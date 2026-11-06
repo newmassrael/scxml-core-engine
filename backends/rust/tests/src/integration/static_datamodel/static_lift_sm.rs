@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 3c98bcf611484a0e8277b90985067a4595fbef91882aa1fe25fdf84830038cc4
+// source-hash: 9aa28cb8a6152625fb0eb1560e8ab3014da5864745e85b6f3b6e37672c04dcf6
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -334,6 +334,7 @@ pub enum StaticLiftRefusalCodeEnum {
     UnknownVariant,
     NotByteText,
     NulInText,
+    TooFew,
 }
 
 impl StaticLiftRefusalCodeEnum {
@@ -354,6 +355,7 @@ impl StaticLiftRefusalCodeEnum {
             Self::UnknownVariant => "unknownVariant",
             Self::NotByteText => "notByteText",
             Self::NulInText => "nulInText",
+            Self::TooFew => "tooFew",
         }
     }
 
@@ -374,6 +376,7 @@ impl StaticLiftRefusalCodeEnum {
             Self::UnknownVariant => 11,
             Self::NotByteText => 12,
             Self::NulInText => 13,
+            Self::TooFew => 14,
         }
     }
 
@@ -394,6 +397,7 @@ impl StaticLiftRefusalCodeEnum {
             11 => Some(Self::UnknownVariant),
             12 => Some(Self::NotByteText),
             13 => Some(Self::NulInText),
+            14 => Some(Self::TooFew),
             _ => None,
         }
     }
@@ -519,6 +523,7 @@ impl ::sce_rust_runtime::saved_state::SavedValue for StaticLiftRefusalCodeEnum {
                 Self::UnknownVariant => "unknownVariant",
                 Self::NotByteText => "notByteText",
                 Self::NulInText => "nulInText",
+                Self::TooFew => "tooFew",
             }
             .to_string(),
         )
@@ -543,6 +548,7 @@ impl ::sce_rust_runtime::saved_state::SavedValue for StaticLiftRefusalCodeEnum {
                 "unknownVariant" => Ok(Self::UnknownVariant),
                 "notByteText" => Ok(Self::NotByteText),
                 "nulInText" => Ok(Self::NulInText),
+                "tooFew" => Ok(Self::TooFew),
                 other => Err(::sce_rust_runtime::saved_state::StateRefusal::new(format!(
                     "'{what}' ({other}) is not a variant of refusal_code"
                 ))),
@@ -736,10 +742,10 @@ impl StaticLiftPersist for Engine<StaticLiftPolicy> {
 
     const SHAPE: ::sce_rust_runtime::saved_state::SavedShape =
         ::sce_rust_runtime::saved_state::SavedShape {
-            first: "884dfb541f11437c383220a4a8943e853f0fff42e87f118143145b03a9aee339",
-            revised: "b65930f928a4dfd860d83ab4fb45775b4494c49bb97c6a9faf342d80438a049d",
-            format2_first: "89179c86cd5b354ab3abf1b5c8c7c4815b51864b4a0423fd58ba7cced2f087d3",
-            format2_revised: "8cd69763111ad98c584d6d129ad6990993578ebd60f3dd907a5e5e4de7995830",
+            first: "bcc64bc7d8cbabe025c700ffc5d239d7f9ac55e720b5338913046399534bc5f0",
+            revised: "f86ff2576aa4492e7db15825af60d0f20acaa2442b8344bc223c75c7b4ba4192",
+            format2_first: "a0338bb4be14b3f0513f97a845c32c3635f6e8bc270638ca868ed0e4f7646e57",
+            format2_revised: "aaa57de3b4aec9e8b2b203ac096e30cd24ec843f1def6d5398e47e99737c7c95",
             records: &[
                 ::sce_rust_runtime::saved_state::RecordLineage {
                     event: "lift.answer",
@@ -1431,7 +1437,7 @@ impl StatePolicy for StaticLiftPolicy {
                             self.why = None;
                         }
                         Err(sce_refusal) => {
-                            self.why = Some(StaticLiftLiftRefusalRecord { code: match sce_refusal.code() { ::sce_rust_runtime::event_payload::RefusalCode::NotJson => StaticLiftRefusalCodeEnum::NotJson, ::sce_rust_runtime::event_payload::RefusalCode::NotObject => StaticLiftRefusalCodeEnum::NotObject, ::sce_rust_runtime::event_payload::RefusalCode::TooDeep => StaticLiftRefusalCodeEnum::TooDeep, ::sce_rust_runtime::event_payload::RefusalCode::Missing => StaticLiftRefusalCodeEnum::Missing, ::sce_rust_runtime::event_payload::RefusalCode::NullNotOptional => StaticLiftRefusalCodeEnum::NullNotOptional, ::sce_rust_runtime::event_payload::RefusalCode::WrongKind => StaticLiftRefusalCodeEnum::WrongKind, ::sce_rust_runtime::event_payload::RefusalCode::BadNumber => StaticLiftRefusalCodeEnum::BadNumber, ::sce_rust_runtime::event_payload::RefusalCode::OutOfRange => StaticLiftRefusalCodeEnum::OutOfRange, ::sce_rust_runtime::event_payload::RefusalCode::TooLong => StaticLiftRefusalCodeEnum::TooLong, ::sce_rust_runtime::event_payload::RefusalCode::TooMany => StaticLiftRefusalCodeEnum::TooMany, ::sce_rust_runtime::event_payload::RefusalCode::UnknownVariant => StaticLiftRefusalCodeEnum::UnknownVariant, ::sce_rust_runtime::event_payload::RefusalCode::NotByteText => StaticLiftRefusalCodeEnum::NotByteText, ::sce_rust_runtime::event_payload::RefusalCode::NulInText => StaticLiftRefusalCodeEnum::NulInText, }, path: ::sce_rust_runtime::portable::SceString::<256>::from_text(sce_refusal.pointer()).unwrap_or_default(), bound: sce_refusal.bound() });
+                            self.why = Some(StaticLiftLiftRefusalRecord { code: match sce_refusal.code() { ::sce_rust_runtime::event_payload::RefusalCode::NotJson => StaticLiftRefusalCodeEnum::NotJson, ::sce_rust_runtime::event_payload::RefusalCode::NotObject => StaticLiftRefusalCodeEnum::NotObject, ::sce_rust_runtime::event_payload::RefusalCode::TooDeep => StaticLiftRefusalCodeEnum::TooDeep, ::sce_rust_runtime::event_payload::RefusalCode::Missing => StaticLiftRefusalCodeEnum::Missing, ::sce_rust_runtime::event_payload::RefusalCode::NullNotOptional => StaticLiftRefusalCodeEnum::NullNotOptional, ::sce_rust_runtime::event_payload::RefusalCode::WrongKind => StaticLiftRefusalCodeEnum::WrongKind, ::sce_rust_runtime::event_payload::RefusalCode::BadNumber => StaticLiftRefusalCodeEnum::BadNumber, ::sce_rust_runtime::event_payload::RefusalCode::OutOfRange => StaticLiftRefusalCodeEnum::OutOfRange, ::sce_rust_runtime::event_payload::RefusalCode::TooLong => StaticLiftRefusalCodeEnum::TooLong, ::sce_rust_runtime::event_payload::RefusalCode::TooMany => StaticLiftRefusalCodeEnum::TooMany, ::sce_rust_runtime::event_payload::RefusalCode::UnknownVariant => StaticLiftRefusalCodeEnum::UnknownVariant, ::sce_rust_runtime::event_payload::RefusalCode::NotByteText => StaticLiftRefusalCodeEnum::NotByteText, ::sce_rust_runtime::event_payload::RefusalCode::NulInText => StaticLiftRefusalCodeEnum::NulInText, ::sce_rust_runtime::event_payload::RefusalCode::TooFew => StaticLiftRefusalCodeEnum::TooFew, }, path: ::sce_rust_runtime::portable::SceString::<256>::from_text(sce_refusal.pointer()).unwrap_or_default(), bound: sce_refusal.bound() });
                         }
                     }
 
@@ -1512,7 +1518,7 @@ impl StatePolicy for StaticLiftPolicy {
                             self.why = None;
                         }
                         Err(sce_refusal) => {
-                            self.why = Some(StaticLiftLiftRefusalRecord { code: match sce_refusal.code() { ::sce_rust_runtime::event_payload::RefusalCode::NotJson => StaticLiftRefusalCodeEnum::NotJson, ::sce_rust_runtime::event_payload::RefusalCode::NotObject => StaticLiftRefusalCodeEnum::NotObject, ::sce_rust_runtime::event_payload::RefusalCode::TooDeep => StaticLiftRefusalCodeEnum::TooDeep, ::sce_rust_runtime::event_payload::RefusalCode::Missing => StaticLiftRefusalCodeEnum::Missing, ::sce_rust_runtime::event_payload::RefusalCode::NullNotOptional => StaticLiftRefusalCodeEnum::NullNotOptional, ::sce_rust_runtime::event_payload::RefusalCode::WrongKind => StaticLiftRefusalCodeEnum::WrongKind, ::sce_rust_runtime::event_payload::RefusalCode::BadNumber => StaticLiftRefusalCodeEnum::BadNumber, ::sce_rust_runtime::event_payload::RefusalCode::OutOfRange => StaticLiftRefusalCodeEnum::OutOfRange, ::sce_rust_runtime::event_payload::RefusalCode::TooLong => StaticLiftRefusalCodeEnum::TooLong, ::sce_rust_runtime::event_payload::RefusalCode::TooMany => StaticLiftRefusalCodeEnum::TooMany, ::sce_rust_runtime::event_payload::RefusalCode::UnknownVariant => StaticLiftRefusalCodeEnum::UnknownVariant, ::sce_rust_runtime::event_payload::RefusalCode::NotByteText => StaticLiftRefusalCodeEnum::NotByteText, ::sce_rust_runtime::event_payload::RefusalCode::NulInText => StaticLiftRefusalCodeEnum::NulInText, }, path: ::sce_rust_runtime::portable::SceString::<256>::from_text(sce_refusal.pointer()).unwrap_or_default(), bound: sce_refusal.bound() });
+                            self.why = Some(StaticLiftLiftRefusalRecord { code: match sce_refusal.code() { ::sce_rust_runtime::event_payload::RefusalCode::NotJson => StaticLiftRefusalCodeEnum::NotJson, ::sce_rust_runtime::event_payload::RefusalCode::NotObject => StaticLiftRefusalCodeEnum::NotObject, ::sce_rust_runtime::event_payload::RefusalCode::TooDeep => StaticLiftRefusalCodeEnum::TooDeep, ::sce_rust_runtime::event_payload::RefusalCode::Missing => StaticLiftRefusalCodeEnum::Missing, ::sce_rust_runtime::event_payload::RefusalCode::NullNotOptional => StaticLiftRefusalCodeEnum::NullNotOptional, ::sce_rust_runtime::event_payload::RefusalCode::WrongKind => StaticLiftRefusalCodeEnum::WrongKind, ::sce_rust_runtime::event_payload::RefusalCode::BadNumber => StaticLiftRefusalCodeEnum::BadNumber, ::sce_rust_runtime::event_payload::RefusalCode::OutOfRange => StaticLiftRefusalCodeEnum::OutOfRange, ::sce_rust_runtime::event_payload::RefusalCode::TooLong => StaticLiftRefusalCodeEnum::TooLong, ::sce_rust_runtime::event_payload::RefusalCode::TooMany => StaticLiftRefusalCodeEnum::TooMany, ::sce_rust_runtime::event_payload::RefusalCode::UnknownVariant => StaticLiftRefusalCodeEnum::UnknownVariant, ::sce_rust_runtime::event_payload::RefusalCode::NotByteText => StaticLiftRefusalCodeEnum::NotByteText, ::sce_rust_runtime::event_payload::RefusalCode::NulInText => StaticLiftRefusalCodeEnum::NulInText, ::sce_rust_runtime::event_payload::RefusalCode::TooFew => StaticLiftRefusalCodeEnum::TooFew, }, path: ::sce_rust_runtime::portable::SceString::<256>::from_text(sce_refusal.pointer()).unwrap_or_default(), bound: sce_refusal.bound() });
                         }
                     }
 

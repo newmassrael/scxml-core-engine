@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 3c98bcf611484a0e8277b90985067a4595fbef91882aa1fe25fdf84830038cc4
+// source-hash: 9aa28cb8a6152625fb0eb1560e8ab3014da5864745e85b6f3b6e37672c04dcf6
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_model_harness.scxml
@@ -102,7 +102,7 @@ data class StaticModelHarnessTransition(
 
 object StaticModelHarnessTransitions {
     /** The digest of the source set this machine was generated from: the `source-hash` of the file's own header, as a value. */
-    const val SOURCE_HASH: String = "3c98bcf611484a0e8277b90985067a4595fbef91882aa1fe25fdf84830038cc4"
+    const val SOURCE_HASH: String = "9aa28cb8a6152625fb0eb1560e8ab3014da5864745e85b6f3b6e37672c04dcf6"
 
     /** Every transition of the machine. */
     val all: List<StaticModelHarnessTransition> = listOf(
@@ -163,6 +163,7 @@ enum class StaticModelHarnessHarnessCodeEnum(val declaredName: String) {
     UNKNOWN_VARIANT("unknownVariant"),
     NOT_BYTE_TEXT("notByteText"),
     NUL_IN_TEXT("nulInText"),
+    TOO_FEW("tooFew"),
     NOT_OFFERED("notOffered");
 
     /** This value as a saved state writes it. */
@@ -183,7 +184,8 @@ enum class StaticModelHarnessHarnessCodeEnum(val declaredName: String) {
         UNKNOWN_VARIANT -> 11u.toUByte()
         NOT_BYTE_TEXT -> 12u.toUByte()
         NUL_IN_TEXT -> 13u.toUByte()
-        NOT_OFFERED -> 14u.toUByte()
+        TOO_FEW -> 14u.toUByte()
+        NOT_OFFERED -> 15u.toUByte()
     }
 
     companion object {
@@ -266,7 +268,8 @@ enum class StaticModelHarnessLiftRefusalCodeEnum(val declaredName: String) {
     TOO_MANY("tooMany"),
     UNKNOWN_VARIANT("unknownVariant"),
     NOT_BYTE_TEXT("notByteText"),
-    NUL_IN_TEXT("nulInText");
+    NUL_IN_TEXT("nulInText"),
+    TOO_FEW("tooFew");
 
     /** This value as a saved state writes it. */
     fun toSaved(): Any = declaredName
@@ -286,6 +289,7 @@ enum class StaticModelHarnessLiftRefusalCodeEnum(val declaredName: String) {
         UNKNOWN_VARIANT -> 11u.toUByte()
         NOT_BYTE_TEXT -> 12u.toUByte()
         NUL_IN_TEXT -> 13u.toUByte()
+        TOO_FEW -> 14u.toUByte()
     }
 
     companion object {
@@ -507,10 +511,10 @@ class StaticModelHarnessStateMachine(
      * later revision added at its default.
      */
     val savedShape: SavedShape = SavedShape(
-        first = "869dd573a3b7db5db8af69bf755da73d74bcef754fd2228700ce325d473a4a3e",
-        revised = "30c80b673132c846bc72d4a2ca88c90bb219c7fd83f1c470a243fe031605e15a",
-        format2First = "6a94014734cca5ff94de33f9a569430ac46267ccdeb3bb215379062013324a1f",
-        format2Revised = "4a96c2880ba2a3ce956b3f380dd6f1b2a6e33b976409ec90911cf2b937894fb1",
+        first = "37befbc8acd00383a5b5c22dccd834a45417865a992fce63e4fff9ffba57eea3",
+        revised = "71d8d448c8aef08c94b4c434c99fe8b570a2053ef5f397824e9bd8dd1f950a3a",
+        format2First = "3b077e2ef9a79afe1e0bdd2b4b4bef2b710cf1f1d0ff92e34196fe799ea64bda",
+        format2Revised = "4e941d5a22fb0a84a8f3a01e5bf4846243f1bd294e9e6b5169a55cbd776d73d8",
         records = listOf(
             RecordLineage(
                 event = "harness.refusal",
@@ -1595,7 +1599,7 @@ class StaticModelHarnessStateMachine(
                 return
             }
 
-            when (val sceLift = com.sce.runtime.EventPayload.liftRecord(vSaid, 1, 256, "{\"priority\":3}") { r -> StaticModelHarnessAnswerRecord(id = r.field("id").let { v -> v.uint32() }, amount = r.field("amount").let { v -> v.int64() }, title = r.field("title").let { v -> v.string(16) }, kind = r.field("kind").let { v -> v.name().let { name -> when (name) { "meeting" -> StaticModelHarnessEnumLiftKindEnum.MEETING; "task" -> StaticModelHarnessEnumLiftKindEnum.TASK; else -> throw v.unknownVariant(name, "enum_lift_kind") } } }, note = r.field("note").let { v -> v.optional { present -> present.string(8) } }, tag = r.field("tag").let { v -> v.bytes(4) }, priority = r.field("priority").let { v -> v.uint8() }) }) { is com.sce.runtime.EventPayload.LiftOutcome.Lifted -> { vAnswer = sceLift.value; vWhy = null }; is com.sce.runtime.EventPayload.LiftOutcome.Refused -> { vWhy = StaticModelHarnessLiftRefusalRecord(code = when (sceLift.refusal.code) { com.sce.runtime.EventPayload.RefusalCode.NOT_JSON -> StaticModelHarnessLiftRefusalCodeEnum.NOT_JSON; com.sce.runtime.EventPayload.RefusalCode.NOT_OBJECT -> StaticModelHarnessLiftRefusalCodeEnum.NOT_OBJECT; com.sce.runtime.EventPayload.RefusalCode.TOO_DEEP -> StaticModelHarnessLiftRefusalCodeEnum.TOO_DEEP; com.sce.runtime.EventPayload.RefusalCode.MISSING -> StaticModelHarnessLiftRefusalCodeEnum.MISSING; com.sce.runtime.EventPayload.RefusalCode.NULL_NOT_OPTIONAL -> StaticModelHarnessLiftRefusalCodeEnum.NULL_NOT_OPTIONAL; com.sce.runtime.EventPayload.RefusalCode.WRONG_KIND -> StaticModelHarnessLiftRefusalCodeEnum.WRONG_KIND; com.sce.runtime.EventPayload.RefusalCode.BAD_NUMBER -> StaticModelHarnessLiftRefusalCodeEnum.BAD_NUMBER; com.sce.runtime.EventPayload.RefusalCode.OUT_OF_RANGE -> StaticModelHarnessLiftRefusalCodeEnum.OUT_OF_RANGE; com.sce.runtime.EventPayload.RefusalCode.TOO_LONG -> StaticModelHarnessLiftRefusalCodeEnum.TOO_LONG; com.sce.runtime.EventPayload.RefusalCode.TOO_MANY -> StaticModelHarnessLiftRefusalCodeEnum.TOO_MANY; com.sce.runtime.EventPayload.RefusalCode.UNKNOWN_VARIANT -> StaticModelHarnessLiftRefusalCodeEnum.UNKNOWN_VARIANT; com.sce.runtime.EventPayload.RefusalCode.NOT_BYTE_TEXT -> StaticModelHarnessLiftRefusalCodeEnum.NOT_BYTE_TEXT; com.sce.runtime.EventPayload.RefusalCode.NUL_IN_TEXT -> StaticModelHarnessLiftRefusalCodeEnum.NUL_IN_TEXT; }, path = sceLift.refusal.pointer, bound = sceLift.refusal.bound?.toUInt()) } }
+            when (val sceLift = com.sce.runtime.EventPayload.liftRecord(vSaid, 1, 256, "{\"priority\":3}") { r -> StaticModelHarnessAnswerRecord(id = r.field("id").let { v -> v.uint32() }, amount = r.field("amount").let { v -> v.int64() }, title = r.field("title").let { v -> v.string(16) }, kind = r.field("kind").let { v -> v.name().let { name -> when (name) { "meeting" -> StaticModelHarnessEnumLiftKindEnum.MEETING; "task" -> StaticModelHarnessEnumLiftKindEnum.TASK; else -> throw v.unknownVariant(name, "enum_lift_kind") } } }, note = r.field("note").let { v -> v.optional { present -> present.string(8) } }, tag = r.field("tag").let { v -> v.bytes(4) }, priority = r.field("priority").let { v -> v.uint8() }) }) { is com.sce.runtime.EventPayload.LiftOutcome.Lifted -> { vAnswer = sceLift.value; vWhy = null }; is com.sce.runtime.EventPayload.LiftOutcome.Refused -> { vWhy = StaticModelHarnessLiftRefusalRecord(code = when (sceLift.refusal.code) { com.sce.runtime.EventPayload.RefusalCode.NOT_JSON -> StaticModelHarnessLiftRefusalCodeEnum.NOT_JSON; com.sce.runtime.EventPayload.RefusalCode.NOT_OBJECT -> StaticModelHarnessLiftRefusalCodeEnum.NOT_OBJECT; com.sce.runtime.EventPayload.RefusalCode.TOO_DEEP -> StaticModelHarnessLiftRefusalCodeEnum.TOO_DEEP; com.sce.runtime.EventPayload.RefusalCode.MISSING -> StaticModelHarnessLiftRefusalCodeEnum.MISSING; com.sce.runtime.EventPayload.RefusalCode.NULL_NOT_OPTIONAL -> StaticModelHarnessLiftRefusalCodeEnum.NULL_NOT_OPTIONAL; com.sce.runtime.EventPayload.RefusalCode.WRONG_KIND -> StaticModelHarnessLiftRefusalCodeEnum.WRONG_KIND; com.sce.runtime.EventPayload.RefusalCode.BAD_NUMBER -> StaticModelHarnessLiftRefusalCodeEnum.BAD_NUMBER; com.sce.runtime.EventPayload.RefusalCode.OUT_OF_RANGE -> StaticModelHarnessLiftRefusalCodeEnum.OUT_OF_RANGE; com.sce.runtime.EventPayload.RefusalCode.TOO_LONG -> StaticModelHarnessLiftRefusalCodeEnum.TOO_LONG; com.sce.runtime.EventPayload.RefusalCode.TOO_MANY -> StaticModelHarnessLiftRefusalCodeEnum.TOO_MANY; com.sce.runtime.EventPayload.RefusalCode.UNKNOWN_VARIANT -> StaticModelHarnessLiftRefusalCodeEnum.UNKNOWN_VARIANT; com.sce.runtime.EventPayload.RefusalCode.NOT_BYTE_TEXT -> StaticModelHarnessLiftRefusalCodeEnum.NOT_BYTE_TEXT; com.sce.runtime.EventPayload.RefusalCode.NUL_IN_TEXT -> StaticModelHarnessLiftRefusalCodeEnum.NUL_IN_TEXT; com.sce.runtime.EventPayload.RefusalCode.TOO_FEW -> StaticModelHarnessLiftRefusalCodeEnum.TOO_FEW; }, path = sceLift.refusal.pointer, bound = sceLift.refusal.bound?.toUInt()) } }
     }
 
     private fun transitionContentOfGenerateAt1() {

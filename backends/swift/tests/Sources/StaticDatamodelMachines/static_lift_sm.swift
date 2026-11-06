@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 3c98bcf611484a0e8277b90985067a4595fbef91882aa1fe25fdf84830038cc4
+// source-hash: 9aa28cb8a6152625fb0eb1560e8ab3014da5864745e85b6f3b6e37672c04dcf6
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -191,6 +191,7 @@ public enum StaticLiftRefusalCodeEnum: UInt8, CaseIterable, Sendable {
     case unknownVariant = 11
     case notByteText = 12
     case nulInText = 13
+    case tooFew = 14
 
     /// The name the enum document declares for the value.
     public var declaredName: String {
@@ -208,6 +209,7 @@ public enum StaticLiftRefusalCodeEnum: UInt8, CaseIterable, Sendable {
         case .unknownVariant: return "unknownVariant"
         case .notByteText: return "notByteText"
         case .nulInText: return "nulInText"
+        case .tooFew: return "tooFew"
         }
     }
 
@@ -238,6 +240,7 @@ public enum StaticLiftRefusalCodeEnum: UInt8, CaseIterable, Sendable {
         case "unknownVariant": self = .unknownVariant
         case "notByteText": self = .notByteText
         case "nulInText": self = .nulInText
+        case "tooFew": self = .tooFew
         default: return nil
         }
     }
@@ -722,7 +725,7 @@ public final class StaticLiftPolicy: InvocablePolicy {
 
                 // docs/adr/0087: <sce:lift text="_event.data.text" schema="Answer">
 
-                switch liftRecord(self.pendingTextGivenPayload.text, schema: "Answer", depth: 1, pathBound: 256, defaults: "{\"priority\":3}", read: { r in StaticLiftAnswerRecord(id: try (try r.field("id")).unsigned() as UInt32, amount: try (try r.field("amount")).signed64(), title: try (try r.field("title")).text(bound: 16), kind: try { (v: PayloadValue) throws -> StaticLiftEnumLiftKindEnum in let name = try v.name(); switch name { case "meeting": return StaticLiftEnumLiftKindEnum.meeting; case "task": return StaticLiftEnumLiftKindEnum.task; default: throw v.unknownVariant(name, alias: "enum_lift_kind") } }((try r.field("kind"))), note: try r.field("note").optional { present in try present.text(bound: 8) }, tag: try (try r.field("tag")).bytes(bound: 4), priority: try (try r.field("priority")).unsigned() as UInt8) }) { case .success(let sceLifted): self.vAnswer = sceLifted; self.vWhy = nil; case .failure(let sceRefusal): self.vWhy = StaticLiftLiftRefusalRecord(code: { () -> StaticLiftRefusalCodeEnum in switch sceRefusal.code { case .notJson: return StaticLiftRefusalCodeEnum.notJson; case .notObject: return StaticLiftRefusalCodeEnum.notObject; case .tooDeep: return StaticLiftRefusalCodeEnum.tooDeep; case .missing: return StaticLiftRefusalCodeEnum.missing; case .nullNotOptional: return StaticLiftRefusalCodeEnum.nullNotOptional; case .wrongKind: return StaticLiftRefusalCodeEnum.wrongKind; case .badNumber: return StaticLiftRefusalCodeEnum.badNumber; case .outOfRange: return StaticLiftRefusalCodeEnum.outOfRange; case .tooLong: return StaticLiftRefusalCodeEnum.tooLong; case .tooMany: return StaticLiftRefusalCodeEnum.tooMany; case .unknownVariant: return StaticLiftRefusalCodeEnum.unknownVariant; case .notByteText: return StaticLiftRefusalCodeEnum.notByteText; case .nulInText: return StaticLiftRefusalCodeEnum.nulInText; } }(), path: sceRefusal.pointer, bound: sceRefusal.bound) }
+                switch liftRecord(self.pendingTextGivenPayload.text, schema: "Answer", depth: 1, pathBound: 256, defaults: "{\"priority\":3}", read: { r in StaticLiftAnswerRecord(id: try (try r.field("id")).unsigned() as UInt32, amount: try (try r.field("amount")).signed64(), title: try (try r.field("title")).text(bound: 16), kind: try { (v: PayloadValue) throws -> StaticLiftEnumLiftKindEnum in let name = try v.name(); switch name { case "meeting": return StaticLiftEnumLiftKindEnum.meeting; case "task": return StaticLiftEnumLiftKindEnum.task; default: throw v.unknownVariant(name, alias: "enum_lift_kind") } }((try r.field("kind"))), note: try r.field("note").optional { present in try present.text(bound: 8) }, tag: try (try r.field("tag")).bytes(bound: 4), priority: try (try r.field("priority")).unsigned() as UInt8) }) { case .success(let sceLifted): self.vAnswer = sceLifted; self.vWhy = nil; case .failure(let sceRefusal): self.vWhy = StaticLiftLiftRefusalRecord(code: { () -> StaticLiftRefusalCodeEnum in switch sceRefusal.code { case .notJson: return StaticLiftRefusalCodeEnum.notJson; case .notObject: return StaticLiftRefusalCodeEnum.notObject; case .tooDeep: return StaticLiftRefusalCodeEnum.tooDeep; case .missing: return StaticLiftRefusalCodeEnum.missing; case .nullNotOptional: return StaticLiftRefusalCodeEnum.nullNotOptional; case .wrongKind: return StaticLiftRefusalCodeEnum.wrongKind; case .badNumber: return StaticLiftRefusalCodeEnum.badNumber; case .outOfRange: return StaticLiftRefusalCodeEnum.outOfRange; case .tooLong: return StaticLiftRefusalCodeEnum.tooLong; case .tooMany: return StaticLiftRefusalCodeEnum.tooMany; case .unknownVariant: return StaticLiftRefusalCodeEnum.unknownVariant; case .notByteText: return StaticLiftRefusalCodeEnum.notByteText; case .nulInText: return StaticLiftRefusalCodeEnum.nulInText; case .tooFew: return StaticLiftRefusalCodeEnum.tooFew; } }(), path: sceRefusal.pointer, bound: sceRefusal.bound) }
 
 
 
@@ -746,7 +749,7 @@ public final class StaticLiftPolicy: InvocablePolicy {
 
                 // docs/adr/0087: <sce:lift text="said" schema="Answer">
 
-                switch liftRecord(self.vSaid, schema: "Answer", depth: 1, pathBound: 256, defaults: "{\"priority\":3}", read: { r in StaticLiftAnswerRecord(id: try (try r.field("id")).unsigned() as UInt32, amount: try (try r.field("amount")).signed64(), title: try (try r.field("title")).text(bound: 16), kind: try { (v: PayloadValue) throws -> StaticLiftEnumLiftKindEnum in let name = try v.name(); switch name { case "meeting": return StaticLiftEnumLiftKindEnum.meeting; case "task": return StaticLiftEnumLiftKindEnum.task; default: throw v.unknownVariant(name, alias: "enum_lift_kind") } }((try r.field("kind"))), note: try r.field("note").optional { present in try present.text(bound: 8) }, tag: try (try r.field("tag")).bytes(bound: 4), priority: try (try r.field("priority")).unsigned() as UInt8) }) { case .success(let sceLifted): self.vAnswer = sceLifted; self.vWhy = nil; case .failure(let sceRefusal): self.vWhy = StaticLiftLiftRefusalRecord(code: { () -> StaticLiftRefusalCodeEnum in switch sceRefusal.code { case .notJson: return StaticLiftRefusalCodeEnum.notJson; case .notObject: return StaticLiftRefusalCodeEnum.notObject; case .tooDeep: return StaticLiftRefusalCodeEnum.tooDeep; case .missing: return StaticLiftRefusalCodeEnum.missing; case .nullNotOptional: return StaticLiftRefusalCodeEnum.nullNotOptional; case .wrongKind: return StaticLiftRefusalCodeEnum.wrongKind; case .badNumber: return StaticLiftRefusalCodeEnum.badNumber; case .outOfRange: return StaticLiftRefusalCodeEnum.outOfRange; case .tooLong: return StaticLiftRefusalCodeEnum.tooLong; case .tooMany: return StaticLiftRefusalCodeEnum.tooMany; case .unknownVariant: return StaticLiftRefusalCodeEnum.unknownVariant; case .notByteText: return StaticLiftRefusalCodeEnum.notByteText; case .nulInText: return StaticLiftRefusalCodeEnum.nulInText; } }(), path: sceRefusal.pointer, bound: sceRefusal.bound) }
+                switch liftRecord(self.vSaid, schema: "Answer", depth: 1, pathBound: 256, defaults: "{\"priority\":3}", read: { r in StaticLiftAnswerRecord(id: try (try r.field("id")).unsigned() as UInt32, amount: try (try r.field("amount")).signed64(), title: try (try r.field("title")).text(bound: 16), kind: try { (v: PayloadValue) throws -> StaticLiftEnumLiftKindEnum in let name = try v.name(); switch name { case "meeting": return StaticLiftEnumLiftKindEnum.meeting; case "task": return StaticLiftEnumLiftKindEnum.task; default: throw v.unknownVariant(name, alias: "enum_lift_kind") } }((try r.field("kind"))), note: try r.field("note").optional { present in try present.text(bound: 8) }, tag: try (try r.field("tag")).bytes(bound: 4), priority: try (try r.field("priority")).unsigned() as UInt8) }) { case .success(let sceLifted): self.vAnswer = sceLifted; self.vWhy = nil; case .failure(let sceRefusal): self.vWhy = StaticLiftLiftRefusalRecord(code: { () -> StaticLiftRefusalCodeEnum in switch sceRefusal.code { case .notJson: return StaticLiftRefusalCodeEnum.notJson; case .notObject: return StaticLiftRefusalCodeEnum.notObject; case .tooDeep: return StaticLiftRefusalCodeEnum.tooDeep; case .missing: return StaticLiftRefusalCodeEnum.missing; case .nullNotOptional: return StaticLiftRefusalCodeEnum.nullNotOptional; case .wrongKind: return StaticLiftRefusalCodeEnum.wrongKind; case .badNumber: return StaticLiftRefusalCodeEnum.badNumber; case .outOfRange: return StaticLiftRefusalCodeEnum.outOfRange; case .tooLong: return StaticLiftRefusalCodeEnum.tooLong; case .tooMany: return StaticLiftRefusalCodeEnum.tooMany; case .unknownVariant: return StaticLiftRefusalCodeEnum.unknownVariant; case .notByteText: return StaticLiftRefusalCodeEnum.notByteText; case .nulInText: return StaticLiftRefusalCodeEnum.nulInText; case .tooFew: return StaticLiftRefusalCodeEnum.tooFew; } }(), path: sceRefusal.pointer, bound: sceRefusal.bound) }
 
 
 
@@ -824,10 +827,10 @@ extension StaticLiftPolicy: SavedPolicy {
     /// re-typed or moved something a saved state names refuses it.
     public static var savedShape: SavedShape {
         SavedShape(
-            first: "884dfb541f11437c383220a4a8943e853f0fff42e87f118143145b03a9aee339",
-            revised: "b65930f928a4dfd860d83ab4fb45775b4494c49bb97c6a9faf342d80438a049d",
-            format2First: "89179c86cd5b354ab3abf1b5c8c7c4815b51864b4a0423fd58ba7cced2f087d3",
-            format2Revised: "8cd69763111ad98c584d6d129ad6990993578ebd60f3dd907a5e5e4de7995830",
+            first: "bcc64bc7d8cbabe025c700ffc5d239d7f9ac55e720b5338913046399534bc5f0",
+            revised: "f86ff2576aa4492e7db15825af60d0f20acaa2442b8344bc223c75c7b4ba4192",
+            format2First: "a0338bb4be14b3f0513f97a845c32c3635f6e8bc270638ca868ed0e4f7646e57",
+            format2Revised: "aaa57de3b4aec9e8b2b203ac096e30cd24ec843f1def6d5398e47e99737c7c95",
             records: [
                 SavedRecordLineage(
                     event: "lift.answer", revision: 2,

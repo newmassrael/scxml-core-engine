@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 3c98bcf611484a0e8277b90985067a4595fbef91882aa1fe25fdf84830038cc4
+// source-hash: 9aa28cb8a6152625fb0eb1560e8ab3014da5864745e85b6f3b6e37672c04dcf6
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_host_model.scxml
@@ -141,7 +141,8 @@ enum class StaticHostModelRefusalCodeEnum(val declaredName: String) {
     TOO_MANY("tooMany"),
     UNKNOWN_VARIANT("unknownVariant"),
     NOT_BYTE_TEXT("notByteText"),
-    NUL_IN_TEXT("nulInText");
+    NUL_IN_TEXT("nulInText"),
+    TOO_FEW("tooFew");
 
     /** This value as a saved state writes it. */
     fun toSaved(): Any = declaredName
@@ -161,6 +162,7 @@ enum class StaticHostModelRefusalCodeEnum(val declaredName: String) {
         UNKNOWN_VARIANT -> 11u.toUByte()
         NOT_BYTE_TEXT -> 12u.toUByte()
         NUL_IN_TEXT -> 13u.toUByte()
+        TOO_FEW -> 14u.toUByte()
     }
 
     companion object {
@@ -405,10 +407,10 @@ class StaticHostModelStateMachine(
      * later revision added at its default.
      */
     val savedShape: SavedShape = SavedShape(
-        first = "dbeae1305922e59dfa1f64bf377f0cca47774aa4ea0bcf0d11bd8f05fdd6dbe6",
-        revised = "f66696a536bd60de17eb3afb4303ac2774c8fbd9f2e28b4453716090879d8b39",
-        format2First = "d8996ec71a3c00b1285d4a592db8e7352542fee3446fdc9e5d1b743078ea5b77",
-        format2Revised = "9171aa1571f9cf0f1983e440052be5e1f76132e88b8cf94406ab93ece17f10d2",
+        first = "71b7e2f6efe67b97423eada78502bf45f45666ca41178d66f083b83af856f487",
+        revised = "b9e0109fe02a6b471d723b9067e6b78c6feb6b5a578e316efd93015a1531bdb2",
+        format2First = "529ec77bbc60bbfcdb3dfbe1ae5f8ce2e34deec20ed0ed495741a6252344b702",
+        format2Revised = "73a09bac29295fb1f7d5d1dcbe20adf2371d7e658b9347ead7caad59e9f1d1ef",
         records = listOf(
             RecordLineage(
                 event = "lift.answer",
@@ -1041,7 +1043,7 @@ class StaticHostModelStateMachine(
 
             vAnswerTokens = pendingDoneInvokeGenPayload!!.answer_tokens
 
-            when (val sceLift = com.sce.runtime.EventPayload.liftRecord(pendingDoneInvokeGenPayload!!.text, 1, 256, "{\"priority\":3}") { r -> StaticHostModelAnswerRecord(id = r.field("id").let { v -> v.uint32() }, amount = r.field("amount").let { v -> v.int64() }, title = r.field("title").let { v -> v.string(16) }, kind = r.field("kind").let { v -> v.name().let { name -> when (name) { "meeting" -> StaticHostModelEnumLiftKindEnum.MEETING; "task" -> StaticHostModelEnumLiftKindEnum.TASK; else -> throw v.unknownVariant(name, "enum_lift_kind") } } }, note = r.field("note").let { v -> v.optional { present -> present.string(8) } }, tag = r.field("tag").let { v -> v.bytes(4) }, priority = r.field("priority").let { v -> v.uint8() }) }) { is com.sce.runtime.EventPayload.LiftOutcome.Lifted -> { vAnswer = sceLift.value; vWhy = null }; is com.sce.runtime.EventPayload.LiftOutcome.Refused -> { vWhy = StaticHostModelLiftRefusalRecord(code = when (sceLift.refusal.code) { com.sce.runtime.EventPayload.RefusalCode.NOT_JSON -> StaticHostModelRefusalCodeEnum.NOT_JSON; com.sce.runtime.EventPayload.RefusalCode.NOT_OBJECT -> StaticHostModelRefusalCodeEnum.NOT_OBJECT; com.sce.runtime.EventPayload.RefusalCode.TOO_DEEP -> StaticHostModelRefusalCodeEnum.TOO_DEEP; com.sce.runtime.EventPayload.RefusalCode.MISSING -> StaticHostModelRefusalCodeEnum.MISSING; com.sce.runtime.EventPayload.RefusalCode.NULL_NOT_OPTIONAL -> StaticHostModelRefusalCodeEnum.NULL_NOT_OPTIONAL; com.sce.runtime.EventPayload.RefusalCode.WRONG_KIND -> StaticHostModelRefusalCodeEnum.WRONG_KIND; com.sce.runtime.EventPayload.RefusalCode.BAD_NUMBER -> StaticHostModelRefusalCodeEnum.BAD_NUMBER; com.sce.runtime.EventPayload.RefusalCode.OUT_OF_RANGE -> StaticHostModelRefusalCodeEnum.OUT_OF_RANGE; com.sce.runtime.EventPayload.RefusalCode.TOO_LONG -> StaticHostModelRefusalCodeEnum.TOO_LONG; com.sce.runtime.EventPayload.RefusalCode.TOO_MANY -> StaticHostModelRefusalCodeEnum.TOO_MANY; com.sce.runtime.EventPayload.RefusalCode.UNKNOWN_VARIANT -> StaticHostModelRefusalCodeEnum.UNKNOWN_VARIANT; com.sce.runtime.EventPayload.RefusalCode.NOT_BYTE_TEXT -> StaticHostModelRefusalCodeEnum.NOT_BYTE_TEXT; com.sce.runtime.EventPayload.RefusalCode.NUL_IN_TEXT -> StaticHostModelRefusalCodeEnum.NUL_IN_TEXT; }, path = sceLift.refusal.pointer, bound = sceLift.refusal.bound?.toUInt()) } }
+            when (val sceLift = com.sce.runtime.EventPayload.liftRecord(pendingDoneInvokeGenPayload!!.text, 1, 256, "{\"priority\":3}") { r -> StaticHostModelAnswerRecord(id = r.field("id").let { v -> v.uint32() }, amount = r.field("amount").let { v -> v.int64() }, title = r.field("title").let { v -> v.string(16) }, kind = r.field("kind").let { v -> v.name().let { name -> when (name) { "meeting" -> StaticHostModelEnumLiftKindEnum.MEETING; "task" -> StaticHostModelEnumLiftKindEnum.TASK; else -> throw v.unknownVariant(name, "enum_lift_kind") } } }, note = r.field("note").let { v -> v.optional { present -> present.string(8) } }, tag = r.field("tag").let { v -> v.bytes(4) }, priority = r.field("priority").let { v -> v.uint8() }) }) { is com.sce.runtime.EventPayload.LiftOutcome.Lifted -> { vAnswer = sceLift.value; vWhy = null }; is com.sce.runtime.EventPayload.LiftOutcome.Refused -> { vWhy = StaticHostModelLiftRefusalRecord(code = when (sceLift.refusal.code) { com.sce.runtime.EventPayload.RefusalCode.NOT_JSON -> StaticHostModelRefusalCodeEnum.NOT_JSON; com.sce.runtime.EventPayload.RefusalCode.NOT_OBJECT -> StaticHostModelRefusalCodeEnum.NOT_OBJECT; com.sce.runtime.EventPayload.RefusalCode.TOO_DEEP -> StaticHostModelRefusalCodeEnum.TOO_DEEP; com.sce.runtime.EventPayload.RefusalCode.MISSING -> StaticHostModelRefusalCodeEnum.MISSING; com.sce.runtime.EventPayload.RefusalCode.NULL_NOT_OPTIONAL -> StaticHostModelRefusalCodeEnum.NULL_NOT_OPTIONAL; com.sce.runtime.EventPayload.RefusalCode.WRONG_KIND -> StaticHostModelRefusalCodeEnum.WRONG_KIND; com.sce.runtime.EventPayload.RefusalCode.BAD_NUMBER -> StaticHostModelRefusalCodeEnum.BAD_NUMBER; com.sce.runtime.EventPayload.RefusalCode.OUT_OF_RANGE -> StaticHostModelRefusalCodeEnum.OUT_OF_RANGE; com.sce.runtime.EventPayload.RefusalCode.TOO_LONG -> StaticHostModelRefusalCodeEnum.TOO_LONG; com.sce.runtime.EventPayload.RefusalCode.TOO_MANY -> StaticHostModelRefusalCodeEnum.TOO_MANY; com.sce.runtime.EventPayload.RefusalCode.UNKNOWN_VARIANT -> StaticHostModelRefusalCodeEnum.UNKNOWN_VARIANT; com.sce.runtime.EventPayload.RefusalCode.NOT_BYTE_TEXT -> StaticHostModelRefusalCodeEnum.NOT_BYTE_TEXT; com.sce.runtime.EventPayload.RefusalCode.NUL_IN_TEXT -> StaticHostModelRefusalCodeEnum.NUL_IN_TEXT; com.sce.runtime.EventPayload.RefusalCode.TOO_FEW -> StaticHostModelRefusalCodeEnum.TOO_FEW; }, path = sceLift.refusal.pointer, bound = sceLift.refusal.bound?.toUInt()) } }
 
 
             if (vWhy == null) {

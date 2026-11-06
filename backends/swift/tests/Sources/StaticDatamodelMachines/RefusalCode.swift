@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 03f5f5a232b4c15827c1df86d51093d72261821859cf841999bc5c194110f97a
-// SCE-MAP: refusal_code.scxml:32 :: _forge_body
+// source-hash: 84fb9ab720a733e5ae584f0097d5e6a562408447dcdd1ab7923585e9289913d3
+// SCE-MAP: refusal_code.scxml:34 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="enum")
 // Runtime: none
@@ -27,6 +27,7 @@ public enum RefusalCode: UInt8, CaseIterable, Sendable {
     case unknownVariant = 11
     case notByteText = 12
     case nulInText = 13
+    case tooFew = 14
 
     /// The name the enum document declares for the value.
     public var declaredName: String {
@@ -44,6 +45,7 @@ public enum RefusalCode: UInt8, CaseIterable, Sendable {
         case .unknownVariant: return "unknownVariant"
         case .notByteText: return "notByteText"
         case .nulInText: return "nulInText"
+        case .tooFew: return "tooFew"
         }
     }
 
@@ -74,6 +76,7 @@ public enum RefusalCode: UInt8, CaseIterable, Sendable {
         case "unknownVariant": self = .unknownVariant
         case "notByteText": self = .notByteText
         case "nulInText": self = .nulInText
+        case "tooFew": self = .tooFew
         default: return nil
         }
     }

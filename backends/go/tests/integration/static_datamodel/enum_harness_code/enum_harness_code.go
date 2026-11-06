@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 3c98bcf611484a0e8277b90985067a4595fbef91882aa1fe25fdf84830038cc4
+// source-hash: 9aa28cb8a6152625fb0eb1560e8ab3014da5864745e85b6f3b6e37672c04dcf6
 // SCE-MAP: enum_harness_code.scxml:19 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="enum")
@@ -26,7 +26,8 @@ const (
 	EnumHarnessCodeUnknownVariant EnumHarnessCode = 11
 	EnumHarnessCodeNotByteText EnumHarnessCode = 12
 	EnumHarnessCodeNulInText EnumHarnessCode = 13
-	EnumHarnessCodeNotOffered EnumHarnessCode = 14
+	EnumHarnessCodeTooFew EnumHarnessCode = 14
+	EnumHarnessCodeNotOffered EnumHarnessCode = 15
 )
 
 // ToUnderlying returns the carrier value this holds.
@@ -67,6 +68,8 @@ func (v EnumHarnessCode) DeclaredName() optional.Of[string] {
 		return optional.Some("notByteText")
 	case EnumHarnessCodeNulInText:
 		return optional.Some("nulInText")
+	case EnumHarnessCodeTooFew:
+		return optional.Some("tooFew")
 	case EnumHarnessCodeNotOffered:
 		return optional.Some("notOffered")
 	}
@@ -104,6 +107,8 @@ func EnumHarnessCodeFromUnderlying(raw uint8) optional.Of[EnumHarnessCode] {
 	case 13:
 		return optional.Some(EnumHarnessCodeNulInText)
 	case 14:
+		return optional.Some(EnumHarnessCodeTooFew)
+	case 15:
 		return optional.Some(EnumHarnessCodeNotOffered)
 	}
 	return optional.None[EnumHarnessCode]()

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 3c98bcf611484a0e8277b90985067a4595fbef91882aa1fe25fdf84830038cc4
+// source-hash: 9aa28cb8a6152625fb0eb1560e8ab3014da5864745e85b6f3b6e37672c04dcf6
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -309,7 +309,7 @@ impl StaticModelHarnessTransition {
     /// The digest of the source set this machine was generated from: the
     /// `source-hash` of the file's own header, as a value.
     pub const SOURCE_HASH: &'static str =
-        "3c98bcf611484a0e8277b90985067a4595fbef91882aa1fe25fdf84830038cc4";
+        "9aa28cb8a6152625fb0eb1560e8ab3014da5864745e85b6f3b6e37672c04dcf6";
 
     /// Every transition of the machine.
     pub const ALL: [StaticModelHarnessTransition; 15] = [
@@ -560,6 +560,7 @@ pub enum StaticModelHarnessHarnessCodeEnum {
     UnknownVariant,
     NotByteText,
     NulInText,
+    TooFew,
     NotOffered,
 }
 
@@ -581,6 +582,7 @@ impl StaticModelHarnessHarnessCodeEnum {
             Self::UnknownVariant => "unknownVariant",
             Self::NotByteText => "notByteText",
             Self::NulInText => "nulInText",
+            Self::TooFew => "tooFew",
             Self::NotOffered => "notOffered",
         }
     }
@@ -602,7 +604,8 @@ impl StaticModelHarnessHarnessCodeEnum {
             Self::UnknownVariant => 11,
             Self::NotByteText => 12,
             Self::NulInText => 13,
-            Self::NotOffered => 14,
+            Self::TooFew => 14,
+            Self::NotOffered => 15,
         }
     }
 
@@ -623,7 +626,8 @@ impl StaticModelHarnessHarnessCodeEnum {
             11 => Some(Self::UnknownVariant),
             12 => Some(Self::NotByteText),
             13 => Some(Self::NulInText),
-            14 => Some(Self::NotOffered),
+            14 => Some(Self::TooFew),
+            15 => Some(Self::NotOffered),
             _ => None,
         }
     }
@@ -703,6 +707,7 @@ pub enum StaticModelHarnessLiftRefusalCodeEnum {
     UnknownVariant,
     NotByteText,
     NulInText,
+    TooFew,
 }
 
 impl StaticModelHarnessLiftRefusalCodeEnum {
@@ -723,6 +728,7 @@ impl StaticModelHarnessLiftRefusalCodeEnum {
             Self::UnknownVariant => "unknownVariant",
             Self::NotByteText => "notByteText",
             Self::NulInText => "nulInText",
+            Self::TooFew => "tooFew",
         }
     }
 
@@ -743,6 +749,7 @@ impl StaticModelHarnessLiftRefusalCodeEnum {
             Self::UnknownVariant => 11,
             Self::NotByteText => 12,
             Self::NulInText => 13,
+            Self::TooFew => 14,
         }
     }
 
@@ -763,6 +770,7 @@ impl StaticModelHarnessLiftRefusalCodeEnum {
             11 => Some(Self::UnknownVariant),
             12 => Some(Self::NotByteText),
             13 => Some(Self::NulInText),
+            14 => Some(Self::TooFew),
             _ => None,
         }
     }
@@ -866,6 +874,7 @@ impl ::sce_rust_runtime::saved_state::SavedValue for StaticModelHarnessHarnessCo
                 Self::UnknownVariant => "unknownVariant",
                 Self::NotByteText => "notByteText",
                 Self::NulInText => "nulInText",
+                Self::TooFew => "tooFew",
                 Self::NotOffered => "notOffered",
             }
             .to_string(),
@@ -891,6 +900,7 @@ impl ::sce_rust_runtime::saved_state::SavedValue for StaticModelHarnessHarnessCo
                 "unknownVariant" => Ok(Self::UnknownVariant),
                 "notByteText" => Ok(Self::NotByteText),
                 "nulInText" => Ok(Self::NulInText),
+                "tooFew" => Ok(Self::TooFew),
                 "notOffered" => Ok(Self::NotOffered),
                 other => Err(::sce_rust_runtime::saved_state::StateRefusal::new(format!(
                     "'{what}' ({other}) is not a variant of HarnessCode"
@@ -950,6 +960,7 @@ impl ::sce_rust_runtime::saved_state::SavedValue for StaticModelHarnessLiftRefus
                 Self::UnknownVariant => "unknownVariant",
                 Self::NotByteText => "notByteText",
                 Self::NulInText => "nulInText",
+                Self::TooFew => "tooFew",
             }
             .to_string(),
         )
@@ -974,6 +985,7 @@ impl ::sce_rust_runtime::saved_state::SavedValue for StaticModelHarnessLiftRefus
                 "unknownVariant" => Ok(Self::UnknownVariant),
                 "notByteText" => Ok(Self::NotByteText),
                 "nulInText" => Ok(Self::NulInText),
+                "tooFew" => Ok(Self::TooFew),
                 other => Err(::sce_rust_runtime::saved_state::StateRefusal::new(format!(
                     "'{what}' ({other}) is not a variant of LiftRefusalCode"
                 ))),
@@ -1192,10 +1204,10 @@ impl StaticModelHarnessPersist for Engine<StaticModelHarnessPolicy> {
 
     const SHAPE: ::sce_rust_runtime::saved_state::SavedShape =
         ::sce_rust_runtime::saved_state::SavedShape {
-            first: "869dd573a3b7db5db8af69bf755da73d74bcef754fd2228700ce325d473a4a3e",
-            revised: "30c80b673132c846bc72d4a2ca88c90bb219c7fd83f1c470a243fe031605e15a",
-            format2_first: "6a94014734cca5ff94de33f9a569430ac46267ccdeb3bb215379062013324a1f",
-            format2_revised: "4a96c2880ba2a3ce956b3f380dd6f1b2a6e33b976409ec90911cf2b937894fb1",
+            first: "37befbc8acd00383a5b5c22dccd834a45417865a992fce63e4fff9ffba57eea3",
+            revised: "71d8d448c8aef08c94b4c434c99fe8b570a2053ef5f397824e9bd8dd1f950a3a",
+            format2_first: "3b077e2ef9a79afe1e0bdd2b4b4bef2b710cf1f1d0ff92e34196fe799ea64bda",
+            format2_revised: "4e941d5a22fb0a84a8f3a01e5bf4846243f1bd294e9e6b5169a55cbd776d73d8",
             records: &[
                 ::sce_rust_runtime::saved_state::RecordLineage {
                     event: "harness.refusal",
@@ -2845,7 +2857,7 @@ impl StatePolicy for StaticModelHarnessPolicy {
                             self.why = None;
                         }
                         Err(sce_refusal) => {
-                            self.why = Some(StaticModelHarnessLiftRefusalRecord { code: match sce_refusal.code() { ::sce_rust_runtime::event_payload::RefusalCode::NotJson => StaticModelHarnessLiftRefusalCodeEnum::NotJson, ::sce_rust_runtime::event_payload::RefusalCode::NotObject => StaticModelHarnessLiftRefusalCodeEnum::NotObject, ::sce_rust_runtime::event_payload::RefusalCode::TooDeep => StaticModelHarnessLiftRefusalCodeEnum::TooDeep, ::sce_rust_runtime::event_payload::RefusalCode::Missing => StaticModelHarnessLiftRefusalCodeEnum::Missing, ::sce_rust_runtime::event_payload::RefusalCode::NullNotOptional => StaticModelHarnessLiftRefusalCodeEnum::NullNotOptional, ::sce_rust_runtime::event_payload::RefusalCode::WrongKind => StaticModelHarnessLiftRefusalCodeEnum::WrongKind, ::sce_rust_runtime::event_payload::RefusalCode::BadNumber => StaticModelHarnessLiftRefusalCodeEnum::BadNumber, ::sce_rust_runtime::event_payload::RefusalCode::OutOfRange => StaticModelHarnessLiftRefusalCodeEnum::OutOfRange, ::sce_rust_runtime::event_payload::RefusalCode::TooLong => StaticModelHarnessLiftRefusalCodeEnum::TooLong, ::sce_rust_runtime::event_payload::RefusalCode::TooMany => StaticModelHarnessLiftRefusalCodeEnum::TooMany, ::sce_rust_runtime::event_payload::RefusalCode::UnknownVariant => StaticModelHarnessLiftRefusalCodeEnum::UnknownVariant, ::sce_rust_runtime::event_payload::RefusalCode::NotByteText => StaticModelHarnessLiftRefusalCodeEnum::NotByteText, ::sce_rust_runtime::event_payload::RefusalCode::NulInText => StaticModelHarnessLiftRefusalCodeEnum::NulInText, }, path: ::sce_rust_runtime::portable::SceString::<256>::from_text(sce_refusal.pointer()).unwrap_or_default(), bound: sce_refusal.bound() });
+                            self.why = Some(StaticModelHarnessLiftRefusalRecord { code: match sce_refusal.code() { ::sce_rust_runtime::event_payload::RefusalCode::NotJson => StaticModelHarnessLiftRefusalCodeEnum::NotJson, ::sce_rust_runtime::event_payload::RefusalCode::NotObject => StaticModelHarnessLiftRefusalCodeEnum::NotObject, ::sce_rust_runtime::event_payload::RefusalCode::TooDeep => StaticModelHarnessLiftRefusalCodeEnum::TooDeep, ::sce_rust_runtime::event_payload::RefusalCode::Missing => StaticModelHarnessLiftRefusalCodeEnum::Missing, ::sce_rust_runtime::event_payload::RefusalCode::NullNotOptional => StaticModelHarnessLiftRefusalCodeEnum::NullNotOptional, ::sce_rust_runtime::event_payload::RefusalCode::WrongKind => StaticModelHarnessLiftRefusalCodeEnum::WrongKind, ::sce_rust_runtime::event_payload::RefusalCode::BadNumber => StaticModelHarnessLiftRefusalCodeEnum::BadNumber, ::sce_rust_runtime::event_payload::RefusalCode::OutOfRange => StaticModelHarnessLiftRefusalCodeEnum::OutOfRange, ::sce_rust_runtime::event_payload::RefusalCode::TooLong => StaticModelHarnessLiftRefusalCodeEnum::TooLong, ::sce_rust_runtime::event_payload::RefusalCode::TooMany => StaticModelHarnessLiftRefusalCodeEnum::TooMany, ::sce_rust_runtime::event_payload::RefusalCode::UnknownVariant => StaticModelHarnessLiftRefusalCodeEnum::UnknownVariant, ::sce_rust_runtime::event_payload::RefusalCode::NotByteText => StaticModelHarnessLiftRefusalCodeEnum::NotByteText, ::sce_rust_runtime::event_payload::RefusalCode::NulInText => StaticModelHarnessLiftRefusalCodeEnum::NulInText, ::sce_rust_runtime::event_payload::RefusalCode::TooFew => StaticModelHarnessLiftRefusalCodeEnum::TooFew, }, path: ::sce_rust_runtime::portable::SceString::<256>::from_text(sce_refusal.pointer()).unwrap_or_default(), bound: sce_refusal.bound() });
                         }
                     }
                 }

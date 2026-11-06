@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 3c98bcf611484a0e8277b90985067a4595fbef91882aa1fe25fdf84830038cc4
+// source-hash: 9aa28cb8a6152625fb0eb1560e8ab3014da5864745e85b6f3b6e37672c04dcf6
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -427,6 +427,7 @@ const (
 	StaticLiftRefusalCodeEnumUnknownVariant StaticLiftRefusalCodeEnum = 11
 	StaticLiftRefusalCodeEnumNotByteText StaticLiftRefusalCodeEnum = 12
 	StaticLiftRefusalCodeEnumNulInText StaticLiftRefusalCodeEnum = 13
+	StaticLiftRefusalCodeEnumTooFew StaticLiftRefusalCodeEnum = 14
 )
 
 // String is the name the enum document declares for the value.
@@ -458,6 +459,8 @@ func (v StaticLiftRefusalCodeEnum) String() string {
 		return "notByteText"
 	case StaticLiftRefusalCodeEnumNulInText:
 		return "nulInText"
+	case StaticLiftRefusalCodeEnumTooFew:
+		return "tooFew"
 	}
 	return ""
 }
@@ -471,7 +474,7 @@ func (v StaticLiftRefusalCodeEnum) ToUnderlying() uint8 {
 // value for a number no variant declares.
 func StaticLiftRefusalCodeEnumFromUnderlying(raw uint8) optional.Of[StaticLiftRefusalCodeEnum] {
 	switch raw {
-	case 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13:
+	case 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14:
 		return optional.Some(StaticLiftRefusalCodeEnum(raw))
 	}
 	return optional.None[StaticLiftRefusalCodeEnum]()
@@ -515,6 +518,8 @@ func StaticLiftRefusalCodeEnumFromSaved(value any, what string) (StaticLiftRefus
 		return StaticLiftRefusalCodeEnumNotByteText, nil
 	case "nulInText":
 		return StaticLiftRefusalCodeEnumNulInText, nil
+	case "tooFew":
+		return StaticLiftRefusalCodeEnumTooFew, nil
 	}
 	return 0, sce.Refuse(fmt.Sprintf("'%s' (%s) is not a variant of refusal_code", what, declared))
 }
@@ -594,12 +599,12 @@ const StaticLiftLimitLiftPath uint32 = 256
 // this machine names when every record schema it holds is in its first
 // revision (docs/adr/0045, section 2). The generator computes it once, so it is
 // the text every backend's constant is.
-const StaticLiftSavedShapeFormat2 = "89179c86cd5b354ab3abf1b5c8c7c4815b51864b4a0423fd58ba7cced2f087d3"
+const StaticLiftSavedShapeFormat2 = "a0338bb4be14b3f0513f97a845c32c3635f6e8bc270638ca868ed0e4f7646e57"
 
 // StaticLiftSavedShapeFormat2Revised is the shape a format-2 saved state
 // of this machine names when it names a later revision of a record schema or
 // an enum.
-const StaticLiftSavedShapeFormat2Revised = "8cd69763111ad98c584d6d129ad6990993578ebd60f3dd907a5e5e4de7995830"
+const StaticLiftSavedShapeFormat2Revised = "aaa57de3b4aec9e8b2b203ac096e30cd24ec843f1def6d5398e47e99737c7c95"
 
 // StaticLiftSavedEnumKeys names each enum a value of a saved state of
 // this machine is of, by its document (docs/adr/0044): the key `revisions`
@@ -617,10 +622,10 @@ var StaticLiftSavedEnumKeys = [...]string{
 // one saved at an earlier revision of a record schema is read with each field a
 // later revision added at its default.
 var StaticLiftSavedShape = sce.SavedShape{
-	First:          "884dfb541f11437c383220a4a8943e853f0fff42e87f118143145b03a9aee339",
-	Revised:        "b65930f928a4dfd860d83ab4fb45775b4494c49bb97c6a9faf342d80438a049d",
-	Format2First:   "89179c86cd5b354ab3abf1b5c8c7c4815b51864b4a0423fd58ba7cced2f087d3",
-	Format2Revised: "8cd69763111ad98c584d6d129ad6990993578ebd60f3dd907a5e5e4de7995830",
+	First:          "bcc64bc7d8cbabe025c700ffc5d239d7f9ac55e720b5338913046399534bc5f0",
+	Revised:        "f86ff2576aa4492e7db15825af60d0f20acaa2442b8344bc223c75c7b4ba4192",
+	Format2First:   "a0338bb4be14b3f0513f97a845c32c3635f6e8bc270638ca868ed0e4f7646e57",
+	Format2Revised: "aaa57de3b4aec9e8b2b203ac096e30cd24ec843f1def6d5398e47e99737c7c95",
 	Records: []sce.RecordLineage{
 		{
 			Event:     "lift.answer",
@@ -1379,7 +1384,7 @@ func (p *StaticLiftPolicy) ExecuteTransitionContent(source StaticLiftState, tran
 
 	// docs/adr/0087: <sce:lift text="_event.data.text" schema="Answer">
 
-	if sceLifted, sceRefusal := sce.LiftRecord(p.pendingTextGivenPayload.text, "Answer", 1, 256, "{\"priority\":3}", func(r sce.PayloadRecord) (StaticLiftAnswerRecord, error) { sceField0, err := sce.LiftField(r, "id", sce.ValueUnsigned[uint32]); if err != nil { return StaticLiftAnswerRecord{}, err }; sceField1, err := sce.LiftField(r, "amount", sce.ValueSigned64); if err != nil { return StaticLiftAnswerRecord{}, err }; sceField2, err := sce.LiftField(r, "title", func(v sce.PayloadValue) (string, error) { return v.Text(16) }); if err != nil { return StaticLiftAnswerRecord{}, err }; sceField3, err := sce.LiftField(r, "kind", func(v sce.PayloadValue) (StaticLiftEnumLiftKindEnum, error) { name, err := v.Name(); if err != nil { return 0, err }; switch name { case "meeting": return StaticLiftEnumLiftKindEnumMeeting, nil; case "task": return StaticLiftEnumLiftKindEnumTask, nil; }; return 0, v.UnknownVariant(name, "enum_lift_kind") }); if err != nil { return StaticLiftAnswerRecord{}, err }; sceField4, err := sce.LiftField(r, "note", func(v sce.PayloadValue) (optional.Of[string], error) { return optional.Read(v, func(v sce.PayloadValue) (string, error) { return v.Text(8) }) }); if err != nil { return StaticLiftAnswerRecord{}, err }; sceField5, err := sce.LiftField(r, "tag", func(v sce.PayloadValue) ([]byte, error) { return v.Bytes(4) }); if err != nil { return StaticLiftAnswerRecord{}, err }; sceField6, err := sce.LiftField(r, "priority", sce.ValueUnsigned[uint8]); if err != nil { return StaticLiftAnswerRecord{}, err }; return StaticLiftAnswerRecord{id: sceField0, amount: sceField1, title: sceField2, kind: sceField3, note: sceField4, tag: sceField5, priority: sceField6}, nil }); sceRefusal == nil { p.vAnswer = optional.Some[StaticLiftAnswerRecord](sceLifted); p.vWhy = optional.None[StaticLiftLiftRefusalRecord]() } else { p.vWhy = optional.Some[StaticLiftLiftRefusalRecord](StaticLiftLiftRefusalRecord{code: func() StaticLiftRefusalCodeEnum { switch sceRefusal.Code() { case 1: return StaticLiftRefusalCodeEnumNotJson; case 2: return StaticLiftRefusalCodeEnumNotObject; case 3: return StaticLiftRefusalCodeEnumTooDeep; case 4: return StaticLiftRefusalCodeEnumMissing; case 5: return StaticLiftRefusalCodeEnumNullNotOptional; case 6: return StaticLiftRefusalCodeEnumWrongKind; case 7: return StaticLiftRefusalCodeEnumBadNumber; case 8: return StaticLiftRefusalCodeEnumOutOfRange; case 9: return StaticLiftRefusalCodeEnumTooLong; case 10: return StaticLiftRefusalCodeEnumTooMany; case 11: return StaticLiftRefusalCodeEnumUnknownVariant; case 12: return StaticLiftRefusalCodeEnumNotByteText; case 13: return StaticLiftRefusalCodeEnumNulInText; }; return StaticLiftRefusalCodeEnumNotJson }(), path: sceRefusal.Pointer(), bound: func() optional.Of[uint32] { if sceBound, ok := sceRefusal.Bound(); ok { return optional.Some[uint32](sceBound) }; return optional.None[uint32]() }()}) }
+	if sceLifted, sceRefusal := sce.LiftRecord(p.pendingTextGivenPayload.text, "Answer", 1, 256, "{\"priority\":3}", func(r sce.PayloadRecord) (StaticLiftAnswerRecord, error) { sceField0, err := sce.LiftField(r, "id", sce.ValueUnsigned[uint32]); if err != nil { return StaticLiftAnswerRecord{}, err }; sceField1, err := sce.LiftField(r, "amount", sce.ValueSigned64); if err != nil { return StaticLiftAnswerRecord{}, err }; sceField2, err := sce.LiftField(r, "title", func(v sce.PayloadValue) (string, error) { return v.Text(16) }); if err != nil { return StaticLiftAnswerRecord{}, err }; sceField3, err := sce.LiftField(r, "kind", func(v sce.PayloadValue) (StaticLiftEnumLiftKindEnum, error) { name, err := v.Name(); if err != nil { return 0, err }; switch name { case "meeting": return StaticLiftEnumLiftKindEnumMeeting, nil; case "task": return StaticLiftEnumLiftKindEnumTask, nil; }; return 0, v.UnknownVariant(name, "enum_lift_kind") }); if err != nil { return StaticLiftAnswerRecord{}, err }; sceField4, err := sce.LiftField(r, "note", func(v sce.PayloadValue) (optional.Of[string], error) { return optional.Read(v, func(v sce.PayloadValue) (string, error) { return v.Text(8) }) }); if err != nil { return StaticLiftAnswerRecord{}, err }; sceField5, err := sce.LiftField(r, "tag", func(v sce.PayloadValue) ([]byte, error) { return v.Bytes(4) }); if err != nil { return StaticLiftAnswerRecord{}, err }; sceField6, err := sce.LiftField(r, "priority", sce.ValueUnsigned[uint8]); if err != nil { return StaticLiftAnswerRecord{}, err }; return StaticLiftAnswerRecord{id: sceField0, amount: sceField1, title: sceField2, kind: sceField3, note: sceField4, tag: sceField5, priority: sceField6}, nil }); sceRefusal == nil { p.vAnswer = optional.Some[StaticLiftAnswerRecord](sceLifted); p.vWhy = optional.None[StaticLiftLiftRefusalRecord]() } else { p.vWhy = optional.Some[StaticLiftLiftRefusalRecord](StaticLiftLiftRefusalRecord{code: func() StaticLiftRefusalCodeEnum { switch sceRefusal.Code() { case 1: return StaticLiftRefusalCodeEnumNotJson; case 2: return StaticLiftRefusalCodeEnumNotObject; case 3: return StaticLiftRefusalCodeEnumTooDeep; case 4: return StaticLiftRefusalCodeEnumMissing; case 5: return StaticLiftRefusalCodeEnumNullNotOptional; case 6: return StaticLiftRefusalCodeEnumWrongKind; case 7: return StaticLiftRefusalCodeEnumBadNumber; case 8: return StaticLiftRefusalCodeEnumOutOfRange; case 9: return StaticLiftRefusalCodeEnumTooLong; case 10: return StaticLiftRefusalCodeEnumTooMany; case 11: return StaticLiftRefusalCodeEnumUnknownVariant; case 12: return StaticLiftRefusalCodeEnumNotByteText; case 13: return StaticLiftRefusalCodeEnumNulInText; case 14: return StaticLiftRefusalCodeEnumTooFew; }; return StaticLiftRefusalCodeEnumNotJson }(), path: sceRefusal.Pointer(), bound: func() optional.Of[uint32] { if sceBound, ok := sceRefusal.Bound(); ok { return optional.Some[uint32](sceBound) }; return optional.None[uint32]() }()}) }
 
 
 
@@ -1404,7 +1409,7 @@ func (p *StaticLiftPolicy) ExecuteTransitionContent(source StaticLiftState, tran
 
 	// docs/adr/0087: <sce:lift text="said" schema="Answer">
 
-	if sceLifted, sceRefusal := sce.LiftRecord(p.vSaid, "Answer", 1, 256, "{\"priority\":3}", func(r sce.PayloadRecord) (StaticLiftAnswerRecord, error) { sceField0, err := sce.LiftField(r, "id", sce.ValueUnsigned[uint32]); if err != nil { return StaticLiftAnswerRecord{}, err }; sceField1, err := sce.LiftField(r, "amount", sce.ValueSigned64); if err != nil { return StaticLiftAnswerRecord{}, err }; sceField2, err := sce.LiftField(r, "title", func(v sce.PayloadValue) (string, error) { return v.Text(16) }); if err != nil { return StaticLiftAnswerRecord{}, err }; sceField3, err := sce.LiftField(r, "kind", func(v sce.PayloadValue) (StaticLiftEnumLiftKindEnum, error) { name, err := v.Name(); if err != nil { return 0, err }; switch name { case "meeting": return StaticLiftEnumLiftKindEnumMeeting, nil; case "task": return StaticLiftEnumLiftKindEnumTask, nil; }; return 0, v.UnknownVariant(name, "enum_lift_kind") }); if err != nil { return StaticLiftAnswerRecord{}, err }; sceField4, err := sce.LiftField(r, "note", func(v sce.PayloadValue) (optional.Of[string], error) { return optional.Read(v, func(v sce.PayloadValue) (string, error) { return v.Text(8) }) }); if err != nil { return StaticLiftAnswerRecord{}, err }; sceField5, err := sce.LiftField(r, "tag", func(v sce.PayloadValue) ([]byte, error) { return v.Bytes(4) }); if err != nil { return StaticLiftAnswerRecord{}, err }; sceField6, err := sce.LiftField(r, "priority", sce.ValueUnsigned[uint8]); if err != nil { return StaticLiftAnswerRecord{}, err }; return StaticLiftAnswerRecord{id: sceField0, amount: sceField1, title: sceField2, kind: sceField3, note: sceField4, tag: sceField5, priority: sceField6}, nil }); sceRefusal == nil { p.vAnswer = optional.Some[StaticLiftAnswerRecord](sceLifted); p.vWhy = optional.None[StaticLiftLiftRefusalRecord]() } else { p.vWhy = optional.Some[StaticLiftLiftRefusalRecord](StaticLiftLiftRefusalRecord{code: func() StaticLiftRefusalCodeEnum { switch sceRefusal.Code() { case 1: return StaticLiftRefusalCodeEnumNotJson; case 2: return StaticLiftRefusalCodeEnumNotObject; case 3: return StaticLiftRefusalCodeEnumTooDeep; case 4: return StaticLiftRefusalCodeEnumMissing; case 5: return StaticLiftRefusalCodeEnumNullNotOptional; case 6: return StaticLiftRefusalCodeEnumWrongKind; case 7: return StaticLiftRefusalCodeEnumBadNumber; case 8: return StaticLiftRefusalCodeEnumOutOfRange; case 9: return StaticLiftRefusalCodeEnumTooLong; case 10: return StaticLiftRefusalCodeEnumTooMany; case 11: return StaticLiftRefusalCodeEnumUnknownVariant; case 12: return StaticLiftRefusalCodeEnumNotByteText; case 13: return StaticLiftRefusalCodeEnumNulInText; }; return StaticLiftRefusalCodeEnumNotJson }(), path: sceRefusal.Pointer(), bound: func() optional.Of[uint32] { if sceBound, ok := sceRefusal.Bound(); ok { return optional.Some[uint32](sceBound) }; return optional.None[uint32]() }()}) }
+	if sceLifted, sceRefusal := sce.LiftRecord(p.vSaid, "Answer", 1, 256, "{\"priority\":3}", func(r sce.PayloadRecord) (StaticLiftAnswerRecord, error) { sceField0, err := sce.LiftField(r, "id", sce.ValueUnsigned[uint32]); if err != nil { return StaticLiftAnswerRecord{}, err }; sceField1, err := sce.LiftField(r, "amount", sce.ValueSigned64); if err != nil { return StaticLiftAnswerRecord{}, err }; sceField2, err := sce.LiftField(r, "title", func(v sce.PayloadValue) (string, error) { return v.Text(16) }); if err != nil { return StaticLiftAnswerRecord{}, err }; sceField3, err := sce.LiftField(r, "kind", func(v sce.PayloadValue) (StaticLiftEnumLiftKindEnum, error) { name, err := v.Name(); if err != nil { return 0, err }; switch name { case "meeting": return StaticLiftEnumLiftKindEnumMeeting, nil; case "task": return StaticLiftEnumLiftKindEnumTask, nil; }; return 0, v.UnknownVariant(name, "enum_lift_kind") }); if err != nil { return StaticLiftAnswerRecord{}, err }; sceField4, err := sce.LiftField(r, "note", func(v sce.PayloadValue) (optional.Of[string], error) { return optional.Read(v, func(v sce.PayloadValue) (string, error) { return v.Text(8) }) }); if err != nil { return StaticLiftAnswerRecord{}, err }; sceField5, err := sce.LiftField(r, "tag", func(v sce.PayloadValue) ([]byte, error) { return v.Bytes(4) }); if err != nil { return StaticLiftAnswerRecord{}, err }; sceField6, err := sce.LiftField(r, "priority", sce.ValueUnsigned[uint8]); if err != nil { return StaticLiftAnswerRecord{}, err }; return StaticLiftAnswerRecord{id: sceField0, amount: sceField1, title: sceField2, kind: sceField3, note: sceField4, tag: sceField5, priority: sceField6}, nil }); sceRefusal == nil { p.vAnswer = optional.Some[StaticLiftAnswerRecord](sceLifted); p.vWhy = optional.None[StaticLiftLiftRefusalRecord]() } else { p.vWhy = optional.Some[StaticLiftLiftRefusalRecord](StaticLiftLiftRefusalRecord{code: func() StaticLiftRefusalCodeEnum { switch sceRefusal.Code() { case 1: return StaticLiftRefusalCodeEnumNotJson; case 2: return StaticLiftRefusalCodeEnumNotObject; case 3: return StaticLiftRefusalCodeEnumTooDeep; case 4: return StaticLiftRefusalCodeEnumMissing; case 5: return StaticLiftRefusalCodeEnumNullNotOptional; case 6: return StaticLiftRefusalCodeEnumWrongKind; case 7: return StaticLiftRefusalCodeEnumBadNumber; case 8: return StaticLiftRefusalCodeEnumOutOfRange; case 9: return StaticLiftRefusalCodeEnumTooLong; case 10: return StaticLiftRefusalCodeEnumTooMany; case 11: return StaticLiftRefusalCodeEnumUnknownVariant; case 12: return StaticLiftRefusalCodeEnumNotByteText; case 13: return StaticLiftRefusalCodeEnumNulInText; case 14: return StaticLiftRefusalCodeEnumTooFew; }; return StaticLiftRefusalCodeEnumNotJson }(), path: sceRefusal.Pointer(), bound: func() optional.Of[uint32] { if sceBound, ok := sceRefusal.Bound(); ok { return optional.Some[uint32](sceBound) }; return optional.None[uint32]() }()}) }
 
 
 

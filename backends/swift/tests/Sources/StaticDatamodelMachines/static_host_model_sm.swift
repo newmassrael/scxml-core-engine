@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 3c98bcf611484a0e8277b90985067a4595fbef91882aa1fe25fdf84830038cc4
+// source-hash: 9aa28cb8a6152625fb0eb1560e8ab3014da5864745e85b6f3b6e37672c04dcf6
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -214,6 +214,7 @@ public enum StaticHostModelRefusalCodeEnum: UInt8, CaseIterable, Sendable {
     case unknownVariant = 11
     case notByteText = 12
     case nulInText = 13
+    case tooFew = 14
 
     /// The name the enum document declares for the value.
     public var declaredName: String {
@@ -231,6 +232,7 @@ public enum StaticHostModelRefusalCodeEnum: UInt8, CaseIterable, Sendable {
         case .unknownVariant: return "unknownVariant"
         case .notByteText: return "notByteText"
         case .nulInText: return "nulInText"
+        case .tooFew: return "tooFew"
         }
     }
 
@@ -261,6 +263,7 @@ public enum StaticHostModelRefusalCodeEnum: UInt8, CaseIterable, Sendable {
         case "unknownVariant": self = .unknownVariant
         case "notByteText": self = .notByteText
         case "nulInText": self = .nulInText
+        case "tooFew": self = .tooFew
         default: return nil
         }
     }
@@ -993,7 +996,7 @@ public final class StaticHostModelPolicy: InvocablePolicy {
 
                 // docs/adr/0087: <sce:lift text="_event.data.text" schema="Answer">
 
-                switch liftRecord(self.pendingDoneInvokeGenPayload.text, schema: "Answer", depth: 1, pathBound: 256, defaults: "{\"priority\":3}", read: { r in StaticHostModelAnswerRecord(id: try (try r.field("id")).unsigned() as UInt32, amount: try (try r.field("amount")).signed64(), title: try (try r.field("title")).text(bound: 16), kind: try { (v: PayloadValue) throws -> StaticHostModelEnumLiftKindEnum in let name = try v.name(); switch name { case "meeting": return StaticHostModelEnumLiftKindEnum.meeting; case "task": return StaticHostModelEnumLiftKindEnum.task; default: throw v.unknownVariant(name, alias: "enum_lift_kind") } }((try r.field("kind"))), note: try r.field("note").optional { present in try present.text(bound: 8) }, tag: try (try r.field("tag")).bytes(bound: 4), priority: try (try r.field("priority")).unsigned() as UInt8) }) { case .success(let sceLifted): self.vAnswer = sceLifted; self.vWhy = nil; case .failure(let sceRefusal): self.vWhy = StaticHostModelLiftRefusalRecord(code: { () -> StaticHostModelRefusalCodeEnum in switch sceRefusal.code { case .notJson: return StaticHostModelRefusalCodeEnum.notJson; case .notObject: return StaticHostModelRefusalCodeEnum.notObject; case .tooDeep: return StaticHostModelRefusalCodeEnum.tooDeep; case .missing: return StaticHostModelRefusalCodeEnum.missing; case .nullNotOptional: return StaticHostModelRefusalCodeEnum.nullNotOptional; case .wrongKind: return StaticHostModelRefusalCodeEnum.wrongKind; case .badNumber: return StaticHostModelRefusalCodeEnum.badNumber; case .outOfRange: return StaticHostModelRefusalCodeEnum.outOfRange; case .tooLong: return StaticHostModelRefusalCodeEnum.tooLong; case .tooMany: return StaticHostModelRefusalCodeEnum.tooMany; case .unknownVariant: return StaticHostModelRefusalCodeEnum.unknownVariant; case .notByteText: return StaticHostModelRefusalCodeEnum.notByteText; case .nulInText: return StaticHostModelRefusalCodeEnum.nulInText; } }(), path: sceRefusal.pointer, bound: sceRefusal.bound) }
+                switch liftRecord(self.pendingDoneInvokeGenPayload.text, schema: "Answer", depth: 1, pathBound: 256, defaults: "{\"priority\":3}", read: { r in StaticHostModelAnswerRecord(id: try (try r.field("id")).unsigned() as UInt32, amount: try (try r.field("amount")).signed64(), title: try (try r.field("title")).text(bound: 16), kind: try { (v: PayloadValue) throws -> StaticHostModelEnumLiftKindEnum in let name = try v.name(); switch name { case "meeting": return StaticHostModelEnumLiftKindEnum.meeting; case "task": return StaticHostModelEnumLiftKindEnum.task; default: throw v.unknownVariant(name, alias: "enum_lift_kind") } }((try r.field("kind"))), note: try r.field("note").optional { present in try present.text(bound: 8) }, tag: try (try r.field("tag")).bytes(bound: 4), priority: try (try r.field("priority")).unsigned() as UInt8) }) { case .success(let sceLifted): self.vAnswer = sceLifted; self.vWhy = nil; case .failure(let sceRefusal): self.vWhy = StaticHostModelLiftRefusalRecord(code: { () -> StaticHostModelRefusalCodeEnum in switch sceRefusal.code { case .notJson: return StaticHostModelRefusalCodeEnum.notJson; case .notObject: return StaticHostModelRefusalCodeEnum.notObject; case .tooDeep: return StaticHostModelRefusalCodeEnum.tooDeep; case .missing: return StaticHostModelRefusalCodeEnum.missing; case .nullNotOptional: return StaticHostModelRefusalCodeEnum.nullNotOptional; case .wrongKind: return StaticHostModelRefusalCodeEnum.wrongKind; case .badNumber: return StaticHostModelRefusalCodeEnum.badNumber; case .outOfRange: return StaticHostModelRefusalCodeEnum.outOfRange; case .tooLong: return StaticHostModelRefusalCodeEnum.tooLong; case .tooMany: return StaticHostModelRefusalCodeEnum.tooMany; case .unknownVariant: return StaticHostModelRefusalCodeEnum.unknownVariant; case .notByteText: return StaticHostModelRefusalCodeEnum.notByteText; case .nulInText: return StaticHostModelRefusalCodeEnum.nulInText; case .tooFew: return StaticHostModelRefusalCodeEnum.tooFew; } }(), path: sceRefusal.pointer, bound: sceRefusal.bound) }
 
 
                 if (self.vWhy == nil) {
@@ -1251,10 +1254,10 @@ extension StaticHostModelPolicy: SavedPolicy {
     /// re-typed or moved something a saved state names refuses it.
     public static var savedShape: SavedShape {
         SavedShape(
-            first: "dbeae1305922e59dfa1f64bf377f0cca47774aa4ea0bcf0d11bd8f05fdd6dbe6",
-            revised: "f66696a536bd60de17eb3afb4303ac2774c8fbd9f2e28b4453716090879d8b39",
-            format2First: "d8996ec71a3c00b1285d4a592db8e7352542fee3446fdc9e5d1b743078ea5b77",
-            format2Revised: "9171aa1571f9cf0f1983e440052be5e1f76132e88b8cf94406ab93ece17f10d2",
+            first: "71b7e2f6efe67b97423eada78502bf45f45666ca41178d66f083b83af856f487",
+            revised: "b9e0109fe02a6b471d723b9067e6b78c6feb6b5a578e316efd93015a1531bdb2",
+            format2First: "529ec77bbc60bbfcdb3dfbe1ae5f8ce2e34deec20ed0ed495741a6252344b702",
+            format2Revised: "73a09bac29295fb1f7d5d1dcbe20adf2371d7e658b9347ead7caad59e9f1d1ef",
             records: [
                 SavedRecordLineage(
                     event: "lift.answer", revision: 2,

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 3c98bcf611484a0e8277b90985067a4595fbef91882aa1fe25fdf84830038cc4
+// source-hash: 9aa28cb8a6152625fb0eb1560e8ab3014da5864745e85b6f3b6e37672c04dcf6
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -172,7 +172,7 @@ public struct StaticModelHarnessTransition: Hashable, Sendable {
 
     /// The digest of the source set this machine was generated from: the
     /// `source-hash` of the file's own header, as a value.
-    public static let sourceHash = "3c98bcf611484a0e8277b90985067a4595fbef91882aa1fe25fdf84830038cc4"
+    public static let sourceHash = "9aa28cb8a6152625fb0eb1560e8ab3014da5864745e85b6f3b6e37672c04dcf6"
 
     /// Every transition of the machine. Each id is written with its type, so a
     /// state or an event the document calls `none` is never read as `nil`.
@@ -214,7 +214,8 @@ public enum StaticModelHarnessHarnessCodeEnum: UInt8, CaseIterable, Sendable {
     case unknownVariant = 11
     case notByteText = 12
     case nulInText = 13
-    case notOffered = 14
+    case tooFew = 14
+    case notOffered = 15
 
     /// The name the enum document declares for the value.
     public var declaredName: String {
@@ -232,6 +233,7 @@ public enum StaticModelHarnessHarnessCodeEnum: UInt8, CaseIterable, Sendable {
         case .unknownVariant: return "unknownVariant"
         case .notByteText: return "notByteText"
         case .nulInText: return "nulInText"
+        case .tooFew: return "tooFew"
         case .notOffered: return "notOffered"
         }
     }
@@ -263,6 +265,7 @@ public enum StaticModelHarnessHarnessCodeEnum: UInt8, CaseIterable, Sendable {
         case "unknownVariant": self = .unknownVariant
         case "notByteText": self = .notByteText
         case "nulInText": self = .nulInText
+        case "tooFew": self = .tooFew
         case "notOffered": self = .notOffered
         default: return nil
         }
@@ -404,6 +407,7 @@ public enum StaticModelHarnessLiftRefusalCodeEnum: UInt8, CaseIterable, Sendable
     case unknownVariant = 11
     case notByteText = 12
     case nulInText = 13
+    case tooFew = 14
 
     /// The name the enum document declares for the value.
     public var declaredName: String {
@@ -421,6 +425,7 @@ public enum StaticModelHarnessLiftRefusalCodeEnum: UInt8, CaseIterable, Sendable
         case .unknownVariant: return "unknownVariant"
         case .notByteText: return "notByteText"
         case .nulInText: return "nulInText"
+        case .tooFew: return "tooFew"
         }
     }
 
@@ -451,6 +456,7 @@ public enum StaticModelHarnessLiftRefusalCodeEnum: UInt8, CaseIterable, Sendable
         case "unknownVariant": self = .unknownVariant
         case "notByteText": self = .notByteText
         case "nulInText": self = .nulInText
+        case "tooFew": self = .tooFew
         default: return nil
         }
     }
@@ -1486,7 +1492,7 @@ public final class StaticModelHarnessPolicy: InvocablePolicy {
 
                 // docs/adr/0087: <sce:lift text="said" schema="Answer">
 
-                switch liftRecord(self.vSaid, schema: "Answer", depth: 1, pathBound: 256, defaults: "{\"priority\":3}", read: { r in StaticModelHarnessAnswerRecord(id: try (try r.field("id")).unsigned() as UInt32, amount: try (try r.field("amount")).signed64(), title: try (try r.field("title")).text(bound: 16), kind: try { (v: PayloadValue) throws -> StaticModelHarnessEnumLiftKindEnum in let name = try v.name(); switch name { case "meeting": return StaticModelHarnessEnumLiftKindEnum.meeting; case "task": return StaticModelHarnessEnumLiftKindEnum.task; default: throw v.unknownVariant(name, alias: "enum_lift_kind") } }((try r.field("kind"))), note: try r.field("note").optional { present in try present.text(bound: 8) }, tag: try (try r.field("tag")).bytes(bound: 4), priority: try (try r.field("priority")).unsigned() as UInt8) }) { case .success(let sceLifted): self.vAnswer = sceLifted; self.vWhy = nil; case .failure(let sceRefusal): self.vWhy = StaticModelHarnessLiftRefusalRecord(code: { () -> StaticModelHarnessLiftRefusalCodeEnum in switch sceRefusal.code { case .notJson: return StaticModelHarnessLiftRefusalCodeEnum.notJson; case .notObject: return StaticModelHarnessLiftRefusalCodeEnum.notObject; case .tooDeep: return StaticModelHarnessLiftRefusalCodeEnum.tooDeep; case .missing: return StaticModelHarnessLiftRefusalCodeEnum.missing; case .nullNotOptional: return StaticModelHarnessLiftRefusalCodeEnum.nullNotOptional; case .wrongKind: return StaticModelHarnessLiftRefusalCodeEnum.wrongKind; case .badNumber: return StaticModelHarnessLiftRefusalCodeEnum.badNumber; case .outOfRange: return StaticModelHarnessLiftRefusalCodeEnum.outOfRange; case .tooLong: return StaticModelHarnessLiftRefusalCodeEnum.tooLong; case .tooMany: return StaticModelHarnessLiftRefusalCodeEnum.tooMany; case .unknownVariant: return StaticModelHarnessLiftRefusalCodeEnum.unknownVariant; case .notByteText: return StaticModelHarnessLiftRefusalCodeEnum.notByteText; case .nulInText: return StaticModelHarnessLiftRefusalCodeEnum.nulInText; } }(), path: sceRefusal.pointer, bound: sceRefusal.bound) }
+                switch liftRecord(self.vSaid, schema: "Answer", depth: 1, pathBound: 256, defaults: "{\"priority\":3}", read: { r in StaticModelHarnessAnswerRecord(id: try (try r.field("id")).unsigned() as UInt32, amount: try (try r.field("amount")).signed64(), title: try (try r.field("title")).text(bound: 16), kind: try { (v: PayloadValue) throws -> StaticModelHarnessEnumLiftKindEnum in let name = try v.name(); switch name { case "meeting": return StaticModelHarnessEnumLiftKindEnum.meeting; case "task": return StaticModelHarnessEnumLiftKindEnum.task; default: throw v.unknownVariant(name, alias: "enum_lift_kind") } }((try r.field("kind"))), note: try r.field("note").optional { present in try present.text(bound: 8) }, tag: try (try r.field("tag")).bytes(bound: 4), priority: try (try r.field("priority")).unsigned() as UInt8) }) { case .success(let sceLifted): self.vAnswer = sceLifted; self.vWhy = nil; case .failure(let sceRefusal): self.vWhy = StaticModelHarnessLiftRefusalRecord(code: { () -> StaticModelHarnessLiftRefusalCodeEnum in switch sceRefusal.code { case .notJson: return StaticModelHarnessLiftRefusalCodeEnum.notJson; case .notObject: return StaticModelHarnessLiftRefusalCodeEnum.notObject; case .tooDeep: return StaticModelHarnessLiftRefusalCodeEnum.tooDeep; case .missing: return StaticModelHarnessLiftRefusalCodeEnum.missing; case .nullNotOptional: return StaticModelHarnessLiftRefusalCodeEnum.nullNotOptional; case .wrongKind: return StaticModelHarnessLiftRefusalCodeEnum.wrongKind; case .badNumber: return StaticModelHarnessLiftRefusalCodeEnum.badNumber; case .outOfRange: return StaticModelHarnessLiftRefusalCodeEnum.outOfRange; case .tooLong: return StaticModelHarnessLiftRefusalCodeEnum.tooLong; case .tooMany: return StaticModelHarnessLiftRefusalCodeEnum.tooMany; case .unknownVariant: return StaticModelHarnessLiftRefusalCodeEnum.unknownVariant; case .notByteText: return StaticModelHarnessLiftRefusalCodeEnum.notByteText; case .nulInText: return StaticModelHarnessLiftRefusalCodeEnum.nulInText; case .tooFew: return StaticModelHarnessLiftRefusalCodeEnum.tooFew; } }(), path: sceRefusal.pointer, bound: sceRefusal.bound) }
 
                 }
             case 1:
@@ -1736,10 +1742,10 @@ extension StaticModelHarnessPolicy: SavedPolicy {
     /// re-typed or moved something a saved state names refuses it.
     public static var savedShape: SavedShape {
         SavedShape(
-            first: "869dd573a3b7db5db8af69bf755da73d74bcef754fd2228700ce325d473a4a3e",
-            revised: "30c80b673132c846bc72d4a2ca88c90bb219c7fd83f1c470a243fe031605e15a",
-            format2First: "6a94014734cca5ff94de33f9a569430ac46267ccdeb3bb215379062013324a1f",
-            format2Revised: "4a96c2880ba2a3ce956b3f380dd6f1b2a6e33b976409ec90911cf2b937894fb1",
+            first: "37befbc8acd00383a5b5c22dccd834a45417865a992fce63e4fff9ffba57eea3",
+            revised: "71d8d448c8aef08c94b4c434c99fe8b570a2053ef5f397824e9bd8dd1f950a3a",
+            format2First: "3b077e2ef9a79afe1e0bdd2b4b4bef2b710cf1f1d0ff92e34196fe799ea64bda",
+            format2Revised: "4e941d5a22fb0a84a8f3a01e5bf4846243f1bd294e9e6b5169a55cbd776d73d8",
             records: [
                 SavedRecordLineage(
                     event: "harness.refusal", revision: 1,

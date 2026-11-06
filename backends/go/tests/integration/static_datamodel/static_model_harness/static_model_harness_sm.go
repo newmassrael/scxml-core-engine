@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 3c98bcf611484a0e8277b90985067a4595fbef91882aa1fe25fdf84830038cc4
+// source-hash: 9aa28cb8a6152625fb0eb1560e8ab3014da5864745e85b6f3b6e37672c04dcf6
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -279,7 +279,7 @@ func (e StaticModelHarnessEvent) String() string {
 
 // StaticModelHarnessSourceHash is the digest of the source set this machine
 // was generated from: the `source-hash` of the file's own header, as a value.
-const StaticModelHarnessSourceHash = "3c98bcf611484a0e8277b90985067a4595fbef91882aa1fe25fdf84830038cc4"
+const StaticModelHarnessSourceHash = "9aa28cb8a6152625fb0eb1560e8ab3014da5864745e85b6f3b6e37672c04dcf6"
 
 // StaticModelHarnessTransition is one transition of this machine, as constant
 // data. Nothing in the machine reads it: a host that draws the machine, or
@@ -427,7 +427,8 @@ const (
 	StaticModelHarnessHarnessCodeEnumUnknownVariant StaticModelHarnessHarnessCodeEnum = 11
 	StaticModelHarnessHarnessCodeEnumNotByteText StaticModelHarnessHarnessCodeEnum = 12
 	StaticModelHarnessHarnessCodeEnumNulInText StaticModelHarnessHarnessCodeEnum = 13
-	StaticModelHarnessHarnessCodeEnumNotOffered StaticModelHarnessHarnessCodeEnum = 14
+	StaticModelHarnessHarnessCodeEnumTooFew StaticModelHarnessHarnessCodeEnum = 14
+	StaticModelHarnessHarnessCodeEnumNotOffered StaticModelHarnessHarnessCodeEnum = 15
 )
 
 // String is the name the enum document declares for the value.
@@ -459,6 +460,8 @@ func (v StaticModelHarnessHarnessCodeEnum) String() string {
 		return "notByteText"
 	case StaticModelHarnessHarnessCodeEnumNulInText:
 		return "nulInText"
+	case StaticModelHarnessHarnessCodeEnumTooFew:
+		return "tooFew"
 	case StaticModelHarnessHarnessCodeEnumNotOffered:
 		return "notOffered"
 	}
@@ -474,7 +477,7 @@ func (v StaticModelHarnessHarnessCodeEnum) ToUnderlying() uint8 {
 // value for a number no variant declares.
 func StaticModelHarnessHarnessCodeEnumFromUnderlying(raw uint8) optional.Of[StaticModelHarnessHarnessCodeEnum] {
 	switch raw {
-	case 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14:
+	case 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15:
 		return optional.Some(StaticModelHarnessHarnessCodeEnum(raw))
 	}
 	return optional.None[StaticModelHarnessHarnessCodeEnum]()
@@ -518,6 +521,8 @@ func StaticModelHarnessHarnessCodeEnumFromSaved(value any, what string) (StaticM
 		return StaticModelHarnessHarnessCodeEnumNotByteText, nil
 	case "nulInText":
 		return StaticModelHarnessHarnessCodeEnumNulInText, nil
+	case "tooFew":
+		return StaticModelHarnessHarnessCodeEnumTooFew, nil
 	case "notOffered":
 		return StaticModelHarnessHarnessCodeEnumNotOffered, nil
 	}
@@ -771,6 +776,7 @@ const (
 	StaticModelHarnessLiftRefusalCodeEnumUnknownVariant StaticModelHarnessLiftRefusalCodeEnum = 11
 	StaticModelHarnessLiftRefusalCodeEnumNotByteText StaticModelHarnessLiftRefusalCodeEnum = 12
 	StaticModelHarnessLiftRefusalCodeEnumNulInText StaticModelHarnessLiftRefusalCodeEnum = 13
+	StaticModelHarnessLiftRefusalCodeEnumTooFew StaticModelHarnessLiftRefusalCodeEnum = 14
 )
 
 // String is the name the enum document declares for the value.
@@ -802,6 +808,8 @@ func (v StaticModelHarnessLiftRefusalCodeEnum) String() string {
 		return "notByteText"
 	case StaticModelHarnessLiftRefusalCodeEnumNulInText:
 		return "nulInText"
+	case StaticModelHarnessLiftRefusalCodeEnumTooFew:
+		return "tooFew"
 	}
 	return ""
 }
@@ -815,7 +823,7 @@ func (v StaticModelHarnessLiftRefusalCodeEnum) ToUnderlying() uint8 {
 // value for a number no variant declares.
 func StaticModelHarnessLiftRefusalCodeEnumFromUnderlying(raw uint8) optional.Of[StaticModelHarnessLiftRefusalCodeEnum] {
 	switch raw {
-	case 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13:
+	case 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14:
 		return optional.Some(StaticModelHarnessLiftRefusalCodeEnum(raw))
 	}
 	return optional.None[StaticModelHarnessLiftRefusalCodeEnum]()
@@ -859,6 +867,8 @@ func StaticModelHarnessLiftRefusalCodeEnumFromSaved(value any, what string) (Sta
 		return StaticModelHarnessLiftRefusalCodeEnumNotByteText, nil
 	case "nulInText":
 		return StaticModelHarnessLiftRefusalCodeEnumNulInText, nil
+	case "tooFew":
+		return StaticModelHarnessLiftRefusalCodeEnumTooFew, nil
 	}
 	return 0, sce.Refuse(fmt.Sprintf("'%s' (%s) is not a variant of LiftRefusalCode", what, declared))
 }
@@ -947,12 +957,12 @@ const StaticModelHarnessLimitModelPrompt uint32 = 8192
 // this machine names when every record schema it holds is in its first
 // revision (docs/adr/0045, section 2). The generator computes it once, so it is
 // the text every backend's constant is.
-const StaticModelHarnessSavedShapeFormat2 = "6a94014734cca5ff94de33f9a569430ac46267ccdeb3bb215379062013324a1f"
+const StaticModelHarnessSavedShapeFormat2 = "3b077e2ef9a79afe1e0bdd2b4b4bef2b710cf1f1d0ff92e34196fe799ea64bda"
 
 // StaticModelHarnessSavedShapeFormat2Revised is the shape a format-2 saved state
 // of this machine names when it names a later revision of a record schema or
 // an enum.
-const StaticModelHarnessSavedShapeFormat2Revised = "4a96c2880ba2a3ce956b3f380dd6f1b2a6e33b976409ec90911cf2b937894fb1"
+const StaticModelHarnessSavedShapeFormat2Revised = "4e941d5a22fb0a84a8f3a01e5bf4846243f1bd294e9e6b5169a55cbd776d73d8"
 
 // StaticModelHarnessSavedEnumKeys names each enum a value of a saved state of
 // this machine is of, by its document (docs/adr/0044): the key `revisions`
@@ -971,10 +981,10 @@ var StaticModelHarnessSavedEnumKeys = [...]string{
 // one saved at an earlier revision of a record schema is read with each field a
 // later revision added at its default.
 var StaticModelHarnessSavedShape = sce.SavedShape{
-	First:          "869dd573a3b7db5db8af69bf755da73d74bcef754fd2228700ce325d473a4a3e",
-	Revised:        "30c80b673132c846bc72d4a2ca88c90bb219c7fd83f1c470a243fe031605e15a",
-	Format2First:   "6a94014734cca5ff94de33f9a569430ac46267ccdeb3bb215379062013324a1f",
-	Format2Revised: "4a96c2880ba2a3ce956b3f380dd6f1b2a6e33b976409ec90911cf2b937894fb1",
+	First:          "37befbc8acd00383a5b5c22dccd834a45417865a992fce63e4fff9ffba57eea3",
+	Revised:        "71d8d448c8aef08c94b4c434c99fe8b570a2053ef5f397824e9bd8dd1f950a3a",
+	Format2First:   "3b077e2ef9a79afe1e0bdd2b4b4bef2b710cf1f1d0ff92e34196fe799ea64bda",
+	Format2Revised: "4e941d5a22fb0a84a8f3a01e5bf4846243f1bd294e9e6b5169a55cbd776d73d8",
 	Records: []sce.RecordLineage{
 		{
 			Event:     "harness.refusal",
@@ -2553,7 +2563,7 @@ func (p *StaticModelHarnessPolicy) ExecuteTransitionContent(source StaticModelHa
 
 	// docs/adr/0087: <sce:lift text="said" schema="Answer">
 
-	if sceLifted, sceRefusal := sce.LiftRecord(p.vSaid, "Answer", 1, 256, "{\"priority\":3}", func(r sce.PayloadRecord) (StaticModelHarnessAnswerRecord, error) { sceField0, err := sce.LiftField(r, "id", sce.ValueUnsigned[uint32]); if err != nil { return StaticModelHarnessAnswerRecord{}, err }; sceField1, err := sce.LiftField(r, "amount", sce.ValueSigned64); if err != nil { return StaticModelHarnessAnswerRecord{}, err }; sceField2, err := sce.LiftField(r, "title", func(v sce.PayloadValue) (string, error) { return v.Text(16) }); if err != nil { return StaticModelHarnessAnswerRecord{}, err }; sceField3, err := sce.LiftField(r, "kind", func(v sce.PayloadValue) (StaticModelHarnessEnumLiftKindEnum, error) { name, err := v.Name(); if err != nil { return 0, err }; switch name { case "meeting": return StaticModelHarnessEnumLiftKindEnumMeeting, nil; case "task": return StaticModelHarnessEnumLiftKindEnumTask, nil; }; return 0, v.UnknownVariant(name, "enum_lift_kind") }); if err != nil { return StaticModelHarnessAnswerRecord{}, err }; sceField4, err := sce.LiftField(r, "note", func(v sce.PayloadValue) (optional.Of[string], error) { return optional.Read(v, func(v sce.PayloadValue) (string, error) { return v.Text(8) }) }); if err != nil { return StaticModelHarnessAnswerRecord{}, err }; sceField5, err := sce.LiftField(r, "tag", func(v sce.PayloadValue) ([]byte, error) { return v.Bytes(4) }); if err != nil { return StaticModelHarnessAnswerRecord{}, err }; sceField6, err := sce.LiftField(r, "priority", sce.ValueUnsigned[uint8]); if err != nil { return StaticModelHarnessAnswerRecord{}, err }; return StaticModelHarnessAnswerRecord{id: sceField0, amount: sceField1, title: sceField2, kind: sceField3, note: sceField4, tag: sceField5, priority: sceField6}, nil }); sceRefusal == nil { p.vAnswer = optional.Some[StaticModelHarnessAnswerRecord](sceLifted); p.vWhy = optional.None[StaticModelHarnessLiftRefusalRecord]() } else { p.vWhy = optional.Some[StaticModelHarnessLiftRefusalRecord](StaticModelHarnessLiftRefusalRecord{code: func() StaticModelHarnessLiftRefusalCodeEnum { switch sceRefusal.Code() { case 1: return StaticModelHarnessLiftRefusalCodeEnumNotJson; case 2: return StaticModelHarnessLiftRefusalCodeEnumNotObject; case 3: return StaticModelHarnessLiftRefusalCodeEnumTooDeep; case 4: return StaticModelHarnessLiftRefusalCodeEnumMissing; case 5: return StaticModelHarnessLiftRefusalCodeEnumNullNotOptional; case 6: return StaticModelHarnessLiftRefusalCodeEnumWrongKind; case 7: return StaticModelHarnessLiftRefusalCodeEnumBadNumber; case 8: return StaticModelHarnessLiftRefusalCodeEnumOutOfRange; case 9: return StaticModelHarnessLiftRefusalCodeEnumTooLong; case 10: return StaticModelHarnessLiftRefusalCodeEnumTooMany; case 11: return StaticModelHarnessLiftRefusalCodeEnumUnknownVariant; case 12: return StaticModelHarnessLiftRefusalCodeEnumNotByteText; case 13: return StaticModelHarnessLiftRefusalCodeEnumNulInText; }; return StaticModelHarnessLiftRefusalCodeEnumNotJson }(), path: sceRefusal.Pointer(), bound: func() optional.Of[uint32] { if sceBound, ok := sceRefusal.Bound(); ok { return optional.Some[uint32](sceBound) }; return optional.None[uint32]() }()}) }
+	if sceLifted, sceRefusal := sce.LiftRecord(p.vSaid, "Answer", 1, 256, "{\"priority\":3}", func(r sce.PayloadRecord) (StaticModelHarnessAnswerRecord, error) { sceField0, err := sce.LiftField(r, "id", sce.ValueUnsigned[uint32]); if err != nil { return StaticModelHarnessAnswerRecord{}, err }; sceField1, err := sce.LiftField(r, "amount", sce.ValueSigned64); if err != nil { return StaticModelHarnessAnswerRecord{}, err }; sceField2, err := sce.LiftField(r, "title", func(v sce.PayloadValue) (string, error) { return v.Text(16) }); if err != nil { return StaticModelHarnessAnswerRecord{}, err }; sceField3, err := sce.LiftField(r, "kind", func(v sce.PayloadValue) (StaticModelHarnessEnumLiftKindEnum, error) { name, err := v.Name(); if err != nil { return 0, err }; switch name { case "meeting": return StaticModelHarnessEnumLiftKindEnumMeeting, nil; case "task": return StaticModelHarnessEnumLiftKindEnumTask, nil; }; return 0, v.UnknownVariant(name, "enum_lift_kind") }); if err != nil { return StaticModelHarnessAnswerRecord{}, err }; sceField4, err := sce.LiftField(r, "note", func(v sce.PayloadValue) (optional.Of[string], error) { return optional.Read(v, func(v sce.PayloadValue) (string, error) { return v.Text(8) }) }); if err != nil { return StaticModelHarnessAnswerRecord{}, err }; sceField5, err := sce.LiftField(r, "tag", func(v sce.PayloadValue) ([]byte, error) { return v.Bytes(4) }); if err != nil { return StaticModelHarnessAnswerRecord{}, err }; sceField6, err := sce.LiftField(r, "priority", sce.ValueUnsigned[uint8]); if err != nil { return StaticModelHarnessAnswerRecord{}, err }; return StaticModelHarnessAnswerRecord{id: sceField0, amount: sceField1, title: sceField2, kind: sceField3, note: sceField4, tag: sceField5, priority: sceField6}, nil }); sceRefusal == nil { p.vAnswer = optional.Some[StaticModelHarnessAnswerRecord](sceLifted); p.vWhy = optional.None[StaticModelHarnessLiftRefusalRecord]() } else { p.vWhy = optional.Some[StaticModelHarnessLiftRefusalRecord](StaticModelHarnessLiftRefusalRecord{code: func() StaticModelHarnessLiftRefusalCodeEnum { switch sceRefusal.Code() { case 1: return StaticModelHarnessLiftRefusalCodeEnumNotJson; case 2: return StaticModelHarnessLiftRefusalCodeEnumNotObject; case 3: return StaticModelHarnessLiftRefusalCodeEnumTooDeep; case 4: return StaticModelHarnessLiftRefusalCodeEnumMissing; case 5: return StaticModelHarnessLiftRefusalCodeEnumNullNotOptional; case 6: return StaticModelHarnessLiftRefusalCodeEnumWrongKind; case 7: return StaticModelHarnessLiftRefusalCodeEnumBadNumber; case 8: return StaticModelHarnessLiftRefusalCodeEnumOutOfRange; case 9: return StaticModelHarnessLiftRefusalCodeEnumTooLong; case 10: return StaticModelHarnessLiftRefusalCodeEnumTooMany; case 11: return StaticModelHarnessLiftRefusalCodeEnumUnknownVariant; case 12: return StaticModelHarnessLiftRefusalCodeEnumNotByteText; case 13: return StaticModelHarnessLiftRefusalCodeEnumNulInText; case 14: return StaticModelHarnessLiftRefusalCodeEnumTooFew; }; return StaticModelHarnessLiftRefusalCodeEnumNotJson }(), path: sceRefusal.Pointer(), bound: func() optional.Of[uint32] { if sceBound, ok := sceRefusal.Bound(); ok { return optional.Some[uint32](sceBound) }; return optional.None[uint32]() }()}) }
 
 			}()
 		case 1:

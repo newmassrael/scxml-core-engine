@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 3c98bcf611484a0e8277b90985067a4595fbef91882aa1fe25fdf84830038cc4
+// source-hash: 9aa28cb8a6152625fb0eb1560e8ab3014da5864745e85b6f3b6e37672c04dcf6
 // SCE-MAP: enum_harness_code.scxml:19 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="enum")
@@ -27,7 +27,8 @@ public enum EnumHarnessCode: UInt8, CaseIterable, Sendable {
     case unknownVariant = 11
     case notByteText = 12
     case nulInText = 13
-    case notOffered = 14
+    case tooFew = 14
+    case notOffered = 15
 
     /// The name the enum document declares for the value.
     public var declaredName: String {
@@ -45,6 +46,7 @@ public enum EnumHarnessCode: UInt8, CaseIterable, Sendable {
         case .unknownVariant: return "unknownVariant"
         case .notByteText: return "notByteText"
         case .nulInText: return "nulInText"
+        case .tooFew: return "tooFew"
         case .notOffered: return "notOffered"
         }
     }
@@ -76,6 +78,7 @@ public enum EnumHarnessCode: UInt8, CaseIterable, Sendable {
         case "unknownVariant": self = .unknownVariant
         case "notByteText": self = .notByteText
         case "nulInText": self = .nulInText
+        case "tooFew": self = .tooFew
         case "notOffered": self = .notOffered
         default: return nil
         }

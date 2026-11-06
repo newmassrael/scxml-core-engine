@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 3c98bcf611484a0e8277b90985067a4595fbef91882aa1fe25fdf84830038cc4
+// source-hash: 9aa28cb8a6152625fb0eb1560e8ab3014da5864745e85b6f3b6e37672c04dcf6
 // SCE-MAP: enum_harness_code.scxml:19 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="enum")
@@ -23,7 +23,8 @@ enum class EnumHarnessCode(val raw: UByte) {
     UNKNOWN_VARIANT(11u.toUByte()),
     NOT_BYTE_TEXT(12u.toUByte()),
     NUL_IN_TEXT(13u.toUByte()),
-    NOT_OFFERED(14u.toUByte()),
+    TOO_FEW(14u.toUByte()),
+    NOT_OFFERED(15u.toUByte()),
     ;
 
     /** The carrier value this variant declares. */
@@ -44,6 +45,7 @@ enum class EnumHarnessCode(val raw: UByte) {
         UNKNOWN_VARIANT -> "unknownVariant"
         NOT_BYTE_TEXT -> "notByteText"
         NUL_IN_TEXT -> "nulInText"
+        TOO_FEW -> "tooFew"
         NOT_OFFERED -> "notOffered"
     }
 

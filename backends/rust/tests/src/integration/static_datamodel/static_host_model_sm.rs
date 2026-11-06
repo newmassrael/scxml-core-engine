@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 3c98bcf611484a0e8277b90985067a4595fbef91882aa1fe25fdf84830038cc4
+// source-hash: 9aa28cb8a6152625fb0eb1560e8ab3014da5864745e85b6f3b6e37672c04dcf6
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -368,6 +368,7 @@ pub enum StaticHostModelRefusalCodeEnum {
     UnknownVariant,
     NotByteText,
     NulInText,
+    TooFew,
 }
 
 impl StaticHostModelRefusalCodeEnum {
@@ -388,6 +389,7 @@ impl StaticHostModelRefusalCodeEnum {
             Self::UnknownVariant => "unknownVariant",
             Self::NotByteText => "notByteText",
             Self::NulInText => "nulInText",
+            Self::TooFew => "tooFew",
         }
     }
 
@@ -408,6 +410,7 @@ impl StaticHostModelRefusalCodeEnum {
             Self::UnknownVariant => 11,
             Self::NotByteText => 12,
             Self::NulInText => 13,
+            Self::TooFew => 14,
         }
     }
 
@@ -428,6 +431,7 @@ impl StaticHostModelRefusalCodeEnum {
             11 => Some(Self::UnknownVariant),
             12 => Some(Self::NotByteText),
             13 => Some(Self::NulInText),
+            14 => Some(Self::TooFew),
             _ => None,
         }
     }
@@ -565,6 +569,7 @@ impl ::sce_rust_runtime::saved_state::SavedValue for StaticHostModelRefusalCodeE
                 Self::UnknownVariant => "unknownVariant",
                 Self::NotByteText => "notByteText",
                 Self::NulInText => "nulInText",
+                Self::TooFew => "tooFew",
             }
             .to_string(),
         )
@@ -589,6 +594,7 @@ impl ::sce_rust_runtime::saved_state::SavedValue for StaticHostModelRefusalCodeE
                 "unknownVariant" => Ok(Self::UnknownVariant),
                 "notByteText" => Ok(Self::NotByteText),
                 "nulInText" => Ok(Self::NulInText),
+                "tooFew" => Ok(Self::TooFew),
                 other => Err(::sce_rust_runtime::saved_state::StateRefusal::new(format!(
                     "'{what}' ({other}) is not a variant of refusal_code"
                 ))),
@@ -782,10 +788,10 @@ impl StaticHostModelPersist for Engine<StaticHostModelPolicy> {
 
     const SHAPE: ::sce_rust_runtime::saved_state::SavedShape =
         ::sce_rust_runtime::saved_state::SavedShape {
-            first: "dbeae1305922e59dfa1f64bf377f0cca47774aa4ea0bcf0d11bd8f05fdd6dbe6",
-            revised: "f66696a536bd60de17eb3afb4303ac2774c8fbd9f2e28b4453716090879d8b39",
-            format2_first: "d8996ec71a3c00b1285d4a592db8e7352542fee3446fdc9e5d1b743078ea5b77",
-            format2_revised: "9171aa1571f9cf0f1983e440052be5e1f76132e88b8cf94406ab93ece17f10d2",
+            first: "71b7e2f6efe67b97423eada78502bf45f45666ca41178d66f083b83af856f487",
+            revised: "b9e0109fe02a6b471d723b9067e6b78c6feb6b5a578e316efd93015a1531bdb2",
+            format2_first: "529ec77bbc60bbfcdb3dfbe1ae5f8ce2e34deec20ed0ed495741a6252344b702",
+            format2_revised: "73a09bac29295fb1f7d5d1dcbe20adf2371d7e658b9347ead7caad59e9f1d1ef",
             records: &[
                 ::sce_rust_runtime::saved_state::RecordLineage {
                     event: "lift.answer",
@@ -2080,7 +2086,7 @@ impl StatePolicy for StaticHostModelPolicy {
                             self.why = None;
                         }
                         Err(sce_refusal) => {
-                            self.why = Some(StaticHostModelLiftRefusalRecord { code: match sce_refusal.code() { ::sce_rust_runtime::event_payload::RefusalCode::NotJson => StaticHostModelRefusalCodeEnum::NotJson, ::sce_rust_runtime::event_payload::RefusalCode::NotObject => StaticHostModelRefusalCodeEnum::NotObject, ::sce_rust_runtime::event_payload::RefusalCode::TooDeep => StaticHostModelRefusalCodeEnum::TooDeep, ::sce_rust_runtime::event_payload::RefusalCode::Missing => StaticHostModelRefusalCodeEnum::Missing, ::sce_rust_runtime::event_payload::RefusalCode::NullNotOptional => StaticHostModelRefusalCodeEnum::NullNotOptional, ::sce_rust_runtime::event_payload::RefusalCode::WrongKind => StaticHostModelRefusalCodeEnum::WrongKind, ::sce_rust_runtime::event_payload::RefusalCode::BadNumber => StaticHostModelRefusalCodeEnum::BadNumber, ::sce_rust_runtime::event_payload::RefusalCode::OutOfRange => StaticHostModelRefusalCodeEnum::OutOfRange, ::sce_rust_runtime::event_payload::RefusalCode::TooLong => StaticHostModelRefusalCodeEnum::TooLong, ::sce_rust_runtime::event_payload::RefusalCode::TooMany => StaticHostModelRefusalCodeEnum::TooMany, ::sce_rust_runtime::event_payload::RefusalCode::UnknownVariant => StaticHostModelRefusalCodeEnum::UnknownVariant, ::sce_rust_runtime::event_payload::RefusalCode::NotByteText => StaticHostModelRefusalCodeEnum::NotByteText, ::sce_rust_runtime::event_payload::RefusalCode::NulInText => StaticHostModelRefusalCodeEnum::NulInText, }, path: ::sce_rust_runtime::portable::SceString::<256>::from_text(sce_refusal.pointer()).unwrap_or_default(), bound: sce_refusal.bound() });
+                            self.why = Some(StaticHostModelLiftRefusalRecord { code: match sce_refusal.code() { ::sce_rust_runtime::event_payload::RefusalCode::NotJson => StaticHostModelRefusalCodeEnum::NotJson, ::sce_rust_runtime::event_payload::RefusalCode::NotObject => StaticHostModelRefusalCodeEnum::NotObject, ::sce_rust_runtime::event_payload::RefusalCode::TooDeep => StaticHostModelRefusalCodeEnum::TooDeep, ::sce_rust_runtime::event_payload::RefusalCode::Missing => StaticHostModelRefusalCodeEnum::Missing, ::sce_rust_runtime::event_payload::RefusalCode::NullNotOptional => StaticHostModelRefusalCodeEnum::NullNotOptional, ::sce_rust_runtime::event_payload::RefusalCode::WrongKind => StaticHostModelRefusalCodeEnum::WrongKind, ::sce_rust_runtime::event_payload::RefusalCode::BadNumber => StaticHostModelRefusalCodeEnum::BadNumber, ::sce_rust_runtime::event_payload::RefusalCode::OutOfRange => StaticHostModelRefusalCodeEnum::OutOfRange, ::sce_rust_runtime::event_payload::RefusalCode::TooLong => StaticHostModelRefusalCodeEnum::TooLong, ::sce_rust_runtime::event_payload::RefusalCode::TooMany => StaticHostModelRefusalCodeEnum::TooMany, ::sce_rust_runtime::event_payload::RefusalCode::UnknownVariant => StaticHostModelRefusalCodeEnum::UnknownVariant, ::sce_rust_runtime::event_payload::RefusalCode::NotByteText => StaticHostModelRefusalCodeEnum::NotByteText, ::sce_rust_runtime::event_payload::RefusalCode::NulInText => StaticHostModelRefusalCodeEnum::NulInText, ::sce_rust_runtime::event_payload::RefusalCode::TooFew => StaticHostModelRefusalCodeEnum::TooFew, }, path: ::sce_rust_runtime::portable::SceString::<256>::from_text(sce_refusal.pointer()).unwrap_or_default(), bound: sce_refusal.bound() });
                         }
                     }
 

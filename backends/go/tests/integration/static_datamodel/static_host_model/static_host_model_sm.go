@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 3c98bcf611484a0e8277b90985067a4595fbef91882aa1fe25fdf84830038cc4
+// source-hash: 9aa28cb8a6152625fb0eb1560e8ab3014da5864745e85b6f3b6e37672c04dcf6
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -453,6 +453,7 @@ const (
 	StaticHostModelRefusalCodeEnumUnknownVariant StaticHostModelRefusalCodeEnum = 11
 	StaticHostModelRefusalCodeEnumNotByteText StaticHostModelRefusalCodeEnum = 12
 	StaticHostModelRefusalCodeEnumNulInText StaticHostModelRefusalCodeEnum = 13
+	StaticHostModelRefusalCodeEnumTooFew StaticHostModelRefusalCodeEnum = 14
 )
 
 // String is the name the enum document declares for the value.
@@ -484,6 +485,8 @@ func (v StaticHostModelRefusalCodeEnum) String() string {
 		return "notByteText"
 	case StaticHostModelRefusalCodeEnumNulInText:
 		return "nulInText"
+	case StaticHostModelRefusalCodeEnumTooFew:
+		return "tooFew"
 	}
 	return ""
 }
@@ -497,7 +500,7 @@ func (v StaticHostModelRefusalCodeEnum) ToUnderlying() uint8 {
 // value for a number no variant declares.
 func StaticHostModelRefusalCodeEnumFromUnderlying(raw uint8) optional.Of[StaticHostModelRefusalCodeEnum] {
 	switch raw {
-	case 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13:
+	case 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14:
 		return optional.Some(StaticHostModelRefusalCodeEnum(raw))
 	}
 	return optional.None[StaticHostModelRefusalCodeEnum]()
@@ -541,6 +544,8 @@ func StaticHostModelRefusalCodeEnumFromSaved(value any, what string) (StaticHost
 		return StaticHostModelRefusalCodeEnumNotByteText, nil
 	case "nulInText":
 		return StaticHostModelRefusalCodeEnumNulInText, nil
+	case "tooFew":
+		return StaticHostModelRefusalCodeEnumTooFew, nil
 	}
 	return 0, sce.Refuse(fmt.Sprintf("'%s' (%s) is not a variant of refusal_code", what, declared))
 }
@@ -626,12 +631,12 @@ const StaticHostModelLimitModelPrompt uint32 = 8192
 // this machine names when every record schema it holds is in its first
 // revision (docs/adr/0045, section 2). The generator computes it once, so it is
 // the text every backend's constant is.
-const StaticHostModelSavedShapeFormat2 = "d8996ec71a3c00b1285d4a592db8e7352542fee3446fdc9e5d1b743078ea5b77"
+const StaticHostModelSavedShapeFormat2 = "529ec77bbc60bbfcdb3dfbe1ae5f8ce2e34deec20ed0ed495741a6252344b702"
 
 // StaticHostModelSavedShapeFormat2Revised is the shape a format-2 saved state
 // of this machine names when it names a later revision of a record schema or
 // an enum.
-const StaticHostModelSavedShapeFormat2Revised = "9171aa1571f9cf0f1983e440052be5e1f76132e88b8cf94406ab93ece17f10d2"
+const StaticHostModelSavedShapeFormat2Revised = "73a09bac29295fb1f7d5d1dcbe20adf2371d7e658b9347ead7caad59e9f1d1ef"
 
 // StaticHostModelSavedEnumKeys names each enum a value of a saved state of
 // this machine is of, by its document (docs/adr/0044): the key `revisions`
@@ -649,10 +654,10 @@ var StaticHostModelSavedEnumKeys = [...]string{
 // one saved at an earlier revision of a record schema is read with each field a
 // later revision added at its default.
 var StaticHostModelSavedShape = sce.SavedShape{
-	First:          "dbeae1305922e59dfa1f64bf377f0cca47774aa4ea0bcf0d11bd8f05fdd6dbe6",
-	Revised:        "f66696a536bd60de17eb3afb4303ac2774c8fbd9f2e28b4453716090879d8b39",
-	Format2First:   "d8996ec71a3c00b1285d4a592db8e7352542fee3446fdc9e5d1b743078ea5b77",
-	Format2Revised: "9171aa1571f9cf0f1983e440052be5e1f76132e88b8cf94406ab93ece17f10d2",
+	First:          "71b7e2f6efe67b97423eada78502bf45f45666ca41178d66f083b83af856f487",
+	Revised:        "b9e0109fe02a6b471d723b9067e6b78c6feb6b5a578e316efd93015a1531bdb2",
+	Format2First:   "529ec77bbc60bbfcdb3dfbe1ae5f8ce2e34deec20ed0ed495741a6252344b702",
+	Format2Revised: "73a09bac29295fb1f7d5d1dcbe20adf2371d7e658b9347ead7caad59e9f1d1ef",
 	Records: []sce.RecordLineage{
 		{
 			Event:     "lift.answer",
@@ -1946,7 +1951,7 @@ func (p *StaticHostModelPolicy) ExecuteTransitionContent(source StaticHostModelS
 
 	// docs/adr/0087: <sce:lift text="_event.data.text" schema="Answer">
 
-	if sceLifted, sceRefusal := sce.LiftRecord(p.pendingDoneInvokeGenPayload.text, "Answer", 1, 256, "{\"priority\":3}", func(r sce.PayloadRecord) (StaticHostModelAnswerRecord, error) { sceField0, err := sce.LiftField(r, "id", sce.ValueUnsigned[uint32]); if err != nil { return StaticHostModelAnswerRecord{}, err }; sceField1, err := sce.LiftField(r, "amount", sce.ValueSigned64); if err != nil { return StaticHostModelAnswerRecord{}, err }; sceField2, err := sce.LiftField(r, "title", func(v sce.PayloadValue) (string, error) { return v.Text(16) }); if err != nil { return StaticHostModelAnswerRecord{}, err }; sceField3, err := sce.LiftField(r, "kind", func(v sce.PayloadValue) (StaticHostModelEnumLiftKindEnum, error) { name, err := v.Name(); if err != nil { return 0, err }; switch name { case "meeting": return StaticHostModelEnumLiftKindEnumMeeting, nil; case "task": return StaticHostModelEnumLiftKindEnumTask, nil; }; return 0, v.UnknownVariant(name, "enum_lift_kind") }); if err != nil { return StaticHostModelAnswerRecord{}, err }; sceField4, err := sce.LiftField(r, "note", func(v sce.PayloadValue) (optional.Of[string], error) { return optional.Read(v, func(v sce.PayloadValue) (string, error) { return v.Text(8) }) }); if err != nil { return StaticHostModelAnswerRecord{}, err }; sceField5, err := sce.LiftField(r, "tag", func(v sce.PayloadValue) ([]byte, error) { return v.Bytes(4) }); if err != nil { return StaticHostModelAnswerRecord{}, err }; sceField6, err := sce.LiftField(r, "priority", sce.ValueUnsigned[uint8]); if err != nil { return StaticHostModelAnswerRecord{}, err }; return StaticHostModelAnswerRecord{id: sceField0, amount: sceField1, title: sceField2, kind: sceField3, note: sceField4, tag: sceField5, priority: sceField6}, nil }); sceRefusal == nil { p.vAnswer = optional.Some[StaticHostModelAnswerRecord](sceLifted); p.vWhy = optional.None[StaticHostModelLiftRefusalRecord]() } else { p.vWhy = optional.Some[StaticHostModelLiftRefusalRecord](StaticHostModelLiftRefusalRecord{code: func() StaticHostModelRefusalCodeEnum { switch sceRefusal.Code() { case 1: return StaticHostModelRefusalCodeEnumNotJson; case 2: return StaticHostModelRefusalCodeEnumNotObject; case 3: return StaticHostModelRefusalCodeEnumTooDeep; case 4: return StaticHostModelRefusalCodeEnumMissing; case 5: return StaticHostModelRefusalCodeEnumNullNotOptional; case 6: return StaticHostModelRefusalCodeEnumWrongKind; case 7: return StaticHostModelRefusalCodeEnumBadNumber; case 8: return StaticHostModelRefusalCodeEnumOutOfRange; case 9: return StaticHostModelRefusalCodeEnumTooLong; case 10: return StaticHostModelRefusalCodeEnumTooMany; case 11: return StaticHostModelRefusalCodeEnumUnknownVariant; case 12: return StaticHostModelRefusalCodeEnumNotByteText; case 13: return StaticHostModelRefusalCodeEnumNulInText; }; return StaticHostModelRefusalCodeEnumNotJson }(), path: sceRefusal.Pointer(), bound: func() optional.Of[uint32] { if sceBound, ok := sceRefusal.Bound(); ok { return optional.Some[uint32](sceBound) }; return optional.None[uint32]() }()}) }
+	if sceLifted, sceRefusal := sce.LiftRecord(p.pendingDoneInvokeGenPayload.text, "Answer", 1, 256, "{\"priority\":3}", func(r sce.PayloadRecord) (StaticHostModelAnswerRecord, error) { sceField0, err := sce.LiftField(r, "id", sce.ValueUnsigned[uint32]); if err != nil { return StaticHostModelAnswerRecord{}, err }; sceField1, err := sce.LiftField(r, "amount", sce.ValueSigned64); if err != nil { return StaticHostModelAnswerRecord{}, err }; sceField2, err := sce.LiftField(r, "title", func(v sce.PayloadValue) (string, error) { return v.Text(16) }); if err != nil { return StaticHostModelAnswerRecord{}, err }; sceField3, err := sce.LiftField(r, "kind", func(v sce.PayloadValue) (StaticHostModelEnumLiftKindEnum, error) { name, err := v.Name(); if err != nil { return 0, err }; switch name { case "meeting": return StaticHostModelEnumLiftKindEnumMeeting, nil; case "task": return StaticHostModelEnumLiftKindEnumTask, nil; }; return 0, v.UnknownVariant(name, "enum_lift_kind") }); if err != nil { return StaticHostModelAnswerRecord{}, err }; sceField4, err := sce.LiftField(r, "note", func(v sce.PayloadValue) (optional.Of[string], error) { return optional.Read(v, func(v sce.PayloadValue) (string, error) { return v.Text(8) }) }); if err != nil { return StaticHostModelAnswerRecord{}, err }; sceField5, err := sce.LiftField(r, "tag", func(v sce.PayloadValue) ([]byte, error) { return v.Bytes(4) }); if err != nil { return StaticHostModelAnswerRecord{}, err }; sceField6, err := sce.LiftField(r, "priority", sce.ValueUnsigned[uint8]); if err != nil { return StaticHostModelAnswerRecord{}, err }; return StaticHostModelAnswerRecord{id: sceField0, amount: sceField1, title: sceField2, kind: sceField3, note: sceField4, tag: sceField5, priority: sceField6}, nil }); sceRefusal == nil { p.vAnswer = optional.Some[StaticHostModelAnswerRecord](sceLifted); p.vWhy = optional.None[StaticHostModelLiftRefusalRecord]() } else { p.vWhy = optional.Some[StaticHostModelLiftRefusalRecord](StaticHostModelLiftRefusalRecord{code: func() StaticHostModelRefusalCodeEnum { switch sceRefusal.Code() { case 1: return StaticHostModelRefusalCodeEnumNotJson; case 2: return StaticHostModelRefusalCodeEnumNotObject; case 3: return StaticHostModelRefusalCodeEnumTooDeep; case 4: return StaticHostModelRefusalCodeEnumMissing; case 5: return StaticHostModelRefusalCodeEnumNullNotOptional; case 6: return StaticHostModelRefusalCodeEnumWrongKind; case 7: return StaticHostModelRefusalCodeEnumBadNumber; case 8: return StaticHostModelRefusalCodeEnumOutOfRange; case 9: return StaticHostModelRefusalCodeEnumTooLong; case 10: return StaticHostModelRefusalCodeEnumTooMany; case 11: return StaticHostModelRefusalCodeEnumUnknownVariant; case 12: return StaticHostModelRefusalCodeEnumNotByteText; case 13: return StaticHostModelRefusalCodeEnumNulInText; case 14: return StaticHostModelRefusalCodeEnumTooFew; }; return StaticHostModelRefusalCodeEnumNotJson }(), path: sceRefusal.Pointer(), bound: func() optional.Of[uint32] { if sceBound, ok := sceRefusal.Bound(); ok { return optional.Some[uint32](sceBound) }; return optional.None[uint32]() }()}) }
 
 
 	if !p.vWhy.IsPresent() {
