@@ -263,6 +263,43 @@ Search terms that find the rest: `origintype`, `"origin"`, `FORMAT_2` / `SavedFo
 - Casefiles: `a_saved_c11_child_session_is_resumed_where_it_stood_ctest.cases`,
   `a_saved_c11_host_work_is_restored_as_the_call_it_was_ctest.cases` (`saved.c.jinja2`).
 
+## Amendment (2026-11-06): the sender rule
+
+ADR 0090 section 1 and the section 7 "Text form" are amended. These items override the lists above where they
+disagree.
+
+1. **`sender` and `origin` are independent.** `sender` is the id of the session that sent the event. The SCXML
+   processor writes it for a local session, and the Mesh transport for a remote child or parent (§mesh-9.6.3).
+   The address beside it is the reply address that processor wrote: a local location, or a session endpoint
+   `mesh://<device>/<machine>/<session>`. The C++ remote child is `sender` `<parent machine>:<invokeid>` beside
+   `{SCXML type, mesh://<device>/<machine>/<parent machine>%3A<invokeid>}` (`MeshDispatch.h`,
+   `meshChildSessionOrigin`).
+2. **Queued-event refusals.**
+   - Remove "a sender beside an origin other than its SCXML pair".
+   - Add "a sender beside a null origin".
+   - Keep every pair-shape refusal and the Nmtoken check on `sender`.
+   - A reader reads a sender beside any pair as written.
+3. **Acts are unchanged.**
+   - `raise`, `parent` and `child` carry `scxmlOrigin(sender)` and a sender; anything else is refused.
+   - `internal` carries null and null.
+4. **Format-2 act with an empty stored origin.** Read a `raise`, `parent` or `child` act that stored an empty
+   `origin` as the own send of the session that holds it, by the `sessionid` of its session record. A format-1 act
+   with an empty origin is armed as the restoring machine's own send.
+5. **Format-2 act stored as the prefix `sce://scxml/` alone** names no session: refuse it. A queued event stored so
+   is row 4 of the table, read as `{its type or SCXML, "sce://scxml/"}` with no sender. Go's `ReadStoredSender`
+   returns that text as a sender today; it must not.
+6. **The writer never refuses** a queued event for its sender and origin. Remove the C++ save refusal near
+   `sce/include/saved/SavedEngine.h:327`.
+7. **C11 only.** C11 derives a sender from an SCXML location and cannot hold a sender beside another address. It
+   runs no Mesh remote child, so it refuses a text with a `sender` beside an address other than
+   `scxmlLocation(sender)`, and names that as the reason.
+8. **Fixtures.**
+   - `saved/format2/static_invoke_tree_working_origins.json` now stores both of its session-to-session acts with an
+     empty `origin`. It also holds a tenth root event, `go`, stored as the prefix alone. Its `read_as/` twin gained
+     that event's reading; the acts read as before.
+   - Restore it and compare as before.
+   - Any new reading fixture must be named `static_invoke_tree_working*` or `static_timers*`.
+
 ## What the round merges and runs once
 
 - `cargo test -p sce-build --features cli --test saved_state_schema` and `--test wire_surface_stability`: the format
