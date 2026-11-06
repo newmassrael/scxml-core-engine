@@ -806,7 +806,16 @@ extension SavedSend {
                 }
                 return id
             }
-            let stored = readStoredSender(try field("origin"))
+            let written = try field("origin")
+            // The prefix of an SCXML location with no id after it names no session, and `readStoredSender` would
+            // take it for a bare id. A queued event that stored it is read as the pair as saved; a session's own
+            // send cannot have been sent by it.
+            if written.utf8.elementsEqual(scxmlLocationPrefix.utf8) {
+                throw StateRefusal(
+                    "'\(what).origin' is '\(written)', an SCXML location that names no session, and a \(name) act is a session's own send"
+                )
+            }
+            let stored = readStoredSender(written)
             if !stored.isEmpty { return stored }
             return sessionID.isEmpty ? nil : sessionID
         }

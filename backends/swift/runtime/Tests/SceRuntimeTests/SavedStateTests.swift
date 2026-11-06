@@ -420,6 +420,29 @@ private func queuedText(origin: String, sender: String) -> String {
     )
 }
 
+@Test func aStoredSendWhoseOriginIsTheSCXMLPrefixAloneIsRefusedAndAQueuedEventIsReadAsSaved() throws {
+    // The prefix with no id after it names no session: a session's own send that stored it is refused, in
+    // format 2 and in format 1, and a queued event that stored it is the pair as saved, with no sender.
+    let state = SavedState(
+        shape: String(repeating: "a", count: 64), configuration: ["a"], current: "a", variables: [],
+        pending: [SavedSend(due: 5, act: .raise(event: "e", data: "", sendID: "s", sender: "root"))],
+        invokes: .resumed([]), sessionID: "root")
+    let stored = state.toJSON()
+        .replacingOccurrences(of: #"{"format":3,"#, with: #"{"format":2,"#)
+        .replacingOccurrences(of: #""origin":\#(scxmlPairText("root")),"sender":"root""#, with: #""origin":"sce://scxml/""#)
+    #expect(stored.contains(#""sendid":"s","origin":"sce://scxml/"}"#), "\(stored)")
+    let refused =
+        "'pending[0].origin' is 'sce://scxml/', an SCXML location that names no session, and a raise act is a session's own send"
+    #expect(refusal(stored) == refused)
+    let unnamed = #"{"due":"5","act":"raise","event":"e","data":"","sendid":"s","origin":"sce://scxml/"}"#
+    #expect(refusal(format1().replacingOccurrences(of: #""pending":[]"#, with: #""pending":[\#(unnamed)]"#)) == refused)
+    let queued = #"{"name":"go","data":"","type":"external","sendid":"","origin":"sce://scxml/","origintype":"","invokeid":"","hostinvoketoken":null}"#
+    let read = try SavedState.fromJSON(
+        format1().replacingOccurrences(of: #""external":[]"#, with: #""external":[\#(queued)]"#))
+    #expect(read.external.first?.origin == EventOrigin(processor: scxmlEventProcessorType, address: "sce://scxml/"))
+    #expect(read.external.first?.sender == nil)
+}
+
 @Test func aFormat2SendThatStoredNoOriginIsReadAsSentByTheSessionThatHoldsIt() throws {
     // docs/adr/0090, section 7: a `raise`, `parent` or `child` act of a format-2 text whose stored `origin` is
     // empty is the send of the session it sits in, its `sessionid`, so the text it is written back as is one a

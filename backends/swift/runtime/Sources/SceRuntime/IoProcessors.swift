@@ -21,7 +21,8 @@ public let scxmlProcessorAlias = "scxml"
 /// documents.
 public let basicHTTPProcessorAlias = "basichttp"
 
-private let scxmlLocationPrefix = "sce://scxml/"
+/// What every SCXML Event I/O Processor location begins with, before the session id it names.
+let scxmlLocationPrefix = "sce://scxml/"
 
 /// The address that reaches this session over the SCXML Event I/O Processor.
 ///
