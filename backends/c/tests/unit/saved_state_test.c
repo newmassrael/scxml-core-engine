@@ -403,8 +403,10 @@ static void a_format_three_origin_that_is_not_whole_is_refused(void) {
         // Both members are in every record that carries the pair.
         {"\"origin\":null", "'external[0]' has no 'sender'"},
         {"\"sender\":null", "'external[0]' has no 'origin'"},
-        {"\"origin\":\"\",\"origintype\":\"\"", "'external[0].origin' is neither null nor a pair of a processor and an "
-                                                "address"},
+        // The format-2 text `origin` in a format-3 record, with its `sender` present so that the
+        // origin's shape is the one fault.
+        {"\"origin\":\"\",\"sender\":null", "'external[0].origin' is neither null nor a pair of a processor and an "
+                                            "address"},
     };
     char queue[1024];
     char long_type[SCE_MAX_ID_LEN + 8];
