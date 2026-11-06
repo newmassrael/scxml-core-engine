@@ -285,7 +285,8 @@ disagree.
 4. **Format-2 act with an empty stored origin.** Read a `raise`, `parent` or `child` act that stored an empty
    `origin` as the own send of the session that holds it, by the `sessionid` of its session record. A format-1 act
    with an empty origin is armed as the restoring machine's own send.
-5. **Format-2 act stored as the prefix `sce://scxml/` alone** names no session: refuse it. A queued event stored so
+5. **Format-1 or format-2 act stored as the prefix `sce://scxml/` alone** names no session: refuse it. A queued
+   event stored so
    is row 4 of the table, read as `{its type or SCXML, "sce://scxml/"}` with no sender. Go's `ReadStoredSender`
    returns that text as a sender today; it must not.
 6. **The writer never refuses** a queued event for its sender and origin. Remove the C++ save refusal near
@@ -309,10 +310,12 @@ disagree.
      act is this session's own send`.
    - The oracle is `acts_sent_by_another_session` in `sce-build/tests/saved_state_schema.rs`; the schema cannot
      compare two members.
-10. **R2: the prefix `sce://scxml/` alone in a format-2 act is refused.** This is item 5 restated, with the event
-    case kept apart:
-    - a `raise`, `parent` or `child` act whose stored `origin` is exactly `sce://scxml/` names no session, and is
-      refused;
+10. **R2: the prefix `sce://scxml/` alone in a format-1 or format-2 act is refused.** This is item 5 restated, with
+    the event case kept apart:
+    - a `raise`, `parent` or `child` act of format 1 or format 2 whose stored `origin` is exactly `sce://scxml/`
+      names no session in either format, and is refused. A format-1 reader that arms such an act as the restoring
+      machine's own send is wrong, as a format-2 reader that takes it as a sender is. Only an empty `origin` means
+      the act's own session;
     - a queued event stored so is not refused. It is read as the pair as saved with no sender: the root event
       `question` of `static_invoke_tree_working_origins.json`.
 
