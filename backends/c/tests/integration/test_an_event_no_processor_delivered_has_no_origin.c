@@ -76,12 +76,14 @@ int main(void) {
         fprintf(stderr, "FAIL: the run must end in `done`\n");
         ok = 0;
     }
+    // Each value is read before it is judged: C leaves the order of a call's
+    // arguments unspecified, so a reader and the value it writes cannot share one.
     int64_t posted_blank = -1;
     int64_t reply_blank = -1;
-    ok &= check("postedBlank", an_event_no_processor_delivered_has_no_origin_posted_blank(&sm, &posted_blank),
-                posted_blank);
-    ok &=
-        check("replyBlank", an_event_no_processor_delivered_has_no_origin_reply_blank(&sm, &reply_blank), reply_blank);
+    const bool posted_read = an_event_no_processor_delivered_has_no_origin_posted_blank(&sm, &posted_blank);
+    const bool reply_read = an_event_no_processor_delivered_has_no_origin_reply_blank(&sm, &reply_blank);
+    ok &= check("postedBlank", posted_read, posted_blank);
+    ok &= check("replyBlank", reply_read, reply_blank);
     an_event_no_processor_delivered_has_no_origin_destroy(&sm);
     if (!ok) {
         return 1;
