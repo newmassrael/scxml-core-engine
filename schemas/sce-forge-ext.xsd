@@ -138,13 +138,17 @@
 
          T ::= uint8 | uint16 | uint32 | uint64 | int8 | int16 | int32 | int64
              | float32 | float64 | bool | enum:<alias> | string[B] | bytes[B]
-             | optional<T> | record:<alias> | list<T>[B]
+             | optional<T> | record:<alias> | list<T>[B] | list<T>[M..B]
          B ::= <positive integer> | <limit name>=<positive integer>
+         M ::= <whole number of zero or more, at most the number of B>
 
        Every constructor takes every type, and a bound is written in the type it
        bounds, at every depth: `list&lt;string[8]&gt;[4]` in XML is at most 4
        texts of at most 8 bytes, and `string[merge_text=96]` a text whose bound
-       a build moves with `limit merge_text=N`. The grammar is recursive, which
+       a build moves with `limit merge_text=N`. A list may state its lower count
+       before `..` (docs/adr/0086, section 15): `list&lt;uint32&gt;[1..8]` is at
+       least 1 and at most 8 elements; a text and a byte string take none, and a
+       name moves the upper bound alone (`[1..shared_parts=64]`). The grammar is recursive, which
        no pattern of XSD 1.0 matches, so the type is a lexical string of the
        type alphabet here, and the parser (`forge::value_type::WrittenType`,
        read by each position's reader) judges its structure with a diagnostic

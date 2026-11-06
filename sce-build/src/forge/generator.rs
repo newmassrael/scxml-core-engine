@@ -40750,6 +40750,7 @@ fn body_limits(body: &[AlgorithmStmt]) -> Vec<(&str, u32)> {
                     if let Some(crate::forge::value_type::Bound {
                         max,
                         limit: Some(name),
+                        ..
                     }) = sce_type.stated_outer_bound()
                     {
                         out.push((name.as_str(), *max));

@@ -46,16 +46,25 @@ use crate::forge::model::{EntryType, SceType};
 /// a text or a byte string. `limit` is the name a build may give another number
 /// (`[name=N]`, docs/adr/0050); `max` is the number the build holds, the one
 /// written until a build resolves the name ([`WrittenType::resolve_limits`]).
+///
+/// `min` is the fewest elements of a list, its lower count (`[M..N]`,
+/// docs/adr/0086 section 15): 0 where none is written, and on every text and
+/// byte string, whose bracket takes none. A name moves `max` alone.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Bound {
     pub max: u32,
     pub limit: Option<String>,
+    pub min: u32,
 }
 
 impl Bound {
     /// A bound no name carries.
     pub fn of(max: u32) -> Self {
-        Self { max, limit: None }
+        Self {
+            max,
+            limit: None,
+            min: 0,
+        }
     }
 
     /// A bound a build may move by `limit`.
@@ -63,16 +72,29 @@ impl Bound {
         Self {
             max,
             limit: Some(limit.to_string()),
+            min: 0,
         }
+    }
+
+    /// This bound with the lower count `min`: a list of at least `min`
+    /// elements.
+    pub fn at_least(self, min: u32) -> Self {
+        Self { min, ..self }
     }
 }
 
 impl fmt::Display for Bound {
-    /// The bracket as the grammar spells it: `[8]` or `[name=8]`.
+    /// The bracket as the grammar spells it: `[8]` or `[name=8]`, the lower
+    /// count before `..` where one is stated (`[3..8]`, `[3..name=8]`). A
+    /// lower count of zero is not printed: `[0..8]` and `[8]` are one bound.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "[")?;
+        if self.min > 0 {
+            write!(f, "{}..", self.min)?;
+        }
         match &self.limit {
-            Some(name) => write!(f, "[{name}={}]", self.max),
-            None => write!(f, "[{}]", self.max),
+            Some(name) => write!(f, "{name}={}]", self.max),
+            None => write!(f, "{}]", self.max),
         }
     }
 }
@@ -170,10 +192,18 @@ impl<B: BoundSlot> Serialize for TypeOf<B> {
             }
             Self::List { elem, max } => {
                 let stated = max.stated();
-                let mut map = serializer.serialize_map(Some(1 + usize::from(stated.is_some())))?;
+                // The lower count beside the bound, where one is stated
+                // (docs/adr/0086, section 15.3): a list that states none is
+                // the shape it always was.
+                let least = stated.map_or(0, |bound| bound.min);
+                let entries = 1 + usize::from(stated.is_some()) + usize::from(least > 0);
+                let mut map = serializer.serialize_map(Some(entries))?;
                 map.serialize_entry("list", &**elem)?;
                 if let Some(bound) = stated {
                     map.serialize_entry("max", bound)?;
+                }
+                if least > 0 {
+                    map.serialize_entry("min", &least)?;
                 }
                 map.end()
             }
@@ -193,6 +223,8 @@ impl<B: BoundSlot> schemars::JsonSchema for TypeOf<B> {
     fn json_schema(generator: &mut schemars::gen::SchemaGenerator) -> schemars::schema::Schema {
         let scalar = generator.subschema_for::<SceType>();
         let this = generator.subschema_for::<Self>();
+        // A bound, and a list's lower count: one of zero is not written, so one
+        // that is written is at least 1 too.
         let bound = serde_json::json!({"type": "integer", "format": "uint32", "minimum": 1});
         let list_required = if B::REQUIRED {
             serde_json::json!(["list", "max"])
@@ -212,7 +244,7 @@ impl<B: BoundSlot> schemars::JsonSchema for TypeOf<B> {
                 {
                     "type": "object",
                     "required": list_required,
-                    "properties": {"list": this, "max": bound}
+                    "properties": {"list": this, "max": bound, "min": bound}
                 }
             ]
         }))
@@ -377,6 +409,32 @@ pub enum TypeRefusal {
     BothForms { place: String },
     /// An attribute states a bound beside a type that has none to state.
     NothingToBound { place: String },
+    /// A list's lower count past its bound, as written or after a build moved
+    /// the bound (docs/adr/0086, section 15.2): the type has no value.
+    CountPastBound {
+        place: String,
+        least: u32,
+        most: u32,
+    },
+    /// A lower count where nothing reads it (docs/adr/0086, sections 15.2,
+    /// 15.7 and 15.8): in the bracket of a text or a byte string, or in the
+    /// type of a place that is filled an element at a time. `place` is the
+    /// part of the type that states it; `why` says where it stands.
+    CountMisplaced { place: String, why: CountPlace },
+}
+
+/// Where a lower count stands that nothing reads (docs/adr/0086, section 15).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CountPlace {
+    /// In the bracket of a `string` or `bytes`, which counts bytes from above
+    /// only.
+    Length,
+    /// In the type of a variable or an algorithm's slot, which starts empty
+    /// and is filled an element at a time.
+    Built,
+    /// On a list a later revision of its schema adds, which a delivery that
+    /// lacks it reads as the empty list.
+    Added,
 }
 
 impl TypeRefusal {
@@ -393,7 +451,8 @@ impl TypeRefusal {
             }
             Self::BadBound { place, written } => format!(
                 "the bound `[{written}]` of `{place}` is a whole number of at least one that \
-                 fits 32 bits, or `name=N` with such a number"
+                 fits 32 bits, or `name=N` with such a number; a list's may follow its lower \
+                 count, a whole number of zero or more, as `M..N`"
             ),
             Self::BoundOnUnboundable { place } => format!(
                 "`{place}` takes no bound: a bound is written after a string, a bytes or a \
@@ -416,6 +475,28 @@ impl TypeRefusal {
                 "`{place}` has no length to bound: an attribute bound stands beside a \
                  string, a bytes or a list"
             ),
+            Self::CountPastBound { place, least, most } => format!(
+                "the lower count {least} of `{place}` is past its bound {most}: a list holds \
+                 at least its lower count and at most its bound, so the lower count is at \
+                 most the bound, or the type has no value"
+            ),
+            Self::CountMisplaced { place, why } => match why {
+                CountPlace::Length => format!(
+                    "`{place}` takes no lower count: a string's or a bytes' bracket is the most \
+                     bytes it holds, and only a list states the fewest elements it holds \
+                     (`list<T>[M..N]`)"
+                ),
+                CountPlace::Built => format!(
+                    "`{place}` states a lower count, and a variable or an algorithm's slot \
+                     starts empty and is filled an element at a time, so no lower count holds \
+                     of it until it is full: its type states none (`list<T>[N]`)"
+                ),
+                CountPlace::Added => format!(
+                    "`{place}` states a lower count, and a list a later revision adds reads \
+                     as the empty list from a delivery that lacks it: it states none \
+                     (`list<T>[N]`), or is declared optional<…> and reads absent"
+                ),
+            },
         }
     }
 }
@@ -559,7 +640,9 @@ impl WrittenType {
     }
 
     /// The type with every bound stated, or the refusal of the outermost text,
-    /// byte string or list that states none.
+    /// byte string or list that states none, or of the outermost list whose
+    /// lower count is past its bound, which a build that moved the bound below
+    /// the lower count leaves (docs/adr/0086, section 15.2).
     pub fn bounded(self) -> Result<ValueType, TypeRefusal> {
         let place = self.to_string();
         let required = |max: Option<Bound>| {
@@ -581,12 +664,41 @@ impl WrittenType {
             },
             Self::List { elem, max } => {
                 let max = required(max)?;
+                if max.min > max.max {
+                    return Err(TypeRefusal::CountPastBound {
+                        place: place.clone(),
+                        least: max.min,
+                        most: max.max,
+                    });
+                }
                 ValueType::List {
                     elem: Box::new(elem.bounded()?),
                     max,
                 }
             }
         })
+    }
+
+    /// The refusal of the outermost list of the type, at any depth, that states
+    /// a lower count, or `None`: the check of a place that is filled an element
+    /// at a time, a variable or an algorithm's slot, whose own type states none
+    /// (docs/adr/0086, section 15.7).
+    pub fn lower_count_inside(&self) -> Option<TypeRefusal> {
+        let mut found = None;
+        self.walk(&mut |ty| {
+            if let Self::List {
+                max: Some(bound), ..
+            } = ty
+            {
+                if bound.min > 0 && found.is_none() {
+                    found = Some(TypeRefusal::CountMisplaced {
+                        place: ty.to_string(),
+                        why: CountPlace::Built,
+                    });
+                }
+            }
+        });
+        found
     }
 
     /// The refusal [`Self::bounded`] would give for a bound left out below the
@@ -605,16 +717,15 @@ impl WrittenType {
     /// `resolve` gives its name: what a build that moves a limit holds
     /// (`crate::limits::resolve`). A bound no name carries is kept.
     pub fn resolve_limits(self, resolve: &mut dyn FnMut(&str, u32) -> u32) -> Self {
+        // A name moves the upper bound alone; a list's lower count is a
+        // literal of the type (docs/adr/0086, section 15.2).
         let mut bound = |max: Option<Bound>| {
             max.map(|b| {
                 let max = match b.limit.as_deref() {
                     Some(name) => resolve(name, b.max),
                     None => b.max,
                 };
-                Bound {
-                    max,
-                    limit: b.limit,
-                }
+                Bound { max, ..b }
             })
         };
         match self {
@@ -755,18 +866,18 @@ fn read_type(cursor: &mut Cursor<'_>) -> Result<WrittenType, TypeRefusal> {
         }
         "list" => {
             let elem = read_element(cursor, start, "list")?;
-            let max = read_bracket(cursor, start)?;
+            let max = read_bracket(cursor, start, Counted::Elements)?;
             return Ok(WrittenType::List {
                 elem: Box::new(elem),
                 max,
             });
         }
         "string" => {
-            let max = read_bracket(cursor, start)?;
+            let max = read_bracket(cursor, start, Counted::Bytes)?;
             return Ok(WrittenType::Text { max });
         }
         "bytes" => {
-            let max = read_bracket(cursor, start)?;
+            let max = read_bracket(cursor, start, Counted::Bytes)?;
             return Ok(WrittenType::Bytes { max });
         }
         "enum" | "record" => {
@@ -842,8 +953,27 @@ fn read_element(
     Ok(elem)
 }
 
+/// What the bracket of a type counts: a list's elements, which it bounds from
+/// below and above, or a text's or a byte string's bytes, which it bounds from
+/// above only (docs/adr/0086, section 15.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Counted {
+    Elements,
+    Bytes,
+}
+
 /// The bracket after a type that takes one, or `None` when none is written.
-fn read_bracket(cursor: &mut Cursor<'_>, start: usize) -> Result<Option<Bound>, TypeRefusal> {
+///
+/// A list's bracket may write its lower count before `..` (`[3..8]`,
+/// `[3..name=8]`): a whole number of zero or more, at most the bound written.
+/// A text before `..` that is no such number is read as the bracket always
+/// was, so a limit name that holds `..` keeps its reading and a negative count
+/// is refused as a malformed bound.
+fn read_bracket(
+    cursor: &mut Cursor<'_>,
+    start: usize,
+    counted: Counted,
+) -> Result<Option<Bound>, TypeRefusal> {
     let before = cursor.pos;
     if !cursor.eat('[') {
         cursor.pos = before;
@@ -863,14 +993,25 @@ fn read_bracket(cursor: &mut Cursor<'_>, start: usize) -> Result<Option<Bound>, 
         place: place.clone(),
         written: inside.to_string(),
     };
-    let number = |text: &str| {
+    let digits = |text: &str| {
         let text = text.trim();
-        if text.is_empty() || !text.chars().all(|c| c.is_ascii_digit()) {
-            return None;
-        }
-        text.parse::<u32>().ok().filter(|n| *n > 0)
+        !text.is_empty() && text.chars().all(|c| c.is_ascii_digit())
     };
-    match inside.split_once('=') {
+    let whole = |text: &str| {
+        if digits(text) {
+            text.trim().parse::<u32>().ok()
+        } else {
+            None
+        }
+    };
+    let number = |text: &str| whole(text).filter(|n| *n > 0);
+    // The lower count, where the text before `..` is written in digits; one
+    // past 32 bits is a malformed bound.
+    let (least, upper) = match inside.split_once("..") {
+        Some((lower, upper)) if digits(lower) => (Some(whole(lower).ok_or_else(refused)?), upper),
+        _ => (None, inside),
+    };
+    let bound = match upper.split_once('=') {
         Some((name, value)) => {
             let name = name.trim();
             let starts_well = name
@@ -881,10 +1022,27 @@ fn read_bracket(cursor: &mut Cursor<'_>, start: usize) -> Result<Option<Bound>, 
                 return Err(refused());
             }
             let max = number(value).ok_or_else(refused)?;
-            Ok(Some(Bound::named(name, max)))
+            Bound::named(name, max)
         }
-        None => Ok(Some(Bound::of(number(inside).ok_or_else(refused)?))),
+        None => Bound::of(number(upper).ok_or_else(refused)?),
+    };
+    let Some(least) = least else {
+        return Ok(Some(bound));
+    };
+    if counted == Counted::Bytes {
+        return Err(TypeRefusal::CountMisplaced {
+            place: cursor.since(start),
+            why: CountPlace::Length,
+        });
     }
+    if least > bound.max {
+        return Err(TypeRefusal::CountPastBound {
+            place: cursor.since(start),
+            least,
+            most: bound.max,
+        });
+    }
+    Ok(Some(bound.at_least(least)))
 }
 
 // ── The narrowing onto the shapes a position lowers ─────────────────────────
@@ -2733,6 +2891,9 @@ pub enum MisfitReason {
     /// The value's text, byte string or list may be longer than the place
     /// expected holds.
     Bound,
+    /// The value's list may hold fewer elements than the lower count of the
+    /// place expected (docs/adr/0086, section 15.6).
+    LowerCount,
     /// The value may be absent and the place expected may not.
     MayBeAbsent,
     /// Two records, or two enums, of different documents.
@@ -2751,6 +2912,10 @@ impl Misfit {
             ),
             MisfitReason::Bound => format!(
                 "'{place}' is a {}, which may hold more than the {} expected there",
+                self.from, self.to
+            ),
+            MisfitReason::LowerCount => format!(
+                "'{place}' is a {}, which may hold fewer than the {} expected there",
                 self.from, self.to
             ),
             MisfitReason::MayBeAbsent => format!(
@@ -2823,10 +2988,12 @@ fn fits_at(
         }
         (ValueType::List { elem: s, max: a }, ValueType::List { elem: t, max: b }) => {
             fits_at(s, t, identity, &format!("{path}/*"))?;
-            if a.max <= b.max {
-                Ok(())
-            } else {
+            if a.max > b.max {
                 Err(misfit(MisfitReason::Bound))
+            } else if a.min < b.min {
+                Err(misfit(MisfitReason::LowerCount))
+            } else {
+                Ok(())
             }
         }
         (ValueType::Optional { elem: s }, ValueType::Optional { elem: t }) => {
@@ -3226,6 +3393,155 @@ mod tests {
         assert!(malformed("list<int64>[3]>"));
     }
 
+    /// A list states its lower count before `..` in its one bracket
+    /// (docs/adr/0086, section 15.2), a named bound after it, at any depth; a
+    /// lower count of zero is the list that states none, and is not printed.
+    #[test]
+    fn a_list_states_its_lower_count_beside_its_bound() {
+        let read = |text: &str| WrittenType::read(text).unwrap().bounded().unwrap();
+        let ValueType::List { max, .. } = read("list<uint8>[3..8]") else {
+            panic!("a list");
+        };
+        assert_eq!(max, Bound::of(8).at_least(3));
+        assert_eq!(read("list<uint8>[3..8]").to_string(), "list<uint8>[3..8]");
+        assert_eq!(
+            read("list<uint8>[ 3 .. 8 ]").to_string(),
+            "list<uint8>[3..8]"
+        );
+        // `[M..M]`: exactly M.
+        assert_eq!(read("list<uint8>[2..2]").to_string(), "list<uint8>[2..2]");
+        assert_eq!(read("list<uint8>[0..8]"), read("list<uint8>[8]"));
+        assert_eq!(read("list<uint8>[0..8]").to_string(), "list<uint8>[8]");
+        assert_ne!(read("list<uint8>[1..8]"), read("list<uint8>[8]"));
+        let ValueType::List { max, .. } = read("list<record:Op>[1..shared_parts=64]") else {
+            panic!("a list");
+        };
+        assert_eq!(max, Bound::named("shared_parts", 64).at_least(1));
+        assert_eq!(
+            read("list<record:Op>[1..shared_parts=64]").to_string(),
+            "list<record:Op>[1..shared_parts=64]"
+        );
+        assert_eq!(
+            read("list<list<string[8]>[1..4]>[2..3]").to_string(),
+            "list<list<string[8]>[1..4]>[2..3]"
+        );
+        // A limit name that holds `..` keeps the reading it had.
+        assert_eq!(
+            read("list<uint8>[a..b=4]"),
+            ValueType::List {
+                elem: Box::new(ValueType::Scalar(SceType::Uint8)),
+                max: Bound::named("a..b", 4),
+            }
+        );
+    }
+
+    /// Each lower count that leaves no type, or that no reader reads in a
+    /// bracket, is refused as what it breaks (docs/adr/0086, section 15.2).
+    #[test]
+    fn an_ill_formed_lower_count_is_refused_by_what_it_breaks() {
+        for text in [
+            "list<uint8>[4..3]",
+            "list<uint8>[9..n=8]",
+            "list<list<uint8>[3..2]>[4]",
+        ] {
+            assert!(
+                matches!(
+                    WrittenType::read(text),
+                    Err(TypeRefusal::CountPastBound { .. })
+                ),
+                "{text}: {:?}",
+                WrittenType::read(text)
+            );
+        }
+        assert_eq!(
+            WrittenType::read("list<uint8>[4..3]"),
+            Err(TypeRefusal::CountPastBound {
+                place: "list<uint8>[4..3]".into(),
+                least: 4,
+                most: 3,
+            })
+        );
+        for inside in [
+            "-1..3",
+            "..3",
+            "3..",
+            "x..3",
+            "3..0",
+            "4294967296..4294967295",
+            "1..2..3",
+        ] {
+            let text = format!("list<uint8>[{inside}]");
+            assert!(
+                matches!(WrittenType::read(&text), Err(TypeRefusal::BadBound { .. })),
+                "{text}: {:?}",
+                WrittenType::read(&text)
+            );
+        }
+        for text in ["string[1..8]", "bytes[0..4]", "list<string[1..8]>[3]"] {
+            assert!(
+                matches!(
+                    WrittenType::read(text),
+                    Err(TypeRefusal::CountMisplaced {
+                        why: CountPlace::Length,
+                        ..
+                    })
+                ),
+                "{text}: {:?}",
+                WrittenType::read(text)
+            );
+        }
+        assert!(matches!(
+            WrittenType::read("uint8[1..2]"),
+            Err(TypeRefusal::BoundOnUnboundable { .. })
+        ));
+    }
+
+    /// A build that moves a named bound below the lower count leaves a type
+    /// with no value, refused where every bound is required; the lower count
+    /// itself no build moves (docs/adr/0086, section 15.2).
+    #[test]
+    fn a_limit_moved_below_the_lower_count_leaves_no_type() {
+        let written = WrittenType::read("list<uint8>[3..n=8]").unwrap();
+        let moved = written.clone().resolve_limits(&mut |_, _| 5);
+        assert_eq!(moved.to_string(), "list<uint8>[3..n=5]");
+        assert!(moved.bounded().is_ok());
+        let below = written.resolve_limits(&mut |_, _| 2);
+        assert_eq!(
+            below.bounded(),
+            Err(TypeRefusal::CountPastBound {
+                place: "list<uint8>[3..n=2]".into(),
+                least: 3,
+                most: 2,
+            })
+        );
+    }
+
+    /// A place filled an element at a time finds the outermost lower count
+    /// its own type states, at any depth (docs/adr/0086, section 15.7).
+    #[test]
+    fn a_lower_count_in_a_built_place_is_found_at_any_depth() {
+        let found = |text: &str| WrittenType::read(text).unwrap().lower_count_inside();
+        assert_eq!(found("list<uint8>[8]"), None);
+        assert_eq!(found("list<uint8>[0..8]"), None);
+        assert_eq!(found("optional<list<uint8>[8]>"), None);
+        assert_eq!(
+            found("list<uint8>[1..8]"),
+            Some(TypeRefusal::CountMisplaced {
+                place: "list<uint8>[1..8]".into(),
+                why: CountPlace::Built,
+            })
+        );
+        assert_eq!(
+            found("optional<list<list<uint8>[2..3]>[4]>"),
+            Some(TypeRefusal::CountMisplaced {
+                place: "list<uint8>[2..3]".into(),
+                why: CountPlace::Built,
+            })
+        );
+        // A list with no bracket, a parameter's, states no lower count.
+        assert_eq!(found("list<uint8>"), None);
+    }
+
     #[test]
     fn the_aliases_a_type_names_are_found_at_every_depth() {
         let written = WrittenType::read("list<optional<list<record:Item>[2]>>[3]").unwrap();
@@ -3330,6 +3646,16 @@ mod tests {
         assert_eq!(
             json("list<list<string[8]>[4]>[3]"),
             serde_json::json!({"list": {"list": {"string": 8}, "max": 4}, "max": 3})
+        );
+        // A lower count stands beside the bound, and one of zero is not
+        // written (docs/adr/0086, section 15.3).
+        assert_eq!(
+            json("list<list<uint8>[1..4]>[2..n=3]"),
+            serde_json::json!({"list": {"list": "uint8", "max": 4, "min": 1}, "max": 3, "min": 2})
+        );
+        assert_eq!(
+            json("list<uint8>[0..3]"),
+            serde_json::json!({"list": "uint8", "max": 3})
         );
     }
 
@@ -4046,7 +4372,7 @@ mod tests {
     /// record or an enum one value of its document, a text or a byte string one
     /// value per length, an absent optional `null` beside the values of its
     /// element (the wire spells a present one as its element), and a list every
-    /// sequence of values of its element up to its bound.
+    /// sequence of values of its element from its lower count up to its bound.
     fn values_of(t: &ValueType) -> BTreeSet<String> {
         match t {
             ValueType::Scalar(SceType::Enum(r)) => {
@@ -4064,8 +4390,11 @@ mod tests {
             ValueType::List { elem, max } => {
                 let elems: Vec<String> = values_of(elem).into_iter().collect();
                 let mut sequences: Vec<Vec<String>> = vec![Vec::new()];
-                let mut out: BTreeSet<String> = ["[]".to_string()].into();
-                for _ in 0..max.max {
+                let mut out: BTreeSet<String> = BTreeSet::new();
+                if max.min == 0 {
+                    out.insert("[]".to_string());
+                }
+                for length in 1..=max.max {
                     sequences = sequences
                         .iter()
                         .flat_map(|seq| {
@@ -4076,7 +4405,9 @@ mod tests {
                             })
                         })
                         .collect();
-                    out.extend(sequences.iter().map(|seq| format!("[{}]", seq.join(","))));
+                    if length >= max.min {
+                        out.extend(sequences.iter().map(|seq| format!("[{}]", seq.join(","))));
+                    }
                 }
                 out
             }
@@ -4189,6 +4520,57 @@ mod tests {
             fits(
                 &ty("list<record:R2>[2]"),
                 &ty("optional<list<record:R>[3]>"),
+                &Documents
+            ),
+            Ok(())
+        );
+    }
+
+    /// A list's lower count is part of the relation (docs/adr/0086, section
+    /// 15.6): over lists that state one and lists that do not, a type fits
+    /// another exactly when every value of it is a value of the other, and a
+    /// list that may hold fewer than the place's lower count is refused as
+    /// that.
+    #[test]
+    fn a_lower_count_fits_a_place_that_needs_no_more() {
+        let mut universe: Vec<String> = Vec::new();
+        for leaf in ["uint8", "bool"] {
+            for bracket in ["[1]", "[2]", "[1..1]", "[1..2]", "[2..2]", "[0..2]"] {
+                universe.push(format!("list<{leaf}>{bracket}"));
+                universe.push(format!("optional<list<{leaf}>{bracket}>"));
+            }
+        }
+        universe.push("list<list<uint8>[1..2]>[2]".into());
+        universe.push("list<list<uint8>[2]>[2]".into());
+        let mut reasons = BTreeSet::new();
+        for from_text in &universe {
+            for to_text in &universe {
+                let (from, to) = (ty(from_text), ty(to_text));
+                let oracle = values_of(&from).is_subset(&values_of(&to));
+                match fits(&from, &to, &Documents) {
+                    Ok(()) => assert!(oracle, "{from_text} fits {to_text}"),
+                    Err(misfit) => {
+                        assert!(!oracle, "{from_text} does not fit {to_text}: {misfit:?}");
+                        reasons.insert(format!("{:?}", misfit.why));
+                    }
+                }
+            }
+        }
+        assert!(reasons.contains("LowerCount"), "{reasons:?}");
+        let refused = |from: &str, to: &str| fits(&ty(from), &ty(to), &Documents).unwrap_err();
+        let at = refused("list<uint8>[3]", "list<uint8>[1..3]");
+        assert_eq!((at.path.as_str(), at.why), ("", MisfitReason::LowerCount));
+        assert_eq!(
+            at.sentence("items"),
+            "'items' is a list<uint8>[3], which may hold fewer than the list<uint8>[1..3] \
+             expected there"
+        );
+        let at = refused("list<list<uint8>[2]>[2]", "list<list<uint8>[1..2]>[2]");
+        assert_eq!((at.path.as_str(), at.why), ("/*", MisfitReason::LowerCount));
+        assert_eq!(
+            fits(
+                &ty("list<uint8>[2..3]"),
+                &ty("list<uint8>[1..4]"),
                 &Documents
             ),
             Ok(())

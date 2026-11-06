@@ -85,7 +85,8 @@ fn with_page_bound(
         return Ok(ty);
     };
     let shape = ty.as_attr();
-    ty.with_outer_bound(crate::forge::value_type::Bound { max, limit })
+    // A slot's bound states no lower count (docs/adr/0086, section 15.7).
+    ty.with_outer_bound(crate::forge::value_type::Bound { max, limit, min: 0 })
         .map_err(|_| ParseError {
             line,
             why: format!("`{shape}` has no length for a bound of {max} to bound"),

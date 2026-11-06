@@ -618,6 +618,36 @@ pub fn composed_parting(
     }
 }
 
+/// Whether two declarations of one field, each handed with the revision of the
+/// schema that declares it, declare one type across the two revisions as far
+/// as a list's lower count goes (docs/adr/0086, section 15.12): alike at every
+/// depth, every bound alike, but for a list's lower count, which the later
+/// revision may lower (a widening, as `T` to `optional<T>` is, docs/adr/0055
+/// section 6) and may not raise, since a value an older sender wrote may then
+/// be refused. Two declarations of one revision state one lower count. The
+/// rule is symmetric: which of the two is handed first does not matter.
+///
+/// No build judges two revisions of a schema that holds a list between two
+/// machines yet ([`composed_parting`], docs/adr/0086 section 5.2); this is the
+/// rule such a judgement holds a list's type to.
+pub fn list_count_revises(one: (&ValueType, u32), other: (&ValueType, u32)) -> bool {
+    fn revises(earlier: &ValueType, later: &ValueType) -> bool {
+        match (earlier, later) {
+            (ValueType::List { elem: e, max: a }, ValueType::List { elem: l, max: b }) => {
+                a.max == b.max && a.limit == b.limit && b.min <= a.min && revises(e, l)
+            }
+            (ValueType::Optional { elem: e }, ValueType::Optional { elem: l }) => revises(e, l),
+            _ => earlier == later,
+        }
+    }
+    let ((one, one_revision), (other, other_revision)) = (one, other);
+    match one_revision.cmp(&other_revision) {
+        std::cmp::Ordering::Equal => one == other,
+        std::cmp::Ordering::Less => revises(one, other),
+        std::cmp::Ordering::Greater => revises(other, one),
+    }
+}
+
 /// An enum document as a saved state and the Mesh check name it
 /// (docs/adr/0044): by the document, as every reader of an enum identifies it
 /// ([`crate::forge::stdlib::identity`]), not by the alias one document imports
@@ -1059,6 +1089,58 @@ mod tests {
                 from: Party::First,
             }
         );
+    }
+
+    /// A later revision may lower a list's lower count, at any depth, and may
+    /// not raise it, change the bound or change the element; one revision
+    /// states one lower count (docs/adr/0086, section 15.12).
+    #[test]
+    fn a_later_revision_lowers_a_lower_count_and_never_raises_it() {
+        let ty = |text: &str| {
+            crate::forge::value_type::WrittenType::read(text)
+                .unwrap()
+                .bounded()
+                .unwrap()
+        };
+        let one = |a: &str, ra: u32, b: &str, rb: u32| {
+            let (a, b) = (ty(a), ty(b));
+            let forward = list_count_revises((&a, ra), (&b, rb));
+            assert_eq!(
+                forward,
+                list_count_revises((&b, rb), (&a, ra)),
+                "the rule is symmetric"
+            );
+            forward
+        };
+        assert!(one("list<uint8>[1..3]", 1, "list<uint8>[1..3]", 1));
+        assert!(one("list<uint8>[2..3]", 1, "list<uint8>[1..3]", 2));
+        assert!(one("list<uint8>[2..3]", 1, "list<uint8>[3]", 3));
+        assert!(one(
+            "list<list<uint8>[2..3]>[2]",
+            1,
+            "list<list<uint8>[3]>[2]",
+            2
+        ));
+        assert!(one(
+            "optional<list<uint8>[1..3]>",
+            2,
+            "optional<list<uint8>[3]>",
+            4
+        ));
+        // Raised: an older sender's value may be refused.
+        assert!(!one("list<uint8>[1..3]", 1, "list<uint8>[2..3]", 2));
+        assert!(!one("list<uint8>[3]", 1, "list<uint8>[1..3]", 2));
+        assert!(!one(
+            "list<list<uint8>[3]>[2]",
+            1,
+            "list<list<uint8>[1..3]>[2]",
+            2
+        ));
+        // One revision, two lower counts.
+        assert!(!one("list<uint8>[1..3]", 2, "list<uint8>[3]", 2));
+        // Every other change of the type is still no revision.
+        assert!(!one("list<uint8>[3]", 1, "list<uint8>[4]", 2));
+        assert!(!one("list<uint8>[3]", 1, "list<uint16>[3]", 2));
     }
 
     #[test]

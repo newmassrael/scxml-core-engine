@@ -1150,9 +1150,11 @@ fn render_stmt(stmt: &AlgorithmStmt, out: &mut Out<'_>) {
             // The shape and the bound are two clauses of the page, as a return's
             // are; the reader folds the bound back into the type.
             let cap = match sce_type.stated_outer_bound() {
+                // A local states no lower count (docs/adr/0086, section 15.7).
                 Some(crate::forge::value_type::Bound {
                     max,
                     limit: Some(name),
+                    ..
                 }) => format!(" cap {max} limit {}", text(name)),
                 Some(bound) => format!(" cap {}", bound.max),
                 None => String::new(),

@@ -7405,6 +7405,11 @@
               "format": "uint32",
               "minimum": 1.0,
               "type": "integer"
+            },
+            "min": {
+              "format": "uint32",
+              "minimum": 1.0,
+              "type": "integer"
             }
           },
           "required": [
@@ -7633,6 +7638,11 @@
               "$ref": "#/definitions/WrittenType"
             },
             "max": {
+              "format": "uint32",
+              "minimum": 1.0,
+              "type": "integer"
+            },
+            "min": {
               "format": "uint32",
               "minimum": 1.0,
               "type": "integer"

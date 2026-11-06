@@ -12,7 +12,9 @@ use crate::forge::error::{
 };
 use crate::forge::expression_site::{ExpressionSite, WrittenAt};
 use crate::forge::model::*;
-use crate::forge::value_type::{Bound, Composition, TypeRefusal, ValueType, WrittenType};
+use crate::forge::value_type::{
+    Bound, Composition, CountPlace, TypeRefusal, ValueType, WrittenType,
+};
 use crate::read_ledger;
 use crate::DocumentLabel;
 
@@ -11809,7 +11811,23 @@ fn read_field_revision(
         // is what absent means, and it reads absent (docs/adr/0055, section 4).
         (Some(_), None) if matches!(field.sce_type, ValueType::Optional { .. }) => {}
         // A list a later revision added reads empty from an earlier delivery, the
-        // one value meaning the sender said nothing (docs/adr/0086, section 10.2).
+        // one value meaning the sender said nothing (docs/adr/0086, section 10.2),
+        // which a lower count would refuse: such a list states none (section
+        // 15.8).
+        (Some(_), None) if matches!(&field.sce_type, ValueType::List { max, .. } if max.min > 0) => {
+            let text = sce_attr(data, "type").unwrap_or_default();
+            return Err(type_rule_refusal(
+                data,
+                doc_name,
+                &element,
+                "sce:type",
+                &text,
+                &TypeRefusal::CountMisplaced {
+                    place: field.sce_type.to_string(),
+                    why: CountPlace::Added,
+                },
+            ));
+        }
         (Some(_), None) if matches!(field.sce_type, ValueType::List { .. }) => {}
         // A record has no literal a delivery that lacks it could take: one a later
         // revision adds is an optional record, which reads absent.
@@ -12669,9 +12687,11 @@ fn fold_legacy_bound(
     let Some(legacy) = legacy else {
         return Ok((resolve(written), None));
     };
+    // A legacy attribute states no lower count (docs/adr/0086, section 15.2).
     let bound = Bound {
         max: legacy.max,
         limit: legacy.limit.clone(),
+        min: 0,
     };
     match written.clone().with_outer_bound(bound) {
         Ok(folded) => Ok((resolve(folded), None)),
@@ -12809,6 +12829,13 @@ pub(crate) fn read_static_variable_type(
             data, doc_name, element, "sce:type", text, &refusal,
         ));
     }
+    // A variable starts empty and is filled an element at a time, so its own
+    // type states no lower count (docs/adr/0086, section 15.7).
+    if let Some(refusal) = written.lower_count_inside() {
+        return Err(type_rule_refusal(
+            data, doc_name, element, "sce:type", text, &refusal,
+        ));
+    }
     Ok(written)
 }
 
@@ -12870,6 +12897,13 @@ fn read_algorithm_slot_type(
     };
     let (written, _) = fold_legacy_bound(node, doc_name, element, ("type", text), written, legacy)?;
     if let Some(refusal) = written.unbounded_inside() {
+        return Err(type_rule_refusal(
+            node, doc_name, element, "type", text, &refusal,
+        ));
+    }
+    // A slot starts empty, or views its argument, and is filled an element at
+    // a time: its own type states no lower count (docs/adr/0086, section 15.7).
+    if let Some(refusal) = written.lower_count_inside() {
         return Err(type_rule_refusal(
             node, doc_name, element, "type", text, &refusal,
         ));
