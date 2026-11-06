@@ -46,7 +46,11 @@ class PayloadRefusalTest {
                 type.containsKey("optional") -> v.optional { read(type["optional"], it) }
                 type.containsKey("string") -> v.string(bound(type["string"]))
                 type.containsKey("bytes") -> v.bytes(bound(type["bytes"]))
-                type.containsKey("list") -> v.list(bound(type["max"])) { read(type["list"], it) }
+                // The lower count, where the case states one (docs/adr/0086, section 15).
+                type.containsKey("list") -> v.listWithin(
+                    if (type.containsKey("min")) bound(type["min"]) else 0,
+                    bound(type["max"]),
+                ) { read(type["list"], it) }
                 type.containsKey("record") -> v.record { fields ->
                     for ((id, field) in type["record"] as Map<*, *>) {
                         read(field, fields.field(id as String))

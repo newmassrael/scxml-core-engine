@@ -973,6 +973,17 @@ func (v PayloadValue) pastBytes(held, bound int) error {
 // The bound is held before any element is read: an array longer than bound is
 // refused whole, and no element of it is decoded (ADR 0077, section 2).
 func ReadList[T any](v PayloadValue, bound int, read func(PayloadValue) (T, error)) ([]T, error) {
+	return ReadListWithin(v, 0, bound, read)
+}
+
+// ReadListWithin reads a value of `list<T>[least..bound]`: an array of at least
+// least and at most bound elements (docs/adr/0086, section 15), each read by
+// read at the path of its index, in order.
+//
+// Both counts are held before any element is read: an array longer than bound
+// is refused as RefusalTooMany, one shorter than least as RefusalTooFew naming
+// least, and no element of either is decoded.
+func ReadListWithin[T any](v PayloadValue, least, bound int, read func(PayloadValue) (T, error)) ([]T, error) {
 	items, ok := v.value.([]any)
 	if !ok {
 		return nil, v.wrongKind("is not a list")
@@ -980,6 +991,9 @@ func ReadList[T any](v PayloadValue, bound int, read func(PayloadValue) (T, erro
 	if len(items) > bound {
 		return nil, v.refuse(RefusalTooMany,
 			fmt.Sprintf("holds %d elements, past the %d its type declares", len(items), bound)).withBound(bound)
+	}
+	if len(items) < least {
+		return nil, v.refuse(RefusalTooFew, countShort(len(items), least)).withBound(least)
 	}
 	out := make([]T, 0, len(items))
 	for index, item := range items {
@@ -1252,8 +1266,25 @@ func CheckBytes(path string, value []byte, bound int) error {
 // CheckList holds a list a host built to its bound, and each element to its
 // own type through each, at the path of its index (see CheckText).
 func CheckList[T any](path string, items []T, bound int, each func(string, T) error) error {
+	return CheckListWithin(path, items, 0, bound, each)
+}
+
+// countShort is why a list of held elements is no value of a type whose lower
+// count is least, in the words the reader and the check both use.
+func countShort(held, least int) string {
+	return fmt.Sprintf("holds %d elements, fewer than the %d its type declares", held, least)
+}
+
+// CheckListWithin holds a list a host or a machine built to its lower count and
+// its bound (docs/adr/0086, section 15.6), and each element to its own type
+// through each, at the path of its index (see CheckText): a list is built from
+// empty an element at a time, so its lower count is held where it is written.
+func CheckListWithin[T any](path string, items []T, least, bound int, each func(string, T) error) error {
 	if len(items) > bound {
 		return fmt.Errorf("'%s' holds %d elements, past the %d its type declares", path, len(items), bound)
+	}
+	if len(items) < least {
+		return fmt.Errorf("'%s' %s", path, countShort(len(items), least))
 	}
 	for index, item := range items {
 		if err := each(joinPath(path, strconv.Itoa(index)), item); err != nil {

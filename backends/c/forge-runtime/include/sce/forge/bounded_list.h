@@ -16,7 +16,10 @@
  *
  * A value a host built is held to its bound before a send encodes it: `<name>_within`
  * answers whether the list holds no more than `N`, and the encode of a composition
- * asks it of every list at every depth (docs/adr/0086, section 5.4). `<name>_push`
+ * asks it of every list at every depth (docs/adr/0086, section 5.4). A lower count is
+ * no part of the layout, so lists of one bound and of any lower count are one type:
+ * `<name>_holds_at_least` answers whether the list holds a place's lower count, which
+ * an encode asks where the build did not prove it (section 15.6). `<name>_push`
  * appends, refusing the element once the list is full and leaving the list as it was.
  *
  * Header-only, with no allocator: freestanding `<stdbool.h>` and `<stdint.h>` only.
@@ -32,7 +35,7 @@ extern "C" {
 #endif
 
 /* The list of at most `bound` values of the type `T`, named `<name>_t`, with
- * `<name>_within` and `<name>_push`. It takes the name already joined, as
+ * `<name>_within`, `<name>_holds_at_least` and `<name>_push`. It takes the name already joined, as
  * `SCE_OPTIONAL_DECLARE_NAMED` does, so that an element named by a macro (`bool`)
  * is never expanded on the way. */
 #define SCE_FORGE_BOUNDED_LIST_DECLARE(name, T, bound)                                                                 \
@@ -44,6 +47,12 @@ extern "C" {
     /* Whether the list holds no more than its bound: what an encode asks of a value a host built. */                  \
     static inline bool name##_within(const name##_t *list) {                                                           \
         return list->len <= (uint32_t)(bound);                                                                         \
+    }                                                                                                                  \
+                                                                                                                       \
+    /* Whether the list holds at least `least` elements: what an encode asks of a value written into a place whose     \
+       type states a lower count, which one type of every lower count shares (docs/adr/0086, section 15.6). */         \
+    static inline bool name##_holds_at_least(const name##_t *list, uint32_t least) {                                   \
+        return list->len >= least;                                                                                     \
     }                                                                                                                  \
                                                                                                                        \
     /* Append `value`, refused once the list holds its bound; the list is then as it was. */                           \

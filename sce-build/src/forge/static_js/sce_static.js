@@ -638,8 +638,9 @@
 
   /* What a type descriptor describes. A scalar is named by its type, an enum by
      the array of its names, and a composed type by an object with one key that
-     names its constructor: {optional: T}, {list: T, max: B}, {record: {id: T,
-     ...}, defaults: {...}}, {string: B}, {bytes: B} (docs/adr/0086, section 4.3). */
+     names its constructor: {optional: T}, {list: T, max: B}, with min: M beside
+     a list that states a lower count, {record: {id: T, ...}, defaults: {...}},
+     {string: B}, {bytes: B} (docs/adr/0086, sections 4.3 and 15). */
   function kindOf(type) {
     if (Array.isArray(type)) {
       return 'enum';
@@ -684,6 +685,11 @@
       }
       if (value.length > type.max) {
         refuse('tooMany', pointer, where + 'holds ' + String(value.length) + ' elements, past the ' + String(type.max) + ' its type declares', type.max);
+      }
+      /* A lower count, where the type states one (docs/adr/0086, section 15),
+         held before any element is read as the bound is. */
+      if (type.min !== undefined && value.length < type.min) {
+        refuse('tooFew', pointer, where + 'holds ' + String(value.length) + ' elements, fewer than the ' + String(type.min) + ' its type declares', type.min);
       }
       return value.map(function (item, index) { return readValue(item, type.list, below(path, index), pointerBelow(pointer, index)); });
     }

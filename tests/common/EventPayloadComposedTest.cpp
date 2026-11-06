@@ -638,6 +638,47 @@ TEST(EventPayloadComposed, AListPastItsBoundIsRefusedBeforeAnElementIsRead) {
     EXPECT_EQ(open.pointer(), "");
 }
 
+// A list short of its lower count is refused as tooFew, naming the count, before an
+// element is read (docs/adr/0086, section 15.5).
+TEST(EventPayloadComposed, AListShortOfItsLowerCountIsRefusedBeforeAnElementIsRead) {
+    const std::string wire = R"({"v": ["x"], "w": [1, 2], "e": []})";
+    EventPayloadFields fields;
+    ASSERT_EQ(EventPayloadFields::decode(wire, fields), "");
+    EventPayloadValue v;
+    ASSERT_EQ(fields.value("v", v), "");
+    int asked = 0;
+    std::vector<uint8_t> out;
+    const Refusal shortList = v.readListWithin(2, 3, out, [&](const EventPayloadValue &e, uint8_t &into) {
+        ++asked;
+        return e.readInteger(into);
+    });
+    EXPECT_EQ(shortList.reason(), "'v' holds 1 elements, fewer than the 2 its type declares");
+    EXPECT_EQ(shortList.code(), RefusalCode::TooFew);
+    EXPECT_EQ(shortList.pointer(), "/v");
+    EXPECT_EQ(shortList.bound(), std::optional<uint32_t>(2u));
+    EXPECT_EQ(asked, 0) << "no element was read before the count was held";
+    ASSERT_EQ(fields.value("w", v), "");
+    EXPECT_EQ(
+        v.readListWithin(2, 3, out, [](const EventPayloadValue &e, uint8_t &into) { return e.readInteger(into); }), "");
+    EXPECT_EQ(out.size(), 2u);
+    ASSERT_EQ(fields.value("e", v), "");
+    EXPECT_EQ(v.readListWithin(1, 3, out, [](const EventPayloadValue &e, uint8_t &into) { return e.readInteger(into); })
+                  .code(),
+              RefusalCode::TooFew);
+    EXPECT_EQ(v.readList(3, out, [](const EventPayloadValue &e, uint8_t &into) { return e.readInteger(into); }), "");
+}
+
+// The raise's check refuses a list short of the place's lower count, the path in front
+// (docs/adr/0086, section 15.6).
+TEST(EventPayloadComposed, AListWrittenShortOfItsLowerCountIsRefused) {
+    const auto none = [](const std::string &, int) { return std::string{}; };
+    EXPECT_EQ(EventPayloadBounds::listWithin("items", std::vector<int>{1, 2}, 2, 3, none), "");
+    EXPECT_EQ(EventPayloadBounds::listWithin("items/1/tags", std::vector<int>{}, 1, 3, none),
+              "'items/1/tags' holds 0 elements, fewer than the 1 its type declares");
+    EXPECT_EQ(EventPayloadBounds::listWithin("items", std::vector<int>{1, 2, 3, 4}, 2, 3, none),
+              "'items' holds 4 elements, past the 3 its type declares");
+}
+
 TEST(EventPayloadComposed, ARecordValueNamesItsMissingFieldAndReadsItsLaterFieldsFromDefaults) {
     const std::string wire = R"({"r": {"a": 1, "zz": [null]}, "s": 5})";
     EventPayloadFields fields;

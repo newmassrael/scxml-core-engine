@@ -10,6 +10,8 @@
 #
 #   a text, byte string or list one past the bound expected is let through;
 #   a list of equal bounds is refused, as if the bound were a strict one;
+#   a list one short of the lower count expected is let through (docs/adr/0086,
+#   section 15.6);
 #   a list's elements are not judged;
 #   a value that may be absent is let through where one may not;
 #   two records of different documents are one record.
@@ -29,8 +31,14 @@ PY
 
 mutation_case "a list of equal bounds is refused" <<'PY'
 edit("sce-build/src/forge/value_type.rs",
-     "            fits_at(s, t, identity, &format!(\"{path}/*\"))?;\n            if a.max <= b.max {",
-     "            fits_at(s, t, identity, &format!(\"{path}/*\"))?;\n            if a.max < b.max {")
+     "            fits_at(s, t, identity, &format!(\"{path}/*\"))?;\n            if a.max > b.max {",
+     "            fits_at(s, t, identity, &format!(\"{path}/*\"))?;\n            if a.max >= b.max {")
+PY
+
+mutation_case "a list one short of the lower count expected is let through" <<'PY'
+edit("sce-build/src/forge/value_type.rs",
+     "            } else if a.min < b.min {",
+     "            } else if a.min + 1 < b.min {")
 PY
 
 mutation_case "a list's elements are not judged" <<'PY'

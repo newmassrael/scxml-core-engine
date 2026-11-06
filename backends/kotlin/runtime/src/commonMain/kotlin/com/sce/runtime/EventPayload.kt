@@ -399,7 +399,19 @@ object EventPayload {
          * [bound] is refused whole, and no element of it is decoded (ADR 0077,
          * section 2).
          */
-        fun <T> list(bound: Int, read: (Value) -> T): List<T> {
+        fun <T> list(bound: Int, read: (Value) -> T): List<T> = listWithin(0, bound, read)
+
+        /**
+         * A value of `list<T>[least..bound]`: an array of at least [least] and at
+         * most [bound] elements (docs/adr/0086, section 15), each read by [read]
+         * at the path of its index, in order.
+         *
+         * Both counts are held before any element is read: an array longer than
+         * [bound] is refused as [RefusalCode.TOO_MANY], one shorter than [least]
+         * as [RefusalCode.TOO_FEW] naming [least], and no element of either is
+         * decoded.
+         */
+        fun <T> listWithin(least: Int, bound: Int, read: (Value) -> T): List<T> {
             if (raw !is List<*>) {
                 throw wrongKind("is not a list")
             }
@@ -409,6 +421,9 @@ object EventPayload {
                     "holds ${raw.size} elements, past the $bound its type declares",
                     bound,
                 )
+            }
+            if (raw.size < least) {
+                throw refuse(RefusalCode.TOO_FEW, ValueBounds.countShort(raw.size, least), least)
             }
             return raw.mapIndexed { index, item ->
                 val token = index.toString()
@@ -820,11 +835,27 @@ object ValueBounds {
 
     /** A list of at most [bound] elements, each held to its own type by [each] at the path of its index. */
     fun <T> list(path: String, value: List<T>, bound: Int, each: (String, T) -> Unit) {
+        listWithin(path, value, 0, bound, each)
+    }
+
+    /**
+     * A list of at least [least] and at most [bound] elements (docs/adr/0086, section 15.6),
+     * each held to its own type by [each] at the path of its index: a list is built from empty
+     * an element at a time, so its lower count is held where it is written.
+     */
+    fun <T> listWithin(path: String, value: List<T>, least: Int, bound: Int, each: (String, T) -> Unit) {
         if (value.size > bound) {
             throw BoundExceeded("'$path' holds ${value.size} elements, past the $bound its type declares")
         }
+        if (value.size < least) {
+            throw BoundExceeded("'$path' ${countShort(value.size, least)}")
+        }
         value.forEachIndexed { index, item -> each("$path/$index", item) }
     }
+
+    /** Why a list of [held] elements is no value of a type whose lower count is [least]. */
+    internal fun countShort(held: Int, least: Int): String =
+        "holds $held elements, fewer than the $least its type declares"
 
     /** An optional value, held to its type by [present] where it is present. */
     fun <T : Any> optional(path: String, value: T?, present: (String, T) -> Unit) {

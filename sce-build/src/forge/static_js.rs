@@ -1993,6 +1993,8 @@ mod tests {
         for part in [
             "type.list",
             "type.max",
+            // A list's lower count (docs/adr/0086, section 15).
+            "type.min",
             "type.record",
             "type.defaults",
             "type.string",

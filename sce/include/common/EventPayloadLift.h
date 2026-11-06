@@ -155,6 +155,15 @@ namespace detail {
  */
 class EventPayloadScan {
 public:
+    /**
+     * Why a list of `held` elements is no value of a type whose lower count is `least`
+     * (docs/adr/0086, section 15), in the words the reader and the raise's check both use.
+     */
+    static std::string countShort(size_t held, size_t least) {
+        return "holds " + std::to_string(held) + " elements, fewer than the " + std::to_string(least) +
+               " its type declares";
+    }
+
     static const char *skipSpace(const char *p) {
         while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') {
             p++;
@@ -937,6 +946,19 @@ public:
      */
     template <typename T, typename Read>
     EventPayloadRefusal readList(size_t bound, std::vector<T> &out, Read read) const {
+        return readListWithin(0, bound, out, read);
+    }
+
+    /**
+     * @brief A value of `list<T>[least..bound]`: an array of at least `least` and at most
+     * `bound` elements (docs/adr/0086, section 15), each read by `read` at its index
+     *
+     * Both counts are held before any element is read: an array longer than `bound` is
+     * refused as `TooMany`, one shorter than `least` as `TooFew` naming `least`, and no
+     * element of either is decoded.
+     */
+    template <typename T, typename Read>
+    EventPayloadRefusal readListWithin(size_t least, size_t bound, std::vector<T> &out, Read read) const {
         if (*at_ != '[') {
             return wrongKind("is not a list");
         }
@@ -965,6 +987,10 @@ public:
                           "holds " + std::to_string(elements.size()) + " elements, past the " + std::to_string(bound) +
                               " its type declares",
                           boundOf(bound));
+        }
+        if (elements.size() < least) {
+            return refuse(RefusalCode::TooFew, detail::EventPayloadScan::countShort(elements.size(), least),
+                          boundOf(least));
         }
         std::vector<T> items;
         items.reserve(elements.size());
@@ -1615,9 +1641,23 @@ public:
     /** `each(path, element)` holds each element to its own type, at the path of its index. */
     template <typename T, typename Each>
     static std::string list(const std::string &path, const std::vector<T> &items, size_t bound, Each each) {
+        return listWithin(path, items, 0, bound, each);
+    }
+
+    /**
+     * A list of at least `least` and at most `bound` elements (docs/adr/0086, section 15.6),
+     * each held to its own type by `each`: a list is built from empty an element at a time,
+     * so its lower count is held where it is written.
+     */
+    template <typename T, typename Each>
+    static std::string listWithin(const std::string &path, const std::vector<T> &items, size_t least, size_t bound,
+                                  Each each) {
         if (items.size() > bound) {
             return "'" + path + "' holds " + std::to_string(items.size()) + " elements, past the " +
                    std::to_string(bound) + " its type declares";
+        }
+        if (items.size() < least) {
+            return "'" + path + "' " + detail::EventPayloadScan::countShort(items.size(), least);
         }
         for (size_t index = 0; index < items.size(); ++index) {
             std::string refusal = each(detail::EventPayloadScan::join(path, std::to_string(index)), items[index]);

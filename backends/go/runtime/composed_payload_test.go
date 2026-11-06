@@ -581,6 +581,61 @@ func TestAListPastItsBoundIsRefusedBeforeAnElementIsRead(t *testing.T) {
 	}
 }
 
+// A list short of its lower count is refused as tooFew, naming the lower count,
+// before any element is read; one that holds it is read (docs/adr/0086, section
+// 15.5).
+func TestAListShortOfItsLowerCountIsRefusedBeforeAnElementIsRead(t *testing.T) {
+	fields, err := LiftPayload(`{"v": ["x"], "w": [1, 2], "e": []}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, _ := fields.Field("v")
+	asked := 0
+	_, err = ReadListWithin(v, 2, 3, func(e PayloadValue) (uint8, error) {
+		asked++
+		return ValueUnsigned[uint8](e)
+	})
+	refusal, ok := err.(*PayloadRefusal)
+	if !ok || refusal.Error() != "'v' holds 1 elements, fewer than the 2 its type declares" {
+		t.Fatalf("one element short of two reads %v", err)
+	}
+	if bound, has := refusal.Bound(); refusal.Code() != RefusalTooFew || refusal.Pointer() != "/v" || !has || bound != 2 {
+		t.Errorf("the refusal is %v at %q bound %d (%v)", refusal.Code(), refusal.Pointer(), bound, has)
+	}
+	if asked != 0 {
+		t.Errorf("%d elements were read before the count was held", asked)
+	}
+	w, _ := fields.Field("w")
+	if held, err := ReadListWithin(w, 2, 3, ValueUnsigned[uint8]); err != nil || len(held) != 2 {
+		t.Errorf("two elements of at least two read %v, %v", held, err)
+	}
+	e, _ := fields.Field("e")
+	if _, err := ReadListWithin(e, 1, 3, ValueUnsigned[uint8]); err == nil ||
+		err.(*PayloadRefusal).Code() != RefusalTooFew {
+		t.Errorf("the empty list where one is needed reads %v", err)
+	}
+	if _, err := ReadList(e, 3, ValueUnsigned[uint8]); err != nil {
+		t.Errorf("the empty list where none is needed reads %v", err)
+	}
+}
+
+// The writer's check refuses a list short of the place's lower count in the
+// reader's words, the path in front (docs/adr/0086, section 15.6).
+func TestAListWrittenShortOfItsLowerCountIsRefused(t *testing.T) {
+	none := func(string, uint8) error { return nil }
+	if err := CheckListWithin("items", []uint8{1, 2}, 2, 3, none); err != nil {
+		t.Errorf("a list that holds its lower count was refused: %v", err)
+	}
+	if err := CheckListWithin("items/1/tags", []uint8{}, 1, 3, none); err == nil ||
+		err.Error() != "'items/1/tags' holds 0 elements, fewer than the 1 its type declares" {
+		t.Errorf("a list short of its lower count reads %v", err)
+	}
+	if err := CheckListWithin("items", []uint8{1, 2, 3, 4}, 2, 3, none); err == nil ||
+		err.Error() != "'items' holds 4 elements, past the 3 its type declares" {
+		t.Errorf("a list past its bound reads %v", err)
+	}
+}
+
 func TestARecordValueNamesItsMissingFieldAndReadsItsLaterFieldsFromDefaults(t *testing.T) {
 	fields, err := LiftPayload(`{"r": {"a": 1, "zz": [null]}, "s": 5}`)
 	if err != nil {

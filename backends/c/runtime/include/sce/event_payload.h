@@ -127,6 +127,8 @@ SCE_C_UNUSED static const char sce_payload_refuse_null[] = "is null, and its typ
 SCE_C_UNUSED static const char sce_payload_refuse_not_list[] = "is not a list";
 SCE_C_UNUSED static const char sce_payload_refuse_not_record[] = "is not a record";
 SCE_C_UNUSED static const char sce_payload_refuse_past_count[] = "holds more elements than its type declares";
+/* A list short of the lower count its type states (docs/adr/0086, section 15). */
+SCE_C_UNUSED static const char sce_payload_refuse_short_count[] = "holds fewer elements than its type declares";
 SCE_C_UNUSED static const char sce_payload_refuse_past_bound[] = "is more bytes than its type declares";
 SCE_C_UNUSED static const char sce_payload_refuse_bad_defaults[] =
     "the schema's defaults are not a JSON object, which the generator never writes";
@@ -158,6 +160,7 @@ SCE_C_UNUSED static const char sce_payload_refuse_too_deep[] =
 #define SCE_PAYLOAD_REFUSE_NOT_LIST sce_payload_refuse_not_list
 #define SCE_PAYLOAD_REFUSE_NOT_RECORD sce_payload_refuse_not_record
 #define SCE_PAYLOAD_REFUSE_PAST_COUNT sce_payload_refuse_past_count
+#define SCE_PAYLOAD_REFUSE_SHORT_COUNT sce_payload_refuse_short_count
 #define SCE_PAYLOAD_REFUSE_PAST_BOUND sce_payload_refuse_past_bound
 #define SCE_PAYLOAD_REFUSE_BAD_DEFAULTS sce_payload_refuse_bad_defaults
 
@@ -193,6 +196,7 @@ SCE_C_UNUSED static inline uint8_t sce_payload_refusal_code(const char *refusal)
         {sce_payload_refuse_not_list, SCE_PAYLOAD_CODE_WRONG_KIND},
         {sce_payload_refuse_not_record, SCE_PAYLOAD_CODE_WRONG_KIND},
         {sce_payload_refuse_past_count, SCE_PAYLOAD_CODE_TOO_MANY},
+        {sce_payload_refuse_short_count, SCE_PAYLOAD_CODE_TOO_FEW},
         {sce_payload_refuse_past_bound, SCE_PAYLOAD_CODE_TOO_LONG},
         {sce_payload_refuse_bad_defaults, SCE_PAYLOAD_CODE_NOT_JSON},
         {sce_payload_refuse_empty_text, SCE_PAYLOAD_CODE_NOT_JSON},
@@ -1353,9 +1357,14 @@ typedef struct {
     uint32_t index;   /* the index of the next element */
 } sce_payload_list_t;
 
-/* Open the list value at `p`, of at most `bound` elements. A value that is no
-   array, or an array that never closes, is not a list. */
-SCE_C_UNUSED static inline const char *sce_payload_list_open(const char *p, uint32_t bound, sce_payload_list_t *out) {
+/* Open the list value at `p`, of at least `least` and at most `bound` elements
+   (docs/adr/0086, section 15). Both counts are held when the elements are counted,
+   before any is read: one past the bound is SCE_PAYLOAD_REFUSE_PAST_COUNT, one short
+   of the lower count SCE_PAYLOAD_REFUSE_SHORT_COUNT, and the cursor hands out no
+   element after either. A value that is no array, or an array that never closes, is
+   not a list. */
+SCE_C_UNUSED static inline const char *sce_payload_list_open_within(const char *p, uint32_t least, uint32_t bound,
+                                                                    sce_payload_list_t *out) {
     /* A cursor whose list was refused hands out no element, whichever refusal
        it was: it is emptied before the first one. */
     out->next = p;
@@ -1367,7 +1376,8 @@ SCE_C_UNUSED static inline const char *sce_payload_list_open(const char *p, uint
     out->next = sce_payload_skip_space(p + 1);
     const char *q = out->next;
     if (*q == ']') {
-        return NULL;
+        /* The empty list: no value of a type that needs an element. */
+        return (least > 0u) ? SCE_PAYLOAD_REFUSE_SHORT_COUNT : NULL;
     }
     uint32_t count = 0u;
     for (;;) {
@@ -1392,9 +1402,20 @@ SCE_C_UNUSED static inline const char *sce_payload_list_open(const char *p, uint
         if (*q != ']') {
             return SCE_PAYLOAD_REFUSE_NOT_LIST;
         }
+        if (count < least) {
+            /* Counted, never decoded: the cursor hands out none of them. */
+            return SCE_PAYLOAD_REFUSE_SHORT_COUNT;
+        }
         out->count = count;
         return NULL;
     }
+}
+
+/* Open the list value at `p`, of at most `bound` elements: a list that states no
+   lower count. A value that is no array, or an array that never closes, is not a
+   list. */
+SCE_C_UNUSED static inline const char *sce_payload_list_open(const char *p, uint32_t bound, sce_payload_list_t *out) {
+    return sce_payload_list_open_within(p, 0u, bound, out);
 }
 
 /* The next element of an open list: `*element` is at its text, and false is

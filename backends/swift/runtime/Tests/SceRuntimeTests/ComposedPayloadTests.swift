@@ -412,6 +412,47 @@ private enum Want {
     #expect(notList?.reason == "'s' is not a list")
 }
 
+/// A list short of its lower count is refused as `tooFew`, naming the count, before an
+/// element is read (docs/adr/0086, section 15.5).
+@Test func aListShortOfItsLowerCountIsRefusedBeforeAnElementIsRead() throws {
+    let fields = try PayloadFields.decode(#"{"v": ["x"], "w": [1, 2], "e": []}"#)
+    var asked = 0
+    var refusal: PayloadRefusal?
+    do {
+        _ = try fields.field("v").list(least: 2, bound: 3) { (element: PayloadValue) -> UInt8 in
+            asked += 1
+            return try element.unsigned()
+        }
+    } catch let error as PayloadRefusal {
+        refusal = error
+    }
+    #expect(refusal?.reason == "'v' holds 1 elements, fewer than the 2 its type declares")
+    #expect(refusal?.code == .tooFew)
+    #expect(refusal?.pointer == "/v")
+    #expect(refusal?.bound == 2)
+    #expect(asked == 0)
+    #expect(try fields.field("w").list(least: 2, bound: 3) { try $0.unsigned() as UInt8 } == [1, 2])
+    let empty = #expect(throws: PayloadRefusal.self) {
+        try fields.field("e").list(least: 1, bound: 3) { try $0.unsigned() as UInt8 }
+    }
+    #expect(empty?.code == .tooFew)
+    #expect(try fields.field("e").list(bound: 3) { try $0.unsigned() as UInt8 } == [])
+}
+
+/// The writer's check refuses a list short of the place's lower count, the path in front
+/// (docs/adr/0086, section 15.6).
+@Test func aListWrittenShortOfItsLowerCountIsRefused() throws {
+    try checkList("items", [1, 2], least: 2, bound: 3) { _, _ in }
+    let short = #expect(throws: BoundExceeded.self) {
+        try checkList("items/1/tags", [Int](), least: 1, bound: 3) { _, _ in }
+    }
+    #expect(short?.reason == "'items/1/tags' holds 0 elements, fewer than the 1 its type declares")
+    let past = #expect(throws: BoundExceeded.self) {
+        try checkList("items", [1, 2, 3, 4], least: 2, bound: 3) { _, _ in }
+    }
+    #expect(past?.reason == "'items' holds 4 elements, past the 3 its type declares")
+}
+
 @Test func aRecordValueNamesItsMissingFieldAndReadsItsLaterFieldsFromDefaults() throws {
     let fields = try PayloadFields.decode(#"{"r": {"a": 1, "zz": [null]}, "s": 5}"#)
     let missing = #expect(throws: PayloadRefusal.self) { try fields.field("r").record { try $0.field("b") } }

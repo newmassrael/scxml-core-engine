@@ -88,7 +88,8 @@ def _declared(ty: Any) -> Any:
     if "bytes" in ty:
         return Bytes(ty["bytes"])
     if "list" in ty:
-        return ListOf(_declared(ty["list"]), ty["max"])
+        # The lower count, where the case states one (docs/adr/0086, section 15).
+        return ListOf(_declared(ty["list"]), ty["max"], ty.get("min", 0))
     if "record" in ty:
         return RecordOf([(id_, _declared(field)) for id_, field in ty["record"].items()])
     raise AssertionError(f"a type of the table names no constructor: {ty!r}")

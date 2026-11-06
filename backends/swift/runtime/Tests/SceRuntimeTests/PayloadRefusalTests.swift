@@ -50,7 +50,9 @@ private func readDescribed(_ type: Any, _ v: PayloadValue) throws {
     } else if let bound = described["bytes"] as? Int {
         _ = try v.bytes(bound: bound)
     } else if let inner = described["list"], let bound = described["max"] as? Int {
-        _ = try v.list(bound: bound) { try readDescribed(inner, $0) }
+        // The lower count, where the case states one (docs/adr/0086, section 15).
+        let least = described["min"] as? Int ?? 0
+        _ = try v.list(least: least, bound: bound) { try readDescribed(inner, $0) }
     } else if let fields = described["record"] as? [String: Any] {
         try v.record { record in
             for (id, field) in fields {

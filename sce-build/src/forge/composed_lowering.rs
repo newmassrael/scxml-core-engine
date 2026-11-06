@@ -205,10 +205,12 @@ pub trait ComposedSpelling {
     /// The reader of a value that may be absent, `elem` the reader of its
     /// present value bound to [`Self::read_binding`].
     fn read_optional(&self, value: &str, elem: &str) -> String;
-    /// The reader of a list of at most `max` elements, `elem` the reader of an
-    /// element bound to [`Self::read_binding`]; one past the bound is refused
-    /// before any element is read.
-    fn read_list(&self, value: &str, max: u32, elem: &str) -> String;
+    /// The reader of a list of at least `least` and at most `max` elements,
+    /// `elem` the reader of an element bound to [`Self::read_binding`]; one past
+    /// the bound, or short of the lower count, is refused before any element is
+    /// read (docs/adr/0086, section 15.5). `least` is 0 for a list that states
+    /// no lower count.
+    fn read_list(&self, value: &str, least: u32, max: u32, elem: &str) -> String;
     /// The reader of a record held in `ty`: `defaults` the JSON of the fields a
     /// later revision of its schema added, `fields` each field's id with the
     /// reader of its value bound to [`Self::read_binding`].
@@ -460,6 +462,7 @@ pub fn reader(
         ),
         ValueType::List { elem, max } => spelling.read_list(
             value,
+            max.min,
             max.max,
             &reader(elem, within, records, enums, spelling, bound)?,
         ),
@@ -699,9 +702,15 @@ impl ComposedSpelling for RustComposed<'_> {
     fn read_optional(&self, value: &str, elem: &str) -> String {
         format!("{value}.optional(|v| {elem})")
     }
-    // The runtime's reader answers the `BoundedList<T, N>` the machine holds.
-    fn read_list(&self, value: &str, max: u32, elem: &str) -> String {
-        format!("{value}.list::<_, {max}>(|v| {elem})")
+    // The runtime's reader answers the `BoundedList<T, N>` the machine holds;
+    // a lower count is held by the reader too, since no Rust type holds it
+    // (docs/adr/0086, section 15.6).
+    fn read_list(&self, value: &str, least: u32, max: u32, elem: &str) -> String {
+        if least == 0 {
+            format!("{value}.list::<_, {max}>(|v| {elem})")
+        } else {
+            format!("{value}.list_within::<_, {max}>({least}, |v| {elem})")
+        }
     }
     fn read_record(
         &self,
@@ -1016,6 +1025,16 @@ mod tests {
         assert_eq!(
             read("list<list<uint8>[2]>[3]"),
             "v.list::<_, 3>(|v| v.list::<_, 2>(|v| v.unsigned::<u8>()))"
+        );
+        // A lower count is handed to the reader, at any depth (docs/adr/0086,
+        // section 15.5); the machine's type is the one its bound gives.
+        assert_eq!(
+            read("list<list<uint8>[1..2]>[2..3]"),
+            "v.list_within::<_, 3>(2, |v| v.list_within::<_, 2>(1, |v| v.unsigned::<u8>()))"
+        );
+        assert_eq!(
+            machine_type(&ty("list<uint8>[2..3]"), None, &held, &enums, &RUST),
+            machine_type(&ty("list<uint8>[3]"), None, &held, &enums, &RUST)
         );
         assert_eq!(
             read("enum:Level"),

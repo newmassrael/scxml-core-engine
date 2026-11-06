@@ -716,17 +716,22 @@ public struct PayloadValue {
         return try read(self)
     }
 
-    /// A value of `list<T>[bound]`: an array of at most `bound` elements, each read
-    /// by `read` at the path of its index, in order.
+    /// A value of `list<T>[least..bound]`: an array of at least `least` and at most
+    /// `bound` elements, each read by `read` at the path of its index, in order.
+    /// `least` is 0 for a list that states no lower count (docs/adr/0086, section 15).
     ///
-    /// The bound is held before any element is read: an array longer than `bound`
-    /// is refused whole, and no element of it is decoded (ADR 0077, section 2).
-    public func list<T>(bound: Int, _ read: (PayloadValue) throws -> T) throws -> [T] {
+    /// Both counts are held before any element is read: an array longer than `bound`
+    /// is refused as `tooMany`, one shorter than `least` as `tooFew` naming `least`,
+    /// and no element of either is decoded (ADR 0077, section 2).
+    public func list<T>(least: Int = 0, bound: Int, _ read: (PayloadValue) throws -> T) throws -> [T] {
         guard case .array(let items) = value else {
             throw wrongKind("is not a list")
         }
         if items.count > bound {
             throw refuse(.tooMany, "holds \(items.count) elements, past the \(bound) its type declares", bound: bound)
+        }
+        if items.count < least {
+            throw refuse(.tooFew, countShort(items.count, least), bound: least)
         }
         var out: [T] = []
         out.reserveCapacity(items.count)
@@ -798,11 +803,24 @@ public func checkBytes(_ path: String, _ value: [UInt8], bound: Int) throws {
     }
 }
 
-/// Holds a list a host built to its bound, and each element to its own type through
-/// `each`, at the path of its index (see `checkText`).
-public func checkList<T>(_ path: String, _ items: [T], bound: Int, _ each: (String, T) throws -> Void) throws {
+/// Why a list of `held` elements is no value of a type whose lower count is `least`, in
+/// the words the reader and the check both use (docs/adr/0086, section 15).
+func countShort(_ held: Int, _ least: Int) -> String {
+    "holds \(held) elements, fewer than the \(least) its type declares"
+}
+
+/// Holds a list a host built to its lower count and its bound, and each element to its
+/// own type through `each`, at the path of its index (see `checkText`). A list is built
+/// from empty an element at a time, so its lower count is held where it is written
+/// (docs/adr/0086, section 15.6); `least` is 0 for a list that states none.
+public func checkList<T>(
+    _ path: String, _ items: [T], least: Int = 0, bound: Int, _ each: (String, T) throws -> Void
+) throws {
     if items.count > bound {
         throw BoundExceeded("'\(path)' holds \(items.count) elements, past the \(bound) its type declares")
+    }
+    if items.count < least {
+        throw BoundExceeded("'\(path)' \(countShort(items.count, least))")
     }
     for (index, item) in items.enumerated() {
         try each(joinPath(path, String(index)), item)

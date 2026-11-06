@@ -759,6 +759,31 @@ static void check_top_level_bounds_and_records(void) {
         fprintf(stderr, "FAIL: a missing field was found\n");
         failures++;
     }
+    /* A list short of its lower count is refused when it is counted, before an
+       element is handed out (docs/adr/0086, section 15.5), and classed tooFew. */
+    if (!refused_as(sce_payload_list_open_within("[\"x\"]", 2u, 3u, &list), SCE_PAYLOAD_REFUSE_SHORT_COUNT) ||
+        sce_payload_list_next(&list, &v) ||
+        sce_payload_refusal_code(SCE_PAYLOAD_REFUSE_SHORT_COUNT) != SCE_PAYLOAD_CODE_TOO_FEW ||
+        !sce_payload_code_has_bound(SCE_PAYLOAD_CODE_TOO_FEW)) {
+        fprintf(stderr, "FAIL: a list short of its lower count handed out an element or was not tooFew\n");
+        failures++;
+    }
+    if (!refused_as(sce_payload_list_open_within("[]", 1u, 3u, &list), SCE_PAYLOAD_REFUSE_SHORT_COUNT)) {
+        fprintf(stderr, "FAIL: the empty list was opened where one element is needed\n");
+        failures++;
+    }
+    if (sce_payload_list_open_within("[1,2]", 2u, 3u, &list) != NULL || list.count != 2u) {
+        fprintf(stderr, "FAIL: a list that holds its lower count was refused\n");
+        failures++;
+    }
+    if (!refused_as(sce_payload_list_open_within("[1,2,3,4]", 2u, 3u, &list), SCE_PAYLOAD_REFUSE_PAST_COUNT)) {
+        fprintf(stderr, "FAIL: a list past its bound with a lower count was not refused past it\n");
+        failures++;
+    }
+    if (sce_payload_list_open("[]", 3u, &list) != NULL) {
+        fprintf(stderr, "FAIL: the empty list was refused where no element is needed\n");
+        failures++;
+    }
 }
 
 SCE_FORGE_BOUNDED_LIST_DECLARE(sce_list_2_uint8, uint8_t, 2)
@@ -790,6 +815,13 @@ static void check_bounded_list(void) {
     outer.len = 4u;
     if (sce_list_3_list_2_uint8_within(&outer)) {
         fprintf(stderr, "FAIL: an outer list past its bound was held within it\n");
+        failures++;
+    }
+    /* A value written into a place whose type states a lower count is held to it
+       (docs/adr/0086, section 15.6). */
+    inner.len = 1u;
+    if (!sce_list_2_uint8_holds_at_least(&inner, 1u) || sce_list_2_uint8_holds_at_least(&inner, 2u)) {
+        fprintf(stderr, "FAIL: a list was not held to a lower count\n");
         failures++;
     }
     if (sizeof(sce_list_3_list_2_uint8_t) < 3u * sizeof(sce_list_2_uint8_t)) {

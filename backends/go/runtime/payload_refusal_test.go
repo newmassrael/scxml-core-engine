@@ -100,7 +100,9 @@ func readDescribed(ty any, v PayloadValue) error {
 		}
 		if inner, ok := t["list"]; ok {
 			bound, _ := t["max"].(float64)
-			_, err := ReadList(v, int(bound), func(element PayloadValue) (struct{}, error) {
+			// The lower count, where the case states one (docs/adr/0086, section 15).
+			least, _ := t["min"].(float64)
+			_, err := ReadListWithin(v, int(least), int(bound), func(element PayloadValue) (struct{}, error) {
 				return struct{}{}, readDescribed(inner, element)
 			})
 			return err

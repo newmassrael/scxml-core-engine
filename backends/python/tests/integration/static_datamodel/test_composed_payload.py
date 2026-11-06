@@ -28,6 +28,7 @@ from sce_runtime.event_payload import (
     OptionalOf,
     Raw,
     RecordOf,
+    RefusalCode,
     Single,
     Text,
     TypedPayloadError,
@@ -287,6 +288,31 @@ def test_a_list_past_its_bound_is_refused_before_an_element_is_read() -> None:
     assert lift({"v": [2, 1]}, (("v", ListOf(Whole(0, 255), 2)),)) == [[2, 1]]
     with pytest.raises(TypedPayloadError, match="^'v' is not a list$"):
         lift({"v": "x"}, (("v", ListOf(Whole(0, 255), 2)),))
+
+
+def test_a_list_short_of_its_lower_count_is_refused_before_an_element_is_read() -> None:
+    # The one element is no uint8: a reader that decoded it before it held the
+    # lower count would refuse it at 'v/0' instead (docs/adr/0086, section 15.5).
+    with pytest.raises(TypedPayloadError,
+                       match="^'v' holds 1 elements, fewer than the 2 its type declares$") as short:
+        lift({"v": ["x"]}, (("v", ListOf(Whole(0, 255), 3, least=2)),))
+    assert (short.value.code, short.value.pointer, short.value.bound) == (RefusalCode.TOO_FEW, "/v", 2)
+    assert lift({"v": [2, 1]}, (("v", ListOf(Whole(0, 255), 3, least=2)),)) == [[2, 1]]
+    with pytest.raises(TypedPayloadError) as empty:
+        lift({"v": []}, (("v", ListOf(Whole(0, 255), 3, least=1)),))
+    assert (empty.value.code, empty.value.bound) == (RefusalCode.TOO_FEW, 1)
+    # A list that states no lower count reads the empty list.
+    assert lift({"v": []}, (("v", ListOf(Whole(0, 255), 3)),)) == [[]]
+
+
+def test_a_list_written_short_of_its_lower_count_is_refused() -> None:
+    # docs/adr/0086, section 15.6: the check a record's __post_init__ runs.
+    check_value("items", ListOf(Whole(0, 255), 3, least=2), [1, 2])
+    with pytest.raises(BoundError,
+                       match="^'items/1/tags' holds 0 elements, fewer than the 1 its type declares$"):
+        check_value("items/1/tags", ListOf(Whole(0, 255), 3, least=1), [])
+    with pytest.raises(BoundError, match="^'items' holds 4 elements, past the 3 its type declares$"):
+        check_value("items", ListOf(Whole(0, 255), 3, least=2), [1, 2, 3, 4])
 
 
 def test_a_record_value_names_its_missing_field_and_reads_its_later_fields_from_defaults() -> None:

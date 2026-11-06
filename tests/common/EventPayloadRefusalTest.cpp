@@ -110,8 +110,11 @@ Refusal readDescribed(const nlohmann::json &ty, const EventPayloadValue &v) {
     }
     if (ty.contains("list")) {
         std::vector<int> items;
-        return v.readList(ty["max"].get<size_t>(), items,
-                          [&](const EventPayloadValue &element, int &) { return readDescribed(ty["list"], element); });
+        // The lower count, where the case states one (docs/adr/0086, section 15).
+        const size_t least = ty.contains("min") ? ty["min"].get<size_t>() : 0u;
+        return v.readListWithin(least, ty["max"].get<size_t>(), items, [&](const EventPayloadValue &element, int &) {
+            return readDescribed(ty["list"], element);
+        });
     }
     if (ty.contains("record")) {
         return v.readRecord(nullptr, [&](const EventPayloadFields &fields) {

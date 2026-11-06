@@ -981,6 +981,11 @@ impl<'a> PayloadValue<'a> {
         .with_bound(bound)
     }
 
+    fn short_count(&self, held: usize, least: usize) -> PayloadRefusal {
+        self.refuse(RefusalCode::TooFew, &count_short(held, least))
+            .with_bound(least)
+    }
+
     /// A value of `optional<T>` (docs/adr/0055): absent where the value is
     /// `null`, and otherwise what `read` reads of it, held to `T`.
     pub fn optional<T>(
@@ -1001,6 +1006,22 @@ impl<'a> PayloadValue<'a> {
     /// is refused whole, and no element of it is decoded (ADR 0077, section 2).
     pub fn list<T, const N: usize>(
         &self,
+        read: impl FnMut(&PayloadValue<'a>) -> Result<T, PayloadRefusal>,
+    ) -> Result<BoundedList<T, N>, PayloadRefusal> {
+        self.list_within::<T, N>(0, read)
+    }
+
+    /// A value of `list<T>[least..N]`: an array of at least `least` and at
+    /// most `N` elements (docs/adr/0086, section 15), each read by `read` at
+    /// the path of its index, in order.
+    ///
+    /// Both counts are held before any element is read: an array longer than
+    /// `N` is refused as [`RefusalCode::TooMany`], one shorter than `least` as
+    /// [`RefusalCode::TooFew`] naming `least`, and no element of either is
+    /// decoded.
+    pub fn list_within<T, const N: usize>(
+        &self,
+        least: usize,
         mut read: impl FnMut(&PayloadValue<'a>) -> Result<T, PayloadRefusal>,
     ) -> Result<BoundedList<T, N>, PayloadRefusal> {
         let Value::Array(items) = self.value else {
@@ -1008,6 +1029,9 @@ impl<'a> PayloadValue<'a> {
         };
         if items.len() > N {
             return Err(self.past_count(items.len(), N));
+        }
+        if items.len() < least {
+            return Err(self.short_count(items.len(), least));
         }
         let mut list = BoundedList::<T, N>::new();
         for (index, value) in items.iter().enumerate() {
@@ -1117,6 +1141,27 @@ pub fn quote(text: &str) -> String {
 /// ([`PayloadFields::optional`]).
 pub fn optional_json<T>(value: Option<T>, write: impl FnOnce(T) -> String) -> String {
     value.map_or_else(|| "null".to_string(), write)
+}
+
+/// Why a list of `held` elements is no value of a type whose lower count is
+/// `least`: one sentence for the reader and the writer's check, the path in
+/// front of it where the caller has one.
+fn count_short(held: usize, least: usize) -> String {
+    format!("holds {held} elements, fewer than the {least} its type declares")
+}
+
+/// Hold a list a machine or a host built, `held` elements long, to the lower
+/// count `least` of the place it is written into (docs/adr/0086, section
+/// 15.6), before the event that carries it is encoded: the one bound a
+/// `BoundedList<T, N>` does not hold by its type, since a list is built from
+/// empty an element at a time. `Err` is the refusal's sentence, naming `path`,
+/// in the words the reader uses; the event is refused whole.
+pub fn check_count(path: &str, held: usize, least: usize) -> Result<(), String> {
+    if held < least {
+        Err(format!("'{path}' {}", count_short(held, least)))
+    } else {
+        Ok(())
+    }
 }
 
 /// The JSON spelling of one list, for the inject seam's `data`
@@ -1303,10 +1348,16 @@ mod tests {
                 }
                 if let Some(inner) = ty.member("list") {
                     let each = |element: &super::PayloadValue<'_>| read_described(inner, element);
+                    // The lower count, where the case states one (docs/adr/0086,
+                    // section 15).
+                    let least = match ty.member("min") {
+                        Some(Value::Number(n)) => n.parse::<usize>().expect("a lower count"),
+                        _ => 0,
+                    };
                     return match bound("max").as_str() {
-                        "2" => v.list::<(), 2>(each).map(|_| ()),
-                        "3" => v.list::<(), 3>(each).map(|_| ()),
-                        "8" => v.list::<(), 8>(each).map(|_| ()),
+                        "2" => v.list_within::<(), 2>(least, each).map(|_| ()),
+                        "3" => v.list_within::<(), 3>(least, each).map(|_| ()),
+                        "8" => v.list_within::<(), 8>(least, each).map(|_| ()),
                         other => panic!("the table's bounds are 2, 3 and 8, not {other}"),
                     };
                 }
@@ -1688,6 +1739,63 @@ mod tests {
             "'v' holds 3 elements, past the 2 its type declares"
         );
         assert_eq!(asked, 0, "no element was read before the bound was held");
+    }
+
+    /// A list short of its lower count is refused as `tooFew`, naming the
+    /// lower count, before any element is read; one that holds it is read
+    /// (docs/adr/0086, section 15.5).
+    #[test]
+    fn a_list_short_of_its_lower_count_is_refused_before_an_element_is_read() {
+        let fields = PayloadFields::decode(r#"{"v": ["x"], "w": [1, 2], "e": []}"#).expect("reads");
+        let mut asked = 0;
+        let refusal = fields
+            .field("v")
+            .and_then(|v| {
+                v.list_within::<u8, 3>(2, |e| {
+                    asked += 1;
+                    e.unsigned()
+                })
+            })
+            .expect_err("one element, short of two");
+        assert_eq!(
+            refusal.reason(),
+            "'v' holds 1 elements, fewer than the 2 its type declares"
+        );
+        assert_eq!(
+            (refusal.code(), refusal.pointer(), refusal.bound()),
+            (RefusalCode::TooFew, "/v", Some(2))
+        );
+        assert_eq!(asked, 0, "no element was read before the count was held");
+        let held = fields
+            .field("w")
+            .and_then(|w| w.list_within::<u8, 3>(2, |e| e.unsigned()))
+            .expect("two elements, at least two");
+        assert_eq!(held.as_slice(), &[1u8, 2]);
+        assert_eq!(
+            fields
+                .field("e")
+                .and_then(|e| e.list_within::<u8, 3>(1, |e| e.unsigned()))
+                .map(|_| ())
+                .map_err(|refusal| (refusal.code(), refusal.bound())),
+            Err((RefusalCode::TooFew, Some(1)))
+        );
+        // A list that states no lower count reads the empty list.
+        assert!(fields
+            .field("e")
+            .and_then(|e| e.list::<u8, 3>(|e| e.unsigned()))
+            .is_ok());
+    }
+
+    /// The writer's count check refuses a list short of the place's lower count
+    /// in the reader's words, the path in front (docs/adr/0086, section 15.6).
+    #[test]
+    fn a_list_written_short_of_its_lower_count_is_refused() {
+        assert_eq!(super::check_count("items", 3, 3), Ok(()));
+        assert_eq!(super::check_count("items", 4, 3), Ok(()));
+        assert_eq!(
+            super::check_count("items/1/tags", 0, 1),
+            Err("'items/1/tags' holds 0 elements, fewer than the 1 its type declares".to_string())
+        );
     }
 
     #[test]

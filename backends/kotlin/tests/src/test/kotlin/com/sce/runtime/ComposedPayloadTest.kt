@@ -366,6 +366,48 @@ class ComposedPayloadTest {
         )
     }
 
+    /** A list short of its lower count is refused as tooFew, naming the count, before an element is read (docs/adr/0086, section 15.5). */
+    @Test
+    fun `a list short of its lower count is refused before an element is read`() {
+        val fields = EventPayload.decode("""{"v": ["x"], "w": [1, 2], "e": []}""")
+        var asked = 0
+        val refusal = assertFailsWith<EventPayload.Refusal> {
+            fields.field("v").listWithin(2, 3) {
+                asked++
+                it.uint8()
+            }
+        }
+        assertEquals("'v' holds 1 elements, fewer than the 2 its type declares", refusal.message)
+        assertEquals(EventPayload.RefusalCode.TOO_FEW, refusal.code)
+        assertEquals("/v", refusal.pointer)
+        assertEquals(2L, refusal.bound)
+        assertEquals(0, asked, "no element was read before the count was held")
+        assertEquals(2, fields.field("w").listWithin(2, 3) { it.uint8() }.size)
+        assertEquals(
+            EventPayload.RefusalCode.TOO_FEW,
+            assertFailsWith<EventPayload.Refusal> { fields.field("e").listWithin(1, 3) { it.uint8() } }.code,
+        )
+        assertEquals(0, fields.field("e").list(3) { it.uint8() }.size)
+    }
+
+    /** The writer's check refuses a list short of the place's lower count, the path in front (docs/adr/0086, section 15.6). */
+    @Test
+    fun `a list written short of its lower count is refused`() {
+        ValueBounds.listWithin("items", listOf(1, 2), 2, 3) { _, _ -> }
+        assertEquals(
+            "'items/1/tags' holds 0 elements, fewer than the 1 its type declares",
+            assertFailsWith<BoundExceeded> {
+                ValueBounds.listWithin("items/1/tags", emptyList<Int>(), 1, 3) { _, _ -> }
+            }.message,
+        )
+        assertEquals(
+            "'items' holds 4 elements, past the 3 its type declares",
+            assertFailsWith<BoundExceeded> {
+                ValueBounds.listWithin("items", listOf(1, 2, 3, 4), 2, 3) { _, _ -> }
+            }.message,
+        )
+    }
+
     @Test
     fun `a record value names its missing field and reads its later fields from defaults`() {
         val fields = EventPayload.decode("""{"r": {"a": 1, "zz": [null]}, "s": 5}""")

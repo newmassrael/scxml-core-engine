@@ -150,18 +150,29 @@ class Bytes:
 
 
 class ListOf:
-    """Names ``list<T>[bound]``, around what names ``T``: an array of at most
-    ``bound`` elements, each a value of ``T``, read in order. The bound is held
-    before any element is read (ADR 0077, section 2)."""
+    """Names ``list<T>[least..bound]``, around what names ``T``: an array of at
+    least ``least`` and at most ``bound`` elements, each a value of ``T``, read
+    in order. Both counts are held before any element is read (ADR 0077,
+    section 2); ``least`` is 0 for a list that states no lower count
+    (docs/adr/0086, section 15)."""
 
-    __slots__ = ("declared", "bound")
+    __slots__ = ("declared", "bound", "least")
 
-    def __init__(self, declared: Any, bound: int) -> None:
+    def __init__(self, declared: Any, bound: int, least: int = 0) -> None:
         self.declared = declared
         self.bound = bound
+        self.least = least
 
     def __repr__(self) -> str:
+        if self.least:
+            return f"ListOf({self.declared!r}, {self.bound}, least={self.least})"
         return f"ListOf({self.declared!r}, {self.bound})"
+
+
+def _count_short(held: int, least: int) -> str:
+    """Why a list of ``held`` elements is no value of a type whose lower count
+    is ``least``, in the words the reader and the check both use."""
+    return f"holds {held} elements, fewer than the {least} its type declares"
 
 
 class RecordOf:
@@ -310,6 +321,10 @@ def read_value(path: str, declared: Any, value: Any, pointer: str) -> Any:
             raise TypedPayloadError(
                 f"{path!r} holds {len(value)} elements, past the {declared.bound} "
                 f"its type declares", RefusalCode.TOO_MANY, pointer, declared.bound)
+        if len(value) < declared.least:
+            raise TypedPayloadError(
+                f"{path!r} {_count_short(len(value), declared.least)}",
+                RefusalCode.TOO_FEW, pointer, declared.least)
         return [read_value(_join(path, str(index)), declared.declared, item,
                            pointer_below(pointer, str(index)))
                 for index, item in enumerate(value)]
@@ -376,6 +391,10 @@ def check_value(path: str, declared: Any, value: Any) -> None:
             raise BoundError(
                 f"{path!r} holds {len(value)} elements, past the {declared.bound} "
                 f"its type declares")
+        # A list is built from empty an element at a time, so its lower count
+        # is held where it is written (docs/adr/0086, section 15.6).
+        if len(value) < declared.least:
+            raise BoundError(f"{path!r} {_count_short(len(value), declared.least)}")
         for index, item in enumerate(value):
             check_value(_join(path, str(index)), declared.declared, item)
         return

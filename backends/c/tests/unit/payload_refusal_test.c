@@ -156,10 +156,14 @@ static const char *read_described(const char *type, const char *value, const cha
     inner = member(type, "list");
     if (inner != NULL) {
         const uint32_t bound = bound_of(type, "max");
+        /* The lower count, where the case states one (docs/adr/0086, section 15). */
+        const uint32_t least = member(type, "min") != NULL ? bound_of(type, "min") : 0u;
         sce_payload_list_t list;
-        const char *refusal = sce_payload_list_open(value, bound, &list);
+        const char *refusal = sce_payload_list_open_within(value, least, bound, &list);
         if (refusal != NULL) {
-            at->bound = bound;
+            /* The bound a refusal names is the one it broke: the lower count for a
+               list too short, the bound for one too long. */
+            at->bound = (refusal == SCE_PAYLOAD_REFUSE_SHORT_COUNT) ? least : bound;
             return refuse_at(refusal, pointer, at);
         }
         const char *element = NULL;
