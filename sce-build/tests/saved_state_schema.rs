@@ -314,19 +314,53 @@ fn read_format_2_event(event: &json::Value) -> json::Value {
     )
 }
 
+/// Whether `text` is an XML 1.0 Nmtoken, which a session id is: one name
+/// character or more (production `Nmtoken`, fifth edition). Written here from
+/// the `NameStartChar` and `NameChar` productions, not taken from a runtime,
+/// for the reason [`scxml_location`] gives.
+fn is_nmtoken(text: &str) -> bool {
+    fn is_name_char(c: char) -> bool {
+        matches!(
+            c,
+            ':' | 'A'..='Z'
+                | '_'
+                | 'a'..='z'
+                | '\u{C0}'..='\u{D6}'
+                | '\u{D8}'..='\u{F6}'
+                | '\u{F8}'..='\u{2FF}'
+                | '\u{370}'..='\u{37D}'
+                | '\u{37F}'..='\u{1FFF}'
+                | '\u{200C}'..='\u{200D}'
+                | '\u{2070}'..='\u{218F}'
+                | '\u{2C00}'..='\u{2FEF}'
+                | '\u{3001}'..='\u{D7FF}'
+                | '\u{F900}'..='\u{FDCF}'
+                | '\u{FDF0}'..='\u{FFFD}'
+                | '\u{10000}'..='\u{EFFFF}'
+                | '-'
+                | '.'
+                | '0'..='9'
+                | '\u{B7}'
+                | '\u{300}'..='\u{36F}'
+                | '\u{203F}'..='\u{2040}'
+        )
+    }
+    !text.is_empty() && text.chars().all(is_name_char)
+}
+
 /// The sender a format-2 `raise`, `parent` or `child` act of the session
 /// `holder` names by its stored `origin` (docs/adr/0090, section 7): the
-/// holder for an empty one, the session a location names, and a bare id as it
-/// is. `None` for the prefix `sce://scxml/` alone, which names no session and
-/// is no id: a reader refuses the text.
+/// holder for an empty one; otherwise the stored sender, which is the id a
+/// location names, decoded, or the text itself. `None` when that sender is
+/// not an Nmtoken, so names no session: a reader refuses the text. The prefix
+/// `sce://scxml/` alone is one such value, read as itself, and so are an
+/// address of another scheme and a location whose id decodes to no name.
 fn format_2_act_sender(stored: &str, holder: &str) -> Option<String> {
     if stored.is_empty() {
         return Some(holder.to_string());
     }
-    if let Some(session) = located_session(stored) {
-        return Some(session);
-    }
-    (stored != SCXML_LOCATION).then(|| stored.to_string())
+    let sender = located_session(stored).unwrap_or_else(|| stored.to_string());
+    is_nmtoken(&sender).then_some(sender)
 }
 
 /// A format-2 waiting send of the session `holder` as format 3 writes it. Its
@@ -489,9 +523,17 @@ fn the_scxml_prefix_alone_names_no_session_in_a_format_2_text() {
         read_format_2_origin(SCXML_LOCATION, ""),
         (pair(SCXML_PROCESSOR, SCXML_LOCATION), json::Value::Null)
     );
-    // A session's own waiting send must name a session: the prefix alone names
-    // none and is no id, so a reader refuses it rather than take it as a sender.
-    assert_eq!(format_2_act_sender(SCXML_LOCATION, "fixture-root"), None);
+    // A session's own waiting send must name a session: a stored origin whose
+    // sender is no Nmtoken names none, so a reader refuses it rather than take
+    // it as a sender. The prefix alone is one such value; an address of
+    // another scheme and a location whose id decodes to `a b` are others.
+    for stored in [SCXML_LOCATION, "mesh://elsewhere", "sce://scxml/a%20b"] {
+        assert_eq!(
+            format_2_act_sender(stored, "fixture-root"),
+            None,
+            "{stored} names no session"
+        );
+    }
     // The neighbours it must not be confused with.
     assert_eq!(
         format_2_act_sender("", "fixture-root").as_deref(),
