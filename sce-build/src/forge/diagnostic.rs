@@ -19650,7 +19650,12 @@ mod tests {
             // `deploy/scheduler-session-runtime-not-applicable`: `expected` is
             // the one scheduler kind the block applies to (`tokio`). Dropping
             // the block is the other repair, so it is not a `Fix`.
-            | MeshDeploySchedulerSessionRuntimeNotApplicable => ExpectedIsMetadata,
+            | MeshDeploySchedulerSessionRuntimeNotApplicable
+            // `validation/lower-count-past-bound`: `expected` is the rule the
+            // range breaks (a lower count is at most its bound). Lowering the
+            // count and raising the bound are both repairs, so neither is a
+            // `Fix` (docs/adr/0086, section 15.13).
+            | ValidationLowerCountPastBound => ExpectedIsMetadata,
 
             // ── Deterministic fix or no fix; expected=None ────
             XmlParse
@@ -19698,7 +19703,6 @@ mod tests {
             | ValidationLiftLocation
             | ValidationLiftText
             | ValidationLiftPathBound
-            | ValidationLowerCountPastBound
             | ValidationLowerCountMisplaced
             | ValidationModelAnswerSchema
             | ValidationNativeActionArgument
