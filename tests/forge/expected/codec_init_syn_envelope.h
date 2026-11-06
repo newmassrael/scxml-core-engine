@@ -135,10 +135,12 @@ struct CodecInitSynEnvelope {
         if (auto _e = w.write_u8(header); _e) return _e;
         // Append the active arm body's encoded bytes.
         if (auto _p = std::get_if<::SCE::Generated::CodecInitSynBody::CodecInitSynBody>(&body)) {
-            if (auto _e = _p->encode(w, static_cast<std::uint8_t>((this->header >> 6) & 0x1)); _e) return _e;
+            if ((::SCE::Generated::CodecInitSynBody::input_s(*_p) & 0x1u) != (static_cast<std::uint8_t>((this->header >> 6) & 0x1) & 0x1u)) return ::SCE::Forge::CodecError::PresentIfMismatch;
+            if (auto _e = _p->encode(w); _e) return _e;
         }
         if (auto _p = std::get_if<CodecInitSynEnvelopeDefault>(&body)) {
-            if (auto _e = _p->body.encode(w, static_cast<std::uint8_t>((this->header >> 6) & 0x1)); _e) return _e;
+            if ((::SCE::Generated::CodecInitSynBody::input_s(_p->body) & 0x1u) != (static_cast<std::uint8_t>((this->header >> 6) & 0x1) & 0x1u)) return ::SCE::Forge::CodecError::PresentIfMismatch;
+            if (auto _e = _p->body.encode(w); _e) return _e;
         }
         return std::nullopt;
     }

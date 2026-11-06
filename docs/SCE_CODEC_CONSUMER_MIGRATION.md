@@ -1290,6 +1290,21 @@ body among them).
   `PresentIfMismatch` where its own flag disagrees with what that value says, as the held codec refused it before
   it was printed. A caller that set the flag by hand sets it to agree, or reads the codec's `input_<name>(value)`.
 
+## A printed C++ codec holds fields one gate decides together as one optional value (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C++ tree is regenerated after it. It moves the codecs whose
+gated fields one gate decides together, on one side (4 more codecs of the resources, 101 in all: the Zenoh
+`decl_queryable`, `init_body`, `join` and the init body of the synthesis fixtures).
+
+- The fields are `value.<gate>()`, a `const std::optional<{Codec}{Gate}>&` (`value.z()` holding `ext_type()` and
+  `ext_value()` for a queryable declaration), where each was a member `std::optional<T>` of its own. The value is
+  made by its constructor with `std::nullopt` or `{Codec}{Gate}{field, ...}`, so it cannot hold some of the fields
+  and not the others.
+- The gate is derived from whether the group is there: a flag of the codec is set by it, and an input the value says
+  is read by `input_<gate>(value)`, which the encode is no longer handed.
+- A source presents the group as a `std::optional` of any type that presents each field by name, by a member
+  function or a free function of its namespace.
+
 ## A payload schema states its keys in the order the document declares them (ADR 0087 §1.1)
 
 Landing: the commit that adds this section; every tree holding a `JSON_SCHEMA` constant or a GBNF table (the Rust,

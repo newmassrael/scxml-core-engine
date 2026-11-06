@@ -238,7 +238,9 @@ struct CodecZenohDeclaration {
             if (auto _e = _p->encode(w); _e) return _e;
         }
         if (auto _p = std::get_if<::SCE::Generated::CodecZenohDeclQueryable::CodecZenohDeclQueryable>(&body)) {
-            if (auto _e = _p->encode(w, static_cast<std::uint8_t>((this->header >> 5) & 0x1), static_cast<std::uint8_t>((this->header >> 7) & 0x1)); _e) return _e;
+            if ((::SCE::Generated::CodecZenohDeclQueryable::input_n(*_p) & 0x1u) != (static_cast<std::uint8_t>((this->header >> 5) & 0x1) & 0x1u)) return ::SCE::Forge::CodecError::PresentIfMismatch;
+            if ((::SCE::Generated::CodecZenohDeclQueryable::input_z(*_p) & 0x1u) != (static_cast<std::uint8_t>((this->header >> 7) & 0x1) & 0x1u)) return ::SCE::Forge::CodecError::PresentIfMismatch;
+            if (auto _e = _p->encode(w); _e) return _e;
         }
         if (auto _p = std::get_if<::SCE::Generated::CodecZenohUndeclQueryable::CodecZenohUndeclQueryable>(&body)) {
             if ((::SCE::Generated::CodecZenohUndeclQueryable::input_z(*_p) & 0x1u) != (static_cast<std::uint8_t>((this->header >> 7) & 0x1) & 0x1u)) return ::SCE::Forge::CodecError::PresentIfMismatch;

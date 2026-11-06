@@ -202,7 +202,9 @@ struct CodecTransportEnvelope {
         if (auto _e = w.write_u8(header); _e) return _e;
         // Append the active arm body's encoded bytes.
         if (auto _p = std::get_if<::SCE::Generated::CodecZenohInitBody::CodecZenohInitBody>(&body)) {
-            if (auto _e = _p->encode(w, static_cast<std::uint8_t>((this->header >> 6) & 0x1), static_cast<std::uint8_t>((this->header >> 5) & 0x1)); _e) return _e;
+            if ((::SCE::Generated::CodecZenohInitBody::input_s(*_p) & 0x1u) != (static_cast<std::uint8_t>((this->header >> 6) & 0x1) & 0x1u)) return ::SCE::Forge::CodecError::PresentIfMismatch;
+            if ((::SCE::Generated::CodecZenohInitBody::input_a(*_p) & 0x1u) != (static_cast<std::uint8_t>((this->header >> 5) & 0x1) & 0x1u)) return ::SCE::Forge::CodecError::PresentIfMismatch;
+            if (auto _e = _p->encode(w); _e) return _e;
         }
         if (auto _p = std::get_if<::SCE::Generated::CodecZenohOpenBody::CodecZenohOpenBody>(&body)) {
             if ((::SCE::Generated::CodecZenohOpenBody::input_a(*_p) & 0x1u) != (static_cast<std::uint8_t>((this->header >> 5) & 0x1) & 0x1u)) return ::SCE::Forge::CodecError::PresentIfMismatch;
@@ -221,7 +223,8 @@ struct CodecTransportEnvelope {
             if (auto _e = _p->encode(w); _e) return _e;
         }
         if (auto _p = std::get_if<::SCE::Generated::CodecZenohJoin::CodecZenohJoin>(&body)) {
-            if (auto _e = _p->encode(w, static_cast<std::uint8_t>((this->header >> 6) & 0x1)); _e) return _e;
+            if ((::SCE::Generated::CodecZenohJoin::input_s(*_p) & 0x1u) != (static_cast<std::uint8_t>((this->header >> 6) & 0x1) & 0x1u)) return ::SCE::Forge::CodecError::PresentIfMismatch;
+            if (auto _e = _p->encode(w); _e) return _e;
         }
         if (auto _p = std::get_if<CodecTransportEnvelopeDefault>(&body)) {
             if (auto _e = _p->body.encode(w); _e) return _e;

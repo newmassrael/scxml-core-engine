@@ -477,6 +477,15 @@ old encode, the old encode and its templates are removed in the same landing.
    codec had refused the two disagreeing (`PresentIfMismatch`) before it was printed. Such a parent now holds the
    flag it binds against `input_<name>` of the arm or the body it writes, and refuses as the codec did; one whose
    list holds entries that say an input is refused at generation, since each entry would say it anew.
+
+   *The thirteenth C++ landing, 2026-11-06:* a group of fields one gate decides together, of one side
+   (docs/adr/0065 §6 R4b). The value holds it as a `std::optional` of the class `{Codec}{Gate}`, made by its
+   constructor and read by its accessors as the value is; a source presents it as a `std::optional` of any type that
+   presents each of its fields by name (the traits `is_<group>_members` and `is_<group>_group`). The encode binds
+   each field to an optional local from the group where it is there, so each statement that writes a field is the
+   one that writes an optional element, and derives the gate from whether the group is there: a flag of the codec,
+   or an input the value says. The printed set is 101 codecs. A group of two sides, of a chain's memberships, of
+   lists that share a count, or one holding more than integers, still waits.
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences

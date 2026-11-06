@@ -28,6 +28,7 @@
 #include "codec_chain_depth_gated.h"
 #include "codec_chain_depth_plain.h"
 #include "codec_embed_basic.h"
+#include "codec_init_syn_body.h"
 #include "codec_length_ref.h"
 #include "codec_length_ref_dotted_basic.h"
 #include "codec_little_endian.h"
@@ -965,6 +966,84 @@ void a_template_parent_holds_its_flag_against_what_a_printed_arm_says() {
           "a header whose Z contradicts what the arm says is refused");
 }
 
+namespace InitSyn = ::SCE::Generated::CodecInitSynBody;
+
+// A holder of the consumer's own whose group is a pair of its own, which
+// presents the group's fields by name.
+struct OwnSizes {
+    std::uint8_t resolution;
+    std::uint16_t batch;
+
+    [[nodiscard]] std::uint8_t sn_res() const noexcept {
+        return resolution;
+    }
+
+    [[nodiscard]] std::uint16_t batch_size() const noexcept {
+        return batch;
+    }
+};
+
+struct OwnInitSyn {
+    std::optional<OwnSizes> sizes;
+
+    [[nodiscard]] std::uint8_t version() const noexcept {
+        return 0x09;
+    }
+
+    [[nodiscard]] std::optional<OwnSizes> s() const noexcept {
+        return sizes;
+    }
+};
+
+// The same holder presenting the group's fields one by one: no source of a
+// codec whose fields one gate decides together.
+struct OwnInitSynApart {
+    [[nodiscard]] std::uint8_t version() const noexcept {
+        return 0x09;
+    }
+
+    [[nodiscard]] std::optional<std::uint8_t> sn_res() const noexcept {
+        return std::nullopt;
+    }
+
+    [[nodiscard]] std::optional<std::uint16_t> batch_size() const noexcept {
+        return std::nullopt;
+    }
+};
+
+static_assert(InitSyn::is_source<OwnInitSyn>::value,
+              "a holder presenting the group as an optional of its own pair is a source");
+static_assert(!InitSyn::is_source<OwnInitSynApart>::value, "a holder presenting the group's fields apart is no source");
+
+void fields_one_gate_decides_are_held_and_written_together() {
+    // The group is there: its fields follow the version, and the S the value
+    // says is set; it is not: the version alone, and S clear.
+    const std::vector<std::uint8_t> with{0x09, 0x02, 0x01, 0x00};
+    const std::vector<std::uint8_t> without{0x09};
+    const InitSyn::CodecInitSynBody present{0x09, InitSyn::CodecInitSynBodyS{0x02, 0x0100}};
+    const InitSyn::CodecInitSynBody absent{0x09, std::nullopt};
+    CHECK(present.encode_to_vec() == with, "a group that is there is written field by field");
+    CHECK(absent.encode_to_vec() == without, "a group that is not there writes none of its fields");
+    CHECK(InitSyn::input_s(present) == 1 && InitSyn::input_s(absent) == 0,
+          "the value says S from whether it holds the group");
+
+    ::SCE::Forge::SceCursor cursor(with.data(), with.size());
+    const auto decoded = InitSyn::CodecInitSynBody::decode(cursor, 1);
+    CHECK(decoded.has_value() && decoded->s().has_value() && decoded->s()->sn_res() == 0x02 &&
+              decoded->s()->batch_size() == 0x0100,
+          "a decoded value holds the group it read");
+    ::SCE::Forge::SceCursor absent_cursor(without.data(), without.size());
+    const auto decoded_absent = InitSyn::CodecInitSynBody::decode(absent_cursor, 0);
+    CHECK(decoded_absent.has_value() && !decoded_absent->s().has_value(),
+          "a decoded value holds no group it did not read");
+
+    const OwnInitSyn own{OwnSizes{0x02, 0x0100}};
+    std::vector<std::uint8_t> out;
+    ::SCE::Forge::VectorSink sink(out);
+    CHECK(!InitSyn::Wire::encode_source(own, sink).has_value() && out == with,
+          "a consumer's own pair encodes as the generated group does");
+}
+
 void encode_source_reports_the_sinks_failure() {
     std::uint8_t buffer[3] = {};
     ::SCE::Forge::SpanSink sink(buffer, sizeof buffer);
@@ -992,6 +1071,7 @@ int main() {
     a_list_a_gate_decides_is_walked_where_it_is_present();
     a_list_and_bytes_of_no_stated_bound_are_held_to_none();
     a_template_parent_holds_its_flag_against_what_a_printed_arm_says();
+    fields_one_gate_decides_are_held_and_written_together();
     encode_source_reports_the_sinks_failure();
     if (failures != 0) {
         std::fprintf(stderr, "codec_source_generated_test: %d failure(s)\n", failures);
