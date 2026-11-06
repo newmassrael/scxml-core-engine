@@ -35,6 +35,10 @@ pub struct IoProcessorDescriptor {
     pub location: String,
 }
 
+/// What every SCXML Event I/O Processor location begins with, before the
+/// percent-encoded session id ([`scxml_location`]). Alone, it names no session.
+pub const SCXML_LOCATION_PREFIX: &str = "sce://scxml/";
+
 /// Address that reaches this session over the SCXML Event I/O Processor.
 ///
 /// §scxml-C-1 leaves the transport platform-specific, so the address is an
@@ -42,7 +46,7 @@ pub struct IoProcessorDescriptor {
 /// because it arrives from `<invoke>` and from embedders, neither of which is
 /// constrained to URI-safe characters.
 pub fn scxml_location(session_id: &str) -> String {
-    let mut location = String::from("sce://scxml/");
+    let mut location = String::from(SCXML_LOCATION_PREFIX);
     location.push_str(&url_encode(session_id));
     location
 }
@@ -57,7 +61,7 @@ pub fn scxml_location(session_id: &str) -> String {
 /// Returns an empty string when the input is not an SCXML processor location
 /// or names no session.
 pub fn session_id_from_scxml_location(uri: &str) -> String {
-    match uri.strip_prefix("sce://scxml/") {
+    match uri.strip_prefix(SCXML_LOCATION_PREFIX) {
         Some(rest) if !rest.is_empty() => url_decode(rest),
         _ => String::new(),
     }

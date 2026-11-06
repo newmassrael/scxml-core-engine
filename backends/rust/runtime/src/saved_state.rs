@@ -60,6 +60,7 @@ use core::fmt;
 use crate::helpers::configuration::ConfigurationRejection;
 use crate::helpers::io_processors::{
     read_stored_origin, read_stored_sender, scxml_origin, scxml_origin_of, stored_origin_text,
+    SCXML_LOCATION_PREFIX,
 };
 use crate::json::{self, Value};
 use crate::scheduler_storage::sealed::SchedulerOps;
@@ -979,7 +980,17 @@ impl SavedSend {
                 }
                 Ok(sender)
             } else {
-                let stored = read_stored_sender(&text("origin")?);
+                let origin = text("origin")?;
+                // The SCXML location prefix alone names no session, so it is no
+                // sender a session's act can have. A queued event that stored it
+                // is read as the pair as saved instead (docs/adr/0090, section 7).
+                if origin == SCXML_LOCATION_PREFIX {
+                    return Err(StateRefusal::new(format!(
+                        "'{what}.origin' is '{origin}', which names no session: a {act} act \
+                         is the send of a session"
+                    )));
+                }
+                let stored = read_stored_sender(&origin);
                 Ok(if stored.is_empty() {
                     session_id.to_string()
                 } else {
@@ -4133,6 +4144,50 @@ mod tests {
         let state = SavedState::from_json(&format2).expect("a format-2 tree reads");
         assert_eq!(state.format(), FORMAT_3);
         assert_eq!(state.to_json(), format3);
+    }
+
+    /// docs/adr/0090, section 7: the SCXML location prefix alone names no
+    /// session. A format-2 act that stored it is refused, since an act is a
+    /// session's send; a queued event that stored it is read as the pair as
+    /// saved, with no sender.
+    #[test]
+    fn a_format_2_origin_of_the_scxml_prefix_alone_names_no_session() {
+        let format2 = |pending: &str, external: &str| {
+            format!(
+                r#"{{"format":2,"shape":"d","sessionid":"s1","configuration":[],"current":"s","variables":{{}},"history":{{}},"pending":[{pending}],"invokes":[],"invokestarts":{{}},"hostinvokes":[],"hostinvoketoken":"0","sendseq":"0","external":[{external}]}}"#
+            )
+        };
+        for (act, invoke_id) in [
+            ("raise", ""),
+            ("parent", ""),
+            ("child", r#""invokeid":"w","#),
+        ] {
+            let text = format2(
+                &format!(
+                    r#"{{"due":"1","act":"{act}",{invoke_id}"event":"e","data":"","sendid":"","origin":"sce://scxml/"}}"#
+                ),
+                "",
+            );
+            let refusal = SavedState::from_json(&text).expect_err(act);
+            assert_eq!(
+                refusal.reason(),
+                format!(
+                    "'pending[0].origin' is 'sce://scxml/', which names no session: a {act} \
+                     act is the send of a session"
+                ),
+                "{act}"
+            );
+        }
+        let state = SavedState::from_json(&format2(
+            "",
+            r#"{"name":"go","data":"","type":"external","sendid":"","origin":"sce://scxml/","origintype":"","invokeid":"","hostinvoketoken":null}"#,
+        ))
+        .expect("a queued event of the prefix alone reads");
+        assert_eq!(
+            state.external[0].origin,
+            Some(EventOrigin::new(SCXML, "sce://scxml/"))
+        );
+        assert_eq!(state.external[0].sender, "");
     }
 
     #[test]
