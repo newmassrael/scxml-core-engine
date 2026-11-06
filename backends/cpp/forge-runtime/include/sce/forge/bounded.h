@@ -35,6 +35,12 @@
 
 namespace SCE::Forge {
 
+/// The bound of a list, a byte string or a text the protocol states no bound
+/// of (docs/adr/0077 §7): the largest `std::size_t`, past which no frame this
+/// runtime reads has a length, so `Bounded` holds it with no second shape, as
+/// the Rust runtime's `{ usize::MAX }` does.
+inline constexpr std::size_t kUnbounded = SIZE_MAX;
+
 template <typename L, std::size_t Max, std::size_t Min = 0> class Bounded;
 
 namespace Detail {

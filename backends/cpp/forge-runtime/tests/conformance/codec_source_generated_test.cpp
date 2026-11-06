@@ -36,8 +36,11 @@
 #include "codec_repeat_basic.h"
 #include "codec_simple_frame.h"
 #include "codec_zenoh_decl_subscriber.h"
+#include "codec_zenoh_declaration.h"
 #include "codec_zenoh_ext_entry.h"
+#include "codec_zenoh_ext_envelope.h"
 #include "codec_zenoh_locator.h"
+#include "codec_zenoh_open_body.h"
 #include "codec_zenoh_wireexpr.h"
 
 #include <cstdint>
@@ -872,6 +875,96 @@ void a_list_a_gate_decides_is_walked_where_it_is_present() {
           "a chain the source presents is walked over the entries it holds");
 }
 
+namespace ExtEnvelope = ::SCE::Generated::CodecZenohExtEnvelope;
+using Extensions = decltype(std::declval<const ExtEnvelope::CodecZenohExtEnvelope &>().extensions());
+namespace OpenBody = ::SCE::Generated::CodecZenohOpenBody;
+using Cookie = decltype(std::declval<const OpenBody::CodecZenohOpenBody &>().cookie())::value_type;
+
+static_assert(Extensions::most == ::SCE::Forge::kUnbounded,
+              "a chain the protocol states no depth of is held to no bound");
+static_assert(Cookie::most == ::SCE::Forge::kUnbounded,
+              "a byte string the protocol states no size of is held to no bound");
+
+// A holder of the consumer's own whose chain is held to a bound of its own,
+// which lies within the codec's none.
+struct TwoExtensions {
+    std::vector<ExtEntry::CodecZenohExtEntry> entries;
+
+    [[nodiscard]] std::uint8_t header_flags() const noexcept {
+        return 0x00;
+    }
+
+    [[nodiscard]] ::SCE::Forge::List<ExtEntry::CodecZenohExtEntry, 2, 1> extensions() const {
+        return *::SCE::Forge::List<ExtEntry::CodecZenohExtEntry, 2, 1>::make(entries);
+    }
+};
+
+static_assert(ExtEnvelope::is_source<TwoExtensions>::value,
+              "a list of a bound of the consumer's own lies within a list of no bound");
+
+void a_list_and_bytes_of_no_stated_bound_are_held_to_none() {
+    // Two unit extensions, Z set on the first and cleared on the last.
+    const std::vector<ExtEntry::CodecZenohExtEntry> entries{
+        ExtEntry::CodecZenohExtEntry{0x01, ExtEntry::CodecZenohExtEntryVariant{std::in_place_index<0>, ExtUnit{}}},
+        ExtEntry::CodecZenohExtEntry{0x02, ExtEntry::CodecZenohExtEntryVariant{std::in_place_index<0>, ExtUnit{}}}};
+    const std::vector<std::uint8_t> frame{0x00, 0x81, 0x02};
+    const auto extensions = Extensions::make(entries);
+    CHECK(extensions.has_value(), "two entries lie within no bound");
+    if (!extensions) {
+        return;
+    }
+    const ExtEnvelope::CodecZenohExtEnvelope envelope{0x00, *extensions};
+    CHECK(envelope.encode_to_vec() == frame, "each entry is written, the chain's flag set on all but the last");
+    ::SCE::Forge::SceCursor cursor(frame.data(), frame.size());
+    const auto decoded = ExtEnvelope::CodecZenohExtEnvelope::decode(cursor);
+    CHECK(decoded.has_value() && decoded->extensions().size() == 2, "a decoded value holds every entry it read");
+
+    std::vector<std::uint8_t> out;
+    ::SCE::Forge::VectorSink sink(out);
+    CHECK(!ExtEnvelope::Wire::encode_source(TwoExtensions{entries}, sink).has_value() && out == frame,
+          "a consumer's list of a bound of its own encodes alike");
+
+    // A cookie of a bound of the caller's own converts to one of no bound; the
+    // cookie is there where the parent's A is clear.
+    const std::vector<std::uint8_t> bytes{0xAB, 0xCD};
+    const auto cookie = ::SCE::Forge::Bytes<4>::make(bytes);
+    CHECK(cookie.has_value(), "two bytes lie within a bound of four");
+    if (!cookie) {
+        return;
+    }
+    const OpenBody::CodecZenohOpenBody body{1, 2, Cookie{*cookie}};
+    const std::vector<std::uint8_t> open{0x01, 0x02, 0x02, 0xAB, 0xCD};
+    CHECK(body.encode_to_vec() == open, "the cookie's length is derived and its bytes follow");
+    ::SCE::Forge::SceCursor open_cursor(open.data(), open.size());
+    const auto decoded_body = OpenBody::CodecZenohOpenBody::decode(open_cursor, 0);
+    CHECK(decoded_body.has_value() && decoded_body->cookie().has_value() && *decoded_body->cookie() == bytes,
+          "a decoded value holds the cookie it read");
+}
+
+namespace Declaration = ::SCE::Generated::CodecZenohDeclaration;
+using UndeclQueryable = ::SCE::Generated::CodecZenohUndeclQueryable::CodecZenohUndeclQueryable;
+
+void a_template_parent_holds_its_flag_against_what_a_printed_arm_says() {
+    // An undeclaration with no key expression says Z clear; the declaration
+    // on the template's encode writes the header it holds, so a header that
+    // sets Z contradicts the arm and is refused, as the arm itself refused it
+    // before it was printed.
+    Declaration::CodecZenohDeclaration agreeing;
+    agreeing.header = 0x05;
+    agreeing.body = UndeclQueryable{7, std::nullopt};
+    CHECK(agreeing.encode_to_vec() == (std::vector<std::uint8_t>{0x05, 0x07}),
+          "a header whose Z agrees with the arm is written, the arm after it");
+
+    Declaration::CodecZenohDeclaration contradicting;
+    contradicting.header = 0x85;
+    contradicting.body = UndeclQueryable{7, std::nullopt};
+    std::vector<std::uint8_t> out;
+    ::SCE::Forge::VectorSink sink(out);
+    const auto error = contradicting.encode(sink);
+    CHECK(error.has_value() && *error == ::SCE::Forge::CodecError::PresentIfMismatch,
+          "a header whose Z contradicts what the arm says is refused");
+}
+
 void encode_source_reports_the_sinks_failure() {
     std::uint8_t buffer[3] = {};
     ::SCE::Forge::SpanSink sink(buffer, sizeof buffer);
@@ -897,6 +990,8 @@ int main() {
     a_chain_sets_the_flag_its_entries_end_on();
     a_body_a_gate_decides_is_written_where_it_is_present();
     a_list_a_gate_decides_is_walked_where_it_is_present();
+    a_list_and_bytes_of_no_stated_bound_are_held_to_none();
+    a_template_parent_holds_its_flag_against_what_a_printed_arm_says();
     encode_source_reports_the_sinks_failure();
     if (failures != 0) {
         std::fprintf(stderr, "codec_source_generated_test: %d failure(s)\n", failures);

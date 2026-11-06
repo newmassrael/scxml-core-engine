@@ -10574,6 +10574,12 @@ fn render_codec(
                         m,
                         lang,
                     );
+                    refuse_template_list_of_entries_that_say(
+                        &repeat_thread,
+                        f,
+                        alias,
+                        cpp_printed.is_some(),
+                    )?;
                     let law_start = matches!(lang, crate::generator::Language::Rust)
                         .then(|| rust_law_start(&roles, f, &repeat_thread.inputs))
                         .flatten();
@@ -10783,6 +10789,12 @@ fn render_codec(
                         lang,
                         |input| ChainEntryBinds::local_of(f, input),
                     );
+                    refuse_template_list_of_entries_that_say(
+                        &entry_thread,
+                        f,
+                        alias,
+                        cpp_printed.is_some(),
+                    )?;
                     let law_start = matches!(lang, crate::generator::Language::Rust)
                         .then(|| rust_law_start(&roles, f, &entry_thread.inputs))
                         .flatten();
@@ -11081,7 +11093,7 @@ fn render_codec(
                                 f,
                                 &body_type,
                                 &body_encoder,
-                                &embed_thread.encode_arg,
+                                &embed_thread,
                                 lang,
                             )
                             .into(),
@@ -12307,6 +12319,14 @@ fn render_codec(
                     "body_encode_args_with_leading_comma".into(),
                     body_encode_args_with_leading_comma.into(),
                 );
+                // C++: each input the arm says of itself, held against the
+                // flag the parent binds to it before the arm is written.
+                obj.insert(
+                    "body_said_checks".into(),
+                    arm_flag_bind_args
+                        .cpp_said_checks("*_p", "            ")
+                        .into(),
+                );
                 // RFC variant-default-uniformity: surface the
                 // `default="true"` marker so the Rust template can pick
                 // this arm as the Default-trait starting value. At most
@@ -12494,6 +12514,14 @@ fn render_codec(
                 obj.insert(
                     "body_encode_args_with_leading_comma".into(),
                     body_encode_args_with_leading_comma.into(),
+                );
+                // C++: each input the catch-all's body says of itself, held
+                // against the flag the parent binds to it.
+                obj.insert(
+                    "body_said_checks".into(),
+                    default_flag_bind_args
+                        .cpp_said_checks("_p->body", "            ")
+                        .into(),
                 );
                 Ok::<_, ForgeError>(serde_json::Value::Object(obj))
             })
@@ -15762,11 +15790,12 @@ fn embed_streaming_encode_block(
     field: &CodecField,
     body_type: &str,
     body_encoder: &str,
-    thread_arg: &str,
+    thread: &EmbedThreadArgs,
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
     let _ = body_type;
+    let thread_arg = thread.encode_arg.as_str();
     let id_owned = codec_field_local_name(&field.id, lang);
     let id = id_owned.as_str();
     // Non-C11 backends discriminate gated-embed presence via the host
@@ -15811,13 +15840,19 @@ fn embed_streaming_encode_block(
             } else {
                 format!(", {thread_arg_norm}")
             };
+            // An input the body says of itself is held against the flag
+            // the parent binds to it before the body is written.
             if !has_present_if {
-                format!("        if (auto _e = {id}.encode(w{comma_thread}); _e) return _e;")
+                format!(
+                    "{}        if (auto _e = {id}.encode(w{comma_thread}); _e) return _e;",
+                    thread.cpp_said_checks(id, "        ")
+                )
             } else {
                 format!(
-                    "        if (this->{id}.has_value()) {{\n            \
+                    "        if (this->{id}.has_value()) {{\n{}            \
                      if (auto _e = this->{id}->encode(w{comma_thread}); _e) return _e;\n        \
-                 }}"
+                 }}",
+                    thread.cpp_said_checks(&format!("*this->{id}"), "            ")
                 )
             }
         }
@@ -15926,6 +15961,69 @@ struct EmbedThreadArgs {
     /// locals are gone (ADR 0049). The joined strings are what every other
     /// caller reads.
     inputs: Vec<ThreadInput>,
+    /// Each input a C++ codec printed from its plan says of its own value and
+    /// so is not handed on encode (docs/adr/0065 §6 R4a), with what the parent
+    /// would have handed it: a parent on the template's encode tests the two
+    /// agree, as the codec's own encode tested what it was handed before it was
+    /// printed. Empty for every other language.
+    said: Vec<SaidCheck>,
+}
+
+/// Refuses a C++ codec on the template's encode whose list holds entries of a
+/// printed codec that says an input of its own value: each entry would say it
+/// anew while the parent binds one value to it, and the template's walk holds
+/// no test of the two. A codec printed from its plan (`printed`) writes its
+/// lists itself and is not refused.
+fn refuse_template_list_of_entries_that_say(
+    thread: &EmbedThreadArgs,
+    field: &CodecField,
+    alias: &str,
+    printed: bool,
+) -> Result<(), ForgeError> {
+    match thread.said.first() {
+        Some(check) if !printed => Err(ForgeError::from(GenerateError::unsupported(format!(
+            "the list `{}` holds entries of `{alias}`, which says its input `{}` of its own \
+             value; a C++ codec on the template's encode cannot hold it against the flag it \
+             binds to it (docs/adr/0081 step 4)",
+            field.id, check.reader
+        )))),
+        _ => Ok(()),
+    }
+}
+
+/// An input a printed C++ codec says of its own value, which a parent on the
+/// template's encode holds against what it binds to the input.
+struct SaidCheck {
+    /// The namespace of the held codec, whose `input_<name>` reads the input
+    /// off any source of it.
+    namespace: String,
+    /// The input's name as the held codec's reader spells it.
+    reader: String,
+    /// What the parent binds to the input, as its encode body evaluates it.
+    handed: String,
+    /// The bits of the input.
+    mask: u64,
+}
+
+impl EmbedThreadArgs {
+    /// The statements, each at `indent`, that refuse the encode with
+    /// `PresentIfMismatch` where an input the held codec `held` says of itself
+    /// is not what the parent binds to it: the parent's own flag and the held
+    /// value contradict each other, as a gated field and its flag do.
+    fn cpp_said_checks(&self, held: &str, indent: &str) -> String {
+        self.said
+            .iter()
+            .map(|check| {
+                format!(
+                    "{indent}if (({}::input_{}({held}) & 0x{mask:X}u) != ({} & 0x{mask:X}u)) return ::SCE::Forge::CodecError::PresentIfMismatch;\n",
+                    check.namespace,
+                    check.reader,
+                    check.handed,
+                    mask = check.mask
+                )
+            })
+            .collect()
+    }
 }
 
 /// One argument an entry's `decode` is handed (a `u8`: a flag input or the
@@ -15984,6 +16082,7 @@ fn embed_parent_flags_thread_args(
         decode_arg: format!("{}{}", flag_bind_args.decode_arg, caller_tag_decode_arg),
         encode_arg: flag_bind_args.encode_arg,
         inputs,
+        said: flag_bind_args.said,
     }
 }
 
@@ -16038,6 +16137,7 @@ fn embed_flag_bind_thread_args_supplying(
                 decode_arg: String::new(),
                 encode_arg: String::new(),
                 inputs: Vec::new(),
+                said: Vec::new(),
             }
         }
     };
@@ -16046,19 +16146,38 @@ fn embed_flag_bind_thread_args_supplying(
             decode_arg: String::new(),
             encode_arg: String::new(),
             inputs: Vec::new(),
+            said: Vec::new(),
         };
     }
     let mut decode_out = String::new();
     let mut encode_out = String::new();
     let mut inputs: Vec<ThreadInput> = Vec::new();
+    let mut said: Vec<SaidCheck> = Vec::new();
     for input in &imp.codec_flag_inputs {
         // A C++ codec printed from its plan is not handed, on encode, an input
         // its value says (docs/adr/0065 §6 R4a): its encode reads it off the
-        // value. Its decode is handed every input.
+        // value. Its decode is handed every input. What the parent binds to it
+        // is kept, for a parent on the template's encode to hold it against
+        // what the value says.
         let encode_hands = !(matches!(lang, Language::Cpp)
             && imp.cpp_printed
             && imp.codec_says_inputs.contains(&input.name));
+        let mut keep_said = |handed: &str| {
+            if !encode_hands {
+                said.push(SaidCheck {
+                    namespace: imp
+                        .member_type
+                        .rsplit_once("::")
+                        .map(|(namespace, _)| namespace.to_string())
+                        .expect("a generated C++ codec's class is named in its namespace"),
+                    reader: filters::to_snake_case(input.name.clone()),
+                    handed: handed.trim_start_matches(", ").to_string(),
+                    mask: (1u64 << input.width.clamp(1, 8)) - 1,
+                });
+            }
+        };
         if let Some(arg) = supplied(&input.name) {
+            keep_said(&arg);
             // A Swift codec takes its inputs as labelled parameters, named as the leaf names them.
             let passed = match lang {
                 Language::Swift => format!("{}: {arg}", input.name),
@@ -16176,6 +16295,7 @@ fn embed_flag_bind_thread_args_supplying(
                 if encode_hands {
                     encode_out.push_str(&encode_arg);
                 }
+                keep_said(&encode_arg);
                 inputs.push(ThreadInput {
                     input: input.name.clone(),
                     expr: decode_arg.trim_start_matches(", ").to_string(),
@@ -16197,6 +16317,7 @@ fn embed_flag_bind_thread_args_supplying(
                 if encode_hands {
                     encode_out.push_str(&arg);
                 }
+                keep_said(&arg);
                 inputs.push(ThreadInput {
                     input: input.name.clone(),
                     expr: arg.trim_start_matches(", ").to_string(),
@@ -16209,6 +16330,7 @@ fn embed_flag_bind_thread_args_supplying(
         decode_arg: decode_out,
         encode_arg: encode_out,
         inputs,
+        said,
     }
 }
 

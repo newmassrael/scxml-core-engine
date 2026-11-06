@@ -34,9 +34,8 @@ namespace SCE::Forge::ContentLine {
 inline constexpr std::size_t kFoldWidth = 75;
 
 /// The bound a reader or a writer is handed for a text or a list the protocol
-/// states no bound of (docs/adr/0077 §7): the largest `std::size_t`, past which
-/// no frame this runtime reads has a length.
-inline constexpr std::size_t kUnbounded = SIZE_MAX;
+/// states no bound of (docs/adr/0077 §7): the runtime's one such bound.
+inline constexpr std::size_t kUnbounded = ::SCE::Forge::kUnbounded;
 
 /// One variant of an enum a content-line entry is read and written by
 /// (docs/adr/0015): the text the enum document gives it and the carrier value it

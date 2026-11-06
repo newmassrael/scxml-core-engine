@@ -158,13 +158,13 @@ edit("tools/codegen/templates/forge/cpp/codec.h.jinja2",
 #if {{ arm.c_feature_macro }}
 {% endif %}
         if (auto _p = std::get_if<{{ arm.body_type }}>(&body)) {
-            if (auto _e = _p->encode(w{{ arm.body_encode_args_with_leading_comma }}); _e) return _e;
+{{ arm.body_said_checks }}            if (auto _e = _p->encode(w{{ arm.body_encode_args_with_leading_comma }}); _e) return _e;
         }
 {% if arm.c_feature_macro %}
 #endif
 {% endif %}''',
      r'''        if (auto _p = std::get_if<{{ arm.body_type }}>(&body)) {
-            if (auto _e = _p->encode(w{{ arm.body_encode_args_with_leading_comma }}); _e) return _e;
+{{ arm.body_said_checks }}            if (auto _e = _p->encode(w{{ arm.body_encode_args_with_leading_comma }}); _e) return _e;
         }''')
 PY
 

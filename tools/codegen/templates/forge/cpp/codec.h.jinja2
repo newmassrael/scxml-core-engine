@@ -505,7 +505,7 @@ struct {{ struct_name }} {
 #if {{ arm.c_feature_macro }}
 {% endif %}
         if (auto _p = std::get_if<{{ arm.body_type }}>(&body)) {
-            if (auto _e = _p->encode(w{{ arm.body_encode_args_with_leading_comma }}); _e) return _e;
+{{ arm.body_said_checks }}            if (auto _e = _p->encode(w{{ arm.body_encode_args_with_leading_comma }}); _e) return _e;
         }
 {% if arm.c_feature_macro %}
 #endif
@@ -513,7 +513,7 @@ struct {{ struct_name }} {
 {% endfor %}
 {% if variant.default_arm %}
         if (auto _p = std::get_if<{{ struct_name }}{{ variant.default_arm.variant_name }}>(&body)) {
-            if (auto _e = _p->body.encode(w{{ variant.default_arm.body_encode_args_with_leading_comma }}); _e) return _e;
+{{ variant.default_arm.body_said_checks }}            if (auto _e = _p->body.encode(w{{ variant.default_arm.body_encode_args_with_leading_comma }}); _e) return _e;
         }
 {% endif %}
         return std::nullopt;

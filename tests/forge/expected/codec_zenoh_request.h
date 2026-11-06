@@ -214,6 +214,7 @@ struct CodecZenohRequest {
         // per-field path.
         if (auto _e = w.write_u8(header); _e) return _e;
         if (auto _e = w.write_vle_u64(static_cast<std::uint64_t>(rid)); _e) return _e;
+        if ((::SCE::Generated::CodecZenohWireexpr::input_n(keyexpr) & 0x1u) != (static_cast<std::uint8_t>((this->header >> 5) & 0x1) & 0x1u)) return ::SCE::Forge::CodecError::PresentIfMismatch;
         if (auto _e = keyexpr.encode(w); _e) return _e;
         if (this->extensions.has_value()) {
             for (const auto& _e : *this->extensions) {

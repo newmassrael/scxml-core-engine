@@ -223,27 +223,33 @@ struct CodecZenohDeclaration {
         if (auto _e = w.write_u8(header); _e) return _e;
         // Append the active arm body's encoded bytes.
         if (auto _p = std::get_if<::SCE::Generated::CodecZenohDeclKexpr::CodecZenohDeclKexpr>(&body)) {
+            if ((::SCE::Generated::CodecZenohDeclKexpr::input_n(*_p) & 0x1u) != (static_cast<std::uint8_t>((this->header >> 5) & 0x1) & 0x1u)) return ::SCE::Forge::CodecError::PresentIfMismatch;
             if (auto _e = _p->encode(w); _e) return _e;
         }
         if (auto _p = std::get_if<::SCE::Generated::CodecZenohUndeclKexpr::CodecZenohUndeclKexpr>(&body)) {
             if (auto _e = _p->encode(w); _e) return _e;
         }
         if (auto _p = std::get_if<::SCE::Generated::CodecZenohDeclSubscriber::CodecZenohDeclSubscriber>(&body)) {
+            if ((::SCE::Generated::CodecZenohDeclSubscriber::input_n(*_p) & 0x1u) != (static_cast<std::uint8_t>((this->header >> 5) & 0x1) & 0x1u)) return ::SCE::Forge::CodecError::PresentIfMismatch;
             if (auto _e = _p->encode(w); _e) return _e;
         }
         if (auto _p = std::get_if<::SCE::Generated::CodecZenohUndeclSubscriber::CodecZenohUndeclSubscriber>(&body)) {
+            if ((::SCE::Generated::CodecZenohUndeclSubscriber::input_z(*_p) & 0x1u) != (static_cast<std::uint8_t>((this->header >> 7) & 0x1) & 0x1u)) return ::SCE::Forge::CodecError::PresentIfMismatch;
             if (auto _e = _p->encode(w); _e) return _e;
         }
         if (auto _p = std::get_if<::SCE::Generated::CodecZenohDeclQueryable::CodecZenohDeclQueryable>(&body)) {
             if (auto _e = _p->encode(w, static_cast<std::uint8_t>((this->header >> 5) & 0x1), static_cast<std::uint8_t>((this->header >> 7) & 0x1)); _e) return _e;
         }
         if (auto _p = std::get_if<::SCE::Generated::CodecZenohUndeclQueryable::CodecZenohUndeclQueryable>(&body)) {
+            if ((::SCE::Generated::CodecZenohUndeclQueryable::input_z(*_p) & 0x1u) != (static_cast<std::uint8_t>((this->header >> 7) & 0x1) & 0x1u)) return ::SCE::Forge::CodecError::PresentIfMismatch;
             if (auto _e = _p->encode(w); _e) return _e;
         }
         if (auto _p = std::get_if<::SCE::Generated::CodecZenohDeclToken::CodecZenohDeclToken>(&body)) {
+            if ((::SCE::Generated::CodecZenohDeclToken::input_n(*_p) & 0x1u) != (static_cast<std::uint8_t>((this->header >> 5) & 0x1) & 0x1u)) return ::SCE::Forge::CodecError::PresentIfMismatch;
             if (auto _e = _p->encode(w); _e) return _e;
         }
         if (auto _p = std::get_if<::SCE::Generated::CodecZenohUndeclToken::CodecZenohUndeclToken>(&body)) {
+            if ((::SCE::Generated::CodecZenohUndeclToken::input_z(*_p) & 0x1u) != (static_cast<std::uint8_t>((this->header >> 7) & 0x1) & 0x1u)) return ::SCE::Forge::CodecError::PresentIfMismatch;
             if (auto _e = _p->encode(w); _e) return _e;
         }
         if (auto _p = std::get_if<::SCE::Generated::CodecZenohDeclFinal::CodecZenohDeclFinal>(&body)) {

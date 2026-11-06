@@ -468,6 +468,15 @@ old encode, the old encode and its templates are removed in the same landing.
    `is_<element>_present_list`), from which the encode derives the flag it is gated on and walks the entries where
    it is present, a chain setting the flag its entries end on as before. A count of its entries is derived where it
    is present. The printed set is 88 codecs.
+
+   *The twelfth C++ landing, 2026-11-06:* a list, a byte string or a text the protocol states no bound of
+   (docs/adr/0077 §7), held as `Bounded<_, kUnbounded>`. `SCE::Forge::kUnbounded` is the runtime's one such bound,
+   which `ContentLine::kUnbounded` names. The printed set is 97 codecs. A defect of the template parents of printed
+   codecs, open since the fifth landing, was closed with it: a printed codec is not handed an input its value says,
+   and a parent on the template's encode had then written its own flag with no test against the value, where the
+   codec had refused the two disagreeing (`PresentIfMismatch`) before it was printed. Such a parent now holds the
+   flag it binds against `input_<name>` of the arm or the body it writes, and refuses as the codec did; one whose
+   list holds entries that say an input is refused at generation, since each entry would say it anew.
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences

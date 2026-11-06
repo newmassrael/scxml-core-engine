@@ -181,6 +181,7 @@ struct CodecZenohInterestBody {
         // dedicated helpers; everything else uses `present_if_encode_block`.
         if (auto _e = w.write_u8(header); _e) return _e;
         if (this->keyexpr.has_value()) {
+            if ((::SCE::Generated::CodecZenohWireexpr::input_n(*this->keyexpr) & 0x1u) != (static_cast<std::uint8_t>((this->header >> 5) & 0x1) & 0x1u)) return ::SCE::Forge::CodecError::PresentIfMismatch;
             if (auto _e = this->keyexpr->encode(w); _e) return _e;
         }
         return std::nullopt;

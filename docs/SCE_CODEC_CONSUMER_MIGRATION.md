@@ -1274,6 +1274,22 @@ lists a gate decides (2 more codecs of the resources, 88 in all).
 - A source presents the list as a `std::optional` of any bounded list within the element's bounds whose entries are
   sources of the entry codec.
 
+## A printed C++ codec holds a list or bytes of no stated bound to `kUnbounded` (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C++ tree is regenerated after it. It moves the codecs whose lists,
+byte strings or texts the protocol states no bound of (9 more codecs of the resources, 97 in all: the Zenoh
+messages `err`, `msg_del`, `msg_put`, `oam`, `query`, `reply`, `response_final`, the extension envelope and the open
+body among them).
+
+- Such an element is `::SCE::Forge::List<Entry, ::SCE::Forge::kUnbounded>` (or `Bytes<kUnbounded>`,
+  `Text<kUnbounded>`), where it was a public `std::vector` member. A list or bytes of any bound of the caller's own
+  converts to it with no check.
+- `SCE::Forge::kUnbounded` is the one "no bound" of the runtime; `SCE::Forge::ContentLine::kUnbounded` names it.
+- A parent on the template's encode (a declaration, a transport envelope, a request, an interest body, a queryable
+  declaration) holding one of the printed codecs that say an input of their own value refuses its encode with
+  `PresentIfMismatch` where its own flag disagrees with what that value says, as the held codec refused it before
+  it was printed. A caller that set the flag by hand sets it to agree, or reads the codec's `input_<name>(value)`.
+
 ## A payload schema states its keys in the order the document declares them (ADR 0087 §1.1)
 
 Landing: the commit that adds this section; every tree holding a `JSON_SCHEMA` constant or a GBNF table (the Rust,

@@ -205,7 +205,8 @@ struct CodecTransportEnvelope {
             if (auto _e = _p->encode(w, static_cast<std::uint8_t>((this->header >> 6) & 0x1), static_cast<std::uint8_t>((this->header >> 5) & 0x1)); _e) return _e;
         }
         if (auto _p = std::get_if<::SCE::Generated::CodecZenohOpenBody::CodecZenohOpenBody>(&body)) {
-            if (auto _e = _p->encode(w, static_cast<std::uint8_t>((this->header >> 5) & 0x1)); _e) return _e;
+            if ((::SCE::Generated::CodecZenohOpenBody::input_a(*_p) & 0x1u) != (static_cast<std::uint8_t>((this->header >> 5) & 0x1) & 0x1u)) return ::SCE::Forge::CodecError::PresentIfMismatch;
+            if (auto _e = _p->encode(w); _e) return _e;
         }
         if (auto _p = std::get_if<::SCE::Generated::CodecZenohClose::CodecZenohClose>(&body)) {
             if (auto _e = _p->encode(w); _e) return _e;

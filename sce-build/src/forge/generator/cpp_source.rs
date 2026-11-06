@@ -80,16 +80,9 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
                 forms.push(format!("`{id}`, which is not an integer or a flag set"))
             }
             // A byte string is presented within its bound (docs/adr/0077 §3),
-            // which a type holds only where the protocol states one.
-            Value::Bytes(Bound { most: None, .. }) => {
-                forms.push(format!("`{id}`, bytes of no stated bound"))
-            }
-            Value::Bytes(_) => {}
-            // A text likewise, in UTF-8 bytes.
-            Value::Text(Bound { most: None, .. }) => {
-                forms.push(format!("`{id}`, a text of no stated bound"))
-            }
-            Value::Text(_) => {}
+            // and a text likewise, in UTF-8 bytes; one the protocol states no
+            // bound of is held to `kUnbounded` (§7).
+            Value::Bytes(_) | Value::Text(_) => {}
             // A body is encoded over a source of its codec, which a codec the
             // printer prints has; it is written whole, every input it takes
             // handed by what the parent binds to it. One a gate decides is
@@ -108,19 +101,17 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
                     forms.push(format!("`{id}`, a body handed an input nothing binds"));
                 }
             }
-            // A list of entries is held to its bound and walked entry by
+            // A list of entries is held to its bound, `kUnbounded` where the
+            // protocol states none (docs/adr/0077 §7), and walked entry by
             // entry, each written by its codec's encode over the source the
             // list holds it as. One a gate decides is presented as an optional
             // value and walked where it is present. A law over the entries is
             // not yet.
-            Value::List { codec, bound, law } => {
+            Value::List { codec, law, .. } => {
                 if !held_printed(imports, codec) {
                     forms.push(format!(
                         "`{id}`, a list of entries of a codec the printer does not print"
                     ));
-                }
-                if bound.most.is_none() {
-                    forms.push(format!("`{id}`, a list of no stated bound"));
                 }
                 if !law.is_none() {
                     forms.push(format!("`{id}`, a list held to a law"));
@@ -755,14 +746,7 @@ impl<'p> Presented<'p> {
             }
             Value::List { codec, bound, .. } => {
                 let (class, namespace) = held_codec(imports, codec);
-                let most = bound
-                    .most
-                    .expect("`unlowered` refuses a list of no stated bound");
-                let bounds = if bound.least == 0 {
-                    format!("{most}")
-                } else {
-                    format!("{most}, {}", bound.least)
-                };
+                let bounds = bounds_args(bound);
                 Presented {
                     field: element.field,
                     name,
@@ -783,14 +767,7 @@ impl<'p> Presented<'p> {
             }
             Value::Bytes(bound) | Value::Text(bound) => {
                 let text = matches!(element.value, Value::Text(_));
-                let most = bound
-                    .most
-                    .expect("`unlowered` refuses bytes or text of no stated bound");
-                let bounds = if bound.least == 0 {
-                    format!("{most}")
-                } else {
-                    format!("{most}, {}", bound.least)
-                };
+                let bounds = bounds_args(bound);
                 let (view, list) = if text {
                     ("Text", "std::string")
                 } else {
@@ -1907,6 +1884,21 @@ pub(super) fn render(
         members: line(members),
         private: line(private),
         decoded: line(decoded),
+    }
+}
+
+/// The bounds of a list, a byte string or a text as the arguments of its
+/// `Bounded`: the most it holds, `::SCE::Forge::kUnbounded` where the protocol
+/// states none (docs/adr/0077 §7), then the fewest where that is not none.
+fn bounds_args(bound: &Bound) -> String {
+    let most = bound.most.map_or_else(
+        || "::SCE::Forge::kUnbounded".to_string(),
+        |most| most.to_string(),
+    );
+    if bound.least == 0 {
+        most
+    } else {
+        format!("{most}, {}", bound.least)
     }
 }
 
