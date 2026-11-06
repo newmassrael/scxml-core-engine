@@ -2175,6 +2175,15 @@ impl MatcherReader<'_> {
         )
     }
 
+    /// A rule a matcher breaks at its position, placed on `node`.
+    fn refused(
+        &self,
+        node: &roxmltree::Node,
+        refusal: crate::forge::test_profile::MatcherRefusal,
+    ) -> Located<ForgeError> {
+        self.refusal(node, refusal.rule, &refusal.actual, refusal.detail)
+    }
+
     /// The formal parameter `name`, refused where `node` names it when the
     /// template declares none.
     fn parameter(
@@ -2183,20 +2192,8 @@ impl MatcherReader<'_> {
         element: &str,
         name: &str,
     ) -> Result<&TestTemplateParameter, Located<ForgeError>> {
-        self.parameters
-            .iter()
-            .find(|p| p.id == name)
-            .ok_or_else(|| {
-                self.refusal(
-                    node,
-                    TestProfileRule::TemplateParameter,
-                    name,
-                    format!(
-                    "{element} names '{name}', which is not a formal parameter of the template \
-                     (a <data sce:direction=in> with no expr)"
-                ),
-                )
-            })
+        crate::forge::test_profile::formal_parameter(self.parameters, element, name)
+            .map_err(|refusal| self.refused(node, refusal))
     }
 
     /// The matcher `node` is, standing at `place`, where a value of `ty`
@@ -2455,7 +2452,14 @@ impl MatcherReader<'_> {
                         ));
                     }
                     let value = self.read_value(&bound, &bound_element)?;
-                    self.check_range_bound(&bound, &bound_element, &value, bound_ty)?;
+                    crate::forge::test_profile::check_range_bound(
+                        &bound_element,
+                        &value,
+                        bound_ty,
+                        self.parameters,
+                        &same_spelling,
+                    )
+                    .map_err(|refusal| self.refused(&bound, refusal))?;
                     *slot = Some(value);
                 }
                 TestMatcherForm::ValueRange { lower, upper }
@@ -2519,132 +2523,27 @@ impl MatcherReader<'_> {
         })
     }
 
-    /// A bound of a `value-range` (B.1.2.5): an integer in decimal, or a
-    /// formal parameter of an integer type; of the position's type where the
-    /// document spells it.
-    fn check_range_bound(
-        &self,
-        node: &roxmltree::Node,
-        element: &str,
-        value: &TestValue,
-        ty: Option<&ValueType>,
-    ) -> Result<(), Located<ForgeError>> {
-        match value {
-            TestValue::Value(text) => {
-                let fits = match ty {
-                    Some(ty) => crate::forge::test_profile::literal_of(ty, text),
-                    None => crate::forge::test_profile::decimal_integer(text)
-                        .map(|_| ())
-                        .ok_or_else(|| "an integer in decimal".to_string()),
-                };
-                fits.map_err(|rule| {
-                    self.refusal(
-                        node,
-                        TestProfileRule::Literal,
-                        text,
-                        format!(
-                            "{element} value '{text}' is not a bound of the range: expected {rule}"
-                        ),
-                    )
-                })
-            }
-            TestValue::Param(name) => {
-                let parameter = self.parameter(node, element, name)?;
-                let integer = matches!(
-                    &parameter.parameter_type,
-                    crate::forge::value_type::TypeOf::Scalar(scalar)
-                        if scalar.int_value_range().is_some()
-                );
-                let of_position =
-                    ty.is_none_or(|ty| same_value_type(ty, &parameter.parameter_type));
-                if integer && of_position {
-                    return Ok(());
-                }
-                Err(self.refusal(
-                    node,
-                    TestProfileRule::TemplateParameter,
-                    name,
-                    format!(
-                        "{element} names '{name}', of type {}, and a bound of this range is a \
-                         value of {}",
-                        parameter.parameter_type,
-                        ty.map_or_else(|| "an integer type".to_string(), |ty| ty.to_string())
-                    ),
-                ))
-            }
-        }
-    }
-
     /// The rules of a position whose type the document spells
-    /// (docs/SCE_TEST_PROFILE.md §11.4): the matcher's form and its
-    /// attributes are admitted there, and a specific value is a literal of the
-    /// type or a formal parameter of it.
+    /// (docs/SCE_TEST_PROFILE.md §11.4), as
+    /// [`crate::forge::test_profile::check_position`] states them, placed on
+    /// `node`.
     fn check_position(
         &self,
         node: &roxmltree::Node,
         matcher: &TestMatcher,
         ty: &ValueType,
     ) -> Result<(), Located<ForgeError>> {
-        let local = node.tag_name().name();
-        if let Err(rule) = crate::forge::test_profile::matcher_admitted(&matcher.form, ty) {
-            return Err(self.refusal(
-                node,
-                TestProfileRule::MatcherType,
-                local,
-                format!("<sce:{local}> stands where a value of {ty} is matched: it stands only at {rule}"),
-            ));
-        }
-        if let Err((attr, rule)) = crate::forge::test_profile::attributes_admitted(matcher, ty) {
-            return Err(self.refusal(
-                node,
-                TestProfileRule::MatcherType,
-                attr,
-                format!(
-                    "<sce:{local}> carries {attr} where a value of {ty} is matched: it is \
-                     written only at {rule}"
-                ),
-            ));
-        }
-        match &matcher.form {
-            TestMatcherForm::Specific {
-                value: TestValue::Value(text),
-            } => crate::forge::test_profile::literal_of(ty, text).map_err(|rule| {
-                self.refusal(
-                    node,
-                    TestProfileRule::Literal,
-                    text,
-                    format!("<sce:{local}> value '{text}' is not a value of {ty}: expected {rule}"),
-                )
-            }),
-            TestMatcherForm::Specific {
-                value: TestValue::Param(name),
-            } => {
-                let parameter = self.parameter(node, &format!("<sce:{local}>"), name)?;
-                if same_value_type(ty, &parameter.parameter_type) {
-                    return Ok(());
-                }
-                Err(self.refusal(
-                    node,
-                    TestProfileRule::TemplateParameter,
-                    name,
-                    format!(
-                        "<sce:{local}> names '{name}', of type {}, where a value of {ty} is \
-                         matched",
-                        parameter.parameter_type
-                    ),
-                ))
-            }
-            _ => Ok(()),
-        }
+        crate::forge::test_profile::check_position(matcher, ty, self.parameters, &same_spelling)
+            .map_err(|refusal| self.refused(node, refusal))
     }
 }
 
-/// Whether a value of `parameter` stands where a value of `position` is
-/// matched: the same type, or the type of a present value of an optional
-/// position.
-fn same_value_type(position: &ValueType, parameter: &ValueType) -> bool {
-    use crate::forge::value_type::TypeOf;
-    position == parameter || matches!(position, TypeOf::Optional { elem } if **elem == *parameter)
+/// Whether two types written in one template are one type: within one
+/// document an alias names one document, so two types are one when they are
+/// spelled alike. A type read through an imported document is told by the
+/// document its alias names ([`crate::forge::test_template_check`]).
+fn same_spelling(a: &ValueType, b: &ValueType) -> bool {
+    a == b
 }
 
 /// Read a `sce:kind="test-configuration"` document (docs/SCE_TEST_PROFILE.md

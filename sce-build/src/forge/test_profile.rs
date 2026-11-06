@@ -10,10 +10,14 @@
 //! the root of a template and every position its own type reaches, a formal
 //! parameter, a module parameter. A position whose type is a field of an
 //! imported record or a case of an imported union is asked the same
-//! questions where the imports are read.
+//! questions where the imports are read ([`crate::forge::test_template_check`]),
+//! by the one reading of a matcher at a position both share
+//! ([`check_position`], [`check_range_bound`]).
 
-use crate::forge::error::{GenerateError, SourceLocation};
-use crate::forge::model::{ForgeKind, SceType, TestMatcher, TestMatcherForm};
+use crate::forge::error::{GenerateError, SourceLocation, TestProfileRule};
+use crate::forge::model::{
+    ForgeKind, SceType, TestMatcher, TestMatcherForm, TestTemplateParameter, TestValue,
+};
 use crate::forge::value_type::{TypeOf, ValueType};
 
 /// Why no backend generates a document of the test profile yet, as every
@@ -220,7 +224,7 @@ pub fn decimal_integer(text: &str) -> Option<i128> {
 
 /// What stands at a position of type `ty` once an optional's absence is set
 /// apart: the type a present value has.
-fn present(ty: &ValueType) -> &ValueType {
+pub fn present(ty: &ValueType) -> &ValueType {
     match ty {
         TypeOf::Optional { elem } => elem.as_ref(),
         other => other,
@@ -315,6 +319,169 @@ pub fn list_element(ty: &ValueType) -> Option<&ValueType> {
     match present(ty) {
         TypeOf::List { elem, .. } => Some(elem.as_ref()),
         _ => None,
+    }
+}
+
+// ── A matcher at its position ──────────────────────────────────
+
+/// A rule of docs/SCE_TEST_PROFILE.md §11.4 that one matcher breaks where it
+/// stands: the rule, which decides the wire code; what the document wrote
+/// where the rule is broken; and what is wrong, phrased as the refusal's
+/// detail. The reader that holds the matcher places it: the parser on the
+/// element, the import-time check on the matcher's line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MatcherRefusal {
+    pub rule: TestProfileRule,
+    pub actual: String,
+    pub detail: String,
+}
+
+/// The formal parameter `name` of a template whose parameters are
+/// `parameters`, or the refusal of `element` naming one the template does
+/// not declare (`test-profile/template-parameter`).
+pub fn formal_parameter<'p>(
+    parameters: &'p [TestTemplateParameter],
+    element: &str,
+    name: &str,
+) -> Result<&'p TestTemplateParameter, MatcherRefusal> {
+    parameters
+        .iter()
+        .find(|p| p.id == name)
+        .ok_or_else(|| MatcherRefusal {
+            rule: TestProfileRule::TemplateParameter,
+            actual: name.to_string(),
+            detail: format!(
+                "{element} names '{name}', which is not a formal parameter of the template \
+                 (a <data sce:direction=in> with no expr)"
+            ),
+        })
+}
+
+/// Whether a value of `value` stands where a value of `position` is matched:
+/// the two are one type by `same`, or `position` is optional and `value` is
+/// the type of its present value. `same` is asked `(position, value)`, in that
+/// order, since the two may be read in the scopes of different documents.
+pub fn stands_at(
+    position: &ValueType,
+    value: &ValueType,
+    same: &dyn Fn(&ValueType, &ValueType) -> bool,
+) -> bool {
+    same(position, value)
+        || matches!(position, TypeOf::Optional { elem } if same(elem.as_ref(), value))
+}
+
+/// The rules of a matcher where a value of `ty` is matched
+/// (docs/SCE_TEST_PROFILE.md §11.4): its form and its attributes are admitted
+/// there (`test-profile/matcher-type`), and a specific value is a literal of
+/// the type (`test-profile/literal`) or a formal parameter of it
+/// (`test-profile/template-parameter`).
+///
+/// `parameters` are the formal parameters of the template that holds the
+/// matcher, and `same` tells whether a parameter's type is the position's
+/// ([`stands_at`]). Whether a literal of an enum names one of its variants
+/// needs the enum's document, and is the caller's to ask.
+pub fn check_position(
+    matcher: &TestMatcher,
+    ty: &ValueType,
+    parameters: &[TestTemplateParameter],
+    same: &dyn Fn(&ValueType, &ValueType) -> bool,
+) -> Result<(), MatcherRefusal> {
+    let local = matcher.form.element();
+    if let Err(rule) = matcher_admitted(&matcher.form, ty) {
+        return Err(MatcherRefusal {
+            rule: TestProfileRule::MatcherType,
+            actual: local.to_string(),
+            detail: format!(
+                "<sce:{local}> stands where a value of {ty} is matched: it stands only at {rule}"
+            ),
+        });
+    }
+    if let Err((attr, rule)) = attributes_admitted(matcher, ty) {
+        return Err(MatcherRefusal {
+            rule: TestProfileRule::MatcherType,
+            actual: attr.to_string(),
+            detail: format!(
+                "<sce:{local}> carries {attr} where a value of {ty} is matched: it is written \
+                 only at {rule}"
+            ),
+        });
+    }
+    match &matcher.form {
+        TestMatcherForm::Specific {
+            value: TestValue::Value(text),
+        } => literal_of(ty, text).map_err(|rule| MatcherRefusal {
+            rule: TestProfileRule::Literal,
+            actual: text.clone(),
+            detail: format!("<sce:{local}> value '{text}' is not a value of {ty}: expected {rule}"),
+        }),
+        TestMatcherForm::Specific {
+            value: TestValue::Param(name),
+        } => {
+            let parameter = formal_parameter(parameters, &format!("<sce:{local}>"), name)?;
+            if stands_at(ty, &parameter.parameter_type, same) {
+                return Ok(());
+            }
+            Err(MatcherRefusal {
+                rule: TestProfileRule::TemplateParameter,
+                actual: name.clone(),
+                detail: format!(
+                    "<sce:{local}> names '{name}', of type {}, where a value of {ty} is matched",
+                    parameter.parameter_type
+                ),
+            })
+        }
+        _ => Ok(()),
+    }
+}
+
+/// A bound of a `value-range` (B.1.2.5), written by `element`: an integer in
+/// decimal, or a formal parameter of an integer type; of the position's type
+/// `ty` where the caller knows it (`None` holds the bound to the integer
+/// syntax alone). `parameters` and `same` are as [`check_position`] takes them.
+pub fn check_range_bound(
+    element: &str,
+    value: &TestValue,
+    ty: Option<&ValueType>,
+    parameters: &[TestTemplateParameter],
+    same: &dyn Fn(&ValueType, &ValueType) -> bool,
+) -> Result<(), MatcherRefusal> {
+    match value {
+        TestValue::Value(text) => {
+            let fits = match ty {
+                Some(ty) => literal_of(ty, text),
+                None => decimal_integer(text)
+                    .map(|_| ())
+                    .ok_or_else(|| "an integer in decimal".to_string()),
+            };
+            fits.map_err(|rule| MatcherRefusal {
+                rule: TestProfileRule::Literal,
+                actual: text.clone(),
+                detail: format!(
+                    "{element} value '{text}' is not a bound of the range: expected {rule}"
+                ),
+            })
+        }
+        TestValue::Param(name) => {
+            let parameter = formal_parameter(parameters, element, name)?;
+            let integer = matches!(
+                &parameter.parameter_type,
+                TypeOf::Scalar(scalar) if scalar.int_value_range().is_some()
+            );
+            let of_position = ty.is_none_or(|ty| stands_at(ty, &parameter.parameter_type, same));
+            if integer && of_position {
+                return Ok(());
+            }
+            Err(MatcherRefusal {
+                rule: TestProfileRule::TemplateParameter,
+                actual: name.clone(),
+                detail: format!(
+                    "{element} names '{name}', of type {}, and a bound of this range is a value \
+                     of {}",
+                    parameter.parameter_type,
+                    ty.map_or_else(|| "an integer type".to_string(), |ty| ty.to_string())
+                ),
+            })
+        }
     }
 }
 
