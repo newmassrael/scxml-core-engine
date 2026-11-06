@@ -15,8 +15,8 @@
 //
 // Driven entirely on `SceClock::Manual`: no case sleeps, and none can be decided
 // by how loaded the build machine is. The shared instance
-// `saved/statechart_static_host_invoke_running.json` is the format-2 text every
-// backend writes (docs/adr/0045); the format-1 text of the same run, under
+// `saved/statechart_static_host_invoke_running.json` is the format-3 text every
+// backend writes (docs/adr/0090); the format-1 text of the same run, under
 // `saved/format1/`, still restores.
 
 use std::sync::{Arc, Mutex};
@@ -83,7 +83,7 @@ fn starts(log: &Log) -> Vec<HostInvokeRequest> {
 }
 
 /// A machine standing in `working`, its invocation started with token 0, given
-/// the session id the shared format-2 fixtures name their root by.
+/// the session id the shared tree fixtures name their root by.
 fn working() -> (Engine<Policy>, Log) {
     let log = Log::default();
     let mut engine = Engine::new(Policy::new_with_session_id("fixture-root").expect("an Nmtoken"));
@@ -152,7 +152,7 @@ fn a_restore_asks_nothing_of_the_host_until_the_machine_is_driven() {
     const FORMAT1_RUNNING: &str = include_str!(
         "../../../../sce-build/tests/fixtures/host_processor/saved/format1/statechart_static_host_invoke_running.json"
     );
-    // From the format-2 text, and from the format-1 text of the same run.
+    // From the format-3 text, and from the format-1 text of the same run.
     for text in [SHARED_RUNNING, FORMAT1_RUNNING] {
         let (mut engine, log) = restored(text, 1000);
         assert!(told(&log).is_empty(), "the restore itself calls nobody");

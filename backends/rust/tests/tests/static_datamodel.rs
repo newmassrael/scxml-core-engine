@@ -526,14 +526,14 @@ fn the_snapshot_names_the_state_a_guard_held_the_machine_in() {
 // Each saved state goes through its JSON text and back before it is
 // restored, as one that crossed a process boundary would.
 //
-// The machine writes format 2 (docs/adr/0045), and a format-2 state names the
-// session's id. A machine a host creates draws one, so a run whose text is held
+// The machine writes format 3 (docs/adr/0090, section 7), a tree of sessions
+// (docs/adr/0045), and a tree names the session's id. A machine a host creates draws one, so a run whose text is held
 // to a shared fixture is given the id the fixtures name their root by, as a
 // host may give one; no case reads the value of a drawn id. The format-1 texts
 // every backend saved before trees are under `saved/format1/`, and each still
 // restores.
 
-/// The session id the shared format-2 fixtures give their root.
+/// The session id the shared tree fixtures give their root.
 const ROOT: &str = "fixture-root";
 
 fn through_json(saved: &SavedState) -> SavedState {
@@ -675,7 +675,7 @@ fn a_record_and_a_list_save_the_text_every_backend_saves() {
 
 #[test]
 fn a_state_another_backend_saved_is_restored() {
-    // A format-2 text, and the format-1 text of the same run.
+    // A format-3 text, and the format-1 text of the same run.
     for (record, list) in [(SHARED_RECORD, SHARED_LIST), (FORMAT1_RECORD, FORMAT1_LIST)] {
         let restored = Engine::<StaticRecordPolicy>::restore(
             StaticRecordPolicy::new(),
@@ -782,7 +782,7 @@ const SHARED_REVISED_FIRST_QUEUED: &str = include_str!(
 );
 
 /// `text` restored into a machine given the root's id, so a format-1 text,
-/// which holds no id, saves again as the shared format-2 text does.
+/// which holds no id, saves again as the shared format-3 text does.
 fn revised_restored(text: &str) -> Engine<StaticSchemaRevisionPolicy> {
     Engine::<StaticSchemaRevisionPolicy>::restore(
         StaticSchemaRevisionPolicy::new_with_session_id(ROOT).expect("an Nmtoken"),
@@ -1038,7 +1038,7 @@ fn an_enum_variable_is_saved_as_the_name_the_document_declares() {
 
 #[test]
 fn a_state_another_backend_saved_holds_an_enum_that_is_restored() {
-    // The format-2 text's shape names the enum by its document, the format-1
+    // The format-3 text's shape, format 2's, names the enum by its document, the format-1
     // text's by its alias: each is judged by the shape of its own format.
     for text in [SHARED_ENUM, FORMAT1_ENUM] {
         let mut restored = Engine::<StaticEnumPolicy>::restore(
@@ -1058,8 +1058,9 @@ fn a_state_another_backend_saved_holds_an_enum_that_is_restored() {
 
 #[test]
 fn a_shape_of_one_format_does_not_stand_for_the_other() {
-    // The format-2 text under the format-1 shape, and the format-1 text under the
-    // format-2 one: a state is bound to the shape its own format names.
+    // The format-3 text under the format-1 shape, and the format-1 text under the
+    // format-2 one, which format 3 keeps: a state is bound to the shape its own
+    // format names.
     let crossed = [
         SHARED_ENUM.trim().replace(
             "f4b82d70d61f1a107887fbbef7b3f95ff21face9f668501207e0d75867026323",

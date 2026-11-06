@@ -13,8 +13,8 @@
 // `second.due`, each under an id written to `first` and `second`, and
 // `cancel.first` and `cancel.second` remove the send whose id the variable holds.
 // Everything runs on a host-owned clock, so no case sleeps. The shared fixture
-// `saved/static_send_idlocation_armed.json` is the format-2 text every backend
-// writes (docs/adr/0045), its root given the id the fixtures name it by, and
+// `saved/static_send_idlocation_armed.json` is the format-3 text every backend
+// writes (docs/adr/0090), its root given the id the fixtures name it by, and
 // `saved/format1/` holds the format-1 text of the same run, which still restores.
 
 use sce_rust_runtime::saved_state::SavedState;
@@ -30,7 +30,7 @@ const FORMAT1_ARMED: &str = include_str!(
     "../../../../sce-build/tests/fixtures/static_datamodel/saved/format1/static_send_idlocation_armed.json"
 );
 
-/// The session id the shared format-2 fixtures give their root.
+/// The session id the shared tree fixtures give their root.
 const ROOT: &str = "fixture-root";
 
 /// The wall-clock moment the shared fixture was saved at: 2023-11-14T22:13:20Z.
@@ -84,7 +84,7 @@ fn a_machine_that_armed_two_sends_saves_the_ids_it_generated() {
 
 #[test]
 fn a_restored_send_is_cancelled_by_the_id_the_document_holds() {
-    // From the format-2 text, and from the format-1 text of the same run.
+    // From the format-3 text, and from the format-1 text of the same run.
     for text in [SHARED_ARMED, FORMAT1_ARMED] {
         let mut engine = restored_from(text);
         send(&mut engine, "cancel.first");

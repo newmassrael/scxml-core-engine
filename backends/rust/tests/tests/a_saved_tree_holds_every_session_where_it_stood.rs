@@ -33,7 +33,7 @@ use sce_rust_tests::integration::static_datamodel::static_invoke_tree_sm::{
     StaticInvokeTreePersist, StaticInvokeTreePolicy,
 };
 
-/// The session id the shared format-2 fixtures give their root.
+/// The session id the shared tree fixtures give their root.
 const ROOT: &str = "fixture-root";
 
 /// The wall-clock moment the tree is saved at.

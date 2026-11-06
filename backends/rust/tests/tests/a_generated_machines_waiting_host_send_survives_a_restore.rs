@@ -13,8 +13,8 @@
 // generator emitted, with its two typed `<param>`s read from the machine's
 // fields, and saved and restored by the `Persist` the generator emitted. The
 // Kotlin twin is `AGeneratedMachinesWaitingHostSendSurvivesARestoreTest`. The
-// text this backend writes is the format-2
-// `saved/statechart_static_delayed_host_send_waiting.json` (docs/adr/0045), its
+// text this backend writes is the format-3
+// `saved/statechart_static_delayed_host_send_waiting.json` (docs/adr/0090), its
 // root given the id the fixtures name it by; the format-1 text of the same run,
 // under `saved/format1/`, still restores.
 //
@@ -44,7 +44,7 @@ const FORMAT1_WAITING: &str = include_str!(
     "../../../../sce-build/tests/fixtures/host_processor/saved/format1/statechart_static_delayed_host_send_waiting.json"
 );
 
-/// The session id the shared format-2 fixtures give their root.
+/// The session id the shared tree fixtures give their root.
 const ROOT: &str = "fixture-root";
 
 /// The wall-clock moment the shared instance was saved at.
