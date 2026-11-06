@@ -138,23 +138,38 @@ def test_a_format_two_text_is_read_by_the_table_and_written_back_as_format_three
 
 
 def test_a_format_two_origin_is_read_as_the_pair_the_table_gives() -> None:
-    # The rows saved/format2/README.md names for the root's queue: a stored id and
-    # an SCXML location are the session's pair, an empty address is none whatever
-    # type beside it, and anything else is the pair as stored, with no sender.
+    # The rows saved/format2/README.md names for the root's queue, in queue order:
+    # a stored id and an SCXML location are the session's pair, an empty address
+    # is none whatever type beside it, and anything else is the pair as stored,
+    # with no sender, the SCXML prefix alone among them. Compared by position, not
+    # by name, so two rows of one name are both held.
     saved = saved_state_from_json(format_2_readings()["static_invoke_tree_working_origins.json"])
     worker = "fixture-root.working.2.worker"
-    read = {event.name: (event.origin, event.sender) for event in saved.external}
-    assert read == {
-        "answer": (scxml_origin(worker), worker),
-        "report": (scxml_origin(worker), worker),
-        "go": (None, None),
-        "swap": (None, None),
-        "stamped": (scxml_origin("peer:1"), "peer:1"),
-        "ask": (scxml_origin("peer:1"), "peer:1"),
-        "arm": (EventOrigin(SCXML_EVENT_PROCESSOR_URI, "mesh://ecu"), None),
-        "rest": (EventOrigin("x-sce-host", "motor"), None),
-        "back": (EventOrigin(SCXML_EVENT_PROCESSOR_URI, "mesh://ecu"), None),
-    }
+    assert [(event.origin, event.sender) for event in saved.external] == [
+        (scxml_origin(worker), worker),
+        (scxml_origin(worker), worker),
+        (None, None),
+        (None, None),
+        (scxml_origin("peer:1"), "peer:1"),
+        (scxml_origin("peer:1"), "peer:1"),
+        (EventOrigin(SCXML_EVENT_PROCESSOR_URI, "mesh://ecu"), None),
+        (EventOrigin("x-sce-host", "motor"), None),
+        (EventOrigin(SCXML_EVENT_PROCESSOR_URI, "mesh://ecu"), None),
+        (EventOrigin(SCXML_EVENT_PROCESSOR_URI, "sce://scxml/"), None),
+    ]
+    # The first nine by the names the README gives them; the tenth's name is the
+    # fixture's to choose.
+    assert [event.name for event in saved.external][:9] == [
+        "answer",
+        "report",
+        "go",
+        "swap",
+        "stamped",
+        "ask",
+        "arm",
+        "rest",
+        "back",
+    ]
     # An unencoded location is written again as the session publishes it.
     assert scxml_origin("peer:1").address == "sce://scxml/peer%3A1"
 
