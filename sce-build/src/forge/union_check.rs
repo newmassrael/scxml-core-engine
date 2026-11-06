@@ -2,8 +2,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
 //! A union document (docs/adr/0092, section 1.1): the rules of its cases that
-//! need the documents it imports, and the refusal every backend gives a union
-//! until one lowers it.
+//! need the documents it imports, and the refusal a backend that does not
+//! lower a union gives one.
 //!
 //! The parser holds a union to every rule the document states alone: one tag,
 //! a value of an imported enum; each case naming a variant once and, where it
@@ -19,14 +19,16 @@ use crate::forge::error::{ForgeError, GenerateError, Located, ValidationError};
 use crate::forge::import_source::{enum_model, parse_quietly};
 use crate::forge::model::{ForgeDocument, ForgeKind, ParsedForge, UnionCase, UnionModel};
 
-/// Why no backend generates a union yet, as every refusal of one says it: the
-/// type is the language's, and its lowering is a step of the landing, not a
-/// rule (docs/adr/0092, section 7, and its landing order).
-pub const NOT_LOWERED_YET: &str = "a union is a type of the language, and no backend lowers \
-                                   a union yet (docs/adr/0092, section 7)";
+/// Why a backend does not generate a union, as every refusal of one says it:
+/// the type is the language's, and its lowering on a backend is a step of the
+/// landing, not a rule (docs/adr/0092, section 7, and its landing order). The
+/// backends that lower one are
+/// [`crate::forge::codegen_matrix::UNION_BACKENDS`].
+pub const NOT_LOWERED_YET: &str = "a union is a type of the language, and this backend does \
+                                   not lower a union yet (docs/adr/0092, section 7)";
 
-/// The refusal of a union document on every backend: its document is read and
-/// checked, and generating it is refused by name
+/// The refusal of a union document on a backend that does not lower one: its
+/// document is read and checked, and generating it is refused by name
 /// (`generate/unsupported-feature`), as a composition a backend does not lower
 /// yet is (docs/adr/0086, section 7.3).
 pub fn document_unlowered(m: &UnionModel) -> GenerateError {

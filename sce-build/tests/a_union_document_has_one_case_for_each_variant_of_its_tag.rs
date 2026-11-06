@@ -3,7 +3,7 @@
 
 //! The `union` kind (docs/adr/0092, section 1.1): what a document of it reads
 //! as, each refusal of its tag and of its cases and where it is placed, and that
-//! every backend refuses a valid union by name until one lowers it.
+//! every backend that does not lower a union refuses a valid one by name.
 //!
 //! The rules a union states alone are the parser's and are judged on inline
 //! documents; the rules that read the enum and the records it imports are judged
@@ -361,7 +361,7 @@ fn a_case_whose_record_declares_the_tags_key_is_refused() {
 }
 
 #[test]
-fn a_valid_union_is_refused_by_name_on_every_backend() {
+fn a_valid_union_is_refused_by_name_on_every_backend_that_does_not_lower_one() {
     assert!(ForgeKind::Union.is_supported());
     assert_eq!(ForgeKind::Union.to_string(), "union");
     assert!(!ForgeKind::Union.needs_instance());
@@ -371,7 +371,13 @@ fn a_valid_union_is_refused_by_name_on_every_backend() {
         codegen_matrix::kind_class(ForgeKind::Union),
         KindClass::Generic
     );
-    for language in Language::ALL.iter().copied() {
+    let refusing: Vec<Language> = Language::ALL
+        .iter()
+        .copied()
+        .filter(|language| !codegen_matrix::UNION_BACKENDS.contains(language))
+        .collect();
+    assert!(!refusing.is_empty(), "every backend lowers a union");
+    for language in refusing {
         assert_eq!(
             codegen_matrix::lookup(ForgeKind::Union, language),
             EmitOutcome::RuntimeMissing,
@@ -393,7 +399,7 @@ fn a_valid_union_is_refused_by_name_on_every_backend() {
                         "{language:?}: {detail}"
                     );
                     assert!(
-                        detail.contains("no backend lowers a union yet"),
+                        detail.contains("this backend does not lower a union yet"),
                         "{language:?}: {detail}"
                     );
                 }

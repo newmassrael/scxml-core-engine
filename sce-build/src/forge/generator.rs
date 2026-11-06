@@ -2010,8 +2010,9 @@ pub fn generate_cpp_with_imports_and_externs(
         }
         // A declaration writes no file (`KindClass::Declaration`).
         ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
-        // docs/adr/0092: no backend lowers a union yet, so its document is
-        // refused by name on every backend, here and in each dispatch below.
+        // docs/adr/0092: a backend not in `codegen_matrix::UNION_BACKENDS`
+        // does not lower a union yet, so its document is refused by name, here
+        // and in each such dispatch below.
         ForgeDocument::Union(m) => {
             return Err(crate::forge::union_check::document_unlowered(m).into())
         }
@@ -4315,6 +4316,178 @@ fn render_event_schema(
     }
 
     l.render(env, "event_schema", ctx)
+}
+
+/// The Kotlin unit of a union document (docs/adr/0092, section 7, the Kotlin
+/// row): a sealed interface named for the document, holding `val kind`, the
+/// value of the tag's enum the case is for; one case nested in it per variant,
+/// in the enum's order, a `data class` holding the case's record as `value` or
+/// a `data object` for an empty case; and on the interface, once, a
+/// `proven<Case>()` per case that holds a record, the read of a case a test of
+/// the tag proved. Beside it the constants of section 3.1, item 4: `REVISION`
+/// (the tag enum's, section 8.1), `DATA_MAX_LEN`, `SCHEMA_ID` and `JSON_SCHEMA`.
+///
+/// A case is named by its variant in Pascal case, the spelling Kotlin gives a
+/// class, as the ADR's row writes it (`Absolute`, `provenAbsolute()`). A case
+/// is a class nested in the interface, and a nested name hides an outer name of
+/// the same spelling inside the interface, so the tag's enum, the cases'
+/// records and the union itself are named by their packages there.
+fn render_union_kotlin(
+    env: &minijinja::Environment,
+    m: &UnionModel,
+    imports: &[ImportContext],
+    options: &crate::ForgeCompileOptions,
+) -> Result<String, ForgeError> {
+    use crate::generator::Language;
+    let refused = |why: String| {
+        ForgeError::from(GenerateError::unsupported_at(
+            format!("union '{}': {why}", m.name),
+            m.source_location.clone(),
+        ))
+    };
+    // A name of the unit of the document `document`, by its package.
+    let qualified = |document: &str, ty: String| {
+        format!(
+            "{}.{ty}",
+            kotlin_forge_package(&filters::to_snake_case(document.to_string()))
+        )
+    };
+    let tag = imports
+        .iter()
+        .find(|i| i.kind == "enum" && i.alias == m.tag_enum)
+        .ok_or_else(|| {
+            refused(format!(
+                "the tag's enum `{}` names no enum the document imports",
+                m.tag_enum
+            ))
+        })?;
+    let Some(revision) = tag.enum_revision else {
+        return Err(refused(format!(
+            "the tag's enum `{}` was not read",
+            m.tag_enum
+        )));
+    };
+    // The union as the type grammar reads it, in the scope its imports name
+    // the tag's enum and the cases' records in. Its own document is no import,
+    // so it is named by its alias alone (`ScopedUnion::key`).
+    let union =
+        crate::forge::import_source::union_in_scope(String::new(), m, import_type_scope(imports))
+            .ok_or_else(|| refused(format!("the tag's enum `{}` was not read", m.tag_enum)))?;
+    let union_type = filters::to_pascal_case(m.name.clone());
+    let kind_type = qualified(
+        &tag.document_name,
+        filters::to_pascal_case(tag.document_name.clone()),
+    );
+    // Two variants whose Pascal spellings are one would be two classes of one
+    // name: refused by name rather than left to the compiler.
+    let mut spelled: std::collections::BTreeMap<String, &str> = std::collections::BTreeMap::new();
+    let mut cases = Vec::with_capacity(union.cases.len());
+    for case in &union.cases {
+        let variant = case.variant.name.as_str();
+        let ident = filters::to_pascal_case(variant.to_string());
+        if let Some(first) = spelled.insert(ident.clone(), variant) {
+            return Err(refused(format!(
+                "the cases `{first}` and `{variant}` are both the Kotlin class `{ident}`"
+            )));
+        }
+        let record = match &case.record {
+            None => None,
+            Some(alias) => {
+                let import = imports
+                    .iter()
+                    .find(|i| i.kind == "event-schema" && i.alias == *alias)
+                    .ok_or_else(|| {
+                        refused(format!(
+                            "the case `{variant}` holds `{alias}`, which names no event schema \
+                             the document imports"
+                        ))
+                    })?;
+                // A schema of no field generates no payload type
+                // (`EventSchemaModel::carries_payload`), so a case that holds one
+                // would name a class no unit declares.
+                if import
+                    .record_type
+                    .as_ref()
+                    .is_some_and(|record| record.fields.is_empty())
+                {
+                    return Err(refused(format!(
+                        "the case `{variant}` holds `{alias}`, which declares no field, so no \
+                         record type is generated for it"
+                    )));
+                }
+                Some(qualified(
+                    &import.document_name,
+                    event_schema_payload_type(&import.document_name, Language::Kotlin),
+                ))
+            }
+        };
+        cases.push(serde_json::json!({
+            "ident": ident,
+            "variant": variant,
+            "kind": format!(
+                "{kind_type}.{}",
+                crate::forge::enum_naming::variant_ident(
+                    Language::Kotlin,
+                    &tag.document_name,
+                    variant
+                )
+            ),
+            "record": record,
+        }));
+    }
+    // The longest text of a value: its largest case at its largest
+    // (docs/adr/0092, section 5.1), sized as a field of the union is.
+    let mut root = crate::forge::value_type::TypeScope::default();
+    root.unions.insert(m.name.clone(), union.clone());
+    let data_max_len = crate::forge::value_type::json_max_len(
+        &crate::forge::value_type::ValueType::Union {
+            alias: m.name.clone(),
+        },
+        &root,
+    )
+    .map_err(|why| {
+        refused(format!(
+            "its largest value has no size the build can compute: {why}"
+        ))
+    })?;
+
+    let l = LangCtx::new(Language::Kotlin, imports);
+    let mut ctx = l.base_context(&m.name);
+    ctx.insert("union_name".into(), m.name.clone().into());
+    ctx.insert("union_type".into(), union_type.clone().into());
+    ctx.insert(
+        "union_qualified".into(),
+        qualified(&m.name, union_type).into(),
+    );
+    ctx.insert("tag".into(), m.tag.clone().into());
+    ctx.insert("tag_enum_name".into(), tag.document_name.clone().into());
+    ctx.insert("kind_type".into(), kind_type.into());
+    ctx.insert("schema_revision".into(), revision.into());
+    ctx.insert("data_max_len".into(), data_max_len.into());
+    ctx.insert(
+        "schema_id".into(),
+        crate::forge::payload_schema::schema_id(&m.name, revision).into(),
+    );
+    // The schema of a value, every bound as this build resolved it, under the
+    // source hash of the files this run writes (as an event schema's unit
+    // writes its own); a union whose type has no grammar declares none, and
+    // says why where it would stand.
+    match crate::forge::payload_schema::union_json_schema(
+        revision,
+        &union,
+        options.source_hash.as_deref(),
+    ) {
+        Ok(json_schema) => {
+            ctx.insert("payload_grammar".into(), true.into());
+            ctx.insert("json_schema".into(), json_schema.into());
+        }
+        Err(why) => {
+            ctx.insert("payload_grammar".into(), false.into());
+            ctx.insert("payload_grammar_absent".into(), why.to_string().into());
+        }
+    }
+    ctx.insert("cases".into(), serde_json::json!(cases));
+    l.render(env, "union", ctx)
 }
 
 /// One lowered native guard ready to attach to its owning transition.
@@ -24813,10 +24986,9 @@ pub fn generate_kotlin_with_imports(
         }
         // Feature model: see cpp dispatch.
         ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
-        // Union: see cpp dispatch.
-        ForgeDocument::Union(m) => {
-            return Err(crate::forge::union_check::document_unlowered(m).into())
-        }
+        // docs/adr/0092, section 7: Kotlin lowers a union to a sealed
+        // interface, one case per variant of its tag's enum.
+        ForgeDocument::Union(m) => render_union_kotlin(&env, m, imports, options)?,
     };
 
     let filename = format!("{}.kt", filters::to_pascal_case(doc.name().to_string()));
@@ -29885,7 +30057,7 @@ pub fn generate_swift_with_imports(
         // A template's holes are texts, integers and enum names, each a `String`
         // or an integer of the standard library (docs/adr/0087, section 3.1).
         ForgeDocument::TextTemplate(_) => None,
-        // docs/adr/0092: no backend lowers a union yet (see the cpp dispatch).
+        // docs/adr/0092: Swift does not lower a union yet (see the cpp dispatch).
         ForgeDocument::Union(m) => {
             return Err(crate::forge::union_check::document_unlowered(m).into())
         }

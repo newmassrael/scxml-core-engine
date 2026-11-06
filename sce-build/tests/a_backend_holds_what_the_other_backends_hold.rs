@@ -294,6 +294,14 @@ enum Why {
 /// Every capability a backend lacks, with the reason. The one hand-written
 /// table in this file, and checked both ways against the derived rows.
 const ACCEPTED: &[(Language, &str, Why)] = &[
+    // The union (docs/adr/0092, section 7, `codegen_matrix::UNION_BACKENDS`):
+    // its sum type lands one backend at a time, Kotlin first.
+    (Language::Rust, "forge kind `union`", Why::NotYet(UNION_NOT_YET)),
+    (Language::Cpp, "forge kind `union`", Why::NotYet(UNION_NOT_YET)),
+    (Language::Go, "forge kind `union`", Why::NotYet(UNION_NOT_YET)),
+    (Language::Python, "forge kind `union`", Why::NotYet(UNION_NOT_YET)),
+    (Language::C11, "forge kind `union`", Why::NotYet(UNION_NOT_YET)),
+    (Language::Swift, "forge kind `union`", Why::NotYet(UNION_NOT_YET)),
     // The CLI routes (cli_language.rs, `LanguageRoute::exclusion_reason`).
     (
         Language::C11,
@@ -460,6 +468,12 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
     // Mesh (SCE_MESH.md §mesh-19, §mesh-20).
     (Language::Swift, "host Mesh core over `zenoh_inbox`", Why::NotYet(SWIFT_NO_ZENOH)),
 ];
+
+/// A union's sum type is generated one backend at a time (docs/adr/0092, landing order).
+const UNION_NOT_YET: &str =
+    "no union template and union field spelling for this backend yet: its dispatch refuses a \
+     union document by name (`union_check::document_unlowered`) and its schema unit a union \
+     field (`schema_unit_type::unit_type`); Kotlin lowers both";
 
 /// Swift writes a statechart in part, so what reads a whole one does not exist for it.
 const SWIFT_NO_EMITTER: &str =

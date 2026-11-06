@@ -339,19 +339,28 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
             | Language::C11
             | Language::Swift => true,
         },
-        // docs/adr/0092, landing order: the generated sum types land after the
-        // type and its document, so no backend has a template for a union yet.
-        ForgeKind::Union => match lang {
-            Language::Rust
-            | Language::Cpp
-            | Language::Go
-            | Language::Kotlin
-            | Language::Python
-            | Language::C11
-            | Language::Swift => false,
-        },
+        // docs/adr/0092, section 7: the generated sum type of a union lands one
+        // backend at a time. Which have landed is [`UNION_BACKENDS`], the one
+        // list both this answer and [`awaits_runtime`] read.
+        ForgeKind::Union => lists(UNION_BACKENDS, lang),
     }
 }
+
+/// The backends that generate a union (docs/adr/0092, section 7): the unit of a
+/// union document, its sum type, and a field of an event schema's unit that
+/// holds a union at any depth. A backend joins this list in the change that
+/// gives it the template (`tools/codegen/templates/forge/<language>/union.*.jinja2`),
+/// the dispatch arm that renders it and the spelling of a union in a schema
+/// unit's field ([`crate::forge::schema_unit_type::unit_type`]), and in no
+/// other change, for the reason [`BROADCAST_LOG_BACKENDS`] gives. A backend
+/// not listed refuses a union document and a union field by name
+/// (`generate/unsupported-feature`, [`crate::forge::union_check`]).
+///
+/// What a statechart and an algorithm hold of a union is not decided here: a
+/// statechart's variable, a read of a payload that holds one and a send of
+/// that payload are composed values, which a backend lowers where its composed
+/// lowering does ([`crate::forge::event_schema_check::ComposedLowering`]).
+pub const UNION_BACKENDS: &[Language] = &[Language::Kotlin];
 
 /// The backends whose broadcast-log template has landed (ADR 0062, "Order of
 /// landing"). A backend joins this list in the change that gives it the
@@ -445,9 +454,10 @@ const fn lists(list: &[Language], lang: Language) -> bool {
 /// lands, and its dispatch arm builds
 /// `GenerateError::BroadcastLogRuntimeMissing` where the document is in hand.
 ///
-/// Every language awaits the union's lowering (docs/adr/0092, landing order): a
-/// union document is valid and checked, and each dispatch arm refuses it by name
-/// with `generate/unsupported-feature`
+/// A language not in [`UNION_BACKENDS`] awaits the union's lowering
+/// (docs/adr/0092, landing order): a union document is valid and checked, and
+/// that language's dispatch arm refuses it by name with
+/// `generate/unsupported-feature`
 /// ([`crate::forge::union_check::document_unlowered`]).
 pub const fn awaits_runtime(kind: ForgeKind, lang: Language) -> bool {
     match kind {
@@ -458,9 +468,9 @@ pub const fn awaits_runtime(kind: ForgeKind, lang: Language) -> bool {
             !lists(BROADCAST_LOG_BACKENDS, lang) && !ships_in_part(ForgeKind::BroadcastLog, lang)
         }
         // docs/adr/0092: a union document is read and checked on every backend,
-        // and no backend lowers a union yet, so each dispatch refuses it by name
-        // (`generate/unsupported-feature`, `crate::forge::union_check`).
-        ForgeKind::Union => !template_ships(ForgeKind::Union, lang),
+        // and a backend that does not lower a union yet refuses it by name in
+        // its dispatch (`generate/unsupported-feature`, `crate::forge::union_check`).
+        ForgeKind::Union => !lists(UNION_BACKENDS, lang),
         _ => false,
     }
 }
@@ -1065,20 +1075,29 @@ mod tests {
         }
     }
 
-    /// docs/adr/0092, landing order: no backend lowers a union yet, so every
-    /// backend awaits it, lets it through the matrix to the dispatch that
-    /// refuses the document by name, and none is listed as emitting it.
+    /// docs/adr/0092, landing order: a backend of [`UNION_BACKENDS`] emits a
+    /// union, and every other awaits it, letting it through the matrix to the
+    /// dispatch that refuses the document by name. Kotlin is the first to
+    /// emit one.
     #[test]
-    fn every_backend_awaits_the_union_and_none_emits_it() {
+    fn a_union_is_emitted_by_its_backends_and_awaited_by_the_rest() {
         for &lang in Language::ALL {
-            assert_eq!(
-                lookup(ForgeKind::Union, lang),
-                EmitOutcome::RuntimeMissing,
-                "{lang:?}"
-            );
+            let want = if UNION_BACKENDS.contains(&lang) {
+                EmitOutcome::Emit
+            } else {
+                EmitOutcome::RuntimeMissing
+            };
+            assert_eq!(lookup(ForgeKind::Union, lang), want, "{lang:?}");
             assert!(check(ForgeKind::Union, lang).is_ok(), "{lang:?}");
         }
-        assert_eq!(emitting(ForgeKind::Union).count(), 0);
+        assert_eq!(
+            emitting(ForgeKind::Union).collect::<Vec<_>>(),
+            [Language::Kotlin]
+        );
+        for &lang in UNION_BACKENDS {
+            let times = UNION_BACKENDS.iter().filter(|l| **l == lang).count();
+            assert_eq!(times, 1, "{lang:?}");
+        }
     }
 
     #[test]

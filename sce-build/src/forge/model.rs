@@ -469,8 +469,8 @@ impl ForgeKind {
             // language's forge runtime; a template with no untrusted hole calls
             // nothing of it.
             Self::TextTemplate => RuntimeDep::ForgeRuntime,
-            // docs/adr/0092: no backend lowers a union yet, so a union document
-            // emits nothing and depends on nothing.
+            // docs/adr/0092, section 7: a union's unit is a sum type of the
+            // language's own, which names nothing of a runtime.
             Self::Union => RuntimeDep::None,
         }
     }
@@ -6894,7 +6894,7 @@ impl ForgeDocument {
                     RuntimeDep::None
                 }
             }
-            // No backend lowers a union yet: nothing is emitted.
+            // A union's unit is a sum type of the language's own.
             Self::Union(_) => RuntimeDep::None,
         }
     }

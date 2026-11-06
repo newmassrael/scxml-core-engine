@@ -1,0 +1,64 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "kotlin", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="union")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+
+package {{ package | kotlin_forge_package }}
+
+{# docs/adr/0092, section 7, the Kotlin row. Inside the interface a case's
+   name hides an outer name of the same spelling, so the tag's enum, the cases'
+   records and the union itself are written by their packages there. Each text
+   constant goes through `kotlin_string_val`, which holds a text of any length. #}
+/** The revision of the union: its tag enum's, `{{ tag_enum_name }}`'s (a union declares none of its own). */
+const val REVISION: UInt = {{ schema_revision }}u
+
+/** The most bytes a value's JSON text takes: its largest case, every list full, every text at its bound, every number at its longest spelling. */
+const val DATA_MAX_LEN: ULong = {{ data_max_len }}uL
+
+/** The id of the union's schema, `urn:sce:schema:<document>:<revision>`: the `$id` of `JSON_SCHEMA`. */
+{{ kotlin_string_val("SCHEMA_ID", schema_id) }}
+{% if payload_grammar %}
+
+/** A value as a JSON Schema (2020-12): the `oneOf` of the cases, each its tag `{{ tag }}` beside the fields of its record, every bound as this build resolved it. */
+{{ kotlin_string_val("JSON_SCHEMA", json_schema) }}
+{% else %}
+
+// No JSON_SCHEMA: {{ payload_grammar_absent }}.
+{% endif %}
+
+/**
+ * A value of `{{ union_name }}`: exactly one case, told apart by its tag `{{ tag }}`, a value of
+ * [{{ kind_type }}]. Two values are equal when they are in one case and their records are equal.
+ */
+sealed interface {{ union_type }} {
+    /** The case this value is in: the tag its text writes under `{{ tag }}`. */
+    val kind: {{ kind_type }}
+{% for c in cases %}
+
+{% if c.record %}
+    /** The case `{{ c.variant }}`, holding its record. */
+    data class {{ c.ident }}(val value: {{ c.record }}) : {{ union_qualified }} {
+        override val kind: {{ kind_type }}
+            get() = {{ c.kind }}
+    }
+{% else %}
+    /** The case `{{ c.variant }}`, its tag alone. */
+    data object {{ c.ident }} : {{ union_qualified }} {
+        override val kind: {{ kind_type }}
+            get() = {{ c.kind }}
+    }
+{% endif %}
+{% endfor %}
+{% for c in cases if c.record %}
+
+    /** The record of the case `{{ c.variant }}`, read where a test of the tag proved the value is in it. */
+    fun proven{{ c.ident }}(): {{ c.record }} =
+        (this as? {{ c.ident }})?.value
+            ?: throw IllegalStateException("a {{ union_name | escape_kotlin }} read as {{ c.variant | escape_kotlin }} is in ${kind.declaredName()}")
+{% endfor %}
+}

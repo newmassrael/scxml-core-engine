@@ -376,6 +376,24 @@ fn payload_schema_prints_a_union_documents_one_of_and_grammar() {
     assert!(gbnf.is_ascii() && !gbnf.contains("source-hash"), "{gbnf}");
 }
 
+/// The unit of a union document declares the JSON Schema `payload-schema`
+/// prints for it, under the id its tag enum's revision names (docs/adr/0092,
+/// section 3.1, item 4), on Kotlin, the backend that lowers a union.
+#[test]
+fn a_union_unit_declares_the_json_schema_payload_schema_prints() {
+    let document = repo_root().join("sce-build/tests/fixtures/union/union_shape.scxml");
+    let json_schema = printed(&[], &document, &[]);
+    let unit = generated(&document, "kotlin");
+    assert_eq!(
+        literal_after(&unit, "const val SCHEMA_ID: String = \""),
+        "urn:sce:schema:union_shape:1"
+    );
+    assert_eq!(
+        literal_after(&unit, "const val JSON_SCHEMA: String = \""),
+        json_schema
+    );
+}
+
 /// A union whose cases are not one to one with its tag enum's variants is
 /// refused in its own words before any grammar is written.
 #[test]
