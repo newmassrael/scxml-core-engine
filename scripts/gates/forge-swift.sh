@@ -20,9 +20,9 @@
 # command every backend's histories are judged by reads them. Linearizability is that command's to
 # judge, not a checker of the arm's own.
 #
-# WHAT IT DOES NOT HOLD: the broadcast-log histories the other arms judge with
-# `check-broadcast-history`. Swift's broadcast log is a row of its own, and when its recorder exists
-# its arm of this gate reads the histories the way the others do.
+# THE BROADCAST-LOG HISTORIES: the broadcast log's stress runs (RFC section synth-5-S, ADR 0062) are
+# written and emptied the same way, to the directory SCE_BROADCAST_HISTORY_DIR names, by the same
+# Swift run, and `check-broadcast-history` judges them as it judges the other arms'.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -34,13 +34,17 @@ source "$SCE_REPO_ROOT/scripts/lib/sce_codegen.sh"
 QUEUE_HISTORIES="$SCE_REPO_ROOT/target/queue-histories/swift"
 rm -rf "$QUEUE_HISTORIES"
 mkdir -p "$QUEUE_HISTORIES"
+BROADCAST_HISTORIES="$SCE_REPO_ROOT/target/broadcast-histories/swift"
+rm -rf "$BROADCAST_HISTORIES"
+mkdir -p "$BROADCAST_HISTORIES"
 
 LOG="$(mktemp)"
 sce_gate_on_exit "rm -f '$LOG'"
 
 # The status of the script, not of the `tee` it is piped to.
 set +e
-SCE_QUEUE_HISTORY_DIR="$QUEUE_HISTORIES" scripts/test_swift_backend.sh forge 2>&1 | tee "$LOG"
+SCE_QUEUE_HISTORY_DIR="$QUEUE_HISTORIES" SCE_BROADCAST_HISTORY_DIR="$BROADCAST_HISTORIES" \
+    scripts/test_swift_backend.sh forge 2>&1 | tee "$LOG"
 status="${PIPESTATUS[0]}"
 set -e
 [ "$status" -eq 0 ] \
@@ -56,6 +60,16 @@ shopt -u nullglob
 "$(sce_codegen_require "$SCE_REPO_ROOT")" check-queue-history "${queue_histories[@]}" \
     || sce_gate_fail "Swift queue histories are not linearizable"
 sce_gate_step "${#queue_histories[@]} Swift queue histories judged, all linearizable"
+
+# 4 shapes recorded 25 times. A run that recorded fewer would pass the judgement below, so the count is held.
+shopt -s nullglob
+broadcast_histories=("$BROADCAST_HISTORIES"/*.json)
+shopt -u nullglob
+(( ${#broadcast_histories[@]} >= 100 )) \
+    || sce_gate_fail "Swift broadcast-log histories: ${#broadcast_histories[@]} written, expected at least 100"
+"$(sce_codegen_require "$SCE_REPO_ROOT")" check-broadcast-history "${broadcast_histories[@]}" \
+    || sce_gate_fail "Swift broadcast-log histories are not linearizable"
+sce_gate_step "${#broadcast_histories[@]} Swift broadcast-log histories judged, all linearizable"
 
 # The test runs the lane reported, in the order it ran them: the forge runtime, then the
 # conformance tests. A package whose tests were not discovered builds, runs nothing and exits 0,
