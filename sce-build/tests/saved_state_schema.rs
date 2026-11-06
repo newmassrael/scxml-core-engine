@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// The saved-state wire surface (`schemas/sce-saved-state.v1.schema.json` and
-// `schemas/sce-saved-state.v2.schema.json`, SCE Accepted Subset §2.15) held to
+// The saved-state wire surface (`schemas/sce-saved-state.v1.schema.json`,
+// `schemas/sce-saved-state.v2.schema.json` and
+// `schemas/sce-saved-state.v3.schema.json`, SCE Accepted Subset §2.15) held to
 // its instances.
 //
 // The shared fixtures under `tests/fixtures/static_datamodel/saved/` are the
@@ -12,15 +13,20 @@
 // added for a new backend or machine is held to the schema without an edit
 // here.
 //
-// Format 2 (docs/adr/0045) is a tree of sessions, the format the Rust backend
-// writes: the texts directly under `saved/` are format 2 and are held to the
-// format-2 schema. The format-1 texts every backend saved before moved to
-// `saved/format1/`, where a backend that writes format 2 still restores them
-// and one that has not yet moved still saves them, and they are held to the
-// format-1 schema. A hand-written tree below exercises every member format 2
-// adds.
+// Format 3 (docs/adr/0090, section 7) is format 2's tree of sessions with an
+// event's origin held as one pair: the texts directly under `saved/` are
+// format 3, the format every backend writes, and are held to the format-3
+// schema and to the one text form the ADR fixes. The format-1 texts every
+// backend saved before trees are in `saved/format1/` and are held to the
+// format-1 schema. The format-2 reading fixtures are in `saved/format2/`, held
+// to the format-2 schema, and beside them in `saved/format2/read_as/` the
+// format-3 text each one is read as, which is held to the table of section 7
+// applied to its fixture. Hand-written trees below exercise every member
+// formats 2 and 3 add.
 
 use std::path::{Path, PathBuf};
+
+use sce_rust_runtime::json;
 
 /// The `.json` files directly under each of `dirs`, sorted.
 fn instances(dirs: &[PathBuf]) -> Vec<PathBuf> {
@@ -78,6 +84,48 @@ fn validator_v2() -> jsonschema::JSONSchema {
     compile(include_str!("../../schemas/sce-saved-state.v2.schema.json"))
 }
 
+fn validator_v3() -> jsonschema::JSONSchema {
+    compile(include_str!("../../schemas/sce-saved-state.v3.schema.json"))
+}
+
+/// The directory of the shared saved states of the static data model.
+fn shared_saved() -> PathBuf {
+    repo_root().join("sce-build/tests/fixtures/static_datamodel/saved")
+}
+
+/// The format-2 reading fixtures (docs/adr/0090, section 7).
+fn format_2_readings() -> PathBuf {
+    shared_saved().join("format2")
+}
+
+/// The format-3 text each format-2 reading fixture is read as, under its name.
+fn format_2_read_as() -> PathBuf {
+    format_2_readings().join("read_as")
+}
+
+/// The directories whose texts are format 3: the shared instances every
+/// backend writes, and what each format-2 reading fixture is read as.
+fn format_3_directories() -> [PathBuf; 3] {
+    [
+        shared_saved(),
+        repo_root().join("sce-build/tests/fixtures/host_processor/saved"),
+        format_2_read_as(),
+    ]
+}
+
+/// `path`'s text without the line end a file closes with: the text a backend
+/// writes and compares.
+fn saved_text(path: &Path) -> String {
+    let text =
+        std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    text.strip_suffix('\n').unwrap_or(&text).to_string()
+}
+
+/// `text` read as JSON with every object's members in the order written.
+fn ordered(text: &str, what: &Path) -> json::Value {
+    json::parse(text).unwrap_or_else(|e| panic!("{} is not JSON: {e}", what.display()))
+}
+
 fn errors(validator: &jsonschema::JSONSchema, instance: &serde_json::Value) -> Vec<String> {
     match validator.validate(instance) {
         Ok(()) => Vec::new(),
@@ -95,26 +143,435 @@ fn every_shared_saved_state_fixture_is_a_saved_state() {
         repo_root().join("sce-build/tests/fixtures/static_datamodel/saved/format1"),
         repo_root().join("sce-build/tests/fixtures/host_processor/saved/format1"),
     ];
-    let format2 = [
-        repo_root().join("sce-build/tests/fixtures/static_datamodel/saved"),
-        repo_root().join("sce-build/tests/fixtures/host_processor/saved"),
-    ];
-    let (old, new) = (instances(&format1), instances(&format2));
+    let format2 = [format_2_readings()];
+    let format3 = format_3_directories();
+    let (first, second, third) = (
+        instances(&format1),
+        instances(&format2),
+        instances(&format3),
+    );
     // A sweep over nothing certifies nothing: the sixteen texts every backend
-    // saved before trees moved to `format1/`, and the twelve the Rust backend
-    // writes as format 2 when this floor was set.
+    // saved before trees moved to `format1/`, the four format-2 reading
+    // fixtures, and the fifteen shared format-3 instances with the four texts
+    // those fixtures are read as, when these floors were set.
     assert!(
-        old.len() >= 16,
+        first.len() >= 16,
         "swept only {} format-1 fixture(s) in {format1:?}",
-        old.len()
+        first.len()
     );
     assert!(
-        new.len() >= 12,
+        second.len() >= 4,
         "swept only {} format-2 fixture(s) in {format2:?}",
-        new.len()
+        second.len()
     );
-    each_is_a_saved_state(&validator(), old);
-    each_is_a_saved_state(&validator_v2(), new);
+    assert!(
+        third.len() >= 19,
+        "swept only {} format-3 fixture(s) in {format3:?}",
+        third.len()
+    );
+    each_is_a_saved_state(&validator(), first);
+    each_is_a_saved_state(&validator_v2(), second);
+    each_is_a_saved_state(&validator_v3(), third);
+}
+
+/// The canonical type of the SCXML Event I/O Processor (docs/adr/0090,
+/// section 4).
+const SCXML_PROCESSOR: &str = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor";
+
+/// What the SCXML processor's address of a session starts with.
+const SCXML_LOCATION: &str = "sce://scxml/";
+
+/// The SCXML processor's address of `session_id` (docs/adr/0090, section 7,
+/// "Text form"): the prefix and the id's UTF-8 bytes, each byte outside
+/// `A-Z a-z 0-9 - . _ ~` written as `%` and two uppercase hexadecimal digits.
+/// Written here from the ADR's words, not taken from a runtime, so the
+/// instances are held to the format and not to one backend's reading of it.
+fn scxml_location(session_id: &str) -> String {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    let mut location = String::from(SCXML_LOCATION);
+    for byte in session_id.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
+            location.push(char::from(byte));
+        } else {
+            location.push('%');
+            location.push(char::from(HEX[usize::from(byte >> 4)]));
+            location.push(char::from(HEX[usize::from(byte & 0x0F)]));
+        }
+    }
+    location
+}
+
+/// `text` with every `%` and two hexadecimal digits read as the byte they
+/// name, and any other `%` kept as it is.
+fn percent_decoded(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let hex = |b: u8| char::from(b).to_digit(16);
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut at = 0;
+    while at < bytes.len() {
+        let escaped = if bytes[at] == b'%' && at + 2 < bytes.len() {
+            hex(bytes[at + 1]).zip(hex(bytes[at + 2]))
+        } else {
+            None
+        };
+        match escaped {
+            Some((high, low)) => {
+                decoded.push(u8::try_from(high * 16 + low).expect("two hex digits are a byte"));
+                at += 3;
+            }
+            None => {
+                decoded.push(bytes[at]);
+                at += 1;
+            }
+        }
+    }
+    String::from_utf8(decoded).expect("a location names its session in UTF-8")
+}
+
+/// The session a value that starts with the SCXML processor's prefix names,
+/// or `None` for any other value and for the prefix alone.
+fn located_session(origin: &str) -> Option<String> {
+    origin
+        .strip_prefix(SCXML_LOCATION)
+        .filter(|id| !id.is_empty())
+        .map(percent_decoded)
+}
+
+fn text(value: &str) -> json::Value {
+    json::Value::Text(value.to_string())
+}
+
+/// An origin as format 3 writes it: `processor` first, then `address`.
+fn pair(processor: &str, address: &str) -> json::Value {
+    json::Value::Object(vec![
+        ("processor".to_string(), text(processor)),
+        ("address".to_string(), text(address)),
+    ])
+}
+
+/// The `origin` and `sender` of an event the session `sender` sent.
+fn sent_by(sender: &str) -> (json::Value, json::Value) {
+    (pair(SCXML_PROCESSOR, &scxml_location(sender)), text(sender))
+}
+
+/// The `origin` and `sender` a format-2 `origin` and `origintype` are read as:
+/// the table of docs/adr/0090, section 7, row by row.
+fn read_format_2_origin(origin: &str, origin_type: &str) -> (json::Value, json::Value) {
+    // Row 1: an empty address is none, whatever type was saved beside it.
+    if origin.is_empty() {
+        return (json::Value::Null, json::Value::Null);
+    }
+    // Row 3, before row 4 whatever the type: a location names its session.
+    if let Some(session) = located_session(origin) {
+        return sent_by(&session);
+    }
+    // An empty type beside an address is the SCXML processor's.
+    let processor = if origin_type.is_empty() {
+        SCXML_PROCESSOR
+    } else {
+        origin_type
+    };
+    // Row 2: no `://`, and the SCXML type, is a session's id.
+    if !origin.contains("://") && processor == SCXML_PROCESSOR {
+        return sent_by(origin);
+    }
+    // Row 4: the pair as saved, sent by no session.
+    (pair(processor, origin), json::Value::Null)
+}
+
+/// The text member `key` of `record`.
+fn member_text<'v>(record: &'v json::Value, key: &str) -> &'v str {
+    match record.member(key) {
+        Some(json::Value::Text(value)) => value,
+        other => panic!("'{key}' is not a text: {other:?}"),
+    }
+}
+
+/// The members of `value`, an object.
+fn members(value: &json::Value) -> &[(String, json::Value)] {
+    match value {
+        json::Value::Object(members) => members,
+        other => panic!("not an object: {other:?}"),
+    }
+}
+
+/// A format-2 queued event as format 3 writes it: `origin` and `origintype`
+/// become `origin` and `sender` in their place.
+fn read_format_2_event(event: &json::Value) -> json::Value {
+    let (origin, sender) = read_format_2_origin(
+        member_text(event, "origin"),
+        member_text(event, "origintype"),
+    );
+    json::Value::Object(
+        members(event)
+            .iter()
+            .map(|(key, value)| match key.as_str() {
+                "origin" => (key.clone(), origin.clone()),
+                "origintype" => ("sender".to_string(), sender.clone()),
+                _ => (key.clone(), value.clone()),
+            })
+            .collect(),
+    )
+}
+
+/// A format-2 waiting send as format 3 writes it. Its stored `origin` is the
+/// sending session's id, or that session's location as C11 stored it; an
+/// `internal` act's event is internal and carries none; a `host` act carries
+/// neither member in either format.
+fn read_format_2_act(act: &json::Value) -> json::Value {
+    let kind = member_text(act, "act");
+    if kind == "host" {
+        return act.clone();
+    }
+    let (origin, sender) = if kind == "internal" {
+        (json::Value::Null, json::Value::Null)
+    } else {
+        let stored = member_text(act, "origin");
+        sent_by(&located_session(stored).unwrap_or_else(|| stored.to_string()))
+    };
+    let mut read = Vec::new();
+    for (key, value) in members(act) {
+        if key == "origin" {
+            read.push(("origin".to_string(), origin.clone()));
+            read.push(("sender".to_string(), sender.clone()));
+        } else {
+            read.push((key.clone(), value.clone()));
+        }
+    }
+    json::Value::Object(read)
+}
+
+fn read_format_2_items(items: &json::Value, read: fn(&json::Value) -> json::Value) -> json::Value {
+    match items {
+        json::Value::Array(items) => json::Value::Array(items.iter().map(read).collect()),
+        other => panic!("not an array: {other:?}"),
+    }
+}
+
+/// A running child of a format-2 session, its own session read as format 3.
+fn read_format_2_child(child: &json::Value) -> json::Value {
+    json::Value::Object(
+        members(child)
+            .iter()
+            .map(|(key, value)| match key.as_str() {
+                "session" => (key.clone(), read_format_2_session(value)),
+                _ => (key.clone(), value.clone()),
+            })
+            .collect(),
+    )
+}
+
+/// A format-2 session, the root with its `format` or a child without it, as
+/// format 3 writes it: every member as it was but the format, the queued
+/// events, the waiting sends and each running child.
+fn read_format_2_session(session: &json::Value) -> json::Value {
+    json::Value::Object(
+        members(session)
+            .iter()
+            .map(|(key, value)| {
+                let read = match key.as_str() {
+                    "format" => json::Value::Number("3".to_string()),
+                    "external" => read_format_2_items(value, read_format_2_event),
+                    "pending" => read_format_2_items(value, read_format_2_act),
+                    "invokes" => read_format_2_items(value, read_format_2_child),
+                    _ => value.clone(),
+                };
+                (key.clone(), read)
+            })
+            .collect(),
+    )
+}
+
+#[test]
+fn each_format_2_reading_fixture_is_read_as_the_table_of_section_7_says() {
+    // docs/adr/0090, section 7: every backend restores each format-2 reading
+    // fixture and saves at once the format-3 text `read_as/` holds under its
+    // name. That text is held here to the table, applied row by row to the
+    // fixture, byte for byte, so the backends are held to the table and not to
+    // a text written by hand.
+    fn names(paths: &[PathBuf]) -> Vec<String> {
+        paths
+            .iter()
+            .map(|p| {
+                p.file_name()
+                    .expect("a file")
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect()
+    }
+    let fixtures = instances(&[format_2_readings()]);
+    let readings = instances(&[format_2_read_as()]);
+    assert_eq!(
+        names(&fixtures),
+        names(&readings),
+        "every reading fixture has the text it is read as, and only those"
+    );
+    assert!(
+        fixtures.len() >= 4,
+        "swept only {} fixture(s)",
+        fixtures.len()
+    );
+    for (fixture, reading) in fixtures.iter().zip(&readings) {
+        let stored = ordered(&saved_text(fixture), fixture);
+        assert_eq!(
+            stored.member("format"),
+            Some(&json::Value::Number("2".to_string())),
+            "{} is a format-2 text",
+            fixture.display()
+        );
+        assert_eq!(
+            json::write(&read_format_2_session(&stored)),
+            saved_text(reading),
+            "{} is not what {} is read as",
+            reading.display(),
+            fixture.display()
+        );
+    }
+    // The tree as C11 stored it and as the other backends stored it mean one
+    // tree, and the timers one timers: each reading is the shared instance.
+    for (reading, shared) in [
+        (
+            "static_invoke_tree_working.json",
+            "static_invoke_tree_working.json",
+        ),
+        (
+            "static_invoke_tree_working_c11.json",
+            "static_invoke_tree_working.json",
+        ),
+        ("static_timers.json", "static_timers.json"),
+    ] {
+        assert_eq!(
+            saved_text(&format_2_read_as().join(reading)),
+            saved_text(&shared_saved().join(shared)),
+            "{reading} is read as the shared {shared}"
+        );
+    }
+}
+
+/// The members of a queued event, in the order every backend writes them.
+const EVENT_MEMBERS: [&str; 8] = [
+    "name",
+    "data",
+    "type",
+    "sendid",
+    "origin",
+    "sender",
+    "invokeid",
+    "hostinvoketoken",
+];
+
+/// The members of a waiting send of `kind`, in the order every backend writes
+/// them.
+fn act_members(kind: &str) -> &'static [&'static str] {
+    match kind {
+        "host" => &[
+            "due", "act", "type", "event", "target", "content", "params", "sendid", "data",
+            "invokeid",
+        ],
+        "child" => &[
+            "due", "act", "invokeid", "event", "data", "sendid", "origin", "sender",
+        ],
+        _ => &["due", "act", "event", "data", "sendid", "origin", "sender"],
+    }
+}
+
+fn keys(record: &json::Value) -> Vec<&str> {
+    members(record).iter().map(|(k, _)| k.as_str()).collect()
+}
+
+/// Hold one origin to the text form: `null`, or the pair with `processor`
+/// first and `address` second; and the SCXML pair of the sender beside it,
+/// byte for byte, where there is one.
+fn holds_one_origin(record: &json::Value, what: &str) {
+    match (record.member("origin"), record.member("sender")) {
+        (Some(json::Value::Null), Some(json::Value::Null)) => {}
+        (Some(origin), Some(sender)) if matches!(origin, json::Value::Object(_)) => {
+            assert_eq!(keys(origin), ["processor", "address"], "{what}: the pair");
+            if let json::Value::Text(sender) = sender {
+                assert_eq!(
+                    origin,
+                    &sent_by(sender).0,
+                    "{what}: a sender's origin is the location it publishes"
+                );
+            } else {
+                assert_eq!(sender, &json::Value::Null, "{what}: the sender");
+            }
+        }
+        other => panic!("{what}: an origin and a sender written as {other:?}"),
+    }
+}
+
+/// Hold `session` and every session below it to the text form.
+fn holds_the_text_form(session: &json::Value, what: &str) {
+    if let Some(json::Value::Array(events)) = session.member("external") {
+        for (i, event) in events.iter().enumerate() {
+            let at = format!("{what}external[{i}]");
+            assert_eq!(keys(event), EVENT_MEMBERS, "{at}: its members");
+            holds_one_origin(event, &at);
+        }
+    }
+    if let Some(json::Value::Array(acts)) = session.member("pending") {
+        for (i, act) in acts.iter().enumerate() {
+            let at = format!("{what}pending[{i}]");
+            let kind = member_text(act, "act");
+            assert_eq!(keys(act), act_members(kind), "{at}: its members");
+            if kind == "internal" {
+                assert_eq!(act.member("origin"), Some(&json::Value::Null), "{at}");
+                assert_eq!(act.member("sender"), Some(&json::Value::Null), "{at}");
+            } else if kind != "host" {
+                assert!(
+                    matches!(act.member("sender"), Some(json::Value::Text(_))),
+                    "{at}: a session's own send names it"
+                );
+                holds_one_origin(act, &at);
+            }
+        }
+    }
+    if let Some(json::Value::Array(children)) = session.member("invokes") {
+        for (i, child) in children.iter().enumerate() {
+            let child_session = child.member("session").expect("a child's session");
+            assert!(
+                child_session.member("format").is_none(),
+                "{what}invokes[{i}].session states the format again"
+            );
+            holds_the_text_form(child_session, &format!("{what}invokes[{i}].session."));
+        }
+    }
+}
+
+#[test]
+fn every_format_3_instance_is_written_in_the_one_text_form() {
+    // docs/adr/0090, section 7, "Text form": the bytes every backend writes.
+    // The schema cannot say the order of members or the spelling of the text,
+    // so each format-3 instance is held to them here.
+    let paths = instances(&format_3_directories());
+    assert!(paths.len() >= 19, "swept only {} instance(s)", paths.len());
+    let mut origins = 0usize;
+    for path in paths {
+        let written = saved_text(&path);
+        let state = ordered(&written, &path);
+        let what = path.display().to_string();
+        // Compact, each text escaped by the one rule, every member where it
+        // was written: what the runtime's writer writes back is the file.
+        assert_eq!(json::write(&state), written, "{what} is not compact JSON");
+        assert_eq!(
+            members(&state).first().map(|(k, v)| (k.as_str(), v)),
+            Some(("format", &json::Value::Number("3".to_string()))),
+            "{what}: `format` is 3, the root's first member"
+        );
+        assert!(
+            !written.contains("\"origintype\""),
+            "{what} keeps format 2's origintype"
+        );
+        holds_the_text_form(&state, &format!("{what}: "));
+        origins += written.matches("\"origin\":{").count();
+    }
+    // The sweep reached pairs, not only texts that hold none.
+    assert!(
+        origins >= 20,
+        "only {origins} pair(s) were held to the form"
+    );
 }
 
 #[test]
@@ -563,6 +1020,10 @@ fn a_tree_of_sessions_is_a_format_2_saved_state() {
         !errors(&validator(), &tree).is_empty(),
         "the format-1 schema admitted a tree"
     );
+    assert!(
+        !errors(&validator_v3(), &tree).is_empty(),
+        "the format-3 schema admitted a format-2 tree"
+    );
 }
 
 #[test]
@@ -662,6 +1123,222 @@ fn the_format_2_schema_refuses_what_no_backend_writes() {
         assert!(
             !errors(&validator, &instance).is_empty(),
             "the format-2 schema admitted {what}"
+        );
+    }
+}
+
+/// The origin the SCXML processor writes for an event the session `id` sent,
+/// as a schema instance.
+fn scxml_origin(id: &str) -> serde_json::Value {
+    serde_json::json!({"processor": SCXML_PROCESSOR, "address": scxml_location(id)})
+}
+
+/// A format-3 saved state that uses every member format 3 changes: the tree of
+/// `a_tree`, with each queued event and each waiting send of an event carrying
+/// its pair and its sender. The root holds a child's event (the SCXML pair and
+/// the child as sender), a host invocation's ending (the host's own pair and no
+/// sender), an event relayed from an address that names no session (the SCXML
+/// pair and no sender) and an event no processor stamped (neither); it waits on
+/// a send to the child, one to itself, one to its internal queue (neither
+/// member) and a host's (no member at all). The child waits on a send to the
+/// root and holds an event no processor stamped.
+fn a_format_3_tree() -> serde_json::Value {
+    let mut tree = a_tree();
+    tree["format"] = serde_json::json!(3);
+    tree["pending"] = serde_json::json!([
+        {
+            "due": "1700000006000", "act": "child", "invokeid": "worker", "event": "nudge",
+            "data": "", "sendid": "poke", "origin": scxml_origin("planner-1"), "sender": "planner-1"
+        },
+        {
+            "due": "1700000007000", "act": "raise", "event": "tick", "data": "",
+            "sendid": "tick", "origin": scxml_origin("planner-1"), "sender": "planner-1"
+        },
+        {
+            "due": "1700000008000", "act": "internal", "event": "inner", "data": "",
+            "sendid": "__send_1", "origin": null, "sender": null
+        },
+        {
+            "due": "1700000009000", "act": "host", "type": "x-sce-host", "event": "audit",
+            "target": "job://report", "content": "", "params": {}, "sendid": "a", "data": "",
+            "invokeid": ""
+        }
+    ]);
+    tree["external"] = serde_json::json!([
+        {
+            "name": "done.step", "data": "", "type": "external", "sendid": "",
+            "origin": scxml_origin("planner-1.worker"), "sender": "planner-1.worker",
+            "invokeid": "worker", "hostinvoketoken": null
+        },
+        {
+            "name": "done.invoke.h", "data": "", "type": "external", "sendid": "",
+            "origin": {"processor": "x-sce-host", "address": "motor"}, "sender": null,
+            "invokeid": "h", "hostinvoketoken": "6"
+        },
+        {
+            "name": "relayed", "data": "", "type": "external", "sendid": "",
+            "origin": {"processor": SCXML_PROCESSOR, "address": "mesh://ecu"}, "sender": null,
+            "invokeid": "", "hostinvoketoken": null
+        },
+        {
+            "name": "tick", "data": "", "type": "external", "sendid": "",
+            "origin": null, "sender": null, "invokeid": "", "hostinvoketoken": null
+        }
+    ]);
+    let child = &mut tree["invokes"][0]["session"];
+    child["pending"] = serde_json::json!([{
+        "due": "1700000005000", "act": "parent", "event": "progress", "data": "{\"n\":1}",
+        "sendid": "report", "origin": scxml_origin("planner-1.worker"),
+        "sender": "planner-1.worker"
+    }]);
+    child["external"] = serde_json::json!([{
+        "name": "go", "data": "", "type": "external", "sendid": "",
+        "origin": null, "sender": null, "invokeid": "", "hostinvoketoken": null
+    }]);
+    tree
+}
+
+#[test]
+fn a_tree_of_sessions_is_a_format_3_saved_state() {
+    let mut tree = a_format_3_tree();
+    let found = errors(&validator_v3(), &tree);
+    assert!(found.is_empty(), "{}", found.join("\n"));
+    // `format` tells the formats apart before anything else: a reader of
+    // formats 1 and 2 refuses a format-3 text rather than read part of it.
+    for (format, older) in [(1, validator()), (2, validator_v2())] {
+        assert!(
+            !errors(&older, &tree).is_empty(),
+            "the format-{format} schema admitted a format-3 tree"
+        );
+    }
+    // A value that may be absent is null in format 3 as in format 2
+    // (docs/adr/0055), in the root and in a child it runs.
+    tree["variables"] = optional_variables();
+    tree["invokes"][0]["session"]["variables"] = optional_variables();
+    let found = errors(&validator_v3(), &tree);
+    assert!(found.is_empty(), "{}", found.join("\n"));
+}
+
+#[test]
+fn the_format_3_schema_refuses_what_no_backend_writes() {
+    // The control: the tree is a saved state, so each refusal below is the
+    // one change it makes.
+    let validator = validator_v3();
+    let good = a_format_3_tree();
+    assert!(
+        errors(&validator, &good).is_empty(),
+        "{:?}",
+        errors(&validator, &good)
+    );
+
+    type Change = fn(&mut serde_json::Value);
+    let broken: [(&str, Change); 25] = [
+        ("format 2", |t| t["format"] = serde_json::json!(2)),
+        ("a child whose state states the format again", |t| {
+            t["invokes"][0]["session"]["format"] = serde_json::json!(3)
+        }),
+        // docs/adr/0090, section 7, "Text form": the pair replaces both of
+        // format 2's members, and both new members are always written.
+        ("a queued event that keeps format 2's origintype", |t| {
+            t["external"][0]["origintype"] = serde_json::json!(SCXML_PROCESSOR)
+        }),
+        (
+            "a queued event whose origin is a text, as format 2 wrote it",
+            |t| t["external"][0]["origin"] = serde_json::json!("planner-1.worker"),
+        ),
+        ("a queued event with no origin member", |t| {
+            t["external"][3]
+                .as_object_mut()
+                .expect("an event")
+                .remove("origin");
+        }),
+        ("a queued event with no sender member", |t| {
+            t["external"][3]
+                .as_object_mut()
+                .expect("an event")
+                .remove("sender");
+        }),
+        (
+            "a grandchild's queued event written as format 2 wrote it",
+            |t| {
+                t["invokes"][0]["session"]["invokes"][0]["session"]["external"] = serde_json::json!([{
+                    "name": "go", "data": "", "type": "external", "sendid": "",
+                    "origin": "", "origintype": "", "invokeid": "", "hostinvoketoken": null
+                }])
+            },
+        ),
+        // Never half a pair (docs/adr/0090, section 1).
+        ("a processor with no address", |t| {
+            t["external"][1]["origin"] = serde_json::json!({"processor": "x-sce-host"})
+        }),
+        ("an address with no processor", |t| {
+            t["external"][1]["origin"] = serde_json::json!({"address": "motor"})
+        }),
+        ("a pair with an empty address", |t| {
+            t["external"][1]["origin"]["address"] = serde_json::json!("")
+        }),
+        ("a pair with an empty processor", |t| {
+            t["external"][1]["origin"]["processor"] = serde_json::json!("")
+        }),
+        ("a pair with a member it does not have", |t| {
+            t["external"][1]["origin"]["sender"] = serde_json::json!("planner-1")
+        }),
+        // A sender is set only by the SCXML processor, which writes the
+        // sender's own location.
+        ("a sender beside a host's pair", |t| {
+            t["external"][1]["sender"] = serde_json::json!("planner-1.worker")
+        }),
+        ("a sender beside no origin", |t| {
+            t["external"][3]["sender"] = serde_json::json!("planner-1")
+        }),
+        (
+            "a sender beside an SCXML pair at an address that names no session",
+            |t| t["external"][2]["sender"] = serde_json::json!("planner-1"),
+        ),
+        ("an empty sender", |t| {
+            t["external"][0]["sender"] = serde_json::json!("")
+        }),
+        ("a sender that is not a session id", |t| {
+            t["external"][0]["sender"] = serde_json::json!("planner 1")
+        }),
+        // A waiting send of an event is the session's own, and its event is
+        // what it carries; an internal event carries none.
+        ("a send to a child that names no sender", |t| {
+            t["pending"][0]["sender"] = serde_json::json!(null)
+        }),
+        ("a send to itself with no origin", |t| {
+            t["pending"][1]["origin"] = serde_json::json!(null)
+        }),
+        (
+            "a send to itself whose origin is a text, as format 2 wrote it",
+            |t| t["pending"][1]["origin"] = serde_json::json!("planner-1"),
+        ),
+        ("a send to the parent from another processor", |t| {
+            t["invokes"][0]["session"]["pending"][0]["origin"] =
+                serde_json::json!({"processor": "x-sce-host", "address": "motor"})
+        }),
+        ("a send to the internal queue that names a sender", |t| {
+            t["pending"][2]["sender"] = serde_json::json!("planner-1")
+        }),
+        ("a send to the internal queue that carries an origin", |t| {
+            t["pending"][2]["origin"] = scxml_origin("planner-1")
+        }),
+        ("a send to the internal queue with no sender member", |t| {
+            t["pending"][2]
+                .as_object_mut()
+                .expect("a send")
+                .remove("sender");
+        }),
+        ("a host's send that carries an origin", |t| {
+            t["pending"][3]["origin"] = serde_json::json!(null)
+        }),
+    ];
+    for (what, change) in broken {
+        let mut instance = good.clone();
+        change(&mut instance);
+        assert!(
+            !errors(&validator, &instance).is_empty(),
+            "the format-3 schema admitted {what}"
         );
     }
 }

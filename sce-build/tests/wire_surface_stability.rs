@@ -47,6 +47,7 @@ const JSON_SURFACES: &[&str] = &[
     "schemas/sce-symbol-lookup.v1.schema.json",
     "schemas/sce-saved-state.v1.schema.json",
     "schemas/sce-saved-state.v2.schema.json",
+    "schemas/sce-saved-state.v3.schema.json",
     "schemas/sce-kind-catalog.v1.schema.json",
     "schemas/sce-authoring-profile.v1.schema.json",
     "schemas/sce-scenario-set.v1.schema.json",
@@ -220,6 +221,26 @@ const INSTANCE_VALIDATION: &[(&str, &str, &str)] = &[
         "sce-build/tests/saved_state_schema.rs",
     ),
     (
+        "schemas/sce-saved-state.v3.schema.json",
+        "every_shared_saved_state_fixture_is_a_saved_state",
+        "sce-build/tests/saved_state_schema.rs",
+    ),
+    (
+        "schemas/sce-saved-state.v3.schema.json",
+        "a_tree_of_sessions_is_a_format_3_saved_state",
+        "sce-build/tests/saved_state_schema.rs",
+    ),
+    (
+        "schemas/sce-saved-state.v3.schema.json",
+        "every_format_3_instance_is_written_in_the_one_text_form",
+        "sce-build/tests/saved_state_schema.rs",
+    ),
+    (
+        "schemas/sce-saved-state.v3.schema.json",
+        "each_format_2_reading_fixture_is_read_as_the_table_of_section_7_says",
+        "sce-build/tests/saved_state_schema.rs",
+    ),
+    (
         "schemas/sce-kind-catalog.v1.schema.json",
         "the_catalog_validates_against_the_wire_schema",
         "sce-build/src/forge/kind_catalog.rs",
@@ -310,6 +331,11 @@ const NEGATIVE_VALIDATION: &[(&str, &str, &str)] = &[
         "sce-build/tests/saved_state_schema.rs",
     ),
     (
+        "schemas/sce-saved-state.v3.schema.json",
+        "the_format_3_schema_refuses_what_no_backend_writes",
+        "sce-build/tests/saved_state_schema.rs",
+    ),
+    (
         "schemas/sce-kind-catalog.v1.schema.json",
         "the_catalog_schema_rejects_a_kind_the_product_does_not_have",
         "sce-build/src/forge/kind_catalog.rs",
@@ -393,6 +419,15 @@ const ATTRIBUTION_EXEMPT: &[(&str, &str, &str)] = &[
          change on every commit. Each session of the tree carries the `shape` \
          of its own document, which is what it restores into.",
         "Format 2 of the saved state deliberately does",
+    ),
+    (
+        "schemas/sce-saved-state.v3.schema.json",
+        "format 3 is format 2's tree written by the same generated code, with \
+         only the origin of its events changed: every committed machine and \
+         every shared fixture would again change on every commit. Each \
+         session carries the `shape` of its own document, which is what it \
+         restores into.",
+        "Format 3 of the saved state deliberately does",
     ),
     (
         "schemas/sce-authoring-profile.v1.schema.json",
