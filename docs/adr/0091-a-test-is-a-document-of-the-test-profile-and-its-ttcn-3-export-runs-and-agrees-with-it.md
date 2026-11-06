@@ -1,8 +1,9 @@
 # ADR 0091 — A test is a document of the test profile, and its TTCN-3 export runs and agrees with it
 
 - Status: Accepted (2026-11-06), with each question answered in "Answers (2026-11-06)". The owner ordered the
-  questions decided by the rule of 2026-10-26 and 2026-10-27 ("비용 무시하고 가장 장기적으로 올바르고 궁극적인
-  구조이고, 학술적으로 교과서적으로 결정해"); the answers below are the decisions taken under it, each with its basis.
+  questions decided by the rule of 2026-10-26 and 2026-10-27 (ignore the cost; decide for the structure that is the
+  most correct in the long run, the ultimate one, and textbook in its academic foundations); the answers below are the
+  decisions taken under it, each with its basis.
   History: a downstream consumer session drafted it at the owner's request
   under the owner's rule of 2026-10-26 and 2026-10-27: the most long-term correct structure, textbook in its
   foundations, cost ignored. The drafter wrote it as 0083 against a checkout 681 commits behind `origin/main`. It was
