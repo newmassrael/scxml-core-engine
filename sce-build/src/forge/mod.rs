@@ -86,6 +86,7 @@ pub mod stdlib;
 pub mod symbol_mangling;
 pub mod target_plugin;
 pub mod test_profile;
+pub mod test_profile_assembly;
 pub mod test_template_check;
 pub mod text_template;
 pub mod transform_dep_check;

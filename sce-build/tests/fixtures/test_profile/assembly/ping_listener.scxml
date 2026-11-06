@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §11.5: a test component whose one port only
+     receives. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="ping_listener"
+       datamodel="sce-static" initial="listening">
+  <sce:import kind="test-port-type" src="ping_listen_port.scxml" as="ListenPort"/>
+  <sce:test-port id="ear" type="ListenPort"/>
+  <state id="listening">
+    <transition sce:receive="ear" target="done">
+      <sce:setverdict value="pass"/>
+    </transition>
+  </state>
+  <final id="done"/>
+</scxml>

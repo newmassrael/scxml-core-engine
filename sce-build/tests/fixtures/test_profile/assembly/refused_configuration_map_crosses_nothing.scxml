@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: the map joins a component port that sends nothing to a system
+     port that receives nothing, so no message crosses it
+     (docs/SCE_TEST_PROFILE.md §11.6, -1 §21.1.1 c). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-configuration" name="refused_configuration_map_crosses_nothing">
+  <sce:import kind="test-component" src="ping_listener.scxml" as="Listener"/>
+  <sce:import kind="test-port-type" src="ping_speak_port.scxml" as="SpeakPort"/>
+  <sce:mtc type="Listener"/>
+  <sce:system-port id="mouth" type="SpeakPort"/>
+  <sce:map component="mtc" port="ear" system-port="mouth"/>
+</scxml>

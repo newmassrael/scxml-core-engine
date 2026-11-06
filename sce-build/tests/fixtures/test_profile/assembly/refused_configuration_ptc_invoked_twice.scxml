@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: the PTC 'second' is a tester too, so it invokes 'helper' as the
+     MTC does, and the helper is the id of two invokes
+     (docs/SCE_TEST_PROFILE.md §11.6). Every port takes part in one join. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-configuration" name="refused_configuration_ptc_invoked_twice">
+  <sce:import kind="test-component" src="ping_tester.scxml" as="Tester"/>
+  <sce:import kind="test-component" src="ping_helper.scxml" as="Helper"/>
+  <sce:import kind="test-port-type" src="ping_system_port.scxml" as="SystemPort"/>
+  <sce:import kind="test-port-type" src="ping_control_port.scxml" as="ControlPort"/>
+  <sce:mtc type="Tester"/>
+  <sce:ptc id="helper" type="Helper"/>
+  <sce:ptc id="second" type="Tester"/>
+  <sce:system-port id="sut" type="SystemPort"/>
+  <sce:system-port id="sut2" type="SystemPort"/>
+  <sce:system-port id="link" type="ControlPort"/>
+  <sce:map component="mtc" port="sut" system-port="sut"/>
+  <sce:map component="second" port="sut" system-port="sut2"/>
+  <sce:map component="second" port="control" system-port="link"/>
+  <sce:connect>
+    <sce:endpoint component="mtc" port="control"/>
+    <sce:endpoint component="helper" port="control"/>
+  </sce:connect>
+</scxml>

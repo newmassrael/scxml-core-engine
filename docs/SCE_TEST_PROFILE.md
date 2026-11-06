@@ -723,7 +723,8 @@ inside a `list-match` (B.1.3.2, §8.1); a template whose references form a cycle
   of a component reached from the suite has a declaration here with its `id` and type.
 - Feature conditions appear only on `<sce:execute>`. The other kinds of the profile take none.
 - At most one `feature-model` import. A `requires` names only its features
-  (`validation/feature-requirement-undeclared`, ADR 0091 §3).
+  (`validation/feature-undeclared`, the code ADR 0057 gives a condition that names a feature its model does not
+  declare; ADR 0091 §3).
 
 ### 11.9 Generation
 

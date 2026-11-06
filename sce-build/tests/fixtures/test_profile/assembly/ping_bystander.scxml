@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §11.5: a test component with no port, which
+     invokes nothing: it waits out a timer and passes. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="ping_bystander"
+       datamodel="sce-static" initial="waiting">
+  <sce:test-timer id="wait" duration="1s"/>
+  <state id="waiting">
+    <onentry>
+      <sce:start-timer timer="wait"/>
+    </onentry>
+    <transition sce:timeout="wait" target="done">
+      <sce:setverdict value="pass"/>
+    </transition>
+  </state>
+  <final id="done"/>
+</scxml>

@@ -5077,6 +5077,12 @@ pub fn compile_forge_from_parsed(
     // references by the templates they name: what the parser could not ask
     // without them (docs/SCE_TEST_PROFILE.md §11.4).
     forge::test_template_check::check(parsed, base_dir, label.diagnostic_label)?;
+    // A port type's messages carry distinct event names; a configuration's
+    // ports and PTCs agree with its components; a test case runs in a
+    // configuration; a suite selects by its features and declares what its
+    // components read: what the parser could not ask without the documents a
+    // test imports (docs/SCE_TEST_PROFILE.md §11.3, §11.6, §11.7, §11.8).
+    forge::test_profile_assembly::check(parsed, base_dir, label.diagnostic_label)?;
 
     // A content-line codec reads a text off a line and names the variant whose
     // text it is, so an `enum:<alias>` entry needs an enum whose variants each

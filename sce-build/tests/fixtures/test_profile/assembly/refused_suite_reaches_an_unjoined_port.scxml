@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: the suite runs a test case whose configuration leaves the
+     tester's control port unjoined. The refusal is the configuration's, and
+     is placed in it (docs/SCE_TEST_PROFILE.md §11.6, §11.8). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-suite" name="refused_suite_reaches_an_unjoined_port">
+  <sce:import kind="test-case" src="ping_case_unjoined.scxml" as="Unjoined"/>
+  <sce:module-parameter id="limit" type="uint32" value="500"/>
+  <sce:execute test-case="Unjoined"/>
+</scxml>

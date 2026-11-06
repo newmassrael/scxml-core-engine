@@ -538,6 +538,30 @@ do not bind the template's formal parameters one to one, each by a parameter of 
 document of the profile until its runtime lands: generation refuses one by name
 (`generate/unsupported-feature`).
 
+A port type, a configuration, a test case and a suite are then held to the rules their
+imports decide (`docs/SCE_TEST_PROFILE.md` §11.3, §11.6 to §11.8), and a document a
+suite reaches through its test cases and their configurations is held with it, each
+refusal placed in the document that breaks the rule. Two message types of a port type
+with one event name are `test-profile/message-event-name`. A configuration's
+`<sce:mtc>` and `<sce:ptc>` name test components and its system ports port types, and a
+document of another kind is `import/kind-mismatch`, as a test case's configuration and a
+suite's test case are; a test component is read by the statechart parser, so a
+configuration reads its ports, the PTCs it invokes and the module parameters it reads. A
+`connect` or `map` naming a port its component's type does not declare is
+`validation/invalid-attribute`. A `connect` whose ports' lists do not agree (each `out`
+list within the other's `in` list, one `out` list not empty) and a `map` whose do not
+(the component port's `out` list within the system port's, the system port's `in` list
+within the component port's, one of those not empty), the lists compared by the event
+schema documents the messages are, are `test-profile/port-lists`; a component port that
+no `connect` or `map` joins is `test-profile/port-connection`. A PTC that is the `id` of
+no `<invoke>` of the configuration's components or of more than one, whose `<invoke>`
+starts a document other than its type, or that no chain of invocations from the MTC
+creates, and an `<invoke>` of a component that names no declared PTC, are
+`test-profile/ptc-invocation`. A suite's selection that names a feature its feature
+model does not declare is `validation/feature-undeclared` (ADR 0057 §3), and a module
+parameter a component of one of its test cases reads that the suite does not declare,
+or declares of another type, is `test-profile/module-parameter`.
+
 `union` (docs/adr/0092, section 1) is a value that is exactly one of several shapes,
 told apart by a tag of a closed enum. Its `<datamodel>` holds exactly one `<data>`, the
 tag: the `id` is the key the tag is written under, and the `sce:type` an
@@ -9337,7 +9361,7 @@ document map's symbol of the same node; that map carries no condition.
 
 ---
 
-## Appendix — `DiagnosticCode` index (513 codes)
+## Appendix — `DiagnosticCode` index (517 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -9440,6 +9464,10 @@ Codes that the author can avoid by writing a better SCXML /
 | `test-profile/duration` | Validation |
 | `test-profile/port-connection` | Validation |
 | `test-profile/record-fields` | Validation |
+| `test-profile/message-event-name` | Validation |
+| `test-profile/port-lists` | Validation |
+| `test-profile/ptc-invocation` | Validation |
+| `test-profile/module-parameter` | Validation |
 | `validation/mesh-rpc-reserved-param` | Validation |
 | `validation/mesh-rpc-missing-target` | Validation |
 | `validation/mesh-rpc-duplicate-target` | Validation |

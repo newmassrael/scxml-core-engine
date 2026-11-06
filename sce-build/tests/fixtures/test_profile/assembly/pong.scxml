@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The message the system under test answers with: the ping's number back
+     (docs/SCE_TEST_PROFILE.md §11.3). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="event-schema" name="pong" sce:event-name="test.pong">
+  <datamodel>
+    <data id="sequence" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+</scxml>

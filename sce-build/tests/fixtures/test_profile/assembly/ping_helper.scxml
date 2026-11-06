@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §11.5: a parallel test component. It waits for
+     any message on its control port and passes. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="ping_helper"
+       datamodel="sce-static" initial="listening">
+  <sce:import kind="test-port-type" src="ping_control_port.scxml" as="ControlPort"/>
+  <sce:test-port id="control" type="ControlPort"/>
+  <state id="listening">
+    <transition sce:receive="control" target="done">
+      <sce:setverdict value="pass"/>
+    </transition>
+  </state>
+  <final id="done"/>
+</scxml>

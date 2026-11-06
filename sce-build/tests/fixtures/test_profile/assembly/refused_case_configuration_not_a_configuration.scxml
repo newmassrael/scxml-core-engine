@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: the import the test case names as its configuration is a test
+     component, not a test configuration (docs/SCE_TEST_PROFILE.md §11.7). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-case" name="refused_case_configuration_not_a_configuration"
+       sce:configuration="Pair">
+  <sce:import kind="test-configuration" src="ping_tester.scxml" as="Pair"/>
+</scxml>

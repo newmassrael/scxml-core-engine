@@ -633,14 +633,30 @@ pub enum TestProfileRule {
     /// a whole number of microseconds. Wire code `test-profile/duration`.
     Duration,
     /// §11.6: a port of the configuration joined by more than one `connect`
-    /// or `map`, or a port of the test system interface joined by none. Wire
-    /// code `test-profile/port-connection`.
+    /// or `map`, or by none. Wire code `test-profile/port-connection`.
     PortConnection,
     /// §11.4: a `record-match` whose fields and the fields of its record are
     /// not one to one: a field of the record it holds no matcher for, or a
     /// matcher for a field the record does not declare. Wire code
     /// `test-profile/record-fields`.
     RecordFields,
+    /// §11.3: two message types of a port type that carry one event name.
+    /// Wire code `test-profile/message-event-name`.
+    MessageEventName,
+    /// §11.6: a `connect` whose two ports' message lists do not agree
+    /// (-1 §21.1.1 b), or a `map` whose component port and system port do not
+    /// (-1 §21.1.1 c). Wire code `test-profile/port-lists`.
+    PortLists,
+    /// §11.6: a PTC that is not created by exactly one `<invoke>` of the
+    /// configuration's components, whose `src` is a document of the PTC's
+    /// type, in a tree rooted at the MTC; or an `<invoke>` of a test component
+    /// that names no PTC the configuration declares. Wire code
+    /// `test-profile/ptc-invocation`.
+    PtcInvocation,
+    /// §11.8: a module parameter that a component reached from the suite
+    /// reads and the suite does not declare, or declares of another type.
+    /// Wire code `test-profile/module-parameter`.
+    ModuleParameter,
 }
 
 /// Semantic validation errors from kind-specific parsing.

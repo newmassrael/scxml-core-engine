@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The features the suite selects its test cases by (ADR 0057 §2). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="feature-model" name="ping_features">
+  <sce:feature name="ping-echo"/>
+  <sce:feature name="ping-retry" requires="ping-echo"/>
+</scxml>

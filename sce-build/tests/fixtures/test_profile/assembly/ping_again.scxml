@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- A second schema of the event name test.ping, with other fields: a port
+     type that carries it beside ping.scxml carries two message types a port
+     cannot tell apart (docs/SCE_TEST_PROFILE.md §11.3). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="event-schema" name="ping_again" sce:event-name="test.ping">
+  <datamodel>
+    <data id="attempt" sce:type="uint8" sce:direction="in"/>
+  </datamodel>
+</scxml>

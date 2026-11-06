@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: the selection names the feature 'ping-burst', which the suite's
+     feature model does not declare (docs/SCE_TEST_PROFILE.md §11.8, ADR 0057
+     §3). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-suite" name="refused_suite_feature_undeclared">
+  <sce:import kind="feature-model" src="ping_features.scxml" as="Features"/>
+  <sce:import kind="test-case" src="ping_case.scxml" as="PingCase"/>
+  <sce:module-parameter id="limit" type="uint32" value="500"/>
+  <sce:execute test-case="PingCase" requires="any(ping-echo, ping-burst)"/>
+</scxml>

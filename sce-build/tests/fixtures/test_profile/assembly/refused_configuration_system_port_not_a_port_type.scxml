@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: the import a system port's type names is an event schema, not a
+     port type (docs/SCE_TEST_PROFILE.md §11.6). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-configuration" name="refused_configuration_system_port_not_a_port_type">
+  <sce:import kind="test-component" src="ping_bystander.scxml" as="Bystander"/>
+  <sce:import kind="test-port-type" src="ping.scxml" as="SystemPort"/>
+  <sce:mtc type="Bystander"/>
+  <sce:system-port id="sut" type="SystemPort"/>
+  <sce:map component="mtc" port="sut" system-port="sut"/>
+</scxml>

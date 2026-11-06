@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §11.5: the main test component. It creates the
+     helper, owns a port to the system under test and a control port, reads
+     a limit the suite supplies, and passes on any answer of the system. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="ping_tester"
+       datamodel="sce-static" initial="waiting">
+  <sce:import kind="test-port-type" src="ping_sut_port.scxml" as="SutPort"/>
+  <sce:import kind="test-port-type" src="ping_control_port.scxml" as="ControlPort"/>
+  <sce:test-port id="sut" type="SutPort"/>
+  <sce:test-port id="control" type="ControlPort"/>
+  <datamodel>
+    <data id="limit" sce:type="uint32" sce:module-parameter="true"/>
+  </datamodel>
+  <state id="waiting">
+    <invoke type="http://sce.dev/ext/test-component" src="ping_helper.scxml" id="helper"/>
+    <transition sce:receive="sut" target="passed">
+      <sce:setverdict value="pass"/>
+    </transition>
+  </state>
+  <final id="passed"/>
+</scxml>

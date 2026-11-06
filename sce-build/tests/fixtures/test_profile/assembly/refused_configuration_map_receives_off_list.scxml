@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: the map joins the tester's port to the system under test, which
+     receives pongs alone, to a system port that receives pings
+     (docs/SCE_TEST_PROFILE.md §11.6, -1 §21.1.1 c). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-configuration" name="refused_configuration_map_receives_off_list">
+  <sce:import kind="test-component" src="ping_tester.scxml" as="Tester"/>
+  <sce:import kind="test-port-type" src="ping_control_port.scxml" as="ControlPort"/>
+  <sce:mtc type="Tester"/>
+  <sce:system-port id="link" type="ControlPort"/>
+  <sce:map component="mtc" port="sut" system-port="link"/>
+</scxml>

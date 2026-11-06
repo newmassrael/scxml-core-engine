@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: the PTC 'extra' is the id of no invoke of the configuration's
+     components, so nothing creates it (docs/SCE_TEST_PROFILE.md §11.6). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-configuration" name="refused_configuration_ptc_not_invoked">
+  <sce:import kind="test-component" src="ping_tester.scxml" as="Tester"/>
+  <sce:import kind="test-component" src="ping_helper.scxml" as="Helper"/>
+  <sce:import kind="test-component" src="ping_bystander.scxml" as="Bystander"/>
+  <sce:import kind="test-port-type" src="ping_system_port.scxml" as="SystemPort"/>
+  <sce:mtc type="Tester"/>
+  <sce:ptc id="helper" type="Helper"/>
+  <sce:ptc id="extra" type="Bystander"/>
+  <sce:system-port id="sut" type="SystemPort"/>
+  <sce:map component="mtc" port="sut" system-port="sut"/>
+  <sce:connect>
+    <sce:endpoint component="mtc" port="control"/>
+    <sce:endpoint component="helper" port="control"/>
+  </sce:connect>
+</scxml>

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: the tester creates the PTC 'helper' as ping_helper.scxml, and
+     the configuration declares it a bystander (docs/SCE_TEST_PROFILE.md
+     §11.6). Both of the tester's ports are mapped. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-configuration" name="refused_configuration_ptc_of_another_type">
+  <sce:import kind="test-component" src="ping_tester.scxml" as="Tester"/>
+  <sce:import kind="test-component" src="ping_bystander.scxml" as="Bystander"/>
+  <sce:import kind="test-port-type" src="ping_system_port.scxml" as="SystemPort"/>
+  <sce:import kind="test-port-type" src="ping_control_port.scxml" as="ControlPort"/>
+  <sce:mtc type="Tester"/>
+  <sce:ptc id="helper" type="Bystander"/>
+  <sce:system-port id="sut" type="SystemPort"/>
+  <sce:system-port id="link" type="ControlPort"/>
+  <sce:map component="mtc" port="sut" system-port="sut"/>
+  <sce:map component="mtc" port="control" system-port="link"/>
+</scxml>

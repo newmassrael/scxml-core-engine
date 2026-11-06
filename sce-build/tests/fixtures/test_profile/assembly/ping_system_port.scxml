@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §11.3, §11.6: the port of the test system
+     interface the tester's port is mapped to. It carries the same two
+     schemas as ping_sut_port.scxml under other aliases, so the map's lists
+     agree by the documents the messages are, not by the names they are
+     imported under. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-port-type" name="ping_system_port">
+  <sce:import kind="event-schema" src="ping.scxml" as="Request"/>
+  <sce:import kind="event-schema" src="pong.scxml" as="Reply"/>
+  <sce:message type="Request" direction="out"/>
+  <sce:message type="Reply" direction="in"/>
+</scxml>

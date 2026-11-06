@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: the connect joins two ports that only receive, so neither out
+     list holds a message (docs/SCE_TEST_PROFILE.md §11.6, -1 §21.1.1 b). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-configuration" name="refused_configuration_connect_sends_nothing">
+  <sce:import kind="test-component" src="ping_bystander.scxml" as="Bystander"/>
+  <sce:import kind="test-component" src="ping_listener.scxml" as="Listener"/>
+  <sce:mtc type="Bystander"/>
+  <sce:ptc id="left" type="Listener"/>
+  <sce:ptc id="right" type="Listener"/>
+  <sce:connect>
+    <sce:endpoint component="left" port="ear"/>
+    <sce:endpoint component="right" port="ear"/>
+  </sce:connect>
+</scxml>

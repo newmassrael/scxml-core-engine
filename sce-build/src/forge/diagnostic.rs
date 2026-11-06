@@ -936,6 +936,24 @@ pub enum DiagnosticCode {
     /// record are not one to one (docs/SCE_TEST_PROFILE.md §11.4).
     #[serde(rename = "test-profile/record-fields")]
     TestProfileRecordFields,
+    /// Two message types of a test port type that carry one event name
+    /// (docs/SCE_TEST_PROFILE.md §11.3).
+    #[serde(rename = "test-profile/message-event-name")]
+    TestProfileMessageEventName,
+    /// A `connect` or a `map` of a test configuration whose ports' message
+    /// lists do not agree (docs/SCE_TEST_PROFILE.md §11.6).
+    #[serde(rename = "test-profile/port-lists")]
+    TestProfilePortLists,
+    /// A PTC of a test configuration that the invocations of its components
+    /// do not create once, from the MTC's tree, as a document of its type
+    /// (docs/SCE_TEST_PROFILE.md §11.6).
+    #[serde(rename = "test-profile/ptc-invocation")]
+    TestProfilePtcInvocation,
+    /// A module parameter a component reached from a test suite reads that
+    /// the suite does not declare with its type (docs/SCE_TEST_PROFILE.md
+    /// §11.8).
+    #[serde(rename = "test-profile/module-parameter")]
+    TestProfileModuleParameter,
     #[serde(rename = "validation/mesh-rpc-reserved-param")]
     ValidationMeshRpcReservedParam,
     #[serde(rename = "validation/mesh-rpc-missing-target")]
@@ -3894,6 +3912,10 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         TestProfileDuration,
         TestProfilePortConnection,
         TestProfileRecordFields,
+        TestProfileMessageEventName,
+        TestProfilePortLists,
+        TestProfilePtcInvocation,
+        TestProfileModuleParameter,
         ValidationMeshRpcReservedParam,
         ValidationMeshRpcMissingTarget,
         ValidationMeshRpcDuplicateTarget,
@@ -4655,6 +4677,11 @@ impl DiagnosticCode {
             TestProfileDuration => Some("SCE Test Profile §4.7"),
             TestProfilePortConnection => Some("SCE Test Profile §11.6"),
             TestProfileRecordFields => Some("SCE Test Profile §11.4"),
+            TestProfilePortConnection | TestProfilePortLists | TestProfilePtcInvocation => {
+                Some("SCE Test Profile §11.6")
+            }
+            TestProfileMessageEventName => Some("SCE Test Profile §11.3"),
+            TestProfileModuleParameter => Some("SCE Test Profile §11.8"),
 
             // ── Mesh-RPC invoke reserved params (SCE_MESH.md §9.5) ──
             ValidationMeshRpcReservedParam
@@ -5580,6 +5607,10 @@ impl DiagnosticCode {
             | TestProfileDuration
             | TestProfilePortConnection
             | TestProfileRecordFields
+            | TestProfileMessageEventName
+            | TestProfilePortLists
+            | TestProfilePtcInvocation
+            | TestProfileModuleParameter
             | ValidationMeshRpcReservedParam
             | ValidationMeshRpcMissingTarget
             | ValidationMeshRpcDuplicateTarget
@@ -6093,6 +6124,10 @@ impl DiagnosticCode {
             TestProfileDuration => "test-profile/duration",
             TestProfilePortConnection => "test-profile/port-connection",
             TestProfileRecordFields => "test-profile/record-fields",
+            TestProfileMessageEventName => "test-profile/message-event-name",
+            TestProfilePortLists => "test-profile/port-lists",
+            TestProfilePtcInvocation => "test-profile/ptc-invocation",
+            TestProfileModuleParameter => "test-profile/module-parameter",
             ValidationMeshRpcReservedParam => "validation/mesh-rpc-reserved-param",
             ValidationMeshRpcMissingTarget => "validation/mesh-rpc-missing-target",
             ValidationMeshRpcDuplicateTarget => "validation/mesh-rpc-duplicate-target",
@@ -8416,6 +8451,10 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 TestProfileRule::Duration => DiagnosticCode::TestProfileDuration,
                 TestProfileRule::PortConnection => DiagnosticCode::TestProfilePortConnection,
                 TestProfileRule::RecordFields => DiagnosticCode::TestProfileRecordFields,
+                TestProfileRule::MessageEventName => DiagnosticCode::TestProfileMessageEventName,
+                TestProfileRule::PortLists => DiagnosticCode::TestProfilePortLists,
+                TestProfileRule::PtcInvocation => DiagnosticCode::TestProfilePtcInvocation,
+                TestProfileRule::ModuleParameter => DiagnosticCode::TestProfileModuleParameter,
             },
             stage: Stage::Validation,
             expected: None,
@@ -14167,6 +14206,77 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:e84f87cb4d9b4992","code":"test-profile/record-fields","stage":"validation","spec":"SCE Test Profile §11.4","message":"test-template 'every_matcher': <sce:any-value> names the field 'status', which the record JobStatus does not declare (declared: elapsed_ms, note, codes, tag, retry, count): a <sce:record-match> holds one matcher for each field of its record, and for no other","actual":"status"}"#,
+                // Two message types of one event name on a port type
+                // (docs/SCE_TEST_PROFILE.md §11.3): the event name is
+                // `actual`.
+                "forge/test-profile-message-event-name",
+                ValidationError::TestProfile {
+                    rule: TestProfileRule::MessageEventName,
+                    kind: ForgeKind::TestPortType,
+                    document: "job_port".into(),
+                    actual: "job.status".into(),
+                    detail: "the message types 'JobStatus' and 'JobStatusAgain' both carry the \
+                             event name 'job.status': a message delivered to a port is told \
+                             apart from the others by its event name, so the message types of a \
+                             port type carry distinct ones"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:0aec7ec4e4e796b9","code":"test-profile/message-event-name","stage":"validation","spec":"SCE Test Profile §11.3","message":"test-port-type 'job_port': the message types 'JobStatus' and 'JobStatusAgain' both carry the event name 'job.status': a message delivered to a port is told apart from the others by its event name, so the message types of a port type carry distinct ones","actual":"job.status"}"#,
+            ),
+            (
+                // A connect one of whose ports sends what the other does not
+                // receive (docs/SCE_TEST_PROFILE.md §11.6): the sending port
+                // is `actual`.
+                "forge/test-profile-port-lists",
+                ValidationError::TestProfile {
+                    rule: TestProfileRule::PortLists,
+                    kind: ForgeKind::TestConfiguration,
+                    document: "tester_and_helper".into(),
+                    actual: "control".into(),
+                    detail: "the <sce:connect> joins the port 'control' of the component \
+                             'helper' to the port 'sut' of the component 'mtc', and the second's \
+                             `in` list does not hold 'Nudge', which the first sends: each port's \
+                             `out` list is contained in the other's `in` list (-1 §21.1.1 b)"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:09f2069b5eea55fc","code":"test-profile/port-lists","stage":"validation","spec":"SCE Test Profile §11.6","message":"test-configuration 'tester_and_helper': the <sce:connect> joins the port 'control' of the component 'helper' to the port 'sut' of the component 'mtc', and the second's `in` list does not hold 'Nudge', which the first sends: each port's `out` list is contained in the other's `in` list (-1 §21.1.1 b)","actual":"control"}"#,
+            ),
+            (
+                // A PTC nothing creates (docs/SCE_TEST_PROFILE.md §11.6): the
+                // PTC is `actual`.
+                "forge/test-profile-ptc-invocation",
+                ValidationError::TestProfile {
+                    rule: TestProfileRule::PtcInvocation,
+                    kind: ForgeKind::TestConfiguration,
+                    document: "tester_and_helper".into(),
+                    actual: "extra".into(),
+                    detail: "the PTC 'extra' is the id of 0 <invoke> of the configuration's \
+                             components: every <sce:ptc> is created by exactly one"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:f74ecf273e76f9bf","code":"test-profile/ptc-invocation","stage":"validation","spec":"SCE Test Profile §11.6","message":"test-configuration 'tester_and_helper': the PTC 'extra' is the id of 0 <invoke> of the configuration's components: every <sce:ptc> is created by exactly one","actual":"extra"}"#,
+            ),
+            (
+                // A module parameter declared of another type than a
+                // component reads it as (docs/SCE_TEST_PROFILE.md §11.8): the
+                // declared type is `actual`.
+                "forge/test-profile-module-parameter",
+                ValidationError::TestProfile {
+                    rule: TestProfileRule::ModuleParameter,
+                    kind: ForgeKind::TestSuite,
+                    document: "ping_suite".into(),
+                    actual: "uint16".into(),
+                    detail: "the module parameter 'limit' is declared of type uint16, and the \
+                             component 'tester', which the test case 'pings_and_pongs' runs, \
+                             reads it as uint32: a module parameter is declared with the type \
+                             its components read it as"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:42d2febe0241c2b3","code":"test-profile/module-parameter","stage":"validation","spec":"SCE Test Profile §11.8","message":"test-suite 'ping_suite': the module parameter 'limit' is declared of type uint16, and the component 'tester', which the test case 'pings_and_pongs' runs, reads it as uint32: a module parameter is declared with the type its components read it as","actual":"uint16"}"#,
             ),
             (
                 "forge/mesh-rpc-reserved-param",
@@ -20070,6 +20180,10 @@ mod tests {
             | TestProfileDuration
             | TestProfilePortConnection
             | TestProfileRecordFields
+            | TestProfileMessageEventName
+            | TestProfilePortLists
+            | TestProfilePtcInvocation
+            | TestProfileModuleParameter
             | ValidationMeshRpcReservedParam
             | ValidationMeshRpcMissingTarget
             | ValidationMeshRpcDuplicateTarget
@@ -21070,6 +21184,8 @@ mod tests {
                 | TestProfileTemplateParameter | TestProfileTemplateFloat
                 | TestProfileDuration | TestProfilePortConnection
                 | TestProfileRecordFields
+                | TestProfileMessageEventName | TestProfilePortLists
+                | TestProfilePtcInvocation | TestProfileModuleParameter
                 | ValidationMeshRpcReservedParam
                 | ValidationMeshRpcMissingTarget
                 | ValidationMeshRpcDuplicateTarget
@@ -21488,9 +21604,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            513,
+            517,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 513 distinct variants to match the DiagnosticCode \
+             expected 517 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -22154,6 +22270,10 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | TestProfileDuration
             | TestProfilePortConnection
             | TestProfileRecordFields
+            | TestProfileMessageEventName
+            | TestProfilePortLists
+            | TestProfilePtcInvocation
+            | TestProfileModuleParameter
             | ValidationMeshRpcReservedParam
             | ValidationMeshRpcMissingTarget
             | ValidationMeshRpcDuplicateTarget
