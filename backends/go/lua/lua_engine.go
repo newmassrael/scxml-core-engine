@@ -327,10 +327,6 @@ func (e *LuaEngine) SetCurrentEvent(sessionID string, args sce.SetCurrentEventAr
 		// and nothing says why. Measured 2026-08-25 by the Go channel of
 		// `examples/ai_loop/ai_loop.scxml`, whose Rust and C++ channels both
 		// counted the error this one silently swallowed.
-		//
-		// The origin/origintype fields below are deliberately the other way
-		// round — see their own comment — because `targetexpr="_event.origin"`
-		// has to evaluate to a string. Nothing evaluates `_event.data` as one.
 		sess.l.PushNil()
 		sess.l.SetField(-2, "data")
 	}
@@ -338,19 +334,32 @@ func (e *LuaEngine) SetCurrentEvent(sessionID string, args sce.SetCurrentEventAr
 	sess.l.PushString(args.Type)
 	sess.l.SetField(-2, "type")
 
-	sess.l.PushString(args.SendID)
-	sess.l.SetField(-2, "sendid")
-
-	// W3C SCXML 5.10.1: Always set origin/origintype so targetexpr="_event.origin"
-	// evaluates to empty string (not nil) when origin is unset (test 336).
-	sess.l.PushString(args.Origin)
-	sess.l.SetField(-2, "origin")
-
-	sess.l.PushString(args.OriginType)
-	sess.l.SetField(-2, "origintype")
-
-	sess.l.PushString(args.InvokeID)
-	sess.l.SetField(-2, "invokeid")
+	// §scxml-5.10.1 has the Processor leave four fields blank: `sendid` when
+	// the sender named none, `origin` and `origintype` for internal and
+	// platform events, `invokeid` when no invoked process returned the event.
+	// §scxml-B-2-8 makes blank ECMAScript undefined, not the empty string, and
+	// a Lua session holds undefined as nil. SetCurrentEventArgs carries "none"
+	// as the empty string, so an empty field is left unset here, and
+	// `_event.sendid === ''` answers false for an event whose sender named no
+	// id (tests/ecmascript/event_blank_fields.json).
+	//
+	// All four used to be pushed as "" whatever the event, `origin` and
+	// `origintype` so that `targetexpr="_event.origin"` read a string (test
+	// 336). That test reads the origin of an event the session sent itself,
+	// which carries its origin, so it never needed the blank one to be a
+	// string.
+	for _, field := range [...]struct{ name, value string }{
+		{"sendid", args.SendID},
+		{"origin", args.Origin},
+		{"origintype", args.OriginType},
+		{"invokeid", args.InvokeID},
+	} {
+		if field.value == "" {
+			continue
+		}
+		sess.l.PushString(field.value)
+		sess.l.SetField(-2, field.name)
+	}
 
 	sess.l.SetGlobal("_event")
 	return reading, nil
