@@ -1801,12 +1801,15 @@ fn static_statechart<'a>(
             ctx.insert_record(var.id.as_str(), RecordShape::Closed);
             continue;
         }
-        // A union is read through its value alone: its tag, and a field of the
+        // A union is a declared name with no operand type of its own, as a
+        // record is, and is read through its value: its tag, and a field of the
         // cases a test leaves (docs/adr/0092, section 6.1), as a payload's is.
+        // An `optional<union:U>` is declared below, as the optional value it is.
         if matches!(
             value_type,
             crate::forge::model::AlgorithmValueType::Union { .. }
         ) {
+            ctx.insert_var(var.id.as_str(), InferredType::Unknown);
             continue;
         }
         if let Some(elem) = value_type.list_elem() {
