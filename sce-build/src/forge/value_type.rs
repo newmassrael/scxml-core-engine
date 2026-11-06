@@ -2161,10 +2161,12 @@ pub fn longest_pointer(ty: &ValueType, env: &dyn TypeEnv) -> Result<(String, u64
 /// Why a type has no grammar the build can write.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GrammarError {
-    /// An alias no record or enum of the environment goes by.
+    /// An alias no record, enum or union of the environment goes by, or a
+    /// union of no case.
     Unresolved { alias: String },
-    /// A record that holds itself, directly or through other records: the
-    /// records on the way, the first repeated at the end.
+    /// A record or a union that holds itself, directly or through other
+    /// records and the records of its cases: the keys on the way, the first
+    /// repeated at the end.
     ContainsItself { cycle: Vec<String> },
     /// A `Scalar` built over a text or a byte string, whose bound is not part
     /// of it: the reader of a type never builds one.
@@ -2173,14 +2175,9 @@ pub enum GrammarError {
     /// a value of it may be a number no declared name spells, and a grammar
     /// spells a value of an enum by its name.
     OpenEnum { alias: String },
-    /// Two records of different documents under one document name, which a
-    /// JSON Schema's `$defs` would name alike.
+    /// Two records or unions of different documents under one document name,
+    /// which a JSON Schema's `$defs` would name alike.
     SharedName { name: String },
-    /// A union, whose rows of the two grammars (a `oneOf` of one object per
-    /// case, an alternation of one rule per case) are a later step of its
-    /// landing (docs/adr/0092, section 3 and landing order): refused by name
-    /// until they land, not left to a wrong grammar.
-    UnionUnlowered { alias: String },
 }
 
 impl fmt::Display for GrammarError {
@@ -2211,13 +2208,8 @@ impl fmt::Display for GrammarError {
             ),
             Self::SharedName { name } => write!(
                 f,
-                "two records of different documents are named `{name}`, which the schema's \
-                 `$defs` would name alike"
-            ),
-            Self::UnionUnlowered { alias } => write!(
-                f,
-                "`union:{alias}` has no JSON Schema or GBNF grammar yet: {}",
-                crate::forge::union_check::NOT_LOWERED_YET
+                "two records or unions of different documents are named `{name}`, which the \
+                 schema's `$defs` would name alike"
             ),
         }
     }
@@ -2259,6 +2251,81 @@ fn grammar_record<'e>(
         fields,
         scope: env.record_scope(alias).unwrap_or(env),
     })
+}
+
+/// The union `alias` names, with a case, or why a fold cannot descend into it
+/// (docs/adr/0092, section 3.1): an alias no union goes by, a union of no
+/// case, which was not read from its document, and a union met again inside
+/// itself. `on_path` holds the key of each record and union the fold is
+/// inside.
+fn grammar_union<'e>(
+    alias: &str,
+    env: &'e dyn TypeEnv,
+    on_path: &[String],
+) -> Result<&'e ScopedUnion, GrammarError> {
+    let unresolved = || GrammarError::Unresolved {
+        alias: alias.to_string(),
+    };
+    let union = env.union_type(alias).ok_or_else(unresolved)?;
+    if union.cases.is_empty() {
+        return Err(unresolved());
+    }
+    let key = union.key(alias);
+    if on_path.contains(&key) {
+        let mut cycle = on_path.to_vec();
+        cycle.push(key);
+        return Err(GrammarError::ContainsItself { cycle });
+    }
+    Ok(union)
+}
+
+/// The keys a fold of the union `union`, as the whole of a schema, starts
+/// inside: the union's own, so a case that holds the union again holds
+/// itself; or the refusal of a union of no case, as [`grammar_union`] refuses
+/// one.
+fn whole_union(union: &ScopedUnion) -> Result<Vec<String>, GrammarError> {
+    if union.cases.is_empty() {
+        return Err(GrammarError::Unresolved {
+            alias: union.name.clone(),
+        });
+    }
+    Ok(vec![union.key(&union.name)])
+}
+
+/// What `fold` makes of each case of `union`, in its tag enum's declaration
+/// order: `fold` is given the case, the fields of the record it holds (none
+/// for an empty case) and the scope they are read in, the union's own
+/// document's for the record's alias and the record's own for its fields,
+/// with the record's key on `on_path` while it runs.
+fn fold_cases<T, F>(
+    union: &ScopedUnion,
+    on_path: &mut Vec<String>,
+    mut fold: F,
+) -> Result<Vec<T>, GrammarError>
+where
+    F: FnMut(
+        &ScopedCase,
+        &[(String, ValueType)],
+        &dyn TypeEnv,
+        &mut Vec<String>,
+    ) -> Result<T, GrammarError>,
+{
+    let scope: &dyn TypeEnv = &union.scope;
+    let empty: &[(String, ValueType)] = &[];
+    let mut folded = Vec::with_capacity(union.cases.len());
+    for case in &union.cases {
+        folded.push(match &case.record {
+            None => fold(case, empty, scope, on_path)?,
+            Some(alias) => {
+                let record = grammar_record(alias, scope, on_path)?;
+                on_path.push(record.key);
+                let one = fold(case, &record.fields, record.scope, on_path)?;
+                on_path.pop();
+                one
+            }
+        });
+    }
+    Ok(folded)
 }
 
 /// The enum `reference` names, closed and with a variant, or why a grammar
@@ -2440,11 +2507,13 @@ fn regex_range(lo: i128, hi: i128) -> String {
 /// in (`schemas/sce-payload-schema.v1.schema.json`), declared in the one order
 /// every schema object writes its keywords in, whatever order a fold puts them
 /// in: what names the schema (`$schema`, `$id`, the source hash), what it says
-/// of itself, the form of a value (`$ref`, `type`, `enum`, `anyOf`), its
-/// bounds, each annotation beside the keyword it qualifies, then a record's
-/// keys and the definitions the schema gathered. It is the order of the
-/// example of docs/adr/0087, section 1.1, item 4, and it makes the text of a
-/// schema one text.
+/// of itself, the form of a value (`$ref`, `type`, `const`, `enum`, `anyOf`,
+/// `oneOf`), its bounds, each annotation beside the keyword it qualifies, then
+/// a record's keys and the definitions the schema gathered. It is the order of
+/// the example of docs/adr/0087, section 1.1, item 4, and it makes the text of
+/// a schema one text. `const` (a union case's tag) stands before `enum` and
+/// `oneOf` (a union's cases) after `anyOf` (docs/adr/0092, section 3.1, item
+/// 2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Keyword {
     Schema,
@@ -2453,8 +2522,10 @@ pub enum Keyword {
     Description,
     Ref,
     Type,
+    Const,
     Enum,
     AnyOf,
+    OneOf,
     Minimum,
     Maximum,
     MaxLength,
@@ -2479,8 +2550,10 @@ impl Keyword {
             Keyword::Description => "description",
             Keyword::Ref => "$ref",
             Keyword::Type => "type",
+            Keyword::Const => "const",
             Keyword::Enum => "enum",
             Keyword::AnyOf => "anyOf",
+            Keyword::OneOf => "oneOf",
             Keyword::Minimum => "minimum",
             Keyword::Maximum => "maximum",
             Keyword::MaxLength => "maxLength",
@@ -2501,14 +2574,15 @@ impl Keyword {
 #[derive(Debug, Clone, PartialEq)]
 pub enum SchemaNode {
     /// A value that holds no schema: a text, a number, a truth value, or a
-    /// list of texts (`enum`, `required`).
+    /// list of texts (`const`, `enum`, `required`).
     Value(serde_json::Value),
     /// One schema (`items`).
     Schema(SchemaObject),
-    /// Schemas in order (`anyOf`).
+    /// Schemas in order (`anyOf`, `oneOf`).
     Schemas(Vec<SchemaObject>),
     /// Schemas by name (`properties`, `$defs`), written in the order they
-    /// were put in: a record's keys in the order its document declares them.
+    /// were put in: a record's keys in the order its document declares them,
+    /// a union case's tag before them.
     Named(Vec<(String, SchemaObject)>),
 }
 
@@ -2603,10 +2677,11 @@ impl SchemaObject {
 }
 
 /// The definitions a JSON Schema of a type gathers as its fold walks it: each
-/// record the type holds, once, under its document's name.
+/// record and each union the type holds, once, under its document's name.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct SchemaDefs {
-    /// Each definition by its name, with the key of the record it defines.
+    /// Each definition by its name, with the key of the record or union it
+    /// defines.
     defs: std::collections::BTreeMap<String, (String, SchemaObject)>,
 }
 
@@ -2699,6 +2774,8 @@ fn pointer_token(name: &str) -> String {
 ///   required;
 /// - a record is a `$ref` to its definition, an object of every key, in the
 ///   order its document declares them, and no other;
+/// - a union is a `$ref` to its definition, the `oneOf` of one object per
+///   case ([`json_schema_union`]);
 /// - a list is an `array` of at most its bound.
 pub fn json_schema_of(
     ty: &ValueType,
@@ -2716,27 +2793,101 @@ pub fn json_schema_object(
     env: &dyn TypeEnv,
     defs: &mut SchemaDefs,
 ) -> Result<SchemaObject, GrammarError> {
-    json_object(fields, env, defs, &mut Vec::new())
+    json_object(None, fields, env, defs, &mut Vec::new())
 }
 
+/// `S` of a value of the union `union` as the whole of a schema: the `oneOf`
+/// of one object per case, what a union document's unit states at its root
+/// (docs/adr/0092, section 3.1, item 4), and the definition a type that holds
+/// the union refers to. The records the cases' fields hold are gathered in
+/// `defs`.
+///
+/// Each case is an object of its tag, a string `const` of its variant's name,
+/// then the fields of the record it holds, written inline, every key required
+/// and no other. The tag stands in each case's `required` and is a `const`
+/// literal, and the literals differ, so a converter can prove the cases
+/// disjoint: llguidance refuses a `oneOf` it cannot, and a `$ref` to the
+/// record is never proven so (section 3.1, item 2).
+pub fn json_schema_union(
+    union: &ScopedUnion,
+    defs: &mut SchemaDefs,
+) -> Result<SchemaObject, GrammarError> {
+    json_cases(union, defs, &mut whole_union(union)?)
+}
+
+/// An object of `fields`, each key required and no other, the keys in the
+/// order of `fields`, after `lead` where it is given: a union case's tag,
+/// which stands first in `properties` and in `required` (docs/adr/0092,
+/// section 3.1, item 1).
 fn json_object(
+    lead: Option<(String, SchemaObject)>,
     fields: &[(String, ValueType)],
     env: &dyn TypeEnv,
     defs: &mut SchemaDefs,
     on_path: &mut Vec<String>,
 ) -> Result<SchemaObject, GrammarError> {
-    let mut properties = Vec::with_capacity(fields.len());
+    let mut properties = Vec::with_capacity(fields.len() + 1);
+    properties.extend(lead);
     for (id, field) in fields {
         properties.push((id.clone(), json_schema(field, env, defs, on_path)?));
     }
     // Every key, in the order the document declares them, as `properties`
     // states them: a decoder held to the schema writes the keys in this order
     // (docs/adr/0087, section 1.1, item 2).
-    let required: Vec<&str> = fields.iter().map(|(id, _)| id.as_str()).collect();
+    let required: Vec<&str> = properties.iter().map(|(id, _)| id.as_str()).collect();
+    let required = SchemaNode::value(required);
     Ok(SchemaObject::typed("object")
         .with(Keyword::Properties, SchemaNode::Named(properties))
-        .with(Keyword::Required, SchemaNode::value(required))
+        .with(Keyword::Required, required)
         .with(Keyword::AdditionalProperties, SchemaNode::value(false)))
+}
+
+/// `{"oneOf":[...]}` of the cases of `union` ([`json_schema_union`]).
+fn json_cases(
+    union: &ScopedUnion,
+    defs: &mut SchemaDefs,
+    on_path: &mut Vec<String>,
+) -> Result<SchemaObject, GrammarError> {
+    let cases = fold_cases(union, on_path, |case, fields, scope, on_path| {
+        let tag = SchemaObject::default().with(
+            Keyword::Const,
+            SchemaNode::value(case.variant.name.as_str()),
+        );
+        json_object(Some((union.tag.clone(), tag)), fields, scope, defs, on_path)
+    })?;
+    Ok(SchemaObject::default().with(Keyword::OneOf, SchemaNode::Schemas(cases)))
+}
+
+/// `{"$ref":"#/$defs/<name>"}`, the record or union `key` names defined in
+/// `defs` under `name` by `define`, called with `key` on `on_path`, the first
+/// time the fold meets it, and once: a type met twice is defined once. Two
+/// documents under one name are refused, whichever is met first and also when
+/// the one inside the other takes the name first.
+fn defined<D>(
+    defs: &mut SchemaDefs,
+    name: String,
+    key: String,
+    on_path: &mut Vec<String>,
+    define: D,
+) -> Result<SchemaObject, GrammarError>
+where
+    D: FnOnce(&mut SchemaDefs, &mut Vec<String>) -> Result<SchemaObject, GrammarError>,
+{
+    match defs.defs.get(&name) {
+        Some((known, _)) if *known == key => {}
+        Some(_) => return Err(GrammarError::SharedName { name }),
+        None => {
+            on_path.push(key.clone());
+            let object = define(defs, on_path)?;
+            on_path.pop();
+            if defs.defs.contains_key(&name) {
+                return Err(GrammarError::SharedName { name });
+            }
+            defs.defs.insert(name.clone(), (key, object));
+        }
+    }
+    let reference = format!("#/$defs/{}", pointer_token(&name));
+    Ok(SchemaObject::default().with(Keyword::Ref, SchemaNode::value(reference)))
 }
 
 fn json_schema(
@@ -2775,31 +2926,27 @@ fn json_schema(
             array.with(Keyword::MaxItems, SchemaNode::value(max.max))
         }
         ValueType::Record { alias } => {
-            let record = grammar_record(alias, env, on_path)?;
-            match defs.defs.get(&record.name) {
-                Some((key, _)) if *key == record.key => {}
-                Some(_) => {
-                    return Err(GrammarError::SharedName { name: record.name });
-                }
-                None => {
-                    on_path.push(record.key.clone());
-                    let object = json_object(&record.fields, record.scope, defs, on_path)?;
-                    on_path.pop();
-                    // A record of another document under the same name, inside
-                    // this one, took the name first.
-                    if defs.defs.contains_key(&record.name) {
-                        return Err(GrammarError::SharedName { name: record.name });
-                    }
-                    defs.defs.insert(record.name.clone(), (record.key, object));
-                }
-            }
-            let reference = format!("#/$defs/{}", pointer_token(&record.name));
-            SchemaObject::default().with(Keyword::Ref, SchemaNode::value(reference))
+            let GrammarRecord {
+                key,
+                name,
+                fields,
+                scope,
+            } = grammar_record(alias, env, on_path)?;
+            defined(defs, name, key, on_path, |defs, on_path| {
+                json_object(None, &fields, scope, defs, on_path)
+            })?
         }
+        // docs/adr/0092, section 3.1: defined once, as a record is, under its
+        // document's name.
         ValueType::Union { alias } => {
-            return Err(GrammarError::UnionUnlowered {
-                alias: alias.clone(),
-            })
+            let union = grammar_union(alias, env, on_path)?;
+            defined(
+                defs,
+                union.name.clone(),
+                union.key(alias),
+                on_path,
+                |defs, on_path| json_cases(union, defs, on_path),
+            )?
         }
     })
 }
@@ -2934,9 +3081,9 @@ fn is_rule_name(expression: &str) -> bool {
 }
 
 /// The rules a GBNF grammar of a type gathers as its fold walks it
-/// ([`gbnf_of`]): a rule for each record and each list element, the rule of
-/// each integer type and of a number, and the chains that count a text's
-/// bytes, a byte string's bytes and a list's elements.
+/// ([`gbnf_of`]): a rule for each record, each union and each list element,
+/// the rule of each integer type and of a number, and the chains that count a
+/// text's bytes, a byte string's bytes and a list's elements.
 ///
 /// Every bound is a chain of rules, never a repetition `{0,N}`: llama.cpp's
 /// parser makes a repetition past 2000 unbounded (`MAX_REPETITION_THRESHOLD`,
@@ -2945,15 +3092,17 @@ fn is_rule_name(expression: &str) -> bool {
 /// repetition. A repetition stands only in an integer's digits, at most 19.
 ///
 /// A rule's name is a word of lowercase letters, digits and `-`, the one
-/// alphabet the parser reads in a name (`is_word_char`): a record's rule and a
-/// list element's are numbered in the order the walk meets them.
+/// alphabet the parser reads in a name (`is_word_char`): a record's rule, a
+/// union's and a list element's are numbered in the order the walk meets them.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GbnfRules {
-    /// Each rule the walk named, a record's or a list element's, in the order
-    /// it named them.
+    /// Each rule the walk named, a record's, a union's or a list element's,
+    /// in the order it named them.
     named: Vec<(String, String)>,
     /// The rule of each record, by its key ([`TypeEnv::record_key`]).
     records: std::collections::BTreeMap<String, String>,
+    /// The rule of each union, by its key (docs/adr/0092, section 3.1).
+    unions: std::collections::BTreeMap<String, String>,
     /// The rule of each list element's expression that is no rule alone.
     items: std::collections::BTreeMap<String, String>,
     /// The most elements after the first a list of each element rule holds.
@@ -2979,7 +3128,46 @@ fn push_rule(out: &mut String, name: &str, body: &str) {
     out.push('\n');
 }
 
+/// The documents a grammar names a rule of its own for, each numbered apart.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DocumentRule {
+    Record,
+    Union,
+}
+
 impl GbnfRules {
+    /// The rule of the record or union `key` names, its body written by
+    /// `body`, called with `key` on `on_path`, the first time the walk meets
+    /// it: a document met twice has one rule, named before its body is
+    /// written so the rules stand in the order the walk meets them.
+    fn document_rule<B>(
+        &mut self,
+        kind: DocumentRule,
+        key: String,
+        on_path: &mut Vec<String>,
+        body: B,
+    ) -> Result<String, GrammarError>
+    where
+        B: FnOnce(&mut Self, &mut Vec<String>) -> Result<String, GrammarError>,
+    {
+        let (table, prefix) = match kind {
+            DocumentRule::Record => (&mut self.records, "record"),
+            DocumentRule::Union => (&mut self.unions, "union"),
+        };
+        if let Some(rule) = table.get(&key) {
+            return Ok(rule.clone());
+        }
+        let rule = format!("{prefix}-{}", table.len() + 1);
+        table.insert(key.clone(), rule.clone());
+        let slot = self.named.len();
+        self.named.push((rule.clone(), String::new()));
+        on_path.push(key);
+        let written = body(self, on_path)?;
+        on_path.pop();
+        self.named[slot].1 = written;
+        Ok(rule)
+    }
+
     /// The rule of a list element `expression` is: itself when it is a rule's
     /// name, else a rule of its own, one for each distinct expression.
     fn item_rule(&mut self, expression: String) -> String {
@@ -3084,6 +3272,7 @@ impl GbnfRules {
 /// - an optional value is `null` or its element's;
 /// - a record is its rule: `{`, each key in the order its document declares
 ///   them with its value, `,` between two, `}`;
+/// - a union is its rule, one alternative per case ([`gbnf_union`]);
 /// - a list is `[`, at least its lower count and at most its bound of its
 ///   element's, `,` between two, `]`.
 pub fn gbnf_of(
@@ -3101,10 +3290,42 @@ pub fn gbnf_object(
     env: &dyn TypeEnv,
     rules: &mut GbnfRules,
 ) -> Result<String, GrammarError> {
-    gbnf_record(fields, env, rules, &mut Vec::new())
+    gbnf_record(None, fields, env, rules, &mut Vec::new())
 }
 
+/// `G` of a value of the union `union` as the whole of a grammar: what a
+/// union document's `root` is and a union's rule holds (docs/adr/0092,
+/// section 3.1). One alternative per case, in its tag enum's declaration
+/// order: `{`, the tag's key and the variant's quoted name, then each field of
+/// the case's record in the order its document declares them with its value,
+/// `,` between two, `}`; an empty case is its tag alone. Every alternative
+/// begins with its tag, so the variant's name a decoder writes decides the
+/// case, and every token after it is held to that case's fields.
+pub fn gbnf_union(union: &ScopedUnion, rules: &mut GbnfRules) -> Result<String, GrammarError> {
+    gbnf_cases(union, rules, &mut whole_union(union)?)
+}
+
+/// The alternation of the cases of `union` ([`gbnf_union`]).
+fn gbnf_cases(
+    union: &ScopedUnion,
+    rules: &mut GbnfRules,
+    on_path: &mut Vec<String>,
+) -> Result<String, GrammarError> {
+    let alternatives = fold_cases(union, on_path, |case, fields, scope, on_path| {
+        let tag = format!(
+            "{}:{}",
+            json_quoted(&union.tag),
+            json_quoted(&case.variant.name)
+        );
+        gbnf_record(Some(tag.as_str()), fields, scope, rules, on_path)
+    })?;
+    Ok(alternatives.join(" | "))
+}
+
+/// `{`, `lead` where it is given (a union case's tag and its value, as JSON
+/// text), each key of `fields` with its value, `,` between two, `}`.
 fn gbnf_record(
+    lead: Option<&str>,
     fields: &[(String, ValueType)],
     env: &dyn TypeEnv,
     rules: &mut GbnfRules,
@@ -3112,11 +3333,15 @@ fn gbnf_record(
 ) -> Result<String, GrammarError> {
     // The keys in the order the record's document declares them, the order
     // the JSON Schema's `properties` states them in: a decoder held to either
-    // form writes them so (docs/adr/0087, section 1.1, item 2).
+    // form writes them so (docs/adr/0087, section 1.1, item 2). A case's tag
+    // stands before them in both (docs/adr/0092, section 3.1, item 1).
     let mut parts = Vec::new();
     let mut literal = String::from("{");
+    if let Some(lead) = lead {
+        literal.push_str(lead);
+    }
     for (at, (id, field)) in fields.iter().enumerate() {
-        if at > 0 {
+        if at > 0 || lead.is_some() {
             literal.push(',');
         }
         literal.push_str(&json_quoted(id));
@@ -3186,24 +3411,23 @@ fn gbnf(
             }
         },
         ValueType::Record { alias } => {
-            let record = grammar_record(alias, env, on_path)?;
-            if let Some(rule) = rules.records.get(&record.key) {
-                return Ok(rule.clone());
-            }
-            let rule = format!("record-{}", rules.records.len() + 1);
-            rules.records.insert(record.key.clone(), rule.clone());
-            let slot = rules.named.len();
-            rules.named.push((rule.clone(), String::new()));
-            on_path.push(record.key);
-            let body = gbnf_record(&record.fields, record.scope, rules, on_path)?;
-            on_path.pop();
-            rules.named[slot].1 = body;
-            rule
+            let GrammarRecord {
+                key, fields, scope, ..
+            } = grammar_record(alias, env, on_path)?;
+            rules.document_rule(DocumentRule::Record, key, on_path, |rules, on_path| {
+                gbnf_record(None, &fields, scope, rules, on_path)
+            })?
         }
+        // docs/adr/0092, section 3.1: one rule per union document, one
+        // alternative per case.
         ValueType::Union { alias } => {
-            return Err(GrammarError::UnionUnlowered {
-                alias: alias.clone(),
-            })
+            let union = grammar_union(alias, env, on_path)?;
+            rules.document_rule(
+                DocumentRule::Union,
+                union.key(alias),
+                on_path,
+                |rules, on_path| gbnf_cases(union, rules, on_path),
+            )?
         }
     })
 }
@@ -5800,8 +6024,8 @@ mod tests {
                 GrammarError::SharedName {
                     name: "item".into(),
                 },
-                "two records of different documents are named `item`, which the schema's \
-                 `$defs` would name alike",
+                "two records or unions of different documents are named `item`, which the \
+                 schema's `$defs` would name alike",
             ),
         ] {
             assert_eq!(refusal.to_string(), sentence);
@@ -6151,23 +6375,270 @@ mod tests {
         }
     }
 
+    /// The definition of the shape in `$defs`, as it is written: one object
+    /// per case in the tag enum's order, the tag first and a string `const`,
+    /// the case's fields inline after it (docs/adr/0092, section 3.1).
+    const SHAPE_CASES: &str = concat!(
+        r#"{"oneOf":["#,
+        r#"{"type":"object","properties":{"kind":{"const":"dot"}},"#,
+        r#""required":["kind"],"additionalProperties":false},"#,
+        r#"{"type":"object","properties":{"kind":{"const":"circle"},"#,
+        r#""radius":{"type":"integer","minimum":0,"maximum":65535}},"#,
+        r#""required":["kind","radius"],"additionalProperties":false},"#,
+        r#"{"type":"object","properties":{"kind":{"const":"disc"},"#,
+        r#""radius":{"type":"integer","minimum":0,"maximum":65535}},"#,
+        r#""required":["kind","radius"],"additionalProperties":false},"#,
+        r#"{"type":"object","properties":{"kind":{"const":"rect"},"#,
+        r#""width":{"type":"integer","minimum":0,"maximum":65535},"#,
+        r#""height":{"type":"integer","minimum":0,"maximum":65535}},"#,
+        r#""required":["kind","width","height"],"additionalProperties":false},"#,
+        r#"{"type":"object","properties":{"kind":{"const":"label"},"#,
+        r#""text":{"type":"string","maxLength":4,"x-sce-max-bytes":4},"#,
+        r#""points":{"type":"array","items":{"type":"integer","minimum":0,"maximum":255},"#,
+        r#""maxItems":3}},"#,
+        r#""required":["kind","text","points"],"additionalProperties":false}"#,
+        r#"]}"#,
+    );
+
+    /// The alternation of the shape's cases, as its rule and a union
+    /// document's `root` hold it: each alternative begins with its tag.
+    const SHAPE_ALTERNATIVES: &str = concat!(
+        r#""{\"kind\":\"dot\"}""#,
+        r#" | "{\"kind\":\"circle\",\"radius\":" uint16 "}""#,
+        r#" | "{\"kind\":\"disc\",\"radius\":" uint16 "}""#,
+        r#" | "{\"kind\":\"rect\",\"width\":" uint16 ",\"height\":" uint16 "}""#,
+        r#" | "{\"kind\":\"label\",\"text\":" "\"" t4 "\"" ",\"points\":" "[" ( uint8 uint8-tail-2 )? "]" "}""#,
+    );
+
+    /// The rule of `uint16`.
+    const UINT16_RULE: &str = concat!(
+        r#"uint16 ::= "0" | [1-9] [0-9]{0,3} | [1-5] [0-9]{4} | "6" [0-4] [0-9]{3} | "#,
+        r#""65" [0-4] [0-9]{2} | "655" [0-2] [0-9] | "6553" [0-5]"#,
+    );
+
     #[test]
-    fn a_union_has_no_grammar_until_its_rows_land() {
+    fn a_union_is_defined_once_as_the_one_of_of_its_cases() {
         let env = union_table();
-        let refusal =
-            json_schema_of(&ty("union:Shape"), &env, &mut SchemaDefs::default()).unwrap_err();
+        let mut defs = SchemaDefs::default();
+        let schema = json_schema_of(&ty("union:Shape"), &env, &mut defs).unwrap();
+        assert_eq!(schema.text(), r##"{"$ref":"#/$defs/shape"}"##);
         assert_eq!(
-            refusal,
-            GrammarError::UnionUnlowered {
-                alias: "Shape".into()
+            defs.into_node().map(defs_text),
+            Some(format!("{{\"shape\":{SHAPE_CASES}}}"))
+        );
+        // Met twice, inside a list and an optional, it is defined once.
+        let mut defs = SchemaDefs::default();
+        let fields = [
+            ("one".to_string(), ty("union:Shape")),
+            ("many".to_string(), ty("list<optional<union:Shape>>[2]")),
+        ];
+        let object = json_schema_object(&fields, &env, &mut defs).unwrap();
+        assert_eq!(
+            object.text(),
+            concat!(
+                r##"{"type":"object","properties":{"one":{"$ref":"#/$defs/shape"},"##,
+                r##""many":{"type":"array","items":{"anyOf":[{"$ref":"#/$defs/shape"},"##,
+                r##"{"type":"null"}]},"maxItems":2}},"required":["one","many"],"##,
+                r##""additionalProperties":false}"##,
+            )
+        );
+        assert_eq!(
+            defs.into_node().map(defs_text),
+            Some(format!("{{\"shape\":{SHAPE_CASES}}}"))
+        );
+        // The whole of a union document's schema is the same `oneOf`, with no
+        // definition of its own.
+        let mut defs = SchemaDefs::default();
+        assert_eq!(
+            json_schema_union(&shape_union(), &mut defs).map(|s| s.text()),
+            Ok(SHAPE_CASES.to_string())
+        );
+        assert_eq!(defs.into_node(), None);
+    }
+
+    /// docs/adr/0092, section 3.1, item 2: llguidance accepts a `oneOf` only
+    /// where it proves the cases disjoint, which two objects are when a key
+    /// both require holds different string `const` literals; a `$ref` is
+    /// never proven so. Each case therefore requires the tag, holds it as a
+    /// string `const` of its own, and writes its fields inline.
+    #[test]
+    fn every_case_requires_its_tag_and_holds_it_as_a_string_const() {
+        let union = shape_union();
+        let mut defs = SchemaDefs::default();
+        let schema = read_json(&json_schema_union(&union, &mut defs).unwrap().text());
+        let cases = schema["oneOf"].as_array().expect("a oneOf of the cases");
+        assert_eq!(cases.len(), union.cases.len());
+        let mut literals = BTreeSet::new();
+        for (case, object) in union.cases.iter().zip(cases) {
+            let name = &case.variant.name;
+            let required = object["required"].as_array().expect("required keys");
+            assert_eq!(required.first(), Some(&serde_json::json!("kind")), "{name}");
+            let properties = object["properties"].as_object().expect("properties");
+            assert_eq!(
+                properties.get("kind"),
+                Some(&serde_json::json!({ "const": name })),
+                "{name}"
+            );
+            assert!(
+                properties["kind"]["const"].is_string(),
+                "{name}: the tag is a string literal"
+            );
+            assert!(literals.insert(name.clone()), "{name}: one literal a case");
+            assert_eq!(object["additionalProperties"], false, "{name}");
+            assert_eq!(object.get("$ref"), None, "{name}: written inline");
+            for (key, value) in properties {
+                assert!(
+                    required.contains(&serde_json::json!(key)),
+                    "{name}: `{key}` is required"
+                );
+                assert_eq!(value.get("$ref"), None, "{name}: `{key}` is no record");
             }
+        }
+    }
+
+    #[test]
+    fn a_union_is_one_rule_of_one_alternative_per_case_its_tag_first() {
+        let env = union_table();
+        let text_to_four = &TEXT_TO_FIVE[..TEXT_TO_FIVE.find("t5 ::=").unwrap()];
+        let tail = concat!(
+            "uint8-tail-0 ::= \"\"\n",
+            "uint8-tail-1 ::= \"\" | \",\" uint8 uint8-tail-0\n",
+            "uint8-tail-2 ::= \"\" | \",\" uint8 uint8-tail-1\n",
+        );
+        let mut rules = GbnfRules::default();
+        let root = gbnf_of(&ty("union:Shape"), &env, &mut rules).unwrap();
+        assert_eq!(
+            rules.grammar(&root),
+            format!(
+                "root ::= union-1\nunion-1 ::= {SHAPE_ALTERNATIVES}\n{tail}{UINT16_RULE}\n\
+                 {UINT8_RULE}\n{text_to_four}"
+            )
+        );
+        // Met twice, it has one rule.
+        let mut rules = GbnfRules::default();
+        let root = gbnf_of(&ty("list<union:Shape>[2]"), &env, &mut rules).unwrap();
+        let grammar = rules.grammar(&root);
+        assert!(
+            grammar.starts_with(&format!(
+                "root ::= \"[\" ( union-1 union-1-tail-1 )? \"]\"\n\
+                 union-1 ::= {SHAPE_ALTERNATIVES}\n"
+            )),
+            "{grammar}"
+        );
+        assert_eq!(grammar.matches("union-1 ::=").count(), 1, "{grammar}");
+        // The whole of a union document's grammar is the same alternation, at
+        // its root.
+        let mut rules = GbnfRules::default();
+        let root = gbnf_union(&shape_union(), &mut rules).unwrap();
+        assert_eq!(root, SHAPE_ALTERNATIVES);
+        assert!(rules
+            .grammar(&root)
+            .starts_with(&format!("root ::= {SHAPE_ALTERNATIVES}\n{tail}")));
+    }
+
+    #[test]
+    fn a_union_with_no_grammar_is_refused_by_name() {
+        let both = |ty: &ValueType, env: &dyn TypeEnv| -> (GrammarError, GrammarError) {
+            (
+                json_schema_of(ty, env, &mut SchemaDefs::default()).expect_err("no JSON Schema"),
+                gbnf_of(ty, env, &mut GbnfRules::default()).expect_err("no GBNF grammar"),
+            )
+        };
+        let mut env = union_table();
+        // A union of no case was not read from its document.
+        let hollow = ScopedUnion {
+            cases: Vec::new(),
+            ..shape_union()
+        };
+        env.unions.insert("Hollow".into(), hollow.clone());
+        for alias in ["Nope", "Hollow"] {
+            let unresolved = GrammarError::Unresolved {
+                alias: alias.into(),
+            };
+            assert_eq!(
+                both(&ty(&format!("optional<union:{alias}>")), &env),
+                (unresolved.clone(), unresolved)
+            );
+        }
+        let unresolved = GrammarError::Unresolved {
+            alias: "shape".into(),
+        };
+        assert_eq!(
+            json_schema_union(&hollow, &mut SchemaDefs::default()),
+            Err(unresolved.clone())
         );
         assert_eq!(
-            gbnf_of(&ty("list<union:Shape>[2]"), &env, &mut GbnfRules::default()).unwrap_err(),
-            refusal
+            gbnf_union(&hollow, &mut GbnfRules::default()),
+            Err(unresolved)
         );
-        assert!(refusal
-            .to_string()
-            .contains("no backend lowers a union yet"));
+        // A case's record that holds the union again: `N` holds `union:U`,
+        // whose one case holds `N`.
+        let mut inner = TypeScope::default();
+        inner
+            .enums
+            .insert("K".into(), closed_enum(SceType::Uint8, &[("a", 0)]));
+        inner
+            .records
+            .insert("N".into(), case_record("n", &[("id", "uint8")]));
+        let looping = ScopedUnion {
+            identity: "u".into(),
+            name: "u".into(),
+            tag: "k".into(),
+            tag_enum: "K".into(),
+            cases: vec![ScopedCase {
+                variant: ScopedVariant {
+                    name: "a".into(),
+                    value: 0,
+                },
+                record: Some("N".into()),
+            }],
+            scope: inner,
+        };
+        let mut node_scope = TypeScope::default();
+        node_scope.unions.insert("U".into(), looping);
+        let mut cyclic = TypeScope::default();
+        cyclic.records.insert(
+            "N".into(),
+            ScopedRecord {
+                identity: "n".into(),
+                name: "n".into(),
+                fields: vec![("next".into(), ty("optional<union:U>"))],
+                scope: node_scope,
+            },
+        );
+        let cycle = GrammarError::ContainsItself {
+            cycle: vec!["n".into(), "u".into(), "n".into()],
+        };
+        assert_eq!(both(&ty("record:N"), &cyclic), (cycle.clone(), cycle));
+        // A union and a record of another document under one name: the
+        // schema's `$defs` would name them alike, whichever is met first.
+        let mut shared = TypeScope::default();
+        shared.unions.insert("Shape".into(), shape_union());
+        shared.records.insert(
+            "Other".into(),
+            ScopedRecord {
+                identity: "elsewhere/shape.scxml".into(),
+                name: "shape".into(),
+                fields: vec![("x".into(), ty("bool"))],
+                scope: TypeScope::default(),
+            },
+        );
+        for fields in [
+            [
+                ("a".to_string(), ty("union:Shape")),
+                ("b".to_string(), ty("record:Other")),
+            ],
+            [
+                ("a".to_string(), ty("record:Other")),
+                ("b".to_string(), ty("union:Shape")),
+            ],
+        ] {
+            assert_eq!(
+                json_schema_object(&fields, &shared, &mut SchemaDefs::default()),
+                Err(GrammarError::SharedName {
+                    name: "shape".into()
+                })
+            );
+        }
     }
 }
