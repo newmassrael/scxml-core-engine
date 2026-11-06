@@ -299,6 +299,10 @@ names the record, in these cases:
 - a queued event with a `sender` beside a `null` origin;
 - a `raise`, `parent` or `child` act with no `sender`, or with an `origin` other than the SCXML pair of that
   sender, `{SCXML type, scxmlLocation(sender)}`, byte for byte;
+- a `raise`, `parent` or `child` act whose `sender` is not the `sessionid` of the session record it sits in, in
+  the root or in any child session. Such an act is that session's own send. A reader that took it would save it
+  back under its own id, so one text would mean two things. The reason names the member, the two ids and the act,
+  for example `'pending[0].sender' is 'y', and this session is 'x': a raise act is this session's own send`;
 - an `internal` act that holds either member.
 
 The reader refuses these texts and does not repair them, as it refuses every other text that it cannot read whole.

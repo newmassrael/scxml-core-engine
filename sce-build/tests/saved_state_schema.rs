@@ -479,8 +479,8 @@ fn each_format_2_reading_fixture_is_read_as_the_table_of_section_7_says() {
 fn the_scxml_prefix_alone_names_no_session_in_a_format_2_text() {
     // docs/adr/0090, section 7. A queued event stored with the prefix and no id
     // is row 4: row 3 needs an id after the prefix, and row 2 a text without
-    // `://`. It is read as the pair it stores, sent by no session (the last
-    // `go` of `saved/format2/static_invoke_tree_working_origins.json`).
+    // `://`. It is read as the pair it stores, sent by no session (the root
+    // event `question` of `saved/format2/static_invoke_tree_working_origins.json`).
     assert_eq!(
         read_format_2_origin(SCXML_LOCATION, SCXML_PROCESSOR),
         (pair(SCXML_PROCESSOR, SCXML_LOCATION), json::Value::Null)
@@ -564,6 +564,79 @@ fn holds_one_origin(record: &json::Value, what: &str, own_send: bool) {
     }
 }
 
+/// Every `raise`, `parent` and `child` act of `session` and of each session
+/// below it whose `sender` is not that session's own `sessionid`, as the
+/// reason a reader refuses it (docs/adr/0090, section 7, "Text form"): a
+/// session's waiting send is its own send. The schema cannot compare two
+/// members, so this is the check.
+fn acts_sent_by_another_session(session: &json::Value, what: &str) -> Vec<String> {
+    let own = member_text(session, "sessionid");
+    let mut found = Vec::new();
+    if let Some(json::Value::Array(acts)) = session.member("pending") {
+        for (i, act) in acts.iter().enumerate() {
+            let kind = member_text(act, "act");
+            if !matches!(kind, "raise" | "parent" | "child") {
+                continue;
+            }
+            let sender = match act.member("sender") {
+                Some(json::Value::Text(sender)) if sender == own => continue,
+                Some(json::Value::Text(sender)) => format!("'{sender}'"),
+                other => format!("{other:?}"),
+            };
+            found.push(format!(
+                "'{what}pending[{i}].sender' is {sender}, and this session is '{own}': a {kind} \
+                 act is this session's own send"
+            ));
+        }
+    }
+    if let Some(json::Value::Array(children)) = session.member("invokes") {
+        for (i, child) in children.iter().enumerate() {
+            let child_session = child.member("session").expect("a child's session");
+            found.extend(acts_sent_by_another_session(
+                child_session,
+                &format!("{what}invokes[{i}].session."),
+            ));
+        }
+    }
+    found
+}
+
+#[test]
+fn a_session_act_sent_by_another_session_is_refused() {
+    // The shared tree holds a `child` act in the root and a `parent` act in the
+    // child, each its own session's send.
+    let path = shared_saved().join("static_invoke_tree_working.json");
+    let written = saved_text(&path);
+    let found = acts_sent_by_another_session(&ordered(&written, &path), "");
+    assert!(found.is_empty(), "{}", found.join("\n"));
+    // The root's act given the child as its sender, with the child's own pair
+    // beside it: every other rule of the text form holds, and this one does not.
+    let root = "fixture-root";
+    let child = "fixture-root.working.2.worker";
+    let own = format!(
+        "\"sendid\":\"poke\",\"origin\":{{\"processor\":\"{SCXML_PROCESSOR}\",\"address\":\"{}\"}},\"sender\":\"{root}\"}}",
+        scxml_location(root)
+    );
+    let foreign = format!(
+        "\"sendid\":\"poke\",\"origin\":{{\"processor\":\"{SCXML_PROCESSOR}\",\"address\":\"{}\"}},\"sender\":\"{child}\"}}",
+        scxml_location(child)
+    );
+    assert_eq!(
+        written.matches(&own).count(),
+        1,
+        "the root's act as written"
+    );
+    let changed = written.replace(&own, &foreign);
+    let found = acts_sent_by_another_session(&ordered(&changed, &path), "");
+    assert_eq!(
+        found,
+        [format!(
+            "'pending[0].sender' is '{child}', and this session is '{root}': a child act is \
+             this session's own send"
+        )]
+    );
+}
+
 /// Hold `session` and every session below it to the text form.
 fn holds_the_text_form(session: &json::Value, what: &str) {
     if let Some(json::Value::Array(events)) = session.member("external") {
@@ -627,6 +700,8 @@ fn every_format_3_instance_is_written_in_the_one_text_form() {
             "{what} keeps format 2's origintype"
         );
         holds_the_text_form(&state, &format!("{what}: "));
+        let foreign = acts_sent_by_another_session(&state, "");
+        assert!(foreign.is_empty(), "{what}: {}", foreign.join("\n"));
         origins += written.matches("\"origin\":{").count();
     }
     // The sweep reached pairs, not only texts that hold none.
