@@ -539,23 +539,37 @@ SCE_C_UNUSED static inline bool sce_event_origin_scxml(sce_event_origin_t *origi
     return true;
 }
 
+/* docs/adr/0090, section 2: the SCXML Event I/O Processor stamps an event a
+   session sends — the pair of `session_id` into `origin`, and `from_session`,
+   the one byte an event record and a forwarded record carry beside the pair,
+   set to say that this processor wrote it. A sender that holds no id stamps
+   none and leaves the flag clear. The provenance is the event's, not the
+   pair's: a host may spell any pair it likes, a session's location included,
+   and the event it posts is still no session's send. */
+SCE_C_UNUSED static inline void sce_event_stamp_session(sce_event_origin_t *origin, uint8_t *from_session,
+                                                        const char *session_id) {
+    *from_session =
+        (uint8_t)((sce_event_origin_scxml(origin, session_id) && !sce_event_origin_is_none(origin)) ? 1u : 0u);
+}
+
 /* docs/adr/0090, section 1: the session that sent an event, the id the
    session-keyed lookups (`<finalize>`, a saved state's `origin`) read, written
    into `dst` of `cap` bytes.
 
-   Not stored beside the pair on this backend: the only processor that sets a
-   sender here is the SCXML one, and the sender it sets is exactly the session
-   its location names, so the id is read back out of the pair where it is
-   needed instead of costing every queued event a second copy. False, leaving
-   `dst` empty, for an event no SCXML session sent: one of another processor,
-   one whose address is not an SCXML location (a Mesh peer's `mesh://`), and
-   one with no origin. */
-SCE_C_UNUSED static inline bool sce_event_origin_sender(const sce_event_origin_t *origin, char *dst, size_t cap) {
+   Not stored beside the pair on this backend: only the SCXML processor sets a
+   sender, which it marks by `from_session` (`sce_event_stamp_session`), and the
+   sender it sets is exactly the session its location names, so the id is read
+   back out of the pair where it is needed instead of costing every queued
+   event a second copy. False, leaving `dst` empty, for an event no session
+   sent — a host's, whatever pair it spells, a Mesh peer's, one with no origin —
+   and for an id longer than `cap` holds. */
+SCE_C_UNUSED static inline bool sce_event_origin_sender(const sce_event_origin_t *origin, uint8_t from_session,
+                                                        char *dst, size_t cap) {
     if (cap == 0u) {
         return false;
     }
     dst[0] = '\0';
-    if (origin == NULL || strcmp(origin->processor, SCE_SCXML_EVENT_PROCESSOR_TYPE) != 0) {
+    if (from_session == 0u || origin == NULL || strcmp(origin->processor, SCE_SCXML_EVENT_PROCESSOR_TYPE) != 0) {
         return false;
     }
     return sce_session_id_from_scxml_location(dst, cap, origin->address);
@@ -609,10 +623,13 @@ typedef struct sce_forwarded_event_s {
     char name[SCE_MAX_ID_LEN];
     char data[SCE_MAX_DATA_LEN];
     /* `_event.origin` and `_event.origintype`, the one pair the delivering
-       processor wrote (docs/adr/0090); the session that sent it is read out of
-       it (`sce_event_origin_sender`). A host posting an event by name names
+       processor wrote (docs/adr/0090). A host posting an event by name names
        its origin here in its own terms, or none. */
     sce_event_origin_t origin;
+    /* 1 when the SCXML processor stamped the pair for a sending session
+       (`sce_event_stamp_session`), whose id is then read out of it
+       (`sce_event_origin_sender`); 0 for every other event. */
+    uint8_t from_session;
     char send_id[SCE_MAX_ID_LEN];
     char type[SCE_MAX_EVENT_TYPE_LEN];
     char invoke_id[SCE_MAX_ID_LEN];

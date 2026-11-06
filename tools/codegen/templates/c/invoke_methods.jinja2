@@ -297,7 +297,7 @@ static void {{ csym_prefix }}{{ model.name }}_dispatch_external_by_name(void *op
        the child's session id, spelled by the one encoder the child's
        `_ioprocessors` entry is spelled by; `<finalize>` finds the child by
        the id that location names. */
-    (void)sce_event_origin_scxml(&evt.origin, sender);
+    sce_event_stamp_session(&evt.origin, &evt.from_session, sender);
     /* W3C SCXML 6.4 (test233): copy child-supplied `<send><param>` Lua-
        source string into `event_with_meta_t.data`. The dequeue path
        loads it into the parent's L state as `_event.data` before

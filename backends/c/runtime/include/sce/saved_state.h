@@ -500,12 +500,13 @@ static inline bool sce_saved_event_read(sce_jv_t v, const char *what, sce_saved_
 }
 
 /* docs/adr/0090, "Until step 6": the format-2 `origin` text that stores an event's origin — the
- * sending session's id for an event a session sent (read out of its pair,
+ * sending session's id for an event a session sent (`from_session`; the id read out of its pair,
  * `sce_event_origin_sender`, into `buf` of `cap` bytes), the address otherwise, and empty for
  * none, which is what every backend writes. The `origintype` beside it is the pair's processor
  * (`sce_event_origin_processor`). */
-static inline const char *sce_saved_origin_text(const sce_event_origin_t *origin, char *buf, size_t cap) {
-    return sce_event_origin_sender(origin, buf, cap) ? buf : sce_event_origin_address(origin);
+static inline const char *sce_saved_origin_text(const sce_event_origin_t *origin, uint8_t from_session, char *buf,
+                                                size_t cap) {
+    return sce_event_origin_sender(origin, from_session, buf, cap) ? buf : sce_event_origin_address(origin);
 }
 
 /* docs/adr/0090, section 7: the origin a stored `origin` and `origintype` are read as, never half
@@ -514,12 +515,14 @@ static inline const char *sce_saved_origin_text(const sce_event_origin_t *origin
  * `origintype` beside an address is the SCXML processor's, which is what format 2 meant by it. An
  * SCXML location — the spelling this backend once stored in place of the id, unencoded — is read
  * as the pair of the session it names. A value without a scheme read with the SCXML type is a
- * session's id, read the same way. Anything else is the pair as stored. The sender of an SCXML
- * pair is the session its location names (`sce_event_origin_sender`).
+ * session's id, read the same way. Those two are a session's send, marked in `*from_session`,
+ * whose sender is the session its location names (`sce_event_origin_sender`). Anything else is
+ * the pair as stored, sent by no session.
  *
- * False, leaving none, when the pair, or the id of the session it names, does not fit the room
- * this build holds them in, which the caller refuses rather than cuts. */
-static inline bool sce_saved_origin_read(const char *origin_text, const char *origin_type, sce_event_origin_t *origin) {
+ * False, leaving none and the mark clear, when the pair, or the id of the session it names, does
+ * not fit the room this build holds them in, which the caller refuses rather than cuts. */
+static inline bool sce_saved_origin_read(const char *origin_text, const char *origin_type, sce_event_origin_t *origin,
+                                         uint8_t *from_session) {
     const size_t prefix_len = sizeof(SCE_SCXML_LOCATION_PREFIX) - 1u;
     const char *text = origin_text != NULL ? origin_text : "";
     const char *processor =
@@ -527,18 +530,22 @@ static inline bool sce_saved_origin_read(const char *origin_text, const char *or
     char id[SCE_MAX_SESSION_ID_LEN];
     bool fits;
     sce_event_origin_clear(origin);
+    *from_session = 0u;
     if (text[0] == '\0') {
         return true;
     }
     if (strncmp(text, SCE_SCXML_LOCATION_PREFIX, prefix_len) == 0 && text[prefix_len] != '\0') {
         fits = sce_session_id_from_scxml_location(id, sizeof(id), text) && sce_event_origin_scxml(origin, id);
+        *from_session = 1u;
     } else if (strstr(text, "://") == NULL && strcmp(processor, SCE_SCXML_EVENT_PROCESSOR_TYPE) == 0) {
         fits = strlen(text) < sizeof(id) && sce_event_origin_scxml(origin, text);
+        *from_session = 1u;
     } else {
         fits = sce_event_origin_set(origin, processor, text);
     }
     if (!fits) {
         sce_event_origin_clear(origin);
+        *from_session = 0u;
     }
     return fits;
 }

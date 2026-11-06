@@ -1763,6 +1763,36 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # W3C SCXML 6.5 + docs/adr/0090, sections 1 and 6: `<finalize>` runs for the
+    # child's own send and not for a host's event that spells the child's pair as
+    # its origin. A document of this channel alone, beside the C test: this
+    # machine reads a sender back out of the pair, marked by the processor that
+    # stamped it.
+    sce_generate_static_integration_c_test(a_host_pair_runs_no_finalize
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_CURRENT_SOURCE_DIR}/integration_resources/a_host_pair_runs_no_finalize/a_host_pair_runs_no_finalize.scxml"
+    )
+    add_executable(sce_c_integration_a_host_pair_runs_no_finalize
+        integration/test_a_host_pair_runs_no_finalize.c
+        ${INTEGRATION_C_TEST_a_host_pair_runs_no_finalize_SOURCES}
+    )
+    sce_c_link_runtime(sce_c_integration_a_host_pair_runs_no_finalize)
+    target_include_directories(sce_c_integration_a_host_pair_runs_no_finalize PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_a_host_pair_runs_no_finalize PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_a_host_pair_runs_no_finalize
+        COMMAND sce_c_integration_a_host_pair_runs_no_finalize
+    )
+    set_tests_properties(c11_integration_a_host_pair_runs_no_finalize PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # SCE_MESH.md §mesh-19: a `targetexpr` that evaluates to a Mesh peer
     # reaches the host's Mesh router, and with none registered is
     # error.execution. The machine carries the host-send surface because the

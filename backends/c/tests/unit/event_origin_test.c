@@ -110,33 +110,40 @@ static void the_pair_is_written_whole_or_not_at_all(void) {
 
 static void a_session_sends_with_its_type_at_its_location(void) {
     sce_event_origin_t origin;
+    uint8_t from_session = 0u;
     char sender[SCE_MAX_SESSION_ID_LEN];
-    CHECK(sce_event_origin_scxml(&origin, "a b"), "the SCXML pair of a session");
+    sce_event_stamp_session(&origin, &from_session, "a b");
+    CHECK(from_session == 1u, "the SCXML processor's stamp marks a session's send");
     CHECK(strcmp(origin.processor, SCE_SCXML_EVENT_PROCESSOR_TYPE) == 0, "is the processor's URI: '%s'",
           origin.processor);
     CHECK(strcmp(origin.address, "sce://scxml/a%20b") == 0, "at the location it publishes: '%s'", origin.address);
-    CHECK(sce_event_origin_sender(&origin, sender, sizeof(sender)) && strcmp(sender, "a b") == 0,
+    CHECK(sce_event_origin_sender(&origin, from_session, sender, sizeof(sender)) && strcmp(sender, "a b") == 0,
           "and its sender is the session that location names: '%s'", sender);
 
-    CHECK(sce_event_origin_scxml(&origin, ""), "a sender that holds no id");
-    CHECK(sce_event_origin_is_none(&origin), "has no address to publish, so the event carries none");
-    CHECK(!sce_event_origin_sender(&origin, sender, sizeof(sender)) && sender[0] == '\0',
+    sce_event_stamp_session(&origin, &from_session, "");
+    CHECK(sce_event_origin_is_none(&origin) && from_session == 0u,
+          "a sender that holds no id has no address to publish, so the event carries none and is no send");
+    CHECK(!sce_event_origin_sender(&origin, from_session, sender, sizeof(sender)) && sender[0] == '\0',
           "and an event with no origin has no sender");
 }
 
-// Only the SCXML processor sets a sender, and only at an SCXML location.
+// Only the SCXML processor's stamp makes a sender, whatever pair another names.
 static void an_event_no_session_sent_has_no_sender(void) {
     sce_event_origin_t origin;
     char sender[SCE_MAX_SESSION_ID_LEN];
+    // docs/adr/0090, section 6: a host that spells a session's own pair is still no session.
+    CHECK(sce_event_origin_scxml(&origin, "kid_session_3"), "a host writes a session's pair itself");
+    CHECK(!sce_event_origin_sender(&origin, 0u, sender, sizeof(sender)) && sender[0] == '\0',
+          "and the event it posts, unmarked, names no sender");
     CHECK(sce_event_origin_set(&origin, "x-sce-host", "sce://scxml/kid"), "a host's pair at an SCXML-shaped address");
-    CHECK(!sce_event_origin_sender(&origin, sender, sizeof(sender)),
-          "is no session's send: the processor is the host's");
+    CHECK(!sce_event_origin_sender(&origin, 1u, sender, sizeof(sender)),
+          "names no session even marked: the processor is the host's");
     CHECK(sce_event_origin_mesh_peer(&origin, "hmi"), "a Mesh peer's pair");
-    CHECK(!sce_event_origin_sender(&origin, sender, sizeof(sender)), "names no session: its address is mesh://");
+    CHECK(!sce_event_origin_sender(&origin, 1u, sender, sizeof(sender)), "names no session: its address is mesh://");
     CHECK(sce_event_origin_scxml(&origin, "kid_session_3"), "a session's pair");
-    CHECK(!sce_event_origin_sender(&origin, sender, 4u) && sender[0] == '\0',
+    CHECK(!sce_event_origin_sender(&origin, 1u, sender, 4u) && sender[0] == '\0',
           "whose id does not fit the room asked for is refused, not cut");
-    CHECK(!sce_event_origin_sender(NULL, sender, sizeof(sender)), "nothing has no sender");
+    CHECK(!sce_event_origin_sender(NULL, 1u, sender, sizeof(sender)), "nothing has no sender");
 }
 
 // docs/adr/0090, section 4: an alias reads as the URI it names; anything else as written.
@@ -178,9 +185,10 @@ static void a_location_target_names_the_session_its_id_decodes_to(void) {
 static void reads_as(const char *text, const char *type, const char *processor, const char *address,
                      const char *sender_want) {
     sce_event_origin_t origin;
+    uint8_t from_session = 0u;
     char sender[SCE_MAX_SESSION_ID_LEN];
-    CHECK(sce_saved_origin_read(text, type, &origin), "'%s' of type '%s' is read", text, type);
-    (void)sce_event_origin_sender(&origin, sender, sizeof(sender));
+    CHECK(sce_saved_origin_read(text, type, &origin, &from_session), "'%s' of type '%s' is read", text, type);
+    (void)sce_event_origin_sender(&origin, from_session, sender, sizeof(sender));
     CHECK(strcmp(origin.processor, processor) == 0, "'%s' of type '%s': processor '%s', not '%s'", text, type,
           origin.processor, processor);
     CHECK(strcmp(origin.address, address) == 0, "'%s' of type '%s': address '%s', not '%s'", text, type, origin.address,
@@ -208,15 +216,21 @@ static void a_stored_origin_reads_back_as_the_table_of_section_7_says(void) {
     reads_as("mesh://hmi", "", scxml, "mesh://hmi", "");
 
     sce_event_origin_t origin;
+    uint8_t from_session = 0u;
     char buf[SCE_MAX_SESSION_ID_LEN];
-    CHECK(sce_saved_origin_read("motherSession", scxml, &origin), "read for the write");
-    CHECK(strcmp(sce_saved_origin_text(&origin, buf, sizeof(buf)), "motherSession") == 0,
+    CHECK(sce_saved_origin_read("motherSession", scxml, &origin, &from_session) && from_session == 1u,
+          "a stored session's id is read back as a session's send");
+    CHECK(strcmp(sce_saved_origin_text(&origin, from_session, buf, sizeof(buf)), "motherSession") == 0,
           "an event a session sent is stored as its sender");
-    CHECK(sce_event_origin_set(&origin, "x-sce-host", "motor") &&
-              strcmp(sce_saved_origin_text(&origin, buf, sizeof(buf)), "motor") == 0,
+    CHECK(sce_saved_origin_read("motor", "x-sce-host", &origin, &from_session) && from_session == 0u,
+          "a stored host pair is read back as no session's send");
+    CHECK(strcmp(sce_saved_origin_text(&origin, from_session, buf, sizeof(buf)), "motor") == 0,
           "any other as its address");
+    CHECK(sce_event_origin_scxml(&origin, "kid") &&
+              strcmp(sce_saved_origin_text(&origin, 0u, buf, sizeof(buf)), "sce://scxml/kid") == 0,
+          "a host's pair that spells a session's location is stored as that address, not as a sender");
     sce_event_origin_clear(&origin);
-    CHECK(strcmp(sce_saved_origin_text(&origin, buf, sizeof(buf)), "") == 0, "and none as the empty string");
+    CHECK(strcmp(sce_saved_origin_text(&origin, 0u, buf, sizeof(buf)), "") == 0, "and none as the empty string");
 }
 
 int main(void) {

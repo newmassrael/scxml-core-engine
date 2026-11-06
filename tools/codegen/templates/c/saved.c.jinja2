@@ -611,7 +611,7 @@ SCE_SM_FN static bool {{ _t }}_saved_events(const sce_saved_session_t *s, {{ _t 
             if (!sce_saved_text_into(event.origin_type, field, origin_type, sizeof(origin_type), err)) {
                 return false;
             }
-            if (!sce_saved_origin_read(origin_text, origin_type, &queued.origin)) {
+            if (!sce_saved_origin_read(origin_text, origin_type, &queued.origin, &queued.from_session)) {
                 return sce_saved_refuse(err,
                                         "%s's origin '%s' of type '%s' names an address or a session id longer "
                                         "than this build holds (SCE_MAX_URI_LEN, SCE_MAX_SESSION_ID_LEN)",
@@ -1672,7 +1672,7 @@ bool {{ _t }}_save_members(const {{ _t }}_t *sm, int64_t wall_now_ms, sce_jw_t *
                sent (the id its location names, read into `sender` for the write below) and the
                address otherwise, with the pair's processor as its type, which is what a
                scheduled send's `origin` holds too. */
-            event.origin = sce_saved_origin_text(&queued->origin, sender, sizeof(sender));
+            event.origin = sce_saved_origin_text(&queued->origin, queued->from_session, sender, sizeof(sender));
             event.origin_type = sce_event_origin_processor(&queued->origin);
             event.invoke_id = queued->invoke_id;
 {% if model.host_invoker_types %}

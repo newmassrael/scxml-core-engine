@@ -1766,7 +1766,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
 {% if meta_send_id %}
                             sce_copy_bounded_id(_send_fwd.send_id, {{ meta_send_id }});
 {% endif %}
-                            (void)sce_event_origin_scxml(&_send_fwd.origin, sm->session_id);
+                            sce_event_stamp_session(&_send_fwd.origin, &_send_fwd.from_session, sm->session_id);
                             (void)deliver_to_invocation(sm, _send_invoke, &_send_fwd);
 {% endif %}
                             break;
@@ -1884,7 +1884,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                        pair of this session, the sender, where it builds the
                        event. One on the internal queue is an internal event,
                        whose origin it leaves blank (§scxml-5.10.1). */
-                    (void)sce_event_origin_scxml(&_send_evt.origin, sm->session_id);
+                    sce_event_stamp_session(&_send_evt.origin, &_send_evt.from_session, sm->session_id);
 {% endif %}
 {% if action.eventexpr %}
                     if (_send_evt_matched) {
@@ -1916,7 +1916,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
 {% endif %}
                     /* docs/adr/0090, section 2: the child reads this session's
                        pair as the event's origin. */
-                    (void)sce_event_origin_scxml(&_send_fwd.origin, sm->session_id);
+                    sce_event_stamp_session(&_send_fwd.origin, &_send_fwd.from_session, sm->session_id);
 {% if report_missing %}
                     if (!deliver_to_invocation(sm, "{{ invoke_info.invoke_id | escape_c }}", &_send_fwd)) {
                         {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
@@ -3849,6 +3849,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise_external_forwarded({{ csy
     /* docs/adr/0090: the pair as the processor that built the event wrote it,
        unchanged, and with it the session that sent it. */
     evt.origin = fwd->origin;
+    evt.from_session = fwd->from_session;
     sce_copy_bounded_id(evt.send_id, fwd->send_id);
     sce_copy_bounded_event_type(evt.type, fwd->type);
     sce_copy_bounded_id(evt.invoke_id, fwd->invoke_id);
@@ -4433,6 +4434,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_forward_to_autoforward_c
     /* docs/adr/0090, section 2: autoforward copies the origin of the event it
        forwards unchanged, and with it the session that sent it. */
     fwd.origin = evt->origin;
+    fwd.from_session = evt->from_session;
     sce_copy_bounded_id(fwd.send_id, evt->send_id);
     sce_copy_bounded_event_type(fwd.type, evt->type);
     sce_copy_bounded_id(fwd.invoke_id, evt->invoke_id);
@@ -4771,7 +4773,7 @@ SCE_SM_FN static bool process_next_external_event({{ csym_prefix }}{{ model.name
            (Lua and JS both spell `Var = _event.data.aParam` the same). */
         {
             char _evt_sender[SCE_MAX_SESSION_ID_LEN];
-            if (sce_event_origin_sender(&evt.origin, _evt_sender, sizeof(_evt_sender))) {
+            if (sce_event_origin_sender(&evt.origin, evt.from_session, _evt_sender, sizeof(_evt_sender))) {
         {% for state_id, state in model.states | dictsort %}
         {% for invoke_info in state.invokes | scxml %}
         {% if invoke_info.finalize_content %}
@@ -5230,7 +5232,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
             /* docs/adr/0090, section 2: a waiting send is always this
                session's, so the event built when it comes due names this
                session as its sender. */
-            (void)sce_event_origin_scxml(&_ready_fwd.origin, sm->session_id);
+            sce_event_stamp_session(&_ready_fwd.origin, &_ready_fwd.from_session, sm->session_id);
 {% if 'error.communication' in model.events %}
             if (!deliver_to_invocation(sm, ready.route_invoke, &_ready_fwd)) {
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
@@ -5281,7 +5283,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
         if (ready.route == (uint8_t){{ csym_prefix | upper }}{{ model.name | upper }}_SCHED_ROUTE_INTERNAL) {
             {{ csym_prefix }}{{ model.name }}_raise(sm, &evt);
         } else {
-            (void)sce_event_origin_scxml(&evt.origin, sm->session_id);
+            sce_event_stamp_session(&evt.origin, &evt.from_session, sm->session_id);
             {{ csym_prefix }}{{ model.name }}_raise_external(sm, &evt);
         }
 

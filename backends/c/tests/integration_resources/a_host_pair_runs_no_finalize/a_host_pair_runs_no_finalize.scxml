@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  W3C SCXML 6.5 + docs/adr/0090, sections 1 and 6: `<finalize>` runs for an
+  event the invoked child sent, found by the event's sender, and never for an
+  event the host posted, whatever origin the host spells for it. Only the SCXML
+  processor sets a sender, so a host that names a child's own location as the
+  origin of its event still posts an event no session sent, as on every other
+  engine.
+
+  A document of the C11 channel alone, beside its C test: it is the C11
+  machine that reads the sender back out of the pair, and so the one that could
+  mistake a host's pair for a session's send.
+
+  `watching`  the child `kid` sends `fromChild` to its parent as it starts: the
+              finalize runs once (finalized 1, heard 1). The host then posts
+              `poke` with the origin {SCXML processor, the child's location}:
+              the transition takes it (poked 1) and the finalize does not run
+              again (finalized 1).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="watching"
+       name="a_host_pair_runs_no_finalize">
+  <datamodel>
+    <data id="finalized" expr="0"/>
+    <data id="heard" expr="0"/>
+    <data id="poked" expr="0"/>
+  </datamodel>
+
+  <state id="watching">
+    <invoke type="scxml" id="kid">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml"
+               version="1.0" datamodel="ecmascript" initial="waiting">
+          <state id="waiting">
+            <onentry>
+              <send target="#_parent" event="fromChild"/>
+            </onentry>
+          </state>
+        </scxml>
+      </content>
+      <finalize>
+        <assign location="finalized" expr="finalized + 1"/>
+      </finalize>
+    </invoke>
+    <transition event="fromChild">
+      <assign location="heard" expr="heard + 1"/>
+    </transition>
+    <transition event="poke">
+      <assign location="poked" expr="poked + 1"/>
+    </transition>
+  </state>
+</scxml>
