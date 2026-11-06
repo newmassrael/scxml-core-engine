@@ -3833,12 +3833,14 @@ fn cpp_reads_a_deploy_key_retention_from_the_target_machines_limits() {
 
 #[test]
 fn cpp_stores_the_flag_inputs_an_element_asks_its_caller_for() {
-    // The codec `event_record` takes the flag input `S` from its caller on `encode` and
-    // `decode`, as a `std::uint8_t` after the sink or the cursor. The log stores it in a
-    // context word of the entry, takes it on `publish` as a `bool` of a struct, and gives
-    // it back with the item, so that every reader decodes the entry under what it was
-    // published under. The element is a `uint8` and an optional `uint8`: 2 bytes, an entry
-    // of 1 length word, 1 context word and 1 word of bytes.
+    // The codec `event_record` takes the flag input `S` from its caller on `decode`, as a
+    // `std::uint8_t` after the cursor, and its value says it (ADR 0065 §6 R4a), which the
+    // encode C++ prints from its plan reads off the value (docs/adr/0081 §6). The log
+    // stores it in a context word of the entry, reads it off the element on `publish`
+    // instead of taking it, and gives it back with the item, so that every reader decodes
+    // the entry under what it was published under. The element is a `uint8` and an
+    // optional `uint8`: 2 bytes, an entry of 1 length word, 1 context word and 1 word of
+    // bytes.
     let xml = event_ring();
     let codec = flag_input_codec();
     let code = generated_cpp_log(
@@ -3858,8 +3860,9 @@ fn cpp_stores_the_flag_inputs_an_element_asks_its_caller_for() {
             "[[nodiscard]] constexpr std::uint8_t flag_input(bool on) noexcept {",
             "    EventRecordType element;\n    EventRingFlags flags;\n};",
             "[[nodiscard]] inline EventRingPublished publish(EventRingPublisher &publisher, \
-             const EventRecordType &element, const EventRingFlags &flags) noexcept {",
-            "element.encode(sink, flag_input(flags.s))",
+             const EventRecordType &element) noexcept {",
+            "flags.s = ::SCE::Generated::EventRecord::input_s(element) != 0;",
+            "element.encode(sink)",
             "if (flags.s) {\n        entry[1 + 0] |= std::uint64_t{1} << 0;\n    }",
             "entry[2 + index / 8] |= static_cast<std::uint64_t>(bytes[index]) << (8 * (index % 8));",
             "bytes[index] = static_cast<std::uint8_t>(entry[2 + index / 8] >> (8 * (index % 8)));",
@@ -3872,6 +3875,10 @@ fn cpp_stores_the_flag_inputs_an_element_asks_its_caller_for() {
     assert!(
         !code.contains("std::uint8_t tag"),
         "the element has no tag:\n{code}"
+    );
+    assert!(
+        !code.contains("const EventRingFlags &flags) noexcept") && !code.contains("GivenFlags"),
+        "`publish` takes no flag the element says:\n{code}"
     );
     // The flag is stored before the bytes are packed, and the bits are read back before
     // the decode that is given them.
@@ -4399,9 +4406,11 @@ fn cpp_the_narrow_row_stores_the_context_in_32_bit_words() {
 
 #[test]
 fn cpp_the_narrow_row_stores_the_flag_input_of_the_real_codec() {
-    // The codec `event_record` takes the flag input `S` from its caller. Generated as a set
-    // for a 32-bit target, the log keeps it in one context word of 32 bits ahead of the
-    // 2 bytes of the element (1 word of bytes): 1 + 1 + ceil(2 / 4) = 3 words an entry.
+    // The codec `event_record` takes the flag input `S` from its caller on `decode`, and
+    // its value says it (ADR 0065 §6 R4a), which the encode C++ prints from its plan
+    // reads off the value (docs/adr/0081 §6). Generated as a set for a 32-bit target, the
+    // log keeps it in one context word of 32 bits ahead of the 2 bytes of the element
+    // (1 word of bytes): 1 + 1 + ceil(2 / 4) = 3 words an entry.
     let xml = event_ring();
     let codec = flag_input_codec();
     let deploy = parse_deploy_str(
@@ -4440,7 +4449,10 @@ topology:
             "inline constexpr std::size_t CONTEXT_WORDS = 1;",
             "struct EventRingFlags {\n    bool s = false;\n};",
             "[[nodiscard]] constexpr std::uint8_t flag_input(bool on) noexcept {",
-            "element.encode(sink, flag_input(flags.s))",
+            "[[nodiscard]] inline EventRingPublished publish(EventRingPublisher &publisher, \
+             const EventRecordType &element) noexcept {",
+            "flags.s = ::SCE::Generated::EventRecord::input_s(element) != 0;",
+            "element.encode(sink)",
             "if (flags.s) {\n        entry[1 + 0] |= std::uint32_t{1} << 0;\n    }",
             "entry[2 + index / 4] |= static_cast<std::uint32_t>(bytes[index]) << (8 * (index % 4));",
             "flags.s = ((entry[1 + 0] >> 0) & std::uint32_t{1}) != 0;",

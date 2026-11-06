@@ -7,9 +7,10 @@
 //
 // The log stores each of those in the entry beside the bytes, so that a reader decodes
 // an entry under what it was published under and not under whatever it happens to
-// hold: `publish` takes the flags and the item `read` returns holds them, and the tag
-// is taken from the element (`element.tag()`), which the element `read` returns
-// reports again. Two logs, each
+// hold: `publish` reads the flag off the element, whose value says it (ADR 0065
+// section 6, R4a), and the item `read` returns holds it, and the tag is taken from
+// the element (`element.tag()`), which the element `read` returns reports again.
+// Two logs, each
 // generated from the documents of tests/forge/conformance/broadcast_log_context/ by
 // `sce-codegen orchestrate` (every backend's conformance lane reads the same files):
 //
@@ -59,7 +60,6 @@ using FlaggedElement = ::SCE::Generated::BroadcastLogConformanceFlaggedEvent::Br
 using ChoiceElement = ::SCE::Generated::BroadcastLogConformanceChoice::BroadcastLogConformanceChoice;
 
 using FlaggedLog = flagged::BroadcastLogConformanceFlagged;
-using FlaggedFlags = flagged::BroadcastLogConformanceFlaggedFlags;
 using FlaggedItem = flagged::BroadcastLogConformanceFlaggedItem;
 using FlaggedEmpty = flagged::BroadcastLogConformanceFlaggedEmpty;
 using FlaggedLagged = flagged::BroadcastLogConformanceFlaggedLagged;
@@ -95,27 +95,17 @@ void the_headers_state_what_the_documents_required() {
     CHECK(chosen::DECLARED_PROGRESS == "wait-free", "the chosen log's declared progress");
 }
 
-// ─── A flag the codec takes from its caller ───
+// ─── A flag the codec's decode takes from its caller ───
 
 FlaggedElement make_event(std::uint8_t sensor_id, bool present, std::uint16_t value) {
-    FlaggedElement element{};
-    element.sensor_id = sensor_id;
-    if (present) {
-        element.value = value;
-    }
-    return element;
+    return FlaggedElement{sensor_id, present ? std::optional<std::uint16_t>{value} : std::nullopt};
 }
 
-FlaggedFlags flags_of(bool has_value) {
-    FlaggedFlags flags;
-    flags.has_value = has_value;
-    return flags;
-}
-
+/// Publish `element`. The value says the flag, so `publish` takes none and stores the
+/// one the element says (ADR 0065 section 6, R4a).
 std::uint64_t publish_flagged(flagged::BroadcastLogConformanceFlaggedPublisher &publisher,
-                              const FlaggedElement &element, bool has_value) {
-    const flagged::BroadcastLogConformanceFlaggedPublished published =
-        flagged::publish(publisher, element, flags_of(has_value));
+                              const FlaggedElement &element) {
+    const flagged::BroadcastLogConformanceFlaggedPublished published = flagged::publish(publisher, element);
     CHECK(published.published() && !published.error.has_value(),
           "an element within its bound is published under its flag");
     return published.seq;
@@ -127,10 +117,11 @@ bool is_flagged_item(const FlaggedRead &got, std::uint64_t seq, const FlaggedEle
     if (item == nullptr || item->seq != seq || item->flags.has_value != has_value) {
         return false;
     }
-    if (item->element.sensor_id != want.sensor_id || item->element.value.has_value() != want.value.has_value()) {
+    if (item->element.sensor_id() != want.sensor_id() ||
+        item->element.value().has_value() != want.value().has_value()) {
         return false;
     }
-    return !want.value.has_value() || *item->element.value == *want.value;
+    return !want.value().has_value() || *item->element.value() == *want.value();
 }
 
 void the_context_is_in_the_word_after_the_length_and_the_bytes_follow_it() {
@@ -139,8 +130,8 @@ void the_context_is_in_the_word_after_the_length_and_the_bytes_follow_it() {
     CHECK(publisher.has_value(), "the first publisher");
     const FlaggedElement first = make_event(1, true, 0x0203);
     const FlaggedElement second = make_event(2, false, 0);
-    CHECK(publish_flagged(*publisher, first, true) == 0, "the first entry takes sequence 0");
-    CHECK(publish_flagged(*publisher, second, false) == 1, "the second entry takes sequence 1");
+    CHECK(publish_flagged(*publisher, first) == 0, "the first entry takes sequence 0");
+    CHECK(publish_flagged(*publisher, second) == 1, "the second entry takes sequence 1");
 
     auto reader = log.reader_oldest();
     FlaggedLog::Entry entry{};
@@ -166,11 +157,12 @@ void a_reader_gets_back_the_flag_an_entry_was_published_under() {
 
     // The same element shape, published under each answer of the flag: the value is on
     // the wire under a set flag and absent under a clear one, so the two frames are
-    // three bytes and one, and neither can be decoded under the other's flag.
+    // three bytes and one, and neither can be decoded under the other's flag. The value
+    // says the flag, so `publish` takes none (ADR 0065 section 6, R4a).
     const FlaggedElement sent[2] = {make_event(1, true, 0x0203), make_event(2, false, 0)};
     const bool flags[2] = {true, false};
     for (std::uint64_t n = 0; n < 2; ++n) {
-        CHECK(publish_flagged(*publisher, sent[n], flags[n]) == n, "an entry takes the next sequence number");
+        CHECK(publish_flagged(*publisher, sent[n]) == n, "an entry takes the next sequence number");
     }
     for (std::uint64_t n = 0; n < 2; ++n) {
         CHECK(is_flagged_item(flagged::read(log, reader), n, sent[n], flags[n]),
@@ -187,8 +179,8 @@ void every_reader_of_an_entry_decodes_it_under_the_same_flag() {
     auto late = log.reader_oldest();
     const FlaggedElement first = make_event(5, true, 500);
     const FlaggedElement second = make_event(6, false, 0);
-    (void)publish_flagged(*publisher, first, true);
-    (void)publish_flagged(*publisher, second, false);
+    (void)publish_flagged(*publisher, first);
+    (void)publish_flagged(*publisher, second);
     CHECK(is_flagged_item(flagged::read(log, early), 0, first, true), "the early reader, entry 0");
     CHECK(is_flagged_item(flagged::read(log, early), 1, second, false), "the early reader, entry 1");
     CHECK(is_flagged_item(flagged::read(log, late), 0, first, true), "the late reader, entry 0");
@@ -207,7 +199,7 @@ void a_reader_the_publisher_laps_resumes_at_an_entry_with_the_flag_it_was_publis
     for (std::uint8_t n = 0; n < 5; ++n) {
         const bool has_value = (n % 2) == 0;
         sent.push_back(make_event(static_cast<std::uint8_t>(n + 1), has_value, static_cast<std::uint16_t>(100 + n)));
-        (void)publish_flagged(*publisher, sent.back(), has_value);
+        (void)publish_flagged(*publisher, sent.back());
     }
     const FlaggedRead lapped = flagged::read(log, slow);
     const FlaggedLagged *lag = std::get_if<FlaggedLagged>(&lapped);
@@ -219,39 +211,21 @@ void a_reader_the_publisher_laps_resumes_at_an_entry_with_the_flag_it_was_publis
     CHECK(std::holds_alternative<FlaggedEmpty>(flagged::read(log, slow)), "nothing is left after the window");
 }
 
-void a_flag_its_element_contradicts_is_refused_by_the_codec_and_nothing_is_published() {
-    // The codec checks a flag input against the field it gates before it writes a byte
-    // (`CodecError::PresentIfMismatch`, as the Rust codec does). The log stores what the
-    // codec accepted and judges nothing of its own, so a contradiction never reaches an
-    // entry: nothing is published and no sequence number is taken.
+void an_entry_is_stored_under_the_flag_its_element_says() {
+    // The flag is read off the element, so the log cannot hold an entry whose bytes and
+    // flag disagree: there is no flag to give that could (ADR 0065 section 6, R4a). Each
+    // element comes back under the flag its value says.
     FlaggedLog log;
     auto publisher = log.publisher();
     CHECK(publisher.has_value(), "the first publisher");
-    auto typed = log.reader_oldest();
+    auto reader = log.reader_oldest();
 
-    // The value is there and the flag says it is not.
-    const flagged::BroadcastLogConformanceFlaggedPublished present_under_clear =
-        flagged::publish(*publisher, make_event(7, true, 1), flags_of(false));
-    CHECK(!present_under_clear.published(), "a value under a flag that says it is absent is not published");
-    CHECK(present_under_clear.error.has_value() &&
-              *present_under_clear.error == ::SCE::Forge::CodecError::PresentIfMismatch,
-          "the codec refuses it");
-    CHECK(log.head() == 0, "a refused flag publishes nothing");
-
-    // The value is absent and the flag says it is there.
-    const flagged::BroadcastLogConformanceFlaggedPublished absent_under_set =
-        flagged::publish(*publisher, make_event(8, false, 0), flags_of(true));
-    CHECK(!absent_under_set.published(), "an absent value under a flag that says it is there is not published");
-    CHECK(absent_under_set.error.has_value() && *absent_under_set.error == ::SCE::Forge::CodecError::PresentIfMismatch,
-          "the codec refuses it");
-    CHECK(log.head() == 0, "a refused flag publishes nothing");
-    CHECK(std::holds_alternative<FlaggedEmpty>(flagged::read(log, typed)), "a reader sees nothing of either");
-
-    // An element and a flag that agree are published after the refused ones, as entry 0:
-    // a refusal does not spend a sequence number.
-    const flagged::BroadcastLogConformanceFlaggedPublished agreeing =
-        flagged::publish(*publisher, make_event(7, true, 1), flags_of(true));
-    CHECK(agreeing.published() && agreeing.seq == 0, "a refusal spends no sequence number");
+    const FlaggedElement present = make_event(7, true, 1);
+    const FlaggedElement absent = make_event(7, false, 0);
+    CHECK(publish_flagged(*publisher, present) == 0, "a present value is published as entry 0");
+    CHECK(is_flagged_item(flagged::read(log, reader), 0, present, true), "it is stored under a set flag");
+    CHECK(publish_flagged(*publisher, absent) == 1, "an absent value is published as entry 1");
+    CHECK(is_flagged_item(flagged::read(log, reader), 1, absent, false), "it is stored under a clear flag");
 }
 
 // ─── The tag of a variant that has none of its own ───
@@ -371,7 +345,7 @@ int main() {
     a_reader_gets_back_the_flag_an_entry_was_published_under();
     every_reader_of_an_entry_decodes_it_under_the_same_flag();
     a_reader_the_publisher_laps_resumes_at_an_entry_with_the_flag_it_was_published_under();
-    a_flag_its_element_contradicts_is_refused_by_the_codec_and_nothing_is_published();
+    an_entry_is_stored_under_the_flag_its_element_says();
     the_tag_is_in_the_context_word_and_the_arms_own_bytes_are_all_the_bytes_hold();
     a_reader_gets_back_the_tag_an_entry_was_published_under();
     the_stored_tag_is_the_tag_of_the_arm_the_element_holds();

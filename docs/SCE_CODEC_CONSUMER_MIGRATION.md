@@ -1204,6 +1204,11 @@ resources, 69 in all, the wire expression and the declarations that hold it amon
   `N`. `decode` still takes the input, since the frame's carrier says it.
 - `<Codec namespace>::input_<name>(value)` reads the input a value (or any source) says, as a `std::uint8_t`: use it
   where you set the parent's flag by hand, or drop that code where the parent is printed and derives it.
+- A broadcast log over such an element reads the flag off the element on `publish` and stores it, so no entry is
+  stored under a flag its bytes disagree with: `publish(publisher, element)` where it was
+  `publish(publisher, element, flags)`. A log whose element also takes a flag its value does not say takes those as
+  `{Log}GivenFlags`. The item a read returns still holds every flag in `{Log}Flags`. The fix was landed after the
+  chain section below; the trees before it did not compile such a log.
 
 ## A printed C++ codec holds a list to its bound as a type and derives its count (ADR 0081 step 4)
 

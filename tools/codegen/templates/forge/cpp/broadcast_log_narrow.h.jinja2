@@ -20,7 +20,7 @@
 // when it is overwritten, and a copy that was torn is thrown away unread.
 //
 // Operations (from `SCE::Forge::Broadcast`, typed here over the element):
-//   publish(publisher, element{% if context.flags %}, flags{% endif %}) -> Published   wait-free; the entry's sequence number,
+//   publish(publisher, element{% if context.flags and context.given_flags %}, {% if context.said_flags %}given{% else %}flags{% endif %}{% endif %}) -> Published   wait-free; the entry's sequence number,
 //                                              or the codec's refusal of the element
 //   read(log, reader)           -> Read        wait-free; an item, nothing new, how many
 //                                              were missed, or an entry that is no element
@@ -52,7 +52,15 @@
 // part of the entry: the log stores them in the entry's context words beside the bytes,
 // so every reader decodes an entry under what it was published under (ADR 0062 section 4).
 {% if context.flags %}
-// `publish` takes the flags, and the item `read` returns holds them.
+{% if context.given_flags %}
+// `publish` takes the flags{% if context.said_flags %} the element's value does not say{% endif %}, and the item `read` returns holds them{% if context.said_flags %} all{% endif %}.
+{% else %}
+// The item `read` returns holds the flags.
+{% endif %}
+{% endif %}
+{% if context.said_flags %}
+// A flag input the element's value says is not taken: `publish` reads it off the
+// element, as its encode does (ADR 0065 section 6, R4a).
 {% endif %}
 {% if context.has_tag %}
 // The tag is not given: it is the tag of the arm the element holds, `element.tag()`, so
@@ -172,6 +180,18 @@ struct {{ pascal }}Flags {
     bool {{ flag.snake }} = false;
 {% endfor %}
 };
+{% if context.said_flags and context.given_flags %}
+
+/// The flag inputs `publish` takes from its caller: those the element's value does not
+/// say. The log reads the others off the element (ADR 0065 section 6, R4a).
+struct {{ pascal }}GivenFlags {
+{% for flag in context.flags %}
+{% if not flag.said %}
+    bool {{ flag.snake }} = false;
+{% endif %}
+{% endfor %}
+};
+{% endif %}
 
 /// A flag input as the codec takes it: one bit, in a byte that is 1 or 0.
 [[nodiscard]] constexpr std::uint8_t flag_input(bool on) noexcept {
@@ -231,11 +251,21 @@ using {{ pascal }}Read = std::variant<{{ pascal }}Item, {{ pascal }}Empty, {{ pa
 {% if context.present %}
 {% if context.flags %}
 ///
+{% if context.said_flags %}
+/// The flag inputs the element's codec takes from its caller are stored in the entry's
+/// context words (after the length word, before the bytes), so that every reader decodes
+/// the entry under what it was published under. A flag the element's value says is read
+/// off `element` and stored as it says it, so no entry is stored under a flag its bytes
+/// disagree with{% if context.given_flags %}. `given` holds the others, encoded under here; the log does not
+/// check that they agree with `element`, the publisher gives what it knows, as every
+/// caller of this codec does{% endif %}.
+{% else %}
 /// `flags` are what the element's codec takes from its caller as flag inputs: they are
 /// encoded under here and stored in the entry's context words (after the length word,
 /// before the bytes), so that every reader decodes the entry under what it was
 /// published under. The log does not check that the flags agree with `element`; the
 /// publisher gives what it knows, as every caller of this codec does.
+{% endif %}
 {% endif %}
 {% if context.has_tag %}
 ///
@@ -245,13 +275,23 @@ using {{ pascal }}Read = std::variant<{{ pascal }}Item, {{ pascal }}Empty, {{ pa
 /// with the element.
 {% endif %}
 {% endif %}
-[[nodiscard]] inline {{ pascal }}Published publish({{ pascal }}Publisher &publisher, const {{ element_pascal }}Type &element{% if context.flags %}, const {{ pascal }}Flags &flags{% endif %}) noexcept {
+[[nodiscard]] inline {{ pascal }}Published publish({{ pascal }}Publisher &publisher, const {{ element_pascal }}Type &element{% if context.flags and context.given_flags %}, const {{ pascal }}{% if context.said_flags %}GivenFlags &given{% else %}Flags &flags{% endif %}{% endif %}) noexcept {
+{% if context.said_flags %}
+    {{ pascal }}Flags flags{};
+{% for flag in context.flags %}
+{% if flag.said %}
+    flags.{{ flag.snake }} = ::SCE::Generated::{{ element_pascal }}::input_{{ flag.snake }}(element) != 0;
+{% else %}
+    flags.{{ flag.snake }} = given.{{ flag.snake }};
+{% endif %}
+{% endfor %}
+{% endif %}
     // A whole number of words, so the buffer is never empty even for an element
     // that encodes to nothing. The sink is bounded by `MAX_ENCODED_BYTES`, not by
     // the buffer, and that bound is what refuses a longer element.
     std::array<std::uint8_t, WORDS * 4> bytes{};
     ::SCE::Forge::SpanSink sink(bytes.data(), MAX_ENCODED_BYTES);
-    if (const std::optional<::SCE::Forge::CodecError> refused = element.encode(sink{% for flag in context.flags %}, flag_input(flags.{{ flag.snake }}){% endfor %})) {
+    if (const std::optional<::SCE::Forge::CodecError> refused = element.encode(sink{% for flag in context.flags %}{% if not flag.said %}, flag_input(flags.{{ flag.snake }}){% endif %}{% endfor %})) {
         return {{ pascal }}Published{refused, ::SCE::Forge::Broadcast::kNoSequence};
     }
     const std::size_t length = sink.position();

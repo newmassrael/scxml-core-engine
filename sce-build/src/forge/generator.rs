@@ -26062,8 +26062,10 @@ struct BroadcastLogRenderInputs {
 /// * `flags`: one `{name, snake, camel, pascal, bit, word, shift, said}` per
 ///   flag input, in the order of the codec's signature (`word` is relative to
 ///   the first context word, so the slot index is `1 + word`; `said` is whether
-///   the element's value says it, ADR 0065 §6 R4a, which only a language whose
-///   encode reads the input off the value acts on);
+///   the element's value says it, ADR 0065 §6 R4a, and the language's encode of
+///   the element reads it off the value, `encode_reads_said`: the Rust encode
+///   always does, a C++ one once the element is printed from its plan
+///   (docs/adr/0081 §6), and every other encode takes each flag from its caller);
 /// * `said_flags` and `given_flags`: whether some flag input is said, and
 ///   whether some is not;
 /// * `flag_words`, `has_tag`, `tag_word` (relative as well; the slot index is
@@ -26076,7 +26078,10 @@ struct BroadcastLogRenderInputs {
 fn broadcast_log_context_value(
     element: &crate::BroadcastLogElementFacts,
     word_bits: u32,
+    encode_reads_said: bool,
 ) -> minijinja::Value {
+    let said_by_value =
+        |name: &String| encode_reads_said && element.said_flag_inputs.contains(name);
     let flags: Vec<minijinja::Value> = element
         .caller_flag_inputs
         .iter()
@@ -26091,7 +26096,7 @@ fn broadcast_log_context_value(
                 bit => index,
                 word => index / word_bits,
                 shift => index % word_bits,
-                said => element.said_flag_inputs.contains(name),
+                said => said_by_value(name),
             }
         })
         .collect();
@@ -26100,7 +26105,7 @@ fn broadcast_log_context_value(
     let said = element
         .caller_flag_inputs
         .iter()
-        .filter(|name| element.said_flag_inputs.contains(name))
+        .filter(|name| said_by_value(name))
         .count();
     minijinja::context! {
         flags => flags,
@@ -26306,7 +26311,7 @@ fn render_broadcast_log_rust(
         word_bytes => word_bytes,
         word_bytes_word => word_bytes_word,
         log_name => &m.name,
-        context => broadcast_log_context_value(&inputs.element, word_bits),
+        context => broadcast_log_context_value(&inputs.element, word_bits, true),
         wrap_bound_ops => crate::forge::model::broadcast_log_longest_pause_ops(
             crate::forge::model::BROADCAST_LOG_NARROW_STAMP_BITS,
             inputs.retention,
@@ -26394,6 +26399,12 @@ fn render_broadcast_log_cpp(
     } else {
         "broadcast_log.h.jinja2"
     };
+    // A printed element's encode reads the flags its value says off the value
+    // (docs/adr/0081 §6), so `publish` derives those and hands the codec the rest.
+    let element_printed = options
+        .element_type_cpp_printed
+        .as_ref()
+        .is_some_and(|printed| printed.contains(&filters::to_snake_case(m.element_type.clone())));
     let tmpl = env.get_template(template_name).map_err(|e| {
         ForgeError::from(GenerateError::TemplateLoad(format!(
             "{template_name} (cpp): {e}"
@@ -26422,7 +26433,7 @@ fn render_broadcast_log_cpp(
             crate::forge::model::BROADCAST_LOG_NARROW_STAMP_BITS,
             inputs.retention,
         ),
-        context => broadcast_log_context_value(&inputs.element, word_bits),
+        context => broadcast_log_context_value(&inputs.element, word_bits, element_printed),
     };
     tmpl.render(ctx).map_err(|e| {
         ForgeError::from(GenerateError::TemplateRender(format!(
@@ -26484,7 +26495,7 @@ fn render_broadcast_log_python(
         producers => inputs.producers,
         declared_progress => inputs.declared_progress,
         runtime_dep => "sce_forge_runtime.broadcast_log",
-        context => broadcast_log_context_value(&inputs.element, 64),
+        context => broadcast_log_context_value(&inputs.element, 64, false),
     };
     tmpl.render(ctx).map_err(|e| {
         ForgeError::from(GenerateError::TemplateRender(format!(
@@ -26571,7 +26582,7 @@ fn render_broadcast_log_kotlin(
         producers => inputs.producers,
         declared_progress => inputs.declared_progress,
         runtime_dep => "com.sce.forge.runtime.broadcastlog",
-        context => broadcast_log_context_value(&inputs.element, 64),
+        context => broadcast_log_context_value(&inputs.element, 64, false),
     };
     tmpl.render(ctx).map_err(|e| {
         ForgeError::from(GenerateError::TemplateRender(format!(
@@ -26683,7 +26694,7 @@ fn render_broadcast_log_swift(
         runtime_dep => "SceForgeRuntime",
         // What the element's codec asks its caller for, which an entry stores beside the bytes,
         // in the 64-bit words of the runtime's slots.
-        context => broadcast_log_context_value(&inputs.element, 64),
+        context => broadcast_log_context_value(&inputs.element, 64, false),
     };
     tmpl.render(ctx).map_err(|e| {
         ForgeError::from(GenerateError::TemplateRender(format!(
@@ -26820,7 +26831,7 @@ fn render_broadcast_log_c(
         } else {
             "sce/forge/broadcast_log.h"
         },
-        context => broadcast_log_context_value(&inputs.element, word_bits),
+        context => broadcast_log_context_value(&inputs.element, word_bits, false),
         ownership_only => row == (RustBroadcastLogRow::Narrow { ownership_only: true }),
         stamp_bits => crate::forge::model::BROADCAST_LOG_NARROW_STAMP_BITS,
         log_name => &m.name,
@@ -27869,7 +27880,7 @@ fn render_broadcast_log_go(
         producers => inputs.producers,
         declared_progress => inputs.declared_progress,
         runtime_dep => "github.com/newmassrael/sce-forge-runtime/broadcastlog",
-        context => broadcast_log_context_value(&inputs.element, 64),
+        context => broadcast_log_context_value(&inputs.element, 64, false),
     };
     tmpl.render(ctx).map_err(|e| {
         ForgeError::from(GenerateError::TemplateRender(format!(
