@@ -114,9 +114,15 @@ static int check_directory(const char *directory) {
 
 static void every_shared_text_reads_and_writes_back_as_it_was(void) {
     char format1[1024];
+    char format2[1024];
+    char read_as[1024];
     (void)snprintf(format1, sizeof(format1), "%s/format1", SCE_SAVED_FIXTURES_DIR);
-    CHECK(check_directory(SCE_SAVED_FIXTURES_DIR) >= 8, "the shared format-2 texts lost instances");
+    (void)snprintf(format2, sizeof(format2), "%s/format2", SCE_SAVED_FIXTURES_DIR);
+    (void)snprintf(read_as, sizeof(read_as), "%s/format2/read_as", SCE_SAVED_FIXTURES_DIR);
+    CHECK(check_directory(SCE_SAVED_FIXTURES_DIR) >= 8, "the shared format-3 texts lost instances");
     CHECK(check_directory(format1) >= 10, "the shared format-1 texts lost instances");
+    CHECK(check_directory(format2) >= 4, "the format-2 reading texts lost instances");
+    CHECK(check_directory(read_as) >= 4, "the texts the format-2 reading texts are read as lost instances");
 }
 
 static void a_number_keeps_the_spelling_it_was_written_in(void) {

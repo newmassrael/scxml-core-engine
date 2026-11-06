@@ -3698,6 +3698,19 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
             ${INTEGRATION_C_TEST_static_invoke_tree_SOURCES}
     )
 
+    # SCE Accepted Subset §2.15, "Saving and restoring" (docs/adr/0090, section 7): every format-2
+    # reading fixture under `saved/format2/` restored by the machine of its document and saved at
+    # once, which is the format-3 text `saved/format2/read_as/` holds under the same name. The
+    # machines are generated above.
+    sce_c_add_saved_state_test(static_saved_format2
+        FIXTURES_DEFINE SCE_SAVED_FIXTURES_DIR
+        FIXTURES_DIR "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/saved"
+        SOURCES
+            integration/test_a_format_two_state_is_saved_again_as_format_three.c
+            ${INTEGRATION_C_TEST_static_invoke_tree_SOURCES}
+            ${INTEGRATION_C_TEST_static_timers_SOURCES}
+    )
+
     # SCE Accepted Subset §2.15, "Saving and restoring" (docs/adr/0045): a child session is saved
     # inside its parent and resumed where it stood; a format-1 state starts it again. The machine of
     # `static_invoke` is generated above.
