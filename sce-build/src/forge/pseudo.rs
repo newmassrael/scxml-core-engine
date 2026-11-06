@@ -2088,12 +2088,15 @@ fn render_text_template(m: &TextTemplateModel) -> Vec<Node> {
 /// one word wherever it stands.
 fn render_union(m: &UnionModel) -> Vec<Node> {
     let mut out = Out::new();
-    out.line(&format!(
-        "union {} tag {} enum:{}",
-        text(&m.name),
-        text(&m.tag),
-        text(&m.tag_enum)
-    ));
+    out.line_of(vec![
+        Part::Word(Word::Union),
+        Part::Text(format!(
+            "{} tag {} enum:{}",
+            text(&m.name),
+            text(&m.tag),
+            text(&m.tag_enum)
+        )),
+    ]);
     out.nested(|out| {
         for case in &m.cases {
             let line = match &case.record {

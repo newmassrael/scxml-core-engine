@@ -207,6 +207,9 @@ pub enum Word {
     /// A text template's head. Its holes and its text are nested under it,
     /// so the line names the word a shape closes the block with.
     TextTemplate,
+    /// A union's head (docs/adr/0092, section 1.1). Its cases are nested
+    /// under it, so the line names the word a shape closes the block with.
+    Union,
     Worker,
     /// The traceability family (docs/SCE_ACCEPTED_SUBSET.md §2.10): what
     /// a node says it implements, where the specification says so, and
@@ -379,6 +382,7 @@ impl Word {
         Word::Timer,
         Word::BoundedCollection,
         Word::TextTemplate,
+        Word::Union,
         Word::Worker,
         Word::Req,
         Word::Provenance,
@@ -555,6 +559,7 @@ fn en_word(w: Word) -> &'static str {
         Word::Timer => "timer",
         Word::BoundedCollection => "bounded-collection",
         Word::TextTemplate => "text-template",
+        Word::Union => "union",
         Word::Worker => "worker",
         Word::Req => "req",
         Word::Provenance => "provenance",
@@ -1081,6 +1086,7 @@ fn ko_word(w: Word) -> &'static str {
         Word::Timer => "타이머",
         Word::BoundedCollection => "유한컬렉션",
         Word::TextTemplate => "텍스트템플릿",
+        Word::Union => "합타입",
         Word::Worker => "작업자",
         // `미결` rather than `미해결`: the page's other words are short,
         // and `미처리` (unhandled) already spends the `미` shape for a
