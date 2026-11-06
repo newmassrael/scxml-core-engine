@@ -14,6 +14,12 @@
   was not yet. §1 now makes the syntax-translation claim a theorem the work must state and check, rather than an
   assertion. §2.1 states what the subset leaves out. Alternatives F (the UML Testing Profile) and G (tests derived
   from the specification model under ioco) are recorded, and questions 11 and 12 added.
+  Answers 1, 3 and 8 amended the same day. As first accepted, answer 1 required a tool that implements the
+  standard TRI and TCI, and the one such tool found is commercial. The owner stated that no licence for a TRI/TCI
+  tool can be obtained, now or later. The lane therefore runs on Eclipse Titan, an open-source implementation of
+  TTCN-3 independent of SCE, and C1's meaning is kept by the adapter interface of answer 1, not by the tool's own
+  interfaces. Answer 3 now says how the logical clock is supplied inside Titan; answer 8 says where Titan's log
+  comes from.
 - Date: 2026-11-06
 - Scope:
   - a test profile of SCE documents: new forge kinds, new executable content, a verdict model, port and timer
@@ -260,9 +266,10 @@ observer of ADR 0089 or stands alone is question 8.
 
 ### 7. The conformance lane and its reference adapters
 
-- SCE ships a reference adapter set for the chosen TTCN-3 tool: a system adapter that connects ports to a trace player
-  and recorder, a platform adapter with logical time, and codec bindings for the profile's own conformance corpus. With
-  this set, §6 can be checked inside SCE without any consumer's test system.
+- SCE ships a reference adapter set: a system adapter that connects ports to a trace player and recorder, a platform
+  adapter with logical time, and codec bindings for the profile's own conformance corpus. It is written to the
+  adapter interface of answer 1 and reaches the lane's tool through that tool's binding. With this set, §6 can be
+  checked inside SCE without any consumer's test system.
 - A new lane runs the profile corpus natively and through the export, replaying the same recorded input traces, and
   applies C3. This is a conformance law of the profile, held for each backend that emits the native test runtime, as
   other laws are held per lane.
@@ -294,7 +301,8 @@ observer of ADR 0089 or stands alone is question 8.
 - Existing test documents that use native conditions and donedata verdicts are not profile documents. They keep
   working under ADR 0003's accounting of the escape hatch, and the existing census counts them. Moving them is
   migration work for consumers.
-- SCE's CI gains a dependency on a TTCN-3 tool.
+- SCE's CI gains a dependency on a TTCN-3 tool: Eclipse Titan, built from a pinned release together with the
+  logical clock of answer 3 until that clock is part of a Titan release.
 - The tree gains a second meaning of "verdict" next to the scenario judge's. The profile always calls its own a test
   verdict (Context).
 
@@ -375,7 +383,9 @@ traces are those a generator would also produce.
    case.
 4. Build the exporter, deterministic, with the types module and its structural manifest (C2), the correspondence
    witness, and the separate validator that checks it (answer 12).
-5. Build the reference adapter set and the conformance lane (C1, §7).
+5. Build the reference adapter set, its Titan binding and the conformance lane (C1, §7). Contribute the logical
+   clock of answer 3 to Eclipse Titan, and build the lane's Titan from a pinned release with that change until a
+   release contains it. Settle the licence question of answer 1 before the binding is written.
 6. Add the equivalence law over the corpus (C3), with the canonical log's schema and its `SCE_WIRE_CONTRACTS.md` row.
 7. Write migration guidance for consumers' existing test documents.
 
@@ -420,29 +430,51 @@ traces are those a generator would also produce.
 Each question was decided by the owner's rule: the most long-term correct structure, textbook in its foundations,
 cost ignored. The facts each answer rests on were checked on 2026-11-06 and are cited with it.
 
-1. **The lane runs on a tool that implements the standard TRI and TCI, and SCE's adapters are written to those
-   interfaces and to nothing tool-specific.** The reference adapter set (§7) implements the TRI system and platform
-   adapters (ES 201 873-5) and the TCI codec, logging and control interfaces (ES 201 873-6) in the standard C
-   language mapping. The point of C1 is that the suite runs elsewhere. An adapter written to one tool's own API
-   makes "elsewhere" mean that tool, so the standard interfaces are the only choice that keeps C1's meaning.
-   - Eclipse Titan is not the lane's tool. Its adapters are test ports written to its own C++ Test Port API. Its
-     Programmers' Technical Reference (11.2.1, 2026-08-05) cites parts 1, 4, 7 and 9 of ES 201 873 among its
-     references, but not parts 5 or 6. Neither that guide nor its API Technical Reference mentions TRI or TCI.
-     This is evidence of absence from the tool's own documentation, not a statement from its authors.
-   - A tool that states TRI and TCI support exists. Elvior TestCast lists TRI and TCI mappings for C, C++, C# and
-     Java, and ES 201 873-1 4.17.1 support since release 6.21.1 (2025-07-28). It is commercial and lists Windows,
-     with other platforms on request.
-   - The lane names its tool in one place, and any tool that implements the standard interfaces can replace it
-     without a change to SCE's adapters. Running the suite on a second such tool is the stronger form of C1 and is
-     admitted by the same adapters.
+1. **The lane runs on Eclipse Titan. SCE's adapters are written to an adapter interface SCE owns, whose operations
+   are those of TRI (ES 201 873-5) and TCI (ES 201 873-6) one for one and under their names, and each tool is
+   reached through a binding of that interface.** C1 asks for two things: an executor of TTCN-3 that SCE did not
+   write, and a suite that is not tied to one executor. The tool supplies the first. The second is supplied by
+   where the adapters' semantics live: in the standard's operations, not in one tool's API.
+   - **The tool.** Eclipse Titan (EPL-2.0) is a TTCN-3 compiler and runtime written independently of SCE, so a
+     run on it is a second executor in the sense of C1. Its "TTCN-3 Limitations" chapter (Reference Guide) was
+     checked against the profile: it restricts none of templates, message ports, timers, altsteps used as
+     defaults, PTCs or verdicts. It requires a component type's compatibility and a port type's message list to be
+     stated explicitly; the exporter always states both.
+   - **Why an interface of SCE's own.** Titan does not implement TRI or TCI. Its adapters are test ports written to
+     its own C++ Test Port API, and its Programmers' Technical Reference (11.2.1, 2026-08-05) cites parts 1, 4, 7
+     and 9 of ES 201 873 but not parts 5 or 6. Writing the adapters to that API would make "the suite runs
+     elsewhere" mean "the suite runs on Titan". The interface keeps TRI's system and platform adapter operations
+     and TCI's codec, test logging and test control operations, so the adapters carry the standard's meaning and
+     a binding carries only the translation to one tool.
+   - **The Titan binding.** The system adapter's send and enqueue operations become a Titan test port per mapped
+     port type (outgoing send, incoming message). A `connect` between components (answer 10) is Titan's own
+     component-to-component connection and does not pass through the binding. The platform adapter's timer
+     operations have no binding in Titan, because Titan keeps timers inside its runtime; the logical clock of
+     answer 3 is supplied there instead. Codecs are Titan's encoding attributes or external functions (C2). The
+     test logging operations are a Titan logger plugin (answer 8).
+   - **C2 is strengthened by the choice.** Titan has its own encoding engines (RAW, TEXT, BER, XER, JSON and OER).
+     Where the types module states an encoding by attributes, a message is encoded by Titan's engine and not by
+     anything SCE generated, which is C2's first kind of independence.
+   - **A tool that implements TRI and TCI natively** is admitted by the same adapters through a binding that is
+     the identity. Elvior TestCast states TRI and TCI mappings for C, C++, C# and Java; it was the first answer's
+     tool and is not used because its licence cannot be obtained. Running the suite on a second tool remains the
+     stronger form of C1.
+   - **Rejected for this answer:** an executor of TTCN-3 written by SCE, because it would share its author and its
+     reading of the standard with the native runtime and bring back the common cause that C2 and C3 remove; and
+     export without execution, which is alternative D.
+   - **Licence, not yet checked.** The binding is compiled and linked with Titan's runtime (EPL-2.0) and with the
+     reference adapter set, which is SCE's code. Whether that combination is allowed under both licences, and
+     whether running it only in CI, without distributing it, changes the answer, is settled before the binding is
+     written (order of work step 5).
 2. **The profile targets one pinned set of parts:** ES 201 873-1 V4.17.1 (2025), -4 V4.6.1 (2017), -5 V4.9.1
    (2022) and -6 V4.14.1 (2023), the latest of each on ETSI's TTCN-3 download page on 2026-11-06. Part 4 is eight
    years older than part 1, and the profile takes its semantics from part 4 (§1). So the profile admits only
    constructs whose semantics part 4 V4.6.1 defines, even where part 1 V4.17.1 adds to them. Moving to a later
    edition is an amendment of this ADR, made for all four parts at once.
 3. **Time in the lane is a logical clock, and everything due at one instant is in the same snapshot.**
-   - A recorded trace gives each input a logical timestamp. The platform adapter implements TRI's timer operations
-     (start, stop, read, running, timeout) on a logical clock.
+   - A recorded trace gives each input a logical timestamp. TRI's timer operations (start, stop, read, running,
+     timeout) run on a logical clock: in the platform adapter, where a tool delegates timers to it, and inside the
+     runtime where the tool keeps them, as Titan does (below).
    - The clock advances only when every component of the run is blocked (no branch can fire on the present
      snapshot). It advances to the earliest of the next timer expiry and the next input of the trace.
    - At an instant, every input of the trace and every timer expiry due then is delivered before the next snapshot
@@ -450,6 +482,26 @@ cost ignored. The facts each answer rests on were checked on 2026-11-06 and are 
      delivery. The native runtime and the TTCN-3 side therefore see the same timeouts by construction: their order
      is never a race.
    - The same clock is the time domain of answer 11's timed conformance relation.
+   - **In Titan the clock is part of the runtime.** Titan has wall-clock time only. It reads the time at one
+     function, `TTCN_Snapshot::time_now()` (`core/Snapshot.cc`, from `gettimeofday`), and its timers and its
+     snapshot wait both go through it. The change has two parts: the clock behind that function can be replaced,
+     and when every branch is blocked the wait advances the logical clock to the next due instant instead of
+     sleeping.
+   - **With PTCs the clock is distributed.** In parallel mode Titan runs each component in its own process, under
+     its Main Controller. "Every component is blocked" is then a global condition, and it is true only if no port
+     message is still in transit, since a component waiting for a message in flight looks blocked. The Main
+     Controller therefore grants an advance only when every component reports itself blocked with its next due
+     instant, and the counts of port messages sent and received are equal. This is conservative synchronisation of
+     a discrete-event simulation (Chandy, Misra, *Distributed simulation: a case study in design and verification
+     of distributed programs*, IEEE TSE 5(5), 1979) with termination detection by message counting (Mattern,
+     *Algorithms for distributed termination detection*, Distributed Computing 2(3), 1987). The advance goes to
+     the least due instant reported.
+   - **The change is contributed to Eclipse Titan**, so that the logical clock is a property of the tool and not
+     of SCE's copy of it. Until a Titan release contains it, the lane builds Titan from a pinned release with that
+     change applied.
+   - **Rejected:** running the lane on wall-clock time with generous slack on every timer. It makes the order of a
+     timeout and an input a race, which is what this answer exists to remove, and a slack large enough to hide the
+     race still decides nothing at the boundary.
 4. **The guard timer belongs to the control part, and the `error` it causes belongs to the runtime.** TTCN-3's
    `execute` statement takes an optional time limit for the test case. If the test case has not ended when the
    limit expires, it is stopped and its verdict is `error`. The `test-suite` therefore declares each test case's
@@ -485,8 +537,12 @@ cost ignored. The facts each answer rests on were checked on 2026-11-06 and are 
 8. **The canonical log of C3 is a surface of its own, `schemas/sce-test-log.v1.schema.json`, whose record kinds are
    the events of TCI's test logging interface (ES 201 873-6).** These are message sent, message received and matched,
    timer started, stopped and timed out, verdict set, component created and done, and test case started and ended.
-   - The TTCN-3 side writes the log from its TCI logging implementation in the reference adapter set. The native
-     runtime writes the same record kinds at the same semantic points.
+   - The TTCN-3 side writes the log from the test logging operations of the adapter interface (answer 1). On
+     Titan these are a logger plugin, Titan's interface for a user-written logger, which receives Titan's log
+     events and writes the records whose TCI kinds they correspond to. The native runtime writes the same record
+     kinds at the same semantic points.
+   - The record kinds stay TCI's even though Titan does not implement TCI, so that the log's vocabulary is the
+     standard's and does not change with the tool.
    - It does not extend the observation trace, whose subject is a design judged against examples (§2.18).
    - It does not extend ADR 0089's transition observer, because the TTCN-3 side has no transitions to report.
    - It lands `pre-release`, with its row in `SCE_WIRE_CONTRACTS.md`.
