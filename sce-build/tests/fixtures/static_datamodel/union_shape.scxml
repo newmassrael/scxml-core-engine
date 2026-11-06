@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A shape (docs/adr/0092, section 12.1): a union over `enum_shape_kind.scxml`
+  with an empty case (`dot`), two cases that hold one record (`circle` and
+  `disc`), a case of two fields (`rect`), a case of a text and a value that may
+  be absent (`label`) and a case that holds a list (`path`). Held by
+  `event_shapes.scxml`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="union"
+       name="union_shape">
+  <sce:import kind="enum" src="enum_shape_kind.scxml" as="ShapeKind"/>
+  <sce:import kind="event-schema" src="shape_radius.scxml" as="Radius"/>
+  <sce:import kind="event-schema" src="shape_rect.scxml" as="Rect"/>
+  <sce:import kind="event-schema" src="shape_label.scxml" as="Label"/>
+  <sce:import kind="event-schema" src="shape_path.scxml" as="Path"/>
+  <datamodel>
+    <data id="kind" sce:type="enum:ShapeKind">
+      <sce:case variant="dot"/>
+      <sce:case variant="circle" record="Radius"/>
+      <sce:case variant="disc" record="Radius"/>
+      <sce:case variant="rect" record="Rect"/>
+      <sce:case variant="label" record="Label"/>
+      <sce:case variant="path" record="Path"/>
+    </data>
+  </datamodel>
+</scxml>

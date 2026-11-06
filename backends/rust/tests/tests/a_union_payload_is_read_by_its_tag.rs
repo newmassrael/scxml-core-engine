@@ -1,0 +1,156 @@
+// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+//
+// A Rust machine reads a payload that holds a union by testing its tag
+// (docs/adr/0092, section 6.1), run with no script engine. The committed
+// machine under `src/integration/static_datamodel/` is generated from
+// `sce-build/tests/fixtures/static_datamodel/static_union.scxml` (regen:
+// `scripts/regen_static_datamodel_rust.sh`).
+//
+// A delivery is lifted tag first into the machine's own sum (section 4), each
+// branch the tag's test proves reads the fields of its case, a field two cases
+// share is read under a test that leaves both, a list a case holds is walked,
+// and each shape of a list is narrowed on the loop's item. A key of another
+// case is stepped over; a tag no variant names and a field its case lacks are
+// refused whole, naming the place.
+
+use sce_rust_runtime::{Engine, StatePolicy};
+use sce_rust_tests::integration::static_datamodel::static_union_sm::{
+    StaticUnionEvent, StaticUnionPolicy,
+};
+
+/// A delivery of `shapes.sent`: `one` and the elements of `many` as written,
+/// and no `maybe`.
+fn shapes(one: &str, many: &[&str]) -> String {
+    format!(
+        r#"{{"one":{one},"many":[{}],"maybe":null}}"#,
+        many.join(",")
+    )
+}
+
+fn machine() -> Engine<StaticUnionPolicy> {
+    let mut engine = Engine::new(StaticUnionPolicy::new());
+    engine.initialize();
+    engine
+}
+
+fn deliver(engine: &mut Engine<StaticUnionPolicy>, data: &str) {
+    engine.raise_external_by_name("shapes.sent", data);
+    engine.step();
+}
+
+#[test]
+fn each_case_is_read_where_its_tag_is_tested() {
+    let mut engine = machine();
+    deliver(
+        &mut engine,
+        &shapes(
+            r#"{"kind":"circle","radius":7}"#,
+            &[
+                r#"{"kind":"rect","width":3,"height":4}"#,
+                r#"{"kind":"disc","radius":5}"#,
+                r#"{"kind":"dot"}"#,
+            ],
+        ),
+    );
+    let policy = engine.policy();
+    assert_eq!(policy.refusals(), 0, "a delivery of its type is no error");
+    assert_eq!(policy.last_kind().sce_name(), "circle");
+    // `radius`, which `circle` and `disc` share, under the test of both.
+    assert_eq!(policy.radius(), 7);
+    assert_eq!(policy.many_shapes(), 3);
+    assert_eq!(policy.many_width(), 3);
+    assert_eq!(policy.many_radius(), 5);
+}
+
+#[test]
+fn a_case_of_two_fields_and_a_case_of_a_list_are_read_by_their_tests() {
+    let mut engine = machine();
+    deliver(
+        &mut engine,
+        &shapes(
+            r#"{"kind":"rect","width":3,"height":4}"#,
+            &[r#"{"kind":"dot"}"#],
+        ),
+    );
+    assert_eq!(engine.policy().width(), 3);
+    assert_eq!(engine.policy().height(), 4);
+    deliver(
+        &mut engine,
+        &shapes(
+            r#"{"kind":"path","points":[1,2,3]}"#,
+            &[r#"{"kind":"dot"}"#],
+        ),
+    );
+    assert_eq!(engine.policy().points(), 3);
+    deliver(
+        &mut engine,
+        &shapes(
+            r#"{"kind":"label","text":"abc","note":null}"#,
+            &[r#"{"kind":"dot"}"#],
+        ),
+    );
+    assert_eq!(engine.policy().labels(), 1);
+    deliver(
+        &mut engine,
+        &shapes(r#"{"kind":"dot"}"#, &[r#"{"kind":"dot"}"#]),
+    );
+    assert_eq!(engine.policy().dots(), 1);
+    assert_eq!(engine.policy().refusals(), 0);
+}
+
+/// The tag is read wherever it stands, and a key of another case, or `null`
+/// under one (the flat spelling), is stepped over (section 2.1).
+#[test]
+fn the_tag_last_and_another_cases_keys_are_read_as_its_case() {
+    let mut engine = machine();
+    deliver(
+        &mut engine,
+        &shapes(
+            r#"{"radius":9,"width":null,"points":[1],"kind":"disc"}"#,
+            &[r#"{"kind":"dot","radius":null}"#],
+        ),
+    );
+    let policy = engine.policy();
+    assert_eq!(policy.refusals(), 0);
+    assert_eq!(policy.last_kind().sce_name(), "disc");
+    assert_eq!(policy.radius(), 9);
+    assert_eq!(policy.points(), 0, "the key of another case is not read");
+}
+
+#[test]
+fn a_tag_no_variant_names_is_refused_whole() {
+    let mut engine = machine();
+    let data = shapes(
+        r#"{"kind":"dot"}"#,
+        &[r#"{"kind":"dot"}"#, r#"{"kind":"oval"}"#],
+    );
+    deliver(&mut engine, &data);
+    let policy = engine.policy();
+    assert_eq!(
+        policy.refusals(),
+        1,
+        "error.execution reached the document once"
+    );
+    assert_eq!(policy.many_shapes(), 0, "none of the content ran");
+    let refusal = StaticUnionPolicy::new()
+        .lift_event_payload(StaticUnionEvent::ShapesSent, &data)
+        .expect_err("a tag no variant names");
+    assert_eq!(refusal.pointer(), "/many/1/kind");
+    assert_eq!(
+        refusal.reason(),
+        "'many/1/kind' (oval) is not a variant of Kind"
+    );
+}
+
+#[test]
+fn a_field_its_case_reads_and_the_delivery_lacks_is_refused_naming_it() {
+    let refusal = StaticUnionPolicy::new()
+        .lift_event_payload(
+            StaticUnionEvent::ShapesSent,
+            &shapes(r#"{"kind":"rect","width":3}"#, &[r#"{"kind":"dot"}"#]),
+        )
+        .expect_err("a field of the case missing");
+    assert_eq!(refusal.pointer(), "/one/height");
+    assert_eq!(refusal.reason(), "the event's data has no 'one/height'");
+}

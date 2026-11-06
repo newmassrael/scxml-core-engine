@@ -630,7 +630,16 @@ hide a derived one (`clone`, `eq`, `fmt`), is refused by name. Every other backe
 refuses a union document and a union field by name. A statechart's variable of a union, and its read or send
 of a payload that holds one, are composed values: a backend whose statechart does
 not lower them refuses each by name, as it refuses any composed value it does not
-lower (`generate/unsupported-feature`).
+lower (`generate/unsupported-feature`). The Rust machine reads a payload that holds
+a union at any depth: it holds the union as a sum of its own whose cases hold the
+machine's records, so the statechart imports the record each case holds and the
+tag's enum, as it imports a record another record holds; the lift reads the tag
+first and then the case's record; a tag read is the sum's tag method, and a field
+read is the proven read of the one case the tests leave, or, where they leave
+several cases that share a field whose value is copied as it is read (a number, a
+`bool`, an enum or an optional one), its one accessor. A shared field of any other
+type is read only where a test proves one case on Rust. A `<foreach>` over a list
+a proven case holds walks it there.
 
 `text-template` (docs/adr/0087, section 3) is a text with typed holes, rendered by
 one pure function into the same bytes on every backend. Its holes are the `<data>`

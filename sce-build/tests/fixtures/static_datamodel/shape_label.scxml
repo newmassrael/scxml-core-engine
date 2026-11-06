@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The record the `label` case of `union_shape.scxml` holds (docs/adr/0092,
+  section 12.1): a bounded text and a text that may be absent.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="shape_label"
+       sce:event-name="shape.label">
+  <datamodel>
+    <data id="text" sce:type="string[8]" sce:direction="in"/>
+    <data id="note" sce:type="optional&lt;string[4]&gt;" sce:direction="in"/>
+  </datamodel>
+</scxml>

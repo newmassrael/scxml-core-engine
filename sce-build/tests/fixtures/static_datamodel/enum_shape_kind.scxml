@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The kind of a shape, the tag of `union_shape.scxml` (docs/adr/0092, section
+  12.1): a dot, which carries nothing; a circle and a disc, which carry one
+  record; a rect of two fields; a label of a text and a note that may be absent;
+  and a path of a list.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="enum"
+       name="shape_kind"
+       sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="dot" value="0"/>
+      <sce:variant name="circle" value="1"/>
+      <sce:variant name="disc" value="2"/>
+      <sce:variant name="rect" value="3"/>
+      <sce:variant name="label" value="4"/>
+      <sce:variant name="path" value="5"/>
+    </data>
+  </datamodel>
+</scxml>

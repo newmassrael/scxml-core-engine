@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A statechart that reads a payload holding a union by testing its tag
+  (docs/adr/0092, section 6.1): the tag of `one` taken into a variable of its
+  enum; a chain of tests on it, each branch reading a field its case declares,
+  `radius` under a test that leaves both cases that share it, a list `path`
+  holds walked where its case is proven; and each shape of `many` narrowed by
+  the same tests on the loop's item. A delivery outside its type is refused
+  whole and counted. Every out variable is what a host reads back.
+
+  The Rust backend lowers it; every other backend refuses the union by its own
+  name until it lowers one (section 7). Rust compile+run gate:
+  scripts/regen_static_datamodel_rust.sh commits the generated machine, and
+  backends/rust/tests/tests/a_union_payload_is_read_by_its_tag.rs drives it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       initial="idle"
+       datamodel="sce-static"
+       name="static_union">
+  <sce:import kind="enum" src="enum_shape_kind.scxml" as="Kind"/>
+  <sce:import kind="event-schema" src="event_shapes.scxml" as="Shapes"/>
+  <sce:import kind="event-schema" src="shape_radius.scxml" as="Radius"/>
+  <sce:import kind="event-schema" src="shape_rect.scxml" as="Rect"/>
+  <sce:import kind="event-schema" src="shape_label.scxml" as="Label"/>
+  <sce:import kind="event-schema" src="shape_path.scxml" as="Path"/>
+  <datamodel>
+    <data id="last_kind" sce:type="enum:Kind" expr="Kind.dot" sce:direction="out"/>
+    <data id="radius" sce:type="uint16" expr="0" sce:direction="out"/>
+    <data id="width" sce:type="uint16" expr="0" sce:direction="out"/>
+    <data id="height" sce:type="uint16" expr="0" sce:direction="out"/>
+    <data id="labels" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="points" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="dots" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="many_radius" sce:type="uint16" expr="0" sce:direction="out"/>
+    <data id="many_width" sce:type="uint16" expr="0" sce:direction="out"/>
+    <data id="many_shapes" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="shapes.sent" type="internal">
+      <assign location="last_kind" expr="_event.data.one.kind"/>
+      <if cond="_event.data.one.kind === Kind.dot">
+        <assign location="dots" expr="dots + 1"/>
+      <elseif cond="_event.data.one.kind === Kind.circle || _event.data.one.kind === Kind.disc"/>
+        <assign location="radius" expr="_event.data.one.radius"/>
+      <elseif cond="_event.data.one.kind === Kind.rect"/>
+        <assign location="width" expr="_event.data.one.width"/>
+        <assign location="height" expr="_event.data.one.height"/>
+      <elseif cond="_event.data.one.kind === Kind.path"/>
+        <foreach array="_event.data.one.points" item="point">
+          <assign location="points" expr="points + 1"/>
+        </foreach>
+      <else/>
+        <assign location="labels" expr="labels + 1"/>
+      </if>
+      <foreach array="_event.data.many" item="shape">
+        <assign location="many_shapes" expr="many_shapes + 1"/>
+        <if cond="shape.kind === Kind.rect">
+          <assign location="many_width" expr="shape.width"/>
+        <elseif cond="shape.kind === Kind.circle || shape.kind === Kind.disc"/>
+          <assign location="many_radius" expr="shape.radius"/>
+        </if>
+      </foreach>
+    </transition>
+    <!-- A delivery outside its type is refused whole: none of the content above
+         runs, and error.execution says so once. -->
+    <transition event="error.execution" type="internal">
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+  </state>
+</scxml>

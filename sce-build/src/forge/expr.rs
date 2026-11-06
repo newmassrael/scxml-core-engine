@@ -856,6 +856,12 @@ fn resolve_then_rename(
     lower_call_crossings(ast, ctx, target);
     lower_call_readings(ast, ctx, target);
     lower_enum_variant_refs(ast, ctx, target)?;
+    // docs/adr/0092, section 6.1: a read of a union's member, judged above
+    // where its case is proven, spelled by the cases the facts leave, on the
+    // backend whose machine holds a union.
+    if matches!(target, ExprTarget::Rust) {
+        lower_union_reads(ast, ctx, &ctx.proven)?;
+    }
     // A C string is a bounded buffer: a join of strings the data model sizes is
     // written into one the lowering sizes, and one it cannot size is refused at
     // emission, by name.
@@ -1150,6 +1156,81 @@ fn reject_unproven_union_reads(
             .children()
             .into_iter()
             .try_for_each(|child| reject_unproven_union_reads(child, ctx, facts, source)),
+    }
+}
+
+/// Spell each read of a union's member as the Rust machine reads it
+/// (docs/adr/0092, section 6.1 and section 7, the Rust row): the member a read
+/// names after the union's value becomes its tag's method, the field of the one
+/// case the facts leave read through that case's proven read, or the accessor
+/// of a field the cases left share
+/// ([`crate::forge::composed_lowering::rust_union_member`]). Each is a read
+/// that cannot fail at run time: [`reject_unproven_union_reads`] admitted it
+/// only where the facts prove its cases, and the facts grow here by the same
+/// rule. A node is spelled before the nodes below it, so its object is still
+/// the place the author wrote when it is typed.
+///
+/// A scope that holds no value of the one value type holds no union, and
+/// nothing is spelled.
+fn lower_union_reads(
+    expr: &mut TypedExpr,
+    ctx: &TypeCtx<'_>,
+    facts: &crate::forge::narrowing::Facts,
+) -> Result<(), Refusal> {
+    use crate::forge::narrowing::proves;
+    let mut spelled = None;
+    if let ExprKind::Member { object, property } = &expr.kind {
+        let place = place_path(object).and_then(|path| ctx.value_of(&path));
+        let union = place
+            .as_ref()
+            .and_then(|place| crate::forge::value_path::union_of(ctx.value_scope, place));
+        if let Some((union, _)) = union {
+            let subject = dotted_path(object);
+            let left = crate::forge::value_path::cases_left(
+                ctx.value_scope,
+                union,
+                subject.as_deref(),
+                Some(facts),
+            );
+            let member = crate::forge::composed_lowering::rust_union_member(union, &left, property)
+                .map_err(|why| {
+                    ExprError::UnsupportedConstruct {
+                        construct: why,
+                        observed: None,
+                    }
+                    .at(expr.span.clone())
+                })?;
+            spelled = Some(member);
+        }
+    }
+    if let (Some(member), ExprKind::Member { property, .. }) = (spelled, &mut expr.kind) {
+        *property = member;
+    }
+    match &mut expr.kind {
+        ExprKind::Binary {
+            op: op @ (BinOp::And | BinOp::Or),
+            left,
+            right,
+        } => {
+            let right_facts = facts.and(&proves(left, *op == BinOp::And));
+            lower_union_reads(left, ctx, facts)?;
+            lower_union_reads(right, ctx, &right_facts)
+        }
+        ExprKind::Conditional {
+            condition,
+            consequent,
+            alternate,
+        } => {
+            let holds = facts.and(&proves(condition, true));
+            let fails = facts.and(&proves(condition, false));
+            lower_union_reads(condition, ctx, facts)?;
+            lower_union_reads(consequent, ctx, &holds)?;
+            lower_union_reads(alternate, ctx, &fails)
+        }
+        _ => expr
+            .children_mut()
+            .into_iter()
+            .try_for_each(|child| lower_union_reads(child, ctx, facts)),
     }
 }
 

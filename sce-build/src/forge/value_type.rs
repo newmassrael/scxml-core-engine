@@ -1191,18 +1191,6 @@ pub fn union_unlowered(alias: &str) -> String {
         crate::forge::union_check::NOT_LOWERED_YET
     )
 }
-
-/// The sentence of the refusal of `union:<alias>` by a walk of a statechart's
-/// machine over a composed value (docs/adr/0092, landing order, step 4): the
-/// backend generates the union's unit, and its machine does not hold one yet.
-pub fn union_unlowered_in_machine(alias: &str) -> String {
-    format!(
-        "`{}{alias}`: {}",
-        WrittenType::UNION_PREFIX,
-        crate::forge::union_check::MACHINE_NOT_LOWERED_YET
-    )
-}
-
 // ── A slot: an algorithm's parameter, return and local, a statechart's variable ──
 
 /// The scalar a text reads as through [`WrittenType::scalar`].
@@ -6217,12 +6205,6 @@ mod tests {
             "union"
         );
         assert!(union_unlowered("Shape").starts_with("`union:Shape`: "));
-        // A machine's refusal names the step it awaits, not a backend that
-        // generates no union at all.
-        let machine = union_unlowered_in_machine("Shape");
-        assert!(machine.starts_with("`union:Shape`: "), "{machine}");
-        assert!(machine.contains("statechart's machine"), "{machine}");
-        assert!(!machine.contains("this backend"), "{machine}");
     }
 
     #[test]

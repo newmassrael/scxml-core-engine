@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The record the `path` case of `union_shape.scxml` holds (docs/adr/0092,
+  section 12.1): a case that holds a list.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="shape_path"
+       sce:event-name="shape.path">
+  <datamodel>
+    <data id="points" sce:type="list&lt;uint8&gt;[3]" sce:direction="in"/>
+  </datamodel>
+</scxml>

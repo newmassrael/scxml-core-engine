@@ -7,8 +7,8 @@
 //! scope a document's types are read in holds the union, its cases in its tag
 //! enum's order, and sizes it by its largest case; every backend that does not
 //! lower a union refuses a field of one by name (section 7); and the Rust
-//! machine, which does not hold one yet, refuses a payload that holds one in
-//! words of its own.
+//! machine reads a payload that holds one where it imports the records of its
+//! cases, and names the record it lacks where it does not.
 
 use std::path::{Path, PathBuf};
 
@@ -244,13 +244,16 @@ fn every_backend_that_does_not_lower_a_union_refuses_a_field_of_one_by_name() {
 }
 
 /// A `sce-static` reader of `shapes.sent` that tests the tag of the payload's
-/// `one` and counts the circles.
-const READER: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+/// `one` and counts the circles, importing the tag's enum, the event and the
+/// further imports `imports`.
+fn reader(imports: &str) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="idle" datamodel="sce-static" name="shapes_reader">
   <sce:import kind="enum" src="shape_kind.scxml" as="Kind"/>
   <sce:import kind="event-schema" src="event_shapes.scxml" as="Shapes"/>
-  <datamodel>
+{imports}  <datamodel>
     <data id="seen" sce:type="uint32" expr="0"/>
   </datamodel>
   <state id="idle">
@@ -261,14 +264,13 @@ const READER: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
     </transition>
   </state>
 </scxml>
-"#;
+"#
+    )
+}
 
-/// Rust generates the union's unit and a field of one, and its machine, the
-/// one whose walks over a composed value are spelled, refuses a payload that
-/// holds one by name, in words that name the machine and not a backend that
-/// lowers no union (docs/adr/0092, landing order, step 4).
-#[test]
-fn a_rust_machine_refuses_a_payload_that_holds_a_union_by_name() {
+/// `sce-codegen check -l rust` of `document` written beside the union
+/// fixtures: whether it passed, and what it printed.
+fn checked_on_rust(document: &str) -> (bool, String) {
     let dir = tempfile::tempdir().expect("a scratch directory");
     for name in [
         "shape_kind.scxml",
@@ -280,7 +282,7 @@ fn a_rust_machine_refuses_a_payload_that_holds_a_union_by_name() {
         std::fs::copy(fixtures().join(name), dir.path().join(name)).expect("copy a fixture");
     }
     let path = dir.path().join("shapes_reader.scxml");
-    std::fs::write(&path, READER).expect("write the reader");
+    std::fs::write(&path, document).expect("write the reader");
     let out = std::process::Command::new(env!("CARGO_BIN_EXE_sce-codegen"))
         .arg("--workspace-root")
         .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join(".."))
@@ -289,21 +291,29 @@ fn a_rust_machine_refuses_a_payload_that_holds_a_union_by_name() {
         .arg(&path)
         .output()
         .expect("invoke sce-codegen");
-    let text =
-        String::from_utf8_lossy(&out.stderr).into_owned() + &String::from_utf8_lossy(&out.stdout);
-    assert!(
-        !out.status.success(),
-        "the machine holds no union yet:\n{text}"
-    );
+    (
+        out.status.success(),
+        String::from_utf8_lossy(&out.stderr).into_owned() + &String::from_utf8_lossy(&out.stdout),
+    )
+}
+
+/// The Rust machine holds a union's cases as its own records, so it reads a
+/// payload that holds one where it imports the records the cases hold, as it
+/// imports a record another record holds (docs/adr/0092, section 7), and
+/// refuses it by name, naming the record, where it does not.
+#[test]
+fn a_rust_machine_reads_a_union_whose_case_records_it_imports() {
+    let (ok, text) = checked_on_rust(&reader(""));
+    assert!(!ok, "the machine imports no record of a case:\n{text}");
     for part in [
         "generate/unsupported-feature",
-        "union:Shape",
-        "a statechart's machine does not hold, read, write or send one yet",
+        "`record:Radius` names a record whose document the statechart does not import",
     ] {
         assert!(text.contains(part), "expected `{part}` in:\n{text}");
     }
-    assert!(
-        !text.contains("this backend does not lower a union"),
-        "{text}"
-    );
+    let (ok, text) = checked_on_rust(&reader(
+        "  <sce:import kind=\"event-schema\" src=\"shape_radius.scxml\" as=\"Radius\"/>\n  \
+         <sce:import kind=\"event-schema\" src=\"shape_rect.scxml\" as=\"Rect\"/>\n",
+    ));
+    assert!(ok, "the machine reads the union:\n{text}");
 }

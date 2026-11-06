@@ -6501,6 +6501,15 @@ fn declare_composed_payload(
             }
         }
     }
+    // Each union the payload holds at any depth, after the records its cases
+    // hold (docs/adr/0092, section 7): the machine's own sum, its tag read as
+    // the machine's enum and every read the narrowing proves a method of it.
+    for key in &reached.unions {
+        let def = composed::union_definition(key, &records, &enums, &*spelling).map_err(refused)?;
+        if declarations.declared.insert(def.ty.clone()) {
+            declarations.type_defs.push(spelling.union_def(&def));
+        }
+    }
     Ok(())
 }
 
@@ -16227,8 +16236,10 @@ fn walked_place(
     };
     let item_ty = typed(&element.ty).map_err(|why| refused(format!(": {why}")))?;
     let list_ty = typed(&place.ty).map_err(|why| refused(format!(": {why}")))?;
+    let name = place_text(&path, ctx, renames, target, &*spelling)
+        .map_err(|why| refused(format!(": {why}")))?;
     Ok(WalkedList {
-        name: place_text(&path, renames, target),
+        name,
         element: WalkedElement::Place(element),
         item_ty,
         list_ty,
@@ -16294,6 +16305,7 @@ fn whole_list_copy(
     let copy = within(&from)
         .and_then(|from_within| {
             let to_within = within(&to)?;
+            let held = place_text(&path, ctx, renames, target, &*spelling)?;
             composed::copier(
                 &from.ty,
                 from_within.as_deref(),
@@ -16302,7 +16314,7 @@ fn whole_list_copy(
                 &names.records,
                 &names.enums,
                 &*spelling,
-                &composed::Held::place(place_text(&path, renames, target)),
+                &composed::Held::place(held),
             )
         })
         .map_err(refused)?;
@@ -16312,14 +16324,25 @@ fn whole_list_copy(
 /// The expression the place `path` is reached by, a path of fields with no
 /// element: the name it starts at as the walk renames it (`_event.data` to the
 /// payload, a variable to its field) or as the target spells a local (a loop's
-/// item), and each field after it as the target spells a record's field.
-fn place_text(path: &str, renames: &HashMap<&str, &str>, target: &dyn StaticTarget) -> String {
+/// item), and each field after it as the target spells a record's field. A
+/// member of a union (docs/adr/0092, section 6.1) is spelled as `spelling`
+/// reads it where the facts of `ctx` leave the union in its cases: its tag, or
+/// a field of the cases left. `Err` names a member of a union the spelling
+/// does not read.
+fn place_text(
+    path: &str,
+    ctx: &crate::forge::types::TypeCtx<'_>,
+    renames: &HashMap<&str, &str>,
+    target: &dyn StaticTarget,
+    spelling: &dyn crate::forge::composed_lowering::ComposedSpelling,
+) -> Result<String, String> {
     let payload = crate::forge::event_schema_check::EVENT_DATA_PATH;
-    let (base, rest) = match path.strip_prefix(payload) {
+    let (base, root, rest) = match path.strip_prefix(payload) {
         Some(rest) if rest.is_empty() || rest.starts_with('.') => (
             renames
                 .get(payload)
                 .map_or_else(|| payload.to_string(), |accessor| accessor.to_string()),
+            payload,
             rest,
         ),
         _ => {
@@ -16329,15 +16352,33 @@ fn place_text(path: &str, renames: &HashMap<&str, &str>, target: &dyn StaticTarg
                     || target.expr_target().local_spelling(root),
                     |name| name.to_string(),
                 ),
+                root,
                 rest,
             )
         }
     };
-    rest.split('.')
-        .filter(|field| !field.is_empty())
-        .fold(base, |text, field| {
-            format!("{text}.{}", target.record_field(field))
-        })
+    let mut text = base;
+    let mut walked = root.to_string();
+    for field in rest.split('.').filter(|field| !field.is_empty()) {
+        let union = ctx.value_of(&walked).and_then(|place| {
+            crate::forge::value_path::union_of(ctx.value_scope, &place).map(|(union, _)| union)
+        });
+        let member = match union {
+            Some(union) => {
+                let left = crate::forge::value_path::cases_left(
+                    ctx.value_scope,
+                    union,
+                    Some(walked.as_str()),
+                    Some(&ctx.proven),
+                );
+                spelling.union_member(union, &left, field)?
+            }
+            None => target.record_field(field),
+        };
+        text = format!("{text}.{member}");
+        walked = format!("{walked}.{field}");
+    }
+    Ok(text)
 }
 
 /// The whole value `expr` gives `place`, an optional variable or an optional

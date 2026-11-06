@@ -38,7 +38,7 @@
 use std::collections::BTreeMap;
 
 use crate::forge::model::{EventSchemaModel, SceType};
-use crate::forge::value_type::{TypeScope, ValueType};
+use crate::forge::value_type::{ScopedCase, ScopedUnion, TypeScope, ValueType};
 
 /// An enum as a machine holds it: the name the statechart holds it by, the
 /// type it is declared as, and each variant's declared name with the
@@ -58,30 +58,115 @@ pub struct HeldRecord<'m> {
     pub schema: &'m EventSchemaModel,
 }
 
-/// Where the records a composed value names are found.
-pub trait RecordEnv {
-    /// The record `alias` names, written in the statechart's own scope when
-    /// `within` is `None`, and in the document of the record the statechart
-    /// holds as `within` otherwise. `Err` is the sentence of a record the
-    /// machine does not hold.
-    fn record(&self, within: Option<&str>, alias: &str) -> Result<HeldRecord<'_>, String>;
+/// A union a machine holds (docs/adr/0092): the key the walks name it by (a
+/// `within` its cases' records are read in, [`union_key`]), the union as the
+/// type grammar reads it, and the alias the statechart imports its tag's enum
+/// by, `None` where it imports no enum of the tag's.
+#[derive(Debug, Clone)]
+pub struct HeldUnion<'m> {
+    pub key: String,
+    pub union: &'m ScopedUnion,
+    pub tag_enum: Option<String>,
 }
 
-/// The records of a statechart: the schemas it imports, by alias, and the
-/// scope each document names its records in. Held apart from the model, so a
-/// walk that rewrites the model's states reads them.
+impl HeldUnion<'_> {
+    /// The alias of the enum of the tag as the machine holds it, or the
+    /// sentence of a statechart that imports no enum of the tag's: the reader
+    /// of a value reads its tag by that enum, and the tag's read answers one.
+    pub fn tag_enum(&self) -> Result<&str, String> {
+        self.tag_enum.as_deref().ok_or_else(|| {
+            format!(
+                "`union:{}` has its tag `{}` of an enum the statechart does not import; import \
+                 the enum so the machine holds a type for it",
+                self.union.name, self.union.tag
+            )
+        })
+    }
+}
+
+/// What the key of a union opens with, so a `within` that names a union is
+/// told from one that names a record by its alias.
+const UNION_KEY: &str = "union:";
+
+/// The key the walks name `union` by: its document's identity, or its name for
+/// a union read from no file.
+pub fn union_key(union: &ScopedUnion) -> String {
+    let identity = if union.identity.is_empty() {
+        &union.name
+    } else {
+        &union.identity
+    };
+    format!("{UNION_KEY}{identity}")
+}
+
+/// Where the records and unions a composed value names are found.
+pub trait RecordEnv {
+    /// The record `alias` names, written in the statechart's own scope when
+    /// `within` is `None`, and in the document of the record or union the
+    /// statechart holds as `within` otherwise. `Err` is the sentence of a
+    /// record the machine does not hold.
+    fn record(&self, within: Option<&str>, alias: &str) -> Result<HeldRecord<'_>, String>;
+    /// The union `alias` names, written in the scope `within` names as for
+    /// [`Self::record`]. `Err` is the sentence of a union the machine cannot
+    /// read.
+    fn union(&self, within: Option<&str>, alias: &str) -> Result<HeldUnion<'_>, String>;
+    /// The union the walks name by `key` ([`union_key`]).
+    fn union_of_key(&self, key: &str) -> Result<HeldUnion<'_>, String>;
+}
+
+/// The records of a statechart: the schemas it imports, by alias, the scope
+/// each document names its records in, and every union a type it reads names
+/// at any depth, by key. Held apart from the model, so a walk that rewrites
+/// the model's states reads them.
 #[derive(Debug, Clone)]
 pub struct StatechartRecords {
     scope: TypeScope,
     records: BTreeMap<String, EventSchemaModel>,
+    unions: BTreeMap<String, ScopedUnion>,
 }
 
 impl StatechartRecords {
     /// The records `model` holds.
     pub fn of(model: &crate::model::SCXMLModel) -> Self {
+        let scope = crate::forge::value_path::statechart_scope(model);
+        let mut unions = BTreeMap::new();
+        let mut seen = std::collections::BTreeSet::new();
+        gather_unions(&scope, &mut unions, &mut seen);
         Self {
-            scope: crate::forge::value_path::statechart_scope(model),
+            scope,
             records: model.imported_records.clone(),
+            unions,
+        }
+    }
+
+    /// The scope the record or union `within` names its types in.
+    fn scope_within(&self, within: &str) -> Option<&TypeScope> {
+        if within.starts_with(UNION_KEY) {
+            self.unions.get(within).map(|union| &union.scope)
+        } else {
+            self.scope.records.get(within).map(|record| &record.scope)
+        }
+    }
+}
+
+/// Every union `scope` names at any depth, through its records' and its
+/// unions' own scopes, by key; `seen` holds each record already walked, so
+/// one document is walked once.
+fn gather_unions(
+    scope: &TypeScope,
+    unions: &mut BTreeMap<String, ScopedUnion>,
+    seen: &mut std::collections::BTreeSet<String>,
+) {
+    for union in scope.unions.values() {
+        let key = union_key(union);
+        if !unions.contains_key(&key) {
+            unions.insert(key, union.clone());
+            gather_unions(&union.scope, unions, seen);
+        }
+    }
+    for record in scope.records.values() {
+        if seen.insert(record.identity.clone()) {
+            gather_unions(&record.scope, unions, seen);
         }
     }
 }
@@ -91,17 +176,15 @@ impl RecordEnv for StatechartRecords {
         let unheld = || {
             format!("`record:{alias}` names a record whose document the statechart does not import")
         };
-        // A record named inside another is named by that record's document,
-        // and held by the statechart under the alias it imports the same
-        // document by.
+        // A record named inside another, or inside a union, is named by that
+        // document, and held by the statechart under the alias it imports the
+        // same document by.
         let held: &str = match within {
             None => alias,
-            Some(record) => {
+            Some(within) => {
                 let identity = &self
-                    .scope
-                    .records
-                    .get(record)
-                    .and_then(|held| held.scope.records.get(alias))
+                    .scope_within(within)
+                    .and_then(|scope| scope.records.get(alias))
                     .ok_or_else(unheld)?
                     .identity;
                 self.scope
@@ -115,17 +198,46 @@ impl RecordEnv for StatechartRecords {
         let (alias, schema) = self.records.get_key_value(held).ok_or_else(unheld)?;
         Ok(HeldRecord { alias, schema })
     }
+
+    fn union(&self, within: Option<&str>, alias: &str) -> Result<HeldUnion<'_>, String> {
+        let scope = match within {
+            None => Some(&self.scope),
+            Some(within) => self.scope_within(within),
+        };
+        let union = scope
+            .and_then(|scope| scope.unions.get(alias))
+            .ok_or_else(|| format!("`union:{alias}` names a union the statechart cannot read"))?;
+        self.union_of_key(&union_key(union))
+    }
+
+    fn union_of_key(&self, key: &str) -> Result<HeldUnion<'_>, String> {
+        let union = self
+            .unions
+            .get(key)
+            .ok_or_else(|| format!("`{key}` names a union the statechart cannot read"))?;
+        Ok(HeldUnion {
+            key: key.to_string(),
+            union,
+            tag_enum: crate::forge::value_path::tag_enum_alias(&self.scope, union),
+        })
+    }
 }
 
-/// The record whose document the aliases of a place's type are written in, as
-/// the statechart holds it, for a place reached through the records `chain`
-/// names, each alias in the scope of the one before it
-/// ([`crate::forge::value_path::Place::scope`]); `None` for a place in the
-/// statechart's own scope.
+/// The record or union whose document the aliases of a place's type are
+/// written in, as the statechart holds it, for a place reached through the
+/// records and unions `chain` names, each alias in the scope of the one before
+/// it ([`crate::forge::value_path::Place::scope`]); `None` for a place in the
+/// statechart's own scope. A union is named by its key ([`union_key`]).
 pub fn within_of(chain: &[String], records: &dyn RecordEnv) -> Result<Option<String>, String> {
     let mut within: Option<String> = None;
     for alias in chain {
-        let held = records.record(within.as_deref(), alias)?.alias.to_string();
+        let held = match records.record(within.as_deref(), alias) {
+            Ok(record) => record.alias.to_string(),
+            Err(why) => records
+                .union(within.as_deref(), alias)
+                .map(|union| union.key)
+                .map_err(|_| why)?,
+        };
         within = Some(held);
     }
     Ok(within)
@@ -263,6 +375,240 @@ pub trait ComposedSpelling {
     /// A copy of the list `held`, `elem` the copy of an element, a reference
     /// bound to [`Self::copy_binding`].
     fn copy_list(&self, held: &Held, elem: &str) -> String;
+
+    /// The type a value of the union whose document is named `name` is held
+    /// in (docs/adr/0092, section 7).
+    fn union_type(&self, name: &str) -> String;
+    /// The identifier of the case of the variant `variant` in a union's type.
+    fn union_case_ident(&self, variant: &str) -> String;
+    /// The read of a union's tag under the key `tag`, `None` for a key this
+    /// backend names no read by.
+    fn union_tag_read(&self, tag: &str) -> Option<String>;
+    /// The read of the record of the case of `variant` where a test proved it.
+    fn union_case_read(&self, variant: &str) -> String;
+    /// The read of the field `field` several cases share ([`SharedFieldDef`]).
+    fn union_shared_read(&self, field: &str) -> String;
+    /// The declaration of a union's type, its cases and its reads.
+    fn union_def(&self, def: &UnionDef) -> String;
+    /// The reader of a value of a union at `value`, as `read` says it: its tag
+    /// first, and then the case the tag names, by its arm.
+    fn read_union(&self, value: &str, read: &UnionRead<'_>) -> String;
+    /// The JSON of a value of a union held in `ty`: its tag under the key
+    /// `tag` beside the fields of its case, by the arm of the case it is in,
+    /// the case's record a reference bound to [`Self::write_binding`].
+    fn write_union(&self, held: &Held, ty: &str, tag: &str, arms: &[UnionWriteArm]) -> String;
+    /// What follows a value of `union` to read its member `member` where it
+    /// may be in the cases `left` (docs/adr/0092, section 6.1): its tag, or a
+    /// field the cases left each declare. `Err` names a read this backend
+    /// does not spell.
+    fn union_member(
+        &self,
+        union: &ScopedUnion,
+        left: &[&ScopedCase],
+        member: &str,
+    ) -> Result<String, String>;
+}
+
+/// One case of a union's declaration ([`UnionDef`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnionCaseDef {
+    /// The case's identifier in the union's type.
+    pub ident: String,
+    /// The variant's declared name.
+    pub variant: String,
+    /// The identifier of the variant in the tag's enum type ([`UnionDef::tag_ty`]).
+    pub tag_ident: String,
+    /// The type of the record the case holds, `None` for an empty case.
+    pub record: Option<String>,
+    /// The read of the case's record where a test proved it.
+    pub proven: String,
+}
+
+/// A field two or more cases of a union declare with one type a value is
+/// copied out as, read by one accessor over every case that declares it
+/// (docs/adr/0092, section 6.1 item 2, open question 8).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SharedFieldDef {
+    pub field: String,
+    pub accessor: String,
+    pub ty: String,
+    /// The identifier of each case that declares it.
+    pub cases: Vec<String>,
+}
+
+/// A union's declaration in a machine (docs/adr/0092, section 7): its type,
+/// its document's name, the read of its tag and the enum type it answers, each
+/// case in the tag enum's order, and each field shared by several cases.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnionDef {
+    pub ty: String,
+    pub name: String,
+    pub tag_method: String,
+    pub tag_ty: String,
+    pub cases: Vec<UnionCaseDef>,
+    pub shared: Vec<SharedFieldDef>,
+}
+
+/// What a union's reader reads ([`ComposedSpelling::read_union`]): the key of
+/// its tag, the reader of the tag bound to [`ComposedSpelling::read_binding`],
+/// the enum type it answers, the union's type, and one arm per case.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnionRead<'a> {
+    pub tag: &'a str,
+    pub tag_reader: String,
+    pub tag_ty: &'a str,
+    pub ty: String,
+    pub arms: Vec<UnionReadArm>,
+}
+
+/// One arm of a union's reader: the identifier of the variant in the tag's
+/// enum type, of the case in the union's type, and the reader of the case's
+/// record bound to [`ComposedSpelling::read_binding`] (`None` for an empty
+/// case).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnionReadArm {
+    pub tag_ident: String,
+    pub case_ident: String,
+    pub record: Option<String>,
+}
+
+/// One arm of a union's writer: the identifier of the case in the union's
+/// type, the variant's declared name its tag is written as, and each field of
+/// its record with the JSON of its value (`None` for an empty case).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnionWriteArm {
+    pub case_ident: String,
+    pub variant: String,
+    pub fields: Option<Vec<(String, String)>>,
+}
+
+/// The identifier of the case `variant` of a union's type: the variant as an
+/// enum's Rust declaration spells it ([`crate::forge::enum_naming::variant_ident`]).
+pub(crate) fn rust_case_ident(variant: &str) -> String {
+    crate::forge::enum_naming::variant_ident(crate::generator::Language::Rust, "", variant)
+}
+
+/// The read of the record of the case `variant` where a test proved it, on a
+/// union's Rust type (the unit's and the machine's alike).
+pub(crate) fn rust_case_read(variant: &str) -> String {
+    format!(
+        "proven_{}",
+        crate::filters::to_snake_case(variant.to_string())
+    )
+}
+
+/// The read of a field several cases share ([`SharedFieldDef`]) on a machine's
+/// union.
+pub(crate) fn rust_shared_read(field: &str) -> String {
+    format!(
+        "proven_field_{}",
+        crate::filters::to_snake_case(field.to_string())
+    )
+}
+
+/// The methods every value of a generated Rust union answers through its
+/// derives (`Clone`, `PartialEq`, `Debug`): an inherent method of one of these
+/// names would hide the trait's at every call written with a dot, so the tag's
+/// accessor is never one of them.
+const RUST_UNION_DERIVED_METHODS: &[&str] = &["clone", "clone_from", "eq", "ne", "fmt"];
+
+/// The Rust method the tag's key `tag` is read by on a generated union, the
+/// unit's and the machine's alike: the key in snake case, as a payload's field
+/// is named, escaped with `r#` where Rust reserves it. `None` for a key that
+/// is no Rust identifier, one `r#` cannot escape (`self`, `Self`, `super`,
+/// `crate`), and one that would hide a derived method
+/// ([`RUST_UNION_DERIVED_METHODS`]).
+pub(crate) fn rust_union_tag_method(tag: &str) -> Option<String> {
+    let snake = crate::filters::to_snake_case(tag.to_string());
+    let mut chars = snake.chars();
+    let identifier = chars
+        .next()
+        .is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+        && snake != "_";
+    if !identifier
+        || ["self", "Self", "super", "crate"].contains(&snake.as_str())
+        || RUST_UNION_DERIVED_METHODS.contains(&snake.as_str())
+    {
+        return None;
+    }
+    Some(if crate::filters::RUST_KEYWORDS.contains(&snake.as_str()) {
+        format!("r#{snake}")
+    } else {
+        snake
+    })
+}
+
+/// The type `field` has in every case of `union` that declares it, where two
+/// or more cases declare it, all with one type, and a value of it is copied as
+/// it is read ([`plain`]): the fields a machine's union reads by one accessor
+/// over the cases ([`SharedFieldDef`]). `None` for every other field.
+pub fn shared_plain_field<'u>(union: &'u ScopedUnion, field: &str) -> Option<&'u ValueType> {
+    let mut found: Option<&ValueType> = None;
+    let mut declaring = 0usize;
+    for case in &union.cases {
+        let declared = case
+            .record
+            .as_deref()
+            .and_then(|record| union.scope.records.get(record))
+            .and_then(|record| record.fields.iter().find(|(id, _)| id == field));
+        if let Some((_, ty)) = declared {
+            match found {
+                Some(held) if held != ty => return None,
+                _ => found = Some(ty),
+            }
+            declaring += 1;
+        }
+    }
+    found.filter(|ty| declaring >= 2 && plain(ty))
+}
+
+/// The Rust spelling of what follows a union's value to read `member` where
+/// it may be in the cases `left` ([`ComposedSpelling::union_member`]): the
+/// tag's method; the field of the one case left, read through that case's
+/// proven read, a place as a record's field is; or the accessor of a field
+/// several cases share ([`shared_plain_field`]). `Err` for a field the cases
+/// left share whose value is not copied as it is read, which no accessor
+/// answers yet.
+pub(crate) fn rust_union_member(
+    union: &ScopedUnion,
+    left: &[&ScopedCase],
+    member: &str,
+) -> Result<String, String> {
+    if member == union.tag {
+        return rust_union_tag_method(member)
+            .map(|method| format!("{method}()"))
+            .ok_or_else(|| {
+                format!("the tag's key `{member}` names no Rust method its value can be read by")
+            });
+    }
+    let declares = |case: &ScopedCase| -> bool {
+        case.record
+            .as_deref()
+            .and_then(|record| union.scope.records.get(record))
+            .is_some_and(|record| record.fields.iter().any(|(id, _)| id == member))
+    };
+    match left {
+        [case] if declares(case) => {
+            Ok(format!("{}().{member}", rust_case_read(&case.variant.name)))
+        }
+        _ if !left.is_empty()
+            && left.iter().all(|case| declares(case))
+            && shared_plain_field(union, member).is_some() =>
+        {
+            Ok(format!("{}()", rust_shared_read(member)))
+        }
+        _ => Err(format!(
+            "`{member}` of `union:{}`, read where it may be in the cases {}, is a field those \
+             cases share whose value is not copied as it is read, and a machine reads such a \
+             field only where a test proves one case (docs/adr/0092, section 6.1)",
+            union.name,
+            left.iter()
+                .map(|case| format!("`{}`", case.variant.name))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )),
+    }
 }
 
 /// Whether a value of `ty` is copied as it is read, which a copy says
@@ -369,11 +715,10 @@ pub fn machine_type(
             max.max,
         ),
         ValueType::Record { alias } => spelling.record_type(records.record(within, alias)?.alias),
-        // docs/adr/0092, landing order, step 4: the backend generates the
-        // union's unit, and no machine holds one yet; every walk below refuses
-        // it in the same words.
+        // docs/adr/0092, section 7: the machine's own sum, named by the
+        // union's document, whichever alias names it.
         ValueType::Union { alias } => {
-            return Err(crate::forge::value_type::union_unlowered_in_machine(alias))
+            spelling.union_type(&records.union(within, alias)?.union.name)
         }
     })
 }
@@ -386,6 +731,9 @@ pub struct Reached {
     pub records: Vec<String>,
     /// The statechart's name of each enum.
     pub enums: std::collections::BTreeSet<String>,
+    /// The key of each union ([`union_key`]), each once, after the records
+    /// its cases hold.
+    pub unions: Vec<String>,
 }
 
 /// Add to `reached` what a value of `ty`, written in the scope `within` names,
@@ -419,11 +767,149 @@ pub fn held_records(
                 reached.records.push(held.alias.to_string());
             }
         }
+        // docs/adr/0092, section 7: the union, its tag's enum, and the record
+        // each case holds, which the machine's sum holds as the machine's
+        // records; a union that holds itself is refused where its document is
+        // read (section 1.1), so the walk ends.
         ValueType::Union { alias } => {
-            return Err(crate::forge::value_type::union_unlowered_in_machine(alias))
+            let held = records.union(within, alias)?;
+            if reached.unions.contains(&held.key) {
+                return Ok(());
+            }
+            reached.enums.insert(held.tag_enum()?.to_string());
+            for case in &held.union.cases {
+                if let Some(record) = &case.record {
+                    held_records(
+                        &ValueType::Record {
+                            alias: record.clone(),
+                        },
+                        Some(&held.key),
+                        records,
+                        reached,
+                    )?;
+                }
+            }
+            if !reached.unions.contains(&held.key) {
+                reached.unions.push(held.key);
+            }
         }
     }
     Ok(())
+}
+
+/// The declaration of the union the walks name by `key` ([`union_key`]) in
+/// the machine (docs/adr/0092, section 7): each case in its tag enum's order,
+/// holding the machine's record of its case or nothing, the read of the tag
+/// as the machine's enum, a proven read per case that holds a record, and an
+/// accessor per field several cases share ([`shared_plain_field`]). `Err`
+/// names a union the machine has no declaration of: a tag of an enum the
+/// statechart does not import, a key the backend names no read by, a record
+/// the statechart does not import, or two reads of one name.
+pub fn union_definition(
+    key: &str,
+    records: &dyn RecordEnv,
+    enums: &BTreeMap<String, MachineEnum>,
+    spelling: &dyn ComposedSpelling,
+) -> Result<UnionDef, String> {
+    let held = records.union_of_key(key)?;
+    let union = held.union;
+    let tag = machine_enum(enums, held.tag_enum()?)?;
+    let tag_method = spelling.union_tag_read(&union.tag).ok_or_else(|| {
+        format!(
+            "`union:{}`: the tag's key `{}` names no method its value can be read by",
+            union.name, union.tag
+        )
+    })?;
+    let mut methods = std::collections::BTreeSet::new();
+    methods.insert(tag_method.clone());
+    let mut cases = Vec::with_capacity(union.cases.len());
+    let mut case_records: BTreeMap<String, &str> = BTreeMap::new();
+    for case in &union.cases {
+        let variant = case.variant.name.as_str();
+        let (_, tag_ident) = tag
+            .variants
+            .iter()
+            .find(|(declared, _)| declared == variant)
+            .ok_or_else(|| {
+                format!(
+                    "`union:{}`: the machine's `{}` has no variant `{variant}`",
+                    union.name, tag.ty
+                )
+            })?;
+        let record = match &case.record {
+            None => None,
+            Some(record) => {
+                let held_record = records.record(Some(key), record)?;
+                case_records.insert(variant.to_string(), held_record.alias);
+                Some(spelling.record_type(held_record.alias))
+            }
+        };
+        let proven = spelling.union_case_read(variant);
+        if record.is_some() && !methods.insert(proven.clone()) {
+            return Err(format!(
+                "`union:{}`: the case `{variant}` is read by `{proven}`, which another read \
+                 of the union is named too",
+                union.name
+            ));
+        }
+        cases.push(UnionCaseDef {
+            ident: spelling.union_case_ident(variant),
+            variant: variant.to_string(),
+            tag_ident: tag_ident.clone(),
+            record,
+            proven,
+        });
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    let mut shared = Vec::new();
+    for case in &union.cases {
+        let Some(record) = case
+            .record
+            .as_deref()
+            .and_then(|r| union.scope.records.get(r))
+        else {
+            continue;
+        };
+        for (field, ty) in &record.fields {
+            if !seen.insert(field.clone()) || shared_plain_field(union, field).is_none() {
+                continue;
+            }
+            let accessor = spelling.union_shared_read(field);
+            if !methods.insert(accessor.clone()) {
+                return Err(format!(
+                    "`union:{}`: the field `{field}` several cases share is read by \
+                     `{accessor}`, which another read of the union is named too",
+                    union.name
+                ));
+            }
+            let within = case_records.get(&case.variant.name).copied();
+            shared.push(SharedFieldDef {
+                field: field.clone(),
+                accessor,
+                ty: machine_type(ty, within, records, enums, spelling)?,
+                cases: union
+                    .cases
+                    .iter()
+                    .filter(|other| {
+                        other
+                            .record
+                            .as_deref()
+                            .and_then(|r| union.scope.records.get(r))
+                            .is_some_and(|r| r.fields.iter().any(|(id, _)| id == field))
+                    })
+                    .map(|other| spelling.union_case_ident(&other.variant.name))
+                    .collect(),
+            });
+        }
+    }
+    Ok(UnionDef {
+        ty: spelling.union_type(&union.name),
+        name: union.name.clone(),
+        tag_method,
+        tag_ty: tag.ty.clone(),
+        cases,
+        shared,
+    })
 }
 
 /// The members of the record the statechart holds as `alias`, each field's id
@@ -486,8 +972,54 @@ pub fn reader(
                 &fields,
             )
         }
+        // docs/adr/0092, section 4: the tag first, by its enum's reader, and
+        // then the record of the case it names, from the same object.
         ValueType::Union { alias } => {
-            return Err(crate::forge::value_type::union_unlowered_in_machine(alias))
+            let held = records.union(within, alias)?;
+            let tag = machine_enum(enums, held.tag_enum()?)?;
+            let ty = spelling.union_type(&held.union.name);
+            let mut arms = Vec::with_capacity(held.union.cases.len());
+            for case in &held.union.cases {
+                let variant = case.variant.name.as_str();
+                let (_, tag_ident) = tag
+                    .variants
+                    .iter()
+                    .find(|(declared, _)| declared == variant)
+                    .ok_or_else(|| {
+                        format!(
+                            "`union:{}`: the machine's `{}` has no variant `{variant}`",
+                            held.union.name, tag.ty
+                        )
+                    })?;
+                let record = match &case.record {
+                    None => None,
+                    Some(record) => Some(reader(
+                        &ValueType::Record {
+                            alias: record.clone(),
+                        },
+                        Some(&held.key),
+                        records,
+                        enums,
+                        spelling,
+                        bound,
+                    )?),
+                };
+                arms.push(UnionReadArm {
+                    tag_ident: tag_ident.clone(),
+                    case_ident: spelling.union_case_ident(variant),
+                    record,
+                });
+            }
+            spelling.read_union(
+                value,
+                &UnionRead {
+                    tag: &held.union.tag,
+                    tag_reader: spelling.read_enum(tag, bound),
+                    tag_ty: &tag.ty,
+                    ty,
+                    arms,
+                },
+            )
         }
     })
 }
@@ -545,8 +1077,30 @@ pub fn writer(
             let record = records.record(within, alias)?;
             spelling.write_record(&field_writers(record, records, spelling, held)?)
         }
+        // docs/adr/0092, section 2.1: the tag beside the fields of the case
+        // the value is in, each field of the case's record read through the
+        // reference its arm binds.
         ValueType::Union { alias } => {
-            return Err(crate::forge::value_type::union_unlowered_in_machine(alias))
+            let union = records.union(within, alias)?;
+            let ty = spelling.union_type(&union.union.name);
+            let mut arms = Vec::with_capacity(union.union.cases.len());
+            for case in &union.union.cases {
+                let fields = match &case.record {
+                    None => None,
+                    Some(record) => Some(field_writers(
+                        records.record(Some(&union.key), record)?,
+                        records,
+                        spelling,
+                        &bound,
+                    )?),
+                };
+                arms.push(UnionWriteArm {
+                    case_ident: spelling.union_case_ident(&case.variant.name),
+                    variant: case.variant.name.clone(),
+                    fields,
+                });
+            }
+            spelling.write_union(held, &ty, &union.union.tag, &arms)
         }
     })
 }
@@ -841,6 +1395,165 @@ impl ComposedSpelling for RustComposed<'_> {
             held.borrowed()
         )
     }
+
+    // The machine's own sum, beside its records (docs/adr/0092, section 7, the
+    // Rust row): named by the union's document, so one union is one type of
+    // the machine whichever alias names it.
+    fn union_type(&self, name: &str) -> String {
+        format!(
+            "{}{}Union",
+            self.machine,
+            crate::filters::to_pascal_case(name.to_string())
+        )
+    }
+    fn union_case_ident(&self, variant: &str) -> String {
+        rust_case_ident(variant)
+    }
+    fn union_tag_read(&self, tag: &str) -> Option<String> {
+        rust_union_tag_method(tag)
+    }
+    fn union_case_read(&self, variant: &str) -> String {
+        rust_case_read(variant)
+    }
+    fn union_shared_read(&self, field: &str) -> String {
+        rust_shared_read(field)
+    }
+    // Owned and compared whole, as a record that holds a composed value is;
+    // every read the narrowing proves is a method here, whose other arms are
+    // `unreachable!()`, the one place they are written (as a proven optional
+    // is read through the runtime's one `proven`, docs/adr/0055, section 5).
+    fn union_def(&self, def: &UnionDef) -> String {
+        let name = crate::filters::escape_rust(def.name.clone());
+        let others = |covered: usize, variant: &str| {
+            if covered < def.cases.len() {
+                format!(
+                    "            _ => unreachable!(\"a value of {{}} read as {{}} is in another \
+                     case\", \"{name}\", \"{}\"),\n",
+                    crate::filters::escape_rust(variant.to_string())
+                )
+            } else {
+                String::new()
+            }
+        };
+        let mut variants = String::new();
+        let mut tag_arms = String::new();
+        let mut proven = String::new();
+        for case in &def.cases {
+            let ident = &case.ident;
+            match &case.record {
+                Some(record) => {
+                    variants.push_str(&format!("    {ident}({record}),\n"));
+                    tag_arms.push_str(&format!(
+                        "            Self::{ident}(_) => {}::{},\n",
+                        def.tag_ty, case.tag_ident
+                    ));
+                    proven.push_str(&format!(
+                        "\n    pub fn {}(&self) -> &{record} {{\n        match self {{\n            \
+                         Self::{ident}(record) => record,\n{}        }}\n    }}\n",
+                        case.proven,
+                        others(1, &case.variant)
+                    ));
+                }
+                None => {
+                    variants.push_str(&format!("    {ident},\n"));
+                    tag_arms.push_str(&format!(
+                        "            Self::{ident} => {}::{},\n",
+                        def.tag_ty, case.tag_ident
+                    ));
+                }
+            }
+        }
+        let shared: String = def
+            .shared
+            .iter()
+            .map(|field| {
+                let arms: String = field
+                    .cases
+                    .iter()
+                    .map(|ident| {
+                        format!("            Self::{ident}(record) => record.{},\n", field.field)
+                    })
+                    .collect();
+                format!(
+                    "\n    pub fn {}(&self) -> {} {{\n        match self {{\n{arms}{}        }}\n    \
+                     }}\n",
+                    field.accessor,
+                    field.ty,
+                    others(field.cases.len(), &field.field)
+                )
+            })
+            .collect();
+        format!(
+            "/// SCE Accepted Subset §2.15: a `union:{name}` value (docs/adr/0092).\n\
+             #[derive(Clone, Debug, PartialEq)]\npub enum {ty} {{\n{variants}}}\n\n\
+             #[allow(dead_code, non_snake_case)]\nimpl {ty} {{\n    pub fn {tag}(&self) -> {tag_ty} \
+             {{\n        match self {{\n{tag_arms}        }}\n    }}\n{proven}{shared}}}",
+            ty = def.ty,
+            tag = def.tag_method,
+            tag_ty = def.tag_ty,
+        )
+    }
+    // The tag first, by the enum's reader, then the record of the case it
+    // names from the same object (docs/adr/0092, section 4), each case a
+    // match arm the compiler holds to every variant of the tag's enum.
+    fn read_union(&self, value: &str, read: &UnionRead<'_>) -> String {
+        let arms: String = read
+            .arms
+            .iter()
+            .map(|arm| {
+                let case = format!("{}::{}", read.ty, arm.case_ident);
+                let value = match &arm.record {
+                    Some(record) => format!("{record}.map({case})"),
+                    None => format!("Ok({case})"),
+                };
+                format!("{}::{} => {value}, ", read.tag_ty, arm.tag_ident)
+            })
+            .collect();
+        format!(
+            "{value}.union(\"{}\", |v| {}, |sce_case, v| match sce_case {{ {arms}}})",
+            crate::filters::escape_rust(read.tag.to_string()),
+            read.tag_reader
+        )
+    }
+    // One object, the tag among the fields of the case (docs/adr/0092,
+    // section 2.1), keys ascending as the runtime's `union_json` writes them.
+    fn write_union(&self, held: &Held, ty: &str, tag: &str, arms: &[UnionWriteArm]) -> String {
+        let tag = crate::filters::escape_rust(tag.to_string());
+        let arms: String = arms
+            .iter()
+            .map(|arm| {
+                let variant = crate::filters::escape_rust(arm.variant.clone());
+                match &arm.fields {
+                    Some(fields) => {
+                        let members: Vec<String> = fields
+                            .iter()
+                            .map(|(id, json)| format!("(\"{id}\", {json})"))
+                            .collect();
+                        format!(
+                            "{ty}::{}(h) => {RUST_PAYLOAD}::union_json(\"{tag}\", \"{variant}\", \
+                             vec![{}]), ",
+                            arm.case_ident,
+                            members.join(", ")
+                        )
+                    }
+                    None => format!(
+                        "{ty}::{} => {RUST_PAYLOAD}::union_json(\"{tag}\", \"{variant}\", \
+                         Vec::new()), ",
+                        arm.case_ident
+                    ),
+                }
+            })
+            .collect();
+        format!("match {} {{ {arms}}}", held.borrowed())
+    }
+    fn union_member(
+        &self,
+        union: &ScopedUnion,
+        left: &[&ScopedCase],
+        member: &str,
+    ) -> Result<String, String> {
+        rust_union_member(union, left, member)
+    }
 }
 
 #[cfg(test)]
@@ -907,6 +1620,121 @@ mod tests {
                 _ => Err(format!("no record `{alias}`")),
             }
         }
+        fn union(&self, _within: Option<&str>, alias: &str) -> Result<HeldUnion<'_>, String> {
+            Err(format!("no union `{alias}`"))
+        }
+        fn union_of_key(&self, key: &str) -> Result<HeldUnion<'_>, String> {
+            Err(format!("no union `{key}`"))
+        }
+    }
+
+    const RADIUS: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" sce:kind="event-schema" name="shape_radius" sce:event-name="shape.radius">
+  <datamodel>
+    <data id="radius" sce:type="uint16" sce:direction="in"/>
+  </datamodel>
+</scxml>
+"#;
+
+    /// A statechart that imports `shape_radius` as `Radius` and the tag's enum
+    /// as `Kind`, and reads a `shape`: a dot of nothing, and a circle and a
+    /// disc that both hold `Radius`.
+    struct Shapes {
+        radius: EventSchemaModel,
+        union: ScopedUnion,
+    }
+
+    const SHAPE_KEY: &str = "union:shape";
+
+    impl RecordEnv for Shapes {
+        fn record(&self, within: Option<&str>, alias: &str) -> Result<HeldRecord<'_>, String> {
+            match (within, alias) {
+                (None | Some(SHAPE_KEY), "Radius") => Ok(HeldRecord {
+                    alias: "Radius",
+                    schema: &self.radius,
+                }),
+                _ => Err(format!("no record `{alias}`")),
+            }
+        }
+        fn union(&self, within: Option<&str>, alias: &str) -> Result<HeldUnion<'_>, String> {
+            match (within, alias) {
+                (None, "Shape") => self.union_of_key(SHAPE_KEY),
+                _ => Err(format!("no union `{alias}`")),
+            }
+        }
+        fn union_of_key(&self, key: &str) -> Result<HeldUnion<'_>, String> {
+            (key == SHAPE_KEY)
+                .then(|| HeldUnion {
+                    key: key.to_string(),
+                    union: &self.union,
+                    tag_enum: Some("Kind".to_string()),
+                })
+                .ok_or_else(|| format!("no union `{key}`"))
+        }
+    }
+
+    fn shapes() -> Shapes {
+        use crate::forge::value_type::{ScopedEnum, ScopedRecord, ScopedVariant};
+        let variants: Vec<ScopedVariant> = ["dot", "circle", "disc"]
+            .iter()
+            .zip(0..)
+            .map(|(name, value)| ScopedVariant {
+                name: name.to_string(),
+                value,
+            })
+            .collect();
+        let mut scope = TypeScope::default();
+        scope.enums.insert(
+            "ShapeKind".to_string(),
+            ScopedEnum {
+                variants: variants.clone(),
+                underlying: SceType::Uint8,
+                strict: true,
+            },
+        );
+        scope.records.insert(
+            "Radius".to_string(),
+            ScopedRecord {
+                identity: "shape_radius".to_string(),
+                name: "shape_radius".to_string(),
+                fields: vec![("radius".to_string(), ty("uint16"))],
+                scope: TypeScope::default(),
+            },
+        );
+        let cases = variants
+            .into_iter()
+            .map(|variant| ScopedCase {
+                record: (variant.name != "dot").then(|| "Radius".to_string()),
+                variant,
+            })
+            .collect();
+        Shapes {
+            radius: schema(RADIUS),
+            union: ScopedUnion {
+                identity: "shape".to_string(),
+                name: "shape".to_string(),
+                tag: "kind".to_string(),
+                tag_enum: "ShapeKind".to_string(),
+                cases,
+                scope,
+            },
+        }
+    }
+
+    fn kinds() -> BTreeMap<String, MachineEnum> {
+        [(
+            "Kind".to_string(),
+            MachineEnum {
+                alias: "Kind".to_string(),
+                ty: "MKindEnum".to_string(),
+                variants: vec![
+                    ("dot".to_string(), "Dot".to_string()),
+                    ("circle".to_string(), "Circle".to_string()),
+                    ("disc".to_string(), "Disc".to_string()),
+                ],
+            },
+        )]
+        .into()
     }
 
     fn held() -> TwoRecords {
@@ -976,42 +1804,136 @@ mod tests {
         assert!(machine_type(&ty("enum:Other"), None, &held, &enums, &RUST).is_err());
     }
 
-    /// Every walk refuses a union at any depth in the machine's own words
-    /// (docs/adr/0092, landing order, step 4): the backend that spells the
-    /// walks generates the union's unit, so no refusal says it lowers none.
+    /// A union is the machine's own sum at any depth, named by its document
+    /// (docs/adr/0092, section 7), and reaches its tag's enum, then the record
+    /// each case holds once, then itself.
     #[test]
-    fn every_walk_refuses_a_union_as_a_machine_that_holds_none_yet() {
-        let held = held();
-        let enums = enums();
-        let refused: Result<String, String> = Err(
-            crate::forge::value_type::union_unlowered_in_machine("Shape"),
+    fn the_machine_holds_a_union_in_its_own_sum_after_its_cases_records() {
+        let shapes = shapes();
+        let kinds = kinds();
+        let list = "::sce_rust_runtime::portable::BoundedList";
+        assert_eq!(
+            machine_type(&ty("union:Shape"), None, &shapes, &kinds, &RUST),
+            Ok("MShapeUnion".to_string())
         );
-        for text in [
-            "union:Shape",
-            "optional<union:Shape>",
-            "list<union:Shape>[2]",
+        assert_eq!(
+            machine_type(
+                &ty("list<optional<union:Shape>>[3]"),
+                None,
+                &shapes,
+                &kinds,
+                &RUST
+            ),
+            Ok(format!("{list}<Option<MShapeUnion>, 3>"))
+        );
+        let mut reached = Reached::default();
+        held_records(&ty("list<union:Shape>[2]"), None, &shapes, &mut reached).expect("reached");
+        held_records(&ty("union:Shape"), None, &shapes, &mut reached).expect("reached");
+        assert_eq!(reached.records, vec!["Radius".to_string()]);
+        assert_eq!(reached.unions, vec![SHAPE_KEY.to_string()]);
+        assert_eq!(reached.enums.into_iter().collect::<Vec<_>>(), vec!["Kind"]);
+    }
+
+    /// The declaration: one variant per case, the tag read as the machine's
+    /// enum, a proven read per case that holds a record whose other arms are
+    /// `unreachable!()`, and one accessor for `radius`, which `circle` and
+    /// `disc` share.
+    #[test]
+    fn a_union_is_declared_with_its_tag_its_proven_reads_and_its_shared_fields() {
+        let def = union_definition(SHAPE_KEY, &shapes(), &kinds(), &RUST).expect("declared");
+        assert_eq!(def.ty, "MShapeUnion");
+        assert_eq!(def.tag_method, "kind");
+        assert_eq!(
+            def.shared,
+            vec![SharedFieldDef {
+                field: "radius".to_string(),
+                accessor: "proven_field_radius".to_string(),
+                ty: "u16".to_string(),
+                cases: vec!["Circle".to_string(), "Disc".to_string()],
+            }]
+        );
+        let text = RUST.union_def(&def);
+        for fragment in [
+            "#[derive(Clone, Debug, PartialEq)]\npub enum MShapeUnion {\n    Dot,\n    \
+             Circle(MRadiusRecord),\n    Disc(MRadiusRecord),\n}",
+            "    pub fn kind(&self) -> MKindEnum {\n",
+            "            Self::Dot => MKindEnum::Dot,\n",
+            "            Self::Circle(_) => MKindEnum::Circle,\n",
+            "    pub fn proven_circle(&self) -> &MRadiusRecord {\n",
+            "            Self::Circle(record) => record,\n",
+            "    pub fn proven_field_radius(&self) -> u16 {\n",
+            "            Self::Disc(record) => record.radius,\n",
         ] {
-            assert_eq!(
-                machine_type(&ty(text), None, &held, &enums, &RUST),
-                refused,
-                "{text}"
-            );
-            assert_eq!(
-                held_records(&ty(text), None, &held, &mut Reached::default()),
-                refused.clone().map(|_: String| ()),
-                "{text}"
-            );
-            assert_eq!(
-                reader(&ty(text), None, &held, &enums, &RUST, "v"),
-                refused,
-                "{text}"
-            );
-            assert_eq!(
-                writer(&ty(text), None, &held, &RUST, &Held::place("x")),
-                refused,
-                "{text}"
-            );
+            assert!(text.contains(fragment), "expected `{fragment}` in:\n{text}");
         }
+        assert!(!text.contains("proven_dot"), "{text}");
+        assert_eq!(text.matches("unreachable!(").count(), 3, "{text}");
+    }
+
+    /// The reader reads the tag by the enum's reader and then the record of
+    /// the case it names; the writer writes the tag among the case's fields.
+    #[test]
+    fn a_union_is_read_tag_first_and_written_by_its_case() {
+        let shapes = shapes();
+        let read = reader(&ty("union:Shape"), None, &shapes, &kinds(), &RUST, "v").expect("read");
+        assert!(
+            read.starts_with(
+                "v.union(\"kind\", |v| v.name().and_then(|name| match name { \"dot\" \
+                              => Ok(MKindEnum::Dot), "
+            ),
+            "{read}"
+        );
+        assert!(
+            read.contains(
+                "|sce_case, v| match sce_case { MKindEnum::Dot => Ok(MShapeUnion::Dot), \
+                 MKindEnum::Circle => v.record(None, |r| Ok(MRadiusRecord { radius: \
+                 r.field(\"radius\").and_then(|v| v.unsigned::<u16>())? })).map(MShapeUnion::Circle), "
+            ),
+            "{read}"
+        );
+        let p = "::sce_rust_runtime::event_payload";
+        assert_eq!(
+            writer(
+                &ty("union:Shape"),
+                None,
+                &shapes,
+                &RUST,
+                &Held::place("x.one")
+            ),
+            Ok(format!(
+                "match &x.one {{ MShapeUnion::Dot => {p}::union_json(\"kind\", \"dot\", \
+                 Vec::new()), MShapeUnion::Circle(h) => {p}::union_json(\"kind\", \"circle\", \
+                 vec![(\"radius\", h.radius.to_string())]), MShapeUnion::Disc(h) => \
+                 {p}::union_json(\"kind\", \"disc\", vec![(\"radius\", h.radius.to_string())]), }}"
+            ))
+        );
+    }
+
+    /// A read of a union's member (docs/adr/0092, section 6.1): the tag by its
+    /// method, a field of the one case left through that case's proven read,
+    /// and a field two cases share through its accessor.
+    #[test]
+    fn a_proven_read_is_spelled_by_the_cases_left() {
+        let shapes = shapes();
+        let union = &shapes.union;
+        let case = |name: &str| {
+            union
+                .cases
+                .iter()
+                .find(|case| case.variant.name == name)
+                .expect("a case")
+        };
+        let all: Vec<&ScopedCase> = union.cases.iter().collect();
+        assert_eq!(rust_union_member(union, &all, "kind"), Ok("kind()".into()));
+        assert_eq!(
+            rust_union_member(union, &[case("disc")], "radius"),
+            Ok("proven_disc().radius".into())
+        );
+        assert_eq!(
+            rust_union_member(union, &[case("circle"), case("disc")], "radius"),
+            Ok("proven_field_radius()".into())
+        );
+        assert!(rust_union_member(union, &[case("dot")], "radius").is_err());
     }
 
     #[test]

@@ -4608,39 +4608,6 @@ fn render_union_kotlin(
     l.render(env, "union", ctx)
 }
 
-/// The methods every value of a generated Rust union answers through its
-/// derives (`Clone`, `PartialEq`, `Debug`): an inherent method of one of these
-/// names would hide the trait's at every call written with a dot, so the tag's
-/// accessor is never one of them.
-const RUST_UNION_DERIVED_METHODS: &[&str] = &["clone", "clone_from", "eq", "ne", "fmt"];
-
-/// The Rust method the tag's key `tag` is read by on a generated union: the key
-/// in snake case, as a payload's field is named
-/// ([`event_schema_field_ident`]), escaped with `r#` where Rust reserves it.
-/// `None` for a key that is no Rust identifier, one `r#` cannot escape
-/// (`self`, `Self`, `super`, `crate`), and one that would hide a derived
-/// method ([`RUST_UNION_DERIVED_METHODS`]).
-fn rust_union_tag_method(tag: &str) -> Option<String> {
-    let snake = event_schema_field_ident(tag, crate::generator::Language::Rust);
-    let mut chars = snake.chars();
-    let identifier = chars
-        .next()
-        .is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
-        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
-        && snake != "_";
-    if !identifier
-        || ["self", "Self", "super", "crate"].contains(&snake.as_str())
-        || RUST_UNION_DERIVED_METHODS.contains(&snake.as_str())
-    {
-        return None;
-    }
-    Some(if filters::RUST_KEYWORDS.contains(&snake.as_str()) {
-        format!("r#{snake}")
-    } else {
-        snake
-    })
-}
-
 /// The Rust unit of a union document (docs/adr/0092, section 7, the Rust row):
 /// an enum named for the document, deriving what the one policy gives a union
 /// ([`crate::rust_derive_policy::RustDeriveCategory::UnionSum`]: `Debug`,
@@ -4668,15 +4635,18 @@ fn render_union_rust(
     let unit = UnionUnit::read(m, imports)?;
     let tag = unit.tag;
     let kind_type = enum_qualified_type(&tag.document_name, Language::Rust);
-    let tag_method = rust_union_tag_method(&m.tag).ok_or_else(|| {
-        union_refused(
-            m,
-            format!(
-                "the tag's key `{}` names no Rust method its value can be read by",
-                m.tag
-            ),
-        )
-    })?;
+    // The unit and the machine read the tag, and each case, by one spelling
+    // ([`crate::forge::composed_lowering::rust_union_tag_method`]).
+    let tag_method =
+        crate::forge::composed_lowering::rust_union_tag_method(&m.tag).ok_or_else(|| {
+            union_refused(
+                m,
+                format!(
+                    "the tag's key `{}` names no Rust method its value can be read by",
+                    m.tag
+                ),
+            )
+        })?;
     // Two cases of one Rust variant, or two methods of one name, would not
     // compile: each is refused by name rather than left to the compiler.
     let mut variants: std::collections::BTreeMap<String, &str> = std::collections::BTreeMap::new();
@@ -4686,15 +4656,14 @@ fn render_union_rust(
     let mut uses: Vec<String> = vec![tag.include_stmt.clone()];
     for (variant, record) in &unit.cases {
         let variant = variant.as_str();
-        let ident =
-            crate::forge::enum_naming::variant_ident(Language::Rust, &tag.document_name, variant);
+        let ident = crate::forge::composed_lowering::rust_case_ident(variant);
         if let Some(first) = variants.insert(ident.clone(), variant) {
             return Err(union_refused(
                 m,
                 format!("the cases `{first}` and `{variant}` are both the Rust variant `{ident}`"),
             ));
         }
-        let proven = format!("proven_{}", filters::to_snake_case(variant.to_string()));
+        let proven = crate::forge::composed_lowering::rust_case_read(variant);
         if let Some(import) = record {
             let read = format!("the case `{variant}`");
             if let Some(first) = methods.insert(proven.clone(), read.clone()) {
