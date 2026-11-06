@@ -20,6 +20,11 @@
   TTCN-3 independent of SCE, and C1's meaning is kept by the adapter interface of answer 1, not by the tool's own
   interfaces. Answer 3 now says how the logical clock is supplied inside Titan; answer 8 says where Titan's log
   comes from.
+  Amended again the same day after a probe on Eclipse Titan 11.2.1, built from source. A hand-written suite
+  using the profile's constructs ran in Titan's parallel mode with the expected verdicts. The probe corrected
+  two statements of the previous amendment: Titan's own encoding engines cannot write either of SCE's codec
+  formats (answer 1), and Titan reads the time at two functions, not one (answer 3). It also showed what
+  Titan's logger passes for a message value (answer 8). Answer 1 now lists the licence facts that were checked.
 - Date: 2026-11-06
 - Scope:
   - a test profile of SCE documents: new forge kinds, new executable content, a verdict model, port and timer
@@ -439,7 +444,15 @@ cost ignored. The facts each answer rests on were checked on 2026-11-06 and are 
      run on it is a second executor in the sense of C1. Its "TTCN-3 Limitations" chapter (Reference Guide) was
      checked against the profile: it restricts none of templates, message ports, timers, altsteps used as
      defaults, PTCs or verdicts. It requires a component type's compatibility and a port type's message list to be
-     stated explicitly; the exporter always states both.
+     stated explicitly; the exporter always states both. A probe on Titan 11.2.1 executed the constructs in
+     parallel mode, the mode a suite with PTCs runs in:
+     - PTC creation, `connect` and timers;
+     - a default that fails on an unexpected message;
+     - templates with `?`, `*`, `omit`, `ifpresent`, ranges, value lists, `complement` and `length`;
+     - `map` through a test port;
+     - `execute` with a time limit, which ended in `error` assigned by the runtime (answer 4).
+
+     Every verdict was the expected one.
    - **Why an interface of SCE's own.** Titan does not implement TRI or TCI. Its adapters are test ports written to
      its own C++ Test Port API, and its Programmers' Technical Reference (11.2.1, 2026-08-05) cites parts 1, 4, 7
      and 9 of ES 201 873 but not parts 5 or 6. Writing the adapters to that API would make "the suite runs
@@ -450,11 +463,21 @@ cost ignored. The facts each answer rests on were checked on 2026-11-06 and are 
      port type (outgoing send, incoming message). A `connect` between components (answer 10) is Titan's own
      component-to-component connection and does not pass through the binding. The platform adapter's timer
      operations have no binding in Titan, because Titan keeps timers inside its runtime; the logical clock of
-     answer 3 is supplied there instead. Codecs are Titan's encoding attributes or external functions (C2). The
-     test logging operations are a Titan logger plugin (answer 8).
-   - **C2 is strengthened by the choice.** Titan has its own encoding engines (RAW, TEXT, BER, XER, JSON and OER).
-     Where the types module states an encoding by attributes, a message is encoded by Titan's engine and not by
-     anything SCE generated, which is C2's first kind of independence.
+     answer 3 is supplied there instead. Codecs are external functions (C2, below). The test logging operations
+     are a Titan logger plugin (answer 8).
+   - **C2's codecs are independent libraries, not Titan's engines.** Titan's own encoding engines (RAW, TEXT,
+     BER, XER, JSON, OER) cannot write either format SCE generates codecs for:
+     - **CBOR.** SCE writes maps with integer keys and byte strings (`SCE_FORGE.md` §4.6.1). Titan reaches CBOR
+       only through JSON (`json2cbor`), which writes every key as a text string and a byte string as hex text.
+       The probe encoded the shape of `codec_cbor_map` and got `A3 62 "id" 78 20 "0001…"`, where SCE writes
+       the key as `00` and the value as `50` followed by sixteen bytes.
+     - **content-line.** SCE's content-line codec is one RFC 5545 component (`SCE_FORGE.md` §4.6.4). It folds
+       lines at 75 octets and escapes TEXT values, and Titan's TEXT engine does neither.
+
+     The types module therefore declares external encoding and decoding functions, and the binding implements
+     them on codec libraries that neither SCE nor Titan wrote: a CBOR library and an iCalendar library. Their
+     authors share nothing with SCE's codec generator, so this is C2's first kind of independence, an
+     independent encoding engine. The choice of library is pinned with the lane.
    - **A tool that implements TRI and TCI natively** is admitted by the same adapters through a binding that is
      the identity. Elvior TestCast states TRI and TCI mappings for C, C++, C# and Java; it was the first answer's
      tool and is not used because its licence cannot be obtained. Running the suite on a second tool remains the
@@ -462,10 +485,21 @@ cost ignored. The facts each answer rests on were checked on 2026-11-06 and are 
    - **Rejected for this answer:** an executor of TTCN-3 written by SCE, because it would share its author and its
      reading of the standard with the native runtime and bring back the common cause that C2 and C3 remove; and
      export without execution, which is alternative D.
-   - **Licence, not yet checked.** The binding is compiled and linked with Titan's runtime (EPL-2.0) and with the
-     reference adapter set, which is SCE's code. Whether that combination is allowed under both licences, and
-     whether running it only in CI, without distributing it, changes the answer, is settled before the binding is
-     written (order of work step 5).
+   - **Licence: the facts checked, and what is still to be decided.** No legal review has been made. The facts:
+     - Titan's files carry EPL-2.0 alone, with no Exhibit A notice naming a Secondary License, so EPL-2.0 is not
+       made compatible with the GPL family for Titan.
+     - SCE's code is AGPL-3.0 with the SCE Linking Exception, or the commercial licence, and has one copyright
+       holder.
+     - EPL-2.0's obligations arise when the program is distributed. AGPL-3.0's arise when it is conveyed or
+       offered to users over a network.
+     - Titan is used only by the conformance lane: in SCE's CI, and by a developer who runs the lane. No SCE
+       product contains Titan. An exported TTCN-3 module is text SCE writes and contains no Titan code.
+
+     So the lane itself distributes nothing. One case remains: SCE publishes the binding's source, and a consumer
+     builds it with Titan and distributes the result. The binding and the reference adapter set are therefore
+     published under a licence chosen to combine with EPL-2.0. The copyright holder can do that for those files
+     alone, as `LICENSE-GENERATED.md` already sets separate terms for generated code. Which licence, and its
+     confirmation by legal review, are settled before the binding is written (order of work step 5).
 2. **The profile targets one pinned set of parts:** ES 201 873-1 V4.17.1 (2025), -4 V4.6.1 (2017), -5 V4.9.1
    (2022) and -6 V4.14.1 (2023), the latest of each on ETSI's TTCN-3 download page on 2026-11-06. Part 4 is eight
    years older than part 1, and the profile takes its semantics from part 4 (§1). So the profile admits only
@@ -482,16 +516,30 @@ cost ignored. The facts each answer rests on were checked on 2026-11-06 and are 
      delivery. The native runtime and the TTCN-3 side therefore see the same timeouts by construction: their order
      is never a race.
    - The same clock is the time domain of answer 11's timed conformance relation.
-   - **In Titan the clock is part of the runtime.** Titan has wall-clock time only. It reads the time at one
-     function, `TTCN_Snapshot::time_now()` (`core/Snapshot.cc`, from `gettimeofday`), and its timers and its
-     snapshot wait both go through it. The change has two parts: the clock behind that function can be replaced,
-     and when every branch is blocked the wait advances the logical clock to the next due instant instead of
-     sleeping.
+   - **In Titan the clock is part of the runtime.** Titan has wall-clock time only. Its runtime reads the time,
+     from `gettimeofday`, at two functions:
+     - `TTCN_Snapshot::time_now()` (`core/Snapshot.cc`), which the timers, the test case's guard timer, the
+       snapshot wait and the test ports' timed handlers use;
+     - `TTCN_Runtime::now()` (`core/Runtime.cc`), the TTCN-3 `now` operation, measured from the start of the
+       test case.
+
+     The profile does not use `now`, but both functions read the one replaceable clock. The other reads of the
+     time (log timestamps, the profiler, the debugger) do not decide behaviour. The snapshot wait
+     (`TTCN_Snapshot::take_new`) already takes the earliest of the next timer expiry and the next handler
+     timeout before it polls. When nothing is ready at a poll that does not block, the logical clock advances
+     to that instant instead of sleeping. A trace player in the binding schedules each recorded input as a
+     handler timeout, so the inputs run on the same clock.
    - **With PTCs the clock is distributed.** In parallel mode Titan runs each component in its own process, under
      its Main Controller. "Every component is blocked" is then a global condition, and it is true only if no port
-     message is still in transit, since a component waiting for a message in flight looks blocked. The Main
-     Controller therefore grants an advance only when every component reports itself blocked with its next due
-     instant, and the counts of port messages sent and received are equal. This is conservative synchronisation of
+     message is still in transit, since a component waiting for a message in flight looks blocked. Connected
+     ports exchange messages over sockets between the component processes, not through the Main Controller,
+     so the Main Controller cannot see such a message. It therefore grants an advance only when three things
+     hold:
+     - every component has reported itself blocked, with its next due instant, in the current epoch;
+     - the totals of port messages sent and received in those reports are equal;
+     - no operation the Main Controller itself carries (create, connect, map, done) is pending.
+
+     Each grant starts a new epoch, and a report from an earlier epoch does not count. This is conservative synchronisation of
      a discrete-event simulation (Chandy, Misra, *Distributed simulation: a case study in design and verification
      of distributed programs*, IEEE TSE 5(5), 1979) with termination detection by message counting (Mattern,
      *Algorithms for distributed termination detection*, Distributed Computing 2(3), 1987). The advance goes to
@@ -539,8 +587,10 @@ cost ignored. The facts each answer rests on were checked on 2026-11-06 and are 
    timer started, stopped and timed out, verdict set, component created and done, and test case started and ended.
    - The TTCN-3 side writes the log from the test logging operations of the adapter interface (answer 1). On
      Titan these are a logger plugin, Titan's interface for a user-written logger, which receives Titan's log
-     events and writes the records whose TCI kinds they correspond to. The native runtime writes the same record
-     kinds at the same semantic points.
+     events and writes the records whose TCI kinds they correspond to. Titan passes a message's value to the
+     plugin as text in TTCN-3 value notation, not as a structured value. The plugin parses that notation into
+     the log's canonical value form; the notation is ES 201 873-1's, a standard grammar. The native runtime
+     writes the same record kinds at the same semantic points.
    - The record kinds stay TCI's even though Titan does not implement TCI, so that the log's vocabulary is the
      standard's and does not change with the tool.
    - It does not extend the observation trace, whose subject is a design judged against examples (§2.18).
