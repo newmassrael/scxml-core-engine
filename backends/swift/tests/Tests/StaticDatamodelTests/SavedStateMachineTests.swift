@@ -196,3 +196,26 @@ private func refusal(_ body: () throws -> Void) -> String? {
         refusal { try unstarted().1.restore(withHistory) }
             == "the saved state records the history 'h', which the document does not declare")
 }
+
+@Test func aQueuedEventKeepsItsSenderBesideTheReplyAddressItsProcessorWrote() throws {
+    // docs/adr/0090, section 1: the sender is the session that sent the event and the origin the reply address
+    // the delivering processor wrote, two fields no rule ties together. A remote child's event the Mesh transport
+    // delivers names the child beside its endpoint, and the machine that holds it is saved and restored with both.
+    let (_, engine) = try started()
+    let endpoint = EventOrigin(processor: scxmlEventProcessorType, address: "mesh://dev/counter/root.work.1.kid")
+    engine.raiseExternalByNameWithMeta(
+        "tick", metadata: EventMetadata(eventType: .externalEvent, origin: endpoint, sender: "root.work.1.kid"))
+    let text = try engine.save().toJSON()
+    #expect(
+        text.contains(
+            #""origin":{"processor":"\#(scxmlEventProcessorType)","address":"mesh://dev/counter/root.work.1.kid"},"sender":"root.work.1.kid""#
+        ), "\(text)")
+    let saved = try SavedState.fromJSON(text)
+    #expect(saved.external.first?.origin == endpoint)
+    #expect(saved.external.first?.sender == "root.work.1.kid")
+    let (restored, restoredEngine) = try unstarted()
+    try restoredEngine.restore(saved)
+    #expect(try restoredEngine.save().toJSON() == text, "the pair and the sender are restored as they were saved")
+    restoredEngine.step()
+    #expect(restored.count == 1, "the event is delivered after the restore")
+}

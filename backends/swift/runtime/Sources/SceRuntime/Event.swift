@@ -90,9 +90,15 @@ public struct EventMetadata {
     /// fields as the empty text (§scxml-5.10.1).
     public var origin: EventOrigin?
 
-    /// The id of the session that sent the event, set only by the SCXML Event I/O
-    /// Processor. Not an `_event` field: it is what the lookups that find a session
-    /// read (`<finalize>`), and nothing reads the origin's address to find one.
+    /// The id of the session that sent the event, written by the processor that
+    /// delivered it from that session: the SCXML Event I/O Processor for a local
+    /// session, and the Mesh transport for a remote child or parent session (SCE_MESH.md,
+    /// Child Sessions in Mesh). Nil
+    /// for every other sender (a host, BasicHTTP, a Mesh peer that is no session of
+    /// ours). Independent of `origin`, which is the reply address that processor
+    /// wrote, a remote child's endpoint among them (docs/adr/0090). Not an `_event`
+    /// field: it is what the lookups that find a session read (`<finalize>`), and
+    /// nothing reads the origin's address to find one.
     public var sender: String?
 
     /// The `_event.invokeid` when the event came from a child invoke (§scxml-6.4.1).
