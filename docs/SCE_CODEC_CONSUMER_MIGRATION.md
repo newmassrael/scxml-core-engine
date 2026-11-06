@@ -1305,6 +1305,18 @@ gated fields one gate decides together, on one side (4 more codecs of the resour
 - A source presents the group as a `std::optional` of any type that presents each field by name, by a member
   function or a free function of its namespace.
 
+## A printed C++ codec derives a flag its arm or a gated body says (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C++ tree is regenerated after it. It moves the codecs whose flag
+is bound to an input the arm they hold says, or a body a gate decides says (5 more codecs of the resources, 106 in
+all: the Zenoh declaration, declare and interest body, the transport envelope and the InitSyn envelope).
+
+- The flag is derived from the arm the value holds, read through the arm's `input_<name>`, or from the gated body
+  where the value holds it: the header you pass need not agree with it, and the encode no longer refuses a header
+  that disagrees (`PresentIfMismatch`, which the template's encode of these parents returned).
+- Where the value holds an arm that does not say the input (a declaration's `decl_final`, an undeclaration of a key
+  expression), or no gated body, the flag is the bit the header you pass holds.
+
 ## A payload schema states its keys in the order the document declares them (ADR 0087 §1.1)
 
 Landing: the commit that adds this section; every tree holding a `JSON_SCHEMA` constant or a GBNF table (the Rust,

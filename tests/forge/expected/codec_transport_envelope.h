@@ -13,6 +13,8 @@
 #include <optional>
 #include <vector>
 #include <variant>
+#include <type_traits>
+#include <utility>
 
 #include "sce/forge/codec.h"
 #include "codec_zenoh_init_body.h"
@@ -44,19 +46,182 @@ using CodecTransportEnvelopeVariant = std::variant<
     CodecTransportEnvelopeDefault
 >;
 
+/// The elements a value of `CodecTransportEnvelope` presents, each read by name: the
+/// member function where the type has one, otherwise a function the type's own
+/// namespace declares (docs/adr/0081, step 4).
+namespace source {
+namespace detail_header {
+void header() = delete;
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferMember) noexcept(noexcept(s.header())) -> decltype(s.header()) {
+    return s.header();
+}
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferFree) noexcept(noexcept(header(s))) -> decltype(header(s)) {
+    return header(s);
+}
+struct Read {
+    template <class S>
+    constexpr auto operator()(const S& s) const
+        noexcept(noexcept(read(s, ::SCE::Forge::PreferMember{})))
+        -> decltype(read(s, ::SCE::Forge::PreferMember{})) {
+        return read(s, ::SCE::Forge::PreferMember{});
+    }
+};
+}  // namespace detail_header
+/// The `header` element of a source.
+inline constexpr detail_header::Read header{};
+namespace detail_body {
+void body() = delete;
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferMember) noexcept(noexcept(s.body())) -> decltype(s.body()) {
+    return s.body();
+}
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferFree) noexcept(noexcept(body(s))) -> decltype(body(s)) {
+    return body(s);
+}
+struct Read {
+    template <class S>
+    constexpr auto operator()(const S& s) const
+        noexcept(noexcept(read(s, ::SCE::Forge::PreferMember{})))
+        -> decltype(read(s, ::SCE::Forge::PreferMember{})) {
+        return read(s, ::SCE::Forge::PreferMember{});
+    }
+};
+}  // namespace detail_body
+/// The `body` element of a source.
+inline constexpr detail_body::Read body{};
+}  // namespace source
+
+/// Whether `D` is the catch-all arm of a source's body: the tag it holds,
+/// and its body, a source of the catch-all's codec.
+template <class D, class = void>
+struct is_default_arm : std::false_type {};
+template <class D>
+struct is_default_arm<D, std::void_t<decltype(std::declval<const D&>().tag), decltype(std::declval<const D&>().body)>>
+    : std::conjunction<std::is_convertible<decltype(std::declval<const D&>().tag), std::uint64_t>,
+                       ::SCE::Generated::CodecZenohClose::is_source<std::decay_t<decltype(std::declval<const D&>().body)>>> {};
+
+/// Whether `R` is a body a source may present: the arm it holds, of a
+/// `std::variant` of a source of each arm's codec in turn.
+template <class R, class = void>
+struct is_body : std::false_type {};
+template <class R>
+struct is_body<R, std::enable_if_t<::SCE::Forge::Detail::IsVariantOf<R, 8>::value>>
+    : std::conjunction<::SCE::Generated::CodecZenohInitBody::is_source<std::variant_alternative_t<0, R>>, ::SCE::Generated::CodecZenohOpenBody::is_source<std::variant_alternative_t<1, R>>, ::SCE::Generated::CodecZenohClose::is_source<std::variant_alternative_t<2, R>>, ::SCE::Generated::CodecZenohKeepAlive::is_source<std::variant_alternative_t<3, R>>, ::SCE::Generated::CodecZenohFrame::is_source<std::variant_alternative_t<4, R>>, ::SCE::Generated::CodecZenohFragment::is_source<std::variant_alternative_t<5, R>>, ::SCE::Generated::CodecZenohJoin::is_source<std::variant_alternative_t<6, R>>, is_default_arm<std::variant_alternative_t<7, R>>> {};
+
+/// Whether `S` presents every element of `CodecTransportEnvelope`, each convertible to
+/// its type (a C++17 trait, ADR 0059 §3).
+template <class S, class = void>
+struct is_source : std::false_type {};
+template <class S>
+struct is_source<S, std::void_t<decltype(source::header(std::declval<const S&>())), decltype(source::body(std::declval<const S&>()))>>
+    : std::conjunction<std::is_convertible<decltype(source::header(std::declval<const S&>())), uint8_t>, is_body<std::decay_t<decltype(source::body(std::declval<const S&>()))>>> {};
+
+/// Whether reading every element of a source `S` throws nothing.
+template <class S, class = void>
+struct is_nothrow_source : std::false_type {};
+template <class S>
+struct is_nothrow_source<S, std::enable_if_t<is_source<S>::value>>
+    : std::bool_constant<noexcept(::SCE::Forge::Detail::converts_to<uint8_t>(source::header(std::declval<const S&>()))) && noexcept(source::body(std::declval<const S&>())) && ::SCE::Generated::CodecZenohInitBody::is_nothrow_source<std::variant_alternative_t<0, std::decay_t<decltype(source::body(std::declval<const S&>()))>>>::value && ::SCE::Generated::CodecZenohOpenBody::is_nothrow_source<std::variant_alternative_t<1, std::decay_t<decltype(source::body(std::declval<const S&>()))>>>::value && ::SCE::Generated::CodecZenohClose::is_nothrow_source<std::variant_alternative_t<2, std::decay_t<decltype(source::body(std::declval<const S&>()))>>>::value && ::SCE::Generated::CodecZenohKeepAlive::is_nothrow_source<std::variant_alternative_t<3, std::decay_t<decltype(source::body(std::declval<const S&>()))>>>::value && ::SCE::Generated::CodecZenohFrame::is_nothrow_source<std::variant_alternative_t<4, std::decay_t<decltype(source::body(std::declval<const S&>()))>>>::value && ::SCE::Generated::CodecZenohFragment::is_nothrow_source<std::variant_alternative_t<5, std::decay_t<decltype(source::body(std::declval<const S&>()))>>>::value && ::SCE::Generated::CodecZenohJoin::is_nothrow_source<std::variant_alternative_t<6, std::decay_t<decltype(source::body(std::declval<const S&>()))>>>::value && ::SCE::Generated::CodecZenohClose::is_nothrow_source<std::decay_t<decltype(std::declval<const std::variant_alternative_t<7, std::decay_t<decltype(source::body(std::declval<const S&>()))>>&>().body)>>::value> {};
+
+/// One-bit flags of `CodecTransportEnvelope` a parent may set in place of the ones a value
+/// presents, such as the flag a chain whose entries are `CodecTransportEnvelope` ends them
+/// on, which the chain derives from where each entry stands.
+struct Overrides {
+    /// The `Z` flag of `header`, where a parent sets it.
+    std::optional<bool> header_z;
+};
+
+/// The encode of `CodecTransportEnvelope` over any source of it: each element read
+/// through `source`, written as the plan lays it out (docs/adr/0081). It
+/// refuses nothing; what it returns is the sink's own failure, and it
+/// throws only what a read of `src` throws.
+struct Wire {
+    template <class S>
+    [[nodiscard]] static std::optional<::SCE::Forge::CodecError> encode_source(const S& src, ::SCE::Forge::SceSink& w, const Overrides& overrides = Overrides{}) noexcept(is_nothrow_source<S>::value) {
+        static_assert(is_source<S>::value, "S presents every element of CodecTransportEnvelope: header, body");
+        const auto& _r_body = source::body(src);
+        std::uint64_t _t_body = 0;
+        switch (_r_body.index()) {
+            case 0: _t_body = 1ull; break;
+            case 1: _t_body = 2ull; break;
+            case 2: _t_body = 3ull; break;
+            case 3: _t_body = 4ull; break;
+            case 4: _t_body = 5ull; break;
+            case 5: _t_body = 6ull; break;
+            case 6: _t_body = 7ull; break;
+            case 7: _t_body = static_cast<std::uint64_t>(std::get_if<7>(&_r_body)->tag); break;
+            default: break;
+        }
+        std::size_t _s_header_a = 0;
+        bool _s_header_a_there = false;
+        switch (_r_body.index()) {
+            case 0: _s_header_a = static_cast<std::size_t>(::SCE::Generated::CodecZenohInitBody::input_a(*std::get_if<0>(&_r_body))); _s_header_a_there = true; break;
+            case 1: _s_header_a = static_cast<std::size_t>(::SCE::Generated::CodecZenohOpenBody::input_a(*std::get_if<1>(&_r_body))); _s_header_a_there = true; break;
+            default: break;
+        }
+        std::size_t _s_header_s = 0;
+        bool _s_header_s_there = false;
+        switch (_r_body.index()) {
+            case 0: _s_header_s = static_cast<std::size_t>(::SCE::Generated::CodecZenohInitBody::input_s(*std::get_if<0>(&_r_body))); _s_header_s_there = true; break;
+            case 6: _s_header_s = static_cast<std::size_t>(::SCE::Generated::CodecZenohJoin::input_s(*std::get_if<6>(&_r_body))); _s_header_s_there = true; break;
+            default: break;
+        }
+        std::uint64_t _f_header = static_cast<std::uint64_t>(source::header(src));
+        _f_header = (_f_header & ~0x1Full) | (_t_body & 0x1Full);
+        if (_s_header_a_there) {
+            _f_header = (_f_header & ~0x20ull) | (static_cast<std::uint64_t>(_s_header_a) << 5);
+        }
+        if (_s_header_s_there) {
+            _f_header = (_f_header & ~0x40ull) | (static_cast<std::uint64_t>(_s_header_s) << 6);
+        }
+        if (overrides.header_z.has_value()) {
+            _f_header = (_f_header & ~0x80ull) | (static_cast<std::uint64_t>(*overrides.header_z) << 7);
+        }
+        const uint8_t _c_header = static_cast<uint8_t>(_f_header);
+        if (auto _e = w.write_u8(static_cast<std::uint8_t>(_c_header)); _e) return _e;
+        switch (_r_body.index()) {
+            case 0:
+                if (auto _e = ::SCE::Generated::CodecZenohInitBody::Wire::encode_source(*std::get_if<0>(&_r_body), w); _e) return _e;
+                break;
+            case 1:
+                if (auto _e = ::SCE::Generated::CodecZenohOpenBody::Wire::encode_source(*std::get_if<1>(&_r_body), w); _e) return _e;
+                break;
+            case 2:
+                if (auto _e = ::SCE::Generated::CodecZenohClose::Wire::encode_source(*std::get_if<2>(&_r_body), w); _e) return _e;
+                break;
+            case 3:
+                if (auto _e = ::SCE::Generated::CodecZenohKeepAlive::Wire::encode_source(*std::get_if<3>(&_r_body), w); _e) return _e;
+                break;
+            case 4:
+                if (auto _e = ::SCE::Generated::CodecZenohFrame::Wire::encode_source(*std::get_if<4>(&_r_body), w); _e) return _e;
+                break;
+            case 5:
+                if (auto _e = ::SCE::Generated::CodecZenohFragment::Wire::encode_source(*std::get_if<5>(&_r_body), w); _e) return _e;
+                break;
+            case 6:
+                if (auto _e = ::SCE::Generated::CodecZenohJoin::Wire::encode_source(*std::get_if<6>(&_r_body), w); _e) return _e;
+                break;
+            case 7:
+                if (auto _e = ::SCE::Generated::CodecZenohClose::Wire::encode_source(std::get_if<7>(&_r_body)->body, w); _e) return _e;
+                break;
+            default: break;
+        }
+        return std::nullopt;
+    }
+};
+
 struct CodecTransportEnvelope {
-    uint8_t header{};
-    // RFC variant-default-uniformity (Cpp): the
-    // `std::in_place_index_t<N>{}` tag-type selects the arm marked
-    // `<sce:arm default="true"/>` by index so a freshly-constructed
-    // envelope holds that arm (not the first declared alternative
-    // which `std::variant`'s default constructor would otherwise
-    // pick), encoding its wire-MID for byte-exact round-trip.
-    // (We construct the tag type explicitly — `std::in_place_index<N>`
-    // is a variable template of type `std::in_place_index_t<N>` and
-    // the brace-init form `std::in_place_index<N>{}` does not parse
-    // in a member-init context.)
-    CodecTransportEnvelopeVariant body{std::in_place_index_t<2>{}};
+    CodecTransportEnvelope() = default;
+    /// The value of each element it presents, in declaration order (ADR 0059 §5).
+    CodecTransportEnvelope(uint8_t header, CodecTransportEnvelopeVariant body)
+        : header_(header), body_(std::move(body)) {}
+    /// The `header` element.
+    [[nodiscard]] constexpr uint8_t header() const noexcept { return header_; }
+    /// The arm the value holds, each arm's body the value of its codec.
+    [[nodiscard]] const CodecTransportEnvelopeVariant& body() const noexcept { return body_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
@@ -125,10 +290,11 @@ struct CodecTransportEnvelope {
                 break;
             }
         }
-        return CodecTransportEnvelope{
+        CodecTransportEnvelope _decoded{
             /*header=*/header,
-            /*body=*/body,
+            /*body=*/std::move(body),
         };
+        return _decoded;
     }
 
     // RFC §synth-5-B flags primitive: per-bit-range accessors.
@@ -138,7 +304,7 @@ struct CodecTransportEnvelope {
     // sibling bits. Wire layout is unchanged.
     uint8_t mid() const noexcept {
         return static_cast<uint8_t>(
-            (this->header >> 0) & static_cast<uint8_t>(0x1F)
+            (this->header_ >> 0) & static_cast<uint8_t>(0x1F)
         );
     }
 
@@ -151,44 +317,44 @@ struct CodecTransportEnvelope {
             static_cast<uint8_t>(
                 (static_cast<uint8_t>(v) & static_cast<uint8_t>(0x1F)) << 0
             );
-        this->header = static_cast<uint8_t>(
-            (this->header & static_cast<uint8_t>(~_shifted_mask)) | _val
+        this->header_ = static_cast<uint8_t>(
+            (this->header_ & static_cast<uint8_t>(~_shifted_mask)) | _val
         );
     }
 
     bool a() const noexcept {
-        return (this->header & 0x20) != 0;
+        return (this->header_ & 0x20) != 0;
     }
 
     void set_a(bool v) noexcept {
         if (v) {
-            this->header = static_cast<uint8_t>(this->header | 0x20);
+            this->header_ = static_cast<uint8_t>(this->header_ | 0x20);
         } else {
-            this->header = static_cast<uint8_t>(this->header & static_cast<uint8_t>(~0x20));
+            this->header_ = static_cast<uint8_t>(this->header_ & static_cast<uint8_t>(~0x20));
         }
     }
 
     bool s() const noexcept {
-        return (this->header & 0x40) != 0;
+        return (this->header_ & 0x40) != 0;
     }
 
     void set_s(bool v) noexcept {
         if (v) {
-            this->header = static_cast<uint8_t>(this->header | 0x40);
+            this->header_ = static_cast<uint8_t>(this->header_ | 0x40);
         } else {
-            this->header = static_cast<uint8_t>(this->header & static_cast<uint8_t>(~0x40));
+            this->header_ = static_cast<uint8_t>(this->header_ & static_cast<uint8_t>(~0x40));
         }
     }
 
     bool z() const noexcept {
-        return (this->header & 0x80) != 0;
+        return (this->header_ & 0x80) != 0;
     }
 
     void set_z(bool v) noexcept {
         if (v) {
-            this->header = static_cast<uint8_t>(this->header | 0x80);
+            this->header_ = static_cast<uint8_t>(this->header_ | 0x80);
         } else {
-            this->header = static_cast<uint8_t>(this->header & static_cast<uint8_t>(~0x80));
+            this->header_ = static_cast<uint8_t>(this->header_ & static_cast<uint8_t>(~0x80));
         }
     }
 
@@ -198,38 +364,9 @@ struct CodecTransportEnvelope {
     /// destination has insufficient remaining capacity; growable sinks
     /// (e.g. `VectorSink`) are effectively infallible.
     [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink& w) const noexcept {
-        // Encode fixed prefix (tag field bytes are part of the prefix).
-        if (auto _e = w.write_u8(header); _e) return _e;
-        // Append the active arm body's encoded bytes.
-        if (auto _p = std::get_if<::SCE::Generated::CodecZenohInitBody::CodecZenohInitBody>(&body)) {
-            if ((::SCE::Generated::CodecZenohInitBody::input_s(*_p) & 0x1u) != (static_cast<std::uint8_t>((this->header >> 6) & 0x1) & 0x1u)) return ::SCE::Forge::CodecError::PresentIfMismatch;
-            if ((::SCE::Generated::CodecZenohInitBody::input_a(*_p) & 0x1u) != (static_cast<std::uint8_t>((this->header >> 5) & 0x1) & 0x1u)) return ::SCE::Forge::CodecError::PresentIfMismatch;
-            if (auto _e = _p->encode(w); _e) return _e;
-        }
-        if (auto _p = std::get_if<::SCE::Generated::CodecZenohOpenBody::CodecZenohOpenBody>(&body)) {
-            if ((::SCE::Generated::CodecZenohOpenBody::input_a(*_p) & 0x1u) != (static_cast<std::uint8_t>((this->header >> 5) & 0x1) & 0x1u)) return ::SCE::Forge::CodecError::PresentIfMismatch;
-            if (auto _e = _p->encode(w); _e) return _e;
-        }
-        if (auto _p = std::get_if<::SCE::Generated::CodecZenohClose::CodecZenohClose>(&body)) {
-            if (auto _e = _p->encode(w); _e) return _e;
-        }
-        if (auto _p = std::get_if<::SCE::Generated::CodecZenohKeepAlive::CodecZenohKeepAlive>(&body)) {
-            if (auto _e = _p->encode(w); _e) return _e;
-        }
-        if (auto _p = std::get_if<::SCE::Generated::CodecZenohFrame::CodecZenohFrame>(&body)) {
-            if (auto _e = _p->encode(w); _e) return _e;
-        }
-        if (auto _p = std::get_if<::SCE::Generated::CodecZenohFragment::CodecZenohFragment>(&body)) {
-            if (auto _e = _p->encode(w); _e) return _e;
-        }
-        if (auto _p = std::get_if<::SCE::Generated::CodecZenohJoin::CodecZenohJoin>(&body)) {
-            if ((::SCE::Generated::CodecZenohJoin::input_s(*_p) & 0x1u) != (static_cast<std::uint8_t>((this->header >> 6) & 0x1) & 0x1u)) return ::SCE::Forge::CodecError::PresentIfMismatch;
-            if (auto _e = _p->encode(w); _e) return _e;
-        }
-        if (auto _p = std::get_if<CodecTransportEnvelopeDefault>(&body)) {
-            if (auto _e = _p->body.encode(w); _e) return _e;
-        }
-        return std::nullopt;
+        // The encode over any source of the codec, this value one of them,
+        // handed the inputs the caller hands this encode.
+        return Wire::encode_source(*this, w);
     }
 
     /// Heap-backed convenience facade. It reserves nothing, since the
@@ -243,6 +380,10 @@ struct CodecTransportEnvelope {
         (void)encode(_sce_sink);
         return _sce_v;
     }
+
+private:
+    uint8_t header_{};
+    CodecTransportEnvelopeVariant body_{std::in_place_index_t<2>{}};
 };
 
 }  // namespace SCE::Generated::CodecTransportEnvelope

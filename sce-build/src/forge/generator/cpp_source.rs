@@ -393,7 +393,9 @@ fn held_codec<'i>(imports: &'i [ImportContext], alias: &str) -> (&'i str, &'i st
 /// - how many bytes one byte string holds, as it is or plus or less a constant,
 ///   into a field it always fits (zero where a gate leaves the bytes out and the
 ///   field is gated beside them) or into a flag of a carrier (which keeps the
-///   bits the value presents where the bytes are absent).
+///   bits the value presents where the bytes are absent);
+/// - the input a body always there says, or the arm the value holds says
+///   where it holds one that says it, into a field or a flag likewise.
 fn derivation_unlowered(derived: &crate::forge::encode_plan::Derived<'_>) -> Option<String> {
     let element = &derived.element;
     match (element, &derived.by) {
@@ -443,10 +445,14 @@ fn number_unlowered(element: &ElementId, number: &Number<'_>) -> Option<String> 
                 "`{element}`, the encoded length of a body that can refuse"
             ))
         }
-        // The input a body says, read through the body's codec.
-        Measured::Says { .. } if !measure.gated => {}
+        // The input a body says, read through the body's codec, where the
+        // value holds the body.
+        Measured::Says { .. } => {}
         // How many entries a list always there holds.
         Measured::Entries { .. } if !measure.gated => {}
+        // The input the arm the value holds says, read through the arm's
+        // codec, where it holds one that says it (docs/adr/0065 §6 R4a).
+        Measured::ArmSays { .. } => {}
         _ => return Some(format!("`{element}`, a count")),
     }
     match (element, &number.into) {
@@ -1514,19 +1520,28 @@ pub(super) fn render(
                     }
                     // The input a body always there says, read off the source
                     // the value presents it by (docs/adr/0065 §6 R4a).
+                    // Where a gate leaves the body out, it says nothing: a
+                    // field beside it holds zero and a flag keeps its bits.
                     Measured::Says { body, input, .. } => {
-                        let held = element(body)
-                            .and_then(|e| e.body.as_ref())
+                        let e = element(body)
+                            .filter(|e| e.body.is_some())
                             .expect("a body that says an input is a body the value presents");
-                        (
-                            format!(
-                                "{}::input_{}(_r_{})",
-                                held.namespace,
-                                input_name(input),
-                                l.codec_field_id(&body.id)
-                            ),
-                            None,
-                        )
+                        let held = e.body.as_ref().expect("filtered to a body");
+                        let says = |source: &str| {
+                            format!("{}::input_{}({source})", held.namespace, input_name(input))
+                        };
+                        let local = e.local();
+                        if e.optional {
+                            (
+                                format!(
+                                    "({local}.has_value() ? {} : std::uint8_t{{0}})",
+                                    says(&format!("*{local}"))
+                                ),
+                                Some(format!("{local}.has_value()")),
+                            )
+                        } else {
+                            (says(&local), None)
+                        }
                     }
                     // How many entries the list holds, as the source presents
                     // it, within its bound; where a gate leaves the list out, a
@@ -1543,6 +1558,58 @@ pub(super) fn render(
                         } else {
                             (format!("{}.size()", counted.entries()), None)
                         }
+                    }
+                    // The input the arm the value holds says, read through
+                    // the arm's codec off the source the body presents it as
+                    // (the catch-all's, off its body); where the value holds
+                    // an arm that does not say it, a field beside it holds
+                    // zero and a flag keeps the bits the value presents
+                    // (docs/adr/0065 §6 R4a).
+                    Measured::ArmSays { arms } => {
+                        let variant = variant
+                            .as_ref()
+                            .expect("an input an arm says is said where the codec has a variant");
+                        let local = match element_id {
+                            ElementId::Field(id) => format!("_s_{}", l.codec_field_id(id)),
+                            ElementId::Flag { field, flag } => format!(
+                                "_s_{}_{}",
+                                l.codec_field_id(field),
+                                filters::to_snake_case(flag.clone())
+                            ),
+                            ElementId::Variant => {
+                                unreachable!("an input an arm says is bound to a field or a flag")
+                            }
+                        };
+                        let there = measure.gated.then(|| format!("{local}_there"));
+                        let mut cases = String::new();
+                        for said in arms {
+                            let (held, tag) = &variant.arms[said.arm];
+                            let index = said.arm;
+                            let arm = match tag {
+                                Some(_) => format!("*std::get_if<{index}>(&_r_body)"),
+                                None => format!("std::get_if<{index}>(&_r_body)->body"),
+                            };
+                            let mark = there
+                                .as_ref()
+                                .map(|t| format!(" {t} = true;"))
+                                .unwrap_or_default();
+                            cases.push_str(&format!(
+                                "            case {index}: {local} = static_cast<std::size_t>({}::input_{}({arm}));{mark} break;\n",
+                                held.namespace,
+                                input_name(&said.input)
+                            ));
+                        }
+                        before.push_str(&format!("        std::size_t {local} = 0;\n"));
+                        if let Some(there) = &there {
+                            before.push_str(&format!("        bool {there} = false;\n"));
+                        }
+                        before.push_str(&format!(
+                            "        switch (_r_body.index()) {{\n\
+                             {cases}\
+                             \x20           default: break;\n\
+                             \x20       }}\n"
+                        ));
+                        (local, there)
                     }
                     // Counted below, once the carriers its body may be handed
                     // are as the encode writes them.

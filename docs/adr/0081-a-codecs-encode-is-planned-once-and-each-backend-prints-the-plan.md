@@ -486,6 +486,14 @@ old encode, the old encode and its templates are removed in the same landing.
    one that writes an optional element, and derives the gate from whether the group is there: a flag of the codec,
    or an input the value says. The printed set is 101 codecs. A group of two sides, of a chain's memberships, of
    lists that share a count, or one holding more than integers, still waits.
+
+   *The fourteenth C++ landing, 2026-11-07:* a flag bound to an input the arm the value holds says, or a body a gate
+   decides says (docs/adr/0065 §6 R4a). The encode reads the input through the arm's codec, by a switch over the arm
+   the value holds (the catch-all's, off its body), or through the body's codec where the value holds the body; where
+   the value holds an arm that does not say it, or no body, the flag keeps the bit the value presents. A flag every
+   arm says leaves the value's word out of the wire. The printed set is 106 codecs, the declaration and its declare
+   among them, so no resource keeps a template parent whose printed arm says an input: the check the twelfth landing
+   gave such a parent is held by its generated text alone.
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences

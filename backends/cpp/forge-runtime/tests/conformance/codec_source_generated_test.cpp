@@ -29,6 +29,7 @@
 #include "codec_chain_depth_plain.h"
 #include "codec_embed_basic.h"
 #include "codec_init_syn_body.h"
+#include "codec_init_syn_envelope.h"
 #include "codec_length_ref.h"
 #include "codec_length_ref_dotted_basic.h"
 #include "codec_little_endian.h"
@@ -40,6 +41,7 @@
 #include "codec_zenoh_declaration.h"
 #include "codec_zenoh_ext_entry.h"
 #include "codec_zenoh_ext_envelope.h"
+#include "codec_zenoh_interest_body.h"
 #include "codec_zenoh_locator.h"
 #include "codec_zenoh_open_body.h"
 #include "codec_zenoh_wireexpr.h"
@@ -555,6 +557,7 @@ void a_body_is_encoded_over_the_source_its_holder_presents() {
 
 namespace Wireexpr = ::SCE::Generated::CodecZenohWireexpr;
 namespace Subscriber = ::SCE::Generated::CodecZenohDeclSubscriber;
+namespace Interest = ::SCE::Generated::CodecZenohInterestBody;
 
 void an_input_the_value_says_is_read_off_the_value_and_handed_on() {
     using Suffix = typename decltype(std::declval<const Wireexpr::CodecZenohWireexpr &>().suffix())::value_type;
@@ -575,6 +578,14 @@ void an_input_the_value_says_is_read_off_the_value_and_handed_on() {
     CHECK(Subscriber::input_n(declaration) == 1, "a declaration says the input its wire expression says");
     CHECK(declaration.encode_to_vec() == (std::vector<std::uint8_t>{0x07, 0x05, 0x03, 'a', '/', 'b'}),
           "a declaration writes its wire expression as the expression's own encode does");
+
+    // A body a gate decides says the input where the value holds it; where
+    // it does not, the flag keeps the bit the header presents.
+    const Interest::CodecZenohInterestBody restricted{0x00, named};
+    CHECK(restricted.encode_to_vec() == (std::vector<std::uint8_t>{0x30, 0x05, 0x03, 'a', '/', 'b'}),
+          "N is what the key expression the value holds says, beside the flag that it is there");
+    const Interest::CodecZenohInterestBody open{0x20, std::nullopt};
+    CHECK(open.encode_to_vec() == std::vector<std::uint8_t>{0x20}, "no key expression, and N is the header's own");
 }
 
 namespace Fragmented = ::SCE::Generated::CodecRepeatBasic;
@@ -944,26 +955,22 @@ void a_list_and_bytes_of_no_stated_bound_are_held_to_none() {
 
 namespace Declaration = ::SCE::Generated::CodecZenohDeclaration;
 using UndeclQueryable = ::SCE::Generated::CodecZenohUndeclQueryable::CodecZenohUndeclQueryable;
+using DeclFinal = ::SCE::Generated::CodecZenohDeclFinal::CodecZenohDeclFinal;
 
-void a_template_parent_holds_its_flag_against_what_a_printed_arm_says() {
-    // An undeclaration with no key expression says Z clear; the declaration
-    // on the template's encode writes the header it holds, so a header that
-    // sets Z contradicts the arm and is refused, as the arm itself refused it
-    // before it was printed.
-    Declaration::CodecZenohDeclaration agreeing;
-    agreeing.header = 0x05;
-    agreeing.body = UndeclQueryable{7, std::nullopt};
-    CHECK(agreeing.encode_to_vec() == (std::vector<std::uint8_t>{0x05, 0x07}),
-          "a header whose Z agrees with the arm is written, the arm after it");
+void a_flag_an_arm_says_is_derived_from_the_arm_the_value_holds() {
+    // An undeclaration with no key expression says Z clear: the header the
+    // value presents sets it, and the arm's word is what is written, beside
+    // the arm's tag.
+    const Declaration::CodecZenohDeclaration undeclaring{
+        0x85, Declaration::CodecZenohDeclarationVariant{std::in_place_index<5>, UndeclQueryable{7, std::nullopt}}};
+    CHECK(undeclaring.encode_to_vec() == (std::vector<std::uint8_t>{0x05, 0x07}),
+          "Z is what the arm says, whatever the header presents");
 
-    Declaration::CodecZenohDeclaration contradicting;
-    contradicting.header = 0x85;
-    contradicting.body = UndeclQueryable{7, std::nullopt};
-    std::vector<std::uint8_t> out;
-    ::SCE::Forge::VectorSink sink(out);
-    const auto error = contradicting.encode(sink);
-    CHECK(error.has_value() && *error == ::SCE::Forge::CodecError::PresentIfMismatch,
-          "a header whose Z contradicts what the arm says is refused");
+    // An arm that says neither N nor Z leaves the bits the header presents.
+    const Declaration::CodecZenohDeclaration final_arm{
+        0xA0, Declaration::CodecZenohDeclarationVariant{std::in_place_index<8>, DeclFinal{}}};
+    CHECK(final_arm.encode_to_vec() == std::vector<std::uint8_t>{0xBA},
+          "a flag no arm the value holds says keeps the header's bit");
 }
 
 namespace InitSyn = ::SCE::Generated::CodecInitSynBody;
@@ -1044,6 +1051,23 @@ void fields_one_gate_decides_are_held_and_written_together() {
           "a consumer's own pair encodes as the generated group does");
 }
 
+namespace InitSynEnvelope = ::SCE::Generated::CodecInitSynEnvelope;
+
+void a_flag_every_arm_says_is_the_arms_word() {
+    // Both arms hold an InitSyn body, which says S from its group: the
+    // header's S is the arm's, set or clear, whatever the header presents.
+    const InitSynEnvelope::CodecInitSynEnvelope sized{
+        0x00, InitSynEnvelope::CodecInitSynEnvelopeVariant{
+                  std::in_place_index<0>, InitSyn::CodecInitSynBody{0x02, InitSyn::CodecInitSynBodyS{0x55, 0xCAFE}}}};
+    CHECK(sized.encode_to_vec() == (std::vector<std::uint8_t>{0x41, 0x02, 0x55, 0xCA, 0xFE}),
+          "an arm that holds the group sets S beside the arm's tag");
+    const InitSynEnvelope::CodecInitSynEnvelope bare{
+        0x40, InitSynEnvelope::CodecInitSynEnvelopeVariant{std::in_place_index<0>,
+                                                           InitSyn::CodecInitSynBody{0x02, std::nullopt}}};
+    CHECK(bare.encode_to_vec() == (std::vector<std::uint8_t>{0x01, 0x02}),
+          "an arm that holds no group clears the S the header presents");
+}
+
 void encode_source_reports_the_sinks_failure() {
     std::uint8_t buffer[3] = {};
     ::SCE::Forge::SpanSink sink(buffer, sizeof buffer);
@@ -1070,8 +1094,9 @@ int main() {
     a_body_a_gate_decides_is_written_where_it_is_present();
     a_list_a_gate_decides_is_walked_where_it_is_present();
     a_list_and_bytes_of_no_stated_bound_are_held_to_none();
-    a_template_parent_holds_its_flag_against_what_a_printed_arm_says();
+    a_flag_an_arm_says_is_derived_from_the_arm_the_value_holds();
     fields_one_gate_decides_are_held_and_written_together();
+    a_flag_every_arm_says_is_the_arms_word();
     encode_source_reports_the_sinks_failure();
     if (failures != 0) {
         std::fprintf(stderr, "codec_source_generated_test: %d failure(s)\n", failures);
