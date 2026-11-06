@@ -18450,7 +18450,7 @@ mod tests {
             (
                 "mesh/codegen-unsupported-language",
                 CodegenError::UnsupportedLanguage("ruby".into()).into(),
-                r#"{"v":1,"id":"fnv1a:7d6e0a4752f9975b","code":"mesh/codegen-unsupported-language","stage":"mesh-codegen","spec":"SCE Mesh §7","message":"mesh codegen not yet supported for language 'ruby'","actual":"ruby","fix":{"kind":"replace_one_of","candidates":["rust","cpp","kotlin"]}}"#,
+                r#"{"v":1,"id":"fnv1a:7d6e0a4752f9975b","code":"mesh/codegen-unsupported-language","stage":"mesh-codegen","spec":"SCE Mesh §7","message":"mesh codegen not yet supported for language 'ruby'","actual":"ruby","fix":{"kind":"replace_one_of","candidates":["rust","cpp","kotlin","swift"]}}"#,
             ),
             (
                 "mesh/codegen-unsupported-transport",
