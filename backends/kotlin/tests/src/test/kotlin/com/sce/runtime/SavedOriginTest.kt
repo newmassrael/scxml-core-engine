@@ -10,8 +10,8 @@
 // than the one whose record holds it, and an internal act that holds either
 // member. A queued event's sender is not tied to its address.
 // A format-2 send that stored no origin is the send of the session holding it,
-// and a format-1 or format-2 send whose origin is the SCXML prefix alone is
-// refused.
+// and a format-1 or format-2 send whose stored origin reads as no session id, an
+// XML Nmtoken, is refused: the SCXML prefix alone is one such origin.
 // A text of any other format is refused by its `format` alone. A format-1 text,
 // which has no place for the pair, is written back as format 1.
 //
@@ -245,22 +245,52 @@ class SavedOriginTest {
     }
 
     @Test
-    fun `a stored waiting send origin that is the SCXML prefix alone is refused, and a queued one is not`() {
+    fun `a stored waiting send origin that names no session is refused, and a queued one is not`() {
         val prefix = IoProcessors.SCXML_LOCATION_PREFIX
-        val raise = """{"due":"1700000001000","act":"raise","event":"ping","data":"","sendid":"r","origin":"$prefix"}"""
-        // Format 2, at the root of a tree, and format 1: it names no session in either.
-        val format2 = tree(pending = listOf(raise)).replace("{\"format\":3,", "{\"format\":2,")
-        val format1 = """{"format":1,"shape":"s","configuration":["s"],"current":"s","variables":{},""" +
-            "\"history\":{},\"pending\":[$raise],\"invokes\":[],\"hostinvokes\":[],\"hostinvoketoken\":\"0\"," +
-            "\"sendseq\":\"0\",\"external\":[]}"
-        for (text in listOf(format2, format1)) {
-            val refused = refusal(text)
-            assertTrue(
-                refused.contains("'pending[0].origin' is '$prefix', an SCXML location that names no session"),
-                refused,
-            )
+        fun raise(origin: String): String =
+            """{"due":"1700000001000","act":"raise","event":"ping","data":"","sendid":"r","origin":"$origin"}"""
+        // Format 2, at the root of a tree, and format 1: a stored origin that is not
+        // empty is read as a sender, and one that reads as no session id is refused
+        // in either. The prefix alone reads as itself, another processor's address
+        // as itself, and `a%20b` decodes to `a b`: none is an XML Nmtoken.
+        fun format2(origin: String): String =
+            tree(pending = listOf(raise(origin))).replace("{\"format\":3,", "{\"format\":2,")
+        fun format1(origin: String): String =
+            """{"format":1,"shape":"s","configuration":["s"],"current":"s","variables":{},""" +
+                "\"history\":{},\"pending\":[${raise(origin)}],\"invokes\":[],\"hostinvokes\":[]," +
+                "\"hostinvoketoken\":\"0\",\"sendseq\":\"0\",\"external\":[]}"
+        for (origin in listOf(prefix, "mesh://elsewhere", "sce://scxml/a%20b")) {
+            for (text in listOf(format2(origin), format1(origin))) {
+                assertEquals(
+                    "'pending[0].origin' is '$origin', which names no session: a raise act is a session's own " +
+                        "send, and its stored origin is that session's id or its SCXML location",
+                    refusal(text),
+                )
+            }
         }
-        // A queued event that stored it is the pair as saved, with no sender.
+        // The refusal names the kind of act.
+        val parent = tree(
+            pending = listOf(
+                """{"due":"1700000001000","act":"parent","event":"ping","data":"","sendid":"p",""" +
+                    """"origin":"mesh://elsewhere"}""",
+            ),
+        ).replace("{\"format\":3,", "{\"format\":2,")
+        val refusedParent = refusal(parent)
+        assertTrue(
+            refusedParent.contains("which names no session: a parent act is a session's own send"),
+            refusedParent,
+        )
+        // A neighbour that names a session is read as its sender: the id, or the id
+        // its SCXML location names, decoded.
+        for (origin in listOf("peer:1", "sce://scxml/peer%3A1")) {
+            for (text in listOf(format2(origin), format1(origin))) {
+                assertEquals(
+                    listOf(SavedAct.Raise("ping", "", "r", "peer:1")),
+                    SavedState.fromJson(text).pending.map { it.act },
+                )
+            }
+        }
+        // A queued event that stored the prefix alone is the pair as saved, with no sender.
         val queued = """{"name":"go","data":"","type":"external","sendid":"","origin":"$prefix",""" +
             "\"origintype\":\"$scxml\",\"invokeid\":\"\",\"hostinvoketoken\":null}"
         val read = SavedState.fromJson(tree(external = listOf(queued)).replace("{\"format\":3,", "{\"format\":2,"))

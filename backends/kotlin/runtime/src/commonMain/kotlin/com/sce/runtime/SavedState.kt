@@ -1309,9 +1309,10 @@ data class SavedSend(val due: Long, val act: SavedAct) {
          * [sessionId], the session whose record holds it; an internal one holds
          * neither, the event it delivers being internal. Formats 1 and 2 stored
          * `origin` alone, the sending session's id or its location: read as that
-         * id ([IoProcessors.readStoredSender]), refused when it is the SCXML
-         * location's prefix alone, which names no session, and not read at all
-         * for an internal act. A format-2 send that stored an empty one is read as sent by
+         * id ([IoProcessors.readStoredSender]), refused when that id is not an
+         * XML Nmtoken, so names no session (the SCXML location's prefix alone,
+         * `mesh://x`, `sce://scxml/a%20b`), and not read at all for an internal
+         * act. A format-2 send that stored an empty one is read as sent by
          * [sessionId], the session whose record holds it; a format-1 text names no
          * session, so its send is read with no sender, and the machine that
          * restores it arms it as its own.
@@ -1327,15 +1328,17 @@ data class SavedSend(val due: Long, val act: SavedAct) {
             fun sender(act: String): String? {
                 if (format != SavedState.FORMAT_3) {
                     val written = text("origin")
-                    // The SCXML location's prefix alone names no session, in format
-                    // 1 as in format 2, and a session's own send names the session
-                    // that made it.
-                    if (written == IoProcessors.SCXML_LOCATION_PREFIX) {
-                        throw StateRefusal(
-                            "'$what.origin' is '$written', an SCXML location that names no session, and a $act " +
-                                "act is a session's own send")
-                    }
+                    // A session's own send names the session that made it, in format
+                    // 1 as in format 2: a stored origin that is not empty is read as
+                    // a sender, which is a session id, an XML Nmtoken, as a format-3
+                    // `sender` is. The SCXML location's prefix alone is one origin
+                    // this refuses: it reads as itself, and '/' is no name character.
                     val read = IoProcessors.readStoredSender(written)
+                    if (read != null && !SessionId.isNmtoken(read)) {
+                        throw StateRefusal(
+                            "'$what.origin' is '$written', which names no session: a $act act is a session's " +
+                                "own send, and its stored origin is that session's id or its SCXML location")
+                    }
                     return if (format == SavedState.FORMAT_2) read ?: sessionId else read
                 }
                 val stored = readOriginAndSender(members, what)
