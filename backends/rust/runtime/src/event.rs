@@ -166,10 +166,15 @@ pub struct EventMetadata {
     /// document reads both fields as the empty string.
     #[cfg(feature = "std")]
     pub origin: Option<EventOrigin>,
-    /// The id of the session that sent the event, set only by the SCXML Event
-    /// I/O Processor; empty otherwise. Not an `_event` field: `<finalize>` and
-    /// a saved state find the sending session by it, and nothing reads the
-    /// origin's address to find a session (docs/adr/0090, section 1).
+    /// The id of the session that sent the event, written by the processor
+    /// that delivered it from that session: the SCXML Event I/O Processor for a
+    /// local session, and the Mesh transport for a remote child or parent
+    /// (SCE_MESH.md). Empty for any other sender: a host, BasicHTTP, a Mesh peer
+    /// that is no session of this tree. It is independent of the reply address
+    /// in [`origin`](Self::origin), which no rule ties to it. Not an `_event`
+    /// field: `<finalize>` and a saved state find the sending session by it,
+    /// and nothing reads the origin's address to find a session (docs/adr/0090,
+    /// section 1).
     #[cfg(feature = "std")]
     pub sender: SceString,
     /// `_event.invokeid` — invoke ID if event came from a child invoke (W3C 6.4.1).

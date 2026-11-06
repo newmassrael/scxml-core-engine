@@ -4052,6 +4052,32 @@ mod tests {
         }
     }
 
+    /// docs/adr/0090, section 7: a queued event's sender is independent of its
+    /// reply address. A remote child's event over the Mesh transport carries
+    /// the child's id beside its session endpoint, and a tree that holds one is
+    /// written and read back with both as they were: the writer refuses no
+    /// pairing of the two.
+    #[test]
+    fn a_remote_childs_event_is_saved_with_its_sender_beside_its_endpoint() {
+        let mut root = tree();
+        root.external.push(SavedEvent {
+            name: "progress".to_string(),
+            event_type: "external".to_string(),
+            origin: Some(EventOrigin::new(SCXML, "mesh://dev/machine/remote")),
+            sender: "planner-1.remote".to_string(),
+            invoke_id: "remote".to_string(),
+            ..SavedEvent::default()
+        });
+        let text = root.to_json();
+        assert!(
+            text.contains(&format!(
+                r#""origin":{{"processor":"{SCXML}","address":"mesh://dev/machine/remote"}},"sender":"planner-1.remote""#
+            )),
+            "{text}"
+        );
+        assert_eq!(SavedState::from_json(&text), Ok(root));
+    }
+
     /// docs/adr/0090, section 7: a format-3 `raise`, `parent` or `child` act is
     /// this session's own send, so one that names another session as its
     /// sender is refused, even with that session's own pair beside it, in the
