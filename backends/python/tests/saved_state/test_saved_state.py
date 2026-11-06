@@ -303,32 +303,59 @@ _MINIMAL = (
             '{"format":3,' + _MINIMAL.replace('"pending":[]', '"pending":[{"due":"5","act":"fax"}]', 1) + "}",
             "'pending[0].act' is 'fax', which is not raise, internal, host, parent or child",
         ),
-        # A stored origin that is the SCXML prefix alone names no session, and a
-        # session's own send names the session that sent it.
-        (
-            '{"format":2,'
-            + _MINIMAL.replace(
-                '"pending":[]',
-                '"pending":[{"due":"5","act":"raise","event":"e","data":"","sendid":"","origin":"sce://scxml/"}]',
-                1,
-            )
-            + "}",
-            "'pending[0].origin' is 'sce://scxml/', the SCXML prefix alone, which names no session: a raise act "
-            "is a session's own send",
-        ),
-        (
-            '{"format":1,"shape":"s","configuration":["a"],"current":"a","variables":{},"history":{},'
-            '"pending":[{"due":"5","act":"raise","event":"e","data":"","sendid":"","origin":"sce://scxml/"}],'
-            '"invokes":[],"hostinvokes":[],"hostinvoketoken":"0","sendseq":"0","external":[]}',
-            "'pending[0].origin' is 'sce://scxml/', the SCXML prefix alone, which names no session: a raise act "
-            "is a session's own send",
-        ),
     ],
 )
 def test_a_text_the_formats_do_not_carry_is_refused_for_the_member_that_breaks_it(text: str, reason: str) -> None:
     with pytest.raises(StateRefusal) as refused:
         saved_state_from_json(text)
     assert str(refused.value) == reason
+
+
+def _stored_act(kind: str, origin: str) -> str:
+    """A format-1 or format-2 waiting send of the act ``kind`` whose stored
+    ``origin`` is ``origin``."""
+    invoke_id = '"invokeid":"w",' if kind == "child" else ""
+    return (
+        '{"due":"5","act":"' + kind + '",' + invoke_id + '"event":"e","data":"","sendid":"","origin":"' + origin + '"}'
+    )
+
+
+def _format_two_with_act(kind: str, origin: str) -> str:
+    return '{"format":2,' + _MINIMAL.replace('"pending":[]', '"pending":[' + _stored_act(kind, origin) + "]", 1) + "}"
+
+
+@pytest.mark.parametrize("origin", ["sce://scxml/", "mesh://elsewhere", "sce://scxml/a%20b"])
+def test_a_stored_act_origin_that_names_no_session_is_refused(origin: str) -> None:
+    # A format-1 or format-2 act's stored origin names its session by an id or
+    # by a location with an id, and the sender read from it is an XML Nmtoken.
+    # Any other text names no session: the SCXML prefix alone, an address with
+    # no SCXML location, and a location whose id decodes to no Nmtoken.
+    def reason(kind: str) -> str:
+        return (
+            f"'pending[0].origin' is '{origin}', which names no session: a {kind} act is a session's own send, "
+            "and its stored origin is that session's id or its SCXML location"
+        )
+
+    for kind in ("raise", "parent", "child"):
+        with pytest.raises(StateRefusal) as refused:
+            saved_state_from_json(_format_two_with_act(kind, origin))
+        assert str(refused.value) == reason(kind)
+    # The same in format 1, whose one session's act is `raise`.
+    with pytest.raises(StateRefusal) as refused:
+        saved_state_from_json(
+            '{"format":1,"shape":"s","configuration":["a"],"current":"a","variables":{},"history":{},'
+            '"pending":[' + _stored_act("raise", origin) + '],"invokes":[],"hostinvokes":[],"hostinvoketoken":"0",'
+            '"sendseq":"0","external":[]}'
+        )
+    assert str(refused.value) == reason("raise")
+    # An internal act's stored origin is not read.
+    assert saved_state_from_json(_format_two_with_act("internal", origin)).pending[0].act.sender is None
+
+
+@pytest.mark.parametrize("origin", ["peer:1", "sce://scxml/peer%3A1"])
+def test_a_stored_act_origin_that_names_a_session_is_read_as_its_id(origin: str) -> None:
+    act = saved_state_from_json(_format_two_with_act("raise", origin)).pending[0].act
+    assert (act.origin, act.sender) == (scxml_origin("peer:1"), "peer:1")
 
 
 # The SCXML pair of the session `root`, as format 3 writes it.

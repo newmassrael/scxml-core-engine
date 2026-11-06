@@ -41,7 +41,6 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .event_origin import EventOrigin, origin_processor_of
 from .io_processors import (
-    SCXML_LOCATION_PREFIX,
     read_stored_origin,
     read_stored_sender,
     scxml_origin,
@@ -967,7 +966,8 @@ def _saved_act_origin_from_json(
     pair, and an internal act that holds either. Formats 1 and 2 store the
     sending session's id, or its location, as ``origin``, which is read as that
     session's pair with the id as its sender; an internal act's is not read, and
-    the SCXML prefix alone, which names no session, is refused. A format-2 act
+    a text whose sender is no XML Nmtoken, such as the SCXML prefix alone, names
+    no session and is refused. A format-2 act
     whose stored origin is empty was sent by the session that holds it. A
     format-1 text holds no session id, so such an act is read with neither, and
     the machine that restores it arms it as its own send."""
@@ -991,13 +991,19 @@ def _saved_act_origin_from_json(
     stored = _member_text(members, what, "origin")
     if kind == ACT_INTERNAL:
         return None, None
-    if stored == SCXML_LOCATION_PREFIX:
+    if not stored:
+        return scxml_origin_of(session_id), (session_id or None)
+    # A stored origin names the act's session by its id or by its SCXML
+    # location, and the sender read from it is that id, an XML Nmtoken. Any
+    # other text, the SCXML prefix alone among them, names no session; a queued
+    # event that stored such a text is read as the pair as saved instead.
+    sender = read_stored_sender(stored)
+    if session_id_refusal_of(sender) is not None:
         raise StateRefusal(
-            f"'{what}.origin' is '{stored}', the SCXML prefix alone, which names no session: a {kind} act is "
-            "a session's own send"
+            f"'{what}.origin' is '{stored}', which names no session: a {kind} act is a session's own send, "
+            "and its stored origin is that session's id or its SCXML location"
         )
-    sender = read_stored_sender(stored) or session_id
-    return scxml_origin_of(sender), (sender or None)
+    return scxml_origin(sender), sender
 
 
 def saved_wall_clock_ms() -> int:
