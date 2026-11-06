@@ -81,7 +81,7 @@ concurrency:
 jobs:
   doc-content:
     name: cargo test -p sce-build --features cli --lib
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
 
     steps:

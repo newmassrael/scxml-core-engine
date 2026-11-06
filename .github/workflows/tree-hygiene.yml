@@ -81,7 +81,7 @@ concurrency:
 jobs:
   hygiene:
     name: tree-wide gates
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 55
 
     steps:

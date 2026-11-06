@@ -64,7 +64,7 @@ concurrency:
 jobs:
   verify:
     name: Snapshot integrity + tooling tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
@@ -80,7 +80,7 @@ jobs:
 
   upstream-drift:
     name: Upstream spec drift (scheduled)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     steps:

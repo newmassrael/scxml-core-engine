@@ -84,7 +84,7 @@ concurrency:
 jobs:
   embed-smoke:
     name: Embed vendor smoke build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
 
     steps:
@@ -192,7 +192,7 @@ jobs:
   # that did cover it is skipped by `--no-verify`.
   emit-fail-fast:
     name: emit_embed_manifest fail-fast case
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
 
     steps:
@@ -227,7 +227,7 @@ jobs:
   # answer should not wait behind the seven-minute smoke build.
   manifest-stamp:
     name: embed manifest stamp
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
 
     steps:

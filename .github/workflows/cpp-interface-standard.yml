@@ -83,7 +83,7 @@ concurrency:
 jobs:
   cpp-interface-standard:
     name: C++ interface at C++17 and C++20 (GCC 15)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     container:
       image: gcc:15.3.0

@@ -204,7 +204,7 @@ concurrency:
 jobs:
   cpp-suite:
     name: C++ ctest Suite (engine + mesh)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 140
 
     steps:
@@ -360,7 +360,7 @@ jobs:
   # missing, skipping" into a failure here, where emsdk is installed.
   cpp-suite-wasm:
     name: C++ ctest Suite (WASM, under Node)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # An allowance, not a measurement: the tree had never been built whole when
     # this job arrived (2026-11-05). The W3C job's cold build of two of its
     # programs took 21 minutes; the first run of this one is the reading.

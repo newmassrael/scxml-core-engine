@@ -36,7 +36,7 @@ concurrency:
 jobs:
   endpoint-ssot:
     name: One owner for the BasicHTTP fixture endpoint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
 
     steps:

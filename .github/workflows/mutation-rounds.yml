@@ -204,7 +204,7 @@ concurrency:
 jobs:
   select:
     name: Which casefiles does this change reach
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
 
     # `actions: read` lists this workflow's earlier runs to find the last one
@@ -525,7 +525,7 @@ jobs:
     name: "round: ${{ matrix.casefile }} ${{ matrix.shard }}"
     needs: select
     if: needs.select.outputs.count != '0'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     # Declared rather than inherited. GitHub's default is 360 minutes, and a
     # job that crosses it is `cancelled` — which this workflow's own header

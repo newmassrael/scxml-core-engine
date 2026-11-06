@@ -64,7 +64,7 @@ jobs:
   # ============================================================
   test-cpp:
     name: C++ W3C Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # 60 until the WASM half joined this job (2026-11-04), 85 while it was
     # here. With it the job ran 67 minutes once and was stopped at 85 three
     # times on 2026-11-05, so the WASM half, which runs in two emscripten trees
@@ -351,7 +351,7 @@ jobs:
   # failure here, where emsdk is installed.
   test-cpp-wasm:
     name: C++ W3C Tests (WASM, under Node)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # An allowance until a run of the job is read: one tree's cold build of the
     # two programs took 21 minutes on a hosted runner (2026-11-04), and this
     # builds two.
@@ -440,7 +440,7 @@ jobs:
   # ============================================================
   test-rust:
     name: Rust W3C Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 65
 
     steps:
@@ -532,7 +532,7 @@ jobs:
   # ============================================================
   test-kotlin:
     name: Kotlin W3C Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     # The junit reporter below creates a check run, which needs `checks: write`.
     # Without it the step fails with "Resource not accessible by integration"
@@ -673,7 +673,7 @@ jobs:
   # ============================================================
   test-python-bindings:
     name: Python Bindings (pybind) W3C Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
 
     steps:
@@ -796,7 +796,7 @@ jobs:
   # ============================================================
   test-python:
     name: Python W3C Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
 
     steps:
@@ -894,7 +894,7 @@ jobs:
   # ============================================================
   test-go:
     name: Go W3C Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
 
     steps:
@@ -1004,7 +1004,7 @@ jobs:
   # ============================================================
   test-c11:
     name: C11 W3C Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
 
     steps:
@@ -1131,7 +1131,7 @@ jobs:
   # ============================================================
   report:
     name: Unified Report
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     needs: [test-cpp, test-rust, test-kotlin, test-python-bindings, test-python, test-go, test-c11]
     if: always()

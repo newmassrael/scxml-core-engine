@@ -252,4 +252,5 @@ cargo test -p sce-build --features cli,ffi \
     --test a_regeneration_removes_what_it_no_longer_writes \
     --test a_cpp_test_unit_compiles_a_bounded_number_of_machines \
     --test a_documents_tables_are_its_tree_in_document_order \
+    --test a_workflow_names_the_image_it_runs_on \
     || sce_gate_fail "tree-wide hygiene gates"
