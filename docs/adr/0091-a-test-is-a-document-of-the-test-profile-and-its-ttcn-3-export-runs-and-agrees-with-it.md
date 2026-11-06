@@ -204,7 +204,7 @@ row (`acceptance_doc_covers_every_code`):
 - `<donedata>` used as a verdict carrier;
 - a receive branch whose template is not one of the port's declared incoming types;
 - a test case selected by a feature its suite's `feature-model` does not declare. This is the existing
-  `validation/feature-requirement-undeclared` of ADR 0057, applied to the suite's `<sce:execute>`. It is not a new
+  `validation/feature-undeclared` of ADR 0057 §5, applied to the suite's `<sce:execute>`. It is not a new
   variant;
 - the constructs the operational semantics needs refused in a `test-component` (`docs/SCE_TEST_PROFILE.md` §8.2):
   - `<raise>` and a `<send>` to `#_internal`;
