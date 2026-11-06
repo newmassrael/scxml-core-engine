@@ -130,7 +130,17 @@ pub fn enum_model(
     base_dir: &Path,
     alias: &str,
 ) -> Option<crate::forge::model::EnumModel> {
-    let import = parsed.imports.iter().find(|i| i.alias == alias)?;
+    enum_model_in(&parsed.imports, base_dir, alias)
+}
+
+/// The enum `imports` (written relative to `base_dir`) name as `alias`, as
+/// [`enum_model`] reads it from a document's imports.
+pub fn enum_model_in(
+    imports: &[ForgeImport],
+    base_dir: &Path,
+    alias: &str,
+) -> Option<crate::forge::model::EnumModel> {
+    let import = imports.iter().find(|i| i.alias == alias)?;
     match parse_quietly(base_dir, import)?.document {
         ForgeDocument::Enum(e) => Some(e),
         _ => None,

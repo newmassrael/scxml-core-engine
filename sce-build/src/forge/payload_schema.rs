@@ -28,13 +28,18 @@
 //! held to either writes them in the order it states
 //! ([`crate::forge::value_type::SchemaObject`]); the reader takes them in any
 //! order.
+//!
+//! A union document has a payload schema of its own (docs/adr/0092, section
+//! 3.1, item 4), so a union may be named as an answer by itself: the same two
+//! texts, whose root is the `oneOf` of its cases and the alternation of them,
+//! not a record, named by its tag enum's revision (section 8.1).
 
 use std::path::Path;
 
-use crate::forge::model::{EventSchemaModel, ForgeImport};
+use crate::forge::model::{EventSchemaModel, ForgeImport, UnionModel};
 use crate::forge::value_type::{
-    gbnf_object, json_schema_object, GbnfRules, GrammarError, Keyword, SchemaDefs, SchemaNode,
-    TypeEnv, ValueType,
+    gbnf_object, gbnf_union, json_schema_object, json_schema_union, GbnfRules, GrammarError,
+    Keyword, SchemaDefs, SchemaNode, SchemaObject, ScopedUnion, TypeEnv, ValueType,
 };
 
 /// The stability status of `schemas/sce-payload-schema.v1.schema.json`, held to
@@ -64,7 +69,8 @@ pub enum PayloadFormat {
     Gbnf,
 }
 
-/// The payload schema of an event schema: its id and its two texts.
+/// The payload schema of an event schema, or of a union document: its id and
+/// its two texts.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PayloadSchema {
     /// `urn:sce:schema:<document name>:<revision>` ([`schema_id`]).
@@ -90,7 +96,33 @@ pub fn json_schema(
     source_hash: Option<&str>,
 ) -> Result<String, GrammarError> {
     let mut defs = SchemaDefs::default();
-    let mut root = json_schema_object(fields, env, &mut defs)?;
+    let root = json_schema_object(fields, env, &mut defs)?;
+    Ok(headed(root, name, revision, defs, source_hash))
+}
+
+/// The JSON Schema of a value of `union`, the union document of that name at
+/// `revision`, its tag enum's (docs/adr/0092, sections 3.1 and 8.1): the
+/// `oneOf` of its cases at the root, under the header [`json_schema`] writes.
+pub fn union_json_schema(
+    revision: u32,
+    union: &ScopedUnion,
+    source_hash: Option<&str>,
+) -> Result<String, GrammarError> {
+    let mut defs = SchemaDefs::default();
+    let root = json_schema_union(union, &mut defs)?;
+    Ok(headed(root, &union.name, revision, defs, source_hash))
+}
+
+/// `root`, the schema of the value, with what names the schema and what it
+/// says of itself, and the definitions its fold gathered: the text of the
+/// payload schema of `name` at `revision`.
+fn headed(
+    mut root: SchemaObject,
+    name: &str,
+    revision: u32,
+    defs: SchemaDefs,
+    source_hash: Option<&str>,
+) -> String {
     root.insert(Keyword::Schema, SchemaNode::value(DIALECT));
     root.insert(Keyword::Id, SchemaNode::value(schema_id(name, revision)));
     if let Some(hash) = source_hash {
@@ -100,7 +132,7 @@ pub fn json_schema(
     if let Some(defs) = defs.into_node() {
         root.insert(Keyword::Defs, defs);
     }
-    Ok(root.text())
+    root.text()
 }
 
 /// The GBNF grammar of the payload, a record of `fields` read in `env`: a
@@ -112,6 +144,53 @@ pub fn gbnf(fields: &[(String, ValueType)], env: &dyn TypeEnv) -> Result<String,
     let mut rules = GbnfRules::default();
     let body = gbnf_object(fields, env, &mut rules)?;
     Ok(rules.grammar(&body))
+}
+
+/// The GBNF grammar of a value of `union`: its `root` one alternative per
+/// case, each beginning with its tag (docs/adr/0092, section 3.1).
+pub fn union_gbnf(union: &ScopedUnion) -> Result<String, GrammarError> {
+    let mut rules = GbnfRules::default();
+    let body = gbnf_union(union, &mut rules)?;
+    Ok(rules.grammar(&body))
+}
+
+/// The union the union document `model`, read from `path`, is, with the
+/// imports `imports` written relative to its directory, and its revision,
+/// which is its tag enum's (docs/adr/0092, section 8.1). A tag enum that
+/// cannot be read leaves the union no grammar, refused as an alias that names
+/// nothing; the import pass reports why in its own words.
+fn read_union(
+    model: &UnionModel,
+    imports: &[ForgeImport],
+    path: &Path,
+) -> Result<(u32, ScopedUnion), GrammarError> {
+    let base_dir = path.parent().unwrap_or_else(|| Path::new("."));
+    let unresolved = || GrammarError::Unresolved {
+        alias: model.tag_enum.clone(),
+    };
+    let revision = crate::forge::import_source::enum_model_in(imports, base_dir, &model.tag_enum)
+        .ok_or_else(unresolved)?
+        .revision();
+    let union = crate::forge::import_source::scoped_union(path, model, imports, base_dir)
+        .ok_or_else(unresolved)?;
+    Ok((revision, union))
+}
+
+/// The text of `format` of a value of the union document `model`, read from
+/// `path` with its imports `imports`: what `sce-codegen payload-schema` prints
+/// for a union document (docs/adr/0092, section 3.1, item 4).
+pub fn text_of_union(
+    model: &UnionModel,
+    imports: &[ForgeImport],
+    path: &Path,
+    format: PayloadFormat,
+    source_hash: Option<&str>,
+) -> Result<String, GrammarError> {
+    let (revision, union) = read_union(model, imports, path)?;
+    match format {
+        PayloadFormat::JsonSchema => union_json_schema(revision, &union, source_hash),
+        PayloadFormat::Gbnf => union_gbnf(&union),
+    }
 }
 
 /// The text of `format` of the payload of `schema`, whose imports `imports`
@@ -175,6 +254,33 @@ impl PayloadSchema {
         )
     }
 
+    /// Both texts of the payload schema of a value of `union`, the union
+    /// document of that name at `revision` ([`union_json_schema`],
+    /// [`union_gbnf`]).
+    pub fn of_union(
+        revision: u32,
+        union: &ScopedUnion,
+        source_hash: Option<&str>,
+    ) -> Result<Self, GrammarError> {
+        Ok(Self {
+            id: schema_id(&union.name, revision),
+            json_schema: union_json_schema(revision, union, source_hash)?,
+            gbnf: union_gbnf(union)?,
+        })
+    }
+
+    /// Both texts of the payload schema of the union document `model`, read
+    /// as [`text_of_union`] reads it.
+    pub fn of_union_document(
+        model: &UnionModel,
+        imports: &[ForgeImport],
+        path: &Path,
+        source_hash: Option<&str>,
+    ) -> Result<Self, GrammarError> {
+        let (revision, union) = read_union(model, imports, path)?;
+        Self::of_union(revision, &union, source_hash)
+    }
+
     /// The text of one spelling.
     pub fn text(&self, format: PayloadFormat) -> &str {
         match format {
@@ -189,7 +295,7 @@ mod tests {
     use super::*;
     use crate::forge::model::{ForgeDocument, SceType};
     use crate::forge::value_type::{
-        ScopedEnum, ScopedRecord, ScopedUnion, ScopedVariant, TypeScope, WrittenType,
+        ScopedCase, ScopedEnum, ScopedRecord, ScopedVariant, TypeScope, WrittenType,
     };
     use sce_rust_runtime::json::{number_text, parse, write, Value};
     use std::path::PathBuf;
@@ -464,16 +570,23 @@ mod tests {
 
     // ── The wire surface ────────────────────────────────────────────────
 
+    /// The directories of the fixtures whose event schemas the sweeps below
+    /// read: the union fixtures hold a union in a field, in a list and in an
+    /// optional (docs/adr/0092, section 1.1, item 3).
+    const FIXTURE_DIRS: [&str; 3] = [
+        "tests/fixtures/static_datamodel",
+        "tests/fixtures/payload_schema",
+        "tests/fixtures/union",
+    ];
+
     /// Every event schema of the conformance fixtures that has a grammar,
     /// with the payload schema the build writes for it, and the names of
-    /// those that have none, each refused for an open enum.
+    /// those that have none, each refused for an open enum. A fixture is
+    /// named by its path from the crate's directory.
     fn fixture_schemas() -> (Vec<(String, PayloadSchema)>, Vec<String>) {
         let mut written = Vec::new();
         let mut refused = Vec::new();
-        for dir in [
-            "tests/fixtures/static_datamodel",
-            "tests/fixtures/payload_schema",
-        ] {
+        for dir in FIXTURE_DIRS {
             let mut paths: Vec<PathBuf> = std::fs::read_dir(manifest_dir().join(dir))
                 .expect("a fixture directory")
                 .map(|entry| entry.expect("an entry").path())
@@ -481,7 +594,8 @@ mod tests {
                 .collect();
             paths.sort();
             for path in paths {
-                let name = path.file_name().unwrap().to_string_lossy().into_owned();
+                let file = path.file_name().unwrap().to_string_lossy().into_owned();
+                let name = format!("{dir}/{file}");
                 match of_document(&path) {
                     None => {}
                     Some(Ok(schema)) => written.push((name, schema)),
@@ -522,16 +636,19 @@ mod tests {
     }
 
     /// The keywords a payload schema is written in, in the one order every
-    /// schema object writes them in (docs/adr/0087, section 1.1, item 4).
-    const KEYWORD_ORDER: [&str; 20] = [
+    /// schema object writes them in (docs/adr/0087, section 1.1, item 4;
+    /// `const` and `oneOf`, docs/adr/0092, section 3.1, item 2).
+    const KEYWORD_ORDER: [&str; 22] = [
         "$schema",
         "$id",
         "x-sce-source-hash",
         "description",
         "$ref",
         "type",
+        "const",
         "enum",
         "anyOf",
+        "oneOf",
         "minimum",
         "maximum",
         "maxLength",
@@ -593,7 +710,7 @@ mod tests {
                     }
                 }
                 ("items", schema) => keywords_in_order(schema, &inner),
-                ("anyOf", Value::Array(schemas)) => {
+                ("anyOf" | "oneOf", Value::Array(schemas)) => {
                     for schema in schemas {
                         keywords_in_order(schema, &inner);
                     }
@@ -626,7 +743,23 @@ mod tests {
             change(&mut instance);
             instance
         };
-        let changes: [(&str, serde_json::Value); 9] = [
+        let changes: [(&str, serde_json::Value); 11] = [
+            (
+                "a tag outside a union's case",
+                changed(&|s| s["properties"]["kind"] = serde_json::json!({"const": "meeting"})),
+            ),
+            (
+                "a record's root that is also a union's",
+                changed(&|s| {
+                    let case = serde_json::json!({
+                        "type": "object",
+                        "properties": {"kind": {"const": "meeting"}},
+                        "required": ["kind"],
+                        "additionalProperties": false
+                    });
+                    s["oneOf"] = serde_json::json!([case]);
+                }),
+            ),
             (
                 "a schema without its id",
                 changed(&|s| {
@@ -679,6 +812,325 @@ mod tests {
                 "{what} is refused: {instance}"
             );
         }
+        // A union document's schema, valid as written, and each change of one
+        // thing of it that the producer never writes.
+        let valid: serde_json::Value =
+            serde_json::from_str(&union_shape().json_schema).expect("JSON");
+        assert_eq!(wire_violations(&valid), Vec::<String>::new());
+        let changed = |change: &dyn Fn(&mut serde_json::Value)| {
+            let mut instance = valid.clone();
+            change(&mut instance);
+            instance
+        };
+        let changes: [(&str, serde_json::Value); 6] = [
+            (
+                "a tag that is no text",
+                changed(&|s| s["oneOf"][1]["properties"]["kind"] = serde_json::json!({"const": 1})),
+            ),
+            (
+                "a union's root beside a record's keyword",
+                changed(&|s| s["type"] = "object".into()),
+            ),
+            (
+                "a root that is neither a record nor a union",
+                changed(&|s| {
+                    s.as_object_mut().unwrap().remove("oneOf");
+                }),
+            ),
+            (
+                "a union of no case",
+                changed(&|s| s["oneOf"] = serde_json::json!([])),
+            ),
+            (
+                "a case that admits a key it does not declare",
+                changed(&|s| s["oneOf"][0]["additionalProperties"] = true.into()),
+            ),
+            (
+                "a case of no key",
+                changed(&|s| {
+                    s["oneOf"][0]["properties"] = serde_json::json!({});
+                    s["oneOf"][0]["required"] = serde_json::json!([]);
+                }),
+            ),
+        ];
+        for (what, instance) in changes {
+            assert!(
+                !wire_violations(&instance).is_empty(),
+                "{what} is refused: {instance}"
+            );
+        }
+    }
+
+    // ── A union document (docs/adr/0092, section 3.1) ───────────────────
+
+    fn union_fixture(file: &str) -> PathBuf {
+        manifest_dir().join("tests/fixtures/union").join(file)
+    }
+
+    /// The payload schema of the union document at `path`, as `sce-codegen
+    /// payload-schema` reads it.
+    fn of_union_document(path: &Path) -> Result<PayloadSchema, GrammarError> {
+        let content = std::fs::read_to_string(path).expect("the fixture reads");
+        let label = path.to_string_lossy().into_owned();
+        let parsed = crate::forge::parser::parse_forge_with_imports(
+            &content,
+            crate::DocumentLabel::for_input_path(&label),
+        )
+        .expect("the union parses")
+        .expect("a forge document");
+        let ForgeDocument::Union(model) = &parsed.document else {
+            panic!("a union document: {}", path.display());
+        };
+        PayloadSchema::of_union_document(model, &parsed.imports, path, Some(HASH))
+    }
+
+    /// The shape union of the fixtures: a dot of no field, a circle of a
+    /// radius and a rect of a width and a height, its tag under `kind`.
+    fn union_shape() -> PayloadSchema {
+        of_union_document(&union_fixture("union_shape.scxml")).expect("a grammar")
+    }
+
+    /// Every `oneOf` of `schema`, at any depth.
+    fn every_one_of(schema: &serde_json::Value) -> Vec<&Vec<serde_json::Value>> {
+        let mut found = Vec::new();
+        match schema {
+            serde_json::Value::Object(members) => {
+                for (keyword, value) in members {
+                    if let ("oneOf", serde_json::Value::Array(cases)) = (keyword.as_str(), value) {
+                        found.push(cases);
+                    }
+                    found.extend(every_one_of(value));
+                }
+            }
+            serde_json::Value::Array(items) => {
+                for item in items {
+                    found.extend(every_one_of(item));
+                }
+            }
+            _ => {}
+        }
+        found
+    }
+
+    #[test]
+    fn a_union_document_states_one_object_per_case_its_tag_first() {
+        let schema = union_shape();
+        assert_eq!(schema.id, "urn:sce:schema:union_shape:1");
+        // The cases in the tag enum's order (dot, circle, rect), not the
+        // document's (rect, dot, circle); the root is the `oneOf`, no record.
+        assert_eq!(
+            schema.json_schema,
+            format!(
+                concat!(
+                    r#"{{"$schema":"https://json-schema.org/draft/2020-12/schema","#,
+                    r#""$id":"urn:sce:schema:union_shape:1","x-sce-source-hash":"{}","#,
+                    r#""description":"x-sce-max-bytes bounds a text in UTF-8 bytes; "#,
+                    r#"maxLength counts characters","oneOf":["#,
+                    r#"{{"type":"object","properties":{{"kind":{{"const":"dot"}}}},"#,
+                    r#""required":["kind"],"additionalProperties":false}},"#,
+                    r#"{{"type":"object","properties":{{"kind":{{"const":"circle"}},"#,
+                    r#""radius":{{"type":"integer","minimum":0,"maximum":65535}}}},"#,
+                    r#""required":["kind","radius"],"additionalProperties":false}},"#,
+                    r#"{{"type":"object","properties":{{"kind":{{"const":"rect"}},"#,
+                    r#""width":{{"type":"integer","minimum":0,"maximum":65535}},"#,
+                    r#""height":{{"type":"integer","minimum":0,"maximum":65535}}}},"#,
+                    r#""required":["kind","width","height"],"additionalProperties":false}}"#,
+                    r#"]}}"#,
+                ),
+                HASH
+            )
+        );
+        let lines: Vec<&str> = schema.gbnf.lines().collect();
+        assert_eq!(
+            lines,
+            [
+                concat!(
+                    r#"root ::= "{\"kind\":\"dot\"}""#,
+                    r#" | "{\"kind\":\"circle\",\"radius\":" uint16 "}""#,
+                    r#" | "{\"kind\":\"rect\",\"width\":" uint16 ",\"height\":" uint16 "}""#,
+                ),
+                concat!(
+                    r#"uint16 ::= "0" | [1-9] [0-9]{0,3} | [1-5] [0-9]{4} | "6" [0-4] [0-9]{3} | "#,
+                    r#""65" [0-4] [0-9]{2} | "655" [0-2] [0-9] | "6553" [0-5]"#,
+                ),
+            ]
+        );
+        // A schema of the wire surface, of 2020-12, compact and ASCII, its
+        // keywords in the one order.
+        let parsed: serde_json::Value = serde_json::from_str(&schema.json_schema).unwrap();
+        assert_eq!(wire_violations(&parsed), Vec::<String>::new());
+        compiled(&schema.json_schema);
+        let read = parse(&schema.json_schema).expect("a payload schema is JSON");
+        assert_eq!(schema.json_schema, ascii(&write(&read)));
+        assert!(schema.json_schema.is_ascii() && schema.gbnf.is_ascii());
+        keywords_in_order(&read, "union_shape");
+        // A run that writes no headed file states no source hash, and the
+        // grammar carries none.
+        let path = union_fixture("union_shape.scxml");
+        let content = std::fs::read_to_string(&path).unwrap();
+        let label = path.to_string_lossy().into_owned();
+        let parsed = crate::forge::parser::parse_forge_with_imports(
+            &content,
+            crate::DocumentLabel::for_input_path(&label),
+        )
+        .unwrap()
+        .unwrap();
+        let ForgeDocument::Union(model) = &parsed.document else {
+            unreachable!("a union document");
+        };
+        let unhashed = text_of_union(
+            model,
+            &parsed.imports,
+            &path,
+            PayloadFormat::JsonSchema,
+            None,
+        )
+        .unwrap();
+        assert!(!unhashed.contains("x-sce-source-hash"), "{unhashed}");
+        assert_eq!(
+            text_of_union(model, &parsed.imports, &path, PayloadFormat::Gbnf, None).as_ref(),
+            Ok(&schema.gbnf)
+        );
+        assert_eq!(
+            text_of_union(
+                model,
+                &parsed.imports,
+                &path,
+                PayloadFormat::JsonSchema,
+                Some(HASH)
+            )
+            .as_ref(),
+            Ok(&schema.json_schema)
+        );
+    }
+
+    /// docs/adr/0092, section 3.1, item 2: llguidance accepts a `oneOf` only
+    /// where it proves every two cases disjoint, which two objects are when a
+    /// key both require holds different string `const` literals, and a `$ref`
+    /// is never proven so. Every `oneOf` the build writes, at the root of a
+    /// union document and in the `$defs` of a schema that holds a union,
+    /// requires its tag in each case, holds it as a string `const` first, a
+    /// literal of its own, and writes the case's fields inline.
+    #[test]
+    fn every_case_requires_its_tag_and_holds_it_as_a_string_const() {
+        let event = of_document(&union_fixture("event_shapes.scxml"))
+            .expect("an event schema")
+            .expect("a grammar");
+        let mut seen = 0usize;
+        for text in [&union_shape().json_schema, &event.json_schema] {
+            // The tag first in `required`, and `properties` in the order of
+            // `required` (read by a reader that keeps an object's order).
+            keywords_in_order(&parse(text).expect("JSON"), "the schema");
+            let schema: serde_json::Value = serde_json::from_str(text).unwrap();
+            let unions = every_one_of(&schema);
+            assert_eq!(unions.len(), 1, "one union, defined once: {text}");
+            for cases in unions {
+                let mut literals = std::collections::BTreeSet::new();
+                for case in cases {
+                    let required = case["required"].as_array().expect("required keys");
+                    assert_eq!(required.first(), Some(&serde_json::json!("kind")), "{case}");
+                    let properties = case["properties"].as_object().expect("properties");
+                    let tag = &properties["kind"];
+                    assert_eq!(tag.as_object().map(|t| t.len()), Some(1), "{case}");
+                    let literal = tag["const"].as_str().expect("a string const");
+                    assert!(literals.insert(literal.to_string()), "{literal} twice");
+                    assert_eq!(case.get("$ref"), None, "{case}: written inline");
+                    assert_eq!(case["additionalProperties"], false, "{case}");
+                    seen += 1;
+                }
+            }
+        }
+        assert_eq!(seen, 6, "three cases in each of the two schemas");
+    }
+
+    /// Both forms hold a value of a union to exactly one case, chosen by its
+    /// tag: each case's smallest and largest value is admitted, a field of
+    /// another case, a field of its case missing and a tag no variant names
+    /// are refused. The grammar alone refuses the tag after a field and the
+    /// keys out of their declared order, which the JSON Schema, for which an
+    /// object's order is insignificant, admits, as the reader will.
+    #[test]
+    fn the_recognizer_holds_a_union_to_one_case_by_its_tag() {
+        let schema = union_shape();
+        let grammar = gbnf::Grammar::read(&schema.gbnf);
+        let json = compiled(&schema.json_schema);
+        for text in [
+            r#"{"kind":"dot"}"#,
+            r#"{"kind":"circle","radius":0}"#,
+            r#"{"kind":"circle","radius":65535}"#,
+            r#"{"kind":"rect","width":0,"height":0}"#,
+            r#"{"kind":"rect","width":65535,"height":65535}"#,
+        ] {
+            assert!(grammar.admits(text), "the grammar admits {text}");
+            assert!(json_admits(&json, text), "the schema admits {text}");
+        }
+        for text in [
+            r#"{"kind":"dot","radius":1}"#,
+            r#"{"kind":"circle","width":1,"height":2}"#,
+            r#"{"kind":"rect","width":1}"#,
+            r#"{"kind":"circle","radius":65536}"#,
+            r#"{"kind":"square"}"#,
+            r#"{"kind":1}"#,
+            r#"{"kind":null}"#,
+            r#"{"radius":1}"#,
+            r#"{}"#,
+        ] {
+            assert!(!grammar.admits(text), "the grammar refuses {text}");
+            assert!(!json_admits(&json, text), "the schema refuses {text}");
+        }
+        for text in [
+            r#"{"radius":1,"kind":"circle"}"#,
+            r#"{"kind":"rect","height":2,"width":1}"#,
+        ] {
+            assert!(!grammar.admits(text), "the grammar refuses {text}");
+            assert!(json_admits(&json, text), "the schema admits {text}");
+        }
+        // Held in a field, a list of at least one and an optional, by a
+        // definition the three share.
+        let event = of_document(&union_fixture("event_shapes.scxml"))
+            .expect("an event schema")
+            .expect("a grammar");
+        let grammar = gbnf::Grammar::read(&event.gbnf);
+        let json = compiled(&event.json_schema);
+        for (text, admitted) in [
+            (
+                r#"{"one":{"kind":"dot"},"many":[{"kind":"circle","radius":3}],"maybe":null}"#,
+                true,
+            ),
+            (
+                r#"{"one":{"kind":"rect","width":1,"height":2},"many":[{"kind":"dot"},{"kind":"dot"},{"kind":"dot"}],"maybe":{"kind":"circle","radius":9}}"#,
+                true,
+            ),
+            (r#"{"one":{"kind":"dot"},"many":[],"maybe":null}"#, false),
+            (
+                r#"{"one":{"kind":"dot"},"many":[{"kind":"dot"},{"kind":"dot"},{"kind":"dot"},{"kind":"dot"}],"maybe":null}"#,
+                false,
+            ),
+            (
+                r#"{"one":{"kind":"dot"},"many":[{"kind":"dot","radius":3}],"maybe":null}"#,
+                false,
+            ),
+            (
+                r#"{"one":{"kind":"dot"},"many":[{"kind":"dot"}],"maybe":{"kind":"rect"}}"#,
+                false,
+            ),
+        ] {
+            assert_eq!(grammar.admits(text), admitted, "the grammar: {text}");
+            assert_eq!(json_admits(&json, text), admitted, "the schema: {text}");
+        }
+    }
+
+    /// A union document whose tag is a value of an open enum has no grammar,
+    /// refused as an enum field's is; the import refuses it first, in its own
+    /// words (`validation/attribute-rule-violated`).
+    #[test]
+    fn a_union_of_an_open_tag_has_no_payload_schema() {
+        assert_eq!(
+            of_union_document(&union_fixture("union_shape_open_tag.scxml")),
+            Err(GrammarError::OpenEnum {
+                alias: "ShapeKind".into()
+            })
+        );
     }
 
     // ── Values written by the runtime's writer ──────────────────────────
@@ -717,6 +1169,44 @@ mod tests {
     ) -> (Vec<(String, ValueType)>, &'e dyn TypeEnv) {
         let fields = env.record_fields(alias).expect("a record of the fixture");
         (fields, env.record_scope(alias).unwrap_or(env))
+    }
+
+    fn union_of<'e>(alias: &str, env: &'e dyn TypeEnv) -> &'e ScopedUnion {
+        env.union_type(alias).expect("a union of the fixture")
+    }
+
+    /// The fields of the record `case` of `union` holds, none for an empty
+    /// case, and the scope they are read in.
+    fn case_of<'e>(
+        union: &'e ScopedUnion,
+        case: &ScopedCase,
+    ) -> (Vec<(String, ValueType)>, &'e dyn TypeEnv) {
+        let scope: &'e dyn TypeEnv = &union.scope;
+        match &case.record {
+            Some(alias) => record_of(alias, scope),
+            None => (Vec::new(), scope),
+        }
+    }
+
+    /// The value of `case` of `union` whose fields are `members`: the tag
+    /// first, then the fields in the order the case's record declares them,
+    /// as both forms state them (docs/adr/0092, section 3.1, item 1).
+    fn case_value(union: &ScopedUnion, case: &ScopedCase, members: Members) -> Value {
+        let mut object = vec![(union.tag.clone(), Value::Text(case.variant.name.clone()))];
+        object.extend(members);
+        Value::Object(object)
+    }
+
+    /// The case of `union` of the most fields, the first of them in its tag
+    /// enum's order: the case a largest value of the union is in.
+    fn widest_case(union: &ScopedUnion) -> &ScopedCase {
+        let mut widest = union.cases.first().expect("a union has a case");
+        for case in &union.cases {
+            if case_of(union, case).0.len() > case_of(union, widest).0.len() {
+                widest = case;
+            }
+        }
+        widest
     }
 
     fn names_of<'e>(t: &SceType, env: &'e dyn TypeEnv) -> &'e ScopedEnum {
@@ -769,14 +1259,19 @@ mod tests {
             ValueType::List { elem, max } => {
                 Value::Array(vec![largest(elem, env, fill); max.max as usize])
             }
-            ValueType::Union { .. } => unreachable!("{NO_UNION_GRAMMAR}"),
+            // Its case of the most fields, each at its largest.
+            ValueType::Union { alias } => {
+                let union = union_of(alias, env);
+                let case = widest_case(union);
+                let (fields, scope) = case_of(union, case);
+                let members = fields
+                    .iter()
+                    .map(|(id, field)| (id.clone(), largest(field, scope, fill)))
+                    .collect();
+                case_value(union, case, members)
+            }
         }
     }
-
-    /// Why the walks of a value below meet no union: a union has no grammar
-    /// until its rows land (docs/adr/0092, section 3), so no fixture schema
-    /// holds one.
-    const NO_UNION_GRAMMAR: &str = "no fixture schema holds a union, which has no grammar yet";
 
     /// The value of `ty` that holds least: a list as many of its element's
     /// smallest as its lower count needs (docs/adr/0086, section 15).
@@ -802,7 +1297,18 @@ mod tests {
             ValueType::List { elem, max } => {
                 Value::Array(vec![smallest(elem, env); max.min as usize])
             }
-            ValueType::Union { .. } => unreachable!("{NO_UNION_GRAMMAR}"),
+            // Its first case in its tag enum's order, each field at its
+            // smallest.
+            ValueType::Union { alias } => {
+                let union = union_of(alias, env);
+                let case = union.cases.first().expect("a union has a case");
+                let (fields, scope) = case_of(union, case);
+                let members = fields
+                    .iter()
+                    .map(|(id, field)| (id.clone(), smallest(field, scope)))
+                    .collect();
+                case_value(union, case, members)
+            }
         }
     }
 
@@ -842,22 +1348,19 @@ mod tests {
             ValueType::Optional { elem } => past_each_bound(elem, env),
             ValueType::Record { alias } => {
                 let (fields, scope) = record_of(alias, env);
+                past_in_fields(&fields, scope)
+                    .into_iter()
+                    .map(|(members, sees)| (Value::Object(members), sees))
+                    .collect()
+            }
+            // Each case's, its tag first.
+            ValueType::Union { alias } => {
+                let union = union_of(alias, env);
                 let mut out = Vec::new();
-                for (at, (_, field)) in fields.iter().enumerate() {
-                    for (past, sees) in past_each_bound(field, scope) {
-                        let members = fields
-                            .iter()
-                            .enumerate()
-                            .map(|(i, (id, other))| {
-                                let value = if i == at {
-                                    past.clone()
-                                } else {
-                                    largest(other, scope, Fill::Wide)
-                                };
-                                (id.clone(), value)
-                            })
-                            .collect();
-                        out.push((Value::Object(members), sees));
+                for case in &union.cases {
+                    let (fields, scope) = case_of(union, case);
+                    for (members, sees) in past_in_fields(&fields, scope) {
+                        out.push((case_value(union, case, members), sees));
                     }
                 }
                 out
@@ -881,8 +1384,38 @@ mod tests {
                 }
                 out
             }
-            ValueType::Union { .. } => unreachable!("{NO_UNION_GRAMMAR}"),
         }
+    }
+
+    /// The members of an object, each key with its value, in order.
+    type Members = Vec<(String, Value)>;
+
+    /// The members of an object of `fields`, read in `scope`, with one field
+    /// past a bound and every other at its largest, for each place a bound is
+    /// written in each field, and whether the JSON Schema refuses it.
+    fn past_in_fields(
+        fields: &[(String, ValueType)],
+        scope: &dyn TypeEnv,
+    ) -> Vec<(Members, JsonSchemaSees)> {
+        let mut out = Vec::new();
+        for (at, (_, field)) in fields.iter().enumerate() {
+            for (past, sees) in past_each_bound(field, scope) {
+                let members = fields
+                    .iter()
+                    .enumerate()
+                    .map(|(i, (id, other))| {
+                        let value = if i == at {
+                            past.clone()
+                        } else {
+                            largest(other, scope, Fill::Wide)
+                        };
+                        (id.clone(), value)
+                    })
+                    .collect();
+                out.push((members, sees));
+            }
+        }
+        out
     }
 
     /// The payload of `schema` as the record of its own fields, in the scope
@@ -927,14 +1460,7 @@ mod tests {
         let mut past_cases = 0usize;
         let mut looser = 0usize;
         for (name, schema) in &written {
-            let path = [
-                "tests/fixtures/static_datamodel",
-                "tests/fixtures/payload_schema",
-            ]
-            .iter()
-            .map(|dir| manifest_dir().join(dir).join(name))
-            .find(|path| path.exists())
-            .expect("the fixture");
+            let path = manifest_dir().join(name);
             let content = std::fs::read_to_string(&path).unwrap();
             let label = path.to_string_lossy().into_owned();
             let parsed = crate::forge::parser::parse_forge_with_imports(

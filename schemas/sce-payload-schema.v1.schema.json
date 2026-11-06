@@ -3,10 +3,29 @@
   "$id": "https://github.com/newmassrael/scxml-core-engine/blob/main/schemas/sce-payload-schema.v1.schema.json",
   "x-sce-schema-status": "pre-release",
   "title": "SCE payload schema (wire schema v1)",
-  "description": "The JSON Schema (2020-12) of the payload of an event schema, which every schema unit declares as JSON_SCHEMA and `sce-codegen payload-schema` prints byte for byte (docs/adr/0087, section 1). This file states the subset of 2020-12 SCE writes: one spelling of each value of the payload's type, a record with every key required and no other, a 64-bit integer as the quoted text of its digits, every bound as the build resolved it. A text's maxLength counts characters and x-sce-max-bytes the UTF-8 bytes the type bounds. The text is compact, each object's keywords in one order ($schema, $id, x-sce-source-hash, description, $ref, type, enum, anyOf, minimum, maximum, maxLength, x-sce-max-bytes, pattern, items, minItems, maxItems, properties, required, additionalProperties, $defs), and a record's properties and required in the order its document declares its keys: a decoder held to a schema writes an object's keys in the order the schema states them. It carries no generator stamp: it is a constant of committed generated units, and x-sce-source-hash, the source-hash of the files it is written into, names its inputs instead. Its second spelling, the GBNF grammar of the same type, has no schema file. Authoritative producer is sce-build/src/forge/payload_schema.rs over the folds of sce-build/src/forge/value_type.rs. The stability status of this surface lives in this header alone; see SCE_WIRE_CONTRACTS.md for the shared policy.",
+  "description": "The JSON Schema (2020-12) of the payload of an event schema, which every schema unit declares as JSON_SCHEMA and `sce-codegen payload-schema` prints byte for byte (docs/adr/0087, section 1), and of a value of a union document, which `sce-codegen payload-schema` prints for one (docs/adr/0092, section 3.1, item 4). This file states the subset of 2020-12 SCE writes: one spelling of each value of the payload's type, a record with every key required and no other, a union as the oneOf of one object per case whose tag is a required string const standing first and whose fields are written inline, a 64-bit integer as the quoted text of its digits, every bound as the build resolved it. An event schema's payload is a record at the root; a union document's value is the oneOf of its cases at the root. A text's maxLength counts characters and x-sce-max-bytes the UTF-8 bytes the type bounds. The text is compact, each object's keywords in one order ($schema, $id, x-sce-source-hash, description, $ref, type, const, enum, anyOf, oneOf, minimum, maximum, maxLength, x-sce-max-bytes, pattern, items, minItems, maxItems, properties, required, additionalProperties, $defs), and a record's properties and required in the order its document declares its keys, a case's tag before them: a decoder held to a schema writes an object's keys in the order the schema states them. It carries no generator stamp: it is a constant of committed generated units, and x-sce-source-hash, the source-hash of the files it is written into, names its inputs instead. Its second spelling, the GBNF grammar of the same type, has no schema file. Authoritative producer is sce-build/src/forge/payload_schema.rs over the folds of sce-build/src/forge/value_type.rs. The stability status of this surface lives in this header alone; see SCE_WIRE_CONTRACTS.md for the shared policy.",
   "type": "object",
-  "required": ["$schema", "$id", "description", "type", "properties", "required", "additionalProperties"],
+  "required": ["$schema", "$id", "description"],
   "additionalProperties": false,
+  "oneOf": [
+    {
+      "description": "An event schema's payload: a record at the root.",
+      "required": ["type", "properties", "required", "additionalProperties"],
+      "not": { "required": ["oneOf"] }
+    },
+    {
+      "description": "A union document's value: the oneOf of its cases at the root, with no record's keywords beside it.",
+      "required": ["oneOf"],
+      "not": {
+        "anyOf": [
+          { "required": ["type"] },
+          { "required": ["properties"] },
+          { "required": ["required"] },
+          { "required": ["additionalProperties"] }
+        ]
+      }
+    }
+  ],
   "properties": {
     "$schema": {
       "description": "The dialect: JSON Schema 2020-12.",
@@ -30,10 +49,16 @@
     "properties": { "$ref": "#/definitions/properties" },
     "required": { "$ref": "#/definitions/keys" },
     "additionalProperties": { "const": false },
+    "oneOf": { "$ref": "#/definitions/cases" },
     "$defs": {
-      "description": "Each record the payload holds, once, under its document's name.",
+      "description": "Each record and each union the value holds, once, under its document's name.",
       "type": "object",
-      "additionalProperties": { "$ref": "#/definitions/record" }
+      "additionalProperties": {
+        "oneOf": [
+          { "$ref": "#/definitions/record" },
+          { "$ref": "#/definitions/union" }
+        ]
+      }
     }
   },
   "definitions": {
@@ -56,6 +81,53 @@
         "properties": { "$ref": "#/definitions/properties" },
         "required": { "$ref": "#/definitions/keys" },
         "additionalProperties": { "const": false }
+      }
+    },
+    "union": {
+      "description": "A union (docs/adr/0092, section 3.1): the oneOf of one object per case, in its tag enum's declaration order.",
+      "type": "object",
+      "required": ["oneOf"],
+      "additionalProperties": false,
+      "properties": {
+        "oneOf": { "$ref": "#/definitions/cases" }
+      }
+    },
+    "cases": {
+      "description": "One object per case of a union.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/case" }
+    },
+    "case": {
+      "description": "A case of a union: its tag, a required string const, then the fields of the record it holds written inline, every key required and no other. The tag stands first in properties and in required, which a schema file cannot state and the producer's tests pin.",
+      "type": "object",
+      "required": ["type", "properties", "required", "additionalProperties"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "const": "object" },
+        "properties": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "oneOf": [
+              { "$ref": "#/definitions/value" },
+              { "$ref": "#/definitions/tag" }
+            ]
+          }
+        },
+        "required": {
+          "allOf": [{ "$ref": "#/definitions/keys" }, { "minItems": 1 }]
+        },
+        "additionalProperties": { "const": false }
+      }
+    },
+    "tag": {
+      "description": "A case's tag: the name of the variant of the tag's enum the case is for.",
+      "type": "object",
+      "required": ["const"],
+      "additionalProperties": false,
+      "properties": {
+        "const": { "type": "string" }
       }
     },
     "value": {

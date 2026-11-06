@@ -2270,6 +2270,7 @@ fn grammar_union<'e>(
     if union.cases.is_empty() {
         return Err(unresolved());
     }
+    tag_closed(union)?;
     let key = union.key(alias);
     if on_path.contains(&key) {
         let mut cycle = on_path.to_vec();
@@ -2281,15 +2282,29 @@ fn grammar_union<'e>(
 
 /// The keys a fold of the union `union`, as the whole of a schema, starts
 /// inside: the union's own, so a case that holds the union again holds
-/// itself; or the refusal of a union of no case, as [`grammar_union`] refuses
-/// one.
+/// itself; or the refusal of a union of no case and of an open tag, as
+/// [`grammar_union`] refuses them.
 fn whole_union(union: &ScopedUnion) -> Result<Vec<String>, GrammarError> {
     if union.cases.is_empty() {
         return Err(GrammarError::Unresolved {
             alias: union.name.clone(),
         });
     }
+    tag_closed(union)?;
     Ok(vec![union.key(&union.name)])
+}
+
+/// The refusal of a union whose tag is a value of an open enum, as an enum
+/// value's grammar refuses one ([`GrammarError::OpenEnum`]): a number no
+/// variant names would be a value with no case, which the import refuses
+/// first (`crate::forge::union_check`).
+fn tag_closed(union: &ScopedUnion) -> Result<(), GrammarError> {
+    match union.scope.enum_type(&union.tag_enum) {
+        Some(tag) if !tag.strict => Err(GrammarError::OpenEnum {
+            alias: union.tag_enum.clone(),
+        }),
+        _ => Ok(()),
+    }
 }
 
 /// What `fold` makes of each case of `union`, in its tag enum's declaration
@@ -6571,6 +6586,35 @@ mod tests {
             gbnf_union(&hollow, &mut GbnfRules::default()),
             Err(unresolved)
         );
+        // A tag of an open enum: a number no variant names would be a value
+        // of no case, and a grammar spells the tag by its variant's name.
+        let mut open = shape_union();
+        open.scope.enums.insert(
+            "ShapeKind".into(),
+            open_enum(
+                SceType::Uint8,
+                &[
+                    ("dot", 0),
+                    ("circle", 1),
+                    ("disc", 2),
+                    ("rect", 3),
+                    ("label", 4),
+                ],
+            ),
+        );
+        env.unions.insert("Open".into(), open.clone());
+        let refusal = GrammarError::OpenEnum {
+            alias: "ShapeKind".into(),
+        };
+        assert_eq!(
+            both(&ty("list<union:Open>[2]"), &env),
+            (refusal.clone(), refusal.clone())
+        );
+        assert_eq!(
+            json_schema_union(&open, &mut SchemaDefs::default()),
+            Err(refusal.clone())
+        );
+        assert_eq!(gbnf_union(&open, &mut GbnfRules::default()), Err(refusal));
         // A case's record that holds the union again: `N` holds `union:U`,
         // whose one case holds `N`.
         let mut inner = TypeScope::default();
