@@ -797,6 +797,13 @@ extension SavedSend {
                     throw StateRefusal(
                         "'\(what).origin' is not the SCXML pair of its sender '\(id)', which a session's own send carries")
                 }
+                // Sent by the session the record sits in, root or child: a text that names another is not one
+                // this session saved, and is refused rather than saved back under this session's id.
+                guard id.utf8.elementsEqual(sessionID.utf8) else {
+                    throw StateRefusal(
+                        "'\(what).sender' is '\(id)', and this session is '\(sessionID)': a \(name) act is this session's own send"
+                    )
+                }
                 return id
             }
             let stored = readStoredSender(try field("origin"))

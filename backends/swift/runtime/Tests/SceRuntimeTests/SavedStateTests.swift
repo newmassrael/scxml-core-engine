@@ -398,6 +398,28 @@ private func queuedText(origin: String, sender: String) -> String {
             .replacingOccurrences(of: #""origin":"kid""#, with: #""origin":"""#))
 }
 
+@Test func aFormat3SessionsActSentByAnotherSessionIsRefusedInTheRootAndInAChild() {
+    // docs/adr/0090, section 7, "Text form": a `raise`, `parent` or `child` act carries this session's pair and
+    // this session's id, so one that names another session is no text this session saved.
+    let other = #"{"due":"5","act":"raise","event":"e","data":"","sendid":"s","origin":\#(scxmlPairText("other")),"sender":"other"}"#
+    #expect(
+        refusal(format3(pending: other))
+            == "'pending[0].sender' is 'other', and this session is 'root': a raise act is this session's own send")
+    let shape = String(repeating: "a", count: 64)
+    let child = SavedState(
+        shape: shape, configuration: ["a"], current: "a", variables: [],
+        pending: [SavedSend(due: 9, act: .parent(event: "up", data: "", sendID: "u", sender: "root"))],
+        invokes: .resumed([]), sessionID: "root.kid")
+    let root = SavedState(
+        shape: shape, configuration: ["a"], current: "a", variables: [],
+        invokes: .resumed([SavedChild(id: "kid", start: 1, invokeID: "s.1.kid", document: "kid", session: child)]),
+        sessionID: "root", invokeStarts: [SavedEntry("kid", 1)])
+    #expect(
+        refusal(root.toJSON())
+            == "the session at invokes[0].session: 'pending[0].sender' is 'root', and this session is 'root.kid': a parent act is this session's own send"
+    )
+}
+
 @Test func aFormat2SendThatStoredNoOriginIsReadAsSentByTheSessionThatHoldsIt() throws {
     // docs/adr/0090, section 7: a `raise`, `parent` or `child` act of a format-2 text whose stored `origin` is
     // empty is the send of the session it sits in, its `sessionid`, so the text it is written back as is one a
