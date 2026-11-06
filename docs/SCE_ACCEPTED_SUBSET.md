@@ -480,7 +480,7 @@ producer side really holds is that it says when it did not validate.
 
 The `sce:kind` attribute on the root `<scxml>` element selects the
 forge kind the document compiles to. The closed value set is the
-twenty-three variants of `ForgeKind`, written in the `sce:kind` attribute
+twenty-nine variants of `ForgeKind`, written in the `sce:kind` attribute
 as the kebab-case tokens below (source of truth:
 `sce-build/src/forge/model.rs` `ForgeKind::from_attr`; see
 `forge_kinds_catalog.md` for the stateful/stateless/inline-eligible
@@ -493,7 +493,40 @@ timer        observer    algorithm   link         worker
 buffer-pool  bounded-collection      enum         event-schema
 queue        feature-model            broadcast-log
 text-template                         union
+test-template          test-port-type test-component
+test-configuration     test-case      test-suite
 ```
+
+The six `test-` kinds are the test profile (docs/adr/0091; their forms are
+`docs/SCE_TEST_PROFILE.md` §11). Five are declarations read by the forge parser:
+`test-port-type` (`<sce:message type direction>` per message, `direction` one of `in`,
+`out`, `inout`), `test-template` (a root `sce:type`, value parameters as
+`<data sce:direction="in">` with no `expr`, and exactly one matcher of the §11.4
+table), `test-configuration` (`<sce:mtc>`, `<sce:ptc>`, `<sce:system-port>`,
+`<sce:map>`, `<sce:connect>` of two `<sce:endpoint>`), `test-case` (a root
+`sce:configuration`) and `test-suite` (`<sce:module-parameter id type value>` and
+`<sce:execute test-case guard requires>`). `test-component` is a `sce-static`
+statechart, read by the statechart parser, that takes the profile's `<sce:test-port>`,
+`<sce:test-timer>`, `<sce:setverdict>`, `<sce:start-timer>` and `<sce:stop-timer>`,
+`sce:receive`, `sce:timeout`, `sce:test-template`, `sce:template-args` and
+`sce:module-parameter`; in any other statechart those attributes are refused as unread
+(`validation/sce-attribute-unread`). Each document is held to what it states alone: a
+data model other than `sce-static` is `test-profile/datamodel`; a matcher its
+position's type does not admit, and `any-value-or-none` as an element of a
+`list-match`, are `test-profile/matcher-type`; a literal outside its type is
+`test-profile/literal`; a `param` or `args` entry that is no formal parameter is
+`test-profile/template-parameter`; a template whose type holds a float is
+`test-profile/template-float`; a guard that is not a delay in whole microseconds is
+`test-profile/duration`; a port of the test system interface mapped by no `<sce:map>`
+or by two, and a component port joined twice, are `test-profile/port-connection`. A
+missing or misplaced attribute, a name declared twice, an alias that names no import of
+its kind, a `value-list` of fewer than two matchers, a `complement` of none and a
+`length-min` past `length-max` are refused with the shape codes every kind uses
+(`validation/missing-attribute`, `validation/duplicate-id`, `validation/invalid-attribute`,
+`validation/attribute-rule-violated`, `validation/exactly-one-attribute`). The rules that
+need an imported document are asked where the imports are read. No backend generates a
+document of the profile until its runtime lands: generation refuses one by name
+(`generate/unsupported-feature`).
 
 `union` (docs/adr/0092, section 1) is a value that is exactly one of several shapes,
 told apart by a tag of a closed enum. Its `<datamodel>` holds exactly one `<data>`, the
@@ -9294,7 +9327,7 @@ document map's symbol of the same node; that map carries no condition.
 
 ---
 
-## Appendix — `DiagnosticCode` index (506 codes)
+## Appendix — `DiagnosticCode` index (513 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -9389,6 +9422,13 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/render-bound` | Validation |
 | `validation/union-cases` | Validation |
 | `validation/union-tag-collision` | Validation |
+| `test-profile/datamodel` | Validation |
+| `test-profile/matcher-type` | Validation |
+| `test-profile/literal` | Validation |
+| `test-profile/template-parameter` | Validation |
+| `test-profile/template-float` | Validation |
+| `test-profile/duration` | Validation |
+| `test-profile/port-connection` | Validation |
 | `validation/mesh-rpc-reserved-param` | Validation |
 | `validation/mesh-rpc-missing-target` | Validation |
 | `validation/mesh-rpc-duplicate-target` | Validation |

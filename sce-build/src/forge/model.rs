@@ -212,9 +212,72 @@ pub enum ForgeKind {
     /// lowers it yet, so generation refuses it by name
     /// (`generate/unsupported-feature`).
     Union,
+    /// A template of the test profile — docs/adr/0091, section 2;
+    /// docs/SCE_TEST_PROFILE.md §11.4. One matcher over a value of the
+    /// template's type, with value parameters; a send names a specific one,
+    /// a receive branch any one.
+    TestTemplate,
+    /// A port type of the test profile — docs/adr/0091, section 2;
+    /// docs/SCE_TEST_PROFILE.md §11.3. The messages a port of the type
+    /// carries, each an imported event schema with its direction.
+    TestPortType,
+    /// A component type of the test profile — docs/adr/0091, section 2;
+    /// docs/SCE_TEST_PROFILE.md §11.5. A `sce-static` statechart, read by
+    /// the statechart parser, that declares its ports, timers and module
+    /// parameters, sends through its ports and branches on receives and
+    /// timeouts.
+    TestComponent,
+    /// A test configuration — docs/adr/0091, answer 10;
+    /// docs/SCE_TEST_PROFILE.md §11.6. The MTC, the PTCs, the ports of the
+    /// test system interface, and the `connect` and `map` that join ports.
+    TestConfiguration,
+    /// A test case — docs/adr/0091, section 2; docs/SCE_TEST_PROFILE.md
+    /// §11.7. Names the configuration it runs in; its body is the MTC.
+    TestCase,
+    /// A test suite — docs/adr/0091, answer 4; docs/SCE_TEST_PROFILE.md
+    /// §11.8. Its test cases in run order, each with its guard and its
+    /// selection, and the module parameters the components read.
+    TestSuite,
 }
 
 impl ForgeKind {
+    /// The kinds of the test profile (docs/adr/0091, section 2), in
+    /// declaration order.
+    pub const TEST_PROFILE: &'static [ForgeKind] = &[
+        Self::TestTemplate,
+        Self::TestPortType,
+        Self::TestComponent,
+        Self::TestConfiguration,
+        Self::TestCase,
+        Self::TestSuite,
+    ];
+
+    /// Whether a document of this kind belongs to the test profile
+    /// (docs/adr/0091): every document of it names `sce-static` as its data
+    /// model, and no backend generates one until the profile's runtime
+    /// lands (docs/SCE_TEST_PROFILE.md §11.9).
+    pub const fn is_test_profile(&self) -> bool {
+        matches!(
+            self,
+            Self::TestTemplate
+                | Self::TestPortType
+                | Self::TestComponent
+                | Self::TestConfiguration
+                | Self::TestCase
+                | Self::TestSuite
+        )
+    }
+
+    /// Whether a document of this kind is read by the statechart parser
+    /// (`crate::parser::SCXMLParser`) rather than by a forge kind parser.
+    /// A `test-component` is a statechart of the test profile
+    /// (docs/SCE_TEST_PROFILE.md §11.5), so it takes the statechart's
+    /// pipeline, and every routing question asks here rather than comparing
+    /// with [`Self::Statechart`].
+    pub const fn reads_as_statechart(&self) -> bool {
+        matches!(self, Self::Statechart | Self::TestComponent)
+    }
+
     /// Every legal `sce:kind` attribute value, in declaration order.
     /// Single source of truth for `from_attr()` and any diagnostic
     /// that needs to surface the closed enumeration (e.g. the
@@ -243,6 +306,12 @@ impl ForgeKind {
         "broadcast-log",
         "text-template",
         "union",
+        "test-template",
+        "test-port-type",
+        "test-component",
+        "test-configuration",
+        "test-case",
+        "test-suite",
     ];
 
     /// This kind's `sce:kind` attribute value — the inverse of
@@ -281,6 +350,12 @@ impl ForgeKind {
             Self::BroadcastLog => "broadcast-log",
             Self::TextTemplate => "text-template",
             Self::Union => "union",
+            Self::TestTemplate => "test-template",
+            Self::TestPortType => "test-port-type",
+            Self::TestComponent => "test-component",
+            Self::TestConfiguration => "test-configuration",
+            Self::TestCase => "test-case",
+            Self::TestSuite => "test-suite",
         }
     }
 
@@ -310,6 +385,12 @@ impl ForgeKind {
             "broadcast-log" => Some(Self::BroadcastLog),
             "text-template" => Some(Self::TextTemplate),
             "union" => Some(Self::Union),
+            "test-template" => Some(Self::TestTemplate),
+            "test-port-type" => Some(Self::TestPortType),
+            "test-component" => Some(Self::TestComponent),
+            "test-configuration" => Some(Self::TestConfiguration),
+            "test-case" => Some(Self::TestCase),
+            "test-suite" => Some(Self::TestSuite),
             _ => None,
         }
     }
@@ -393,6 +474,15 @@ impl ForgeKind {
             // docs/adr/0092, section 7: a union is a value type, held by
             // whoever holds a value of it; the document has no instance.
             Self::Union => false,
+            // docs/adr/0091: no backend generates a document of the test
+            // profile yet, so none of them is held as an instance by an
+            // importer.
+            Self::TestTemplate
+            | Self::TestPortType
+            | Self::TestComponent
+            | Self::TestConfiguration
+            | Self::TestCase
+            | Self::TestSuite => false,
         }
     }
 
@@ -472,6 +562,15 @@ impl ForgeKind {
             // docs/adr/0092, section 7: a union's unit is a sum type of the
             // language's own, which names nothing of a runtime.
             Self::Union => RuntimeDep::None,
+            // docs/SCE_TEST_PROFILE.md §11.9: no backend generates a document
+            // of the test profile until its runtime lands, so none emits
+            // anything or depends on anything.
+            Self::TestTemplate
+            | Self::TestPortType
+            | Self::TestComponent
+            | Self::TestConfiguration
+            | Self::TestCase
+            | Self::TestSuite => RuntimeDep::None,
         }
     }
 
@@ -502,6 +601,12 @@ impl ForgeKind {
                 | Self::BroadcastLog
                 | Self::TextTemplate
                 | Self::Union
+                | Self::TestTemplate
+                | Self::TestPortType
+                | Self::TestComponent
+                | Self::TestConfiguration
+                | Self::TestCase
+                | Self::TestSuite
         )
     }
 }
@@ -532,6 +637,12 @@ impl std::fmt::Display for ForgeKind {
             Self::BroadcastLog => write!(f, "broadcast-log"),
             Self::TextTemplate => write!(f, "text-template"),
             Self::Union => write!(f, "union"),
+            Self::TestTemplate => write!(f, "test-template"),
+            Self::TestPortType => write!(f, "test-port-type"),
+            Self::TestComponent => write!(f, "test-component"),
+            Self::TestConfiguration => write!(f, "test-configuration"),
+            Self::TestCase => write!(f, "test-case"),
+            Self::TestSuite => write!(f, "test-suite"),
         }
     }
 }
@@ -6669,6 +6780,21 @@ pub enum ForgeDocument {
     /// [`UnionModel`].
     #[serde(rename = "union")]
     Union(UnionModel),
+    /// A template of the test profile. See [`TestTemplateModel`].
+    #[serde(rename = "test-template")]
+    TestTemplate(TestTemplateModel),
+    /// A port type of the test profile. See [`TestPortTypeModel`].
+    #[serde(rename = "test-port-type")]
+    TestPortType(TestPortTypeModel),
+    /// A test configuration. See [`TestConfigurationModel`].
+    #[serde(rename = "test-configuration")]
+    TestConfiguration(TestConfigurationModel),
+    /// A test case. See [`TestCaseModel`].
+    #[serde(rename = "test-case")]
+    TestCase(TestCaseModel),
+    /// A test suite. See [`TestSuiteModel`].
+    #[serde(rename = "test-suite")]
+    TestSuite(TestSuiteModel),
 }
 
 impl ForgeDocument {
@@ -6697,12 +6823,19 @@ impl ForgeDocument {
             Self::BroadcastLog(m) => &m.name,
             Self::TextTemplate(m) => &m.name,
             Self::Union(m) => &m.name,
+            Self::TestTemplate(m) => &m.name,
+            Self::TestPortType(m) => &m.name,
+            Self::TestConfiguration(m) => &m.name,
+            Self::TestCase(m) => &m.name,
+            Self::TestSuite(m) => &m.name,
         }
     }
 
     pub fn kind(&self) -> ForgeKind {
         match self {
-            Self::Statechart(_) => ForgeKind::Statechart,
+            // A `test-component` is a statechart the statechart parser read
+            // (docs/SCE_TEST_PROFILE.md §11.5), and its model says which.
+            Self::Statechart(m) => m.kind(),
             Self::Transform(_) => ForgeKind::Transform,
             Self::Lookup(_) => ForgeKind::Lookup,
             Self::Condition(_) => ForgeKind::Condition,
@@ -6725,6 +6858,11 @@ impl ForgeDocument {
             Self::BroadcastLog(_) => ForgeKind::BroadcastLog,
             Self::TextTemplate(_) => ForgeKind::TextTemplate,
             Self::Union(_) => ForgeKind::Union,
+            Self::TestTemplate(_) => ForgeKind::TestTemplate,
+            Self::TestPortType(_) => ForgeKind::TestPortType,
+            Self::TestConfiguration(_) => ForgeKind::TestConfiguration,
+            Self::TestCase(_) => ForgeKind::TestCase,
+            Self::TestSuite(_) => ForgeKind::TestSuite,
         }
     }
 
@@ -6805,6 +6943,16 @@ impl ForgeDocument {
             // A union is a type a field, a variable or a slot holds; its
             // document is not read through its alias as a record.
             Self::Union(_) => return None,
+            // The documents of the test profile are named by the documents
+            // that import them (a template by a send or a receive, a port
+            // type by a port, a configuration by a test case, a test case by
+            // a suite), never read through an alias as a record
+            // (docs/SCE_TEST_PROFILE.md §11).
+            Self::TestTemplate(_)
+            | Self::TestPortType(_)
+            | Self::TestConfiguration(_)
+            | Self::TestCase(_)
+            | Self::TestSuite(_) => return None,
         })
     }
 
@@ -6820,8 +6968,10 @@ impl ForgeDocument {
             // W3C SCXML statechart — built on the SCE runtime
             // (sce_runtime). Matches `ForgeKind::Statechart`'s
             // conservative upper bound; AST export does not change
-            // the runtime tier semantics.
-            Self::Statechart(_) => RuntimeDep::SceRuntime,
+            // the runtime tier semantics. A `test-component` is generated by
+            // no backend yet (docs/SCE_TEST_PROFILE.md §11.9), so its tier is
+            // its kind's.
+            Self::Statechart(m) => m.kind().max_runtime_dep(),
             Self::Transform(_) | Self::Condition(_) | Self::Codec(_) | Self::Validator(_) => {
                 RuntimeDep::None
             }
@@ -6896,6 +7046,13 @@ impl ForgeDocument {
             }
             // A union's unit is a sum type of the language's own.
             Self::Union(_) => RuntimeDep::None,
+            // No backend generates a document of the test profile yet
+            // (docs/SCE_TEST_PROFILE.md §11.9): nothing is emitted.
+            Self::TestTemplate(_)
+            | Self::TestPortType(_)
+            | Self::TestConfiguration(_)
+            | Self::TestCase(_)
+            | Self::TestSuite(_) => RuntimeDep::None,
         }
     }
 }
@@ -6959,6 +7116,445 @@ impl UnionModel {
     pub fn case(&self, variant: &str) -> Option<&UnionCase> {
         self.cases.iter().find(|case| case.variant == variant)
     }
+}
+
+// ── Test profile kinds ─────────────────────────────────────────
+//
+// docs/adr/0091 and docs/SCE_TEST_PROFILE.md §11. Each model holds what one
+// document says, read and held by the parser to every rule the document
+// states alone. A rule that needs an imported document (a field name against
+// its record, a port's direction against a template's type, the PTC tree of a
+// configuration, a module parameter against the components that read it, a
+// cycle of template references) is asked where the imports are read, and each
+// name an import gives is kept here as written so that check can find it.
+
+/// Which way a message of a port type travels, seen from the component that
+/// owns a port of the type (docs/SCE_TEST_PROFILE.md §11.3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(rename_all = "lowercase")]
+pub enum TestMessageDirection {
+    In,
+    Out,
+    Inout,
+}
+
+impl TestMessageDirection {
+    /// Every direction, in the order the attribute's values are listed.
+    pub const ALL: [Self; 3] = [Self::In, Self::Out, Self::Inout];
+
+    /// The `direction` attribute's value.
+    pub fn as_attr(self) -> &'static str {
+        match self {
+            Self::In => "in",
+            Self::Out => "out",
+            Self::Inout => "inout",
+        }
+    }
+
+    /// The direction `value` names, if it names one.
+    pub fn from_attr(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|d| d.as_attr() == value)
+    }
+
+    /// Whether a message of this direction is on the port type's `in` list.
+    pub fn is_in(self) -> bool {
+        matches!(self, Self::In | Self::Inout)
+    }
+
+    /// Whether a message of this direction is on the port type's `out` list.
+    pub fn is_out(self) -> bool {
+        matches!(self, Self::Out | Self::Inout)
+    }
+}
+
+/// Test-port-type document — docs/SCE_TEST_PROFILE.md §11.3: the messages a
+/// port of the type carries, each an imported event schema with its
+/// direction.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct TestPortTypeModel {
+    pub name: String,
+    /// The `<sce:message>` children, in document order.
+    pub messages: Vec<TestPortMessage>,
+    /// Post-preprocessor source position of the root element.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
+}
+
+impl TestPortTypeModel {
+    /// The aliases of the event schemas on the port type's `in` list.
+    pub fn in_list(&self) -> impl Iterator<Item = &str> {
+        self.messages
+            .iter()
+            .filter(|m| m.direction.is_in())
+            .map(|m| m.schema.as_str())
+    }
+
+    /// The aliases of the event schemas on the port type's `out` list.
+    pub fn out_list(&self) -> impl Iterator<Item = &str> {
+        self.messages
+            .iter()
+            .filter(|m| m.direction.is_out())
+            .map(|m| m.schema.as_str())
+    }
+}
+
+/// One `<sce:message type direction>` of a [`TestPortTypeModel`].
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct TestPortMessage {
+    /// The alias of the imported event schema the message is a value of.
+    pub schema: String,
+    pub direction: TestMessageDirection,
+    /// Source line of the `<sce:message>`.
+    #[serde(skip, default)]
+    pub source_line: Option<u32>,
+}
+
+/// Test-template document — docs/SCE_TEST_PROFILE.md §11.4: one matcher over
+/// a value of the template's type, and the value parameters it reads.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct TestTemplateModel {
+    pub name: String,
+    /// The root's `sce:type`, in the type grammar of an event schema's
+    /// fields.
+    pub template_type: crate::forge::value_type::ValueType,
+    /// The formal parameters (`<data sce:direction="in">`), in document
+    /// order: value parameters, bound in order by a reference's arguments.
+    pub parameters: Vec<TestTemplateParameter>,
+    /// The template's one matcher.
+    pub matcher: TestMatcher,
+    /// Post-preprocessor source position of the root element.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
+}
+
+impl TestTemplateModel {
+    /// The formal parameter `id`, if the template declares one.
+    pub fn parameter(&self, id: &str) -> Option<&TestTemplateParameter> {
+        self.parameters.iter().find(|p| p.id == id)
+    }
+
+    /// Whether the template is specific (docs/SCE_TEST_PROFILE.md §6.2): its
+    /// own matchers are values alone. A reference to another template is
+    /// specific when that template is, which is asked where the imports are
+    /// read; here it counts as specific.
+    pub fn is_specific(&self) -> bool {
+        self.matcher.is_specific()
+    }
+}
+
+/// One formal parameter of a [`TestTemplateModel`].
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct TestTemplateParameter {
+    pub id: String,
+    pub parameter_type: crate::forge::value_type::ValueType,
+    /// Source line of the `<data>`.
+    #[serde(skip, default)]
+    pub source_line: Option<u32>,
+}
+
+/// One matcher of a [`TestTemplateModel`] (docs/SCE_TEST_PROFILE.md §11.4):
+/// its form, and the attributes every matcher may carry.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct TestMatcher {
+    pub form: TestMatcherForm,
+    /// `field`: the field of the enclosing `record-match` this matcher is
+    /// for. Present exactly on a child of a `record-match`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub field: Option<String>,
+    /// `length-min`: the fewest characters, octets or elements.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub length_min: Option<u32>,
+    /// `length-max`: the most characters, octets or elements.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub length_max: Option<u32>,
+    /// `ifpresent="true"`: an absent optional field matches too.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub ifpresent: bool,
+    /// Source line of the matcher's element.
+    #[serde(skip, default)]
+    pub source_line: Option<u32>,
+}
+
+impl TestMatcher {
+    /// Whether this matcher and every matcher inside it is a value
+    /// (docs/SCE_TEST_PROFILE.md §6.2): `specific`, `record-match`,
+    /// `list-match`, `union-match`, `omit` and `template-ref`, with no length
+    /// restriction and no `ifpresent`.
+    pub fn is_specific(&self) -> bool {
+        if self.length_min.is_some() || self.length_max.is_some() || self.ifpresent {
+            return false;
+        }
+        match &self.form {
+            TestMatcherForm::Specific { .. }
+            | TestMatcherForm::Omit
+            | TestMatcherForm::TemplateRef { .. } => true,
+            TestMatcherForm::RecordMatch { fields } => fields.iter().all(Self::is_specific),
+            TestMatcherForm::ListMatch { elements } => elements.iter().all(Self::is_specific),
+            TestMatcherForm::UnionMatch { case, .. } => {
+                case.as_deref().is_none_or(Self::is_specific)
+            }
+            TestMatcherForm::ValueList { .. }
+            | TestMatcherForm::Complement { .. }
+            | TestMatcherForm::AnyValue
+            | TestMatcherForm::AnyValueOrNone
+            | TestMatcherForm::ValueRange { .. } => false,
+        }
+    }
+
+    /// The matchers directly inside this one, in document order.
+    pub fn children(&self) -> &[TestMatcher] {
+        match &self.form {
+            TestMatcherForm::RecordMatch { fields } => fields.as_slice(),
+            TestMatcherForm::ListMatch { elements } => elements.as_slice(),
+            TestMatcherForm::ValueList { items } | TestMatcherForm::Complement { items } => {
+                items.as_slice()
+            }
+            TestMatcherForm::UnionMatch { case, .. } => match case {
+                Some(case) => std::slice::from_ref(&**case),
+                None => &[],
+            },
+            TestMatcherForm::Specific { .. }
+            | TestMatcherForm::AnyValue
+            | TestMatcherForm::AnyValueOrNone
+            | TestMatcherForm::ValueRange { .. }
+            | TestMatcherForm::Omit
+            | TestMatcherForm::TemplateRef { .. } => &[],
+        }
+    }
+}
+
+/// What a matcher matches with: one variant per element of
+/// docs/SCE_TEST_PROFILE.md §11.4, named by the element's local name.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(tag = "matcher", rename_all = "kebab-case")]
+pub enum TestMatcherForm {
+    /// `<sce:specific>`: one value, a literal or a formal parameter.
+    Specific { value: TestValue },
+    /// `<sce:record-match>`: one matcher per field of the record, each named
+    /// by its `field`.
+    RecordMatch { fields: Vec<TestMatcher> },
+    /// `<sce:list-match>`: one matcher per element of the list, in order.
+    ListMatch { elements: Vec<TestMatcher> },
+    /// `<sce:union-match variant>`: the case `variant`, and the matcher of its
+    /// record when the case holds one.
+    UnionMatch {
+        variant: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        case: Option<Box<TestMatcher>>,
+    },
+    /// `<sce:value-list>`: the value matches one of the items.
+    ValueList { items: Vec<TestMatcher> },
+    /// `<sce:complement>`: the value matches none of the items.
+    Complement { items: Vec<TestMatcher> },
+    /// `<sce:any-value/>`: any value.
+    AnyValue,
+    /// `<sce:any-value-or-none/>`: any value of an optional field, or none.
+    AnyValueOrNone,
+    /// `<sce:value-range>`: an integer within the bounds, each inclusive, a
+    /// missing bound unbounded.
+    ValueRange {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        lower: Option<TestValue>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        upper: Option<TestValue>,
+    },
+    /// `<sce:omit/>`: the optional field is absent.
+    Omit,
+    /// `<sce:template-ref template args>`: the imported template, its formal
+    /// parameters bound in order to this template's own parameters.
+    TemplateRef { template: String, args: Vec<String> },
+}
+
+impl TestMatcherForm {
+    /// The element's local name.
+    pub fn element(&self) -> &'static str {
+        match self {
+            Self::Specific { .. } => "specific",
+            Self::RecordMatch { .. } => "record-match",
+            Self::ListMatch { .. } => "list-match",
+            Self::UnionMatch { .. } => "union-match",
+            Self::ValueList { .. } => "value-list",
+            Self::Complement { .. } => "complement",
+            Self::AnyValue => "any-value",
+            Self::AnyValueOrNone => "any-value-or-none",
+            Self::ValueRange { .. } => "value-range",
+            Self::Omit => "omit",
+            Self::TemplateRef { .. } => "template-ref",
+        }
+    }
+}
+
+/// A value a matcher names (docs/SCE_TEST_PROFILE.md §11.4): a literal as
+/// written, which its position's type reads, or a formal parameter.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(rename_all = "lowercase")]
+pub enum TestValue {
+    Value(String),
+    Param(String),
+}
+
+/// Test-configuration document — docs/SCE_TEST_PROFILE.md §11.6: the
+/// components of a test case and how their ports are joined.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct TestConfigurationModel {
+    pub name: String,
+    /// The alias of the imported `test-component` the MTC is.
+    pub mtc: String,
+    /// The `<sce:ptc>` children, in document order.
+    pub ptcs: Vec<TestPtc>,
+    /// The `<sce:system-port>` children: the ports of the test system
+    /// interface.
+    pub system_ports: Vec<TestSystemPort>,
+    /// The `<sce:map>` children.
+    pub maps: Vec<TestMap>,
+    /// The `<sce:connect>` children.
+    pub connects: Vec<TestConnect>,
+    /// Post-preprocessor source position of the root element.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
+}
+
+impl TestConfigurationModel {
+    /// The name the MTC is known by in `component` attributes.
+    pub const MTC: &'static str = "mtc";
+
+    /// Whether `component` names a component of the configuration: the MTC
+    /// or a declared PTC.
+    pub fn names_component(&self, component: &str) -> bool {
+        component == Self::MTC || self.ptcs.iter().any(|p| p.id == component)
+    }
+}
+
+/// One `<sce:ptc id type>` of a [`TestConfigurationModel`].
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct TestPtc {
+    /// The PTC's name, the `id` of the `<invoke>` that creates it.
+    pub id: String,
+    /// The alias of the imported `test-component` the PTC is.
+    pub component: String,
+    /// Source line of the `<sce:ptc>`.
+    #[serde(skip, default)]
+    pub source_line: Option<u32>,
+}
+
+/// One `<sce:system-port id type>` of a [`TestConfigurationModel`].
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct TestSystemPort {
+    pub id: String,
+    /// The alias of the imported `test-port-type` the port is of.
+    pub port_type: String,
+    /// Source line of the `<sce:system-port>`.
+    #[serde(skip, default)]
+    pub source_line: Option<u32>,
+}
+
+/// One `<sce:map component port system-port>` of a
+/// [`TestConfigurationModel`]: a component port joined to a port of the
+/// test system interface.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct TestMap {
+    pub component: String,
+    pub port: String,
+    pub system_port: String,
+    /// Source line of the `<sce:map>`.
+    #[serde(skip, default)]
+    pub source_line: Option<u32>,
+}
+
+/// One `<sce:connect>` of a [`TestConfigurationModel`]: two component ports
+/// joined to each other.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct TestConnect {
+    /// The two `<sce:endpoint>` children, in document order.
+    pub endpoints: Vec<TestEndpoint>,
+    /// Source line of the `<sce:connect>`.
+    #[serde(skip, default)]
+    pub source_line: Option<u32>,
+}
+
+/// One `<sce:endpoint component port>` of a [`TestConnect`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct TestEndpoint {
+    pub component: String,
+    pub port: String,
+}
+
+/// Test-case document — docs/SCE_TEST_PROFILE.md §11.7: a test case and the
+/// configuration it runs in.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct TestCaseModel {
+    pub name: String,
+    /// The root's `sce:configuration`: the alias of the imported
+    /// `test-configuration`.
+    pub configuration: String,
+    /// Post-preprocessor source position of the root element.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
+}
+
+/// Test-suite document — docs/SCE_TEST_PROFILE.md §11.8: the test cases in
+/// run order, and the module parameters their components read.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct TestSuiteModel {
+    pub name: String,
+    /// The alias of the one imported `feature-model` the selections are
+    /// over, when the suite imports one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub features: Option<String>,
+    /// The `<sce:module-parameter>` children, in document order.
+    pub module_parameters: Vec<TestModuleParameter>,
+    /// The `<sce:execute>` children, in run order.
+    pub executes: Vec<TestExecute>,
+    /// Post-preprocessor source position of the root element.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_location: Option<SourceLocation>,
+}
+
+/// One `<sce:module-parameter id type value>` of a [`TestSuiteModel`].
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct TestModuleParameter {
+    pub id: String,
+    pub parameter_type: crate::forge::value_type::ValueType,
+    /// The default, a literal of `parameter_type` as written.
+    pub value: String,
+    /// Source line of the `<sce:module-parameter>`.
+    #[serde(skip, default)]
+    pub source_line: Option<u32>,
+}
+
+/// One `<sce:execute test-case guard requires>` of a [`TestSuiteModel`].
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+pub struct TestExecute {
+    /// The alias of the imported `test-case`.
+    pub test_case: String,
+    /// The guard: the test case's time limit, in microseconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub guard_us: Option<u64>,
+    /// The selection: a feature condition over the suite's feature model,
+    /// as written (ADR 0057 §3).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requires: Option<String>,
+    /// Source line of the `<sce:execute>`.
+    #[serde(skip, default)]
+    pub source_line: Option<u32>,
 }
 
 // ── Text-template kind ─────────────────────────────────────────
@@ -7169,7 +7765,7 @@ mod tests {
     fn forge_kind_attr_names_round_trip() {
         assert_eq!(
             ForgeKind::ALL_ATTR_NAMES.len(),
-            23,
+            29,
             "the kind vocabulary changed size — every arm below counts it"
         );
         let mut seen: BTreeSet<&'static str> = BTreeSet::new();

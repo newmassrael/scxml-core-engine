@@ -13557,7 +13557,7 @@ fn cmd_unresolved(scxml: &str, profile: Option<&str>, error_format: ErrorFormat)
         )
     });
     match sce_build::forge::parser::detect_kind(&content) {
-        Ok(Some(kind)) if kind != sce_build::forge::model::ForgeKind::Statechart => {
+        Ok(Some(kind)) if !kind.reads_as_statechart() => {
             // Expanded, as every other forge route reads a document: a
             // marker a template or an included fragment carries is one the
             // build refuses under `--strict-unresolved`, so it is one this

@@ -52,7 +52,7 @@
     "kindName": {
       "description": "An sce:kind value the parser accepts. The enumeration is ForgeKind::ALL_ATTR_NAMES, in its order, which a test holds this list to.",
       "type": "string",
-      "enum": ["statechart", "transform", "lookup", "condition", "codec", "procedure", "validator", "filter", "interpolation", "timer", "observer", "algorithm", "link", "buffer-pool", "worker", "bounded-collection", "enum", "event-schema", "queue", "feature-model", "broadcast-log", "text-template", "union"]
+      "enum": ["statechart", "transform", "lookup", "condition", "codec", "procedure", "validator", "filter", "interpolation", "timer", "observer", "algorithm", "link", "buffer-pool", "worker", "bounded-collection", "enum", "event-schema", "queue", "feature-model", "broadcast-log", "text-template", "union", "test-template", "test-port-type", "test-component", "test-configuration", "test-case", "test-suite"]
     },
     "kind": {
       "type": "object",
@@ -61,8 +61,8 @@
       "properties": {
         "name": { "$ref": "#/definitions/kindName" },
         "role": {
-          "description": "What a document of the kind describes: behavior (reacts over time), computation (answers from its inputs when called), data-format (the shape of bytes, a value set, or a payload), platform-resource (the platform the behaviour runs on), or variability (which parts of the other documents a build contains).",
-          "enum": ["behavior", "computation", "data-format", "platform-resource", "variability"]
+          "description": "What a document of the kind describes: behavior (reacts over time), computation (answers from its inputs when called), data-format (the shape of bytes, a value set, or a payload), platform-resource (the platform the behaviour runs on), variability (which parts of the other documents a build contains), or verification (how an implementation is tested against what the other documents specify: templates, ports, components, configurations, test cases, suites; ADR 0091).",
+          "enum": ["behavior", "computation", "data-format", "platform-resource", "variability", "verification"]
         },
         "summary": { "type": "string", "minLength": 1 },
         "choose_when": {

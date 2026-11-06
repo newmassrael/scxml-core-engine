@@ -210,6 +210,18 @@ pub enum Word {
     /// A union's head (docs/adr/0092, section 1.1). Its cases are nested
     /// under it, so the line names the word a shape closes the block with.
     Union,
+    /// The heads of the declaration kinds of the test profile
+    /// (docs/SCE_TEST_PROFILE.md §11). What each declares is nested under
+    /// it, so the line names the word a shape closes the block with.
+    TestTemplate,
+    TestPortType,
+    TestConfiguration,
+    TestCase,
+    TestSuite,
+    /// One matcher of a test template (docs/SCE_TEST_PROFILE.md §11.4). The
+    /// matchers inside a record, a list, a union case, a value list or a
+    /// complement are nested under it.
+    Matcher,
     Worker,
     /// The traceability family (docs/SCE_ACCEPTED_SUBSET.md §2.10): what
     /// a node says it implements, where the specification says so, and
@@ -383,6 +395,12 @@ impl Word {
         Word::BoundedCollection,
         Word::TextTemplate,
         Word::Union,
+        Word::TestTemplate,
+        Word::TestPortType,
+        Word::TestConfiguration,
+        Word::TestCase,
+        Word::TestSuite,
+        Word::Matcher,
         Word::Worker,
         Word::Req,
         Word::Provenance,
@@ -560,6 +578,12 @@ fn en_word(w: Word) -> &'static str {
         Word::BoundedCollection => "bounded-collection",
         Word::TextTemplate => "text-template",
         Word::Union => "union",
+        Word::TestTemplate => "test-template",
+        Word::TestPortType => "test-port-type",
+        Word::TestConfiguration => "test-configuration",
+        Word::TestCase => "test-case",
+        Word::TestSuite => "test-suite",
+        Word::Matcher => "matcher",
         Word::Worker => "worker",
         Word::Req => "req",
         Word::Provenance => "provenance",
@@ -1087,6 +1111,12 @@ fn ko_word(w: Word) -> &'static str {
         Word::BoundedCollection => "유한컬렉션",
         Word::TextTemplate => "텍스트템플릿",
         Word::Union => "합타입",
+        Word::TestTemplate => "시험템플릿",
+        Word::TestPortType => "시험포트형",
+        Word::TestConfiguration => "시험구성",
+        Word::TestCase => "시험사례",
+        Word::TestSuite => "시험묶음",
+        Word::Matcher => "대조",
         Word::Worker => "작업자",
         // `미결` rather than `미해결`: the page's other words are short,
         // and `미처리` (unhandled) already spends the `미` shape for a

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- test-suite: the test cases to run, in order. Each has a time limit, and
+     runs only for a product with the features its condition names, from the
+     feature-model example beside this file. The suite also declares the
+     limit the test component reads, and its value. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-suite" name="job_suite">
+  <sce:import kind="feature-model" src="feature-model.scxml" as="Features"/>
+  <sce:import kind="test-case" src="test-case.scxml" as="CompletesInTime"/>
+  <sce:module-parameter id="limit" type="uint32" value="500"/>
+  <sce:execute test-case="CompletesInTime" guard="10s" requires="session-unicast"/>
+</scxml>

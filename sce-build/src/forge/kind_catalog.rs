@@ -61,6 +61,10 @@ pub enum KindRole {
     /// Says which parts of the other documents a build contains: the
     /// features they are written against (ADR 0057).
     Variability,
+    /// Says how an implementation is tested against what the other
+    /// documents specify: templates, ports, components, configurations, test
+    /// cases, suites (ADR 0091).
+    Verification,
 }
 
 /// The behaviour that separates a kind from one it is confused with.
@@ -783,6 +787,201 @@ pub const fn guide(kind: ForgeKind) -> KindGuide {
                  yet, so generation refuses it by name",
             ],
             example: Example::Document(include_str!("../../kind-examples/union.scxml")),
+        },
+        K::TestTemplate => KindGuide {
+            role: KindRole::Verification,
+            summary: "What a test expects of a message, or what it sends: one matcher over a \
+                      value of an event schema's record or of a type it holds (a specific \
+                      value, any value, a range, a list of values, a complement, an absent \
+                      field, a length restriction), with value parameters a test binds where \
+                      it names the template.",
+            choose_when: &[
+                "the text says what a received message must hold for a test to pass: which \
+                 fields must have which values, which may have any value, which may be absent",
+                "a test sends a message whose every field the text fixes",
+            ],
+            distinct_from: &[
+                apart!(
+                    K::EventSchema,
+                    "an event schema declares the fields a message has; a template says \
+                     which values of them a test accepts or sends, and is written over a \
+                     schema",
+                ),
+                apart!(
+                    K::Condition,
+                    "a condition is an expression a program evaluates over its inputs; a \
+                     template is matched against a message by the test runtime and holds no \
+                     expression",
+                ),
+            ],
+            notes: &[
+                "the root's sce:type is the template's type; a template a send or a receive \
+                 names has the type record:<alias> of an imported event schema",
+                "a formal parameter is a <data sce:direction=\"in\"> with no expr; a matcher \
+                 names it with param, and a reference binds it with args",
+                "a template a send names is specific: values only, no matching symbol \
+                 (docs/SCE_TEST_PROFILE.md §6.2)",
+                "no backend generates it yet, so generation refuses it by name",
+            ],
+            example: Example::Document(include_str!("../../kind-examples/test-template.scxml")),
+        },
+        K::TestPortType => KindGuide {
+            role: KindRole::Verification,
+            summary: "The messages a port of a test component carries, each an imported event \
+                      schema with the way it travels, seen from the component that owns the \
+                      port: in, out or inout.",
+            choose_when: &[
+                "the text names a channel between the tester and the system under test, or \
+                 between two test components, and the messages that travel on it",
+            ],
+            distinct_from: &[
+                apart!(
+                    K::EventSchema,
+                    "an event schema is one message's fields; a port type lists the messages a \
+                     port carries and which way each travels",
+                ),
+                apart!(
+                    K::Link,
+                    "a link is a transport endpoint the generated code drives; a port type is \
+                     a channel of a test, joined to another port by the test configuration",
+                ),
+            ],
+            notes: &[
+                "one <sce:message type direction> per message, type the alias of an imported \
+                 event schema, each listed once",
+                "no backend generates it yet, so generation refuses it by name",
+            ],
+            example: Example::Document(include_str!("../../kind-examples/test-port-type.scxml")),
+        },
+        K::TestComponent => KindGuide {
+            role: KindRole::Verification,
+            summary: "What a tester does, as a sce-static statechart: it sends messages through \
+                      its ports, branches on the messages it receives and on its timers' \
+                      timeouts, and sets the test's verdict.",
+            choose_when: &[
+                "the text says what the tester does: send a request, wait for a reply within a \
+                 time, decide pass or fail",
+                "a part of a test runs alongside another and is created by it (a parallel test \
+                 component)",
+            ],
+            distinct_from: &[
+                apart!(
+                    K::Statechart,
+                    "a statechart is the system's behaviour; a test component is the tester's, \
+                     its transitions branches on a port's message or a timer's timeout and its \
+                     outcome a verdict set with <sce:setverdict>",
+                ),
+                apart!(
+                    K::Timer,
+                    "the timer kind fires periodically for the system; a test timer is \
+                     one-shot, started and stopped by the component, and its timeout is a \
+                     branch",
+                ),
+            ],
+            notes: &[
+                "declares datamodel=\"sce-static\", its ports with <sce:test-port id type> and \
+                 its timers with <sce:test-timer id duration>",
+                "a <transition sce:receive=\"<port>\" sce:test-template=\"<alias>\"> is a \
+                 receive branch, a <transition sce:timeout=\"<timer>\"> a timeout branch; a \
+                 <send type=\"http://sce.dev/ext/test-port\" target=\"<port>\" \
+                 sce:test-template=\"<alias>\"> sends a specific template",
+                "a <data sce:module-parameter=\"true\"> has no expr: its value is the suite's \
+                 module parameter of the same id",
+                "no backend generates it yet, so generation refuses it by name",
+            ],
+            example: Example::Document(include_str!("../../kind-examples/test-component.scxml")),
+        },
+        K::TestConfiguration => KindGuide {
+            role: KindRole::Verification,
+            summary: "Who takes part in a test case and how their ports are joined: the main \
+                      test component, each parallel test component, the ports of the test \
+                      system interface, a map from a component port to one of them and a \
+                      connect between two component ports.",
+            choose_when: &[
+                "the text says which testers take part in a test, which of them talk to the \
+                 system under test and which to each other",
+            ],
+            distinct_from: &[
+                apart!(
+                    K::TestCase,
+                    "a test case is one entry a suite runs and names one configuration; the \
+                     configuration is the arrangement it runs in, which several test cases may \
+                     share",
+                ),
+                apart!(
+                    K::Worker,
+                    "a worker is an execution context of the system; a test component of a \
+                     configuration is a tester, created and joined to its peers for one test \
+                     case",
+                ),
+            ],
+            notes: &[
+                "exactly one <sce:mtc type>; one <sce:ptc id type> per PTC, never named mtc, \
+                 created by the component's <invoke> of the same id",
+                "one <sce:system-port id type> per port of the test system interface; every \
+                 port takes part in exactly one <sce:map> or <sce:connect>",
+                "no backend generates it yet, so generation refuses it by name",
+            ],
+            example: Example::Document(include_str!(
+                "../../kind-examples/test-configuration.scxml"
+            )),
+        },
+        K::TestCase => KindGuide {
+            role: KindRole::Verification,
+            summary: "One test case: its name in the suite and the test configuration it runs \
+                      in. Its behaviour is the configuration's main test component.",
+            choose_when: &["the text names a test by what it checks, as one entry of a test plan"],
+            distinct_from: &[
+                apart!(
+                    K::TestSuite,
+                    "a suite runs test cases in order and selects each by feature; a test \
+                     case is one of them",
+                ),
+                apart!(
+                    K::TestComponent,
+                    "a test component is the behaviour of a tester; a test case names the \
+                     configuration whose main test component that behaviour is",
+                ),
+            ],
+            notes: &[
+                "the root's sce:configuration names an imported test configuration",
+                "no backend generates it yet, so generation refuses it by name",
+            ],
+            example: Example::Document(include_str!("../../kind-examples/test-case.scxml")),
+        },
+        K::TestSuite => KindGuide {
+            role: KindRole::Verification,
+            summary: "The test cases to run, in order, each with its time limit and the feature \
+                      condition that selects it, and the module parameters the test components \
+                      read.",
+            choose_when: &[
+                "the text lists the tests of a product, their order, which apply to which \
+                 product variant, and how long each may take",
+            ],
+            distinct_from: &[
+                apart!(
+                    K::FeatureModel,
+                    "a feature model declares the features of a product line; a suite selects \
+                     its test cases by a condition over the features of the one it imports",
+                ),
+                apart!(
+                    K::TestCase,
+                    "a test case is one test; a suite is the ordered list a run executes",
+                ),
+            ],
+            notes: &[
+                "a scenario set states what the specification says should be observed and is \
+                 judged against the design; a suite runs test cases against an \
+                 implementation, and a scenario is not lowered into one (docs/adr/0091, \
+                 answer 7)",
+                "one <sce:execute test-case guard requires> per test case, in run order; \
+                 guard is a delay in whole microseconds, requires a condition over the \
+                 imported feature model",
+                "one <sce:module-parameter id type value> per module parameter: a scalar, \
+                 string[N] or bytes[N] type and a literal default",
+                "no backend generates it yet, so generation refuses it by name",
+            ],
+            example: Example::Document(include_str!("../../kind-examples/test-suite.scxml")),
         },
     }
 }

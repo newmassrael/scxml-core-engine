@@ -132,6 +132,36 @@
       "prose": "A reminder's time is one of three kinds. At a clock time, it gives the hour and the minute. Before an event, it gives the number of minutes before the event starts. Never, it gives nothing more. Which kind a reminder is decides which of these numbers it has, and a reminder never carries a number its kind does not use."
     },
     {
+      "id": "accepted-reply",
+      "kind": "test-template",
+      "prose": "In the conformance tests, a reply to a booking request is accepted when its status is confirmed, its seat count is between one and the number the test asked for, and its note is either absent or anything at all. A reply that differs in any of these is not the one the test waits for."
+    },
+    {
+      "id": "booking-channel",
+      "kind": "test-port-type",
+      "prose": "The tester talks to the booking service over one channel. On it the tester sends booking requests and receives replies; nothing else travels on that channel."
+    },
+    {
+      "id": "booking-tester",
+      "kind": "test-component",
+      "prose": "The tester sends a booking request, then waits at most two seconds. If a reply arrives that the test accepts, the test passes. If any other reply arrives, or none before the two seconds are over, the test fails."
+    },
+    {
+      "id": "booking-setup",
+      "kind": "test-configuration",
+      "prose": "One test runs a main tester and a helper that plays a second customer. The main tester's channel goes to the booking service under test; the helper and the main tester also talk to each other over a channel of their own."
+    },
+    {
+      "id": "double-booking-case",
+      "kind": "test-case",
+      "prose": "The test named double booking is refused runs in the setup with the main tester and the helper; it checks that the service refuses a seat the helper already holds."
+    },
+    {
+      "id": "booking-test-plan",
+      "kind": "test-suite",
+      "prose": "The booking tests run in this order: request accepted, double booking refused, cancellation. Each may take at most ten seconds. The cancellation test runs only for products that offer cancellation. The tests read the largest party size from the plan, five unless a product says otherwise."
+    },
+    {
       "id": "client-only-build",
       "kind": "feature-model",
       "prose": "The session code is built in two shapes. A client build opens sessions and never accepts one; a server build also accepts incoming sessions. Accepting is only possible in a build that has sessions at all. The build options must name both capabilities so that a client build leaves the accepting code out entirely."

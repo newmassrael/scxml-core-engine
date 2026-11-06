@@ -55,6 +55,13 @@ const PICTURES: &[(&str, &[&str])] = &[
     // page, where the storage, the cardinalities and the progress are each
     // a word, and the field table.
     ("queue", &[]),
+    // The declaration kinds of the test profile are lists and one tree of
+    // matchers; their reading is the pseudocode page and the field table.
+    ("test-case", &[]),
+    ("test-configuration", &[]),
+    ("test-port-type", &[]),
+    ("test-suite", &[]),
+    ("test-template", &[]),
     // A text template is a text with holes; its reading is the pseudocode
     // page, where each literal and each put is a line, and the field table.
     ("text-template", &[]),
@@ -66,6 +73,11 @@ const PICTURES: &[(&str, &[&str])] = &[
     ("validator", &["dataflow.svg"]),
     ("worker", &["structure.svg"]),
 ];
+
+/// The kinds the statechart parser reads, each drawn as its figures with no
+/// field table: the statechart, and the `test-component`, a statechart of
+/// the test profile (docs/SCE_TEST_PROFILE.md §11.5).
+const STATECHART_FIGURES: &[&str] = &["statechart", "test-component"];
 
 fn scratch(label: &str) -> PathBuf {
     let dir =
@@ -112,7 +124,9 @@ fn names(files: &[PathBuf]) -> Vec<String> {
 #[test]
 fn the_table_names_every_kind_the_parser_knows() {
     let mut listed: Vec<&str> = PICTURES.iter().map(|(k, _)| *k).collect();
-    listed.push("statechart");
+    // Drawn as figures, as a statechart is: a `test-component` is one
+    // (docs/SCE_TEST_PROFILE.md §11.5).
+    listed.extend(STATECHART_FIGURES);
     listed.sort_unstable();
     let mut known: Vec<&str> = ForgeKind::ALL_ATTR_NAMES.to_vec();
     known.sort_unstable();
@@ -168,27 +182,29 @@ fn every_kind_example_is_drawn_as_its_pictures_and_its_table() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// The statechart example is still drawn as its figures: the document's
-/// own figure first, and no field table.
+/// The statechart example, and the test component's, are still drawn as
+/// their figures: the document's own figure first, and no field table.
 #[test]
 fn the_statechart_example_is_still_drawn_as_figures() {
     let dir = scratch("diagram-every-kind-statechart");
-    let out = dir.join("figures");
-    let run = diagram(&example("statechart"), &out, &[]);
-    assert!(
-        run.status.success(),
-        "{}",
-        String::from_utf8_lossy(&run.stderr)
-    );
-    let got = names(&written(&run));
-    assert_eq!(
-        got.first().map(String::as_str),
-        Some("document.svg"),
-        "{got:?}"
-    );
-    assert!(
-        got.iter().all(|n| !n.starts_with("fields-")),
-        "a statechart has no field table: {got:?}"
-    );
+    for kind in STATECHART_FIGURES {
+        let out = dir.join(format!("{kind}-figures"));
+        let run = diagram(&example(kind), &out, &[]);
+        assert!(
+            run.status.success(),
+            "{kind}: {}",
+            String::from_utf8_lossy(&run.stderr)
+        );
+        let got = names(&written(&run));
+        assert_eq!(
+            got.first().map(String::as_str),
+            Some("document.svg"),
+            "{kind}: {got:?}"
+        );
+        assert!(
+            got.iter().all(|n| !n.starts_with("fields-")),
+            "{kind}: a statechart has no field table: {got:?}"
+        );
+    }
     let _ = std::fs::remove_dir_all(&dir);
 }

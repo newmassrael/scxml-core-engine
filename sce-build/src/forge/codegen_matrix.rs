@@ -123,7 +123,16 @@ pub const fn kind_class(kind: ForgeKind) -> KindClass {
         // docs/adr/0092, section 7: a union is a sum type on every backend.
         // No backend lowers one yet, so each refuses it by name
         // ([`awaits_runtime`]), not as a missing template.
-        | ForgeKind::Union => KindClass::Generic,
+        | ForgeKind::Union
+        // docs/SCE_TEST_PROFILE.md §11.9: the test profile is generated on
+        // every backend once its runtime lands there. Until then each refuses
+        // a document of it by name ([`awaits_runtime`]).
+        | ForgeKind::TestTemplate
+        | ForgeKind::TestPortType
+        | ForgeKind::TestComponent
+        | ForgeKind::TestConfiguration
+        | ForgeKind::TestCase
+        | ForgeKind::TestSuite => KindClass::Generic,
         // RFC §synth-5-C / §synth-5-J-4: Link is the first MCU-class kind.
         // Authoring it on cpp/kotlin/go/python raises
         // `codegen/mcu-class-kind-on-non-mcu-language`. The (rust, *)
@@ -343,6 +352,23 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
         // backend at a time. Which have landed is [`UNION_BACKENDS`], the one
         // list both this answer and [`awaits_runtime`] read.
         ForgeKind::Union => lists(UNION_BACKENDS, lang),
+        // docs/adr/0091, order of work step 3: the profile's native runtime
+        // lands in one backend first, so no backend has a template for a
+        // document of the profile yet.
+        ForgeKind::TestTemplate
+        | ForgeKind::TestPortType
+        | ForgeKind::TestComponent
+        | ForgeKind::TestConfiguration
+        | ForgeKind::TestCase
+        | ForgeKind::TestSuite => match lang {
+            Language::Rust
+            | Language::Cpp
+            | Language::Go
+            | Language::Kotlin
+            | Language::Python
+            | Language::C11
+            | Language::Swift => false,
+        },
     }
 }
 
@@ -471,6 +497,17 @@ pub const fn awaits_runtime(kind: ForgeKind, lang: Language) -> bool {
         // and a backend that does not lower a union yet refuses it by name in
         // its dispatch (`generate/unsupported-feature`, `crate::forge::union_check`).
         ForgeKind::Union => !lists(UNION_BACKENDS, lang),
+        // docs/SCE_TEST_PROFILE.md §11.9: a document of the test profile is
+        // read and checked on every backend, and each refuses to generate it
+        // by name (`generate/unsupported-feature`,
+        // `crate::forge::test_profile::document_not_generated`) until the
+        // profile's runtime lands there.
+        kind @ (ForgeKind::TestTemplate
+        | ForgeKind::TestPortType
+        | ForgeKind::TestComponent
+        | ForgeKind::TestConfiguration
+        | ForgeKind::TestCase
+        | ForgeKind::TestSuite) => !template_ships(kind, lang),
         _ => false,
     }
 }
@@ -1057,8 +1094,8 @@ mod tests {
         }
     }
 
-    /// No kind but the broadcast log and the union awaits a runtime, and no
-    /// pair that ships a template awaits one.
+    /// No kind but the broadcast log, the union and the kinds of the test
+    /// profile awaits a runtime, and no pair that ships a template awaits one.
     #[test]
     fn only_a_pair_with_no_template_awaits_its_runtime() {
         for name in ForgeKind::ALL_ATTR_NAMES {
@@ -1066,12 +1103,35 @@ mod tests {
             for &lang in Language::ALL {
                 if awaits_runtime(kind, lang) {
                     assert!(
-                        matches!(kind, ForgeKind::BroadcastLog | ForgeKind::Union),
+                        matches!(kind, ForgeKind::BroadcastLog | ForgeKind::Union)
+                            || kind.is_test_profile(),
                         "{kind:?} on {lang:?}"
                     );
                     assert!(!template_ships(kind, lang), "{kind:?} on {lang:?}");
                 }
             }
+        }
+    }
+
+    /// docs/SCE_TEST_PROFILE.md §11.9: no backend generates a document of the
+    /// test profile yet, so every backend awaits each of its six kinds, lets
+    /// it through the matrix to the dispatch that refuses it by name, and none
+    /// is listed as emitting it.
+    #[test]
+    fn every_backend_awaits_the_test_profile_and_none_emits_it() {
+        assert_eq!(ForgeKind::TEST_PROFILE.len(), 6);
+        for &kind in ForgeKind::TEST_PROFILE {
+            assert!(kind.is_test_profile(), "{kind:?}");
+            assert_eq!(kind_class(kind), KindClass::Generic, "{kind:?}");
+            for &lang in Language::ALL {
+                assert_eq!(
+                    lookup(kind, lang),
+                    EmitOutcome::RuntimeMissing,
+                    "{kind:?} on {lang:?}"
+                );
+                assert!(check(kind, lang).is_ok(), "{kind:?} on {lang:?}");
+            }
+            assert_eq!(emitting(kind).count(), 0, "{kind:?}");
         }
     }
 

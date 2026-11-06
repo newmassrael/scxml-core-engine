@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- test-template: what a test expects of a message. A job that completed
+     within a limit the test supplies: its elapsed time lies between 0 and the
+     limit, both included. The record is the event-schema example beside this
+     file. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="completed_within"
+       sce:type="record:JobCompleted">
+  <sce:import kind="event-schema" src="event-schema.scxml" as="JobCompleted"/>
+  <datamodel>
+    <data id="limit" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+  <sce:record-match>
+    <sce:value-range field="elapsed_ms">
+      <sce:lower value="0"/>
+      <sce:upper param="limit"/>
+    </sce:value-range>
+  </sce:record-match>
+</scxml>

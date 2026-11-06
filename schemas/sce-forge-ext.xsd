@@ -99,6 +99,16 @@
            variant, each holding the record of an imported event schema or
            nothing. A type of the language (`union:<alias>`). -->
       <xs:enumeration value="union"/>
+      <!-- docs/adr/0091, section 2 — the six kinds of the test profile
+           (docs/SCE_TEST_PROFILE.md §11): a template, a port type, a test
+           component (a `sce-static` statechart), a test configuration, a
+           test case and a test suite. -->
+      <xs:enumeration value="test-template"/>
+      <xs:enumeration value="test-port-type"/>
+      <xs:enumeration value="test-component"/>
+      <xs:enumeration value="test-configuration"/>
+      <xs:enumeration value="test-case"/>
+      <xs:enumeration value="test-suite"/>
     </xs:restriction>
   </xs:simpleType>
 
@@ -508,6 +518,22 @@
        diagnostic. -->
   <xs:attribute name="requires" type="xs:string"/>
 
+  <!-- docs/SCE_TEST_PROFILE.md §11 — the test profile's attributes on W3C
+       elements. Each is read only where its document is of the kind that
+       takes it, and refused as unread anywhere else
+       (`validation/sce-attribute-unread`): `sce:configuration` on the root
+       of a `test-case`; `sce:receive`, `sce:timeout`, `sce:test-template`
+       and `sce:template-args` on a `<transition>` of a `test-component`, the
+       last two on its `<send>` too; `sce:module-parameter` on a `<data>` of
+       a `test-component`. Names are strings here: which import, port, timer
+       or variable each names is the parser's and the import check's rule. -->
+  <xs:attribute name="configuration" type="xs:string"/>
+  <xs:attribute name="receive" type="xs:string"/>
+  <xs:attribute name="timeout" type="xs:string"/>
+  <xs:attribute name="test-template" type="xs:string"/>
+  <xs:attribute name="template-args" type="xs:string"/>
+  <xs:attribute name="module-parameter" type="xs:boolean"/>
+
   <!-- W3C SCXML 6.4: on an `<invoke>` whose child is named by an
        expression, the finite set that expression may select from —
        space separated paths, matched by document STEM
@@ -834,6 +860,316 @@
     <xs:complexType>
       <xs:attribute name="variant" type="xs:string" use="required"/>
       <xs:attribute name="record" type="xs:NCName"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       The test profile — docs/adr/0091; the forms are
+       docs/SCE_TEST_PROFILE.md §11.
+
+       Each element below is read only in the kind that takes it, and an
+       element read by nothing is refused by the parser's read ledger.
+       What the grammar does not say — how many matchers a container
+       holds, which name an attribute names, which matcher a position's
+       type admits — is the parser's and the import check's rule, each
+       with its own diagnostic (`test-profile/…` and the shape codes).
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <!-- §11.3: the direction of a message, seen from the component that
+       owns a port of the type. -->
+  <xs:simpleType name="testMessageDirectionType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="in"/>
+      <xs:enumeration value="out"/>
+      <xs:enumeration value="inout"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- §11.3: one message of a `test-port-type`: `type` the alias of an
+       imported event schema. -->
+  <xs:element name="message">
+    <xs:complexType>
+      <xs:attribute name="type" type="xs:string" use="required"/>
+      <xs:attribute name="direction" type="sce:testMessageDirectionType" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- §11.4: the matchers of a `test-template`, one element each. A
+       container holds matchers of this group; how many is the parser's rule
+       (a value list two or more, a complement one or more, a union case at
+       most one). -->
+  <xs:group name="testMatcher">
+    <xs:choice>
+      <xs:element ref="sce:specific"/>
+      <xs:element ref="sce:record-match"/>
+      <xs:element ref="sce:list-match"/>
+      <xs:element ref="sce:union-match"/>
+      <xs:element ref="sce:value-list"/>
+      <xs:element ref="sce:complement"/>
+      <xs:element ref="sce:any-value"/>
+      <xs:element ref="sce:any-value-or-none"/>
+      <xs:element ref="sce:value-range"/>
+      <xs:element ref="sce:omit"/>
+      <xs:element ref="sce:template-ref"/>
+    </xs:choice>
+  </xs:group>
+
+  <!-- B.1.1: a specific value, by exactly one of `value` (a literal of the
+       position's type) and `param` (a formal parameter). Every matcher takes
+       `field` (in a record match), `length-min`, `length-max` and
+       `ifpresent`. -->
+  <xs:element name="specific">
+    <xs:complexType>
+      <xs:attribute name="value" type="xs:string"/>
+      <xs:attribute name="param" type="xs:string"/>
+      <xs:attribute name="field" type="xs:string"/>
+      <xs:attribute name="length-min" type="xs:nonNegativeInteger"/>
+      <xs:attribute name="length-max" type="xs:nonNegativeInteger"/>
+      <xs:attribute name="ifpresent" type="xs:boolean"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- B.1.1: one matcher per field of the record, each with `field`. -->
+  <xs:element name="record-match">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:group ref="sce:testMatcher" minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+      <xs:attribute name="field" type="xs:string"/>
+      <xs:attribute name="length-min" type="xs:nonNegativeInteger"/>
+      <xs:attribute name="length-max" type="xs:nonNegativeInteger"/>
+      <xs:attribute name="ifpresent" type="xs:boolean"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- B.1.1, B.1.3.1: one matcher per element of the list, in order. -->
+  <xs:element name="list-match">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:group ref="sce:testMatcher" minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+      <xs:attribute name="field" type="xs:string"/>
+      <xs:attribute name="length-min" type="xs:nonNegativeInteger"/>
+      <xs:attribute name="length-max" type="xs:nonNegativeInteger"/>
+      <xs:attribute name="ifpresent" type="xs:boolean"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- B.1.1: the case `variant` of a union, and the matcher of its record. -->
+  <xs:element name="union-match">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:group ref="sce:testMatcher" minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+      <xs:attribute name="variant" type="xs:string" use="required"/>
+      <xs:attribute name="field" type="xs:string"/>
+      <xs:attribute name="length-min" type="xs:nonNegativeInteger"/>
+      <xs:attribute name="length-max" type="xs:nonNegativeInteger"/>
+      <xs:attribute name="ifpresent" type="xs:boolean"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- B.1.2.1: the value matches one of two or more matchers. -->
+  <xs:element name="value-list">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:group ref="sce:testMatcher" minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+      <xs:attribute name="field" type="xs:string"/>
+      <xs:attribute name="length-min" type="xs:nonNegativeInteger"/>
+      <xs:attribute name="length-max" type="xs:nonNegativeInteger"/>
+      <xs:attribute name="ifpresent" type="xs:boolean"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- B.1.2.2: the value matches none of one or more matchers. -->
+  <xs:element name="complement">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:group ref="sce:testMatcher" minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+      <xs:attribute name="field" type="xs:string"/>
+      <xs:attribute name="length-min" type="xs:nonNegativeInteger"/>
+      <xs:attribute name="length-max" type="xs:nonNegativeInteger"/>
+      <xs:attribute name="ifpresent" type="xs:boolean"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- B.1.2.3: any value. -->
+  <xs:element name="any-value">
+    <xs:complexType>
+      <xs:attribute name="field" type="xs:string"/>
+      <xs:attribute name="length-min" type="xs:nonNegativeInteger"/>
+      <xs:attribute name="length-max" type="xs:nonNegativeInteger"/>
+      <xs:attribute name="ifpresent" type="xs:boolean"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- B.1.2.4: any value of an optional field, or none. -->
+  <xs:element name="any-value-or-none">
+    <xs:complexType>
+      <xs:attribute name="field" type="xs:string"/>
+      <xs:attribute name="length-min" type="xs:nonNegativeInteger"/>
+      <xs:attribute name="length-max" type="xs:nonNegativeInteger"/>
+      <xs:attribute name="ifpresent" type="xs:boolean"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- B.1.2.5: an integer within the bounds, each inclusive and optional. -->
+  <xs:element name="value-range">
+    <xs:complexType>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element ref="sce:lower"/>
+        <xs:element ref="sce:upper"/>
+      </xs:choice>
+      <xs:attribute name="field" type="xs:string"/>
+      <xs:attribute name="length-min" type="xs:nonNegativeInteger"/>
+      <xs:attribute name="length-max" type="xs:nonNegativeInteger"/>
+      <xs:attribute name="ifpresent" type="xs:boolean"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- A bound of a value range, by exactly one of `value` and `param`. -->
+  <xs:element name="lower">
+    <xs:complexType>
+      <xs:attribute name="value" type="xs:string"/>
+      <xs:attribute name="param" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="upper">
+    <xs:complexType>
+      <xs:attribute name="value" type="xs:string"/>
+      <xs:attribute name="param" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- B.1.2.8: the optional field is absent. -->
+  <xs:element name="omit">
+    <xs:complexType>
+      <xs:attribute name="field" type="xs:string"/>
+      <xs:attribute name="length-min" type="xs:nonNegativeInteger"/>
+      <xs:attribute name="length-max" type="xs:nonNegativeInteger"/>
+      <xs:attribute name="ifpresent" type="xs:boolean"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- -1 §15.1: an imported template, its formal parameters bound in order
+       to this template's own parameters `args`, separated by spaces. -->
+  <xs:element name="template-ref">
+    <xs:complexType>
+      <xs:attribute name="template" type="xs:string" use="required"/>
+      <xs:attribute name="args" type="xs:string"/>
+      <xs:attribute name="field" type="xs:string"/>
+      <xs:attribute name="length-min" type="xs:nonNegativeInteger"/>
+      <xs:attribute name="length-max" type="xs:nonNegativeInteger"/>
+      <xs:attribute name="ifpresent" type="xs:boolean"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- §11.5: a port of a `test-component`, of an imported port type. -->
+  <xs:element name="test-port">
+    <xs:complexType>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="type" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- §11.5, P7: a one-shot timer of a `test-component`, with an optional
+       default duration in SCXML's delay syntax. -->
+  <xs:element name="test-timer">
+    <xs:complexType>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="duration" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- §5.1, P12: the verdict a document sets. `error` is the runtime's
+       alone. -->
+  <xs:simpleType name="testVerdictType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="pass"/>
+      <xs:enumeration value="inconclusive"/>
+      <xs:enumeration value="fail"/>
+      <xs:enumeration value="none"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- P12: executable content of a `test-component`; `reason` a
+       `sce-static` expression of type string. -->
+  <xs:element name="setverdict">
+    <xs:complexType>
+      <xs:attribute name="value" type="sce:testVerdictType" use="required"/>
+      <xs:attribute name="reason" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- P7: executable content of a `test-component`. -->
+  <xs:element name="start-timer">
+    <xs:complexType>
+      <xs:attribute name="timer" type="xs:string" use="required"/>
+      <xs:attribute name="duration" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="stop-timer">
+    <xs:complexType>
+      <xs:attribute name="timer" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- §11.6: the components of a `test-configuration` and how their ports
+       are joined. `component` names the MTC (`mtc`) or a PTC. -->
+  <xs:element name="mtc">
+    <xs:complexType>
+      <xs:attribute name="type" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="ptc">
+    <xs:complexType>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="type" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="system-port">
+    <xs:complexType>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="type" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="map">
+    <xs:complexType>
+      <xs:attribute name="component" type="xs:string" use="required"/>
+      <xs:attribute name="port" type="xs:string" use="required"/>
+      <xs:attribute name="system-port" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="connect">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="sce:endpoint" minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="endpoint">
+    <xs:complexType>
+      <xs:attribute name="component" type="xs:string" use="required"/>
+      <xs:attribute name="port" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- §11.8: a module parameter of a `test-suite` and its default, and one
+       test case in run order with its guard and its selection. -->
+  <xs:element name="module-parameter">
+    <xs:complexType>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="type" type="xs:string" use="required"/>
+      <xs:attribute name="value" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+  <xs:element name="execute">
+    <xs:complexType>
+      <xs:attribute name="test-case" type="xs:string" use="required"/>
+      <xs:attribute name="guard" type="xs:string"/>
+      <xs:attribute name="requires" type="xs:string"/>
     </xs:complexType>
   </xs:element>
 

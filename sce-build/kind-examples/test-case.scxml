@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- test-case: one test, named, and the configuration it runs in; its
+     behaviour is the configuration's main test component. The configuration
+     is the example beside this file. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-case" name="completes_in_time"
+       sce:configuration="JobConfiguration">
+  <sce:import kind="test-configuration" src="test-configuration.scxml"
+              as="JobConfiguration"/>
+</scxml>

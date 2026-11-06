@@ -10,7 +10,7 @@
 //   sce-codegen manifest <dir>
 
 use crate::forge::error::{ForgeError, Located, ManifestError};
-use crate::forge::model::{ForgeKind, ForgeManifest, ManifestEntry};
+use crate::forge::model::{ForgeManifest, ManifestEntry};
 use crate::forge::parser;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -51,7 +51,9 @@ pub fn build_manifest(dir: &Path) -> Result<ForgeManifest, Located<ForgeError>> 
             .map_err(|e| Located::new(e, path_label.clone(), None, None))?
         {
             None => continue,
-            Some(ForgeKind::Statechart) => continue,
+            // A statechart, and a `test-component`, which is one
+            // (docs/SCE_TEST_PROFILE.md §11.5).
+            Some(k) if k.reads_as_statechart() => continue,
             Some(k) => k,
         };
 
@@ -197,7 +199,7 @@ fn topological_sort(entries: &[ManifestEntry]) -> Result<Vec<String>, ManifestEr
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::forge::model::{ForgeImport, RuntimeDep};
+    use crate::forge::model::{ForgeImport, ForgeKind, RuntimeDep};
 
     #[test]
     fn topological_sort_no_deps() {

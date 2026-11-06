@@ -22,8 +22,8 @@
 // goes through `to_diagnostics()` → `serde_json`.
 
 use crate::forge::error::{
-    ExprError, ForgeError, GenerateError, ImportError, Located, ManifestError, ValidationError,
-    XmlError,
+    ExprError, ForgeError, GenerateError, ImportError, Located, ManifestError, TestProfileRule,
+    ValidationError, XmlError,
 };
 use serde::Serialize;
 
@@ -903,6 +903,35 @@ pub enum DiagnosticCode {
     /// declares a field under the tag's key.
     #[serde(rename = "validation/union-tag-collision")]
     ValidationUnionTagCollision,
+    /// A document of the test profile that names a data model other than
+    /// `sce-static` (docs/SCE_TEST_PROFILE.md §11.2).
+    #[serde(rename = "test-profile/datamodel")]
+    TestProfileDatamodel,
+    /// A matcher of a test template, or an attribute of one, that its
+    /// position's type does not admit (docs/SCE_TEST_PROFILE.md §11.4).
+    #[serde(rename = "test-profile/matcher-type")]
+    TestProfileMatcherType,
+    /// A literal of the test profile outside its type
+    /// (docs/SCE_TEST_PROFILE.md §11.4).
+    #[serde(rename = "test-profile/literal")]
+    TestProfileLiteral,
+    /// A `param` or `args` entry of a test template that is not one of its
+    /// formal parameters, or not of its position's type
+    /// (docs/SCE_TEST_PROFILE.md §11.4).
+    #[serde(rename = "test-profile/template-parameter")]
+    TestProfileTemplateParameter,
+    /// A test template whose type holds a float (docs/SCE_TEST_PROFILE.md
+    /// §11.4, §8.1).
+    #[serde(rename = "test-profile/template-float")]
+    TestProfileTemplateFloat,
+    /// A duration of the test profile that is not a delay in whole
+    /// microseconds (docs/SCE_TEST_PROFILE.md §11.5, §11.8).
+    #[serde(rename = "test-profile/duration")]
+    TestProfileDuration,
+    /// Ports of a test configuration that are not joined one to one
+    /// (docs/SCE_TEST_PROFILE.md §11.6).
+    #[serde(rename = "test-profile/port-connection")]
+    TestProfilePortConnection,
     #[serde(rename = "validation/mesh-rpc-reserved-param")]
     ValidationMeshRpcReservedParam,
     #[serde(rename = "validation/mesh-rpc-missing-target")]
@@ -3853,6 +3882,13 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationRenderBound,
         ValidationUnionCases,
         ValidationUnionTagCollision,
+        TestProfileDatamodel,
+        TestProfileMatcherType,
+        TestProfileLiteral,
+        TestProfileTemplateParameter,
+        TestProfileTemplateFloat,
+        TestProfileDuration,
+        TestProfilePortConnection,
         ValidationMeshRpcReservedParam,
         ValidationMeshRpcMissingTarget,
         ValidationMeshRpcDuplicateTarget,
@@ -4604,6 +4640,15 @@ impl DiagnosticCode {
 
             // ── A union document's cases and its tag (docs/adr/0092, section 1.1) ──
             ValidationUnionCases | ValidationUnionTagCollision => Some("ADR 0092 §1.1"),
+
+            // ── The documents of the test profile (docs/SCE_TEST_PROFILE.md §11) ──
+            TestProfileDatamodel => Some("SCE Test Profile §11.2"),
+            TestProfileMatcherType
+            | TestProfileLiteral
+            | TestProfileTemplateParameter
+            | TestProfileTemplateFloat => Some("SCE Test Profile §11.4"),
+            TestProfileDuration => Some("SCE Test Profile §4.7"),
+            TestProfilePortConnection => Some("SCE Test Profile §11.6"),
 
             // ── Mesh-RPC invoke reserved params (SCE_MESH.md §9.5) ──
             ValidationMeshRpcReservedParam
@@ -5521,6 +5566,13 @@ impl DiagnosticCode {
             | ValidationRenderBound
             | ValidationUnionCases
             | ValidationUnionTagCollision
+            | TestProfileDatamodel
+            | TestProfileMatcherType
+            | TestProfileLiteral
+            | TestProfileTemplateParameter
+            | TestProfileTemplateFloat
+            | TestProfileDuration
+            | TestProfilePortConnection
             | ValidationMeshRpcReservedParam
             | ValidationMeshRpcMissingTarget
             | ValidationMeshRpcDuplicateTarget
@@ -6026,6 +6078,13 @@ impl DiagnosticCode {
             ValidationRenderBound => "validation/render-bound",
             ValidationUnionCases => "validation/union-cases",
             ValidationUnionTagCollision => "validation/union-tag-collision",
+            TestProfileDatamodel => "test-profile/datamodel",
+            TestProfileMatcherType => "test-profile/matcher-type",
+            TestProfileLiteral => "test-profile/literal",
+            TestProfileTemplateParameter => "test-profile/template-parameter",
+            TestProfileTemplateFloat => "test-profile/template-float",
+            TestProfileDuration => "test-profile/duration",
+            TestProfilePortConnection => "test-profile/port-connection",
             ValidationMeshRpcReservedParam => "validation/mesh-rpc-reserved-param",
             ValidationMeshRpcMissingTarget => "validation/mesh-rpc-missing-target",
             ValidationMeshRpcDuplicateTarget => "validation/mesh-rpc-duplicate-target",
@@ -8328,6 +8387,36 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 case.clone(),
                 record.clone(),
                 field.clone(),
+            ],
+        },
+        // docs/SCE_TEST_PROFILE.md §11: the rule names the code, and what the
+        // document wrote where it is broken is `actual`; each repair is the
+        // author's choice, so neither `expected` nor `fix`.
+        ValidationError::TestProfile {
+            rule,
+            kind,
+            document,
+            actual,
+            detail,
+        } => DiagnosticPayload {
+            code: match rule {
+                TestProfileRule::Datamodel => DiagnosticCode::TestProfileDatamodel,
+                TestProfileRule::MatcherType => DiagnosticCode::TestProfileMatcherType,
+                TestProfileRule::Literal => DiagnosticCode::TestProfileLiteral,
+                TestProfileRule::TemplateParameter => DiagnosticCode::TestProfileTemplateParameter,
+                TestProfileRule::TemplateFloat => DiagnosticCode::TestProfileTemplateFloat,
+                TestProfileRule::Duration => DiagnosticCode::TestProfileDuration,
+                TestProfileRule::PortConnection => DiagnosticCode::TestProfilePortConnection,
+            },
+            stage: Stage::Validation,
+            expected: None,
+            actual: (!actual.is_empty()).then(|| actual.clone()),
+            fix: None,
+            key_fragments: vec![
+                kind.to_string(),
+                document.clone(),
+                actual.clone(),
+                detail.clone(),
             ],
         },
         ValidationError::MeshRpcReservedParam { param, detail } => DiagnosticPayload {
@@ -13591,7 +13680,7 @@ mod tests {
             (
                 "forge/unsupported-kind",
                 ValidationError::UnsupportedKind("bogus".into()).into(),
-                r#"{"v":1,"id":"fnv1a:812898e1a23fda4d","code":"validation/unsupported-kind","stage":"validation","spec":"SCE Forge §3.2","message":"unsupported sce:kind value: 'bogus'","actual":"bogus","fix":{"kind":"replace_one_of","candidates":["statechart","transform","lookup","condition","codec","procedure","validator","filter","interpolation","timer","observer","algorithm","link","buffer-pool","worker","bounded-collection","enum","event-schema","queue","feature-model","broadcast-log","text-template","union"]}}"#,
+                r#"{"v":1,"id":"fnv1a:812898e1a23fda4d","code":"validation/unsupported-kind","stage":"validation","spec":"SCE Forge §3.2","message":"unsupported sce:kind value: 'bogus'","actual":"bogus","fix":{"kind":"replace_one_of","candidates":["statechart","transform","lookup","condition","codec","procedure","validator","filter","interpolation","timer","observer","algorithm","link","buffer-pool","worker","bounded-collection","enum","event-schema","queue","feature-model","broadcast-log","text-template","union","test-template","test-port-type","test-component","test-configuration","test-case","test-suite"]}}"#,
             ),
             (
                 "forge/duplicate-id",
@@ -13937,6 +14026,119 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:4a393eeefed3dd8c","code":"validation/union-tag-collision","stage":"validation","spec":"ADR 0092 §1.1","message":"union 'date_expression', case 'absolute': the record 'CivilDate' declares the field 'kind', the key the union's tag is written under — the tag and a case's fields stand beside each other in one object, so no case's record declares the tag's key: rename the field or the tag","actual":"kind"}"#,
+            ),
+            (
+                // A port type that names a data model other than `sce-static`
+                // (docs/SCE_TEST_PROFILE.md §11.2): the data model is `actual`.
+                "forge/test-profile-datamodel",
+                ValidationError::TestProfile {
+                    rule: TestProfileRule::Datamodel,
+                    kind: ForgeKind::TestPortType,
+                    document: "job_port".into(),
+                    actual: "ecmascript".into(),
+                    detail: "names the data model 'ecmascript': a document of the test profile \
+                             names sce-static, or no data model (docs/SCE_TEST_PROFILE.md §11.2)"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:176a61ac957568b7","code":"test-profile/datamodel","stage":"validation","spec":"SCE Test Profile §11.2","message":"test-port-type 'job_port': names the data model 'ecmascript': a document of the test profile names sce-static, or no data model (docs/SCE_TEST_PROFILE.md §11.2)","actual":"ecmascript"}"#,
+            ),
+            (
+                // `<sce:omit>` at a position that is not optional
+                // (docs/SCE_TEST_PROFILE.md §11.4): the matcher is `actual`.
+                "forge/test-profile-matcher-type",
+                ValidationError::TestProfile {
+                    rule: TestProfileRule::MatcherType,
+                    kind: ForgeKind::TestTemplate,
+                    document: "completed_within".into(),
+                    actual: "omit".into(),
+                    detail: "<sce:omit> stands where a value of uint32 is matched: it stands \
+                             only at an `optional<T>` position"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:8f80c5ab5658d2bc","code":"test-profile/matcher-type","stage":"validation","spec":"SCE Test Profile §11.4","message":"test-template 'completed_within': <sce:omit> stands where a value of uint32 is matched: it stands only at an `optional<T>` position","actual":"omit"}"#,
+            ),
+            (
+                // A literal past its type's range (docs/SCE_TEST_PROFILE.md
+                // §11.4): the literal is `actual`.
+                "forge/test-profile-literal",
+                ValidationError::TestProfile {
+                    rule: TestProfileRule::Literal,
+                    kind: ForgeKind::TestTemplate,
+                    document: "small_count".into(),
+                    actual: "300".into(),
+                    detail: "<sce:specific> value '300' is not a value of uint8: expected an \
+                             integer in decimal in 0..=255 (uint8)"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:095f98c97238e7e4","code":"test-profile/literal","stage":"validation","spec":"SCE Test Profile §11.4","message":"test-template 'small_count': <sce:specific> value '300' is not a value of uint8: expected an integer in decimal in 0..=255 (uint8)","actual":"300"}"#,
+            ),
+            (
+                // A bound that names no formal parameter
+                // (docs/SCE_TEST_PROFILE.md §11.4): the name is `actual`.
+                "forge/test-profile-template-parameter",
+                ValidationError::TestProfile {
+                    rule: TestProfileRule::TemplateParameter,
+                    kind: ForgeKind::TestTemplate,
+                    document: "completed_within".into(),
+                    actual: "limt".into(),
+                    detail: "<sce:upper> names 'limt', which is not a formal parameter of the \
+                             template (a <data sce:direction=in> with no expr)"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:8b6491d1e7991e09","code":"test-profile/template-parameter","stage":"validation","spec":"SCE Test Profile §11.4","message":"test-template 'completed_within': <sce:upper> names 'limt', which is not a formal parameter of the template (a <data sce:direction=in> with no expr)","actual":"limt"}"#,
+            ),
+            (
+                // A template over a float (docs/SCE_TEST_PROFILE.md §8.1): the
+                // type is `actual`.
+                "forge/test-profile-template-float",
+                ValidationError::TestProfile {
+                    rule: TestProfileRule::TemplateFloat,
+                    kind: ForgeKind::TestTemplate,
+                    document: "reading".into(),
+                    actual: "float32".into(),
+                    detail: "the template's type float32 holds a float, which the test profile \
+                             leaves out (docs/SCE_TEST_PROFILE.md §8.1)"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:7be02cfe8011d9f2","code":"test-profile/template-float","stage":"validation","spec":"SCE Test Profile §11.4","message":"test-template 'reading': the template's type float32 holds a float, which the test profile leaves out (docs/SCE_TEST_PROFILE.md §8.1)","actual":"float32"}"#,
+            ),
+            (
+                // A guard with no unit (docs/SCE_TEST_PROFILE.md §4.7): the
+                // guard is `actual`.
+                "forge/test-profile-duration",
+                ValidationError::TestProfile {
+                    rule: TestProfileRule::Duration,
+                    kind: ForgeKind::TestSuite,
+                    document: "job_suite".into(),
+                    actual: "10".into(),
+                    detail: "<sce:execute> guard '10': expected a delay in SCXML's syntax: a \
+                             decimal number followed by `s` or `ms`, as `2s` or `500ms`"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:96e75f65cb26160d","code":"test-profile/duration","stage":"validation","spec":"SCE Test Profile §4.7","message":"test-suite 'job_suite': <sce:execute> guard '10': expected a delay in SCXML's syntax: a decimal number followed by `s` or `ms`, as `2s` or `500ms`","actual":"10"}"#,
+            ),
+            (
+                // A system port mapped twice (docs/SCE_TEST_PROFILE.md §11.6):
+                // the port is `actual`.
+                "forge/test-profile-port-connection",
+                ValidationError::TestProfile {
+                    rule: TestProfileRule::PortConnection,
+                    kind: ForgeKind::TestConfiguration,
+                    document: "tester_and_helper".into(),
+                    actual: "sut".into(),
+                    detail: "the port 'sut' of the test system interface is joined by 2 \
+                             <sce:map>: every port of the configuration takes part in exactly \
+                             one connect or map"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:ebe44144c4e1fbd6","code":"test-profile/port-connection","stage":"validation","spec":"SCE Test Profile §11.6","message":"test-configuration 'tester_and_helper': the port 'sut' of the test system interface is joined by 2 <sce:map>: every port of the configuration takes part in exactly one connect or map","actual":"sut"}"#,
             ),
             (
                 "forge/mesh-rpc-reserved-param",
@@ -19832,6 +20034,13 @@ mod tests {
             | ValidationRenderBound
             | ValidationUnionCases
             | ValidationUnionTagCollision
+            | TestProfileDatamodel
+            | TestProfileMatcherType
+            | TestProfileLiteral
+            | TestProfileTemplateParameter
+            | TestProfileTemplateFloat
+            | TestProfileDuration
+            | TestProfilePortConnection
             | ValidationMeshRpcReservedParam
             | ValidationMeshRpcMissingTarget
             | ValidationMeshRpcDuplicateTarget
@@ -20828,6 +21037,9 @@ mod tests {
                 | ValidationTextTemplateHole | ValidationTextTemplateFence
                 | ValidationRenderHoles | ValidationRenderBound
                 | ValidationUnionCases | ValidationUnionTagCollision
+                | TestProfileDatamodel | TestProfileMatcherType | TestProfileLiteral
+                | TestProfileTemplateParameter | TestProfileTemplateFloat
+                | TestProfileDuration | TestProfilePortConnection
                 | ValidationMeshRpcReservedParam
                 | ValidationMeshRpcMissingTarget
                 | ValidationMeshRpcDuplicateTarget
@@ -21246,9 +21458,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            506,
+            513,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 506 distinct variants to match the DiagnosticCode \
+             expected 513 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -21904,6 +22116,13 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | ValidationRenderBound
             | ValidationUnionCases
             | ValidationUnionTagCollision
+            | TestProfileDatamodel
+            | TestProfileMatcherType
+            | TestProfileLiteral
+            | TestProfileTemplateParameter
+            | TestProfileTemplateFloat
+            | TestProfileDuration
+            | TestProfilePortConnection
             | ValidationMeshRpcReservedParam
             | ValidationMeshRpcMissingTarget
             | ValidationMeshRpcDuplicateTarget

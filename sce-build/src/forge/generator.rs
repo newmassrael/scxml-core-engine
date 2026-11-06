@@ -2016,6 +2016,20 @@ pub fn generate_cpp_with_imports_and_externs(
         ForgeDocument::Union(m) => {
             return Err(crate::forge::union_check::document_unlowered(m).into())
         }
+        // docs/SCE_TEST_PROFILE.md §11.9: no backend generates a document of
+        // the test profile until its runtime lands, so each is refused by name.
+        ForgeDocument::TestTemplate(_)
+        | ForgeDocument::TestPortType(_)
+        | ForgeDocument::TestConfiguration(_)
+        | ForgeDocument::TestCase(_)
+        | ForgeDocument::TestSuite(_) => {
+            return Err(crate::forge::test_profile::document_not_generated(
+                doc.kind(),
+                doc.name(),
+                crate::forge::provenance::forge_doc_source_location(doc).cloned(),
+            )
+            .into())
+        }
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));
@@ -25017,6 +25031,20 @@ pub fn generate_kotlin_with_imports(
         // docs/adr/0092, section 7: Kotlin lowers a union to a sealed
         // interface, one case per variant of its tag's enum.
         ForgeDocument::Union(m) => render_union_kotlin(&env, m, imports, options)?,
+        // docs/SCE_TEST_PROFILE.md §11.9: no backend generates a document of
+        // the test profile until its runtime lands, so each is refused by name.
+        ForgeDocument::TestTemplate(_)
+        | ForgeDocument::TestPortType(_)
+        | ForgeDocument::TestConfiguration(_)
+        | ForgeDocument::TestCase(_)
+        | ForgeDocument::TestSuite(_) => {
+            return Err(crate::forge::test_profile::document_not_generated(
+                doc.kind(),
+                doc.name(),
+                crate::forge::provenance::forge_doc_source_location(doc).cloned(),
+            )
+            .into())
+        }
     };
 
     let filename = format!("{}.kt", filters::to_pascal_case(doc.name().to_string()));
@@ -25240,6 +25268,20 @@ pub fn generate_rust_with_imports_and_externs(
         // Union: see cpp dispatch.
         ForgeDocument::Union(m) => {
             return Err(crate::forge::union_check::document_unlowered(m).into())
+        }
+        // docs/SCE_TEST_PROFILE.md §11.9: no backend generates a document of
+        // the test profile until its runtime lands, so each is refused by name.
+        ForgeDocument::TestTemplate(_)
+        | ForgeDocument::TestPortType(_)
+        | ForgeDocument::TestConfiguration(_)
+        | ForgeDocument::TestCase(_)
+        | ForgeDocument::TestSuite(_) => {
+            return Err(crate::forge::test_profile::document_not_generated(
+                doc.kind(),
+                doc.name(),
+                crate::forge::provenance::forge_doc_source_location(doc).cloned(),
+            )
+            .into())
         }
     };
 
@@ -29618,6 +29660,20 @@ pub fn generate_go_with_imports(
         ForgeDocument::Union(m) => {
             return Err(crate::forge::union_check::document_unlowered(m).into())
         }
+        // docs/SCE_TEST_PROFILE.md §11.9: no backend generates a document of
+        // the test profile until its runtime lands, so each is refused by name.
+        ForgeDocument::TestTemplate(_)
+        | ForgeDocument::TestPortType(_)
+        | ForgeDocument::TestConfiguration(_)
+        | ForgeDocument::TestCase(_)
+        | ForgeDocument::TestSuite(_) => {
+            return Err(crate::forge::test_profile::document_not_generated(
+                doc.kind(),
+                doc.name(),
+                crate::forge::provenance::forge_doc_source_location(doc).cloned(),
+            )
+            .into())
+        }
     };
 
     let filename = format!("{}.go", filters::to_snake_case(doc.name().to_string()));
@@ -29868,6 +29924,20 @@ pub fn generate_python_with_imports(
         ForgeDocument::Union(m) => {
             return Err(crate::forge::union_check::document_unlowered(m).into())
         }
+        // docs/SCE_TEST_PROFILE.md §11.9: no backend generates a document of
+        // the test profile until its runtime lands, so each is refused by name.
+        ForgeDocument::TestTemplate(_)
+        | ForgeDocument::TestPortType(_)
+        | ForgeDocument::TestConfiguration(_)
+        | ForgeDocument::TestCase(_)
+        | ForgeDocument::TestSuite(_) => {
+            return Err(crate::forge::test_profile::document_not_generated(
+                doc.kind(),
+                doc.name(),
+                crate::forge::provenance::forge_doc_source_location(doc).cloned(),
+            )
+            .into())
+        }
     };
     let code = import_the_algorithm_runtime(code);
 
@@ -30088,6 +30158,20 @@ pub fn generate_swift_with_imports(
         // docs/adr/0092: Swift does not lower a union yet (see the cpp dispatch).
         ForgeDocument::Union(m) => {
             return Err(crate::forge::union_check::document_unlowered(m).into())
+        }
+        // docs/SCE_TEST_PROFILE.md §11.9: no backend generates a document of
+        // the test profile until its runtime lands, so each is refused by name.
+        ForgeDocument::TestTemplate(_)
+        | ForgeDocument::TestPortType(_)
+        | ForgeDocument::TestConfiguration(_)
+        | ForgeDocument::TestCase(_)
+        | ForgeDocument::TestSuite(_) => {
+            return Err(crate::forge::test_profile::document_not_generated(
+                doc.kind(),
+                doc.name(),
+                crate::forge::provenance::forge_doc_source_location(doc).cloned(),
+            )
+            .into())
         }
         _ => {
             return match crate::forge::codegen_matrix::lookup(doc.kind(), Language::Swift) {
@@ -30993,6 +31077,20 @@ pub fn generate_c11_with_imports_and_externs(
         // Union: see cpp dispatch.
         ForgeDocument::Union(m) => {
             return Err(crate::forge::union_check::document_unlowered(m).into())
+        }
+        // docs/SCE_TEST_PROFILE.md §11.9: no backend generates a document of
+        // the test profile until its runtime lands, so each is refused by name.
+        ForgeDocument::TestTemplate(_)
+        | ForgeDocument::TestPortType(_)
+        | ForgeDocument::TestConfiguration(_)
+        | ForgeDocument::TestCase(_)
+        | ForgeDocument::TestSuite(_) => {
+            return Err(crate::forge::test_profile::document_not_generated(
+                doc.kind(),
+                doc.name(),
+                crate::forge::provenance::forge_doc_source_location(doc).cloned(),
+            )
+            .into())
         }
     };
 
@@ -40523,7 +40621,14 @@ impl StatelessFunction {
             // it is no function an expression calls (docs/adr/0087, section 3.2).
             | ForgeDocument::TextTemplate(_)
             // A union is a type a value is held in (docs/adr/0092, section 1.1).
-            | ForgeDocument::Union(_) => None,
+            | ForgeDocument::Union(_)
+            // A document of the test profile is named by the documents that
+            // import it, never called (docs/SCE_TEST_PROFILE.md §11).
+            | ForgeDocument::TestTemplate(_)
+            | ForgeDocument::TestPortType(_)
+            | ForgeDocument::TestConfiguration(_)
+            | ForgeDocument::TestCase(_)
+            | ForgeDocument::TestSuite(_) => None,
         }
     }
 

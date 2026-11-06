@@ -99,6 +99,14 @@ pub fn pictures(
         ForgeDocument::TextTemplate(_) => Ok(Vec::new()),
         // A union is a tag and its cases; the pseudocode page carries it.
         ForgeDocument::Union(_) => Ok(Vec::new()),
+        // The declarations of the test profile (docs/SCE_TEST_PROFILE.md
+        // §11) are lists and one tree of matchers; the pseudocode page and
+        // the field table carry them.
+        ForgeDocument::TestTemplate(_)
+        | ForgeDocument::TestPortType(_)
+        | ForgeDocument::TestConfiguration(_)
+        | ForgeDocument::TestCase(_)
+        | ForgeDocument::TestSuite(_) => Ok(Vec::new()),
     }
 }
 

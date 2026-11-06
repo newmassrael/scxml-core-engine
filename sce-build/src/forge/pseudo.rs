@@ -337,6 +337,10 @@ use crate::forge::model::{
     TransformModel, ValidatorModel, WorkerModel,
 };
 use crate::forge::model::{HoleKind, TemplatePart, UnionModel};
+use crate::forge::model::{
+    TestCaseModel, TestConfigurationModel, TestMatcher, TestMatcherForm, TestPortTypeModel,
+    TestSuiteModel, TestTemplateModel, TestValue,
+};
 use crate::forge::page::{Indent, Node, Part, Shape, Word, EN};
 use crate::model::BlockRole;
 
@@ -566,6 +570,11 @@ pub fn render_nodes(
         ForgeDocument::FeatureModel(m) => Ok(render_feature_model(m)),
         ForgeDocument::TextTemplate(m) => Ok(render_text_template(m)),
         ForgeDocument::Union(m) => Ok(render_union(m)),
+        ForgeDocument::TestTemplate(m) => Ok(render_test_template(m)),
+        ForgeDocument::TestPortType(m) => Ok(render_test_port_type(m)),
+        ForgeDocument::TestConfiguration(m) => Ok(render_test_configuration(m)),
+        ForgeDocument::TestCase(m) => Ok(render_test_case(m)),
+        ForgeDocument::TestSuite(m) => Ok(render_test_suite(m)),
         ForgeDocument::Worker(m) => Ok(render_worker(m)),
         ForgeDocument::BufferPool(m) => Ok(render_buffer_pool(m)),
         ForgeDocument::Link(m) => Ok(render_link(m)),
@@ -2109,6 +2118,211 @@ fn render_union(m: &UnionModel) -> Vec<Node> {
     out.nodes
 }
 
+// ── Test profile (docs/SCE_TEST_PROFILE.md §11) ────────────────
+//
+// Each declaration kind of the profile is its head line, with what it
+// declares nested under it one line apiece. A name is an identifier, so it is
+// one word wherever it stands; a literal, which may hold a space, and a
+// condition are the last thing on their line.
+
+/// A port type (§11.3): one line per message, its event schema and its
+/// direction.
+fn render_test_port_type(m: &TestPortTypeModel) -> Vec<Node> {
+    let mut out = Out::new();
+    out.line_of(vec![
+        Part::Word(Word::TestPortType),
+        Part::Text(text(&m.name).into_owned()),
+    ]);
+    out.nested(|out| {
+        for message in &m.messages {
+            out.line(&format!(
+                "message {} {}",
+                text(&message.schema),
+                message.direction.as_attr()
+            ));
+        }
+    });
+    out.nodes
+}
+
+/// A template (§11.4): its type, its formal parameters, and its matchers,
+/// each nested under the matcher it stands in.
+fn render_test_template(m: &TestTemplateModel) -> Vec<Node> {
+    let mut out = Out::new();
+    out.line_of(vec![
+        Part::Word(Word::TestTemplate),
+        Part::Text(format!("{} type {}", text(&m.name), m.template_type)),
+    ]);
+    out.nested(|out| {
+        for parameter in &m.parameters {
+            out.line(&format!(
+                "parameter {} {}",
+                text(&parameter.id),
+                parameter.parameter_type
+            ));
+        }
+        render_test_matcher(&m.matcher, out);
+    });
+    out.nodes
+}
+
+/// A value a matcher names: `value <literal>` or `param <name>`.
+fn test_value_words(value: &TestValue) -> String {
+    match value {
+        TestValue::Value(literal) => format!("value {}", text(literal)),
+        TestValue::Param(name) => format!("param {}", text(name)),
+    }
+}
+
+/// One matcher: its element and its attributes on one line, the free-text
+/// literal of a specific value last; the matchers inside it nested under it.
+fn render_test_matcher(m: &TestMatcher, out: &mut Out<'_>) {
+    let mut words = m.form.element().to_string();
+    if let Some(field) = &m.field {
+        let _ = write!(words, " field {}", text(field));
+    }
+    if let Some(min) = m.length_min {
+        let _ = write!(words, " length-min {min}");
+    }
+    if let Some(max) = m.length_max {
+        let _ = write!(words, " length-max {max}");
+    }
+    if m.ifpresent {
+        words.push_str(" ifpresent");
+    }
+    match &m.form {
+        TestMatcherForm::UnionMatch { variant, .. } => {
+            let _ = write!(words, " variant {}", text(variant));
+        }
+        TestMatcherForm::ValueRange { lower, upper } => {
+            if let Some(lower) = lower {
+                let _ = write!(words, " lower {}", test_value_words(lower));
+            }
+            if let Some(upper) = upper {
+                let _ = write!(words, " upper {}", test_value_words(upper));
+            }
+        }
+        TestMatcherForm::TemplateRef { template, args } => {
+            let _ = write!(words, " template {}", text(template));
+            if !args.is_empty() {
+                let args: Vec<_> = args.iter().map(|a| text(a)).collect();
+                let _ = write!(words, " args {}", args.join(" "));
+            }
+        }
+        TestMatcherForm::Specific { value } => {
+            let _ = write!(words, " {}", test_value_words(value));
+        }
+        TestMatcherForm::RecordMatch { .. }
+        | TestMatcherForm::ListMatch { .. }
+        | TestMatcherForm::ValueList { .. }
+        | TestMatcherForm::Complement { .. }
+        | TestMatcherForm::AnyValue
+        | TestMatcherForm::AnyValueOrNone
+        | TestMatcherForm::Omit => {}
+    }
+    out.line_of(vec![Part::Word(Word::Matcher), Part::Text(words)]);
+    let children = m.children();
+    if !children.is_empty() {
+        out.nested(|out| {
+            for child in children {
+                render_test_matcher(child, out);
+            }
+        });
+    }
+}
+
+/// A test configuration (§11.6): the MTC, each PTC, each port of the test
+/// system interface, each map and each connect.
+fn render_test_configuration(m: &TestConfigurationModel) -> Vec<Node> {
+    let mut out = Out::new();
+    out.line_of(vec![
+        Part::Word(Word::TestConfiguration),
+        Part::Text(text(&m.name).into_owned()),
+    ]);
+    out.nested(|out| {
+        out.line(&format!("mtc {}", text(&m.mtc)));
+        for ptc in &m.ptcs {
+            out.line(&format!(
+                "ptc {} type {}",
+                text(&ptc.id),
+                text(&ptc.component)
+            ));
+        }
+        for port in &m.system_ports {
+            out.line(&format!(
+                "system-port {} type {}",
+                text(&port.id),
+                text(&port.port_type)
+            ));
+        }
+        for map in &m.maps {
+            out.line(&format!(
+                "map {} {} system-port {}",
+                text(&map.component),
+                text(&map.port),
+                text(&map.system_port)
+            ));
+        }
+        for connect in &m.connects {
+            let ends: Vec<String> = connect
+                .endpoints
+                .iter()
+                .map(|e| format!("{} {}", text(&e.component), text(&e.port)))
+                .collect();
+            out.line(&format!("connect {}", ends.join(" with ")));
+        }
+    });
+    out.nodes
+}
+
+/// A test case (§11.7): its configuration.
+fn render_test_case(m: &TestCaseModel) -> Vec<Node> {
+    let mut out = Out::new();
+    out.line_of(vec![
+        Part::Word(Word::TestCase),
+        Part::Text(format!(
+            "{} configuration {}",
+            text(&m.name),
+            text(&m.configuration)
+        )),
+    ]);
+    out.nodes
+}
+
+/// A test suite (§11.8): its feature model, its module parameters, and its
+/// test cases in run order, each with its guard and its selection.
+fn render_test_suite(m: &TestSuiteModel) -> Vec<Node> {
+    let mut out = Out::new();
+    out.line_of(vec![
+        Part::Word(Word::TestSuite),
+        Part::Text(text(&m.name).into_owned()),
+    ]);
+    out.nested(|out| {
+        if let Some(features) = &m.features {
+            out.line(&format!("features {}", text(features)));
+        }
+        for parameter in &m.module_parameters {
+            out.line(&format!(
+                "module-parameter {} {} value {}",
+                text(&parameter.id),
+                parameter.parameter_type,
+                text(&parameter.value)
+            ));
+        }
+        for execute in &m.executes {
+            let mut line = format!("execute {}", text(&execute.test_case));
+            if let Some(guard) = execute.guard_us {
+                let _ = write!(line, " guard-us {guard}");
+            }
+            if let Some(requires) = &execute.requires {
+                let _ = write!(line, " requires {}", text(requires));
+            }
+            out.line(&line);
+        }
+    });
+    out.nodes
+}
+
 // ── Statechart ─────────────────────────────────────────────────
 //
 // The one kind whose model is mostly NOT the document: of its 92
@@ -2276,6 +2490,9 @@ fn render_statechart(
                 let _ = write!(line, " kt-type {}", text(&c.kt_type));
             }
             out.line(&line);
+        }
+        if let Some(profile) = &m.test_component {
+            render_test_component_profile(profile, out);
         }
         for v in &m.variables {
             render_variable(v, out);
@@ -2876,10 +3093,89 @@ fn render_scxml_transition(t: &crate::model::Transition, out: &mut Out<'_>) {
             provenance: &t.provenance,
             unresolved: &t.unresolved,
         });
+        if let Some(branch) = &t.test_branch {
+            render_test_branch(branch, out);
+        }
         for a in &t.actions {
             render_scxml_action(a, out);
         }
     });
+}
+
+/// What a `test-component` declares of the test profile
+/// (docs/SCE_TEST_PROFILE.md §11.5), a line apiece: its ports, its timers,
+/// its module parameters, and the statements the profile adds, each with the
+/// state whose executable content holds it. A PTC's `<invoke>` is written by
+/// the state that owns it, as every invoke is.
+fn render_test_component_profile(
+    profile: &crate::test_component::TestComponentProfile,
+    out: &mut Out<'_>,
+) {
+    use crate::test_component::TestStatementKind;
+    for port in &profile.ports {
+        out.line(&format!(
+            "test-port {} type {}",
+            text(&port.id),
+            text(&port.port_type)
+        ));
+    }
+    for timer in &profile.timers {
+        let mut line = format!("test-timer {}", text(&timer.id));
+        if let Some(duration) = &timer.duration {
+            let _ = write!(line, " duration {}", text(duration));
+        }
+        out.line(&line);
+    }
+    for id in &profile.module_parameters {
+        out.line(&format!("module-parameter {}", text(id)));
+    }
+    for statement in &profile.statements {
+        let line = match &statement.statement {
+            TestStatementKind::Setverdict { verdict, reason } => {
+                let mut line = format!(
+                    "setverdict {} in {}",
+                    verdict.as_attr(),
+                    text(&statement.state)
+                );
+                if let Some(reason) = reason {
+                    let _ = write!(line, " reason {}", text(reason));
+                }
+                line
+            }
+            TestStatementKind::StartTimer { timer, duration } => {
+                let mut line = format!("start-timer {} in {}", text(timer), text(&statement.state));
+                if let Some(duration) = duration {
+                    let _ = write!(line, " duration {}", text(duration));
+                }
+                line
+            }
+            TestStatementKind::StopTimer { timer } => {
+                format!("stop-timer {} in {}", text(timer), text(&statement.state))
+            }
+        };
+        out.line(&line);
+    }
+}
+
+/// The branch a transition of a `test-component` is
+/// (docs/SCE_TEST_PROFILE.md §4.2): its port or its timer, and the template
+/// it matches with.
+fn render_test_branch(branch: &crate::test_component::TestBranch, out: &mut Out<'_>) {
+    let mut line = "branch".to_string();
+    if let Some(port) = &branch.receive {
+        let _ = write!(line, " receive {}", text(port));
+    }
+    if let Some(timer) = &branch.timeout {
+        let _ = write!(line, " timeout {}", text(timer));
+    }
+    if let Some(template) = &branch.template.template {
+        let _ = write!(line, " template {}", text(template));
+    }
+    if !branch.template.args.is_empty() {
+        let args: Vec<_> = branch.template.args.iter().map(|a| text(a)).collect();
+        let _ = write!(line, " args {}", args.join(" "));
+    }
+    out.line(&line);
 }
 
 fn render_donedata(d: &crate::model::DoneData, out: &mut Out<'_>) {
@@ -3238,6 +3534,18 @@ fn render_donedata_param(p: &crate::model::DoneDataParam, out: &mut Out<'_>) {
 /// A bare `send <event>` stays one line: with nothing after the event
 /// there is nothing to be ambiguous about, and most sends are that.
 fn render_send(a: &crate::model::Action, out: &mut Out<'_>) {
+    // A `test-component`'s send names its template and the variables bound
+    // to its parameters (docs/SCE_TEST_PROFILE.md §11.5).
+    let test_template = a
+        .test_template
+        .as_ref()
+        .and_then(|used| used.template.as_deref())
+        .unwrap_or("");
+    let template_args = a
+        .test_template
+        .as_ref()
+        .map(|used| used.args.join(" "))
+        .unwrap_or_default();
     let clauses: Vec<(&str, &str)> = [
         ("eventexpr", a.eventexpr.as_str()),
         ("to", a.target.as_str()),
@@ -3251,6 +3559,8 @@ fn render_send(a: &crate::model::Action, out: &mut Out<'_>) {
         ("namelist", a.namelist.as_str()),
         ("content", a.content.as_str()),
         ("content-expr", a.contentexpr.as_str()),
+        ("test-template", test_template),
+        ("template-args", template_args.as_str()),
     ]
     .into_iter()
     .filter(|(_, v)| !v.is_empty())

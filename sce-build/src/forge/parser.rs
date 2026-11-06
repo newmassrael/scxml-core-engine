@@ -8,7 +8,8 @@
 
 use crate::attribute_spelling::AttributeSpelling;
 use crate::forge::error::{
-    ForgeError, Located, SourceLocation, ValidationError, WorkerSharedStateReason, XmlError,
+    ForgeError, Located, SourceLocation, TestProfileRule, ValidationError, WorkerSharedStateReason,
+    XmlError,
 };
 use crate::forge::expression_site::{ExpressionSite, WrittenAt};
 use crate::forge::model::*;
@@ -365,7 +366,9 @@ pub fn parse_forge_with_imports_and_plugin(
 
     let kind = match detect_kind_from_node(&root) {
         Ok(None) => return Ok(None),
-        Ok(Some(ForgeKind::Statechart)) => return Ok(None),
+        // A statechart, and a `test-component`, which is one
+        // (docs/SCE_TEST_PROFILE.md §11.5): the statechart parser's.
+        Ok(Some(k)) if k.reads_as_statechart() => return Ok(None),
         Ok(Some(k)) => k,
         Err(e) => return Err(located(&root, diag, e)),
     };
@@ -948,11 +951,24 @@ fn parse_forge_from_node(
             parse_text_template(root, label).map(ForgeDocument::TextTemplate)
         }
         ForgeKind::Union => parse_union(root, label).map(ForgeDocument::Union),
-        ForgeKind::Statechart => Err(located(
+        ForgeKind::TestTemplate => {
+            parse_test_template(root, label).map(ForgeDocument::TestTemplate)
+        }
+        ForgeKind::TestPortType => {
+            parse_test_port_type(root, label).map(ForgeDocument::TestPortType)
+        }
+        ForgeKind::TestConfiguration => {
+            parse_test_configuration(root, label).map(ForgeDocument::TestConfiguration)
+        }
+        ForgeKind::TestCase => parse_test_case(root, label).map(ForgeDocument::TestCase),
+        ForgeKind::TestSuite => parse_test_suite(root, label).map(ForgeDocument::TestSuite),
+        // A `test-component` is a statechart (docs/SCE_TEST_PROFILE.md
+        // §11.5), read by the statechart parser.
+        kind @ (ForgeKind::Statechart | ForgeKind::TestComponent) => Err(located(
             root,
             label.diagnostic_label,
             ValidationError::WrongPipeline {
-                kind: ForgeKind::Statechart,
+                kind,
                 pipeline: crate::Pipeline::Forge,
             },
         )),
@@ -1765,6 +1781,1331 @@ fn parse_union(
         cases,
         tag_line: Some(row_of(tag_node)),
         source_location: forge_source_location_of(root, label.diagnostic_label),
+    })
+}
+
+// ── Test profile kinds (docs/adr/0091, docs/SCE_TEST_PROFILE.md §11) ──
+//
+// Each reader holds its document to every rule the document states alone. A
+// rule that needs an imported document is asked where the imports are read;
+// the names each import gives are kept on the model as written for it.
+
+/// The local names of the matchers of docs/SCE_TEST_PROFILE.md §11.4, in the
+/// order its table lists them.
+const MATCHER_ELEMENTS: &[&str] = &[
+    "specific",
+    "record-match",
+    "list-match",
+    "union-match",
+    "value-list",
+    "complement",
+    "any-value",
+    "any-value-or-none",
+    "value-range",
+    "omit",
+    "template-ref",
+];
+
+/// The refusal of a rule of the test profile at `node`.
+fn test_profile_refusal(
+    node: &roxmltree::Node,
+    label: DocumentLabel<'_>,
+    kind: ForgeKind,
+    rule: TestProfileRule,
+    actual: &str,
+    detail: String,
+) -> Located<ForgeError> {
+    located(
+        node,
+        label.diagnostic_label,
+        ValidationError::TestProfile {
+            rule,
+            kind,
+            document: label.identifier.to_string(),
+            actual: actual.to_string(),
+            detail,
+        },
+    )
+}
+
+/// docs/SCE_TEST_PROFILE.md §11.2: a document of the test profile names
+/// `sce-static` when it names a data model.
+fn refuse_profile_datamodel(
+    root: &roxmltree::Node,
+    label: DocumentLabel<'_>,
+    kind: ForgeKind,
+) -> Result<(), Located<ForgeError>> {
+    match root.attribute("datamodel").map(str::trim) {
+        None | Some("sce-static") => Ok(()),
+        Some(other) => Err(test_profile_refusal(
+            root,
+            label,
+            kind,
+            TestProfileRule::Datamodel,
+            other,
+            format!(
+                "names the data model '{other}': a document of the test profile names \
+                 sce-static, or no data model (docs/SCE_TEST_PROFILE.md §11.2)"
+            ),
+        )),
+    }
+}
+
+/// The value of `node`'s required attribute `attr` that names an import of
+/// `kind`, refused with the aliases the document imports of that kind as the
+/// candidates when it names none.
+fn imported_alias(
+    node: &roxmltree::Node,
+    doc_name: &str,
+    element: &str,
+    attr: &str,
+    kind: ForgeKind,
+) -> Result<String, Located<ForgeError>> {
+    let alias = require_attr(node, attr, element, doc_name)?
+        .trim()
+        .to_string();
+    let aliases = import_aliases_of(node, kind);
+    if aliases.contains(&alias) {
+        return Ok(alias);
+    }
+    Err(located(
+        node,
+        doc_name,
+        ValidationError::InvalidAttribute {
+            element: element.to_string(),
+            attr: attr.to_string(),
+            value: alias,
+            allowed: aliases,
+        },
+    ))
+}
+
+/// The value of `node`'s required attribute `attr`, which may not be empty.
+fn required_name(
+    node: &roxmltree::Node,
+    doc_name: &str,
+    element: &str,
+    attr: &str,
+) -> Result<String, Located<ForgeError>> {
+    let value = require_attr(node, attr, element, doc_name)?
+        .trim()
+        .to_string();
+    if value.is_empty() {
+        return Err(located(
+            node,
+            doc_name,
+            ValidationError::EmptyValue {
+                element: element.to_string(),
+                attr: attr.to_string(),
+            },
+        ));
+    }
+    Ok(value)
+}
+
+/// A type the test profile reads in the type grammar of an event schema's
+/// fields (docs/SCE_TEST_PROFILE.md §11.4), every bound in it stated.
+fn read_profile_type(
+    node: &roxmltree::Node,
+    doc_name: &str,
+    element: &str,
+    attr: &str,
+    text: &str,
+) -> Result<ValueType, Located<ForgeError>> {
+    read_written_type(node, doc_name, element, attr, text, OptionalElems::Scalar)?
+        .bounded()
+        .map_err(|refusal| type_rule_refusal(node, doc_name, element, attr, text, &refusal))
+}
+
+/// Read a `sce:kind="test-port-type"` document (docs/SCE_TEST_PROFILE.md
+/// §11.3): one `<sce:message type direction>` per message, `type` an
+/// imported event schema and `direction` one of `in`, `out`, `inout`. A port
+/// type of no message, and one type listed twice, are refused here; two
+/// types with one event name need the schemas, and are asked where the
+/// imports are read.
+fn parse_test_port_type(
+    root: &roxmltree::Node,
+    label: DocumentLabel<'_>,
+) -> Result<TestPortTypeModel, Located<ForgeError>> {
+    let kind = ForgeKind::TestPortType;
+    let doc = label.diagnostic_label;
+    refuse_profile_datamodel(root, label, kind)?;
+    let mut messages: Vec<TestPortMessage> = Vec::new();
+    for node in sce_children(root, "message") {
+        let schema = imported_alias(&node, doc, "<sce:message>", "type", ForgeKind::EventSchema)?;
+        let written = require_attr(&node, "direction", "<sce:message>", doc)?;
+        let direction = TestMessageDirection::from_attr(written.trim()).ok_or_else(|| {
+            located(
+                &node,
+                doc,
+                ValidationError::InvalidAttribute {
+                    element: "<sce:message>".into(),
+                    attr: "direction".into(),
+                    value: written.clone(),
+                    allowed: TestMessageDirection::ALL
+                        .iter()
+                        .map(|d| d.as_attr().to_string())
+                        .collect(),
+                },
+            )
+        })?;
+        if messages.iter().any(|m| m.schema == schema) {
+            return Err(located(
+                &node,
+                doc,
+                ValidationError::DuplicateId {
+                    kind,
+                    what: "message type".into(),
+                    id: schema,
+                },
+            ));
+        }
+        messages.push(TestPortMessage {
+            schema,
+            direction,
+            source_line: Some(row_of(&node)),
+        });
+    }
+    if messages.is_empty() {
+        return Err(located(
+            root,
+            doc,
+            ValidationError::MissingElement {
+                kind,
+                element: "sce:message".into(),
+            },
+        ));
+    }
+    Ok(TestPortTypeModel {
+        name: label.identifier.to_string(),
+        messages,
+        source_location: forge_source_location_of(root, doc),
+    })
+}
+
+/// Read a `sce:kind="test-template"` document (docs/SCE_TEST_PROFILE.md
+/// §11.4): the root's `sce:type`, its formal parameters (`<data
+/// sce:direction="in">` with no `expr`) and its one matcher.
+///
+/// Every rule a matcher states alone is held here, and every rule of a
+/// position whose type the document itself spells: the root, the elements of
+/// a list it reaches, the items of a value list or a complement. A field of an
+/// imported record and the case of an imported union are typed by their
+/// documents, and are asked where the imports are read.
+fn parse_test_template(
+    root: &roxmltree::Node,
+    label: DocumentLabel<'_>,
+) -> Result<TestTemplateModel, Located<ForgeError>> {
+    let kind = ForgeKind::TestTemplate;
+    let doc = label.diagnostic_label;
+    refuse_profile_datamodel(root, label, kind)?;
+    let root_element = "<scxml sce:kind=\"test-template\">";
+    let type_text = sce_attr(root, "type").ok_or_else(|| {
+        located(
+            root,
+            doc,
+            ValidationError::MissingAttribute {
+                element: root_element.into(),
+                attr: "sce:type".into(),
+            },
+        )
+    })?;
+    let template_type = read_profile_type(root, doc, root_element, "sce:type", &type_text)?;
+    let float_refusal = |node: &roxmltree::Node, ty: &ValueType, of: &str| {
+        test_profile_refusal(
+            node,
+            label,
+            kind,
+            TestProfileRule::TemplateFloat,
+            &ty.to_string(),
+            format!(
+                "{of} {ty} holds a float, which the test profile leaves out \
+                 (docs/SCE_TEST_PROFILE.md §8.1)"
+            ),
+        )
+    };
+    if crate::forge::test_profile::holds_float(&template_type) {
+        return Err(float_refusal(root, &template_type, "the template's type"));
+    }
+
+    let mut parameters: Vec<TestTemplateParameter> = Vec::new();
+    if let Some(datamodel) = find_child(root, "datamodel") {
+        for data in data_children(&datamodel) {
+            let (id, type_str) = field_id_and_type(&data, doc)?;
+            let element = format!("<data id=\"{id}\">");
+            let direction = sce_attr(&data, "direction").unwrap_or_default();
+            if direction.trim() != "in" {
+                return Err(located(
+                    &data,
+                    doc,
+                    ValidationError::AttributeRuleViolated {
+                        element,
+                        attr: "sce:direction".into(),
+                        value: direction,
+                        rule: "in: a template's <data> is a formal parameter, a value its \
+                               reference binds (docs/SCE_TEST_PROFILE.md §11.4)"
+                            .into(),
+                    },
+                ));
+            }
+            if let Some(expr) = data.attribute("expr") {
+                return Err(located(
+                    &data,
+                    doc,
+                    ValidationError::AttributeRuleViolated {
+                        element,
+                        attr: "expr".into(),
+                        value: expr.to_string(),
+                        rule: "no expr: a formal parameter's value is the argument its \
+                               reference binds to it"
+                            .into(),
+                    },
+                ));
+            }
+            if parameters.iter().any(|p| p.id == id) {
+                return Err(located(
+                    &data,
+                    doc,
+                    ValidationError::DuplicateId {
+                        kind,
+                        what: "formal parameter".into(),
+                        id,
+                    },
+                ));
+            }
+            let parameter_type = read_profile_type(&data, doc, &element, "sce:type", &type_str)?;
+            if crate::forge::test_profile::holds_float(&parameter_type) {
+                return Err(float_refusal(
+                    &data,
+                    &parameter_type,
+                    &format!("the formal parameter '{id}' of type"),
+                ));
+            }
+            parameters.push(TestTemplateParameter {
+                id,
+                parameter_type,
+                source_line: Some(row_of(&data)),
+            });
+        }
+    }
+
+    let matchers: Vec<roxmltree::Node> = sce_children_among(root, MATCHER_ELEMENTS).collect();
+    let one_matcher = "exactly one matcher of docs/SCE_TEST_PROFILE.md §11.4: a template \
+                       matches one value of its type";
+    let Some(first) = matchers.first() else {
+        return Err(located(
+            root,
+            doc,
+            ValidationError::AttributeRuleViolated {
+                element: root_element.into(),
+                attr: "matcher".into(),
+                value: "0".into(),
+                rule: one_matcher.into(),
+            },
+        ));
+    };
+    if let Some(second) = matchers.get(1) {
+        return Err(located(
+            second,
+            doc,
+            ValidationError::AttributeRuleViolated {
+                element: root_element.into(),
+                attr: "matcher".into(),
+                value: matchers.len().to_string(),
+                rule: one_matcher.into(),
+            },
+        ));
+    }
+    let templates = import_aliases_of(root, ForgeKind::TestTemplate);
+    let reader = MatcherReader {
+        label,
+        parameters: &parameters,
+        templates: &templates,
+    };
+    let matcher = reader.read(first, MatcherPlace::Root, Some(&template_type))?;
+
+    Ok(TestTemplateModel {
+        name: label.identifier.to_string(),
+        template_type,
+        parameters,
+        matcher,
+        source_location: forge_source_location_of(root, doc),
+    })
+}
+
+/// Where a matcher stands, for the rules that depend on it
+/// (docs/SCE_TEST_PROFILE.md §11.4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MatcherPlace {
+    /// The template's one matcher.
+    Root,
+    /// A field of a `record-match`: it carries `field`.
+    RecordField,
+    /// An element of a `list-match`.
+    ListElement,
+    /// The case of a `union-match`.
+    UnionCase,
+    /// An item of a `value-list` or a `complement`.
+    Item,
+}
+
+/// Reads the matchers of one template, against its formal parameters and the
+/// templates it imports.
+struct MatcherReader<'r> {
+    label: DocumentLabel<'r>,
+    parameters: &'r [TestTemplateParameter],
+    templates: &'r [String],
+}
+
+impl MatcherReader<'_> {
+    fn refusal(
+        &self,
+        node: &roxmltree::Node,
+        rule: TestProfileRule,
+        actual: &str,
+        detail: String,
+    ) -> Located<ForgeError> {
+        test_profile_refusal(
+            node,
+            self.label,
+            ForgeKind::TestTemplate,
+            rule,
+            actual,
+            detail,
+        )
+    }
+
+    /// The formal parameter `name`, refused where `node` names it when the
+    /// template declares none.
+    fn parameter(
+        &self,
+        node: &roxmltree::Node,
+        element: &str,
+        name: &str,
+    ) -> Result<&TestTemplateParameter, Located<ForgeError>> {
+        self.parameters
+            .iter()
+            .find(|p| p.id == name)
+            .ok_or_else(|| {
+                self.refusal(
+                    node,
+                    TestProfileRule::TemplateParameter,
+                    name,
+                    format!(
+                    "{element} names '{name}', which is not a formal parameter of the template \
+                     (a <data sce:direction=in> with no expr)"
+                ),
+                )
+            })
+    }
+
+    /// The matcher `node` is, standing at `place`, where a value of `ty`
+    /// is matched when the document spells that type (`None` where an
+    /// imported document does).
+    fn read(
+        &self,
+        node: &roxmltree::Node,
+        place: MatcherPlace,
+        ty: Option<&ValueType>,
+    ) -> Result<TestMatcher, Located<ForgeError>> {
+        let doc = self.label.diagnostic_label;
+        let local = node.tag_name().name();
+        let element = format!("<sce:{local}>");
+
+        // `field` names the record's field exactly where the matcher is one.
+        let field = match (place, node.attribute("field")) {
+            (MatcherPlace::RecordField, _) => Some(required_name(
+                node,
+                doc,
+                &format!("{element} of a <sce:record-match>"),
+                "field",
+            )?),
+            (_, None) => None,
+            (_, Some(written)) => {
+                return Err(located(
+                    node,
+                    doc,
+                    ValidationError::AttributeRuleViolated {
+                        element,
+                        attr: "field".into(),
+                        value: written.to_string(),
+                        rule: "no field: `field` names a field of the <sce:record-match> a \
+                               matcher stands in, and this one stands in none"
+                            .into(),
+                    },
+                ));
+            }
+        };
+
+        // B.1.4.1: a length restriction, each bound a whole number.
+        let length_min = read_unsigned_written(
+            node,
+            doc,
+            &element,
+            ("length-min", false),
+            UnsignedInt::NonNegative,
+        )?;
+        let length_max = read_unsigned_written(
+            node,
+            doc,
+            &element,
+            ("length-max", false),
+            UnsignedInt::NonNegative,
+        )?;
+        if let (Some(min), Some(max)) = (length_min, length_max) {
+            if min > max {
+                return Err(located(
+                    node,
+                    doc,
+                    ValidationError::AttributeRuleViolated {
+                        element,
+                        attr: "length-min".into(),
+                        value: min.to_string(),
+                        rule: format!(
+                            "at most length-max ({max}): a length restriction admits the \
+                             lengths from its least to its most"
+                        ),
+                    },
+                ));
+            }
+        }
+        // B.1.4.2, spelled as `xs:boolean` spells a truth value.
+        let ifpresent = match node.attribute("ifpresent").map(str::trim) {
+            None | Some("false") | Some("0") => false,
+            Some("true") | Some("1") => true,
+            Some(other) => {
+                return Err(located(
+                    node,
+                    doc,
+                    ValidationError::InvalidAttribute {
+                        element,
+                        attr: "ifpresent".into(),
+                        value: other.to_string(),
+                        allowed: vec!["true".into(), "false".into()],
+                    },
+                ));
+            }
+        };
+
+        let form = self.read_form(node, &element, ty)?;
+        let matcher = TestMatcher {
+            form,
+            field,
+            length_min,
+            length_max,
+            ifpresent,
+            source_line: Some(row_of(node)),
+        };
+
+        // B.1.3.2: `*` inside a list matches any number of elements, which
+        // the profile leaves out (docs/SCE_TEST_PROFILE.md §8.1).
+        if place == MatcherPlace::ListElement
+            && matches!(matcher.form, TestMatcherForm::AnyValueOrNone)
+        {
+            return Err(self.refusal(
+                node,
+                TestProfileRule::MatcherType,
+                local,
+                "<sce:any-value-or-none> stands as an element of a <sce:list-match>, where it \
+                 would match any number of elements: the test profile leaves that out \
+                 (B.1.3.2, docs/SCE_TEST_PROFILE.md §8.1)"
+                    .into(),
+            ));
+        }
+
+        if let Some(ty) = ty {
+            self.check_position(node, &matcher, ty)?;
+        }
+        Ok(matcher)
+    }
+
+    /// What `node` matches with, its children read at their places.
+    fn read_form(
+        &self,
+        node: &roxmltree::Node,
+        element: &str,
+        ty: Option<&ValueType>,
+    ) -> Result<TestMatcherForm, Located<ForgeError>> {
+        let doc = self.label.diagnostic_label;
+        let children = |place: MatcherPlace, child_ty: Option<&ValueType>| {
+            sce_children_among(node, MATCHER_ELEMENTS)
+                .map(|child| self.read(&child, place, child_ty))
+                .collect::<Result<Vec<TestMatcher>, Located<ForgeError>>>()
+        };
+        let count_rule =
+            |least: usize, rule: &str| -> Result<Vec<TestMatcher>, Located<ForgeError>> {
+                let items = children(MatcherPlace::Item, ty)?;
+                if items.len() < least {
+                    return Err(located(
+                        node,
+                        doc,
+                        ValidationError::AttributeRuleViolated {
+                            element: element.to_string(),
+                            attr: "matcher".into(),
+                            value: items.len().to_string(),
+                            rule: rule.to_string(),
+                        },
+                    ));
+                }
+                Ok(items)
+            };
+        Ok(match node.tag_name().name() {
+            "specific" => TestMatcherForm::Specific {
+                value: self.read_value(node, element)?,
+            },
+            "record-match" => {
+                let fields = children(MatcherPlace::RecordField, None)?;
+                let mut seen: Vec<&str> = Vec::new();
+                for field in &fields {
+                    let name = field.field.as_deref().unwrap_or_default();
+                    if seen.contains(&name) {
+                        return Err(located(
+                            node,
+                            doc,
+                            ValidationError::DuplicateId {
+                                kind: ForgeKind::TestTemplate,
+                                what: "field of a <sce:record-match>".into(),
+                                id: name.to_string(),
+                            },
+                        ));
+                    }
+                    seen.push(name);
+                }
+                TestMatcherForm::RecordMatch { fields }
+            }
+            "list-match" => TestMatcherForm::ListMatch {
+                elements: children(
+                    MatcherPlace::ListElement,
+                    ty.and_then(crate::forge::test_profile::list_element),
+                )?,
+            },
+            "union-match" => {
+                let variant = required_name(node, doc, element, "variant")?;
+                let mut case = children(MatcherPlace::UnionCase, None)?;
+                if case.len() > 1 {
+                    return Err(located(
+                        node,
+                        doc,
+                        ValidationError::AttributeRuleViolated {
+                            element: element.to_string(),
+                            attr: "matcher".into(),
+                            value: case.len().to_string(),
+                            rule: "at most one matcher: the matcher of the case's record, or \
+                                   none when the case holds none"
+                                .into(),
+                        },
+                    ));
+                }
+                TestMatcherForm::UnionMatch {
+                    variant,
+                    case: case.pop().map(Box::new),
+                }
+            }
+            "value-list" => TestMatcherForm::ValueList {
+                items: count_rule(
+                    2,
+                    "two or more matchers: a value list matches a value that matches one of \
+                     them (B.1.2.1)",
+                )?,
+            },
+            "complement" => TestMatcherForm::Complement {
+                items: count_rule(
+                    1,
+                    "one or more matchers: a complement matches a value that matches none of \
+                     them (B.1.2.2)",
+                )?,
+            },
+            "any-value" => TestMatcherForm::AnyValue,
+            "any-value-or-none" => TestMatcherForm::AnyValueOrNone,
+            "omit" => TestMatcherForm::Omit,
+            "value-range" => {
+                // A bound is read against the position's type where a range
+                // stands there; at a position that admits none, the range
+                // itself is refused by `check_position`, and its bounds are
+                // held to the integer syntax alone.
+                let bound_ty = ty.filter(|ty| {
+                    crate::forge::test_profile::matcher_admitted(
+                        &TestMatcherForm::ValueRange {
+                            lower: None,
+                            upper: None,
+                        },
+                        ty,
+                    )
+                    .is_ok()
+                });
+                let mut lower: Option<TestValue> = None;
+                let mut upper: Option<TestValue> = None;
+                for bound in sce_children_among(node, &["lower", "upper"]) {
+                    let local = bound.tag_name().name();
+                    let bound_element = format!("<sce:{local}>");
+                    let slot = if local == "lower" {
+                        &mut lower
+                    } else {
+                        &mut upper
+                    };
+                    if slot.is_some() {
+                        return Err(located(
+                            &bound,
+                            doc,
+                            ValidationError::DuplicateId {
+                                kind: ForgeKind::TestTemplate,
+                                what: format!("bound of a {element}"),
+                                id: local.to_string(),
+                            },
+                        ));
+                    }
+                    let value = self.read_value(&bound, &bound_element)?;
+                    self.check_range_bound(&bound, &bound_element, &value, bound_ty)?;
+                    *slot = Some(value);
+                }
+                TestMatcherForm::ValueRange { lower, upper }
+            }
+            "template-ref" => {
+                let template = required_name(node, doc, element, "template")?;
+                if !self.templates.contains(&template) {
+                    return Err(located(
+                        node,
+                        doc,
+                        ValidationError::InvalidAttribute {
+                            element: element.to_string(),
+                            attr: "template".into(),
+                            value: template,
+                            allowed: self.templates.to_vec(),
+                        },
+                    ));
+                }
+                let args: Vec<String> = node
+                    .attribute("args")
+                    .unwrap_or_default()
+                    .split_whitespace()
+                    .map(str::to_string)
+                    .collect();
+                for arg in &args {
+                    self.parameter(node, element, arg)?;
+                }
+                TestMatcherForm::TemplateRef { template, args }
+            }
+            other => unreachable!(
+                "{other}: sce_children_among hands out only the names of MATCHER_ELEMENTS"
+            ),
+        })
+    }
+
+    /// The value `node` names, by exactly one of `value` and `param`; a
+    /// `param` is a formal parameter of the template.
+    fn read_value(
+        &self,
+        node: &roxmltree::Node,
+        element: &str,
+    ) -> Result<TestValue, Located<ForgeError>> {
+        let doc = self.label.diagnostic_label;
+        if let Some(refusal) = exactly_one_form(
+            node,
+            doc,
+            element.to_string(),
+            &[&["value"], &["param"]],
+            |_| true,
+        ) {
+            return Err(refusal);
+        }
+        Ok(match (node.attribute("value"), node.attribute("param")) {
+            (Some(value), _) => TestValue::Value(value.to_string()),
+            (None, Some(param)) => {
+                let name = param.trim();
+                self.parameter(node, element, name)?;
+                TestValue::Param(name.to_string())
+            }
+            (None, None) => unreachable!("exactly_one_form refused an element with neither"),
+        })
+    }
+
+    /// A bound of a `value-range` (B.1.2.5): an integer in decimal, or a
+    /// formal parameter of an integer type; of the position's type where the
+    /// document spells it.
+    fn check_range_bound(
+        &self,
+        node: &roxmltree::Node,
+        element: &str,
+        value: &TestValue,
+        ty: Option<&ValueType>,
+    ) -> Result<(), Located<ForgeError>> {
+        match value {
+            TestValue::Value(text) => {
+                let fits = match ty {
+                    Some(ty) => crate::forge::test_profile::literal_of(ty, text),
+                    None => crate::forge::test_profile::decimal_integer(text)
+                        .map(|_| ())
+                        .ok_or_else(|| "an integer in decimal".to_string()),
+                };
+                fits.map_err(|rule| {
+                    self.refusal(
+                        node,
+                        TestProfileRule::Literal,
+                        text,
+                        format!(
+                            "{element} value '{text}' is not a bound of the range: expected {rule}"
+                        ),
+                    )
+                })
+            }
+            TestValue::Param(name) => {
+                let parameter = self.parameter(node, element, name)?;
+                let integer = matches!(
+                    &parameter.parameter_type,
+                    crate::forge::value_type::TypeOf::Scalar(scalar)
+                        if scalar.int_value_range().is_some()
+                );
+                let of_position =
+                    ty.is_none_or(|ty| same_value_type(ty, &parameter.parameter_type));
+                if integer && of_position {
+                    return Ok(());
+                }
+                Err(self.refusal(
+                    node,
+                    TestProfileRule::TemplateParameter,
+                    name,
+                    format!(
+                        "{element} names '{name}', of type {}, and a bound of this range is a \
+                         value of {}",
+                        parameter.parameter_type,
+                        ty.map_or_else(|| "an integer type".to_string(), |ty| ty.to_string())
+                    ),
+                ))
+            }
+        }
+    }
+
+    /// The rules of a position whose type the document spells
+    /// (docs/SCE_TEST_PROFILE.md §11.4): the matcher's form and its
+    /// attributes are admitted there, and a specific value is a literal of the
+    /// type or a formal parameter of it.
+    fn check_position(
+        &self,
+        node: &roxmltree::Node,
+        matcher: &TestMatcher,
+        ty: &ValueType,
+    ) -> Result<(), Located<ForgeError>> {
+        let local = node.tag_name().name();
+        if let Err(rule) = crate::forge::test_profile::matcher_admitted(&matcher.form, ty) {
+            return Err(self.refusal(
+                node,
+                TestProfileRule::MatcherType,
+                local,
+                format!("<sce:{local}> stands where a value of {ty} is matched: it stands only at {rule}"),
+            ));
+        }
+        if let Err((attr, rule)) = crate::forge::test_profile::attributes_admitted(matcher, ty) {
+            return Err(self.refusal(
+                node,
+                TestProfileRule::MatcherType,
+                attr,
+                format!(
+                    "<sce:{local}> carries {attr} where a value of {ty} is matched: it is \
+                     written only at {rule}"
+                ),
+            ));
+        }
+        match &matcher.form {
+            TestMatcherForm::Specific {
+                value: TestValue::Value(text),
+            } => crate::forge::test_profile::literal_of(ty, text).map_err(|rule| {
+                self.refusal(
+                    node,
+                    TestProfileRule::Literal,
+                    text,
+                    format!("<sce:{local}> value '{text}' is not a value of {ty}: expected {rule}"),
+                )
+            }),
+            TestMatcherForm::Specific {
+                value: TestValue::Param(name),
+            } => {
+                let parameter = self.parameter(node, &format!("<sce:{local}>"), name)?;
+                if same_value_type(ty, &parameter.parameter_type) {
+                    return Ok(());
+                }
+                Err(self.refusal(
+                    node,
+                    TestProfileRule::TemplateParameter,
+                    name,
+                    format!(
+                        "<sce:{local}> names '{name}', of type {}, where a value of {ty} is \
+                         matched",
+                        parameter.parameter_type
+                    ),
+                ))
+            }
+            _ => Ok(()),
+        }
+    }
+}
+
+/// Whether a value of `parameter` stands where a value of `position` is
+/// matched: the same type, or the type of a present value of an optional
+/// position.
+fn same_value_type(position: &ValueType, parameter: &ValueType) -> bool {
+    use crate::forge::value_type::TypeOf;
+    position == parameter || matches!(position, TypeOf::Optional { elem } if **elem == *parameter)
+}
+
+/// Read a `sce:kind="test-configuration"` document (docs/SCE_TEST_PROFILE.md
+/// §11.6): the MTC, the PTCs, the ports of the test system interface, and
+/// the `map` and `connect` that join ports.
+///
+/// Held here: exactly one MTC; each PTC and each system port declared once, a
+/// PTC never named `mtc`; each name an import of its kind; a `map` and an
+/// `endpoint` naming a declared component and a `map` a declared system port;
+/// a `connect` of two endpoints; every system port joined by exactly one
+/// `map`; no component port joined twice. Whether each component port is
+/// joined at all, whether the lists of joined ports agree, and the tree of
+/// PTCs the components' invocations make need the components and the port
+/// types, and are asked where the imports are read.
+fn parse_test_configuration(
+    root: &roxmltree::Node,
+    label: DocumentLabel<'_>,
+) -> Result<TestConfigurationModel, Located<ForgeError>> {
+    let kind = ForgeKind::TestConfiguration;
+    let doc = label.diagnostic_label;
+    refuse_profile_datamodel(root, label, kind)?;
+
+    let mtcs: Vec<roxmltree::Node> = sce_children(root, "mtc").collect();
+    let Some(mtc_node) = mtcs.first() else {
+        return Err(located(
+            root,
+            doc,
+            ValidationError::MissingElement {
+                kind,
+                element: "sce:mtc".into(),
+            },
+        ));
+    };
+    if let Some(second) = mtcs.get(1) {
+        return Err(located(
+            second,
+            doc,
+            ValidationError::AttributeRuleViolated {
+                element: "<sce:mtc>".into(),
+                attr: "(element)".into(),
+                value: String::new(),
+                rule: "exactly one <sce:mtc>: a test case has one main test component".into(),
+            },
+        ));
+    }
+    let mtc = imported_alias(mtc_node, doc, "<sce:mtc>", "type", ForgeKind::TestComponent)?;
+
+    let mut ptcs: Vec<TestPtc> = Vec::new();
+    for node in sce_children(root, "ptc") {
+        let id = required_name(&node, doc, "<sce:ptc>", "id")?;
+        if id == TestConfigurationModel::MTC {
+            return Err(located(
+                &node,
+                doc,
+                ValidationError::AttributeRuleViolated {
+                    element: "<sce:ptc>".into(),
+                    attr: "id".into(),
+                    value: id,
+                    rule: "a name other than `mtc`, which is the MTC's".into(),
+                },
+            ));
+        }
+        if ptcs.iter().any(|p| p.id == id) {
+            return Err(located(
+                &node,
+                doc,
+                ValidationError::DuplicateId {
+                    kind,
+                    what: "PTC".into(),
+                    id,
+                },
+            ));
+        }
+        let component = imported_alias(&node, doc, "<sce:ptc>", "type", ForgeKind::TestComponent)?;
+        ptcs.push(TestPtc {
+            id,
+            component,
+            source_line: Some(row_of(&node)),
+        });
+    }
+
+    let mut system_ports: Vec<TestSystemPort> = Vec::new();
+    let mut system_port_nodes: Vec<roxmltree::Node> = Vec::new();
+    for node in sce_children(root, "system-port") {
+        let id = required_name(&node, doc, "<sce:system-port>", "id")?;
+        if system_ports.iter().any(|p| p.id == id) {
+            return Err(located(
+                &node,
+                doc,
+                ValidationError::DuplicateId {
+                    kind,
+                    what: "system port".into(),
+                    id,
+                },
+            ));
+        }
+        let port_type = imported_alias(
+            &node,
+            doc,
+            "<sce:system-port>",
+            "type",
+            ForgeKind::TestPortType,
+        )?;
+        system_ports.push(TestSystemPort {
+            id,
+            port_type,
+            source_line: Some(row_of(&node)),
+        });
+        system_port_nodes.push(node);
+    }
+
+    let components: Vec<String> = std::iter::once(TestConfigurationModel::MTC.to_string())
+        .chain(ptcs.iter().map(|p| p.id.clone()))
+        .collect();
+    let component_of =
+        |node: &roxmltree::Node, element: &str| -> Result<String, Located<ForgeError>> {
+            let component = required_name(node, doc, element, "component")?;
+            if components.contains(&component) {
+                return Ok(component);
+            }
+            Err(located(
+                node,
+                doc,
+                ValidationError::InvalidAttribute {
+                    element: element.to_string(),
+                    attr: "component".into(),
+                    value: component,
+                    allowed: components.clone(),
+                },
+            ))
+        };
+    // Each component port joins at most one `connect` or `map` (§11.6, ports
+    // are one-to-one).
+    let mut joined: Vec<(String, String)> = Vec::new();
+    let port_joined_twice = |node: &roxmltree::Node, component: &str, port: &str| {
+        test_profile_refusal(
+            node,
+            label,
+            kind,
+            TestProfileRule::PortConnection,
+            port,
+            format!(
+                "the port '{port}' of the component '{component}' is joined by a second \
+                 connect or map: every port of the configuration takes part in exactly one"
+            ),
+        )
+    };
+
+    let mut maps: Vec<TestMap> = Vec::new();
+    for node in sce_children(root, "map") {
+        let component = component_of(&node, "<sce:map>")?;
+        let port = required_name(&node, doc, "<sce:map>", "port")?;
+        let system_port = required_name(&node, doc, "<sce:map>", "system-port")?;
+        if !system_ports.iter().any(|p| p.id == system_port) {
+            return Err(located(
+                &node,
+                doc,
+                ValidationError::InvalidAttribute {
+                    element: "<sce:map>".into(),
+                    attr: "system-port".into(),
+                    value: system_port,
+                    allowed: system_ports.iter().map(|p| p.id.clone()).collect(),
+                },
+            ));
+        }
+        let key = (component.clone(), port.clone());
+        if joined.contains(&key) {
+            return Err(port_joined_twice(&node, &component, &port));
+        }
+        joined.push(key);
+        maps.push(TestMap {
+            component,
+            port,
+            system_port,
+            source_line: Some(row_of(&node)),
+        });
+    }
+
+    let mut connects: Vec<TestConnect> = Vec::new();
+    for node in sce_children(root, "connect") {
+        let mut endpoints: Vec<TestEndpoint> = Vec::new();
+        for endpoint in sce_children(&node, "endpoint") {
+            let component = component_of(&endpoint, "<sce:endpoint>")?;
+            let port = required_name(&endpoint, doc, "<sce:endpoint>", "port")?;
+            let key = (component.clone(), port.clone());
+            if joined.contains(&key) {
+                return Err(port_joined_twice(&endpoint, &component, &port));
+            }
+            joined.push(key);
+            endpoints.push(TestEndpoint { component, port });
+        }
+        if endpoints.len() != 2 {
+            return Err(located(
+                &node,
+                doc,
+                ValidationError::AttributeRuleViolated {
+                    element: "<sce:connect>".into(),
+                    attr: "endpoint".into(),
+                    value: endpoints.len().to_string(),
+                    rule: "exactly two <sce:endpoint>: a connect joins one component port to \
+                           another"
+                        .into(),
+                },
+            ));
+        }
+        connects.push(TestConnect {
+            endpoints,
+            source_line: Some(row_of(&node)),
+        });
+    }
+
+    // Every port of the test system interface is joined by exactly one map.
+    for (port, node) in system_ports.iter().zip(&system_port_nodes) {
+        let count = maps.iter().filter(|m| m.system_port == port.id).count();
+        if count != 1 {
+            return Err(test_profile_refusal(
+                node,
+                label,
+                kind,
+                TestProfileRule::PortConnection,
+                &port.id,
+                format!(
+                    "the port '{}' of the test system interface is joined by {count} \
+                     <sce:map>: every port of the configuration takes part in exactly one \
+                     connect or map",
+                    port.id
+                ),
+            ));
+        }
+    }
+
+    Ok(TestConfigurationModel {
+        name: label.identifier.to_string(),
+        mtc,
+        ptcs,
+        system_ports,
+        maps,
+        connects,
+        source_location: forge_source_location_of(root, doc),
+    })
+}
+
+/// Read a `sce:kind="test-case"` document (docs/SCE_TEST_PROFILE.md §11.7):
+/// the root's `sce:configuration`, an imported test configuration.
+fn parse_test_case(
+    root: &roxmltree::Node,
+    label: DocumentLabel<'_>,
+) -> Result<TestCaseModel, Located<ForgeError>> {
+    let kind = ForgeKind::TestCase;
+    let doc = label.diagnostic_label;
+    refuse_profile_datamodel(root, label, kind)?;
+    let root_element = "<scxml sce:kind=\"test-case\">";
+    let configuration = sce_attr(root, "configuration")
+        .ok_or_else(|| {
+            located(
+                root,
+                doc,
+                ValidationError::MissingAttribute {
+                    element: root_element.into(),
+                    attr: "sce:configuration".into(),
+                },
+            )
+        })?
+        .trim()
+        .to_string();
+    let configurations = import_aliases_of(root, ForgeKind::TestConfiguration);
+    if !configurations.contains(&configuration) {
+        return Err(located(
+            root,
+            doc,
+            ValidationError::InvalidAttribute {
+                element: root_element.into(),
+                attr: "sce:configuration".into(),
+                value: configuration,
+                allowed: configurations,
+            },
+        ));
+    }
+    Ok(TestCaseModel {
+        name: label.identifier.to_string(),
+        configuration,
+        source_location: forge_source_location_of(root, doc),
+    })
+}
+
+/// Read a `sce:kind="test-suite"` document (docs/SCE_TEST_PROFILE.md §11.8):
+/// its module parameters and its `<sce:execute>` children in run order.
+///
+/// Held here: at most one imported feature model; each module parameter
+/// declared once, of a scalar, `string[N]` or `bytes[N]` type, its default a
+/// literal of that type; each test case an import, listed once; each guard a
+/// delay in whole microseconds; each selection a condition of ADR 0057's
+/// grammar, which needs a feature model to name. Whether a selection names
+/// only the model's features, and whether every module parameter a component
+/// reads is declared here with its type, need the imported documents, and are
+/// asked where the imports are read.
+fn parse_test_suite(
+    root: &roxmltree::Node,
+    label: DocumentLabel<'_>,
+) -> Result<TestSuiteModel, Located<ForgeError>> {
+    let kind = ForgeKind::TestSuite;
+    let doc = label.diagnostic_label;
+    refuse_profile_datamodel(root, label, kind)?;
+
+    // At most one feature model (§11.8). Read without the ledger: the
+    // imports were taken by `parse_imports`.
+    let feature_models: Vec<roxmltree::Node> = root
+        .children()
+        .filter(|c| {
+            c.is_element()
+                && c.tag_name().name() == "import"
+                && c.tag_name().namespace() == Some(SCE_NAMESPACE)
+                && c.attribute("kind") == Some(ForgeKind::FeatureModel.as_attr())
+        })
+        .collect();
+    if let Some(second) = feature_models.get(1) {
+        return Err(located(
+            second,
+            doc,
+            ValidationError::FeatureModelImportedTwice {
+                src: second.attribute("src").unwrap_or_default().to_string(),
+            },
+        ));
+    }
+    let features = feature_models
+        .first()
+        .and_then(|import| import.attribute("as"))
+        .map(str::to_string);
+
+    let mut module_parameters: Vec<TestModuleParameter> = Vec::new();
+    for node in sce_children(root, "module-parameter") {
+        let element = "<sce:module-parameter>";
+        let id = required_name(&node, doc, element, "id")?;
+        if module_parameters.iter().any(|p| p.id == id) {
+            return Err(located(
+                &node,
+                doc,
+                ValidationError::DuplicateId {
+                    kind,
+                    what: "module parameter".into(),
+                    id,
+                },
+            ));
+        }
+        let element = format!("<sce:module-parameter id=\"{id}\">");
+        let type_text = require_attr(&node, "type", &element, doc)?;
+        let parameter_type = read_profile_type(&node, doc, &element, "type", &type_text)?;
+        let literal_type = match &parameter_type {
+            crate::forge::value_type::TypeOf::Scalar(scalar) => !scalar.is_float(),
+            crate::forge::value_type::TypeOf::Text { .. }
+            | crate::forge::value_type::TypeOf::Bytes { .. } => true,
+            _ => false,
+        };
+        if !literal_type {
+            return Err(located(
+                &node,
+                doc,
+                ValidationError::AttributeRuleViolated {
+                    element,
+                    attr: "type".into(),
+                    value: type_text,
+                    rule: "an integer, `bool`, `enum:`, `string[N]` or `bytes[N]` type: a \
+                           module parameter's default is a literal (docs/SCE_TEST_PROFILE.md \
+                           §11.8)"
+                        .into(),
+                },
+            ));
+        }
+        let value = require_attr(&node, "value", &element, doc)?;
+        if let Err(rule) = crate::forge::test_profile::literal_of(&parameter_type, &value) {
+            return Err(test_profile_refusal(
+                &node,
+                label,
+                kind,
+                TestProfileRule::Literal,
+                &value,
+                format!(
+                    "{element} value '{value}' is not a value of {parameter_type}: expected \
+                     {rule}"
+                ),
+            ));
+        }
+        module_parameters.push(TestModuleParameter {
+            id,
+            parameter_type,
+            value,
+            source_line: Some(row_of(&node)),
+        });
+    }
+
+    let mut executes: Vec<TestExecute> = Vec::new();
+    for node in sce_children(root, "execute") {
+        let element = "<sce:execute>";
+        let test_case = imported_alias(&node, doc, element, "test-case", ForgeKind::TestCase)?;
+        if executes.iter().any(|e| e.test_case == test_case) {
+            return Err(located(
+                &node,
+                doc,
+                ValidationError::DuplicateId {
+                    kind,
+                    what: "test case of an <sce:execute>".into(),
+                    id: test_case,
+                },
+            ));
+        }
+        let guard_us = match node.attribute("guard") {
+            None => None,
+            Some(guard) => Some(crate::forge::test_profile::duration_us(guard).map_err(
+                |refusal| {
+                    test_profile_refusal(
+                        &node,
+                        label,
+                        kind,
+                        TestProfileRule::Duration,
+                        guard,
+                        format!("{element} guard '{guard}': expected {}", refusal.rule()),
+                    )
+                },
+            )?),
+        };
+        let requires = match node.attribute(crate::product_line::CONDITION_ATTRIBUTE) {
+            None => None,
+            Some(condition) => {
+                let expr = crate::presence_condition::parse(condition).map_err(|error| {
+                    located(
+                        &node,
+                        doc,
+                        ValidationError::FeatureConditionMalformed {
+                            condition: condition.to_string(),
+                            reason: error.message,
+                        },
+                    )
+                })?;
+                if features.is_none() {
+                    let (feature, _) = crate::product_line::first_feature(&expr);
+                    return Err(located(
+                        &node,
+                        doc,
+                        ValidationError::FeatureUndeclared {
+                            feature: feature.to_string(),
+                            model: None,
+                        },
+                    ));
+                }
+                Some(condition.trim().to_string())
+            }
+        };
+        executes.push(TestExecute {
+            test_case,
+            guard_us,
+            requires,
+            source_line: Some(row_of(&node)),
+        });
+    }
+
+    Ok(TestSuiteModel {
+        name: label.identifier.to_string(),
+        features,
+        module_parameters,
+        executes,
+        source_location: forge_source_location_of(root, doc),
     })
 }
 
@@ -13245,6 +14586,9 @@ const KNOWN_SCE_ATTRS: &[&str] = &[
     // an unread `sce:` attribute on a W3C element, so the sites were
     // removed rather than excused.
     "compute-at",
+    // The test configuration a `test-case` names on its root
+    // (docs/SCE_TEST_PROFILE.md §11.7).
+    "configuration",
     "default",
     // The answering half of the value-space coverage report — the
     // variants an author says reach the default on purpose. Named

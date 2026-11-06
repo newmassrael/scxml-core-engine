@@ -37,7 +37,7 @@
 // satisfied) fire ahead of the guard-analysis heuristic.
 
 use crate::forge::error::{ForgeError, Located};
-use crate::model::{SCXMLModel, State};
+use crate::model::{SCXMLModel, State, Transition};
 use crate::scxml_semantic::ScxmlSemanticError;
 
 /// Reject the document on its first guard-analysis violation — the first
@@ -91,7 +91,7 @@ pub fn findings(model: &SCXMLModel, source: &str) -> Vec<Located<ForgeError>> {
                 continue;
             }
             for (j, later) in state.transitions.iter().enumerate().skip(i + 1) {
-                if !shadowed[j] && event_descriptors_match(&earlier.event, &later.event) {
+                if !shadowed[j] && triggers_overlap(earlier, later) {
                     shadowed[j] = true;
                     // The shadowed transition, not the shadowing one:
                     // the dead element is what the author deletes or
@@ -250,6 +250,24 @@ fn event_descriptors_match(a: &str, b: &str) -> bool {
     ta.sort_unstable();
     tb.sort_unstable();
     ta == tb
+}
+
+/// Is `later` enabled on no occasion `earlier` is not, judged by what
+/// triggers each? Two transitions of a statechart by their event
+/// descriptors; two branches of a `test-component` by the branch each is
+/// (docs/SCE_TEST_PROFILE.md §4.2: a branch has no event, and is enabled when
+/// its port or its timer matches on the snapshot), so two branches that are
+/// both eventless are not one trigger. A branch and a transition that is not
+/// one never share a trigger.
+fn triggers_overlap(earlier: &Transition, later: &Transition) -> bool {
+    match (&earlier.test_branch, &later.test_branch) {
+        (None, None) => event_descriptors_match(&earlier.event, &later.event),
+        (Some(earlier_branch), Some(later_branch)) => {
+            earlier_branch.hides(later_branch)
+                && event_descriptors_match(&earlier.event, &later.event)
+        }
+        (Some(_), None) | (None, Some(_)) => false,
+    }
 }
 
 #[cfg(test)]
@@ -432,6 +450,54 @@ mod tests {
         let diags = err.error.to_diagnostics();
         assert_eq!(diags[0].code.as_str(), "scxml/shadowed-transition");
         assert_eq!(diags[0].actual.as_deref(), Some("fire"));
+    }
+
+    /// docs/SCE_TEST_PROFILE.md §4.2: two branches of a test component have
+    /// no event, and are not one trigger for it. A receive on a port and a
+    /// timeout of a timer are each enabled on snapshots the other is not;
+    /// an unguarded receive with no template takes every message its port
+    /// has, so a later receive on that port is shadowed.
+    #[test]
+    fn branches_shadow_by_their_port_or_timer_not_by_their_empty_event() {
+        use crate::test_component::{TemplateUse, TestBranch};
+        let branch = |receive: Option<&str>, timeout: Option<&str>, template: Option<&str>| {
+            let mut t = transition("", "", "next");
+            t.test_branch = Some(TestBranch {
+                receive: receive.map(str::to_string),
+                timeout: timeout.map(str::to_string),
+                template: TemplateUse {
+                    template: template.map(str::to_string),
+                    args: Vec::new(),
+                },
+            });
+            t
+        };
+        let model_of = |transitions: Vec<Transition>| {
+            let mut model = SCXMLModel {
+                initial: "waiting".to_string(),
+                ..Default::default()
+            };
+            let mut waiting = state("waiting", 0);
+            waiting.transitions = transitions;
+            insert_state(&mut model, waiting);
+            model
+        };
+
+        let distinct = model_of(vec![
+            branch(Some("sut"), None, Some("Completed")),
+            branch(None, Some("reply"), None),
+        ]);
+        assert!(validate(&distinct, "test.scxml").is_ok());
+
+        let hidden = model_of(vec![
+            branch(Some("sut"), None, None),
+            branch(Some("sut"), None, Some("Completed")),
+        ]);
+        let err = validate(&hidden, "test.scxml").expect_err("must reject");
+        assert_eq!(
+            err.error.to_diagnostics()[0].code.as_str(),
+            "scxml/shadowed-transition"
+        );
     }
 
     #[test]

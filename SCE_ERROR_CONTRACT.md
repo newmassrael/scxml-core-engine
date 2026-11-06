@@ -944,6 +944,13 @@ references against a real document and drift silently.
 | `scxml/unknown-session-role-kind` | `validation` | `replace_one_of` |  |
 | `scxml/unreachable-state` | `validation` | no |  |
 | `scxml/unsupported-datamodel` | `validation` | `replace_one_of` | W3C SCXML §3.2 |
+| `test-profile/datamodel` | `validation` | no | SCE Test Profile §11.2 |
+| `test-profile/duration` | `validation` | no | SCE Test Profile §4.7 |
+| `test-profile/literal` | `validation` | no | SCE Test Profile §11.4 |
+| `test-profile/matcher-type` | `validation` | no | SCE Test Profile §11.4 |
+| `test-profile/port-connection` | `validation` | no | SCE Test Profile §11.6 |
+| `test-profile/template-float` | `validation` | no | SCE Test Profile §11.4 |
+| `test-profile/template-parameter` | `validation` | no | SCE Test Profile §11.4 |
 | `timer/period-below-tick-rate` | `validation` | no | SCE Protocol-Synthesis RFC §5.D |
 | `traceability/meta-generated-source-line-marker-missing` | `generate` | no | SCE Protocol-Synthesis RFC §5.O |
 | `traceability/sce-map-attribute-stripped` | `generate` | no | SCE Protocol-Synthesis RFC §5.O |

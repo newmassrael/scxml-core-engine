@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- test-configuration: who takes part in a test case and how their ports
+     are joined. The tester is the main test component, and its port is
+     mapped to the port of the system under test. The component and the port
+     type are the examples beside this file. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-configuration" name="job_configuration">
+  <sce:import kind="test-component" src="test-component.scxml" as="Tester"/>
+  <sce:import kind="test-port-type" src="test-port-type.scxml" as="JobPort"/>
+  <sce:mtc type="Tester"/>
+  <sce:system-port id="sut" type="JobPort"/>
+  <sce:map component="mtc" port="sut" system-port="sut"/>
+</scxml>

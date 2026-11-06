@@ -120,6 +120,18 @@ impl Names {
         }
     }
 
+    /// Each enum, record and union a value type holds, at every depth.
+    fn value_type_aliases(&mut self, ty: &crate::forge::value_type::ValueType) {
+        for alias in ty
+            .enum_aliases()
+            .into_iter()
+            .chain(ty.record_aliases())
+            .chain(ty.union_aliases())
+        {
+            self.name(alias);
+        }
+    }
+
     fn ty(&mut self, ty: &SceType) {
         if let SceType::Enum(r) = ty {
             self.name(&r.alias);
@@ -465,6 +477,60 @@ impl Names {
                 }
                 self.opt_expr(f.expr.as_deref(), f.expr_spelling.as_ref())
             }),
+            // The documents of the test profile name each other by alias
+            // (docs/SCE_TEST_PROFILE.md §11): a template the record, union or
+            // enums its type and its parameters' types hold and every template
+            // it references; a port type the schema of each message; a
+            // configuration its components and port types; a test case its
+            // configuration; a suite its feature model, the enums of its module
+            // parameters and its test cases.
+            ForgeDocument::TestTemplate(m) => {
+                let types = std::iter::once(&m.template_type)
+                    .chain(m.parameters.iter().map(|p| &p.parameter_type));
+                for ty in types {
+                    self.value_type_aliases(ty);
+                }
+                let mut pending = vec![&m.matcher];
+                while let Some(matcher) = pending.pop() {
+                    if let crate::forge::model::TestMatcherForm::TemplateRef { template, .. } =
+                        &matcher.form
+                    {
+                        self.name(template);
+                    }
+                    pending.extend(matcher.children());
+                }
+                Ok(())
+            }
+            ForgeDocument::TestPortType(m) => {
+                for message in &m.messages {
+                    self.name(&message.schema);
+                }
+                Ok(())
+            }
+            ForgeDocument::TestConfiguration(m) => {
+                self.name(&m.mtc);
+                for ptc in &m.ptcs {
+                    self.name(&ptc.component);
+                }
+                for port in &m.system_ports {
+                    self.name(&port.port_type);
+                }
+                Ok(())
+            }
+            ForgeDocument::TestCase(m) => {
+                self.name(&m.configuration);
+                Ok(())
+            }
+            ForgeDocument::TestSuite(m) => {
+                self.opt_name(m.features.as_deref());
+                for parameter in &m.module_parameters {
+                    self.value_type_aliases(&parameter.parameter_type);
+                }
+                for execute in &m.executes {
+                    self.name(&execute.test_case);
+                }
+                Ok(())
+            }
             // A timer names events, a buffer pool sizes storage, an enum
             // lists values and a feature model lists features: none of them
             // reads another document.

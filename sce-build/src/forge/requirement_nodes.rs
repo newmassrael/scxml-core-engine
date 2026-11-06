@@ -211,6 +211,17 @@ pub fn requirement_nodes(doc: &ForgeDocument) -> ReviewScope {
             kind: "text-template",
         },
         ForgeDocument::Union(_) => ReviewScope::NoAnnotationSite { kind: "union" },
+        ForgeDocument::TestTemplate(_) => ReviewScope::NoAnnotationSite {
+            kind: "test-template",
+        },
+        ForgeDocument::TestPortType(_) => ReviewScope::NoAnnotationSite {
+            kind: "test-port-type",
+        },
+        ForgeDocument::TestConfiguration(_) => ReviewScope::NoAnnotationSite {
+            kind: "test-configuration",
+        },
+        ForgeDocument::TestCase(_) => ReviewScope::NoAnnotationSite { kind: "test-case" },
+        ForgeDocument::TestSuite(_) => ReviewScope::NoAnnotationSite { kind: "test-suite" },
     }
 }
 

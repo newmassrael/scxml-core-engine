@@ -561,7 +561,7 @@ fn written_tag(node: &roxmltree::Node) -> String {
 }
 
 /// The first feature `expr` names, and its offset.
-fn first_feature(expr: &PresenceExpr) -> (&str, usize) {
+pub(crate) fn first_feature(expr: &PresenceExpr) -> (&str, usize) {
     match expr {
         PresenceExpr::Feature { name, offset } => (name, *offset),
         PresenceExpr::All(operands) | PresenceExpr::Any(operands) => first_feature(&operands[0]),

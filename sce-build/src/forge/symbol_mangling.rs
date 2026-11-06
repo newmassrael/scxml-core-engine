@@ -459,6 +459,11 @@ fn forge_doc_name(doc: &ForgeDocument) -> &str {
         ForgeDocument::BroadcastLog(m) => &m.name,
         ForgeDocument::TextTemplate(m) => &m.name,
         ForgeDocument::Union(m) => &m.name,
+        ForgeDocument::TestTemplate(m) => &m.name,
+        ForgeDocument::TestPortType(m) => &m.name,
+        ForgeDocument::TestConfiguration(m) => &m.name,
+        ForgeDocument::TestCase(m) => &m.name,
+        ForgeDocument::TestSuite(m) => &m.name,
     }
 }
 

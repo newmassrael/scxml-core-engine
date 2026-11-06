@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- test-port-type: the messages a port of a test carries, each with the way
+     it travels, seen from the component that owns the port. The tester
+     receives the job's completion on it; the message is the event-schema
+     example beside this file. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-port-type" name="job_port">
+  <sce:import kind="event-schema" src="event-schema.scxml" as="JobCompleted"/>
+  <sce:message type="JobCompleted" direction="in"/>
+</scxml>

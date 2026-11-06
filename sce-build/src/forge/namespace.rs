@@ -228,6 +228,15 @@ fn declarations(parsed: &ParsedForge) -> Vec<(&str, Declared)> {
         // by their variants, never by an expression, and the uniqueness of a
         // case is the union parser's.
         | ForgeDocument::Union(_)
+        // The documents of the test profile hold no expression: a template's
+        // formal parameter is named by `param` and `args`, never by an
+        // expression, and every name a document of the profile declares is
+        // its parser's to hold unique (docs/SCE_TEST_PROFILE.md §11).
+        | ForgeDocument::TestTemplate(_)
+        | ForgeDocument::TestPortType(_)
+        | ForgeDocument::TestConfiguration(_)
+        | ForgeDocument::TestCase(_)
+        | ForgeDocument::TestSuite(_)
         | ForgeDocument::Statechart(_) => {}
     }
     out

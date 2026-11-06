@@ -397,7 +397,7 @@ pub fn reject_unexpanded_directives(
 /// `location.file` on a diagnostic is something the consumer can open.
 /// Artifacts need the other spelling; see [`artifact_label`].
 #[inline]
-fn source_location_of(
+pub(crate) fn source_location_of(
     node: &roxmltree::Node,
     source_name: &str,
 ) -> Option<crate::forge::error::SourceLocation> {
@@ -809,7 +809,7 @@ fn enforce_datamodel_languages(
 /// holding it, and a `<final>` is one as much as a `<state>` or a
 /// `<parallel>` — a construct in a final state's `<onentry>` or
 /// `<donedata>` names that state, not the one around it.
-fn owning_state(node: &roxmltree::Node) -> String {
+pub(crate) fn owning_state(node: &roxmltree::Node) -> String {
     match node
         .ancestors()
         .find(|ancestor| is_scxml_state_element(ancestor))
@@ -888,6 +888,7 @@ fn event_metadata_member(expression: &str) -> Option<String> {
 fn enforce_static_datamodel(
     root: &roxmltree::Node,
     datamodel: Datamodel,
+    test_component: bool,
     diag_label: &str,
 ) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
     use crate::forge::model::SCE_NAMESPACE;
@@ -1180,7 +1181,16 @@ fn enforce_static_datamodel(
             // A field holds a value from the moment the machine exists, so
             // the value is written rather than implied: no zero, no empty
             // string, no first variant stands in for one the author left out.
-            if node.attribute("expr").is_none_or(|e| e.trim().is_empty()) {
+            //
+            // A module parameter of a `test-component` is the one variable
+            // whose value is written elsewhere: the suite declares it, with its
+            // default (docs/SCE_TEST_PROFILE.md §11.5, §11.8). Asked only of a
+            // `test-component`, so in any other statechart the attribute stays
+            // unread and refused.
+            let module_parameter = test_component
+                && crate::sce_attr::read(&node, "module-parameter")
+                    .is_some_and(|flag| matches!(flag.trim(), "true" | "1"));
+            if !module_parameter && node.attribute("expr").is_none_or(|e| e.trim().is_empty()) {
                 return Err(refused(
                     element_row(&node),
                     format!("<data id=\"{id}\">"),
@@ -3012,8 +3022,11 @@ impl SCXMLParser {
         // key, and `classify_document` is the primitive; the CLI asks it
         // and the library entries did not, so only build.rs consumers
         // got the misleading answer.
-        if let Ok(Some(kind)) = crate::forge::parser::detect_kind_from_node(&root) {
-            if kind != crate::forge::model::ForgeKind::Statechart {
+        //
+        // A `test-component` is a statechart of the test profile
+        // (docs/SCE_TEST_PROFILE.md §11.5), and is read here.
+        let declared_kind = match crate::forge::parser::detect_kind_from_node(&root) {
+            Ok(Some(kind)) if !kind.reads_as_statechart() => {
                 return Err(Located::new(
                     crate::forge::error::ValidationError::WrongPipeline {
                         kind,
@@ -3025,7 +3038,9 @@ impl SCXMLParser {
                     None,
                 ));
             }
-        }
+            Ok(Some(kind)) => kind,
+            Ok(None) | Err(_) => crate::forge::model::ForgeKind::Statechart,
+        };
 
         // The same precondition the forge parse entry holds: a document
         // reaching model construction has been through expansion.
@@ -3227,11 +3242,7 @@ impl SCXMLParser {
         let forge_imports = crate::forge::parser::parse_imports(&root, diag_label)?;
         // The same reader a forge root uses, so both pipelines hold a
         // `<sce:kind-basis>` to one set of rules.
-        let kind_basis = crate::forge::kind_basis::read(
-            &root,
-            crate::forge::model::ForgeKind::Statechart,
-            diag_label,
-        )?;
+        let kind_basis = crate::forge::kind_basis::read(&root, declared_kind, diag_label)?;
 
         let mut model = SCXMLModel {
             name: name.to_string(),
@@ -3253,6 +3264,20 @@ impl SCXMLParser {
             kind_basis,
             ..Default::default()
         };
+
+        // docs/SCE_TEST_PROFILE.md §11.5: a `test-component` declares its
+        // ports, timers and module parameters, adds statements, and invokes
+        // its PTCs; its transitions and sends read the profile's attributes as
+        // they are parsed below, because this is set. In any other statechart
+        // nothing reads them, and the read ledger refuses each as unread.
+        if declared_kind == crate::forge::model::ForgeKind::TestComponent {
+            model.test_component = Some(crate::test_component::read(
+                &root,
+                &model.name,
+                model.datamodel,
+                diag_label,
+            )?);
+        }
 
         // Every reader below takes the one directory `import_dir` chooses, so
         // they cannot disagree about where a relative `src` points.
@@ -3288,7 +3313,12 @@ impl SCXMLParser {
         // document named — the state the `datamodel` attribute existed to
         // prevent and, until now, did not.
         enforce_datamodel_languages(&root, model.datamodel, diag_label)?;
-        enforce_static_datamodel(&root, model.datamodel, diag_label)?;
+        enforce_static_datamodel(
+            &root,
+            model.datamodel,
+            model.test_component.is_some(),
+            diag_label,
+        )?;
 
         // Parse datamodel
         self.parse_datamodel(&root, &mut model, diag_label)?;
@@ -4525,6 +4555,13 @@ impl SCXMLParser {
             unresolved: transition.unresolved,
         } = read_traceability(elem, transition_label, source_name)?;
 
+        // docs/SCE_TEST_PROFILE.md §4.2: in a `test-component` a transition
+        // is a branch by its `sce:receive` or `sce:timeout`. Read only there,
+        // so in any other statechart the attributes stay unread and refused.
+        if model.test_component.is_some() {
+            transition.test_branch = crate::test_component::TestBranch::read(elem);
+        }
+
         transition.actions = self.parse_executable_content(elem, model, source_name)?;
 
         // Detect guard conditions requiring In() predicate. The
@@ -4648,6 +4685,13 @@ impl SCXMLParser {
         action.id = elem.attribute("id").unwrap_or("").to_string();
         action.idlocation = elem.attribute("idlocation").unwrap_or("").to_string();
         action.namelist = elem.attribute("namelist").unwrap_or("").to_string();
+        // docs/SCE_TEST_PROFILE.md §11.5: a `test-component`'s send names
+        // the template it sends. Read only there, so in any other statechart
+        // the attributes stay unread and refused.
+        if model.test_component.is_some() {
+            let used = crate::test_component::TemplateUse::read(elem);
+            action.test_template = (!used.is_empty()).then_some(used);
+        }
 
         if action.id.is_empty() {
             action.auto_send_id = format!("__send_{}", self.send_counter);

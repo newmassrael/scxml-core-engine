@@ -608,6 +608,36 @@ impl XmlError {
 
 // ── Stage 3: Semantic validation ───────────────────────────────
 
+/// A rule of the test profile a [`ValidationError::TestProfile`] names
+/// (docs/SCE_TEST_PROFILE.md §11), one wire code each.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TestProfileRule {
+    /// §11.2: a document of the profile names a data model other than
+    /// `sce-static`. Wire code `test-profile/datamodel`.
+    Datamodel,
+    /// §11.4: a matcher, or an attribute of one, that its position's type
+    /// does not admit, and `any-value-or-none` as an element of a
+    /// `list-match`. Wire code `test-profile/matcher-type`.
+    MatcherType,
+    /// §11.4: a literal outside its type, in a matcher or as a module
+    /// parameter's default. Wire code `test-profile/literal`.
+    Literal,
+    /// §11.4: a `param` or an `args` entry that is not a formal parameter of
+    /// the template, or whose type is not its position's. Wire code
+    /// `test-profile/template-parameter`.
+    TemplateParameter,
+    /// §11.4 and §8.1: a template whose type holds `float32` or `float64`.
+    /// Wire code `test-profile/template-float`.
+    TemplateFloat,
+    /// §11.5 and §11.8: a duration that is not one of SCXML's delays, or not
+    /// a whole number of microseconds. Wire code `test-profile/duration`.
+    Duration,
+    /// §11.6: a port of the configuration joined by more than one `connect`
+    /// or `map`, or a port of the test system interface joined by none. Wire
+    /// code `test-profile/port-connection`.
+    PortConnection,
+}
+
 /// Semantic validation errors from kind-specific parsing.
 ///
 /// These fire *after* XML is successfully parsed — the document
@@ -1335,6 +1365,23 @@ pub enum ValidationError {
         case: String,
         record: String,
         field: String,
+    },
+
+    /// A rule of the test profile one document breaks (docs/adr/0091;
+    /// docs/SCE_TEST_PROFILE.md §11). `rule` names the rule and decides the
+    /// wire code; `kind` and `document` name the document; `actual` is what
+    /// the document wrote where the rule is broken, empty where the rule is
+    /// about an element as a whole; `detail` says what is wrong and what the
+    /// rule asks.
+    ///
+    /// Wire code: `test-profile/<rule>` ([`TestProfileRule`]).
+    #[error("{kind} '{document}': {detail}")]
+    TestProfile {
+        rule: TestProfileRule,
+        kind: ForgeKind,
+        document: String,
+        actual: String,
+        detail: String,
     },
 
     /// docs/adr/0087, section 4.1, item 2: an `sce:answer` that names no answer

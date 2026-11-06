@@ -379,6 +379,9 @@ pub mod template_lexing;
 /// `tools/codegen/templates/` by `build.rs`. Serves callers with no
 /// filesystem (WASM) from the same tree the filesystem loader walks.
 pub mod template_registry;
+/// What a statechart of `sce:kind="test-component"` declares and writes of
+/// the test profile (docs/adr/0091, docs/SCE_TEST_PROFILE.md §11.5).
+pub mod test_component;
 /// How a unit test installs an executable stand-in it is about to run — the
 /// integration tests' `common::executable`, included here by path so both
 /// halves of the crate's tests share the one installer and the race it
@@ -2097,6 +2100,22 @@ pub fn emit_model_artifacts(
     language: generator::Language,
     options: &ModelEmitOptions<'_>,
 ) -> Result<generator::GeneratedOutput, CompileError> {
+    // docs/SCE_TEST_PROFILE.md §11.9: a `test-component` is read and checked
+    // on every backend, and no backend generates one until the profile's
+    // runtime lands; every route that writes a machine comes through here.
+    if model.test_component.is_some() {
+        return Err(forge::error::Located::new(
+            forge::test_profile::document_not_generated(
+                model.kind(),
+                &model.name,
+                model.source_location.clone(),
+            )
+            .into(),
+            source_name,
+            model.source_location.as_ref().and_then(|at| at.line),
+            model.source_location.as_ref().and_then(|at| at.col),
+        ));
+    }
     // ADR 0057 §6: a document that carries feature conditions is generated one
     // variant at a time, except by a backend that keeps the variability in
     // its output (§9), given the variants. The parse of a selection
@@ -9483,7 +9502,14 @@ fn discover_stateful_member_methods(
         | ForgeDocument::TextTemplate(_)
         // A union is a type a value is held in, never called on its alias
         // (docs/adr/0092, section 1.1).
-        | ForgeDocument::Union(_) => Vec::new(),
+        | ForgeDocument::Union(_)
+        // A document of the test profile is named by the documents that import
+        // it, never called on its alias (docs/SCE_TEST_PROFILE.md §11).
+        | ForgeDocument::TestTemplate(_)
+        | ForgeDocument::TestPortType(_)
+        | ForgeDocument::TestConfiguration(_)
+        | ForgeDocument::TestCase(_)
+        | ForgeDocument::TestSuite(_) => Vec::new(),
     }
 }
 
@@ -11543,8 +11569,9 @@ pub fn classify_document(content: &str) -> Pipeline {
     use forge::error::{ForgeError, ValidationError};
     match forge::parser::detect_kind(content) {
         // Explicit forge kind with a recognised value.
-        Ok(Some(k)) if k != forge::model::ForgeKind::Statechart => Pipeline::Forge,
-        // No `sce:kind` attribute, or `sce:kind="statechart"`.
+        Ok(Some(k)) if !k.reads_as_statechart() => Pipeline::Forge,
+        // No `sce:kind` attribute, `sce:kind="statechart"`, or a kind that is a
+        // statechart, `test-component` (docs/SCE_TEST_PROFILE.md §11.5).
         Ok(_) => Pipeline::Scxml,
         // `sce:kind` attribute is present but the value is outside the
         // XSD enumeration. Route to forge so the schema / validator

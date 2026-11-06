@@ -348,6 +348,31 @@ fn forge_doc_provenance(doc: &ForgeDocument) -> (&'static str, &str, &Option<Sou
             &m.source_location,
         ),
         ForgeDocument::Union(m) => ("<scxml sce:kind=\"union\">", &m.name, &m.source_location),
+        ForgeDocument::TestTemplate(m) => (
+            "<scxml sce:kind=\"test-template\">",
+            &m.name,
+            &m.source_location,
+        ),
+        ForgeDocument::TestPortType(m) => (
+            "<scxml sce:kind=\"test-port-type\">",
+            &m.name,
+            &m.source_location,
+        ),
+        ForgeDocument::TestConfiguration(m) => (
+            "<scxml sce:kind=\"test-configuration\">",
+            &m.name,
+            &m.source_location,
+        ),
+        ForgeDocument::TestCase(m) => (
+            "<scxml sce:kind=\"test-case\">",
+            &m.name,
+            &m.source_location,
+        ),
+        ForgeDocument::TestSuite(m) => (
+            "<scxml sce:kind=\"test-suite\">",
+            &m.name,
+            &m.source_location,
+        ),
     }
 }
 

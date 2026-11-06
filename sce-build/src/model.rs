@@ -56,6 +56,13 @@ pub struct Transition {
     /// The condition this transition carries itself; see [`State::requires`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub requires: Option<crate::presence_condition::CanonicalCondition>,
+    /// What makes this transition a branch of a `test-component`
+    /// (docs/SCE_TEST_PROFILE.md §4.2, §11.5): its `sce:receive`,
+    /// `sce:timeout`, `sce:test-template` and `sce:template-args`, as
+    /// written. `None` on a transition that carries none of them, and on
+    /// every transition of a document that is not a `test-component`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub test_branch: Option<crate::test_component::TestBranch>,
     /// The `target` attribute as the analyzer leaves it: as written, except
     /// that a value naming exactly one `<history>` is rewritten by
     /// `parser::resolve_history_targets` to that history's default target
@@ -357,6 +364,12 @@ pub struct Action {
     /// boundary.
     #[serde(default)]
     pub send_type_unsupported: bool,
+    /// The template a `<send>` of a `test-component` sends and the variables
+    /// bound to its parameters (`sce:test-template`, `sce:template-args`;
+    /// docs/SCE_TEST_PROFILE.md §11.5). `None` on every other action, and on
+    /// every action of a document that is not a `test-component`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub test_template: Option<crate::test_component::TemplateUse>,
 
     /// `true` when a written `target` is a value the SCXML Event I/O
     /// Processor cannot address (§scxml-6.2.4) — decided by
@@ -1040,6 +1053,9 @@ impl Action {
                 "params",
                 "content",
                 "contentexpr",
+                // A `test-component`'s send names its template
+                // (docs/SCE_TEST_PROFILE.md §11.5).
+                "test_template",
             ],
             _ => &[],
         }
@@ -4164,6 +4180,13 @@ pub struct SCXMLModel {
     /// export, where every kind carries it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind_basis: Option<crate::forge::kind_basis::KindBasis>,
+    /// The test profile's declarations when the document is a
+    /// `sce:kind="test-component"` (docs/SCE_TEST_PROFILE.md §11.5): its
+    /// ports, timers and module parameters, the statements the profile adds
+    /// and the PTCs it invokes. `None` for every other statechart, which
+    /// reads none of the profile's attributes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub test_component: Option<crate::test_component::TestComponentProfile>,
     /// EventSchema MCU native lowering —
     /// the statechart's `<sce:import kind="event-schema">` declarations
     /// resolved to their `EventSchemaModel`, keyed by SCXML event name
@@ -5213,6 +5236,17 @@ impl State {
 }
 
 impl SCXMLModel {
+    /// The kind of document this model was read from: a `test-component`
+    /// when it carries the test profile's declarations
+    /// (docs/SCE_TEST_PROFILE.md §11.5), a statechart otherwise.
+    pub fn kind(&self) -> crate::forge::model::ForgeKind {
+        if self.test_component.is_some() {
+            crate::forge::model::ForgeKind::TestComponent
+        } else {
+            crate::forge::model::ForgeKind::Statechart
+        }
+    }
+
     /// The enum a value the document holds is of, by the name a variable, a
     /// record's field or the payload's field names it by: the document's own
     /// import under that alias, or an enum a schema's field holds that the
