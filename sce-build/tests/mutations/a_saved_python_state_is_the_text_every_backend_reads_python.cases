@@ -138,13 +138,13 @@ edit("backends/python/runtime/sce_runtime/saved_state.py",
      "        elif False:")
 PY
 
-# The format-2 and format-1 rows of
-# `test_a_text_the_formats_do_not_carry_is_refused_for_the_member_that_breaks_it` whose `raise`
-# act stores the SCXML prefix alone, which would be read as a sender.
+# `test_a_stored_act_origin_that_names_no_session_is_refused`: a format-2 or format-1 act
+# whose stored origin names no session, the SCXML prefix alone among them, would be read with
+# that text as its sender.
 
-mutation_case "a session's own send stored as the SCXML prefix alone is read" <<'PY'
+mutation_case "a session's own send stored with an origin that names no session is read" <<'PY'
 edit("backends/python/runtime/sce_runtime/saved_state.py",
-     "    if stored == SCXML_LOCATION_PREFIX:",
+     "    if session_id_refusal_of(sender) is not None:",
      "    if False:")
 PY
 
@@ -162,8 +162,8 @@ PY
 
 mutation_case "a format-2 act with an empty origin is read as sent by no session" <<'PY'
 edit("backends/python/runtime/sce_runtime/saved_state.py",
-     "    sender = read_stored_sender(stored) or session_id",
-     "    sender = read_stored_sender(stored)")
+     "        return scxml_origin_of(session_id), (session_id or None)",
+     "        return None, None")
 PY
 
 # The row of the same test whose pair holds a third member, `sender`.
