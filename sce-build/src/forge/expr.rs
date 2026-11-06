@@ -890,7 +890,7 @@ fn resolve_names(ast: &mut TypedExpr, ctx: &TypeCtx<'_>, source: &str) -> Result
     reject_record_text_misuse(ast, ctx, source, false)?;
     reject_buffers_as_values(ast, source)?;
     reject_optional_misuse(ast, &ctx.proven, source)?;
-    reject_unproven_union_reads(ast, ctx, source)?;
+    reject_unproven_union_reads(ast, ctx, &ctx.proven, source)?;
     reject_call_argument_mismatches(ast, ctx, source)?;
     reject_ill_typed_total_operations(ast, source)?;
     reject_composed_operands(ast, ctx, source, ReadThrough::Whole)?;
@@ -1053,18 +1053,25 @@ fn union_members(union: &crate::forge::value_type::ScopedUnion) -> Vec<String> {
 /// Refuse a read of a union's field where the build has not proven the union
 /// in cases that each declare it with one type (docs/adr/0092, section 6.1,
 /// `expression/union-read-unproven`): the tag is read anywhere, and a case's
-/// field only where a test of the tag that holds there ([`TypeCtx::proven`])
-/// leaves cases that each declare it. A union read through an element at an
-/// index is no subject a test names, so only its tag is read there, and a
-/// field no case declares is no member of it.
+/// field only where a test of the tag that holds there (`facts`) leaves cases
+/// that each declare it. A union read through an element at an index is no
+/// subject a test names, so only its tag is read there, and a field no case
+/// declares is no member of it.
+///
+/// Within the expression the facts grow as [`reject_optional_misuse`]'s do,
+/// by one rule for both kinds of fact ([`crate::forge::narrowing::proves`]):
+/// the right operand of `a && b` is read where `a` is true, of `a || b` where
+/// `a` is false, and the branches of `c ? t : e` where `c` is true and false.
 ///
 /// A scope that holds no value of the one value type holds no union, and
 /// nothing is refused.
 fn reject_unproven_union_reads(
     expr: &TypedExpr,
     ctx: &TypeCtx<'_>,
+    facts: &crate::forge::narrowing::Facts,
     source: &str,
 ) -> Result<(), Refusal> {
+    use crate::forge::narrowing::proves;
     if let ExprKind::Member { object, property } = &expr.kind {
         let held = place_path(object).and_then(|path| ctx.value_of(&path));
         let union = held
@@ -1095,7 +1102,7 @@ fn reject_unproven_union_reads(
                     &alias,
                     subject.as_deref(),
                     property,
-                    Some(&ctx.proven),
+                    Some(facts),
                 ) {
                     return Err(ExprError::UnionReadUnproven(Box::new(
                         crate::forge::error::UnionReadUnproven {
@@ -1110,9 +1117,40 @@ fn reject_unproven_union_reads(
             }
         }
     }
-    expr.children()
-        .into_iter()
-        .try_for_each(|child| reject_unproven_union_reads(child, ctx, source))
+    match &expr.kind {
+        ExprKind::Binary {
+            op: op @ (BinOp::And | BinOp::Or),
+            left,
+            right,
+        } => {
+            reject_unproven_union_reads(left, ctx, facts, source)?;
+            let when = *op == BinOp::And;
+            reject_unproven_union_reads(right, ctx, &facts.and(&proves(left, when)), source)
+        }
+        ExprKind::Conditional {
+            condition,
+            consequent,
+            alternate,
+        } => {
+            reject_unproven_union_reads(condition, ctx, facts, source)?;
+            reject_unproven_union_reads(
+                consequent,
+                ctx,
+                &facts.and(&proves(condition, true)),
+                source,
+            )?;
+            reject_unproven_union_reads(
+                alternate,
+                ctx,
+                &facts.and(&proves(condition, false)),
+                source,
+            )
+        }
+        _ => expr
+            .children()
+            .into_iter()
+            .try_for_each(|child| reject_unproven_union_reads(child, ctx, facts, source)),
+    }
 }
 
 /// Refuse an index read whose object is a value that holds no elements, or

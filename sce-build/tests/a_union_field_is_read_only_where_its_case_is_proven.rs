@@ -282,6 +282,57 @@ fn the_right_operand_of_and_is_read_where_the_left_is_true() {
 }
 
 #[test]
+fn the_right_operand_of_or_is_read_where_the_left_is_false() {
+    accepted(
+        "",
+        r#"<if cond="_event.data.one.kind !== Kind.rect || _event.data.one.width &gt; 3">
+             <assign location="seen" expr="1"/>
+           </if>"#,
+    );
+    accepted(
+        "",
+        r#"<if cond="!(_event.data.one.kind === Kind.rect) || _event.data.one.width &gt; 3">
+             <assign location="seen" expr="1"/>
+           </if>"#,
+    );
+    refused(
+        "",
+        r#"<if cond="_event.data.one.kind === Kind.rect || _event.data.one.width &gt; 3">
+             <assign location="seen" expr="1"/>
+           </if>"#,
+        unproven,
+        &["_event.data.one.width"],
+    );
+}
+
+#[test]
+fn the_branches_of_a_conditional_are_read_where_its_condition_is_true_and_false() {
+    accepted(
+        "",
+        &assign(
+            "seen",
+            "_event.data.one.kind === Kind.rect ? _event.data.one.width : 0",
+        ),
+    );
+    accepted(
+        "",
+        &assign(
+            "seen",
+            "_event.data.one.kind !== Kind.rect ? 0 : _event.data.one.height",
+        ),
+    );
+    refused(
+        "",
+        &assign(
+            "seen",
+            "_event.data.one.kind === Kind.rect ? 0 : _event.data.one.width",
+        ),
+        unproven,
+        &["_event.data.one.width"],
+    );
+}
+
+#[test]
 fn a_guard_proves_a_payload_case_in_its_transitions_content() {
     accepted(
         "_event.data.one.kind === Kind.disc",
