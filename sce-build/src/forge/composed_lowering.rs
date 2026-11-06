@@ -369,8 +369,12 @@ pub fn machine_type(
             max.max,
         ),
         ValueType::Record { alias } => spelling.record_type(records.record(within, alias)?.alias),
-        // docs/adr/0092, section 7: no machine holds a union yet.
-        ValueType::Union { alias } => return Err(crate::forge::value_type::union_unlowered(alias)),
+        // docs/adr/0092, landing order, step 4: the backend generates the
+        // union's unit, and no machine holds one yet; every walk below refuses
+        // it in the same words.
+        ValueType::Union { alias } => {
+            return Err(crate::forge::value_type::union_unlowered_in_machine(alias))
+        }
     })
 }
 
@@ -415,7 +419,9 @@ pub fn held_records(
                 reached.records.push(held.alias.to_string());
             }
         }
-        ValueType::Union { alias } => return Err(crate::forge::value_type::union_unlowered(alias)),
+        ValueType::Union { alias } => {
+            return Err(crate::forge::value_type::union_unlowered_in_machine(alias))
+        }
     }
     Ok(())
 }
@@ -480,7 +486,9 @@ pub fn reader(
                 &fields,
             )
         }
-        ValueType::Union { alias } => return Err(crate::forge::value_type::union_unlowered(alias)),
+        ValueType::Union { alias } => {
+            return Err(crate::forge::value_type::union_unlowered_in_machine(alias))
+        }
     })
 }
 
@@ -537,7 +545,9 @@ pub fn writer(
             let record = records.record(within, alias)?;
             spelling.write_record(&field_writers(record, records, spelling, held)?)
         }
-        ValueType::Union { alias } => return Err(crate::forge::value_type::union_unlowered(alias)),
+        ValueType::Union { alias } => {
+            return Err(crate::forge::value_type::union_unlowered_in_machine(alias))
+        }
     })
 }
 
@@ -964,6 +974,44 @@ mod tests {
             format!("Option<{list}<u8, 2>>")
         );
         assert!(machine_type(&ty("enum:Other"), None, &held, &enums, &RUST).is_err());
+    }
+
+    /// Every walk refuses a union at any depth in the machine's own words
+    /// (docs/adr/0092, landing order, step 4): the backend that spells the
+    /// walks generates the union's unit, so no refusal says it lowers none.
+    #[test]
+    fn every_walk_refuses_a_union_as_a_machine_that_holds_none_yet() {
+        let held = held();
+        let enums = enums();
+        let refused: Result<String, String> = Err(
+            crate::forge::value_type::union_unlowered_in_machine("Shape"),
+        );
+        for text in [
+            "union:Shape",
+            "optional<union:Shape>",
+            "list<union:Shape>[2]",
+        ] {
+            assert_eq!(
+                machine_type(&ty(text), None, &held, &enums, &RUST),
+                refused,
+                "{text}"
+            );
+            assert_eq!(
+                held_records(&ty(text), None, &held, &mut Reached::default()),
+                refused.clone().map(|_: String| ()),
+                "{text}"
+            );
+            assert_eq!(
+                reader(&ty(text), None, &held, &enums, &RUST, "v"),
+                refused,
+                "{text}"
+            );
+            assert_eq!(
+                writer(&ty(text), None, &held, &RUST, &Held::place("x")),
+                refused,
+                "{text}"
+            );
+        }
     }
 
     #[test]

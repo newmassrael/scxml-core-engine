@@ -27,6 +27,17 @@ use crate::forge::model::{ForgeDocument, ForgeKind, ParsedForge, UnionCase, Unio
 pub const NOT_LOWERED_YET: &str = "a union is a type of the language, and this backend does \
                                    not lower a union yet (docs/adr/0092, section 7)";
 
+/// Why a statechart's machine does not hold a union yet, on the backend whose
+/// walks over a composed value its machine spells
+/// ([`crate::forge::composed_lowering`]): that backend generates the union's
+/// own unit and a schema unit's field of one, and the machine's read, write,
+/// send and variable of one are the next step of the landing (docs/adr/0092,
+/// landing order, step 4). Said apart from [`NOT_LOWERED_YET`], which a backend
+/// that generates no union at all gives.
+pub const MACHINE_NOT_LOWERED_YET: &str =
+    "a union is a type of the language, and a statechart's machine does not hold, read, \
+     write or send one yet (docs/adr/0092, landing order, step 4)";
+
 /// The refusal of a union document on a backend that does not lower one: its
 /// document is read and checked, and generating it is refused by name
 /// (`generate/unsupported-feature`), as a composition a backend does not lower

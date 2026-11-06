@@ -5,8 +5,10 @@
 //! field holds one at any depth, named through `<sce:import kind="union">`; an
 //! alias no import names and a bracket on one are refused at the attribute; the
 //! scope a document's types are read in holds the union, its cases in its tag
-//! enum's order, and sizes it by its largest case; and every backend that does
-//! not lower a union refuses a field of one by name (section 7).
+//! enum's order, and sizes it by its largest case; every backend that does not
+//! lower a union refuses a field of one by name (section 7); and the Rust
+//! machine, which does not hold one yet, refuses a payload that holds one in
+//! words of its own.
 
 use std::path::{Path, PathBuf};
 
@@ -239,4 +241,69 @@ fn every_backend_that_does_not_lower_a_union_refuses_a_field_of_one_by_name() {
             other => panic!("{language:?}: {other:?}"),
         }
     }
+}
+
+/// A `sce-static` reader of `shapes.sent` that tests the tag of the payload's
+/// `one` and counts the circles.
+const READER: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="shapes_reader">
+  <sce:import kind="enum" src="shape_kind.scxml" as="Kind"/>
+  <sce:import kind="event-schema" src="event_shapes.scxml" as="Shapes"/>
+  <datamodel>
+    <data id="seen" sce:type="uint32" expr="0"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="shapes.sent" target="idle">
+      <if cond="_event.data.one.kind === Kind.circle">
+        <assign location="seen" expr="seen + 1"/>
+      </if>
+    </transition>
+  </state>
+</scxml>
+"#;
+
+/// Rust generates the union's unit and a field of one, and its machine, the
+/// one whose walks over a composed value are spelled, refuses a payload that
+/// holds one by name, in words that name the machine and not a backend that
+/// lowers no union (docs/adr/0092, landing order, step 4).
+#[test]
+fn a_rust_machine_refuses_a_payload_that_holds_a_union_by_name() {
+    let dir = tempfile::tempdir().expect("a scratch directory");
+    for name in [
+        "shape_kind.scxml",
+        "shape_radius.scxml",
+        "shape_rect.scxml",
+        "union_shape.scxml",
+        "event_shapes.scxml",
+    ] {
+        std::fs::copy(fixtures().join(name), dir.path().join(name)).expect("copy a fixture");
+    }
+    let path = dir.path().join("shapes_reader.scxml");
+    std::fs::write(&path, READER).expect("write the reader");
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_sce-codegen"))
+        .arg("--workspace-root")
+        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join(".."))
+        .arg("--error-format=json")
+        .args(["check", "-l", "rust"])
+        .arg(&path)
+        .output()
+        .expect("invoke sce-codegen");
+    let text =
+        String::from_utf8_lossy(&out.stderr).into_owned() + &String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !out.status.success(),
+        "the machine holds no union yet:\n{text}"
+    );
+    for part in [
+        "generate/unsupported-feature",
+        "union:Shape",
+        "a statechart's machine does not hold, read, write or send one yet",
+    ] {
+        assert!(text.contains(part), "expected `{part}` in:\n{text}");
+    }
+    assert!(
+        !text.contains("this backend does not lower a union"),
+        "{text}"
+    );
 }
