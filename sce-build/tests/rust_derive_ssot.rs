@@ -208,6 +208,23 @@ fn event_schema_plain_payload_adds_copy() {
     );
 }
 
+/// UnionSum: a union document's enum (docs/adr/0092, section 7) carries the
+/// wire-typed trio on the line before its declaration, and no `Copy`, since
+/// a case's record may own a buffer.
+#[test]
+fn union_sum_emits_ssot_trio() {
+    let out = scratch("union_sum");
+    run_generate(
+        &out,
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/union/union_shape.scxml"),
+    );
+    let src = read_emitted_rs(&out);
+    assert!(
+        src.contains("#[derive(Debug, Clone, PartialEq)]\npub enum UnionShape {"),
+        "a union's enum must derive Debug, Clone, PartialEq; got:\n{src}"
+    );
+}
+
 /// ForgeEnum: repr-tagged C-like enum with the Copy-trivial derive
 /// set.
 #[test]

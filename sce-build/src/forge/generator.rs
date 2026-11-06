@@ -3614,12 +3614,24 @@ impl crate::forge::schema_unit_type::UnitNames for SchemaUnitNames<'_> {
             .map(|i| event_schema_payload_type(&i.document_name, self.l.lang))
     }
     // The type the union's own unit declares, as the import line that brings
-    // its unit into scope names it ([`forge_import_identity`]).
+    // its unit into scope names it ([`forge_import_identity`]): Rust's
+    // `use super::<snake>;` brings the sibling module, which names the enum
+    // (`<snake>::<Pascal>`, as an imported enum and record are named), and
+    // Kotlin's wildcard import brings the interface itself.
     fn union(&self, alias: &str) -> Option<String> {
+        use crate::generator::Language;
         self.imports
             .iter()
             .find(|i| i.kind == "union" && i.alias == alias)
-            .map(|i| i.type_name.clone())
+            .map(|i| match self.l.lang {
+                Language::Rust => format!("{}::{}", i.namespace, i.type_name),
+                Language::Cpp
+                | Language::Kotlin
+                | Language::Go
+                | Language::Python
+                | Language::C11
+                | Language::Swift => i.type_name.clone(),
+            })
     }
     fn enum_mangle(&self, alias: &str) -> String {
         self.imports
@@ -4360,14 +4372,170 @@ fn render_event_schema(
     l.render(env, "event_schema", ctx)
 }
 
+/// What the unit of a union document is built from on every backend that
+/// lowers a union (docs/adr/0092, section 3.1 item 4, sections 5.1 and 8.1):
+/// the import of the tag's enum, the union's revision (that enum's), the union
+/// as the type grammar reads it, each case in the enum's order with the import
+/// of the record it holds, and the longest text of a value. Read once, so every
+/// backend refuses one document in the same words.
+struct UnionUnit<'i> {
+    tag: &'i ImportContext,
+    revision: u32,
+    union: crate::forge::value_type::ScopedUnion,
+    /// Each case's variant, by its declared name, and the import of the
+    /// record it holds (`None` for an empty case), in the tag enum's order.
+    cases: Vec<(String, Option<&'i ImportContext>)>,
+    data_max_len: u64,
+}
+
+/// The refusal of the union document `m` for `why`, anchored at its root.
+fn union_refused(m: &UnionModel, why: String) -> ForgeError {
+    ForgeError::from(GenerateError::unsupported_at(
+        format!("union '{}': {why}", m.name),
+        m.source_location.clone(),
+    ))
+}
+
+impl<'i> UnionUnit<'i> {
+    /// The unit of `m` as its imports resolved it. Refused by name where the
+    /// tag's enum was not read, and where a case holds a record no import
+    /// names or one of no field, for which no unit declares a type.
+    fn read(m: &UnionModel, imports: &'i [ImportContext]) -> Result<Self, ForgeError> {
+        let refused = |why: String| union_refused(m, why);
+        let tag = imports
+            .iter()
+            .find(|i| i.kind == "enum" && i.alias == m.tag_enum)
+            .ok_or_else(|| {
+                refused(format!(
+                    "the tag's enum `{}` names no enum the document imports",
+                    m.tag_enum
+                ))
+            })?;
+        let Some(revision) = tag.enum_revision else {
+            return Err(refused(format!(
+                "the tag's enum `{}` was not read",
+                m.tag_enum
+            )));
+        };
+        // The union as the type grammar reads it, in the scope its imports name
+        // the tag's enum and the cases' records in. Its own document is no
+        // import, so it is named by its alias alone (`ScopedUnion::key`).
+        let union = crate::forge::import_source::union_in_scope(
+            String::new(),
+            m,
+            import_type_scope(imports),
+        )
+        .ok_or_else(|| refused(format!("the tag's enum `{}` was not read", m.tag_enum)))?;
+        let mut cases = Vec::with_capacity(union.cases.len());
+        for case in &union.cases {
+            let variant = case.variant.name.as_str();
+            let record = match &case.record {
+                None => None,
+                Some(alias) => {
+                    let import = imports
+                        .iter()
+                        .find(|i| i.kind == "event-schema" && i.alias == *alias)
+                        .ok_or_else(|| {
+                            refused(format!(
+                                "the case `{variant}` holds `{alias}`, which names no event \
+                                 schema the document imports"
+                            ))
+                        })?;
+                    // A schema of no field generates no payload type
+                    // (`EventSchemaModel::carries_payload`), so a case that holds
+                    // one would name a type no unit declares.
+                    if import
+                        .record_type
+                        .as_ref()
+                        .is_some_and(|record| record.fields.is_empty())
+                    {
+                        return Err(refused(format!(
+                            "the case `{variant}` holds `{alias}`, which declares no field, so \
+                             no record type is generated for it"
+                        )));
+                    }
+                    Some(import)
+                }
+            };
+            cases.push((variant.to_string(), record));
+        }
+        // The longest text of a value: its largest case at its largest
+        // (docs/adr/0092, section 5.1), sized as a field of the union is.
+        let mut root = crate::forge::value_type::TypeScope::default();
+        root.unions.insert(m.name.clone(), union.clone());
+        let data_max_len = crate::forge::value_type::json_max_len(
+            &crate::forge::value_type::ValueType::Union {
+                alias: m.name.clone(),
+            },
+            &root,
+        )
+        .map_err(|why| {
+            refused(format!(
+                "its largest value has no size the build can compute: {why}"
+            ))
+        })?;
+        Ok(Self {
+            tag,
+            revision,
+            union,
+            cases,
+            data_max_len,
+        })
+    }
+
+    /// The template keys every backend's union unit reads, beside the base
+    /// context of `l`: the document's name, the tag's key and its enum's
+    /// document, and the constants of section 3.1 item 4: `REVISION`,
+    /// `DATA_MAX_LEN`, `SCHEMA_ID` and, where the type has a grammar,
+    /// `JSON_SCHEMA` (or why it has none).
+    fn context(
+        &self,
+        l: &LangCtx,
+        m: &UnionModel,
+        options: &crate::ForgeCompileOptions,
+    ) -> serde_json::Map<String, serde_json::Value> {
+        let mut ctx = l.base_context(&m.name);
+        ctx.insert("union_name".into(), m.name.clone().into());
+        ctx.insert("tag".into(), m.tag.clone().into());
+        ctx.insert(
+            "tag_enum_name".into(),
+            self.tag.document_name.clone().into(),
+        );
+        ctx.insert("schema_revision".into(), self.revision.into());
+        ctx.insert("data_max_len".into(), self.data_max_len.into());
+        ctx.insert(
+            "schema_id".into(),
+            crate::forge::payload_schema::schema_id(&m.name, self.revision).into(),
+        );
+        // The schema of a value, every bound as this build resolved it, under
+        // the source hash of the files this run writes (as an event schema's
+        // unit writes its own); a union whose type has no grammar declares
+        // none, and says why where it would stand.
+        match crate::forge::payload_schema::union_json_schema(
+            self.revision,
+            &self.union,
+            options.source_hash.as_deref(),
+        ) {
+            Ok(json_schema) => {
+                ctx.insert("payload_grammar".into(), true.into());
+                ctx.insert("json_schema".into(), json_schema.into());
+            }
+            Err(why) => {
+                ctx.insert("payload_grammar".into(), false.into());
+                ctx.insert("payload_grammar_absent".into(), why.to_string().into());
+            }
+        }
+        ctx
+    }
+}
+
 /// The Kotlin unit of a union document (docs/adr/0092, section 7, the Kotlin
 /// row): a sealed interface named for the document, holding `val kind`, the
 /// value of the tag's enum the case is for; one case nested in it per variant,
 /// in the enum's order, a `data class` holding the case's record as `value` or
 /// a `data object` for an empty case; and on the interface, once, a
 /// `proven<Case>()` per case that holds a record, the read of a case a test of
-/// the tag proved. Beside it the constants of section 3.1, item 4: `REVISION`
-/// (the tag enum's, section 8.1), `DATA_MAX_LEN`, `SCHEMA_ID` and `JSON_SCHEMA`.
+/// the tag proved. Beside it the constants of [`UnionUnit::context`].
 ///
 /// A case is named by its variant in Pascal case, the spelling Kotlin gives a
 /// class, as the ADR's row writes it (`Absolute`, `provenAbsolute()`). A case
@@ -4381,12 +4549,7 @@ fn render_union_kotlin(
     options: &crate::ForgeCompileOptions,
 ) -> Result<String, ForgeError> {
     use crate::generator::Language;
-    let refused = |why: String| {
-        ForgeError::from(GenerateError::unsupported_at(
-            format!("union '{}': {why}", m.name),
-            m.source_location.clone(),
-        ))
-    };
+    let unit = UnionUnit::read(m, imports)?;
     // A name of the unit of the document `document`, by its package.
     let qualified = |document: &str, ty: String| {
         format!(
@@ -4394,27 +4557,7 @@ fn render_union_kotlin(
             kotlin_forge_package(&filters::to_snake_case(document.to_string()))
         )
     };
-    let tag = imports
-        .iter()
-        .find(|i| i.kind == "enum" && i.alias == m.tag_enum)
-        .ok_or_else(|| {
-            refused(format!(
-                "the tag's enum `{}` names no enum the document imports",
-                m.tag_enum
-            ))
-        })?;
-    let Some(revision) = tag.enum_revision else {
-        return Err(refused(format!(
-            "the tag's enum `{}` was not read",
-            m.tag_enum
-        )));
-    };
-    // The union as the type grammar reads it, in the scope its imports name
-    // the tag's enum and the cases' records in. Its own document is no import,
-    // so it is named by its alias alone (`ScopedUnion::key`).
-    let union =
-        crate::forge::import_source::union_in_scope(String::new(), m, import_type_scope(imports))
-            .ok_or_else(|| refused(format!("the tag's enum `{}` was not read", m.tag_enum)))?;
+    let tag = unit.tag;
     let union_type = filters::to_pascal_case(m.name.clone());
     let kind_type = qualified(
         &tag.document_name,
@@ -4423,46 +4566,22 @@ fn render_union_kotlin(
     // Two variants whose Pascal spellings are one would be two classes of one
     // name: refused by name rather than left to the compiler.
     let mut spelled: std::collections::BTreeMap<String, &str> = std::collections::BTreeMap::new();
-    let mut cases = Vec::with_capacity(union.cases.len());
-    for case in &union.cases {
-        let variant = case.variant.name.as_str();
+    let mut cases = Vec::with_capacity(unit.cases.len());
+    for (variant, record) in &unit.cases {
+        let variant = variant.as_str();
         let ident = filters::to_pascal_case(variant.to_string());
         if let Some(first) = spelled.insert(ident.clone(), variant) {
-            return Err(refused(format!(
-                "the cases `{first}` and `{variant}` are both the Kotlin class `{ident}`"
-            )));
+            return Err(union_refused(
+                m,
+                format!("the cases `{first}` and `{variant}` are both the Kotlin class `{ident}`"),
+            ));
         }
-        let record = match &case.record {
-            None => None,
-            Some(alias) => {
-                let import = imports
-                    .iter()
-                    .find(|i| i.kind == "event-schema" && i.alias == *alias)
-                    .ok_or_else(|| {
-                        refused(format!(
-                            "the case `{variant}` holds `{alias}`, which names no event schema \
-                             the document imports"
-                        ))
-                    })?;
-                // A schema of no field generates no payload type
-                // (`EventSchemaModel::carries_payload`), so a case that holds one
-                // would name a class no unit declares.
-                if import
-                    .record_type
-                    .as_ref()
-                    .is_some_and(|record| record.fields.is_empty())
-                {
-                    return Err(refused(format!(
-                        "the case `{variant}` holds `{alias}`, which declares no field, so no \
-                         record type is generated for it"
-                    )));
-                }
-                Some(qualified(
-                    &import.document_name,
-                    event_schema_payload_type(&import.document_name, Language::Kotlin),
-                ))
-            }
-        };
+        let record = record.map(|import| {
+            qualified(
+                &import.document_name,
+                event_schema_payload_type(&import.document_name, Language::Kotlin),
+            )
+        });
         cases.push(serde_json::json!({
             "ident": ident,
             "variant": variant,
@@ -4477,57 +4596,142 @@ fn render_union_kotlin(
             "record": record,
         }));
     }
-    // The longest text of a value: its largest case at its largest
-    // (docs/adr/0092, section 5.1), sized as a field of the union is.
-    let mut root = crate::forge::value_type::TypeScope::default();
-    root.unions.insert(m.name.clone(), union.clone());
-    let data_max_len = crate::forge::value_type::json_max_len(
-        &crate::forge::value_type::ValueType::Union {
-            alias: m.name.clone(),
-        },
-        &root,
-    )
-    .map_err(|why| {
-        refused(format!(
-            "its largest value has no size the build can compute: {why}"
-        ))
-    })?;
-
     let l = LangCtx::new(Language::Kotlin, imports);
-    let mut ctx = l.base_context(&m.name);
-    ctx.insert("union_name".into(), m.name.clone().into());
+    let mut ctx = unit.context(&l, m, options);
     ctx.insert("union_type".into(), union_type.clone().into());
     ctx.insert(
         "union_qualified".into(),
         qualified(&m.name, union_type).into(),
     );
-    ctx.insert("tag".into(), m.tag.clone().into());
-    ctx.insert("tag_enum_name".into(), tag.document_name.clone().into());
     ctx.insert("kind_type".into(), kind_type.into());
-    ctx.insert("schema_revision".into(), revision.into());
-    ctx.insert("data_max_len".into(), data_max_len.into());
-    ctx.insert(
-        "schema_id".into(),
-        crate::forge::payload_schema::schema_id(&m.name, revision).into(),
-    );
-    // The schema of a value, every bound as this build resolved it, under the
-    // source hash of the files this run writes (as an event schema's unit
-    // writes its own); a union whose type has no grammar declares none, and
-    // says why where it would stand.
-    match crate::forge::payload_schema::union_json_schema(
-        revision,
-        &union,
-        options.source_hash.as_deref(),
-    ) {
-        Ok(json_schema) => {
-            ctx.insert("payload_grammar".into(), true.into());
-            ctx.insert("json_schema".into(), json_schema.into());
-        }
-        Err(why) => {
-            ctx.insert("payload_grammar".into(), false.into());
-            ctx.insert("payload_grammar_absent".into(), why.to_string().into());
-        }
+    ctx.insert("cases".into(), serde_json::json!(cases));
+    l.render(env, "union", ctx)
+}
+
+/// The methods every value of a generated Rust union answers through its
+/// derives (`Clone`, `PartialEq`, `Debug`): an inherent method of one of these
+/// names would hide the trait's at every call written with a dot, so the tag's
+/// accessor is never one of them.
+const RUST_UNION_DERIVED_METHODS: &[&str] = &["clone", "clone_from", "eq", "ne", "fmt"];
+
+/// The Rust method the tag's key `tag` is read by on a generated union: the key
+/// in snake case, as a payload's field is named
+/// ([`event_schema_field_ident`]), escaped with `r#` where Rust reserves it.
+/// `None` for a key that is no Rust identifier, one `r#` cannot escape
+/// (`self`, `Self`, `super`, `crate`), and one that would hide a derived
+/// method ([`RUST_UNION_DERIVED_METHODS`]).
+fn rust_union_tag_method(tag: &str) -> Option<String> {
+    let snake = event_schema_field_ident(tag, crate::generator::Language::Rust);
+    let mut chars = snake.chars();
+    let identifier = chars
+        .next()
+        .is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+        && snake != "_";
+    if !identifier
+        || ["self", "Self", "super", "crate"].contains(&snake.as_str())
+        || RUST_UNION_DERIVED_METHODS.contains(&snake.as_str())
+    {
+        return None;
     }
+    Some(if filters::RUST_KEYWORDS.contains(&snake.as_str()) {
+        format!("r#{snake}")
+    } else {
+        snake
+    })
+}
+
+/// The Rust unit of a union document (docs/adr/0092, section 7, the Rust row):
+/// an enum named for the document, deriving what the one policy gives a union
+/// ([`crate::rust_derive_policy::RustDeriveCategory::UnionSum`]: `Debug`,
+/// `Clone`, `PartialEq`), one variant per case in the tag enum's order, holding
+/// the case's record or nothing for an empty case; `<tag>(&self)`, the value of
+/// the tag's enum the case is for; and one `proven_<case>(&self) -> &R` per
+/// case that holds a record, the read of a case a test of the tag proved, whose
+/// other arms are `unreachable!()`, the one place they are written. Beside it
+/// the constants of [`UnionUnit::context`].
+///
+/// A case is named by its variant as the enum's own Rust declaration spells it
+/// ([`crate::forge::enum_naming::variant_ident`]), so the case of `circle` is
+/// `Circle` as the tag's value is `ShapeKind::Circle`, and its proven read by
+/// the variant in snake case. The tag's enum and the cases' records are named
+/// through the sibling modules the unit's `use super::<snake>;` lines bring in,
+/// the lines every Rust unit names its imports by; only the documents the type
+/// names are brought in, so no `use` is left unread.
+fn render_union_rust(
+    env: &minijinja::Environment,
+    m: &UnionModel,
+    imports: &[ImportContext],
+    options: &crate::ForgeCompileOptions,
+) -> Result<String, ForgeError> {
+    use crate::generator::Language;
+    let unit = UnionUnit::read(m, imports)?;
+    let tag = unit.tag;
+    let kind_type = enum_qualified_type(&tag.document_name, Language::Rust);
+    let tag_method = rust_union_tag_method(&m.tag).ok_or_else(|| {
+        union_refused(
+            m,
+            format!(
+                "the tag's key `{}` names no Rust method its value can be read by",
+                m.tag
+            ),
+        )
+    })?;
+    // Two cases of one Rust variant, or two methods of one name, would not
+    // compile: each is refused by name rather than left to the compiler.
+    let mut variants: std::collections::BTreeMap<String, &str> = std::collections::BTreeMap::new();
+    let mut methods: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+    methods.insert(tag_method.clone(), format!("the tag `{}`", m.tag));
+    let mut cases = Vec::with_capacity(unit.cases.len());
+    let mut uses: Vec<String> = vec![tag.include_stmt.clone()];
+    for (variant, record) in &unit.cases {
+        let variant = variant.as_str();
+        let ident =
+            crate::forge::enum_naming::variant_ident(Language::Rust, &tag.document_name, variant);
+        if let Some(first) = variants.insert(ident.clone(), variant) {
+            return Err(union_refused(
+                m,
+                format!("the cases `{first}` and `{variant}` are both the Rust variant `{ident}`"),
+            ));
+        }
+        let proven = format!("proven_{}", filters::to_snake_case(variant.to_string()));
+        if let Some(import) = record {
+            let read = format!("the case `{variant}`");
+            if let Some(first) = methods.insert(proven.clone(), read.clone()) {
+                return Err(union_refused(
+                    m,
+                    format!("{first} and {read} are both read by the Rust method `{proven}`"),
+                ));
+            }
+            if !uses.contains(&import.include_stmt) {
+                uses.push(import.include_stmt.clone());
+            }
+        }
+        cases.push(serde_json::json!({
+            "ident": ident,
+            "variant": variant,
+            "kind": format!("{kind_type}::{ident}"),
+            "proven": proven,
+            "record": record.map(|import| {
+                event_schema_payload_type(&import.document_name, Language::Rust)
+            }),
+        }));
+    }
+    let l = LangCtx::new(Language::Rust, imports);
+    let mut ctx = unit.context(&l, m, options);
+    ctx.insert(
+        "union_type".into(),
+        filters::to_pascal_case(m.name.clone()).into(),
+    );
+    ctx.insert("kind_type".into(), kind_type.into());
+    ctx.insert("tag_method".into(), tag_method.into());
+    ctx.insert("rust_type_imports".into(), serde_json::json!(uses));
+    ctx.insert(
+        "union_derives_attr".into(),
+        crate::rust_derive_policy::RustDeriveCategory::UnionSum
+            .derives_attr()
+            .into(),
+    );
     ctx.insert("cases".into(), serde_json::json!(cases));
     l.render(env, "union", ctx)
 }
@@ -25265,10 +25469,9 @@ pub fn generate_rust_with_imports_and_externs(
         }
         // Feature model: see cpp dispatch.
         ForgeDocument::FeatureModel(_) => return Ok(GeneratedOutput::default()),
-        // Union: see cpp dispatch.
-        ForgeDocument::Union(m) => {
-            return Err(crate::forge::union_check::document_unlowered(m).into())
-        }
+        // docs/adr/0092, section 7: Rust lowers a union to an enum, one
+        // variant per variant of its tag's enum.
+        ForgeDocument::Union(m) => render_union_rust(&env, m, imports, options)?,
         // docs/SCE_TEST_PROFILE.md §11.9: no backend generates a document of
         // the test profile until its runtime lands, so each is refused by name.
         ForgeDocument::TestTemplate(_)

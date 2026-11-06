@@ -1,0 +1,83 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "rust", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="union")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+
+{# docs/adr/0092, section 7, the Rust row. The tag's enum and each case's
+   record as a sibling module (`use super::<snake>;`), the statement
+   `forge_import_identity` writes for every generated Rust file, and only for
+   the documents the type names. #}
+{% for stmt in rust_type_imports %}
+{{ stmt }}
+{% endfor %}
+
+/// The revision of the union: its tag enum's, `{{ tag_enum_name }}`'s (a union declares none of its own).
+#[allow(dead_code)]
+pub const REVISION: u32 = {{ schema_revision }};
+/// The most bytes a value's JSON text takes: its largest case, every list full,
+/// every text at its bound, every number at its longest spelling.
+#[allow(dead_code)]
+pub const DATA_MAX_LEN: u64 = {{ data_max_len }};
+/// The id of the union's schema, `urn:sce:schema:<document>:<revision>`: the
+/// `$id` of `JSON_SCHEMA`.
+#[allow(dead_code)]
+pub const SCHEMA_ID: &str = "{{ schema_id }}";
+{% if payload_grammar %}
+/// A value as a JSON Schema (2020-12): the `oneOf` of the cases, each its tag
+/// `{{ tag }}` beside the fields of its record, every bound as this build resolved it.
+#[allow(dead_code)]
+pub const JSON_SCHEMA: &str = "{{ json_schema }}";
+{% else %}
+// No JSON_SCHEMA: {{ payload_grammar_absent }}.
+{% endif %}
+
+/// A value of `{{ union_name }}`: exactly one case, told apart by its tag `{{ tag }}`, a
+/// value of `{{ kind_type }}`. Two values are equal when they are in one case and
+/// their records are equal.
+{{ union_derives_attr }}
+pub enum {{ union_type }} {
+{% for c in cases %}
+{% if c.record %}
+    /// The case `{{ c.variant }}`, holding its record.
+    {{ c.ident }}({{ c.record }}),
+{% else %}
+    /// The case `{{ c.variant }}`, its tag alone.
+    {{ c.ident }},
+{% endif %}
+{% endfor %}
+}
+
+{# The accessors are the type's API, read or not (see the enum's template). #}
+#[allow(dead_code)]
+impl {{ union_type }} {
+    /// The case this value is in: the tag its text writes under `{{ tag }}`.
+    pub fn {{ tag_method }}(&self) -> {{ kind_type }} {
+        match self {
+{% for c in cases %}
+{% if c.record %}
+            Self::{{ c.ident }}(_) => {{ c.kind }},
+{% else %}
+            Self::{{ c.ident }} => {{ c.kind }},
+{% endif %}
+{% endfor %}
+        }
+    }
+{% for c in cases if c.record %}
+
+    /// The record of the case `{{ c.variant }}`, read where a test of the tag proved
+    /// the value is in it.
+    pub fn {{ c.proven }}(&self) -> &{{ c.record }} {
+        match self {
+            Self::{{ c.ident }}(record) => record,
+{% if cases | length > 1 %}
+            _ => unreachable!("a value of {} read as {} is in another case", "{{ union_name }}", "{{ c.variant }}"),
+{% endif %}
+        }
+    }
+{% endfor %}
+}

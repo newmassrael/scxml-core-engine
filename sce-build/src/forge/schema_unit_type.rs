@@ -22,8 +22,9 @@
 //!
 //! A union (docs/adr/0092, section 7) is spelled on a backend that lowers one
 //! ([`crate::forge::codegen_matrix::UNION_BACKENDS`]) as the sum type its own
-//! unit declares: on Kotlin the sealed interface, named as the import names the
-//! union's unit. Every other backend refuses it by name.
+//! unit declares, named as the import names the union's unit: on Rust the enum
+//! through its sibling module (`union_shape::UnionShape`), on Kotlin the sealed
+//! interface. Every other backend refuses it by name.
 //!
 //! Rust's text, byte string and list inside a composition are the bounded types
 //! of `sce-portable-bytes`, whose every constructor refuses a value past its
@@ -114,7 +115,7 @@ pub(crate) fn unit_type(
             ValueType::Bytes { max } => format!("::sce_portable_bytes::SceBytes<{}>", max.max),
             ValueType::Optional { elem } => format!("Option<{}>", inner(elem, c11)?),
             ValueType::Record { alias } => record(alias)?,
-            ValueType::Union { alias } => return Err(unlowered(alias)),
+            ValueType::Union { alias } => union_type(alias)?,
             ValueType::List { elem, max } => format!(
                 "::sce_portable_bytes::BoundedList<{}, {}>",
                 inner(elem, c11)?,
@@ -321,9 +322,10 @@ mod tests {
         .is_err());
     }
 
-    /// Kotlin names a union by the sealed interface its unit declares, at any
-    /// depth; a union no import names is refused, and a backend that does not
-    /// lower a union refuses it by name (docs/adr/0092, section 7).
+    /// Kotlin names a union by the sealed interface its unit declares and Rust
+    /// by its enum, at any depth; a union no import names is refused, and a
+    /// backend that does not lower a union refuses it by name (docs/adr/0092,
+    /// section 7).
     #[test]
     fn kotlin_names_a_union_by_its_units_sum_and_the_rest_refuse_it() {
         assert_eq!(spelled(Language::Kotlin, "union:Shape"), "UnionShape");
@@ -339,6 +341,12 @@ mod tests {
         )
         .expect_err("no import names the union");
         assert!(unnamed.contains("`union:Other`"), "{unnamed}");
+        // Rust names the same sum inside its bounded list and its optional.
+        assert_eq!(spelled(Language::Rust, "union:Shape"), "UnionShape");
+        assert_eq!(
+            spelled(Language::Rust, "list<optional<union:Shape>>[3]"),
+            "::sce_portable_bytes::BoundedList<Option<UnionShape>, 3>"
+        );
         for lang in Language::ALL.iter().copied() {
             if crate::forge::codegen_matrix::UNION_BACKENDS.contains(&lang) {
                 continue;

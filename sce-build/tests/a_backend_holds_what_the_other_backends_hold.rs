@@ -295,8 +295,7 @@ enum Why {
 /// table in this file, and checked both ways against the derived rows.
 const ACCEPTED: &[(Language, &str, Why)] = &[
     // The union (docs/adr/0092, section 7, `codegen_matrix::UNION_BACKENDS`):
-    // its sum type lands one backend at a time, Kotlin first.
-    (Language::Rust, "forge kind `union`", Why::NotYet(UNION_NOT_YET)),
+    // its sum type lands one backend at a time, Kotlin and Rust first.
     (Language::Cpp, "forge kind `union`", Why::NotYet(UNION_NOT_YET)),
     (Language::Go, "forge kind `union`", Why::NotYet(UNION_NOT_YET)),
     (Language::Python, "forge kind `union`", Why::NotYet(UNION_NOT_YET)),
@@ -473,7 +472,7 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
 const UNION_NOT_YET: &str =
     "no union template and union field spelling for this backend yet: its dispatch refuses a \
      union document by name (`union_check::document_unlowered`) and its schema unit a union \
-     field (`schema_unit_type::unit_type`); Kotlin lowers both";
+     field (`schema_unit_type::unit_type`); Rust and Kotlin lower both";
 
 /// Swift writes a statechart in part, so what reads a whole one does not exist for it.
 const SWIFT_NO_EMITTER: &str =

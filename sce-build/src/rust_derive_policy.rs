@@ -177,6 +177,13 @@ pub enum RustDeriveCategory {
     /// activation, returned by the holder's `update`. The same set as the
     /// holder, for the same reasons.
     TransformOutputs,
+    /// `union.rs.jinja2` — `pub enum {{ union_type }}`, a union document's sum
+    /// (docs/adr/0092, section 7, the Rust row): one variant per case, each
+    /// holding its case's record, an event-schema payload. The wire-typed
+    /// payload trio, the set a payload it holds derives at least, so the sum
+    /// is compared and cloned case by case; not `Copy`, since a case's record
+    /// may own a buffer.
+    UnionSum,
 }
 
 impl RustDeriveCategory {
@@ -224,6 +231,7 @@ impl RustDeriveCategory {
             }
             Self::ValidatorResult => &["Debug"],
             Self::TransformHolder | Self::TransformOutputs => &["Debug", "Clone", "PartialEq"],
+            Self::UnionSum => &["Debug", "Clone", "PartialEq"],
         }
     }
 
@@ -375,6 +383,7 @@ mod tests {
             RustDeriveCategory::ValidatorResult,
             RustDeriveCategory::TransformHolder,
             RustDeriveCategory::TransformOutputs,
+            RustDeriveCategory::UnionSum,
         ] {
             assert!(
                 cat.derives().contains(&"Debug"),

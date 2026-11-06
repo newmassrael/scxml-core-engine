@@ -617,8 +617,13 @@ document as a sealed interface, `val kind` on it, one nested case per variant (a
 `data class` holding the case's record as `value`, or a `data object` for an empty
 case) and a `proven<Case>()` read per case that holds a record, beside `REVISION`,
 `DATA_MAX_LEN`, `SCHEMA_ID` and `JSON_SCHEMA`; and an event schema's field of the
-union at any depth as that interface. Every other backend refuses a union document
-and a union field by name. A statechart's variable of a union, and its read or send
+union at any depth as that interface. Rust generates it as an enum deriving `Debug`,
+`Clone` and `PartialEq`, one variant per case (holding the case's record, or none
+for an empty case), a `<tag>(&self)` read of the tag and a `proven_<case>(&self)`
+read per case that holds a record, beside the same four constants; and a field of
+the union at any depth as that enum. A tag whose key names no Rust method, or would
+hide a derived one (`clone`, `eq`, `fmt`), is refused by name. Every other backend
+refuses a union document and a union field by name. A statechart's variable of a union, and its read or send
 of a payload that holds one, are composed values: a backend whose statechart does
 not lower them refuses each by name, as it refuses any composed value it does not
 lower (`generate/unsupported-feature`).

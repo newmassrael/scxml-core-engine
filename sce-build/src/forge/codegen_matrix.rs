@@ -386,7 +386,7 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
 /// statechart's variable, a read of a payload that holds one and a send of
 /// that payload are composed values, which a backend lowers where its composed
 /// lowering does ([`crate::forge::event_schema_check::ComposedLowering`]).
-pub const UNION_BACKENDS: &[Language] = &[Language::Kotlin];
+pub const UNION_BACKENDS: &[Language] = &[Language::Rust, Language::Kotlin];
 
 /// The backends whose broadcast-log template has landed (ADR 0062, "Order of
 /// landing"). A backend joins this list in the change that gives it the
@@ -1137,8 +1137,8 @@ mod tests {
 
     /// docs/adr/0092, landing order: a backend of [`UNION_BACKENDS`] emits a
     /// union, and every other awaits it, letting it through the matrix to the
-    /// dispatch that refuses the document by name. Kotlin is the first to
-    /// emit one.
+    /// dispatch that refuses the document by name. Rust and Kotlin emit one,
+    /// in [`Language::ALL`]'s order.
     #[test]
     fn a_union_is_emitted_by_its_backends_and_awaited_by_the_rest() {
         for &lang in Language::ALL {
@@ -1152,7 +1152,7 @@ mod tests {
         }
         assert_eq!(
             emitting(ForgeKind::Union).collect::<Vec<_>>(),
-            [Language::Kotlin]
+            [Language::Rust, Language::Kotlin]
         );
         for &lang in UNION_BACKENDS {
             let times = UNION_BACKENDS.iter().filter(|l| **l == lang).count();

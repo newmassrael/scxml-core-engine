@@ -378,7 +378,7 @@ fn payload_schema_prints_a_union_documents_one_of_and_grammar() {
 
 /// The unit of a union document declares the JSON Schema `payload-schema`
 /// prints for it, under the id its tag enum's revision names (docs/adr/0092,
-/// section 3.1, item 4), on Kotlin, the backend that lowers a union.
+/// section 3.1, item 4), on Kotlin and Rust, the backends that lower a union.
 #[test]
 fn a_union_unit_declares_the_json_schema_payload_schema_prints() {
     let document = repo_root().join("sce-build/tests/fixtures/union/union_shape.scxml");
@@ -390,6 +390,16 @@ fn a_union_unit_declares_the_json_schema_payload_schema_prints() {
     );
     assert_eq!(
         literal_after(&unit, "const val JSON_SCHEMA: String = \""),
+        json_schema
+    );
+    // Rust, the other backend that lowers a union, declares the same text.
+    let unit = generated(&document, "rust");
+    assert_eq!(
+        literal_after(&unit, "pub const SCHEMA_ID: &str = \""),
+        "urn:sce:schema:union_shape:1"
+    );
+    assert_eq!(
+        literal_after(&unit, "pub const JSON_SCHEMA: &str = \""),
         json_schema
     );
 }

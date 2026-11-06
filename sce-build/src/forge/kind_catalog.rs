@@ -783,8 +783,9 @@ pub const fn guide(kind: ForgeKind) -> KindGuide {
                 "one <sce:case variant record> per variant of that enum, record the alias of \
                  an imported event schema or left out for an empty case; no case's record \
                  declares the tag's key",
-                "a field, a variable or a slot holds one as union:<alias>; no backend lowers it \
-                 yet, so generation refuses it by name",
+                "a field, a variable or a slot holds one as union:<alias>; Rust and Kotlin \
+                 generate the union and a field that holds it, and every other backend refuses \
+                 both by name",
             ],
             example: Example::Document(include_str!("../../kind-examples/union.scxml")),
         },
