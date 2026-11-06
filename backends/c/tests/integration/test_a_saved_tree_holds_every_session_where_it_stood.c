@@ -213,11 +213,12 @@ static void the_tree_holds_every_session_where_it_stood(void) {
     CHECK(sce_jv_count(root.external) == 1u, "the child's answer waits in the parent's queue");
     CHECK(sce_jv_count(root.invokes) == 1u, "one running child");
     CHECK(sce_jv_iter(root.invokes, &it) && sce_jiter_element(&it, &item), "the child is there");
-    CHECK(sce_saved_child_read(item, 0u, &worker, &err), "%s", err.message);
+    CHECK(root.format == SCE_SAVED_FORMAT_3, "the tree is saved as format 3: %d", root.format);
+    CHECK(sce_saved_child_read(item, 0u, root.format, &worker, &err), "%s", err.message);
     CHECK(sce_jv_string_is(worker.id, "worker") && worker.start == 2 &&
               sce_jv_string_is(worker.invoke_id, "working.2.worker"),
           "the worker is start 2 under `working.2.worker`");
-    CHECK(sce_saved_session_read(worker.session, SCE_SAVED_FORMAT_2, &child, &err), "%s", err.message);
+    CHECK(sce_saved_session_read(worker.session, worker.format, &child, &err), "%s", err.message);
     CHECK(sce_jv_string_is(child.session_id, SHARED_ROOT ".working.2.worker"), "the child's session id");
     CHECK(sce_jv_string_is(child.current, "second"), "the child took `go`");
     CHECK(sce_jv_count(child.invokes) == 1u, "one grandchild");

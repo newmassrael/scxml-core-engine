@@ -3,10 +3,10 @@
 //
 // SCE Accepted Subset §2.15, "Saving and restoring" (docs/adr/0045, section 8): the saved
 // states the shared fixtures hold are the text every backend writes and reads, so a state saved
-// by one backend is one another restores. Each format-2 text is restored by the generated C11
+// by one backend is one another restores. Each format-3 text is restored by the generated C11
 // machine of its document and saved again, which is the same text byte for byte; each format-1
-// text, which every backend still reads, is restored and saved as format 2 under the machine's own
-// session id.
+// text, which every backend still reads, is restored and saved as format 3 under the machine's own
+// session id. The format-2 texts are read in `test_a_format_two_state_is_saved_again_as_format_three.c`.
 //
 // The cases below it hold the machine's own behaviour: a waiting send survives a restore, a
 // queued event is delivered after one, a state that is not the document's is refused and leaves
@@ -149,9 +149,9 @@ static bool read_trimmed(const char *path, char *out, size_t cap, size_t *len) {
     return true;
 }
 
-// Every text of `directory` that is of a machine here, restored and saved again; `format2` says the
-// text is saved as it was. How many were held to a machine.
-static int round_trips(const char *directory, bool format2) {
+// Every text of `directory` that is of a machine here, restored and saved again; `as_it_was` says
+// the text is saved as it was. How many were held to a machine.
+static int round_trips(const char *directory, bool as_it_was) {
     DIR *dir = opendir(directory);
     int checked = 0;
     if (dir == NULL) {
@@ -181,13 +181,13 @@ static int round_trips(const char *directory, bool format2) {
         }
         const bool ok = machine->round_trip(text, len, SAVED_AT_MS, again, sizeof(again), &err);
         CHECK(ok, "%s: restoring and saving again was refused: %s", entry->d_name, ok ? "" : err.message);
-        if (ok && format2) {
+        if (ok && as_it_was) {
             CHECK(strcmp(again, text) == 0, "%s: saved again as\n%s\nthe shared text is\n%s", entry->d_name, again,
                   text);
         } else if (ok) {
-            // What a format-1 text holds is what a restore reads; saving it again writes format 2,
+            // What a format-1 text holds is what a restore reads; saving it again writes format 3,
             // with the machine's own session id.
-            CHECK(strncmp(again, "{\"format\":2,", 12u) == 0, "%s: saved again as %s", entry->d_name, again);
+            CHECK(strncmp(again, "{\"format\":3,", 12u) == 0, "%s: saved again as %s", entry->d_name, again);
         }
         ++checked;
     }
@@ -195,9 +195,9 @@ static int round_trips(const char *directory, bool format2) {
     return checked;
 }
 
-static void a_format_two_state_another_backend_saved_is_restored_and_saved_as_it_was(void) {
+static void a_format_three_state_another_backend_saved_is_restored_and_saved_as_it_was(void) {
     const int checked = round_trips(SCE_SAVED_FIXTURES_DIR, true);
-    CHECK(checked >= 8, "only %d of the shared format-2 texts were held to a machine", checked);
+    CHECK(checked >= 8, "only %d of the shared format-3 texts were held to a machine", checked);
 }
 
 // A text is held to the machine of the longest stem that begins its name: the optional record's
@@ -319,8 +319,7 @@ static void a_queued_event_is_delivered_after_a_restore(void) {
     static_timers_state_t done;
     const char *none = "\"external\":[]";
     const char *queued = "\"external\":[{\"name\":\"stop\",\"data\":\"\",\"type\":\"external\",\"sendid\":\"\","
-                         "\"origin\":\"\",\"origintype\":\"http://www.w3.org/TR/scxml/#SCXMLEventProcessor\","
-                         "\"invokeid\":\"\",\"hostinvoketoken\":null}]";
+                         "\"origin\":null,\"sender\":null,\"invokeid\":\"\",\"hostinvoketoken\":null}]";
     (void)snprintf(path, sizeof(path), "%s/static_timers_midway.json", SCE_SAVED_FIXTURES_DIR);
     CHECK(read_trimmed(path, text, sizeof(text), &len), "the shared text");
     const char *at = strstr(text, none);
@@ -369,7 +368,7 @@ static void a_text_that_is_not_a_state_is_refused_in_the_words_every_backend_use
               strcmp(err.message, "the saved state is not an object") == 0,
           "%s", err.message);
     CHECK(!static_timers_restore(&sm, "{\"format\":9}", 12u, SAVED_AT_MS, &args, &err) &&
-              strcmp(err.message, "the saved state is format 9, and this runtime reads formats 1 and 2") == 0,
+              strcmp(err.message, "the saved state is format 9, and this runtime reads formats 1, 2 and 3") == 0,
           "%s", err.message);
 }
 
@@ -458,7 +457,7 @@ static void a_save_into_no_buffer_measures_the_text(void) {
 
 int main(void) {
     a_document_whose_name_begins_with_anothers_is_held_to_its_own_machine();
-    a_format_two_state_another_backend_saved_is_restored_and_saved_as_it_was();
+    a_format_three_state_another_backend_saved_is_restored_and_saved_as_it_was();
     a_format_one_state_is_restored_and_takes_the_machines_own_session();
     a_waiting_send_survives_a_restore();
     the_id_a_cancel_names_is_part_of_what_is_saved();

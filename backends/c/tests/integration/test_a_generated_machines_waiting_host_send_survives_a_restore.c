@@ -8,8 +8,8 @@
 // `statechart_static_delayed_host_send.scxml` is a `datamodel="sce-static"` document, generated
 // with the processor declaration: the send is armed by the code the generator emitted, with its
 // two typed `<param>`s read from the machine's fields, and saved and restored by the `_save` and
-// `_restore` the generator emitted. The text this backend writes is the format-2
-// `saved/statechart_static_delayed_host_send_waiting.json` (docs/adr/0045), its root given the id
+// `_restore` the generator emitted. The text this backend writes is the format-3
+// `saved/statechart_static_delayed_host_send_waiting.json` (docs/adr/0090), its root given the id
 // the fixtures name it by; the format-1 text of the same run, under `saved/format1/`, still
 // restores. A C11 root draws its own id, so the text a run saves is held to the shared one once
 // the id it drew is replaced by the shared one.

@@ -15,7 +15,7 @@
 //
 // Driven entirely on the machine's manual clock: no case sleeps, and none can be decided by how
 // loaded the build machine is. The shared instance `saved/statechart_static_host_invoke_running.json`
-// is the format-2 text every backend writes (docs/adr/0045); the format-1 text of the same run, under
+// is the format-3 text every backend writes (docs/adr/0090); the format-1 text of the same run, under
 // `saved/format1/`, still restores.
 
 // `strstr` and `snprintf` are C99; the build asks for strict C11.

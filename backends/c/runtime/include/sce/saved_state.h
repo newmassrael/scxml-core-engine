@@ -6,7 +6,7 @@
  * boundary and restored into a new process (SCE Accepted Subset §2.15, E17;
  * docs/adr/0045), on the C11 backend.
  *
- * The format is one JSON document (`sce-saved-state`, format 1 or 2), the same
+ * The format is one JSON document (`sce-saved-state`, format 1, 2 or 3), the same
  * on every backend, so what one backend saved another reads. This header is the
  * part of the C11 side that is the same for every machine: it judges the
  * members of a session (the words of a refusal are the other backends'), hands
@@ -39,13 +39,23 @@ extern "C" {
 #define SCE_SAVED_FORMAT_1 1
 /* A tree of sessions, each running child saved inside its parent (docs/adr/0045). */
 #define SCE_SAVED_FORMAT_2 2
-/* The newest format this runtime writes; it reads this one and format 1. */
-#define SCE_SAVED_FORMAT SCE_SAVED_FORMAT_2
+/* The tree of format 2, with each event's origin held as one pair and the session that sent it
+ * beside it (docs/adr/0090, section 7). */
+#define SCE_SAVED_FORMAT_3 3
+/* The newest format this runtime writes; it reads this one, format 2 and format 1. */
+#define SCE_SAVED_FORMAT SCE_SAVED_FORMAT_3
 
 /* The stability status of the saved-state wire surface, held in lockstep with
- * `x-sce-schema-status` in `schemas/sce-saved-state.v1.schema.json` and
- * `schemas/sce-saved-state.v2.schema.json` (SCE_WIRE_CONTRACTS.md). */
+ * `x-sce-schema-status` in `schemas/sce-saved-state.v1.schema.json`,
+ * `schemas/sce-saved-state.v2.schema.json` and `schemas/sce-saved-state.v3.schema.json`
+ * (SCE_WIRE_CONTRACTS.md). */
 #define SCE_SAVED_SCHEMA_STATUS "pre-release"
+
+/* Whether a text of `form` is a tree of sessions: format 2 and format 3 have the one grammar of a
+ * tree, and differ only in how a record holds its origin. */
+static inline bool sce_saved_format_is_tree(int form) {
+    return form == SCE_SAVED_FORMAT_2 || form == SCE_SAVED_FORMAT_3;
+}
 
 /* The most bytes of a session id, a text or a name a refusal quotes. */
 #define SCE_SAVED_QUOTE_LEN 96u
@@ -150,16 +160,16 @@ static inline bool sce_saved_text_into(sce_jv_t v, const char *what, char *dst, 
  * names, and so is each element of those that hold elements. What an element
  * means to the machine is the machine's to judge. */
 typedef struct sce_saved_session_s {
-    int format;             /* SCE_SAVED_FORMAT_1 or SCE_SAVED_FORMAT_2 */
+    int format;             /* SCE_SAVED_FORMAT_1, SCE_SAVED_FORMAT_2 or SCE_SAVED_FORMAT_3 */
     sce_jv_t shape;         /* a text */
-    sce_jv_t session_id;    /* a text; format 2 only */
+    sce_jv_t session_id;    /* a text; a tree only */
     sce_jv_t configuration; /* an array of texts: the state ids */
     sce_jv_t current;       /* a text */
     sce_jv_t variables;     /* an object */
     sce_jv_t history;       /* an object of arrays of texts */
     sce_jv_t pending;       /* an array of sends */
-    sce_jv_t invokes;       /* format 1: an array of ids; format 2: an array of children */
-    sce_jv_t invoke_starts; /* an object of counts; format 2 only */
+    sce_jv_t invokes;       /* format 1: an array of ids; a tree: an array of children */
+    sce_jv_t invoke_starts; /* an object of counts; a tree only */
     sce_jv_t host_invokes;  /* an array of host-run invocations */
     sce_jv_t external;      /* an array of events */
     sce_jv_t revisions;     /* an object; valid when `has_revisions` */
@@ -198,7 +208,12 @@ static inline const char *sce_saved_act_name(sce_saved_act_t act) {
 
 /* One delayed `<send>` that has not been delivered yet, as the text holds it. `due` is when it
  * comes due, in milliseconds since the Unix epoch on the wall clock of the host that saved it.
- * A member the act does not have is the empty span (`p == end`). */
+ * A member the act does not have is the empty span (`p == end`).
+ *
+ * `origin` is the sending session's id, or its location, in format 1 and 2, and in format 3 the
+ * pair its event will carry, or null; `sender`, the id beside the pair, is a member of format 3
+ * only. A `host` act carries neither. Each is judged as it is read, and what a format-3 act holds
+ * is held to its act (docs/adr/0090, section 7). */
 typedef struct sce_saved_send_s {
     int64_t due;
     sce_saved_act_t act;
@@ -206,6 +221,7 @@ typedef struct sce_saved_send_s {
     sce_jv_t data;
     sce_jv_t send_id;
     sce_jv_t origin;
+    sce_jv_t sender;
     sce_jv_t invoke_id;
     sce_jv_t type;
     sce_jv_t target;
@@ -214,14 +230,19 @@ typedef struct sce_saved_send_s {
     bool has_params;
 } sce_saved_send_t;
 
-/* One event of a saved external queue. */
+/* One event of a saved external queue. Its origin is read as the pair it is, whatever the format
+ * of its text (docs/adr/0090, section 7): as written in format 3, and from the `origin` and
+ * `origintype` of format 1 and 2 by `sce_saved_origin_read`. */
 typedef struct sce_saved_event_s {
     sce_jv_t name;
     sce_jv_t data;
     sce_jv_t type;
     sce_jv_t send_id;
-    sce_jv_t origin;
-    sce_jv_t origin_type;
+    /* The pair the delivering processor wrote, or none. */
+    sce_event_origin_t origin;
+    /* 1 when a session sent the event, the session `origin` is the SCXML location of
+     * (`sce_event_origin_sender`); 0 for every other event. */
+    uint8_t from_session;
     sce_jv_t invoke_id;
     bool has_host_invoke_token;
     int64_t host_invoke_token;
@@ -246,6 +267,7 @@ typedef struct sce_saved_child_s {
     sce_jv_t invoke_id; /* the id the child was started under */
     sce_jv_t document;  /* the document the child runs */
     sce_jv_t session;   /* the child's own members: an object, read by `sce_saved_session_read` */
+    int format;         /* the format of the tree, which the child's session is read in: it states none */
 } sce_saved_child_t;
 
 /* ── Reading ──────────────────────────────────────────────────────────────── */
@@ -420,104 +442,17 @@ static inline bool sce_saved_params_(sce_jv_t members, const char *what, sce_jv_
     return true;
 }
 
-/* The waiting send `v`, of a state of `form`; a send to the parent or to a child is an act of
- * format 2 only. `what` names it in a refusal. */
-static inline bool sce_saved_send_read(sce_jv_t v, const char *what, int form, sce_saved_send_t *out,
-                                       sce_saved_error_t *err) {
-    sce_jv_t due;
-    sce_jv_t act;
-    char name[SCE_SAVED_QUOTE_LEN];
-    char at[SCE_SAVED_AT_LEN];
-    const sce_jv_t none = sce_saved_nothing_();
-    if (!sce_saved_object_(v, what, err)) {
-        return false;
-    }
-    memset(out, 0, sizeof(*out));
-    out->event = out->data = out->send_id = out->origin = out->invoke_id = none;
-    out->type = out->target = out->content = out->params = none;
-    (void)snprintf(at, sizeof(at), "%s.due", what);
-    if (!sce_saved_member_text_(v, what, "due", &due, err) || !sce_saved_read_moment(due, at, &out->due, err)) {
-        return false;
-    }
-    if (!sce_saved_member_text_(v, what, "act", &act, err)) {
-        return false;
-    }
-    sce_saved_quote_(act, name, sizeof(name));
-    if (strcmp(name, "parent") == 0 || strcmp(name, "child") == 0) {
-        if (form != SCE_SAVED_FORMAT_2) {
-            return sce_saved_refuse(err, "'%s.act' is '%s', which is not raise, internal or host, the acts of format 1",
-                                    what, name);
-        }
-        out->act = name[0] == 'p' ? SCE_SAVED_ACT_PARENT : SCE_SAVED_ACT_CHILD;
-        if (out->act == SCE_SAVED_ACT_CHILD && !sce_saved_member_text_(v, what, "invokeid", &out->invoke_id, err)) {
-            return false;
-        }
-    } else if (strcmp(name, "raise") == 0 || strcmp(name, "internal") == 0) {
-        out->act = name[0] == 'r' ? SCE_SAVED_ACT_RAISE : SCE_SAVED_ACT_INTERNAL;
-    } else if (strcmp(name, "host") == 0) {
-        out->act = SCE_SAVED_ACT_HOST;
-        if (!sce_saved_member_text_(v, what, "type", &out->type, err) ||
-            !sce_saved_member_text_(v, what, "event", &out->event, err) ||
-            !sce_saved_member_text_(v, what, "target", &out->target, err) ||
-            !sce_saved_member_text_(v, what, "content", &out->content, err) ||
-            !sce_saved_params_(v, what, &out->params, err) ||
-            !sce_saved_member_text_(v, what, "sendid", &out->send_id, err) ||
-            !sce_saved_member_text_(v, what, "data", &out->data, err) ||
-            !sce_saved_member_text_(v, what, "invokeid", &out->invoke_id, err)) {
-            return false;
-        }
-        out->has_params = true;
-        return true;
-    } else if (form == SCE_SAVED_FORMAT_1) {
-        return sce_saved_refuse(err, "'%s.act' is '%s', which is not raise, internal or host, the acts of format 1",
-                                what, name);
-    } else {
-        return sce_saved_refuse(err, "'%s.act' is '%s', which is not raise, internal, host, parent or child", what,
-                                name);
-    }
-    return sce_saved_member_text_(v, what, "event", &out->event, err) &&
-           sce_saved_member_text_(v, what, "data", &out->data, err) &&
-           sce_saved_member_text_(v, what, "sendid", &out->send_id, err) &&
-           sce_saved_member_text_(v, what, "origin", &out->origin, err);
-}
+/* ── The origin of a record (docs/adr/0090, section 7) ─────────────────────── */
 
-/* The queued event `v`. */
-static inline bool sce_saved_event_read(sce_jv_t v, const char *what, sce_saved_event_t *out, sce_saved_error_t *err) {
-    if (!sce_saved_object_(v, what, err)) {
-        return false;
-    }
-    memset(out, 0, sizeof(*out));
-    /* The token is judged first, as every backend judges it. */
-    return sce_saved_optional_count_(v, what, "hostinvoketoken", sce_saved_read_token, &out->has_host_invoke_token,
-                                     &out->host_invoke_token, err) &&
-           sce_saved_member_text_(v, what, "name", &out->name, err) &&
-           sce_saved_member_text_(v, what, "data", &out->data, err) &&
-           sce_saved_member_text_(v, what, "type", &out->type, err) &&
-           sce_saved_member_text_(v, what, "sendid", &out->send_id, err) &&
-           sce_saved_member_text_(v, what, "origin", &out->origin, err) &&
-           sce_saved_member_text_(v, what, "origintype", &out->origin_type, err) &&
-           sce_saved_member_text_(v, what, "invokeid", &out->invoke_id, err);
-}
-
-/* docs/adr/0090, "Until step 6": the format-2 `origin` text that stores an event's origin — the
- * sending session's id for an event a session sent (`from_session`; the id read out of its pair,
- * `sce_event_origin_sender`, into `buf` of `cap` bytes), the address otherwise, and empty for
- * none, which is what every backend writes. The `origintype` beside it is the pair's processor
- * (`sce_event_origin_processor`). */
-static inline const char *sce_saved_origin_text(const sce_event_origin_t *origin, uint8_t from_session, char *buf,
-                                                size_t cap) {
-    return sce_event_origin_sender(origin, from_session, buf, cap) ? buf : sce_event_origin_address(origin);
-}
-
-/* docs/adr/0090, section 7: the origin a stored `origin` and `origintype` are read as, never half
- * a pair. An empty `origin` is none whatever type was stored beside it: an empty address answers
- * nothing, and format 2 stored the SCXML type beside events no processor stamped. An empty
- * `origintype` beside an address is the SCXML processor's, which is what format 2 meant by it. An
- * SCXML location — the spelling this backend once stored in place of the id, unencoded — is read
- * as the pair of the session it names. A value without a scheme read with the SCXML type is a
- * session's id, read the same way. Those two are a session's send, marked in `*from_session`,
- * whose sender is the session its location names (`sce_event_origin_sender`). Anything else is
- * the pair as stored, sent by no session.
+/* The origin a stored `origin` and `origintype` of format 1 or 2 are read as, never half a pair.
+ * An empty `origin` is none whatever type was stored beside it: an empty address answers nothing,
+ * and format 2 stored the SCXML type beside events no processor stamped. An empty `origintype`
+ * beside an address is the SCXML processor's, which is what format 2 meant by it. An SCXML
+ * location — the spelling this backend once stored in place of the id, unencoded — is read as the
+ * pair of the session it names. A value without a scheme read with the SCXML type is a session's
+ * id, read the same way. Those two are a session's send, marked in `*from_session`, whose sender
+ * is the session its location names (`sce_event_origin_sender`). Anything else is the pair as
+ * stored, sent by no session.
  *
  * False, leaving none and the mark clear, when the pair, or the id of the session it names, does
  * not fit the room this build holds them in, which the caller refuses rather than cuts. */
@@ -550,6 +485,240 @@ static inline bool sce_saved_origin_read(const char *origin_text, const char *or
     return fits;
 }
 
+/* The `origin` and `origintype` of the format-1 or format-2 event `v`, which `what` names in a
+ * refusal, read as the pair they store (`sce_saved_origin_read`), in the room this build holds a
+ * pair in. */
+static inline bool sce_saved_stored_origin_(sce_jv_t v, const char *what, sce_event_origin_t *origin,
+                                            uint8_t *from_session, sce_saved_error_t *err) {
+    sce_jv_t text;
+    sce_jv_t type;
+    char at[SCE_SAVED_AT_LEN];
+    char origin_text[SCE_MAX_URI_LEN];
+    char origin_type[SCE_MAX_ID_LEN];
+    if (!sce_saved_member_text_(v, what, "origin", &text, err) ||
+        !sce_saved_member_text_(v, what, "origintype", &type, err)) {
+        return false;
+    }
+    sce_saved_path_field(at, sizeof(at), what, "origin");
+    if (!sce_saved_text_into(text, at, origin_text, sizeof(origin_text), err)) {
+        return false;
+    }
+    sce_saved_path_field(at, sizeof(at), what, "origintype");
+    if (!sce_saved_text_into(type, at, origin_type, sizeof(origin_type), err)) {
+        return false;
+    }
+    if (!sce_saved_origin_read(origin_text, origin_type, origin, from_session)) {
+        return sce_saved_refuse(err,
+                                "%s's origin '%s' of type '%s' names an address or a session id longer than this "
+                                "build holds (SCE_MAX_URI_LEN, SCE_MAX_SESSION_ID_LEN)",
+                                what, origin_text, origin_type);
+    }
+    return true;
+}
+
+/* The text member `key` of the pair `pair`, which `what` names in a refusal, into `dst` of `cap`
+ * bytes: a text, not empty, that fits. */
+static inline bool sce_saved_pair_member_(sce_jv_t pair, const char *what, const char *key, char *dst, size_t cap,
+                                          sce_saved_error_t *err) {
+    sce_jv_t value;
+    char at[SCE_SAVED_AT_LEN];
+    if (!sce_saved_member_text_(pair, what, key, &value, err)) {
+        return false;
+    }
+    sce_saved_path_field(at, sizeof(at), what, key);
+    if (sce_jv_string_len(value) == 0u) {
+        return sce_saved_refuse(err, "'%s' is empty", at);
+    }
+    return sce_saved_text_into(value, at, dst, cap, err);
+}
+
+/* The members `origin` and `sender` of the format-3 record `v`, which `what` names in a refusal,
+ * read as they are written, neither derived from the other (docs/adr/0090, section 7). `origin`
+ * is null for none, or the pair `{"processor", "address"}`: two texts, neither empty, and no other
+ * member. `sender` is null, or a session id beside the SCXML pair of that id, byte for byte, which
+ * `*from_session` marks: the id is then the one that pair's location names
+ * (`sce_event_origin_sender`), so it is held once. Anything else is refused, never repaired.
+ *
+ * The pair is held in the room `sce_event_origin_t` has and the id in `SCE_MAX_SESSION_ID_LEN`
+ * bytes, and one that does not fit is refused rather than cut. Nothing is written to `origin` or
+ * `*from_session` unless the record is read whole. */
+static inline bool sce_saved_pair_read(sce_jv_t v, const char *what, sce_event_origin_t *origin, uint8_t *from_session,
+                                       sce_saved_error_t *err) {
+    sce_jv_t pair;
+    sce_jv_t sender;
+    sce_event_origin_t held;
+    sce_saved_error_t why;
+    char at[SCE_SAVED_AT_LEN];
+    char id[SCE_MAX_SESSION_ID_LEN];
+    char location[SCE_MAX_URI_LEN];
+    sce_event_origin_clear(&held);
+    if (!sce_saved_member_(v, what, "origin", &pair, err) || !sce_saved_member_(v, what, "sender", &sender, err)) {
+        return false;
+    }
+    sce_saved_path_field(at, sizeof(at), what, "origin");
+    if (!sce_jv_is_null(pair)) {
+        if (sce_jv_kind(pair) != SCE_JSON_OBJECT) {
+            return sce_saved_refuse(err, "'%s' is neither null nor a pair of a processor and an address", at);
+        }
+        if (!sce_saved_pair_member_(pair, at, "processor", held.processor, sizeof(held.processor), err) ||
+            !sce_saved_pair_member_(pair, at, "address", held.address, sizeof(held.address), err)) {
+            return false;
+        }
+        if (sce_jv_count(pair) != 2u) {
+            return sce_saved_refuse(err, "'%s' holds a member other than 'processor' and 'address'", at);
+        }
+    }
+    sce_saved_path_field(at, sizeof(at), what, "sender");
+    if (sce_jv_is_null(sender)) {
+        *origin = held;
+        *from_session = 0u;
+        return true;
+    }
+    if (sce_jv_kind(sender) != SCE_JSON_STRING) {
+        return sce_saved_refuse(err, "'%s' is neither null nor a session id", at);
+    }
+    if (!sce_saved_text_into(sender, at, id, sizeof(id), err)) {
+        return false;
+    }
+    if (!sce_saved_session_id_ok(id, &why)) {
+        return sce_saved_refuse(err, "'%s' (%s) is not an XML Nmtoken, which a session id is", at, id);
+    }
+    if (!sce_scxml_location(location, sizeof(location), id)) {
+        return sce_saved_refuse(err,
+                                "'%s' (%s) is published at a location of %lu bytes, past the %lu a URI is bounded by "
+                                "(SCE_MAX_URI_LEN)",
+                                at, id, (unsigned long)sce_scxml_location_len(id),
+                                (unsigned long)(SCE_MAX_URI_LEN - 1));
+    }
+    if (strcmp(held.processor, SCE_SCXML_EVENT_PROCESSOR_TYPE) != 0 || strcmp(held.address, location) != 0) {
+        return sce_saved_refuse(err, "'%s' is '%s', and '%s.origin' is not the SCXML pair of that session", at, id,
+                                what);
+    }
+    *origin = held;
+    *from_session = 1u;
+    return true;
+}
+
+/* The waiting send `v`, of a state of `form`; a send to the parent or to a child is an act of a
+ * tree only. `what` names it in a refusal. In format 3 a `raise`, `parent` or `child` act is this
+ * session's own send, which the SCXML processor delivers, so it names its sender, and an `internal`
+ * act delivers an internal event, which has no origin, so it holds neither member (docs/adr/0090,
+ * section 7). */
+static inline bool sce_saved_send_read(sce_jv_t v, const char *what, int form, sce_saved_send_t *out,
+                                       sce_saved_error_t *err) {
+    sce_jv_t due;
+    sce_jv_t act;
+    char name[SCE_SAVED_QUOTE_LEN];
+    char at[SCE_SAVED_AT_LEN];
+    const sce_jv_t none = sce_saved_nothing_();
+    if (!sce_saved_object_(v, what, err)) {
+        return false;
+    }
+    memset(out, 0, sizeof(*out));
+    out->event = out->data = out->send_id = out->origin = out->sender = out->invoke_id = none;
+    out->type = out->target = out->content = out->params = none;
+    (void)snprintf(at, sizeof(at), "%s.due", what);
+    if (!sce_saved_member_text_(v, what, "due", &due, err) || !sce_saved_read_moment(due, at, &out->due, err)) {
+        return false;
+    }
+    if (!sce_saved_member_text_(v, what, "act", &act, err)) {
+        return false;
+    }
+    sce_saved_quote_(act, name, sizeof(name));
+    if (strcmp(name, "parent") == 0 || strcmp(name, "child") == 0) {
+        if (!sce_saved_format_is_tree(form)) {
+            return sce_saved_refuse(err, "'%s.act' is '%s', which is not raise, internal or host, the acts of format 1",
+                                    what, name);
+        }
+        out->act = name[0] == 'p' ? SCE_SAVED_ACT_PARENT : SCE_SAVED_ACT_CHILD;
+        if (out->act == SCE_SAVED_ACT_CHILD && !sce_saved_member_text_(v, what, "invokeid", &out->invoke_id, err)) {
+            return false;
+        }
+    } else if (strcmp(name, "raise") == 0 || strcmp(name, "internal") == 0) {
+        out->act = name[0] == 'r' ? SCE_SAVED_ACT_RAISE : SCE_SAVED_ACT_INTERNAL;
+    } else if (strcmp(name, "host") == 0) {
+        out->act = SCE_SAVED_ACT_HOST;
+        if (!sce_saved_member_text_(v, what, "type", &out->type, err) ||
+            !sce_saved_member_text_(v, what, "event", &out->event, err) ||
+            !sce_saved_member_text_(v, what, "target", &out->target, err) ||
+            !sce_saved_member_text_(v, what, "content", &out->content, err) ||
+            !sce_saved_params_(v, what, &out->params, err) ||
+            !sce_saved_member_text_(v, what, "sendid", &out->send_id, err) ||
+            !sce_saved_member_text_(v, what, "data", &out->data, err) ||
+            !sce_saved_member_text_(v, what, "invokeid", &out->invoke_id, err)) {
+            return false;
+        }
+        out->has_params = true;
+        return true;
+    } else if (form == SCE_SAVED_FORMAT_1) {
+        return sce_saved_refuse(err, "'%s.act' is '%s', which is not raise, internal or host, the acts of format 1",
+                                what, name);
+    } else {
+        return sce_saved_refuse(err, "'%s.act' is '%s', which is not raise, internal, host, parent or child", what,
+                                name);
+    }
+    if (!sce_saved_member_text_(v, what, "event", &out->event, err) ||
+        !sce_saved_member_text_(v, what, "data", &out->data, err) ||
+        !sce_saved_member_text_(v, what, "sendid", &out->send_id, err)) {
+        return false;
+    }
+    if (form != SCE_SAVED_FORMAT_3) {
+        /* The sending session's id, or its location as this backend once stored it, and always
+         * this session's: a session's act is its own send, and an `internal` act's is not read,
+         * since its event has no origin (docs/adr/0090, section 7). */
+        return sce_saved_member_text_(v, what, "origin", &out->origin, err);
+    }
+    {
+        sce_event_origin_t pair;
+        uint8_t from_session = 0u;
+        sce_event_origin_clear(&pair);
+        if (!sce_saved_pair_read(v, what, &pair, &from_session, err)) {
+            return false;
+        }
+        (void)sce_jv_get(v, "origin", &out->origin);
+        (void)sce_jv_get(v, "sender", &out->sender);
+        if (out->act == SCE_SAVED_ACT_INTERNAL) {
+            if (!sce_event_origin_is_none(&pair) || from_session != 0u) {
+                return sce_saved_refuse(err,
+                                        "'%s' is an internal act, whose event is internal and has no origin, and it "
+                                        "holds an origin or a sender",
+                                        what);
+            }
+        } else if (from_session == 0u) {
+            return sce_saved_refuse(err, "'%s' is a %s act, this session's own send, and it names no sender", what,
+                                    name);
+        }
+    }
+    return true;
+}
+
+/* The queued event `v`, of a state of `form`, with the origin it carries read as its format holds
+ * it (docs/adr/0090, section 7). */
+static inline bool sce_saved_event_read(sce_jv_t v, const char *what, int form, sce_saved_event_t *out,
+                                        sce_saved_error_t *err) {
+    if (!sce_saved_object_(v, what, err)) {
+        return false;
+    }
+    memset(out, 0, sizeof(*out));
+    /* The token is judged first, as every backend judges it. */
+    if (!sce_saved_optional_count_(v, what, "hostinvoketoken", sce_saved_read_token, &out->has_host_invoke_token,
+                                   &out->host_invoke_token, err) ||
+        !sce_saved_member_text_(v, what, "name", &out->name, err) ||
+        !sce_saved_member_text_(v, what, "data", &out->data, err) ||
+        !sce_saved_member_text_(v, what, "type", &out->type, err) ||
+        !sce_saved_member_text_(v, what, "sendid", &out->send_id, err)) {
+        return false;
+    }
+    if (form == SCE_SAVED_FORMAT_3) {
+        if (!sce_saved_pair_read(v, what, &out->origin, &out->from_session, err)) {
+            return false;
+        }
+    } else if (!sce_saved_stored_origin_(v, what, &out->origin, &out->from_session, err)) {
+        return false;
+    }
+    return sce_saved_member_text_(v, what, "invokeid", &out->invoke_id, err);
+}
+
 /* The host-run invocation `v`. */
 static inline bool sce_saved_host_invoke_read(sce_jv_t v, const char *what, sce_saved_host_invoke_t *out,
                                               sce_saved_error_t *err) {
@@ -579,8 +748,10 @@ static inline bool sce_saved_non_empty_(sce_jv_t members, const char *what, cons
     return true;
 }
 
-/* The running child `v`, which also judges the session it holds, to any depth. */
-static inline bool sce_saved_child_read(sce_jv_t v, size_t index, sce_saved_child_t *out, sce_saved_error_t *err) {
+/* The running child `v` of a tree of `form`, which also judges the session it holds, to any depth,
+ * in that format. */
+static inline bool sce_saved_child_read(sce_jv_t v, size_t index, int form, sce_saved_child_t *out,
+                                        sce_saved_error_t *err) {
     char what[SCE_SAVED_WHAT_LEN];
     char at[SCE_SAVED_AT_LEN];
     sce_jv_t start;
@@ -591,6 +762,7 @@ static inline bool sce_saved_child_read(sce_jv_t v, size_t index, sce_saved_chil
         return false;
     }
     memset(out, 0, sizeof(*out));
+    out->format = form;
     (void)snprintf(at, sizeof(at), "%s.start", what);
     if (!sce_saved_non_empty_(v, what, "start", &start, err) || !sce_saved_read_count(start, at, &out->start, err)) {
         return false;
@@ -605,7 +777,7 @@ static inline bool sce_saved_child_read(sce_jv_t v, size_t index, sce_saved_chil
     if (sce_jv_get(out->session, "format", &unused)) {
         return sce_saved_refuse(err, "'%s' states a format, which only the root of a tree does", at);
     }
-    if (!sce_saved_session_read(out->session, SCE_SAVED_FORMAT_2, &session, err)) {
+    if (!sce_saved_session_read(out->session, form, &session, err)) {
         return sce_saved_within(err, at);
     }
     return sce_saved_non_empty_(v, what, "id", &out->id, err) &&
@@ -770,14 +942,14 @@ static inline bool sce_saved_session_read(sce_jv_t members, int form, sce_saved_
             }
         } else {
             sce_saved_child_t child;
-            if (!sce_saved_child_read(item, at, &child, err)) {
+            if (!sce_saved_child_read(item, at, form, &child, err)) {
                 return false;
             }
         }
     }
 
-    /* Format 2's own members: the session's id and its count of starts. */
-    if (form == SCE_SAVED_FORMAT_2) {
+    /* A tree's own members: the session's id and its count of starts. */
+    if (sce_saved_format_is_tree(form)) {
         if (!sce_jv_get(members, "sessionid", &out->session_id)) {
             return sce_saved_refuse(err, "the saved state has no 'sessionid'");
         }
@@ -852,7 +1024,7 @@ static inline bool sce_saved_session_read(sce_jv_t members, int form, sce_saved_
     for (at = 0u; sce_jiter_element(&it, &item); ++at) {
         sce_saved_event_t event;
         (void)snprintf(what, sizeof(what), "external[%lu]", (unsigned long)at);
-        if (!sce_saved_event_read(item, what, &event, err)) {
+        if (!sce_saved_event_read(item, what, form, &event, err)) {
             return false;
         }
     }
@@ -922,8 +1094,9 @@ static inline bool sce_saved_session_read(sce_jv_t members, int form, sce_saved_
     return true;
 }
 
-/* Reads `sce-saved-state` JSON, of format 1 or 2, giving the root session. Judges the text as
- * JSON first, then the members of the session and, in a tree, of every session below it. */
+/* Reads `sce-saved-state` JSON, of format 1, 2 or 3, giving the root session. Judges the text as
+ * JSON first, then its `format`, before any other member, then the members of the session and, in
+ * a tree, of every session below it. */
 static inline bool sce_saved_read(const char *text, size_t len, sce_saved_session_t *out, sce_saved_error_t *err) {
     sce_jv_t root;
     sce_jv_t written;
@@ -946,14 +1119,16 @@ static inline bool sce_saved_read(const char *text, size_t len, sce_saved_sessio
         form = SCE_SAVED_FORMAT_1;
     } else if (sce_jv_kind(written) == SCE_JSON_NUMBER && sce_jv_number_len(written) == 1u && *written.p == '2') {
         form = SCE_SAVED_FORMAT_2;
+    } else if (sce_jv_kind(written) == SCE_JSON_NUMBER && sce_jv_number_len(written) == 1u && *written.p == '3') {
+        form = SCE_SAVED_FORMAT_3;
     } else {
         sce_jw_t w;
         char quoted[SCE_SAVED_QUOTE_LEN];
         sce_jw_init(&w, quoted, sizeof(quoted));
         sce_jw_value(&w, written);
         (void)sce_jw_finish(&w);
-        return sce_saved_refuse(err, "the saved state is format %s, and this runtime reads formats %d and %d", quoted,
-                                SCE_SAVED_FORMAT_1, SCE_SAVED_FORMAT_2);
+        return sce_saved_refuse(err, "the saved state is format %s, and this runtime reads formats %d, %d and %d",
+                                quoted, SCE_SAVED_FORMAT_1, SCE_SAVED_FORMAT_2, SCE_SAVED_FORMAT_3);
     }
     return sce_saved_session_read(root, form, out, err);
 }
@@ -972,7 +1147,7 @@ static inline int64_t sce_saved_invoke_start(const sce_saved_session_t *session,
     sce_jv_t name;
     sce_jv_t value;
     int64_t count = 0;
-    if (session->format != SCE_SAVED_FORMAT_2 || !sce_jv_iter(session->invoke_starts, &it)) {
+    if (!sce_saved_format_is_tree(session->format) || !sce_jv_iter(session->invoke_starts, &it)) {
         return 0;
     }
     while (sce_jiter_member(&it, &name, &value)) {
@@ -1027,7 +1202,8 @@ typedef struct sce_saved_shape_s {
      * revisions knows only the first, so it refuses such a state rather than read it without the
      * fields it does not know. */
     const char *revised;
-    /* The same two, as a format-2 state names them (docs/adr/0045, section 2). */
+    /* The same two, as a tree names them (docs/adr/0045, section 2): format 3 names the shape
+     * format 2 does, since the pair it holds an origin in changes no document. */
     const char *format2_first;
     const char *format2_revised;
     const sce_saved_lineage_t *records;
@@ -1298,9 +1474,9 @@ static inline bool sce_saved_check_shape(const sce_saved_session_t *session, con
     for (i = 0u; i < shape->enum_count; ++i) {
         enum_at[i] = 1u;
     }
-    /* A format-2 state names an enum by its document and a format-1 state by the alias it is
-     * imported under, so each is judged against its own shape (docs/adr/0045, section 2). */
-    if (session->format == SCE_SAVED_FORMAT_2) {
+    /* A tree names an enum by its document and a format-1 state by the alias it is imported
+     * under, so each is judged against its own shape (docs/adr/0045, section 2). */
+    if (sce_saved_format_is_tree(session->format)) {
         first = shape->format2_first;
         revised = shape->format2_revised;
     }
@@ -1469,14 +1645,40 @@ static inline void sce_saved_write_params(sce_jw_t *w, size_t count, const char 
     sce_jw_end_object(w);
 }
 
-/* A waiting send, as the members of its act. A text a kind of act does not carry is not written. */
+/* The members `origin` and `sender` of a record that carries the pair, in the place format 3 gives
+ * them (docs/adr/0090, section 7): the pair, `processor` then `address`, or null for none, then the
+ * id of the session that sent it, or null (`sender` NULL or empty) for an event no session sent.
+ * Both are always written. */
+static inline void sce_saved_write_origin(sce_jw_t *w, const sce_event_origin_t *origin, const char *sender) {
+    sce_jw_key(w, "origin");
+    if (sce_event_origin_is_none(origin)) {
+        sce_jw_null(w);
+    } else {
+        sce_jw_begin_object(w);
+        sce_saved_write_member_text(w, "processor", origin->processor);
+        sce_saved_write_member_text(w, "address", origin->address);
+        sce_jw_end_object(w);
+    }
+    sce_jw_key(w, "sender");
+    if (sender == NULL || sender[0] == '\0') {
+        sce_jw_null(w);
+    } else {
+        sce_jw_string(w, sender);
+    }
+}
+
+/* A waiting send, as the members of its act. A text a kind of act does not carry is not written.
+ * `origin` and `sender` are the pair and the id the event it delivers will carry: this session's
+ * for a `raise`, `parent` or `child` act, and none (NULL) for an `internal` one; a `host` act
+ * carries neither. */
 typedef struct sce_saved_send_out_s {
     int64_t due;
     sce_saved_act_t act;
     const char *event;
     const char *data;
     const char *send_id;
-    const char *origin;
+    const sce_event_origin_t *origin;
+    const char *sender;
     const char *invoke_id;
     const char *type;
     const char *target;
@@ -1511,19 +1713,20 @@ static inline void sce_saved_write_send(sce_jw_t *w, const sce_saved_send_out_t 
         sce_saved_write_member_text(w, "event", send->event);
         sce_saved_write_member_text(w, "data", send->data);
         sce_saved_write_member_text(w, "sendid", send->send_id);
-        sce_saved_write_member_text(w, "origin", send->origin);
+        sce_saved_write_origin(w, send->origin, send->sender);
     }
     sce_jw_end_object(w);
 }
 
-/* A queued event. */
+/* A queued event. `origin` is the pair it carries, NULL or none for none, and `sender` the id of
+ * the session that sent it, NULL for an event no session sent. */
 typedef struct sce_saved_event_out_s {
     const char *name;
     const char *data;
     const char *type;
     const char *send_id;
-    const char *origin;
-    const char *origin_type;
+    const sce_event_origin_t *origin;
+    const char *sender;
     const char *invoke_id;
     bool has_host_invoke_token;
     uint64_t host_invoke_token;
@@ -1535,8 +1738,7 @@ static inline void sce_saved_write_event(sce_jw_t *w, const sce_saved_event_out_
     sce_saved_write_member_text(w, "data", event->data);
     sce_saved_write_member_text(w, "type", event->type);
     sce_saved_write_member_text(w, "sendid", event->send_id);
-    sce_saved_write_member_text(w, "origin", event->origin);
-    sce_saved_write_member_text(w, "origintype", event->origin_type);
+    sce_saved_write_origin(w, event->origin, event->sender);
     sce_saved_write_member_text(w, "invokeid", event->invoke_id);
     sce_jw_key(w, "hostinvoketoken");
     if (event->has_host_invoke_token) {

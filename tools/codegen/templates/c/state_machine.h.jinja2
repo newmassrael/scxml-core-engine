@@ -374,7 +374,9 @@ const sce_answer_schema_t *{{ csym_prefix }}{{ model.name }}_answer_schemas(void
    schema it holds is in its first revision, and the one it names when it names
    a later revision (docs/adr/0045, section 2), and each enum a value of it is
    of, by its document (docs/adr/0044). The generator computes them once, so
-   they are the texts every backend's constants are. */
+   they are the texts every backend's constants are. A format-3 state names the
+   same shape: the pair it holds an origin in changes no document
+   (docs/adr/0090, section 7). */
 #define {{ saved_prefix }}_SAVED_SHAPE_FORMAT2 "{{ static_format2_shape.first }}"
 #define {{ saved_prefix }}_SAVED_SHAPE_FORMAT2_REVISED "{{ static_format2_shape.revised }}"
 #define {{ saved_prefix }}_SAVED_ENUM_KEY_COUNT {{ static_format2_shape.enum_keys | length }}u
@@ -2227,9 +2229,9 @@ void {{ cb }}(const sce_sample_t *sample SCE_PARAM_TYPESTATE(unconsumed), void *
 {% set saved_restore_args = model.needs_event_scheduler or model.host_processor_types or model.host_invoker_types or has_native_actions %}
 /* ── SCE Accepted Subset §2.15: saving this machine, restoring it ───── */
 /* A running machine saved at a macrostep boundary, and restored into a new process in place of
-   `_init` (docs/adr/0045). The saved state is JSON (`sce-saved-state`, format 2), the same on
-   every backend, so a state another backend saved is one this machine restores, and the other way
-   round. Nothing is allocated: the host owns the buffer a state is written into and the text one
+   `_init` (docs/adr/0045). The saved state is JSON (`sce-saved-state`, format 3; formats 1 and 2
+   are read too), the same on every backend, so a state another backend saved is one this machine
+   restores, and the other way round. Nothing is allocated: the host owns the buffer a state is written into and the text one
    is read from, and every refusal is one sentence in `err` (`sce/saved_json.h`), in the words the
    other backends use. */
 
@@ -2281,8 +2283,8 @@ bool {{ csym_prefix }}{{ model.name }}_judge(const char *text, size_t len, sce_s
 
    `wall_now_ms` is what time it is on the wall clock the saved `due`s were written against. A
    delayed `<send>` is armed against the machine's clock to come due `due - wall_now_ms` after
-   now, and one that came due while the machine was away comes due now. A format-2 state carries
-   on under the id it was saved with, which every child's id and a peer's address name; a
+   now, and one that came due while the machine was away comes due now. A tree (format 2 or 3)
+   carries on under the id it was saved with, which every child's id and a peer's address name; a
    format-1 state holds none, so the machine keeps the one it drew. The host drives the machine
    on as it would one it had initialized. */
 bool {{ csym_prefix }}{{ model.name }}_restore({{ csym_prefix }}{{ model.name }}_t *sm, const char *text, size_t len,
@@ -2300,13 +2302,15 @@ bool {{ csym_prefix }}{{ model.name }}_restore({{ csym_prefix }}{{ model.name }}
 bool {{ csym_prefix }}{{ model.name }}_save_members(const {{ csym_prefix }}{{ model.name }}_t *sm, int64_t wall_now_ms,
                                     sce_jw_t *w, sce_saved_error_t *err);
 
-/* Refuse `members`, the object a child session was saved as, unless it is a state of this
-   document, building nothing (docs/adr/0045, section 3, step 1). */
-bool {{ csym_prefix }}{{ model.name }}_judge_members(sce_jv_t members, sce_saved_error_t *err);
+/* Refuse `members`, the object a child session was saved as in a tree of `form` (a child states no
+   format: its tree's is its own), unless it is a state of this document, building nothing
+   (docs/adr/0045, section 3, step 1). */
+bool {{ csym_prefix }}{{ model.name }}_judge_members(sce_jv_t members, int form, sce_saved_error_t *err);
 
 /* Stand `sm`, a machine its parent has begun (`_invoked_begin`) and not entered, where `members`
-   left it, in place of `_invoked_enter`: no `<onentry>`, no `<data>`, nothing sent. */
-bool {{ csym_prefix }}{{ model.name }}_resume({{ csym_prefix }}{{ model.name }}_t *sm, sce_jv_t members,
+   left it, read in the format `form` of its tree, in place of `_invoked_enter`: no `<onentry>`, no
+   `<data>`, nothing sent. */
+bool {{ csym_prefix }}{{ model.name }}_resume({{ csym_prefix }}{{ model.name }}_t *sm, sce_jv_t members, int form,
                               int64_t wall_now_ms, sce_saved_error_t *err);
 
 /* Name the session `<parent_id>.<invoke_id>`, the id a child session is known by (docs/adr/0045):

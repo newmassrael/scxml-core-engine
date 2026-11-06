@@ -205,6 +205,9 @@ static void a_stored_origin_reads_back_as_the_table_of_section_7_says(void) {
     // What this backend stored before the pair: the location, unencoded.
     reads_as("sce://scxml/a:b", scxml, scxml, "sce://scxml/a%3Ab", "a:b");
     reads_as("sce://scxml/a%3Ab", "", scxml, "sce://scxml/a%3Ab", "a:b");
+    // A value that starts `sce://scxml/` and names a session is that session's pair whatever type
+    // was saved beside it (`ask` of the format-2 reading fixture).
+    reads_as("sce://scxml/peer%3A1", "x-sce-host", scxml, "sce://scxml/peer%3A1", "peer:1");
     reads_as("motor", "x-sce-host", "x-sce-host", "motor", "");
     reads_as("mesh://hmi", scxml, scxml, "mesh://hmi", "");
     // An empty `origin` is none whatever type was saved beside it: format 2 saved the SCXML type
@@ -217,20 +220,17 @@ static void a_stored_origin_reads_back_as_the_table_of_section_7_says(void) {
 
     sce_event_origin_t origin;
     uint8_t from_session = 0u;
-    char buf[SCE_MAX_SESSION_ID_LEN];
     CHECK(sce_saved_origin_read("motherSession", scxml, &origin, &from_session) && from_session == 1u,
           "a stored session's id is read back as a session's send");
-    CHECK(strcmp(sce_saved_origin_text(&origin, from_session, buf, sizeof(buf)), "motherSession") == 0,
-          "an event a session sent is stored as its sender");
+    CHECK(sce_saved_origin_read("sce://scxml/peer:1", "", &origin, &from_session) && from_session == 1u,
+          "a stored location is read back as the send of the session it names");
     CHECK(sce_saved_origin_read("motor", "x-sce-host", &origin, &from_session) && from_session == 0u,
           "a stored host pair is read back as no session's send");
-    CHECK(strcmp(sce_saved_origin_text(&origin, from_session, buf, sizeof(buf)), "motor") == 0,
-          "any other as its address");
-    CHECK(sce_event_origin_scxml(&origin, "kid") &&
-              strcmp(sce_saved_origin_text(&origin, 0u, buf, sizeof(buf)), "sce://scxml/kid") == 0,
-          "a host's pair that spells a session's location is stored as that address, not as a sender");
-    sce_event_origin_clear(&origin);
-    CHECK(strcmp(sce_saved_origin_text(&origin, 0u, buf, sizeof(buf)), "") == 0, "and none as the empty string");
+    CHECK(sce_saved_origin_read("mesh://ecu", "", &origin, &from_session) && from_session == 0u,
+          "an SCXML pair whose address names no session is no session's send");
+    CHECK(sce_saved_origin_read("", scxml, &origin, &from_session) && from_session == 0u &&
+              sce_event_origin_is_none(&origin),
+          "and none is no session's send");
 }
 
 int main(void) {

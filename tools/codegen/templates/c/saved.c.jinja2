@@ -575,7 +575,7 @@ SCE_SM_FN static bool {{ _t }}_saved_events(const sce_saved_session_t *s, {{ _t 
         char quoted[SCE_SAVED_QUOTE_LEN];
         char kind[SCE_MAX_EVENT_TYPE_LEN];
         (void)snprintf(what, sizeof(what), "external[%lu]", (unsigned long)at);
-        if (!sce_saved_event_read(item, what, &event, err)) {
+        if (!sce_saved_event_read(item, what, s->format, &event, err)) {
             return false;
         }
         memset(&queued, 0, sizeof(queued));
@@ -597,27 +597,11 @@ SCE_SM_FN static bool {{ _t }}_saved_events(const sce_saved_session_t *s, {{ _t 
         if (!sce_saved_text_into(event.send_id, field, queued.send_id, sizeof(queued.send_id), err)) {
             return false;
         }
-        {
-            /* docs/adr/0090, section 7: the stored `origin` and `origintype` are read back as
-               the pair they store — a session's id, or the location this backend once stored
-               in its place, as that session's pair; never half a pair. */
-            char origin_text[SCE_MAX_URI_LEN];
-            char origin_type[SCE_MAX_ID_LEN];
-            (void)snprintf(field, sizeof(field), "%s.origin", what);
-            if (!sce_saved_text_into(event.origin, field, origin_text, sizeof(origin_text), err)) {
-                return false;
-            }
-            (void)snprintf(field, sizeof(field), "%s.origintype", what);
-            if (!sce_saved_text_into(event.origin_type, field, origin_type, sizeof(origin_type), err)) {
-                return false;
-            }
-            if (!sce_saved_origin_read(origin_text, origin_type, &queued.origin, &queued.from_session)) {
-                return sce_saved_refuse(err,
-                                        "%s's origin '%s' of type '%s' names an address or a session id longer "
-                                        "than this build holds (SCE_MAX_URI_LEN, SCE_MAX_SESSION_ID_LEN)",
-                                        what, origin_text, origin_type);
-            }
-        }
+        /* docs/adr/0090, section 7: the pair the event carries, and whether a session sent it, as
+           the reader of its format read them — a format-3 pair as written, a format-1 or format-2
+           `origin` and `origintype` by the table of that section; never half a pair. */
+        queued.origin = event.origin;
+        queued.from_session = event.from_session;
         (void)snprintf(field, sizeof(field), "%s.invokeid", what);
         if (!sce_saved_text_into(event.invoke_id, field, queued.invoke_id, sizeof(queued.invoke_id), err)) {
             return false;
@@ -995,12 +979,12 @@ SCE_SM_FN static bool {{ _t }}_saved_judge_child(const sce_saved_child_t *child,
 {% for inv in family %}
 {% for target in (inv.candidates if inv.candidates else []) %}
     if (sce_jv_string_is(child->id, "{{ inv.invoke_id | escape_c }}") && sce_jv_string_is(child->document, "{{ target.stem | escape_c }}")) {
-        return {{ csym_prefix }}{{ target.stem }}_judge_members(child->session, err) || sce_saved_within(err, path);
+        return {{ csym_prefix }}{{ target.stem }}_judge_members(child->session, child->format, err) || sce_saved_within(err, path);
     }
 {% endfor %}
 {% if not inv.candidates and inv.kind == 'Scxml' %}
     if (sce_jv_string_is(child->id, "{{ inv.invoke_id | escape_c }}") && sce_jv_string_is(child->document, "{{ inv.child_name | escape_c }}")) {
-        return {{ csym_prefix }}{{ inv.child_name }}_judge_members(child->session, err) || sce_saved_within(err, path);
+        return {{ csym_prefix }}{{ inv.child_name }}_judge_members(child->session, child->format, err) || sce_saved_within(err, path);
     }
 {% endif %}
 {% endfor %}
@@ -1052,7 +1036,7 @@ SCE_SM_FN static bool {{ _t }}_saved_resume_child({{ _t }}_t *sm, const sce_save
 {% endif %}
         sm->{{ slot }}_active = true;
         sce_copy_bounded_id(sm->child_{{ inv.field_suffix }}_invoke_id, invoke_id);
-        if (!{{ csym_prefix }}{{ target.stem }}_resume(&sm->{{ slot }}, child->session, wall_now_ms, err)) {
+        if (!{{ csym_prefix }}{{ target.stem }}_resume(&sm->{{ slot }}, child->session, child->format, wall_now_ms, err)) {
             return sce_saved_within(err, path);
         }
 {% if (inv.candidates and target.child_is_static) or (not inv.candidates and inv.child_is_static) %}
@@ -1106,7 +1090,7 @@ SCE_SM_FN static bool {{ _t }}_saved_invokes(const sce_saved_session_t *s, uint3
     sce_jv_t item;
     char quoted[SCE_SAVED_QUOTE_LEN];
     size_t at = 0u;
-    if (s->format == SCE_SAVED_FORMAT_2) {
+    if (sce_saved_format_is_tree(s->format)) {
         sce_jv_t name;
         sce_jv_t count;
         (void)sce_jv_iter(s->invoke_starts, &it);
@@ -1125,8 +1109,8 @@ SCE_SM_FN static bool {{ _t }}_saved_invokes(const sce_saved_session_t *s, uint3
         sce_jiter_t earlier;
         sce_jv_t before;
         memset(&child, 0, sizeof(child));
-        if (s->format == SCE_SAVED_FORMAT_2) {
-            if (!sce_saved_child_read(item, at, &child, err)) {
+        if (sce_saved_format_is_tree(s->format)) {
+            if (!sce_saved_child_read(item, at, s->format, &child, err)) {
                 return false;
             }
             id = child.id;
@@ -1146,8 +1130,8 @@ SCE_SM_FN static bool {{ _t }}_saved_invokes(const sce_saved_session_t *s, uint3
             sce_jv_t other = before;
             sce_saved_child_t peer;
             sce_saved_error_t ignored;
-            if (s->format == SCE_SAVED_FORMAT_2) {
-                if (!sce_saved_child_read(before, k, &peer, &ignored)) {
+            if (sce_saved_format_is_tree(s->format)) {
+                if (!sce_saved_child_read(before, k, s->format, &peer, &ignored)) {
                     continue;
                 }
                 other = peer.id;
@@ -1157,7 +1141,7 @@ SCE_SM_FN static bool {{ _t }}_saved_invokes(const sce_saved_session_t *s, uint3
                                         (unsigned long)at, quoted);
             }
         }
-        if (s->format == SCE_SAVED_FORMAT_2) {
+        if (sce_saved_format_is_tree(s->format)) {
             /* Its start is the count the session holds for its `<invoke>`, and its session is the
                one its parent derived its id for. */
             char id_text[SCE_MAX_ID_LEN];
@@ -1177,7 +1161,7 @@ SCE_SM_FN static bool {{ _t }}_saved_invokes(const sce_saved_session_t *s, uint3
             }
             {
                 sce_saved_session_t inner;
-                if (!sce_saved_session_read(child.session, SCE_SAVED_FORMAT_2, &inner, err)) {
+                if (!sce_saved_session_read(child.session, s->format, &inner, err)) {
                     return false;
                 }
                 child_id = inner.session_id;
@@ -1207,9 +1191,9 @@ SCE_SM_FN static bool {{ _t }}_saved_invokes(const sce_saved_session_t *s, uint3
 {% endfor %}
     (void)sce_jv_iter(s->invokes, &it);
     for (at = 0u; sce_jiter_element(&it, &item); ++at) {
-        if (s->format == SCE_SAVED_FORMAT_2) {
+        if (sce_saved_format_is_tree(s->format)) {
             sce_saved_child_t child;
-            if (!sce_saved_child_read(item, at, &child, err) ||
+            if (!sce_saved_child_read(item, at, s->format, &child, err) ||
                 !{{ _t }}_saved_resume_child(sm, &child, at, wall_now_ms, err)) {
                 return false;
             }
@@ -1308,11 +1292,11 @@ SCE_SM_FN static bool {{ _t }}_saved_judge_session(const sce_saved_session_t *s,
             return sce_saved_refuse(err, "the saved configuration is refused: the current state must be the atomic state the engine descended to");
         }
     }
-    if (s->format == SCE_SAVED_FORMAT_2 &&
+    if (sce_saved_format_is_tree(s->format) &&
         !sce_saved_text_into(s->session_id, "sessionid", NULL, (size_t)SCE_MAX_SESSION_ID_LEN, err)) {
         return false;
     }
-    if (s->format == SCE_SAVED_FORMAT_2) {
+    if (sce_saved_format_is_tree(s->format)) {
         /* The session carries on at the location its id is published at, which every event it
            sends names as its origin: a URI, held in `SCE_MAX_URI_LEN` bytes, and an id whose
            location (percent-encoded) does not fit is refused rather than published cut. */
@@ -1350,7 +1334,7 @@ SCE_SM_FN static bool {{ _t }}_saved_judge_session(const sce_saved_session_t *s,
         (void)sce_jiter_element(&it, &item);
         return sce_saved_refuse(err, "invokes[0] is a child session, and the document starts none");
     }
-    if (s->format == SCE_SAVED_FORMAT_2 && sce_jv_count(s->invoke_starts) != 0u) {
+    if (sce_saved_format_is_tree(s->format) && sce_jv_count(s->invoke_starts) != 0u) {
         sce_jv_t name;
         sce_jv_t count;
         (void)sce_jv_iter(s->invoke_starts, &it);
@@ -1423,6 +1407,12 @@ bool {{ _t }}_save_members(const {{ _t }}_t *sm, int64_t wall_now_ms, sce_jw_t *
 {% if model.needs_event_scheduler %}
     {
         const uint64_t now_ms = sched_now_ms(sm);
+        /* docs/adr/0090, section 7: a `raise`, `parent` or `child` act is this session's own send,
+           and it carries the pair and the sender the event built when it comes due carries: the
+           ones this session's SCXML processor stamps on it, written here by the same stamp. */
+        sce_event_origin_t own;
+        uint8_t own_from_session = 0u;
+        sce_event_stamp_session(&own, &own_from_session, sm->session_id);
         for (uint8_t i = 0u; i < sm->scheduled_queue.count; ++i) {
             const {{ _t }}_scheduled_entry_t *entry = &sm->scheduled_queue.buf[i];
             sce_saved_send_out_t send;
@@ -1448,9 +1438,8 @@ bool {{ _t }}_save_members(const {{ _t }}_t *sm, int64_t wall_now_ms, sce_jw_t *
             memset(&send, 0, sizeof(send));
             send.due = sce_saved_due_on(wall_now_ms, now_ms, entry->fire_time_ms);
             send.send_id = entry->send_id;
-            /* A waiting send is always this session's: its sender (docs/adr/0090, "Until step
-               6"), which the event built when it comes due names. */
-            send.origin = sm->session_id;
+            send.origin = &own;
+            send.sender = own_from_session != 0u ? sm->session_id : NULL;
             send.data = "";
 {% if model.needs_script_engine or model.has_delayed_send_payload %}
             send.data = entry->data;
@@ -1488,8 +1477,12 @@ bool {{ _t }}_save_members(const {{ _t }}_t *sm, int64_t wall_now_ms, sce_jw_t *
             } else
 {% endif %}
             if (entry->route == (uint8_t){{ _u }}_SCHED_ROUTE_INTERNAL) {
+                /* The event it delivers is internal, and an internal event has no origin
+                   (docs/adr/0090, section 7). */
                 send.act = SCE_SAVED_ACT_INTERNAL;
                 send.event = {{ _t }}_saved_event_name(entry->event);
+                send.origin = NULL;
+                send.sender = NULL;
             } else {
                 send.act = SCE_SAVED_ACT_RAISE;
                 send.event = {{ _t }}_saved_event_name(entry->event);
@@ -1659,6 +1652,7 @@ bool {{ _t }}_save_members(const {{ _t }}_t *sm, int64_t wall_now_ms, sce_jw_t *
             const {{ _t }}_event_with_meta_t *queued = &sm->external_queue.buf[at];
             sce_saved_event_out_t event;
             char sender[SCE_MAX_SESSION_ID_LEN];
+            bool sent_by_session;
             memset(&event, 0, sizeof(event));
             /* §scxml-5.10: a queued event is saved under the name it ARRIVED under, so a restore
                gives the machine the same `_event.name`. */
@@ -1668,12 +1662,12 @@ bool {{ _t }}_save_members(const {{ _t }}_t *sm, int64_t wall_now_ms, sce_jw_t *
                unset, and the queue it waits on is the external one. */
             event.type = queued->type[0] != '\0' ? queued->type : "external";
             event.send_id = queued->send_id;
-            /* docs/adr/0090, "Until step 6": format 2 stores the sender for an event a session
-               sent (the id its location names, read into `sender` for the write below) and the
-               address otherwise, with the pair's processor as its type, which is what a
-               scheduled send's `origin` holds too. */
-            event.origin = sce_saved_origin_text(&queued->origin, queued->from_session, sender, sizeof(sender));
-            event.origin_type = sce_event_origin_processor(&queued->origin);
+            /* docs/adr/0090, section 7: the pair as the delivering processor wrote it, and the
+               session that sent it, which only the SCXML processor sets and which is the session
+               its location names (`sce_event_origin_sender`, read into `sender`). */
+            sent_by_session = sce_event_origin_sender(&queued->origin, queued->from_session, sender, sizeof(sender));
+            event.origin = &queued->origin;
+            event.sender = sent_by_session ? sender : NULL;
             event.invoke_id = queued->invoke_id;
 {% if model.host_invoker_types %}
             event.has_host_invoke_token = queued->has_host_invoke_token;
@@ -1754,10 +1748,10 @@ bool {{ _t }}_save(const {{ _t }}_t *sm, int64_t wall_now_ms, char *buf, size_t 
 SCE_SM_FN static bool {{ _t }}_saved_apply({{ _t }}_t *sm, const sce_saved_session_t *session,
                                          const {{ _t }}_saved_judged_t *judged, int64_t wall_now_ms,
                                          sce_saved_error_t *err) {
-    /* A format-2 state carries on under the id it was saved with, which every child's id and a
+    /* A tree's session carries on under the id it was saved with, which every child's id and a
        peer's address name (docs/adr/0045); a format-1 state holds none, so the machine keeps the
        one it drew. */
-    if (session->format == SCE_SAVED_FORMAT_2) {
+    if (sce_saved_format_is_tree(session->format)) {
         /* The judge refused an id whose location does not fit, so the location is whole. */
         (void)sce_jv_string(session->session_id, sm->session_id, sizeof(sm->session_id), NULL);
         (void)sce_scxml_location(sm->scxml_location, sizeof(sm->scxml_location), sm->session_id);
@@ -1803,20 +1797,20 @@ SCE_SM_FN static bool {{ _t }}_saved_apply({{ _t }}_t *sm, const sce_saved_sessi
     return true;
 }
 
-bool {{ _t }}_judge_members(sce_jv_t members, sce_saved_error_t *err) {
+bool {{ _t }}_judge_members(sce_jv_t members, int form, sce_saved_error_t *err) {
     sce_saved_session_t session;
     {{ _t }}_saved_judged_t judged;
-    return sce_saved_session_read(members, SCE_SAVED_FORMAT_2, &session, err) &&
+    return sce_saved_session_read(members, form, &session, err) &&
            {{ _t }}_saved_judge_session(&session, &judged, err);
 }
 
-bool {{ _t }}_resume({{ _t }}_t *sm, sce_jv_t members, int64_t wall_now_ms, sce_saved_error_t *err) {
+bool {{ _t }}_resume({{ _t }}_t *sm, sce_jv_t members, int form, int64_t wall_now_ms, sce_saved_error_t *err) {
     sce_saved_session_t session;
     {{ _t }}_saved_judged_t judged;
     if (sm == NULL) {
         return sce_saved_refuse(err, "there is no machine to resume");
     }
-    if (!sce_saved_session_read(members, SCE_SAVED_FORMAT_2, &session, err) ||
+    if (!sce_saved_session_read(members, form, &session, err) ||
         !{{ _t }}_saved_judge_session(&session, &judged, err)) {
         return false;
     }

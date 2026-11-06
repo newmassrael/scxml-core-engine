@@ -10,8 +10,8 @@
 //
 // `statechart_static_mesh_request.scxml` asks from `asking`; `done.invoke.ask` and
 // `error.invoke.ask` each leave it, counting in `answered` and `failed`. The shared instance
-// `saved/statechart_static_mesh_request_asking.json` is the format-2 text every backend writes
-// (docs/adr/0045); `saved/format1/` holds the format-1 text of the same run. A C11 root draws its
+// `saved/statechart_static_mesh_request_asking.json` is the format-3 text every backend writes
+// (docs/adr/0090); `saved/format1/` holds the format-1 text of the same run. A C11 root draws its
 // own id, so the text a run saves is held to the shared one once the id it drew is replaced by
 // the shared one.
 //

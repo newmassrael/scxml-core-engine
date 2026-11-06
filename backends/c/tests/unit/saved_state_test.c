@@ -7,6 +7,8 @@
 //   * every shared saved text reads as a session of its format, a tree to every depth;
 //   * a waiting send, a queued event and a host-run invocation read back as they were
 //     written, and a text of another kind is refused in the words every backend uses;
+//   * a record's origin is read as its format holds it: a format-3 pair and sender as written and
+//     refused unless whole (docs/adr/0090, section 7), a format-2 `origin` by the table;
 //   * a machine writes the same members the other backends write, byte for byte;
 //   * a state is bound to the shape of its document and to the revision each schema was
 //     saved at, and a wall-clock moment converts to the engine's clock and back;
@@ -97,9 +99,16 @@ static int check_directory(const char *directory, int format) {
 
 static void every_shared_text_reads_as_a_session_of_its_format(void) {
     char format1[1024];
+    char format2[1024];
+    char read_as[1024];
     (void)snprintf(format1, sizeof(format1), "%s/format1", SCE_SAVED_FIXTURES_DIR);
-    CHECK(check_directory(SCE_SAVED_FIXTURES_DIR, SCE_SAVED_FORMAT_2) >= 10, "the format-2 texts");
+    (void)snprintf(format2, sizeof(format2), "%s/format2", SCE_SAVED_FIXTURES_DIR);
+    (void)snprintf(read_as, sizeof(read_as), "%s/format2/read_as", SCE_SAVED_FIXTURES_DIR);
+    CHECK(check_directory(SCE_SAVED_FIXTURES_DIR, SCE_SAVED_FORMAT_3) >= 10, "the format-3 texts");
     CHECK(check_directory(format1, SCE_SAVED_FORMAT_1) >= 10, "the format-1 texts");
+    // The format-2 reading fixtures (docs/adr/0090, section 7), and the format-3 text each is read as.
+    CHECK(check_directory(format2, SCE_SAVED_FORMAT_2) >= 4, "the format-2 reading texts");
+    CHECK(check_directory(read_as, SCE_SAVED_FORMAT_3) >= 4, "the texts the format-2 reading texts are read as");
 }
 
 // `text` read as a state, the refusal it gets in `err`.
@@ -113,12 +122,15 @@ static void a_text_that_is_not_a_session_is_refused_in_the_words_every_backend_u
     CHECK(refused("{", &err) && strstr(err.message, "the saved state is ") == err.message, "%s", err.message);
     CHECK(refused("[]", &err) && strcmp(err.message, "the saved state is not an object") == 0, "%s", err.message);
     CHECK(refused("{}", &err) && strcmp(err.message, "the saved state has no 'format'") == 0, "%s", err.message);
-    CHECK(refused("{\"format\":3}", &err) &&
-              strcmp(err.message, "the saved state is format 3, and this runtime reads formats 1 and 2") == 0,
+    CHECK(refused("{\"format\":4}", &err) &&
+              strcmp(err.message, "the saved state is format 4, and this runtime reads formats 1, 2 and 3") == 0,
           "%s", err.message);
     CHECK(refused("{\"format\":\"2\"}", &err) &&
-              strcmp(err.message, "the saved state is format \"2\", and this runtime reads formats 1 and 2") == 0,
+              strcmp(err.message, "the saved state is format \"2\", and this runtime reads formats 1, 2 and 3") == 0,
           "%s", err.message);
+    // A format-3 text is judged by its format first: it is read as a session of that format.
+    CHECK(refused("{\"format\":3}", &err) && strcmp(err.message, "the saved state has no 'configuration'") == 0, "%s",
+          err.message);
     CHECK(refused("{\"format\":1}", &err) && strcmp(err.message, "the saved state has no 'configuration'") == 0, "%s",
           err.message);
     CHECK(refused("{\"format\":1,\"configuration\":{}}", &err) &&
@@ -179,12 +191,13 @@ static void a_tree_is_judged_to_every_depth(void) {
     CHECK(sce_saved_invoke_start(&root, "worker") == 2, "the root has started the worker twice");
     CHECK(sce_saved_invoke_start(&root, "nobody") == 0, "and nothing else");
     CHECK(sce_jv_iter(root.invokes, &it) && sce_jiter_element(&it, &item), "the root holds a child");
-    CHECK(sce_saved_child_read(item, 0u, &child, &err), "%s", err.message);
+    CHECK(sce_saved_child_read(item, 0u, root.format, &child, &err), "%s", err.message);
     CHECK(sce_jv_string_is(child.id, "worker") && child.start == 2 &&
               sce_jv_string_is(child.invoke_id, "working.2.worker") &&
               sce_jv_string_is(child.document, "static_invoke_tree__sce_synth_invoke__worker"),
           "the child's words");
-    CHECK(sce_saved_session_read(child.session, SCE_SAVED_FORMAT_2, &session, &err), "%s", err.message);
+    CHECK(child.format == SCE_SAVED_FORMAT_3, "the child is read in the format of its tree: %d", child.format);
+    CHECK(sce_saved_session_read(child.session, child.format, &session, &err), "%s", err.message);
     CHECK(sce_jv_string_is(session.session_id, "fixture-root.working.2.worker"), "the child's id");
 
     // A grandchild's refusal names the path from the root.
@@ -212,17 +225,21 @@ static void a_waiting_send_a_queued_event_and_a_host_invocation_read_back_as_the
     sce_saved_session_t timers;
     sce_jiter_t it;
     sce_jv_t item;
+    sce_jv_t address;
     sce_saved_send_t send;
     (void)snprintf(path, sizeof(path), "%s/static_timers_midway.json", SCE_SAVED_FIXTURES_DIR);
     CHECK(read_trimmed(path, text, sizeof(text), &len), "the timers text");
     CHECK(sce_saved_read(text, len, &timers, &err), "%s", err.message);
     CHECK(sce_jv_count(timers.pending) == 3u, "three sends wait");
     CHECK(sce_jv_iter(timers.pending, &it) && sce_jiter_element(&it, &item), "the first");
-    CHECK(sce_saved_send_read(item, "pending[0]", SCE_SAVED_FORMAT_2, &send, &err), "%s", err.message);
+    CHECK(sce_saved_send_read(item, "pending[0]", timers.format, &send, &err), "%s", err.message);
     CHECK(send.due == 1700000002000 && send.act == SCE_SAVED_ACT_RAISE, "its moment and act");
     CHECK(sce_jv_string(send.event, field, sizeof(field), NULL) && strcmp(field, "beat") == 0, "its event");
     CHECK(sce_jv_string(send.send_id, field, sizeof(field), NULL) && strcmp(field, "__send_0") == 0, "its id");
-    CHECK(sce_jv_string(send.origin, field, sizeof(field), NULL) && strcmp(field, "fixture-root") == 0, "its origin");
+    CHECK(sce_jv_kind(send.origin) == SCE_JSON_OBJECT && sce_jv_get(send.origin, "address", &address) &&
+              sce_jv_string_is(address, "sce://scxml/fixture-root"),
+          "its origin, this session's pair");
+    CHECK(sce_jv_string(send.sender, field, sizeof(field), NULL) && strcmp(field, "fixture-root") == 0, "its sender");
 
     // The tree's root holds an event, and its child a host-run invocation.
     (void)snprintf(path, sizeof(path), "%s/static_invoke_tree_working.json", SCE_SAVED_FIXTURES_DIR);
@@ -235,19 +252,248 @@ static void a_waiting_send_a_queued_event_and_a_host_invocation_read_back_as_the
         sce_saved_host_invoke_t host;
         CHECK(sce_saved_read(text, len, &root, &err), "%s", err.message);
         CHECK(sce_jv_iter(root.external, &it) && sce_jiter_element(&it, &item), "an event waits");
-        CHECK(sce_saved_event_read(item, "external[0]", &event, &err), "%s", err.message);
+        CHECK(sce_saved_event_read(item, "external[0]", root.format, &event, &err), "%s", err.message);
         CHECK(sce_jv_string_is(event.name, "answer") && sce_jv_string_is(event.invoke_id, "worker") &&
                   !event.has_host_invoke_token,
               "the event's words");
+        CHECK(strcmp(event.origin.processor, SCE_SCXML_EVENT_PROCESSOR_TYPE) == 0 &&
+                  strcmp(event.origin.address, "sce://scxml/fixture-root.working.2.worker") == 0 &&
+                  event.from_session == 1u,
+              "the event's pair, sent by the child: '%s' '%s' %u", event.origin.processor, event.origin.address,
+              (unsigned)event.from_session);
         CHECK(sce_jv_iter(root.invokes, &it) && sce_jiter_element(&it, &item), "a child runs");
-        CHECK(sce_saved_child_read(item, 0u, &child, &err), "%s", err.message);
-        CHECK(sce_saved_session_read(child.session, SCE_SAVED_FORMAT_2, &inner, &err), "%s", err.message);
+        CHECK(sce_saved_child_read(item, 0u, root.format, &child, &err), "%s", err.message);
+        CHECK(sce_saved_session_read(child.session, child.format, &inner, &err), "%s", err.message);
         CHECK(inner.host_invoke_token == 1, "the child has handed out one token");
         CHECK(sce_jv_iter(inner.host_invokes, &it) && sce_jiter_element(&it, &item), "a host run waits");
         CHECK(sce_saved_host_invoke_read(item, "hostinvokes[0]", &host, &err), "%s", err.message);
         CHECK(sce_jv_string_is(host.type, "sce-host-clock-now") && sce_jv_string_is(host.id, "clock") && !host.has_due,
               "the invocation's words");
     }
+}
+
+// ── The origin a record holds (docs/adr/0090, section 7) ──────────────────────────────────────
+
+#define SCXML_TYPE "http://www.w3.org/TR/scxml/#SCXMLEventProcessor"
+
+// A tree of `format` holding `pending` and `external`, the texts of two JSON arrays, read into
+// `out`: false, with the reason in `err`, when it is refused as it is read. The text is held until
+// the next call, so `out` reads it in place.
+static bool tree_holding(int format, const char *pending, const char *external, sce_saved_session_t *out,
+                         sce_saved_error_t *err) {
+    static char text[4096];
+    (void)snprintf(text, sizeof(text),
+                   "{\"format\":%d,\"shape\":\"s\",\"sessionid\":\"x\",\"configuration\":[],\"current\":\"c\","
+                   "\"variables\":{},\"history\":{},\"pending\":%s,\"invokes\":[],\"invokestarts\":{},"
+                   "\"hostinvokes\":[],\"hostinvoketoken\":\"0\",\"sendseq\":\"0\",\"external\":%s}",
+                   format, pending, external);
+    return sce_saved_read(text, strlen(text), out, err);
+}
+
+// A queue of one event whose origin members are `members`, the text between `sendid` and
+// `invokeid`.
+static void queue_of(const char *members, char *out, size_t cap) {
+    (void)snprintf(out, cap,
+                   "[{\"name\":\"a\",\"data\":\"\",\"type\":\"external\",\"sendid\":\"\",%s,\"invokeid\":\"\","
+                   "\"hostinvoketoken\":null}]",
+                   members);
+}
+
+// The first event of the queue `session` holds, read as the format of its text says.
+static bool first_event(const sce_saved_session_t *session, sce_saved_event_t *out, sce_saved_error_t *err) {
+    sce_jiter_t it;
+    sce_jv_t item;
+    return sce_jv_iter(session->external, &it) && sce_jiter_element(&it, &item) &&
+           sce_saved_event_read(item, "external[0]", session->format, out, err);
+}
+
+static void a_format_three_origin_is_read_as_it_is_written(void) {
+    char queue[1024];
+    char sender[64];
+    sce_saved_session_t session;
+    sce_saved_event_t event;
+    sce_saved_error_t err;
+    memset(&err, 0, sizeof(err));
+
+    // A session's send: the pair, and the id its location names, which is held once.
+    queue_of("\"origin\":{\"processor\":\"" SCXML_TYPE "\",\"address\":\"sce://scxml/peer%3A1\"},\"sender\":\"peer:1\"",
+             queue, sizeof(queue));
+    CHECK(tree_holding(3, "[]", queue, &session, &err) && first_event(&session, &event, &err), "%s", err.message);
+    CHECK(strcmp(event.origin.processor, SCXML_TYPE) == 0 && strcmp(event.origin.address, "sce://scxml/peer%3A1") == 0,
+          "the pair as written: '%s' '%s'", event.origin.processor, event.origin.address);
+    CHECK(event.from_session == 1u &&
+              sce_event_origin_sender(&event.origin, event.from_session, sender, sizeof(sender)) &&
+              strcmp(sender, "peer:1") == 0,
+          "sent by the session it names: '%s'", sender);
+
+    // A host's pair, sent by no session, though it may spell a session's location.
+    queue_of("\"origin\":{\"processor\":\"x-sce-host\",\"address\":\"motor\"},\"sender\":null", queue, sizeof(queue));
+    CHECK(tree_holding(3, "[]", queue, &session, &err) && first_event(&session, &event, &err), "%s", err.message);
+    CHECK(strcmp(event.origin.processor, "x-sce-host") == 0 && strcmp(event.origin.address, "motor") == 0 &&
+              event.from_session == 0u,
+          "a host's pair: '%s' '%s' %u", event.origin.processor, event.origin.address, (unsigned)event.from_session);
+    queue_of("\"origin\":{\"processor\":\"" SCXML_TYPE "\",\"address\":\"sce://scxml/kid\"},\"sender\":null", queue,
+             sizeof(queue));
+    CHECK(tree_holding(3, "[]", queue, &session, &err) && first_event(&session, &event, &err), "%s", err.message);
+    CHECK(strcmp(event.origin.address, "sce://scxml/kid") == 0 && event.from_session == 0u,
+          "a sender is not derived from the pair: %u", (unsigned)event.from_session);
+
+    // No origin.
+    queue_of("\"origin\":null,\"sender\":null", queue, sizeof(queue));
+    CHECK(tree_holding(3, "[]", queue, &session, &err) && first_event(&session, &event, &err), "%s", err.message);
+    CHECK(sce_event_origin_is_none(&event.origin) && event.from_session == 0u, "none");
+
+    // A format-2 text is read by the table of section 7: an unencoded location is the pair of the
+    // session it names, written again encoded.
+    queue_of("\"origin\":\"sce://scxml/peer:1\",\"origintype\":\"\"", queue, sizeof(queue));
+    CHECK(tree_holding(2, "[]", queue, &session, &err) && first_event(&session, &event, &err), "%s", err.message);
+    CHECK(strcmp(event.origin.processor, SCXML_TYPE) == 0 &&
+              strcmp(event.origin.address, "sce://scxml/peer%3A1") == 0 && event.from_session == 1u,
+          "the format-2 location: '%s' '%s' %u", event.origin.processor, event.origin.address,
+          (unsigned)event.from_session);
+    // And a format-2 text holds its origin as a text, not as a pair.
+    queue_of("\"origin\":{\"processor\":\"x-sce-host\",\"address\":\"motor\"},\"origintype\":\"\"", queue,
+             sizeof(queue));
+    CHECK(!tree_holding(2, "[]", queue, &session, &err) &&
+              strcmp(err.message, "'external[0].origin' is not a text") == 0,
+          "%s", err.message);
+}
+
+static void a_format_three_origin_that_is_not_whole_is_refused(void) {
+    typedef struct {
+        const char *members;
+        const char *reason;
+    } refusal_t;
+
+    static const refusal_t cases[] = {
+        {"\"origin\":\"motor\",\"sender\":null",
+         "'external[0].origin' is neither null nor a pair of a processor and an address"},
+        {"\"origin\":[],\"sender\":null",
+         "'external[0].origin' is neither null nor a pair of a processor and an address"},
+        {"\"origin\":{\"processor\":\"x-sce-host\"},\"sender\":null", "'external[0].origin' has no 'address'"},
+        {"\"origin\":{\"address\":\"motor\"},\"sender\":null", "'external[0].origin' has no 'processor'"},
+        {"\"origin\":{\"processor\":\"\",\"address\":\"motor\"},\"sender\":null",
+         "'external[0].origin.processor' is empty"},
+        {"\"origin\":{\"processor\":\"x-sce-host\",\"address\":\"\"},\"sender\":null",
+         "'external[0].origin.address' is empty"},
+        {"\"origin\":{\"processor\":1,\"address\":\"motor\"},\"sender\":null",
+         "'external[0].origin.processor' is not a text"},
+        {"\"origin\":{\"processor\":\"x-sce-host\",\"address\":\"motor\",\"port\":\"1\"},\"sender\":null",
+         "'external[0].origin' holds a member other than 'processor' and 'address'"},
+        {"\"origin\":null,\"sender\":7", "'external[0].sender' is neither null nor a session id"},
+        {"\"origin\":{\"processor\":\"" SCXML_TYPE "\",\"address\":\"sce://scxml/kid\"},\"sender\":\"a b\"",
+         "'external[0].sender' (a b) is not an XML Nmtoken, which a session id is"},
+        // A sender beside an origin other than the SCXML pair of that id, byte for byte.
+        {"\"origin\":null,\"sender\":\"kid\"",
+         "'external[0].sender' is 'kid', and 'external[0].origin' is not the SCXML pair of that session"},
+        {"\"origin\":{\"processor\":\"x-sce-host\",\"address\":\"sce://scxml/kid\"},\"sender\":\"kid\"",
+         "'external[0].sender' is 'kid', and 'external[0].origin' is not the SCXML pair of that session"},
+        {"\"origin\":{\"processor\":\"" SCXML_TYPE "\",\"address\":\"sce://scxml/other\"},\"sender\":\"kid\"",
+         "'external[0].sender' is 'kid', and 'external[0].origin' is not the SCXML pair of that session"},
+        {"\"origin\":{\"processor\":\"" SCXML_TYPE "\",\"address\":\"sce://scxml/peer:1\"},\"sender\":\"peer:1\"",
+         "'external[0].sender' is 'peer:1', and 'external[0].origin' is not the SCXML pair of that session"},
+        // Both members are in every record that carries the pair.
+        {"\"origin\":null", "'external[0]' has no 'sender'"},
+        {"\"sender\":null", "'external[0]' has no 'origin'"},
+        {"\"origin\":\"\",\"origintype\":\"\"", "'external[0].origin' is neither null nor a pair of a processor and an "
+                                                "address"},
+    };
+    char queue[1024];
+    char long_type[SCE_MAX_ID_LEN + 8];
+    char members[SCE_MAX_ID_LEN + 128];
+    char reason[128];
+    sce_saved_session_t session;
+    sce_saved_error_t err;
+    memset(&err, 0, sizeof(err));
+    for (size_t i = 0u; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        queue_of(cases[i].members, queue, sizeof(queue));
+        CHECK(!tree_holding(3, "[]", queue, &session, &err) && strcmp(err.message, cases[i].reason) == 0, "%s: %s",
+              cases[i].members, err.message);
+    }
+    // A pair this build cannot hold whole is refused, not cut.
+    memset(long_type, 'p', sizeof(long_type) - 1u);
+    long_type[sizeof(long_type) - 1u] = '\0';
+    (void)snprintf(members, sizeof(members), "\"origin\":{\"processor\":\"%s\",\"address\":\"motor\"},\"sender\":null",
+                   long_type);
+    (void)snprintf(reason, sizeof(reason),
+                   "'external[0].origin.processor' holds %lu UTF-8 bytes, past the %lu it is "
+                   "bounded by",
+                   (unsigned long)strlen(long_type), (unsigned long)(SCE_MAX_ID_LEN - 1));
+    queue_of(members, queue, sizeof(queue));
+    CHECK(!tree_holding(3, "[]", queue, &session, &err) && strcmp(err.message, reason) == 0, "%s", err.message);
+}
+
+// One waiting send of `act` whose origin members are `members`, as a `pending` array.
+static void pending_of(const char *act, const char *members, char *out, size_t cap) {
+    (void)snprintf(out, cap, "[{\"due\":\"1\",\"act\":\"%s\",%s\"event\":\"e\",\"data\":\"\",\"sendid\":\"s\",%s}]",
+                   act, strcmp(act, "child") == 0 ? "\"invokeid\":\"kid\"," : "", members);
+}
+
+static void a_format_three_act_holds_what_its_event_will_carry(void) {
+    typedef struct {
+        const char *act;
+        const char *members;
+        const char *reason;  // NULL for a send that is read
+    } act_case_t;
+
+    static const act_case_t cases[] = {
+        // A session's act is its own send, and it names its sender.
+        {"raise", "\"origin\":{\"processor\":\"" SCXML_TYPE "\",\"address\":\"sce://scxml/x\"},\"sender\":\"x\"", NULL},
+        {"parent", "\"origin\":{\"processor\":\"" SCXML_TYPE "\",\"address\":\"sce://scxml/x\"},\"sender\":\"x\"",
+         NULL},
+        {"child", "\"origin\":{\"processor\":\"" SCXML_TYPE "\",\"address\":\"sce://scxml/x\"},\"sender\":\"x\"", NULL},
+        {"raise", "\"origin\":null,\"sender\":null",
+         "'pending[0]' is a raise act, this session's own send, and it names no sender"},
+        {"parent", "\"origin\":null,\"sender\":null",
+         "'pending[0]' is a parent act, this session's own send, and it names no sender"},
+        {"child", "\"origin\":{\"processor\":\"" SCXML_TYPE "\",\"address\":\"sce://scxml/x\"},\"sender\":null",
+         "'pending[0]' is a child act, this session's own send, and it names no sender"},
+        // An internal act delivers an internal event, which has no origin.
+        {"internal", "\"origin\":null,\"sender\":null", NULL},
+        {"internal", "\"origin\":{\"processor\":\"" SCXML_TYPE "\",\"address\":\"sce://scxml/x\"},\"sender\":\"x\"",
+         "'pending[0]' is an internal act, whose event is internal and has no origin, and it holds an origin or a "
+         "sender"},
+        {"internal", "\"origin\":{\"processor\":\"x-sce-host\",\"address\":\"motor\"},\"sender\":null",
+         "'pending[0]' is an internal act, whose event is internal and has no origin, and it holds an origin or a "
+         "sender"},
+        // The pair of an act is judged as an event's is.
+        {"raise", "\"origin\":\"x\",\"sender\":\"x\"",
+         "'pending[0].origin' is neither null nor a pair of a processor and an address"},
+        {"raise", "\"origin\":\"x\"", "'pending[0]' has no 'sender'"},
+    };
+    char pending[1024];
+    sce_saved_session_t session;
+    sce_saved_send_t send;
+    sce_saved_error_t err;
+    sce_jiter_t it;
+    sce_jv_t item;
+    memset(&err, 0, sizeof(err));
+    for (size_t i = 0u; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        pending_of(cases[i].act, cases[i].members, pending, sizeof(pending));
+        const bool accepted = tree_holding(3, pending, "[]", &session, &err);
+        if (cases[i].reason == NULL) {
+            CHECK(accepted, "%s %s: %s", cases[i].act, cases[i].members, err.message);
+        } else {
+            CHECK(!accepted && strcmp(err.message, cases[i].reason) == 0, "%s %s: %s", cases[i].act, cases[i].members,
+                  err.message);
+        }
+    }
+    // What a session's act is read as: the two members, as spans of the text.
+    pending_of("raise", "\"origin\":{\"processor\":\"" SCXML_TYPE "\",\"address\":\"sce://scxml/x\"},\"sender\":\"x\"",
+               pending, sizeof(pending));
+    CHECK(tree_holding(3, pending, "[]", &session, &err), "%s", err.message);
+    CHECK(sce_jv_iter(session.pending, &it) && sce_jiter_element(&it, &item) &&
+              sce_saved_send_read(item, "pending[0]", session.format, &send, &err),
+          "%s", err.message);
+    CHECK(sce_jv_kind(send.origin) == SCE_JSON_OBJECT && sce_jv_string_is(send.sender, "x"), "the act's members");
+
+    // A format-2 act stores the sending session's id, and an internal act's is not read.
+    pending_of("internal", "\"origin\":\"fixture-root\"", pending, sizeof(pending));
+    CHECK(tree_holding(2, pending, "[]", &session, &err), "%s", err.message);
+    pending_of("raise", "\"origin\":null", pending, sizeof(pending));
+    CHECK(!tree_holding(2, pending, "[]", &session, &err) &&
+              strcmp(err.message, "'pending[0].origin' is not a text") == 0,
+          "%s", err.message);
 }
 
 static void a_count_a_token_and_a_moment_are_whole_numbers_within_what_they_can_hold(void) {
@@ -278,21 +524,31 @@ static void a_machine_writes_the_members_the_other_backends_write(void) {
     sce_saved_send_out_t send;
     sce_saved_event_out_t event;
     sce_saved_host_invoke_out_t host;
+    sce_event_origin_t own;
+    sce_event_origin_t child;
+    uint8_t from_session = 0u;
     static const char names[3][8] = {"b", "a", "b"};
     static const char values[3][8] = {"1", "2", "3"};
 
+    // A session's act carries the pair this session's processor stamps, and its id (docs/adr/0090,
+    // section 7): the bytes the shared timers hold.
+    sce_event_stamp_session(&own, &from_session, "fixture-root");
+    CHECK(from_session == 1u, "the session stamps its own send");
     memset(&send, 0, sizeof(send));
     send.due = 1700000002000;
     send.act = SCE_SAVED_ACT_RAISE;
     send.event = "beat";
     send.data = "";
     send.send_id = "__send_0";
-    send.origin = "fixture-root";
+    send.origin = &own;
+    send.sender = "fixture-root";
     sce_jw_init(&w, buf, sizeof(buf));
     sce_saved_write_send(&w, &send);
     CHECK(sce_jw_finish(&w) &&
               strcmp(buf, "{\"due\":\"1700000002000\",\"act\":\"raise\",\"event\":\"beat\",\"data\":\"\","
-                          "\"sendid\":\"__send_0\",\"origin\":\"fixture-root\"}") == 0,
+                          "\"sendid\":\"__send_0\",\"origin\":{\"processor\":"
+                          "\"http://www.w3.org/TR/scxml/#SCXMLEventProcessor\",\"address\":"
+                          "\"sce://scxml/fixture-root\"},\"sender\":\"fixture-root\"}") == 0,
           "%s", buf);
 
     send.act = SCE_SAVED_ACT_CHILD;
@@ -302,8 +558,26 @@ static void a_machine_writes_the_members_the_other_backends_write(void) {
     sce_saved_write_send(&w, &send);
     CHECK(sce_jw_finish(&w) &&
               strcmp(buf, "{\"due\":\"1700000002000\",\"act\":\"child\",\"invokeid\":\"worker\",\"event\":\"nudge\","
-                          "\"data\":\"\",\"sendid\":\"__send_0\",\"origin\":\"fixture-root\"}") == 0,
+                          "\"data\":\"\",\"sendid\":\"__send_0\",\"origin\":{\"processor\":"
+                          "\"http://www.w3.org/TR/scxml/#SCXMLEventProcessor\",\"address\":"
+                          "\"sce://scxml/fixture-root\"},\"sender\":\"fixture-root\"}") == 0,
           "%s", buf);
+
+    // An internal act delivers an internal event, which has no origin: both members are null.
+    send.act = SCE_SAVED_ACT_INTERNAL;
+    send.invoke_id = "";
+    send.event = "inner";
+    send.send_id = "__send_2";
+    send.origin = NULL;
+    send.sender = NULL;
+    sce_jw_init(&w, buf, sizeof(buf));
+    sce_saved_write_send(&w, &send);
+    CHECK(sce_jw_finish(&w) &&
+              strcmp(buf, "{\"due\":\"1700000002000\",\"act\":\"internal\",\"event\":\"inner\",\"data\":\"\","
+                          "\"sendid\":\"__send_2\",\"origin\":null,\"sender\":null}") == 0,
+          "%s", buf);
+    send.send_id = "__send_0";
+    send.event = "nudge";
 
     send.act = SCE_SAVED_ACT_HOST;
     send.type = "http";
@@ -323,20 +597,40 @@ static void a_machine_writes_the_members_the_other_backends_write(void) {
                           "\"sendid\":\"__send_0\",\"data\":\"\",\"invokeid\":\"\"}") == 0,
           "%s", buf);
 
+    // A queued event a session sent: the pair, then the sender, where format 2 held `origin` and
+    // `origintype` — the bytes of the shared tree's `answer`.
     memset(&event, 0, sizeof(event));
+    sce_event_stamp_session(&child, &from_session, "fixture-root.working.2.worker");
     event.name = "answer";
     event.data = "";
     event.type = "external";
     event.send_id = "";
-    event.origin = "";
-    event.origin_type = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor";
+    event.origin = &child;
+    event.sender = "fixture-root.working.2.worker";
     event.invoke_id = "worker";
     sce_jw_init(&w, buf, sizeof(buf));
     sce_saved_write_event(&w, &event);
     CHECK(sce_jw_finish(&w) &&
-              strcmp(buf, "{\"name\":\"answer\",\"data\":\"\",\"type\":\"external\",\"sendid\":\"\",\"origin\":\"\","
-                          "\"origintype\":\"http://www.w3.org/TR/scxml/#SCXMLEventProcessor\","
-                          "\"invokeid\":\"worker\",\"hostinvoketoken\":null}") == 0,
+              strcmp(buf, "{\"name\":\"answer\",\"data\":\"\",\"type\":\"external\",\"sendid\":\"\",\"origin\":{"
+                          "\"processor\":\"http://www.w3.org/TR/scxml/#SCXMLEventProcessor\",\"address\":"
+                          "\"sce://scxml/fixture-root.working.2.worker\"},\"sender\":"
+                          "\"fixture-root.working.2.worker\",\"invokeid\":\"worker\",\"hostinvoketoken\":null}") == 0,
+          "%s", buf);
+    // A host's pair is written as the host named it, and the event has no sender.
+    CHECK(sce_event_origin_set(&child, "x-sce-host", "motor"), "a host's pair");
+    event.sender = NULL;
+    sce_jw_init(&w, buf, sizeof(buf));
+    sce_saved_write_event(&w, &event);
+    CHECK(sce_jw_finish(&w) &&
+              strstr(buf, "\"origin\":{\"processor\":\"x-sce-host\",\"address\":\"motor\"},\"sender\":null,") != NULL,
+          "%s", buf);
+    // An event no processor stamped has no origin, and both members are null.
+    event.origin = NULL;
+    sce_jw_init(&w, buf, sizeof(buf));
+    sce_saved_write_event(&w, &event);
+    CHECK(sce_jw_finish(&w) &&
+              strcmp(buf, "{\"name\":\"answer\",\"data\":\"\",\"type\":\"external\",\"sendid\":\"\",\"origin\":null,"
+                          "\"sender\":null,\"invokeid\":\"worker\",\"hostinvoketoken\":null}") == 0,
           "%s", buf);
     event.has_host_invoke_token = true;
     event.host_invoke_token = 4u;
@@ -369,7 +663,8 @@ static void a_state_is_bound_to_its_shape_and_to_the_revision_each_schema_was_sa
                                           "e511eddacf1d4e220c85f78c95988fe26a2a1319cf119cb085f1a84f4f197f8d"};
     static const sce_saved_lineage_t records[] = {{"reading.revised", 3u, digests, 2u, NULL, 0u, NULL, 0u}};
     static const sce_saved_lineage_t enums[] = {{"enum:level", 1u, NULL, 0u, NULL, 0u, NULL, 0u}};
-    // The shape the shared revision text names, as format 2 does when it names a revision.
+    // The shape the shared revision text names, as a tree (format 2 or 3) does when it names a
+    // revision.
     sce_saved_shape_t shape;
     static char text[TEXT_CAP];
     char path[1024];
@@ -431,7 +726,7 @@ static void a_value_of_a_variant_a_later_revision_added_is_refused(void) {
     unsigned enum_at[1];
     char text[1024];
     static const char head[] =
-        "{\"format\":2,\"shape\":\"S\",\"sessionid\":\"x\",\"configuration\":[],\"current\":\"a\","
+        "{\"format\":3,\"shape\":\"S\",\"sessionid\":\"x\",\"configuration\":[],\"current\":\"a\","
         "\"variables\":";
     static const char tail[] = ",\"history\":{},\"pending\":[],\"invokes\":[],\"invokestarts\":{},\"hostinvokes\":[],"
                                "\"hostinvoketoken\":\"0\",\"sendseq\":\"0\",\"external\":[]}";
@@ -641,6 +936,9 @@ int main(void) {
     a_member_is_judged_for_what_it_is();
     a_tree_is_judged_to_every_depth();
     a_waiting_send_a_queued_event_and_a_host_invocation_read_back_as_they_were();
+    a_format_three_origin_is_read_as_it_is_written();
+    a_format_three_origin_that_is_not_whole_is_refused();
+    a_format_three_act_holds_what_its_event_will_carry();
     a_count_a_token_and_a_moment_are_whole_numbers_within_what_they_can_hold();
     a_machine_writes_the_members_the_other_backends_write();
     a_state_is_bound_to_its_shape_and_to_the_revision_each_schema_was_saved_at();

@@ -553,7 +553,7 @@ SCE_C_UNUSED static inline void sce_event_stamp_session(sce_event_origin_t *orig
 }
 
 /* docs/adr/0090, section 1: the session that sent an event, the id the
-   session-keyed lookups (`<finalize>`, a saved state's `origin`) read, written
+   session-keyed lookups (`<finalize>`, a saved state's `sender`) read, written
    into `dst` of `cap` bytes.
 
    Not stored beside the pair on this backend: only the SCXML processor sets a
