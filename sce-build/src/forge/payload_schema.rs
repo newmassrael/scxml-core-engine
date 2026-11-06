@@ -523,7 +523,7 @@ mod tests {
 
     /// The keywords a payload schema is written in, in the one order every
     /// schema object writes them in (docs/adr/0087, section 1.1, item 4).
-    const KEYWORD_ORDER: [&str; 19] = [
+    const KEYWORD_ORDER: [&str; 20] = [
         "$schema",
         "$id",
         "x-sce-source-hash",
@@ -538,6 +538,7 @@ mod tests {
         "x-sce-max-bytes",
         "pattern",
         "items",
+        "minItems",
         "maxItems",
         "properties",
         "required",
@@ -771,7 +772,8 @@ mod tests {
         }
     }
 
-    /// The value of `ty` that holds least.
+    /// The value of `ty` that holds least: a list as many of its element's
+    /// smallest as its lower count needs (docs/adr/0086, section 15).
     fn smallest(ty: &ValueType, env: &dyn TypeEnv) -> Value {
         match ty {
             ValueType::Scalar(t) => match t {
@@ -791,7 +793,9 @@ mod tests {
                         .collect(),
                 )
             }
-            ValueType::List { .. } => Value::Array(Vec::new()),
+            ValueType::List { elem, max } => {
+                Value::Array(vec![smallest(elem, env); max.min as usize])
+            }
         }
     }
 
@@ -805,7 +809,9 @@ mod tests {
     }
 
     /// The largest value of `ty` with one place past its bound, for each place
-    /// a bound is written, and whether the JSON Schema refuses it.
+    /// a bound is written, and whether the JSON Schema refuses it; and, for a
+    /// list that states a lower count, the list one short of it, which both
+    /// forms refuse (docs/adr/0086, section 15).
     fn past_each_bound(ty: &ValueType, env: &dyn TypeEnv) -> Vec<(Value, JsonSchemaSees)> {
         match ty {
             ValueType::Scalar(_) => Vec::new(),
@@ -855,6 +861,12 @@ mod tests {
                     Value::Array(vec![largest(elem, env, Fill::Wide); full + 1]),
                     JsonSchemaSees::Refused,
                 )];
+                if max.min > 0 {
+                    out.push((
+                        Value::Array(vec![largest(elem, env, Fill::Wide); max.min as usize - 1]),
+                        JsonSchemaSees::Refused,
+                    ));
+                }
                 for (past, sees) in past_each_bound(elem, env) {
                     let mut items = vec![largest(elem, env, Fill::Wide); full];
                     items[0] = past;
@@ -990,6 +1002,41 @@ mod tests {
             gbnf::Grammar::read(&schema.gbnf),
             compiled(&schema.json_schema),
         )
+    }
+
+    /// A list that states a lower count is held to it by both forms, as to its
+    /// bound: the JSON Schema by `minItems`, the grammar by the chain of the
+    /// elements it must hold (docs/adr/0086, sections 15.9 and 15.10), so the
+    /// empty list is no answer either admits.
+    #[test]
+    fn a_list_is_held_to_its_lower_count_by_both_forms() {
+        let schema = PayloadSchema::of(
+            "probe",
+            1,
+            &[("x".into(), ty("list<uint8>[2..3]"))],
+            &TypeScope::default(),
+            None,
+        )
+        .expect("a grammar");
+        assert!(
+            schema.json_schema.contains("\"minItems\":2,\"maxItems\":3"),
+            "{}",
+            schema.json_schema
+        );
+        let (grammar, json) = one_field("list<uint8>[2..3]");
+        for (text, admitted) in [
+            ("{\"x\":[]}", false),
+            ("{\"x\":[1]}", false),
+            ("{\"x\":[1,2]}", true),
+            ("{\"x\":[1,2,3]}", true),
+            ("{\"x\":[1,2,3,4]}", false),
+        ] {
+            assert_eq!(grammar.admits(text), admitted, "the grammar: {text}");
+            assert_eq!(json_admits(&json, text), admitted, "the schema: {text}");
+        }
+        // A list that states none admits the empty list in both, as before.
+        let (grammar, json) = one_field("list<uint8>[3]");
+        assert!(grammar.admits("{\"x\":[]}") && json_admits(&json, "{\"x\":[]}"));
     }
 
     /// Each range rule admits its ends and refuses one past each. A spelling

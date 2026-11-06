@@ -2113,6 +2113,7 @@ pub enum Keyword {
     MaxBytes,
     Pattern,
     Items,
+    MinItems,
     MaxItems,
     Properties,
     Required,
@@ -2138,6 +2139,7 @@ impl Keyword {
             Keyword::MaxBytes => "x-sce-max-bytes",
             Keyword::Pattern => "pattern",
             Keyword::Items => "items",
+            Keyword::MinItems => "minItems",
             Keyword::MaxItems => "maxItems",
             Keyword::Properties => "properties",
             Keyword::Required => "required",
@@ -2412,11 +2414,17 @@ fn json_schema(
             let null = SchemaObject::typed("null");
             SchemaObject::default().with(Keyword::AnyOf, SchemaNode::Schemas(vec![element, null]))
         }
+        // A lower count is `minItems`, written only where one is stated
+        // (docs/adr/0086, section 15.9): a list that states none is the schema
+        // it always was.
         ValueType::List { elem, max } => {
             let element = json_schema(elem, env, defs, on_path)?;
-            SchemaObject::typed("array")
-                .with(Keyword::Items, SchemaNode::Schema(element))
-                .with(Keyword::MaxItems, SchemaNode::value(max.max))
+            let mut array =
+                SchemaObject::typed("array").with(Keyword::Items, SchemaNode::Schema(element));
+            if max.min > 0 {
+                array.insert(Keyword::MinItems, SchemaNode::value(max.min));
+            }
+            array.with(Keyword::MaxItems, SchemaNode::value(max.max))
         }
         ValueType::Record { alias } => {
             let record = grammar_record(alias, env, on_path)?;
@@ -2597,6 +2605,9 @@ pub struct GbnfRules {
     items: std::collections::BTreeMap<String, String>,
     /// The most elements after the first a list of each element rule holds.
     tails: std::collections::BTreeMap<String, u32>,
+    /// The most elements after the first a list of each element rule must hold:
+    /// its lower count less one, the longest (docs/adr/0086, section 15.10).
+    leasts: std::collections::BTreeMap<String, u32>,
     /// The rule of each integer type the grammar holds, by its name.
     integers: std::collections::BTreeMap<String, String>,
     /// Whether the grammar holds a real.
@@ -2640,12 +2651,28 @@ impl GbnfRules {
     /// t(k-3) | c4 t(k-4)`, the terms of a negative index left out: one chain,
     /// up to the largest bound, serves every text (docs/adr/0087, section 1.1,
     /// item 3). A byte string's is `bk ::= "" | byte b(k-1)`, and the elements
-    /// after a list's first `X-tail-k ::= "" | "," X X-tail-(k-1)`.
+    /// after a list's first `X-tail-k ::= "" | "," X X-tail-(k-1)`; the elements
+    /// a list must hold after its first, by its lower count, are
+    /// `X-least-k ::= "," X X-least-(k-1)` down to `X-least-1 ::= "," X`.
     pub fn grammar(&self, root: &str) -> String {
         let mut out = String::new();
         push_rule(&mut out, "root", root);
         for (name, body) in &self.named {
             push_rule(&mut out, name, body);
+        }
+        for (item, most) in &self.leasts {
+            push_rule(
+                &mut out,
+                &format!("{item}-least-1"),
+                &format!("\",\" {item}"),
+            );
+            for k in 2..=*most {
+                push_rule(
+                    &mut out,
+                    &format!("{item}-least-{k}"),
+                    &format!("\",\" {item} {item}-least-{}", k - 1),
+                );
+            }
         }
         for (item, most) in &self.tails {
             push_rule(&mut out, &format!("{item}-tail-0"), "\"\"");
@@ -2704,7 +2731,8 @@ impl GbnfRules {
 /// - an optional value is `null` or its element's;
 /// - a record is its rule: `{`, each key in the order its document declares
 ///   them with its value, `,` between two, `}`;
-/// - a list is `[`, at most its bound of its element's, `,` between two, `]`.
+/// - a list is `[`, at least its lower count and at most its bound of its
+///   element's, `,` between two, `]`.
 pub fn gbnf_of(
     ty: &ValueType,
     env: &dyn TypeEnv,
@@ -2771,12 +2799,37 @@ fn gbnf(
         ValueType::List { elem, max } => match max.max.checked_sub(1) {
             // A list of at most no element is the empty list.
             None => "\"[]\"".to_string(),
-            Some(more) => {
+            // A list that states no lower count may be empty.
+            Some(more) if max.min == 0 => {
                 let element = gbnf(elem, env, rules, on_path)?;
                 let item = rules.item_rule(element);
                 let most = rules.tails.entry(item.clone()).or_insert(0);
                 *most = (*most).max(more);
                 format!("\"[\" ( {item} {item}-tail-{more} )? \"]\"")
+            }
+            // A list of at least `min` elements writes its first, the
+            // `min - 1` it must hold after it, then at most the rest of its
+            // bound (docs/adr/0086, section 15.10): the empty list, and every
+            // shorter one, is no sentence of it. A chain of no element is
+            // left out.
+            Some(more) => {
+                let element = gbnf(elem, env, rules, on_path)?;
+                let item = rules.item_rule(element);
+                let required = max.min - 1;
+                let optional = more.saturating_sub(required);
+                let mut parts = vec!["\"[\"".to_string(), item.clone()];
+                if required > 0 {
+                    let most = rules.leasts.entry(item.clone()).or_insert(0);
+                    *most = (*most).max(required);
+                    parts.push(format!("{item}-least-{required}"));
+                }
+                if optional > 0 {
+                    let most = rules.tails.entry(item.clone()).or_insert(0);
+                    *most = (*most).max(optional);
+                    parts.push(format!("{item}-tail-{optional}"));
+                }
+                parts.push("\"]\"".to_string());
+                parts.join(" ")
             }
         },
         ValueType::Record { alias } => {
@@ -5004,6 +5057,82 @@ mod tests {
             max: Bound::of(0),
         };
         assert_eq!(grammar_of(&none), Ok("root ::= \"[]\"\n".to_string()));
+    }
+
+    /// A list's lower count is `minItems` in the JSON Schema and, in the GBNF
+    /// grammar, the chain of the elements it must hold after its first, so no
+    /// shorter list is a sentence of either (docs/adr/0086, sections 15.9 and
+    /// 15.10).
+    #[test]
+    fn a_list_holds_at_least_its_lower_count() {
+        assert_eq!(
+            json_of("list<uint8>[2..3]"),
+            serde_json::json!({
+                "type": "array",
+                "items": {"type": "integer", "minimum": 0, "maximum": 255},
+                "minItems": 2,
+                "maxItems": 3
+            })
+        );
+        // `minItems` stands between `items` and `maxItems`, in the one order.
+        assert_eq!(
+            schema_text("list<uint8>[2..3]"),
+            "{\"type\":\"array\",\"items\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":255},\
+             \"minItems\":2,\"maxItems\":3}"
+        );
+        // A lower count of zero writes none.
+        assert_eq!(
+            schema_text("list<uint8>[0..3]"),
+            schema_text("list<uint8>[3]")
+        );
+        // At least two of at most four: the first, one it must hold, at most two
+        // more.
+        assert_eq!(
+            gbnf_text("list<uint8>[2..4]"),
+            format!(
+                "root ::= \"[\" uint8 uint8-least-1 uint8-tail-2 \"]\"\n\
+                 uint8-least-1 ::= \",\" uint8\n\
+                 uint8-tail-0 ::= \"\"\n\
+                 uint8-tail-1 ::= \"\" | \",\" uint8 uint8-tail-0\n\
+                 uint8-tail-2 ::= \"\" | \",\" uint8 uint8-tail-1\n\
+                 {UINT8_RULE}\n"
+            )
+        );
+        // At least one: the first, then at most the rest; no chain it must hold.
+        assert_eq!(
+            gbnf_text("list<uint8>[1..3]"),
+            format!(
+                "root ::= \"[\" uint8 uint8-tail-2 \"]\"\n\
+                 uint8-tail-0 ::= \"\"\n\
+                 uint8-tail-1 ::= \"\" | \",\" uint8 uint8-tail-0\n\
+                 uint8-tail-2 ::= \"\" | \",\" uint8 uint8-tail-1\n\
+                 {UINT8_RULE}\n"
+            )
+        );
+        // Exactly three: no chain it may hold.
+        assert_eq!(
+            gbnf_text("list<uint8>[3..3]"),
+            format!(
+                "root ::= \"[\" uint8 uint8-least-2 \"]\"\n\
+                 uint8-least-1 ::= \",\" uint8\n\
+                 uint8-least-2 ::= \",\" uint8 uint8-least-1\n\
+                 {UINT8_RULE}\n"
+            )
+        );
+        assert_eq!(
+            gbnf_text("list<uint8>[1..1]"),
+            format!("root ::= \"[\" uint8 \"]\"\n{UINT8_RULE}\n")
+        );
+        // A lower count of zero is the grammar it always was.
+        assert_eq!(gbnf_text("list<uint8>[0..3]"), gbnf_text("list<uint8>[3]"));
+        // An element that is no rule alone is given one, and the chains are
+        // its rule's.
+        assert_eq!(
+            gbnf_text("list<bool>[2..2]"),
+            "root ::= \"[\" item-1 item-1-least-1 \"]\"\n\
+             item-1 ::= ( \"true\" | \"false\" )\n\
+             item-1-least-1 ::= \",\" item-1\n"
+        );
     }
 
     #[test]

@@ -3,7 +3,7 @@
   "$id": "https://github.com/newmassrael/scxml-core-engine/blob/main/schemas/sce-payload-schema.v1.schema.json",
   "x-sce-schema-status": "pre-release",
   "title": "SCE payload schema (wire schema v1)",
-  "description": "The JSON Schema (2020-12) of the payload of an event schema, which every schema unit declares as JSON_SCHEMA and `sce-codegen payload-schema` prints byte for byte (docs/adr/0087, section 1). This file states the subset of 2020-12 SCE writes: one spelling of each value of the payload's type, a record with every key required and no other, a 64-bit integer as the quoted text of its digits, every bound as the build resolved it. A text's maxLength counts characters and x-sce-max-bytes the UTF-8 bytes the type bounds. The text is compact, each object's keywords in one order ($schema, $id, x-sce-source-hash, description, $ref, type, enum, anyOf, minimum, maximum, maxLength, x-sce-max-bytes, pattern, items, maxItems, properties, required, additionalProperties, $defs), and a record's properties and required in the order its document declares its keys: a decoder held to a schema writes an object's keys in the order the schema states them. It carries no generator stamp: it is a constant of committed generated units, and x-sce-source-hash, the source-hash of the files it is written into, names its inputs instead. Its second spelling, the GBNF grammar of the same type, has no schema file. Authoritative producer is sce-build/src/forge/payload_schema.rs over the folds of sce-build/src/forge/value_type.rs. The stability status of this surface lives in this header alone; see SCE_WIRE_CONTRACTS.md for the shared policy.",
+  "description": "The JSON Schema (2020-12) of the payload of an event schema, which every schema unit declares as JSON_SCHEMA and `sce-codegen payload-schema` prints byte for byte (docs/adr/0087, section 1). This file states the subset of 2020-12 SCE writes: one spelling of each value of the payload's type, a record with every key required and no other, a 64-bit integer as the quoted text of its digits, every bound as the build resolved it. A text's maxLength counts characters and x-sce-max-bytes the UTF-8 bytes the type bounds. The text is compact, each object's keywords in one order ($schema, $id, x-sce-source-hash, description, $ref, type, enum, anyOf, minimum, maximum, maxLength, x-sce-max-bytes, pattern, items, minItems, maxItems, properties, required, additionalProperties, $defs), and a record's properties and required in the order its document declares its keys: a decoder held to a schema writes an object's keys in the order the schema states them. It carries no generator stamp: it is a constant of committed generated units, and x-sce-source-hash, the source-hash of the files it is written into, names its inputs instead. Its second spelling, the GBNF grammar of the same type, has no schema file. Authoritative producer is sce-build/src/forge/payload_schema.rs over the folds of sce-build/src/forge/value_type.rs. The stability status of this surface lives in this header alone; see SCE_WIRE_CONTRACTS.md for the shared policy.",
   "type": "object",
   "required": ["$schema", "$id", "description", "type", "properties", "required", "additionalProperties"],
   "additionalProperties": false,
@@ -181,13 +181,14 @@
       }
     },
     "array": {
-      "description": "A list of at most its bound.",
+      "description": "A list of at most its bound, and of at least its lower count where its type states one (docs/adr/0086, section 15): minItems is written only then, so it is at least 1.",
       "type": "object",
       "required": ["type", "items", "maxItems"],
       "additionalProperties": false,
       "properties": {
         "type": { "const": "array" },
         "items": { "$ref": "#/definitions/value" },
+        "minItems": { "type": "integer", "minimum": 1 },
         "maxItems": { "type": "integer", "minimum": 0 }
       }
     }

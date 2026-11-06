@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  An answer whose lists state their lower counts (docs/adr/0086, section 15): at
+  least three steps, at least one tag, exactly two flags, and up to three groups
+  of slots, each group holding at least one. Its JSON Schema states `minItems`
+  for each list that needs one and its GBNF grammar leaves every shorter list
+  out, so a constrained decoder cannot answer `[]` where a value is needed: the
+  payload-schema sweep holds that the smallest value, every lower count met, is
+  admitted by both forms, and a list one short of its lower count is refused by
+  both.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="answer_counted"
+       sce:event-name="answer.counted">
+  <datamodel>
+    <data id="title" sce:type="string[16]" sce:direction="in"/>
+    <data id="steps" sce:type="list&lt;string[12]&gt;[3..6]" sce:direction="in"/>
+    <data id="tags" sce:type="list&lt;uint8&gt;[1..4]" sce:direction="in"/>
+    <data id="flags" sce:type="list&lt;bool&gt;[2..2]" sce:direction="in"/>
+    <data id="groups" sce:type="list&lt;list&lt;uint16&gt;[1..2]&gt;[3]" sce:direction="in"/>
+  </datamodel>
+</scxml>
