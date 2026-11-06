@@ -77,8 +77,14 @@ Each engine gains one value type with two fields:
 
 An event holds either an `EventOrigin` or none. There is no state in which one field is set and the other is not:
 the type is constructed whole, and `none` is the only way to express absence. The document sees
-`_event.origin = address` and `_event.origintype = processor`. With no origin, both fields read as the empty string,
-which is what §scxml-5.10.1 asks of internal and platform events and what test 330 requires to be present.
+`_event.origin = address` and `_event.origintype = processor`. With no origin, both fields are left blank, which is
+what §scxml-5.10.1 asks of internal and platform events. In the ECMAScript data model a blank field is a property of
+`_event` whose value is undefined (§scxml-B-2-8), so test 330 still finds it present. An engine that lowers to Lua
+holds it as nil.
+
+(Amended 2026-11-07. The first text said both fields "read as the empty string". §scxml-B-2-8 makes a field the
+specification leaves blank ECMAScript undefined, and `tests/ecmascript/event_blank_fields.json` holds every engine to
+it.)
 
 The session id of the sender is a separate field, `sender: SessionId?`. `origin` is the reply address and `sender`
 is the identity of the sending session: two independent fields, and no rule ties one to the other. The processor

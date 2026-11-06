@@ -15,8 +15,11 @@
      receiving transition conds on the three fields the copy must carry:
 
        _event.data.value === 42   the payload survived the forward
-       _event.origin !== ''       the originating session id survived
-       _event.invokeid !== ''     the invoke correlation survived
+       _event.origin              the originating session's address survived
+       _event.invokeid            the invoke correlation survived
+
+     A field that did not survive is blank, which §B.2.8 makes ECMAScript
+     undefined, so each is asked to be neither undefined nor the empty string.
 
      The verdict rides home as its own event rather than as `<donedata>`,
      so this fixture stays on one axis: a regression in the unrelated
@@ -43,8 +46,8 @@
                         </onentry>
                         <transition event="childToParent"
                                     cond="_event.data &amp;&amp; _event.data.value === 42
-                                          &amp;&amp; _event.origin !== ''
-                                          &amp;&amp; _event.invokeid !== ''"
+                                          &amp;&amp; _event.origin !== undefined &amp;&amp; _event.origin !== ''
+                                          &amp;&amp; _event.invokeid !== undefined &amp;&amp; _event.invokeid !== ''"
                                     target="reported">
                             <send target="#_parent" event="fieldsPreserved"/>
                         </transition>

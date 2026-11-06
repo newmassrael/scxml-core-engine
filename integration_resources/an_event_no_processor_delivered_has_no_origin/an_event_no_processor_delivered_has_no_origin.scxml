@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   W3C SCXML 5.10.1 (docs/adr/0090, test 2): an event no Event I/O Processor
-  delivered has no origin, so `_event.origin` and `_event.origintype` both read
-  as the empty string.
+  delivered has no origin, so `_event.origin` and `_event.origintype` are both
+  left blank, which §B.2.8 makes ECMAScript undefined rather than the empty
+  string (tests/ecmascript/event_blank_fields.json holds every engine to it).
 
   5.10.1 asks the processor that delivers an external event to set the two
   fields to an address it can answer at. An event the host hands the machine
@@ -33,7 +34,7 @@
 
   <state id="waiting">
     <transition event="posted" target="asking">
-      <if cond="_event.origin === '' &amp;&amp; _event.origintype === ''">
+      <if cond="_event.origin === undefined &amp;&amp; _event.origintype === undefined">
         <assign location="postedBlank" expr="1"/>
       </if>
     </transition>
@@ -44,7 +45,7 @@
       <send type="x-sce-host" event="host.ask"/>
     </onentry>
     <transition event="host.reply" target="done">
-      <if cond="_event.origin === '' &amp;&amp; _event.origintype === ''">
+      <if cond="_event.origin === undefined &amp;&amp; _event.origintype === undefined">
         <assign location="replyBlank" expr="1"/>
       </if>
     </transition>
