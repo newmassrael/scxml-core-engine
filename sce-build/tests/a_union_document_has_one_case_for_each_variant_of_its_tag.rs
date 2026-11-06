@@ -272,7 +272,8 @@ fn a_union_of_no_case_or_of_only_empty_cases_is_refused() {
 
 #[test]
 fn a_variant_with_no_case_is_refused_naming_it() {
-    let (error, code, _) = validation(compiled("union_shape_missing_case.scxml", Language::Rust));
+    let (error, code, line) =
+        validation(compiled("union_shape_missing_case.scxml", Language::Rust));
     assert!(
         matches!(code, DiagnosticCode::ValidationUnionCases),
         "{code:?}"
@@ -284,11 +285,16 @@ fn a_variant_with_no_case_is_refused_naming_it() {
             detail,
         } => {
             assert_eq!(document, "union_shape_missing_case");
-            assert_eq!(variant, "rect");
+            // The missing variant is written only in the enum, so no line of
+            // the union holds it: the refusal names it in `detail` and has no
+            // `actual`.
+            assert_eq!(variant, "");
             assert!(detail.contains("with no case: 'rect'"), "{detail}");
         }
         other => panic!("{other:?}"),
     }
+    // The tag, on line 9 of the fixture.
+    assert_eq!(line, Some(9));
 }
 
 #[test]
@@ -350,8 +356,8 @@ fn a_case_whose_record_declares_the_tags_key_is_refused() {
         }
         other => panic!("{other:?}"),
     }
-    // The rect case, on line 14 of the fixture.
-    assert_eq!(line, Some(14));
+    // The tag, whose `id` is the colliding key, on line 11 of the fixture.
+    assert_eq!(line, Some(11));
 }
 
 #[test]

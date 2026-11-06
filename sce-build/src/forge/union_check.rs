@@ -113,17 +113,13 @@ pub fn check(
     }
     if !parts.is_empty() {
         // Placed on the first case that names no variant, which is written in
-        // the document; a variant with no case is written in the enum, so the
-        // refusal of one alone stands on the tag.
+        // the document, with that variant as `actual`. A variant with no case
+        // is written only in the enum, so the refusal of one alone stands on
+        // the tag and has no `actual`: no line of this document holds the
+        // name, and `detail` names every missing variant.
         let (variant, line) = match stray.first() {
             Some(case) => (case.variant.clone(), case.source_line),
-            None => (
-                missing
-                    .first()
-                    .map(|name| name.to_string())
-                    .unwrap_or_default(),
-                union.tag_line,
-            ),
+            None => (String::new(), union.tag_line),
         };
         return Err(Located::new(
             ValidationError::UnionCases {
@@ -159,6 +155,9 @@ pub fn check(
             continue;
         };
         if let Some(field) = schema.fields.iter().find(|f| f.id == union.tag) {
+            // Placed on the tag, whose `id` is the colliding key and so the
+            // line that holds `actual`; the case and its record are named in
+            // the message.
             return Err(Located::new(
                 ValidationError::UnionTagCollision {
                     document: union.name.clone(),
@@ -168,7 +167,7 @@ pub fn check(
                 }
                 .into(),
                 document,
-                case.source_line,
+                union.tag_line,
                 None,
             ));
         }

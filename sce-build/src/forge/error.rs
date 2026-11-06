@@ -1306,8 +1306,10 @@ pub enum ValidationError {
     /// a case naming no variant, a variant given two cases — or the union
     /// declares no case, or every case is empty, which makes the union its
     /// enum. `document` is the union document's name, `variant` the first
-    /// variant the rule is broken at (the record's `actual`, empty where the
-    /// rule is about the cases as a whole), and `detail` names each.
+    /// variant the rule is broken at that the document writes (the record's
+    /// `actual`, empty where the rule is about the cases as a whole or the
+    /// variant is written only in the enum, as a variant with no case is), and
+    /// `detail` names each.
     ///
     /// Wire code: `validation/union-cases`.
     #[error("union '{document}': {detail}")]
