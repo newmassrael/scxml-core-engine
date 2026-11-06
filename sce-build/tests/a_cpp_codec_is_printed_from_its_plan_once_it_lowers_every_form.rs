@@ -22,6 +22,7 @@ const PRINTED: &[&str] = &[
     "broadcast_log_conformance_event",
     "broadcast_log_conformance_record",
     "codec_chain_depth_entry",
+    "codec_chain_depth_plain",
     "codec_chain_has_marker_slice",
     "codec_chain_has_slice",
     "codec_chain_has_tagged_entry",

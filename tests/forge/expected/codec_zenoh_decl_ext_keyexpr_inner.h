@@ -103,18 +103,29 @@ template <class S>
 struct is_nothrow_source<S, std::enable_if_t<is_source<S>::value>>
     : std::bool_constant<noexcept(::SCE::Forge::Detail::converts_to<uint8_t>(source::inner_header(std::declval<const S&>()))) && noexcept(::SCE::Forge::Detail::converts_to<uint64_t>(source::id(std::declval<const S&>()))) && noexcept(::SCE::Forge::Detail::converts_to<std::optional<::SCE::Forge::Bytes<65535>>>(source::suffix(std::declval<const S&>())))> {};
 
+/// One-bit flags of `CodecZenohDeclExtKeyexprInner` a parent may set in place of the ones a value
+/// presents, such as the flag a chain whose entries are `CodecZenohDeclExtKeyexprInner` ends them
+/// on, which the chain derives from where each entry stands.
+struct Overrides {
+    /// The `M` flag of `inner_header`, where a parent sets it.
+    std::optional<bool> inner_header_m;
+};
+
 /// The encode of `CodecZenohDeclExtKeyexprInner` over any source of it: each element read
 /// through `source`, written as the plan lays it out (docs/adr/0081). It
 /// refuses nothing; what it returns is the sink's own failure, and it
 /// throws only what a read of `src` throws.
 struct Wire {
     template <class S>
-    [[nodiscard]] static std::optional<::SCE::Forge::CodecError> encode_source(const S& src, ::SCE::Forge::SceSink& w) noexcept(is_nothrow_source<S>::value) {
+    [[nodiscard]] static std::optional<::SCE::Forge::CodecError> encode_source(const S& src, ::SCE::Forge::SceSink& w, const Overrides& overrides = Overrides{}) noexcept(is_nothrow_source<S>::value) {
         static_assert(is_source<S>::value, "S presents every element of CodecZenohDeclExtKeyexprInner: inner_header, id, suffix");
         const auto& _r_suffix = source::suffix(src);
         const std::optional<::SCE::Forge::Bytes<65535>> _e_suffix = _r_suffix;
         std::uint64_t _f_inner_header = static_cast<std::uint64_t>(source::inner_header(src));
         _f_inner_header = (_f_inner_header & ~0x1ull) | static_cast<std::uint64_t>(_e_suffix.has_value());
+        if (overrides.inner_header_m.has_value()) {
+            _f_inner_header = (_f_inner_header & ~0x2ull) | (static_cast<std::uint64_t>(*overrides.inner_header_m) << 1);
+        }
         const uint8_t _c_inner_header = static_cast<uint8_t>(_f_inner_header);
         if (auto _e = w.write_u8(static_cast<std::uint8_t>(_c_inner_header)); _e) return _e;
         if (auto _e = w.write_vle_u64(static_cast<std::uint64_t>(source::id(src))); _e) return _e;

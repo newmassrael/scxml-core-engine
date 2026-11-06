@@ -61,15 +61,38 @@ template <class S>
 struct is_nothrow_source<S, std::enable_if_t<is_source<S>::value>>
     : std::bool_constant<noexcept(::SCE::Forge::Detail::converts_to<uint8_t>(source::qos(std::declval<const S&>())))> {};
 
+/// One-bit flags of `CodecQosByte` a parent may set in place of the ones a value
+/// presents, such as the flag a chain whose entries are `CodecQosByte` ends them
+/// on, which the chain derives from where each entry stands.
+struct Overrides {
+    /// The `reliable` flag of `qos`, where a parent sets it.
+    std::optional<bool> qos_reliable;
+    /// The `express` flag of `qos`, where a parent sets it.
+    std::optional<bool> qos_express;
+    /// The `reserved` flag of `qos`, where a parent sets it.
+    std::optional<bool> qos_reserved;
+};
+
 /// The encode of `CodecQosByte` over any source of it: each element read
 /// through `source`, written as the plan lays it out (docs/adr/0081). It
 /// refuses nothing; what it returns is the sink's own failure, and it
 /// throws only what a read of `src` throws.
 struct Wire {
     template <class S>
-    [[nodiscard]] static std::optional<::SCE::Forge::CodecError> encode_source(const S& src, ::SCE::Forge::SceSink& w) noexcept(is_nothrow_source<S>::value) {
+    [[nodiscard]] static std::optional<::SCE::Forge::CodecError> encode_source(const S& src, ::SCE::Forge::SceSink& w, const Overrides& overrides = Overrides{}) noexcept(is_nothrow_source<S>::value) {
         static_assert(is_source<S>::value, "S presents every element of CodecQosByte: qos");
-        if (auto _e = w.write_u8(static_cast<std::uint8_t>(source::qos(src))); _e) return _e;
+        std::uint64_t _f_qos = static_cast<std::uint64_t>(source::qos(src));
+        if (overrides.qos_reliable.has_value()) {
+            _f_qos = (_f_qos & ~0x8ull) | (static_cast<std::uint64_t>(*overrides.qos_reliable) << 3);
+        }
+        if (overrides.qos_express.has_value()) {
+            _f_qos = (_f_qos & ~0x40ull) | (static_cast<std::uint64_t>(*overrides.qos_express) << 6);
+        }
+        if (overrides.qos_reserved.has_value()) {
+            _f_qos = (_f_qos & ~0x80ull) | (static_cast<std::uint64_t>(*overrides.qos_reserved) << 7);
+        }
+        const uint8_t _c_qos = static_cast<uint8_t>(_f_qos);
+        if (auto _e = w.write_u8(static_cast<std::uint8_t>(_c_qos)); _e) return _e;
         return std::nullopt;
     }
 };

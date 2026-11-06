@@ -103,16 +103,29 @@ template <class S>
 struct is_nothrow_source<S, std::enable_if_t<is_source<S>::value>>
     : std::bool_constant<noexcept(::SCE::Forge::Detail::converts_to<uint8_t>(source::entry_type(std::declval<const S&>()))) && noexcept(::SCE::Forge::Detail::converts_to<uint8_t>(source::ctl(std::declval<const S&>()))) && noexcept(::SCE::Forge::Detail::converts_to<uint8_t>(source::body(std::declval<const S&>())))> {};
 
+/// One-bit flags of `CodecChainHasTaggedEntry` a parent may set in place of the ones a value
+/// presents, such as the flag a chain whose entries are `CodecChainHasTaggedEntry` ends them
+/// on, which the chain derives from where each entry stands.
+struct Overrides {
+    /// The `more` flag of `ctl`, where a parent sets it.
+    std::optional<bool> ctl_more;
+};
+
 /// The encode of `CodecChainHasTaggedEntry` over any source of it: each element read
 /// through `source`, written as the plan lays it out (docs/adr/0081). It
 /// refuses nothing; what it returns is the sink's own failure, and it
 /// throws only what a read of `src` throws.
 struct Wire {
     template <class S>
-    [[nodiscard]] static std::optional<::SCE::Forge::CodecError> encode_source(const S& src, ::SCE::Forge::SceSink& w) noexcept(is_nothrow_source<S>::value) {
+    [[nodiscard]] static std::optional<::SCE::Forge::CodecError> encode_source(const S& src, ::SCE::Forge::SceSink& w, const Overrides& overrides = Overrides{}) noexcept(is_nothrow_source<S>::value) {
         static_assert(is_source<S>::value, "S presents every element of CodecChainHasTaggedEntry: entry_type, ctl, body");
+        std::uint64_t _f_ctl = static_cast<std::uint64_t>(source::ctl(src));
+        if (overrides.ctl_more.has_value()) {
+            _f_ctl = (_f_ctl & ~0x1ull) | static_cast<std::uint64_t>(*overrides.ctl_more);
+        }
+        const uint8_t _c_ctl = static_cast<uint8_t>(_f_ctl);
         if (auto _e = w.write_u8(static_cast<std::uint8_t>(source::entry_type(src))); _e) return _e;
-        if (auto _e = w.write_u8(static_cast<std::uint8_t>(source::ctl(src))); _e) return _e;
+        if (auto _e = w.write_u8(static_cast<std::uint8_t>(_c_ctl)); _e) return _e;
         if (auto _e = w.write_u8(static_cast<std::uint8_t>(source::body(src))); _e) return _e;
         return std::nullopt;
     }

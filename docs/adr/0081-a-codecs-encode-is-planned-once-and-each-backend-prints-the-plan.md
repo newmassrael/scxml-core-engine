@@ -446,6 +446,13 @@ old encode, the old encode and its templates are removed in the same landing.
    `Wire`. A codec the template still writes reads an embedded printed variant through `body()`. A variant whose
    caller hands its tag, whose arm's own header holds it, or with an arm under a feature, waits. The printed set is
    80 codecs.
+
+   *The ninth C++ landing, 2026-11-06:* a chain whose entries end on a flag it sets. As Rust's `{Codec}Overrides`, a
+   printed codec a parent may set a flag of has a `struct Overrides` of `std::optional<bool>` members, one for each
+   such flag, and `Wire::encode_source` takes one last, empty by default; what it holds is folded into the carrier
+   after every derived flag. A chain walks its entries setting on each but the last the flag they end on. The
+   printed set is 81 codecs. A list of no stated bound and a list a gate decides wait for their own landing, which
+   the extension chains of the Zenoh messages need.
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences

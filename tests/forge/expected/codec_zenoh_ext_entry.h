@@ -118,13 +118,23 @@ template <class S>
 struct is_nothrow_source<S, std::enable_if_t<is_source<S>::value>>
     : std::bool_constant<noexcept(::SCE::Forge::Detail::converts_to<uint8_t>(source::header(std::declval<const S&>()))) && noexcept(source::body(std::declval<const S&>())) && ::SCE::Generated::CodecZenohExtUnit::is_nothrow_source<std::variant_alternative_t<0, std::decay_t<decltype(source::body(std::declval<const S&>()))>>>::value && ::SCE::Generated::CodecZenohExtZint::is_nothrow_source<std::variant_alternative_t<1, std::decay_t<decltype(source::body(std::declval<const S&>()))>>>::value && ::SCE::Generated::CodecZenohExtZbuf::is_nothrow_source<std::variant_alternative_t<2, std::decay_t<decltype(source::body(std::declval<const S&>()))>>>::value && ::SCE::Generated::CodecZenohExtUnit::is_nothrow_source<std::decay_t<decltype(std::declval<const std::variant_alternative_t<3, std::decay_t<decltype(source::body(std::declval<const S&>()))>>&>().body)>>::value> {};
 
+/// One-bit flags of `CodecZenohExtEntry` a parent may set in place of the ones a value
+/// presents, such as the flag a chain whose entries are `CodecZenohExtEntry` ends them
+/// on, which the chain derives from where each entry stands.
+struct Overrides {
+    /// The `M` flag of `header`, where a parent sets it.
+    std::optional<bool> header_m;
+    /// The `Z` flag of `header`, where a parent sets it.
+    std::optional<bool> header_z;
+};
+
 /// The encode of `CodecZenohExtEntry` over any source of it: each element read
 /// through `source`, written as the plan lays it out (docs/adr/0081). It
 /// refuses nothing; what it returns is the sink's own failure, and it
 /// throws only what a read of `src` throws.
 struct Wire {
     template <class S>
-    [[nodiscard]] static std::optional<::SCE::Forge::CodecError> encode_source(const S& src, ::SCE::Forge::SceSink& w) noexcept(is_nothrow_source<S>::value) {
+    [[nodiscard]] static std::optional<::SCE::Forge::CodecError> encode_source(const S& src, ::SCE::Forge::SceSink& w, const Overrides& overrides = Overrides{}) noexcept(is_nothrow_source<S>::value) {
         static_assert(is_source<S>::value, "S presents every element of CodecZenohExtEntry: header, body");
         const auto& _r_body = source::body(src);
         std::uint64_t _t_body = 0;
@@ -137,6 +147,12 @@ struct Wire {
         }
         std::uint64_t _f_header = static_cast<std::uint64_t>(source::header(src));
         _f_header = (_f_header & ~0x60ull) | ((_t_body & 0x3ull) << 5);
+        if (overrides.header_m.has_value()) {
+            _f_header = (_f_header & ~0x10ull) | (static_cast<std::uint64_t>(*overrides.header_m) << 4);
+        }
+        if (overrides.header_z.has_value()) {
+            _f_header = (_f_header & ~0x80ull) | (static_cast<std::uint64_t>(*overrides.header_z) << 7);
+        }
         const uint8_t _c_header = static_cast<uint8_t>(_f_header);
         if (auto _e = w.write_u8(static_cast<std::uint8_t>(_c_header)); _e) return _e;
         switch (_r_body.index()) {

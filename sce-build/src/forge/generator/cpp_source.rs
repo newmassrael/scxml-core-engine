@@ -263,10 +263,10 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
                     }
                 }
             }
-            // A list is walked entry by entry, each entry written whole; one
-            // whose entries are handed an input from the entry before, whose
-            // chain holds memberships, or whose entries end on a flag the chain
-            // sets, is not yet.
+            // A list is walked entry by entry, each entry written whole, a chain
+            // setting on each entry but the last the flag its entries end on;
+            // one whose entries are handed an input from the entry before, or
+            // whose chain holds memberships, is not yet.
             Write::Streamed {
                 field,
                 guard: Guard::Always,
@@ -275,12 +275,6 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
                 if !list.previous.is_empty() || list.slots.is_some() || list.lawful {
                     forms.push(format!(
                         "`{}`, a chain whose entries the entry before or a group decides",
-                        field.id
-                    ));
-                }
-                if list.ends.is_some() {
-                    forms.push(format!(
-                        "`{}`, a chain whose entries end on a flag it sets",
                         field.id
                     ));
                 }
@@ -318,6 +312,17 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
             .map(|field| format!("`{}`, of no width the sink writes whole", field.id)),
     );
     forms
+}
+
+/// The member of a codec's `Overrides` that sets `flag` of its carrier
+/// `carrier`: the codec's own name for it, which a chain holding the codec
+/// spells alike.
+fn override_member(l: &LangCtx, carrier: &str, flag: &str) -> String {
+    format!(
+        "{}_{}",
+        l.codec_field_id(carrier),
+        filters::to_snake_case(flag.to_string())
+    )
 }
 
 /// Whether the codec a value holds as `alias` is one the C++ printer prints,
@@ -363,6 +368,9 @@ fn derivation_unlowered(derived: &crate::forge::encode_plan::Derived<'_>) -> Opt
         // The tag of the arm the value holds, into the field or the flag that
         // holds it.
         (ElementId::Field(_) | ElementId::Flag { .. }, Derive::VariantTag) => None,
+        // The flag a chain's entry is closed by, which the walk of the chain
+        // sets on each entry as it writes it.
+        (ElementId::Flag { .. }, Derive::ChainContinuation) => None,
         (ElementId::Field(id), _) => Some(format!("`{id}`, a tag or a flag the encode derives")),
         _ => Some(format!("`{element}`, a flag the encode derives")),
     }
@@ -949,11 +957,32 @@ pub(super) fn render(
     // The flag inputs the caller hands the encode (docs/adr/0065 §6 R4a), one
     // byte each, named as the template's `encode` names them.
     let input_name = |name: &str| filters::to_snake_case(name.to_string());
-    let input_params: String = plan
+    let mut input_params: String = plan
         .given
         .iter()
         .map(|input| format!(", std::uint8_t {}", input_name(&input.name)))
         .collect();
+    // The flags a parent may set in place of the ones a value presents, which
+    // a chain holding this codec sets on each entry it writes; a caller that
+    // sets none passes nothing.
+    if !plan.overridable.is_empty() {
+        let mut members = String::new();
+        for (carrier, def) in &plan.overridable {
+            members.push_str(&format!(
+                "    /// The `{}` flag of `{}`, where a parent sets it.\n    std::optional<bool> {};\n",
+                def.name,
+                carrier.id,
+                override_member(l, &carrier.id, &def.name)
+            ));
+        }
+        before.push_str(&format!(
+            "/// One-bit flags of `{struct_name}` a parent may set in place of the ones a value\n\
+             /// presents, such as the flag a chain whose entries are `{struct_name}` ends them\n\
+             /// on, which the chain derives from where each entry stands.\n\
+             struct Overrides {{\n{members}}};\n\n"
+        ));
+        input_params.push_str(", const Overrides& overrides = Overrides{}");
+    }
     before.push_str(&format!(
         "/// The encode of `{struct_name}` over any source of it: each element read\n\
          /// through `source`, written as the plan lays it out (docs/adr/0081). It\n\
@@ -1182,8 +1211,21 @@ pub(super) fn render(
                     }
                 }
             }
+            // Set by the walk of the chain that holds the entry, not here.
+            (ElementId::Flag { .. }, Derive::ChainContinuation) => {}
             _ => unreachable!("`unlowered` refuses a derivation the printer does not lower"),
         }
+    }
+    // A flag a parent sets in place of the one the value presents (the flag a
+    // chain's entries end on), folded last: what the parent says is what the
+    // wire holds.
+    for (carrier, def) in &plan.overridable {
+        let name = override_member(l, &carrier.id, &def.name);
+        folds.entry(carrier.id.as_str()).or_default().push(Fold {
+            flag: def.name.clone(),
+            bits: format!("static_cast<std::uint64_t>(*overrides.{name})"),
+            present: Some(format!("overrides.{name}.has_value()")),
+        });
     }
     for (carrier_id, flags) in &folds {
         let carrier = plan
@@ -1392,7 +1434,7 @@ pub(super) fn render(
             }
             // A field in turn; a list among them is walked as its bit size
             // says, `unlowered` having refused every walk it does not lower.
-            Write::Streamed { field, guard, .. } => {
+            Write::Streamed { field, guard, list } => {
                 let body = match &field.bit_size {
                     // A body, written by its codec's encode over the source the
                     // value read it as, with the inputs that codec is handed.
@@ -1413,14 +1455,33 @@ pub(super) fn render(
                         let (held, _) = element(field)
                             .and_then(|e| e.list.as_ref())
                             .expect("a list field is a list the value presents");
-                        format!(
-                            "        for (const auto& _x : _r_{}) {{\n\
-                             \x20           if (auto _e = {}::Wire::encode_source(_x, w{}); _e) return _e;\n\
-                             \x20       }}\n",
-                            l.codec_field_id(&field.id),
-                            held.namespace,
-                            handed(&held.alias)
-                        )
+                        let name = l.codec_field_id(&field.id);
+                        match list.as_ref().and_then(|list| list.ends.as_ref()) {
+                            // A chain sets on each entry but the last the flag
+                            // its entries end on, in place of the one the entry
+                            // presents.
+                            Some((carrier, flag)) => format!(
+                                "        {{\n\
+                                 \x20           std::size_t _left_{name} = _r_{name}.size();\n\
+                                 \x20           for (const auto& _x : _r_{name}) {{\n\
+                                 \x20               --_left_{name};\n\
+                                 \x20               {ns}::Overrides _o_{name}{{}};\n\
+                                 \x20               _o_{name}.{member} = _left_{name} != 0;\n\
+                                 \x20               if (auto _e = {ns}::Wire::encode_source(_x, w{handed}, _o_{name}); _e) return _e;\n\
+                                 \x20           }}\n\
+                                 \x20       }}\n",
+                                ns = held.namespace,
+                                member = override_member(l, carrier, flag),
+                                handed = handed(&held.alias)
+                            ),
+                            None => format!(
+                                "        for (const auto& _x : _r_{name}) {{\n\
+                                 \x20           if (auto _e = {}::Wire::encode_source(_x, w{}); _e) return _e;\n\
+                                 \x20       }}\n",
+                                held.namespace,
+                                handed(&held.alias)
+                            ),
+                        }
                     }
                     BitSize::Fixed { .. } => fixed_write(plan, field, &read(field)),
                     BitSize::Tail | BitSize::LengthRef => bytes_write(field),

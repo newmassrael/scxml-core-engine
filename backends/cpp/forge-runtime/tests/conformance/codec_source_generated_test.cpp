@@ -25,6 +25,7 @@
 // derives the bit; codec_length_ref_dotted_basic.scxml (a carrier whose high
 // nibble holds the length of the payload after it) derives the nibble.
 
+#include "codec_chain_depth_plain.h"
 #include "codec_embed_basic.h"
 #include "codec_length_ref.h"
 #include "codec_length_ref_dotted_basic.h"
@@ -653,6 +654,33 @@ void a_variant_derives_its_tag_from_the_arm_it_holds() {
           "a decoded value holds the arm its tag names");
 }
 
+namespace DepthPlain = ::SCE::Generated::CodecChainDepthPlain;
+namespace DepthEntryNs = ::SCE::Generated::CodecChainDepthEntry;
+using DepthEntry = DepthEntryNs::CodecChainDepthEntry;
+
+void a_chain_sets_the_flag_its_entries_end_on() {
+    // The first entry presents Z clear and the last presents it set; the
+    // chain sets it on every entry but the last, whatever each presents.
+    using Chain = decltype(std::declval<const DepthPlain::CodecChainDepthPlain &>().extensions());
+    const std::vector<DepthEntry> entries{DepthEntry{0x01}, DepthEntry{0x82}};
+    const auto chain = Chain::make(entries);
+    CHECK(chain.has_value(), "two entries lie within the chain's bound");
+    if (!chain) {
+        return;
+    }
+    const DepthPlain::CodecChainDepthPlain value{0x00, *chain};
+    CHECK(value.encode_to_vec() == (std::vector<std::uint8_t>{0x00, 0x81, 0x02}),
+          "Z is set on the first entry and cleared on the last");
+
+    std::vector<std::uint8_t> out;
+    ::SCE::Forge::VectorSink sink(out);
+    DepthEntryNs::Overrides closed{};
+    closed.header_z = false;
+    CHECK(!DepthEntryNs::Wire::encode_source(DepthEntry{0x83}, sink, closed).has_value() &&
+              out == std::vector<std::uint8_t>{0x03},
+          "a flag a parent sets replaces the one the entry presents");
+}
+
 void encode_source_reports_the_sinks_failure() {
     std::uint8_t buffer[3] = {};
     ::SCE::Forge::SpanSink sink(buffer, sizeof buffer);
@@ -675,6 +703,7 @@ int main() {
     an_input_the_value_says_is_read_off_the_value_and_handed_on();
     a_list_is_written_entry_by_entry_and_its_count_derived();
     a_variant_derives_its_tag_from_the_arm_it_holds();
+    a_chain_sets_the_flag_its_entries_end_on();
     encode_source_reports_the_sinks_failure();
     if (failures != 0) {
         std::fprintf(stderr, "codec_source_generated_test: %d failure(s)\n", failures);

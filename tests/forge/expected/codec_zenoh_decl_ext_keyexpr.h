@@ -83,19 +83,37 @@ template <class S>
 struct is_nothrow_source<S, std::enable_if_t<is_source<S>::value>>
     : std::bool_constant<noexcept(::SCE::Forge::Detail::converts_to<uint8_t>(source::outer_header(std::declval<const S&>()))) && noexcept(source::inner(std::declval<const S&>())) && ::SCE::Generated::CodecZenohDeclExtKeyexprInner::is_nothrow_source<std::decay_t<decltype(source::inner(std::declval<const S&>()))>>::value> {};
 
+/// One-bit flags of `CodecZenohDeclExtKeyexpr` a parent may set in place of the ones a value
+/// presents, such as the flag a chain whose entries are `CodecZenohDeclExtKeyexpr` ends them
+/// on, which the chain derives from where each entry stands.
+struct Overrides {
+    /// The `M` flag of `outer_header`, where a parent sets it.
+    std::optional<bool> outer_header_m;
+    /// The `Z` flag of `outer_header`, where a parent sets it.
+    std::optional<bool> outer_header_z;
+};
+
 /// The encode of `CodecZenohDeclExtKeyexpr` over any source of it: each element read
 /// through `source`, written as the plan lays it out (docs/adr/0081). It
 /// refuses nothing; what it returns is the sink's own failure, and it
 /// throws only what a read of `src` throws.
 struct Wire {
     template <class S>
-    [[nodiscard]] static std::optional<::SCE::Forge::CodecError> encode_source(const S& src, ::SCE::Forge::SceSink& w) noexcept(is_nothrow_source<S>::value) {
+    [[nodiscard]] static std::optional<::SCE::Forge::CodecError> encode_source(const S& src, ::SCE::Forge::SceSink& w, const Overrides& overrides = Overrides{}) noexcept(is_nothrow_source<S>::value) {
         static_assert(is_source<S>::value, "S presents every element of CodecZenohDeclExtKeyexpr: outer_header, inner");
         const auto& _r_inner = source::inner(src);
+        std::uint64_t _f_outer_header = static_cast<std::uint64_t>(source::outer_header(src));
+        if (overrides.outer_header_m.has_value()) {
+            _f_outer_header = (_f_outer_header & ~0x10ull) | (static_cast<std::uint64_t>(*overrides.outer_header_m) << 4);
+        }
+        if (overrides.outer_header_z.has_value()) {
+            _f_outer_header = (_f_outer_header & ~0x80ull) | (static_cast<std::uint64_t>(*overrides.outer_header_z) << 7);
+        }
+        const uint8_t _c_outer_header = static_cast<uint8_t>(_f_outer_header);
         ::SCE::Forge::CountingSink _k_inner;
         (void)::SCE::Generated::CodecZenohDeclExtKeyexprInner::Wire::encode_source(_r_inner, _k_inner);
         const uint64_t _d_total_length = static_cast<uint64_t>(_k_inner.position());
-        if (auto _e = w.write_u8(static_cast<std::uint8_t>(source::outer_header(src))); _e) return _e;
+        if (auto _e = w.write_u8(static_cast<std::uint8_t>(_c_outer_header)); _e) return _e;
         if (auto _e = w.write_vle_u64(static_cast<std::uint64_t>(_d_total_length)); _e) return _e;
         if (auto _e = ::SCE::Generated::CodecZenohDeclExtKeyexprInner::Wire::encode_source(_r_inner, w); _e) return _e;
         return std::nullopt;

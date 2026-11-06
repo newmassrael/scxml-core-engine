@@ -61,15 +61,43 @@ template <class S>
 struct is_nothrow_source<S, std::enable_if_t<is_source<S>::value>>
     : std::bool_constant<noexcept(::SCE::Forge::Detail::converts_to<uint8_t>(source::header(std::declval<const S&>())))> {};
 
+/// One-bit flags of `CodecFlagsBasic` a parent may set in place of the ones a value
+/// presents, such as the flag a chain whose entries are `CodecFlagsBasic` ends them
+/// on, which the chain derives from where each entry stands.
+struct Overrides {
+    /// The `reliable` flag of `header`, where a parent sets it.
+    std::optional<bool> header_reliable;
+    /// The `more` flag of `header`, where a parent sets it.
+    std::optional<bool> header_more;
+    /// The `drop` flag of `header`, where a parent sets it.
+    std::optional<bool> header_drop;
+    /// The `first` flag of `header`, where a parent sets it.
+    std::optional<bool> header_first;
+};
+
 /// The encode of `CodecFlagsBasic` over any source of it: each element read
 /// through `source`, written as the plan lays it out (docs/adr/0081). It
 /// refuses nothing; what it returns is the sink's own failure, and it
 /// throws only what a read of `src` throws.
 struct Wire {
     template <class S>
-    [[nodiscard]] static std::optional<::SCE::Forge::CodecError> encode_source(const S& src, ::SCE::Forge::SceSink& w) noexcept(is_nothrow_source<S>::value) {
+    [[nodiscard]] static std::optional<::SCE::Forge::CodecError> encode_source(const S& src, ::SCE::Forge::SceSink& w, const Overrides& overrides = Overrides{}) noexcept(is_nothrow_source<S>::value) {
         static_assert(is_source<S>::value, "S presents every element of CodecFlagsBasic: header");
-        if (auto _e = w.write_u8(static_cast<std::uint8_t>(source::header(src))); _e) return _e;
+        std::uint64_t _f_header = static_cast<std::uint64_t>(source::header(src));
+        if (overrides.header_reliable.has_value()) {
+            _f_header = (_f_header & ~0x80ull) | (static_cast<std::uint64_t>(*overrides.header_reliable) << 7);
+        }
+        if (overrides.header_more.has_value()) {
+            _f_header = (_f_header & ~0x40ull) | (static_cast<std::uint64_t>(*overrides.header_more) << 6);
+        }
+        if (overrides.header_drop.has_value()) {
+            _f_header = (_f_header & ~0x20ull) | (static_cast<std::uint64_t>(*overrides.header_drop) << 5);
+        }
+        if (overrides.header_first.has_value()) {
+            _f_header = (_f_header & ~0x10ull) | (static_cast<std::uint64_t>(*overrides.header_first) << 4);
+        }
+        const uint8_t _c_header = static_cast<uint8_t>(_f_header);
+        if (auto _e = w.write_u8(static_cast<std::uint8_t>(_c_header)); _e) return _e;
         return std::nullopt;
     }
 };

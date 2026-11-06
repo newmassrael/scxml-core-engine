@@ -1232,6 +1232,16 @@ The sections above apply.
 - A source presents its body as any `std::variant` whose alternative `i` is a source of arm `i`'s codec (the
   catch-all alternative has `tag` and `body` members), so your own arm types encode as the generated ones do.
 
+## A printed C++ chain sets the flag its entries end on (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C++ tree is regenerated after it. It moves the chains whose
+entries are printed and end on a flag the chain sets (1 more codec of the resources, 81 in all).
+
+- The end flag of each entry (`Z`) is set by the chain from where the entry stands, whatever the entry presents:
+  set the entries' other bits and leave `Z` to the chain.
+- A printed codec a parent may set a flag of has `<Codec namespace>::Overrides`, and its `Wire::encode_source`
+  takes one last (empty by default). Pass one to set that flag yourself where you write the codec as an entry by hand.
+
 ## A payload schema states its keys in the order the document declares them (ADR 0087 §1.1)
 
 Landing: the commit that adds this section; every tree holding a `JSON_SCHEMA` constant or a GBNF table (the Rust,
