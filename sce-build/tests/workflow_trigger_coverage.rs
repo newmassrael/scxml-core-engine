@@ -118,6 +118,12 @@ const UNFILTERABLE_GATES: &[&str] = &[
     // file is supposed to buy (`unfiltered-workflow-self` in
     // tools/git-hooks/gate_registry.py).
     "ci_supersession_policy",
+    // Reads every `.yml` in `.github/workflows/` for a runner label GitHub
+    // moves (`ubuntu-latest`), so a workflow added anywhere changes what it
+    // reads — and a new lane that copies the label from an old example is the
+    // case it exists for. A `paths:` filter over the workflows that exist
+    // names the lanes already pinned and cannot start on the one that arrives.
+    "a_workflow_names_the_image_it_runs_on",
     "cmake_option_guard_scope",
     // Asks `git ls-files` for every tracked CMake file and refuses a plan of
     // a generation that no request of the same file asks ahead, which the
