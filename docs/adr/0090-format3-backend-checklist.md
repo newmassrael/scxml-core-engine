@@ -318,6 +318,27 @@ disagree.
       the act's own session;
     - a queued event stored so is not refused. It is read as the pair as saved with no sender: the root event
       `question` of `static_invoke_tree_working_origins.json`.
+11. **R5: a format-1 or format-2 act's stored origin must name a session.** This replaces the prefix test of item
+    10 with one check, of which the prefix alone is a case:
+    - an empty stored `origin` is unchanged: the holder's own send in format 2 (its record's `sessionid`), the
+      restoring machine's own send in format 1;
+    - any other stored `origin` of a `raise`, `parent` or `child` act is read by the backend's stored-sender reader
+      (`readStoredSender`, `read_stored_sender`, `ReadStoredSender`, `sce_saved_origin_read`): the id an SCXML
+      location names, decoded, or the text itself. That sender must pass the Nmtoken check the backend applies to
+      a format-3 `sender`, or the text is refused. Python checks the read before `or session_id` falls back to
+      the holder;
+    - the separate prefix test is removed. The reader gives back `sce://scxml/` for the prefix alone, and `/` is no
+      name character, so one check covers it;
+    - the reason, the same words in every backend, with `<what>` the backend's path (`pending[0]`) and `<kind>`
+      the act's kind:
+      `'<what>.origin' is '<stored>', which names no session: a <kind> act is a session's own send, and its stored
+      origin is that session's id or its SCXML location`;
+    - `internal` acts and queued events are unchanged. A queued event stored as `mesh://x` or as the prefix alone
+      is row 4, the pair as saved with no sender;
+    - tests: the prefix-alone act test of each backend becomes a table of `sce://scxml/`, `mesh://elsewhere` and
+      `sce://scxml/a%20b`, each refused with the reason, beside one read neighbour (`peer:1` or
+      `sce://scxml/peer%3A1`, read as `peer:1`), plus a format-1 case where the format-1 reader is a path of its
+      own. The oracle is `format_2_act_sender` in `sce-build/tests/saved_state_schema.rs`.
 
 ## What the round merges and runs once
 

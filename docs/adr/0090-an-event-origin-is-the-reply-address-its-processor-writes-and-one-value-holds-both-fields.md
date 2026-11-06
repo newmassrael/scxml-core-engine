@@ -196,11 +196,20 @@ text, and no writer stored it in either:
   text without `://`. It is read as the pair it stores, `{its saved type or the SCXML type, "sce://scxml/"}`, sent
   by no session, which is how the stored-origin readers already read it. A reply sent there reaches no session, as
   it would have before the text was saved.
-- **In a `raise`, `parent` or `child` act, of format 1 or format 2,** it is refused. Such an act is a session's
-  own send, and its stored `origin` must name that session. It may do so by an id, by a location with an id, or by
-  nothing: the holder in format 2, or the restoring machine in format 1, as above. The prefix alone is none of these,
-  and it is not an Nmtoken. Reading it as a sender would give the act a sender that is no session id. The empty
-  `origin` is a different case, because it names the act's own session in both formats.
+- **In a `raise`, `parent` or `child` act, of format 1 or format 2,** it is refused, as one case of the rule for
+  every such act. The act is a session's own send, and its stored `origin` must name that session: by an id, by a
+  location with an id, or by nothing (the holder in format 2, or the restoring machine in format 1, as above). An
+  empty `origin` is the last of these. Any other stored `origin` is read by the stored-sender reader: the id an
+  SCXML location names, decoded, or the text itself. That sender must be an XML Nmtoken, held to the check a reader
+  applies to a format-3 `sender`; otherwise the text is refused, because reading it would give the act a sender
+  that is no session id. The prefix alone is read as itself, and `/` is no name character. An address of another
+  scheme (`mesh://elsewhere`) is refused the same way, and so is a location whose id decodes to no Nmtoken
+  (`sce://scxml/a%20b`, which is `a b`). The stored `origin` of an `internal` act is not read, as above. Every
+  backend refuses with the same reason, where `<what>` is the act's path (`pending[0]`) and `<kind>` its `act`:
+
+  ```text
+  '<what>.origin' is '<stored>', which names no session: a <kind> act is a session's own send, and its stored origin is that session's id or its SCXML location
+  ```
 
 This reading is one function, shared by every backend: the stored-origin reader each runtime already holds. It is
 `IOProcessorHelper::readStoredOrigin` and `readStoredSender` in C++, with their ports in the other runtimes and
