@@ -304,9 +304,13 @@ jobs:
           ran=$((total - skipped))
           pass_rate=$(awk "BEGIN {printf \"%.1f\", ($ran > 0) ? ($passed / $ran) * 100 : 0}")
 
-          # Count each engine's cases by the result each testcase carries
+          # Count each engine's cases by the result each testcase carries.
+          # The runner writes one testcase a line with classname before
+          # result (W3CTestRunner.cpp), so one grep counts it: no pipeline
+          # to swallow a read failure; `|| true` covers only "no match",
+          # where grep -c still prints 0.
           engine_count() {
-            grep "classname=\"$1\"" w3c_test_results.xml | grep -c "$2" || true
+            grep -c "classname=\"$1\".*$2" w3c_test_results.xml || true
           }
           interpreter_total=$(engine_count W3C_Interpreter 'result="')
           interpreter_passed=$(engine_count W3C_Interpreter 'result="PASS"')
