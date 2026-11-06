@@ -539,26 +539,45 @@ SCE_C_UNUSED static inline bool sce_event_origin_scxml(sce_event_origin_t *origi
     return true;
 }
 
-/* The bytes a session id is held in where an event names its sender (the
-   `sender` field beside the origin, docs/adr/0090, section 1): any session of a
-   build, whose ids every machine asserts fit `SCE_MAX_SESSION_ID_LEN`. */
-#define SCE_SENDER_LEN SCE_MAX_SESSION_ID_LEN
+/* docs/adr/0090, section 1: the session that sent an event, the id the
+   session-keyed lookups (`<finalize>`, a saved state's `origin`) read, written
+   into `dst` of `cap` bytes.
 
-/* docs/adr/0090, section 2: stamp an event a session sends — the SCXML pair of
-   `sender_session_id` into `origin`, the id itself into `sender` (of
-   `SCE_SENDER_LEN` bytes), which the session-keyed lookups read. False, leaving
-   both empty, when either does not fit. */
-SCE_C_UNUSED static inline bool sce_event_sent_by(sce_event_origin_t *origin, char *sender,
-                                                  const char *sender_session_id) {
-    const char *id = sender_session_id != NULL ? sender_session_id : "";
-    const size_t id_len = strlen(id);
-    if (id_len >= (size_t)SCE_SENDER_LEN || !sce_event_origin_scxml(origin, id)) {
-        sce_event_origin_clear(origin);
-        sender[0] = '\0';
+   Not stored beside the pair on this backend: the only processor that sets a
+   sender here is the SCXML one, and the sender it sets is exactly the session
+   its location names, so the id is read back out of the pair where it is
+   needed instead of costing every queued event a second copy. False, leaving
+   `dst` empty, for an event no SCXML session sent: one of another processor,
+   one whose address is not an SCXML location (a Mesh peer's `mesh://`), and
+   one with no origin. */
+SCE_C_UNUSED static inline bool sce_event_origin_sender(const sce_event_origin_t *origin, char *dst, size_t cap) {
+    if (cap == 0u) {
         return false;
     }
-    memcpy(sender, id, id_len + 1u);
-    return true;
+    dst[0] = '\0';
+    if (origin == NULL || strcmp(origin->processor, SCE_SCXML_EVENT_PROCESSOR_TYPE) != 0) {
+        return false;
+    }
+    return sce_session_id_from_scxml_location(dst, cap, origin->address);
+}
+
+/* The canonical type URI of the BasicHTTP Event I/O Processor. */
+#define SCE_BASIC_HTTP_EVENT_PROCESSOR_TYPE "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
+
+/* docs/adr/0090, section 4: the processor a `<send type>` spelling names. The
+   short aliases `_ioprocessors` files each processor under (`scxml`,
+   `basichttp`) are read as their type URIs, so the type a send is checked
+   against, and the origintype its event carries, is never the author's
+   spelling (C++ `IOProcessorHelper::canonicalProcessorType`, the build's
+   `canonical_send_type`). Any other value is answered as written. */
+SCE_C_UNUSED static inline const char *sce_canonical_processor_type(const char *send_type) {
+    if (send_type != NULL && strcmp(send_type, "scxml") == 0) {
+        return SCE_SCXML_EVENT_PROCESSOR_TYPE;
+    }
+    if (send_type != NULL && strcmp(send_type, "basichttp") == 0) {
+        return SCE_BASIC_HTTP_EVENT_PROCESSOR_TYPE;
+    }
+    return send_type;
 }
 
 /* §scxml-6.4: the function a child session reaches the session that invoked it
@@ -590,11 +609,10 @@ typedef struct sce_forwarded_event_s {
     char name[SCE_MAX_ID_LEN];
     char data[SCE_MAX_DATA_LEN];
     /* `_event.origin` and `_event.origintype`, the one pair the delivering
-       processor wrote (docs/adr/0090), and the sending session's id beside
-       it: empty unless an SCXML session sent the event. A host posting an
-       event by name names its origin here in its own terms, or none. */
+       processor wrote (docs/adr/0090); the session that sent it is read out of
+       it (`sce_event_origin_sender`). A host posting an event by name names
+       its origin here in its own terms, or none. */
     sce_event_origin_t origin;
-    char sender[SCE_SENDER_LEN];
     char send_id[SCE_MAX_ID_LEN];
     char type[SCE_MAX_EVENT_TYPE_LEN];
     char invoke_id[SCE_MAX_ID_LEN];

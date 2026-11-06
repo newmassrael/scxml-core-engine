@@ -1327,11 +1327,16 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                         {{ send_id_c }});
                     return;
                 }
+                /* docs/adr/0090, section 4: an alias `_ioprocessors` files a
+                   processor under (`scxml`, `basichttp`) names that processor,
+                   read as its type URI by the one resolver the runtime holds;
+                   the event's origintype is the URI either way. */
+                const char *_send_type = sce_canonical_processor_type(_send_type_buf);
 {% if is_http %}
-                if (strcmp(_send_type_buf, "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor") != 0) {
+                if (strcmp(_send_type, SCE_BASIC_HTTP_EVENT_PROCESSOR_TYPE) != 0) {
 {% else %}
-                if (_send_type_buf[0] != '\0'
-                    && strcmp(_send_type_buf, "http://www.w3.org/TR/scxml/#SCXMLEventProcessor") != 0) {
+                if (_send_type[0] != '\0'
+                    && strcmp(_send_type, SCE_SCXML_EVENT_PROCESSOR_TYPE) != 0) {
 {% endif %}
                     {{ P }}_raise_platform_error_with_send_id(
                         sm, {{ PU }}_EVENT_ERROR_EXECUTION,
@@ -1761,7 +1766,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
 {% if meta_send_id %}
                             sce_copy_bounded_id(_send_fwd.send_id, {{ meta_send_id }});
 {% endif %}
-                            (void)sce_event_sent_by(&_send_fwd.origin, _send_fwd.sender, sm->session_id);
+                            (void)sce_event_origin_scxml(&_send_fwd.origin, sm->session_id);
                             (void)deliver_to_invocation(sm, _send_invoke, &_send_fwd);
 {% endif %}
                             break;
@@ -1879,7 +1884,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                        pair of this session, the sender, where it builds the
                        event. One on the internal queue is an internal event,
                        whose origin it leaves blank (§scxml-5.10.1). */
-                    (void)sce_event_sent_by(&_send_evt.origin, _send_evt.sender, sm->session_id);
+                    (void)sce_event_origin_scxml(&_send_evt.origin, sm->session_id);
 {% endif %}
 {% if action.eventexpr %}
                     if (_send_evt_matched) {
@@ -1910,8 +1915,8 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                     sce_copy_bounded_id(_send_fwd.send_id, {{ meta_send_id }});
 {% endif %}
                     /* docs/adr/0090, section 2: the child reads this session's
-                       pair as the event's origin, and its sender beside it. */
-                    (void)sce_event_sent_by(&_send_fwd.origin, _send_fwd.sender, sm->session_id);
+                       pair as the event's origin. */
+                    (void)sce_event_origin_scxml(&_send_fwd.origin, sm->session_id);
 {% if report_missing %}
                     if (!deliver_to_invocation(sm, "{{ invoke_info.invoke_id | escape_c }}", &_send_fwd)) {
                         {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
@@ -3841,10 +3846,9 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise_external_forwarded({{ csy
     {{ csym_prefix }}{{ model.name }}_event_with_meta_t evt;
     memset(&evt, 0, sizeof(evt));
     sce_copy_bounded_data(evt.data, fwd->data);
-    /* docs/adr/0090: the pair and the sender as the processor that built the
-       event wrote them, unchanged. */
+    /* docs/adr/0090: the pair as the processor that built the event wrote it,
+       unchanged, and with it the session that sent it. */
     evt.origin = fwd->origin;
-    memcpy(evt.sender, fwd->sender, sizeof(evt.sender));
     sce_copy_bounded_id(evt.send_id, fwd->send_id);
     sce_copy_bounded_event_type(evt.type, fwd->type);
     sce_copy_bounded_id(evt.invoke_id, fwd->invoke_id);
@@ -4426,10 +4430,9 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_forward_to_autoforward_c
     sce_forwarded_event_t fwd;
     memset(&fwd, 0, sizeof(fwd));
     sce_copy_bounded_data(fwd.data, evt->data);
-    /* docs/adr/0090, section 2: autoforward copies the origin and the sender
-       of the event it forwards, unchanged. */
+    /* docs/adr/0090, section 2: autoforward copies the origin of the event it
+       forwards unchanged, and with it the session that sent it. */
     fwd.origin = evt->origin;
-    memcpy(fwd.sender, evt->sender, sizeof(fwd.sender));
     sce_copy_bounded_id(fwd.send_id, evt->send_id);
     sce_copy_bounded_event_type(fwd.type, evt->type);
     sce_copy_bounded_id(fwd.invoke_id, evt->invoke_id);
@@ -4755,7 +4758,8 @@ SCE_SM_FN static bool process_next_external_event({{ csym_prefix }}{{ model.name
            subsequent transition cond evaluates against post-finalize
            state. The match is by the event's sender against the running
            child's session id (docs/adr/0090, section 1: the session-keyed
-           lookups read `sender`, never the origin's address), so events
+           lookups read `sender`, here the session the event's SCXML
+           location names, read out of the pair once), so events
            arriving from one invoke don't trigger a sibling's finalize (the
            test234 parallel-finalize fixture pins this isolation), and an
            event a child of an earlier start sent does not run the
@@ -4765,18 +4769,22 @@ SCE_SM_FN static bool process_next_external_event({{ csym_prefix }}{{ model.name
            equivalent point; the same content was lowered to JS by the
            parser, so `to_lua_script` ports it across the syntax overlap
            (Lua and JS both spell `Var = _event.data.aParam` the same). */
+        {
+            char _evt_sender[SCE_MAX_SESSION_ID_LEN];
+            if (sce_event_origin_sender(&evt.origin, _evt_sender, sizeof(_evt_sender))) {
         {% for state_id, state in model.states | dictsort %}
         {% for invoke_info in state.invokes | scxml %}
         {% if invoke_info.finalize_content %}
-        if (sm->child_{{ invoke_info.field_suffix }}_active
-            && evt.sender[0] != '\0'
-            && strcmp(evt.sender, sm->child_{{ invoke_info.field_suffix }}.session_id) == 0) {
-            (void)luaL_dostring(sm->L,
-                {{ invoke_info.finalize_content | to_lua_script | c_text_expr }});
-        }
+                if (sm->child_{{ invoke_info.field_suffix }}_active
+                    && strcmp(_evt_sender, sm->child_{{ invoke_info.field_suffix }}.session_id) == 0) {
+                    (void)luaL_dostring(sm->L,
+                        {{ invoke_info.finalize_content | to_lua_script | c_text_expr }});
+                }
         {% endif %}
         {% endfor %}
         {% endfor %}
+            }
+        }
         {% endif %}
 
         {% if model.has_autoforward_invoke %}
@@ -5222,7 +5230,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
             /* docs/adr/0090, section 2: a waiting send is always this
                session's, so the event built when it comes due names this
                session as its sender. */
-            (void)sce_event_sent_by(&_ready_fwd.origin, _ready_fwd.sender, sm->session_id);
+            (void)sce_event_origin_scxml(&_ready_fwd.origin, sm->session_id);
 {% if 'error.communication' in model.events %}
             if (!deliver_to_invocation(sm, ready.route_invoke, &_ready_fwd)) {
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
@@ -5273,7 +5281,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
         if (ready.route == (uint8_t){{ csym_prefix | upper }}{{ model.name | upper }}_SCHED_ROUTE_INTERNAL) {
             {{ csym_prefix }}{{ model.name }}_raise(sm, &evt);
         } else {
-            (void)sce_event_sent_by(&evt.origin, evt.sender, sm->session_id);
+            (void)sce_event_origin_scxml(&evt.origin, sm->session_id);
             {{ csym_prefix }}{{ model.name }}_raise_external(sm, &evt);
         }
 

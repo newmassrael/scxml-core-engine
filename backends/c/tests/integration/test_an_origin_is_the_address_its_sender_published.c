@@ -6,7 +6,7 @@
 // self-send, a child's send to its parent and a parent's send to its child, and
 // a reply to it arrives — C11 AOT.
 //
-// The machine writes the pair where it builds the event (`sce_event_sent_by`,
+// The machine writes the pair where it builds the event (`sce_event_origin_scxml`,
 // at the send sites and in the parent's dispatch shim), spelled by the one
 // encoder its `_ioprocessors` entry is spelled by, and a child reaches its
 // parent at the parent's published location as it reaches it at `#_parent`.

@@ -1734,6 +1734,35 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # W3C SCXML 6.2 + 5.10.1 (docs/adr/0090, section 4): a `typeexpr` that
+    # evaluates to the alias `scxml` names the SCXML processor, whose URI the
+    # event reads as its origintype. A document of this channel alone, beside the
+    # C test: the other channels resolve the alias with their own resolver.
+    sce_generate_static_integration_c_test(a_type_alias_names_its_processor
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_CURRENT_SOURCE_DIR}/integration_resources/a_type_alias_names_its_processor/a_type_alias_names_its_processor.scxml"
+    )
+    add_executable(sce_c_integration_a_type_alias_names_its_processor
+        integration/test_a_type_alias_names_its_processor.c
+        ${INTEGRATION_C_TEST_a_type_alias_names_its_processor_SOURCES}
+    )
+    sce_c_link_runtime(sce_c_integration_a_type_alias_names_its_processor)
+    target_include_directories(sce_c_integration_a_type_alias_names_its_processor PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_a_type_alias_names_its_processor PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_a_type_alias_names_its_processor
+        COMMAND sce_c_integration_a_type_alias_names_its_processor
+    )
+    set_tests_properties(c11_integration_a_type_alias_names_its_processor PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # SCE_MESH.md §mesh-19: a `targetexpr` that evaluates to a Mesh peer
     # reaches the host's Mesh router, and with none registered is
     # error.execution. The machine carries the host-send surface because the

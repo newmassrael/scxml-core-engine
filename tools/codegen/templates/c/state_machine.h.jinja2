@@ -408,13 +408,12 @@ typedef struct {{ csym_prefix }}{{ model.name }}_event_with_meta {
     /* §scxml-5.10.1: `_event.origin` and `_event.origintype`, the one pair the
        delivering processor wrote where it built the event (docs/adr/0090,
        `sce_event_origin_t` in `sce/types.h`); none, both empty, for an event
-       no processor stamped. */
+       no processor stamped. The session that sent it, which `<finalize>`
+       finds the child an event came from by, is the one its SCXML location
+       names, read out of the pair where it is needed
+       (`sce_event_origin_sender`) rather than held twice by every queued
+       event. */
     sce_event_origin_t origin;
-    /* The id of the session that sent the event, set only by the SCXML
-       processor (`sce_event_sent_by`). Not an `_event` field: `<finalize>`
-       finds the child an event came from by it, never by the origin's
-       address. */
-    char sender[SCE_SENDER_LEN];
     char send_id[SCE_MAX_ID_LEN];
     char type[SCE_MAX_EVENT_TYPE_LEN];
     char invoke_id[SCE_MAX_ID_LEN];
@@ -2313,10 +2312,11 @@ bool {{ csym_prefix }}{{ model.name }}_bind_session_id({{ csym_prefix }}{{ model
 
 {% endif %}
 /* ── Compile-time invariants ──────────────────────────────────────── */
-/* docs/adr/0090: every event this session sends names it as its sender, held in
-   `SCE_SENDER_LEN` bytes by whichever machine of the build receives it, and
-   carries its location as an address of `SCE_MAX_URI_LEN` bytes. The id it
-   draws is its name and digits, which the location keeps as they are. */
+/* docs/adr/0090: every event this session sends carries its location as an
+   address of `SCE_MAX_URI_LEN` bytes, and whichever machine of the build
+   receives it reads the id back out of it into `SCE_MAX_SESSION_ID_LEN` bytes.
+   The id it draws is its name and digits, which the location keeps as they
+   are. */
 SCE_STATIC_ASSERT(SCE_MAX_SESSION_ID_LEN >= (int)(sizeof("{{ model.name | escape_c }}_session_") + 20u),
                   "SCE_MAX_SESSION_ID_LEN too small for the id this machine draws for itself");
 SCE_STATIC_ASSERT(SCE_MAX_URI_LEN >= (int)(sizeof("sce://scxml/{{ model.name | escape_c }}_session_") + 20u),

@@ -599,8 +599,8 @@ SCE_SM_FN static bool {{ _t }}_saved_events(const sce_saved_session_t *s, {{ _t 
         }
         {
             /* docs/adr/0090, section 7: the stored `origin` and `origintype` are read back as
-               the pair and the sender they store — a session's id, or the location this
-               backend once stored in its place, as that session's pair. */
+               the pair they store — a session's id, or the location this backend once stored
+               in its place, as that session's pair; never half a pair. */
             char origin_text[SCE_MAX_URI_LEN];
             char origin_type[SCE_MAX_ID_LEN];
             (void)snprintf(field, sizeof(field), "%s.origin", what);
@@ -611,8 +611,7 @@ SCE_SM_FN static bool {{ _t }}_saved_events(const sce_saved_session_t *s, {{ _t 
             if (!sce_saved_text_into(event.origin_type, field, origin_type, sizeof(origin_type), err)) {
                 return false;
             }
-            if (!sce_saved_origin_read(origin_text, origin_type, &queued.origin, queued.sender,
-                                       sizeof(queued.sender))) {
+            if (!sce_saved_origin_read(origin_text, origin_type, &queued.origin)) {
                 return sce_saved_refuse(err,
                                         "%s's origin '%s' of type '%s' names an address or a session id longer "
                                         "than this build holds (SCE_MAX_URI_LEN, SCE_MAX_SESSION_ID_LEN)",
@@ -1659,6 +1658,7 @@ bool {{ _t }}_save_members(const {{ _t }}_t *sm, int64_t wall_now_ms, sce_jw_t *
         for (uint16_t i = 0u; i < sm->external_queue.count; ++i) {
             const {{ _t }}_event_with_meta_t *queued = &sm->external_queue.buf[at];
             sce_saved_event_out_t event;
+            char sender[SCE_MAX_SESSION_ID_LEN];
             memset(&event, 0, sizeof(event));
             /* §scxml-5.10: a queued event is saved under the name it ARRIVED under, so a restore
                gives the machine the same `_event.name`. */
@@ -1669,9 +1669,10 @@ bool {{ _t }}_save_members(const {{ _t }}_t *sm, int64_t wall_now_ms, sce_jw_t *
             event.type = queued->type[0] != '\0' ? queued->type : "external";
             event.send_id = queued->send_id;
             /* docs/adr/0090, "Until step 6": format 2 stores the sender for an event a session
-               sent and the address otherwise, with the pair's processor as its type, which is
-               what a scheduled send's `origin` holds too. */
-            event.origin = sce_saved_origin_text(&queued->origin, queued->sender);
+               sent (the id its location names, read into `sender` for the write below) and the
+               address otherwise, with the pair's processor as its type, which is what a
+               scheduled send's `origin` holds too. */
+            event.origin = sce_saved_origin_text(&queued->origin, sender, sizeof(sender));
             event.origin_type = sce_event_origin_processor(&queued->origin);
             event.invoke_id = queued->invoke_id;
 {% if model.host_invoker_types %}

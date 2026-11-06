@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  W3C SCXML 6.2 + 5.10.1 (docs/adr/0090, section 4): a `<send>` type evaluated
+  at run time to the alias `_ioprocessors` files the SCXML processor under
+  names that processor, and the event it delivers reads the processor's URI as
+  its origintype, never the author's spelling. A spelling that is no alias
+  names no processor this platform supports.
+
+  A document of the C11 channel alone, beside its C test: the other channels
+  resolve the same alias with their own resolver.
+
+  `aliased`     `typeexpr="'scxml'"` delivers `ping`, whose origintype is the
+                SCXML processor's URI: aliasOk 1, aliasRefused 0.
+  `misspelled`  `typeexpr="'SCXML'"` is no alias (the alias is the lower-case
+                name): error.execution, nothing delivered, and the block ends,
+                so `settle` comes from the next `<onentry>`: otherRefused 1,
+                strayed 0.
+
+  The run ends in `done`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="aliased"
+       name="a_type_alias_names_its_processor">
+  <datamodel>
+    <data id="aliasOk" expr="0"/>
+    <data id="aliasRefused" expr="0"/>
+    <data id="otherRefused" expr="0"/>
+    <data id="strayed" expr="0"/>
+  </datamodel>
+
+  <state id="aliased">
+    <onentry>
+      <send event="ping" typeexpr="'scxml'"/>
+    </onentry>
+    <transition event="ping" target="misspelled">
+      <if cond="_event.origintype === 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'">
+        <assign location="aliasOk" expr="1"/>
+      </if>
+    </transition>
+    <transition event="error.execution" target="misspelled">
+      <assign location="aliasRefused" expr="1"/>
+    </transition>
+  </state>
+
+  <state id="misspelled">
+    <onentry>
+      <send event="pong" typeexpr="'SCXML'"/>
+    </onentry>
+    <onentry>
+      <send event="settle"/>
+    </onentry>
+    <transition event="error.execution">
+      <assign location="otherRefused" expr="otherRefused + 1"/>
+    </transition>
+    <transition event="pong">
+      <assign location="strayed" expr="strayed + 1"/>
+    </transition>
+    <transition event="settle" target="done"/>
+  </state>
+
+  <final id="done"/>
+</scxml>

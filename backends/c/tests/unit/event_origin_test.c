@@ -10,10 +10,13 @@
 //   * a location that names no session, or names one longer than this build
 //     holds, is read as naming none, and a bad escape is kept, not dropped;
 //   * the pair is written whole or not at all, and the SCXML processor's pair of
-//     a session is its type URI at its location, with the id as the sender;
+//     a session is its type URI at its location, whose id is the sender read
+//     back out of it; no other processor's pair names a sender;
+//   * a processor alias (`scxml`, `basichttp`) is read as its type URI;
 //   * a send target that is a location names the session the decoded id names;
 //   * a format-2 `origin` and `origintype` read back as the table of section 7
-//     says, a location this backend once stored unencoded among them.
+//     says, never as half a pair, a location this backend once stored
+//     unencoded among them.
 //
 // Header-only code; nothing here allocates.
 
@@ -107,18 +110,43 @@ static void the_pair_is_written_whole_or_not_at_all(void) {
 
 static void a_session_sends_with_its_type_at_its_location(void) {
     sce_event_origin_t origin;
-    char sender[SCE_SENDER_LEN];
+    char sender[SCE_MAX_SESSION_ID_LEN];
     CHECK(sce_event_origin_scxml(&origin, "a b"), "the SCXML pair of a session");
     CHECK(strcmp(origin.processor, SCE_SCXML_EVENT_PROCESSOR_TYPE) == 0, "is the processor's URI: '%s'",
           origin.processor);
     CHECK(strcmp(origin.address, "sce://scxml/a%20b") == 0, "at the location it publishes: '%s'", origin.address);
+    CHECK(sce_event_origin_sender(&origin, sender, sizeof(sender)) && strcmp(sender, "a b") == 0,
+          "and its sender is the session that location names: '%s'", sender);
 
     CHECK(sce_event_origin_scxml(&origin, ""), "a sender that holds no id");
     CHECK(sce_event_origin_is_none(&origin), "has no address to publish, so the event carries none");
+    CHECK(!sce_event_origin_sender(&origin, sender, sizeof(sender)) && sender[0] == '\0',
+          "and an event with no origin has no sender");
+}
 
-    CHECK(sce_event_sent_by(&origin, sender, "kid_session_3"), "a session's send is stamped");
-    CHECK(strcmp(sender, "kid_session_3") == 0, "its sender is the id: '%s'", sender);
-    CHECK(strcmp(origin.address, "sce://scxml/kid_session_3") == 0, "its origin the location: '%s'", origin.address);
+// Only the SCXML processor sets a sender, and only at an SCXML location.
+static void an_event_no_session_sent_has_no_sender(void) {
+    sce_event_origin_t origin;
+    char sender[SCE_MAX_SESSION_ID_LEN];
+    CHECK(sce_event_origin_set(&origin, "x-sce-host", "sce://scxml/kid"), "a host's pair at an SCXML-shaped address");
+    CHECK(!sce_event_origin_sender(&origin, sender, sizeof(sender)),
+          "is no session's send: the processor is the host's");
+    CHECK(sce_event_origin_mesh_peer(&origin, "hmi"), "a Mesh peer's pair");
+    CHECK(!sce_event_origin_sender(&origin, sender, sizeof(sender)), "names no session: its address is mesh://");
+    CHECK(sce_event_origin_scxml(&origin, "kid_session_3"), "a session's pair");
+    CHECK(!sce_event_origin_sender(&origin, sender, 4u) && sender[0] == '\0',
+          "whose id does not fit the room asked for is refused, not cut");
+    CHECK(!sce_event_origin_sender(NULL, sender, sizeof(sender)), "nothing has no sender");
+}
+
+// docs/adr/0090, section 4: an alias reads as the URI it names; anything else as written.
+static void a_processor_alias_is_read_as_its_type_uri(void) {
+    CHECK(strcmp(sce_canonical_processor_type("scxml"), SCE_SCXML_EVENT_PROCESSOR_TYPE) == 0, "scxml");
+    CHECK(strcmp(sce_canonical_processor_type("basichttp"), SCE_BASIC_HTTP_EVENT_PROCESSOR_TYPE) == 0, "basichttp");
+    CHECK(strcmp(sce_canonical_processor_type(""), "") == 0, "the empty type is the default processor's, unchanged");
+    CHECK(strcmp(sce_canonical_processor_type("x-example-host"), "x-example-host") == 0, "a host type, unchanged");
+    CHECK(strcmp(sce_canonical_processor_type("SCXML"), "SCXML") == 0, "an alias is spelled in lower case");
+    CHECK(sce_canonical_processor_type(NULL) == NULL, "nothing stays nothing");
 }
 
 static void a_mesh_peer_is_named_at_its_transport_address(void) {
@@ -146,12 +174,13 @@ static void a_location_target_names_the_session_its_id_decodes_to(void) {
           "`#_scxml_<id>` names the id as written");
 }
 
-// The pair and the sender a stored `origin` and `origintype` read back as.
+// The pair, and the sender it names, a stored `origin` and `origintype` read back as.
 static void reads_as(const char *text, const char *type, const char *processor, const char *address,
                      const char *sender_want) {
     sce_event_origin_t origin;
-    char sender[SCE_SENDER_LEN];
-    CHECK(sce_saved_origin_read(text, type, &origin, sender, sizeof(sender)), "'%s' of type '%s' is read", text, type);
+    char sender[SCE_MAX_SESSION_ID_LEN];
+    CHECK(sce_saved_origin_read(text, type, &origin), "'%s' of type '%s' is read", text, type);
+    (void)sce_event_origin_sender(&origin, sender, sizeof(sender));
     CHECK(strcmp(origin.processor, processor) == 0, "'%s' of type '%s': processor '%s', not '%s'", text, type,
           origin.processor, processor);
     CHECK(strcmp(origin.address, address) == 0, "'%s' of type '%s': address '%s', not '%s'", text, type, origin.address,
@@ -170,18 +199,24 @@ static void a_stored_origin_reads_back_as_the_table_of_section_7_says(void) {
     reads_as("sce://scxml/a%3Ab", "", scxml, "sce://scxml/a%3Ab", "a:b");
     reads_as("motor", "x-sce-host", "x-sce-host", "motor", "");
     reads_as("mesh://hmi", scxml, scxml, "mesh://hmi", "");
-    reads_as("bare", "", "", "bare", "");
+    // An empty `origin` is none whatever type was saved beside it: format 2 saved the SCXML type
+    // beside events no processor stamped, and an empty address answers nothing.
+    reads_as("", scxml, "", "", "");
+    reads_as("", "x-sce-host", "", "", "");
+    // An address saved with an empty `origintype` is the SCXML processor's, what format 2 meant.
+    reads_as("bare", "", scxml, "sce://scxml/bare", "bare");
+    reads_as("mesh://hmi", "", scxml, "mesh://hmi", "");
 
     sce_event_origin_t origin;
-    char sender[SCE_SENDER_LEN];
-    CHECK(sce_saved_origin_read("motherSession", scxml, &origin, sender, sizeof(sender)), "read for the write");
-    CHECK(strcmp(sce_saved_origin_text(&origin, sender), "motherSession") == 0,
+    char buf[SCE_MAX_SESSION_ID_LEN];
+    CHECK(sce_saved_origin_read("motherSession", scxml, &origin), "read for the write");
+    CHECK(strcmp(sce_saved_origin_text(&origin, buf, sizeof(buf)), "motherSession") == 0,
           "an event a session sent is stored as its sender");
     CHECK(sce_event_origin_set(&origin, "x-sce-host", "motor") &&
-              strcmp(sce_saved_origin_text(&origin, ""), "motor") == 0,
+              strcmp(sce_saved_origin_text(&origin, buf, sizeof(buf)), "motor") == 0,
           "any other as its address");
     sce_event_origin_clear(&origin);
-    CHECK(strcmp(sce_saved_origin_text(&origin, ""), "") == 0, "and none as the empty string");
+    CHECK(strcmp(sce_saved_origin_text(&origin, buf, sizeof(buf)), "") == 0, "and none as the empty string");
 }
 
 int main(void) {
@@ -191,6 +226,8 @@ int main(void) {
     a_location_or_an_id_that_does_not_fit_is_refused_not_cut();
     the_pair_is_written_whole_or_not_at_all();
     a_session_sends_with_its_type_at_its_location();
+    an_event_no_session_sent_has_no_sender();
+    a_processor_alias_is_read_as_its_type_uri();
     a_mesh_peer_is_named_at_its_transport_address();
     a_location_target_names_the_session_its_id_decodes_to();
     a_stored_origin_reads_back_as_the_table_of_section_7_says();
