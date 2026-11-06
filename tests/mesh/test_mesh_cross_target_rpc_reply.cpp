@@ -36,6 +36,7 @@
 
 #include "brake_invoke_sm.h"
 #include "brake_invoke_transport.h"
+#include "common/TestScriptEngine.h"
 #include "motor_invoke_sm.h"
 
 #include "mesh/MeshEnvelope.h"
@@ -84,6 +85,7 @@ ArmResult run_arm(const std::string &source_name, bool use_captured_invoke_id) {
         return true;
     });
 
+    SCE::Test::inject_build_engine(brake);
     brake.initialize();
     brake.processEvent(SCE::Generated::brake_invoke::Event::Go);
 

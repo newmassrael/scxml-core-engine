@@ -16,6 +16,7 @@
 
 #include "brake_invoke_sm.h"
 #include "brake_invoke_transport.h"
+#include "common/TestScriptEngine.h"
 #include "motor_invoke_sm.h"
 #include "motor_invoke_transport.h"
 
@@ -35,6 +36,8 @@ int main() {
         return brake_router.dispatchToSession(env, 0);
     });
 
+    SCE::Test::inject_build_engine(brake);
+    SCE::Test::inject_build_engine(motor);
     brake.initialize();
     motor.initialize();
 

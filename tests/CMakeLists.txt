@@ -4501,9 +4501,13 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
             ${MESH_INVOKE_OUTPUT_DIR}
     )
 
+    # brake_invoke's done.invoke guard is ECMAScript, so the driver injects
+    # the build's engine; ScriptEngineProvider is in sce_scripting, and no
+    # interpreter is linked (the tier mesh_srcexpr_miss_test links).
     target_link_libraries(mesh_invoke_rpc_runtime_test
         PRIVATE
             sce_base
+            sce_scripting
             sce_mesh_common
     )
 
@@ -4567,9 +4571,11 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
             ${MESH_INVOKE_OUTPUT_DIR}
     )
 
+    # Same engine tier as mesh_invoke_rpc_runtime_test (brake_invoke guard).
     target_link_libraries(mesh_cross_target_rpc_reply_test
         PRIVATE
             sce_base
+            sce_scripting
             sce_mesh_common
     )
 
@@ -4671,9 +4677,11 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
             ${MESH_INVOKE_OUTPUT_DIR}
     )
 
+    # Same engine tier as mesh_invoke_rpc_runtime_test (brake_invoke guard).
     target_link_libraries(mesh_invoke_deadline_test
         PRIVATE
             sce_base
+            sce_scripting
             sce_mesh_common
     )
 
@@ -4696,9 +4704,11 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
             ${MESH_INVOKE_OUTPUT_DIR}
     )
 
+    # Same engine tier as mesh_invoke_rpc_runtime_test (brake_invoke guard).
     target_link_libraries(mesh_invoke_cancel_test
         PRIVATE
             sce_base
+            sce_scripting
             sce_mesh_common
     )
 
