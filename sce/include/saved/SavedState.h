@@ -987,9 +987,9 @@ inline void savedActOriginFromJson(const JsonObject &members, const std::string 
     const bool internal = act.kind == SavedActKind::Internal;
     if (format != kSavedFormat3) {
         const std::string stored = memberText(members, what, "origin");
-        // The SCXML location of no session, the prefix alone: it names no session, and a
-        // session's act is the send of one.
-        if (!internal && format == kSavedFormat2 && stored == IOProcessorHelper::scxmlLocation(std::string())) {
+        // The SCXML location of no session, the prefix alone: it names no session in format 1
+        // or 2, and a session's act is the send of one.
+        if (!internal && stored == IOProcessorHelper::scxmlLocation(std::string())) {
             refuse("'" + what + ".origin' is '" + stored +
                    "', the SCXML location prefix with no session after it, and a " + savedActName(act.kind) +
                    " act is the send of a session");

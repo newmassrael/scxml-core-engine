@@ -452,11 +452,11 @@ TEST(SavedState, AFormatTwoActWithAnEmptyOriginIsTheSendOfTheSessionThatHoldsIt)
     EXPECT_EQ(SavedState::fromJson(text).toJson(), text);
 }
 
-// docs/adr/0090, section 7: a format-2 act whose stored origin is the SCXML location prefix
-// alone names no session, and a raise, parent or child act is the send of one, so it is
-// refused. A queued event stored with that origin is read as the pair as saved, with no
-// sender: the prefix names no session to be its sender.
-TEST(SavedState, TheScxmlPrefixAloneIsNoSenderOfAFormatTwoAct) {
+// docs/adr/0090, section 7: a format-1 or format-2 act whose stored origin is the SCXML
+// location prefix alone names no session, and a raise, parent or child act is the send of
+// one, so it is refused. A queued event stored with that origin is read as the pair as saved,
+// with no sender: the prefix names no session to be its sender.
+TEST(SavedState, TheScxmlPrefixAloneIsNoSenderOfAStoredAct) {
     const auto acting = [](const std::string &act) {
         const std::string head = act == "child" ? R"("act":"child","invokeid":"w",)" : R"("act":")" + act + R"(",)";
         return R"({"format":2,)" +
@@ -471,6 +471,14 @@ TEST(SavedState, TheScxmlPrefixAloneIsNoSenderOfAFormatTwoAct) {
                                               act + " act is the send of a session")
             << act;
     }
+    // Format 1 stores a raise act's origin the same way, and the prefix names no session there
+    // either.
+    EXPECT_EQ(refusalOf(R"({"format":1,"shape":"s","configuration":["a"],"current":"a","variables":{},"history":{},)"
+                        R"("pending":[{"due":"5","act":"raise","event":"e","data":"","sendid":"",)"
+                        R"("origin":"sce://scxml/"}],"invokes":[],"hostinvokes":[],"hostinvoketoken":"0",)"
+                        R"("sendseq":"0","external":[]})"),
+              "'pending[0].origin' is 'sce://scxml/', the SCXML location prefix with no session after it, and a "
+              "raise act is the send of a session");
     // An internal act's stored origin is not read.
     EXPECT_EQ(refusalOf(acting("internal")), "");
 
