@@ -3585,8 +3585,13 @@ enum Commands {
     /// same source set: pass the `--input-root` and `--deploy` `generate` was
     /// given. A schema whose type has no grammar (an open enum, two records of
     /// different documents under one name) is refused by name.
+    ///
+    /// A union document (docs/adr/0092, section 3.1, item 4) has the same two
+    /// texts for a value of the union: the `oneOf` of its cases, each its tag
+    /// as a required `const` before the case's fields, and one alternative per
+    /// case, the tag first; its `$id` names its tag enum's revision.
     PayloadSchema {
-        /// The event-schema document.
+        /// The event-schema or union document.
         scxml: String,
         /// Which spelling to print.
         #[arg(long, value_enum, default_value_t = PayloadSchemaFormat::JsonSchema)]
@@ -14166,26 +14171,40 @@ fn cmd_payload_schema(
         match sce_build::forge::parser::parse_forge_with_imports(&positions.expanded, doc_label) {
             Ok(Some(parsed)) => parsed,
             Ok(None) => cli_exit(CliError::Usage {
-                detail: format!(
-                    "payload-schema reads an event schema (sce:kind=\"event-schema\"); \
-                     {scxml_path} is a statechart"
-                ),
+                detail: format!("{PAYLOAD_SCHEMA_READS}; {scxml_path} is a statechart"),
             }),
             Err(e) => error_format.emit_forge_and_exit(&positions.authored(e)),
         };
-    let sce_build::forge::model::ForgeDocument::EventSchema(schema) = &parsed.document else {
-        cli_exit(CliError::Usage {
+    // The two kinds whose value has a payload schema: an event schema's
+    // payload, and a value of a union (docs/adr/0092, section 3.1, item 4).
+    enum Reads<'a> {
+        EventSchema(&'a sce_build::forge::model::EventSchemaModel),
+        Union(&'a sce_build::forge::model::UnionModel),
+    }
+    let (reads, name) = match &parsed.document {
+        sce_build::forge::model::ForgeDocument::EventSchema(schema) => {
+            (Reads::EventSchema(schema), schema.name.clone())
+        }
+        sce_build::forge::model::ForgeDocument::Union(union) => {
+            (Reads::Union(union), union.name.clone())
+        }
+        other => cli_exit(CliError::Usage {
             detail: format!(
-                "payload-schema reads an event schema (sce:kind=\"event-schema\"); {scxml_path} \
-                 is a document of sce:kind=\"{}\"",
-                parsed.document.kind()
+                "{PAYLOAD_SCHEMA_READS}; {scxml_path} is a document of sce:kind=\"{}\"",
+                other.kind()
             ),
-        })
+        }),
     };
     // The import graph is held to what `generate` holds it to before anything
-    // reads an import.
+    // reads an import, and a union's cases to its tag enum's variants, which
+    // only the imports can answer (docs/adr/0092, section 1.1).
     if let Err(e) =
         sce_build::forge::cross_kind_check::check(&parsed, base_dir, doc_label.diagnostic_label)
+    {
+        error_format.emit_forge_and_exit(&positions.authored(e));
+    }
+    if let Err(e) =
+        sce_build::forge::union_check::check(&parsed, base_dir, doc_label.diagnostic_label)
     {
         error_format.emit_forge_and_exit(&positions.authored(e));
     }
@@ -14195,18 +14214,27 @@ fn cmd_payload_schema(
         }
         PayloadSchemaFormat::Gbnf => sce_build::forge::payload_schema::PayloadFormat::Gbnf,
     };
-    let text = sce_build::forge::payload_schema::text_of_event_schema(
-        schema,
-        &parsed.imports,
-        base_dir,
-        format,
-        Some(&drift_ctx.header.source_hex()),
-    )
+    let source_hash = drift_ctx.header.source_hex();
+    let text = match reads {
+        Reads::EventSchema(schema) => sce_build::forge::payload_schema::text_of_event_schema(
+            schema,
+            &parsed.imports,
+            base_dir,
+            format,
+            Some(&source_hash),
+        ),
+        Reads::Union(union) => sce_build::forge::payload_schema::text_of_union(
+            union,
+            &parsed.imports,
+            Path::new(scxml_path),
+            format,
+            Some(&source_hash),
+        ),
+    }
     .unwrap_or_else(|why| {
         error_format.emit_forge_and_exit(&sce_build::forge::error::Located::in_file(
             sce_build::forge::error::GenerateError::unsupported(format!(
-                "the payload of `{}` has no grammar: {why}",
-                schema.name
+                "the payload of `{name}` has no grammar: {why}"
             ))
             .into(),
             doc_label.diagnostic_label,
@@ -14214,6 +14242,11 @@ fn cmd_payload_schema(
     });
     out_bytes(text.as_bytes());
 }
+
+/// What `payload-schema` reads, as its refusal of every other document says
+/// it.
+const PAYLOAD_SCHEMA_READS: &str = "payload-schema reads an event schema \
+                                    (sce:kind=\"event-schema\") or a union (sce:kind=\"union\")";
 
 /// Report every bound `content` writes as an attribute
 /// (`validation/bound-attribute-superseded`, docs/adr/0086 section 1.3), and let

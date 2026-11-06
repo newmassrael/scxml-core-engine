@@ -336,7 +336,64 @@ fn a_schema_with_an_open_enum_has_no_grammar_and_says_why() {
     assert!(!unit.contains("pub const JSON_SCHEMA"), "{unit}");
 }
 
-/// `payload-schema` reads an event schema and refuses every other document.
+/// `payload-schema` reads a union document (docs/adr/0092, section 3.1, item
+/// 4): the JSON Schema of a value of the union, the `oneOf` of its cases at the
+/// root, named by its tag enum's revision and the source hash `generate`
+/// computes, and its GBNF grammar, one alternative per case, the tag first.
+#[test]
+fn payload_schema_prints_a_union_documents_one_of_and_grammar() {
+    let document = repo_root().join("sce-build/tests/fixtures/union/union_shape.scxml");
+    let json_schema = printed(&[], &document, &[]);
+    assert!(
+        json_schema.starts_with(
+            "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\
+             \"$id\":\"urn:sce:schema:union_shape:1\",\"x-sce-source-hash\":\""
+        ),
+        "{json_schema}"
+    );
+    assert!(
+        json_schema.contains(
+            ",\"oneOf\":[{\"type\":\"object\",\"properties\":{\"kind\":{\"const\":\"dot\"}},\
+             \"required\":[\"kind\"],\"additionalProperties\":false},"
+        ),
+        "{json_schema}"
+    );
+    assert!(
+        json_schema.ends_with(
+            "\"required\":[\"kind\",\"width\",\"height\"],\"additionalProperties\":false}]}"
+        ),
+        "{json_schema}"
+    );
+    assert!(json_schema.is_ascii(), "{json_schema}");
+    let gbnf = printed(&[], &document, &["--format", "gbnf"]);
+    assert!(
+        gbnf.starts_with(
+            "root ::= \"{\\\"kind\\\":\\\"dot\\\"}\" | \
+             \"{\\\"kind\\\":\\\"circle\\\",\\\"radius\\\":\" uint16 \"}\" | "
+        ),
+        "{gbnf}"
+    );
+    assert!(gbnf.is_ascii() && !gbnf.contains("source-hash"), "{gbnf}");
+}
+
+/// A union whose cases are not one to one with its tag enum's variants is
+/// refused in its own words before any grammar is written.
+#[test]
+fn a_union_whose_cases_miss_a_variant_has_no_payload_schema() {
+    let document =
+        repo_root().join("sce-build/tests/fixtures/union/union_shape_missing_case.scxml");
+    let out = payload_schema(&["--error-format=json"], &document, &[]);
+    assert!(!out.status.success(), "a union with a missing case");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let record: serde_json::Value = stderr
+        .lines()
+        .find_map(|line| serde_json::from_str(line.trim()).ok())
+        .unwrap_or_else(|| panic!("a diagnostic record:\n{stderr}"));
+    assert_eq!(record["code"], "validation/union-cases", "{record}");
+}
+
+/// `payload-schema` reads an event schema or a union and refuses every other
+/// document.
 #[test]
 fn a_document_that_is_no_event_schema_has_no_payload_schema() {
     for document in [
@@ -346,8 +403,10 @@ fn a_document_that_is_no_event_schema_has_no_payload_schema() {
         let out = payload_schema(&[], &document, &[]);
         assert!(!out.status.success(), "{}", document.display());
         assert!(
-            String::from_utf8_lossy(&out.stderr)
-                .contains("payload-schema reads an event schema (sce:kind=\"event-schema\")"),
+            String::from_utf8_lossy(&out.stderr).contains(
+                "payload-schema reads an event schema (sce:kind=\"event-schema\") or a union \
+                 (sce:kind=\"union\")"
+            ),
             "{}:\n{}",
             document.display(),
             String::from_utf8_lossy(&out.stderr)
