@@ -14,7 +14,7 @@
 // `working`. A child that had taken `a` is resumed at `second`, so `b` alone
 // ends it.
 //
-// The shared instance `saved/static_invoke_working.json` is the format-2 text of
+// The shared instance `saved/static_invoke_working.json` is the format-3 text of
 // the machine just started, its root given the id the fixtures name it by. A
 // format-1 text holds the child's id alone, and the build that wrote it promised
 // to start the child again from its beginning: `saved/format1/static_invoke_working.json`
@@ -33,7 +33,7 @@ const FORMAT1_WORKING: &str = include_str!(
     "../../../../sce-build/tests/fixtures/static_datamodel/saved/format1/static_invoke_working.json"
 );
 
-/// The session id the shared format-2 fixtures give their root.
+/// The session id the shared tree fixtures give their root.
 const ROOT: &str = "fixture-root";
 
 /// The wall-clock moment the shared instance was saved at.
@@ -201,7 +201,7 @@ fn an_event_saved_in_the_childs_queue_is_taken_by_the_resumed_child() {
     // it, then ends on `b`.
     let text = SHARED_WORKING.trim().replacen(
         r#""configuration":["first"],"current":"first","variables":{},"history":{},"pending":[],"invokes":[],"invokestarts":{},"hostinvokes":[],"hostinvoketoken":"0","sendseq":"0","external":[]"#,
-        r#""configuration":["first"],"current":"first","variables":{},"history":{},"pending":[],"invokes":[],"invokestarts":{},"hostinvokes":[],"hostinvoketoken":"0","sendseq":"0","external":[{"name":"a","data":"","type":"external","sendid":"","origin":"","origintype":"","invokeid":"","hostinvoketoken":null}]"#,
+        r#""configuration":["first"],"current":"first","variables":{},"history":{},"pending":[],"invokes":[],"invokestarts":{},"hostinvokes":[],"hostinvoketoken":"0","sendseq":"0","external":[{"name":"a","data":"","type":"external","sendid":"","origin":null,"sender":null,"invokeid":"","hostinvoketoken":null}]"#,
         1,
     );
     assert_ne!(text, SHARED_WORKING.trim(), "the child's queue was changed");

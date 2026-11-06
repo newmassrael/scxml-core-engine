@@ -293,7 +293,9 @@ fn a_machine_restored_from_a_text_saves_that_text_again() {
 
 /// docs/adr/0045: a delayed send to the parent waits on a session the saved
 /// tree holds, so it is saved as the act that delivers it there, with what the
-/// send carries.
+/// send carries. It is this session's own send, so it is saved with this
+/// session's id as its sender, whatever the entry was armed with by hand
+/// (docs/adr/0090, section 7).
 #[test]
 fn a_delayed_send_to_the_parent_is_saved_as_a_send_to_the_parent() {
     let mut engine = armed();
@@ -308,6 +310,7 @@ fn a_delayed_send_to_the_parent_is_saved_as_a_send_to_the_parent() {
         },
     );
     let saved = saved_through_json(&engine);
+    assert!(!saved.session_id.is_empty(), "{saved:?}");
     assert!(
         saved
             .pending
@@ -318,7 +321,7 @@ fn a_delayed_send_to_the_parent_is_saved_as_a_send_to_the_parent() {
                         event: "report".to_string(),
                         data: "{\"n\":1}".to_string(),
                         send_id: "to_parent".to_string(),
-                        origin: "me".to_string(),
+                        sender: saved.session_id.clone(),
                     }),
         "{:?}",
         saved.pending
@@ -371,7 +374,7 @@ fn a_saved_send_to_a_child_the_document_does_not_invoke_is_refused() {
         event: "report".to_string(),
         data: String::new(),
         send_id: String::new(),
-        origin: String::new(),
+        sender: saved.session_id.clone(),
     };
     let refusal = match saved_state::enter(Policy::new(), &saved, SceClock::Manual(0), SAVED_AT_MS)
     {
@@ -395,7 +398,7 @@ fn a_waiting_send_naming_an_event_the_document_lacks_is_refused() {
         event: "warp".to_string(),
         data: String::new(),
         send_id: String::new(),
-        origin: String::new(),
+        sender: saved.session_id.clone(),
     };
     let refusal = match saved_state::enter(Policy::new(), &saved, SceClock::Manual(0), SAVED_AT_MS)
     {

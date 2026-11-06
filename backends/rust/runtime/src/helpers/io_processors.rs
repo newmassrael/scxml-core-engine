@@ -88,11 +88,12 @@ pub fn scxml_origin_of(sender: &str) -> Option<EventOrigin> {
     }
 }
 
-/// The `origin` text a saved state stores for an event's origin and sender:
-/// the sending session's id for an event a session sent, the address
-/// otherwise, and empty for none — what every backend writes as a format-2
-/// `origin` (docs/adr/0090, "Until step 6"). The `origintype` beside it is the
-/// pair's processor.
+/// The `origin` text a format-1 or format-2 saved state stores for an event's
+/// origin and sender: the sending session's id for an event a session sent, the
+/// address otherwise, and empty for none. The `origintype` beside it is the
+/// pair's processor. A format-3 build writes it only for a state read from a
+/// format-1 text and written back as one, which has no place for the pair
+/// (docs/adr/0090, section 7); [`read_stored_origin`] reads it back.
 pub fn stored_origin_text(origin: Option<&EventOrigin>, sender: &str) -> String {
     if sender.is_empty() {
         origin.map_or_else(String::new, |origin| origin.address.clone())
@@ -111,8 +112,8 @@ pub struct StoredOrigin {
     pub sender: String,
 }
 
-/// The origin and sender a stored `origin` and `origintype` are read as
-/// (docs/adr/0090, section 7).
+/// The origin and sender a format-1 or format-2 `origin` and `origintype` are
+/// read as (docs/adr/0090, section 7).
 ///
 /// An empty `origin` is none whatever type was stored beside it: an empty
 /// address answers nothing, and format 2 wrote the SCXML type beside it for
@@ -150,9 +151,10 @@ pub fn read_stored_origin(origin: &str, origin_type: &str) -> StoredOrigin {
     }
 }
 
-/// The sender a stored waiting send's `origin` names (docs/adr/0090, section
-/// 7): a waiting send is always a session's, so a bare id is that id and an
-/// SCXML location names it.
+/// The sender a format-1 or format-2 waiting send's `origin` names
+/// (docs/adr/0090, section 7): a waiting send is always a session's, so a bare
+/// id is that id and an SCXML location names it. A send to the internal queue
+/// is the exception, whose stored `origin` is not read.
 pub fn read_stored_sender(origin: &str) -> String {
     let located = session_id_from_scxml_location(origin);
     if located.is_empty() {
@@ -306,7 +308,7 @@ mod tests {
         assert_eq!(
             stored_origin_text(Some(&scxml_origin("s1")), "s1"),
             "s1",
-            "format 2 stores the sending session's id, not its location"
+            "formats 1 and 2 store the sending session's id, not its location"
         );
         assert_eq!(stored_origin_text(Some(&host), ""), "motor");
         assert_eq!(stored_origin_text(None, ""), "");

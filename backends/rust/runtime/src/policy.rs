@@ -677,7 +677,7 @@ pub trait StatePolicy: Sized + 'static {
         Vec::new()
     }
 
-    /// Judge `child`, a running child a saved format-2 state holds, against
+    /// Judge `child`, a running child a saved tree of sessions holds, against
     /// the document the `<invoke>` it names starts there — its shape, its
     /// revisions, every value, its own running children — building nothing
     /// (docs/adr/0045, section 3, step 1).
@@ -931,7 +931,7 @@ pub trait StatePolicy: Sized + 'static {
         ""
     }
 
-    /// Bind this session to `session_id`, the id a format-2 saved state holds
+    /// Bind this session to `session_id`, the id a saved tree of sessions holds
     /// for it, in place of the one it was created with: a restored session
     /// carries on, so every child's id and a peer's `#_scxml_<id>` address
     /// still name it (docs/adr/0045). A policy that holds no id has none to

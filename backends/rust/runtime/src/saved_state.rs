@@ -58,10 +58,14 @@
 use core::fmt;
 
 use crate::helpers::configuration::ConfigurationRejection;
+use crate::helpers::io_processors::{
+    read_stored_origin, read_stored_sender, scxml_origin, scxml_origin_of, stored_origin_text,
+};
 use crate::json::{self, Value};
 use crate::scheduler_storage::sealed::SchedulerOps;
 use crate::{
-    Engine, EventId, EventQueueStorage, EventType, EventWithMetadata, SceClock, StatePolicy,
+    Engine, EventId, EventOrigin, EventQueueStorage, EventType, EventWithMetadata, SceClock,
+    StatePolicy,
 };
 
 /// The format of a saved state that names each running child by its id alone
@@ -72,16 +76,25 @@ pub const FORMAT_1: u32 = 1;
 /// The format of a saved state that is a tree of sessions
 /// (`schemas/sce-saved-state.v2.schema.json`; docs/adr/0045): each running child
 /// is saved inside its parent with its whole state, and a restore resumes it.
+/// An event's origin is stored as an `origin` text and an `origintype`, which a
+/// restore reads as a pair ([`crate::helpers::io_processors::read_stored_origin`]).
 pub const FORMAT_2: u32 = 2;
 
-/// The format version this runtime writes. It reads [`FORMAT_1`] and
-/// [`FORMAT_2`].
-pub const FORMAT: u32 = FORMAT_2;
+/// The format of a tree of sessions whose events hold their origin as the one
+/// pair the processor that delivered them wrote, beside the session that sent
+/// them (`schemas/sce-saved-state.v3.schema.json`; docs/adr/0090, section 7).
+/// Its tree is format 2's, and so is its shape.
+pub const FORMAT_3: u32 = 3;
+
+/// The format version this runtime writes. It reads [`FORMAT_1`],
+/// [`FORMAT_2`] and [`FORMAT_3`].
+pub const FORMAT: u32 = FORMAT_3;
 
 /// The stability status of the saved-state wire surface, held in lockstep
-/// with `x-sce-schema-status` in `schemas/sce-saved-state.v1.schema.json`
-/// and `schemas/sce-saved-state.v2.schema.json`, the surface's two formats
-/// (`SCE_WIRE_CONTRACTS.md`). A flip to `"stable"` changes all three in one
+/// with `x-sce-schema-status` in `schemas/sce-saved-state.v1.schema.json`,
+/// `schemas/sce-saved-state.v2.schema.json` and
+/// `schemas/sce-saved-state.v3.schema.json`, the surface's three formats
+/// (`SCE_WIRE_CONTRACTS.md`). A flip to `"stable"` changes all four in one
 /// commit.
 pub const SCHEMA_STATUS: &str = "pre-release";
 
@@ -147,7 +160,8 @@ pub struct SavedState {
     /// the order they were sent.
     pub pending: Vec<SavedSend>,
     /// The `<invoke>`s whose child session is running (§scxml-6.4), in
-    /// document order: in format 2 each with the child's whole state, which a
+    /// document order: in a tree of sessions (formats 2 and 3) each with the
+    /// child's whole state, which a
     /// restore resumes; in format 1 by the id alone, which a restore starts
     /// again from its beginning ([`SavedInvokes`]). One whose child has ended is
     /// absent — its `done.invoke` is in the external queue, or already taken —
@@ -155,7 +169,7 @@ pub struct SavedState {
     pub invokes: SavedInvokes,
     /// The session's own id (`_sessionid`), which events held in the tree name
     /// sessions by and a restore binds again (docs/adr/0045). An XML Nmtoken in
-    /// format 2; empty in a format-1 state, which holds none.
+    /// a tree of sessions; empty in a format-1 state, which holds none.
     pub session_id: String,
     /// How many times each `<invoke>` of the document has started in this
     /// session, by its id, for each started at least once, in document order:
@@ -201,8 +215,8 @@ pub enum SavedInvokes {
     /// holds nothing of a child, so a restore starts each again from its
     /// beginning, under the same id: all that state promised.
     Restarted(Vec<String>),
-    /// Format 2: each running child with its whole state, resumed by a restore
-    /// where it stood (docs/adr/0045).
+    /// Formats 2 and 3, a tree of sessions: each running child with its whole
+    /// state, resumed by a restore where it stood (docs/adr/0045).
     Resumed(Vec<SavedChild>),
 }
 
@@ -305,9 +319,11 @@ pub struct SavedShape {
     /// each enum-typed variable and record field spelled by its enum's
     /// document ([`EnumLineage::key`]) rather than by the alias it is imported
     /// under, so renaming an alias leaves it as it was. The same as
-    /// [`Self::first`] for a document that holds no enum.
+    /// [`Self::first`] for a document that holds no enum. A format-3 state
+    /// names this shape too: format 3 changes no document (docs/adr/0090,
+    /// section 7).
     pub format2_first: &'static str,
-    /// [`Self::revised`] as a format-2 state names it.
+    /// [`Self::revised`] as a format-2 state names it, and a format-3 one.
     pub format2_revised: &'static str,
     /// Each record schema a variable is of, by the event it declares, ordered by
     /// it.
@@ -429,13 +445,19 @@ pub struct SavedSend {
 
 /// What a waiting `<send>` does when it comes due: its own event on this
 /// session's external queue or on its internal queue (`#_internal`), an act a
-/// host-served processor performs (§scxml-6.2.5), or, in format 2, an event for
-/// the parent or for a running child of this session, sessions the saved tree
-/// holds (docs/adr/0045).
+/// host-served processor performs (§scxml-6.2.5), or, in a tree of sessions
+/// (format 2 and 3), an event for the parent or for a running child of this
+/// session, sessions the saved tree holds (docs/adr/0045).
 ///
 /// A delayed send to any other session is none of them, and a document that
 /// makes one is generated without the save API (§2.15): such a send is
 /// delivered through a session this state does not carry.
+///
+/// An act that delivers an event of this session's send holds the session that
+/// sent it, its `sender`. The SCXML processor delivers that event, so its origin
+/// is the sender's SCXML pair. A format-3 text writes the pair beside the id, and
+/// a reader refuses one that is not that pair, so the act holds the id alone
+/// (docs/adr/0090, section 7).
 #[derive(Clone, Debug, PartialEq)]
 pub enum SavedAct {
     /// An event for the session that started this one (`#_parent`).
@@ -446,9 +468,8 @@ pub enum SavedAct {
         data: String,
         /// The `<send>`'s id, which a `<cancel>` names.
         send_id: String,
-        /// The format-2 `origin`: this session's id, the event's sender
-        /// (docs/adr/0090, "Until step 6").
-        origin: String,
+        /// The id of this session, which sent it.
+        sender: String,
     },
     /// An event for a running child of this session (`#_<invokeid>`).
     Child {
@@ -460,9 +481,8 @@ pub enum SavedAct {
         data: String,
         /// The `<send>`'s id, which a `<cancel>` names.
         send_id: String,
-        /// The format-2 `origin`: this session's id, the event's sender
-        /// (docs/adr/0090, "Until step 6").
-        origin: String,
+        /// The id of this session, which sent it.
+        sender: String,
     },
     /// An event for this session's external queue.
     Raise {
@@ -473,11 +493,14 @@ pub enum SavedAct {
         /// The `<send>`'s id, which `_event.sendid` carries and a `<cancel>`
         /// names.
         send_id: String,
-        /// The format-2 `origin`: the id of the session that sent it, the
-        /// event's sender (docs/adr/0090, "Until step 6").
-        origin: String,
+        /// The id of this session, which sent it. Empty only in a state read
+        /// from a format-1 text that stored none: such a send is armed as this
+        /// session's own.
+        sender: String,
     },
-    /// An event for this session's internal queue.
+    /// An event for this session's internal queue. It carries no origin and no
+    /// sender: the event it delivers is an internal event, whose origin the
+    /// processor leaves blank (docs/adr/0090, section 2).
     Internal {
         /// The event's name, as the document spells it.
         event: String,
@@ -485,9 +508,6 @@ pub enum SavedAct {
         data: String,
         /// The `<send>`'s id, which a `<cancel>` names.
         send_id: String,
-        /// The format-2 `origin`: the id of the session that sent it. Empty on a backend whose
-        /// internal events carry none.
-        origin: String,
     },
     /// A `<send>` a host-served processor performs.
     Host(SavedHostSend),
@@ -624,7 +644,7 @@ fn read_token(written: &str, what: &str) -> Result<u64, StateRefusal> {
         })
 }
 
-/// A count of starts, as the text a format-2 saved state writes it as: a
+/// A count of starts, as the text a tree of sessions writes it as: a
 /// positive whole number in digits, with no leading zero, within a signed
 /// 64-bit count, as every backend reads one.
 fn read_count(written: &str, what: &str) -> Result<u64, StateRefusal> {
@@ -642,6 +662,109 @@ fn read_count(written: &str, what: &str) -> Result<u64, StateRefusal> {
                 "'{what}' ({written}) is not a count of starts, a whole number from 1"
             ))
         })
+}
+
+/// An event's origin as format 3 writes it (docs/adr/0090, section 7): the
+/// pair, `processor` first and `address` second, or `null` for none.
+fn origin_to_value(origin: Option<&EventOrigin>) -> Value {
+    origin.map_or(Value::Null, |origin| {
+        Value::Object(vec![
+            (
+                "processor".to_string(),
+                Value::Text(origin.processor.clone()),
+            ),
+            ("address".to_string(), Value::Text(origin.address.clone())),
+        ])
+    })
+}
+
+/// An event's sender as format 3 writes it: the id of the session that sent
+/// it, or `null` for an event no session sent.
+fn sender_to_value(sender: &str) -> Value {
+    if sender.is_empty() {
+        Value::Null
+    } else {
+        Value::Text(sender.to_string())
+    }
+}
+
+/// The `origin` of `record`, a record of a format-3 text that `what` names:
+/// the pair as it is written, or `None` for `null` (docs/adr/0090, section 7).
+/// Never half a pair: one with a member missing, empty or added is refused, as
+/// is a value that is neither `null` nor a pair.
+fn read_origin(record: &Value, what: &str) -> Result<Option<EventOrigin>, StateRefusal> {
+    let members = match record.member("origin") {
+        Some(Value::Null) => return Ok(None),
+        Some(Value::Object(members)) => members,
+        Some(_) => {
+            return Err(StateRefusal::new(format!(
+                "'{what}.origin' is neither null nor a pair"
+            )))
+        }
+        None => return Err(StateRefusal::new(format!("'{what}' has no 'origin'"))),
+    };
+    if let Some((added, _)) = members
+        .iter()
+        .find(|(name, _)| name != "processor" && name != "address")
+    {
+        return Err(StateRefusal::new(format!(
+            "'{what}.origin' holds '{added}', and a pair holds its processor and its \
+             address alone"
+        )));
+    }
+    let member = |name: &str| match members.iter().find(|(k, _)| k == name) {
+        Some((_, Value::Text(s))) if !s.is_empty() => Ok(s.clone()),
+        Some((_, Value::Text(_))) => Err(StateRefusal::new(format!(
+            "'{what}.origin.{name}' is empty, and a pair is never half a pair"
+        ))),
+        Some(_) => Err(StateRefusal::new(format!(
+            "'{what}.origin.{name}' is not a text"
+        ))),
+        None => Err(StateRefusal::new(format!(
+            "'{what}.origin' has no '{name}'"
+        ))),
+    };
+    Ok(Some(EventOrigin::new(
+        member("processor")?,
+        member("address")?,
+    )))
+}
+
+/// The `sender` of `record`, a record of a format-3 text that `what` names: the
+/// id of the session that sent its event, or empty for `null`. A text that is
+/// not a session id, an XML Nmtoken, is refused.
+fn read_sender(record: &Value, what: &str) -> Result<String, StateRefusal> {
+    match record.member("sender") {
+        Some(Value::Null) => Ok(String::new()),
+        Some(Value::Text(id)) if crate::helpers::session_id::is_nmtoken(id) => Ok(id.clone()),
+        Some(Value::Text(id)) => Err(StateRefusal::new(format!(
+            "'{what}.sender' ({id}) is not a session id, which is an XML Nmtoken"
+        ))),
+        Some(_) => Err(StateRefusal::new(format!(
+            "'{what}.sender' is neither null nor a session id"
+        ))),
+        None => Err(StateRefusal::new(format!("'{what}' has no 'sender'"))),
+    }
+}
+
+/// Refuse a `sender` beside an `origin` other than the SCXML pair of that id:
+/// the SCXML processor, the one processor that sets a sender, writes the
+/// sender's own location as the origin of what it delivers (docs/adr/0090,
+/// section 7). Each member is taken as it is written, and neither is derived
+/// from the other.
+fn check_sender(
+    origin: Option<&EventOrigin>,
+    sender: &str,
+    what: &str,
+) -> Result<(), StateRefusal> {
+    if sender.is_empty() || origin == Some(&scxml_origin(sender)) {
+        Ok(())
+    } else {
+        Err(StateRefusal::new(format!(
+            "'{what}.sender' is '{sender}', and '{what}.origin' is not the SCXML pair of \
+             that session"
+        )))
+    }
 }
 
 impl SavedHostInvoke {
@@ -691,8 +814,26 @@ impl SavedHostInvoke {
 }
 
 impl SavedSend {
-    fn to_value(&self) -> Value {
+    /// The waiting send as a text of `format` writes it.
+    fn to_value(&self, format: u32) -> Value {
         let text = |s: &str| Value::Text(s.to_string());
+        // The members that hold the origin of the event `sender` sent, or of an
+        // event with none for the empty `sender` (docs/adr/0090, section 7):
+        // format 1 stores the sending session's id as `origin`, and format 3 the
+        // session's SCXML pair, then its id.
+        let origin_members = |sender: &str| {
+            if format == FORMAT_1 {
+                vec![("origin".to_string(), text(sender))]
+            } else {
+                vec![
+                    (
+                        "origin".to_string(),
+                        origin_to_value(scxml_origin_of(sender).as_ref()),
+                    ),
+                    ("sender".to_string(), sender_to_value(sender)),
+                ]
+            }
+        };
         let mut members = vec![
             ("due".to_string(), Value::Text(self.due.to_string())),
             (
@@ -711,48 +852,57 @@ impl SavedSend {
                 event,
                 data,
                 send_id,
-                origin,
-            } => members.extend([
-                ("event".to_string(), text(event)),
-                ("data".to_string(), text(data)),
-                ("sendid".to_string(), text(send_id)),
-                ("origin".to_string(), text(origin)),
-            ]),
+                sender,
+            } => {
+                members.extend([
+                    ("event".to_string(), text(event)),
+                    ("data".to_string(), text(data)),
+                    ("sendid".to_string(), text(send_id)),
+                ]);
+                members.extend(origin_members(sender));
+            }
             SavedAct::Child {
                 invoke_id,
                 event,
                 data,
                 send_id,
-                origin,
-            } => members.extend([
-                ("invokeid".to_string(), text(invoke_id)),
-                ("event".to_string(), text(event)),
-                ("data".to_string(), text(data)),
-                ("sendid".to_string(), text(send_id)),
-                ("origin".to_string(), text(origin)),
-            ]),
+                sender,
+            } => {
+                members.extend([
+                    ("invokeid".to_string(), text(invoke_id)),
+                    ("event".to_string(), text(event)),
+                    ("data".to_string(), text(data)),
+                    ("sendid".to_string(), text(send_id)),
+                ]);
+                members.extend(origin_members(sender));
+            }
             SavedAct::Raise {
                 event,
                 data,
                 send_id,
-                origin,
-            } => members.extend([
-                ("event".to_string(), text(event)),
-                ("data".to_string(), text(data)),
-                ("sendid".to_string(), text(send_id)),
-                ("origin".to_string(), text(origin)),
-            ]),
+                sender,
+            } => {
+                members.extend([
+                    ("event".to_string(), text(event)),
+                    ("data".to_string(), text(data)),
+                    ("sendid".to_string(), text(send_id)),
+                ]);
+                members.extend(origin_members(sender));
+            }
             SavedAct::Internal {
                 event,
                 data,
                 send_id,
-                origin,
-            } => members.extend([
-                ("event".to_string(), text(event)),
-                ("data".to_string(), text(data)),
-                ("sendid".to_string(), text(send_id)),
-                ("origin".to_string(), text(origin)),
-            ]),
+            } => {
+                members.extend([
+                    ("event".to_string(), text(event)),
+                    ("data".to_string(), text(data)),
+                    ("sendid".to_string(), text(send_id)),
+                ]);
+                // An internal event has no origin and no sender (docs/adr/0090,
+                // section 2): `"origin":null,"sender":null` in format 3.
+                members.extend(origin_members(""));
+            }
             SavedAct::Host(host) => members.extend([
                 ("type".to_string(), text(&host.processor_type)),
                 ("event".to_string(), text(&host.event)),
@@ -768,40 +918,76 @@ impl SavedSend {
     }
 
     /// The waiting send `value`, of a state of `format`; `what` names it in a
-    /// refusal. A send to the parent or to a child is an act of format 2 only.
+    /// refusal. A send to the parent or to a child is an act of a tree of
+    /// sessions (format 2 and 3) only.
     fn from_value(value: &Value, what: &str, format: u32) -> Result<Self, StateRefusal> {
         let text = |key: &str| match value.member(key) {
             Some(Value::Text(s)) => Ok(s.clone()),
             Some(_) => Err(StateRefusal::new(format!("'{what}.{key}' is not a text"))),
             None => Err(StateRefusal::new(format!("'{what}' has no '{key}'"))),
         };
+        // docs/adr/0090, section 7: the sender of an act that delivers an event
+        // this session sent. Format 3 writes it, with the SCXML pair of it as the
+        // origin; formats 1 and 2 store the id alone as `origin`, or the
+        // session's location as one backend stored it.
+        let sender = || -> Result<String, StateRefusal> {
+            if format == FORMAT_3 {
+                let origin = read_origin(value, what)?;
+                let sender = read_sender(value, what)?;
+                if sender.is_empty() {
+                    return Err(StateRefusal::new(format!(
+                        "'{what}' is a send of this session, and it names no sender"
+                    )));
+                }
+                check_sender(origin.as_ref(), &sender, what)?;
+                Ok(sender)
+            } else {
+                Ok(read_stored_sender(&text("origin")?))
+            }
+        };
         let due = read_moment(&text("due")?, &format!("{what}.due"))?;
         let act = match text("act")?.as_str() {
-            "parent" if format == FORMAT_2 => SavedAct::Parent {
+            "parent" if format != FORMAT_1 => SavedAct::Parent {
                 event: text("event")?,
                 data: text("data")?,
                 send_id: text("sendid")?,
-                origin: text("origin")?,
+                sender: sender()?,
             },
-            "child" if format == FORMAT_2 => SavedAct::Child {
+            "child" if format != FORMAT_1 => SavedAct::Child {
                 invoke_id: text("invokeid")?,
                 event: text("event")?,
                 data: text("data")?,
                 send_id: text("sendid")?,
-                origin: text("origin")?,
+                sender: sender()?,
             },
             "raise" => SavedAct::Raise {
                 event: text("event")?,
                 data: text("data")?,
                 send_id: text("sendid")?,
-                origin: text("origin")?,
+                sender: sender()?,
             },
-            "internal" => SavedAct::Internal {
-                event: text("event")?,
-                data: text("data")?,
-                send_id: text("sendid")?,
-                origin: text("origin")?,
-            },
+            "internal" => {
+                // The event it delivers is an internal event, which has no
+                // origin (docs/adr/0090, section 2): format 3 writes none, and
+                // the `origin` formats 1 and 2 stored is not read.
+                if format == FORMAT_3 {
+                    if read_origin(value, what)?.is_some() || !read_sender(value, what)?.is_empty()
+                    {
+                        return Err(StateRefusal::new(format!(
+                            "'{what}' is a send to the internal queue, whose event has no \
+                             origin, and it holds an origin or a sender"
+                        )));
+                    }
+                } else {
+                    // Present as the grammar of formats 1 and 2 has it, and not read.
+                    let _stored_sender = text("origin")?;
+                }
+                SavedAct::Internal {
+                    event: text("event")?,
+                    data: text("data")?,
+                    send_id: text("sendid")?,
+                }
+            }
             "host" => SavedAct::Host(SavedHostSend {
                 processor_type: text("type")?,
                 event: text("event")?,
@@ -843,10 +1029,13 @@ pub struct SavedEvent {
     pub event_type: String,
     /// `_event.sendid`.
     pub send_id: String,
-    /// `_event.origin`.
-    pub origin: String,
-    /// `_event.origintype`.
-    pub origin_type: String,
+    /// `_event.origin` and `_event.origintype`: the pair the processor that
+    /// delivered the event wrote, `None` for an event no processor stamped
+    /// (docs/adr/0090).
+    pub origin: Option<EventOrigin>,
+    /// The id of the session that sent the event, set only for one the SCXML
+    /// Event I/O Processor delivered, and empty otherwise.
+    pub sender: String,
     /// `_event.invokeid`.
     pub invoke_id: String,
     /// The token a host-run invocation's completion or failure was stamped
@@ -864,44 +1053,70 @@ pub struct SavedEvent {
 }
 
 impl SavedEvent {
-    const FIELDS: [&'static str; 7] = [
-        "name",
-        "data",
-        "type",
-        "sendid",
-        "origin",
-        "origintype",
-        "invokeid",
-    ];
-
-    fn to_value(&self) -> Value {
-        let values = [
-            &self.name,
-            &self.data,
-            &self.event_type,
-            &self.send_id,
-            &self.origin,
-            &self.origin_type,
-            &self.invoke_id,
+    /// The event as a text of `format` writes it. Format 3 writes the pair and
+    /// the sender (docs/adr/0090, section 7). Format 1 writes the `origin` text
+    /// format 2 stored, the sender's id for an event a session sent and the
+    /// address otherwise, and the pair's processor as `origintype`; both are
+    /// empty for none.
+    fn to_value(&self, format: u32) -> Value {
+        let text = |s: &str| Value::Text(s.to_string());
+        let mut members = vec![
+            ("name".to_string(), text(&self.name)),
+            ("data".to_string(), text(&self.data)),
+            ("type".to_string(), text(&self.event_type)),
+            ("sendid".to_string(), text(&self.send_id)),
         ];
-        let mut members: Vec<(String, Value)> = Self::FIELDS
-            .iter()
-            .zip(values)
-            .map(|(k, v)| ((*k).to_string(), Value::Text(v.clone())))
-            .collect();
-        members.push((
-            "hostinvoketoken".to_string(),
-            self.host_invoke_token
-                .map_or(Value::Null, |token| Value::Text(token.to_string())),
-        ));
+        if format == FORMAT_1 {
+            members.extend([
+                (
+                    "origin".to_string(),
+                    text(&stored_origin_text(self.origin.as_ref(), &self.sender)),
+                ),
+                (
+                    "origintype".to_string(),
+                    text(
+                        self.origin
+                            .as_ref()
+                            .map_or("", |origin| origin.processor.as_str()),
+                    ),
+                ),
+            ]);
+        } else {
+            members.extend([
+                ("origin".to_string(), origin_to_value(self.origin.as_ref())),
+                ("sender".to_string(), sender_to_value(&self.sender)),
+            ]);
+        }
+        members.extend([
+            ("invokeid".to_string(), text(&self.invoke_id)),
+            (
+                "hostinvoketoken".to_string(),
+                self.host_invoke_token
+                    .map_or(Value::Null, |token| Value::Text(token.to_string())),
+            ),
+        ]);
         Value::Object(members)
     }
 
-    fn from_value(value: &Value, what: &str) -> Result<Self, StateRefusal> {
+    /// The queued event `value`, of a state of `format`; `what` names it in a
+    /// refusal.
+    fn from_value(value: &Value, what: &str, format: u32) -> Result<Self, StateRefusal> {
         let text = |key: &str| match value.member(key) {
             Some(Value::Text(s)) => Ok(s.clone()),
             Some(_) => Err(StateRefusal::new(format!("'{what}.{key}' is not a text"))),
             None => Err(StateRefusal::new(format!("'{what}' has no '{key}'"))),
+        };
+        // docs/adr/0090, section 7: format 3 holds the pair and the sender as
+        // they are written; a format-1 or format-2 `origin` and `origintype` are
+        // read by the table of that section.
+        let (origin, sender) = if format == FORMAT_3 {
+            let origin = read_origin(value, what)?;
+            let sender = read_sender(value, what)?;
+            check_sender(origin.as_ref(), &sender, what)?;
+            (origin, sender)
+        } else {
+            let stored = read_stored_origin(&text("origin")?, &text("origintype")?);
+            (stored.origin, stored.sender)
         };
         let host_invoke_token = match value.member("hostinvoketoken") {
             Some(Value::Null) => None,
@@ -924,8 +1139,8 @@ impl SavedEvent {
             data: text("data")?,
             event_type: text("type")?,
             send_id: text("sendid")?,
-            origin: text("origin")?,
-            origin_type: text("origintype")?,
+            origin,
+            sender,
             invoke_id: text("invokeid")?,
             host_invoke_token,
         })
@@ -942,21 +1157,24 @@ impl SavedState {
             .ok_or_else(|| StateRefusal::new(format!("the saved state has no variable '{id}'")))
     }
 
-    /// The format this state is of: [`FORMAT_2`] for a tree of sessions,
-    /// [`FORMAT_1`] for a state that names its running children by id alone.
+    /// The format this state is written in: [`FORMAT_3`] for a tree of
+    /// sessions, [`FORMAT_1`] for a state that names its running children by id
+    /// alone. A tree read from a format-2 text holds the pairs its origins are
+    /// read as, and is written as format 3 (docs/adr/0090, section 7).
     pub fn format(&self) -> u32 {
         match self.invokes {
             SavedInvokes::Restarted(_) => FORMAT_1,
-            SavedInvokes::Resumed(_) => FORMAT_2,
+            SavedInvokes::Resumed(_) => FORMAT_3,
         }
     }
 
-    /// The id a restore binds the session to: the saved one, for a format-2
-    /// state, since the session carries on and every child's id and a peer's
-    /// address name it (docs/adr/0045); `None` for a format-1 state, which
-    /// holds none, so the restored machine keeps the id it was created with.
+    /// The id a restore binds the session to: the saved one, for a tree of
+    /// sessions, since the session carries on and every child's id and a
+    /// peer's address name it (docs/adr/0045); `None` for a format-1 state,
+    /// which holds none, so the restored machine keeps the id it was created
+    /// with.
     pub fn bound_session_id(&self) -> Option<&str> {
-        (self.format() == FORMAT_2).then_some(self.session_id.as_str())
+        (self.format() != FORMAT_1).then_some(self.session_id.as_str())
     }
 
     /// How many times the `<invoke>` `id` had started in this session when it
@@ -981,12 +1199,13 @@ impl SavedState {
     }
 
     /// The members of this session, in the order every backend writes them:
-    /// format 1's, and in format 2 `sessionid` after `shape` and `invokestarts`
-    /// after `invokes`, each running child's session written by the same rule.
+    /// format 1's, and in a tree `sessionid` after `shape` and `invokestarts`
+    /// after `invokes`, each running child's session written by the same rule
+    /// and in the format of the root.
     fn members(&self) -> Vec<(String, Value)> {
-        let format2 = matches!(self.invokes, SavedInvokes::Resumed(_));
+        let format = self.format();
         let mut members = vec![("shape".to_string(), Value::Text(self.shape.clone()))];
-        if format2 {
+        if format != FORMAT_1 {
             members.push((
                 "sessionid".to_string(),
                 Value::Text(self.session_id.clone()),
@@ -1024,7 +1243,12 @@ impl SavedState {
             ),
             (
                 "pending".to_string(),
-                Value::Array(self.pending.iter().map(SavedSend::to_value).collect()),
+                Value::Array(
+                    self.pending
+                        .iter()
+                        .map(|send| send.to_value(format))
+                        .collect(),
+                ),
             ),
         ]);
         match &self.invokes {
@@ -1068,7 +1292,12 @@ impl SavedState {
             ),
             (
                 "external".to_string(),
-                Value::Array(self.external.iter().map(SavedEvent::to_value).collect()),
+                Value::Array(
+                    self.external
+                        .iter()
+                        .map(|event| event.to_value(format))
+                        .collect(),
+                ),
             ),
         ]);
         // Absent, not empty, when no record schema is past its first revision:
@@ -1106,18 +1335,20 @@ impl SavedState {
         members
     }
 
-    /// Read `sce-saved-state` JSON, of format 1 or 2. The shape is not judged
-    /// here — the machine that restores it knows its own ([`upgrade`]).
+    /// Read `sce-saved-state` JSON, of format 1, 2 or 3, judged by its `format`
+    /// before anything else is read. The shape is not judged here — the machine
+    /// that restores it knows its own ([`upgrade`]).
     pub fn from_json(text: &str) -> Result<Self, StateRefusal> {
         let value =
             json::parse(text).map_err(|e| StateRefusal::new(format!("the saved state is {e}")))?;
         let format = match value.member("format") {
             Some(Value::Number(n)) if n == &FORMAT_1.to_string() => FORMAT_1,
             Some(Value::Number(n)) if n == &FORMAT_2.to_string() => FORMAT_2,
+            Some(Value::Number(n)) if n == &FORMAT_3.to_string() => FORMAT_3,
             Some(other) => {
                 return Err(StateRefusal::new(format!(
-                    "the saved state is format {}, and this runtime reads formats {FORMAT_1} \
-                     and {FORMAT_2}",
+                    "the saved state is format {}, and this runtime reads formats {FORMAT_1}, \
+                     {FORMAT_2} and {FORMAT_3}",
                     json::write(other)
                 )))
             }
@@ -1182,12 +1413,12 @@ impl SavedState {
                 items
                     .iter()
                     .enumerate()
-                    .map(|(i, v)| SavedChild::from_value(v, i))
+                    .map(|(i, v)| SavedChild::from_value(v, i, format))
                     .collect::<Result<Vec<_>, _>>()?,
             ),
             _ => return Err(StateRefusal::new("'invokes' is not an array")),
         };
-        // Format 2's own members: the session's id and its count of starts.
+        // A tree's own members: the session's id and its count of starts.
         let (session_id, invoke_starts) = if format == FORMAT_1 {
             (String::new(), Vec::new())
         } else {
@@ -1232,7 +1463,7 @@ impl SavedState {
             Value::Array(items) => items
                 .iter()
                 .enumerate()
-                .map(|(i, v)| SavedEvent::from_value(v, &format!("external[{i}]")))
+                .map(|(i, v)| SavedEvent::from_value(v, &format!("external[{i}]"), format))
                 .collect::<Result<Vec<_>, _>>()?,
             _ => return Err(StateRefusal::new("'external' is not an array")),
         };
@@ -1307,9 +1538,11 @@ impl SavedChild {
         ])
     }
 
-    /// The `index`th running child of a format-2 session. A refusal inside the
-    /// child's own session names it by its path ([`StateRefusal::within`]).
-    fn from_value(value: &Value, index: usize) -> Result<Self, StateRefusal> {
+    /// The `index`th running child of a session of a tree whose root is of
+    /// `format`, the format the child's own session is written in: a child
+    /// states none of its own. A refusal inside the child's own session names
+    /// it by its path ([`StateRefusal::within`]).
+    fn from_value(value: &Value, index: usize, format: u32) -> Result<Self, StateRefusal> {
         let what = format!("invokes[{index}]");
         let text = |key: &str| match value.member(key) {
             Some(Value::Text(s)) if !s.is_empty() => Ok(s.clone()),
@@ -1325,7 +1558,7 @@ impl SavedChild {
                         "'{what}.session' states a format, which only the root of a tree does"
                     )));
                 }
-                SavedState::from_session(session, FORMAT_2)
+                SavedState::from_session(session, format)
                     .map_err(|refusal| refusal.within(&format!("{what}.session")))?
             }
             Some(_) => {
@@ -1716,11 +1949,13 @@ fn clamp_to_i64(ms: u64) -> u64 {
 /// such revision in `revisions` and writes the revised shape; any other writes
 /// the first shape and no `revisions`.
 ///
-/// The state is format 2 (docs/adr/0045): the machine's own id, how many times
-/// each `<invoke>` has started, and `children`, each running child with its
-/// whole state, which the generated machine saved through the child's own
-/// document, in document order. The shape is the format-2 one, which names an
-/// enum by its document.
+/// The state is a tree of sessions (docs/adr/0045), written as format 3: the
+/// machine's own id, how many times each `<invoke>` has started, and
+/// `children`, each running child with its whole state, which the generated
+/// machine saved through the child's own document, in document order. Each
+/// event it holds carries its origin as one pair and the session that sent it
+/// (docs/adr/0090, section 7). The shape is the format-2 one, which names an
+/// enum by its document, and which format 3 keeps.
 ///
 /// Refused for a machine that is not running — never started, or ended at a
 /// top-level `<final>`, where there is nothing left to resume — for one whose
@@ -1766,7 +2001,7 @@ pub fn save<P: StatePolicy>(
     }
     // Read before anything is built, so a delayed send this state cannot carry
     // refuses the save instead of leaving it out.
-    let pending = save_pending(engine, wall_now_ms)?;
+    let pending = save_pending(engine, &session_id, wall_now_ms)?;
     // Document order, so the same machine saves the same text on every
     // backend.
     let mut active = engine.get_active_states();
@@ -1842,14 +2077,10 @@ pub fn save<P: StatePolicy>(
                 data: queued.metadata.data.clone(),
                 event_type: queued.metadata.event_type.as_str().to_string(),
                 send_id: queued.metadata.send_id.clone(),
-                // docs/adr/0090, "Until step 6": format 2 as every backend
-                // writes it, the sender for a session's send and the address
-                // otherwise.
-                origin: crate::helpers::io_processors::stored_origin_text(
-                    queued.metadata.origin.as_ref(),
-                    &queued.metadata.sender,
-                ),
-                origin_type: queued.metadata.origin_processor().to_string(),
+                // docs/adr/0090, section 7: the pair the processor that
+                // delivered the event wrote, and the session that sent it.
+                origin: queued.metadata.origin.clone(),
+                sender: queued.metadata.sender.clone(),
                 invoke_id: queued.metadata.invoke_id.clone(),
                 host_invoke_token: queued.metadata.host_invoke_token,
             })
@@ -1901,8 +2132,15 @@ fn save_host_invokes<P: StatePolicy>(engine: &Engine<P>, wall_now_ms: u64) -> Ve
 /// the invocation, as its `due` ([`save_host_invokes`]), and left out here. One
 /// that belongs to no running invocation is refused like a send the format
 /// cannot carry.
+///
+/// A send that delivers an event to a session is this session's own send, and
+/// the SCXML processor delivers it, so it is saved with `session_id`, this
+/// session's id, as its sender (docs/adr/0090, section 7). A send to the
+/// internal queue is saved with none: the event it delivers is an internal
+/// event, which has no origin, whatever sender the scheduled entry keeps.
 fn save_pending<P: StatePolicy>(
     engine: &Engine<P>,
+    session_id: &str,
     wall_now_ms: u64,
 ) -> Result<Vec<SavedSend>, StateRefusal> {
     use crate::engine::ScheduledAct;
@@ -1920,51 +2158,44 @@ fn save_pending<P: StatePolicy>(
                 // §scxml-5.10: a send is saved under its member's name. A name the
                 // document computed (`<send eventexpr>`, `name`) needs a script
                 // engine, which no saved machine has, so none is waiting here.
-                // docs/adr/0090, "Until step 6": a waiting send is a session's,
-                // and format 2 stores the sending session's id as its `origin`.
                 ScheduledAct::Raise {
                     event,
                     event_data,
                     send_id,
-                    sender,
                     ..
                 } => SavedAct::Raise {
                     event: name(event),
                     data: event_data.clone(),
                     send_id: send_id.clone(),
-                    origin: sender.clone(),
+                    sender: session_id.to_string(),
                 },
                 ScheduledAct::Routed {
                     event: Some(event),
                     event_data,
                     send_id,
-                    sender,
                     route: ScheduledRoute::InternalQueue,
                     ..
                 } => SavedAct::Internal {
                     event: name(event),
                     data: event_data.clone(),
                     send_id: send_id.clone(),
-                    origin: sender.clone(),
                 },
                 // docs/adr/0045: the parent and a child of this session are
                 // sessions the saved tree holds.
                 ScheduledAct::Routed {
                     event_data,
                     send_id,
-                    sender,
                     route: ScheduledRoute::Parent { event_name },
                     ..
                 } => SavedAct::Parent {
                     event: event_name.clone(),
                     data: event_data.clone(),
                     send_id: send_id.clone(),
-                    origin: sender.clone(),
+                    sender: session_id.to_string(),
                 },
                 ScheduledAct::Routed {
                     event_data,
                     send_id,
-                    sender,
                     route:
                         ScheduledRoute::Invocation {
                             invoke_id,
@@ -1976,7 +2207,7 @@ fn save_pending<P: StatePolicy>(
                     event: event_name.clone(),
                     data: event_data.clone(),
                     send_id: send_id.clone(),
-                    origin: sender.clone(),
+                    sender: session_id.to_string(),
                 },
                 ScheduledAct::Routed { send_id, route, .. } => {
                     return Err(StateRefusal::new(format!(
@@ -2243,9 +2474,10 @@ pub fn check_shape(saved: &SavedState, shape: &str) -> Result<(), StateRefusal> 
 /// the wire carried it, and the lift reads it with the defaults when each is
 /// delivered, so nothing of them is grown here.
 ///
-/// A format-2 state is judged against the format-2 shapes, which name an enum
-/// by its document rather than by its alias (docs/adr/0045, section 2), and a
-/// format-1 state against the format-1 ones, exactly as before.
+/// A tree of sessions (format 2 or 3) is judged against the format-2 shapes,
+/// which name an enum by its document rather than by its alias (docs/adr/0045,
+/// section 2), and a format-1 state against the format-1 ones, exactly as
+/// before.
 pub fn upgrade(saved: &SavedState, shape: &SavedShape) -> Result<SavedState, StateRefusal> {
     check_features(saved, shape.features)?;
     let (first, revised) = match saved.format() {
@@ -2532,7 +2764,7 @@ fn grow_record(
 ///
 /// A format-1 state's running children are started again from their
 /// beginning, last, so what a child sends as it starts stands behind what was
-/// already waiting. A format-2 state's are judged with the rest before anything
+/// already waiting. A tree's are judged with the rest before anything
 /// is built ([`judge`]), and resumed, each where it stood, once this session
 /// stands where it did ([`StatePolicy::resume_child`]).
 pub fn enter<P: StatePolicy>(
@@ -2635,10 +2867,10 @@ fn judge_session<P: StatePolicy>(saved: &SavedState) -> Result<Judged<'_, P>, St
             queued.metadata.data = e.data.clone();
             queued.metadata.event_type = event_type;
             queued.metadata.send_id = e.send_id.clone();
-            // docs/adr/0090, section 7: the pair a format-2 origin is read as.
-            let read = crate::helpers::io_processors::read_stored_origin(&e.origin, &e.origin_type);
-            queued.metadata.origin = read.origin;
-            queued.metadata.sender = read.sender;
+            // docs/adr/0090, section 7: the pair and the sender as the text held
+            // them, a format-2 origin already read as its pair.
+            queued.metadata.origin = e.origin.clone();
+            queued.metadata.sender = e.sender.clone();
             queued.metadata.invoke_id = e.invoke_id.clone();
             queued.metadata.host_invoke_token = e.host_invoke_token;
             Ok(queued)
@@ -2742,7 +2974,7 @@ fn judge_session<P: StatePolicy>(saved: &SavedState) -> Result<Judged<'_, P>, St
     })
 }
 
-/// Refuse `child`, the `index`th running child of the format-2 session
+/// Refuse `child`, the `index`th running child of the session of a tree
 /// `parent`, unless it is the child that session could be running
 /// (docs/adr/0045, section 3, step 1): its start is the count the session holds
 /// for its `<invoke>`, its session id is the session's and the id it was
@@ -2818,14 +3050,13 @@ enum ReadSend<'s, E> {
         event: E,
         data: &'s str,
         send_id: &'s str,
-        origin: &'s str,
+        sender: &'s str,
     },
     Internal {
         due: u64,
         event: E,
         data: &'s str,
         send_id: &'s str,
-        origin: &'s str,
     },
     Host {
         due: u64,
@@ -2837,7 +3068,7 @@ enum ReadSend<'s, E> {
         route: crate::ScheduledRoute,
         data: &'s str,
         send_id: &'s str,
-        origin: &'s str,
+        sender: &'s str,
     },
 }
 
@@ -2861,32 +3092,30 @@ impl<'s, E> ReadSend<'s, E> {
                 event,
                 data,
                 send_id,
-                origin,
+                sender,
             } => Self::Raise {
                 due,
                 event: event_of(event)?,
                 data,
                 send_id,
-                origin,
+                sender,
             },
             SavedAct::Internal {
                 event,
                 data,
                 send_id,
-                origin,
             } => Self::Internal {
                 due,
                 event: event_of(event)?,
                 data,
                 send_id,
-                origin,
             },
             SavedAct::Host(host) => Self::Host { due, host },
             SavedAct::Parent {
                 event,
                 data,
                 send_id,
-                origin,
+                sender,
             } => Self::Routed {
                 due,
                 route: crate::ScheduledRoute::Parent {
@@ -2894,7 +3123,7 @@ impl<'s, E> ReadSend<'s, E> {
                 },
                 data,
                 send_id,
-                origin,
+                sender,
             },
             // The child is named by the `<invoke>` the target names, which must
             // be one of the document's: a send to any other is one the save
@@ -2904,7 +3133,7 @@ impl<'s, E> ReadSend<'s, E> {
                 event,
                 data,
                 send_id,
-                origin,
+                sender,
             } => {
                 if P::invoke_owner(invoke_id).is_none() {
                     return Err(StateRefusal::new(format!(
@@ -2920,7 +3149,7 @@ impl<'s, E> ReadSend<'s, E> {
                     },
                     data,
                     send_id,
-                    origin,
+                    sender,
                 }
             }
         })
@@ -2932,16 +3161,27 @@ impl<'s, E> ReadSend<'s, E> {
 /// due while the machine was away comes due now. Entries due at the same
 /// moment are armed in order and the scheduler delivers those in the order they
 /// were armed, which is how the saved machine would have.
+///
+/// A send that delivers an event to a session is armed with the sender it was
+/// saved with (docs/adr/0090, section 7). A format-1 text stored none, since
+/// it held no session id, and such a send is this session's own: it is armed
+/// with this session's id, the sender a send it makes now carries. A send to
+/// the internal queue is armed with none, since its event is an internal event.
 fn arm_pending<P: StatePolicy>(
     engine: &mut Engine<P>,
     pending: Vec<ReadSend<'_, P::Event>>,
     wall_now_ms: u64,
 ) {
-    // docs/adr/0090, section 7: a waiting send is a session's, so its stored
-    // `origin` names the sender by id, or by location as one backend wrote it.
-    use crate::helpers::io_processors::read_stored_sender;
     use crate::ScheduledRoute;
 
+    let own = engine.policy().own_session_id().to_string();
+    let sender_of = |sender: &str| {
+        if sender.is_empty() {
+            own.clone()
+        } else {
+            sender.to_string()
+        }
+    };
     let now = engine.now_ms();
     let ready_at = |due: u64| now.saturating_add(due.saturating_sub(wall_now_ms));
     for read in pending {
@@ -2951,14 +3191,14 @@ fn arm_pending<P: StatePolicy>(
                 event,
                 data,
                 send_id,
-                origin,
+                sender,
             } => {
                 engine.scheduler.schedule_event_at(
                     P::event_id(event),
                     ready_at(due),
                     send_id,
                     data,
-                    &read_stored_sender(origin),
+                    &sender_of(sender),
                 );
             }
             ReadSend::Internal {
@@ -2966,14 +3206,13 @@ fn arm_pending<P: StatePolicy>(
                 event,
                 data,
                 send_id,
-                origin,
             } => {
                 engine.scheduler.schedule_routed_at(
                     Some(P::event_id(event)),
                     ready_at(due),
                     send_id,
                     data,
-                    &read_stored_sender(origin),
+                    "",
                     ScheduledRoute::InternalQueue,
                 );
             }
@@ -2997,14 +3236,14 @@ fn arm_pending<P: StatePolicy>(
                 route,
                 data,
                 send_id,
-                origin,
+                sender,
             } => {
                 engine.scheduler.schedule_routed_at(
                     None,
                     ready_at(due),
                     send_id,
                     data,
-                    &read_stored_sender(origin),
+                    &sender_of(sender),
                     route,
                 );
             }
@@ -3088,7 +3327,7 @@ mod tests {
                         event: "timeout".to_string(),
                         data: String::new(),
                         send_id: "timer".to_string(),
-                        origin: "s1".to_string(),
+                        sender: "s1".to_string(),
                     },
                 },
                 SavedSend {
@@ -3097,7 +3336,6 @@ mod tests {
                         event: "inner".to_string(),
                         data: "{\"n\":2}".to_string(),
                         send_id: "__send_1".to_string(),
-                        origin: String::new(),
                     },
                 },
                 SavedSend {
@@ -3156,6 +3394,22 @@ mod tests {
                     host_invoke_token: Some(7),
                     ..SavedEvent::default()
                 },
+                // Format 1 stores a session's send as the sender's id, and a
+                // host's pair as its address and processor (docs/adr/0090,
+                // section 7): each is read back as the pair it was.
+                SavedEvent {
+                    name: "answer".to_string(),
+                    event_type: "external".to_string(),
+                    origin: Some(scxml_origin("s1")),
+                    sender: "s1".to_string(),
+                    ..SavedEvent::default()
+                },
+                SavedEvent {
+                    name: "rest".to_string(),
+                    event_type: "external".to_string(),
+                    origin: Some(EventOrigin::new("x-sce-host", "motor")),
+                    ..SavedEvent::default()
+                },
             ],
             revisions: vec![(
                 "reading.taken".to_string(),
@@ -3166,7 +3420,27 @@ mod tests {
             )],
             features: Some(vec!["session-unicast".to_string(), "tls".to_string()]),
         };
-        let back = SavedState::from_json(&state.to_json()).expect("reads");
+        let text = state.to_json();
+        assert!(text.starts_with(r#"{"format":1,"#), "{text}");
+        assert!(
+            text.contains(r#""sendid":"timer","origin":"s1"}"#),
+            "a format-1 waiting send stores its sender's id: {text}"
+        );
+        assert!(
+            text.contains(r#""sendid":"__send_1","origin":""}"#),
+            "an internal send stores none: {text}"
+        );
+        assert!(
+            text.contains(
+                r#""origin":"s1","origintype":"http://www.w3.org/TR/scxml/#SCXMLEventProcessor""#
+            ),
+            "{text}"
+        );
+        assert!(
+            text.contains(r#""origin":"motor","origintype":"x-sce-host""#),
+            "{text}"
+        );
+        let back = SavedState::from_json(&text).expect("reads");
         assert_eq!(back, state);
         // A machine of no product line records no configuration, and its text
         // is the one it was before configurations were recorded.
@@ -3316,8 +3590,14 @@ mod tests {
                 event: "progress".to_string(),
                 data: "{\"n\":1}".to_string(),
                 send_id: "report".to_string(),
-                origin: "planner-1.worker".to_string(),
+                sender: "planner-1.worker".to_string(),
             },
+        }];
+        // The parent's event, which no processor stamped.
+        child.external = vec![SavedEvent {
+            name: "swap".to_string(),
+            event_type: "external".to_string(),
+            ..SavedEvent::default()
         }];
         let mut root = session(
             'a',
@@ -3338,26 +3618,65 @@ mod tests {
                 event: "nudge".to_string(),
                 data: String::new(),
                 send_id: "poke".to_string(),
-                origin: "planner-1".to_string(),
+                sender: "planner-1".to_string(),
             },
         }];
+        // The child's answer, which the SCXML processor delivered, and a host's
+        // event, whose pair names no session.
+        root.external = vec![
+            SavedEvent {
+                name: "answer".to_string(),
+                event_type: "external".to_string(),
+                origin: Some(scxml_origin("planner-1.worker")),
+                sender: "planner-1.worker".to_string(),
+                invoke_id: "worker".to_string(),
+                ..SavedEvent::default()
+            },
+            SavedEvent {
+                name: "rest".to_string(),
+                event_type: "external".to_string(),
+                origin: Some(EventOrigin::new("x-sce-host", "motor")),
+                ..SavedEvent::default()
+            },
+        ];
         root
     }
+
+    /// `http://www.w3.org/TR/scxml/#SCXMLEventProcessor`, as a format-3 pair
+    /// spells it.
+    const SCXML: &str = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor";
 
     #[test]
     fn a_tree_of_sessions_is_read_back_as_it_was_written() {
         let tree = tree();
-        assert_eq!(tree.format(), FORMAT_2);
+        assert_eq!(tree.format(), FORMAT_3);
         let text = tree.to_json();
         // The format is stated once, at the root, and each session's id follows
         // its shape: the order every backend writes.
         let prefix = format!(
-            r#"{{"format":2,"shape":"{}","sessionid":"planner-1","#,
+            r#"{{"format":3,"shape":"{}","sessionid":"planner-1","#,
             "a".repeat(64)
         );
         assert!(text.starts_with(&prefix), "{text}");
         assert_eq!(text.matches(r#""format""#).count(), 1, "{text}");
         assert!(text.contains(r#""invokestarts":{"worker":"2"}"#), "{text}");
+        // docs/adr/0090, section 7, "Text form": the pair, processor first,
+        // then the sender, in the place format 2's origin held; `null` for none.
+        for record in [
+            format!(
+                r#"{{"due":"1700000006000","act":"child","invokeid":"worker","event":"nudge","data":"","sendid":"poke","origin":{{"processor":"{SCXML}","address":"sce://scxml/planner-1"}},"sender":"planner-1"}}"#
+            ),
+            format!(
+                r#"{{"due":"1700000005000","act":"parent","event":"progress","data":"{{\"n\":1}}","sendid":"report","origin":{{"processor":"{SCXML}","address":"sce://scxml/planner-1.worker"}},"sender":"planner-1.worker"}}"#
+            ),
+            format!(
+                r#"{{"name":"answer","data":"","type":"external","sendid":"","origin":{{"processor":"{SCXML}","address":"sce://scxml/planner-1.worker"}},"sender":"planner-1.worker","invokeid":"worker","hostinvoketoken":null}}"#
+            ),
+            r#"{"name":"rest","data":"","type":"external","sendid":"","origin":{"processor":"x-sce-host","address":"motor"},"sender":null,"invokeid":"","hostinvoketoken":null}"#.to_string(),
+            r#"{"name":"swap","data":"","type":"external","sendid":"","origin":null,"sender":null,"invokeid":"","hostinvoketoken":null}"#.to_string(),
+        ] {
+            assert!(text.contains(&record), "{record} in {text}");
+        }
         assert_eq!(SavedState::from_json(&text), Ok(tree.clone()));
         assert_eq!(tree.invokes.ids(), ["worker"]);
         assert_eq!(tree.invoke_start("worker"), 2);
@@ -3417,11 +3736,319 @@ mod tests {
         // A child's session states no format of its own.
         let nested = text.replacen(
             r#""session":{"shape""#,
-            r#""session":{"format":2,"shape""#,
+            r#""session":{"format":3,"shape""#,
             1,
         );
         let refusal = SavedState::from_json(&nested).expect_err("a nested format");
         assert!(refusal.reason().contains("states a format"), "{refusal}");
+    }
+
+    // ── an event's origin in format 3 (docs/adr/0090, section 7) ──
+
+    /// A format-3 session holding `pending` and `external`, and nothing else.
+    fn with_origins(pending: &str, external: &str) -> String {
+        format!(
+            r#"{{"format":3,"shape":"d","sessionid":"s1","configuration":[],"current":"s","variables":{{}},"history":{{}},"pending":[{pending}],"invokes":[],"invokestarts":{{}},"hostinvokes":[],"hostinvoketoken":"0","sendseq":"0","external":[{external}]}}"#
+        )
+    }
+
+    /// A queued event of a format-3 text whose `origin` and `sender` are the
+    /// JSON `origin` and `sender`.
+    fn event_with(origin: &str, sender: &str) -> String {
+        format!(
+            r#"{{"name":"e","data":"","type":"external","sendid":"","origin":{origin},"sender":{sender},"invokeid":"","hostinvoketoken":null}}"#
+        )
+    }
+
+    /// A waiting send of `act` of a format-3 text whose `origin` and `sender`
+    /// are the JSON `origin` and `sender`.
+    fn send_with(act: &str, origin: &str, sender: &str) -> String {
+        let invoke_id = if act == "child" {
+            r#""invokeid":"w","#
+        } else {
+            ""
+        };
+        format!(
+            r#"{{"due":"1","act":"{act}",{invoke_id}"event":"e","data":"","sendid":"","origin":{origin},"sender":{sender}}}"#
+        )
+    }
+
+    /// The SCXML pair of the session `id`, as format 3 writes it for an id that
+    /// needs no escape.
+    fn scxml_pair(id: &str) -> String {
+        format!(r#"{{"processor":"{SCXML}","address":"sce://scxml/{id}"}}"#)
+    }
+
+    #[test]
+    fn a_format_3_origin_and_sender_are_read_as_they_are_written() {
+        let host = r#"{"processor":"x-sce-host","address":"motor"}"#;
+        let mesh = format!(r#"{{"processor":"{SCXML}","address":"mesh://ecu"}}"#);
+        let external = [
+            event_with("null", "null"),
+            event_with(&scxml_pair("s2"), r#""s2""#),
+            event_with(host, "null"),
+            // An SCXML pair at an address that names no session has no sender.
+            event_with(&mesh, "null"),
+            // The address is the id percent-encoded, as the session publishes it.
+            event_with(
+                &format!(r#"{{"processor":"{SCXML}","address":"sce://scxml/peer%3A1"}}"#),
+                r#""peer:1""#,
+            ),
+        ]
+        .join(",");
+        let pending = [
+            send_with("raise", &scxml_pair("s1"), r#""s1""#),
+            send_with("internal", "null", "null"),
+            send_with("parent", &scxml_pair("s1"), r#""s1""#),
+            send_with("child", &scxml_pair("s1"), r#""s1""#),
+        ]
+        .join(",");
+        let text = with_origins(&pending, &external);
+        let state = SavedState::from_json(&text).expect("reads");
+        let read: Vec<(Option<EventOrigin>, &str)> = state
+            .external
+            .iter()
+            .map(|e| (e.origin.clone(), e.sender.as_str()))
+            .collect();
+        assert_eq!(
+            read,
+            vec![
+                (None, ""),
+                (Some(scxml_origin("s2")), "s2"),
+                (Some(EventOrigin::new("x-sce-host", "motor")), ""),
+                (Some(EventOrigin::new(SCXML, "mesh://ecu")), ""),
+                (Some(scxml_origin("peer:1")), "peer:1"),
+            ]
+        );
+        assert!(
+            matches!(&state.pending[0].act, SavedAct::Raise { sender, .. } if sender == "s1"),
+            "{:?}",
+            state.pending[0]
+        );
+        assert!(
+            matches!(&state.pending[1].act, SavedAct::Internal { .. }),
+            "{:?}",
+            state.pending[1]
+        );
+        assert!(
+            matches!(&state.pending[2].act, SavedAct::Parent { sender, .. } if sender == "s1"),
+            "{:?}",
+            state.pending[2]
+        );
+        assert!(
+            matches!(&state.pending[3].act, SavedAct::Child { sender, .. } if sender == "s1"),
+            "{:?}",
+            state.pending[3]
+        );
+        // And written again byte for byte.
+        assert_eq!(state.to_json(), text);
+    }
+
+    #[test]
+    fn a_format_3_origin_or_sender_that_is_not_one_is_refused_naming_its_record() {
+        let pair = scxml_pair("s1");
+        let host = r#"{"processor":"x-sce-host","address":"motor"}"#;
+        for (what, pending, external, wanted) in [
+            (
+                "an origin that is a text",
+                String::new(),
+                event_with(r#""s1""#, r#""s1""#),
+                "'external[0].origin' is neither null nor a pair",
+            ),
+            (
+                "a pair with no address",
+                String::new(),
+                event_with(r#"{"processor":"x-sce-host"}"#, "null"),
+                "'external[0].origin' has no 'address'",
+            ),
+            (
+                "a pair with no processor",
+                String::new(),
+                event_with(r#"{"address":"motor"}"#, "null"),
+                "'external[0].origin' has no 'processor'",
+            ),
+            (
+                "a pair with an empty processor",
+                String::new(),
+                event_with(r#"{"processor":"","address":"motor"}"#, "null"),
+                "'external[0].origin.processor' is empty",
+            ),
+            (
+                "a pair with an empty address",
+                String::new(),
+                event_with(r#"{"processor":"x-sce-host","address":""}"#, "null"),
+                "'external[0].origin.address' is empty",
+            ),
+            (
+                "a pair with a member added",
+                String::new(),
+                event_with(
+                    r#"{"processor":"x-sce-host","address":"motor","origintype":"x"}"#,
+                    "null",
+                ),
+                "'external[0].origin' holds 'origintype'",
+            ),
+            (
+                "a pair whose member is not a text",
+                String::new(),
+                event_with(r#"{"processor":1,"address":"motor"}"#, "null"),
+                "'external[0].origin.processor' is not a text",
+            ),
+            (
+                "a sender that is not a session id",
+                String::new(),
+                event_with(&scxml_pair("a%20b"), r#""a b""#),
+                "'external[0].sender' (a b) is not a session id",
+            ),
+            (
+                "a sender that is not a text",
+                String::new(),
+                event_with("null", "5"),
+                "'external[0].sender' is neither null nor a session id",
+            ),
+            (
+                "a sender beside another session's pair",
+                String::new(),
+                event_with(&pair, r#""s2""#),
+                "'external[0].sender' is 's2', and 'external[0].origin' is not the SCXML pair",
+            ),
+            (
+                "a sender beside no origin",
+                String::new(),
+                event_with("null", r#""s1""#),
+                "'external[0].sender' is 's1'",
+            ),
+            (
+                "a sender beside a host's pair",
+                String::new(),
+                event_with(host, r#""s1""#),
+                "'external[0].sender' is 's1'",
+            ),
+            (
+                "a sender beside its location unencoded",
+                String::new(),
+                event_with(
+                    &format!(r#"{{"processor":"{SCXML}","address":"sce://scxml/peer:1"}}"#),
+                    r#""peer:1""#,
+                ),
+                "'external[0].sender' is 'peer:1'",
+            ),
+            (
+                "an event with no sender",
+                String::new(),
+                r#"{"name":"e","data":"","type":"external","sendid":"","origin":null,"invokeid":"","hostinvoketoken":null}"#.to_string(),
+                "'external[0]' has no 'sender'",
+            ),
+            (
+                "an event written as format 2 writes it",
+                String::new(),
+                r#"{"name":"e","data":"","type":"external","sendid":"","origin":"","origintype":"","invokeid":"","hostinvoketoken":null}"#.to_string(),
+                "'external[0].origin' is neither null nor a pair",
+            ),
+            (
+                "a raise act with no sender",
+                send_with("raise", &pair, "null"),
+                String::new(),
+                "'pending[0]' is a send of this session, and it names no sender",
+            ),
+            (
+                "a parent act with no origin and no sender",
+                send_with("parent", "null", "null"),
+                String::new(),
+                "'pending[0]' is a send of this session, and it names no sender",
+            ),
+            (
+                "a child act whose origin is not its sender's pair",
+                send_with("child", "null", r#""s1""#),
+                String::new(),
+                "'pending[0].sender' is 's1'",
+            ),
+            (
+                "a raise act with an origin that is a text",
+                send_with("raise", r#""s1""#, r#""s1""#),
+                String::new(),
+                "'pending[0].origin' is neither null nor a pair",
+            ),
+            (
+                "an internal act that holds an origin",
+                send_with("internal", &pair, "null"),
+                String::new(),
+                "'pending[0]' is a send to the internal queue",
+            ),
+            (
+                "an internal act that holds a sender",
+                send_with("internal", "null", r#""s1""#),
+                String::new(),
+                "'pending[0]' is a send to the internal queue",
+            ),
+            (
+                "an internal act with no sender",
+                r#"{"due":"1","act":"internal","event":"e","data":"","sendid":"","origin":null}"#
+                    .to_string(),
+                String::new(),
+                "'pending[0]' has no 'sender'",
+            ),
+        ] {
+            let text = with_origins(&pending, &external);
+            let refusal = SavedState::from_json(&text).expect_err(what);
+            assert!(refusal.reason().contains(wanted), "{what}: {refusal}");
+        }
+    }
+
+    /// docs/adr/0090, section 7: a format-1 state written back without a
+    /// machine stays format 1, its origins written by the rule format 2 uses:
+    /// the sender's id for a session's send, the address otherwise, then the
+    /// pair's processor. An internal send's stored origin is not read.
+    #[test]
+    fn a_format_1_state_is_written_back_as_format_1() {
+        let text = |pending: &str, external: &str| {
+            format!(
+                r#"{{"format":1,"shape":"d","configuration":[],"current":"s","variables":{{}},"history":{{}},"pending":[{pending}],"invokes":[],"hostinvokes":[],"hostinvoketoken":"0","sendseq":"0","external":[{external}]}}"#
+            )
+        };
+        let event = |origin: &str, origin_type: &str| {
+            format!(
+                r#"{{"name":"e","data":"","type":"external","sendid":"","origin":"{origin}","origintype":"{origin_type}","invokeid":"","hostinvoketoken":null}}"#
+            )
+        };
+        let stored = text(
+            r#"{"due":"1","act":"internal","event":"i","data":"","sendid":"","origin":"s1"},{"due":"2","act":"raise","event":"r","data":"","sendid":"","origin":"sce://scxml/a%20b"}"#,
+            &[
+                event("s1", ""),
+                event("sce://scxml/a%20b", "x-sce-host"),
+                event("", SCXML),
+            ]
+            .join(","),
+        );
+        let written = text(
+            r#"{"due":"1","act":"internal","event":"i","data":"","sendid":"","origin":""},{"due":"2","act":"raise","event":"r","data":"","sendid":"","origin":"a b"}"#,
+            &[event("s1", SCXML), event("a b", SCXML), event("", "")].join(","),
+        );
+        let state = SavedState::from_json(&stored).expect("a format-1 state reads");
+        assert_eq!(state.format(), FORMAT_1);
+        assert_eq!(state.to_json(), written);
+    }
+
+    /// docs/adr/0090, section 7: a format-2 tree is read by the table of that
+    /// section and written back as format 3, its internal send with no origin.
+    #[test]
+    fn a_format_2_tree_is_read_by_the_table_and_written_as_format_3() {
+        let format2 = format!(
+            r#"{{"format":2,"shape":"d","sessionid":"s1","configuration":[],"current":"s","variables":{{}},"history":{{}},"pending":[{{"due":"1","act":"internal","event":"i","data":"","sendid":"","origin":"s1"}},{{"due":"2","act":"raise","event":"r","data":"","sendid":"","origin":"s1"}},{{"due":"3","act":"parent","event":"p","data":"","sendid":"","origin":"sce://scxml/s1"}}],"invokes":[],"invokestarts":{{}},"hostinvokes":[],"hostinvoketoken":"0","sendseq":"0","external":[{{"name":"a","data":"","type":"external","sendid":"","origin":"w","origintype":"{SCXML}","invokeid":"w","hostinvoketoken":null}},{{"name":"b","data":"","type":"external","sendid":"","origin":"","origintype":"{SCXML}","invokeid":"","hostinvoketoken":null}},{{"name":"c","data":"","type":"external","sendid":"","origin":"motor","origintype":"x-sce-host","invokeid":"","hostinvoketoken":null}}]}}"#
+        );
+        let s1 = scxml_pair("s1");
+        let w = scxml_pair("w");
+        let format3 = with_origins(
+            &format!(
+                r#"{{"due":"1","act":"internal","event":"i","data":"","sendid":"","origin":null,"sender":null}},{{"due":"2","act":"raise","event":"r","data":"","sendid":"","origin":{s1},"sender":"s1"}},{{"due":"3","act":"parent","event":"p","data":"","sendid":"","origin":{s1},"sender":"s1"}}"#
+            ),
+            &format!(
+                r#"{{"name":"a","data":"","type":"external","sendid":"","origin":{w},"sender":"w","invokeid":"w","hostinvoketoken":null}},{{"name":"b","data":"","type":"external","sendid":"","origin":null,"sender":null,"invokeid":"","hostinvoketoken":null}},{{"name":"c","data":"","type":"external","sendid":"","origin":{{"processor":"x-sce-host","address":"motor"}},"sender":null,"invokeid":"","hostinvoketoken":null}}"#
+            ),
+        );
+        let state = SavedState::from_json(&format2).expect("a format-2 tree reads");
+        assert_eq!(state.format(), FORMAT_3);
+        assert_eq!(state.to_json(), format3);
     }
 
     #[test]
@@ -4039,6 +4666,7 @@ mod tests {
         for text in [
             include_str!("../../../../schemas/sce-saved-state.v1.schema.json"),
             include_str!("../../../../schemas/sce-saved-state.v2.schema.json"),
+            include_str!("../../../../schemas/sce-saved-state.v3.schema.json"),
         ] {
             let schema = json::parse(text).expect("the schema is JSON");
             assert_eq!(
@@ -4052,11 +4680,19 @@ mod tests {
 
     #[test]
     fn another_format_is_refused() {
-        let text = r#"{"format":3,"shape":"d","configuration":[],"current":"s","variables":{},"history":{},"external":[]}"#;
-        let refusal = SavedState::from_json(text).expect_err("format 3");
-        assert!(
-            refusal.reason().contains("reads formats 1 and 2"),
-            "{refusal}"
+        // A format of the future is refused by its `format`, before anything
+        // else is read: this text holds nothing else a reader could take.
+        let text = r#"{"format":4,"shape":"d","configuration":[],"current":"s","variables":{},"history":{},"external":[]}"#;
+        let refusal = SavedState::from_json(text).expect_err("format 4");
+        assert_eq!(
+            refusal.reason(),
+            "the saved state is format 4, and this runtime reads formats 1, 2 and 3"
+        );
+        // The member as it is written, a text included.
+        let refusal = SavedState::from_json(&text.replacen("4", "\"3\"", 1)).expect_err("a text");
+        assert_eq!(
+            refusal.reason(),
+            "the saved state is format \"3\", and this runtime reads formats 1, 2 and 3"
         );
     }
 

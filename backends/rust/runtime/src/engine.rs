@@ -1727,7 +1727,7 @@ impl<P: StatePolicy> Engine<P> {
     }
 
     /// docs/adr/0045: resume each of `children`, the running children a saved
-    /// format-2 state holds, in the order given, each restored where it stood
+    /// tree of sessions holds, in the order given, each restored where it stood
     /// ([`StatePolicy::resume_child`]). Nothing starts and nothing is sent; the
     /// first refusal stops the restore, and names the child by its path.
     #[cfg(feature = "std")]
