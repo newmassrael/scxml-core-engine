@@ -23,6 +23,10 @@ const (
 	BasicHTTPProcessorAlias = "basichttp"
 )
 
+// scxmlLocationPrefix is what every SCXML Event I/O Processor location begins
+// with, before the session id it names.
+const scxmlLocationPrefix = "sce://scxml/"
+
 // ScxmlProcessorLocation is the address that reaches this session over the
 // SCXML Event I/O Processor.
 //
@@ -30,7 +34,7 @@ const (
 // SCE-scheme URI naming the session. The session id is percent-encoded because
 // it is not constrained to URI-safe characters.
 func ScxmlProcessorLocation(sessionID string) string {
-	return "sce://scxml/" + percentEncode(sessionID)
+	return scxmlLocationPrefix + percentEncode(sessionID)
 }
 
 // SessionIDFromScxmlLocation returns the session id an SCXML Event I/O
@@ -41,11 +45,10 @@ func ScxmlProcessorLocation(sessionID string) string {
 // publishes to be usable as a <send> target, which only holds if something can
 // read a session back out of it.
 func SessionIDFromScxmlLocation(uri string) string {
-	const prefix = "sce://scxml/"
-	if len(uri) <= len(prefix) || !strings.HasPrefix(uri, prefix) {
+	if len(uri) <= len(scxmlLocationPrefix) || !strings.HasPrefix(uri, scxmlLocationPrefix) {
 		return ""
 	}
-	return percentDecode(uri[len(prefix):])
+	return percentDecode(uri[len(scxmlLocationPrefix):])
 }
 
 // ScxmlOrigin is the origin the SCXML Event I/O Processor writes for an event

@@ -1381,6 +1381,12 @@ func savedSendOriginFromJSON(
 		if kind == SavedActInternal {
 			return nil, "", nil
 		}
+		// The SCXML location's prefix alone names no session, and a session's
+		// act is always a session's send.
+		if stored == scxmlLocationPrefix {
+			return nil, "", refuse("'%s.origin' is '%s', the SCXML location's prefix alone, which names no "+
+				"session: a %s act is a send of this session", what, stored, kind)
+		}
 		sender := ReadStoredSender(stored)
 		return ScxmlOriginOf(sender), sender, nil
 	}

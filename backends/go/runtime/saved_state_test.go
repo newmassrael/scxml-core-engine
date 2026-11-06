@@ -448,6 +448,57 @@ func TestAFormatTwoSendWithNoStoredOriginIsASendOfTheSessionHoldingIt(t *testing
 	}
 }
 
+// docs/adr/0090, section 7: the SCXML location's prefix alone names no session.
+// A format-1 or format-2 `raise`, `parent` or `child` act that stored it is
+// refused, since such an act is always a session's send; a queued event that
+// stored it is read as the pair as saved, with no sender, and written so.
+func TestTheSCXMLPrefixAloneNamesNoSession(t *testing.T) {
+	stored := func(kind string) string {
+		return `{"due":"5","act":"` + kind + `","event":"e","data":"","sendid":"s","origin":"sce://scxml/"}`
+	}
+	act := func(kind string) string {
+		return `{"format":2,` + strings.Replace(minimalSession, `"pending":[]`, `"pending":[`+stored(kind)+`]`, 1) + `}`
+	}
+	refused := func(text, kind string) {
+		t.Helper()
+		_, err := SavedStateFromJSON(text)
+		want := "'pending[0].origin' is 'sce://scxml/', the SCXML location's prefix alone, which names no " +
+			"session: a " + kind + " act is a send of this session"
+		if err == nil || err.Error() != want {
+			t.Errorf("a %s act is refused as %v, want %q", kind, err, want)
+		}
+	}
+	for _, kind := range []string{"raise", "parent", "child"} {
+		text := act(kind)
+		if kind == "child" {
+			text = strings.Replace(text, `"act":"child",`, `"act":"child","invokeid":"w",`, 1)
+		}
+		refused(text, kind)
+	}
+	// Format 1, which has no parent or child act.
+	refused(`{"format":1,"shape":"s","configuration":["a"],"current":"a","variables":{},"history":{},`+
+		`"pending":[`+stored("raise")+`],"invokes":[],"hostinvokes":[],"hostinvoketoken":"0","sendseq":"0",`+
+		`"external":[]}`, "raise")
+	if _, err := SavedStateFromJSON(act("internal")); err != nil {
+		t.Errorf("an internal act's stored origin is not read, and it is refused: %v", err)
+	}
+
+	queued := strings.Replace(minimalSession, `"external":[]`, `"external":[`+
+		queuedEvent("go", `"origin":"sce://scxml/","origintype":""`)+`]`, 1)
+	saved, err := SavedStateFromJSON(`{"format":2,` + queued + `}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	event := saved.External[0]
+	if !event.Origin.Equal(NewEventOrigin(SCXMLEventProcessorType, "sce://scxml/")) || event.Sender != "" {
+		t.Errorf("the queued event is read as (%+v, %q)", event.Origin, event.Sender)
+	}
+	if want := `"origin":{` + scxmlProcessorMember + `,"address":"sce://scxml/"},"sender":null`; !strings.Contains(
+		saved.ToJSON(), want) {
+		t.Errorf("written as %s, want it to hold %s", saved.ToJSON(), want)
+	}
+}
+
 // sharedFormat2Root is the directory of the format-2 reading fixtures
 // (docs/adr/0090, section 7, "The fixtures").
 var sharedFormat2Root = filepath.Join("..", "..", "..", "sce-build", "tests", "fixtures", "static_datamodel", "saved",
