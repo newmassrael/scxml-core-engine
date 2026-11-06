@@ -47,12 +47,26 @@ for STEM in jvm_long_text_static jvm_long_text_ecmascript; do
 
     cp "$FIXTURE" "$TMP/$STEM.scxml"
 
+    # The ECMAScript document is written for an ECMAScript engine, so its
+    # machine hands its engine ECMAScript whatever language the backend ships
+    # by default. The default is Lua, and a machine lowered to Lua is refused
+    # by the Rhino and QuickJS engines the Kotlin gate runs this test on
+    # (`acceptsLanguage`); the gate's overlay replaces only the W3C and
+    # `integration_resources` machines, never these, so the machine has to be
+    # written in the language its test names. The Lua engine reads it through
+    # its ECMAScript adapter.
+    ENGINE_ARGS=()
+    if [ "$STEM" = "jvm_long_text_ecmascript" ]; then
+        ENGINE_ARGS=(--script-engine ecmascript)
+    fi
+
     # Step 3: generate. `--input-root` overrides the default drift-header
     # source-hash root; `--kotlin-package-prefix` flips the emitted `package`
     # header so the driver beside it can import the machine.
     "$CODEGEN" generate "$TMP/$STEM.scxml" -l kotlin -o "$TMP/" \
         --input-root "$INPUT_ROOT" \
-        --kotlin-package-prefix "$PACKAGE_PREFIX"
+        --kotlin-package-prefix "$PACKAGE_PREFIX" \
+        ${ENGINE_ARGS[@]+"${ENGINE_ARGS[@]}"}
 
     # Step 4: clear stale Sm.kt files so a renamed artefact does not leave the
     # previous one orphaned next to the new one.
