@@ -74,6 +74,7 @@ let package = Package(
         .package(path: "../runtime"),
         .package(path: "../forge-runtime"),
         .package(path: "../host-features"),
+        .package(path: "../mesh"),
     ],
     targets: [
         .target(
@@ -140,6 +141,9 @@ let package = Package(
                 .product(name: "SceRuntime", package: "runtime"),
                 .product(name: "SceLua", package: "runtime"),
                 .product(name: "SceForgeRuntime", package: "forge-runtime"),
+                // The host Mesh core, for the tests that run a document through it and not only
+                // through the door it is registered at.
+                .product(name: "SceMesh", package: "mesh"),
             ]
         ),
     ] + w3cTargets + ecma262LoweredTargets
