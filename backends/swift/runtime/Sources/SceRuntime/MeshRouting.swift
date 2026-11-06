@@ -20,14 +20,14 @@ public let meshRpcInvokeType = "sce:mesh-rpc"
 ///
 /// The one place it is built: a host's endpoint builds what it hands a top-level machine with it,
 /// and what it hands a child session, so a child cannot tell a peer's event from the one its
-/// parent would have been given.
+/// parent would have been given. The Mesh transport writes the pair, and no session is its sender
+/// (docs/adr/0090, section 2).
 public func meshEventMetadata(data: String, source: String, sendID: String) -> EventMetadata {
     EventMetadata(
         data: data,
         eventType: .externalEvent,
         sendID: sendID,
-        origin: meshOriginScheme + source,
-        originType: scxmlEventProcessorType
+        origin: EventOrigin(processor: scxmlEventProcessorType, address: meshOriginScheme + source)
     )
 }
 
@@ -163,23 +163,22 @@ extension Engine {
     /// the endpoint built, or end a Mesh request. An event name the machine does not declare is
     /// dropped, as the engine drops any such event; an end the engine no longer waits for is
     /// refused by the token check. An answer carries `_event.origin` `mesh://<source>` and origin
-    /// type `sce:mesh-rpc` (SCE_MESH.md §9.5); a deadline the requester reached itself has no
-    /// peer to name, and carries neither.
+    /// type `sce:mesh-rpc` (SCE_MESH.md §9.5), the pair the Mesh transport writes for that peer
+    /// (docs/adr/0090, section 2); a deadline the requester reached itself has no peer to name,
+    /// and carries none.
     public func applyMeshCall(_ call: MeshCall) {
         switch call {
         case let .raise(name, metadata):
             raiseExternalByNameWithMeta(name, metadata: metadata)
         case let .endInvoke(invokeID, token, failed, data, source):
-            let origin = source.map { meshOriginScheme + $0 } ?? ""
-            let originType = source == nil ? "" : meshRpcInvokeType
+            let origin = source.map { EventOrigin(processor: meshRpcInvokeType, address: meshOriginScheme + $0) }
             if failed {
                 failHostInvoke(
                     processorType: meshRpcInvokeType,
                     invokeID: invokeID,
                     token: token,
                     errorData: data,
-                    origin: origin,
-                    originType: originType
+                    origin: origin
                 )
             } else {
                 completeHostInvoke(
@@ -187,8 +186,7 @@ extension Engine {
                     invokeID: invokeID,
                     token: token,
                     doneData: data,
-                    origin: origin,
-                    originType: originType
+                    origin: origin
                 )
             }
         }

@@ -37,6 +37,31 @@ public enum EventType: Sendable, Equatable, CustomStringConvertible {
     }
 }
 
+/// The reply address an event carries (docs/adr/0090, section 1): the Event I/O
+/// Processor that delivered it and the address that processor accepts as a `<send>`
+/// target.
+///
+/// The document reads the two as `_event.origintype` and `_event.origin`
+/// (§scxml-5.10.1); they are one value because the address means something only
+/// relative to its processor. The processor that delivers an event writes the pair
+/// once, where it builds the event, and nothing converts it later. Constructed whole:
+/// both fields are required and neither can be changed afterwards, so a pair with one
+/// field set cannot be spelled. An event with no origin holds nil instead. Port of the
+/// C++ `Core::EventOrigin`.
+public struct EventOrigin: Sendable, Equatable {
+    /// The canonical type URI of the Event I/O Processor that delivered the event
+    /// (`_event.origintype`).
+    public let processor: String
+
+    /// A URI that processor accepts as a `<send>` target (`_event.origin`).
+    public let address: String
+
+    public init(processor: String, address: String) {
+        self.processor = processor
+        self.address = address
+    }
+}
+
 /// The §scxml-5.10 metadata an event carries.
 ///
 /// Every event flowing through the engine carries one, and it is copied into
@@ -60,11 +85,15 @@ public struct EventMetadata {
     /// The `_event.sendid` of the originating `<send>`; empty if none.
     public var sendID: String
 
-    /// The `_event.origin` URI; empty if none.
-    public var origin: String
+    /// `_event.origin` and `_event.origintype` as the one pair the delivering processor
+    /// wrote (docs/adr/0090); nil for an event no processor stamped, which reads both
+    /// fields as the empty text (§scxml-5.10.1).
+    public var origin: EventOrigin?
 
-    /// The `_event.origintype`, such as the SCXML Event I/O Processor URI.
-    public var originType: String
+    /// The id of the session that sent the event, set only by the SCXML Event I/O
+    /// Processor. Not an `_event` field: it is what the lookups that find a session
+    /// read (`<finalize>`), and nothing reads the origin's address to find one.
+    public var sender: String?
 
     /// The `_event.invokeid` when the event came from a child invoke (§scxml-6.4.1).
     public var invokeID: String
@@ -91,8 +120,8 @@ public struct EventMetadata {
         data: String = "",
         eventType: EventType = .externalEvent,
         sendID: String = "",
-        origin: String = "",
-        originType: String = "",
+        origin: EventOrigin? = nil,
+        sender: String? = nil,
         invokeID: String = "",
         hostInvokeToken: UInt64? = nil,
         typedPayload: Any? = nil
@@ -102,7 +131,7 @@ public struct EventMetadata {
         self.eventType = eventType
         self.sendID = sendID
         self.origin = origin
-        self.originType = originType
+        self.sender = sender
         self.invokeID = invokeID
         self.hostInvokeToken = hostInvokeToken
         self.typedPayload = typedPayload
@@ -119,14 +148,30 @@ public struct EventMetadata {
         EventMetadata(eventType: .internalEvent)
     }
 
-    /// Metadata of an external event with a send id and an origin, as for `<send>`.
-    public static func external(sendID: String, origin: String) -> EventMetadata {
+    /// Metadata of an external event the session `sender` sends through the SCXML Event
+    /// I/O Processor, as for `<send>`: the pair that processor writes for the sender
+    /// (`scxmlOrigin(sender:)`) and the sender beside it (docs/adr/0090, section 2).
+    /// An empty `sender` is a machine that holds no session id, whose event carries no
+    /// origin.
+    public static func external(sendID: String, sender: String) -> EventMetadata {
         EventMetadata(
             eventType: .externalEvent,
             sendID: sendID,
-            origin: origin,
-            originType: scxmlEventProcessorType
+            origin: scxmlOrigin(of: sender),
+            sender: sender.isEmpty ? nil : sender
         )
+    }
+
+    /// `_event.origin` of this event: the origin's address, or the empty text when it
+    /// has none (§scxml-5.10.1).
+    public var originAddress: String {
+        origin?.address ?? ""
+    }
+
+    /// `_event.origintype` of this event: the origin's processor, or the empty text
+    /// when it has none (§scxml-5.10.1).
+    public var originProcessor: String {
+        origin?.processor ?? ""
     }
 }
 
@@ -185,13 +230,15 @@ public struct EventWithMetadata<Event> {
     }
 
     /// An event with the full metadata, in the order of the Rust `with_fields`.
+    /// `origin` is the pair the delivering processor wrote and `sender` the session that
+    /// sent it, when that processor is the SCXML one (docs/adr/0090).
     public static func withFields(
         _ event: Event,
         data: String,
-        origin: String,
+        origin: EventOrigin?,
+        sender: String?,
         sendID: String,
         eventType: EventType,
-        originType: String,
         invokeID: String,
         target: String
     ) -> EventWithMetadata<Event> {
@@ -202,7 +249,7 @@ public struct EventWithMetadata<Event> {
                 eventType: eventType,
                 sendID: sendID,
                 origin: origin,
-                originType: originType,
+                sender: sender,
                 invokeID: invokeID
             ),
             target: target

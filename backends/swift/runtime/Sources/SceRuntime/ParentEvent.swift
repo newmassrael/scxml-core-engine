@@ -28,7 +28,16 @@ public struct ParentEvent: Sendable, Equatable {
 public final class ParentEventQueue: Sendable {
     private let events = Mutex<[ParentEvent]>([])
 
-    public init() {}
+    /// The id of the session that installed this queue, the parent of the session that
+    /// sends into it. §scxml-C-1: the location that session publishes is a target, so a
+    /// reply to the origin of an event the parent sent reaches it as `#_parent` does
+    /// (docs/adr/0090). Empty for a queue no session installed.
+    public let parentSessionID: String
+
+    /// A queue the session `parentSessionID` installs on a child it invokes.
+    public init(parentSessionID: String = "") {
+        self.parentSessionID = parentSessionID
+    }
 
     /// Appends one event. It never blocks for room.
     public func push(_ event: ParentEvent) {

@@ -384,14 +384,19 @@ extension Engine {
     /// raising nothing, for an invocation that was cancelled, already ended, or
     /// restarted since: §scxml-6.4 has the processor ignore what a cancelled process
     /// sends, and a restarted `<invoke>` is a different process under the same id.
+    ///
+    /// `origin` is the completion's `_event.origin` and `_event.origintype` as one pair
+    /// (§scxml-5.10.1, docs/adr/0090), for a host whose invocation stands for a party it
+    /// can name, in the host's own terms: its declared type and the address a `<send>` of
+    /// that type reaches the party at. Nil for a host that names no party: both fields
+    /// then read empty, and the engine fills in no type.
     @discardableResult
     public func completeHostInvoke(
         processorType: String,
         invokeID: String,
         token: UInt64,
         doneData: String,
-        origin: String = "",
-        originType: String = ""
+        origin: EventOrigin? = nil
     ) -> Bool {
         endHostInvoke(
             processorType: processorType,
@@ -399,8 +404,7 @@ extension Engine {
             token: token,
             failed: false,
             data: doneData,
-            origin: origin,
-            originType: originType
+            origin: origin
         )
     }
 
@@ -414,8 +418,7 @@ extension Engine {
         invokeID: String,
         token: UInt64,
         errorData: String,
-        origin: String = "",
-        originType: String = ""
+        origin: EventOrigin? = nil
     ) -> Bool {
         endHostInvoke(
             processorType: processorType,
@@ -423,8 +426,7 @@ extension Engine {
             token: token,
             failed: true,
             data: errorData,
-            origin: origin,
-            originType: originType
+            origin: origin
         )
     }
 
@@ -436,8 +438,7 @@ extension Engine {
         token: UInt64,
         failed: Bool,
         data: String,
-        origin: String,
-        originType: String
+        origin: EventOrigin?
     ) -> Bool {
         let key = HostInvokeKey(processorType: processorType, invokeID: invokeID)
         guard hostInvokes.started[key] == token else {
@@ -448,10 +449,8 @@ extension Engine {
         // The id is the DOCUMENT's, because `done.invoke.<id>` and `error.invoke.<id>`
         // are the names the author wrote a transition for.
         let name = failed ? errorInvokePrefix + invokeID : createDoneInvokeEventName(invokeID)
-        var metadata = EventMetadata.external(sendID: "", origin: origin)
-        if !originType.isEmpty {
-            metadata.originType = originType
-        }
+        // docs/adr/0090, section 2: the pair the host named, or none; no session sent it.
+        var metadata = EventMetadata(eventType: .externalEvent, origin: origin)
         metadata.data = data
         // §scxml-5.10.1: the completion is an event of the invocation, so
         // `_event.invokeid` is the invocation's id.
@@ -523,7 +522,8 @@ extension Engine {
     /// names no specific one, with `_event.invokeid` set and `_event.data` the string `reason`: "deadline" when its
     /// deadline passed, "interrupted" when a restore found a call it must not send again.
     func raiseHostInvokeFailure(invokeID: String, reason: String) {
-        var metadata = EventMetadata.external(sendID: "", origin: "")
+        // The engine ends it, so no processor delivered it and it carries no origin.
+        var metadata = EventMetadata(eventType: .externalEvent)
         metadata.data = "\"\(reason)\""
         metadata.invokeID = invokeID
         if let arriving = arrivingEvent(name: errorInvokePrefix + invokeID, metadata: metadata) {

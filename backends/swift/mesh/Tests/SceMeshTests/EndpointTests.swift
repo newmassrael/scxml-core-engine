@@ -128,8 +128,8 @@ private final class Host {
         #expect(event.name == "go")
         #expect(event.metadata.data == #"{"a":1}"#)
         #expect(event.metadata.eventType == .externalEvent)
-        #expect(event.metadata.origin == "mesh://ecu")
-        #expect(event.metadata.originType == scxmlEventProcessorType)
+        #expect(event.metadata.origin == EventOrigin(processor: scxmlEventProcessorType, address: "mesh://ecu"))
+        #expect(event.metadata.sender == nil, "no session sent it")
         #expect(event.metadata.sendID == "s-7")
     }
 
@@ -218,7 +218,7 @@ private final class Host {
                 == #"{"errorName":"communication","reason":"SEND_FAILED","target":"hmi","transport":"wss","transport_error":"reset"}"#
         )
         // Raised as the C++ core raises it: an envelope from its own machine.
-        #expect(event.metadata.origin == "mesh://ecu")
+        #expect(event.metadata.originAddress == "mesh://ecu")
         #expect(event.metadata.sendID == "")
     }
 

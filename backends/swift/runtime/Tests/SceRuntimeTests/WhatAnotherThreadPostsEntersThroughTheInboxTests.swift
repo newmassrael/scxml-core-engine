@@ -113,7 +113,7 @@ private func expectedFrom(_ posted: [EngineInboxInput<FlatEvent>]) -> [String] {
         switch input {
         case let .externalEvent(_, eventData, _):
             expected.append("ping:" + eventData)
-        case let .externalEventByName(_, eventData):
+        case let .externalEventByName(_, eventData, _):
             expected.append("ping:" + eventData)
         case let .hostInvokeEnding(ending):
             if !ended {
@@ -257,7 +257,7 @@ private func takenWhenTheOwnerQueuesItsOwnEventAfterAPost(
 @Test func anEventPostedBeforeTheOwnersOwnSendIsTakenFirst() {
     let taken = takenWhenTheOwnerQueuesItsOwnEventAfterAPost { engine, _ in
         // What the generated `<send event="ping"/>` with no target raises.
-        var own = EventMetadata.external(sendID: "", origin: "")
+        var own = EventMetadata.external(sendID: "", sender: "")
         own.data = "own"
         engine.raiseExternalWithMeta(EventWithMetadata<FlatEvent>(.ping, metadata: own))
     }

@@ -101,7 +101,7 @@ private func raise(_ engine: Engine<StatechartStaticMeshRequestPolicy>, _ name: 
     }
     engine.completeHostInvoke(
         processorType: meshRpcInvokeType, invokeID: "ask", token: request.token, doneData: "{}",
-        origin: meshOriginScheme + "motor", originType: meshRpcInvokeType)
+        origin: EventOrigin(processor: meshRpcInvokeType, address: meshOriginScheme + "motor"))
     engine.step()
 
     #expect(policy.answered == 1)

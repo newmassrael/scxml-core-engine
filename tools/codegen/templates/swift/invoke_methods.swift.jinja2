@@ -250,7 +250,7 @@
         raiseExecutionError("<invoke> namelist names a location that cannot be read", engine: engine)
 {% else %}
         // W3C SCXML C.1: the child is known by the id its parent mints for it and
-        // keys the invocation on, so the origin of what it sends is the id it
+        // keys the invocation on, so the sender of what it sends is the id it
         // publishes in `_ioprocessors`.
         let childSessionID = "\(sessionID).\(pending.invokeID)"
 {# A child that declares acts is built with the host its parent's host answers, asked here
@@ -280,7 +280,7 @@
         let session = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
-            queue: ParentEventQueue()
+            queue: ParentEventQueue(parentSessionID: sessionID)
         )
         // W3C SCXML 6.4.1: tracked before the child initializes.
         activeInvokes["{{ invoke_info.invoke_id | escape_swift }}"] = ChildSession(
@@ -373,7 +373,7 @@
         let stubSession = InvokedSession(
             policy: childPolicy,
             sessionID: childSessionID,
-            queue: ParentEventQueue()
+            queue: ParentEventQueue(parentSessionID: sessionID)
         )
         stubSession.engine.setClock(engine.clock())
         engine.startChildMesh(of: stubSession, invokeID: "{{ invoke_info.invoke_id | escape_swift }}", document: "")
@@ -406,7 +406,7 @@
             let session = InvokedSession(
                 policy: childPolicy,
                 sessionID: childSessionID,
-                queue: ParentEventQueue()
+                queue: ParentEventQueue(parentSessionID: sessionID)
             )
             session.engine.setClock(engine.clock())
             // SCE_MESH.md §21.3: the child's router is the one the factory answers for this
@@ -719,11 +719,12 @@
     /// W3C SCXML 6.5: the `<finalize>` of the invocation an event came from runs before the
     /// parent selects transitions on that event, in the parent's data model, with `_event` the
     /// event the child sent. The invocation is the one whose session the event names as its
-    /// origin; an event from anywhere else (the host, this machine itself) finalizes nothing.
+    /// sender (docs/adr/0090: the session id travels beside the origin, and nothing reads the
+    /// origin's address to find a session); an event from anywhere else (the host, this
+    /// machine itself) finalizes nothing.
     public func executeFinalizeForChildEvent(_ event: inout EventWithMetadata<{{ machine_name }}Event>, engine: Engine<{{ machine_name }}Policy>) {
-        let origin = event.metadata.origin
-        guard !origin.isEmpty,
-            let child = activeInvokes.values.first(where: { $0.sessionID == origin && !$0.finalizeScript.isEmpty })
+        guard let sender = event.metadata.sender, !sender.isEmpty,
+            let child = activeInvokes.values.first(where: { $0.sessionID == sender && !$0.finalizeScript.isEmpty })
         else {
             return
         }
@@ -744,7 +745,7 @@
 {% for invoke_info in child_invokes %}
         if invokeID.utf8.elementsEqual("{{ invoke_info.invoke_id | escape_swift }}".utf8) {
             if let child = sceInvokeChild{{ invoke_info.field_suffix | to_pascal_case }}, !child.isInFinalState {
-                deliverToChild(child, eventName: eventName, eventData: eventData)
+                deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
                 return true
             }
             return false
@@ -791,7 +792,7 @@
 {% for invoke_info in child_invokes %}
         if let session = activeInvokes["{{ invoke_info.invoke_id | escape_swift }}"], session.sessionID.utf8.elementsEqual(childSessionID.utf8),
            let child = sceInvokeChild{{ invoke_info.field_suffix | to_pascal_case }} {
-            deliverToChild(child, eventName: eventName, eventData: eventData)
+            deliverToChild(child, eventName: eventName, eventData: eventData, sender: sessionID)
             return true
         }
 {% endfor %}

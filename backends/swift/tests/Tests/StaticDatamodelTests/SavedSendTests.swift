@@ -202,7 +202,7 @@ private func refusal(_ body: () throws -> Void) -> String? {
     // send: delivered when due, it finds no one to take it, and the sender is told (error.communication).
     let (_, engine, _) = try startedTimers()
     engine.scheduleRoutedEvent(
-        nil, delay: .seconds(3), sendID: "up", eventData: "", origin: root,
+        nil, delay: .seconds(3), sendID: "up", eventData: "", sender: root,
         route: ScheduledRoute(kind: .parent, eventName: "up"))
     let saved = try SavedState.fromJSON(engine.save(wallNowMs: startedAt).toJSON())
     #expect(
@@ -218,14 +218,14 @@ private func refusal(_ body: () throws -> Void) -> String? {
     let (_, engine, _) = try startedTimers()
     engine.scheduleHTTPSend(
         delay: .seconds(3), target: "http://example.test/hook", eventName: "posted", params: [:], sendID: "post",
-        origin: root)
+        sender: root)
     #expect(
         refusal { _ = try engine.save(wallNowMs: startedAt) }
             == "the delayed send 'post' is an HTTP POST, which a saved state does not carry")
 
     let (_, other, _) = try startedTimers()
     other.scheduleRoutedEvent(
-        nil, delay: .seconds(3), sendID: "kid", eventData: "", origin: root,
+        nil, delay: .seconds(3), sendID: "kid", eventData: "", sender: root,
         route: ScheduledRoute(kind: .session, eventName: "up", sessionID: "elsewhere"))
     #expect(
         refusal { _ = try other.save(wallNowMs: startedAt) }
@@ -237,7 +237,7 @@ private func refusal(_ body: () throws -> Void) -> String? {
     let request = HostSendRequest(
         processorType: "x:host", eventName: "ping", target: "dock", content: "hello", params: ["k": ["a", "b"]],
         sendID: "hs", eventData: "{\"k\":[\"a\",\"b\"]}", invokeID: "")
-    engine.scheduleHostSend(delay: .seconds(4), request: request, origin: root)
+    engine.scheduleHostSend(delay: .seconds(4), request: request, sender: root)
     let saved = try SavedState.fromJSON(engine.save(wallNowMs: startedAt).toJSON())
     let waiting = saved.pending.first { $0.due == startedAt + 4000 }
     #expect(

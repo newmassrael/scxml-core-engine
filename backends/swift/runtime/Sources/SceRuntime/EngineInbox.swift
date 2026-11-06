@@ -26,12 +26,11 @@ public struct HostInvokeEnding: Sendable, Equatable {
     /// `_event.data` of the event the ending raises.
     public var data: String
 
-    /// `_event.origin` of that event, for a host whose invocation stands for a party it can
-    /// name; empty for none.
-    public var origin: String
-
-    /// `_event.origintype` of that event; empty keeps the SCXML processor's.
-    public var originType: String
+    /// `_event.origin` and `_event.origintype` of that event, for a host whose invocation
+    /// stands for a party it can name, in the host's own terms (docs/adr/0090, section 2):
+    /// its declared type and the address a `<send>` of that type reaches the party at. Nil
+    /// for a host that names no party.
+    public var origin: EventOrigin?
 
     public init(
         processorType: String,
@@ -39,8 +38,7 @@ public struct HostInvokeEnding: Sendable, Equatable {
         token: UInt64,
         done: Bool,
         data: String,
-        origin: String = "",
-        originType: String = ""
+        origin: EventOrigin? = nil
     ) {
         self.processorType = processorType
         self.invokeID = invokeID
@@ -48,7 +46,6 @@ public struct HostInvokeEnding: Sendable, Equatable {
         self.done = done
         self.data = data
         self.origin = origin
-        self.originType = originType
     }
 }
 
@@ -61,12 +58,15 @@ public struct HostInvokeEnding: Sendable, Equatable {
 /// `applyMeshCalls`), and `MeshCall` carries `EventMetadata`, which is not `Sendable`.
 public enum EngineInboxInput<Event> {
     /// An external event, applied with `Engine.raiseExternal(_:eventData:origin:)`.
-    case externalEvent(Event, eventData: String = "", origin: String = "")
+    /// `origin` is the pair the host names for it in its own terms, nil for none
+    /// (docs/adr/0090, section 2).
+    case externalEvent(Event, eventData: String = "", origin: EventOrigin? = nil)
 
-    /// An external event named by text, applied with `Engine.raiseExternalByName(_:eventData:)`:
-    /// resolved against the document's names when it is applied, and dropped then if the
-    /// document has no event the name could be delivered as.
-    case externalEventByName(String, eventData: String = "")
+    /// An external event named by text, applied with
+    /// `Engine.raiseExternalByName(_:eventData:origin:)`: resolved against the document's names
+    /// when it is applied, and dropped then if the document has no event the name could be
+    /// delivered as.
+    case externalEventByName(String, eventData: String = "", origin: EventOrigin? = nil)
 
     /// The end of a host-run invocation's start, applied with `Engine.completeHostInvoke` or
     /// `Engine.failHostInvoke`. The token check those make is made when the input is applied, so
@@ -232,8 +232,8 @@ extension Engine {
         switch input {
         case let .externalEvent(event, eventData, origin):
             raiseExternal(event, eventData: eventData, origin: origin)
-        case let .externalEventByName(name, eventData):
-            raiseExternalByName(name, eventData: eventData)
+        case let .externalEventByName(name, eventData, origin):
+            raiseExternalByName(name, eventData: eventData, origin: origin)
         case let .hostInvokeEnding(ending):
             if ending.done {
                 completeHostInvoke(
@@ -241,8 +241,7 @@ extension Engine {
                     invokeID: ending.invokeID,
                     token: ending.token,
                     doneData: ending.data,
-                    origin: ending.origin,
-                    originType: ending.originType
+                    origin: ending.origin
                 )
             } else {
                 failHostInvoke(
@@ -250,8 +249,7 @@ extension Engine {
                     invokeID: ending.invokeID,
                     token: ending.token,
                     errorData: ending.data,
-                    origin: ending.origin,
-                    originType: ending.originType
+                    origin: ending.origin
                 )
             }
         }

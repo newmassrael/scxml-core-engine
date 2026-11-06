@@ -237,10 +237,13 @@ extension SavedState {
 }
 
 private func savedEvent<Event>(_ queued: EventWithMetadata<Event>, name: String) -> SavedEvent {
+    // Format 2 holds the origin and its sender as one text (docs/adr/0090, "Until step 6"): the
+    // sender's id for an event a session sent, the address otherwise, beside the pair's processor.
     let metadata = queued.metadata
     return SavedEvent(
         name: name, data: metadata.data, type: metadata.eventType.description, sendID: metadata.sendID,
-        origin: metadata.origin, originType: metadata.originType, invokeID: metadata.invokeID,
+        origin: storedOriginText(metadata.origin, sender: metadata.sender), originType: metadata.originProcessor,
+        invokeID: metadata.invokeID,
         hostInvokeToken: metadata.hostInvokeToken.map { Int64(bitPattern: $0) })
 }
 
@@ -405,11 +408,14 @@ extension Engine where Policy: SavedPolicy {
             default:
                 throw StateRefusal("the saved event '\(event.name)' is of the type '\(event.type)', which is no event type")
             }
+            // docs/adr/0090, section 7: the stored text is read back as the pair and the sender it stands
+            // for, whichever backend wrote it.
+            let stored = readStoredOrigin(event.origin, originType: event.originType)
             return EventWithMetadata(
                 resolved,
                 metadata: EventMetadata(
-                    name: event.name, data: event.data, eventType: kind, sendID: event.sendID, origin: event.origin,
-                    originType: event.originType, invokeID: event.invokeID,
+                    name: event.name, data: event.data, eventType: kind, sendID: event.sendID, origin: stored.origin,
+                    sender: stored.sender, invokeID: event.invokeID,
                     hostInvokeToken: event.hostInvokeToken.map { UInt64(bitPattern: $0) }))
         }
         let waiting = try judgeSavedSends(saved.pending, invokeIDs: policy.savedInvokeIDs)

@@ -107,7 +107,7 @@ private func makeHostSendEngine() throws -> (Engine<ScriptedPolicy>, RecordingPr
     let (engine, processor, clock) = try makeHostSendEngine()
     let sent = HostSendRequest(
         processorType: "x-host-test", eventName: "go", sendID: "late", eventData: "d", invokeID: "inv-at-send")
-    #expect(engine.scheduleHostSend(delay: .milliseconds(500), request: sent, origin: "o") == "late")
+    #expect(engine.scheduleHostSend(delay: .milliseconds(500), request: sent, sender: "o") == "late")
     #expect(processor.requests.isEmpty)
     clock.advance(499)
     engine.tick()
@@ -119,13 +119,13 @@ private func makeHostSendEngine() throws -> (Engine<ScriptedPolicy>, RecordingPr
 
 @Test func aSendWhoseDelayIsZeroIsPerformedNowAndQueuesNothing() throws {
     let (engine, processor, _) = try makeHostSendEngine()
-    engine.scheduleHostSend(delay: .zero, request: request(), origin: "o")
+    engine.scheduleHostSend(delay: .zero, request: request(), sender: "o")
     #expect(processor.requests.count == 1)
 }
 
 @Test func aCancelReachesAHostSendWhileItWaits() throws {
     let (engine, processor, clock) = try makeHostSendEngine()
-    engine.scheduleHostSend(delay: .seconds(1), request: request(sendID: "gone"), origin: "o")
+    engine.scheduleHostSend(delay: .seconds(1), request: request(sendID: "gone"), sender: "o")
     #expect(engine.cancelEvent(sendID: "gone"))
     clock.advance(2000)
     engine.tick()

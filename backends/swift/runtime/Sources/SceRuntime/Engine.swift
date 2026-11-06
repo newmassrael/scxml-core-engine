@@ -587,18 +587,10 @@ public final class Engine<Policy: StatePolicy> {
                 deliverRouted(act)
             } else if let event = act.event {
                 // §scxml-5.10.1 + §scxml-C-1: the metadata the immediate send stamps,
-                // restored when the wait ends, and §scxml-5.10: the name it was sent
-                // under.
-                var due = EventWithMetadata.withFields(
-                    event,
-                    data: act.data,
-                    origin: act.origin,
-                    sendID: act.sendID,
-                    eventType: .externalEvent,
-                    originType: scxmlEventProcessorType,
-                    invokeID: "",
-                    target: ""
-                )
+                // the pair the SCXML processor writes for its sender, restored when the
+                // wait ends, and §scxml-5.10: the name it was sent under.
+                var due = EventWithMetadata(event, metadata: .external(sendID: act.sendID, sender: act.sender))
+                due.metadata.data = act.data
                 due.metadata.name = act.name
                 enqueueExternal(due)
             }
@@ -800,10 +792,16 @@ public final class Engine<Policy: StatePolicy> {
         internalQueue.raise(event)
     }
 
-    /// Enqueues an external event with optional data and origin (§scxml-C-1 / 6.2).
+    /// Enqueues an external event the host posts, with optional data and origin
+    /// (§scxml-5.10.1 / 6.2).
     ///
+    /// `origin` is the reply address the host names for the event, in its own terms
+    /// (docs/adr/0090, section 2): its processor's type and the address a `<send>` of
+    /// that type reaches the party at. Nil, the default, is a host that names no party,
+    /// and the event reads `_event.origin` and `_event.origintype` as the empty text;
+    /// the engine fills in no SCXML processor type for an event no session sent.
     /// Matches Rust `Engine::raise_external`.
-    public func raiseExternal(_ event: Event, eventData: String = "", origin: String = "") {
+    public func raiseExternal(_ event: Event, eventData: String = "", origin: EventOrigin? = nil) {
         // §scxml-5.10.1: what the host hands the external queue is typed "external"
         // here, where it enters that queue.
         enqueueExternal(
@@ -811,9 +809,9 @@ public final class Engine<Policy: StatePolicy> {
                 event,
                 data: eventData,
                 origin: origin,
+                sender: nil,
                 sendID: "",
                 eventType: .externalEvent,
-                originType: scxmlEventProcessorType,
                 invokeID: "",
                 target: ""
             )
@@ -876,9 +874,10 @@ public final class Engine<Policy: StatePolicy> {
     /// Raises an external event by name (§scxml-6.4.1, for child autoforward).
     ///
     /// The name is delivered as the event `resolveEventByName` answers. A name no
-    /// transition of the document could match is silently ignored. Matches Rust
-    /// `Engine::raise_external_by_name`.
-    public func raiseExternalByName(_ eventName: String, eventData: String = "") {
+    /// transition of the document could match is silently ignored. `origin` is what
+    /// `raiseExternal` takes: the pair the host names in its own terms, nil for none.
+    /// Matches Rust `Engine::raise_external_by_name`.
+    public func raiseExternalByName(_ eventName: String, eventData: String = "", origin: EventOrigin? = nil) {
         guard let event = resolveEventByName(eventName) else {
             sceLog("Engine.raiseExternalByName: event '\(eventName)' matches no event of the document, ignoring")
             return
@@ -888,10 +887,10 @@ public final class Engine<Policy: StatePolicy> {
         var meta = EventWithMetadata.withFields(
             event,
             data: eventData,
-            origin: "",
+            origin: origin,
+            sender: nil,
             sendID: "",
             eventType: .externalEvent,
-            originType: scxmlEventProcessorType,
             invokeID: "",
             target: ""
         )
@@ -1003,21 +1002,23 @@ public final class Engine<Policy: StatePolicy> {
     /// Schedules an event for delayed delivery. Returns the send id.
     ///
     /// The deadline is this turn's instant plus the delay; see `beginTurn` for why the
-    /// reading is the turn's and not this statement's.
+    /// reading is the turn's and not this statement's. `sender` is the id of the session
+    /// that sends it, from which the event's origin is written when it comes due
+    /// (docs/adr/0090).
     @discardableResult
     public func scheduleEvent(
         _ event: Event,
         delay: Duration,
         sendID: String,
         eventData: String,
-        origin: String
+        sender: String
     ) -> String {
         scheduler.scheduleEvent(
             event,
             readyAtMs: schedNowMs() + delay.wholeMilliseconds,
             sendID: sendID,
             eventData: eventData,
-            origin: origin
+            sender: sender
         )
     }
 
@@ -1035,7 +1036,7 @@ public final class Engine<Policy: StatePolicy> {
         delay: Duration,
         sendID: String,
         eventData: String,
-        origin: String
+        sender: String
     ) {
         guard let event = resolveEventByName(name) else {
             return
@@ -1047,12 +1048,12 @@ public final class Engine<Policy: StatePolicy> {
                 readyAtMs: schedNowMs() + delay.wholeMilliseconds,
                 sendID: sendID,
                 eventData: eventData,
-                origin: origin,
+                sender: sender,
                 name: arrival
             )
             return
         }
-        var meta = EventWithMetadata(event, metadata: .external(sendID: sendID, origin: origin))
+        var meta = EventWithMetadata(event, metadata: .external(sendID: sendID, sender: sender))
         meta.metadata.data = eventData
         meta.metadata.name = arrival
         raiseExternalWithMeta(meta)
@@ -1066,7 +1067,7 @@ public final class Engine<Policy: StatePolicy> {
         delay: Duration,
         sendID: String,
         eventData: String,
-        origin: String
+        sender: String
     ) {
         guard let event = resolveEventByName(name) else {
             return
@@ -1077,7 +1078,7 @@ public final class Engine<Policy: StatePolicy> {
                 delay: delay,
                 sendID: sendID,
                 eventData: eventData,
-                origin: origin,
+                sender: sender,
                 route: ScheduledRoute(kind: .internalQueue, eventName: name)
             )
             return
@@ -1105,6 +1106,8 @@ public final class Engine<Policy: StatePolicy> {
     ///
     /// `event` is this machine's spelling of the event, for its own queues; nil when
     /// the document has no such event, and a child or a parent resolves `eventName`.
+    /// `sender` is the id of the sending session, from which the SCXML processor writes
+    /// the event's origin (docs/adr/0090).
     public func sendToTarget(
         event: Event?,
         eventName: String,
@@ -1113,7 +1116,7 @@ public final class Engine<Policy: StatePolicy> {
         delay: Duration,
         sendID: String,
         eventData: String,
-        origin: String
+        sender: String
     ) -> TargetSendOutcome {
         let resolved = classifyTarget(target, ownSessionID: ownSessionID)
         let delayed = delay > .zero
@@ -1135,20 +1138,12 @@ public final class Engine<Policy: StatePolicy> {
                         readyAtMs: schedNowMs() + delay.wholeMilliseconds,
                         sendID: sendID,
                         eventData: eventData,
-                        origin: origin,
+                        sender: sender,
                         name: arrival
                     )
                 } else {
-                    var meta = EventWithMetadata.withFields(
-                        event,
-                        data: eventData,
-                        origin: origin,
-                        sendID: sendID,
-                        eventType: .externalEvent,
-                        originType: scxmlEventProcessorType,
-                        invokeID: "",
-                        target: ""
-                    )
+                    var meta = EventWithMetadata(event, metadata: .external(sendID: sendID, sender: sender))
+                    meta.metadata.data = eventData
                     meta.metadata.name = arrival
                     raiseExternalWithMeta(meta)
                 }
@@ -1169,6 +1164,13 @@ public final class Engine<Policy: StatePolicy> {
             }
             route = ScheduledRoute(kind: .invocation, eventName: eventName, invokeID: resolved.id)
         case .session:
+            // §scxml-C-1: the location the session that invoked this one publishes is a
+            // target, as `#_parent` is: the address a reply to an event the parent sent
+            // goes to (docs/adr/0090).
+            if policy.isParentSession(resolved.id) {
+                route = ScheduledRoute(kind: .parent, eventName: eventName)
+                break
+            }
             if !policy.isChildSessionRunning(resolved.id) {
                 return .notReachable
             }
@@ -1183,12 +1185,12 @@ public final class Engine<Policy: StatePolicy> {
                 delay: delay,
                 sendID: sendID,
                 eventData: eventData,
-                origin: origin,
+                sender: sender,
                 route: route
             )
             return .sent
         }
-        if deliverRoutedNow(event: event, route: route, eventData: eventData, sendID: sendID, origin: origin) {
+        if deliverRoutedNow(event: event, route: route, eventData: eventData, sendID: sendID) {
             return .sent
         }
         return .notReachable
@@ -1198,12 +1200,16 @@ public final class Engine<Policy: StatePolicy> {
     /// at once and a delayed send whose wait is over both go through (§scxml-6.2.4: a
     /// delay postpones a send, it does not change where it goes). Whether the target
     /// was there to take the event.
+    ///
+    /// A child or a parent the route names is reached through the policy, which writes
+    /// this session's pair as the origin of what it hands over (docs/adr/0090); an event
+    /// for this session's internal queue is an internal event, which carries no origin
+    /// (§scxml-5.10.1).
     private func deliverRoutedNow(
         event: Event?,
         route: ScheduledRoute,
         eventData: String,
-        sendID: String,
-        origin: String
+        sendID: String
     ) -> Bool {
         switch route.kind {
         case .internalQueue:
@@ -1213,7 +1219,6 @@ public final class Engine<Policy: StatePolicy> {
             var meta = EventWithMetadata(event)
             meta.metadata.data = eventData
             meta.metadata.sendID = sendID
-            meta.metadata.origin = origin
             if !route.eventName.isEmpty {
                 meta.metadata.name = arrivalName(of: event, name: route.eventName)
             }
@@ -1271,7 +1276,7 @@ public final class Engine<Policy: StatePolicy> {
         eventName: String,
         params: [String: [String]],
         sendID: String,
-        origin: String
+        sender: String
     ) -> String {
         if delay <= .zero {
             performHTTPSend(target: target, eventName: eventName, content: "", params: params, sendID: sendID)
@@ -1282,7 +1287,7 @@ public final class Engine<Policy: StatePolicy> {
             delay: delay,
             sendID: sendID,
             eventData: "",
-            origin: origin,
+            sender: sender,
             route: ScheduledRoute(kind: .httpPost, eventName: eventName, httpTarget: target, httpParams: params)
         )
     }
@@ -1302,7 +1307,7 @@ public final class Engine<Policy: StatePolicy> {
         delay: Duration,
         sendID: String,
         eventData: String,
-        origin: String,
+        sender: String,
         route: ScheduledRoute
     ) -> String {
         scheduler.scheduleRouted(
@@ -1310,7 +1315,7 @@ public final class Engine<Policy: StatePolicy> {
             readyAtMs: schedNowMs() + delay.wholeMilliseconds,
             sendID: sendID,
             eventData: eventData,
-            origin: origin,
+            sender: sender,
             route: route
         )
     }
@@ -1326,7 +1331,7 @@ public final class Engine<Policy: StatePolicy> {
         guard let route = act.route else {
             return
         }
-        if deliverRoutedNow(event: act.event, route: route, eventData: act.data, sendID: act.sendID, origin: act.origin) {
+        if deliverRoutedNow(event: act.event, route: route, eventData: act.data, sendID: act.sendID) {
             return
         }
         if let communicationError = policy.getEventFromName("error.communication") {
@@ -1740,7 +1745,9 @@ public final class Engine<Policy: StatePolicy> {
             HttpSendRequest(target: target, eventName: eventName, content: content, params: params, sendID: sendID)
         )
         if let response {
-            var metadata = EventMetadata.external(sendID: "", origin: "")
+            // §scxml-C-2-1 fixes the event's name and data and gives it no reply address,
+            // so the BasicHTTP processor writes no origin (docs/adr/0090, section 2).
+            var metadata = EventMetadata(eventType: .externalEvent)
             metadata.data = response.eventData
             if let arriving = arrivingEvent(name: response.eventName, metadata: metadata) {
                 enqueueExternal(arriving)
@@ -2381,14 +2388,16 @@ extension Engine {
             }
             return sentAs.isEmpty ? policy.getEventName(member) : sentAs
         }
+        // A waiting send is a session's, so its format-2 `origin` is the sender's id
+        // (docs/adr/0090, "Until step 6").
         guard let route = act.route else {
             return .raise(
-                event: try name(act.event, act.name), data: act.data, sendID: act.sendID, origin: act.origin)
+                event: try name(act.event, act.name), data: act.data, sendID: act.sendID, origin: act.sender)
         }
         switch route.kind {
         case .internalQueue:
             return .internal(
-                event: try name(act.event, route.eventName), data: act.data, sendID: act.sendID, origin: act.origin)
+                event: try name(act.event, route.eventName), data: act.data, sendID: act.sendID, origin: act.sender)
         case .host:
             guard let request = route.host else {
                 throw StateRefusal("the delayed send '\(act.sendID)' is routed to a host processor and holds no request")
@@ -2400,11 +2409,11 @@ extension Engine {
         // The session that started this one, and a running child of it: both are sessions the tree holds
         // (docs/adr/0045).
         case .parent:
-            return .parent(event: route.eventName, data: act.data, sendID: act.sendID, origin: act.origin)
+            return .parent(event: route.eventName, data: act.data, sendID: act.sendID, origin: act.sender)
         case .invocation:
             return .child(
                 invokeID: route.invokeID, event: route.eventName, data: act.data, sendID: act.sendID,
-                origin: act.origin)
+                origin: act.sender)
         case .session:
             throw StateRefusal("the delayed send '\(act.sendID)' is routed to a child session, which a saved state does not carry")
         case .httpPost:
@@ -2453,7 +2462,8 @@ extension Engine {
         let name: String
         let data: String
         let sendID: String
-        let origin: String
+        /// The sending session's id, read from the saved `origin` (`readStoredSender`).
+        let sender: String
         let route: ScheduledRoute?
     }
 
@@ -2474,33 +2484,36 @@ extension Engine {
                 }
                 return id
             }
+            // docs/adr/0090, section 7: a waiting send's `origin` names its sender, as the bare id this
+            // backend writes or the SCXML location another one wrote.
             switch send.act {
             case .raise(let name, let data, let id, let origin):
                 let event = try resolved(name)
                 return SavedArm(
                     due: send.due, event: event, name: arrivalName(of: event, name: name), data: data,
-                    sendID: try sendID(id), origin: origin, route: nil)
+                    sendID: try sendID(id), sender: readStoredSender(origin), route: nil)
             case .internal(let name, let data, let id, let origin):
                 return SavedArm(
                     due: send.due, event: try resolved(name), name: "", data: data, sendID: try sendID(id),
-                    origin: origin, route: ScheduledRoute(kind: .internalQueue, eventName: name))
+                    sender: readStoredSender(origin), route: ScheduledRoute(kind: .internalQueue, eventName: name))
             case .host(let type, let event, let target, let content, let params, let id, let data, let invokeID):
                 let request = HostSendRequest(
                     processorType: type, eventName: event, target: target, content: content, params: params,
                     sendID: try sendID(id), eventData: data, invokeID: invokeID)
                 return SavedArm(
-                    due: send.due, event: nil, name: "", data: data, sendID: request.sendID, origin: "",
+                    due: send.due, event: nil, name: "", data: data, sendID: request.sendID, sender: "",
                     route: ScheduledRoute(kind: .host, eventName: event, host: request))
             case .parent(let name, let data, let id, let origin):
                 return SavedArm(
-                    due: send.due, event: nil, name: "", data: data, sendID: try sendID(id), origin: origin,
-                    route: ScheduledRoute(kind: .parent, eventName: name))
+                    due: send.due, event: nil, name: "", data: data, sendID: try sendID(id),
+                    sender: readStoredSender(origin), route: ScheduledRoute(kind: .parent, eventName: name))
             case .child(let invokeID, let name, let data, let id, let origin):
                 guard invokeIDs.contains(invokeID) else {
                     throw StateRefusal("pending[\(index)] is a send to '\(invokeID)', which the document does not invoke")
                 }
                 return SavedArm(
-                    due: send.due, event: nil, name: "", data: data, sendID: try sendID(id), origin: origin,
+                    due: send.due, event: nil, name: "", data: data, sendID: try sendID(id),
+                    sender: readStoredSender(origin),
                     route: ScheduledRoute(kind: .invocation, eventName: name, invokeID: invokeID))
             }
         }
@@ -2516,11 +2529,11 @@ extension Engine {
             let readyAtMs = overflowed ? Int64.max : at
             if let route = arm.route {
                 scheduler.scheduleRouted(
-                    arm.event, readyAtMs: readyAtMs, sendID: arm.sendID, eventData: arm.data, origin: arm.origin,
+                    arm.event, readyAtMs: readyAtMs, sendID: arm.sendID, eventData: arm.data, sender: arm.sender,
                     route: route)
             } else if let event = arm.event {
                 scheduler.scheduleEvent(
-                    event, readyAtMs: readyAtMs, sendID: arm.sendID, eventData: arm.data, origin: arm.origin,
+                    event, readyAtMs: readyAtMs, sendID: arm.sendID, eventData: arm.data, sender: arm.sender,
                     name: arm.name)
             }
         }

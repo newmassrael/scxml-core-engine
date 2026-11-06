@@ -75,7 +75,7 @@ try SavedValues.list({{ value }}, {{ what }}, capacity: {{ field.bound if field.
 {{ indent }}let session = InvokedSession(
 {{ indent }}    policy: childPolicy,
 {{ indent }}    sessionID: childSessionID,
-{{ indent }}    queue: ParentEventQueue()
+{{ indent }}    queue: ParentEventQueue(parentSessionID: parentSessionID)
 {{ indent }})
 {{ indent }}let resumeChild = try session.prepareSavedChild(child.session, index: index, wallNowMs: wallNowMs)
 {{ indent }}return { [self] in
@@ -342,7 +342,7 @@ extension {{ machine_name }}Policy: SavedPolicy {
                 switch child.id {
 {% for entry in saved_invokes %}
                 case "{{ entry.info.invoke_id | escape_swift }}":
-                    resume.append(try sceJudgeSavedChild{{ entry.info.field_suffix | to_pascal_case }}(child, index, derived, engine: engine, wallNowMs: wallNowMs))
+                    resume.append(try sceJudgeSavedChild{{ entry.info.field_suffix | to_pascal_case }}(child, index, derived, saved.boundSessionID ?? sessionID, engine: engine, wallNowMs: wallNowMs))
 {% endfor %}
                 default:
                     break
@@ -387,7 +387,8 @@ extension {{ machine_name }}Policy: SavedPolicy {
     /// the state it holds, down to its last grandchild; what it returns resumes it where it stood, in place of
     /// starting it: no `<onentry>` runs, no `<data>` is evaluated and nothing is sent.
     private func sceJudgeSavedChild{{ entry.info.field_suffix | to_pascal_case }}(
-        _ child: SavedChild, _ index: Int, _ childSessionID: String, engine: Engine<{{ machine_name }}Policy>, wallNowMs: Int64
+        _ child: SavedChild, _ index: Int, _ childSessionID: String, _ parentSessionID: String,
+        engine: Engine<{{ machine_name }}Policy>, wallNowMs: Int64
     ) throws -> () -> Void {
 {% if entry.info.kind == 'Hybrid' %}
         // The candidate the saved child names: whatever `srcexpr` reads now, the child that was running resumes.

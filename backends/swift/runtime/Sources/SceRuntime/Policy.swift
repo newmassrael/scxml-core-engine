@@ -310,6 +310,12 @@ public protocol StatePolicy: AnyObject {
     /// `<send targetexpr>` names `#_parent`.
     var hasParentSession: Bool { get }
 
+    /// Whether `sessionID` names the session that invoked this one (§scxml-C-1). The
+    /// location a session publishes is a target, so a reply sent to the origin of an
+    /// event the parent sent, its location, reaches the parent as `#_parent` does
+    /// (docs/adr/0090).
+    func isParentSession(_ sessionID: String) -> Bool
+
     /// Delivers a send addressed to a child's published location (§scxml-C-1).
     func deliverToChildSession(childSessionID: String, eventName: String, eventData: String) -> Bool
 
@@ -367,6 +373,8 @@ extension StatePolicy {
     public func deliverToParent(eventName: String, eventData: String) -> Bool { false }
 
     public var hasParentSession: Bool { false }
+
+    public func isParentSession(_ sessionID: String) -> Bool { false }
 
     public func deliverToChildSession(childSessionID: String, eventName: String, eventData: String) -> Bool {
         false

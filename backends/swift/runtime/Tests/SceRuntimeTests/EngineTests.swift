@@ -300,7 +300,7 @@ import Testing
 @Test func aDelayedSendComesDueWhenTheHostMovesTheClockPastIt() {
     let (engine, policy, clock) = makeEngine { policy in
         policy.onEntry[.idle] = { engine in
-            engine.scheduleEvent(.go, delay: .milliseconds(100), sendID: "s1", eventData: "", origin: "")
+            engine.scheduleEvent(.go, delay: .milliseconds(100), sendID: "s1", eventData: "", sender: "")
         }
         policy.transitions[.idle] = [FlatTransition(event: .go, target: .busy)]
     }
@@ -319,7 +319,7 @@ import Testing
 @Test func aCancelledSendIsNeverDelivered() {
     let (engine, _, _) = makeEngine { policy in
         policy.onEntry[.idle] = { engine in
-            engine.scheduleEvent(.go, delay: .milliseconds(50), sendID: "late", eventData: "", origin: "")
+            engine.scheduleEvent(.go, delay: .milliseconds(50), sendID: "late", eventData: "", sender: "")
         }
         policy.transitions[.idle] = [
             FlatTransition(event: .go, target: .busy),
@@ -336,8 +336,8 @@ import Testing
 @Test func twoSendsArmedByOneEntryShareOneInstantAndFireInDeadlineOrder() {
     let (engine, policy, clock) = makeEngine { policy in
         policy.onEntry[.idle] = { engine in
-            engine.scheduleEvent(.ping, delay: .milliseconds(20), sendID: "second", eventData: "", origin: "")
-            engine.scheduleEvent(.go, delay: .milliseconds(10), sendID: "first", eventData: "", origin: "")
+            engine.scheduleEvent(.ping, delay: .milliseconds(20), sendID: "second", eventData: "", sender: "")
+            engine.scheduleEvent(.go, delay: .milliseconds(10), sendID: "first", eventData: "", sender: "")
         }
         policy.transitions[.idle] = [
             FlatTransition(event: .go, target: nil, content: { _ in }),
@@ -354,12 +354,12 @@ import Testing
 @Test func aSendWithNoIdIsGivenOneThatCanBeCancelled() {
     let (engine, _, _) = makeEngine { _ in }
     engine.initialize()
-    let id = engine.scheduleEvent(.go, delay: .milliseconds(5), sendID: "", eventData: "", origin: "")
+    let id = engine.scheduleEvent(.go, delay: .milliseconds(5), sendID: "", eventData: "", sender: "")
     #expect(id == "auto_send_1")
     #expect(engine.cancelEvent(sendID: id))
 }
 
-@Test func aDelayedSendKeepsTheOriginAndTheNameItWasSentUnder() {
+@Test func aDelayedSendKeepsTheSenderAndTheNameItWasSentUnder() {
     let (engine, policy, _) = makeEngine { policy in
         policy.transitions[.idle] = [FlatTransition(event: .request, target: nil, content: { _ in })]
     }
@@ -369,7 +369,7 @@ import Testing
         delay: .milliseconds(10),
         sendID: "n1",
         eventData: "payload",
-        origin: "sce://scxml/sender"
+        sender: "sender"
     )
     #expect(engine.hasReadyEvents() == false)
     engine.advanceTimeMs(10)
@@ -407,7 +407,7 @@ import Testing
         delay: .zero,
         sendID: "x",
         eventData: "",
-        origin: ""
+        sender: ""
     )
     #expect(sent == .sent)
     engine.step()
@@ -422,7 +422,7 @@ import Testing
             delay: .zero,
             sendID: "",
             eventData: "",
-            origin: ""
+            sender: ""
         )
     }
     #expect(outcome("") == .notReachable)
@@ -447,7 +447,7 @@ import Testing
         delay: .zero,
         sendID: "",
         eventData: "{}",
-        origin: ""
+        sender: ""
     )
     #expect(outcome == .sent)
     #expect(policy.parentDeliveries.map(\.name) == ["done.child"])
@@ -469,7 +469,7 @@ import Testing
             delay: .zero,
             sendID: "s",
             eventData: "",
-            origin: ""
+            sender: ""
         )
     }
     #expect(send("#_worker") == .sent)
@@ -495,7 +495,7 @@ import Testing
         delay: .milliseconds(10),
         sendID: "late",
         eventData: "",
-        origin: ""
+        sender: ""
     )
     #expect(outcome == .sent)
     policy.invocationsRunning = []
@@ -522,7 +522,7 @@ import Testing
         delay: .zero,
         sendID: "",
         eventData: "",
-        origin: ""
+        sender: ""
     )
     #expect(outcome == .sent)
     engine.step()
@@ -648,15 +648,15 @@ private final class ParentNeedingPolicy {}
 
     // A wait of zero is no deferral: the request is made before the call returns.
     engine.scheduleHTTPSend(
-        delay: .zero, target: "http://h/now", eventName: "now", params: [:], sendID: "now", origin: "")
+        delay: .zero, target: "http://h/now", eventName: "now", params: [:], sendID: "now", sender: "")
     #expect(seen.map(\.target) == ["http://h/now"])
 
     engine.scheduleHTTPSend(
         delay: .milliseconds(100), target: "http://h/later", eventName: "later", params: ["k": ["v"]],
-        sendID: "later", origin: "")
+        sendID: "later", sender: "")
     engine.scheduleHTTPSend(
         delay: .milliseconds(100), target: "http://h/dropped", eventName: "dropped", params: [:],
-        sendID: "dropped", origin: "")
+        sendID: "dropped", sender: "")
     #expect(engine.cancelEvent(sendID: "dropped"))
     #expect(seen.count == 1)
 
@@ -688,7 +688,7 @@ private final class ParentNeedingPolicy {}
 @Test func theMachineRunsUntilCompletionWhenAScheduledEventEndsIt() {
     let (engine, _, clock) = makeEngine { policy in
         policy.onEntry[.idle] = { engine in
-            engine.scheduleEvent(.go, delay: .milliseconds(5), sendID: "end", eventData: "", origin: "")
+            engine.scheduleEvent(.go, delay: .milliseconds(5), sendID: "end", eventData: "", sender: "")
         }
         policy.transitions[.idle] = [FlatTransition(event: .go, target: .done)]
     }

@@ -162,7 +162,7 @@ fn a_delayed_send_to_a_peer_is_handed_to_the_scheduler() {
     );
     holds_each(
         machine(&files),
-        &["engine.scheduleHostSend(delay: Duration.milliseconds(2000), request: sendRequest, origin: self.sessionID)"],
+        &["engine.scheduleHostSend(delay: Duration.milliseconds(2000), request: sendRequest, sender: self.sessionID)"],
     );
 }
 

@@ -91,9 +91,16 @@ public struct HostSendResponse: Sendable, Equatable {
     public var eventName: String
     public var eventData: String
 
-    public init(eventName: String, eventData: String = "") {
+    /// `_event.origin` and `_event.origintype` of the reply, in the host's own terms
+    /// (docs/adr/0090, section 2): the host processor's type and the address a `<send>` of
+    /// that type reaches the party at. Nil when the reply names no party, and then both fields
+    /// read empty; the engine never fills in the SCXML processor's type for a host.
+    public var origin: EventOrigin?
+
+    public init(eventName: String, eventData: String = "", origin: EventOrigin? = nil) {
         self.eventName = eventName
         self.eventData = eventData
+        self.origin = origin
     }
 }
 
@@ -168,9 +175,10 @@ extension Engine {
             return
         }
         // The external queue is where a reply from outside the machine belongs (§scxml-C-1); a name
-        // the machine does not declare is dropped there.
+        // the machine does not declare is dropped there. Each reply carries the origin the host
+        // named for it, and none when it named no party (docs/adr/0090, section 2).
         for response in handler(request) {
-            raiseExternalByName(response.eventName, eventData: response.eventData)
+            raiseExternalByName(response.eventName, eventData: response.eventData, origin: response.origin)
         }
     }
 
@@ -181,7 +189,7 @@ extension Engine {
     /// moment the send was made, its `invokeID` included. A wait of zero is no deferral: the act is
     /// performed now, before this returns, and nothing is queued.
     @discardableResult
-    public func scheduleHostSend(delay: Duration, request: HostSendRequest, origin: String) -> String {
+    public func scheduleHostSend(delay: Duration, request: HostSendRequest, sender: String) -> String {
         if delay <= .zero {
             performHostSend(request)
             return request.sendID
@@ -191,7 +199,7 @@ extension Engine {
             delay: delay,
             sendID: request.sendID,
             eventData: request.eventData,
-            origin: origin,
+            sender: sender,
             route: ScheduledRoute(kind: .host, eventName: request.eventName, host: request)
         )
     }

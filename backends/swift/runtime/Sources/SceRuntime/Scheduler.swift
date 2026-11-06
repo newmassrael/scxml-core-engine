@@ -73,7 +73,7 @@ public struct ScheduledRoute: Sendable, Equatable {
 /// One act that came due: an event to raise.
 ///
 /// `route` is nil for an ordinary delayed send, whose `event`, `data`, `sendID` and
-/// `origin` are what to raise on this session's own external queue.
+/// `sender` are what to raise on this session's own external queue.
 public struct ReadyAct<Event> {
     /// The event to raise.
     public var event: Event?
@@ -83,8 +83,9 @@ public struct ReadyAct<Event> {
     /// The `<send>`'s id, which `_event.sendid` carries (§scxml-5.10.1).
     public var sendID: String
 
-    /// The sending session, which `_event.origin` publishes (§scxml-C-1).
-    public var origin: String
+    /// The id of the sending session, from which the SCXML Event I/O Processor writes
+    /// the event's origin when it comes due (§scxml-C-1, docs/adr/0090).
+    public var sender: String
 
     /// The name `event` was sent under when that is not its own (§scxml-5.10), or
     /// the empty text.
@@ -139,11 +140,11 @@ public struct PullScheduler<Event> {
         var eventData: String
         var sendID: String
 
-        /// The sending session, which `_event.origin` publishes when the event
-        /// arrives (§scxml-C-1). A delayed send is the same event as an immediate
-        /// one, only later, so waiting must not cost it the address a reply goes
-        /// back to.
-        var origin: String
+        /// The id of the sending session, from which the event's origin is written
+        /// when it arrives (§scxml-C-1). A delayed send is the same event as an
+        /// immediate one, only later, so waiting must not cost it the address a reply
+        /// goes back to.
+        var sender: String
 
         /// The name the event was sent under when that is not the event's own
         /// (§scxml-5.10): a `<send eventexpr>` computes it, and the member that takes
@@ -190,7 +191,7 @@ public struct PullScheduler<Event> {
         readyAtMs: Int64,
         sendID: String,
         eventData: String,
-        origin: String,
+        sender: String,
         name: String = ""
     ) -> String {
         append(
@@ -198,7 +199,7 @@ public struct PullScheduler<Event> {
             readyAtMs: readyAtMs,
             sendID: sendID,
             eventData: eventData,
-            origin: origin,
+            sender: sender,
             name: name,
             route: nil
         )
@@ -209,7 +210,7 @@ public struct PullScheduler<Event> {
         readyAtMs: Int64,
         sendID: String,
         eventData: String,
-        origin: String,
+        sender: String,
         name: String,
         route: ScheduledRoute?
     ) -> String {
@@ -219,7 +220,7 @@ public struct PullScheduler<Event> {
                 event: event,
                 eventData: eventData,
                 sendID: id,
-                origin: origin,
+                sender: sender,
                 name: name,
                 readyAtMs: readyAtMs,
                 route: route
@@ -241,7 +242,7 @@ public struct PullScheduler<Event> {
         readyAtMs: Int64,
         sendID: String,
         eventData: String,
-        origin: String,
+        sender: String,
         route: ScheduledRoute
     ) -> String {
         append(
@@ -249,7 +250,7 @@ public struct PullScheduler<Event> {
             readyAtMs: readyAtMs,
             sendID: sendID,
             eventData: eventData,
-            origin: origin,
+            sender: sender,
             name: "",
             route: route
         )
@@ -266,7 +267,7 @@ public struct PullScheduler<Event> {
                 event: nil,
                 eventData: "",
                 sendID: "",
-                origin: "",
+                sender: "",
                 name: "",
                 readyAtMs: readyAtMs,
                 route: nil,
@@ -343,7 +344,7 @@ public struct PullScheduler<Event> {
             event: entry.event,
             data: entry.eventData,
             sendID: entry.sendID,
-            origin: entry.origin,
+            sender: entry.sender,
             name: entry.name,
             route: entry.route,
             hostInvokeDeadline: entry.hostDeadline
@@ -381,7 +382,7 @@ public struct PullScheduler<Event> {
                         event: entry.event,
                         data: entry.eventData,
                         sendID: entry.sendID,
-                        origin: entry.origin,
+                        sender: entry.sender,
                         name: entry.name,
                         route: entry.route,
                         hostInvokeDeadline: entry.hostDeadline

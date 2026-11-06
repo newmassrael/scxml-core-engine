@@ -203,8 +203,14 @@ extension ChildEngine {
 ///
 /// What the child sends to its parent while it runs here still waits on its own queue
 /// for `tickChildren` to drain, so the parent sees it where it did.
-public func deliverToChild(_ child: any ChildEngine, eventName: String, eventData: String) {
-    child.raiseExternalByName(eventName, eventData: eventData)
+///
+/// `sender` is the id of the session that sends it, this child's parent: the event
+/// carries the pair the SCXML Event I/O Processor writes for that session, so the child
+/// can answer it at `_event.origin` (§scxml-C-1, docs/adr/0090).
+public func deliverToChild(_ child: any ChildEngine, eventName: String, eventData: String, sender: String) {
+    var metadata = EventMetadata.external(sendID: "", sender: sender)
+    metadata.data = eventData
+    child.raiseExternalByNameWithMeta(eventName, metadata: metadata)
     child.applyMeshCalls()
     child.step()
 }
@@ -227,11 +233,14 @@ public func drainAndRaiseChildEvents<Policy: StatePolicy>(
         // §scxml-5.10.1: what a child sends its parent arrives from another session,
         // so it is an external event. The default of EventType is the internal one,
         // which a metadata built here would otherwise carry.
+        // §scxml-C-1 + docs/adr/0090: the SCXML processor writes the child's published
+        // location as the origin, and its id as the sender the parent's `<finalize>`
+        // finds it by.
         var metadata = EventMetadata(data: event.data, eventType: .externalEvent)
         if let session = activeInvokes[invokeKey] {
             metadata.invokeID = session.invokeID
-            metadata.origin = session.sessionID
-            metadata.originType = scxmlEventProcessorType
+            metadata.origin = scxmlOrigin(of: session.sessionID)
+            metadata.sender = session.sessionID.isEmpty ? nil : session.sessionID
         }
         if let arriving = engine.arrivingEvent(name: event.name, metadata: metadata) {
             engine.raiseExternalWithMeta(arriving)

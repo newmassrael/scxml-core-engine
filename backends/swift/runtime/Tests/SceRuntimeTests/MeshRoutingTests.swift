@@ -167,8 +167,8 @@ private let meshSend = HostSendRequest(processorType: meshProcessorType, eventNa
 
 @Test func anEventAPeerSentCarriesTheMeshOriginTheSendIdAndTheScxmlProcessor() {
     let metadata = meshEventMetadata(data: "{\"n\":1}", source: "sheet", sendID: "s9")
-    #expect(metadata.origin == "mesh://sheet")
-    #expect(metadata.originType == scxmlEventProcessorType)
+    #expect(metadata.origin == EventOrigin(processor: scxmlEventProcessorType, address: "mesh://sheet"))
+    #expect(metadata.sender == nil, "the Mesh transport writes the pair, and no session sent it")
     #expect(metadata.sendID == "s9")
     #expect(metadata.data == "{\"n\":1}")
     #expect(metadata.eventType == .externalEvent)

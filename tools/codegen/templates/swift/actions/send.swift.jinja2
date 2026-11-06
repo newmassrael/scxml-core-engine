@@ -470,7 +470,7 @@
                         invokeID: engine.currentEventInvokeID
                     )
 {% if delay_swift %}
-                    engine.scheduleHostSend(delay: {{ delay_swift }}, request: sendRequest, origin: self.sessionID)
+                    engine.scheduleHostSend(delay: {{ delay_swift }}, request: sendRequest, sender: self.sessionID)
 {% else %}
                     engine.performHostSend(sendRequest)
 {% endif %}
@@ -497,7 +497,7 @@
                         delay: {{ delay_swift if delay_swift else '.zero' }},
                         sendID: {{ send_id_swift }},
                         eventData: sendEventData,
-                        origin: self.sessionID
+                        sender: self.sessionID
                     )
                     if sendRouted == .notSupported {
 {{ send_error('error.execution', '"<send> ' ~ ('targetexpr produced a value that is' if computed_target else 'target is') ~ ' not a target"', send_id_swift) }}
@@ -548,7 +548,7 @@
                         eventName: {{ event_name_swift }},
                         params: {{ 'sendForm' if sends_params else '[:]' }},
                         sendID: {{ send_id_swift }},
-                        origin: self.sessionID
+                        sender: self.sessionID
                     )
 {% else %}
                     engine.performHTTPSend(
@@ -572,7 +572,7 @@
                         delay: {{ delay_swift }},
                         sendID: {{ send_id_swift }},
                         eventData: sendEventData,
-                        origin: self.sessionID,
+                        sender: self.sessionID,
                         route: ScheduledRoute(kind: .internalQueue, eventName: "")
                     )
 {% else %}
@@ -588,7 +588,7 @@
                         delay: {{ delay_swift if delay_swift else '.zero' }},
                         sendID: {{ send_id_swift }},
                         eventData: sendEventData,
-                        origin: self.sessionID
+                        sender: self.sessionID
                     )
 {% endif %}
 {% elif static_target == '#_parent' %}
@@ -601,7 +601,7 @@
                         delay: {{ delay_swift }},
                         sendID: {{ send_id_swift }},
                         eventData: sendEventData,
-                        origin: self.sessionID,
+                        sender: self.sessionID,
                         route: ScheduledRoute(kind: .parent, eventName: {{ event_name_swift }})
                     )
 {% else %}
@@ -635,7 +635,8 @@
                     do {
 {% endif %}
                     // W3C SCXML 6.2 / C.1: deliver the event to this session's own external
-                    // queue, carrying this session as its origin.
+                    // queue, carrying the pair the SCXML processor writes for this session as
+                    // its origin and this session as its sender (docs/adr/0090).
 {% if computed_event %}
                         // W3C SCXML 3.12.1 + 5.10: a computed name is delivered as the event the
                         // document's names resolve it to, and `_event.name` is the whole name.
@@ -644,7 +645,7 @@
                             delay: {{ delay_swift if delay_swift else '.zero' }},
                             sendID: {{ send_id_swift }},
                             eventData: sendEventData,
-                            origin: self.sessionID
+                            sender: self.sessionID
                         )
 {% elif delay_swift %}
                         // W3C SCXML 6.2: delayed to this session's external queue.
@@ -653,10 +654,10 @@
                             delay: {{ delay_swift }},
                             sendID: {{ send_id_swift }},
                             eventData: sendEventData,
-                            origin: self.sessionID
+                            sender: self.sessionID
                         )
 {% elif action.event %}
-                        var sendMetadata = EventMetadata.external(sendID: {{ send_id_swift }}, origin: self.sessionID)
+                        var sendMetadata = EventMetadata.external(sendID: {{ send_id_swift }}, sender: self.sessionID)
                         sendMetadata.data = sendEventData
                         engine.raiseExternalWithMeta(
                             EventWithMetadata({{ machine_name }}Event.{{ action.event | to_event_variant }}, metadata: sendMetadata)

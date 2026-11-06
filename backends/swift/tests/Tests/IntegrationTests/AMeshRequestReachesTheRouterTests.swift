@@ -93,7 +93,8 @@ private final class Requests {
         #expect(
             engine.failHostInvoke(
                 processorType: meshRpcInvokeType, invokeID: "ask", token: request.token,
-                errorData: "\"unreachable\"", origin: "mesh://motor"))
+                errorData: "\"unreachable\"",
+                origin: EventOrigin(processor: meshRpcInvokeType, address: "mesh://motor")))
         engine.tick()
         expectEnded(policy, engine, answered: 0, failed: 1, refused: 0)
     }

@@ -48,33 +48,72 @@ public func sessionIDFromScxmlLocation(_ uri: String) -> String {
     return percentDecode(Array(bytes[prefix.count...]))
 }
 
-/// The `_event.origin` a receiver should see for an event sent by
-/// `originSessionID`.
+/// The origin the SCXML Event I/O Processor writes for an event the session `sender`
+/// sends (docs/adr/0090, section 2).
 ///
-/// §scxml-C-1 requires the origin of a delivered event to match the 'location' the
-/// sending session published, which is what makes it an address the receiver can
-/// answer. The engine carries the sender's bare session id internally
-/// (`EventMetadata.origin`) because its session-keyed lookups (`<finalize>`
-/// dispatch, cancelled-invoke filtering) match on the id. Converting where the
-/// event is raised would make one value serve two consumers that need different
-/// spellings. So the conversion belongs at the boundary where the value becomes
-/// visible to the document, and this is that conversion: the same rule, and the
-/// same shape, as the C++ `IOProcessorHelper::publishedOrigin` both engines already
-/// share.
+/// §scxml-C-1 requires the origin of an event raised in the receiving session to match
+/// the location the sending session publishes, so the pair is the processor's canonical
+/// type and `scxmlProcessorLocation` of the sender, the one function that also writes
+/// the session's `_ioprocessors` entry. The sender's id itself travels beside the pair,
+/// as the event's `sender`, for the lookups that find a session by it. Port of the C++
+/// `IOProcessorHelper::scxmlOrigin`.
+public func scxmlOrigin(sender: String) -> EventOrigin {
+    EventOrigin(processor: scxmlEventProcessorType, address: scxmlProcessorLocation(sessionID: sender))
+}
+
+/// `scxmlOrigin(sender:)` of a sender that may be absent: a machine that holds no
+/// session id has no address to publish, so an event it sends carries no origin and
+/// not the location of an empty id.
+public func scxmlOrigin(of sender: String) -> EventOrigin? {
+    sender.isEmpty ? nil : scxmlOrigin(sender: sender)
+}
+
+/// The `origin` text that stores an event's origin and sender.
 ///
-/// A remote invoke is the case that makes this more than a rename: its child
-/// session is stamped with a URI and not an id, and wrapping a URI in
-/// `scxmlProcessorLocation` would produce an address naming nothing. An argument
-/// that already carries a scheme is therefore passed through, since it is already an
-/// address.
-public func publishedOrigin(originSessionID: String) -> String {
-    if originSessionID.isEmpty {
-        return ""
+/// docs/adr/0090, "Until step 6": the sending session's id for an event a session sent,
+/// the address otherwise, and empty for none, which is what every backend writes as a
+/// saved state's format-2 `origin`. The `origintype` beside it is the pair's processor.
+public func storedOriginText(_ origin: EventOrigin?, sender: String?) -> String {
+    if let sender, !sender.isEmpty {
+        return sender
     }
-    if originSessionID.utf8.containsSubsequence("://".utf8) {
-        return originSessionID
+    return origin?.address ?? ""
+}
+
+/// The origin and sender a stored `origin` and `origintype` are read as.
+///
+/// docs/adr/0090, section 7. An empty `origin` is none whatever type was stored beside
+/// it: an empty address answers nothing, and format 2 wrote the SCXML type beside it for
+/// events no processor stamped. An empty `origintype` beside an address is the SCXML
+/// processor's, which is what format 2 meant by it. A value without a scheme read with
+/// the SCXML type is a session's id, read as that session's pair with the id as its
+/// sender; an SCXML location (which one backend stored in place of the id) is read the
+/// same way by the id it names. Anything else is the pair as stored, with no sender.
+/// Never half a pair. Port of the C++ `IOProcessorHelper::readStoredOrigin`.
+public func readStoredOrigin(_ origin: String, originType: String) -> (origin: EventOrigin?, sender: String?) {
+    if origin.isEmpty {
+        return (nil, nil)
     }
-    return scxmlProcessorLocation(sessionID: originSessionID)
+    let located = sessionIDFromScxmlLocation(origin)
+    if !located.isEmpty {
+        return (scxmlOrigin(sender: located), located)
+    }
+    let processor = originType.isEmpty ? scxmlEventProcessorType : originType
+    let bareID = !origin.utf8.containsSubsequence("://".utf8)
+    if bareID && processor.utf8.elementsEqual(scxmlEventProcessorType.utf8) {
+        return (scxmlOrigin(sender: origin), origin)
+    }
+    return (EventOrigin(processor: processor, address: origin), nil)
+}
+
+/// The sender a stored waiting send's `origin` names.
+///
+/// docs/adr/0090, section 7: a waiting send is always a session's, so a bare id is that
+/// id and an SCXML location names it. Port of the C++
+/// `IOProcessorHelper::readStoredSender`.
+public func readStoredSender(_ origin: String) -> String {
+    let located = sessionIDFromScxmlLocation(origin)
+    return located.isEmpty ? origin : located
 }
 
 /// The `_ioprocessors` entry set for a session.

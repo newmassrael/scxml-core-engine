@@ -49,6 +49,19 @@ fi
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
+# The `<send>` and `<invoke>` types the host of a stem's driver serves, declared to its generation
+# as the C++ fixture registration declares them (`HOST_PROCESSOR` / `HOST_INVOKER` of
+# `sce_generate_static_integration_test` in tests/CMakeLists.txt) and as the stem's Python script
+# passes them: the build decides whether a `<send type>` or an `<invoke type>` dispatches to the
+# host or refuses, so a stem whose document addresses the host is generated with the types its
+# driver registers. One line per argument, for `mapfile`; none for a stem the host serves nothing.
+host_args() {
+    case "$1" in
+        an_event_no_processor_delivered_has_no_origin) printf '%s\n' --host-processor x-sce-host ;;
+        a_host_names_its_origin_in_its_own_terms) printf '%s\n' --host-invoker x-sce-host ;;
+    esac
+}
+
 # The canonical document of a stem is GENERATED to learn whether the backend lowers it, and not
 # `check`ed: `check -l swift` does not see every refusal (`flat_lifecycle` passes it and `generate`
 # refuses its transition function), so the verdict that counts is the one that writes the file.
@@ -56,7 +69,8 @@ LOWERED=()
 REFUSED=()
 for stem in "${STEMS[@]}"; do
     status=0
-    verdict="$("$CODEGEN" generate "$INPUT_ROOT/$stem/$stem.scxml" -l swift --error-format=json -o "$TMP/$stem/" 2>&1)" || status=$?
+    mapfile -t HOST_ARGS < <(host_args "$stem")
+    verdict="$("$CODEGEN" generate "$INPUT_ROOT/$stem/$stem.scxml" -l swift --error-format=json -o "$TMP/$stem/" "${HOST_ARGS[@]}" 2>&1)" || status=$?
     case "$status" in
         0) LOWERED+=("$stem") ;;
         7)
