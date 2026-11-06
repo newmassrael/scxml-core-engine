@@ -708,6 +708,114 @@ TEST(EventPayloadComposed, AListAndARecordAreWrittenInTheirOrderAndByTheirKeyByt
     EXPECT_EQ(EventPayloadFields::wire({EventPayloadFields::raw("x", R"([1,{"a":null}])")}), R"({"x":[1,{"a":null}]})");
 }
 
+namespace {
+
+/** The tag of `Shape`, read as a generated reader of an enum reads it. */
+enum class ShapeKind { Dot, Circle, Disc };
+
+/** A union over `ShapeKind` whose `circle` and `disc` both hold one record, its radius. */
+struct Shape {
+    ShapeKind kind = ShapeKind::Dot;
+    uint16_t radius = 0;
+};
+
+Refusal readShape(const std::string &wire, Shape &out) {
+    EventPayloadFields fields;
+    Refusal refusal = EventPayloadFields::decode(wire, fields);
+    EventPayloadValue s;
+    if (refusal.empty()) {
+        refusal = fields.value("s", s);
+    }
+    if (!refusal.empty()) {
+        return refusal;
+    }
+    return s.readUnion<ShapeKind>(
+        "kind",
+        [](const EventPayloadValue &tag, ShapeKind &kind) {
+            std::string name;
+            Refusal named = tag.readName(name);
+            if (!named.empty()) {
+                return named;
+            }
+            if (name == "dot") {
+                kind = ShapeKind::Dot;
+            } else if (name == "circle") {
+                kind = ShapeKind::Circle;
+            } else if (name == "disc") {
+                kind = ShapeKind::Disc;
+            } else {
+                return tag.unknownVariant(name, "ShapeKind");
+            }
+            return Refusal{};
+        },
+        [&](const ShapeKind &kind, const EventPayloadValue &object) {
+            out = Shape{kind, 0};
+            if (kind == ShapeKind::Dot) {
+                return Refusal{};
+            }
+            return object.readRecord(
+                nullptr, [&](const EventPayloadFields &record) { return record.readInteger("radius", out.radius); });
+        });
+}
+
+}  // namespace
+
+// A union's tag is read first, wherever it stands, and names the case whose record is read
+// from the same object (docs/adr/0092, section 4): two cases that hold one record stay apart
+// by their tag, a key or a `null` the case does not declare is stepped over, and each refusal
+// points at the tag or at the case's field.
+TEST(EventPayloadComposed, AUnionReadsItsTagFirstAndThenTheRecordOfItsCase) {
+    const struct {
+        const char *wire;
+        ShapeKind kind;
+        uint16_t radius;
+    } read[] = {
+        {R"({"s":{"kind":"dot"}})", ShapeKind::Dot, 0},
+        {R"({"s":{"radius":2,"kind":"disc"}})", ShapeKind::Disc, 2},
+        {R"({"s":{"kind":"circle","radius":2,"width":null,"text":"x"}})", ShapeKind::Circle, 2},
+        {R"({"s":{"kind":"dot","radius":null}})", ShapeKind::Dot, 0},
+    };
+
+    for (const auto &c : read) {
+        Shape shape;
+        EXPECT_EQ(readShape(c.wire, shape), "") << c.wire;
+        EXPECT_EQ(shape.kind, c.kind) << c.wire;
+        EXPECT_EQ(shape.radius, c.radius) << c.wire;
+    }
+
+    const struct {
+        const char *wire;
+        RefusalCode code;
+        const char *pointer;
+    } refused[] = {
+        {R"({"s":[]})", RefusalCode::WrongKind, "/s"},
+        {R"({"s":null})", RefusalCode::NullNotOptional, "/s"},
+        {R"({"s":{"radius":2}})", RefusalCode::Missing, "/s/kind"},
+        {R"({"s":{"kind":null,"radius":null}})", RefusalCode::NullNotOptional, "/s/kind"},
+        {R"({"s":{"kind":3,"radius":"x"}})", RefusalCode::WrongKind, "/s/kind"},
+        {R"({"s":{"kind":"oval","radius":2}})", RefusalCode::UnknownVariant, "/s/kind"},
+        {R"({"s":{"kind":"circle","width":2}})", RefusalCode::Missing, "/s/radius"},
+        {R"({"s":{"kind":"disc","radius":null}})", RefusalCode::NullNotOptional, "/s/radius"},
+    };
+
+    for (const auto &c : refused) {
+        Shape shape;
+        const Refusal refusal = readShape(c.wire, shape);
+        EXPECT_EQ(refusal.code(), c.code) << c.wire << ": " << refusal.reason();
+        EXPECT_EQ(refusal.pointer(), c.pointer) << c.wire << ": " << refusal.reason();
+    }
+}
+
+// A union is written as one object, its tag among the fields of its case, every key ascending
+// by its bytes (docs/adr/0092, section 2.1).
+TEST(EventPayloadComposed, AUnionIsWrittenWithItsTagAmongTheFieldsOfItsCase) {
+    EXPECT_EQ(EventPayloadFields::unionCase("kind", "none", {}), R"({"kind":"none"})");
+    EXPECT_EQ(EventPayloadFields::unionCase("kind", "relativeWeeks", {{"count", "2"}}),
+              R"({"count":2,"kind":"relativeWeeks"})");
+    EXPECT_EQ(EventPayloadFields::unionCase("kind", "absolute", {{"year", "2027"}, {"month", "3"}, {"day", "3"}}),
+              R"({"day":3,"kind":"absolute","month":3,"year":2027})");
+}
+
 TEST(EventPayloadComposed, AValueAHostBuiltIsCheckedAtEveryDepthBeforeItIsRaised) {
     const auto tags = [](const std::string &path, const std::vector<std::string> &items) {
         return EventPayloadBounds::list(path, items, 2, [](const std::string &p, const std::string &s) {

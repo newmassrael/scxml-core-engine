@@ -131,6 +131,24 @@ Refusal readDescribed(const nlohmann::json &ty, const EventPayloadValue &v) {
             return Refusal{};
         });
     }
+    if (ty.contains("union")) {
+        // The tag's enum is the cases' names; an empty case is null, any other the record
+        // it holds (docs/adr/0092, section 4).
+        const auto &cases = ty["union"]["cases"];
+        return v.readUnion<std::string>(
+            ty["union"]["tag"].get<std::string>().c_str(),
+            [&](const EventPayloadValue &tag, std::string &name) {
+                Refusal refusal = tag.readName(name);
+                if (refusal.empty() && !cases.contains(name)) {
+                    return tag.unknownVariant(name, "Described");
+                }
+                return refusal;
+            },
+            [&](const std::string &name, const EventPayloadValue &object) {
+                const auto &record = cases[name];
+                return record.is_null() ? Refusal{} : readDescribed(record, object);
+            });
+    }
     ADD_FAILURE() << "a type of the table names no constructor: " << ty.dump();
     return Refusal(RefusalCode::WrongKind, v.pointer(), "no reader");
 }

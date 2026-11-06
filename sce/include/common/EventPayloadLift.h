@@ -1020,6 +1020,22 @@ public:
      */
     template <typename Read> EventPayloadRefusal readRecord(const char *defaults, Read read) const;
 
+    /**
+     * @brief A value of a union type (docs/adr/0092, section 4): one object holding its tag
+     * under the key `tag` and the fields of the case the tag names beside it
+     *
+     * The tag is read first, by `readTag(tagValue, tagOut)`, the reader of the tag's enum
+     * `Tag`, wherever it stands in the object; `readCase(tag, object)` is then handed the case
+     * the tag named and this same value, and reads the case's record from it with
+     * `readRecord` (an empty case reads nothing). The refusals come in one order on every
+     * runtime: a value that is not an object; the tag absent (`Missing` at the tag's
+     * pointer), then whatever the enum's reader refuses of it (`null`, not a text, a name the
+     * enum does not declare); then the case's record. A key the case does not declare is
+     * never asked for, so it is stepped over, as a record steps over one.
+     */
+    template <typename Tag, typename ReadTag, typename ReadCase>
+    EventPayloadRefusal readUnion(const char *tag, ReadTag readTag, ReadCase readCase) const;
+
 private:
     /** Whether `c` continues a keyword, so that `nullx` is no `null`. */
     static bool isWordCharacter(char c) {
@@ -1557,6 +1573,18 @@ public:
         return out;
     }
 
+    /**
+     * @brief One union value as JSON (docs/adr/0092, section 2.1): the tag under the key
+     * `tag`, its value `variant`, the case's name as its enum spells it, beside `members`,
+     * the fields of the case's record (none for an empty case), the tag written among them
+     * as `record` writes a record's fields
+     */
+    static std::string unionCase(const std::string &tag, const std::string &variant,
+                                 std::vector<std::pair<std::string, std::string>> members) {
+        members.emplace_back(tag, quote(variant));
+        return record(std::move(members));
+    }
+
 private:
     friend class EventPayloadValue;
 
@@ -1617,6 +1645,28 @@ template <typename Read> EventPayloadRefusal EventPayloadValue::readRecord(const
         }
     }
     return read(static_cast<const EventPayloadFields &>(fields));
+}
+
+template <typename Tag, typename ReadTag, typename ReadCase>
+EventPayloadRefusal EventPayloadValue::readUnion(const char *tag, ReadTag readTag, ReadCase readCase) const {
+    if (*at_ != '{') {
+        return wrongKind("is not a union");
+    }
+    EventPayloadFields object;
+    object.object_ = at_;
+    object.prefix_ = path_;
+    object.pointerPrefix_ = pointer_;
+    EventPayloadValue tagValue;
+    EventPayloadRefusal refusal = object.value(tag, tagValue);
+    if (!refusal.empty()) {
+        return refusal;
+    }
+    Tag chosen{};
+    refusal = readTag(static_cast<const EventPayloadValue &>(tagValue), chosen);
+    if (!refusal.empty()) {
+        return refusal;
+    }
+    return readCase(static_cast<const Tag &>(chosen), *this);
 }
 
 /**
