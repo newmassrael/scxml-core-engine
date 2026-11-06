@@ -747,22 +747,42 @@ fn read_sender(record: &Value, what: &str) -> Result<String, StateRefusal> {
     }
 }
 
-/// Refuse a `sender` beside an `origin` other than the SCXML pair of that id:
-/// the SCXML processor, the one processor that sets a sender, writes the
-/// sender's own location as the origin of what it delivers (docs/adr/0090,
-/// section 7). Each member is taken as it is written, and neither is derived
-/// from the other.
-fn check_sender(
+/// Refuse a waiting send of this session whose `origin` is not the SCXML pair
+/// of its `sender`: the act is this session's own send, and the SCXML processor
+/// delivers it with the session's own location as its origin (docs/adr/0090,
+/// section 7).
+fn check_own_pair(
     origin: Option<&EventOrigin>,
     sender: &str,
     what: &str,
 ) -> Result<(), StateRefusal> {
-    if sender.is_empty() || origin == Some(&scxml_origin(sender)) {
+    if origin == Some(&scxml_origin(sender)) {
         Ok(())
     } else {
         Err(StateRefusal::new(format!(
             "'{what}.sender' is '{sender}', and '{what}.origin' is not the SCXML pair of \
              that session"
+        )))
+    }
+}
+
+/// Refuse a queued event whose `sender` stands beside a `null` origin: a
+/// session that sent an event always has a reply address. The two are
+/// otherwise independent, each taken as it is written: the address is the reply
+/// address the processor that delivered the event wrote, which for a remote
+/// child over the Mesh transport is its session endpoint and not the SCXML
+/// location of its id (docs/adr/0090, section 7).
+fn check_event_sender(
+    origin: Option<&EventOrigin>,
+    sender: &str,
+    what: &str,
+) -> Result<(), StateRefusal> {
+    if sender.is_empty() || origin.is_some() {
+        Ok(())
+    } else {
+        Err(StateRefusal::new(format!(
+            "'{what}.sender' is '{sender}', and '{what}.origin' is null: a session that \
+             sent an event has a reply address"
         )))
     }
 }
@@ -917,10 +937,16 @@ impl SavedSend {
         Value::Object(members)
     }
 
-    /// The waiting send `value`, of a state of `format`; `what` names it in a
+    /// The waiting send `value`, of a state of `format` whose session is
+    /// `session_id` (empty in format 1, which holds none); `what` names it in a
     /// refusal. A send to the parent or to a child is an act of a tree of
     /// sessions (format 2 and 3) only.
-    fn from_value(value: &Value, what: &str, format: u32) -> Result<Self, StateRefusal> {
+    fn from_value(
+        value: &Value,
+        what: &str,
+        format: u32,
+        session_id: &str,
+    ) -> Result<Self, StateRefusal> {
         let text = |key: &str| match value.member(key) {
             Some(Value::Text(s)) => Ok(s.clone()),
             Some(_) => Err(StateRefusal::new(format!("'{what}.{key}' is not a text"))),
@@ -928,8 +954,11 @@ impl SavedSend {
         };
         // docs/adr/0090, section 7: the sender of an act that delivers an event
         // this session sent. Format 3 writes it, with the SCXML pair of it as the
-        // origin; formats 1 and 2 store the id alone as `origin`, or the
-        // session's location as one backend stored it.
+        // origin. Formats 1 and 2 store the id alone as `origin`, or the
+        // session's location as one backend stored it; a format-2 act that
+        // stored none is read as sent by the session that holds it. A format-1
+        // text holds no session id, and its machine arms such an act as its own
+        // ([`arm_pending`]).
         let sender = || -> Result<String, StateRefusal> {
             if format == FORMAT_3 {
                 let origin = read_origin(value, what)?;
@@ -939,10 +968,15 @@ impl SavedSend {
                         "'{what}' is a send of this session, and it names no sender"
                     )));
                 }
-                check_sender(origin.as_ref(), &sender, what)?;
+                check_own_pair(origin.as_ref(), &sender, what)?;
                 Ok(sender)
             } else {
-                Ok(read_stored_sender(&text("origin")?))
+                let stored = read_stored_sender(&text("origin")?);
+                Ok(if stored.is_empty() {
+                    session_id.to_string()
+                } else {
+                    stored
+                })
             }
         };
         let due = read_moment(&text("due")?, &format!("{what}.due"))?;
@@ -1033,8 +1067,11 @@ pub struct SavedEvent {
     /// delivered the event wrote, `None` for an event no processor stamped
     /// (docs/adr/0090).
     pub origin: Option<EventOrigin>,
-    /// The id of the session that sent the event, set only for one the SCXML
-    /// Event I/O Processor delivered, and empty otherwise.
+    /// The id of the session that sent the event, written by the processor
+    /// that delivered it from that session: the SCXML Event I/O Processor for a
+    /// local session, the Mesh transport for a remote child or parent. Empty for
+    /// any other sender, and independent of the reply address in `origin`,
+    /// which is never `None` beside a sender (docs/adr/0090, section 7).
     pub sender: String,
     /// `_event.invokeid`.
     pub invoke_id: String,
@@ -1112,7 +1149,7 @@ impl SavedEvent {
         let (origin, sender) = if format == FORMAT_3 {
             let origin = read_origin(value, what)?;
             let sender = read_sender(value, what)?;
-            check_sender(origin.as_ref(), &sender, what)?;
+            check_event_sender(origin.as_ref(), &sender, what)?;
             (origin, sender)
         } else {
             let stored = read_stored_origin(&text("origin")?, &text("origintype")?);
@@ -1394,11 +1431,27 @@ impl SavedState {
                 .collect::<Result<Vec<_>, _>>()?,
             _ => return Err(StateRefusal::new("'history' is not an object")),
         };
+        // A tree's own id, read before its waiting sends: a format-2 send that
+        // stored no sender is the send of the session that holds it
+        // (docs/adr/0090, section 7). A format-1 state holds none.
+        let session_id = if format == FORMAT_1 {
+            String::new()
+        } else {
+            let session_id = text_of(field("sessionid")?, "sessionid")?;
+            if !crate::helpers::session_id::is_nmtoken(&session_id) {
+                return Err(StateRefusal::new(format!(
+                    "'sessionid' ({session_id}) is not an XML Nmtoken, which a session id is"
+                )));
+            }
+            session_id
+        };
         let pending = match field("pending")? {
             Value::Array(items) => items
                 .iter()
                 .enumerate()
-                .map(|(i, v)| SavedSend::from_value(v, &format!("pending[{i}]"), format))
+                .map(|(i, v)| {
+                    SavedSend::from_value(v, &format!("pending[{i}]"), format, &session_id)
+                })
                 .collect::<Result<Vec<_>, _>>()?,
             _ => return Err(StateRefusal::new("'pending' is not an array")),
         };
@@ -1418,17 +1471,11 @@ impl SavedState {
             ),
             _ => return Err(StateRefusal::new("'invokes' is not an array")),
         };
-        // A tree's own members: the session's id and its count of starts.
-        let (session_id, invoke_starts) = if format == FORMAT_1 {
-            (String::new(), Vec::new())
+        // A tree's other member of its own: its count of starts.
+        let invoke_starts = if format == FORMAT_1 {
+            Vec::new()
         } else {
-            let session_id = text_of(field("sessionid")?, "sessionid")?;
-            if !crate::helpers::session_id::is_nmtoken(&session_id) {
-                return Err(StateRefusal::new(format!(
-                    "'sessionid' ({session_id}) is not an XML Nmtoken, which a session id is"
-                )));
-            }
-            let invoke_starts = match field("invokestarts")? {
+            match field("invokestarts")? {
                 Value::Object(members) => members
                     .iter()
                     .map(|(id, count)| match count {
@@ -1440,8 +1487,7 @@ impl SavedState {
                     })
                     .collect::<Result<Vec<_>, _>>()?,
                 _ => return Err(StateRefusal::new("'invokestarts' is not an object")),
-            };
-            (session_id, invoke_starts)
+            }
         };
         let host_invokes = match field("hostinvokes")? {
             Value::Array(items) => items
@@ -3794,6 +3840,15 @@ mod tests {
                 &format!(r#"{{"processor":"{SCXML}","address":"sce://scxml/peer%3A1"}}"#),
                 r#""peer:1""#,
             ),
+            // A sender is the session that sent the event, independent of the
+            // reply address beside it: a remote child over the Mesh transport
+            // answers at its session endpoint, and the reader derives neither
+            // member from the other.
+            event_with(
+                &format!(r#"{{"processor":"{SCXML}","address":"mesh://dev/machine/w"}}"#),
+                r#""s1.w""#,
+            ),
+            event_with(host, r#""s2""#),
         ]
         .join(",");
         let pending = [
@@ -3818,6 +3873,11 @@ mod tests {
                 (Some(EventOrigin::new("x-sce-host", "motor")), ""),
                 (Some(EventOrigin::new(SCXML, "mesh://ecu")), ""),
                 (Some(scxml_origin("peer:1")), "peer:1"),
+                (
+                    Some(EventOrigin::new(SCXML, "mesh://dev/machine/w")),
+                    "s1.w"
+                ),
+                (Some(EventOrigin::new("x-sce-host", "motor")), "s2"),
             ]
         );
         assert!(
@@ -3847,7 +3907,6 @@ mod tests {
     #[test]
     fn a_format_3_origin_or_sender_that_is_not_one_is_refused_naming_its_record() {
         let pair = scxml_pair("s1");
-        let host = r#"{"processor":"x-sce-host","address":"motor"}"#;
         for (what, pending, external, wanted) in [
             (
                 "an origin that is a text",
@@ -3907,31 +3966,10 @@ mod tests {
                 "'external[0].sender' is neither null nor a session id",
             ),
             (
-                "a sender beside another session's pair",
-                String::new(),
-                event_with(&pair, r#""s2""#),
-                "'external[0].sender' is 's2', and 'external[0].origin' is not the SCXML pair",
-            ),
-            (
                 "a sender beside no origin",
                 String::new(),
                 event_with("null", r#""s1""#),
-                "'external[0].sender' is 's1'",
-            ),
-            (
-                "a sender beside a host's pair",
-                String::new(),
-                event_with(host, r#""s1""#),
-                "'external[0].sender' is 's1'",
-            ),
-            (
-                "a sender beside its location unencoded",
-                String::new(),
-                event_with(
-                    &format!(r#"{{"processor":"{SCXML}","address":"sce://scxml/peer:1"}}"#),
-                    r#""peer:1""#,
-                ),
-                "'external[0].sender' is 'peer:1'",
+                "'external[0].sender' is 's1', and 'external[0].origin' is null",
             ),
             (
                 "an event with no sender",
@@ -3998,7 +4036,9 @@ mod tests {
     /// docs/adr/0090, section 7: a format-1 state written back without a
     /// machine stays format 1, its origins written by the rule format 2 uses:
     /// the sender's id for a session's send, the address otherwise, then the
-    /// pair's processor. An internal send's stored origin is not read.
+    /// pair's processor. An internal send's stored origin is not read, and a
+    /// send that stored none keeps none: a format-1 text holds no session id
+    /// to read it as (`z`).
     #[test]
     fn a_format_1_state_is_written_back_as_format_1() {
         let text = |pending: &str, external: &str| {
@@ -4012,7 +4052,7 @@ mod tests {
             )
         };
         let stored = text(
-            r#"{"due":"1","act":"internal","event":"i","data":"","sendid":"","origin":"s1"},{"due":"2","act":"raise","event":"r","data":"","sendid":"","origin":"sce://scxml/a%20b"}"#,
+            r#"{"due":"1","act":"internal","event":"i","data":"","sendid":"","origin":"s1"},{"due":"2","act":"raise","event":"r","data":"","sendid":"","origin":"sce://scxml/a%20b"},{"due":"3","act":"raise","event":"z","data":"","sendid":"","origin":""}"#,
             &[
                 event("s1", ""),
                 event("sce://scxml/a%20b", "x-sce-host"),
@@ -4021,7 +4061,7 @@ mod tests {
             .join(","),
         );
         let written = text(
-            r#"{"due":"1","act":"internal","event":"i","data":"","sendid":"","origin":""},{"due":"2","act":"raise","event":"r","data":"","sendid":"","origin":"a b"}"#,
+            r#"{"due":"1","act":"internal","event":"i","data":"","sendid":"","origin":""},{"due":"2","act":"raise","event":"r","data":"","sendid":"","origin":"a b"},{"due":"3","act":"raise","event":"z","data":"","sendid":"","origin":""}"#,
             &[event("s1", SCXML), event("a b", SCXML), event("", "")].join(","),
         );
         let state = SavedState::from_json(&stored).expect("a format-1 state reads");
@@ -4030,17 +4070,19 @@ mod tests {
     }
 
     /// docs/adr/0090, section 7: a format-2 tree is read by the table of that
-    /// section and written back as format 3, its internal send with no origin.
+    /// section and written back as format 3, its internal send with no origin,
+    /// and a send that stored no origin as the send of the session that holds
+    /// it (`q`).
     #[test]
     fn a_format_2_tree_is_read_by_the_table_and_written_as_format_3() {
         let format2 = format!(
-            r#"{{"format":2,"shape":"d","sessionid":"s1","configuration":[],"current":"s","variables":{{}},"history":{{}},"pending":[{{"due":"1","act":"internal","event":"i","data":"","sendid":"","origin":"s1"}},{{"due":"2","act":"raise","event":"r","data":"","sendid":"","origin":"s1"}},{{"due":"3","act":"parent","event":"p","data":"","sendid":"","origin":"sce://scxml/s1"}}],"invokes":[],"invokestarts":{{}},"hostinvokes":[],"hostinvoketoken":"0","sendseq":"0","external":[{{"name":"a","data":"","type":"external","sendid":"","origin":"w","origintype":"{SCXML}","invokeid":"w","hostinvoketoken":null}},{{"name":"b","data":"","type":"external","sendid":"","origin":"","origintype":"{SCXML}","invokeid":"","hostinvoketoken":null}},{{"name":"c","data":"","type":"external","sendid":"","origin":"motor","origintype":"x-sce-host","invokeid":"","hostinvoketoken":null}}]}}"#
+            r#"{{"format":2,"shape":"d","sessionid":"s1","configuration":[],"current":"s","variables":{{}},"history":{{}},"pending":[{{"due":"1","act":"internal","event":"i","data":"","sendid":"","origin":"s1"}},{{"due":"2","act":"raise","event":"r","data":"","sendid":"","origin":"s1"}},{{"due":"3","act":"parent","event":"p","data":"","sendid":"","origin":"sce://scxml/s1"}},{{"due":"4","act":"raise","event":"q","data":"","sendid":"","origin":""}}],"invokes":[],"invokestarts":{{}},"hostinvokes":[],"hostinvoketoken":"0","sendseq":"0","external":[{{"name":"a","data":"","type":"external","sendid":"","origin":"w","origintype":"{SCXML}","invokeid":"w","hostinvoketoken":null}},{{"name":"b","data":"","type":"external","sendid":"","origin":"","origintype":"{SCXML}","invokeid":"","hostinvoketoken":null}},{{"name":"c","data":"","type":"external","sendid":"","origin":"motor","origintype":"x-sce-host","invokeid":"","hostinvoketoken":null}}]}}"#
         );
         let s1 = scxml_pair("s1");
         let w = scxml_pair("w");
         let format3 = with_origins(
             &format!(
-                r#"{{"due":"1","act":"internal","event":"i","data":"","sendid":"","origin":null,"sender":null}},{{"due":"2","act":"raise","event":"r","data":"","sendid":"","origin":{s1},"sender":"s1"}},{{"due":"3","act":"parent","event":"p","data":"","sendid":"","origin":{s1},"sender":"s1"}}"#
+                r#"{{"due":"1","act":"internal","event":"i","data":"","sendid":"","origin":null,"sender":null}},{{"due":"2","act":"raise","event":"r","data":"","sendid":"","origin":{s1},"sender":"s1"}},{{"due":"3","act":"parent","event":"p","data":"","sendid":"","origin":{s1},"sender":"s1"}},{{"due":"4","act":"raise","event":"q","data":"","sendid":"","origin":{s1},"sender":"s1"}}"#
             ),
             &format!(
                 r#"{{"name":"a","data":"","type":"external","sendid":"","origin":{w},"sender":"w","invokeid":"w","hostinvoketoken":null}},{{"name":"b","data":"","type":"external","sendid":"","origin":null,"sender":null,"invokeid":"","hostinvoketoken":null}},{{"name":"c","data":"","type":"external","sendid":"","origin":{{"processor":"x-sce-host","address":"motor"}},"sender":null,"invokeid":"","hostinvoketoken":null}}"#
