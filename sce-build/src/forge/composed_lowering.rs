@@ -159,8 +159,8 @@ fn gather_unions(
 ) {
     for union in scope.unions.values() {
         let key = union_key(union);
-        if !unions.contains_key(&key) {
-            unions.insert(key, union.clone());
+        if let std::collections::btree_map::Entry::Vacant(slot) = unions.entry(key) {
+            slot.insert(union.clone());
             gather_unions(&union.scope, unions, seen);
         }
     }
