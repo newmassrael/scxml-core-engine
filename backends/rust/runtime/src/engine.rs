@@ -2811,8 +2811,13 @@ impl<P: StatePolicy> Engine<P> {
     /// data and naming no party: no processor stamped it, so `_event.origin`
     /// and `_event.origintype` read empty (docs/adr/0090, section 3).
     ///
-    /// Matches C++ `raiseExternal(Event, const string&)` with no origin;
-    /// [`raise_external_from`](Self::raise_external_from) names one.
+    /// Matches C++ `raiseExternal(Event, const string&)` with no origin.
+    // The method that names an origin is std-only, so the sentence that links
+    // to it is written only where the link resolves.
+    #[cfg_attr(
+        feature = "std",
+        doc = "[`raise_external_from`](Self::raise_external_from) names one."
+    )]
     pub fn raise_external(&mut self, event: P::Event, event_data: &str) {
         self.raise_external_arrived_as(event, event_data, "");
     }
@@ -2997,9 +3002,12 @@ impl<P: StatePolicy> Engine<P> {
     /// declared).
     ///
     /// The event names no party, so `_event.origin` and `_event.origintype`
-    /// read empty (docs/adr/0090, section 3);
-    /// [`raise_external_by_name_from`](Self::raise_external_by_name_from)
-    /// names one.
+    /// read empty (docs/adr/0090, section 3).
+    // As on `raise_external`: the linked method is std-only.
+    #[cfg_attr(
+        feature = "std",
+        doc = "[`raise_external_by_name_from`](Self::raise_external_by_name_from) names one."
+    )]
     pub fn raise_external_by_name(&mut self, event_name: &str, event_data: &str) {
         if let Some(event) = P::resolve_event_by_name(event_name) {
             self.raise_external_arrived_as(
