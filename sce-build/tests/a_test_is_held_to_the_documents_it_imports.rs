@@ -335,13 +335,14 @@ fn the_rules_run_where_a_document_of_the_profile_is_compiled() {
             other => panic!("the accepted suite is refused by a rule: {other:?}"),
         },
     }
-    let err = sce_build::compile_forge_file(
+    let Err(err) = sce_build::compile_forge_file(
         &dir().join("refused_suite_module_parameter_type.scxml"),
         Language::Rust,
         &[],
         &options(),
-    )
-    .expect_err("refused");
+    ) else {
+        panic!("a module parameter of another type is refused at the compile");
+    };
     assert_eq!(
         record(&err).0,
         DiagnosticCode::TestProfileModuleParameter.as_str(),
