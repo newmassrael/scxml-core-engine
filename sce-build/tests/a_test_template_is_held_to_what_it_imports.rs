@@ -145,13 +145,14 @@ fn the_compile_holds_a_template_to_its_imports_before_it_refuses_to_generate_one
             other => panic!("the generation's refusal, got {other:?}"),
         },
     }
-    let err = sce_build::compile_forge_file(
+    let Err(err) = sce_build::compile_forge_file(
         &imports_dir().join("refused_line_field_unknown.scxml"),
         Language::Rust,
         &[],
         &options(),
-    )
-    .expect_err("refused");
+    ) else {
+        panic!("a field the record does not declare is refused at the compile");
+    };
     let (code, actual, _) = record(&err);
     assert_eq!(code, DiagnosticCode::TestProfileRecordFields.as_str());
     assert_eq!(actual.as_deref(), Some("size"));
