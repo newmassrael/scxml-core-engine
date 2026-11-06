@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	// treeRoot is the session id the shared format-2 fixtures give their root.
+	// treeRoot is the session id the shared format-3 fixtures give their root.
 	treeRoot = "fixture-root"
 	// treeWorker is the session `worker` is: the root's id and the id its first
 	// start is started under (`<state>.<start>.<invoke>`).

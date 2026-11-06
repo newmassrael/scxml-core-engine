@@ -16,7 +16,7 @@
 // and `ASavedMeshRequestIsNotSentAgainAfterARestoreTest.kt`.
 //
 // Driven entirely on a manual clock: no case sleeps. The shared instance
-// `saved/statechart_static_mesh_request_asking.json` is the format-2 text every
+// `saved/statechart_static_mesh_request_asking.json` is the format-3 text every
 // backend writes (docs/adr/0045); `saved/format1/` holds the format-1 text of the
 // same run.
 
@@ -55,7 +55,7 @@ func (r *router) register(engine *Engine) {
 }
 
 // asking is a machine whose request to `#motor` is in flight, the router having
-// been handed it, given the session id the shared format-2 fixtures name their
+// been handed it, given the session id the shared format-3 fixtures name their
 // root by.
 func asking(t *testing.T) (*Engine, *router) {
 	t.Helper()

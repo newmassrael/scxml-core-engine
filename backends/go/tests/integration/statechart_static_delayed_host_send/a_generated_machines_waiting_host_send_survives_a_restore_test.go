@@ -12,7 +12,7 @@
 // generator emitted. The Rust and Kotlin halves are
 // `a_generated_machines_waiting_host_send_survives_a_restore.rs` and
 // `AGeneratedMachinesWaitingHostSendSurvivesARestoreTest.kt`. The text this
-// backend writes is the format-2
+// backend writes is the format-3
 // `saved/statechart_static_delayed_host_send_waiting.json` (docs/adr/0045), its
 // root given the id the fixtures name it by; the format-1 text of the same run,
 // under `saved/format1/`, still restores.
@@ -39,7 +39,7 @@ import (
 
 const (
 	declaredType = "x-sce-host"
-	// root is the session id the shared format-2 fixtures give their root.
+	// root is the session id the shared format-3 fixtures give their root.
 	root = "fixture-root"
 	// savedAtMs is the wall-clock moment the shared instance was saved at.
 	savedAtMs int64 = 1_700_000_000_000

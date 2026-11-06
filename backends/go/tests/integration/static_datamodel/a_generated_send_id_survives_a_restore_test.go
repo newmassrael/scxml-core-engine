@@ -13,7 +13,7 @@
 // `second.due`, each under an id written to `first` and `second`, and
 // `cancel.first` and `cancel.second` remove the send whose id the variable holds.
 // Everything runs on a host-owned clock, so no case sleeps. The shared fixture
-// `saved/static_send_idlocation_armed.json` is the format-2 text every backend
+// `saved/static_send_idlocation_armed.json` is the format-3 text every backend
 // writes (docs/adr/0045), its root given the id the fixtures name it by, and
 // `saved/format1/` holds the format-1 text of the same run, which still restores.
 // The Rust and Kotlin halves are `a_generated_send_id_survives_a_restore.rs` and
@@ -97,7 +97,7 @@ func TestAMachineThatArmedTwoSendsSavesTheIdsItGenerated(t *testing.T) {
 }
 
 func TestARestoredSendIsCancelledByTheIdTheDocumentHolds(t *testing.T) {
-	// From the format-2 text, and from the format-1 text of the same run.
+	// From the format-3 text, and from the format-1 text of the same run.
 	for _, text := range []string{sharedArmed(t, false), sharedArmed(t, true)} {
 		engine, policy := sendIdRestoredFrom(t, text)
 		sendIdSend(engine, "cancel.first")

@@ -17,7 +17,7 @@
 //
 // Driven entirely on a manual clock: no case sleeps, and none can be decided by
 // how loaded the build machine is. The shared instance
-// `saved/statechart_static_host_invoke_running.json` is the format-2 text every
+// `saved/statechart_static_host_invoke_running.json` is the format-3 text every
 // backend writes (docs/adr/0045); the format-1 text of the same run, under
 // `saved/format1/`, still restores.
 
@@ -92,7 +92,7 @@ func sameRequest(a, b sce.HostInvokeRequest) bool {
 }
 
 // working is a machine standing in `working`, its invocation started with token 0,
-// given the session id the shared format-2 fixtures name their root by.
+// given the session id the shared format-3 fixtures name their root by.
 func working(t *testing.T) (*Engine, *StatechartStaticHostInvokePolicy, *host) {
 	t.Helper()
 	policy := NewStatechartStaticHostInvokePolicy()
@@ -176,7 +176,7 @@ func TestAMachineIsSavedWithTheRequestItsInvocationWasStartedWith(t *testing.T) 
 }
 
 func TestARestoreAsksNothingOfTheHostUntilTheMachineIsDriven(t *testing.T) {
-	// From the format-2 text, and from the format-1 text of the same run.
+	// From the format-3 text, and from the format-1 text of the same run.
 	for _, text := range []string{sharedText(t, false), sharedText(t, true)} {
 		engine, _, log := restored(t, text, 1000)
 		if len(log.log) != 0 {
