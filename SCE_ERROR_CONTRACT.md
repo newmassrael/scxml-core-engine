@@ -954,10 +954,9 @@ references against a real document and drift silently.
 | `test-profile/matcher-type` | `validation` | no | SCE Test Profile §11.4 |
 | `test-profile/message-event-name` | `validation` | no | SCE Test Profile §11.3 |
 | `test-profile/message-read` | `validation` | no | SCE Test Profile §4.4 |
-| `test-profile/module-parameter-written` | `validation` | no | SCE Test Profile §11.5 |
 | `test-profile/module-parameter` | `validation` | no | SCE Test Profile §11.8 |
+| `test-profile/module-parameter-written` | `validation` | no | SCE Test Profile §11.5 |
 | `test-profile/native-code` | `validation` | no | ADR 0091 §3 |
-| `test-profile/port-connection` | `validation` | no | SCE Test Profile §11.6 |
 | `test-profile/port-connection` | `validation` | no | SCE Test Profile §11.6 |
 | `test-profile/port-direction` | `validation` | no | SCE Test Profile §11.5 |
 | `test-profile/port-lists` | `validation` | no | SCE Test Profile §11.6 |

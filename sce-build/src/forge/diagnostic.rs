@@ -14303,6 +14303,8 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:e84f87cb4d9b4992","code":"test-profile/record-fields","stage":"validation","spec":"SCE Test Profile §11.4","message":"test-template 'every_matcher': <sce:any-value> names the field 'status', which the record JobStatus does not declare (declared: elapsed_ms, note, codes, tag, retry, count): a <sce:record-match> holds one matcher for each field of its record, and for no other","actual":"status"}"#,
+            ),
+            (
                 // Two message types of one event name on a port type
                 // (docs/SCE_TEST_PROFILE.md §11.3): the event name is
                 // `actual`.
@@ -14374,6 +14376,8 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:42d2febe0241c2b3","code":"test-profile/module-parameter","stage":"validation","spec":"SCE Test Profile §11.8","message":"test-suite 'ping_suite': the module parameter 'limit' is declared of type uint16, and the component 'tester', which the test case 'pings_and_pongs' runs, reads it as uint32: a module parameter is declared with the type its components read it as","actual":"uint16"}"#,
+            ),
+            (
                 // A native condition in a test component (docs/adr/0091 §3):
                 // the condition is `actual`.
                 "forge/test-profile-native-code",
