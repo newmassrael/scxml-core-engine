@@ -7410,6 +7410,9 @@ fn validate_and_enrich_imports(
                 // The enum as the one type grammar reads it, which a type that
                 // holds it is sized by (docs/adr/0086).
                 ctx.enum_type = Some(forge::import_source::scoped_enum(em));
+                // A union whose tag is a value of the enum takes its revision
+                // (docs/adr/0092, section 8.1).
+                ctx.enum_revision = Some(em.revision());
                 // What `<alias>.toNumber` and `<alias>.fromNumber` are lowered to
                 // in this language: the enum document's own accessors.
                 (ctx.enum_to_number, ctx.enum_from_number) =
@@ -7419,6 +7422,19 @@ fn validate_and_enrich_imports(
             // `record:<alias>` names (SCE_FORGE.md §4.12). Its struct name
             // and its fields are captured here, where the schema is in hand,
             // so the algorithm renders against them without reopening it.
+            // An imported union is the type a field's `union:<alias>` names
+            // (docs/adr/0092, section 1.1): read here, where its document is in
+            // hand, with the scope its own imports name its tag's enum and its
+            // cases' records in, so a unit that holds it is sized and its
+            // grammar written without reopening it.
+            if let forge::model::ForgeDocument::Union(um) = &doc {
+                ctx.union_type = forge::import_source::scoped_union(
+                    &source.path,
+                    um,
+                    &parsed.imports,
+                    source.path.parent().unwrap_or(base_dir),
+                );
+            }
             if let forge::model::ForgeDocument::EventSchema(full) = &doc {
                 // The schema's own imports are written relative to it.
                 let schema_base = source.path.parent().unwrap_or(base_dir);

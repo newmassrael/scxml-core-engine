@@ -647,6 +647,20 @@ pub struct ImportContext {
     /// import.
     #[serde(skip)]
     pub enum_type: Option<crate::forge::value_type::ScopedEnum>,
+    /// For an imported `sce:kind="enum"`: the revision of the enum
+    /// (`sce:revision`, 1 when it declares none), which is the revision of a
+    /// union whose tag is a value of it (docs/adr/0092, section 8.1). `None`
+    /// for every other import.
+    #[serde(skip)]
+    pub enum_revision: Option<u32>,
+    /// For an imported `sce:kind="union"`: the union as the one type grammar
+    /// reads it, its tag, each case in its tag enum's order and the scope its
+    /// own document names the enum and the cases' records in (docs/adr/0092,
+    /// section 1.1). What a type that holds the union is sized by
+    /// ([`import_type_scope`]). `None` for every other import, and for a union
+    /// whose tag's enum cannot be read, which the import pass reports.
+    #[serde(skip)]
+    pub union_type: Option<crate::forge::value_type::ScopedUnion>,
     /// For an imported transform that reads a field through `previous()`,
     /// its first such read. A stateless import stands for a pure function
     /// the importer calls with its own values, and this transform's
@@ -1345,6 +1359,8 @@ fn resolve_single_import(
         enum_to_number: String::new(),
         enum_from_number: String::new(),
         enum_type: None,
+        enum_revision: None,
+        union_type: None,
         transform_state_read: None,
         record: None,
         record_type: None,
@@ -3536,10 +3552,11 @@ fn c11_found_reading(name: &str, value: &str, params: &str, about: &str, body: &
     )
 }
 
-/// The enums and records a document's aliases name, as its imports resolved
-/// them: what the size of a type the document writes reads (docs/adr/0086,
-/// section 2). Each record carries the scope of its own document
-/// ([`ImportContext::record_type`]), so its fields are sized by the enums and
+/// The enums, records and unions a document's aliases name, as its imports
+/// resolved them: what the size of a type the document writes reads
+/// (docs/adr/0086, section 2; docs/adr/0092, section 5.1). Each record and
+/// union carries the scope of its own document ([`ImportContext::record_type`],
+/// [`ImportContext::union_type`]), so its fields are sized by the enums and
 /// records its own aliases name. Each enum is read from its document
 /// ([`ImportContext::enum_type`]); an import whose document was not read
 /// carries none, and is left out: a type that names it has no size.
@@ -3553,6 +3570,9 @@ fn import_type_scope(imports: &[ImportContext]) -> crate::forge::value_type::Typ
         }
         if let Some(record) = &import.record_type {
             scope.records.insert(import.alias.clone(), record.clone());
+        }
+        if let Some(union) = &import.union_type {
+            scope.unions.insert(import.alias.clone(), union.clone());
         }
     }
     scope
@@ -44001,6 +44021,8 @@ mod tests {
             enum_to_number: String::new(),
             enum_from_number: String::new(),
             enum_type: None,
+            enum_revision: None,
+            union_type: None,
             transform_state_read: None,
             record: None,
             record_type: None,
@@ -44911,6 +44933,8 @@ mod tests {
                 enum_to_number: String::new(),
                 enum_from_number: String::new(),
                 enum_type: None,
+                enum_revision: None,
+                union_type: None,
                 transform_state_read: None,
                 record: None,
                 record_type: None,
@@ -44975,6 +44999,8 @@ mod tests {
                 enum_to_number: String::new(),
                 enum_from_number: String::new(),
                 enum_type: None,
+                enum_revision: None,
+                union_type: None,
                 transform_state_read: None,
                 record: None,
                 record_type: None,

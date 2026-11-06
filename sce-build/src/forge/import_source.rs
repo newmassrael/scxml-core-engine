@@ -303,6 +303,20 @@ fn scoped_union_at(
     on_path: &mut Vec<PathBuf>,
 ) -> Option<ScopedUnion> {
     let scope = type_scope_at(imports, base_dir, on_path);
+    union_in_scope(crate::forge::stdlib::identity(path), model, scope)
+}
+
+/// The union `model` is, read in `scope`, the scope its own imports name its
+/// tag's enum and its cases' records in, under `identity`: each case in its tag
+/// enum's declaration order, with the variant's declared name and number.
+/// `None` when `scope` holds no tag enum by the alias `model` names. What
+/// [`scoped_union`] makes of a document it reads, and what a backend makes of
+/// a union document whose imports it already holds as a scope.
+pub fn union_in_scope(
+    identity: String,
+    model: &crate::forge::model::UnionModel,
+    scope: TypeScope,
+) -> Option<ScopedUnion> {
     let tag_enum = scope.enums.get(&model.tag_enum)?;
     // The enum's order, each variant's case as the document gives it; a
     // variant with no case is refused where the union is checked
@@ -318,7 +332,7 @@ fn scoped_union_at(
         })
         .collect();
     Some(ScopedUnion {
-        identity: crate::forge::stdlib::identity(path),
+        identity,
         name: model.name.clone(),
         tag: model.tag.clone(),
         tag_enum: model.tag_enum.clone(),
