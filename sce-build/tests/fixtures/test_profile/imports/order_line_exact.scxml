@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §6.2, §11.4: a specific template over an order
+     line, which references a specific template for its quantity. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="order_line_exact"
+       sce:type="record:OrderLine">
+  <sce:import kind="event-schema" src="order_line.scxml" as="OrderLine"/>
+  <sce:import kind="test-template" src="quantity_two.scxml" as="QuantityTwo"/>
+  <sce:record-match>
+    <sce:specific field="sku" value="A-1"/>
+    <sce:template-ref field="quantity" template="QuantityTwo"/>
+    <sce:specific field="color" value="red"/>
+  </sce:record-match>
+</scxml>

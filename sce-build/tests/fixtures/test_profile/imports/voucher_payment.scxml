@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The record the voucher case of the payment union holds. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="voucher_payment"
+       sce:event-name="payment.voucher">
+  <datamodel>
+    <data id="voucher_code" sce:type="bytes[4]" sce:direction="in"/>
+  </datamodel>
+</scxml>

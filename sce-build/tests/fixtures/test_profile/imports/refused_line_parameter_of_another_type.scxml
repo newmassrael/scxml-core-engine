@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: a formal parameter of type uint32 named where the uint16 field of
+     an imported record is matched (docs/SCE_TEST_PROFILE.md §11.4). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="refused_line_parameter_of_another_type"
+       sce:type="record:OrderLine">
+  <sce:import kind="event-schema" src="order_line.scxml" as="OrderLine"/>
+  <datamodel>
+    <data id="count" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+  <sce:record-match>
+    <sce:any-value field="sku"/>
+    <sce:specific field="quantity" param="count"/>
+    <sce:any-value field="color"/>
+  </sce:record-match>
+</scxml>

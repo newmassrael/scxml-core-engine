@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: ifpresent on a field of an imported record that is not optional
+     (B.1.4.2, docs/SCE_TEST_PROFILE.md §11.4). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="refused_line_ifpresent_not_optional"
+       sce:type="record:OrderLine">
+  <sce:import kind="event-schema" src="order_line.scxml" as="OrderLine"/>
+  <sce:record-match>
+    <sce:any-value field="sku" ifpresent="true"/>
+    <sce:any-value field="quantity"/>
+    <sce:any-value field="color"/>
+  </sce:record-match>
+</scxml>

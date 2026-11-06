@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: a bound of a range past the range of the uint16 field of an
+     imported record it stands on (B.1.2.5, docs/SCE_TEST_PROFILE.md §11.4). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="refused_line_range_bound_out_of_range"
+       sce:type="record:OrderLine">
+  <sce:import kind="event-schema" src="order_line.scxml" as="OrderLine"/>
+  <sce:record-match>
+    <sce:any-value field="sku"/>
+    <sce:value-range field="quantity">
+      <sce:upper value="70000"/>
+    </sce:value-range>
+    <sce:any-value field="color"/>
+  </sce:record-match>
+</scxml>

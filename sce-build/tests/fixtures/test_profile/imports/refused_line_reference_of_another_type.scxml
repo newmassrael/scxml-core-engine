@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: a reference to a template over a uint16 where the text field of
+     an imported record is matched (docs/SCE_TEST_PROFILE.md §11.4). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="refused_line_reference_of_another_type"
+       sce:type="record:OrderLine">
+  <sce:import kind="event-schema" src="order_line.scxml" as="OrderLine"/>
+  <sce:import kind="test-template" src="quantity_at_most.scxml" as="QuantityAtMost"/>
+  <datamodel>
+    <data id="limit" sce:type="uint16" sce:direction="in"/>
+  </datamodel>
+  <sce:record-match>
+    <sce:template-ref field="sku" template="QuantityAtMost" args="limit"/>
+    <sce:any-value field="quantity"/>
+    <sce:any-value field="color"/>
+  </sce:record-match>
+</scxml>

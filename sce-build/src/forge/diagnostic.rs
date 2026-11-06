@@ -932,6 +932,10 @@ pub enum DiagnosticCode {
     /// (docs/SCE_TEST_PROFILE.md §11.6).
     #[serde(rename = "test-profile/port-connection")]
     TestProfilePortConnection,
+    /// A `record-match` of a test template whose fields and the fields of its
+    /// record are not one to one (docs/SCE_TEST_PROFILE.md §11.4).
+    #[serde(rename = "test-profile/record-fields")]
+    TestProfileRecordFields,
     #[serde(rename = "validation/mesh-rpc-reserved-param")]
     ValidationMeshRpcReservedParam,
     #[serde(rename = "validation/mesh-rpc-missing-target")]
@@ -3889,6 +3893,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         TestProfileTemplateFloat,
         TestProfileDuration,
         TestProfilePortConnection,
+        TestProfileRecordFields,
         ValidationMeshRpcReservedParam,
         ValidationMeshRpcMissingTarget,
         ValidationMeshRpcDuplicateTarget,
@@ -4649,6 +4654,7 @@ impl DiagnosticCode {
             | TestProfileTemplateFloat => Some("SCE Test Profile §11.4"),
             TestProfileDuration => Some("SCE Test Profile §4.7"),
             TestProfilePortConnection => Some("SCE Test Profile §11.6"),
+            TestProfileRecordFields => Some("SCE Test Profile §11.4"),
 
             // ── Mesh-RPC invoke reserved params (SCE_MESH.md §9.5) ──
             ValidationMeshRpcReservedParam
@@ -5573,6 +5579,7 @@ impl DiagnosticCode {
             | TestProfileTemplateFloat
             | TestProfileDuration
             | TestProfilePortConnection
+            | TestProfileRecordFields
             | ValidationMeshRpcReservedParam
             | ValidationMeshRpcMissingTarget
             | ValidationMeshRpcDuplicateTarget
@@ -6085,6 +6092,7 @@ impl DiagnosticCode {
             TestProfileTemplateFloat => "test-profile/template-float",
             TestProfileDuration => "test-profile/duration",
             TestProfilePortConnection => "test-profile/port-connection",
+            TestProfileRecordFields => "test-profile/record-fields",
             ValidationMeshRpcReservedParam => "validation/mesh-rpc-reserved-param",
             ValidationMeshRpcMissingTarget => "validation/mesh-rpc-missing-target",
             ValidationMeshRpcDuplicateTarget => "validation/mesh-rpc-duplicate-target",
@@ -8407,6 +8415,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 TestProfileRule::TemplateFloat => DiagnosticCode::TestProfileTemplateFloat,
                 TestProfileRule::Duration => DiagnosticCode::TestProfileDuration,
                 TestProfileRule::PortConnection => DiagnosticCode::TestProfilePortConnection,
+                TestProfileRule::RecordFields => DiagnosticCode::TestProfileRecordFields,
             },
             stage: Stage::Validation,
             expected: None,
@@ -14139,6 +14148,25 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:ebe44144c4e1fbd6","code":"test-profile/port-connection","stage":"validation","spec":"SCE Test Profile §11.6","message":"test-configuration 'tester_and_helper': the port 'sut' of the test system interface is joined by 2 <sce:map>: every port of the configuration takes part in exactly one connect or map","actual":"sut"}"#,
+            ),
+            (
+                // A matcher of a record-match for a field its imported record
+                // does not declare (docs/SCE_TEST_PROFILE.md §11.4): the field
+                // is `actual`.
+                "forge/test-profile-record-fields",
+                ValidationError::TestProfile {
+                    rule: TestProfileRule::RecordFields,
+                    kind: ForgeKind::TestTemplate,
+                    document: "every_matcher".into(),
+                    actual: "status".into(),
+                    detail: "<sce:any-value> names the field 'status', which the record \
+                             JobStatus does not declare (declared: elapsed_ms, note, codes, \
+                             tag, retry, count): a <sce:record-match> holds one matcher for \
+                             each field of its record, and for no other"
+                        .into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:e84f87cb4d9b4992","code":"test-profile/record-fields","stage":"validation","spec":"SCE Test Profile §11.4","message":"test-template 'every_matcher': <sce:any-value> names the field 'status', which the record JobStatus does not declare (declared: elapsed_ms, note, codes, tag, retry, count): a <sce:record-match> holds one matcher for each field of its record, and for no other","actual":"status"}"#,
             ),
             (
                 "forge/mesh-rpc-reserved-param",
@@ -20041,6 +20069,7 @@ mod tests {
             | TestProfileTemplateFloat
             | TestProfileDuration
             | TestProfilePortConnection
+            | TestProfileRecordFields
             | ValidationMeshRpcReservedParam
             | ValidationMeshRpcMissingTarget
             | ValidationMeshRpcDuplicateTarget
@@ -21040,6 +21069,7 @@ mod tests {
                 | TestProfileDatamodel | TestProfileMatcherType | TestProfileLiteral
                 | TestProfileTemplateParameter | TestProfileTemplateFloat
                 | TestProfileDuration | TestProfilePortConnection
+                | TestProfileRecordFields
                 | ValidationMeshRpcReservedParam
                 | ValidationMeshRpcMissingTarget
                 | ValidationMeshRpcDuplicateTarget
@@ -22123,6 +22153,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | TestProfileTemplateFloat
             | TestProfileDuration
             | TestProfilePortConnection
+            | TestProfileRecordFields
             | ValidationMeshRpcReservedParam
             | ValidationMeshRpcMissingTarget
             | ValidationMeshRpcDuplicateTarget

@@ -107,6 +107,7 @@
         "test-profile/template-float",
         "test-profile/duration",
         "test-profile/port-connection",
+        "test-profile/record-fields",
         "validation/mesh-rpc-reserved-param",
         "validation/mesh-rpc-missing-target",
         "validation/mesh-rpc-duplicate-target",

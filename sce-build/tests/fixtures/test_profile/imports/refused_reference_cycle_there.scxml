@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: a template whose reference leads to a template that references
+     it back (docs/SCE_TEST_PROFILE.md §11.4). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="refused_reference_cycle_there"
+       sce:type="uint16">
+  <sce:import kind="test-template" src="refused_reference_cycle_back.scxml" as="Back"/>
+  <sce:template-ref template="Back"/>
+</scxml>

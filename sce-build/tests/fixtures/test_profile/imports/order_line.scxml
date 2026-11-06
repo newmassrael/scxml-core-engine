@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- One line of an order: a text, a number and an enum, the record most of
+     the templates beside this file match (docs/SCE_TEST_PROFILE.md §11.4). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="order_line"
+       sce:event-name="order.line">
+  <sce:import kind="enum" src="paint_color.scxml" as="Color"/>
+  <datamodel>
+    <data id="sku" sce:type="string[16]" sce:direction="in"/>
+    <data id="quantity" sce:type="uint16" sce:direction="in"/>
+    <data id="color" sce:type="enum:Color" sce:direction="in"/>
+  </datamodel>
+</scxml>

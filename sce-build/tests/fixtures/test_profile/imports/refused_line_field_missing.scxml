@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: a record match that holds no matcher for the field color of its
+     imported record (docs/SCE_TEST_PROFILE.md §11.4). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="refused_line_field_missing"
+       sce:type="record:OrderLine">
+  <sce:import kind="event-schema" src="order_line.scxml" as="OrderLine"/>
+  <sce:record-match>
+    <sce:any-value field="sku"/>
+    <sce:any-value field="quantity"/>
+  </sce:record-match>
+</scxml>

@@ -5072,6 +5072,12 @@ pub fn compile_forge_from_parsed(
     // (docs/adr/0092, section 1.1).
     forge::union_check::check(parsed, base_dir, label.diagnostic_label)?;
 
+    // A test template's positions below a field of an imported record or a
+    // case of an imported union are typed by those documents, and its
+    // references by the templates they name: what the parser could not ask
+    // without them (docs/SCE_TEST_PROFILE.md §11.4).
+    forge::test_template_check::check(parsed, base_dir, label.diagnostic_label)?;
+
     // A content-line codec reads a text off a line and names the variant whose
     // text it is, so an `enum:<alias>` entry needs an enum whose variants each
     // have a text a line can carry and no other variant has (docs/adr/0015).
@@ -7109,6 +7115,14 @@ fn validate_and_enrich_imports(
             // (docs/adr/0092, section 1.1). Its imports are written relative
             // to it.
             forge::union_check::check(
+                &parsed,
+                source.path.parent().unwrap_or(base_dir),
+                &src_label,
+            )?;
+            // A test template this one references is held, the same way, to
+            // the rules its own imports decide (docs/SCE_TEST_PROFILE.md
+            // §11.4).
+            forge::test_template_check::check(
                 &parsed,
                 source.path.parent().unwrap_or(base_dir),
                 &src_label,

@@ -7240,7 +7240,8 @@ impl TestTemplateModel {
     /// Whether the template is specific (docs/SCE_TEST_PROFILE.md §6.2): its
     /// own matchers are values alone. A reference to another template is
     /// specific when that template is, which is asked where the imports are
-    /// read; here it counts as specific.
+    /// read ([`crate::forge::test_template_check::is_specific`]); here it
+    /// counts as specific.
     pub fn is_specific(&self) -> bool {
         self.matcher.is_specific()
     }

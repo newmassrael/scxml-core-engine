@@ -791,10 +791,11 @@ impl crate::forge::value_type::TypeIdentity for StatechartNames {
 /// records are one type when their aliases resolve to one record document; two
 /// enums when theirs resolve to enums of the same variants, numbers and
 /// underlying type, or, where neither scope reads the enum, when the aliases
-/// are one.
-struct ScopedNames<'s> {
-    from: Option<&'s crate::forge::value_type::TypeScope>,
-    to: Option<&'s crate::forge::value_type::TypeScope>,
+/// are one. A test template's positions are told apart by the same reading
+/// (`crate::forge::test_template_check`).
+pub(crate) struct ScopedNames<'s> {
+    pub(crate) from: Option<&'s crate::forge::value_type::TypeScope>,
+    pub(crate) to: Option<&'s crate::forge::value_type::TypeScope>,
 }
 
 impl crate::forge::value_type::TypeIdentity for ScopedNames<'_> {

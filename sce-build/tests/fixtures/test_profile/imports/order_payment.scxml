@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- How an order is paid: by card, in cash, which carries nothing, or by
+     voucher (docs/adr/0092, section 1.1). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="union" name="order_payment">
+  <sce:import kind="enum" src="payment_kind.scxml" as="PaymentKind"/>
+  <sce:import kind="event-schema" src="card_payment.scxml" as="Card"/>
+  <sce:import kind="event-schema" src="voucher_payment.scxml" as="Voucher"/>
+  <datamodel>
+    <data id="kind" sce:type="enum:PaymentKind">
+      <sce:case variant="card" record="Card"/>
+      <sce:case variant="cash"/>
+      <sce:case variant="voucher" record="Voucher"/>
+    </data>
+  </datamodel>
+</scxml>

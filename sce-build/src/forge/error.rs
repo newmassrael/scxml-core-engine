@@ -636,6 +636,11 @@ pub enum TestProfileRule {
     /// or `map`, or a port of the test system interface joined by none. Wire
     /// code `test-profile/port-connection`.
     PortConnection,
+    /// §11.4: a `record-match` whose fields and the fields of its record are
+    /// not one to one: a field of the record it holds no matcher for, or a
+    /// matcher for a field the record does not declare. Wire code
+    /// `test-profile/record-fields`.
+    RecordFields,
 }
 
 /// Semantic validation errors from kind-specific parsing.

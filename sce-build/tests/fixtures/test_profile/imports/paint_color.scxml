@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The color of an order line: an enum a field of an imported record holds,
+     whose variants a template's literal names (docs/SCE_TEST_PROFILE.md §11.4). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="enum" name="paint_color" sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="red" value="0"/>
+      <sce:variant name="green" value="1"/>
+      <sce:variant name="blue" value="2"/>
+    </data>
+  </datamodel>
+</scxml>

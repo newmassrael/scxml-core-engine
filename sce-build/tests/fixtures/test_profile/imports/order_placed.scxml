@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- An order as it is placed: a list of records, two optional fields, a
+     nested record and a union, each named by the alias this document gives
+     it (docs/SCE_TEST_PROFILE.md §11.4). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="order_placed"
+       sce:event-name="order.placed">
+  <sce:import kind="event-schema" src="order_line.scxml" as="Line"/>
+  <sce:import kind="event-schema" src="order_customer.scxml" as="Customer"/>
+  <sce:import kind="union" src="order_payment.scxml" as="Payment"/>
+  <datamodel>
+    <data id="order_id" sce:type="uint32" sce:direction="in"/>
+    <data id="lines" sce:type="list&lt;record:Line&gt;[4]" sce:direction="in"/>
+    <data id="note" sce:type="optional&lt;string[32]&gt;" sce:direction="in"/>
+    <data id="priority" sce:type="optional&lt;uint8&gt;" sce:direction="in"/>
+    <data id="customer" sce:type="record:Customer" sce:direction="in"/>
+    <data id="payment" sce:type="union:Payment" sce:direction="in"/>
+  </datamodel>
+</scxml>

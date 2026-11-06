@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The tag of the payment union beside this file: three ways to pay, one of
+     which carries nothing (docs/adr/0092, section 1.1). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="enum" name="payment_kind" sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="card" value="0"/>
+      <sce:variant name="cash" value="1"/>
+      <sce:variant name="voucher" value="2"/>
+    </data>
+  </datamodel>
+</scxml>

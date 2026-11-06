@@ -949,6 +949,7 @@ references against a real document and drift silently.
 | `test-profile/literal` | `validation` | no | SCE Test Profile §11.4 |
 | `test-profile/matcher-type` | `validation` | no | SCE Test Profile §11.4 |
 | `test-profile/port-connection` | `validation` | no | SCE Test Profile §11.6 |
+| `test-profile/record-fields` | `validation` | no | SCE Test Profile §11.4 |
 | `test-profile/template-float` | `validation` | no | SCE Test Profile §11.4 |
 | `test-profile/template-parameter` | `validation` | no | SCE Test Profile §11.4 |
 | `timer/period-below-tick-rate` | `validation` | no | SCE Protocol-Synthesis RFC §5.D |

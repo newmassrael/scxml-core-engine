@@ -524,7 +524,17 @@ its kind, a `value-list` of fewer than two matchers, a `complement` of none and 
 `length-min` past `length-max` are refused with the shape codes every kind uses
 (`validation/missing-attribute`, `validation/duplicate-id`, `validation/invalid-attribute`,
 `validation/attribute-rule-violated`, `validation/exactly-one-attribute`). The rules that
-need an imported document are asked where the imports are read. No backend generates a
+need an imported document are asked where the imports are read. For a template, every
+position below a field of an imported record or a case of an imported union is held to the
+same rules, and to these: a `record-match` whose fields and its record's fields are not one
+to one is `test-profile/record-fields`; a `union-match` whose variant the union does not
+declare is `validation/invalid-attribute`, and one that holds a matcher for a case of no
+record, or none for a case of one, `validation/attribute-rule-violated`; a literal of an
+enum that names none of its variants is `test-profile/literal`; a `template-ref` whose
+template's type is not its position's is `test-profile/matcher-type`, and one whose `args`
+do not bind the template's formal parameters one to one, each by a parameter of its type,
+`test-profile/template-parameter`; references that form a cycle are
+`validation/cross-kind-circular-dependency`. No backend generates a
 document of the profile until its runtime lands: generation refuses one by name
 (`generate/unsupported-feature`).
 
@@ -9429,6 +9439,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `test-profile/template-float` | Validation |
 | `test-profile/duration` | Validation |
 | `test-profile/port-connection` | Validation |
+| `test-profile/record-fields` | Validation |
 | `validation/mesh-rpc-reserved-param` | Validation |
 | `validation/mesh-rpc-missing-target` | Validation |
 | `validation/mesh-rpc-duplicate-target` | Validation |

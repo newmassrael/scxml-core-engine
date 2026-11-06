@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The customer of an order: a record an order holds as one field. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="order_customer"
+       sce:event-name="order.customer">
+  <datamodel>
+    <data id="full_name" sce:type="string[24]" sce:direction="in"/>
+    <data id="vip" sce:type="bool" sce:direction="in"/>
+  </datamodel>
+</scxml>
