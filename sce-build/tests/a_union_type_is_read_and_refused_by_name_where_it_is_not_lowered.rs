@@ -150,7 +150,10 @@ fn the_scope_of_a_document_holds_a_union_in_its_tag_enums_order_and_sizes_it() {
 #[test]
 fn a_union_no_import_names_is_refused_with_the_unions_there_are() {
     let (error, code) = refusal(&schema_with("list<union:Nope>[2]", ""));
-    assert_eq!(code, DiagnosticCode::ValidationInvalidAttribute);
+    assert!(
+        matches!(code, DiagnosticCode::ValidationInvalidAttribute),
+        "{code:?}"
+    );
     match &error {
         ValidationError::InvalidAttribute { allowed, .. } => {
             assert_eq!(allowed, &["union:Shape"]);
@@ -162,7 +165,10 @@ fn a_union_no_import_names_is_refused_with_the_unions_there_are() {
 #[test]
 fn a_bracket_on_a_union_is_refused_as_on_a_record() {
     let (error, code) = refusal(&schema_with("union:Shape[2]", ""));
-    assert_eq!(code, DiagnosticCode::ValidationAttributeRuleViolated);
+    assert!(
+        matches!(code, DiagnosticCode::ValidationAttributeRuleViolated),
+        "{code:?}"
+    );
     assert!(
         matches!(&error, ValidationError::AttributeRuleViolated { attr, .. } if attr == "sce:type"),
         "{error:?}"
@@ -172,7 +178,10 @@ fn a_bracket_on_a_union_is_refused_as_on_a_record() {
 #[test]
 fn a_union_a_later_revision_adds_is_declared_optional() {
     let (error, code) = refusal(&schema_with("union:Shape", r#"sce:since="2""#));
-    assert_eq!(code, DiagnosticCode::ValidationAttributeRuleViolated);
+    assert!(
+        matches!(code, DiagnosticCode::ValidationAttributeRuleViolated),
+        "{code:?}"
+    );
     assert!(
         matches!(&error, ValidationError::AttributeRuleViolated { attr, .. } if attr == "sce:since"),
         "{error:?}"
@@ -206,9 +215,11 @@ fn compiled(language: Language) -> Located<ForgeError> {
 fn every_backend_refuses_a_field_of_a_union_by_name() {
     for language in Language::ALL.iter().copied() {
         let err = compiled(language);
-        assert_eq!(
-            err.error.to_diagnostics()[0].code,
-            DiagnosticCode::GenerateUnsupportedFeature,
+        assert!(
+            matches!(
+                err.error.to_diagnostics()[0].code,
+                DiagnosticCode::GenerateUnsupportedFeature
+            ),
             "{language:?}: {err:?}"
         );
         let ForgeError::Generate(boxed) = err.error else {

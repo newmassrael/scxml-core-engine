@@ -127,7 +127,10 @@ fn a_union_reads_as_its_tag_and_its_cases_in_document_order() {
 #[test]
 fn a_union_of_no_tag_or_of_two_is_refused() {
     let (error, code, line) = refusal(&with_imports("  <datamodel/>"));
-    assert_eq!(code, DiagnosticCode::ValidationAttributeRuleViolated);
+    assert!(
+        matches!(code, DiagnosticCode::ValidationAttributeRuleViolated),
+        "{code:?}"
+    );
     assert!(
         matches!(&error, ValidationError::AttributeRuleViolated { attr, .. } if attr == "<data>"),
         "{error:?}"
@@ -142,7 +145,10 @@ fn a_union_of_no_tag_or_of_two_is_refused() {
     <data id="other" sce:type="enum:ShapeKind"/>
   </datamodel>"#,
     ));
-    assert_eq!(code, DiagnosticCode::ValidationAttributeRuleViolated);
+    assert!(
+        matches!(code, DiagnosticCode::ValidationAttributeRuleViolated),
+        "{code:?}"
+    );
     assert!(
         matches!(&error, ValidationError::AttributeRuleViolated { value, .. } if value == "other"),
         "{error:?}"
@@ -160,7 +166,10 @@ fn a_tag_that_is_no_value_of_an_enum_is_refused() {
     </data>
   </datamodel>"#,
     ));
-    assert_eq!(code, DiagnosticCode::ValidationAttributeRuleViolated);
+    assert!(
+        matches!(code, DiagnosticCode::ValidationAttributeRuleViolated),
+        "{code:?}"
+    );
     assert!(
         matches!(
             &error,
@@ -180,7 +189,10 @@ fn a_record_no_import_names_is_refused_with_the_records_there_are() {
     </data>
   </datamodel>"#,
     ));
-    assert_eq!(code, DiagnosticCode::ValidationInvalidAttribute);
+    assert!(
+        matches!(code, DiagnosticCode::ValidationInvalidAttribute),
+        "{code:?}"
+    );
     match &error {
         ValidationError::InvalidAttribute {
             attr,
@@ -208,7 +220,10 @@ fn a_variant_given_two_cases_is_refused_at_its_second_case() {
     </data>
   </datamodel>"#,
     ));
-    assert_eq!(code, DiagnosticCode::ValidationUnionCases);
+    assert!(
+        matches!(code, DiagnosticCode::ValidationUnionCases),
+        "{code:?}"
+    );
     assert!(
         matches!(&error, ValidationError::UnionCases { variant, .. } if variant == "circle"),
         "{error:?}"
@@ -223,7 +238,10 @@ fn a_union_of_no_case_or_of_only_empty_cases_is_refused() {
     <data id="kind" sce:type="enum:ShapeKind"/>
   </datamodel>"#,
     ));
-    assert_eq!(code, DiagnosticCode::ValidationUnionCases);
+    assert!(
+        matches!(code, DiagnosticCode::ValidationUnionCases),
+        "{code:?}"
+    );
     assert!(
         matches!(&error, ValidationError::UnionCases { detail, .. } if detail.contains("no <sce:case>")),
         "{error:?}"
@@ -239,7 +257,10 @@ fn a_union_of_no_case_or_of_only_empty_cases_is_refused() {
     </data>
   </datamodel>"#,
     ));
-    assert_eq!(code, DiagnosticCode::ValidationUnionCases);
+    assert!(
+        matches!(code, DiagnosticCode::ValidationUnionCases),
+        "{code:?}"
+    );
     assert!(
         matches!(&error, ValidationError::UnionCases { variant, detail, .. }
             if variant.is_empty() && detail.contains("every case is empty")),
@@ -252,7 +273,10 @@ fn a_union_of_no_case_or_of_only_empty_cases_is_refused() {
 #[test]
 fn a_variant_with_no_case_is_refused_naming_it() {
     let (error, code, _) = validation(compiled("union_shape_missing_case.scxml", Language::Rust));
-    assert_eq!(code, DiagnosticCode::ValidationUnionCases);
+    assert!(
+        matches!(code, DiagnosticCode::ValidationUnionCases),
+        "{code:?}"
+    );
     match &error {
         ValidationError::UnionCases {
             document,
@@ -270,7 +294,10 @@ fn a_variant_with_no_case_is_refused_naming_it() {
 #[test]
 fn a_case_naming_no_variant_is_refused_at_that_case() {
     let (error, code, line) = validation(compiled("union_shape_stray_case.scxml", Language::Rust));
-    assert_eq!(code, DiagnosticCode::ValidationUnionCases);
+    assert!(
+        matches!(code, DiagnosticCode::ValidationUnionCases),
+        "{code:?}"
+    );
     match &error {
         ValidationError::UnionCases {
             variant, detail, ..
@@ -288,7 +315,10 @@ fn a_case_naming_no_variant_is_refused_at_that_case() {
 #[test]
 fn a_tag_of_an_open_enum_is_refused() {
     let (error, code, _) = validation(compiled("union_shape_open_tag.scxml", Language::Rust));
-    assert_eq!(code, DiagnosticCode::ValidationAttributeRuleViolated);
+    assert!(
+        matches!(code, DiagnosticCode::ValidationAttributeRuleViolated),
+        "{code:?}"
+    );
     assert!(
         matches!(
             &error,
@@ -303,7 +333,10 @@ fn a_tag_of_an_open_enum_is_refused() {
 fn a_case_whose_record_declares_the_tags_key_is_refused() {
     let (error, code, line) =
         validation(compiled("union_shape_tag_collision.scxml", Language::Rust));
-    assert_eq!(code, DiagnosticCode::ValidationUnionTagCollision);
+    assert!(
+        matches!(code, DiagnosticCode::ValidationUnionTagCollision),
+        "{code:?}"
+    );
     match &error {
         ValidationError::UnionTagCollision {
             case,
@@ -339,9 +372,11 @@ fn a_valid_union_is_refused_by_name_on_every_backend() {
             "{language:?}"
         );
         let err = compiled("union_shape.scxml", language);
-        assert_eq!(
-            err.error.to_diagnostics()[0].code,
-            DiagnosticCode::GenerateUnsupportedFeature,
+        assert!(
+            matches!(
+                err.error.to_diagnostics()[0].code,
+                DiagnosticCode::GenerateUnsupportedFeature
+            ),
             "{language:?}: {err:?}"
         );
         match err.error {

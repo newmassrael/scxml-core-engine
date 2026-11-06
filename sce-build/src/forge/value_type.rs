@@ -5900,7 +5900,7 @@ mod tests {
                         name: name.to_string(),
                         value: *value,
                     },
-                    record: record(*name),
+                    record: record(name),
                 })
                 .collect(),
             scope,
