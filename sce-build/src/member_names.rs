@@ -30,10 +30,13 @@
 //! XML Name, so `self` is a conforming state, and Rust spelled it the variant
 //! `Self`, which does not parse. The filters a family calls escape a word the
 //! backend reserves where it writes the member bare (`Self_` in Rust, `self_`
-//! or a backticked word in Swift), so what this module compares is the
-//! escaped spelling, and an escape that met another name would be refused
-//! here like any other fold. None does: an escape either adds a `_` to a
-//! spelling that has none, or puts in backticks the identifier the name is
+//! or a backticked word in Swift, `mEOF` for a C++ member the preprocessor
+//! would expand, `m_X_` for a Python name `Enum` takes as no member), and a
+//! spelling that is no identifier at all (`_1x` for an event `1x`, `_Blank`
+//! for a state `_`). So what this module compares is the escaped spelling,
+//! and an escape that met another name would be refused here like any other
+//! fold. None does: an escape adds a character the unescaped spelling never
+//! holds in that place, or puts in backticks the identifier the name is
 //! spelled as already.
 //!
 //! **Refused for every backend at once**, as a reserved code identifier is

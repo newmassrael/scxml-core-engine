@@ -90,7 +90,10 @@ pub enum UnreadableReason {
     /// name is not one an expression can denote (`screen-rules`).
     NotAnExpression,
     /// The name is a keyword of `language` that the language gives no way
-    /// to escape (C++, or Rust `self` / `Self` / `super` / `crate`).
+    /// to escape (C++, or Rust `self` / `Self` / `super` / `crate`), or a
+    /// name a C++ translation unit's preprocessor takes first: a C library
+    /// macro (`EOF`, `NULL`) or a name reserved to the implementation
+    /// (`__LINE__`).
     Keyword,
     /// The spelling is not an identifier in `language` at all — `_` folds
     /// to nothing in Go's PascalCase.
@@ -503,6 +506,262 @@ const C_ONLY_KEYWORDS: &[&str] = &[
     "_Thread_local",
 ];
 
+/// The object-like and function-like macros the C standard library headers
+/// define (ISO/IEC 9899:2011 Annex B, and the POSIX error and signal numbers
+/// `<errno.h>` and `<signal.h>` add on the hosts SCE builds for), which the C
+/// and C++ a generated machine includes bring into every translation unit. A
+/// member, a reader or a declared name spelled as one of them is expanded by
+/// the preprocessor before the compiler reads it: a C++ event `EOF` would be
+/// the enumerator `Event::(-1)`. `TRUE` and `FALSE` are no standard macro, but
+/// platform headers a host build includes define them.
+///
+/// The lower-case names are in [`CPP_RESERVED`] already; the integer-width and
+/// floating-point families are matched by [`C_LIBRARY_MACRO_FAMILIES`].
+const C_LIBRARY_MACROS: &[&str] = &[
+    // <stddef.h>, <stdio.h>, <stdlib.h>, <wchar.h>, <time.h>, <locale.h>
+    "NULL",
+    "EOF",
+    "BUFSIZ",
+    "FILENAME_MAX",
+    "FOPEN_MAX",
+    "L_tmpnam",
+    "SEEK_CUR",
+    "SEEK_END",
+    "SEEK_SET",
+    "TMP_MAX",
+    "EXIT_FAILURE",
+    "EXIT_SUCCESS",
+    "MB_CUR_MAX",
+    "RAND_MAX",
+    "WEOF",
+    "CLOCKS_PER_SEC",
+    "TIME_UTC",
+    "LC_ALL",
+    "LC_COLLATE",
+    "LC_CTYPE",
+    "LC_MONETARY",
+    "LC_NUMERIC",
+    "LC_TIME",
+    // <math.h>
+    "HUGE_VAL",
+    "HUGE_VALF",
+    "HUGE_VALL",
+    "INFINITY",
+    "NAN",
+    "FP_FAST_FMA",
+    "FP_FAST_FMAF",
+    "FP_FAST_FMAL",
+    "FP_ILOGB0",
+    "FP_ILOGBNAN",
+    "FP_INFINITE",
+    "FP_NAN",
+    "FP_NORMAL",
+    "FP_SUBNORMAL",
+    "FP_ZERO",
+    "MATH_ERREXCEPT",
+    "MATH_ERRNO",
+    "math_errhandling",
+    // <fenv.h>
+    "FE_ALL_EXCEPT",
+    "FE_DFL_ENV",
+    "FE_DIVBYZERO",
+    "FE_DOWNWARD",
+    "FE_INEXACT",
+    "FE_INVALID",
+    "FE_OVERFLOW",
+    "FE_TONEAREST",
+    "FE_TOWARDZERO",
+    "FE_UNDERFLOW",
+    "FE_UPWARD",
+    // <limits.h>
+    "CHAR_BIT",
+    "CHAR_MAX",
+    "CHAR_MIN",
+    "INT_MAX",
+    "INT_MIN",
+    "LLONG_MAX",
+    "LLONG_MIN",
+    "LONG_MAX",
+    "LONG_MIN",
+    "MB_LEN_MAX",
+    "SCHAR_MAX",
+    "SCHAR_MIN",
+    "SHRT_MAX",
+    "SHRT_MIN",
+    "UCHAR_MAX",
+    "UINT_MAX",
+    "ULLONG_MAX",
+    "ULONG_MAX",
+    "USHRT_MAX",
+    // <stdint.h>, beside the width families
+    "PTRDIFF_MAX",
+    "PTRDIFF_MIN",
+    "SIG_ATOMIC_MAX",
+    "SIG_ATOMIC_MIN",
+    "SIZE_MAX",
+    "WCHAR_MAX",
+    "WCHAR_MIN",
+    "WINT_MAX",
+    "WINT_MIN",
+    // <float.h>, beside the FLT_, DBL_ and LDBL_ families
+    "DECIMAL_DIG",
+    "FLT_EVAL_METHOD",
+    "FLT_RADIX",
+    "FLT_ROUNDS",
+    // <errno.h>, ISO C and POSIX
+    "EDOM",
+    "EILSEQ",
+    "ERANGE",
+    "E2BIG",
+    "EACCES",
+    "EADDRINUSE",
+    "EADDRNOTAVAIL",
+    "EAFNOSUPPORT",
+    "EAGAIN",
+    "EALREADY",
+    "EBADF",
+    "EBADMSG",
+    "EBUSY",
+    "ECANCELED",
+    "ECHILD",
+    "ECONNABORTED",
+    "ECONNREFUSED",
+    "ECONNRESET",
+    "EDEADLK",
+    "EDESTADDRREQ",
+    "EDQUOT",
+    "EEXIST",
+    "EFAULT",
+    "EFBIG",
+    "EHOSTUNREACH",
+    "EIDRM",
+    "EINPROGRESS",
+    "EINTR",
+    "EINVAL",
+    "EIO",
+    "EISCONN",
+    "EISDIR",
+    "ELOOP",
+    "EMFILE",
+    "EMLINK",
+    "EMSGSIZE",
+    "EMULTIHOP",
+    "ENAMETOOLONG",
+    "ENETDOWN",
+    "ENETRESET",
+    "ENETUNREACH",
+    "ENFILE",
+    "ENOBUFS",
+    "ENODATA",
+    "ENODEV",
+    "ENOENT",
+    "ENOEXEC",
+    "ENOLCK",
+    "ENOLINK",
+    "ENOMEM",
+    "ENOMSG",
+    "ENOPROTOOPT",
+    "ENOSPC",
+    "ENOSR",
+    "ENOSTR",
+    "ENOSYS",
+    "ENOTCONN",
+    "ENOTDIR",
+    "ENOTEMPTY",
+    "ENOTRECOVERABLE",
+    "ENOTSOCK",
+    "ENOTSUP",
+    "ENOTTY",
+    "ENXIO",
+    "EOPNOTSUPP",
+    "EOVERFLOW",
+    "EOWNERDEAD",
+    "EPERM",
+    "EPIPE",
+    "EPROTO",
+    "EPROTONOSUPPORT",
+    "EPROTOTYPE",
+    "EROFS",
+    "ESPIPE",
+    "ESRCH",
+    "ESTALE",
+    "ETIME",
+    "ETIMEDOUT",
+    "ETXTBSY",
+    "EWOULDBLOCK",
+    "EXDEV",
+    // <signal.h>, ISO C and POSIX
+    "SIG_DFL",
+    "SIG_ERR",
+    "SIG_IGN",
+    "SIGABRT",
+    "SIGALRM",
+    "SIGBUS",
+    "SIGCHLD",
+    "SIGCONT",
+    "SIGFPE",
+    "SIGHUP",
+    "SIGILL",
+    "SIGINT",
+    "SIGKILL",
+    "SIGPIPE",
+    "SIGPOLL",
+    "SIGPROF",
+    "SIGQUIT",
+    "SIGSEGV",
+    "SIGSTOP",
+    "SIGSYS",
+    "SIGTERM",
+    "SIGTRAP",
+    "SIGTSTP",
+    "SIGTTIN",
+    "SIGTTOU",
+    "SIGURG",
+    "SIGUSR1",
+    "SIGUSR2",
+    "SIGVTALRM",
+    "SIGWINCH",
+    "SIGXCPU",
+    "SIGXFSZ",
+    // <stdnoreturn.h>
+    "noreturn",
+    // Platform headers
+    "TRUE",
+    "FALSE",
+];
+
+/// The C library macros that come in families: `<stdint.h>`'s width limits
+/// and constant macros (`INT8_MAX`, `UINT_LEAST16_MAX`, `INT64_C`,
+/// `INTMAX_MIN`), `<inttypes.h>`'s format macros (`PRId64`, `SCNuPTR`), and
+/// `<float.h>`'s limits (`FLT_MAX`, `DBL_EPSILON`, `LDBL_MANT_DIG`).
+static C_LIBRARY_MACRO_FAMILIES: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(concat!(
+        r"^(?:",
+        r"U?INT(?:_LEAST|_FAST)?(?:8|16|32|64)_(?:MAX|MIN|C)",
+        r"|U?INT(?:MAX|PTR)_(?:MAX|MIN|C)",
+        r"|(?:PRI|SCN)[diouxX](?:LEAST|FAST)?(?:8|16|32|64|MAX|PTR)",
+        r"|(?:FLT|DBL|LDBL)_(?:DIG|EPSILON|MANT_DIG|MAX|MAX_10_EXP|MAX_EXP|MIN|MIN_10_EXP|MIN_EXP|TRUE_MIN|DECIMAL_DIG|HAS_SUBNORM)",
+        r")$"
+    ))
+    .expect("the C library macro families are a fixed pattern")
+});
+
+/// Whether a C or C++ translation unit cannot declare `spelled` as a plain
+/// name: a macro of [`C_LIBRARY_MACROS`] or [`C_LIBRARY_MACRO_FAMILIES`], or a
+/// name the C and C++ standards reserve to the implementation, which spells
+/// its own macros so (`__FILE__`, `__GNUC__`, `_WIN32`): one that begins with
+/// two underscores, or with an underscore and a capital.
+fn is_c_preprocessor_name(spelled: &str) -> bool {
+    let mut chars = spelled.chars();
+    let reserved_to_the_implementation = chars.next() == Some('_')
+        && chars
+            .next()
+            .is_some_and(|second| second == '_' || second.is_ascii_uppercase());
+    reserved_to_the_implementation
+        || C_LIBRARY_MACROS.contains(&spelled)
+        || C_LIBRARY_MACRO_FAMILIES.is_match(spelled)
+}
+
 /// Whether `spelled` is a word `language` reserves — a keyword it gives no
 /// way to declare as a plain name. One list per language, shared by the
 /// reader spelling above and by the forge code-identifier rule.
@@ -535,8 +794,12 @@ pub(crate) fn is_reserved_word(language: Language, spelled: &str) -> bool {
         Language::Kotlin => KOTLIN_HARD_KEYWORDS.contains(&spelled),
         Language::Python => PYTHON_KEYWORDS.contains(&spelled),
         Language::Go => filters::GO_KEYWORDS.contains(&spelled),
-        Language::Cpp => CPP_RESERVED.contains(&spelled),
-        Language::C11 => CPP_RESERVED.contains(&spelled) || C_ONLY_KEYWORDS.contains(&spelled),
+        Language::Cpp => CPP_RESERVED.contains(&spelled) || is_c_preprocessor_name(spelled),
+        Language::C11 => {
+            CPP_RESERVED.contains(&spelled)
+                || C_ONLY_KEYWORDS.contains(&spelled)
+                || is_c_preprocessor_name(spelled)
+        }
         Language::Swift => SWIFT_RESERVED.contains(&spelled),
     }
 }
@@ -1030,7 +1293,7 @@ fn spell(id: &str, language: Language) -> Spelling {
         Language::Python if PYTHON_KEYWORDS.contains(&base.as_str()) => {
             Spelling::Name(format!("{base}_"))
         }
-        Language::Cpp if CPP_RESERVED.contains(&base.as_str()) => {
+        Language::Cpp if is_reserved_word(Language::Cpp, &base) => {
             Spelling::Refused(UnreadableReason::Keyword, base)
         }
         Language::Rust

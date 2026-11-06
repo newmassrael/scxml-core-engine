@@ -142,7 +142,6 @@ pub fn register_filters(env: &mut minijinja::Environment, scope: &Arc<DocumentSc
     env.add_filter("to_event_variant", to_event_variant);
     env.add_filter("to_state_variant", to_state_variant);
     env.add_filter("to_rust_literal", to_rust_literal);
-    env.add_filter("escape_keyword", escape_keyword);
     env.add_filter("normalize_ws", normalize_ws);
     env.add_filter("to_machine_name", to_pascal_case);
     register_ecmascript_filters(env, scope);
@@ -354,17 +353,40 @@ pub fn to_event_variant(name: String) -> String {
 /// parse. `r#Self` is no identifier either (Rust refuses the raw form of
 /// `self`, `Self`, `super` and `crate`), so the escape is a trailing `_`.
 ///
-/// The escape cannot meet another name: [`to_pascal_case`] drops every `_` it
-/// reads, so no name of a document is spelled with one, and two names that
-/// differ are escaped to spellings that differ. Every site that writes such a
-/// member calls this one spelling, Go's and Kotlin's included, so a member is
-/// named alike where it is declared and wherever it is used.
+/// A spelling that is no identifier at all is made one by
+/// [`joined_identifier`]: an event `1x` is `_1x`, a state `_` is `_Blank`.
+///
+/// No escape can meet another name: [`to_pascal_case`] drops every `_` it
+/// reads, so no name of a document is spelled with one, and the three escapes
+/// put it where no other does (after a word, before a digit, before
+/// `Blank`). Every site that writes such a member calls this one spelling,
+/// Go's and Kotlin's included, so a member is named alike where it is
+/// declared and wherever it is used.
 fn pascal_member(spelled: String) -> String {
     let reserved = |language| crate::reader_names::is_reserved_word(language, &spelled);
     if reserved(crate::generator::Language::Rust) || reserved(crate::generator::Language::Kotlin) {
         format!("{spelled}_")
     } else {
-        spelled
+        joined_identifier(spelled, "Blank")
+    }
+}
+
+/// A spelling that joins a name's words with nothing (PascalCase, lowerCamel)
+/// as an identifier.
+///
+/// An event token may begin with a digit where an XML Name may not (an event
+/// `1x`, the second token of `DIGIT.0`), and a state's first word may be `_`
+/// and a digit (`_1`), so the joined spelling can begin with a digit: it is
+/// written after a `_` (`_1x`). A name made of delimiters alone (`_`, `_-_`,
+/// `_._`) has no word left and joins to nothing: it is `_` and `blank`. Two
+/// such names are one member, and refused as any two names one backend folds
+/// together are (`crate::member_names`). The joined spelling holds no `_`, so
+/// neither escape is ever the spelling of another name.
+fn joined_identifier(spelled: String, blank: &str) -> String {
+    match spelled.chars().next() {
+        None => format!("_{blank}"),
+        Some(first) if first.is_ascii_digit() => format!("_{spelled}"),
+        Some(_) => spelled,
     }
 }
 
@@ -405,15 +427,6 @@ fn to_rust_literal(value: Value) -> String {
         return format!("\"{escaped}\".to_string()");
     }
     "Default::default()".to_string()
-}
-
-/// Prefix Rust keywords with `r#` to make them valid identifiers.
-fn escape_keyword(name: String) -> String {
-    if RUST_KEYWORDS.contains(&name.as_str()) {
-        format!("r#{name}")
-    } else {
-        name
-    }
 }
 
 /// §scxml-B-2: Normalize whitespace.
@@ -1421,6 +1434,10 @@ pub fn register_swift_filters(env: &mut minijinja::Environment, scope: &Arc<Docu
 /// is spelled with a trailing `_`, a name and no word: a state `self` is the
 /// case `self_`. [`to_camel_case`] drops every `_` it reads, so no other name
 /// of a document is spelled so, and the escape cannot meet another case.
+///
+/// A spelling that is no identifier at all is made one as
+/// [`joined_identifier`] says: an event `1x` is the case `_1x`, a state `_`
+/// the case `_blank`.
 pub fn to_swift_variant(name: String) -> String {
     let spelled = to_camel_case(name);
     if SWIFT_WORDS_AFTER_A_DOT.contains(&spelled.as_str()) {
@@ -1428,7 +1445,7 @@ pub fn to_swift_variant(name: String) -> String {
     } else if crate::reader_names::is_reserved_word(crate::generator::Language::Swift, &spelled) {
         format!("`{spelled}`")
     } else {
-        spelled
+        joined_identifier(spelled, "blank")
     }
 }
 
@@ -1819,15 +1836,41 @@ fn register_cpp_filters_inner(env: &mut minijinja::Environment, scope: &Arc<Docu
 /// names always had this; state ids did not, and a state `door-open` was
 /// declared `Door-open`, which clang-format then printed as `Door - open`
 /// (measured 2026-09-29; `sce-build/tests/generated_names.rs`).
+///
+/// A spelling a C++ translation unit cannot declare is written after an `m`
+/// ([`cpp_member`]).
 pub fn capitalize_state(name: String) -> String {
     let name = name.replace(['.', '-'], "_");
     if name.is_empty() {
         return "Empty".to_string();
     }
-    match name.to_lowercase().as_str() {
+    let spelled = match name.to_lowercase().as_str() {
         "pass" => "Pass".to_string(),
         "fail" => "Fail".to_string(),
         _ => capitalize_first(&name),
+    };
+    cpp_member(spelled)
+}
+
+/// A capitalised C++ member, escaped where the translation unit cannot
+/// declare it.
+///
+/// No C++ keyword begins with a capital, but the preprocessor runs first: an
+/// event `EOF` would be the enumerator `Event::(-1)`, and a state `__LINE__`
+/// a number. A spelling that is a macro the C library headers define or a
+/// name the standard reserves to the implementation
+/// (`crate::reader_names::is_reserved_word`), or that begins with a digit (an
+/// event `1x`), is written after an `m`: `mEOF`, `m__LINE__`, `m1x`. The
+/// capitalised spelling begins with a capital, a digit or `_` and never with
+/// a lower-case letter, so the escape is never the spelling of another name.
+fn cpp_member(spelled: String) -> String {
+    let leading_digit = spelled.starts_with(|c: char| c.is_ascii_digit());
+    if leading_digit
+        || crate::reader_names::is_reserved_word(crate::generator::Language::Cpp, &spelled)
+    {
+        format!("m{spelled}")
+    } else {
+        spelled
     }
 }
 
@@ -2607,8 +2650,14 @@ pub fn to_event_class_name(name: String) -> String {
 /// The event tree ([`crate::kotlin::render_event_tree`]) declares these
 /// classes and [`to_event_class_name`] refers to them, so both spell a token
 /// here — two spellings would declare one class and name another.
+///
+/// A token may begin with a digit (`DIGIT.0`) or be delimiters alone (`_`),
+/// and a class name may be neither, so the spelling is made an identifier as
+/// [`joined_identifier`] says: `DIGIT.0` is `DIGIT._0`, a token `_` is
+/// `_Blank`. No Kotlin keyword begins with a capital, so no token needs a
+/// keyword escape.
 pub fn to_kotlin_event_segment(segment: &str) -> String {
-    RE_WORD_DELIMITERS
+    let joined = RE_WORD_DELIMITERS
         .split(segment)
         .map(|p| {
             if p.is_empty() {
@@ -2617,7 +2666,8 @@ pub fn to_kotlin_event_segment(segment: &str) -> String {
                 capitalize_first(p)
             }
         })
-        .collect::<String>()
+        .collect::<String>();
+    joined_identifier(joined, "Blank")
 }
 
 /// Convert SCXML state ID to Kotlin PascalCase class name: the spelling of
@@ -2677,9 +2727,11 @@ pub fn register_python_filters(env: &mut minijinja::Environment, scope: &Arc<Doc
 ///
 /// Example: `"temp_high"` → `"TEMP_HIGH"`, `"error.execution"` → `"ERROR_EXECUTION"`,
 /// `"passingState"` → `"PASSING_STATE"`. Empty input maps to `"EMPTY"`.
-/// Names that collide with Python soft-keywords (`match`, `case`) or that
-/// happen to start with a digit get an underscore prefix so the resulting
-/// member is a valid identifier.
+/// A name that starts with a digit gets an underscore prefix so the resulting
+/// member is a valid identifier. No keyword of Python is written in capitals,
+/// and of its soft keywords only `_` can be spelled, which names a member as
+/// any name does. A spelling `Enum` reads as no member is escaped as
+/// [`python_enum_member`] says.
 pub fn to_python_const(name: String) -> String {
     if name.is_empty() {
         return "EMPTY".to_string();
@@ -2706,7 +2758,28 @@ pub fn to_python_const(name: String) -> String {
     if prefixed == "NULL" {
         return "NULL_".to_string();
     }
-    prefixed
+    python_enum_member(prefixed)
+}
+
+/// An `UPPER_SNAKE` spelling as an ordinary member of a Python `Enum`.
+///
+/// `Enum` reads three forms of name in a class body as something other than
+/// a member: a `_sunder_` name is refused unless it is one `Enum` gives a
+/// meaning (`_order_`), a `__dunder__` name is an attribute, and a `__private`
+/// name is mangled to `_<Class>__private` and then left out. A state `_x_`
+/// is spelled the first (`_X_`), and so is an event `1x_` once the leading
+/// digit is written after a `_` (`_1X_`). Each such spelling, and every one
+/// that begins `__`, is written after an `m`: `m_X_`, `m__X`. The
+/// `UPPER_SNAKE` spelling holds no lower-case letter, so the
+/// escape is never the spelling of another name. The lower-case name `Enum`
+/// refuses as a member, `mro`, is none it can spell.
+fn python_enum_member(spelled: String) -> String {
+    let sunder_or_dunder = spelled.len() > 2 && spelled.starts_with('_') && spelled.ends_with('_');
+    if sunder_or_dunder || spelled.starts_with("__") {
+        format!("m{spelled}")
+    } else {
+        spelled
+    }
 }
 
 /// Escape the author's text for the BODY of a Python string literal.
@@ -2928,7 +3001,6 @@ mod literal_escaper_census {
         ("escape_go", escape_go),
         ("escape_go_keyword", escape_go_keyword),
         ("escape_json_string", escape_json_string),
-        ("escape_keyword", escape_keyword),
         ("escape_kotlin", escape_kotlin),
         ("escape_lua", escape_lua),
         ("escape_python", escape_python),
@@ -2946,11 +3018,10 @@ mod literal_escaper_census {
     /// what it is called.
     ///
     /// ⚠ The name cannot decide it, and this test exists because relying on
-    /// the name got it wrong: `escape_go_keyword` and `escape_keyword` begin
-    /// with the same six letters as the real escapers and are nothing like
-    /// them — they rename an identifier that collides with a language
-    /// keyword (`type` to `type_`, `match` to `r#match`) and leave every
-    /// other string alone. Declaring one fit for a literal would tell the
+    /// the name got it wrong: `escape_go_keyword` begins with the same six
+    /// letters as the real escapers and is nothing like them — it renames an
+    /// identifier that collides with a Go keyword (`type` to `type_`) and
+    /// leaves every other string alone. Declaring one fit for a literal would tell the
     /// door a value had been escaped when nothing had touched it.
     ///
     /// Delegation is the second reason a source scan cannot answer it:
@@ -3221,5 +3292,106 @@ mod inline_content_readings {
             "{\"a\": [True, False], \"b\": \"x\\\"y\"}"
         );
         assert!(py_json_literal("two words".to_string()).is_err());
+    }
+}
+
+/// The member a state, a history or an event becomes in each backend is an
+/// identifier the backend can declare, whatever conforming name it is.
+#[cfg(test)]
+mod member_spelling {
+    use super::*;
+
+    #[test]
+    fn a_pascal_member_escapes_a_keyword_a_leading_digit_and_a_blank() {
+        assert_eq!(to_state_variant("self".to_string()), "Self_");
+        assert_eq!(to_event_variant("Self".to_string()), "Self_");
+        assert_eq!(to_event_variant("1x".to_string()), "_1x");
+        assert_eq!(to_state_variant("_1".to_string()), "_1");
+        assert_eq!(to_state_variant("_".to_string()), "_Blank");
+        assert_eq!(to_state_variant("_-_".to_string()), "_Blank");
+        // A name no rule touches is spelled as it always was.
+        assert_eq!(to_state_variant("door-open".to_string()), "DoorOpen");
+        assert_eq!(to_event_variant("DIGIT.0".to_string()), "DIGIT0");
+        assert_eq!(to_state_class_name("self".to_string()), "Self_");
+    }
+
+    #[test]
+    fn a_kotlin_event_token_escapes_a_leading_digit_and_a_blank() {
+        assert_eq!(to_kotlin_event_segment("0"), "_0");
+        assert_eq!(to_kotlin_event_segment("_"), "_Blank");
+        assert_eq!(to_kotlin_event_segment("open"), "Open");
+        // No Kotlin keyword is capitalised, and the `Self` an event that is
+        // also a prefix declares stays a collision `member_names` refuses.
+        assert_eq!(to_kotlin_event_segment("self"), "Self");
+    }
+
+    #[test]
+    fn a_swift_case_escapes_what_a_backtick_does_not_reach() {
+        assert_eq!(to_swift_variant("self".to_string()), "self_");
+        assert_eq!(to_swift_variant("init".to_string()), "init_");
+        assert_eq!(to_swift_variant("Type".to_string()), "Type_");
+        assert_eq!(to_swift_variant("break".to_string()), "`break`");
+        assert_eq!(to_swift_variant("1x".to_string()), "_1x");
+        assert_eq!(to_swift_variant("_".to_string()), "_blank");
+        assert_eq!(to_swift_variant("doorOpen".to_string()), "doorOpen");
+    }
+
+    #[test]
+    fn a_cpp_member_escapes_what_the_preprocessor_would_expand() {
+        for (name, spelled) in [
+            ("EOF", "mEOF"),
+            ("NULL", "mNULL"),
+            ("INFINITY", "mINFINITY"),
+            ("EXIT_SUCCESS", "mEXIT_SUCCESS"),
+            ("TRUE", "mTRUE"),
+            ("SIGINT", "mSIGINT"),
+            ("INT32_MAX", "mINT32_MAX"),
+            ("UINT_LEAST8_MAX", "mUINT_LEAST8_MAX"),
+            ("DBL_EPSILON", "mDBL_EPSILON"),
+            ("PRId64", "mPRId64"),
+            ("__LINE__", "m__LINE__"),
+            ("_Bool", "m_Bool"),
+            ("1x", "m1x"),
+        ] {
+            assert_eq!(capitalize_state(name.to_string()), spelled, "{name}");
+        }
+        // The lower-case macros cannot be a capitalised member at all.
+        assert_eq!(capitalize_state("errno".to_string()), "Errno");
+        assert_eq!(capitalize_state("stdin".to_string()), "Stdin");
+        assert_eq!(capitalize_state("assert".to_string()), "Assert");
+        // A name nothing reserves, as it always was.
+        for (name, spelled) in [
+            ("idle", "Idle"),
+            ("_x", "_x"),
+            ("_1", "_1"),
+            ("_", "_"),
+            ("EOFX", "EOFX"),
+            ("pass", "Pass"),
+        ] {
+            assert_eq!(capitalize_state(name.to_string()), spelled, "{name}");
+        }
+        assert_eq!(to_cpp_event_variant(Cow::Borrowed("EOF")), "mEOF");
+    }
+
+    #[test]
+    fn a_python_member_is_never_a_name_enum_reads_as_something_else() {
+        for (name, spelled) in [
+            ("_x_", "m_X_"),
+            ("__x__", "m__X__"),
+            ("__x", "m__X"),
+            ("1x_", "m_1X_"),
+            ("__", "m__"),
+        ] {
+            assert_eq!(to_python_const(name.to_string()), spelled, "{name}");
+        }
+        for (name, spelled) in [
+            ("_x", "_X"),
+            ("1x", "_1X"),
+            ("_", "_"),
+            ("idle", "IDLE"),
+            ("null", "NULL_"),
+        ] {
+            assert_eq!(to_python_const(name.to_string()), spelled, "{name}");
+        }
     }
 }

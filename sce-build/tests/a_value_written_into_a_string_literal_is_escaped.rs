@@ -77,9 +77,9 @@ fn every_syntax_names_an_escaper() {
 // ⚠ The census that keeps `ALREADY_FIT_FOR_A_LITERAL` complete is NOT here.
 // It lives in `filters::literal_escaper_census`, because deciding whether a
 // filter escapes for a literal means asking what it DOES, and the functions
-// are private to that module. The name cannot answer it — `escape_keyword`
-// and `escape_go_keyword` share the prefix and only rename identifiers that
-// collide with a language keyword — and neither can a scan of the bodies,
+// are private to that module. The name cannot answer it — `escape_go_keyword`
+// shares the prefix and only renames an identifier that collides with a Go
+// keyword — and neither can a scan of the bodies,
 // since `escape_cpp` forwards to `escape_c` and never mentions a quote
 // itself.
 

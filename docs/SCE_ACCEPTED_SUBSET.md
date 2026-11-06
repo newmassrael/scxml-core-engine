@@ -3053,7 +3053,11 @@ record (`header.S`, `telemetry.reset`) is code identifiers joined by
 A code identifier of that shape is also refused when it is a word one of
 the six languages reserves, as that language spells that kind of name:
 `override` (Rust), `pass` (Python), `object` (Kotlin), `auto` (C++) for a
-`<data id>`, and `self` for a variant, which Rust spells `Self`. The
+`<data id>`, and `self` for a variant, which Rust spells `Self`. For C
+and C++ a reserved word includes what the preprocessor takes first: a
+macro the C library headers define (a const `eof` is `EOF` there) and a
+name the standard reserves to the implementation (beginning `__`, or `_`
+and a capital). The
 spelling differs by kind and by backend — a const is `UPPER_SNAKE`
 everywhere, so a const `default` is `DEFAULT` and is accepted; a variant
 is `Pascal` in Rust and C++, so a variant `match` is `Match` and is
@@ -3503,13 +3507,36 @@ where it is used. The PascalCase spelling Rust, Go and Kotlin share writes
 Rust's `Self` with a trailing `_` (`r#Self` is no identifier), so a state
 `self` is `Self_` there. Swift writes a word it reserves in backticks
 (`` `in` ``), except the words its grammar reads after a `.` (`self`,
-`Self`, `init`, `Type`, `Protocol`), which take a trailing `_`. C++,
-Python and C11 need no escape for these members: C++ capitalises the
-first letter, Python writes `UPPER_SNAKE` and C11 writes a prefix, and
-none of their keywords has that shape. An escape either adds a `_` to a
-spelling that holds none or puts in backticks the identifier the name is
-spelled as already, so it cannot meet another name, and the collision
-rule above compares the escaped spellings.
+`Self`, `init`, `Type`, `Protocol`), which take a trailing `_`. No C++
+keyword begins with a capital, but the preprocessor runs first: a C++
+member spelled as a macro the C library headers define (`EOF`, `NULL`,
+`INFINITY`, `EXIT_SUCCESS`, `SIGINT`, `INT32_MAX`, and `TRUE` and
+`FALSE`, which platform headers define), as a name the standard reserves
+to the implementation (beginning `__`, or `_` and a capital), or
+beginning with a digit is written after an `m` (`mEOF`). Python writes
+`UPPER_SNAKE`, which no keyword is, but `Enum` takes a `_sunder_`, a
+`__dunder__` or a `__private` name for something other than a member, so
+those are written after an `m` too (`m_X_`). C11 writes every member
+after its machine prefix and needs no escape.
+
+A name can also spell no identifier at all. An event token may begin
+with a digit (W3C's own calculator example writes `DIGIT.0`), which an
+XML Name may not, so an event `1x`, or a state `_1`, whose PascalCase or
+lowerCamel spelling begins with a digit, is written after a `_` (`_1x`)
+in Rust, Go, Kotlin and Swift. A state or an event token made of
+delimiters alone (`_`, `_-_`) has no word left in those spellings and is
+`_Blank` (`_blank` in Swift); two such names are one member and are
+refused as above. Nothing a conforming document can name is left
+without a spelling, so no name is refused for being unrepresentable.
+
+Every escape is injective: it adds a character the unescaped spelling
+never holds in that place (a `_` to a spelling with none, a lower-case
+`m` before a spelling that begins with a capital, a digit or `_`), or puts
+in backticks the identifier the name is spelled as already. It cannot meet
+another name, and the collision rule above compares the escaped
+spellings. A C library macro is also refused as a code identifier
+(§2.14) where C or C++ declares the name as written, and a `<data>` id
+spelled as one has no typed reader (`keyword`).
 
 Measured 2026-09-29, before the rule existed: `idle` beside `Idle`
 passed `check --lint` and `generate` with exit status 0 in all six

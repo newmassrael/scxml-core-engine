@@ -339,7 +339,8 @@ fn rendered(language: Language, label: &str, files: &[(String, String)]) -> BTre
         (Language::Go, "Event") => capture(&all, r"(?m)^\s+NamesEvent(\w+) NamesEvent = \d+"),
         (Language::Python, "State" | "Event") => capture(
             &block(&format!("class Names{label}(IntEnum):"), "\n\n"),
-            r"(?m)^    ([A-Z0-9_]+) = \d+",
+            // `m` begins a name `Enum` would take as no member (`m_X_`).
+            r"(?m)^    ([A-Za-z0-9_]+) = \d+",
         ),
         (Language::C11, "State") => enumerators(block("enum names_state_e {", "}"), "NAMES_STATE_"),
         (Language::C11, "History") => {
@@ -611,6 +612,35 @@ fn a_keyword_is_spelled_as_a_member_every_backend_can_declare() {
         (Language::Swift, "State", "`default`", "default"),
         (Language::Swift, "History", "`is`", "is"),
         (Language::Swift, "Event", "`operator`", "operator"),
+        // A C++ member the preprocessor would expand, or one that begins
+        // with a digit, is written after an `m`.
+        (Language::Cpp, "State", "mEOF", "EOF"),
+        (Language::Cpp, "State", "mNULL", "NULL"),
+        (Language::Cpp, "State", "m__LINE__", "__LINE__"),
+        (Language::Cpp, "Event", "mEOF", "EOF"),
+        (Language::Cpp, "Event", "m1x", "1x"),
+        (Language::Cpp, "Event", "m1y_", "1y_"),
+        (Language::Cpp, "Event", "m__x", "__x"),
+        // A Python name `Enum` takes as no member is written after an `m`,
+        // the digit's `_` included.
+        (Language::Python, "State", "m_X_", "_X_"),
+        (Language::Python, "State", "m__LINE__", "__LINE__"),
+        (Language::Python, "Event", "m_1Y_", "_1Y_"),
+        (Language::Python, "Event", "m__X", "__X"),
+        // A joined spelling that begins with a digit, or has no word left.
+        (Language::Rust, "State", "_1", "1"),
+        (Language::Rust, "State", "_Blank", ""),
+        (Language::Rust, "Event", "_1x", "1x"),
+        (Language::Rust, "Event", "_1y", "1y"),
+        (Language::Rust, "Event", "_Blank", ""),
+        (Language::Kotlin, "State", "_1", "1"),
+        (Language::Kotlin, "State", "_Blank", ""),
+        (Language::Go, "State", "_Blank", ""),
+        (Language::Go, "Event", "_1x", "1x"),
+        (Language::Swift, "State", "_1", "1"),
+        (Language::Swift, "State", "_blank", ""),
+        (Language::Swift, "Event", "_1x", "1x"),
+        (Language::Swift, "Event", "_blank", ""),
     ] {
         let spelled = members_of(&declared, language, label);
         assert!(
@@ -618,17 +648,36 @@ fn a_keyword_is_spelled_as_a_member_every_backend_can_declare() {
             "{language:?} {label}: expected `{escaped}` and no `{bare}` in {spelled:?}"
         );
     }
-    // Where no keyword has the shape of the spelling, the name is spelled as
-    // it always was: C++ capitalises, Python and C11 write capitals.
+    // A Python member is never a name `Enum` reads as something else: a
+    // `_sunder_`, a `__dunder__` or a mangled `__private` name.
+    for label in ["State", "Event"] {
+        for member in members_of(&declared, Language::Python, label) {
+            let special = member.starts_with("__")
+                || (member.len() > 2 && member.starts_with('_') && member.ends_with('_'));
+            assert!(!special, "Python {label}: `{member}` is no Enum member");
+        }
+    }
+    // Where nothing reserves the spelling, the name is spelled as it always
+    // was: C++ capitalises, Python and C11 write capitals.
     for (language, label, spelled) in [
         (Language::Cpp, "State", "Self"),
         (Language::Cpp, "Event", "Self"),
         (Language::Cpp, "State", "None"),
+        (Language::Cpp, "State", "_x_"),
+        (Language::Cpp, "State", "_1"),
+        (Language::Cpp, "State", "_"),
+        (Language::Cpp, "Event", "DIGIT_0"),
         (Language::Python, "State", "SELF"),
         (Language::Python, "State", "NONE"),
+        (Language::Python, "State", "_1"),
+        (Language::Python, "State", "_"),
         (Language::Python, "Event", "IN"),
+        (Language::Python, "Event", "_1X"),
         (Language::C11, "State", "SELF"),
+        (Language::C11, "State", "EOF"),
+        (Language::C11, "Event", "1X"),
         (Language::Rust, "State", "None"),
+        (Language::Rust, "State", "EOF"),
         (Language::Rust, "History", "Is"),
     ] {
         assert!(
@@ -675,6 +724,8 @@ fn a_keyword_data_id_is_read_through_an_escaped_reader_or_has_none() {
     assert_eq!(
         withheld,
         vec![
+            // A macro a C++ translation unit expands: no escape reaches it.
+            ("NAN".to_string(), UnreadableReason::Keyword, Some("cpp")),
             ("Self".to_string(), UnreadableReason::Keyword, Some("rust")),
             ("auto".to_string(), UnreadableReason::Keyword, Some("cpp")),
         ]
@@ -728,4 +779,42 @@ fn a_keyword_data_id_is_read_through_an_escaped_reader_or_has_none() {
     assert!(python.contains("def lambda_(self)"), "{python}");
     let go = source(Language::Go);
     assert!(go.contains("Policy) Chan() ("), "{go}");
+    // And the C++ reader of the macro is not written.
+    let cpp = source(Language::Cpp);
+    assert!(!cpp.contains("> NAN() const"), "{cpp}");
+}
+
+/// Kotlin declares one nested type per token of an event name, outside the
+/// families `member_names` lists, so its escapes are asked here: a token that
+/// begins with a digit and one of delimiters alone are class names too.
+#[test]
+fn a_kotlin_event_token_is_a_class_name_every_time() {
+    use sce_build::filters::to_event_class_name;
+    assert_eq!(to_event_class_name("DIGIT.0".to_string()), "DIGIT._0");
+    assert_eq!(to_event_class_name("1x".to_string()), "_1x");
+    assert_eq!(to_event_class_name("1y_".to_string()), "_1y");
+    assert_eq!(to_event_class_name("_".to_string()), "_Blank");
+    assert_eq!(to_event_class_name("door.open".to_string()), "Door.Open");
+
+    let dir = tempdir().expect("tempdir");
+    let (path, _) = keyword_model(dir.path());
+    let kotlin = compile_scxml_lang_typed(
+        path.to_str().unwrap(),
+        &find_template_dir_for(Language::Kotlin),
+        Language::Kotlin,
+    )
+    .unwrap_or_else(|e| panic!("Kotlin refused the keyword document: {e:?}"))
+    .files
+    .into_iter()
+    .map(|(_, code)| code)
+    .collect::<Vec<_>>()
+    .join("\n");
+    for declared in [
+        "data object _0 : DIGIT",
+        "data object _1x : NamesEvent",
+        "data object _1y : NamesEvent",
+        "data object _Blank : NamesEvent",
+    ] {
+        assert!(kotlin.contains(declared), "no `{declared}` in:\n{kotlin}");
+    }
 }

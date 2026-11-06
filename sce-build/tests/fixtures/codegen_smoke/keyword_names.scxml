@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!--
   Structural smoke fixture: state ids, a history id, event names and data ids
-  that are words some backend reserves.
+  that are words some backend reserves, or that spell no identifier at all.
 
   Each is a conforming name: a state or history id is an XML Name, an event
   name a dotted token, a data id an XML Name. Each backend writes a state, a
@@ -9,6 +9,13 @@
   state `self` as the variant `Self`, which does not parse. The member
   spelling now escapes such a word (`Self_` in Rust, `self_` or a backticked
   word in Swift), and a data id's reader is escaped or withheld as before.
+
+  The last states and events are the names that broke a spelling otherwise:
+  `EOF`, `NULL` and `__LINE__` are macros a C++ translation unit expands
+  (`mEOF`); `_x_`, `__LINE__`, `1y_` and `__x` are names a Python `Enum` takes
+  as no member (`m_X_`); `1x`, `_1` and `DIGIT.0` begin a word with a digit
+  (`_1x`), and `_` has no word left in PascalCase or lowerCamel (`_Blank`).
+  The data id `NAN` is a C++ macro, so it has no reader in any backend.
   Every backend must generate this document, and the output must compile
   where a checker runs. `sce-build/tests/generated_names.rs` reads the members
   each backend declares for it back out of the generated source.
@@ -29,6 +36,7 @@
     <data id="lambda" expr="6"/>
     <data id="guard" expr="7"/>
     <data id="chan" expr="8"/>
+    <data id="NAN" expr="9"/>
   </datamodel>
   <state id="self">
     <onentry><raise event="Self"/></onentry>
@@ -51,6 +59,12 @@
   <state id="as"><transition event="as" target="default"/></state>
   <state id="default"><transition event="default" target="operator"/></state>
   <state id="operator"><transition event="operator" target="init"/></state>
-  <state id="init"><transition event="init" target="done"/></state>
+  <state id="init"><transition event="init" target="EOF"/></state>
+  <state id="EOF"><transition event="EOF" target="NULL"/></state>
+  <state id="NULL"><transition event="1x" target="__LINE__"/></state>
+  <state id="__LINE__"><transition event="_" target="_x_"/></state>
+  <state id="_x_"><transition event="DIGIT.0" target="_1"/></state>
+  <state id="_1"><transition event="1y_" target="_"/></state>
+  <state id="_"><transition event="__x" target="done"/></state>
   <final id="done"/>
 </scxml>
