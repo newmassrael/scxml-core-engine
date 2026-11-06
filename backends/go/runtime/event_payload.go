@@ -1032,6 +1032,38 @@ func (v PayloadValue) Record(defaults string) (PayloadRecord, error) {
 	return record, nil
 }
 
+// ReadUnion reads a value of a union type (docs/adr/0092, section 4): one
+// object holding its tag under the key tag and the fields of the case the tag
+// names beside it.
+//
+// The tag is read first, by readTag, the reader of the tag's enum, wherever it
+// stands in the object; readCase is then handed the case the tag named and this
+// same value, and reads the case's record from it with PayloadValue.Record (an
+// empty case reads nothing). The refusals come in one order on every runtime: a
+// value that is not an object; the tag absent (RefusalMissing at the tag's
+// pointer), then whatever the enum's reader refuses of it (null, not a text, a
+// name the enum does not declare); then the case's record. A key the case does
+// not declare is never asked for, so it is stepped over, as a record steps over
+// one, and a text that carries another case's keys, or null under them, reads as
+// the case its tag names.
+func ReadUnion[E, T any](v PayloadValue, tag string, readTag func(PayloadValue) (E, error),
+	readCase func(E, PayloadValue) (T, error)) (T, error) {
+	var none T
+	members, ok := v.value.(map[string]any)
+	if !ok {
+		return none, v.wrongKind("is not a union")
+	}
+	tagValue, err := PayloadRecord{members: members, prefix: v.path, pointer: v.pointer}.Field(tag)
+	if err != nil {
+		return none, err
+	}
+	chosen, err := readTag(tagValue)
+	if err != nil {
+		return none, err
+	}
+	return readCase(chosen, v)
+}
+
 // field is the value name carries, or a refusal naming what is missing.
 func field(obj PayloadFields, name string) (PayloadValue, error) {
 	return obj.Field(name)
@@ -1163,6 +1195,17 @@ func RecordJSON(members ...PayloadPair) RawJSON {
 	var b strings.Builder
 	writeMembers(&b, sorted)
 	return RawJSON(b.String())
+}
+
+// UnionJSON is the JSON spelling of one union value (docs/adr/0092, section
+// 2.1): the tag under the key tag, its value variant, the case's name as its enum
+// spells it, beside members, the fields of the case's record (none for an empty
+// case). The object writes the tag among the fields, every key ascending by its
+// UTF-8 bytes, as RecordJSON writes a record.
+func UnionJSON(tag, variant string, members ...PayloadPair) RawJSON {
+	all := make([]PayloadPair, 0, len(members)+1)
+	all = append(all, members...)
+	return RecordJSON(append(all, Pair(tag, variant))...)
 }
 
 // ListJSON is the JSON spelling of one list: an array of what write spells each

@@ -123,6 +123,28 @@ func readDescribed(ty any, v PayloadValue) error {
 			}
 			return nil
 		}
+		if described, ok := t["union"].(map[string]any); ok {
+			// The tag's enum is the cases' names; an empty case is null, any
+			// other the record it holds (docs/adr/0092, section 4).
+			tag, _ := described["tag"].(string)
+			cases, _ := described["cases"].(map[string]any)
+			_, err := ReadUnion(v, tag, func(named PayloadValue) (string, error) {
+				name, err := named.Name()
+				if err != nil {
+					return "", err
+				}
+				if _, declared := cases[name]; !declared {
+					return "", named.UnknownVariant(name, "Described")
+				}
+				return name, nil
+			}, func(name string, object PayloadValue) (struct{}, error) {
+				if record := cases[name]; record != nil {
+					return struct{}{}, readDescribed(record, object)
+				}
+				return struct{}{}, nil
+			})
+			return err
+		}
 	}
 	panic(fmt.Sprintf("a type of the table names no constructor: %v", ty))
 }
