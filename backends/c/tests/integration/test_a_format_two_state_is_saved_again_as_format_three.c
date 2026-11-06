@@ -95,6 +95,12 @@ static const machine_t *machine_of(const char *name) {
     return found;
 }
 
+// Whether a path `snprintf` wrote in `n` characters fits a buffer of `cap`. A path that does not
+// fit fails the test: reading the truncated name would read some other file, or none.
+static bool path_fits(int n, size_t cap) {
+    return n >= 0 && (size_t)n < cap;
+}
+
 // The text of `path` without its closing newline; false when it cannot be read.
 static bool read_trimmed(const char *path, char *out, size_t cap, size_t *len) {
     FILE *file = fopen(path, "rb");
@@ -116,7 +122,10 @@ static void every_format_two_text_is_saved_again_as_the_format_three_text_it_is_
     char directory[1024];
     DIR *dir;
     int checked = 0;
-    (void)snprintf(directory, sizeof(directory), "%s/format2", SCE_SAVED_FIXTURES_DIR);
+    if (!path_fits(snprintf(directory, sizeof(directory), "%s/format2", SCE_SAVED_FIXTURES_DIR), sizeof(directory))) {
+        CHECK(false, "the path of %s/format2 does not fit", SCE_SAVED_FIXTURES_DIR);
+        return;
+    }
     dir = opendir(directory);
     if (dir == NULL) {
         CHECK(false, "cannot open %s", directory);
@@ -140,12 +149,18 @@ static void every_format_two_text_is_saved_again_as_the_format_three_text_it_is_
         if (machine == NULL) {
             continue;
         }
-        (void)snprintf(path, sizeof(path), "%s/%s", directory, entry->d_name);
+        if (!path_fits(snprintf(path, sizeof(path), "%s/%s", directory, entry->d_name), sizeof(path))) {
+            CHECK(false, "the path of %s does not fit", entry->d_name);
+            continue;
+        }
         if (!read_trimmed(path, text, sizeof(text), &len)) {
             CHECK(false, "cannot read %s", path);
             continue;
         }
-        (void)snprintf(path, sizeof(path), "%s/read_as/%s", directory, entry->d_name);
+        if (!path_fits(snprintf(path, sizeof(path), "%s/read_as/%s", directory, entry->d_name), sizeof(path))) {
+            CHECK(false, "the path of read_as/%s does not fit", entry->d_name);
+            continue;
+        }
         if (!read_trimmed(path, want, sizeof(want), &want_len)) {
             CHECK(false, "cannot read %s", path);
             continue;
@@ -198,12 +213,18 @@ static void a_changed_text_is_saved_as(const machine_t *machine, const char *nam
         CHECK(false, "%s is of no machine this test builds", name);
         return;
     }
-    (void)snprintf(path, sizeof(path), "%s/format2/%s", SCE_SAVED_FIXTURES_DIR, name);
+    if (!path_fits(snprintf(path, sizeof(path), "%s/format2/%s", SCE_SAVED_FIXTURES_DIR, name), sizeof(path))) {
+        CHECK(false, "the path of %s does not fit", name);
+        return;
+    }
     if (!read_trimmed(path, text, sizeof(text), &len)) {
         CHECK(false, "cannot read %s", path);
         return;
     }
-    (void)snprintf(path, sizeof(path), "%s/format2/read_as/%s", SCE_SAVED_FIXTURES_DIR, name);
+    if (!path_fits(snprintf(path, sizeof(path), "%s/format2/read_as/%s", SCE_SAVED_FIXTURES_DIR, name), sizeof(path))) {
+        CHECK(false, "the path of read_as/%s does not fit", name);
+        return;
+    }
     if (!read_trimmed(path, want, sizeof(want), &want_len)) {
         CHECK(false, "cannot read %s", path);
         return;
