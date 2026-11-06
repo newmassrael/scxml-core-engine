@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: a port type of no message (docs/SCE_TEST_PROFILE.md §11.3). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-port-type" name="refused_port_type_no_message">
+  <sce:import kind="event-schema" src="job_status.scxml" as="JobStatus"/>
+</scxml>

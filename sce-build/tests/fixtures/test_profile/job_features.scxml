@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The features a job suite selects its test cases by (ADR 0057 §2). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="feature-model" name="job_features">
+  <sce:feature name="job-timeout"/>
+  <sce:feature name="job-retry" requires="job-timeout"/>
+</scxml>

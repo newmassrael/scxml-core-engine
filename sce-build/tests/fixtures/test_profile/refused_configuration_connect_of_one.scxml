@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: a connect of one endpoint; a connect joins one component port
+     to another (docs/SCE_TEST_PROFILE.md §11.6). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-configuration"
+       name="refused_configuration_connect_of_one">
+  <sce:import kind="test-component" src="job_tester.scxml" as="Tester"/>
+  <sce:mtc type="Tester"/>
+  <sce:connect>
+    <sce:endpoint component="mtc" port="control"/>
+  </sce:connect>
+</scxml>

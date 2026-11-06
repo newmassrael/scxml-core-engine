@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: a complement of no matcher (docs/SCE_TEST_PROFILE.md §11.4,
+     B.1.2.2). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="refused_template_empty_complement"
+       sce:type="uint32">
+  <sce:complement/>
+</scxml>

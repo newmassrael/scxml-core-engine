@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: ifpresent where a value of a type that is not optional is
+     matched (docs/SCE_TEST_PROFILE.md §11.4, B.1.4.2). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="refused_template_ifpresent_not_optional"
+       sce:type="uint32">
+  <sce:any-value ifpresent="true"/>
+</scxml>

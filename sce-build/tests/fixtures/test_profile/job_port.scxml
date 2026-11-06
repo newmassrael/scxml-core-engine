@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §11.3: a port type that carries the job status
+     both ways and the job's completion out. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-port-type" name="job_port">
+  <sce:import kind="event-schema" src="job_status.scxml" as="JobStatus"/>
+  <sce:import kind="event-schema" src="../../../kind-examples/event-schema.scxml"
+              as="JobCompleted"/>
+  <sce:message type="JobStatus" direction="inout"/>
+  <sce:message type="JobCompleted" direction="out"/>
+</scxml>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: a template whose type holds a float (docs/SCE_TEST_PROFILE.md
+     §11.4, §8.1). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="refused_template_float"
+       sce:type="list&lt;float32&gt;[2]">
+  <sce:any-value/>
+</scxml>

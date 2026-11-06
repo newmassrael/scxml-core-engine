@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The message the test profile fixtures exchange: a job's status, with a
+     field of each shape a template matches (docs/SCE_TEST_PROFILE.md §11.4). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="job_status"
+       sce:event-name="job.status">
+  <datamodel>
+    <data id="elapsed_ms" sce:type="uint32" sce:direction="in"/>
+    <data id="note" sce:type="optional&lt;string[32]&gt;" sce:direction="in"/>
+    <data id="codes" sce:type="list&lt;uint8&gt;[4]" sce:direction="in"/>
+    <data id="tag" sce:type="optional&lt;uint8&gt;" sce:direction="in"/>
+    <data id="retry" sce:type="optional&lt;uint8&gt;" sce:direction="in"/>
+    <data id="count" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+</scxml>

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §11.4: one template that writes every matcher a
+     record holds, and every attribute a matcher carries. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="every_matcher"
+       sce:type="record:JobStatus">
+  <sce:import kind="event-schema" src="job_status.scxml" as="JobStatus"/>
+  <sce:import kind="test-template" src="elapsed_at_most.scxml" as="ElapsedAtMost"/>
+  <datamodel>
+    <data id="limit" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+  <sce:record-match>
+    <sce:value-list field="elapsed_ms">
+      <sce:specific value="1"/>
+      <sce:value-range>
+        <sce:lower value="10"/>
+        <sce:upper param="limit"/>
+      </sce:value-range>
+    </sce:value-list>
+    <sce:any-value field="note" length-max="8" ifpresent="true"/>
+    <sce:list-match field="codes" length-min="1" length-max="4">
+      <sce:specific value="3"/>
+      <sce:any-value/>
+      <sce:complement>
+        <sce:specific value="0"/>
+      </sce:complement>
+    </sce:list-match>
+    <sce:any-value-or-none field="tag"/>
+    <sce:omit field="retry"/>
+    <sce:template-ref field="count" template="ElapsedAtMost" args="limit"/>
+  </sce:record-match>
+</scxml>

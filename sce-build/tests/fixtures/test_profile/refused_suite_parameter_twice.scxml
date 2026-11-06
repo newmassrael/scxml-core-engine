@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: a module parameter declared twice (docs/SCE_TEST_PROFILE.md
+     §11.8). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-suite" name="refused_suite_parameter_twice">
+  <sce:import kind="test-case" src="completes_in_time.scxml" as="CompletesInTime"/>
+  <sce:module-parameter id="limit" type="uint32" value="500"/>
+  <sce:module-parameter id="limit" type="uint32" value="600"/>
+  <sce:execute test-case="CompletesInTime"/>
+</scxml>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: a specific value outside its type, 300 for a uint8
+     (docs/SCE_TEST_PROFILE.md §11.4). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="refused_template_literal_out_of_range"
+       sce:type="uint8">
+  <sce:specific value="300"/>
+</scxml>

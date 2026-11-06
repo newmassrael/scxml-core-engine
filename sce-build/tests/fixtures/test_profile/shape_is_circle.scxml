@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §11.4: a template over a union, the union of
+     the union kind's fixtures, matching its circle case at any radius. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="shape_is_circle"
+       sce:type="union:Shape">
+  <sce:import kind="union" src="../union/union_shape.scxml" as="Shape"/>
+  <sce:union-match variant="circle">
+    <sce:record-match>
+      <sce:any-value field="radius"/>
+    </sce:record-match>
+  </sce:union-match>
+</scxml>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §11.4: a template over a number, its upper bound
+     a formal parameter; `every_matcher.scxml` references it. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="elapsed_at_most"
+       sce:type="uint32">
+  <datamodel>
+    <data id="limit" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+  <sce:value-range>
+    <sce:upper param="limit"/>
+  </sce:value-range>
+</scxml>

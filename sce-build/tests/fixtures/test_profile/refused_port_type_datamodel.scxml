@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: a document of the profile that names a data model other than
+     sce-static (docs/SCE_TEST_PROFILE.md §11.2). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-port-type" name="refused_port_type_datamodel"
+       datamodel="ecmascript">
+  <sce:import kind="event-schema" src="job_status.scxml" as="JobStatus"/>
+  <sce:message type="JobStatus" direction="in"/>
+</scxml>

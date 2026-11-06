@@ -1,0 +1,803 @@
+// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+
+//! The six kinds of the test profile (docs/adr/0091; their forms are
+//! docs/SCE_TEST_PROFILE.md §11): what a document of each reads as, each
+//! refusal of what one document states alone and the code it is refused with,
+//! that a test component's profile is read in a test component and in no
+//! other statechart, and that every backend refuses to generate a document of
+//! the profile by name until its runtime lands.
+//!
+//! The documents are under `sce-build/tests/fixtures/test_profile/`: one per
+//! accepted form, and one per refusal, each named for what it refuses. The
+//! rules that need an imported document are not this file's.
+
+use std::path::{Path, PathBuf};
+
+use sce_build::forge::codegen_matrix::{self, EmitOutcome, KindClass};
+use sce_build::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
+use sce_build::forge::error::{ForgeError, GenerateError, Located};
+use sce_build::forge::model::{
+    ForgeDocument, ForgeKind, ParsedForge, RuntimeDep, TestMatcherForm, TestMessageDirection,
+    TestValue,
+};
+use sce_build::forge::parser::parse_forge_with_imports;
+use sce_build::generator::Language;
+use sce_build::parser::SCXMLParser;
+use sce_build::test_component::{TestStatementKind, Verdict};
+use sce_build::{DocumentLabel, ForgeCompileOptions};
+
+fn fixture(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/test_profile")
+        .join(name)
+}
+
+fn example(kind: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("kind-examples")
+        .join(format!("{kind}.scxml"))
+}
+
+fn read(path: &Path) -> String {
+    std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+}
+
+fn label(name: &str) -> DocumentLabel<'_> {
+    DocumentLabel {
+        identifier: name.strip_suffix(".scxml").unwrap_or(name),
+        diagnostic_label: name,
+    }
+}
+
+/// The fixture `name`, parsed as the forge document it is.
+fn parse(name: &str) -> ParsedForge {
+    let text = read(&fixture(name));
+    parse_forge_with_imports(&text, label(name))
+        .unwrap_or_else(|e| panic!("{name} parses: {e:?}"))
+        .unwrap_or_else(|| panic!("{name} is a forge document"))
+}
+
+/// The fixture `name`, parsed as the statechart it is.
+fn statechart(name: &str) -> Result<sce_build::model::SCXMLModel, Located<ForgeError>> {
+    let path = fixture(name);
+    SCXMLParser::new().parse_file(path.to_str().expect("a UTF-8 path"))
+}
+
+/// The first record of a refusal: its wire code, its `actual`, and its line.
+fn record(err: &Located<ForgeError>) -> (&'static str, Option<String>, Option<u32>) {
+    let diagnostic = &err.error.to_diagnostics()[0];
+    (
+        diagnostic.code.as_str(),
+        diagnostic.actual.clone(),
+        err.location.line,
+    )
+}
+
+#[test]
+fn a_port_type_reads_as_its_messages_and_their_directions() {
+    let parsed = parse("job_port.scxml");
+    let ForgeDocument::TestPortType(port) = &parsed.document else {
+        panic!("a port type, got {:?}", parsed.document.kind());
+    };
+    let messages: Vec<(&str, TestMessageDirection)> = port
+        .messages
+        .iter()
+        .map(|m| (m.schema.as_str(), m.direction))
+        .collect();
+    assert_eq!(
+        messages,
+        [
+            ("JobStatus", TestMessageDirection::Inout),
+            ("JobCompleted", TestMessageDirection::Out),
+        ]
+    );
+    assert_eq!(port.in_list().collect::<Vec<_>>(), ["JobStatus"]);
+    assert_eq!(
+        port.out_list().collect::<Vec<_>>(),
+        ["JobStatus", "JobCompleted"]
+    );
+}
+
+#[test]
+fn a_template_reads_as_its_type_its_parameters_and_its_matcher_tree() {
+    let parsed = parse("every_matcher.scxml");
+    let ForgeDocument::TestTemplate(template) = &parsed.document else {
+        panic!("a template, got {:?}", parsed.document.kind());
+    };
+    assert_eq!(template.template_type.to_string(), "record:JobStatus");
+    assert_eq!(template.parameters.len(), 1);
+    assert_eq!(template.parameters[0].id, "limit");
+    assert_eq!(template.parameters[0].parameter_type.to_string(), "uint32");
+    let TestMatcherForm::RecordMatch { fields } = &template.matcher.form else {
+        panic!("a record match, got {:?}", template.matcher.form);
+    };
+    let named: Vec<(&str, &str)> = fields
+        .iter()
+        .map(|f| (f.field.as_deref().unwrap_or_default(), f.form.element()))
+        .collect();
+    assert_eq!(
+        named,
+        [
+            ("elapsed_ms", "value-list"),
+            ("note", "any-value"),
+            ("codes", "list-match"),
+            ("tag", "any-value-or-none"),
+            ("retry", "omit"),
+            ("count", "template-ref"),
+        ]
+    );
+    // The attributes every matcher may carry.
+    assert!(fields[1].ifpresent);
+    assert_eq!(fields[1].length_max, Some(8));
+    assert_eq!(
+        (fields[2].length_min, fields[2].length_max),
+        (Some(1), Some(4))
+    );
+    // A value list's items, and a bound that is a formal parameter.
+    let TestMatcherForm::ValueList { items } = &fields[0].form else {
+        panic!("{:?}", fields[0].form);
+    };
+    assert!(matches!(
+        &items[0].form,
+        TestMatcherForm::Specific { value: TestValue::Value(v) } if v == "1"
+    ));
+    assert!(matches!(
+        &items[1].form,
+        TestMatcherForm::ValueRange {
+            lower: Some(TestValue::Value(lower)),
+            upper: Some(TestValue::Param(upper)),
+        } if lower == "10" && upper == "limit"
+    ));
+    let TestMatcherForm::TemplateRef {
+        template: alias,
+        args,
+    } = &fields[5].form
+    else {
+        panic!("{:?}", fields[5].form);
+    };
+    assert_eq!(alias, "ElapsedAtMost");
+    assert_eq!(args, &["limit"]);
+    // Matching symbols make a template no specific one (§6.2); a template of
+    // values alone is.
+    assert!(!template.is_specific());
+    let report = parse("job_report.scxml");
+    let ForgeDocument::TestTemplate(report) = &report.document else {
+        panic!("a template");
+    };
+    assert!(report.is_specific());
+}
+
+#[test]
+fn a_template_over_a_union_reads_as_the_case_it_matches() {
+    let parsed = parse("shape_is_circle.scxml");
+    let ForgeDocument::TestTemplate(template) = &parsed.document else {
+        panic!("a template");
+    };
+    let TestMatcherForm::UnionMatch { variant, case } = &template.matcher.form else {
+        panic!("{:?}", template.matcher.form);
+    };
+    assert_eq!(variant, "circle");
+    assert!(matches!(
+        case.as_deref().map(|m| &m.form),
+        Some(TestMatcherForm::RecordMatch { .. })
+    ));
+}
+
+#[test]
+fn a_configuration_reads_as_its_components_and_how_their_ports_are_joined() {
+    let parsed = parse("tester_and_helper.scxml");
+    let ForgeDocument::TestConfiguration(configuration) = &parsed.document else {
+        panic!("a configuration, got {:?}", parsed.document.kind());
+    };
+    assert_eq!(configuration.mtc, "Tester");
+    assert_eq!(configuration.ptcs.len(), 1);
+    assert_eq!(configuration.ptcs[0].id, "helper");
+    assert_eq!(configuration.ptcs[0].component, "Helper");
+    assert_eq!(configuration.system_ports[0].port_type, "JobPort");
+    assert_eq!(configuration.maps[0].component, "mtc");
+    assert_eq!(configuration.maps[0].system_port, "sut");
+    let ends: Vec<(&str, &str)> = configuration.connects[0]
+        .endpoints
+        .iter()
+        .map(|e| (e.component.as_str(), e.port.as_str()))
+        .collect();
+    assert_eq!(ends, [("mtc", "control"), ("helper", "control")]);
+    assert!(configuration.names_component("mtc"));
+    assert!(configuration.names_component("helper"));
+    assert!(!configuration.names_component("Helper"));
+}
+
+#[test]
+fn a_test_case_and_a_suite_read_as_what_they_name() {
+    let parsed = parse("completes_in_time.scxml");
+    let ForgeDocument::TestCase(case) = &parsed.document else {
+        panic!("a test case, got {:?}", parsed.document.kind());
+    };
+    assert_eq!(case.configuration, "TesterAndHelper");
+
+    let parsed = parse("job_suite.scxml");
+    let ForgeDocument::TestSuite(suite) = &parsed.document else {
+        panic!("a suite, got {:?}", parsed.document.kind());
+    };
+    assert_eq!(suite.features.as_deref(), Some("Features"));
+    let parameters: Vec<(&str, String, &str)> = suite
+        .module_parameters
+        .iter()
+        .map(|p| {
+            (
+                p.id.as_str(),
+                p.parameter_type.to_string(),
+                p.value.as_str(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        parameters,
+        [
+            ("limit", "uint32".to_string(), "500"),
+            ("label", "string[8]".to_string(), "nightly"),
+            ("key", "bytes[2]".to_string(), "0aff"),
+        ]
+    );
+    assert_eq!(suite.executes.len(), 1);
+    assert_eq!(suite.executes[0].test_case, "CompletesInTime");
+    assert_eq!(suite.executes[0].guard_us, Some(10_000_000));
+    assert_eq!(
+        suite.executes[0].requires.as_deref(),
+        Some("all(job-timeout, job-retry)")
+    );
+}
+
+/// Every refusal of what one document of the profile states alone, by the
+/// fixture that breaks it: its code, and the value the record names as
+/// `actual` where the rule names one.
+const REFUSALS: &[(&str, DiagnosticCode, Option<&str>)] = &[
+    // §11.2, §11.3: the port type.
+    (
+        "refused_port_type_no_message.scxml",
+        DiagnosticCode::ValidationMissingElement,
+        None,
+    ),
+    (
+        "refused_port_type_message_twice.scxml",
+        DiagnosticCode::ValidationDuplicateId,
+        Some("JobStatus"),
+    ),
+    (
+        "refused_port_type_unimported_message.scxml",
+        DiagnosticCode::ValidationInvalidAttribute,
+        Some("JobState"),
+    ),
+    (
+        "refused_port_type_datamodel.scxml",
+        DiagnosticCode::TestProfileDatamodel,
+        Some("ecmascript"),
+    ),
+    // §11.4: the template.
+    (
+        "refused_template_no_type.scxml",
+        DiagnosticCode::ValidationMissingAttribute,
+        None,
+    ),
+    (
+        "refused_template_float.scxml",
+        DiagnosticCode::TestProfileTemplateFloat,
+        Some("list<float32>[2]"),
+    ),
+    (
+        "refused_template_two_matchers.scxml",
+        DiagnosticCode::ValidationAttributeRuleViolated,
+        Some("2"),
+    ),
+    (
+        "refused_template_no_matcher.scxml",
+        DiagnosticCode::ValidationAttributeRuleViolated,
+        Some("0"),
+    ),
+    (
+        "refused_template_parameter_out.scxml",
+        DiagnosticCode::ValidationAttributeRuleViolated,
+        Some("out"),
+    ),
+    (
+        "refused_template_parameter_expr.scxml",
+        DiagnosticCode::ValidationAttributeRuleViolated,
+        Some("5"),
+    ),
+    (
+        "refused_template_parameter_twice.scxml",
+        DiagnosticCode::ValidationDuplicateId,
+        Some("limit"),
+    ),
+    (
+        "refused_template_value_list_of_one.scxml",
+        DiagnosticCode::ValidationAttributeRuleViolated,
+        Some("1"),
+    ),
+    (
+        "refused_template_empty_complement.scxml",
+        DiagnosticCode::ValidationAttributeRuleViolated,
+        Some("0"),
+    ),
+    (
+        "refused_template_field_missing.scxml",
+        DiagnosticCode::ValidationMissingAttribute,
+        None,
+    ),
+    (
+        "refused_template_field_outside_record.scxml",
+        DiagnosticCode::ValidationAttributeRuleViolated,
+        Some("elapsed_ms"),
+    ),
+    (
+        "refused_template_field_twice.scxml",
+        DiagnosticCode::ValidationDuplicateId,
+        Some("elapsed_ms"),
+    ),
+    (
+        "refused_template_length_min_past_max.scxml",
+        DiagnosticCode::ValidationAttributeRuleViolated,
+        Some("5"),
+    ),
+    (
+        "refused_template_literal_out_of_range.scxml",
+        DiagnosticCode::TestProfileLiteral,
+        Some("300"),
+    ),
+    (
+        "refused_template_range_bound_not_integer.scxml",
+        DiagnosticCode::TestProfileLiteral,
+        Some("0x10"),
+    ),
+    (
+        "refused_template_unknown_parameter.scxml",
+        DiagnosticCode::TestProfileTemplateParameter,
+        Some("limt"),
+    ),
+    (
+        "refused_template_parameter_of_another_type.scxml",
+        DiagnosticCode::TestProfileTemplateParameter,
+        Some("wide"),
+    ),
+    (
+        "refused_template_omit_not_optional.scxml",
+        DiagnosticCode::TestProfileMatcherType,
+        Some("omit"),
+    ),
+    (
+        "refused_template_any_value_or_none_in_list.scxml",
+        DiagnosticCode::TestProfileMatcherType,
+        Some("any-value-or-none"),
+    ),
+    (
+        "refused_template_ifpresent_not_optional.scxml",
+        DiagnosticCode::TestProfileMatcherType,
+        Some("ifpresent"),
+    ),
+    (
+        "refused_template_specific_value_and_param.scxml",
+        DiagnosticCode::ValidationExactlyOneAttribute,
+        None,
+    ),
+    (
+        "refused_template_unimported_reference.scxml",
+        DiagnosticCode::ValidationInvalidAttribute,
+        Some("ElapsedAtLeast"),
+    ),
+    (
+        "refused_template_union_case_of_two.scxml",
+        DiagnosticCode::ValidationAttributeRuleViolated,
+        Some("2"),
+    ),
+    (
+        "refused_template_range_bound_twice.scxml",
+        DiagnosticCode::ValidationDuplicateId,
+        Some("lower"),
+    ),
+    // §11.6: the configuration.
+    (
+        "refused_configuration_no_mtc.scxml",
+        DiagnosticCode::ValidationMissingElement,
+        None,
+    ),
+    (
+        "refused_configuration_two_mtcs.scxml",
+        DiagnosticCode::ValidationAttributeRuleViolated,
+        None,
+    ),
+    (
+        "refused_configuration_ptc_named_mtc.scxml",
+        DiagnosticCode::ValidationAttributeRuleViolated,
+        Some("mtc"),
+    ),
+    (
+        "refused_configuration_ptc_twice.scxml",
+        DiagnosticCode::ValidationDuplicateId,
+        Some("helper"),
+    ),
+    (
+        "refused_configuration_unimported_component.scxml",
+        DiagnosticCode::ValidationInvalidAttribute,
+        Some("Testor"),
+    ),
+    (
+        "refused_configuration_map_unknown_component.scxml",
+        DiagnosticCode::ValidationInvalidAttribute,
+        Some("ghost"),
+    ),
+    (
+        "refused_configuration_map_unknown_system_port.scxml",
+        DiagnosticCode::ValidationInvalidAttribute,
+        Some("system"),
+    ),
+    (
+        "refused_configuration_system_port_unmapped.scxml",
+        DiagnosticCode::TestProfilePortConnection,
+        Some("sut"),
+    ),
+    (
+        "refused_configuration_system_port_mapped_twice.scxml",
+        DiagnosticCode::TestProfilePortConnection,
+        Some("sut"),
+    ),
+    (
+        "refused_configuration_port_joined_twice.scxml",
+        DiagnosticCode::TestProfilePortConnection,
+        Some("sut"),
+    ),
+    (
+        "refused_configuration_connect_of_one.scxml",
+        DiagnosticCode::ValidationAttributeRuleViolated,
+        Some("1"),
+    ),
+    (
+        "refused_configuration_system_port_twice.scxml",
+        DiagnosticCode::ValidationDuplicateId,
+        Some("sut"),
+    ),
+    // §11.7: the test case.
+    (
+        "refused_case_no_configuration.scxml",
+        DiagnosticCode::ValidationMissingAttribute,
+        None,
+    ),
+    (
+        "refused_case_unimported_configuration.scxml",
+        DiagnosticCode::ValidationInvalidAttribute,
+        Some("TesterAlone"),
+    ),
+    // §11.8: the suite.
+    (
+        "refused_suite_guard_no_unit.scxml",
+        DiagnosticCode::TestProfileDuration,
+        Some("10"),
+    ),
+    (
+        "refused_suite_guard_below_a_microsecond.scxml",
+        DiagnosticCode::TestProfileDuration,
+        Some("0.0000005s"),
+    ),
+    (
+        "refused_suite_test_case_twice.scxml",
+        DiagnosticCode::ValidationDuplicateId,
+        Some("CompletesInTime"),
+    ),
+    (
+        "refused_suite_unimported_test_case.scxml",
+        DiagnosticCode::ValidationInvalidAttribute,
+        Some("CompletesLate"),
+    ),
+    (
+        "refused_suite_parameter_literal.scxml",
+        DiagnosticCode::TestProfileLiteral,
+        Some("300"),
+    ),
+    (
+        "refused_suite_parameter_float.scxml",
+        DiagnosticCode::ValidationAttributeRuleViolated,
+        Some("float32"),
+    ),
+    (
+        "refused_suite_parameter_twice.scxml",
+        DiagnosticCode::ValidationDuplicateId,
+        Some("limit"),
+    ),
+    (
+        "refused_suite_condition_malformed.scxml",
+        DiagnosticCode::ValidationFeatureConditionMalformed,
+        Some("all(job-timeout"),
+    ),
+    (
+        "refused_suite_condition_without_model.scxml",
+        DiagnosticCode::ValidationFeatureUndeclared,
+        Some("job-timeout"),
+    ),
+    (
+        "refused_suite_two_feature_models.scxml",
+        DiagnosticCode::ValidationFeatureModelImportedTwice,
+        Some("../../../kind-examples/feature-model.scxml"),
+    ),
+];
+
+#[test]
+fn each_rule_one_document_states_is_refused_with_its_own_code() {
+    let mut wrong: Vec<String> = Vec::new();
+    for (name, code, actual) in REFUSALS {
+        let text = read(&fixture(name));
+        let err = match parse_forge_with_imports(&text, label(name)) {
+            Ok(_) => {
+                wrong.push(format!("{name}: accepted"));
+                continue;
+            }
+            Err(err) => err,
+        };
+        let (got_code, got_actual, line) = record(&err);
+        if got_code != code.as_str() {
+            wrong.push(format!(
+                "{name}: {got_code}, expected {}: {err:?}",
+                code.as_str()
+            ));
+            continue;
+        }
+        if let Some(actual) = actual {
+            if got_actual.as_deref() != Some(*actual) {
+                wrong.push(format!(
+                    "{name}: actual {got_actual:?}, expected {actual:?}"
+                ));
+            }
+        }
+        if line.is_none() {
+            wrong.push(format!("{name}: placed on no line"));
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+/// Every refusal fixture in the directory is in the table, so a fixture whose
+/// row is lost cannot pass by not being read.
+#[test]
+fn every_refusal_fixture_is_judged() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/test_profile");
+    let mut on_disk: Vec<String> = std::fs::read_dir(&dir)
+        .expect("the fixture directory reads")
+        .map(|entry| {
+            entry
+                .expect("an entry")
+                .file_name()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .filter(|name| name.starts_with("refused_"))
+        .collect();
+    on_disk.sort();
+    let mut judged: Vec<String> = REFUSALS
+        .iter()
+        .map(|(name, _, _)| (*name).to_string())
+        .chain(
+            [
+                "refused_component_datamodel.scxml",
+                "refused_statechart_receive.scxml",
+            ]
+            .map(str::to_string),
+        )
+        .collect();
+    judged.sort();
+    assert_eq!(on_disk, judged);
+}
+
+/// A refusal is placed on the row of the value it names.
+#[test]
+fn a_literal_outside_its_type_is_refused_on_its_own_row() {
+    let text = read(&fixture("refused_template_literal_out_of_range.scxml"));
+    let err = parse_forge_with_imports(&text, label("refused_template_literal_out_of_range.scxml"))
+        .expect_err("refused");
+    assert_eq!(err.location.line, Some(8));
+}
+
+#[test]
+fn a_test_component_records_its_declarations_branches_sends_and_statements() {
+    let model = statechart("job_tester.scxml").unwrap_or_else(|e| panic!("parses: {e:?}"));
+    assert_eq!(model.kind(), ForgeKind::TestComponent);
+    let profile = model
+        .test_component
+        .as_ref()
+        .expect("a test component's profile");
+    let ports: Vec<(&str, &str)> = profile
+        .ports
+        .iter()
+        .map(|p| (p.id.as_str(), p.port_type.as_str()))
+        .collect();
+    assert_eq!(ports, [("sut", "JobPort"), ("control", "JobPort")]);
+    let timers: Vec<(&str, Option<&str>)> = profile
+        .timers
+        .iter()
+        .map(|t| (t.id.as_str(), t.duration.as_deref()))
+        .collect();
+    assert_eq!(timers, [("reply", Some("2s")), ("settle", None)]);
+    assert_eq!(profile.module_parameters, ["limit"]);
+    assert_eq!(profile.invocations.len(), 1);
+    assert_eq!(profile.invocations[0].id.as_deref(), Some("helper"));
+    assert_eq!(profile.invocations[0].src.as_deref(), Some("helper.scxml"));
+    assert_eq!(profile.invocations[0].state, "requesting");
+
+    let kinds: Vec<(&str, &TestStatementKind)> = profile
+        .statements
+        .iter()
+        .map(|s| (s.state.as_str(), &s.statement))
+        .collect();
+    // In document order: the entry's start, the receive's stop, the
+    // timeout's verdict, then the second state's start and verdict.
+    assert_eq!(kinds.len(), 5, "{kinds:?}");
+    assert!(matches!(
+        kinds[0],
+        ("requesting", TestStatementKind::StartTimer { timer, duration: None }) if timer == "reply"
+    ));
+    assert!(matches!(
+        kinds[1],
+        ("requesting", TestStatementKind::StopTimer { timer }) if timer == "reply"
+    ));
+    assert!(matches!(
+        kinds[2],
+        ("requesting", TestStatementKind::Setverdict { verdict: Verdict::Fail, reason: Some(r) })
+            if r == "'no reply in time'"
+    ));
+    assert!(matches!(
+        kinds[3],
+        ("settling", TestStatementKind::StartTimer { duration: Some(d), .. }) if d == "500ms"
+    ));
+    assert!(matches!(
+        kinds[4],
+        (
+            "settling",
+            TestStatementKind::Setverdict {
+                verdict: Verdict::Pass,
+                reason: None
+            }
+        )
+    ));
+
+    let requesting = &model.states["requesting"];
+    let receive = requesting.transitions[0]
+        .test_branch
+        .as_ref()
+        .expect("a receive branch");
+    assert_eq!(receive.receive.as_deref(), Some("sut"));
+    assert_eq!(receive.template.template.as_deref(), Some("EveryMatcher"));
+    assert_eq!(receive.template.args, ["limit"]);
+    let timeout = requesting.transitions[1]
+        .test_branch
+        .as_ref()
+        .expect("a timeout branch");
+    assert_eq!(timeout.timeout.as_deref(), Some("reply"));
+    assert!(timeout.receive.is_none());
+
+    let send = requesting
+        .on_entry_blocks
+        .iter()
+        .flatten()
+        .find(|a| a.action_type == "send")
+        .expect("the entry sends");
+    let used = send
+        .test_template
+        .as_ref()
+        .expect("the send names its template");
+    assert_eq!(used.template.as_deref(), Some("JobReport"));
+    assert!(used.args.is_empty());
+}
+
+#[test]
+fn a_test_component_declares_the_static_data_model() {
+    let err = statechart("refused_component_datamodel.scxml").expect_err("refused");
+    let (code, actual, _) = record(&err);
+    assert_eq!(code, DiagnosticCode::TestProfileDatamodel.as_str());
+    assert_eq!(actual.as_deref(), Some("ecmascript"));
+}
+
+/// In a statechart that is not a test component nothing reads the profile's
+/// attributes, so each is refused as unread.
+#[test]
+fn a_statechart_that_is_no_test_component_does_not_read_a_branch() {
+    let err = statechart("refused_statechart_receive.scxml").expect_err("refused");
+    let (code, _, _) = record(&err);
+    assert_eq!(code, DiagnosticCode::ValidationSceAttributeUnread.as_str());
+}
+
+/// The pseudocode page of a test component says what its profile declares,
+/// a transition's branch and a send's template.
+#[test]
+fn a_test_components_page_shows_its_profile() {
+    let model = statechart("job_tester.scxml").unwrap_or_else(|e| panic!("parses: {e:?}"));
+    let page = sce_build::forge::pseudo::render(&ForgeDocument::Statechart(Box::new(model)))
+        .unwrap_or_else(|e| panic!("renders: {e:?}"));
+    for line in [
+        "test-port sut type JobPort",
+        "test-timer reply duration 2s",
+        "module-parameter limit",
+        "branch receive sut template EveryMatcher args limit",
+        "branch timeout reply",
+        "test-template JobReport",
+        "setverdict fail in requesting reason 'no reply in time'",
+    ] {
+        assert!(page.contains(line), "`{line}` is not on the page:\n{page}");
+    }
+}
+
+fn options() -> ForgeCompileOptions {
+    ForgeCompileOptions {
+        go_module_prefix: Some("example.com/generated".to_string()),
+        ..Default::default()
+    }
+}
+
+fn not_generated(kind: &str, language: Language, err: Located<ForgeError>) {
+    assert!(
+        matches!(
+            err.error.to_diagnostics()[0].code,
+            DiagnosticCode::GenerateUnsupportedFeature
+        ),
+        "{kind} on {language:?}: {err:?}"
+    );
+    match err.error {
+        ForgeError::Generate(boxed) => match *boxed {
+            GenerateError::UnsupportedFeature { detail, .. } => {
+                assert!(detail.starts_with(&format!("{kind} '")), "{detail}");
+                assert!(
+                    detail.contains("no backend generates one until the profile's runtime lands"),
+                    "{detail}"
+                );
+            }
+            other => panic!("{kind} on {language:?}: {other:?}"),
+        },
+        other => panic!("{kind} on {language:?}: {other:?}"),
+    }
+}
+
+/// docs/SCE_TEST_PROFILE.md §11.9: every backend refuses a document of the
+/// profile by name until its runtime lands, the declaration kinds at the forge
+/// dispatch and the test component where a machine is written.
+#[test]
+fn a_document_of_the_profile_is_refused_by_name_on_every_backend() {
+    for &kind in ForgeKind::TEST_PROFILE {
+        assert!(kind.is_supported(), "{kind:?}");
+        assert!(!kind.needs_instance(), "{kind:?}");
+        assert!(!kind.is_inline_eligible(), "{kind:?}");
+        assert_eq!(kind.max_runtime_dep(), RuntimeDep::None, "{kind:?}");
+        assert_eq!(codegen_matrix::kind_class(kind), KindClass::Generic);
+        assert_eq!(
+            kind.reads_as_statechart(),
+            kind == ForgeKind::TestComponent,
+            "{kind:?}"
+        );
+    }
+    for &language in Language::ALL {
+        for kind in [
+            "test-template",
+            "test-port-type",
+            "test-configuration",
+            "test-case",
+            "test-suite",
+        ] {
+            let parsed = ForgeKind::from_attr(kind).expect("a kind");
+            assert_eq!(
+                codegen_matrix::lookup(parsed, language),
+                EmitOutcome::RuntimeMissing,
+                "{kind} on {language:?}"
+            );
+            match sce_build::compile_forge_file(&example(kind), language, &[], &options()) {
+                Ok(_) => panic!("{kind} generated on {language:?}"),
+                Err(err) => not_generated(kind, language, err),
+            }
+        }
+        let template_dir = sce_build::find_template_dir_for(language);
+        let component = example("test-component");
+        match sce_build::compile_scxml_lang_typed(
+            component.to_str().expect("a UTF-8 path"),
+            &template_dir,
+            language,
+        ) {
+            Ok(_) => panic!("test-component generated on {language:?}"),
+            Err(err) => not_generated("test-component", language, err),
+        }
+    }
+}

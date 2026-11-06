@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: a length restriction whose least is past its most
+     (docs/SCE_TEST_PROFILE.md §11.4, B.1.4.1). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="refused_template_length_min_past_max"
+       sce:type="string[16]">
+  <sce:any-value length-min="5" length-max="2"/>
+</scxml>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: a union match of two matchers; a case holds the matcher of its
+     record, or none (docs/SCE_TEST_PROFILE.md §11.4). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="refused_template_union_case_of_two"
+       sce:type="union:Shape">
+  <sce:import kind="union" src="../union/union_shape.scxml" as="Shape"/>
+  <sce:union-match variant="circle">
+    <sce:any-value/>
+    <sce:any-value/>
+  </sce:union-match>
+</scxml>

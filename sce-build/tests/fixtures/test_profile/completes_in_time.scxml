@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §11.7: a test case and its configuration. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-case" name="completes_in_time"
+       sce:configuration="TesterAndHelper">
+  <sce:import kind="test-configuration" src="tester_and_helper.scxml" as="TesterAndHelper"/>
+</scxml>

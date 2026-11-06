@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: a reference to a template the document does not import
+     (docs/SCE_TEST_PROFILE.md §11.4). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="refused_template_unimported_reference"
+       sce:type="uint32">
+  <sce:import kind="test-template" src="elapsed_at_most.scxml" as="ElapsedAtMost"/>
+  <sce:template-ref template="ElapsedAtLeast"/>
+</scxml>

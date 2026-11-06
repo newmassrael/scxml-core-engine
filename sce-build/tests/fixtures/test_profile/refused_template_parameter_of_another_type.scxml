@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: a formal parameter of another type than its position's, a
+     uint16 where a uint8 is matched (docs/SCE_TEST_PROFILE.md §11.4). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="refused_template_parameter_of_another_type"
+       sce:type="uint8">
+  <datamodel>
+    <data id="wide" sce:type="uint16" sce:direction="in"/>
+  </datamodel>
+  <sce:specific param="wide"/>
+</scxml>

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §6.2, §11.4: a specific template, the job
+     status a tester sends: values and absent fields alone. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="job_report"
+       sce:type="record:JobStatus">
+  <sce:import kind="event-schema" src="job_status.scxml" as="JobStatus"/>
+  <sce:record-match>
+    <sce:specific field="elapsed_ms" value="0"/>
+    <sce:specific field="note" value="started on time"/>
+    <sce:list-match field="codes">
+      <sce:specific value="7"/>
+    </sce:list-match>
+    <sce:omit field="tag"/>
+    <sce:omit field="retry"/>
+    <sce:specific field="count" value="1"/>
+  </sce:record-match>
+</scxml>

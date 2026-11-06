@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: a PTC declared twice (docs/SCE_TEST_PROFILE.md §11.6). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-configuration" name="refused_configuration_ptc_twice">
+  <sce:import kind="test-component" src="job_tester.scxml" as="Tester"/>
+  <sce:import kind="test-component" src="helper.scxml" as="Helper"/>
+  <sce:mtc type="Tester"/>
+  <sce:ptc id="helper" type="Helper"/>
+  <sce:ptc id="helper" type="Helper"/>
+</scxml>

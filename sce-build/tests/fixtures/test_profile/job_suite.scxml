@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §11.8: a suite of one test case, its guard and
+     its selection, and the module parameters its components read. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-suite" name="job_suite">
+  <sce:import kind="feature-model" src="job_features.scxml" as="Features"/>
+  <sce:import kind="test-case" src="completes_in_time.scxml" as="CompletesInTime"/>
+  <sce:module-parameter id="limit" type="uint32" value="500"/>
+  <sce:module-parameter id="label" type="string[8]" value="nightly"/>
+  <sce:module-parameter id="key" type="bytes[2]" value="0aff"/>
+  <sce:execute test-case="CompletesInTime" guard="10s" requires="all(job-timeout, job-retry)"/>
+</scxml>

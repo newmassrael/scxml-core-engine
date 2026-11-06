@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: a template's <data> that is not a formal parameter,
+     sce:direction="in" (docs/SCE_TEST_PROFILE.md §11.4). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="refused_template_parameter_out"
+       sce:type="uint32">
+  <datamodel>
+    <data id="limit" sce:type="uint32" sce:direction="out"/>
+  </datamodel>
+  <sce:any-value/>
+</scxml>

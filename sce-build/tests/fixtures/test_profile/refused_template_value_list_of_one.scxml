@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: a value list of fewer than two matchers
+     (docs/SCE_TEST_PROFILE.md §11.4, B.1.2.1). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="refused_template_value_list_of_one"
+       sce:type="uint32">
+  <sce:value-list>
+    <sce:specific value="1"/>
+  </sce:value-list>
+</scxml>

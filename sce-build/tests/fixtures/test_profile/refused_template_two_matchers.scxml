@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: a template of two matchers; the root holds exactly one
+     (docs/SCE_TEST_PROFILE.md §11.4). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="refused_template_two_matchers"
+       sce:type="uint32">
+  <sce:any-value/>
+  <sce:specific value="1"/>
+</scxml>

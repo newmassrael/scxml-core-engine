@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: any-value-or-none as an element of a list match, which the
+     profile leaves out (docs/SCE_TEST_PROFILE.md §11.4, §8.1; B.1.3.2). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="refused_template_any_value_or_none_in_list"
+       sce:type="list&lt;uint8&gt;[4]">
+  <sce:list-match>
+    <sce:specific value="1"/>
+    <sce:any-value-or-none/>
+  </sce:list-match>
+</scxml>

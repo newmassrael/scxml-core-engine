@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §11.5: the main test component. It creates a
+     helper, sends a report through its port to the system under test, and
+     waits for a status the template accepts within a limit the suite
+     supplies; the helper is told over the control port. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="job_tester"
+       datamodel="sce-static" initial="requesting">
+  <sce:import kind="test-port-type" src="job_port.scxml" as="JobPort"/>
+  <sce:import kind="test-template" src="job_report.scxml" as="JobReport"/>
+  <sce:import kind="test-template" src="every_matcher.scxml" as="EveryMatcher"/>
+  <sce:test-port id="sut" type="JobPort"/>
+  <sce:test-port id="control" type="JobPort"/>
+  <sce:test-timer id="reply" duration="2s"/>
+  <sce:test-timer id="settle"/>
+  <datamodel>
+    <data id="limit" sce:type="uint32" sce:module-parameter="true"/>
+  </datamodel>
+  <state id="requesting">
+    <invoke type="http://sce.dev/ext/test-component" src="helper.scxml" id="helper"/>
+    <onentry>
+      <send type="http://sce.dev/ext/test-port" target="sut" sce:test-template="JobReport"/>
+      <sce:start-timer timer="reply"/>
+    </onentry>
+    <transition sce:receive="sut" sce:test-template="EveryMatcher"
+                sce:template-args="limit" target="settling">
+      <sce:stop-timer timer="reply"/>
+      <send type="http://sce.dev/ext/test-port" target="control" sce:test-template="JobReport"/>
+    </transition>
+    <transition sce:timeout="reply" target="failed">
+      <sce:setverdict value="fail" reason="'no reply in time'"/>
+    </transition>
+  </state>
+  <state id="settling">
+    <onentry>
+      <sce:start-timer timer="settle" duration="500ms"/>
+    </onentry>
+    <transition sce:timeout="settle" target="passed">
+      <sce:setverdict value="pass"/>
+    </transition>
+  </state>
+  <final id="passed"/>
+  <final id="failed"/>
+</scxml>
