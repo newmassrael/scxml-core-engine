@@ -462,6 +462,12 @@ old encode, the old encode and its templates are removed in the same landing.
    handed its element's encode the flags the element says, and a C++ decode of a codec whose last field is a
    length-ref consumed the rest of the cursor, so that a codec holding it as a body could not decode on after it
    (the Rust decode already consumed only what it read).
+
+   *The eleventh C++ landing, 2026-11-06:* a list a gate decides. The value holds it as a `std::optional` of the
+   bounded list; a source presents it as a `std::optional` of any list the list's own trait accepts (the trait
+   `is_<element>_present_list`), from which the encode derives the flag it is gated on and walks the entries where
+   it is present, a chain setting the flag its entries end on as before. A count of its entries is derived where it
+   is present. The printed set is 88 codecs.
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences

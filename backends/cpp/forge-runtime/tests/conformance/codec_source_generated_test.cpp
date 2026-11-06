@@ -25,6 +25,7 @@
 // derives the bit; codec_length_ref_dotted_basic.scxml (a carrier whose high
 // nibble holds the length of the payload after it) derives the nibble.
 
+#include "codec_chain_depth_gated.h"
 #include "codec_chain_depth_plain.h"
 #include "codec_embed_basic.h"
 #include "codec_length_ref.h"
@@ -780,6 +781,97 @@ void a_body_a_gate_decides_is_written_where_it_is_present() {
           "a body the source presents is written over the source it holds");
 }
 
+namespace DepthGated = ::SCE::Generated::CodecChainDepthGated;
+using GatedChain = decltype(std::declval<const DepthGated::CodecChainDepthGated &>().extensions())::value_type;
+using GatedPayload = decltype(std::declval<const DepthGated::CodecChainDepthGated &>().payload());
+
+// A holder of the consumer's own whose chain is its own entries where it is
+// there; the header it presents claims the chain is there, which the encode
+// does not believe.
+struct ChainHolder {
+    std::optional<std::vector<DepthEntry>> entries;
+
+    [[nodiscard]] std::uint8_t header() const noexcept {
+        return 0x80;
+    }
+
+    [[nodiscard]] std::optional<GatedChain> extensions() const {
+        if (!entries) {
+            return std::nullopt;
+        }
+        return GatedChain::make(*entries);
+    }
+
+    [[nodiscard]] GatedPayload payload() const {
+        static const std::vector<std::uint8_t> byte{0xAA};
+        return *GatedPayload::make(byte);
+    }
+};
+
+// The same holder presenting the chain as always there: no source of a codec
+// whose chain a gate decides.
+struct ChainHolderWithoutGate {
+    std::vector<DepthEntry> entries;
+
+    [[nodiscard]] std::uint8_t header() const noexcept {
+        return 0x80;
+    }
+
+    [[nodiscard]] GatedChain extensions() const {
+        return *GatedChain::make(entries);
+    }
+
+    [[nodiscard]] GatedPayload payload() const {
+        static const std::vector<std::uint8_t> byte{0xAA};
+        return *GatedPayload::make(byte);
+    }
+};
+
+static_assert(DepthGated::is_source<ChainHolder>::value,
+              "a holder presenting a gated chain as an optional list of entry sources is a source");
+static_assert(!DepthGated::is_source<ChainHolderWithoutGate>::value,
+              "a holder presenting a gated chain as always there is no source");
+
+void a_list_a_gate_decides_is_walked_where_it_is_present() {
+    // Z in bit 7 of the header says the chain is there; its entries follow,
+    // Z set on each but the last, then the payload's length and its byte.
+    const std::vector<std::uint8_t> with{0x80, 0x81, 0x02, 0x01, 0xAA};
+    const std::vector<std::uint8_t> without{0x00, 0x01, 0xAA};
+    const std::vector<DepthEntry> entries{DepthEntry{0x01}, DepthEntry{0x82}};
+    const auto chain = GatedChain::make(entries);
+    const std::vector<std::uint8_t> byte{0xAA};
+    const auto payload = GatedPayload::make(byte);
+    CHECK(chain.has_value() && payload.has_value(), "two entries and one byte lie within their bounds");
+    if (!chain || !payload) {
+        return;
+    }
+    const DepthGated::CodecChainDepthGated present{0x00, *chain, *payload};
+    const DepthGated::CodecChainDepthGated absent{0x80, std::nullopt, *payload};
+    CHECK(present.encode_to_vec() == with, "a present chain is walked and its flag set");
+    CHECK(absent.encode_to_vec() == without, "an absent chain is not written and its flag cleared");
+
+    ::SCE::Forge::SceCursor cursor(with.data(), with.size());
+    const auto decoded = DepthGated::CodecChainDepthGated::decode(cursor);
+    CHECK(decoded.has_value() && decoded->extensions().has_value() && decoded->extensions()->size() == 2 &&
+              (*decoded->extensions())[1].header() == 0x02 && decoded->payload() == byte,
+          "a decoded value holds the chain it read and the payload after it");
+    ::SCE::Forge::SceCursor absent_cursor(without.data(), without.size());
+    const auto decoded_absent = DepthGated::CodecChainDepthGated::decode(absent_cursor);
+    CHECK(decoded_absent.has_value() && !decoded_absent->extensions().has_value() && decoded_absent->payload() == byte,
+          "a decoded value holds no chain it did not read");
+
+    const ChainHolder holds_none{std::nullopt};
+    const ChainHolder holds_two{entries};
+    std::vector<std::uint8_t> out_none;
+    ::SCE::Forge::VectorSink sink_none(out_none);
+    CHECK(!DepthGated::Wire::encode_source(holds_none, sink_none).has_value() && out_none == without,
+          "the flag is derived from the optional the source presents, not from its header");
+    std::vector<std::uint8_t> out_two;
+    ::SCE::Forge::VectorSink sink_two(out_two);
+    CHECK(!DepthGated::Wire::encode_source(holds_two, sink_two).has_value() && out_two == with,
+          "a chain the source presents is walked over the entries it holds");
+}
+
 void encode_source_reports_the_sinks_failure() {
     std::uint8_t buffer[3] = {};
     ::SCE::Forge::SpanSink sink(buffer, sizeof buffer);
@@ -804,6 +896,7 @@ int main() {
     a_variant_derives_its_tag_from_the_arm_it_holds();
     a_chain_sets_the_flag_its_entries_end_on();
     a_body_a_gate_decides_is_written_where_it_is_present();
+    a_list_a_gate_decides_is_walked_where_it_is_present();
     encode_source_reports_the_sinks_failure();
     if (failures != 0) {
         std::fprintf(stderr, "codec_source_generated_test: %d failure(s)\n", failures);

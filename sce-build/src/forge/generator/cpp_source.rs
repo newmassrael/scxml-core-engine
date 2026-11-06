@@ -110,8 +110,9 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
             }
             // A list of entries is held to its bound and walked entry by
             // entry, each written by its codec's encode over the source the
-            // list holds it as. A law over the entries, or a list a gate
-            // decides, is not yet.
+            // list holds it as. One a gate decides is presented as an optional
+            // value and walked where it is present. A law over the entries is
+            // not yet.
             Value::List { codec, bound, law } => {
                 if !held_printed(imports, codec) {
                     forms.push(format!(
@@ -123,9 +124,6 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
                 }
                 if !law.is_none() {
                     forms.push(format!("`{id}`, a list held to a law"));
-                }
-                if element.presence == Presence::Gated {
-                    forms.push(format!("`{id}`, a list a gate decides"));
                 }
                 if plan
                     .handed
@@ -267,14 +265,17 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
                 }
             }
             // A list is walked entry by entry, each entry written whole, a chain
-            // setting on each entry but the last the flag its entries end on;
-            // one whose entries are handed an input from the entry before, or
-            // whose chain holds memberships, is not yet.
+            // setting on each entry but the last the flag its entries end on,
+            // and one a gate decides is walked where the value holds it; one
+            // whose entries are handed an input from the entry before, or whose
+            // chain holds memberships, is not yet.
             Write::Streamed {
                 field,
-                guard: Guard::Always,
+                guard,
                 list: Some(list),
-            } => {
+            } if matches!(guard, Guard::Always)
+                || (matches!(guard, Guard::Present) && gated_element(field)) =>
+            {
                 if !list.previous.is_empty() || list.slots.is_some() || list.lawful {
                     forms.push(format!(
                         "`{}`, a chain whose entries the entry before or a group decides",
@@ -826,10 +827,11 @@ impl<'p> Presented<'p> {
 
     /// The trait, of the codec's namespace, that says whether a list a source
     /// presents for this element lies within its bounds and holds sources of
-    /// the entry codec; `None` for an element that is no list.
+    /// the entry codec, and for a list a gate decides the one that says it is
+    /// a `std::optional` of such a list; `None` for an element that is no list.
     fn list_trait(&self) -> Option<String> {
         let (held, bounds) = self.list.as_ref()?;
-        Some(format!(
+        let mut out = format!(
             "/// Whether `R` is a list a source may present for `{name}`: held to bounds\n\
              /// within its own, of any type, each entry a source of the entry codec.\n\
              template <class R, class = void>\n\
@@ -839,7 +841,30 @@ impl<'p> Presented<'p> {
              \x20   : {ns}::is_source<::SCE::Forge::Detail::ElementOf<R>> {{}};\n\n",
             name = self.name,
             ns = held.namespace
-        ))
+        );
+        if self.optional {
+            out.push_str(&format!(
+                "/// Whether `R` is what a source may present for `{name}`, a list a gate\n\
+                 /// decides: a `std::optional` of a list `is_{name}_list` accepts.\n\
+                 template <class R>\n\
+                 struct is_{name}_present_list : std::false_type {{}};\n\
+                 template <class L>\n\
+                 struct is_{name}_present_list<std::optional<L>> : is_{name}_list<L> {{}};\n\n",
+                name = self.name
+            ));
+        }
+        Some(out)
+    }
+
+    /// The entries of a list the encode read into its local, as a range: the
+    /// list the value holds where a gate leaves it in, read only where it is
+    /// tested present.
+    fn entries(&self) -> String {
+        if self.optional {
+            format!("(*_r_{})", self.name)
+        } else {
+            format!("_r_{}", self.name)
+        }
     }
 
     /// What a source's read of it must be: convertible to what it is
@@ -849,6 +874,9 @@ impl<'p> Presented<'p> {
         match (&self.body, &self.list) {
             (Some(_), _) if self.optional => format!("is_{}_body<std::decay_t<{read}>>", self.name),
             (Some(held), _) => format!("{}::is_source<std::decay_t<{read}>>", held.namespace),
+            (None, Some(_)) if self.optional => {
+                format!("is_{}_present_list<std::decay_t<{read}>>", self.name)
+            }
             (None, Some(_)) => format!("is_{}_list<std::decay_t<{read}>>", self.name),
             (None, None) => format!("std::is_convertible<{read}, {}>", self.presented()),
         }
@@ -869,7 +897,12 @@ impl<'p> Presented<'p> {
                 "noexcept({read}) && {}::is_nothrow_source<std::decay_t<decltype({read})>>::value",
                 held.namespace
             ),
-            // A list's entries are read as sources of the entry codec.
+            // A list's entries are read as sources of the entry codec; an
+            // optional list's, off the list it holds.
+            (None, Some((held, _))) if self.optional => format!(
+                "noexcept({read}) && {}::is_nothrow_source<::SCE::Forge::Detail::ElementOf<typename std::decay_t<decltype({read})>::value_type>>::value",
+                held.namespace
+            ),
             (None, Some((held, _))) => format!(
                 "noexcept({read}) && {}::is_nothrow_source<::SCE::Forge::Detail::ElementOf<std::decay_t<decltype({read})>>>::value",
                 held.namespace
@@ -1158,9 +1191,20 @@ pub(super) fn render(
                         )
                     }
                     // How many entries the list holds, as the source presents
-                    // it, within its bound.
+                    // it, within its bound; where a gate leaves the list out, a
+                    // field beside it holds zero and a flag keeps its bits.
                     Measured::Entries { list } => {
-                        (format!("_r_{}.size()", l.codec_field_id(&list.id)), None)
+                        let counted = element(list)
+                            .filter(|e| e.list.is_some())
+                            .expect("a count of entries counts a list the value presents");
+                        if counted.optional {
+                            (
+                                format!("{}.size()", counted.entries()),
+                                Some(format!("{}.has_value()", counted.local())),
+                            )
+                        } else {
+                            (format!("{}.size()", counted.entries()), None)
+                        }
                     }
                     // Counted below, once the carriers its body may be handed
                     // are as the encode writes them.
@@ -1522,20 +1566,26 @@ pub(super) fn render(
                         )
                     }
                     // A list, each entry written in turn by its codec's encode
-                    // over the source the list holds it as.
+                    // over the source the list holds it as; one a gate decides,
+                    // over the list it holds where it is present.
                     BitSize::Repeat { .. } | BitSize::TlvChain { .. } => {
-                        let (held, _) = element(field)
-                            .and_then(|e| e.list.as_ref())
+                        let walked = element(field)
+                            .filter(|e| e.list.is_some())
+                            .expect("a list field is a list the value presents");
+                        let (held, _) = walked
+                            .list
+                            .as_ref()
                             .expect("a list field is a list the value presents");
                         let name = l.codec_field_id(&field.id);
+                        let entries = walked.entries();
                         match list.as_ref().and_then(|list| list.ends.as_ref()) {
                             // A chain sets on each entry but the last the flag
                             // its entries end on, in place of the one the entry
                             // presents.
                             Some((carrier, flag)) => format!(
                                 "        {{\n\
-                                 \x20           std::size_t _left_{name} = _r_{name}.size();\n\
-                                 \x20           for (const auto& _x : _r_{name}) {{\n\
+                                 \x20           std::size_t _left_{name} = {entries}.size();\n\
+                                 \x20           for (const auto& _x : {entries}) {{\n\
                                  \x20               --_left_{name};\n\
                                  \x20               {ns}::Overrides _o_{name}{{}};\n\
                                  \x20               _o_{name}.{member} = _left_{name} != 0;\n\
@@ -1547,7 +1597,7 @@ pub(super) fn render(
                                 handed = handed(&held.alias)
                             ),
                             None => format!(
-                                "        for (const auto& _x : _r_{name}) {{\n\
+                                "        for (const auto& _x : {entries}) {{\n\
                                  \x20           if (auto _e = {}::Wire::encode_source(_x, w{}); _e) return _e;\n\
                                  \x20       }}\n",
                                 held.namespace,
@@ -1687,12 +1737,24 @@ pub(super) fn render(
             ));
             continue;
         }
-        // A list is viewed within its bound, as the value holds it.
+        // A list is viewed within its bound, as the value holds it; one a gate
+        // decides, where it is present.
         if e.list.is_some() {
+            let (what, body) = if e.optional {
+                (
+                    "the entries it holds where a gate leaves them in",
+                    format!(
+                        "if (!{held}) {{ return std::nullopt; }} return {}(*{held});",
+                        e.view
+                    ),
+                )
+            } else {
+                ("the entries it holds", format!("return {held};"))
+            };
             members.push_str(&format!(
-                "    /// The `{name}` element, the entries it holds.\n\
-                 \x20   [[nodiscard]] {} {name}() const noexcept {{ return {held}; }}\n",
-                e.view
+                "    /// The `{name}` element, {what}.\n\
+                 \x20   [[nodiscard]] {} {name}() const noexcept {{ {body} }}\n",
+                e.presented()
             ));
             continue;
         }
@@ -1763,16 +1825,29 @@ pub(super) fn render(
     // derives it. A carrier keeps the flags it was read with.
     let mut decoded = String::new();
     // A list the decode read is held to its bound by the same door, past which
-    // it has too many entries.
+    // it has too many entries (where it is present, for one a gate decides).
     for e in elements.iter().filter(|e| e.list.is_some()) {
         let (name, view) = (&e.name, &e.view);
-        decoded.push_str(&format!(
-            "        const auto _b_{name} = {view}::make({name});\n\
-             \x20       if (!_b_{name}) {{\n\
-             \x20           cursor.refuse(::SCE::Forge::CodecError::TooManyElements);\n\
-             \x20           return std::nullopt;\n\
-             \x20       }}\n"
-        ));
+        if e.optional {
+            decoded.push_str(&format!(
+                "        std::optional<{view}> _b_{name};\n\
+                 \x20       if ({name}) {{\n\
+                 \x20           _b_{name} = {view}::make(*{name});\n\
+                 \x20           if (!_b_{name}) {{\n\
+                 \x20               cursor.refuse(::SCE::Forge::CodecError::TooManyElements);\n\
+                 \x20               return std::nullopt;\n\
+                 \x20           }}\n\
+                 \x20       }}\n"
+            ));
+        } else {
+            decoded.push_str(&format!(
+                "        const auto _b_{name} = {view}::make({name});\n\
+                 \x20       if (!_b_{name}) {{\n\
+                 \x20           cursor.refuse(::SCE::Forge::CodecError::TooManyElements);\n\
+                 \x20           return std::nullopt;\n\
+                 \x20       }}\n"
+            ));
+        }
     }
     for e in elements.iter().filter(|e| e.bytes) {
         let (name, view) = (&e.name, &e.view);
@@ -1810,8 +1885,10 @@ pub(super) fn render(
             (true, true) => format!("_b_{name}"),
             // A body the decode read is moved into the value.
             (false, _) if e.body.is_some() => format!("std::move({name})"),
-            // A list is made from the view of the entries the decode read.
-            (false, _) if e.list.is_some() => format!("*_b_{name}"),
+            // A list is made from the view of the entries the decode read,
+            // where a gate leaves them in for one it decides.
+            (false, true) if e.list.is_some() => format!("_b_{name}"),
+            (false, false) if e.list.is_some() => format!("*_b_{name}"),
             (false, _) => name.clone(),
         };
         decoded.push_str(&format!("            /*{name}=*/{value},\n"));

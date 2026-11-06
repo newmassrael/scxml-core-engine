@@ -1261,6 +1261,19 @@ bodies a gate decides (5 more codecs of the resources, 86 in all, the three unde
   more, as the Rust decode does. A caller that decoded such a codec from a cursor holding more bytes after it and
   relied on the cursor being consumed reads `cursor.remaining()` instead.
 
+## A printed C++ codec holds a list a gate decides as an optional value (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C++ tree is regenerated after it. It moves the codecs whose
+lists a gate decides (2 more codecs of the resources, 88 in all).
+
+- The list is `value.<element>()`, a `std::optional<::SCE::Forge::List<Entry, N>>` viewing the entries the value
+  holds, where it was the member `value.<element>` of type `std::optional<std::vector<Entry>>`. The value is made
+  by its constructor with `std::nullopt` or a list made by `List<Entry, N>::make(entries)`, which refuses more than
+  `N` entries.
+- The flag the list is gated on is derived from whether it is there: a parent that set it by hand drops that code.
+- A source presents the list as a `std::optional` of any bounded list within the element's bounds whose entries are
+  sources of the entry codec.
+
 ## A payload schema states its keys in the order the document declares them (ADR 0087 §1.1)
 
 Landing: the commit that adds this section; every tree holding a `JSON_SCHEMA` constant or a GBNF table (the Rust,
