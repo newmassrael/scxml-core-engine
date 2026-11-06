@@ -1560,9 +1560,16 @@ impl<'a> TypeCtx<'a> {
 
     /// The place `path` (a name of [`TypeCtx::values`] and the steps after it,
     /// `_event.data.items[].tags`) holds, walked through its type; `None` for a
-    /// path no such name starts or whose steps its type does not have.
+    /// path no such name starts or whose steps its type does not have. A union
+    /// on the way is read over the cases [`TypeCtx::proven`] leaves it in
+    /// (docs/adr/0092, section 6.1).
     pub fn value_of(&self, path: &str) -> Option<crate::forge::value_path::Place> {
-        crate::forge::value_path::resolve(self.value_scope, |name| self.values.get(name), path)
+        crate::forge::value_path::resolve_narrowed(
+            self.value_scope,
+            |name| self.values.get(name),
+            path,
+            Some(&self.proven),
+        )
     }
 
     /// This context with `facts` the subjects proven present where an

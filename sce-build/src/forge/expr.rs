@@ -890,6 +890,7 @@ fn resolve_names(ast: &mut TypedExpr, ctx: &TypeCtx<'_>, source: &str) -> Result
     reject_record_text_misuse(ast, ctx, source, false)?;
     reject_buffers_as_values(ast, source)?;
     reject_optional_misuse(ast, &ctx.proven, source)?;
+    reject_unproven_union_reads(ast, ctx, source)?;
     reject_call_argument_mismatches(ast, ctx, source)?;
     reject_ill_typed_total_operations(ast, source)?;
     reject_composed_operands(ast, ctx, source, ReadThrough::Whole)?;
@@ -1027,6 +1028,89 @@ fn reject_unreadable_element_fields(
     expr.children()
         .into_iter()
         .try_for_each(|child| reject_unreadable_element_fields(child, ctx, source))
+}
+
+/// The members of `union`: its tag, and every field a case's record declares,
+/// each once, in the enum's order of the cases (docs/adr/0092, section 6.1).
+fn union_members(union: &crate::forge::value_type::ScopedUnion) -> Vec<String> {
+    let mut members = vec![union.tag.clone()];
+    for case in &union.cases {
+        let fields = case
+            .record
+            .as_deref()
+            .and_then(|record| union.scope.records.get(record))
+            .map(|record| record.fields.as_slice())
+            .unwrap_or_default();
+        for (id, _) in fields {
+            if !members.contains(id) {
+                members.push(id.clone());
+            }
+        }
+    }
+    members
+}
+
+/// Refuse a read of a union's field where the build has not proven the union
+/// in cases that each declare it with one type (docs/adr/0092, section 6.1,
+/// `expression/union-read-unproven`): the tag is read anywhere, and a case's
+/// field only where a test of the tag that holds there ([`TypeCtx::proven`])
+/// leaves cases that each declare it. A union read through an element at an
+/// index is no subject a test names, so only its tag is read there, and a
+/// field no case declares is no member of it.
+///
+/// A scope that holds no value of the one value type holds no union, and
+/// nothing is refused.
+fn reject_unproven_union_reads(
+    expr: &TypedExpr,
+    ctx: &TypeCtx<'_>,
+    source: &str,
+) -> Result<(), Refusal> {
+    if let ExprKind::Member { object, property } = &expr.kind {
+        let held = place_path(object).and_then(|path| ctx.value_of(&path));
+        let union = held
+            .as_ref()
+            .and_then(|place| crate::forge::value_path::union_of(ctx.value_scope, place));
+        if let Some((union, alias)) = union {
+            let read = expr
+                .span
+                .clone()
+                .and_then(|span| source.get(span))
+                .map_or_else(|| property.clone(), str::to_string);
+            if *property != union.tag {
+                let declared = union_members(union);
+                if !declared.iter().any(|field| field == property) {
+                    let mut declared = declared;
+                    declared.sort_unstable();
+                    return Err(ExprError::UnknownMember {
+                        record: place_path(object).unwrap_or_default(),
+                        member: property.clone(),
+                        declared,
+                    }
+                    .at(expr.span.clone()));
+                }
+                let subject = dotted_path(object);
+                if let Some(refusal) = crate::forge::value_path::union_read_refusal(
+                    ctx.value_scope,
+                    union,
+                    &alias,
+                    subject.as_deref(),
+                    property,
+                    Some(&ctx.proven),
+                ) {
+                    return Err(ExprError::UnionReadUnproven {
+                        read,
+                        union: refusal.union,
+                        declaring: refusal.declaring,
+                        test: refusal.test,
+                    }
+                    .at(expr.span.clone()));
+                }
+            }
+        }
+    }
+    expr.children()
+        .into_iter()
+        .try_for_each(|child| reject_unproven_union_reads(child, ctx, source))
 }
 
 /// Refuse an index read whose object is a value that holds no elements, or
@@ -6405,6 +6489,27 @@ fn reject_undeclared_member(
                     }
                     // A record whose schema the build did not read: nothing
                     // here knows its fields.
+                    None => Ok(()),
+                }
+            }
+            // A union has its tag and the fields its cases' records declare
+            // (docs/adr/0092, section 6.1); where a case's field is read is
+            // judged apart ([`reject_unproven_union_reads`]).
+            crate::forge::value_type::ValueType::Union { .. } => {
+                match crate::forge::value_path::union_of(ctx.value_scope, &place) {
+                    Some((union, _)) => {
+                        let mut declared = union_members(union);
+                        if declared.iter().any(|field| field == member) {
+                            Ok(())
+                        } else {
+                            declared.sort_unstable();
+                            Err(ExprError::UnknownMember {
+                                record: base,
+                                member: member.to_string(),
+                                declared,
+                            })
+                        }
+                    }
                     None => Ok(()),
                 }
             }

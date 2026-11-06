@@ -1333,6 +1333,11 @@ pub enum DiagnosticCode {
     // the read is the right one, in the wrong place.
     #[serde(rename = "expression/optional-read-unproven")]
     ExpressionOptionalReadUnproven,
+    // A field of a union's case read or written where the build has not proven
+    // the union in cases that each declare it (docs/adr/0092, section 6.1): the
+    // union twin of `optional-read-unproven`, a read in the wrong place.
+    #[serde(rename = "expression/union-read-unproven")]
+    ExpressionUnionReadUnproven,
     // A name this datamodel provides, written as a call — `t.length()`,
     // `Math.PI()`. Distinct from `unsupported-builtin`, which says the
     // name is absent: here it is present, so there is nothing to offer
@@ -3958,6 +3963,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ExpressionUnknownMember,
         ExpressionMemberOfNonRecord,
         ExpressionOptionalReadUnproven,
+        ExpressionUnionReadUnproven,
         ExpressionPropertyNotCallable,
         ExpressionNamespaceNotCallable,
         ExpressionNamespaceNotAValue,
@@ -4671,6 +4677,9 @@ impl DiagnosticCode {
             // Where an optional value is proven present is written with the
             // static data model's typed scope it is read in.
             ExpressionOptionalReadUnproven => Some("SCE Accepted Subset §2.15"),
+            // Where a union's case is proven is the decision of the ADR that
+            // added the union (docs/adr/0092, section 6.1).
+            ExpressionUnionReadUnproven => Some("ADR 0092 §6.1"),
             // Same anchor again: B.2 is what makes ECMAScript's own
             // rules the datamodel's rules, and calling a value is one
             // ECMAScript answers for itself.
@@ -5595,6 +5604,7 @@ impl DiagnosticCode {
             | ExpressionUnknownMember
             | ExpressionMemberOfNonRecord
             | ExpressionOptionalReadUnproven
+            | ExpressionUnionReadUnproven
             | ExpressionPropertyNotCallable
             | ExpressionNamespaceNotCallable
             | ExpressionNamespaceNotAValue
@@ -6113,6 +6123,7 @@ impl DiagnosticCode {
             ExpressionUnknownMember => "expression/unknown-member",
             ExpressionMemberOfNonRecord => "expression/member-of-non-record",
             ExpressionOptionalReadUnproven => "expression/optional-read-unproven",
+            ExpressionUnionReadUnproven => "expression/union-read-unproven",
             ExpressionPropertyNotCallable => "expression/property-not-callable",
             ExpressionNamespaceNotCallable => "expression/namespace-not-callable",
             ExpressionNamespaceNotAValue => "expression/namespace-not-a-value",
@@ -11373,6 +11384,17 @@ fn expression_fields(e: &ExprError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![optional.clone(), read.clone()],
         },
+        // The read is `actual`, as for an optional value; which case to test
+        // for is the author's choice, so no fix and no `expected`
+        // (docs/adr/0092, section 9).
+        ExprError::UnionReadUnproven { read, union, .. } => DiagnosticPayload {
+            code: DiagnosticCode::ExpressionUnionReadUnproven,
+            stage: Stage::Expression,
+            expected: None,
+            actual: Some(read.clone()),
+            fix: None,
+            key_fragments: vec![read.clone(), union.clone()],
+        },
         // The call is what `actual` names, because the call is what the
         // consumer edits: `.length` occurs on the line either way, and a
         // record pointing at it would leave the consumer to work out
@@ -15312,6 +15334,21 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:efb627275943f7d4","code":"expression/optional-read-unproven","stage":"expression","spec":"SCE Accepted Subset §2.15","message":"pick.value.title reads the value of pick, which may be absent here: test it first (`pick !== null` around the read); a record has no default to read it with, so read a field of it only where that test holds","actual":"pick.value.title"}"#,
+            ),
+            (
+                // A field two cases of a union declare, read where no test of
+                // its tag proves one of them (docs/adr/0092, section 6.1). The
+                // read is `actual`; no fix, since which case to test for is the
+                // author's choice.
+                "forge/expression-union-read-unproven",
+                ExprError::UnionReadUnproven {
+                    read: "when.count".into(),
+                    union: "DateExpression".into(),
+                    declaring: vec!["relativeDays".into(), "relativeWeeks".into()],
+                    test: "when.kind === DateKind.<case>".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:2513297643b69b57","code":"expression/union-read-unproven","stage":"expression","spec":"ADR 0092 §6.1","message":"when.count reads a field of the union `DateExpression` that the case(s) relativeDays, relativeWeeks declare, where the build has not proven the union in cases that each declare it with one type: test its tag first (`when.kind === DateKind.<case>` around the read)","actual":"when.count"}"#,
             ),
             (
                 // A name the datamodel provides, called. The repair is
@@ -20018,6 +20055,9 @@ mod tests {
             // A test around the read and a default are the two repairs, and
             // which one is the author's choice: no fix, no `expected`.
             | ExpressionOptionalReadUnproven
+            // Which case to test for is the author's choice: no fix, no
+            // `expected` (docs/adr/0092, section 9).
+            | ExpressionUnionReadUnproven
             | ExpressionStrictEquality
             // The name that was called is the name that repairs it, so
             // there is one replacement rather than a set — and none at
@@ -20867,6 +20907,7 @@ mod tests {
                 | ExpressionUnknownMember
                 | ExpressionMemberOfNonRecord
                 | ExpressionOptionalReadUnproven
+                | ExpressionUnionReadUnproven
                 | ExpressionPropertyNotCallable
                 | ExpressionNamespaceNotCallable
                 | ExpressionNamespaceNotAValue
@@ -21203,9 +21244,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            505,
+            506,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 505 distinct variants to match the DiagnosticCode \
+             expected 506 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
@@ -21932,6 +21973,9 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             // `sce-static` statechart's expression and an algorithm's body. No
             // anchored statechart has been run against it yet.
             | ExpressionOptionalReadUnproven
+            // Raised where a union's case is judged (docs/adr/0092, section
+            // 6.1), the same places; no anchored statechart reads a union yet.
+            | ExpressionUnionReadUnproven
             | ExpressionGoTernaryUnsupported
             | ImportFileNotFound
             | ImportKindMismatch

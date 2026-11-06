@@ -183,6 +183,7 @@
         "expression/unknown-member",
         "expression/member-of-non-record",
         "expression/optional-read-unproven",
+        "expression/union-read-unproven",
         "expression/property-not-callable",
         "expression/namespace-not-callable",
         "expression/namespace-not-a-value",

@@ -4499,6 +4499,25 @@ algorithm's body is judged by the same analysis before any backend renders it.
 `sce-build/tests/an_optional_value_is_tested_read_and_compared.rs` and
 `sce-build/tests/a_value_is_proven_present_only_where_tested.rs` hold this.
 
+**A union read by its tag** (docs/adr/0092, section 6.1). A value of `union:U` (a
+payload field at any depth, an element of a list of unions, a `<foreach>` item, the
+present value of an optional union) is read by its tag, `s.<tag>`, a value of the
+tag's enum wherever it is, compared with `===` and `!==` to a variant of that enum
+as the statechart imports it. A field of a case, `s.<field>`, is read where the
+tests that hold there leave the subject `s` in cases that each declare the field
+with one type: `s.<tag> === E.v` (or `E.v === s.<tag>`) leaves `v` where it is true
+and every other case where it is false, `!==` the other way round, under the
+constructs and with the invalidations of an optional value above; where `a || b`
+is true, the cases either side leaves. Anywhere else the read is
+`expression/union-read-unproven`, placed at the read and naming the cases that
+declare the field and the test that proves one; a field no case declares is
+`expression/unknown-member`, naming the tag and every case's field. An element
+read at an index is no subject, so only its tag is read there: a `<foreach>`
+item is one. No backend lowers a statechart that holds a union yet (each refuses
+it by name, `generate/unsupported-feature`), so the rule is judged where the
+document is read. `sce-build/tests/a_union_field_is_read_only_where_its_case_is_proven.rs`
+holds this.
+
 **An optional record** (docs/adr/0055, step 9). `sce:type="optional<record:Item>"`
 declares a variable that is absent or holds a record of the event schema the
 document imports as `Item`. It starts at `null`, and only there (`expr="null"`: a
@@ -9268,7 +9287,7 @@ document map's symbol of the same node; that map carries no condition.
 
 ---
 
-## Appendix — `DiagnosticCode` index (505 codes)
+## Appendix — `DiagnosticCode` index (506 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -9589,6 +9608,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `expression/unknown-member` | Expression |
 | `expression/member-of-non-record` | Expression |
 | `expression/optional-read-unproven` | Expression |
+| `expression/union-read-unproven` | Expression |
 | `expression/property-not-callable` | Expression |
 | `expression/namespace-not-callable` | Expression |
 | `expression/namespace-not-a-value` | Expression |

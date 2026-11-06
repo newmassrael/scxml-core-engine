@@ -42,8 +42,20 @@
 //! it, or of a path above it (`r` for `r.f`, `r.value` for `r.value.f`),
 //! whatever value it writes, and a statement that may write anything (a native
 //! `<script>`). Re-assigning a present value proves nothing: only a test does.
+//!
+//! The same analysis keeps a second kind of fact, which case of a union a
+//! subject is in (docs/adr/0092, section 6.1): a test `s.<tag> === E.v` (or
+//! `E.v === s.<tag>`) proves the path `s.<tag>` one of `{E.v}` where it holds
+//! and not `E.v` where it does not, `!==` the other way round ([`CaseFact`]).
+//! Such a fact is kept under the path of the tag read, and this module does not
+//! know which paths are tags: the judge, which types the subject, asks the fact
+//! of the tag path of a union subject ([`Facts::cases_of`]) and of no other.
+//! Its constructs and its invalidations are the ones above, with one addition:
+//! where `a || b` is true and each side proves one path one of a set of
+//! variants, the path is one of the two sets together (the cases a field
+//! common to them is read under, section 6.1 item 2).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::forge::expr::{
     dotted_path, judge_optional_use, parse_to_ast, BinOp, Expected, ExprKind, TypedExpr, UnaryOp,
@@ -57,9 +69,71 @@ use crate::model::Action;
 /// The path every field of a transition's payload is read under.
 const PAYLOAD: &str = crate::forge::event_schema_check::EVENT_DATA_PATH;
 
-/// The subjects proven present at one point of a walk.
+/// The facts proven at one point of a walk: the subjects proven present, and
+/// for each tag path a test named, the variants it may be ([`CaseFact`]).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Facts(BTreeSet<String>);
+pub struct Facts {
+    present: BTreeSet<String>,
+    cases: BTreeMap<String, CaseFact>,
+}
+
+/// A variant a test names, `E.v`: the alias of the enum as written, and the
+/// variant's name.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Variant {
+    pub alias: String,
+    pub name: String,
+}
+
+/// What the tests on one tag path prove about it (docs/adr/0092, section 6.1):
+/// the variants it is one of, where a test said which (`None` where none
+/// did), and the variants it is not.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CaseFact {
+    pub within: Option<BTreeSet<Variant>>,
+    pub not: BTreeSet<Variant>,
+}
+
+impl CaseFact {
+    /// Both facts hold: the variants it is one of are those both allow, and the
+    /// variants it is not are those either excludes.
+    fn and(&self, other: &CaseFact) -> CaseFact {
+        CaseFact {
+            within: match (&self.within, &other.within) {
+                (Some(a), Some(b)) => Some(a.intersection(b).cloned().collect()),
+                (Some(a), None) | (None, Some(a)) => Some(a.clone()),
+                (None, None) => None,
+            },
+            not: self.not.union(&other.not).cloned().collect(),
+        }
+    }
+
+    /// One of the two facts holds: the variants it may be one of are either's,
+    /// and the variants it is not are those both exclude. `None` where nothing
+    /// is left that both say.
+    fn or(&self, other: &CaseFact) -> Option<CaseFact> {
+        let fact = CaseFact {
+            within: match (&self.within, &other.within) {
+                (Some(a), Some(b)) => Some(a.union(b).cloned().collect()),
+                _ => None,
+            },
+            not: self.not.intersection(&other.not).cloned().collect(),
+        };
+        (fact.within.is_some() || !fact.not.is_empty()).then_some(fact)
+    }
+
+    /// Whether the variant `name` of the enum the build names `alias` may be
+    /// the tag's value: a test naming another enum's variant is no test of this
+    /// tag, and the comparison it makes is refused where the enum is judged.
+    pub fn admits(&self, alias: &str, name: &str) -> bool {
+        let named = |v: &Variant| v.alias == alias && v.name == name;
+        let within = match &self.within {
+            Some(within) => within.iter().any(named),
+            None => true,
+        };
+        within && !self.not.iter().any(named)
+    }
+}
 
 impl Facts {
     /// No subject proven: where every block starts.
@@ -69,33 +143,72 @@ impl Facts {
 
     /// Whether `subject` is proven present here.
     pub fn holds(&self, subject: &str) -> bool {
-        self.0.contains(subject)
+        self.present.contains(subject)
     }
 
-    /// Whether no subject is proven here.
+    /// What the tests that hold here prove about the tag read at `tag_path`
+    /// (`when.kind`), when one does (docs/adr/0092, section 6.1).
+    pub fn cases_of(&self, tag_path: &str) -> Option<&CaseFact> {
+        self.cases.get(tag_path)
+    }
+
+    /// Whether nothing is proven here.
     pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.present.is_empty() && self.cases.is_empty()
     }
 
     /// These facts and `other`'s: both hold.
     pub fn and(&self, other: &Facts) -> Facts {
-        Facts(self.0.union(&other.0).cloned().collect())
+        let mut cases = self.cases.clone();
+        for (path, fact) in &other.cases {
+            let joined = match cases.get(path) {
+                Some(held) => held.and(fact),
+                None => fact.clone(),
+            };
+            cases.insert(path.clone(), joined);
+        }
+        Facts {
+            present: self.present.union(&other.present).cloned().collect(),
+            cases,
+        }
+    }
+
+    /// Either these facts or `other`'s hold: a fact about which cases a tag
+    /// path is in that both state, widened to either's cases. No subject is
+    /// proven present by a disjunction (docs/adr/0055, section 3).
+    fn or(&self, other: &Facts) -> Facts {
+        Facts {
+            present: BTreeSet::new(),
+            cases: self
+                .cases
+                .iter()
+                .filter_map(|(path, fact)| {
+                    let theirs = other.cases.get(path)?;
+                    fact.or(theirs).map(|joined| (path.clone(), joined))
+                })
+                .collect(),
+        }
     }
 
     /// The facts that hold after what `writes` may write ran: a write ends a
     /// fact about its path, a path below it and a path above it, and a
-    /// statement that may write anything ends them all.
+    /// statement that may write anything ends them all. A fact about a tag is
+    /// ended by a write of the union that holds it (a path above it), and not
+    /// by a write of a field of its case, which leaves the case as it was.
     pub fn after(&self, writes: &Writes) -> Facts {
         if writes.anything {
             return Facts::none();
         }
-        Facts(
-            self.0
+        let kept = |subject: &String| !writes.paths.iter().any(|path| ends(path, subject));
+        Facts {
+            present: self.present.iter().filter(|s| kept(s)).cloned().collect(),
+            cases: self
+                .cases
                 .iter()
-                .filter(|subject| !writes.paths.iter().any(|path| ends(path, subject)))
-                .cloned()
+                .filter(|(path, _)| kept(path))
+                .map(|(path, fact)| (path.clone(), fact.clone()))
                 .collect(),
-        )
+        }
     }
 
     /// The facts of a transition's `cond` that reach its executable content:
@@ -105,17 +218,45 @@ impl Facts {
     /// run between the two, and any of them may write the variable.
     pub fn of_payload(&self) -> Facts {
         let prefix = format!("{PAYLOAD}.");
-        Facts(
-            self.0
+        let payload = |subject: &String| subject.starts_with(&prefix);
+        Facts {
+            present: self
+                .present
                 .iter()
-                .filter(|subject| subject.starts_with(&prefix))
+                .filter(|s| payload(s))
                 .cloned()
                 .collect(),
-        )
+            cases: self
+                .cases
+                .iter()
+                .filter(|(path, _)| payload(path))
+                .map(|(path, fact)| (path.clone(), fact.clone()))
+                .collect(),
+        }
     }
 
     fn insert(&mut self, subject: String) {
-        self.0.insert(subject);
+        self.present.insert(subject);
+    }
+
+    /// The tag path `path` is `variant` (`is`), or is not.
+    fn insert_case(&mut self, path: String, variant: Variant, is: bool) {
+        let fact = if is {
+            CaseFact {
+                within: Some(BTreeSet::from([variant])),
+                not: BTreeSet::new(),
+            }
+        } else {
+            CaseFact {
+                within: None,
+                not: BTreeSet::from([variant]),
+            }
+        };
+        let joined = match self.cases.get(&path) {
+            Some(held) => held.and(&fact),
+            None => fact,
+        };
+        self.cases.insert(path, joined);
     }
 }
 
@@ -331,6 +472,16 @@ fn collect_proofs(node: &TypedExpr, when: bool, into: &mut Facts) {
                     into.insert(tested);
                 }
             }
+            // `s.<tag> === E.v` proves the tag `E.v` where it is true and not
+            // `E.v` where it is false; `!==` the other way round
+            // (docs/adr/0092, section 6.1). Either side may hold the variant.
+            let is = when == (*op == BinOp::StrictEq);
+            for (path, variant) in [tag_test(left, right), tag_test(right, left)]
+                .into_iter()
+                .flatten()
+            {
+                into.insert_case(path, variant, is);
+            }
         }
         ExprKind::Unary {
             op: UnaryOp::Not,
@@ -353,6 +504,27 @@ fn collect_proofs(node: &TypedExpr, when: bool, into: &mut Facts) {
             collect_proofs(left, false, into);
             collect_proofs(right, false, into);
         }
+        // Where `a || b` is true one of the two is: a tag path each side proves
+        // one of a set of variants is one of the two sets (docs/adr/0092,
+        // section 6.1 item 2), and nothing else is proven.
+        ExprKind::Binary {
+            op: BinOp::Or,
+            left,
+            right,
+        } => {
+            let either = proves(left, true).or(&proves(right, true));
+            *into = into.and(&either);
+        }
+        // Where `a && b` is false one of the two is false: the same widening,
+        // of what each side proves where it is false.
+        ExprKind::Binary {
+            op: BinOp::And,
+            left,
+            right,
+        } => {
+            let either = proves(left, false).or(&proves(right, false));
+            *into = into.and(&either);
+        }
         _ => {}
     }
 }
@@ -362,6 +534,29 @@ fn tested(side: &TypedExpr, other: &TypedExpr) -> Option<String> {
     matches!(other.kind, ExprKind::NullLit)
         .then(|| subject(side))
         .flatten()
+}
+
+/// The tag path `side` names and the variant `other` writes, when `side` is a
+/// member read of a subject (`when.kind`, a path of two names or more) and
+/// `other` is `E.v`, a variant of an enum as written: what a test of a union's
+/// tag compares (docs/adr/0092, section 6.1). Whether the path is a tag is the
+/// judge's to say; a comparison of two such paths is recorded both ways, and
+/// the one that names no tag is never asked for.
+fn tag_test(side: &TypedExpr, other: &TypedExpr) -> Option<(String, Variant)> {
+    let path = subject(side).filter(|path| path.contains('.'))?;
+    let ExprKind::Member { object, property } = &other.kind else {
+        return None;
+    };
+    let ExprKind::Ident(alias) = &object.kind else {
+        return None;
+    };
+    Some((
+        path,
+        Variant {
+            alias: alias.clone(),
+            name: property.clone(),
+        },
+    ))
 }
 
 /// The facts each part of an `<if>` / `<elseif>` / `<else>` chain is read with,
@@ -784,7 +979,92 @@ mod tests {
     use super::*;
 
     fn facts(subjects: &[&str]) -> Facts {
-        Facts(subjects.iter().map(|s| s.to_string()).collect())
+        Facts {
+            present: subjects.iter().map(|s| s.to_string()).collect(),
+            cases: BTreeMap::new(),
+        }
+    }
+
+    fn variant(alias: &str, name: &str) -> Variant {
+        Variant {
+            alias: alias.into(),
+            name: name.into(),
+        }
+    }
+
+    /// The cases the tag path `path` may be in where `cond` is `when`, read for
+    /// the enum `K` and the variants `a`, `b` and `c`: those [`CaseFact::admits`]
+    /// lets through, every one where no test names the path.
+    fn left(cond: &str, when: bool, path: &str) -> Vec<&'static str> {
+        let facts = proves_written(cond, when);
+        ["a", "b", "c"]
+            .into_iter()
+            .filter(|name| !matches!(facts.cases_of(path), Some(fact) if !fact.admits("K", name)))
+            .collect()
+    }
+
+    #[test]
+    fn a_test_of_a_tag_proves_its_case_where_it_holds_and_not_where_it_fails() {
+        assert_eq!(left("s.kind === K.a", true, "s.kind"), ["a"]);
+        assert_eq!(left("K.a === s.kind", true, "s.kind"), ["a"]);
+        assert_eq!(left("s.kind === K.a", false, "s.kind"), ["b", "c"]);
+        assert_eq!(left("s.kind !== K.a", true, "s.kind"), ["b", "c"]);
+        assert_eq!(left("s.kind !== K.a", false, "s.kind"), ["a"]);
+        assert_eq!(left("!(s.kind === K.a)", true, "s.kind"), ["b", "c"]);
+        // A conjunction narrows by both; a test of another path proves nothing
+        // of this one.
+        assert_eq!(
+            left("s.kind !== K.a && s.kind !== K.b", true, "s.kind"),
+            ["c"]
+        );
+        assert_eq!(left("t.kind === K.a", true, "s.kind"), ["a", "b", "c"]);
+        // A disjunction that is true leaves either side's cases.
+        assert_eq!(
+            left("s.kind === K.a || s.kind === K.b", true, "s.kind"),
+            ["a", "b"]
+        );
+        assert_eq!(
+            left("s.kind === K.a || s.kind === K.b", false, "s.kind"),
+            ["c"]
+        );
+        // One side of a true disjunction that says nothing of the path leaves
+        // every case.
+        assert_eq!(
+            left("s.kind === K.a || x !== null", true, "s.kind"),
+            ["a", "b", "c"]
+        );
+        // A conjunction that is false is one of two false sides.
+        assert_eq!(
+            left("s.kind !== K.a && s.kind !== K.b", false, "s.kind"),
+            ["a", "b"]
+        );
+        // A variant of another enum is no variant of this tag.
+        assert_eq!(left("s.kind === L.a", true, "s.kind"), Vec::<&str>::new());
+        // A disjunction proves no subject present.
+        assert_eq!(
+            proves_written("a !== null || b !== null", true),
+            Facts::none()
+        );
+        // An element read by its index is no subject.
+        assert!(proves_written("xs[0].kind === K.a", true)
+            .cases_of("xs[0].kind")
+            .is_none());
+    }
+
+    #[test]
+    fn a_fact_about_a_tag_ends_with_a_write_of_its_union_and_not_of_its_field() {
+        let mut held = Facts::none();
+        held.insert_case("s.kind".into(), variant("K", "a"), true);
+        assert_eq!(held.after(&writing(&["s.count"])), held);
+        assert_eq!(held.after(&writing(&["s"])), Facts::none());
+        // A chain's else is read where every test failed.
+        let chain = Chain::of(&Facts::none(), &["s.kind === K.a", "s.kind === K.b"]);
+        let otherwise = chain.otherwise();
+        let fact = otherwise.cases_of("s.kind").expect("a fact about the tag");
+        assert!(!fact.admits("K", "a") && !fact.admits("K", "b") && fact.admits("K", "c"));
+        let second = chain.block(1);
+        let fact = second.cases_of("s.kind").expect("a fact about the tag");
+        assert!(!fact.admits("K", "a") && fact.admits("K", "b") && !fact.admits("K", "c"));
     }
 
     fn writing(paths: &[&str]) -> Writes {

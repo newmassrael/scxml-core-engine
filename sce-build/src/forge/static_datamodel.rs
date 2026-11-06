@@ -752,6 +752,21 @@ pub(crate) fn enum_fields(
         .collect()
 }
 
+/// The alias the statechart names the enum of a union's tag by, where `path`
+/// (`when.kind`, `_event.data.shapes[].kind`) reads that tag (docs/adr/0092,
+/// section 6.1): the tag is a value of its enum wherever the union is, and is
+/// compared with a variant of it as a value of the enum is. `None` for a path
+/// that reads no union's tag, or whose enum the statechart does not import.
+fn union_tag_enum(ctx: &TypeCtx<'_>, path: &str) -> Option<String> {
+    let (object, tag) = path.rsplit_once('.')?;
+    let place = ctx.value_of(object)?;
+    let (union, _) = crate::forge::value_path::union_of(ctx.value_scope, &place)?;
+    if union.tag != tag {
+        return None;
+    }
+    crate::forge::value_path::tag_enum_alias(ctx.value_scope?, union)
+}
+
 /// The names one statechart gives the records and enums it imports: two are
 /// one type when the statechart names them by one alias, since each alias
 /// names one document (docs/adr/0086, section 5.1).
@@ -1398,7 +1413,7 @@ impl<'a> Judge<'a> {
             expr,
             ctx,
             &crate::forge::static_enum::EnumReading {
-                var_alias: &|name| self.enum_of(name),
+                var_alias: &|name| self.enum_of(name).or_else(|| union_tag_enum(ctx, name)),
                 calls: &|name| self.scope.call_enums(name),
             },
         )

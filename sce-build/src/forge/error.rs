@@ -5712,6 +5712,33 @@ pub enum ExprError {
         record: bool,
     },
 
+    /// `<s>.<field>` where `<s>` is a union and the build has not proven it in
+    /// cases that each declare `<field>` with one type (docs/adr/0092, section
+    /// 6.1): no test of its tag that leaves only such cases holds where the read
+    /// stands, or `<s>` is no subject a test can name (an element read by its
+    /// index). A write of the field is held to the same rule.
+    ///
+    /// The tag is always readable, and a case's field is read only where its
+    /// case is proven, so no backend has a run-time path for reading a field of
+    /// a case the value is not in. Refused when the document is checked, at the
+    /// read. No fix: which case to test for is the author's choice.
+    #[error(
+        "{read} reads a field of the union `{union}` that the case(s) {} declare, where the \
+         build has not proven the union in cases that each declare it with one type: test \
+         its tag first (`{test}` around the read)",
+        .declaring.join(", ")
+    )]
+    UnionReadUnproven {
+        /// The read as written (`when.count`).
+        read: String,
+        /// The alias the union is named by.
+        union: String,
+        /// The cases whose records declare the field, in the enum's order.
+        declaring: Vec<String>,
+        /// The test that proves one of them, as the author would write it.
+        test: String,
+    },
+
     /// Loose equality (`==` / `!=`) instead of strict.
     #[error("loose {operator} is not permitted in Extended SCXML. Use {strict} instead.")]
     StrictEquality {

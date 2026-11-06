@@ -821,6 +821,7 @@ references against a real document and drift silently.
 | `expression/type-coercion` | `expression` | no | SCE Forge §3.4 |
 | `expression/type-mismatch` | `expression` | no | SCE Forge §3.4 |
 | `expression/unexpected-token` | `expression` | no | SCE Forge §3.4 |
+| `expression/union-read-unproven` | `expression` | no | ADR 0092 §6.1 |
 | `expression/unknown-enum-variant` | `expression` | `replace_one_of` | SCE Accepted Subset §2.2 |
 | `expression/unknown-identifier` | `expression` | `replace_one_of` / no | W3C SCXML §B.2 |
 | `expression/unknown-member` | `expression` | `replace_one_of` / no | SCE Accepted Subset §2.2 |
