@@ -19,7 +19,7 @@
 // Driven entirely on ManualClock: nothing here sleeps, and nothing can be
 // decided by how loaded the build machine is.
 //
-// Also here: a delayed send to the parent is an act of a format-2 saved state,
+// Also here: a delayed send to the parent is an act of a saved tree of sessions,
 // the parent being a session the tree holds (docs/adr/0045).
 
 package com.sce.integration
@@ -144,18 +144,14 @@ class ASavedDelayedSendIsDeliveredAfterARestoreTest {
 
     /**
      * A machine on host-owned time with a send of each kind armed: external
-     * 100 ms, internal 150 ms, host-served 250 ms.
-     *
-     * [sender] is the session the external send names as its sender, which a
-     * saved state writes as the act's `origin` (docs/adr/0090, "Until step 6").
-     * A case that only saves names one; a case that delivers names none, as a
-     * machine with no session of its own sends.
+     * 100 ms, internal 150 ms, host-served 250 ms. The external send's event
+     * names the machine as its sender, as a `sce-static` session's send does.
      */
-    private fun armed(sender: String = ""): WaitingMachine {
+    private fun armed(): WaitingMachine {
         val sm = WaitingMachine()
         sm.clock = ManualClock(0)
         sm.initialize()
-        sm.armExternal("p", 100, "d", sender)
+        sm.armExternal("p", 100, "d", sm.sessionId)
         sm.armInternal("i", 150, "x")
         sm.armHost(250, richRequest())
         return sm
@@ -188,13 +184,16 @@ class ASavedDelayedSendIsDeliveredAfterARestoreTest {
 
     @Test
     fun aWaitingSendOfEachKindIsSavedAsTheMomentItComesDue() {
-        val sm = armed(sender = "o")
+        val sm = armed()
         try {
             assertEquals(
                 listOf(
-                    SavedSend(savedAtMs + 100, SavedAct.Raise("probe", "d", "p", "o")),
-                    // An event a `sce-static` session sends itself names that session.
-                    SavedSend(savedAtMs + 150, SavedAct.Internal("beat", "x", "i", sm.sessionId)),
+                    // A send to the session's own queue is the session's, and
+                    // names it as its sender (docs/adr/0090, section 7).
+                    SavedSend(savedAtMs + 100, SavedAct.Raise("probe", "d", "p", sm.sessionId)),
+                    // One to its internal queue delivers an internal event, which
+                    // names no origin and no sender.
+                    SavedSend(savedAtMs + 150, SavedAct.Internal("beat", "x", "i")),
                     SavedSend(
                         savedAtMs + 250,
                         SavedAct.Host(
@@ -320,7 +319,7 @@ class ASavedDelayedSendIsDeliveredAfterARestoreTest {
             current = saved.current,
             variables = saved.variables,
             history = saved.history,
-            pending = listOf(SavedSend(savedAtMs, SavedAct.Raise("warp", "", "", ""))),
+            pending = listOf(SavedSend(savedAtMs, SavedAct.Raise("warp", "", "", null))),
             external = saved.external,
         )
         val machine = WaitingMachine()

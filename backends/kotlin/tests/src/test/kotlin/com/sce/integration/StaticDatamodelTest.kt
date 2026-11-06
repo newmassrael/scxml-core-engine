@@ -677,7 +677,8 @@ class StaticDatamodelTest {
     fun theSavedStateSchemaFileDeclaresTheStatusThisRuntimeDoes() {
         for (file in listOf(
             "schemas/sce-saved-state.v1.schema.json",
-            "schemas/sce-saved-state.v2.schema.json"
+            "schemas/sce-saved-state.v2.schema.json",
+            "schemas/sce-saved-state.v3.schema.json"
         )) {
             val schema = com.sce.runtime.Json.parse(File(repoRoot(), file).readText()) as Map<*, *>
             assertEquals(

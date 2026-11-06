@@ -10,9 +10,10 @@ package com.sce.runtime
 data class IoProcessorDescriptor(val name: String, val location: String)
 
 /**
- * An event's origin and sender as a stored `origin` and `origintype` spell them
- * back: what [IoProcessors.readStoredOrigin] answers for a saved state's
- * format-2 text (docs/adr/0090, section 7).
+ * An event's origin and sender as a saved state holds them back: what
+ * [IoProcessors.readStoredOrigin] reads a format-1 or format-2 `origin` and
+ * `origintype` as, and what a format-3 record holds as written (docs/adr/0090,
+ * section 7).
  */
 data class StoredOrigin(val origin: EventOrigin?, val sender: String?)
 
@@ -86,11 +87,11 @@ object IoProcessors {
         if (senderSessionId.isNullOrEmpty()) null else scxmlOrigin(senderSessionId)
 
     /**
-     * The `origin` text a saved state writes for an event's [origin] and
-     * [sender] (docs/adr/0090, "Until step 6"): the sending session's id for an
-     * event a session sent, the address otherwise, and empty for none — what
-     * every backend writes as a format-2 `origin`. The `origintype` beside it is
-     * the pair's processor.
+     * The `origin` text a format-1 saved state writes for an event's [origin]
+     * and [sender] (docs/adr/0090, section 7): the sending session's id for an
+     * event a session sent, the address otherwise, and empty for none — the
+     * rule format 2 wrote by. The `origintype` beside it is the pair's
+     * processor. Format 3 holds the pair itself.
      */
     fun storedOriginText(origin: EventOrigin?, sender: String?): String =
         if (sender.isNullOrEmpty()) origin?.address ?: "" else sender

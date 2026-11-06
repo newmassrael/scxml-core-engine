@@ -3227,7 +3227,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
             val fields = lineage.revisions.lastOrNull() ?: continue
             revisions[lineage.key] = SavedRevision(lineage.revision, fields)
         }
-        // A format-2 state names its session, and a session id is never empty
+        // A tree of sessions names its session, and a session id is never empty
         // (docs/adr/0045): a machine built by hand that was never given one has
         // none to save.
         val session = sessionIdentity
@@ -3238,7 +3238,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
         // it is saved in: a refusal inside one names it by its path.
         val children = savedChildren(wallNowMs)
         return SavedState(
-            // The shape of the format this writes, 2: an enum is named by its document.
+            // The format-2 shape, which format 3 names as it is: an enum is named
+            // by its document, and the origin pair changes no document.
             shape = if (revisions.isEmpty()) shape.format2First else shape.format2Revised,
             revisions = revisions,
             // The configuration this machine was generated for, none for a
@@ -3274,11 +3275,10 @@ abstract class StateMachineEngine<S : State, E : Event>(
                     data = queued.metadata.data,
                     type = queued.metadata.type,
                     sendId = queued.metadata.sendId,
-                    // docs/adr/0090, "Until step 6": format 2 as every backend
-                    // writes it, the sender's id for a session's event and the
-                    // address otherwise, beside the pair's processor.
-                    origin = IoProcessors.storedOriginText(queued.metadata.origin, queued.metadata.sender),
-                    originType = queued.metadata.origin?.processor ?: "",
+                    // docs/adr/0090, section 7: the pair the delivering processor
+                    // wrote, and the sender the SCXML processor names beside it.
+                    origin = queued.metadata.origin,
+                    sender = queued.metadata.sender,
                     invokeId = queued.metadata.invokeId,
                     hostInvokeToken = queued.metadata.hostInvokeToken,
                 )
@@ -3367,17 +3367,21 @@ abstract class StateMachineEngine<S : State, E : Event>(
                     data = hostSend.eventData,
                     invokeId = hostSend.invokeId,
                 )
+                // docs/adr/0090, section 7: a send to this session's external
+                // queue, to its parent or to a child is this session's own, which
+                // the SCXML processor delivers, so it names this session as its
+                // sender. One to its internal queue delivers an internal event,
+                // which has no origin and no sender, so it names neither.
                 route == null -> SavedAct.Raise(
                     event = pendingEventName(entry),
                     data = entry.metadata.data,
                     sendId = entry.sendId,
-                    origin = IoProcessors.storedOriginText(entry.metadata.origin, entry.metadata.sender),
+                    sender = sessionIdentity,
                 )
                 route == ScheduledRoute.InternalQueue -> SavedAct.Internal(
                     event = pendingEventName(entry),
                     data = entry.metadata.data,
                     sendId = entry.sendId,
-                    origin = IoProcessors.storedOriginText(entry.metadata.origin, entry.metadata.sender),
                 )
                 // The session that started this one, and a running child of it: both
                 // are sessions the tree holds (docs/adr/0045).
@@ -3385,14 +3389,14 @@ abstract class StateMachineEngine<S : State, E : Event>(
                     event = route.eventName,
                     data = route.eventData,
                     sendId = entry.sendId,
-                    origin = sessionIdentity,
+                    sender = sessionIdentity,
                 )
                 route is ScheduledRoute.Invocation -> SavedAct.Child(
                     invokeId = route.invokeId,
                     event = route.eventName,
                     data = route.eventData,
                     sendId = entry.sendId,
-                    origin = sessionIdentity,
+                    sender = sessionIdentity,
                 )
                 else -> throw StateRefusal(
                     "the delayed send '${entry.sendId}' is routed to $route, a session a saved " +
@@ -3459,7 +3463,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
     }
 
     /**
-     * The machine to resume [child], a running child a format-2 state lists, as
+     * The machine to resume [child], a running child a tree of sessions lists, as
      * the `<invoke>` that started it builds it, with what a start would do with
      * the child once it is built: whether it takes the parent's events on, the
      * event its ending raises, its `<finalize>`. Overridden by generated code
@@ -3850,30 +3854,23 @@ abstract class StateMachineEngine<S : State, E : Event>(
                         route = ScheduledRoute.Invocation(act.invokeId, act.event, act.data, noOneTookIt()),
                     )
                 }
-                // docs/adr/0090, section 7: a waiting send is a session's, so its
-                // stored origin names the sender, whose pair the SCXML processor
-                // writes again; an internal event carries no pair.
+                // docs/adr/0090, section 7: a waiting send to this session's queue
+                // is this session's own, so the act names its sender, whose pair
+                // the SCXML processor writes again; an internal event carries
+                // neither.
                 is SavedAct.Raise -> ScheduledSendEntry(
                     fireTimeMs = 0L,
                     sequenceNum = 0L,
                     sendId = act.sendId,
                     event = event(act.event),
-                    metadata = EventMetadata.sentBy(
-                        IoProcessors.readStoredSender(act.origin),
-                        sendId = act.sendId,
-                        data = act.data,
-                    ),
+                    metadata = EventMetadata.sentBy(act.sender, sendId = act.sendId, data = act.data),
                 )
                 is SavedAct.Internal -> ScheduledSendEntry(
                     fireTimeMs = 0L,
                     sequenceNum = 0L,
                     sendId = act.sendId,
                     event = event(act.event),
-                    metadata = EventMetadata(
-                        type = "internal",
-                        data = act.data,
-                        sender = IoProcessors.readStoredSender(act.origin),
-                    ),
+                    metadata = EventMetadata.internal(act.data),
                     route = ScheduledRoute.InternalQueue,
                 )
                 is SavedAct.Host -> ScheduledSendEntry(
@@ -3948,9 +3945,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
             if (e.type !in setOf("internal", "external", "platform")) {
                 throw StateRefusal("external[$i] has the type '${e.type}', which is not an event type")
             }
-            // docs/adr/0090, section 7: the pair and the sender a format-2
-            // origin is read as.
-            val stored = IoProcessors.readStoredOrigin(e.origin, e.originType)
+            // docs/adr/0090, section 7: the pair and the sender as the text holds
+            // them, or as the table reads a format-1 or format-2 origin.
             QueuedEvent(
                 event,
                 EventMetadata(
@@ -3958,8 +3954,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
                     data = e.data,
                     type = e.type,
                     sendId = e.sendId,
-                    origin = stored.origin,
-                    sender = stored.sender,
+                    origin = e.origin,
+                    sender = e.sender,
                     invokeId = e.invokeId,
                     hostInvokeToken = e.hostInvokeToken,
                 ),
@@ -4556,8 +4552,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
         @Suppress("UNCHECKED_CAST")
         when (route) {
             // An event on the internal queue is an internal event, whose origin
-            // the processor leaves blank (docs/adr/0090). The entry kept its sender
-            // only for a saved state to name ([scheduleInternalSend]).
+            // the processor leaves blank and which names no sender (docs/adr/0090).
             ScheduledRoute.InternalQueue -> raiseInternal(entry.event as E, entry.metadata.copy(sender = null))
             is ScheduledRoute.Parent -> deliverToParent(route, entry.sendId)
             is ScheduledRoute.Invocation ->
@@ -5173,14 +5168,10 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * delay would — the delay does not turn it into an external event.
      */
     protected fun scheduleInternalSend(sendId: String, delayMs: Long, event: E, metadata: EventMetadata) {
-        // A waiting send a `sce-static` session makes names that session as its
-        // sender, which the saved state of every backend writes as the act's
-        // origin (docs/adr/0045, docs/adr/0090 "Until step 6"); a machine with no
-        // id of its own (every machine that is not `sce-static`) names none. The
-        // event it delivers is an internal one and carries no origin
-        // ([deliverRouted]).
-        val sender = metadata.sender ?: boundSessionIdentity()
-        queueScheduledSend(sendId, delayMs, event, metadata.copy(sender = sender), ScheduledRoute.InternalQueue)
+        // The event it delivers is an internal one, which has no origin and no
+        // sender (docs/adr/0090, section 2), so the entry names none, and a saved
+        // state writes none for it (section 7).
+        queueScheduledSend(sendId, delayMs, event, metadata, ScheduledRoute.InternalQueue)
     }
 
     /**

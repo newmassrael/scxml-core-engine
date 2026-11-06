@@ -16,7 +16,7 @@
 // `working`. A child that had taken `a` is resumed at `second`, so `b` alone ends
 // it.
 //
-// The shared instance `saved/static_invoke_working.json` is the format-2 text of
+// The shared instance `saved/static_invoke_working.json` is the tree's text of
 // the machine just started, its root given the id the fixtures name it by. A
 // format-1 text holds the child's id alone, and the build that wrote it promised
 // to start the child again from its beginning: `saved/format1/static_invoke_working.json`
@@ -40,7 +40,7 @@ import kotlin.test.assertTrue
 
 class ASavedChildSessionIsResumedAfterARestoreTest {
 
-    /** The session id the shared format-2 fixtures give their root. */
+    /** The session id the shared fixtures give their root. */
     private val root = "fixture-root"
 
     /** The wall-clock moment the shared instance was saved at: 2023-11-14T22:13:20Z. */
@@ -217,7 +217,7 @@ class ASavedChildSessionIsResumedAfterARestoreTest {
             inChild.replace(
                 "\"external\":[]}}]",
                 "\"external\":[{\"name\":\"a\",\"data\":\"\",\"type\":\"external\",\"sendid\":\"\"," +
-                    "\"origin\":\"\",\"origintype\":\"\",\"invokeid\":\"\",\"hostinvoketoken\":null}]}}]",
+                    "\"origin\":null,\"sender\":null,\"invokeid\":\"\",\"hostinvoketoken\":null}]}}]",
             ),
         )
         assertNotEquals(shared, text, "the child's queue was changed")

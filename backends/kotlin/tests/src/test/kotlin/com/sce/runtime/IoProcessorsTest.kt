@@ -121,8 +121,10 @@ class IoProcessorsTest {
     }
 
     @Test
-    fun `an event is stored as format 2 writes it`() {
+    fun `an event of a format-1 text is stored as format 2 wrote it`() {
         // A session's event stores its sender's id; any other stores the address.
+        // Format 3 holds the pair itself; a format-1 text, which has no place for
+        // it, is written back by this rule (docs/adr/0090, section 7).
         assertEquals("kid", IoProcessors.storedOriginText(IoProcessors.scxmlOrigin("kid"), "kid"))
         assertEquals("motor", IoProcessors.storedOriginText(EventOrigin("x-sce-host", "motor"), null))
         assertEquals("", IoProcessors.storedOriginText(null, null))
