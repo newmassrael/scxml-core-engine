@@ -15,7 +15,10 @@ the process came back, and a timer that ran out while it was dead would be late
 by exactly as long as it was dead.
 
 The format is one JSON document (``sce-saved-state``, version :data:`SAVED_FORMAT`),
-the same on every backend, so what one backend saved another can read. A variable
+the same on every backend, so what one backend saved another can read, and the same
+run saves the same bytes on every backend. A queued event and a waiting send of an
+event carry the origin the processor that delivered it wrote, as one pair, and the
+session that sent it (docs/adr/0090, section 7). A variable
 is keyed by its document id and written as its ``sce:type`` says: a number, except
 a 64-bit integer, written as a text so no reader that holds numbers as doubles
 loses its low bits; a byte string as its Latin-1 text; a record as an object of
@@ -36,6 +39,14 @@ import time
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from .event_origin import EventOrigin, origin_processor_of
+from .io_processors import (
+    read_stored_origin,
+    read_stored_sender,
+    scxml_origin,
+    scxml_origin_of,
+    stored_origin_text,
+)
 from .saved_json import JsonError, JsonNumber, parse_json, write_json
 from .session_id import refusal_of as session_id_refusal_of
 
@@ -49,6 +60,7 @@ __all__ = [
     "SAVED_FORMAT",
     "SAVED_FORMAT_1",
     "SAVED_FORMAT_2",
+    "SAVED_FORMAT_3",
     "SAVED_SCHEMA_STATUS",
     "SavedAct",
     "SavedChild",
@@ -73,15 +85,23 @@ __all__ = [
 
 # A state that names its running children by id alone.
 SAVED_FORMAT_1 = 1
-# A tree of sessions, each running child saved inside its parent (docs/adr/0045).
+# A tree of sessions, each running child saved inside its parent (docs/adr/0045),
+# an event's origin stored as one text and its type beside it. Read, no longer
+# written: its origins are read by the table of docs/adr/0090, section 7.
 SAVED_FORMAT_2 = 2
-# The newest format version this runtime writes; it reads this one and format 1.
-SAVED_FORMAT = SAVED_FORMAT_2
+# The tree of format 2, with an event's origin held as the one pair the
+# processor that delivered it wrote, and its sender beside it (docs/adr/0090,
+# section 7).
+SAVED_FORMAT_3 = 3
+# The newest format version this runtime writes; it reads this one and formats 1
+# and 2.
+SAVED_FORMAT = SAVED_FORMAT_3
 
 # The stability status of the saved-state wire surface, held in lockstep with
-# ``x-sce-schema-status`` in ``schemas/sce-saved-state.v1.schema.json`` and
-# ``schemas/sce-saved-state.v2.schema.json`` (SCE_WIRE_CONTRACTS.md). A flip to
-# "stable" changes all three in one commit.
+# ``x-sce-schema-status`` in ``schemas/sce-saved-state.v1.schema.json``,
+# ``schemas/sce-saved-state.v2.schema.json`` and
+# ``schemas/sce-saved-state.v3.schema.json`` (SCE_WIRE_CONTRACTS.md). A flip to
+# "stable" changes all four in one commit.
 SAVED_SCHEMA_STATUS = "pre-release"
 
 # What a refusal inside a child session of a tree begins with, before the
@@ -162,15 +182,15 @@ class SavedInvokes:
     """The running child sessions of a saved session, as the format it was
     written in holds them.
 
-    ``resumed`` is format 2: each running child is saved with its whole state and a
-    restore resumes it where it stood. In format 1 the text holds the id of each
-    ``<invoke>`` whose child is running and nothing of the child, so a restore
-    starts each again from its beginning."""
+    ``resumed`` is a tree, format 2 or 3: each running child is saved with its whole
+    state and a restore resumes it where it stood. In format 1 the text holds the id
+    of each ``<invoke>`` whose child is running and nothing of the child, so a
+    restore starts each again from its beginning."""
 
     resumed: bool = False
     # Format 1's running invocations, by the id the document gives them.
     ids: List[str] = field(default_factory=list)
-    # Format 2's running children, in document order.
+    # A tree's running children, in document order.
     children: List[SavedChild] = field(default_factory=list)
 
     def invoke_ids(self) -> List[str]:
@@ -204,14 +224,19 @@ class SavedEvent:
     failure was stamped with when it was accepted, ``None`` for any other event. A
     completion that was accepted and is still queued has to keep the stamp across
     a save, or the restored machine would refuse the one answer it was waiting
-    for."""
+    for.
+
+    ``origin`` is the pair the processor that delivered the event wrote, ``None``
+    for an event no processor stamped, and ``sender`` the id of the session that
+    sent it, set only for an event the SCXML processor delivered, whose ``origin``
+    is then that session's SCXML pair (docs/adr/0090, section 7)."""
 
     name: str = ""
     data: str = ""
     type: str = ""
     send_id: str = ""
-    origin: str = ""
-    origin_type: str = ""
+    origin: Optional[EventOrigin] = None
+    sender: Optional[str] = None
     invoke_id: str = ""
     host_invoke_token: Optional[int] = None
 
@@ -242,17 +267,21 @@ class SavedAct:
 
     ``event`` is the event's name, as the receiver resolves it; ``data`` is
     ``_event.data``, as the wire carries it; ``send_id`` is the ``<send>``'s id,
-    which a ``<cancel>`` names; ``origin`` is ``_event.origin``; ``invoke_id``
-    names the child a child act is for, and is ``_event.invokeid`` of the event a
-    host act was sent while processing. ``processor_type``, ``target``,
-    ``content`` and ``params`` are a host act's: every field is what the document
-    wrote."""
+    which a ``<cancel>`` names; ``origin`` and ``sender`` are the origin and the
+    sender the event will carry when it is delivered: for a raise, parent or child
+    act this session's SCXML pair and its id, and for an internal act, whose event
+    is internal and has no origin, ``None`` and ``None`` (docs/adr/0090, section 7);
+    a host act carries neither. ``invoke_id`` names the child a child act is for,
+    and is ``_event.invokeid`` of the event a host act was sent while processing.
+    ``processor_type``, ``target``, ``content`` and ``params`` are a host act's:
+    every field is what the document wrote."""
 
     kind: str
     event: str = ""
     data: str = ""
     send_id: str = ""
-    origin: str = ""
+    origin: Optional[EventOrigin] = None
+    sender: Optional[str] = None
     invoke_id: str = ""
     processor_type: str = ""
     target: str = ""
@@ -293,8 +322,8 @@ class SavedState:
     (docs/adr/0057, section 7): the features it turns on, sorted, each once, and
     ``None`` for a machine of no product line, which is every machine of a
     document that imports no feature model; a restore judges it before the shape
-    (:func:`check_saved_features`); ``session_id`` the session's own id (``_sessionid``), an XML Nmtoken in format
-    2 and empty in a format-1 state, which holds none; ``invoke_starts`` how many
+    (:func:`check_saved_features`); ``session_id`` the session's own id (``_sessionid``), an XML Nmtoken in a
+    tree and empty in a format-1 state, which holds none; ``invoke_starts`` how many
     times each ``<invoke>`` of the document has started in this session, for each
     started at least once, in document order (empty in a format-1 state)."""
 
@@ -321,16 +350,18 @@ class SavedState:
         return self.variables[id]
 
     def format(self) -> int:
-        """The format this state is of: 2 for a tree of sessions, 1 for a state
-        that names its running children by id alone."""
-        return SAVED_FORMAT_2 if self.invokes.resumed else SAVED_FORMAT_1
+        """The format this state is written in: 3 for a tree of sessions, 1 for a
+        state that names its running children by id alone. A tree read from a
+        format-2 text holds the pairs its origins are read as, and is written back
+        as format 3 (docs/adr/0090, section 7)."""
+        return SAVED_FORMAT_3 if self.invokes.resumed else SAVED_FORMAT_1
 
     def bound_session_id(self) -> Optional[str]:
-        """The id a restore binds the session to: the saved one, for a format-2
-        state, since the session carries on and every child's id and a peer's
-        address name it (docs/adr/0045); ``None`` for a format-1 state, which holds
-        none, so the restored machine keeps the id it was created with."""
-        if self.format() == SAVED_FORMAT_2:
+        """The id a restore binds the session to: the saved one, for a tree, since
+        the session carries on and every child's id and a peer's address name it
+        (docs/adr/0045); ``None`` for a format-1 state, which holds none, so the
+        restored machine keeps the id it was created with."""
+        if self.format() != SAVED_FORMAT_1:
             return self.session_id
         return None
 
@@ -345,21 +376,23 @@ class SavedState:
 
     def to_json(self) -> str:
         """The state as ``sce-saved-state`` JSON, in the format it is of: the root
-        of the text, with its ``format``."""
-        members: Dict[str, Any] = {"format": JsonNumber(str(self.format()))}
-        self._write_session_members(members)
+        of the text, with its ``format``. The format applies to the whole text: a
+        child session states none and is written by the root's."""
+        form = self.format()
+        members: Dict[str, Any] = {"format": JsonNumber(str(form))}
+        self._write_session_members(members, form)
         return write_json(members)
 
-    def _session_members(self) -> Dict[str, Any]:
-        """The members of this session, in the order every backend writes them:
-        format 1's, and in format 2 ``sessionid`` after ``shape`` and
-        ``invokestarts`` after ``invokes``, each running child's session written
-        by the same rule."""
+    def _session_members(self, form: int) -> Dict[str, Any]:
+        """The members of this session, in the order every backend writes them,
+        in a text of ``form``: format 1's, and in a tree ``sessionid`` after
+        ``shape`` and ``invokestarts`` after ``invokes``, each running child's
+        session written by the same rule."""
         members: Dict[str, Any] = {}
-        self._write_session_members(members)
+        self._write_session_members(members, form)
         return members
 
-    def _write_session_members(self, members: Dict[str, Any]) -> None:
+    def _write_session_members(self, members: Dict[str, Any], form: int) -> None:
         members["shape"] = self.shape
         if self.invokes.resumed:
             members["sessionid"] = self.session_id
@@ -367,16 +400,16 @@ class SavedState:
         members["current"] = self.current
         members["variables"] = self.variables
         members["history"] = {recorded.id: list(recorded.states) for recorded in self.history}
-        members["pending"] = [_send_to_json(send) for send in self.pending]
+        members["pending"] = [_send_to_json(send, form) for send in self.pending]
         if self.invokes.resumed:
-            members["invokes"] = [_child_to_json(child) for child in self.invokes.children]
+            members["invokes"] = [_child_to_json(child, form) for child in self.invokes.children]
             members["invokestarts"] = {started.id: str(started.count) for started in self.invoke_starts}
         else:
             members["invokes"] = list(self.invokes.ids)
         members["hostinvokes"] = [_host_invoke_to_json(host) for host in self.host_invokes]
         members["hostinvoketoken"] = str(self.host_invoke_token)
         members["sendseq"] = str(self.auto_send_seq)
-        members["external"] = [_event_to_json(event) for event in self.external]
+        members["external"] = [_event_to_json(event, form) for event in self.external]
         # Absent, not empty, when no record schema is past its first revision: the
         # text of such a state is the text it was before revisions existed.
         if self.revisions:
@@ -401,27 +434,52 @@ def _params_to_json(params: Dict[str, List[str]]) -> Dict[str, Any]:
     return {name: list(params[name]) for name in sorted(params)}
 
 
-def _child_to_json(child: SavedChild) -> Dict[str, Any]:
+def _child_to_json(child: SavedChild, form: int) -> Dict[str, Any]:
     return {
         "id": child.id,
         "start": str(child.start),
         "invokeid": child.invoke_id,
         "document": child.document,
-        "session": child.session._session_members(),
+        "session": child.session._session_members(form),
     }
 
 
-def _event_to_json(event: SavedEvent) -> Dict[str, Any]:
-    return {
+def _origin_to_json(origin: Optional[EventOrigin]) -> Optional[Dict[str, Any]]:
+    """``origin`` as format 3 writes it: ``processor`` first, then ``address``,
+    the order :class:`EventOrigin` declares them in, or ``null`` for none."""
+    if origin is None:
+        return None
+    return {"processor": origin.processor, "address": origin.address}
+
+
+def _write_origin(
+    members: Dict[str, Any], origin: Optional[EventOrigin], sender: Optional[str], form: int
+) -> None:
+    """The origin and the sender of an event into ``members``, of a text of
+    ``form``, where format 2 held ``origin``: in format 3 the pair, then the
+    sender, both always written and ``null`` where there is none (docs/adr/0090,
+    section 7); in format 1, which has no place for the pair, its one ``origin``
+    text."""
+    if form == SAVED_FORMAT_1:
+        members["origin"] = stored_origin_text(origin, sender)
+        return
+    members["origin"] = _origin_to_json(origin)
+    members["sender"] = sender
+
+
+def _event_to_json(event: SavedEvent, form: int) -> Dict[str, Any]:
+    members: Dict[str, Any] = {
         "name": event.name,
         "data": event.data,
         "type": event.type,
         "sendid": event.send_id,
-        "origin": event.origin,
-        "origintype": event.origin_type,
-        "invokeid": event.invoke_id,
-        "hostinvoketoken": _optional_count(event.host_invoke_token),
     }
+    _write_origin(members, event.origin, event.sender, form)
+    if form == SAVED_FORMAT_1:
+        members["origintype"] = origin_processor_of(event.origin)
+    members["invokeid"] = event.invoke_id
+    members["hostinvoketoken"] = _optional_count(event.host_invoke_token)
+    return members
 
 
 def _host_invoke_to_json(host: SavedHostInvoke) -> Dict[str, Any]:
@@ -436,7 +494,7 @@ def _host_invoke_to_json(host: SavedHostInvoke) -> Dict[str, Any]:
     }
 
 
-def _send_to_json(send: SavedSend) -> Dict[str, Any]:
+def _send_to_json(send: SavedSend, form: int) -> Dict[str, Any]:
     members: Dict[str, Any] = {"due": str(send.due)}
     act = send.act
     members["act"] = act.kind
@@ -444,13 +502,13 @@ def _send_to_json(send: SavedSend) -> Dict[str, Any]:
         members["event"] = act.event
         members["data"] = act.data
         members["sendid"] = act.send_id
-        members["origin"] = act.origin
+        _write_origin(members, act.origin, act.sender, form)
     elif act.kind == ACT_CHILD:
         members["invokeid"] = act.invoke_id
         members["event"] = act.event
         members["data"] = act.data
         members["sendid"] = act.send_id
-        members["origin"] = act.origin
+        _write_origin(members, act.origin, act.sender, form)
     elif act.kind == ACT_HOST:
         members["type"] = act.processor_type
         members["event"] = act.event
@@ -466,9 +524,13 @@ def _send_to_json(send: SavedSend) -> Dict[str, Any]:
 
 
 def saved_state_from_json(text: str) -> SavedState:
-    """Reads ``sce-saved-state`` JSON, of format 1 or 2. The shape is not judged
+    """Reads ``sce-saved-state`` JSON, of format 1, 2 or 3. The shape is not judged
     here; the machine that restores it knows its own. Raises
-    :class:`StateRefusal` when the text is not one."""
+    :class:`StateRefusal` when the text is not one.
+
+    The ``format`` is judged before anything else is read. A format-2 origin is
+    read as the pair and the sender the table of docs/adr/0090, section 7 gives
+    for it, so the state holds what a format-3 text of the same run holds."""
     try:
         value = parse_json(text)
     except JsonError as err:
@@ -482,10 +544,12 @@ def saved_state_from_json(text: str) -> SavedState:
         form = SAVED_FORMAT_1
     elif written == JsonNumber("2"):
         form = SAVED_FORMAT_2
+    elif written == JsonNumber("3"):
+        form = SAVED_FORMAT_3
     else:
         raise StateRefusal(
             f"the saved state is format {write_json(written)}, and this runtime reads formats "
-            f"{SAVED_FORMAT_1} and {SAVED_FORMAT_2}"
+            f"{SAVED_FORMAT_1}, {SAVED_FORMAT_2} and {SAVED_FORMAT_3}"
         )
     return _saved_session_from_json(value, form)
 
@@ -538,11 +602,11 @@ def _saved_session_from_json(members: Dict[str, Any], form: int) -> SavedState:
         state.invokes = SavedInvokes(resumed=False, ids=[text_of(item, "invokes") for item in listed])
     else:
         state.invokes = SavedInvokes(
-            resumed=True, children=[_saved_child_from_json(item, at) for at, item in enumerate(listed)]
+            resumed=True, children=[_saved_child_from_json(item, at, form) for at, item in enumerate(listed)]
         )
 
-    # Format 2's own members: the session's id and its count of starts.
-    if form == SAVED_FORMAT_2:
+    # A tree's own members: the session's id and its count of starts.
+    if form != SAVED_FORMAT_1:
         session_id = field_text("sessionid")
         if session_id_refusal_of(session_id) is not None:
             raise StateRefusal(f"'sessionid' ({session_id}) is not an XML Nmtoken, which a session id is")
@@ -567,7 +631,7 @@ def _saved_session_from_json(members: Dict[str, Any], form: int) -> SavedState:
     state.host_invoke_token, state.auto_send_seq = counters
 
     for at, item in enumerate(field_array("external")):
-        state.external.append(_saved_event_from_json(item, f"external[{at}]"))
+        state.external.append(_saved_event_from_json(item, f"external[{at}]", form))
 
     # Optional, unlike every member above: a state whose record schemas are all in
     # their first revision leaves it out, as every state saved before schemas had
@@ -601,12 +665,18 @@ def _saved_session_from_json(members: Dict[str, Any], form: int) -> SavedState:
 def _member_text(members: Dict[str, Any], what: str, key: str) -> str:
     """The text member ``key`` of ``members``, which ``what`` names in a
     refusal."""
-    if key not in members:
-        raise StateRefusal(f"'{what}' has no '{key}'")
-    value = members[key]
+    value = _member_present(members, what, key)
     if not isinstance(value, str):
         raise StateRefusal(f"'{what}.{key}' is not a text")
     return value
+
+
+def _member_present(members: Dict[str, Any], what: str, key: str) -> Any:
+    """The member ``key`` of ``members``, whatever it holds, which ``what`` names
+    in a refusal."""
+    if key not in members:
+        raise StateRefusal(f"'{what}' has no '{key}'")
+    return members[key]
 
 
 def _member_object(value: Any, what: str) -> Dict[str, Any]:
@@ -616,7 +686,9 @@ def _member_object(value: Any, what: str) -> Dict[str, Any]:
     return value
 
 
-def _saved_child_from_json(value: Any, index: int) -> SavedChild:
+def _saved_child_from_json(value: Any, index: int, form: int) -> SavedChild:
+    """The running child ``value``, the ``index``-th of a session of a tree of
+    ``form``, whose session is read in the format of the text it is in."""
     what = f"invokes[{index}]"
     members = _member_object(value, what)
 
@@ -635,7 +707,7 @@ def _saved_child_from_json(value: Any, index: int) -> SavedChild:
     if "format" in session_members:
         raise StateRefusal(f"'{what}.session' states a format, which only the root of a tree does")
     try:
-        session = _saved_session_from_json(session_members, SAVED_FORMAT_2)
+        session = _saved_session_from_json(session_members, form)
     except StateRefusal as err:
         raise refusal_within(err, what + ".session") from None
     return SavedChild(
@@ -719,9 +791,7 @@ def _optional_member(
 ) -> Optional[int]:
     """The member ``key`` of ``members``, which is null or a text read by
     ``read``."""
-    if key not in members:
-        raise StateRefusal(f"'{what}' has no '{key}'")
-    value = members[key]
+    value = _member_present(members, what, key)
     if value is None:
         return None
     if isinstance(value, str):
@@ -729,7 +799,51 @@ def _optional_member(
     raise StateRefusal(f"'{what}.{key}' is neither a text nor null")
 
 
-def _saved_event_from_json(value: Any, what: str) -> SavedEvent:
+# The members of an origin, in the order format 3 writes them.
+_PAIR_MEMBERS = ("processor", "address")
+
+
+def _saved_origin_from_json(members: Dict[str, Any], what: str) -> Tuple[Optional[EventOrigin], Optional[str]]:
+    """The ``origin`` and ``sender`` of the format-3 record ``members``, which
+    ``what`` names in a refusal, read as they are written: neither is derived from
+    the other (docs/adr/0090, section 7).
+
+    Refused: an ``origin`` that is neither ``null`` nor a pair, a pair with a
+    member missing, empty or added, a ``sender`` that is not a session id, and a
+    ``sender`` beside an ``origin`` other than the SCXML pair of that id."""
+    written = _member_present(members, what, "origin")
+    origin: Optional[EventOrigin] = None
+    if written is not None:
+        if not isinstance(written, dict):
+            raise StateRefusal(f"'{what}.origin' is neither null nor a pair of 'processor' and 'address'")
+        for key in written:
+            if key not in _PAIR_MEMBERS:
+                raise StateRefusal(f"'{what}.origin' holds '{key}', and a pair holds 'processor' and 'address' alone")
+        parts: List[str] = []
+        for key in _PAIR_MEMBERS:
+            part = _member_text(written, what + ".origin", key)
+            if part == "":
+                raise StateRefusal(f"'{what}.origin.{key}' is empty, and a pair is never half of one")
+            parts.append(part)
+        origin = EventOrigin(parts[0], parts[1])
+    named = _member_present(members, what, "sender")
+    if named is None:
+        return origin, None
+    if not isinstance(named, str):
+        raise StateRefusal(f"'{what}.sender' is neither a text nor null")
+    if session_id_refusal_of(named) is not None:
+        raise StateRefusal(f"'{what}.sender' ({named}) is not an XML Nmtoken, which a session id is")
+    # The SCXML processor writes the sender's own location as the origin of what
+    # the sender sent: a sender beside any other origin is a text no run wrote.
+    if origin != scxml_origin(named):
+        raise StateRefusal(f"'{what}.sender' is '{named}', and its 'origin' is not the SCXML pair of that session")
+    return origin, named
+
+
+def _saved_event_from_json(value: Any, what: str, form: int) -> SavedEvent:
+    """The queued event ``value``, of a state of ``form``: in format 3 its pair and
+    its sender as written, and in formats 1 and 2 its stored ``origin`` and
+    ``origintype`` read by the table of docs/adr/0090, section 7."""
     members = _member_object(value, what)
     event = SavedEvent()
     # The token is judged first, as every backend judges it.
@@ -738,8 +852,11 @@ def _saved_event_from_json(value: Any, what: str) -> SavedEvent:
     event.data = _member_text(members, what, "data")
     event.type = _member_text(members, what, "type")
     event.send_id = _member_text(members, what, "sendid")
-    event.origin = _member_text(members, what, "origin")
-    event.origin_type = _member_text(members, what, "origintype")
+    if form == SAVED_FORMAT_3:
+        event.origin, event.sender = _saved_origin_from_json(members, what)
+    else:
+        stored = _member_text(members, what, "origin")
+        event.origin, event.sender = read_stored_origin(stored, _member_text(members, what, "origintype"))
     event.invoke_id = _member_text(members, what, "invokeid")
     return event
 
@@ -780,18 +897,20 @@ def _saved_host_invoke_from_json(value: Any, what: str) -> SavedHostInvoke:
 
 def _saved_send_from_json(value: Any, what: str, form: int) -> SavedSend:
     """The waiting send ``value``, of a state of ``form``; a send to the parent or
-    to a child is an act of format 2 only."""
+    to a child is an act of a tree only. Every act but a host act delivers an
+    event to a session and carries the origin and the sender that event will
+    carry (:func:`_saved_act_origin_from_json`)."""
     members = _member_object(value, what)
     due = _read_saved_moment(_member_text(members, what, "due"), what + ".due")
     name = _member_text(members, what, "act")
     act = SavedAct(kind=name)
     # The members each act reads, in the order every backend reads them.
     if name in (ACT_PARENT, ACT_CHILD):
-        if form != SAVED_FORMAT_2:
+        if form == SAVED_FORMAT_1:
             raise StateRefusal(f"'{what}.act' is '{name}', which is not raise, internal or host, the acts of format 1")
-        keys = (["invokeid"] if name == ACT_CHILD else []) + ["event", "data", "sendid", "origin"]
+        keys = (["invokeid"] if name == ACT_CHILD else []) + ["event", "data", "sendid"]
     elif name in (ACT_RAISE, ACT_INTERNAL):
-        keys = ["event", "data", "sendid", "origin"]
+        keys = ["event", "data", "sendid"]
     elif name == ACT_HOST:
         keys = ["type", "event", "target", "content"]
     else:
@@ -803,7 +922,6 @@ def _saved_send_from_json(value: Any, what: str, form: int) -> SavedSend:
         "event": "event",
         "data": "data",
         "sendid": "send_id",
-        "origin": "origin",
         "type": "processor_type",
         "target": "target",
         "content": "content",
@@ -815,7 +933,38 @@ def _saved_send_from_json(value: Any, what: str, form: int) -> SavedSend:
         act.send_id = _member_text(members, what, "sendid")
         act.data = _member_text(members, what, "data")
         act.invoke_id = _member_text(members, what, "invokeid")
+    else:
+        act.origin, act.sender = _saved_act_origin_from_json(members, what, name, form)
     return SavedSend(due=due, act=act)
+
+
+def _saved_act_origin_from_json(
+    members: Dict[str, Any], what: str, kind: str, form: int
+) -> Tuple[Optional[EventOrigin], Optional[str]]:
+    """The origin and the sender of the waiting send ``members`` of the act
+    ``kind``, in a state of ``form`` (docs/adr/0090, section 7).
+
+    A raise, parent or child act is this session's own send, which the SCXML
+    processor delivers; an internal act's event is internal and has no origin.
+    Format 3 holds both as written, and refuses a raise, parent or child act with
+    no sender and an internal act that holds either. Formats 1 and 2 store the
+    sending session's id, or its location, as ``origin``, which is read as that
+    session's pair with the id as its sender; an internal act's is not read."""
+    if form == SAVED_FORMAT_3:
+        origin, sender = _saved_origin_from_json(members, what)
+        if kind == ACT_INTERNAL:
+            if origin is not None or sender is not None:
+                raise StateRefusal(
+                    f"'{what}' is an internal act and holds an origin or a sender, which an internal event has not"
+                )
+        elif sender is None:
+            raise StateRefusal(f"'{what}' is a {kind} act with no 'sender', and the session that sent it is its sender")
+        return origin, sender
+    stored = _member_text(members, what, "origin")
+    if kind == ACT_INTERNAL:
+        return None, None
+    sender = read_stored_sender(stored)
+    return scxml_origin_of(sender), (sender or None)
 
 
 def saved_wall_clock_ms() -> int:
@@ -925,7 +1074,9 @@ class SavedShape:
     it does not know. ``format2_first`` is ``first`` as a format-2 state names it
     (docs/adr/0045, section 2): each enum-typed variable and record field spelled by
     its enum's document rather than by the alias it is imported under, and
-    ``format2_revised`` is ``revised`` as a format-2 state names it. ``records`` is
+    ``format2_revised`` is ``revised`` as a format-2 state names it. A format-3
+    state names the same two: the pair it holds changes no document
+    (docs/adr/0090, section 7). ``records`` is
     each record schema a variable is of, by the event it declares, ordered by it,
     and ``enums`` each enum a value of the state is of, by its key, ordered by it.
     ``features`` is the configuration of a product line the machine was built for,
@@ -1012,11 +1163,11 @@ def upgrade_saved_state(saved: SavedState, shape: SavedShape) -> SavedState:
     (:func:`check_saved_features`), so a state of another build is refused for the
     features that differ and not for its shape, which differs too."""
     check_saved_features(saved, shape.features)
-    # A format-2 state names an enum by its document and a format-1 state by the
-    # alias it is imported under, so each is judged against its own shape
-    # (docs/adr/0045, section 2).
+    # A tree names an enum by its document and a format-1 state by the alias it is
+    # imported under, so each is judged against its own shape (docs/adr/0045,
+    # section 2). Format 3 has the shape of format 2 (docs/adr/0090, section 7).
     first, revised = shape.first, shape.revised
-    if saved.format() == SAVED_FORMAT_2:
+    if saved.format() != SAVED_FORMAT_1:
         first, revised = shape.format2_first, shape.format2_revised
     if not saved.revisions:
         check_saved_shape(saved, first)

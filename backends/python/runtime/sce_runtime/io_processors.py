@@ -91,12 +91,14 @@ def scxml_origin_of(sender_session_id: Optional[str]) -> Optional[EventOrigin]:
 
 
 def stored_origin_text(origin: Optional[EventOrigin], sender: Optional[str]) -> str:
-    """The ``origin`` text that stores an event's origin and sender.
+    """The ``origin`` text that stores an event's origin and sender in a text
+    that has no place for the pair.
 
-    docs/adr/0090, "Until step 6": the sending session's id for an event a
-    session sent, the address otherwise, and empty for none, which is what every
-    backend writes as a saved state's format-2 ``origin``. The ``origintype``
-    beside it is the pair's processor."""
+    docs/adr/0090, section 7: the sending session's id for an event a session
+    sent, the address otherwise, and empty for none. A format-3 text holds the
+    pair itself; this is the rule a state read from a format-1 text is written
+    back by, without a machine, as format 1, whose ``origintype`` beside it is
+    the pair's processor."""
     return sender if sender else origin_address_of(origin)
 
 
@@ -124,6 +126,17 @@ def read_stored_origin(
     if "://" not in origin and processor == SCXML_EVENT_PROCESSOR_URI:
         return scxml_origin(origin), origin
     return EventOrigin(processor, origin), None
+
+
+def read_stored_sender(origin: str) -> str:
+    """The sending session's id a waiting send's stored format-1 or format-2
+    ``origin`` names, or ``""`` for an empty one.
+
+    docs/adr/0090, section 7: such a text stores the sending session's id, or
+    its location as one backend stored it, which is read back as the id it
+    names. Port of the C++ ``IOProcessorHelper::readStoredSender``."""
+    located = session_id_from_scxml_location(origin)
+    return located if located else origin
 
 
 def published_origin(origin_session_id: str) -> str:

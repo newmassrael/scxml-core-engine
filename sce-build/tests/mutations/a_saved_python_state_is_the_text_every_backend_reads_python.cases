@@ -7,7 +7,8 @@
 # `scripts/mutate sce-build/tests/mutations/a_saved_python_state_is_the_text_every_backend_reads_python.cases`.
 #
 # The test reads every shared text under `saved/` and `saved/format1/` and writes it back byte
-# for byte, refuses a table of texts for the member that breaks them, reads a child session
+# for byte, reads each text under `saved/format2/` and writes it as its `read_as/` text, refuses
+# a table of texts for the member that breaks them, reads a child session
 # refused by its path, and holds a format-1 text to hold no session. The mutants below each take
 # one decision away and leave a runtime that still imports and runs:
 #
@@ -18,7 +19,11 @@
 #   a session id that is not an XML Nmtoken is read;
 #   a format-1 text binds the restored machine to a session id;
 #   a count of starts is written one more than the session holds;
-#   a saved child is written under the invoke's own id, not the id its start was made under.
+#   a saved child is written under the invoke's own id, not the id its start was made under;
+#   a sender is read beside an origin that is not its session's pair;
+#   a pair may hold a member of no pair;
+#   a format-3 internal act may hold an origin;
+#   a format-2 internal act is read as the session's own send.
 #
 # Python compiles nothing and the test imports the runtime directly, so no regeneration is
 # declared; the module on disk is what every run reads.
@@ -28,7 +33,7 @@
 
 mutation_pytest backends/python/tests saved_state/test_saved_state.py
 mutation_runtime_targets backends/python/runtime/sce_runtime/saved_state.py
-mutation_oracles backends/python/tests/saved_state/test_saved_state.py sce-build/tests/fixtures/static_datamodel/saved/static_invoke_working.json sce-build/tests/fixtures/static_datamodel/saved/static_invoke_tree_working.json sce-build/tests/fixtures/static_datamodel/saved/format1/static_invoke_working.json
+mutation_oracles backends/python/tests/saved_state/test_saved_state.py sce-build/tests/fixtures/static_datamodel/saved/static_invoke_working.json sce-build/tests/fixtures/static_datamodel/saved/static_invoke_tree_working.json sce-build/tests/fixtures/static_datamodel/saved/format1/static_invoke_working.json sce-build/tests/fixtures/static_datamodel/saved/format2/static_timers.json sce-build/tests/fixtures/static_datamodel/saved/format2/read_as/static_timers.json sce-build/tests/fixtures/static_datamodel/saved/format2/static_invoke_tree_working_origins.json
 
 ## What a child session is held to when its text is read
 #
@@ -65,8 +70,8 @@ PY
 
 mutation_case "a format-1 text may hold the acts of a tree" <<'PY'
 edit("backends/python/runtime/sce_runtime/saved_state.py",
-     "        if form != SAVED_FORMAT_2:",
-     "        if False:")
+     "    if name in (ACT_PARENT, ACT_CHILD):\n        if form == SAVED_FORMAT_1:",
+     "    if name in (ACT_PARENT, ACT_CHILD):\n        if False:")
 PY
 
 # The row whose `sessionid` is `a b` of the same test.
@@ -106,4 +111,41 @@ mutation_case "a saved child is written under the invoke's own id" <<'PY'
 edit("backends/python/runtime/sce_runtime/saved_state.py",
      "        \"invokeid\": child.invoke_id,",
      "        \"invokeid\": child.id,")
+PY
+
+## An event's origin (docs/adr/0090, section 7)
+#
+# The rows of `test_a_format_three_origin_that_no_run_writes_is_refused_and_not_repaired` whose
+# sender stands beside no pair, a host's pair, another session's pair and an unencoded location.
+
+mutation_case "a sender is read beside an origin that is not its session's pair" <<'PY'
+edit("backends/python/runtime/sce_runtime/saved_state.py",
+     "    if origin != scxml_origin(named):",
+     "    if False:")
+PY
+
+# The row of the same test whose pair holds a third member, `sender`.
+
+mutation_case "a pair may hold a member of no pair" <<'PY'
+edit("backends/python/runtime/sce_runtime/saved_state.py",
+     "            if key not in _PAIR_MEMBERS:",
+     "            if False:")
+PY
+
+# The two rows of the same test whose `internal` act holds a pair.
+
+mutation_case "a format-3 internal act may hold an origin" <<'PY'
+edit("backends/python/runtime/sce_runtime/saved_state.py",
+     "        if kind == ACT_INTERNAL:\n            if origin is not None or sender is not None:",
+     "        if kind == ACT_INTERNAL:\n            if False:")
+PY
+
+# `test_a_format_two_internal_act_is_read_with_no_origin_and_no_sender`, and the byte compare of
+# `format2/static_timers.json` with `format2/read_as/static_timers.json`: the stored sender of the
+# `internal` act would be read as its pair.
+
+mutation_case "a format-2 internal act is read as the session's own send" <<'PY'
+edit("backends/python/runtime/sce_runtime/saved_state.py",
+     "    if kind == ACT_INTERNAL:\n        return None, None",
+     "    if False:\n        return None, None")
 PY

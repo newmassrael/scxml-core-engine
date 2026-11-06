@@ -2,9 +2,10 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 """The saved-state model of the Python runtime: the texts every backend reads
 (docs/adr/0045, section 8), the refusals each member that breaks a format is held
-to, the value types a state is made of, and the upgrade of a state saved before a
-record schema or an enum was revised (docs/adr/0044). Cross-language sibling:
-``backends/go/runtime/saved_state_test.go``."""
+to, an event's origin as format 3 holds it and as a format-2 text is read
+(docs/adr/0090, section 7), the value types a state is made of, and the upgrade of
+a state saved before a record schema or an enum was revised (docs/adr/0044).
+Cross-language sibling: ``backends/go/runtime/saved_state_test.go``."""
 
 from __future__ import annotations
 
@@ -15,6 +16,8 @@ from typing import Dict
 
 import pytest
 
+from sce_runtime.event_origin import EventOrigin
+from sce_runtime.io_processors import SCXML_EVENT_PROCESSOR_URI, scxml_origin
 from sce_runtime.saved_json import JsonNumber, parse_json, write_json
 from sce_runtime.saved_state import (
     AddedField,
@@ -23,8 +26,9 @@ from sce_runtime.saved_state import (
     EnumLineage,
     RecordHolder,
     RecordLineage,
+    SAVED_FORMAT,
     SAVED_FORMAT_1,
-    SAVED_FORMAT_2,
+    SAVED_FORMAT_3,
     SavedInvokes,
     SavedRevision,
     SavedShape,
@@ -62,8 +66,10 @@ _SAVED = Path(__file__).resolve().parents[4] / "sce-build" / "tests" / "fixtures
 
 
 def shared_saved_texts() -> Dict[Path, str]:
-    """The shared saved-state texts every backend reads: format 2 in ``saved/`` and
-    the unchanged format 1 in ``saved/format1/``."""
+    """The shared saved-state texts every backend reads and writes back as they
+    are: format 3 in ``saved/`` and the unchanged format 1 in ``saved/format1/``.
+    The format-2 texts in ``saved/format2/`` are read and written back as format 3
+    (:func:`format_2_readings`)."""
     texts: Dict[Path, str] = {}
     for directory in (_SAVED, _SAVED / "format1"):
         for path in sorted(directory.glob("*.json")):
@@ -88,11 +94,107 @@ def test_a_format_one_text_is_of_format_one_and_holds_no_session() -> None:
 
 def test_a_tree_text_holds_every_child_with_its_session() -> None:
     saved = saved_state_from_json(shared_saved_texts()[_SAVED / "static_invoke_tree_working.json"])
-    assert saved.format() == SAVED_FORMAT_2
+    assert saved.format() == SAVED_FORMAT_3
+    assert SAVED_FORMAT == SAVED_FORMAT_3, "this runtime writes format 3"
     assert saved.invokes.children
     child = saved.invokes.children[0]
     assert child.session.session_id == f"{saved.session_id}.{child.invoke_id}"
     assert saved.invoke_start(child.id) == child.start
+    # The child's answer, queued in the root, carries the child's pair and the
+    # child as its sender; the parent's `swap`, queued in the child, carries none.
+    (answer,) = saved.external
+    assert (answer.origin, answer.sender) == (scxml_origin(child.session.session_id), child.session.session_id)
+    (swap,) = child.session.external
+    assert (swap.origin, swap.sender) == (None, None)
+    # Each waiting send of a session carries that session's pair and its id.
+    (nudge,) = saved.pending
+    assert (nudge.act.origin, nudge.act.sender) == (scxml_origin(saved.session_id), saved.session_id)
+    (report,) = child.session.pending
+    assert (report.act.origin, report.act.sender) == (
+        scxml_origin(child.session.session_id),
+        child.session.session_id,
+    )
+
+
+_READ_AS = _SAVED / "format2" / "read_as"
+
+
+def format_2_readings() -> Dict[str, str]:
+    """The format-2 reading fixtures, by name (docs/adr/0090, section 7): each is
+    read as the format-3 text of the same name in ``saved/format2/read_as/``."""
+    texts = {
+        path.name: path.read_text(encoding="utf-8").strip()
+        for path in sorted((_SAVED / "format2").glob("*.json"))
+    }
+    assert len(texts) >= 4, f"the format-2 reading fixtures lost instances: {len(texts)} read"
+    return texts
+
+
+@pytest.mark.parametrize("name", sorted(format_2_readings()))
+def test_a_format_two_text_is_read_by_the_table_and_written_back_as_format_three(name: str) -> None:
+    saved = saved_state_from_json(format_2_readings()[name])
+    assert saved.format() == SAVED_FORMAT_3
+    assert saved.to_json() == (_READ_AS / name).read_text(encoding="utf-8").strip()
+
+
+def test_a_format_two_origin_is_read_as_the_pair_the_table_gives() -> None:
+    # The rows saved/format2/README.md names for the root's queue: a stored id and
+    # an SCXML location are the session's pair, an empty address is none whatever
+    # type beside it, and anything else is the pair as stored, with no sender.
+    saved = saved_state_from_json(format_2_readings()["static_invoke_tree_working_origins.json"])
+    worker = "fixture-root.working.2.worker"
+    read = {event.name: (event.origin, event.sender) for event in saved.external}
+    assert read == {
+        "answer": (scxml_origin(worker), worker),
+        "report": (scxml_origin(worker), worker),
+        "go": (None, None),
+        "swap": (None, None),
+        "stamped": (scxml_origin("peer:1"), "peer:1"),
+        "ask": (scxml_origin("peer:1"), "peer:1"),
+        "arm": (EventOrigin(SCXML_EVENT_PROCESSOR_URI, "mesh://ecu"), None),
+        "rest": (EventOrigin("x-sce-host", "motor"), None),
+        "back": (EventOrigin(SCXML_EVENT_PROCESSOR_URI, "mesh://ecu"), None),
+    }
+    # An unencoded location is written again as the session publishes it.
+    assert scxml_origin("peer:1").address == "sce://scxml/peer%3A1"
+
+
+def test_a_format_two_internal_act_is_read_with_no_origin_and_no_sender() -> None:
+    # Its stored origin was the sender's id, and the event it delivers is internal.
+    saved = saved_state_from_json(format_2_readings()["static_timers.json"])
+    read = [(send.act.kind, send.act.origin, send.act.sender) for send in saved.pending]
+    root = scxml_origin("fixture-root")
+    assert read == [
+        ("internal", None, None),
+        ("raise", root, "fixture-root"),
+        ("raise", root, "fixture-root"),
+        ("raise", root, "fixture-root"),
+    ]
+
+
+def test_a_format_one_text_keeps_its_origins_as_format_two_stored_them() -> None:
+    # Read without a machine and written back, a format-1 text stays format 1: an
+    # event's origin is the sender's id for a session's send and the address
+    # otherwise, its type the pair's processor, and a raise act stores the id.
+    events = (
+        '{"name":"a","data":"","type":"external","sendid":"","origin":"kid","origintype":"'
+        + SCXML_EVENT_PROCESSOR_URI
+        + '","invokeid":"","hostinvoketoken":null},'
+        '{"name":"b","data":"","type":"external","sendid":"","origin":"motor","origintype":"x-sce-host",'
+        '"invokeid":"","hostinvoketoken":null}'
+    )
+    text = (
+        '{"format":1,"shape":"s","configuration":["a"],"current":"a","variables":{},"history":{},'
+        '"pending":[{"due":"5","act":"raise","event":"e","data":"","sendid":"","origin":"root"}],"invokes":[],'
+        '"hostinvokes":[],"hostinvoketoken":"0","sendseq":"0","external":[' + events + "]}"
+    )
+    saved = saved_state_from_json(text)
+    assert [(event.origin, event.sender) for event in saved.external] == [
+        (scxml_origin("kid"), "kid"),
+        (EventOrigin("x-sce-host", "motor"), None),
+    ]
+    assert (saved.pending[0].act.origin, saved.pending[0].act.sender) == (scxml_origin("root"), "root")
+    assert saved.to_json() == text
 
 
 _MINIMAL = (
@@ -108,22 +210,28 @@ _MINIMAL = (
         ('{"format":', "the saved state is not JSON (it ends where a value was expected)"),
         ("[]", "the saved state is not an object"),
         ("{}", "the saved state has no 'format'"),
-        ('{"format":3}', "the saved state is format 3, and this runtime reads formats 1 and 2"),
-        ('{"format":"2"}', 'the saved state is format "2", and this runtime reads formats 1 and 2'),
+        # A format of the future is refused by its `format` before anything else.
+        ('{"format":4}', "the saved state is format 4, and this runtime reads formats 1, 2 and 3"),
+        ('{"format":"2"}', 'the saved state is format "2", and this runtime reads formats 1, 2 and 3'),
+        (
+            '{"format":3,' + _MINIMAL.replace('"root"', '"a b"', 1) + "}",
+            "'sessionid' (a b) is not an XML Nmtoken, which a session id is",
+        ),
+        # Format 2 is a tree too, held to the same members.
         (
             '{"format":2,' + _MINIMAL.replace('"root"', '"a b"', 1) + "}",
             "'sessionid' (a b) is not an XML Nmtoken, which a session id is",
         ),
         (
-            '{"format":2,' + _MINIMAL.replace('"invokestarts":{}', '"invokestarts":{"w":"01"}', 1) + "}",
+            '{"format":3,' + _MINIMAL.replace('"invokestarts":{}', '"invokestarts":{"w":"01"}', 1) + "}",
             "'invokestarts.w' (01) is not a count of starts, a whole number from 1",
         ),
         (
-            '{"format":2,' + _MINIMAL.replace('"hostinvoketoken":"0"', '"hostinvoketoken":"x"', 1) + "}",
+            '{"format":3,' + _MINIMAL.replace('"hostinvoketoken":"0"', '"hostinvoketoken":"x"', 1) + "}",
             "'hostinvoketoken' (x) is not a whole number a token can be",
         ),
         (
-            '{"format":2,' + _MINIMAL + ',"revisions":{}}',
+            '{"format":3,' + _MINIMAL + ',"revisions":{}}',
             "'revisions' names no schema; a state whose record schemas are all in their first revision leaves it out",
         ),
         (
@@ -133,7 +241,7 @@ _MINIMAL = (
             "'pending[0].act' is 'parent', which is not raise, internal or host, the acts of format 1",
         ),
         (
-            '{"format":2,' + _MINIMAL.replace('"pending":[]', '"pending":[{"due":"5","act":"fax"}]', 1) + "}",
+            '{"format":3,' + _MINIMAL.replace('"pending":[]', '"pending":[{"due":"5","act":"fax"}]', 1) + "}",
             "'pending[0].act' is 'fax', which is not raise, internal, host, parent or child",
         ),
     ],
@@ -142,6 +250,189 @@ def test_a_text_the_formats_do_not_carry_is_refused_for_the_member_that_breaks_i
     with pytest.raises(StateRefusal) as refused:
         saved_state_from_json(text)
     assert str(refused.value) == reason
+
+
+# The SCXML pair of the session `root`, as format 3 writes it.
+_ROOT_PAIR = '{"processor":"' + SCXML_EVENT_PROCESSOR_URI + '","address":"sce://scxml/root"}'
+
+
+def _event_members(origin: str, sender: str) -> str:
+    """A queued event of a format-3 text with `origin` and `sender` as written."""
+    return (
+        '{"name":"e","data":"","type":"external","sendid":"","origin":' + origin + ',"sender":' + sender
+        + ',"invokeid":"","hostinvoketoken":null}'
+    )
+
+
+def _holding_event(event: str) -> str:
+    return '{"format":3,' + _MINIMAL.replace('"external":[]', '"external":[' + event + "]", 1) + "}"
+
+
+def _holding_act(act: str, origin: str, sender: str) -> str:
+    """A format-3 text whose one waiting send is an `act` act to the session's
+    queues with `origin` and `sender` as written."""
+    send = (
+        '{"due":"5","act":"' + act + '","event":"e","data":"","sendid":"","origin":' + origin
+        + ',"sender":' + sender + "}"
+    )
+    return '{"format":3,' + _MINIMAL.replace('"pending":[]', '"pending":[' + send + "]", 1) + "}"
+
+
+@pytest.mark.parametrize(
+    "text, reason",
+    [
+        # An origin that is neither null nor a pair.
+        (
+            _holding_event(_event_members('"root"', "null")),
+            "'external[0].origin' is neither null nor a pair of 'processor' and 'address'",
+        ),
+        (
+            _holding_event(_event_members("[]", "null")),
+            "'external[0].origin' is neither null nor a pair of 'processor' and 'address'",
+        ),
+        # A pair with a member missing, empty, not a text or added.
+        (
+            _holding_event(_event_members('{"processor":"' + SCXML_EVENT_PROCESSOR_URI + '"}', "null")),
+            "'external[0].origin' has no 'address'",
+        ),
+        (
+            _holding_event(_event_members('{"processor":"","address":"mesh://ecu"}', "null")),
+            "'external[0].origin.processor' is empty, and a pair is never half of one",
+        ),
+        (
+            _holding_event(_event_members('{"processor":"x-sce-host","address":""}', "null")),
+            "'external[0].origin.address' is empty, and a pair is never half of one",
+        ),
+        (
+            _holding_event(_event_members('{"processor":1,"address":"motor"}', "null")),
+            "'external[0].origin.processor' is not a text",
+        ),
+        (
+            _holding_event(_event_members('{"processor":"x-sce-host","address":"motor","sender":"root"}', "null")),
+            "'external[0].origin' holds 'sender', and a pair holds 'processor' and 'address' alone",
+        ),
+        # A sender that is not a session id.
+        (
+            _holding_event(_event_members(_ROOT_PAIR, "1")),
+            "'external[0].sender' is neither a text nor null",
+        ),
+        (
+            _holding_event(_event_members(_ROOT_PAIR, '"a b"')),
+            "'external[0].sender' (a b) is not an XML Nmtoken, which a session id is",
+        ),
+        # A sender beside an origin other than the SCXML pair of that id: none, a
+        # host's pair, another session's pair, and the location unencoded.
+        (
+            _holding_event(_event_members("null", '"root"')),
+            "'external[0].sender' is 'root', and its 'origin' is not the SCXML pair of that session",
+        ),
+        (
+            _holding_event(_event_members('{"processor":"x-sce-host","address":"motor"}', '"motor"')),
+            "'external[0].sender' is 'motor', and its 'origin' is not the SCXML pair of that session",
+        ),
+        (
+            _holding_event(_event_members(_ROOT_PAIR, '"other"')),
+            "'external[0].sender' is 'other', and its 'origin' is not the SCXML pair of that session",
+        ),
+        (
+            _holding_event(
+                _event_members(
+                    '{"processor":"' + SCXML_EVENT_PROCESSOR_URI + '","address":"sce://scxml/peer:1"}', '"peer:1"'
+                )
+            ),
+            "'external[0].sender' is 'peer:1', and its 'origin' is not the SCXML pair of that session",
+        ),
+        # Both members are always written.
+        (
+            _holding_event(
+                '{"name":"e","data":"","type":"external","sendid":"","origin":null,"invokeid":"",'
+                '"hostinvoketoken":null}'
+            ),
+            "'external[0]' has no 'sender'",
+        ),
+        (
+            _holding_event(
+                '{"name":"e","data":"","type":"external","sendid":"","origin":"","origintype":"",'
+                '"invokeid":"","hostinvoketoken":null}'
+            ),
+            "'external[0].origin' is neither null nor a pair of 'processor' and 'address'",
+        ),
+        (
+            '{"format":3,'
+            + _MINIMAL.replace(
+                '"pending":[]', '"pending":[{"due":"5","act":"raise","event":"e","data":"","sendid":""}]', 1
+            )
+            + "}",
+            "'pending[0]' has no 'origin'",
+        ),
+        # A session's own send with no sender, and an internal act that holds
+        # either member.
+        (
+            _holding_act("raise", _ROOT_PAIR, "null"),
+            "'pending[0]' is a raise act with no 'sender', and the session that sent it is its sender",
+        ),
+        (
+            _holding_act("parent", "null", "null"),
+            "'pending[0]' is a parent act with no 'sender', and the session that sent it is its sender",
+        ),
+        (
+            _holding_act("internal", _ROOT_PAIR, '"root"'),
+            "'pending[0]' is an internal act and holds an origin or a sender, which an internal event has not",
+        ),
+        (
+            _holding_act("internal", _ROOT_PAIR, "null"),
+            "'pending[0]' is an internal act and holds an origin or a sender, which an internal event has not",
+        ),
+        (
+            _holding_act("raise", _ROOT_PAIR, '"other"'),
+            "'pending[0].sender' is 'other', and its 'origin' is not the SCXML pair of that session",
+        ),
+    ],
+)
+def test_a_format_three_origin_that_no_run_writes_is_refused_and_not_repaired(text: str, reason: str) -> None:
+    with pytest.raises(StateRefusal) as refused:
+        saved_state_from_json(text)
+    assert str(refused.value) == reason
+
+
+def test_a_format_three_origin_is_read_as_written_and_written_back_as_it_was() -> None:
+    # Neither member is derived from the other: an SCXML pair at an address that
+    # names no session has no sender, and a host's pair keeps its own type.
+    events = ",".join(
+        [
+            _event_members(
+                '{"processor":"' + SCXML_EVENT_PROCESSOR_URI + '","address":"sce://scxml/peer%3A1"}', '"peer:1"'
+            ),
+            _event_members('{"processor":"' + SCXML_EVENT_PROCESSOR_URI + '","address":"mesh://ecu"}', "null"),
+            _event_members('{"processor":"x-sce-host","address":"motor"}', "null"),
+            _event_members("null", "null"),
+        ]
+    )
+    acts = ",".join(
+        [
+            '{"due":"5","act":"raise","event":"e","data":"","sendid":"","origin":' + _ROOT_PAIR + ',"sender":"root"}',
+            '{"due":"5","act":"internal","event":"e","data":"","sendid":"","origin":null,"sender":null}',
+        ]
+    )
+    text = (
+        '{"format":3,'
+        + _MINIMAL.replace('"external":[]', '"external":[' + events + "]", 1).replace(
+            '"pending":[]', '"pending":[' + acts + "]", 1
+        )
+        + "}"
+    )
+    saved = saved_state_from_json(text)
+    assert [(event.origin, event.sender) for event in saved.external] == [
+        (scxml_origin("peer:1"), "peer:1"),
+        (EventOrigin(SCXML_EVENT_PROCESSOR_URI, "mesh://ecu"), None),
+        (EventOrigin("x-sce-host", "motor"), None),
+        (None, None),
+    ]
+    assert [(send.act.origin, send.act.sender) for send in saved.pending] == [
+        (scxml_origin("root"), "root"),
+        (None, None),
+    ]
+    assert saved.to_json() == text
 
 
 def test_a_child_session_is_refused_by_its_path() -> None:
@@ -153,10 +444,10 @@ def test_a_child_session_is_refused_by_its_path() -> None:
 
     bad = with_session(_MINIMAL.replace('"configuration":["a"]', '"configuration":[1]', 1))
     with pytest.raises(StateRefusal) as refused:
-        saved_state_from_json('{"format":2,' + holding(bad) + "}")
+        saved_state_from_json('{"format":3,' + holding(bad) + "}")
     assert str(refused.value) == "the session at invokes[0].session: 'configuration' is not a text"
     with pytest.raises(StateRefusal) as grandchild:
-        saved_state_from_json('{"format":2,' + holding(with_session(holding(bad))) + "}")
+        saved_state_from_json('{"format":3,' + holding(with_session(holding(bad))) + "}")
     assert (
         str(grandchild.value)
         == "the session at invokes[0].session.invokes[0].session: 'configuration' is not a text"
@@ -164,11 +455,31 @@ def test_a_child_session_is_refused_by_its_path() -> None:
 
 
 def test_a_child_that_states_a_format_is_refused() -> None:
-    child = '{"id":"w","start":"1","invokeid":"w","document":"w","session":{"format":2,' + _MINIMAL + "}}"
-    text = '{"format":2,' + _MINIMAL.replace('"invokes":[]', '"invokes":[' + child + "]", 1) + "}"
+    child = '{"id":"w","start":"1","invokeid":"w","document":"w","session":{"format":3,' + _MINIMAL + "}}"
+    text = '{"format":3,' + _MINIMAL.replace('"invokes":[]', '"invokes":[' + child + "]", 1) + "}"
     with pytest.raises(StateRefusal) as refused:
         saved_state_from_json(text)
     assert str(refused.value) == "'invokes[0].session' states a format, which only the root of a tree does"
+
+
+def test_a_child_session_is_read_in_the_format_of_its_root() -> None:
+    # One format per text: a child of a format-2 root stores its queue as format 2
+    # did, and a child of a format-3 root holds the pair.
+    stored = (
+        '{"name":"e","data":"","type":"external","sendid":"","origin":"root","origintype":"",'
+        '"invokeid":"w","hostinvoketoken":null}'
+    )
+    child_session = _MINIMAL.replace('"root"', '"root.w"', 1).replace('"external":[]', '"external":[' + stored + "]", 1)
+    child = '{"id":"w","start":"1","invokeid":"w","document":"w","session":{' + child_session + "}}"
+    holding = _MINIMAL.replace('"invokes":[]', '"invokes":[' + child + "]", 1)
+    (event,) = saved_state_from_json('{"format":2,' + holding + "}").invokes.children[0].session.external
+    assert (event.origin, event.sender) == (scxml_origin("root"), "root")
+    with pytest.raises(StateRefusal) as refused:
+        saved_state_from_json('{"format":3,' + holding + "}")
+    assert str(refused.value) == (
+        "the session at invokes[0].session: 'external[0].origin' is neither null nor a pair of "
+        "'processor' and 'address'"
+    )
 
 
 def test_a_saved_state_is_read_back_as_it_was_written() -> None:
@@ -178,7 +489,7 @@ def test_a_saved_state_is_read_back_as_it_was_written() -> None:
     child = '{"id":"w","start":"1","invokeid":"w","document":"w","session":{' + child_session + "}}"
     revisions = '"revisions":{"reading.taken":{"revision":3,"fields":"' + "0" * 64 + '"}}'
     text = (
-        '{"format":2,'
+        '{"format":3,'
         + _MINIMAL.replace('"invokes":[]', '"invokes":[' + child + "]", 1)
         + ","
         + revisions

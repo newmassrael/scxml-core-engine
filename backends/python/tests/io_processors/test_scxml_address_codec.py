@@ -20,6 +20,7 @@ from sce_runtime import (
     origin_address_of,
     origin_processor_of,
     read_stored_origin,
+    read_stored_sender,
     scxml_location,
     scxml_origin,
     session_id_from_scxml_location,
@@ -111,6 +112,15 @@ def test_a_format2_origin_is_read_as_the_pair_it_stood_for() -> None:
         EventOrigin(SCXML_EVENT_PROCESSOR_URI, "mesh://motor"),
         None,
     )
+
+
+def test_a_waiting_sends_stored_origin_is_read_as_the_session_it_names() -> None:
+    # A format-1 or format-2 waiting send stores its session's id, or the
+    # location one backend stored in its place, read back as the id.
+    assert read_stored_sender("fixture-root") == "fixture-root"
+    assert read_stored_sender("sce://scxml/a%20b") == "a b"
+    assert read_stored_sender("sce://scxml/peer:1") == "peer:1"
+    assert read_stored_sender("") == ""
 
 
 def test_an_event_is_stored_as_format2_writes_it() -> None:

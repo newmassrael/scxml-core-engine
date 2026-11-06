@@ -25,7 +25,7 @@ only the document knows about the sessions and invocations a saved state names:
     the state that holds the host-run ``<invoke>`` of this type and id, and
     ``None`` for one the document does not have a host invoker run;
 ``judge_child(child)``
-    refuses ``child``, a running child a format-2 state lists, unless its session
+    refuses ``child``, a running child a tree of sessions lists, unless its session
     is a state of the document the child names, to any depth (docs/adr/0045,
     section 3, step 1), building nothing;
 ``resume_children(engine, children, wall_now_ms)``
@@ -55,9 +55,8 @@ from .engine import (
     RESTORED_NO_DEADLINE,
 )
 from .event import EventMetadata, EventWithMetadata, event_data_text
-from .event_origin import origin_processor_of
 from .host_processor import HostInvokeRequest, HostSendRequest
-from .io_processors import read_stored_origin, stored_origin_text
+from .io_processors import scxml_origin
 from .scheduler import ScheduledRoute
 from .saved_state import (
     ACT_CHILD,
@@ -65,7 +64,6 @@ from .saved_state import (
     ACT_INTERNAL,
     ACT_PARENT,
     ACT_RAISE,
-    SAVED_FORMAT_2,
     SavedAct,
     SavedChild,
     SavedEvent,
@@ -160,7 +158,7 @@ def save_session(
     each such revision in ``revisions`` and writes the revised shape; any other
     writes the first shape and no ``revisions``. A machine of a product line
     writes the features its build turns on in ``features``; any other writes no
-    ``features``. The state is format 2: the
+    ``features``. The state is a tree, written as format 3: the
     machine's own id, how many times each ``<invoke>`` has started, and children,
     each running child with its whole state, which the generated machine saved
     through the child's own document, in document order.
@@ -231,8 +229,9 @@ def save_session(
     for queued in engine._external_queue:
         # §scxml-5.10: a queued event is saved under the name it ARRIVED under, so a
         # restore gives the machine the same `_event.name`. Its origin and sender
-        # are written as format 2 holds them (docs/adr/0090, "Until step 6"): the
-        # sender's id for an event a session sent, the address otherwise.
+        # are saved as the event carries them, the pair the processor that
+        # delivered it wrote and the session that sent it (docs/adr/0090,
+        # section 7).
         metadata = queued.metadata
         state.external.append(
             SavedEvent(
@@ -240,8 +239,8 @@ def save_session(
                 data=event_data_text(metadata.data),
                 type=metadata.event_type,
                 send_id=metadata.send_id,
-                origin=stored_origin_text(metadata.origin, metadata.sender),
-                origin_type=origin_processor_of(metadata.origin),
+                origin=metadata.origin,
+                sender=metadata.sender,
                 invoke_id=metadata.invoke_id,
                 host_invoke_token=metadata.host_invoke_token,
             )
@@ -312,11 +311,15 @@ def _save_pending(engine: Any, policy: Any, wall_now_ms: int) -> List[SavedSend]
     the invocation, as its ``due``, and left out here. One that belongs to no
     running invocation is refused like a send the format cannot carry.
 
-    Python holds no ``origin`` for a waiting send: the event a delayed send makes
-    names the session that sent it, as every backend's does, so what is saved is
-    that session's id."""
+    Python holds no origin for a waiting send: the event a delayed send to a
+    session makes is this session's own send, which the SCXML processor delivers,
+    so what is saved is this session's SCXML pair and its id, the origin and the
+    sender that event carries when it is delivered. A send to the internal queue
+    makes an internal event, which has no origin, and is saved with neither
+    (docs/adr/0090, section 7)."""
     now = engine.now_ms
     session_id = engine._session_id
+    origin = scxml_origin(session_id)
     sends: List[SavedSend] = []
     for entry in engine._scheduler.pending():
         due = _due_on(wall_now_ms, now, entry.due_ms)
@@ -351,15 +354,16 @@ def _save_pending(engine: Any, policy: Any, wall_now_ms: int) -> List[SavedSend]
                 event=entry.name or policy.get_event_name(entry.event),
                 data=data,
                 send_id=entry.sendid,
-                origin=session_id,
+                origin=origin,
+                sender=session_id,
             )
         elif entry.route.kind == _ROUTE_INTERNAL:
+            # The event is internal, and an internal event has no origin.
             act = SavedAct(
                 kind=ACT_INTERNAL,
                 event=entry.route.event_name or policy.get_event_name(entry.event),
                 data=data,
                 send_id=entry.sendid,
-                origin=session_id,
             )
         # docs/adr/0045: the parent and a child of this session are sessions the
         # saved tree holds.
@@ -369,7 +373,8 @@ def _save_pending(engine: Any, policy: Any, wall_now_ms: int) -> List[SavedSend]
                 event=entry.route.event_name,
                 data=data,
                 send_id=entry.sendid,
-                origin=session_id,
+                origin=origin,
+                sender=session_id,
             )
         elif entry.route.kind == _ROUTE_INVOCATION:
             act = SavedAct(
@@ -378,7 +383,8 @@ def _save_pending(engine: Any, policy: Any, wall_now_ms: int) -> List[SavedSend]
                 event=entry.route.event_name,
                 data=data,
                 send_id=entry.sendid,
-                origin=session_id,
+                origin=origin,
+                sender=session_id,
             )
         else:
             raise StateRefusal(
@@ -536,15 +542,14 @@ def _judge(policy: Any, saved: SavedState) -> _JudgedSession:
             raise StateRefusal(f"external[{at}] is '{event.name}', which the document does not name")
         if event.type not in _EVENT_TYPES:
             raise StateRefusal(f"external[{at}] has the type '{event.type}', which is not an event type")
-        # docs/adr/0090, section 7: the stored text is read back as the pair and
-        # the sender it stands for, whichever backend wrote it.
-        origin, sender = read_stored_origin(event.origin, event.origin_type)
+        # docs/adr/0090, section 7: the event carries the pair and the sender the
+        # text was read as, a format-2 origin read by its table when the text was.
         metadata = EventMetadata(
             data=event.data,
             event_type=event.type,
             send_id=event.send_id,
-            origin=origin,
-            sender=sender,
+            origin=event.origin,
+            sender=event.sender,
             invoke_id=event.invoke_id,
             host_invoke_token=event.host_invoke_token,
             name=event.name if policy.get_event_name(resolved) != event.name else "",
@@ -603,7 +608,7 @@ def _judge(policy: Any, saved: SavedState) -> _JudgedSession:
 
 
 def _judge_child_entry(policy: Any, parent: SavedState, child: SavedChild, index: int) -> None:
-    """Refuse `child`, the `index`-th running child of the format-2 session `parent`,
+    """Refuse `child`, the `index`-th running child of the tree's session `parent`,
     unless it is the child that session could be running (docs/adr/0045, section 3,
     step 1): its start is the count the session holds for its ``<invoke>``, its
     session id is the session's and the id it was started under, and its own
@@ -659,7 +664,7 @@ def enter_session(engine: Any, saved: SavedState, wall_now_ms: int) -> None:
     twice. A configuration that is not one of this document is refused, and nothing
     is entered.
 
-    The engine was built under the id `saved` names, a format-2 state's own, which
+    The engine was built under the id `saved` names, a tree's own, which
     every child's id and a peer's address name (docs/adr/0045). `wall_now_ms` is what
     time it is on the wall clock the saved ``due``s were written against: a waiting
     send is armed to come due ``due - wall_now_ms`` after now, and one already due is
@@ -667,7 +672,7 @@ def enter_session(engine: Any, saved: SavedState, wall_now_ms: int) -> None:
 
     A format-1 state's running children are started again from their beginning, last,
     so what a child sends as it starts stands behind what was already waiting. A
-    format-2 state's are judged with the rest before anything is built, and resumed,
+    tree's are judged with the rest before anything is built, and resumed,
     each where it stood, once this session stands where it did
     (``policy.resume_children``)."""
     policy = engine.policy
