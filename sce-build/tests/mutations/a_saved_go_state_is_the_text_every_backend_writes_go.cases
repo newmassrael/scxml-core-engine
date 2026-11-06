@@ -8,12 +8,15 @@
 # The shared texts under `sce-build/tests/fixtures/static_datamodel/saved/` are written by
 # one backend and read by all. `SaveSession` and `SaveHistory` fix the order of everything
 # an author does not order (a history's states in document order, the histories by id), the
-# shape a machine past its first revision writes, and the fields of a waiting send;
-# `armPending` arms a send back with the origin it was saved with; the text writer in
-# `saved_state.go` writes a child's document and the count of starts of each `<invoke>`.
+# shape a machine past its first revision writes, and the fields of a waiting send and of
+# a queued event, with the origin and the sender of each (docs/adr/0090, section 7);
+# `armPending` arms a send back with the sender it was saved with; the text writer in
+# `saved_state.go` writes a child's document and the count of starts of each `<invoke>`,
+# and its reader reads a format-2 origin by the table of docs/adr/0090, section 7.
 # `a_state_another_backend_saved_is_restored_test.go` restores every shared text with a
 # machine of its document and saves it again at the moment it was restored at, expecting
-# the same text; the child and tree tests hold the writer of a child and of the counts.
+# the same text, and each format-2 reading fixture, expecting the text `read_as/` holds;
+# the child and tree tests hold the writer of a child and of the counts.
 # The mutants take one decision away each:
 #
 #   the histories of a state are written in the opposite order of their ids;
@@ -21,7 +24,12 @@
 #   a machine past its first revision writes the shape of its first;
 #   a waiting event is saved without the origin it was sent from;
 #   a waiting internal event is saved without its send id;
+#   a waiting internal event is saved with the sender its entry kept;
 #   a restored waiting event loses its origin;
+#   a waiting send a format-1 text stored with no sender is armed with none;
+#   a queued event is saved without its sender;
+#   a restored queued event loses its sender;
+#   a format-2 origin is read with no regard to the type stored beside it;
 #   the count of starts of an invoke is written one too many;
 #   a running child is written without the document it runs.
 #
@@ -31,9 +39,9 @@
 mutation_go backends/go/tests ./integration/static_datamodel/
 mutation_targets backends/go/runtime/engine_saved.go
 mutation_targets backends/go/runtime/saved_state.go
-mutation_oracles backends/go/tests/integration/static_datamodel/a_state_another_backend_saved_is_restored_test.go backends/go/tests/integration/static_datamodel/a_saved_child_session_is_resumed_after_a_restore_test.go backends/go/tests/integration/static_datamodel/a_saved_tree_holds_every_session_where_it_stood_test.go sce-build/tests/fixtures/static_datamodel/saved/static_history.json sce-build/tests/fixtures/static_datamodel/saved/static_timers.json sce-build/tests/fixtures/static_datamodel/saved/static_schema_revision.json
+mutation_oracles backends/go/tests/integration/static_datamodel/a_state_another_backend_saved_is_restored_test.go backends/go/tests/integration/static_datamodel/a_saved_child_session_is_resumed_after_a_restore_test.go backends/go/tests/integration/static_datamodel/a_saved_tree_holds_every_session_where_it_stood_test.go sce-build/tests/fixtures/static_datamodel/saved/static_history.json sce-build/tests/fixtures/static_datamodel/saved/static_timers.json sce-build/tests/fixtures/static_datamodel/saved/static_schema_revision.json sce-build/tests/fixtures/static_datamodel/saved/static_invoke_tree_working.json sce-build/tests/fixtures/static_datamodel/saved/format1/static_timers.json sce-build/tests/fixtures/static_datamodel/saved/format2/static_invoke_tree_working_origins.json sce-build/tests/fixtures/static_datamodel/saved/format2/read_as/static_invoke_tree_working_origins.json
 
-# Caught by TestAFormatTwoStateAnotherBackendSavedIsRestoredAndSavedAsItWas, on
+# Caught by TestAFormatThreeStateAnotherBackendSavedIsRestoredAndSavedAsItWas, on
 # `static_history`, which records three histories (`crew_all`, `deepest`, `last`).
 mutation_case "the histories of a state are written in the opposite order of their ids" <<'PY'
 edit("backends/go/runtime/engine_saved.go",
@@ -41,7 +49,7 @@ edit("backends/go/runtime/engine_saved.go",
      "return saved[i].ID > saved[j].ID")
 PY
 
-# Caught by TestAFormatTwoStateAnotherBackendSavedIsRestoredAndSavedAsItWas, on the
+# Caught by TestAFormatThreeStateAnotherBackendSavedIsRestoredAndSavedAsItWas, on the
 # history `crew_all`, which recorded `l2` and `r2`.
 mutation_case "the states a history recorded are written in the opposite order of the document" <<'PY'
 edit("backends/go/runtime/engine_saved.go",
@@ -49,7 +57,7 @@ edit("backends/go/runtime/engine_saved.go",
      "return policy.GetDocumentOrder(states[i]) > policy.GetDocumentOrder(states[j])")
 PY
 
-# Caught by TestAFormatTwoStateAnotherBackendSavedIsRestoredAndSavedAsItWas, on
+# Caught by TestAFormatThreeStateAnotherBackendSavedIsRestoredAndSavedAsItWas, on
 # `static_schema_revision`, whose one revised record puts the revised shape in the text.
 mutation_case "a machine past its first revision writes the shape of its first" <<'PY'
 edit("backends/go/runtime/engine_saved.go",
@@ -57,28 +65,77 @@ edit("backends/go/runtime/engine_saved.go",
      "if len(revisions) > 1 {")
 PY
 
-# Caught by TestAFormatTwoStateAnotherBackendSavedIsRestoredAndSavedAsItWas, on
+# Caught by TestAFormatThreeStateAnotherBackendSavedIsRestoredAndSavedAsItWas, on
 # `static_timers`, whose waiting `beat` and `echo` are sent from `fixture-root`.
 mutation_case "a waiting event is saved without the origin it was sent from" <<'PY'
 edit("backends/go/runtime/engine_saved.go",
-     "Kind: SavedActRaise, Event: policy.GetEventName(act.Event), Data: act.Data,\n\t\t\t\tSendID: act.SendID, Origin: act.Sender}",
+     "Kind: SavedActRaise, Event: policy.GetEventName(act.Event), Data: act.Data,\n\t\t\t\tSendID: act.SendID, Origin: ScxmlOriginOf(act.Sender), Sender: act.Sender}",
      "Kind: SavedActRaise, Event: policy.GetEventName(act.Event), Data: act.Data,\n\t\t\t\tSendID: act.SendID}")
 PY
 
-# Caught by TestAFormatTwoStateAnotherBackendSavedIsRestoredAndSavedAsItWas, on
+# Caught by TestAFormatThreeStateAnotherBackendSavedIsRestoredAndSavedAsItWas, on
 # `static_timers`, whose waiting `inner` is an internal event sent under `__send_2`.
 mutation_case "a waiting internal event is saved without its send id" <<'PY'
 edit("backends/go/runtime/engine_saved.go",
-     "Kind: SavedActInternal, Event: policy.GetEventName(act.Event), Data: act.Data,\n\t\t\t\tSendID: act.SendID, Origin: act.Sender}",
-     "Kind: SavedActInternal, Event: policy.GetEventName(act.Event), Data: act.Data,\n\t\t\t\tOrigin: act.Sender}")
+     "Kind: SavedActInternal, Event: policy.GetEventName(act.Event), Data: act.Data,\n\t\t\t\tSendID: act.SendID}",
+     "Kind: SavedActInternal, Event: policy.GetEventName(act.Event), Data: act.Data,\n\t\t\t\t}")
 PY
 
-# Caught by TestAFormatTwoStateAnotherBackendSavedIsRestoredAndSavedAsItWas, on
-# `static_timers`: the restored `beat` and `echo` are saved again with an empty origin.
+# Caught by TestAWaitingSendIsSavedWithTheOriginItsEventWillCarry, on `static_timers`
+# armed as `fixture-root`, whose waiting `inner` is written `"origin":null,"sender":null`:
+# the sender the scheduled entry keeps is saved with the event's origin, and an internal
+# event has none (docs/adr/0090, section 7). A restored `inner` keeps no sender, so the
+# restore round trip alone does not see it.
+mutation_case "a waiting internal event is saved with the sender its entry kept" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "Kind: SavedActInternal, Event: policy.GetEventName(act.Event), Data: act.Data,\n\t\t\t\tSendID: act.SendID}",
+     "Kind: SavedActInternal, Event: policy.GetEventName(act.Event), Data: act.Data,\n\t\t\t\tSendID: act.SendID, Origin: ScxmlOriginOf(act.Sender), Sender: act.Sender}")
+PY
+
+# Caught by TestAFormatThreeStateAnotherBackendSavedIsRestoredAndSavedAsItWas, on
+# `static_timers`: the restored `beat` and `echo` are saved again with no origin.
 mutation_case "a restored waiting event loses its origin" <<'PY'
 edit("backends/go/runtime/engine_saved.go",
      "engine.scheduler.ScheduleEventAt(read.event, readyAt(read.due), act.SendID, act.Data, sender)",
      'engine.scheduler.ScheduleEventAt(read.event, readyAt(read.due), act.SendID, act.Data, "")')
+PY
+
+# Caught by TestAFormatOneStateIsRestoredAndTakesTheMachinesOwnSession, on the format-1
+# `static_timers`, whose waiting `beat`, `echo` and `timeout` stored an empty origin: each
+# is armed with no sender and saved again as a `raise` act that names none, a text the
+# format-3 reader refuses.
+mutation_case "a waiting send a format-1 text stored with no sender is armed with none" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "sender = sessionID",
+     "sender = act.Sender")
+PY
+
+# Caught by TestTheTreeSavesTheSharedTextByteForByte, on the tree's queued `answer`, which
+# the child sent: it is saved with the child's pair and no sender, a text the format-3
+# reader refuses and not the shared one.
+mutation_case "a queued event is saved without its sender" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "Sender:   queued.Metadata.Sender,",
+     'Sender:   "",')
+PY
+
+# Caught by TestTheSharedTextRestoresAndSavesAgainAsItWas, on the tree's queued `answer`:
+# restored with its pair and no sender, it is saved again without the sender it was
+# saved with.
+mutation_case "a restored queued event loses its sender" <<'PY'
+edit("backends/go/runtime/engine_saved.go",
+     "queued.Metadata.Origin, queued.Metadata.Sender = event.Origin, event.Sender",
+     "queued.Metadata.Origin = event.Origin")
+PY
+
+# Caught by TestAFormatTwoStateIsRestoredAndSavedAsTheFormatThreeTextItIsReadAs, on
+# `format2/static_invoke_tree_working_origins.json`, whose `rest` stored `motor` beside
+# `x-sce-host`: read as the SCXML pair of a session `motor`, it is not the host's pair
+# `read_as/` holds.
+mutation_case "a format-2 origin is read with no regard to the type stored beside it" <<'PY'
+edit("backends/go/runtime/saved_state.go",
+     "event.Origin, event.Sender = ReadStoredOrigin(origin, originType)",
+     "event.Origin, event.Sender = ReadStoredOrigin(origin, originType[:0])")
 PY
 
 # Caught by TestAMachineIsSavedWithTheWholeStateOfTheChildItIsRunning and

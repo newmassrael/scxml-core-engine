@@ -6,7 +6,7 @@
 # Run with
 # `scripts/mutate sce-build/tests/mutations/a_saved_go_tree_carries_its_queues_ids_and_routes_go.cases`.
 #
-# `EnterSession` binds the session id a format-2 text names, puts the saved external
+# `EnterSession` binds the session id a tree's text names, puts the saved external
 # queue back, restores the count that numbers the next generated send id, and arms each
 # waiting send; a send to the session's parent or to a child of it is armed as a routed
 # send, which the save writes back by its route. `SaveSession` writes the count of
@@ -38,7 +38,7 @@ mutation_oracles backends/go/tests/integration/static_datamodel/a_saved_tree_hol
 # The restored root and its children save under a random id, so the text saved again is
 # not the one restored. Caught by TestARestoredTreeSavesTheTextItWasRestoredFrom,
 # TestTheSharedTextRestoresAndSavesAgainAsItWas and
-# TestAFormatTwoStateAnotherBackendSavedIsRestoredAndSavedAsItWas.
+# TestAFormatThreeStateAnotherBackendSavedIsRestoredAndSavedAsItWas.
 mutation_case "a restore keeps the session id the machine drew in place of the one saved" <<'PY'
 edit("backends/go/runtime/engine_saved.go",
      "policy.BindSessionID(id)",
