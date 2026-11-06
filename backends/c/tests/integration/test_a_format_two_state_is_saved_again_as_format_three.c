@@ -162,8 +162,82 @@ static void every_format_two_text_is_saved_again_as_the_format_three_text_it_is_
     CHECK(checked >= 4, "only %d of the format-2 reading texts were held to a machine", checked);
 }
 
+// `text` with every `from` made `to`, into `out` of `cap` bytes.
+static void replace_all(const char *text, const char *from, const char *to, char *out, size_t cap) {
+    const size_t from_len = strlen(from);
+    const size_t to_len = strlen(to);
+    size_t at = 0u;
+    while (*text != '\0' && at + 1u < cap) {
+        if (strncmp(text, from, from_len) == 0) {
+            if (at + to_len + 1u >= cap) {
+                break;
+            }
+            memcpy(out + at, to, to_len);
+            at += to_len;
+            text += from_len;
+        } else {
+            out[at++] = *text++;
+        }
+    }
+    out[at] = '\0';
+}
+
+// The reading fixture `name` with each `from` made `to`, restored by `machine` and saved at once:
+// the text `read_as/<name>` holds.
+static void a_changed_text_is_saved_as(const machine_t *machine, const char *name, const char *const *from,
+                                       const char *const *to, size_t count) {
+    char path[1024];
+    static char text[TEXT_CAP];
+    static char changed[TEXT_CAP];
+    static char want[TEXT_CAP];
+    static char again[TEXT_CAP];
+    size_t len = 0u;
+    size_t want_len = 0u;
+    sce_saved_error_t err;
+    if (machine == NULL) {
+        CHECK(false, "%s is of no machine this test builds", name);
+        return;
+    }
+    (void)snprintf(path, sizeof(path), "%s/format2/%s", SCE_SAVED_FIXTURES_DIR, name);
+    if (!read_trimmed(path, text, sizeof(text), &len)) {
+        CHECK(false, "cannot read %s", path);
+        return;
+    }
+    (void)snprintf(path, sizeof(path), "%s/format2/read_as/%s", SCE_SAVED_FIXTURES_DIR, name);
+    if (!read_trimmed(path, want, sizeof(want), &want_len)) {
+        CHECK(false, "cannot read %s", path);
+        return;
+    }
+    for (size_t i = 0u; i < count; ++i) {
+        CHECK(strstr(text, from[i]) != NULL, "%s holds %s", name, from[i]);
+        replace_all(text, from[i], to[i], changed, sizeof(changed));
+        memcpy(text, changed, sizeof(text));
+    }
+    const bool ok = machine->round_trip(text, strlen(text), SAVED_AT_MS, again, sizeof(again), &err);
+    CHECK(ok, "%s, changed: restoring and saving again was refused: %s", name, ok ? "" : err.message);
+    if (ok) {
+        CHECK(strcmp(again, want) == 0, "%s, changed: saved again as\n%s\nit is read as\n%s", name, again, want);
+    }
+}
+
+// docs/adr/0090, section 7: a `raise`, `parent` or `child` act of a format-2 text whose stored
+// origin is empty is sent by the session that holds it, so it is saved again with that session's
+// pair and id, as the act that stored the id is.
+static void a_format_two_act_stored_with_no_origin_is_the_sessions_own_send(void) {
+    static const char *const timers_from[] = {"\"origin\":\"fixture-root\""};
+    static const char *const timers_to[] = {"\"origin\":\"\""};
+    static const char *const tree_from[] = {"\"sendid\":\"poke\",\"origin\":\"fixture-root\"",
+                                            "\"sendid\":\"report\",\"origin\":\"fixture-root.working.2.worker\""};
+    static const char *const tree_to[] = {"\"sendid\":\"poke\",\"origin\":\"\"",
+                                          "\"sendid\":\"report\",\"origin\":\"\""};
+    a_changed_text_is_saved_as(machine_of("static_timers.json"), "static_timers.json", timers_from, timers_to, 1u);
+    a_changed_text_is_saved_as(machine_of("static_invoke_tree_working.json"), "static_invoke_tree_working.json",
+                               tree_from, tree_to, 2u);
+}
+
 int main(void) {
     every_format_two_text_is_saved_again_as_the_format_three_text_it_is_read_as();
+    a_format_two_act_stored_with_no_origin_is_the_sessions_own_send();
     if (failures != 0) {
         (void)fprintf(stderr, "%d check(s) failed\n", failures);
         return 1;
