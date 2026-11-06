@@ -168,30 +168,6 @@ pub fn read_stored_sender(origin: &str) -> String {
     }
 }
 
-/// The `_event.origin` an engine that carried the sender's bare session id
-/// published for it.
-///
-/// No engine of this runtime calls it: each event now carries the pair the
-/// processor that delivered it wrote ([`scxml_origin`]), so nothing converts
-/// at the read. It is the Rust statement of the rule the C++
-/// `IOProcessorHelper::publishedOrigin` states, which docs/adr/0090 removes
-/// from every runtime at once (its step 7). A value that already carries a
-/// scheme is passed through, and anything else is wrapped as an SCXML
-/// location.
-pub fn published_origin(origin_session_id: &str) -> String {
-    // §scxml-C-1: the 'origin' of the event raised in the receiving session
-    // must match the 'location' the sending session published in its
-    // `_ioprocessors` entry. This is where the id the engine carries
-    // internally becomes that location.
-    if origin_session_id.is_empty() {
-        return String::new();
-    }
-    if origin_session_id.contains("://") {
-        return origin_session_id.to_string();
-    }
-    scxml_location(origin_session_id)
-}
-
 /// Entry set for a session.
 ///
 /// Every processor is filed twice: under the specification's entry name and
@@ -378,24 +354,6 @@ mod tests {
         assert_eq!(read_stored_sender("s1"), "s1");
         assert_eq!(read_stored_sender("sce://scxml/a%20b"), "a b");
         assert_eq!(read_stored_sender(""), "");
-    }
-
-    #[test]
-    fn published_origin_is_the_location_the_sender_publishes() {
-        let descriptors = build("session-1", "");
-
-        assert_eq!(
-            Some(published_origin("session-1")),
-            location_of(&descriptors, SCXML_ALIAS)
-        );
-    }
-
-    #[test]
-    fn published_origin_passes_an_address_through_and_keeps_empty_empty() {
-        // A remote child is stamped with a URI, not an id; wrapping it again
-        // would produce an address naming nothing.
-        assert_eq!(published_origin("sce://mesh/peer-7"), "sce://mesh/peer-7");
-        assert_eq!(published_origin(""), "");
     }
 
     #[test]

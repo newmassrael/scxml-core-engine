@@ -136,22 +136,6 @@ object IoProcessors {
     }
 
     /**
-     * The `_event.origin` an engine that carried the sender's bare session id
-     * published for it.
-     *
-     * Nothing in this runtime calls it: every event now carries the pair the
-     * delivering processor wrote ([scxmlOrigin]), so nothing converts at the
-     * read. It is the Kotlin statement of the rule the C++
-     * `IOProcessorHelper::publishedOrigin` and the other runtimes' ports still
-     * state, which docs/adr/0090 removes from every runtime at once.
-     */
-    fun publishedOrigin(originSessionId: String): String = when {
-        originSessionId.isEmpty() -> ""
-        originSessionId.contains("://") -> originSessionId
-        else -> scxmlLocation(originSessionId)
-    }
-
-    /**
      * Entry set for a session.
      *
      * Every processor is filed twice: under the specification's entry name and

@@ -130,21 +130,3 @@ func TestAStoredWaitingSendNamesItsSenderByIDOrLocation(t *testing.T) {
 	}
 }
 
-func TestPublishedOriginIsTheLocationTheSenderPublishes(t *testing.T) {
-	descriptors := BuildIoProcessors("session-1", "")
-
-	if got, want := PublishedOrigin("session-1"), locationOf(descriptors, ScxmlProcessorAlias); got != want {
-		t.Fatalf("PublishedOrigin = %q, published location = %q", got, want)
-	}
-}
-
-func TestPublishedOriginPassesAnAddressThroughAndKeepsEmptyEmpty(t *testing.T) {
-	// A remote child is stamped with a URI, not an id; wrapping it again would
-	// produce an address naming nothing.
-	if got := PublishedOrigin("sce://mesh/peer-7"); got != "sce://mesh/peer-7" {
-		t.Errorf("PublishedOrigin passed-through address = %q", got)
-	}
-	if got := PublishedOrigin(""); got != "" {
-		t.Errorf("PublishedOrigin(\"\") = %q, want empty", got)
-	}
-}

@@ -223,33 +223,6 @@ public:
     }
 
     /**
-     * @brief The `_event.origin` an engine that carries the sender's bare
-     *        session id publishes for it
-     *
-     * Neither C++ engine calls this: each now carries the pair the delivering
-     * processor wrote (`scxmlOrigin`), so nothing converts at the read. It is
-     * the C++ statement of the rule the other runtimes' `publishedOrigin` and
-     * `published_origin` ports still apply, which docs/adr/0090 removes from
-     * every runtime at once.
-     *
-     * @param originSessionId Sender's session id, or an address; empty for none
-     * @return Address to publish as `_event.origin`, empty for empty input
-     */
-    static std::string publishedOrigin(const std::string &originSessionId) {
-        // §scxml-C-1: the 'origin' of the event raised in the receiving
-        // session must match the 'location' the sending session published
-        // in its `_ioprocessors` entry. This is where the id both engines
-        // carry internally becomes that location.
-        if (originSessionId.empty()) {
-            return "";
-        }
-        if (originSessionId.find("://") != std::string::npos) {
-            return originSessionId;
-        }
-        return scxmlLocation(originSessionId);
-    }
-
-    /**
      * @brief Entry set for a session
      *
      * §scxml-C-1-1: the SCXML Event I/O Processor entry and its 'location'

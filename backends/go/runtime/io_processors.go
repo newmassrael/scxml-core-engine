@@ -128,26 +128,6 @@ func ReadStoredSender(origin string) string {
 	return origin
 }
 
-// PublishedOrigin is the _event.origin an engine that carried the sender's bare
-// session id published for it.
-//
-// No engine of this runtime calls it: each event now carries the pair the
-// processor that delivered it wrote (ScxmlOrigin), so nothing converts at the
-// read. It is the Go statement of the rule the C++
-// IOProcessorHelper::publishedOrigin states, which docs/adr/0090 removes from
-// every runtime at once (its step 7). §scxml-C-1 has the origin match the
-// location the sender published: a value that already carries a scheme is
-// passed through, and anything else is wrapped as an SCXML location.
-func PublishedOrigin(originSessionID string) string {
-	if originSessionID == "" {
-		return ""
-	}
-	if strings.Contains(originSessionID, "://") {
-		return originSessionID
-	}
-	return ScxmlProcessorLocation(originSessionID)
-}
-
 // BuildIoProcessors returns the _ioprocessors entry set for a session.
 //
 // Port of the C++ IOProcessorHelper (sce/include/common/IOProcessorHelper.h).

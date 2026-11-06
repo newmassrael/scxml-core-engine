@@ -14756,18 +14756,8 @@
           "kind": "implements"
         },
         {
-          "file": "sce/include/common/IOProcessorHelper.h",
-          "symbol": "publishedOrigin",
-          "kind": "implements"
-        },
-        {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "raiseExternal",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/rust/runtime/src/helpers/io_processors.rs",
-          "symbol": "published_origin",
           "kind": "implements"
         },
         {
@@ -14802,11 +14792,6 @@
         },
         {
           "file": "backends/go/runtime/io_processors.go",
-          "symbol": "PublishedOrigin",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/go/runtime/io_processors.go",
           "symbol": "ScxmlProcessorLocation",
           "kind": "implements"
         },
@@ -14827,11 +14812,6 @@
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/IoProcessors.kt",
-          "symbol": "publishedOrigin",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/IoProcessors.kt",
           "symbol": "scxmlLocation",
           "kind": "implements"
         },
@@ -14848,11 +14828,6 @@
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "advance_time",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/python/runtime/sce_runtime/io_processors.py",
-          "symbol": "published_origin",
           "kind": "implements"
         },
         {
@@ -22544,6 +22519,36 @@
       "target_kind": "section",
       "target_id": "scxml-6.4",
       "reason": "the parent-to-child door is handToChild since ADR 0090"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-1",
+      "reason": "ADR 0090 step 7: the port is deleted; every event carries the EventOrigin pair its processor wrote"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-1",
+      "reason": "ADR 0090 step 7: the port is deleted; every event carries the EventOrigin pair its processor wrote"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-1",
+      "reason": "ADR 0090 step 7: the port is deleted; every event carries the EventOrigin pair its processor wrote"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-1",
+      "reason": "ADR 0090 step 7: the port is deleted; every event carries the EventOrigin pair its processor wrote"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-C-1",
+      "reason": "ADR 0090 step 7: the port is deleted; every event carries the EventOrigin pair its processor wrote"
     }
   ],
   "frames": {},

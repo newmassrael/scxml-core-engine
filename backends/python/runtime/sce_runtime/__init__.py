@@ -59,7 +59,6 @@ from .inbox import (
     InboxWaker,
 )
 from .io_processors import (
-    published_origin,
     read_stored_origin,
     read_stored_sender,
     scxml_location,
@@ -238,7 +237,6 @@ __all__ = [
     "origin_address_of",
     "origin_processor_of",
     "parse_json",
-    "published_origin",
     "read_stored_origin",
     "read_stored_sender",
     "refusal_within",

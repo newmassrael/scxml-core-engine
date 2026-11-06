@@ -7,9 +7,9 @@
 //
 // The address has no scheme, so it is no SCXML location, and the type is the
 // host's. The Kotlin binding used to wrap such an address as `sce://scxml/motor`
-// (`IoProcessors.publishedOrigin`) and, for an ending that named no type, fill
-// in the SCXML processor's; `completeHostInvoke` now takes the pair whole and the
-// binding reads it as written.
+// and, for an ending that named no type, fill in the SCXML processor's;
+// `completeHostInvoke` now takes the pair whole and the binding reads it as
+// written.
 //
 // Fixture:
 // integration_resources/a_host_names_its_origin_in_its_own_terms/a_host_names_its_origin_in_its_own_terms.scxml

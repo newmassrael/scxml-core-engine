@@ -143,26 +143,6 @@ def read_stored_sender(origin: str) -> str:
     return located if located else origin
 
 
-def published_origin(origin_session_id: str) -> str:
-    """The ``_event.origin`` an engine that carries the sender's bare session id
-    publishes for it.
-
-    This runtime no longer calls it: an event carries the pair the delivering
-    processor wrote (:func:`scxml_origin`), so nothing converts at the read. It
-    is kept, with the C++ ``IOProcessorHelper::publishedOrigin`` and the other
-    runtimes' ports, until docs/adr/0090 removes the rule from every runtime at
-    once (its step 7). It leaves an argument that carries a scheme as it is and
-    wraps anything else as an SCXML location.
-    """
-    # §scxml-C-1 — the location the sending session published, from the bare
-    # id an engine that routes on it carried.
-    if not origin_session_id:
-        return ""
-    if "://" in origin_session_id:
-        return origin_session_id
-    return scxml_location(origin_session_id)
-
-
 def build(session_id: str, basic_http_access_uri: str = "") -> List[IoProcessorDescriptor]:
     """Entry set for a session.
 
