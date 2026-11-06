@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: a657d6d390827c00a8c65cc79818ec59a776eff477a713478c6b36adae5a7d61
+// source-hash: 7b98612ed0f35af10eaffafb7dd60088b78d6093971dc622b4d3161a336da46c
 // SCE-MAP: policy_scalar_settings.scxml:21 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="event-schema")
@@ -28,7 +28,7 @@ public enum PolicyScalarSettings {
 
     /// The payload as a JSON Schema (2020-12): one spelling of each value, every bound as this
     /// build resolved it, a text's in UTF-8 bytes in `x-sce-max-bytes`.
-    public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:policy_scalar_settings:1\",\"x-sce-source-hash\":\"a657d6d390827c00a8c65cc79818ec59a776eff477a713478c6b36adae5a7d61\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"strict\":{\"type\":\"boolean\"},\"limitDays\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":65535},\"burst\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295},\"locked\":{\"type\":\"boolean\"}},\"required\":[\"strict\",\"limitDays\",\"burst\",\"locked\"],\"additionalProperties\":false}"
+    public static let jsonSchema: String = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:policy_scalar_settings:1\",\"x-sce-source-hash\":\"7b98612ed0f35af10eaffafb7dd60088b78d6093971dc622b4d3161a336da46c\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"strict\":{\"type\":\"boolean\"},\"limitDays\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":65535},\"burst\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":4294967295},\"locked\":{\"type\":\"boolean\"}},\"required\":[\"strict\",\"limitDays\",\"burst\",\"locked\"],\"additionalProperties\":false}"
 }
 
 /// The payload of the event: a struct of the schema's fields in the schema's order,
