@@ -29,14 +29,14 @@ mutation_oracles backends/go/tests/integration/a_computed_event_name_is_matched_
 
 mutation_case "an external computed name is looked up in the exact table again" <<'PY'
 edit("backends/go/runtime/engine.go",
-     "func (e *Engine[S, E]) SendNamedExternal(name string, delay time.Duration, sendID, eventData, origin string) {\n\tevent, ok := e.ResolveEventByName(name)\n",
-     "func (e *Engine[S, E]) SendNamedExternal(name string, delay time.Duration, sendID, eventData, origin string) {\n\tevent, ok := e.policy.GetEventFromName(name)\n")
+     "func (e *Engine[S, E]) SendNamedExternal(name string, delay time.Duration, sendID, eventData, sender string) {\n\tevent, ok := e.ResolveEventByName(name)\n",
+     "func (e *Engine[S, E]) SendNamedExternal(name string, delay time.Duration, sendID, eventData, sender string) {\n\tevent, ok := e.policy.GetEventFromName(name)\n")
 PY
 
 mutation_case "an internal computed name is looked up in the exact table again" <<'PY'
 edit("backends/go/runtime/engine.go",
-     "func (e *Engine[S, E]) SendNamedInternal(name string, delay time.Duration, sendID, eventData, origin string) {\n\tevent, ok := e.ResolveEventByName(name)\n",
-     "func (e *Engine[S, E]) SendNamedInternal(name string, delay time.Duration, sendID, eventData, origin string) {\n\tevent, ok := e.policy.GetEventFromName(name)\n")
+     "func (e *Engine[S, E]) SendNamedInternal(name string, delay time.Duration, sendID, eventData, sender string) {\n\tevent, ok := e.ResolveEventByName(name)\n",
+     "func (e *Engine[S, E]) SendNamedInternal(name string, delay time.Duration, sendID, eventData, sender string) {\n\tevent, ok := e.policy.GetEventFromName(name)\n")
 PY
 
 mutation_case "an immediate external send does not carry the name it was sent under" <<'PY'
@@ -53,8 +53,8 @@ PY
 
 mutation_case "a delayed external send waits without the name it was sent under" <<'PY'
 edit("backends/go/runtime/engine.go",
-     "\t\treadyAtMs := e.schedNowMs() + int64(delay/time.Millisecond)\n\t\te.scheduler.ScheduleEventNamedAt(event, readyAtMs, sendID, eventData, origin, arrival)\n\t\treturn\n",
-     "\t\treadyAtMs := e.schedNowMs() + int64(delay/time.Millisecond)\n\t\te.scheduler.ScheduleEventNamedAt(event, readyAtMs, sendID, eventData, origin, \"\")\n\t\treturn\n")
+     "\t\treadyAtMs := e.schedNowMs() + int64(delay/time.Millisecond)\n\t\te.scheduler.ScheduleEventNamedAt(event, readyAtMs, sendID, eventData, sender, arrival)\n\t\treturn\n",
+     "\t\treadyAtMs := e.schedNowMs() + int64(delay/time.Millisecond)\n\t\te.scheduler.ScheduleEventNamedAt(event, readyAtMs, sendID, eventData, sender, \"\")\n\t\treturn\n")
 PY
 
 mutation_case "a delayed internal send waits without the name it was sent under" <<'PY'

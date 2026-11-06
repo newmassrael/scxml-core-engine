@@ -43,8 +43,8 @@ PY
 
 mutation_case "an immediate external send does not carry the name it was sent under" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     "                meta.metadata = EventMetadata::external(send_id, origin);\n                meta.metadata.name = crate::sce_string_from_str(arrival);\n",
-     "                meta.metadata = EventMetadata::external(send_id, origin);\n")
+     "                meta.metadata = EventMetadata::sent_by_session(send_id, sender);\n                meta.metadata.name = crate::sce_string_from_str(arrival);\n",
+     "                meta.metadata = EventMetadata::sent_by_session(send_id, sender);\n")
 PY
 
 mutation_case "an immediate internal send does not carry the name it was sent under" <<'PY'
@@ -55,8 +55,8 @@ PY
 
 mutation_case "a delayed external send waits without the name it was sent under" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     "                    origin,\n                    arrival,\n                );\n            }\n            None => {\n                let mut meta = EventWithMetadata::new(event);\n                meta.metadata = EventMetadata::external(",
-     "                    origin,\n                    \"\",\n                );\n            }\n            None => {\n                let mut meta = EventWithMetadata::new(event);\n                meta.metadata = EventMetadata::external(")
+     "                    sender,\n                    arrival,\n                );\n            }\n            None => {\n                let mut meta = EventWithMetadata::new(event);\n                meta.metadata = EventMetadata::sent_by_session(",
+     "                    sender,\n                    \"\",\n                );\n            }\n            None => {\n                let mut meta = EventWithMetadata::new(event);\n                meta.metadata = EventMetadata::sent_by_session(")
 PY
 
 mutation_case "a delayed internal send waits without the name it was sent under" <<'PY'
@@ -73,6 +73,6 @@ PY
 
 mutation_case "a delayed internal send is raised without the name its entry carried" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     "                meta.metadata.origin = origin;\n                meta.metadata.name = name;",
-     "                meta.metadata.origin = origin;\n                let _ = name;")
+     "                meta.metadata.send_id = send_id;\n                meta.metadata.name = name;\n                meta.set_event_data(event_data);\n                self.raise(meta);",
+     "                meta.metadata.send_id = send_id;\n                let _ = name;\n                meta.set_event_data(event_data);\n                self.raise(meta);")
 PY

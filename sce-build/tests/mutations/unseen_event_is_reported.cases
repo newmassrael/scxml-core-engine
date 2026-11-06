@@ -65,10 +65,10 @@ edit("backends/rust/runtime/src/engine.rs",
      """            self.core.note_unseen_event(P::event_id(event));
             return;
         }
-        self.raise_external(event, "", "");""",
+        self.raise_external(event, "");""",
      """            return;
         }
-        self.raise_external(event, "", "");""")
+        self.raise_external(event, "");""")
 PY
 
 # ── Counting the wrong fact ────────────────────────────────────────
@@ -95,8 +95,8 @@ PY
 
 mutation_case "every delivery is counted as unseen" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     """    pub fn raise_external(&mut self, event: P::Event, event_data: &str, origin: &str) {""",
-     """    pub fn raise_external(&mut self, event: P::Event, event_data: &str, origin: &str) {
+     """    pub fn raise_external(&mut self, event: P::Event, event_data: &str) {""",
+     """    pub fn raise_external(&mut self, event: P::Event, event_data: &str) {
         self.core.note_unseen_event(P::event_id(event));""")
 PY
 
