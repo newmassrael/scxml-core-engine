@@ -172,6 +172,50 @@ def test_a_format_two_internal_act_is_read_with_no_origin_and_no_sender() -> Non
     ]
 
 
+def test_a_format_two_act_with_an_empty_origin_was_sent_by_the_session_that_holds_it() -> None:
+    # Each session's own sends: the root's `raise` and the child's `parent` are
+    # read as sent by the `sessionid` of the session record each sits in, and are
+    # written back as format 3 with that session's pair. The internal act carries
+    # none whatever was stored.
+    def send(act: str) -> str:
+        return '{"due":"5","act":"' + act + '","event":"e","data":"","sendid":"","origin":""}'
+
+    child_session = _MINIMAL.replace('"root"', '"root.w"', 1).replace(
+        '"pending":[]', '"pending":[' + send("parent") + "]", 1
+    )
+    child = '{"id":"w","start":"1","invokeid":"w","document":"w","session":{' + child_session + "}}"
+    text = (
+        '{"format":2,'
+        + _MINIMAL.replace('"invokes":[]', '"invokes":[' + child + "]", 1).replace(
+            '"pending":[]', '"pending":[' + send("raise") + "," + send("internal") + "]", 1
+        )
+        + "}"
+    )
+    saved = saved_state_from_json(text)
+    assert [(s.act.kind, s.act.origin, s.act.sender) for s in saved.pending] == [
+        ("raise", scxml_origin("root"), "root"),
+        ("internal", None, None),
+    ]
+    (parent,) = saved.invokes.children[0].session.pending
+    assert (parent.act.origin, parent.act.sender) == (scxml_origin("root.w"), "root.w")
+    again = saved_state_from_json(saved.to_json())
+    assert again.format() == SAVED_FORMAT_3
+    assert again.pending[0].act.sender == "root"
+
+
+def test_a_format_one_act_with_an_empty_origin_names_no_session() -> None:
+    # A format-1 text holds no session id: the act is read with neither member,
+    # and the machine that restores it arms it as its own send.
+    text = (
+        '{"format":1,"shape":"s","configuration":["a"],"current":"a","variables":{},"history":{},'
+        '"pending":[{"due":"5","act":"raise","event":"e","data":"","sendid":"","origin":""}],"invokes":[],'
+        '"hostinvokes":[],"hostinvoketoken":"0","sendseq":"0","external":[]}'
+    )
+    saved = saved_state_from_json(text)
+    assert (saved.pending[0].act.origin, saved.pending[0].act.sender) == (None, None)
+    assert saved.to_json() == text
+
+
 def test_a_format_one_text_keeps_its_origins_as_format_two_stored_them() -> None:
     # Read without a machine and written back, a format-1 text stays format 1: an
     # event's origin is the sender's id for a session's send and the address
@@ -320,27 +364,12 @@ def _holding_act(act: str, origin: str, sender: str) -> str:
             _holding_event(_event_members(_ROOT_PAIR, '"a b"')),
             "'external[0].sender' (a b) is not an XML Nmtoken, which a session id is",
         ),
-        # A sender beside an origin other than the SCXML pair of that id: none, a
-        # host's pair, another session's pair, and the location unencoded.
+        # A sender beside no origin: a session that sent an event has a reply
+        # address.
         (
             _holding_event(_event_members("null", '"root"')),
-            "'external[0].sender' is 'root', and its 'origin' is not the SCXML pair of that session",
-        ),
-        (
-            _holding_event(_event_members('{"processor":"x-sce-host","address":"motor"}', '"motor"')),
-            "'external[0].sender' is 'motor', and its 'origin' is not the SCXML pair of that session",
-        ),
-        (
-            _holding_event(_event_members(_ROOT_PAIR, '"other"')),
-            "'external[0].sender' is 'other', and its 'origin' is not the SCXML pair of that session",
-        ),
-        (
-            _holding_event(
-                _event_members(
-                    '{"processor":"' + SCXML_EVENT_PROCESSOR_URI + '","address":"sce://scxml/peer:1"}', '"peer:1"'
-                )
-            ),
-            "'external[0].sender' is 'peer:1', and its 'origin' is not the SCXML pair of that session",
+            "'external[0].sender' is 'root' beside a null 'origin', and a session that sent an event has a "
+            "reply address",
         ),
         # Both members are always written.
         (
@@ -383,9 +412,22 @@ def _holding_act(act: str, origin: str, sender: str) -> str:
             _holding_act("internal", _ROOT_PAIR, "null"),
             "'pending[0]' is an internal act and holds an origin or a sender, which an internal event has not",
         ),
+        # A session's own send carries its own SCXML pair, unlike a queued event,
+        # whose address may be any reply address.
         (
             _holding_act("raise", _ROOT_PAIR, '"other"'),
             "'pending[0].sender' is 'other', and its 'origin' is not the SCXML pair of that session",
+        ),
+        (
+            _holding_act(
+                "parent", '{"processor":"' + SCXML_EVENT_PROCESSOR_URI + '","address":"mesh://dev/m/root"}', '"root"'
+            ),
+            "'pending[0].sender' is 'root', and its 'origin' is not the SCXML pair of that session",
+        ),
+        (
+            _holding_act("raise", "null", '"root"'),
+            "'pending[0].sender' is 'root' beside a null 'origin', and a session that sent an event has a "
+            "reply address",
         ),
     ],
 )
@@ -397,7 +439,12 @@ def test_a_format_three_origin_that_no_run_writes_is_refused_and_not_repaired(te
 
 def test_a_format_three_origin_is_read_as_written_and_written_back_as_it_was() -> None:
     # Neither member is derived from the other: an SCXML pair at an address that
-    # names no session has no sender, and a host's pair keeps its own type.
+    # names no session has no sender, a host's pair keeps its own type, and a
+    # queued event's sender stands beside whatever reply address the processor
+    # that delivered it wrote: a remote child's Mesh endpoint, or a location that
+    # is not the sender's own.
+    mesh_child = '{"processor":"' + SCXML_EVENT_PROCESSOR_URI + '","address":"mesh://dev/machine/root.w"}'
+    unencoded = '{"processor":"' + SCXML_EVENT_PROCESSOR_URI + '","address":"sce://scxml/peer:1"}'
     events = ",".join(
         [
             _event_members(
@@ -406,6 +453,10 @@ def test_a_format_three_origin_is_read_as_written_and_written_back_as_it_was() -
             _event_members('{"processor":"' + SCXML_EVENT_PROCESSOR_URI + '","address":"mesh://ecu"}', "null"),
             _event_members('{"processor":"x-sce-host","address":"motor"}', "null"),
             _event_members("null", "null"),
+            _event_members(mesh_child, '"root.w"'),
+            _event_members(_ROOT_PAIR, '"other"'),
+            _event_members(unencoded, '"peer:1"'),
+            _event_members('{"processor":"x-sce-host","address":"motor"}', '"motor"'),
         ]
     )
     acts = ",".join(
@@ -427,6 +478,10 @@ def test_a_format_three_origin_is_read_as_written_and_written_back_as_it_was() -
         (EventOrigin(SCXML_EVENT_PROCESSOR_URI, "mesh://ecu"), None),
         (EventOrigin("x-sce-host", "motor"), None),
         (None, None),
+        (EventOrigin(SCXML_EVENT_PROCESSOR_URI, "mesh://dev/machine/root.w"), "root.w"),
+        (scxml_origin("root"), "other"),
+        (EventOrigin(SCXML_EVENT_PROCESSOR_URI, "sce://scxml/peer:1"), "peer:1"),
+        (EventOrigin("x-sce-host", "motor"), "motor"),
     ]
     assert [(send.act.origin, send.act.sender) for send in saved.pending] == [
         (scxml_origin("root"), "root"),

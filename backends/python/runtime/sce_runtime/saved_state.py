@@ -228,8 +228,11 @@ class SavedEvent:
 
     ``origin`` is the pair the processor that delivered the event wrote, ``None``
     for an event no processor stamped, and ``sender`` the id of the session that
-    sent it, set only for an event the SCXML processor delivered, whose ``origin``
-    is then that session's SCXML pair (docs/adr/0090, section 7)."""
+    sent it, written by the processor that delivered it from that session (the
+    SCXML processor for a local session, the Mesh transport for a remote child or
+    parent) and ``None`` for any other sender. The two are independent: the
+    origin beside a sender is whatever reply address that processor wrote, and
+    is never ``None`` (docs/adr/0090, section 7)."""
 
     name: str = ""
     data: str = ""
@@ -594,8 +597,17 @@ def _saved_session_from_json(members: Dict[str, Any], form: int) -> SavedState:
             raise StateRefusal(f"'history.{id}' is not an array")
         state.history.append(SavedHistory(id, [text_of(item, "history." + id) for item in listed]))
 
+    # A tree's own id, read before its waiting sends: a format-2 send whose stored
+    # origin is empty was sent by the session that holds it (docs/adr/0090,
+    # section 7).
+    if form != SAVED_FORMAT_1:
+        session_id = field_text("sessionid")
+        if session_id_refusal_of(session_id) is not None:
+            raise StateRefusal(f"'sessionid' ({session_id}) is not an XML Nmtoken, which a session id is")
+        state.session_id = session_id
+
     for at, item in enumerate(field_array("pending")):
-        state.pending.append(_saved_send_from_json(item, f"pending[{at}]", form))
+        state.pending.append(_saved_send_from_json(item, f"pending[{at}]", form, state.session_id))
 
     listed = field_array("invokes")
     if form == SAVED_FORMAT_1:
@@ -605,12 +617,8 @@ def _saved_session_from_json(members: Dict[str, Any], form: int) -> SavedState:
             resumed=True, children=[_saved_child_from_json(item, at, form) for at, item in enumerate(listed)]
         )
 
-    # A tree's own members: the session's id and its count of starts.
+    # A tree's count of starts.
     if form != SAVED_FORMAT_1:
-        session_id = field_text("sessionid")
-        if session_id_refusal_of(session_id) is not None:
-            raise StateRefusal(f"'sessionid' ({session_id}) is not an XML Nmtoken, which a session id is")
-        state.session_id = session_id
         counted = read_field("invokestarts")
         if not isinstance(counted, dict):
             raise StateRefusal("'invokestarts' is not an object")
@@ -806,11 +814,15 @@ _PAIR_MEMBERS = ("processor", "address")
 def _saved_origin_from_json(members: Dict[str, Any], what: str) -> Tuple[Optional[EventOrigin], Optional[str]]:
     """The ``origin`` and ``sender`` of the format-3 record ``members``, which
     ``what`` names in a refusal, read as they are written: neither is derived from
-    the other (docs/adr/0090, section 7).
+    the other (docs/adr/0090, section 7). The origin is the reply address and the
+    sender the session that sent the event, two fields no rule ties together: a
+    remote child's event carries the child as its sender beside the Mesh endpoint
+    the transport wrote as its address.
 
     Refused: an ``origin`` that is neither ``null`` nor a pair, a pair with a
     member missing, empty or added, a ``sender`` that is not a session id, and a
-    ``sender`` beside an ``origin`` other than the SCXML pair of that id."""
+    ``sender`` beside a ``null`` origin, since a session that sent an event always
+    has a reply address."""
     written = _member_present(members, what, "origin")
     origin: Optional[EventOrigin] = None
     if written is not None:
@@ -833,10 +845,10 @@ def _saved_origin_from_json(members: Dict[str, Any], what: str) -> Tuple[Optiona
         raise StateRefusal(f"'{what}.sender' is neither a text nor null")
     if session_id_refusal_of(named) is not None:
         raise StateRefusal(f"'{what}.sender' ({named}) is not an XML Nmtoken, which a session id is")
-    # The SCXML processor writes the sender's own location as the origin of what
-    # the sender sent: a sender beside any other origin is a text no run wrote.
-    if origin != scxml_origin(named):
-        raise StateRefusal(f"'{what}.sender' is '{named}', and its 'origin' is not the SCXML pair of that session")
+    if origin is None:
+        raise StateRefusal(
+            f"'{what}.sender' is '{named}' beside a null 'origin', and a session that sent an event has a reply address"
+        )
     return origin, named
 
 
@@ -895,8 +907,9 @@ def _saved_host_invoke_from_json(value: Any, what: str) -> SavedHostInvoke:
     return host
 
 
-def _saved_send_from_json(value: Any, what: str, form: int) -> SavedSend:
-    """The waiting send ``value``, of a state of ``form``; a send to the parent or
+def _saved_send_from_json(value: Any, what: str, form: int, session_id: str) -> SavedSend:
+    """The waiting send ``value``, of a state of ``form`` held by the session
+    ``session_id`` (empty in format 1, which holds none); a send to the parent or
     to a child is an act of a tree only. Every act but a host act delivers an
     event to a session and carries the origin and the sender that event will
     carry (:func:`_saved_act_origin_from_json`)."""
@@ -934,22 +947,28 @@ def _saved_send_from_json(value: Any, what: str, form: int) -> SavedSend:
         act.data = _member_text(members, what, "data")
         act.invoke_id = _member_text(members, what, "invokeid")
     else:
-        act.origin, act.sender = _saved_act_origin_from_json(members, what, name, form)
+        act.origin, act.sender = _saved_act_origin_from_json(members, what, name, form, session_id)
     return SavedSend(due=due, act=act)
 
 
 def _saved_act_origin_from_json(
-    members: Dict[str, Any], what: str, kind: str, form: int
+    members: Dict[str, Any], what: str, kind: str, form: int, session_id: str
 ) -> Tuple[Optional[EventOrigin], Optional[str]]:
     """The origin and the sender of the waiting send ``members`` of the act
-    ``kind``, in a state of ``form`` (docs/adr/0090, section 7).
+    ``kind``, in a state of ``form`` held by the session ``session_id``
+    (docs/adr/0090, section 7).
 
     A raise, parent or child act is this session's own send, which the SCXML
-    processor delivers; an internal act's event is internal and has no origin.
-    Format 3 holds both as written, and refuses a raise, parent or child act with
-    no sender and an internal act that holds either. Formats 1 and 2 store the
-    sending session's id, or its location, as ``origin``, which is read as that
-    session's pair with the id as its sender; an internal act's is not read."""
+    processor delivers, so its origin is the SCXML pair of its sender; an
+    internal act's event is internal and has no origin. Format 3 holds both as
+    written, and refuses a raise, parent or child act with no sender or with an
+    origin other than its sender's pair, and an internal act that holds either.
+    Formats 1 and 2 store the sending session's id, or its location, as
+    ``origin``, which is read as that session's pair with the id as its sender;
+    an internal act's is not read. A format-2 act whose stored origin is empty
+    was sent by the session that holds it. A format-1 text holds no session id,
+    so such an act is read with neither, and the machine that restores it arms
+    it as its own send."""
     if form == SAVED_FORMAT_3:
         origin, sender = _saved_origin_from_json(members, what)
         if kind == ACT_INTERNAL:
@@ -959,11 +978,13 @@ def _saved_act_origin_from_json(
                 )
         elif sender is None:
             raise StateRefusal(f"'{what}' is a {kind} act with no 'sender', and the session that sent it is its sender")
+        elif origin != scxml_origin(sender):
+            raise StateRefusal(f"'{what}.sender' is '{sender}', and its 'origin' is not the SCXML pair of that session")
         return origin, sender
     stored = _member_text(members, what, "origin")
     if kind == ACT_INTERNAL:
         return None, None
-    sender = read_stored_sender(stored)
+    sender = read_stored_sender(stored) or session_id
     return scxml_origin_of(sender), (sender or None)
 
 

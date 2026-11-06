@@ -20,7 +20,9 @@
 #   a format-1 text binds the restored machine to a session id;
 #   a count of starts is written one more than the session holds;
 #   a saved child is written under the invoke's own id, not the id its start was made under;
-#   a sender is read beside an origin that is not its session's pair;
+#   a session's own send is read beside an origin that is not its pair;
+#   a sender is read beside no reply address;
+#   a format-2 act with an empty origin is read as sent by no session;
 #   a pair may hold a member of no pair;
 #   a format-3 internal act may hold an origin;
 #   a format-2 internal act is read as the session's own send.
@@ -116,12 +118,31 @@ PY
 ## An event's origin (docs/adr/0090, section 7)
 #
 # The rows of `test_a_format_three_origin_that_no_run_writes_is_refused_and_not_repaired` whose
-# sender stands beside no pair, a host's pair, another session's pair and an unencoded location.
+# `raise` act names another session and whose `parent` act holds a Mesh endpoint: a queued
+# event's sender stands beside any reply address, a session's own send beside its own pair.
 
-mutation_case "a sender is read beside an origin that is not its session's pair" <<'PY'
+mutation_case "a session's own send is read beside an origin that is not its pair" <<'PY'
 edit("backends/python/runtime/sce_runtime/saved_state.py",
-     "    if origin != scxml_origin(named):",
-     "    if False:")
+     "        elif origin != scxml_origin(sender):",
+     "        elif False:")
+PY
+
+# The rows of the same test whose queued event and whose `raise` act hold a sender beside a
+# null origin.
+
+mutation_case "a sender is read beside no reply address" <<'PY'
+edit("backends/python/runtime/sce_runtime/saved_state.py",
+     "    if origin is None:\n        raise StateRefusal(",
+     "    if False:\n        raise StateRefusal(")
+PY
+
+# `test_a_format_two_act_with_an_empty_origin_was_sent_by_the_session_that_holds_it`: the
+# root's `raise` and the child's `parent` would be read as sent by no session.
+
+mutation_case "a format-2 act with an empty origin is read as sent by no session" <<'PY'
+edit("backends/python/runtime/sce_runtime/saved_state.py",
+     "    sender = read_stored_sender(stored) or session_id",
+     "    sender = read_stored_sender(stored)")
 PY
 
 # The row of the same test whose pair holds a third member, `sender`.
