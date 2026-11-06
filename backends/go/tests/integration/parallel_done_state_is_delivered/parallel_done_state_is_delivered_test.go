@@ -50,7 +50,7 @@ func TestCompletionCarriesTheMachineToATopLevelFinal(t *testing.T) {
 			"inside the <parallel>, so nothing below is testing what it claims", entry)
 	}
 
-	engine.RaiseExternal(ParallelDoneStateIsDeliveredEventGo, "", "")
+	engine.RaiseExternal(ParallelDoneStateIsDeliveredEventGo, "")
 	engine.Step()
 
 	// One check, with the configuration in its message, because the two ways

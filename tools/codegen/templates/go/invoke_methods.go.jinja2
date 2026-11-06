@@ -199,6 +199,9 @@
 			// session that can never be compared — which is exactly what C.1
 			// requires of them.
 			childPolicy.SessionID = childSessionID
+			// W3C SCXML C.1: the id whose published location reaches this
+			// session from the child, as `#_parent` does (docs/adr/0090).
+			childPolicy.ParentSessionID = p.SessionID
 
 {{ invoke_seed_child(invoke_info, child, model, machine_name) }}
 
@@ -301,6 +304,9 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 			// session that can never be compared — which is exactly what C.1
 			// requires of them.
 			childPolicy.SessionID = childSessionID
+			// W3C SCXML C.1: the id whose published location reaches this
+			// session from the child, as `#_parent` does (docs/adr/0090).
+			childPolicy.ParentSessionID = p.SessionID
 
 {{ invoke_seed_child(invoke_info, invoke_info, model, machine_name) }}
 
@@ -799,12 +805,14 @@ func (p *{{ machine_name }}Policy) ForwardToAutoforwardChildren(eventName string
 // wait is over, by name — a child need not declare every event its parent
 // sends (W3C SCXML 6.2 + 6.4). It answers whether the invocation was there to
 // take it: one whose session has reached its final state has ended, and the
-// engine reports the send it could not deliver (W3C SCXML C.1).
-func (p *{{ machine_name }}Policy) DeliverToInvocation(invokeID, eventName, eventData, sendID string) bool {
+// engine reports the send it could not deliver (W3C SCXML C.1). sender is the
+// session that sent it, this one, whose location the child reads as
+// `_event.origin` (docs/adr/0090).
+func (p *{{ machine_name }}Policy) DeliverToInvocation(invokeID, eventName, eventData, sendID, sender string) bool {
 {% for invoke_info in model.invokes | scxml_family %}
 	if invokeID == "{{ invoke_info.invoke_id }}" {
 		if child := p.child{{ invoke_info.field_suffix | to_pascal_case }}; child != nil && !child.IsInFinalState() {
-			sce.DeliverToChild(child, eventName, eventData)
+			sce.DeliverToChild(child, eventName, eventData, sender)
 			return true
 		}
 		return false
@@ -852,13 +860,13 @@ func (p *{{ machine_name }}Policy) IsChildSessionRunning(childSessionID string) 
 // return means the address names no live child of ours and the event takes the
 // normal external path — the routing half of C.1 is what makes the published
 // location a usable target rather than a string that merely compares equal.
-func (p *{{ machine_name }}Policy) DeliverToChildSession(childSessionID, eventName, eventData string) bool {
+func (p *{{ machine_name }}Policy) DeliverToChildSession(childSessionID, eventName, eventData, sender string) bool {
 	if !p.IsChildSessionRunning(childSessionID) {
 		return false
 	}
 {% for invoke_info in model.invokes | scxml %}
 	if cs, ok := p.activeInvokes["{{ invoke_info.invoke_id }}"]; ok && cs.SessionID == childSessionID {
-		sce.DeliverToChild(p.child{{ invoke_info.field_suffix | to_pascal_case }}, eventName, eventData)
+		sce.DeliverToChild(p.child{{ invoke_info.field_suffix | to_pascal_case }}, eventName, eventData, sender)
 		return true
 	}
 {% endfor %}
@@ -870,14 +878,17 @@ func (p *{{ machine_name }}Policy) DeliverToChildSession(childSessionID, eventNa
 {% if finalize_invokes %}
 // ExecuteFinalizeForChildEvent executes finalize for events from invoked children (W3C SCXML 6.5).
 func (p *{{ machine_name }}Policy) ExecuteFinalizeForChildEvent(eventWithMeta *sce.EventWithMetadata[{{ machine_name }}Event], engine *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event]) {
-	if eventWithMeta.Metadata.Origin == "" {
+	// The child is found by the event's sender, the session id the SCXML
+	// processor sets beside the origin; the origin's address is never read to
+	// find a session (docs/adr/0090).
+	sender := eventWithMeta.Metadata.Sender
+	if sender == "" {
 		return
 	}
 
-	origin := eventWithMeta.Metadata.Origin
 	var finalizeScript string
 	for _, childSession := range p.activeInvokes {
-		if childSession.SessionID == origin && childSession.FinalizeScript != "" {
+		if childSession.SessionID == sender && childSession.FinalizeScript != "" {
 			finalizeScript = childSession.FinalizeScript
 			break
 		}
@@ -908,8 +919,8 @@ func (p *{{ machine_name }}Policy) ExecuteFinalizeForChildEvent(eventWithMeta *s
 					Data:       eventWithMeta.Metadata.Data,
 					Type:       "external",
 					SendID:     eventWithMeta.Metadata.SendID,
-					Origin:     eventWithMeta.Metadata.Origin,
-					OriginType: eventWithMeta.Metadata.OriginType,
+					Origin:     eventWithMeta.Metadata.OriginAddress(),
+					OriginType: eventWithMeta.Metadata.OriginProcessor(),
 					InvokeID:   eventWithMeta.Metadata.InvokeID,
 				},
 			)

@@ -38,7 +38,7 @@ func TestTheMessageGoesAndTheBlockStops(t *testing.T) {
 	policy.ScriptEngine = scegotest.NewLuaEngine()
 	engine := sce.NewEngine[ABadSendParamEndsItsBlockState, ABadSendParamEndsItsBlockEvent](&policy)
 	engine.Initialize()
-	engine.RaiseExternal(ABadSendParamEndsItsBlockEventFinish, "", "")
+	engine.RaiseExternal(ABadSendParamEndsItsBlockEventFinish, "")
 	engine.Step()
 
 	seen := fmt.Sprintf("errors=%s partials=%s bares=%s after=%s carried=%s (wanted 3 / 2 / 1 / 0 / 1)",

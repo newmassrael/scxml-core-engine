@@ -47,7 +47,7 @@ func TestEachErrorEndsOnlyItsOwnBlock(t *testing.T) {
 		AnErrorEndsTheBlockItWasRaisedInEventT,
 		AnErrorEndsTheBlockItWasRaisedInEventFinish,
 	} {
-		engine.RaiseExternal(event, "", "")
+		engine.RaiseExternal(event, "")
 		engine.Step()
 	}
 

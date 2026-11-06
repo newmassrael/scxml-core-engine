@@ -34,7 +34,7 @@ func TestTheLeftStatesInvokeIsNeverAttempted(t *testing.T) {
 		t.Fatalf("`s0` leaves on an eventless transition within the first macrostep")
 	}
 
-	engine.RaiseExternal(AnInvokeLeftBeforeItStartsRaisesNothingEventFinish, "", "")
+	engine.RaiseExternal(AnInvokeLeftBeforeItStartsRaisesNothingEventFinish, "")
 	engine.Step()
 
 	if ended, ok := engine.TerminalState(); !ok || ended != AnInvokeLeftBeforeItStartsRaisesNothingStateDone {

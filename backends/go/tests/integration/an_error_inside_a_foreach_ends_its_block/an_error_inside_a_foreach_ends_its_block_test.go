@@ -30,7 +30,7 @@ func TestTheErrorEndsTheBlockAndIsTheOnlyOne(t *testing.T) {
 		AnErrorInsideAForeachEndsItsBlockEventT,
 		AnErrorInsideAForeachEndsItsBlockEventFinish,
 	} {
-		engine.RaiseExternal(event, "", "")
+		engine.RaiseExternal(event, "")
 		engine.Step()
 	}
 

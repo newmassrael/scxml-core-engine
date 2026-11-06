@@ -353,7 +353,7 @@ func TestAFailedInvocationRaisesErrorInvokeOnceWithItsOrigin(t *testing.T) {
 	s.engine.ProcessEvent(StatechartHostInvokerEventFail)
 
 	token := tokenOf(t, starts, "job")
-	if !s.engine.FailHostInvoke(declaredType, "job", token, `"no"`, "host://job", declaredType) {
+	if !s.engine.FailHostInvoke(declaredType, "job", token, `"no"`, sce.NewEventOrigin(declaredType, "host://job")) {
 		t.Fatal("a running invocation's failure was refused")
 	}
 	s.engine.Step()
@@ -365,7 +365,7 @@ func TestAFailedInvocationRaisesErrorInvokeOnceWithItsOrigin(t *testing.T) {
 	if s.engine.CompleteHostInvoke(declaredType, "job", token, "ok") {
 		t.Fatal("a failed run completed afterwards")
 	}
-	if s.engine.FailHostInvoke(declaredType, "job", token, `"no"`, "host://job", declaredType) {
+	if s.engine.FailHostInvoke(declaredType, "job", token, `"no"`, sce.NewEventOrigin(declaredType, "host://job")) {
 		t.Fatal("the same run failed twice")
 	}
 	s.engine.Step()

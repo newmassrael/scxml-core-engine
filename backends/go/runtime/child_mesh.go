@@ -15,14 +15,15 @@ const MeshOriginScheme = "mesh://"
 // source, as SCE_MESH.md §mesh-10.7 tabulates it: external, origin
 // `mesh://<source>`, the SCXML processor as origin type, and the send id the
 // envelope carried. The one place it is built, so a child cannot tell a peer's
-// event from the one its parent would have been given.
+// event from the one its parent would have been given. The Mesh transport
+// writes the pair where it builds the event (docs/adr/0090, section 2); the
+// event has no sender, since no session of this tree sent it.
 func MeshEventMetadata(data, source, sendID string) EventMetadata {
 	return EventMetadata{
-		Data:       data,
-		EventType:  EventTypeExternal,
-		SendID:     sendID,
-		Origin:     MeshOriginScheme + source,
-		OriginType: SCXMLEventProcessorType,
+		Data:      data,
+		EventType: EventTypeExternal,
+		SendID:    sendID,
+		Origin:    NewEventOrigin(SCXMLEventProcessorType, MeshOriginScheme+source),
 	}
 }
 
@@ -197,14 +198,16 @@ func (e *Engine[S, E]) ApplyMeshCall(call MeshCall) {
 	case MeshCallRaise:
 		e.RaiseExternalByNameWithMeta(call.Name, call.Metadata)
 	case MeshCallEndInvoke:
-		origin, originType := "", ""
+		// docs/adr/0090, section 2: the pair the Mesh transport gives the peer
+		// that answered, written where the event is built.
+		var origin *EventOrigin
 		if call.Source != "" {
-			origin, originType = MeshOriginScheme+call.Source, MeshRPCInvokeType
+			origin = NewEventOrigin(MeshRPCInvokeType, MeshOriginScheme+call.Source)
 		}
 		if call.Failed {
-			e.FailHostInvoke(MeshRPCInvokeType, call.InvokeID, call.Token, call.Data, origin, originType)
+			e.FailHostInvoke(MeshRPCInvokeType, call.InvokeID, call.Token, call.Data, origin)
 		} else {
-			e.CompleteHostInvokeFrom(MeshRPCInvokeType, call.InvokeID, call.Token, call.Data, origin, originType)
+			e.CompleteHostInvokeFrom(MeshRPCInvokeType, call.InvokeID, call.Token, call.Data, origin)
 		}
 	}
 }

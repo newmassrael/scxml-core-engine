@@ -45,7 +45,7 @@ func TestAStateBindsItsDataOnlyOnItsFirstEntry(t *testing.T) {
 		LateDataBindsOnFirstEntryEventGo, LateDataBindsOnFirstEntryEventBump,
 		LateDataBindsOnFirstEntryEventBack, LateDataBindsOnFirstEntryEventGo,
 	} {
-		engine.RaiseExternal(event, "", "")
+		engine.RaiseExternal(event, "")
 		engine.Step()
 	}
 

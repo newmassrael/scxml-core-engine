@@ -57,7 +57,7 @@ func TestAReaderReadsItsOwnVariable(t *testing.T) {
 // `screen-rules` — which no ECMAScript expression can name — alone.
 func TestAReaderReadsTheLiveValue(t *testing.T) {
 	engine, p := started(t)
-	engine.RaiseExternal(TypedReaderNamesEventBump, "", "")
+	engine.RaiseExternal(TypedReaderNamesEventBump, "")
 	engine.Step()
 	expect(t, "Box", p.Box, 11)
 	expect(t, "Object", p.Object, 12)

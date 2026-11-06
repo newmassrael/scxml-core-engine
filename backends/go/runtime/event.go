@@ -60,11 +60,18 @@ type EventMetadata struct {
 	// SendID is the _event.sendid from originating <send> (empty if none).
 	SendID string
 
-	// Origin is the _event.origin URI (empty if no origin).
-	Origin string
+	// Origin is `_event.origin` and `_event.origintype` — the reply address the
+	// processor that delivered the event wrote when it built it, as one value
+	// (docs/adr/0090); nil for an event no processor stamped, and then the
+	// document reads both fields as the empty string.
+	Origin *EventOrigin
 
-	// OriginType is the _event.origintype (e.g., SCXML Event I/O Processor URI).
-	OriginType string
+	// Sender is the id of the session that sent the event, set only by the
+	// SCXML Event I/O Processor; empty otherwise. Not an `_event` field:
+	// `<finalize>` and a saved state find the sending session by it, and
+	// nothing reads the origin's address to find a session (docs/adr/0090,
+	// section 1).
+	Sender string
 
 	// InvokeID is the _event.invokeid if event came from a child invoke (W3C 6.4.1).
 	InvokeID string
@@ -101,14 +108,86 @@ func InternalMetadata() EventMetadata {
 	return EventMetadata{EventType: EventTypeInternal}
 }
 
-// ExternalMetadata constructs external metadata with a send ID and origin (e.g., for <send>).
-func ExternalMetadata(sendID, origin string) EventMetadata {
+// ExternalMetadata constructs external metadata with a send ID and no origin:
+// an event no Event I/O Processor stamped — one a host raises naming no party,
+// a reply a host processor gives naming none, an HTTP response (docs/adr/0090,
+// sections 2 and 3). `_event.origin` and `_event.origintype` read empty.
+func ExternalMetadata(sendID string) EventMetadata {
 	return EventMetadata{
-		EventType:  EventTypeExternal,
-		SendID:     sendID,
-		Origin:     origin,
-		OriginType: SCXMLEventProcessorType,
+		EventType: EventTypeExternal,
+		SendID:    sendID,
 	}
+}
+
+// SentBySession constructs the external metadata the SCXML Event I/O
+// Processor writes for an event the session sender sent: the pair of its own
+// type and the location sender publishes, and sender beside it (docs/adr/0090,
+// section 2). A machine that holds no session id sends an event with no
+// origin.
+func SentBySession(sendID, sender string) EventMetadata {
+	meta := ExternalMetadata(sendID)
+	meta.Origin = ScxmlOriginOf(sender)
+	meta.Sender = sender
+	return meta
+}
+
+// OriginAddress is `_event.origin`: the address of the event's origin, or the
+// empty string when it has none.
+func (m EventMetadata) OriginAddress() string {
+	return m.Origin.Address()
+}
+
+// OriginProcessor is `_event.origintype`: the processor of the event's origin,
+// or the empty string when it has none.
+func (m EventMetadata) OriginProcessor() string {
+	return m.Origin.Processor()
+}
+
+// EventOrigin is where a reply to an event goes: the Event I/O Processor that
+// delivered it and the address that processor accepts as a `<send>` target
+// (docs/adr/0090).
+//
+// Ports C++ `SCE::Core::EventOrigin`. The document reads the two as
+// `_event.origintype` and `_event.origin`; they are one value because the
+// address means something only relative to its processor. The processor that
+// delivers an event writes the pair once, where it builds the event, and
+// nothing converts it later. Its fields are unexported, so a pair is made whole
+// by NewEventOrigin or not at all: an event with no origin holds nil.
+type EventOrigin struct {
+	processor string
+	address   string
+}
+
+// NewEventOrigin is the pair of processor, the canonical type URI of an Event
+// I/O Processor, and address, a URI that processor accepts as a target.
+func NewEventOrigin(processor, address string) *EventOrigin {
+	return &EventOrigin{processor: processor, address: address}
+}
+
+// Processor is the canonical type URI of the Event I/O Processor that delivered
+// the event (`_event.origintype`); empty for a nil origin.
+func (o *EventOrigin) Processor() string {
+	if o == nil {
+		return ""
+	}
+	return o.processor
+}
+
+// Address is a URI the processor accepts as a `<send>` target
+// (`_event.origin`); empty for a nil origin.
+func (o *EventOrigin) Address() string {
+	if o == nil {
+		return ""
+	}
+	return o.address
+}
+
+// Equal reports whether o and other are the same pair, or both none.
+func (o *EventOrigin) Equal(other *EventOrigin) bool {
+	if o == nil || other == nil {
+		return o == other
+	}
+	return *o == *other
 }
 
 // EventWithMetadata wraps a typed event value with its full §scxml-5.10 metadata.
@@ -178,22 +257,20 @@ func NewPlatformError[E any](event E, message string) EventWithMetadata[E] {
 func NewEventWithFields[E any](
 	event E,
 	data string,
-	origin string,
+	origin *EventOrigin,
 	sendID string,
 	eventType EventType,
-	originType string,
 	invokeID string,
 	target string,
 ) EventWithMetadata[E] {
 	return EventWithMetadata[E]{
 		Event: event,
 		Metadata: EventMetadata{
-			Data:       data,
-			EventType:  eventType,
-			SendID:     sendID,
-			Origin:     origin,
-			OriginType: originType,
-			InvokeID:   invokeID,
+			Data:      data,
+			EventType: eventType,
+			SendID:    sendID,
+			Origin:    origin,
+			InvokeID:  invokeID,
 		},
 		Target: target,
 	}

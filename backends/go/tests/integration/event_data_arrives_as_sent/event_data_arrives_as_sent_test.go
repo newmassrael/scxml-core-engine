@@ -5,7 +5,7 @@
 // value — Go AOT.
 //
 // The edge nothing measured. Every other integration fixture drives its
-// machine with RaiseExternal(event, "", ""); the payload argument was the
+// machine with RaiseExternal(event, ""); the payload argument was the
 // empty string in every call on every channel until this one, so the
 // host-to-datamodel boundary was covered by no test at all. The W3C suite
 // does not reach it either — its payloads originate inside the document
@@ -57,7 +57,7 @@ func TestAHostsJSONPayloadIsAddressableAndItsTextStaysText(t *testing.T) {
 
 	// A JSON object, the shape an embedder has when it holds structured data
 	// and a state machine to give it to.
-	engine.RaiseExternal(EventDataArrivesAsSentEventPayload, `{"milestone":"refined","turns":2}`, "")
+	engine.RaiseExternal(EventDataArrivesAsSentEventPayload, `{"milestone":"refined","turns":2}`)
 	engine.Step()
 
 	afterPayload := engine.GetActiveStates()
@@ -75,7 +75,7 @@ func TestAHostsJSONPayloadIsAddressableAndItsTextStaysText(t *testing.T) {
 	// Text that is not JSON. The same call, and it must NOT be parsed into
 	// something else: `hold the line` is the value the document compares
 	// against, character for character.
-	engine.RaiseExternal(EventDataArrivesAsSentEventNote, "hold the line", "")
+	engine.RaiseExternal(EventDataArrivesAsSentEventNote, "hold the line")
 	engine.Step()
 
 	afterNote := engine.GetActiveStates()
@@ -89,7 +89,7 @@ func TestAHostsJSONPayloadIsAddressableAndItsTextStaysText(t *testing.T) {
 	// payload three readings and none of them is "evaluate it": a payload is
 	// what a host, a peer session or an HTTP sender put there, and running it
 	// makes `_event.data` mean whatever the receiver's engine is written in.
-	engine.RaiseExternal(EventDataArrivesAsSentEventArith, "2 + 3", "")
+	engine.RaiseExternal(EventDataArrivesAsSentEventArith, "2 + 3")
 	engine.Step()
 
 	afterArith := engine.GetActiveStates()
@@ -108,7 +108,7 @@ func TestAHostsJSONPayloadIsAddressableAndItsTextStaysText(t *testing.T) {
 	// Leading whitespace on purpose: the reading is chosen by the first
 	// NON-blank character, and a pretty-printed document is the ordinary shape
 	// of one. The scan past it is small enough to look redundant.
-	engine.RaiseExternal(EventDataArrivesAsSentEventDoc, "\n  "+`<books xmlns=""><book title="t1"/></books>`, "")
+	engine.RaiseExternal(EventDataArrivesAsSentEventDoc, "\n  "+`<books xmlns=""><book title="t1"/></books>`)
 	engine.Step()
 
 	afterDoc := engine.GetActiveStates()
@@ -121,7 +121,7 @@ func TestAHostsJSONPayloadIsAddressableAndItsTextStaysText(t *testing.T) {
 	// The sentence that closes the clause. Every `error.*` message this
 	// repository raises names the SCXML construct that failed, so every one of
 	// them has exactly this shape: it opens like a document and is not one.
-	engine.RaiseExternal(EventDataArrivesAsSentEventBroken, "<assign>  to  detail failed", "")
+	engine.RaiseExternal(EventDataArrivesAsSentEventBroken, "<assign>  to  detail failed")
 	engine.Step()
 
 	afterBroken := engine.GetActiveStates()

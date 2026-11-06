@@ -60,7 +60,7 @@ func started(t *testing.T) (*sce.Engine[UndecodablePayloadIsReportedState, Undec
 
 func deliver(engine *sce.Engine[UndecodablePayloadIsReportedState, UndecodablePayloadIsReportedEvent],
 	event UndecodablePayloadIsReportedEvent, payload string) {
-	engine.RaiseExternal(event, payload, "")
+	engine.RaiseExternal(event, payload)
 	engine.Step()
 }
 

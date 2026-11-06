@@ -47,7 +47,7 @@ func TestEveryRegionFinalCompletesTheParallel(t *testing.T) {
 			"inside the <parallel>, so nothing below is testing what it claims", entry)
 	}
 
-	engine.RaiseExternal(ParallelCompletionRaisesDoneStateEventGo, "", "")
+	engine.RaiseExternal(ParallelCompletionRaisesDoneStateEventGo, "")
 	engine.Step()
 
 	after := engine.GetActiveStates()

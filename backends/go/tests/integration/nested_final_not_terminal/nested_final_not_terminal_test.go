@@ -48,7 +48,7 @@ func TestANestedFinalDoesNotEndTheSession(t *testing.T) {
 			"IsFinalState.")
 	}
 
-	engine.RaiseExternal(NestedFinalNotTerminalEventResume, "", "")
+	engine.RaiseExternal(NestedFinalNotTerminalEventResume, "")
 	completed := engine.RunUntilCompletion(2*time.Second, 10*time.Millisecond)
 
 	if !completed {

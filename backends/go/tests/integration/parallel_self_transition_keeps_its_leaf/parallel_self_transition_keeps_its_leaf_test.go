@@ -52,7 +52,7 @@ func TestTheSelfTransitionedRegionAnswersTheNextEvent(t *testing.T) {
 			"testing what it claims", entry)
 	}
 
-	engine.RaiseExternal(ParallelSelfTransitionKeepsItsLeafEventE, "", "")
+	engine.RaiseExternal(ParallelSelfTransitionKeepsItsLeafEventE, "")
 	engine.Step()
 
 	// The symptom, named where it happens. A region holding no atomic state is
@@ -71,7 +71,7 @@ func TestTheSelfTransitionedRegionAnswersTheNextEvent(t *testing.T) {
 	// The second event is the one this fixture exists for: `judging` has no `e`
 	// transition, so nothing but the self-transitioning region can answer, and
 	// it can only answer from a leaf.
-	engine.RaiseExternal(ParallelSelfTransitionKeepsItsLeafEventE, "", "")
+	engine.RaiseExternal(ParallelSelfTransitionKeepsItsLeafEventE, "")
 	engine.Step()
 
 	twice := engine.GetActiveStates()
@@ -80,7 +80,7 @@ func TestTheSelfTransitionedRegionAnswersTheNextEvent(t *testing.T) {
 			"(active: %v)", twice)
 	}
 
-	engine.RaiseExternal(ParallelSelfTransitionKeepsItsLeafEventCheck, "", "")
+	engine.RaiseExternal(ParallelSelfTransitionKeepsItsLeafEventCheck, "")
 	engine.Step()
 
 	settled := engine.GetActiveStates()

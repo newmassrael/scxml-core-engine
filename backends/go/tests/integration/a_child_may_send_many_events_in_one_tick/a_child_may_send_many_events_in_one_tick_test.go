@@ -43,7 +43,7 @@ func TestEveryEventTheChildSentArrives(t *testing.T) {
 	finished := make(chan struct{})
 	go func() {
 		engine.Initialize()
-		engine.RaiseExternal(AChildMaySendManyEventsInOneTickEventFinish, "", "")
+		engine.RaiseExternal(AChildMaySendManyEventsInOneTickEventFinish, "")
 		engine.Step()
 		close(finished)
 	}()

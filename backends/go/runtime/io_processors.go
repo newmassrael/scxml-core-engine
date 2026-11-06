@@ -48,24 +48,88 @@ func SessionIDFromScxmlLocation(uri string) string {
 	return percentDecode(uri[len(prefix):])
 }
 
-// PublishedOrigin is the _event.origin a receiver should see for an event sent
-// by originSessionID.
+// ScxmlOrigin is the origin the SCXML Event I/O Processor writes for an event
+// the session sender sends (docs/adr/0090, section 2).
 //
-// §scxml-C-1 requires the origin of a delivered event to match the 'location'
-// the sending session published, which is what makes it an address the receiver
-// can answer. The engine carries the sender's BARE session id internally —
-// EventMetadata.Origin — because its session-keyed lookups (<finalize> dispatch,
-// cancelled-invoke filtering) match on the id. Converting where the event is
-// raised would make one value serve two consumers that need different spellings.
-// So the conversion belongs at the boundary where the value becomes visible to
-// the document, and this is that conversion — the same rule, and the same shape,
-// as the C++ IOProcessorHelper::publishedOrigin both engines already share.
+// The SCXML processor's rule has the origin of an event raised in the receiving
+// session match the location the sending session publishes, so the pair is the
+// processor's canonical type and ScxmlProcessorLocation of the sender — the one
+// function that also writes the session's _ioprocessors entry. The sender's id
+// travels beside the pair, as the event's Sender, for the lookups that find a
+// session by it.
+func ScxmlOrigin(sender string) *EventOrigin {
+	return NewEventOrigin(SCXMLEventProcessorType, ScxmlProcessorLocation(sender))
+}
+
+// ScxmlOriginOf is ScxmlOrigin of a sender that may be absent: a machine that
+// holds no session id has no address to publish, so an event it sends carries
+// no origin rather than the location of an empty id.
+func ScxmlOriginOf(sender string) *EventOrigin {
+	if sender == "" {
+		return nil
+	}
+	return ScxmlOrigin(sender)
+}
+
+// StoredOriginText is the `origin` text a saved state stores for an event's
+// origin and sender: the sending session's id for an event a session sent, the
+// address otherwise, and empty for none — what every backend writes as a
+// format-2 `origin` (docs/adr/0090, "Until step 6"). The `origintype` beside it
+// is the pair's processor.
+func StoredOriginText(origin *EventOrigin, sender string) string {
+	if sender != "" {
+		return sender
+	}
+	return origin.Address()
+}
+
+// ReadStoredOrigin is the origin and sender a stored `origin` and `origintype`
+// are read as (docs/adr/0090, section 7).
 //
-// A remote invoke is the case that makes this more than a rename: its child
-// session is stamped with a URI rather than an id, and wrapping a URI in
-// ScxmlProcessorLocation would produce an address naming nothing. An argument
-// that already carries a scheme is therefore passed through — it is already an
-// address.
+// An empty `origin` is none whatever type was stored beside it: an empty
+// address answers nothing, and format 2 wrote the SCXML type beside it for
+// events no processor stamped. An empty `origintype` beside an address is the
+// SCXML processor's, which is what format 2 meant by it. A value without a
+// scheme read with the SCXML type is a session's id, read as that session's
+// pair with the id as its sender; an SCXML location (which one backend stored
+// in place of the id) is read the same way by the id it names. Anything else
+// is the pair as stored, with no sender. Never half a pair.
+func ReadStoredOrigin(origin, originType string) (*EventOrigin, string) {
+	if origin == "" {
+		return nil, ""
+	}
+	if located := SessionIDFromScxmlLocation(origin); located != "" {
+		return ScxmlOrigin(located), located
+	}
+	processor := originType
+	if processor == "" {
+		processor = SCXMLEventProcessorType
+	}
+	if !strings.Contains(origin, "://") && processor == SCXMLEventProcessorType {
+		return ScxmlOrigin(origin), origin
+	}
+	return NewEventOrigin(processor, origin), ""
+}
+
+// ReadStoredSender is the sender a stored waiting send's `origin` names
+// (docs/adr/0090, section 7): a waiting send is always a session's, so a bare
+// id is that id and an SCXML location names it.
+func ReadStoredSender(origin string) string {
+	if located := SessionIDFromScxmlLocation(origin); located != "" {
+		return located
+	}
+	return origin
+}
+
+// PublishedOrigin is the _event.origin an engine that carried the sender's bare
+// session id published for it.
+//
+// No engine of this runtime calls it: each event now carries the pair the
+// processor that delivered it wrote (ScxmlOrigin), so nothing converts at the
+// read. It is the Go statement of the rule the C++
+// IOProcessorHelper::publishedOrigin states, which docs/adr/0090 removes from
+// every runtime at once (its step 7). A value that already carries a scheme is
+// passed through, and anything else is wrapped as an SCXML location.
 func PublishedOrigin(originSessionID string) string {
 	if originSessionID == "" {
 		return ""

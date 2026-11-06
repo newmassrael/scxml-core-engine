@@ -36,7 +36,7 @@ func TestLeavingTheInvokingStateRaisesNoCancelEvent(t *testing.T) {
 	for _, event := range []CancellingAnInvokeRaisesNothingEvent{
 		CancellingAnInvokeRaisesNothingEventLeave, CancellingAnInvokeRaisesNothingEventFinish,
 	} {
-		engine.RaiseExternal(event, "", "")
+		engine.RaiseExternal(event, "")
 		engine.Step()
 	}
 

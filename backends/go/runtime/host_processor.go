@@ -84,6 +84,12 @@ type HostSendResponse struct {
 	EventName string
 	// EventData is the payload for `_event.data`, empty for a bare reply.
 	EventData string
+	// Origin is `_event.origin` and `_event.origintype` of the reply, in the
+	// host's own terms (docs/adr/0090, section 2): the host processor's type
+	// and the address a `<send>` of that type reaches the party at. nil when
+	// the reply names no party, and then both fields read empty; the engine
+	// never fills in the SCXML processor's type for a host.
+	Origin *EventOrigin
 }
 
 // HostSendHandler is what a host registers for one declared processor type.
@@ -250,9 +256,12 @@ func (e *Engine[S, E]) PerformHostSend(request HostSendRequest) ([]HostSendRespo
 			continue
 		}
 		// §scxml-5.10: `_event.name` is the name the host gave, not the value a
-		// prefix of it was matched to.
-		metadata := ExternalMetadata("", "")
+		// prefix of it was matched to. Its origin is the pair the host named
+		// for it, or none; never the SCXML processor's by default
+		// (docs/adr/0090, section 2).
+		metadata := ExternalMetadata("")
 		metadata.Data = reply.EventData
+		metadata.Origin = reply.Origin
 		if meta, known := e.arrivingEvent(reply.EventName, metadata); known {
 			e.enqueueExternal(meta)
 		}
@@ -584,17 +593,19 @@ func cloneParams(params map[string][]string) map[string][]string {
 // whose work finishes on a goroutine of its own posts the ending to Inbox
 // (Inbox.EndHostInvoke), and the owner applies it through this same door.
 func (e *Engine[S, E]) CompleteHostInvoke(processorType, invokeID string, token uint64, doneData string) bool {
-	return e.CompleteHostInvokeFrom(processorType, invokeID, token, doneData, "", "")
+	return e.CompleteHostInvokeFrom(processorType, invokeID, token, doneData, nil)
 }
 
 // CompleteHostInvokeFrom is CompleteHostInvoke with the `_event.origin` and
-// `_event.origintype` the completion carries (§scxml-5.10.1), for a host whose
-// invocation stands for another party it can name — as a Mesh router's
-// `sce:mesh-rpc` stands for the peer that answered (`mesh://<peer>`,
-// SCE_MESH.md §mesh-9.5). An empty originType keeps the one every host
-// completion has carried.
-func (e *Engine[S, E]) CompleteHostInvokeFrom(processorType, invokeID string, token uint64, doneData, origin, originType string) bool {
-	return e.endHostInvoke(processorType, invokeID, token, false, doneData, origin, originType)
+// `_event.origintype` the completion carries (§scxml-5.10.1) as one pair, for a
+// host whose invocation stands for another party it can name — as a Mesh
+// router's `sce:mesh-rpc` stands for the peer that answered (`mesh://<peer>`,
+// SCE_MESH.md §mesh-9.5). The host names it in its own terms (docs/adr/0090,
+// section 2): its declared type and the address a `<send>` of that type reaches
+// the party at. nil reads both fields empty; the engine never fills in the
+// SCXML processor's type for a host.
+func (e *Engine[S, E]) CompleteHostInvokeFrom(processorType, invokeID string, token uint64, doneData string, origin *EventOrigin) bool {
+	return e.endHostInvoke(processorType, invokeID, token, false, doneData, origin)
 }
 
 // FailHostInvoke reports that a host-run invocation failed, raising its
@@ -605,14 +616,15 @@ func (e *Engine[S, E]) CompleteHostInvokeFrom(processorType, invokeID string, to
 // start token is still running, ending the invocation, so a run ends once — by
 // success, failure or deadline, whichever comes first. It returns false,
 // raising nothing, for an invocation that was cancelled, already ended, or
-// restarted since.
-func (e *Engine[S, E]) FailHostInvoke(processorType, invokeID string, token uint64, errorData, origin, originType string) bool {
-	return e.endHostInvoke(processorType, invokeID, token, true, errorData, origin, originType)
+// restarted since. origin is the pair the failure carries, as for
+// CompleteHostInvokeFrom.
+func (e *Engine[S, E]) FailHostInvoke(processorType, invokeID string, token uint64, errorData string, origin *EventOrigin) bool {
+	return e.endHostInvoke(processorType, invokeID, token, true, errorData, origin)
 }
 
 // endHostInvoke is the one body behind a host-run invocation's completion and
 // failure: the token check, the deadline drop, and the event.
-func (e *Engine[S, E]) endHostInvoke(processorType, invokeID string, token uint64, failed bool, data, origin, originType string) bool {
+func (e *Engine[S, E]) endHostInvoke(processorType, invokeID string, token uint64, failed bool, data string, origin *EventOrigin) bool {
 	key := hostInvokeKey{processorType, invokeID}
 	if running, ok := e.startedHostInvokes[key]; !ok || running.token != token {
 		return false
@@ -627,10 +639,10 @@ func (e *Engine[S, E]) endHostInvoke(processorType, invokeID string, token uint6
 	if failed {
 		name = ErrorInvokePrefix + invokeID
 	}
-	metadata := ExternalMetadata("", origin)
-	if originType != "" {
-		metadata.OriginType = originType
-	}
+	// docs/adr/0090, section 2: the pair the host named, as it named it, or
+	// none; never the SCXML processor's type by default.
+	metadata := ExternalMetadata("")
+	metadata.Origin = origin
 	metadata.Data = data
 	// §scxml-5.10.1: the completion is an event of the invocation, so
 	// `_event.invokeid` is the invocation's id — the one the event names
@@ -707,7 +719,7 @@ func (e *Engine[S, E]) expireHostInvoke(deadline HostInvokeDeadline) {
 	if !e.deliverHostInvokeCancel(deadline.ProcessorType, deadline.InvokeID, deadline.Token) {
 		return
 	}
-	metadata := ExternalMetadata("", "")
+	metadata := ExternalMetadata("")
 	metadata.Data = `"deadline"`
 	metadata.InvokeID = deadline.InvokeID
 	if meta, ok := e.arrivingEvent(ErrorInvokePrefix+deadline.InvokeID, metadata); ok {

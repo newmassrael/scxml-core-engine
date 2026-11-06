@@ -81,7 +81,7 @@ func TestAnExternalRegionRootTransitionExitsEveryRegion(t *testing.T) {
 			got, want)
 	}
 
-	engine.RaiseExternal(ParallelRegionRootExternalDomainEventRestart, "", "")
+	engine.RaiseExternal(ParallelRegionRootExternalDomainEventRestart, "")
 	engine.Step()
 
 	if got, want := configuration(engine), "[alive drive restarting run watch]"; got != want {
@@ -99,7 +99,7 @@ func TestAnExternalRegionRootTransitionExitsEveryRegion(t *testing.T) {
 func TestAnInternalRegionRootTransitionLeavesTheOtherRegion(t *testing.T) {
 	engine := started()
 
-	engine.RaiseExternal(ParallelRegionRootExternalDomainEventHold, "", "")
+	engine.RaiseExternal(ParallelRegionRootExternalDomainEventHold, "")
 	engine.Step()
 
 	if got, want := configuration(engine), "[drive paused rebuilding run watch]"; got != want {

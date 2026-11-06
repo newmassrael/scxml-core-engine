@@ -125,7 +125,7 @@ func TestAStaticMeshRequestTheRouterFailsIsErrorInvoke(t *testing.T) {
 	engine, policy := started(recording(&requests))
 	drive(engine, "bump", "go")
 	request := theRequest(t, requests)
-	if !engine.FailHostInvoke(sce.MeshRPCInvokeType, "ask", request.Token, `"unreachable"`, "mesh://motor", "") {
+	if !engine.FailHostInvoke(sce.MeshRPCInvokeType, "ask", request.Token, `"unreachable"`, sce.NewEventOrigin(sce.MeshRPCInvokeType, "mesh://motor")) {
 		t.Fatalf("the running request's failure was refused")
 	}
 	engine.Step()

@@ -216,8 +216,15 @@ type ChildEngine interface {
 //
 // What the child sends to its parent while it runs here still waits on its
 // own queue for TickChildren to drain, so the parent sees it where it did.
-func DeliverToChild(child ChildEngine, eventName, eventData string) {
-	child.RaiseExternalByName(eventName, eventData)
+//
+// sender is the id of the session that sent the event, the parent: the SCXML
+// processor writes the location it publishes as the event's origin and keeps
+// the id beside it (docs/adr/0090), so a reply to `_event.origin`
+// reaches the parent.
+func DeliverToChild(child ChildEngine, eventName, eventData, sender string) {
+	metadata := SentBySession("", sender)
+	metadata.Data = eventData
+	child.RaiseExternalByNameWithMeta(eventName, metadata)
 	child.Step()
 }
 
@@ -244,11 +251,14 @@ func DrainAndRaiseChildEvents[S comparable, E comparable](
 		// §scxml-5.10.1: what a child sends its parent arrives from another session,
 		// so it is an external event. The zero value of EventType is the internal
 		// one, which a metadata built here would otherwise carry.
+		// docs/adr/0090, section 2: the SCXML processor writes the child's
+		// published location as the origin, and its id as the sender the
+		// parent's `<finalize>` finds it by.
 		metadata := EventMetadata{Data: ev.Data, EventType: EventTypeExternal}
 		if cs, found := activeInvokes[invokeKey]; found {
+			metadata = SentBySession("", cs.SessionID)
+			metadata.Data = ev.Data
 			metadata.InvokeID = cs.InvokeID
-			metadata.Origin = cs.SessionID
-			metadata.OriginType = SCXMLEventProcessorType
 		}
 		if meta, ok := engine.arrivingEvent(ev.Name, metadata); ok {
 			engine.RaiseExternalWithMeta(meta)

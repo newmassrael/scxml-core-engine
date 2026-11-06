@@ -111,7 +111,7 @@ func TestAMeshRequestTheRouterFailsIsErrorInvoke(t *testing.T) {
 	var requests []sce.HostInvokeRequest
 	engine, policy := started(t, recording(&requests))
 	request := theRequest(t, requests)
-	if !engine.FailHostInvoke(sce.MeshRPCInvokeType, "ask", request.Token, `"unreachable"`, "mesh://motor", "") {
+	if !engine.FailHostInvoke(sce.MeshRPCInvokeType, "ask", request.Token, `"unreachable"`, sce.NewEventOrigin(sce.MeshRPCInvokeType, "mesh://motor")) {
 		t.Fatalf("the running request's failure was refused")
 	}
 	engine.Step()

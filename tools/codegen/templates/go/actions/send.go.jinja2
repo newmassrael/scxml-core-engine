@@ -73,12 +73,13 @@
 	}
 {%- endmacro %}
 {# W3C SCXML 6.2 / C.1: deliver the event to this session's own external
-   queue, carrying this session as its origin. One body for the send with no
-   target and the one whose target names this session. #}
+   queue, carrying this session as its sender, whose published location the
+   SCXML processor writes as the origin (docs/adr/0090). One body for the send
+   with no target and the one whose target names this session. #}
 {% macro raise_external_here(action, model, machine_name, send_id_go, event_name_go, delay_go=none) %}
 {% if delay_go %}
 	// W3C SCXML 6.2: delayed to this session's external queue. §scxml-C-1: the
-	// origin is this session, as on the immediate path.
+	// sender is this session, as on the immediate path.
 {% if (action.eventexpr and model.needs_script_engine) or action.native_event %}
 	// W3C SCXML 3.12.1 + 5.10: a computed name is delivered as the event the
 	// document's names resolve it to, and `_event.name` is the whole name.
@@ -93,7 +94,7 @@
 {% elif action.event %}
 	{
 		meta := sce.NewEventWithMetadata({{ machine_name }}Event{{ action.event | to_event_variant }})
-		meta.Metadata = sce.ExternalMetadata({{ send_id_go }}, p.SessionID)
+		meta.Metadata = sce.SentBySession({{ send_id_go }}, p.SessionID)
 		meta.Metadata.Data = eventDataStr
 		engine.RaiseExternalWithMeta(meta)
 	}
@@ -801,7 +802,9 @@
 		engine.ScheduleRoutedEvent(*new({{ machine_name }}Event), {{ delay_go }}, {{ send_id_go }}, eventDataStr, p.SessionID,
 			sce.ScheduledRoute{Kind: sce.RouteInvocation, EventName: {{ event_name_go }}, InvokeID: "{{ invoke_info.invoke_id | escape_go }}"})
 {% else %}
-		sce.DeliverToChild(child, {{ event_name_go }}, eventDataStr)
+		// W3C SCXML C.1: this session is the sender, and the child reads the
+		// location it publishes as `_event.origin` (docs/adr/0090).
+		sce.DeliverToChild(child, {{ event_name_go }}, eventDataStr, p.SessionID)
 		// docs/adr/0045: what the child sent in answer reaches this session within
 		// the delivery, so nothing is between the two when it returns.
 		p.SettleChildren(engine)

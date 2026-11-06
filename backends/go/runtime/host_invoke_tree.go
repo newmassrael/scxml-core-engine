@@ -175,12 +175,12 @@ type HostInvokeEnding struct {
 	Done bool
 	// Data is `_event.data` of the event the ending raises.
 	Data string
-	// Origin is `_event.origin` of that event, for a host whose invocation
-	// stands for a party it can name (CompleteHostInvokeFrom); empty for none.
-	Origin string
-	// OriginType is `_event.origintype` of that event; empty keeps the one
-	// every host completion carries.
-	OriginType string
+	// Origin is `_event.origin` and `_event.origintype` of that event, for a
+	// host whose invocation stands for a party it can name, in the host's own
+	// terms (docs/adr/0090, section 2): its declared type and the address a
+	// `<send>` of that type reaches the party at. nil for a host that names no
+	// party.
+	Origin *EventOrigin
 }
 
 // RouteHostInvokeEnd delivers ending to the session sessionID names, if that
@@ -188,7 +188,7 @@ type HostInvokeEnding struct {
 // so the generated parent that asked can try another child.
 func (e *Engine[S, E]) RouteHostInvokeEnd(sessionID string, ending HostInvokeEnding) (bool, error) {
 	if sessionID == e.sessionID() {
-		if e.endHostInvoke(ending.ProcessorType, ending.InvokeID, ending.Token, !ending.Done, ending.Data, ending.Origin, ending.OriginType) {
+		if e.endHostInvoke(ending.ProcessorType, ending.InvokeID, ending.Token, !ending.Done, ending.Data, ending.Origin) {
 			return true, nil
 		}
 		return true, refuse("session '%s' is not running start %d of the '%s' invocation '%s': it was cancelled, has "+

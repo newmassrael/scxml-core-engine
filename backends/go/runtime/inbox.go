@@ -46,8 +46,15 @@ type Inbox[E comparable] struct {
 }
 
 // RaiseExternal posts what Engine.RaiseExternal takes: an external event with
-// eventData as `_event.data` and origin as `_event.origin`.
-func (in Inbox[E]) RaiseExternal(event E, eventData, origin string) bool {
+// eventData as `_event.data`, naming no party (docs/adr/0090, section 3).
+func (in Inbox[E]) RaiseExternal(event E, eventData string) bool {
+	return in.RaiseExternalFrom(event, eventData, nil)
+}
+
+// RaiseExternalFrom posts what Engine.RaiseExternalFrom takes: origin is the
+// pair the host names for the event in its own terms, nil for no party
+// (docs/adr/0090, section 2).
+func (in Inbox[E]) RaiseExternalFrom(event E, eventData string, origin *EventOrigin) bool {
 	return in.state.post(inboxInput[E]{kind: inboxExternalEvent, event: event, data: eventData, origin: origin})
 }
 
@@ -56,7 +63,13 @@ func (in Inbox[E]) RaiseExternal(event E, eventData, origin string) bool {
 // the input is applied, and the event is dropped then if no event of the document
 // could take it, as a direct call drops it.
 func (in Inbox[E]) RaiseExternalByName(eventName, eventData string) bool {
-	return in.state.post(inboxInput[E]{kind: inboxExternalEventByName, name: eventName, data: eventData})
+	return in.RaiseExternalByNameFrom(eventName, eventData, nil)
+}
+
+// RaiseExternalByNameFrom posts what Engine.RaiseExternalByNameFrom takes: origin
+// is the pair the host names for the event, nil for no party.
+func (in Inbox[E]) RaiseExternalByNameFrom(eventName, eventData string, origin *EventOrigin) bool {
+	return in.state.post(inboxInput[E]{kind: inboxExternalEventByName, name: eventName, data: eventData, origin: origin})
 }
 
 // EndHostInvoke posts the end of a host-run invocation's start. An empty
@@ -132,11 +145,12 @@ type inboxInput[E comparable] struct {
 	kind inboxInputKind
 
 	// event is an inboxExternalEvent's event; name an inboxExternalEventByName's
-	// name. data is either's `_event.data`, origin the first's `_event.origin`.
+	// name. data is either's `_event.data`, origin either's origin, nil for
+	// none (docs/adr/0090).
 	event  E
 	name   string
 	data   string
-	origin string
+	origin *EventOrigin
 
 	// ending is an inboxHostInvokeEnding's, of an invocation of this session.
 	ending HostInvokeEnding
@@ -382,9 +396,9 @@ func (e *Engine[S, E]) closeInbox() {
 func (e *Engine[S, E]) applyInboxInput(input inboxInput[E]) {
 	switch input.kind {
 	case inboxExternalEvent:
-		e.RaiseExternal(input.event, input.data, input.origin)
+		e.RaiseExternalFrom(input.event, input.data, input.origin)
 	case inboxExternalEventByName:
-		e.RaiseExternalByName(input.name, input.data)
+		e.RaiseExternalByNameFrom(input.name, input.data, input.origin)
 	case inboxHostInvokeEnding:
 		e.applyHostInvokeEnding(input.ending)
 	case inboxMeshDelivery:
@@ -399,8 +413,8 @@ func (e *Engine[S, E]) applyInboxInput(input inboxInput[E]) {
 // Inbox.EndHostInvoke).
 func (e *Engine[S, E]) applyHostInvokeEnding(ending HostInvokeEnding) {
 	if ending.Done {
-		e.CompleteHostInvokeFrom(ending.ProcessorType, ending.InvokeID, ending.Token, ending.Data, ending.Origin, ending.OriginType)
+		e.CompleteHostInvokeFrom(ending.ProcessorType, ending.InvokeID, ending.Token, ending.Data, ending.Origin)
 		return
 	}
-	e.FailHostInvoke(ending.ProcessorType, ending.InvokeID, ending.Token, ending.Data, ending.Origin, ending.OriginType)
+	e.FailHostInvoke(ending.ProcessorType, ending.InvokeID, ending.Token, ending.Data, ending.Origin)
 }

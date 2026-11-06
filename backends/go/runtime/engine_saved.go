@@ -175,7 +175,7 @@ func (e *Engine[S, E]) startRestoredHostInvokes() {
 // that passed, `"interrupted"` when a restore found a call it must not send
 // again.
 func (e *Engine[S, E]) raiseHostInvokeFailure(invokeID, reason string) {
-	metadata := ExternalMetadata("", "")
+	metadata := ExternalMetadata("")
 	metadata.Data = `"` + reason + `"`
 	metadata.InvokeID = invokeID
 	if meta, ok := e.arrivingEvent(ErrorInvokePrefix+invokeID, metadata); ok {
@@ -382,13 +382,15 @@ func SaveSession[S comparable, E comparable](
 		if name == "" {
 			name = policy.GetEventName(queued.Event)
 		}
+		// docs/adr/0090, "Until step 6": format 2 as every backend writes it,
+		// the sender for a session's send and the address otherwise.
 		event := SavedEvent{
 			Name:       name,
 			Data:       queued.Metadata.Data,
 			Type:       queued.Metadata.EventType.String(),
 			SendID:     queued.Metadata.SendID,
-			Origin:     queued.Metadata.Origin,
-			OriginType: queued.Metadata.OriginType,
+			Origin:     StoredOriginText(queued.Metadata.Origin, queued.Metadata.Sender),
+			OriginType: queued.Metadata.OriginProcessor(),
 			InvokeID:   queued.Metadata.InvokeID,
 		}
 		if token := queued.Metadata.HostInvokeToken; token != nil {
@@ -474,19 +476,21 @@ func savePending[S comparable, E comparable](
 			// §scxml-5.10: a send is saved under its member's name. A name the
 			// document computed (`<send eventexpr>`) needs a script engine, which no
 			// saved machine has, so none is waiting here.
+			// docs/adr/0090, "Until step 6": a waiting send is a session's, and
+			// format 2 stores the sending session's id as its `origin`.
 			saved = SavedAct{Kind: SavedActRaise, Event: policy.GetEventName(act.Event), Data: act.Data,
-				SendID: act.SendID, Origin: act.Origin}
+				SendID: act.SendID, Origin: act.Sender}
 		case act.Route.Kind == RouteInternalQueue:
 			saved = SavedAct{Kind: SavedActInternal, Event: policy.GetEventName(act.Event), Data: act.Data,
-				SendID: act.SendID, Origin: act.Origin}
+				SendID: act.SendID, Origin: act.Sender}
 		// docs/adr/0045: the parent and a child of this session are sessions the
 		// saved tree holds.
 		case act.Route.Kind == RouteParent:
 			saved = SavedAct{Kind: SavedActParent, Event: act.Route.EventName, Data: act.Data,
-				SendID: act.SendID, Origin: act.Origin}
+				SendID: act.SendID, Origin: act.Sender}
 		case act.Route.Kind == RouteInvocation:
 			saved = SavedAct{Kind: SavedActChild, InvokeID: act.Route.InvokeID, Event: act.Route.EventName,
-				Data: act.Data, SendID: act.SendID, Origin: act.Origin}
+				Data: act.Data, SendID: act.SendID, Origin: act.Sender}
 		default:
 			return nil, refuse("the delayed send '%s' is routed to the session '%s', a session a saved state does "+
 				"not carry", act.SendID, act.Route.SessionID)
@@ -675,8 +679,8 @@ func judgeSession[S comparable, E comparable](
 		queued.Metadata.Data = event.Data
 		queued.Metadata.EventType = eventType
 		queued.Metadata.SendID = event.SendID
-		queued.Metadata.Origin = event.Origin
-		queued.Metadata.OriginType = event.OriginType
+		// docs/adr/0090, section 7: the pair a format-2 origin is read as.
+		queued.Metadata.Origin, queued.Metadata.Sender = ReadStoredOrigin(event.Origin, event.OriginType)
 		queued.Metadata.InvokeID = event.InvokeID
 		if event.HostInvokeToken != nil {
 			token := uint64(*event.HostInvokeToken)
@@ -915,11 +919,14 @@ func armPending[S comparable, E comparable](engine *Engine[S, E], pending []read
 	}
 	for _, read := range pending {
 		act := read.act
+		// docs/adr/0090, section 7: a waiting send is a session's, so its stored
+		// `origin` names the sender by id, or by location as one backend wrote it.
+		sender := ReadStoredSender(act.Origin)
 		switch act.Kind {
 		case SavedActRaise:
-			engine.scheduler.ScheduleEventAt(read.event, readyAt(read.due), act.SendID, act.Data, act.Origin)
+			engine.scheduler.ScheduleEventAt(read.event, readyAt(read.due), act.SendID, act.Data, sender)
 		case SavedActInternal:
-			engine.scheduler.ScheduleRoutedAt(read.event, readyAt(read.due), act.SendID, act.Data, act.Origin,
+			engine.scheduler.ScheduleRoutedAt(read.event, readyAt(read.due), act.SendID, act.Data, sender,
 				ScheduledRoute{Kind: RouteInternalQueue})
 		case SavedActHost:
 			engine.scheduler.ScheduleHostSendAt(HostSendRequest{
@@ -934,11 +941,11 @@ func armPending[S comparable, E comparable](engine *Engine[S, E], pending []read
 			}, readyAt(read.due), act.SendID)
 		case SavedActParent:
 			var none E
-			engine.scheduler.ScheduleRoutedAt(none, readyAt(read.due), act.SendID, act.Data, act.Origin,
+			engine.scheduler.ScheduleRoutedAt(none, readyAt(read.due), act.SendID, act.Data, sender,
 				ScheduledRoute{Kind: RouteParent, EventName: act.Event})
 		case SavedActChild:
 			var none E
-			engine.scheduler.ScheduleRoutedAt(none, readyAt(read.due), act.SendID, act.Data, act.Origin,
+			engine.scheduler.ScheduleRoutedAt(none, readyAt(read.due), act.SendID, act.Data, sender,
 				ScheduledRoute{Kind: RouteInvocation, InvokeID: act.InvokeID, EventName: act.Event})
 		}
 	}

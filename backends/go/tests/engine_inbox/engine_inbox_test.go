@@ -276,9 +276,9 @@ func (p *probePolicy) ExecuteTransitionContent(_ probeState, transitionIndex int
 			p.duringCall()
 		}
 		// What the generated `<send event="ping"/>` raises: an external event
-		// whose origin is this session.
+		// whose sender is this session.
 		own := sce.NewEventWithMetadata(probePing)
-		own.Metadata = sce.ExternalMetadata("", p.sessionID)
+		own.Metadata = sce.SentBySession("", p.sessionID)
 		own.Metadata.Data = "own"
 		engine.RaiseExternalWithMeta(own)
 		return
@@ -372,7 +372,7 @@ func (p *probePolicy) TickChildren(*probeEngine) {
 
 func (p *probePolicy) PopulateEventMetadata(meta *sce.EventMetadata) {
 	p.eventData = meta.Data
-	p.eventOrigin = meta.Origin
+	p.eventOrigin = meta.OriginAddress()
 }
 
 func (p *probePolicy) LiftTypedPayload(probeEvent, *sce.EventMetadata) error { return nil }
@@ -474,7 +474,7 @@ type post struct {
 func (p post) to(inbox sce.Inbox[probeEvent]) bool {
 	switch p.kind {
 	case postPing:
-		return inbox.RaiseExternal(probePing, p.data, "")
+		return inbox.RaiseExternal(probePing, p.data)
 	case postPingByName:
 		return inbox.RaiseExternalByName("ping", p.data)
 	case postDone:
@@ -660,7 +660,7 @@ func TestAPostedEndingOfACancelledOrRestartedStartIsRefusedAsADirectOneIs(t *tes
 	first := pr.latestToken(t)
 
 	// `leave` exits `working`, which cancels the first start.
-	pr.engine.RaiseExternal(probeLeave, "", "")
+	pr.engine.RaiseExternal(probeLeave, "")
 	pr.engine.Tick()
 	if want := []string{fmt.Sprintf("start:%d", first), fmt.Sprintf("cancel:%d", first)}; !slices.Equal(pr.log, want) {
 		t.Fatalf("leaving `working` did not cancel `job`: the host was told %v, want %v", pr.log, want)
@@ -680,7 +680,7 @@ func TestAPostedEndingOfACancelledOrRestartedStartIsRefusedAsADirectOneIs(t *tes
 	}
 
 	// `go` enters `working` again: the same invocation, a new start.
-	pr.engine.RaiseExternal(probeGo, "", "")
+	pr.engine.RaiseExternal(probeGo, "")
 	pr.engine.Tick()
 	second := pr.latestToken(t)
 	if second == first {
@@ -702,7 +702,7 @@ func TestAPostedEndingOfACancelledOrRestartedStartIsRefusedAsADirectOneIs(t *tes
 	if want := []string{"done:fresh"}; !slices.Equal(pr.policy.taken, want) {
 		t.Fatalf("the first start's ending was taken for the second's: took %v, want %v", pr.policy.taken, want)
 	}
-	if pr.engine.FailHostInvoke(probeType, probeJob, first, "direct", "", "") {
+	if pr.engine.FailHostInvoke(probeType, probeJob, first, "direct", nil) {
 		t.Fatalf("the first start's direct ending was taken")
 	}
 }
@@ -715,8 +715,7 @@ func TestAPostedEndingCarriesTheOriginItNames(t *testing.T) {
 
 	// To this machine: applied with CompleteHostInvokeFrom.
 	answered := ending(first, true, "answered")
-	answered.Origin = "mesh://peer"
-	answered.OriginType = sce.MeshRPCInvokeType
+	answered.Origin = sce.NewEventOrigin(sce.MeshRPCInvokeType, "mesh://peer")
 	if !postFromAnotherGoroutine(t, inbox, func(in sce.Inbox[probeEvent]) bool {
 		return in.EndHostInvoke("", answered)
 	}) {
@@ -725,14 +724,14 @@ func TestAPostedEndingCarriesTheOriginItNames(t *testing.T) {
 	pr.engine.Tick()
 
 	// `leave` and `go` start `job` again.
-	pr.engine.RaiseExternal(probeLeave, "", "")
-	pr.engine.RaiseExternal(probeGo, "", "")
+	pr.engine.RaiseExternal(probeLeave, "")
+	pr.engine.RaiseExternal(probeGo, "")
 	pr.engine.Tick()
 	second := pr.latestToken(t)
 
 	// To the session named by its id: applied with EndHostInvokeIn.
 	failed := ending(second, false, "refused")
-	failed.Origin = "mesh://other"
+	failed.Origin = sce.NewEventOrigin(sce.MeshRPCInvokeType, "mesh://other")
 	if !postFromAnotherGoroutine(t, inbox, func(in sce.Inbox[probeEvent]) bool {
 		return in.EndHostInvoke(pr.policy.sessionID, failed)
 	}) {
@@ -777,7 +776,7 @@ func TestAPostBeforeTheRunIsTakenByItAndOneAfterTheStopIsRefused(t *testing.T) {
 	woken := 0
 	inbox.WakeWith(func() { woken++ })
 
-	if !inbox.RaiseExternal(probePing, "early", "") {
+	if !inbox.RaiseExternal(probePing, "early") {
 		t.Fatalf("the inbox of an engine not yet started refused a post")
 	}
 	if woken != 1 {
@@ -794,11 +793,11 @@ func TestAPostBeforeTheRunIsTakenByItAndOneAfterTheStopIsRefused(t *testing.T) {
 
 	// Held when the run is stopped: applied as a direct call would be then, onto
 	// the queue of a machine that will not dequeue it, which the next Step counts.
-	if !inbox.RaiseExternal(probePing, "held", "") {
+	if !inbox.RaiseExternal(probePing, "held") {
 		t.Fatalf("a running engine's inbox refused a post")
 	}
 	pr.engine.Stop()
-	if inbox.RaiseExternal(probePing, "late", "") {
+	if inbox.RaiseExternal(probePing, "late") {
 		t.Fatalf("a stopped engine's inbox took a post")
 	}
 	if woken != 2 {
@@ -928,10 +927,10 @@ func TestAPostHeldWhenTheRunEndsIsAppliedAndOneAfterIsRefused(t *testing.T) {
 	// The host posts while `job` is cancelled: from inside the microstep that
 	// enters `over`, after the last boundary's drain and before the run's end.
 	heldTaken := false
-	pr.onCancel = func() { heldTaken = inbox.RaiseExternal(probePing, "at-the-end", "") }
+	pr.onCancel = func() { heldTaken = inbox.RaiseExternal(probePing, "at-the-end") }
 	pr.engine.Initialize()
 
-	pr.engine.RaiseExternal(probeFinish, "", "")
+	pr.engine.RaiseExternal(probeFinish, "")
 	pr.engine.Step()
 	if !pr.engine.IsInFinalState() {
 		t.Fatalf("`finish` did not end the run")
@@ -948,7 +947,7 @@ func TestAPostHeldWhenTheRunEndsIsAppliedAndOneAfterIsRefused(t *testing.T) {
 	if len(pr.policy.taken) != 0 {
 		t.Fatalf("a run that ended took an event: %v", pr.policy.taken)
 	}
-	if inbox.RaiseExternal(probePing, "after", "") {
+	if inbox.RaiseExternal(probePing, "after") {
 		t.Fatalf("the inbox of a run that ended took a post")
 	}
 }
@@ -967,12 +966,12 @@ func TestAnEventPostedBeforeTheMachinesOwnSendIsTakenFirst(t *testing.T) {
 	postedTaken := false
 	pr.policy.duringCall = func() {
 		postedTaken = postFromAnotherGoroutine(t, inbox, func(in sce.Inbox[probeEvent]) bool {
-			return in.RaiseExternal(probePing, "posted", "")
+			return in.RaiseExternal(probePing, "posted")
 		})
 	}
 	pr.engine.Initialize()
 
-	pr.engine.RaiseExternal(probeCall, "", "")
+	pr.engine.RaiseExternal(probeCall, "")
 	pr.engine.Tick()
 
 	if !postedTaken {

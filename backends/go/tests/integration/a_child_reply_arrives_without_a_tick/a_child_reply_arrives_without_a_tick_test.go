@@ -35,7 +35,7 @@ func TestTheChildsReplyArrivesBeforeTheHostsNextEvent(t *testing.T) {
 	policy.ScriptEngine = scegotest.NewLuaEngine()
 	engine := sce.NewEngine[AChildReplyArrivesWithoutATickState, AChildReplyArrivesWithoutATickEvent](&policy)
 	engine.Initialize()
-	engine.RaiseExternal(AChildReplyArrivesWithoutATickEventFinish, "", "")
+	engine.RaiseExternal(AChildReplyArrivesWithoutATickEventFinish, "")
 	engine.Step()
 
 	seen := fmt.Sprintf("hellos=%s (wanted 1)", record(policy.Hellos()))

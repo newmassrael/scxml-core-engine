@@ -673,6 +673,7 @@ func (p *{{ machine_name }}Policy) resumeChild{{ slot }}(engine *sce.Engine[{{ m
 	childPolicy.InvokeID = child.InvokeID
 	childPolicy.ChildSessionID = childSessionID
 	childPolicy.SessionID = childSessionID
+	childPolicy.ParentSessionID = p.SessionID
 
 	p.activeInvokes["{{ invoke_info.invoke_id | escape_go }}"] = &sce.ChildSession{
 		SessionID:       childSessionID,
@@ -890,11 +891,10 @@ type {{ machine_name }}Policy struct {
 {% if model.needs_event_sendid %}
 	pendingEventSendid string
 {% endif %}
-{% if model.needs_event_origin %}
-	pendingEventOrigin string
-{% endif %}
-{% if model.needs_event_origintype %}
-	pendingEventOrigintype string
+{% if model.needs_event_origin or model.needs_event_origintype %}
+	// W3C SCXML 5.10.1: the one pair the delivering processor wrote
+	// (docs/adr/0090), nil for an event it did not stamp.
+	pendingEventOrigin *sce.EventOrigin
 {% endif %}
 {% if model.needs_event_invokeid %}
 	pendingEventInvokeid string
@@ -963,6 +963,10 @@ type {{ machine_name }}Policy struct {
 	ParentExternalQueue *sce.ParentEventQueue
 	InvokeID           string
 	ChildSessionID     string
+	// W3C SCXML C.1: the id of the session that invoked this one, whose
+	// published location reaches it as `#_parent` does (docs/adr/0090); empty
+	// for a session its host started.
+	ParentSessionID    string
 	// §scxml-6.4.3: invoke param VALUES staged by the parent, applied after
 	// this machine's datamodel init so they override its `<data>` defaults.
 	pendingParams      map[string]interface{}
@@ -1152,6 +1156,13 @@ func (p *{{ machine_name }}Policy) DeliverToParent(eventName, eventData string) 
 // the queue the invoking parent installs is the link to it.
 func (p *{{ machine_name }}Policy) HasParentSession() bool {
 	return p.ParentExternalQueue != nil
+}
+
+// IsParentSession answers whether sessionID names the session that invoked this
+// one (W3C SCXML C.1): the location it publishes is a target, so a reply sent to
+// the origin of an event the parent sent reaches it (docs/adr/0090).
+func (p *{{ machine_name }}Policy) IsParentSession(sessionID string) bool {
+	return p.ParentExternalQueue != nil && sessionID != "" && p.ParentSessionID == sessionID
 }
 
 // ======================================================================
@@ -1454,11 +1465,8 @@ func (p *{{ machine_name }}Policy) PopulateEventMetadata(meta *sce.EventMetadata
 {% if model.needs_event_sendid %}
 	p.pendingEventSendid = meta.SendID
 {% endif %}
-{% if model.needs_event_origin %}
+{% if model.needs_event_origin or model.needs_event_origintype %}
 	p.pendingEventOrigin = meta.Origin
-{% endif %}
-{% if model.needs_event_origintype %}
-	p.pendingEventOrigintype = meta.OriginType
 {% endif %}
 {% if model.needs_event_invokeid %}
 	p.pendingEventInvokeid = meta.InvokeID
@@ -1504,11 +1512,8 @@ func (p *{{ machine_name }}Policy) ClearEventMetadata() {
 {% if model.needs_event_sendid %}
 	p.pendingEventSendid = ""
 {% endif %}
-{% if model.needs_event_origin %}
-	p.pendingEventOrigin = ""
-{% endif %}
-{% if model.needs_event_origintype %}
-	p.pendingEventOrigintype = ""
+{% if model.needs_event_origin or model.needs_event_origintype %}
+	p.pendingEventOrigin = nil
 {% endif %}
 {% if model.needs_event_invokeid %}
 	p.pendingEventInvokeid = ""

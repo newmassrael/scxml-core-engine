@@ -34,7 +34,7 @@ func TestEachPayloadArrivesOnItsOwnEvent(t *testing.T) {
 	policy.ScriptEngine = scegotest.NewLuaEngine()
 	engine := sce.NewEngine[APayloadRidesOnItsOwnEventState, APayloadRidesOnItsOwnEventEvent](&policy)
 	engine.Initialize()
-	engine.RaiseExternal(APayloadRidesOnItsOwnEventEventFinish, "", "")
+	engine.RaiseExternal(APayloadRidesOnItsOwnEventEventFinish, "")
 	engine.Step()
 
 	seen := fmt.Sprintf("got=%s stolen=%s plains=%s (wanted 4 / 0 / 4)",

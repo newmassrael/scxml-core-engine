@@ -29,7 +29,7 @@ func TestEachBadArgumentDiscardsItsMessage(t *testing.T) {
 	engine.SetClock(sce.NewManualClock(0))
 	engine.Initialize()
 	engine.AdvanceTimeMs(60000)
-	engine.RaiseExternal(ABadSendArgumentDiscardsItsMessageEventFinish, "", "")
+	engine.RaiseExternal(ABadSendArgumentDiscardsItsMessageEventFinish, "")
 	engine.Step()
 
 	if ended, ok := engine.TerminalState(); !ok || ended != ABadSendArgumentDiscardsItsMessageStateDone {

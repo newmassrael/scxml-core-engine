@@ -28,7 +28,7 @@ func TestEachArgumentCostsWhatItsClauseSays(t *testing.T) {
 		ABadInvokeArgumentIsReportedOnceEventGo,
 		ABadInvokeArgumentIsReportedOnceEventFinish,
 	} {
-		engine.RaiseExternal(event, "", "")
+		engine.RaiseExternal(event, "")
 		engine.Step()
 	}
 

@@ -41,7 +41,7 @@ func started(t *testing.T) (*sce.Engine[UnseenEventIsReportedState, UnseenEventI
 
 func deliver(engine *sce.Engine[UnseenEventIsReportedState, UnseenEventIsReportedEvent],
 	event UnseenEventIsReportedEvent) {
-	engine.RaiseExternal(event, "", "")
+	engine.RaiseExternal(event, "")
 	engine.Step()
 }
 

@@ -81,7 +81,7 @@ func expectRecord(t *testing.T, name string, want int64, v int64, ok bool, why, 
 // The run ends in a top-level <final> after a step: the final is exited too.
 func TestARunThatReachesItsFinalExitsTheFinal(t *testing.T) {
 	engine, policy := started(t)
-	engine.RaiseExternal(TheRunEndsByExitingEveryStateEventFinish, "", "")
+	engine.RaiseExternal(TheRunEndsByExitingEveryStateEventFinish, "")
 	engine.Step()
 
 	seen := describe(engine, policy)

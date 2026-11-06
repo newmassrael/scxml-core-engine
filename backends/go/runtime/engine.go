@@ -630,16 +630,9 @@ func (e *Engine[S, E]) Tick() {
 			// §scxml-5.10.1 + §scxml-C-1: the metadata the immediate send
 			// stamps, restored when the wait ends, and §scxml-5.10: the name
 			// it was sent under.
-			due := NewEventWithFields(
-				act.Event,
-				act.Data,
-				act.Origin,
-				act.SendID,
-				EventTypeExternal,
-				SCXMLEventProcessorType,
-				"", // invokeID
-				"", // target
-			)
+			due := NewEventWithMetadata(act.Event)
+			due.Metadata = SentBySession(act.SendID, act.Sender)
+			due.Metadata.Data = act.Data
 			due.Metadata.Name = act.Name
 			e.enqueueExternal(due)
 		}
@@ -913,22 +906,33 @@ func (e *Engine[S, E]) Raise(event EventWithMetadata[E]) {
 	e.internalQueue.Raise(event)
 }
 
-// RaiseExternal enqueues an external event with optional data and origin
-// (§scxml-C-1 / 6.2).
+// RaiseExternal enqueues an external event a host posts, with optional data
+// and naming no party (§scxml-C-1 / 6.2): no processor stamped it, so
+// `_event.origin` and `_event.origintype` read empty (docs/adr/0090, section
+// 3). RaiseExternalFrom names one.
 //
 // Matches Rust Engine::raise_external.
-func (e *Engine[S, E]) RaiseExternal(event E, eventData, origin string) {
-	// §scxml-5.10.1: what the host hands the external queue is typed
-	// "external" here, where it enters that queue.
+func (e *Engine[S, E]) RaiseExternal(event E, eventData string) {
+	e.RaiseExternalFrom(event, eventData, nil)
+}
+
+// RaiseExternalFrom is RaiseExternal with the reply address the host names for
+// the event in its own terms (docs/adr/0090, section 2): its processor's type
+// and the address a `<send>` of that type reaches the party at. nil names no
+// party, and the engine never fills in the SCXML processor's type for a host.
+//
+// Matches Rust Engine::raise_external_from.
+func (e *Engine[S, E]) RaiseExternalFrom(event E, eventData string, origin *EventOrigin) {
+	// What the host hands the external queue is typed "external" here, where
+	// it enters that queue.
 	meta := NewEventWithFields(
 		event,
 		eventData,
 		origin,
-		"",                      // sendID
-		EventTypeExternal,       // eventType
-		SCXMLEventProcessorType, // originType
-		"",                      // invokeID
-		"",                      // target
+		"",                // sendID
+		EventTypeExternal, // eventType
+		"",                // invokeID
+		"",                // target
 	)
 	e.enqueueExternal(meta)
 }
@@ -972,15 +976,25 @@ func (e *Engine[S, E]) ResolveEventByName(name string) (E, bool) {
 // The name is delivered as the event ResolveEventByName answers. A name no
 // transition of the document could match is silently ignored.
 // Matches Rust Engine::raise_external_by_name.
+//
+// The event names no party, so `_event.origin` and `_event.origintype` read
+// empty (docs/adr/0090, section 3); RaiseExternalByNameFrom names one.
 func (e *Engine[S, E]) RaiseExternalByName(eventName, eventData string) {
+	e.RaiseExternalByNameFrom(eventName, eventData, nil)
+}
+
+// RaiseExternalByNameFrom is RaiseExternalByName with the reply address the
+// host names for the event in its own terms (docs/adr/0090, section 2); nil
+// names no party.
+func (e *Engine[S, E]) RaiseExternalByNameFrom(eventName, eventData string, origin *EventOrigin) {
 	event, ok := e.ResolveEventByName(eventName)
 	if !ok {
 		log.Printf("[sce] Engine::RaiseExternalByName: event '%s' matches no event of the document, ignoring", eventName)
 		return
 	}
-	// §scxml-5.10.1: what a host hands the external queue is typed "external"
-	// here, where it enters that queue; and `_event.name` is the name it gave.
-	meta := NewEventWithFields(event, eventData, "", "", EventTypeExternal, SCXMLEventProcessorType, "", "")
+	// What a host hands the external queue is typed "external" here, where it
+	// enters that queue; and `_event.name` is the name it gave.
+	meta := NewEventWithFields(event, eventData, origin, "", EventTypeExternal, "", "")
 	meta.Metadata.Name = e.arrivalNameOf(event, eventName)
 	e.enqueueExternal(meta)
 }
@@ -1059,7 +1073,7 @@ func (e *Engine[S, E]) ProcessEvent(event E) {
 		e.noteUnseenEvent(event)
 		return
 	}
-	e.RaiseExternal(event, "", "")
+	e.RaiseExternal(event, "")
 	e.Step()
 }
 
@@ -1111,9 +1125,12 @@ func (e *Engine[S, E]) DonedataAtFinal() string {
 //
 // The deadline is this turn's instant plus the delay — see beginTurn for why
 // the reading is the turn's rather than this statement's.
-func (e *Engine[S, E]) ScheduleEvent(event E, delay time.Duration, sendID, eventData, origin string) string {
+//
+// sender is the id of the sending session — this one for a `<send>` — whose
+// published location is the event's origin when it arrives (docs/adr/0090).
+func (e *Engine[S, E]) ScheduleEvent(event E, delay time.Duration, sendID, eventData, sender string) string {
 	readyAtMs := e.schedNowMs() + int64(delay/time.Millisecond)
-	return e.scheduler.ScheduleEventAt(event, readyAtMs, sendID, eventData, origin)
+	return e.scheduler.ScheduleEventAt(event, readyAtMs, sendID, eventData, sender)
 }
 
 // SendNamedExternal is a `<send eventexpr>` this session addresses to its own
@@ -1125,7 +1142,7 @@ func (e *Engine[S, E]) ScheduleEvent(event E, delay time.Duration, sendID, event
 // wildcard — and a name no descriptor of the document could match is dropped, as
 // one that arrives from outside is. `_event.name` is the whole name whenever the
 // member is not called that, a delayed send's included.
-func (e *Engine[S, E]) SendNamedExternal(name string, delay time.Duration, sendID, eventData, origin string) {
+func (e *Engine[S, E]) SendNamedExternal(name string, delay time.Duration, sendID, eventData, sender string) {
 	event, ok := e.ResolveEventByName(name)
 	if !ok {
 		return
@@ -1133,11 +1150,11 @@ func (e *Engine[S, E]) SendNamedExternal(name string, delay time.Duration, sendI
 	arrival := e.arrivalNameOf(event, name)
 	if delay > 0 {
 		readyAtMs := e.schedNowMs() + int64(delay/time.Millisecond)
-		e.scheduler.ScheduleEventNamedAt(event, readyAtMs, sendID, eventData, origin, arrival)
+		e.scheduler.ScheduleEventNamedAt(event, readyAtMs, sendID, eventData, sender, arrival)
 		return
 	}
 	meta := NewEventWithMetadata(event)
-	meta.Metadata = ExternalMetadata(sendID, origin)
+	meta.Metadata = SentBySession(sendID, sender)
 	meta.Metadata.Data = eventData
 	meta.Metadata.Name = arrival
 	e.RaiseExternalWithMeta(meta)
@@ -1146,13 +1163,13 @@ func (e *Engine[S, E]) SendNamedExternal(name string, delay time.Duration, sendI
 // SendNamedInternal is the internal-queue twin of SendNamedExternal: a
 // `<send target="#_internal" eventexpr>`, now or after delay. A delay postpones
 // it and does not change the queue (§scxml-6.2).
-func (e *Engine[S, E]) SendNamedInternal(name string, delay time.Duration, sendID, eventData, origin string) {
+func (e *Engine[S, E]) SendNamedInternal(name string, delay time.Duration, sendID, eventData, sender string) {
 	event, ok := e.ResolveEventByName(name)
 	if !ok {
 		return
 	}
 	if delay > 0 {
-		e.ScheduleRoutedEvent(event, delay, sendID, eventData, origin,
+		e.ScheduleRoutedEvent(event, delay, sendID, eventData, sender,
 			ScheduledRoute{Kind: RouteInternalQueue, EventName: name})
 		return
 	}
@@ -1187,8 +1204,12 @@ func (e *Engine[S, E]) settleChildren() {
 // Detected rather than required, as the C++ engine detects its policy's
 // delivery hooks: a policy with no invocations — every hand-written test
 // policy among them — must not have to say so.
+//
+// sender is the id of the session that sent the event, this one: the child
+// reads the location it publishes as `_event.origin` (docs/adr/0090, section
+// 2).
 type InvocationDelivery interface {
-	DeliverToInvocation(invokeID, eventName, eventData, sendID string) bool
+	DeliverToInvocation(invokeID, eventName, eventData, sendID, sender string) bool
 }
 
 // ParentDelivery is implemented by a generated policy, so a delayed
@@ -1202,11 +1223,20 @@ type ParentDelivery interface {
 	HasParentSession() bool
 }
 
+// ParentSession is implemented by a generated policy, so a send addressed to
+// the location the session that invoked this one publishes reaches it as
+// `#_parent` does: the address a reply to an event the parent sent
+// goes to (docs/adr/0090). Detected rather than required, as ParentDelivery is.
+type ParentSession interface {
+	IsParentSession(sessionID string) bool
+}
+
 // ChildSessionDelivery is implemented by a generated policy that invokes, so a
 // send addressed to a child's published location reaches that child
-// (§scxml-C-1). IsChildSessionRunning is the test DeliverToChildSession makes.
+// (§scxml-C-1). IsChildSessionRunning is the test DeliverToChildSession makes;
+// sender is the session that sent the event, as for InvocationDelivery.
 type ChildSessionDelivery interface {
-	DeliverToChildSession(childSessionID, eventName, eventData string) bool
+	DeliverToChildSession(childSessionID, eventName, eventData, sender string) bool
 	IsChildSessionRunning(childSessionID string) bool
 }
 
@@ -1256,7 +1286,7 @@ const (
 //
 // event is this machine's spelling of the event, for its own queues, valid
 // when hasEvent; a child or a parent resolves eventName.
-func (e *Engine[S, E]) SendToTarget(event E, hasEvent bool, eventName, target, ownSessionID string, delay time.Duration, sendID, eventData, origin string) TargetSendOutcome {
+func (e *Engine[S, E]) SendToTarget(event E, hasEvent bool, eventName, target, ownSessionID string, delay time.Duration, sendID, eventData, sender string) TargetSendOutcome {
 	resolved := ClassifyTarget(target, ownSessionID)
 	delayed := delay > 0
 	var route ScheduledRoute
@@ -1273,10 +1303,11 @@ func (e *Engine[S, E]) SendToTarget(event E, hasEvent bool, eventName, target, o
 			arrival := e.arrivalNameOf(event, eventName)
 			if delayed {
 				readyAtMs := e.schedNowMs() + int64(delay/time.Millisecond)
-				e.scheduler.ScheduleEventNamedAt(event, readyAtMs, sendID, eventData, origin, arrival)
+				e.scheduler.ScheduleEventNamedAt(event, readyAtMs, sendID, eventData, sender, arrival)
 			} else {
-				meta := NewEventWithFields(event, eventData, origin, sendID,
-					EventTypeExternal, SCXMLEventProcessorType, "", "")
+				meta := NewEventWithMetadata(event)
+				meta.Metadata = SentBySession(sendID, sender)
+				meta.Metadata.Data = eventData
 				meta.Metadata.Name = arrival
 				e.RaiseExternalWithMeta(meta)
 			}
@@ -1299,6 +1330,13 @@ func (e *Engine[S, E]) SendToTarget(event E, hasEvent bool, eventName, target, o
 		}
 		route = ScheduledRoute{Kind: RouteInvocation, EventName: eventName, InvokeID: resolved.ID}
 	case TargetSession:
+		// §scxml-C-1: the location the session that invoked this one
+		// publishes is a target, as `#_parent` is — the address a reply to an
+		// event the parent sent goes to (docs/adr/0090).
+		if parent, ok := any(e.policy).(ParentSession); ok && parent.IsParentSession(resolved.ID) {
+			route = ScheduledRoute{Kind: RouteParent, EventName: eventName}
+			break
+		}
 		sessions, ok := any(e.policy).(ChildSessionDelivery)
 		if !ok || !sessions.IsChildSessionRunning(resolved.ID) {
 			return TargetNotReachable
@@ -1309,10 +1347,10 @@ func (e *Engine[S, E]) SendToTarget(event E, hasEvent bool, eventName, target, o
 		return TargetSent
 	}
 	if delayed {
-		e.ScheduleRoutedEvent(event, delay, sendID, eventData, origin, route)
+		e.ScheduleRoutedEvent(event, delay, sendID, eventData, sender, route)
 		return TargetSent
 	}
-	if e.deliverRoutedNow(event, route, eventData, sendID, origin) {
+	if e.deliverRoutedNow(event, route, eventData, sendID, sender) {
 		return TargetSent
 	}
 	return TargetNotReachable
@@ -1322,13 +1360,15 @@ func (e *Engine[S, E]) SendToTarget(event E, hasEvent bool, eventName, target, o
 // delivery a send made at once and a delayed send whose wait is over both go
 // through (§scxml-6.2.4: a delay postpones a send, it does not change where it
 // goes). It answers whether the target was there to take the event.
-func (e *Engine[S, E]) deliverRoutedNow(event E, route ScheduledRoute, eventData, sendID, origin string) bool {
+func (e *Engine[S, E]) deliverRoutedNow(event E, route ScheduledRoute, eventData, sendID, sender string) bool {
 	switch route.Kind {
 	case RouteInternalQueue:
+		// An event on the internal queue is an internal event, whose origin the
+		// processor leaves blank (docs/adr/0090, section 2): no pair, and no
+		// sender.
 		meta := NewEventWithMetadata(event)
 		meta.Metadata.Data = eventData
 		meta.Metadata.SendID = sendID
-		meta.Metadata.Origin = origin
 		if route.EventName != "" {
 			meta.Metadata.Name = e.arrivalNameOf(event, route.EventName)
 		}
@@ -1336,13 +1376,13 @@ func (e *Engine[S, E]) deliverRoutedNow(event E, route ScheduledRoute, eventData
 		return true
 	case RouteInvocation:
 		if invocations, ok := any(e.policy).(InvocationDelivery); ok {
-			delivered := invocations.DeliverToInvocation(route.InvokeID, route.EventName, eventData, sendID)
+			delivered := invocations.DeliverToInvocation(route.InvokeID, route.EventName, eventData, sendID, sender)
 			e.settleChildren()
 			return delivered
 		}
 	case RouteSession:
 		if sessions, ok := any(e.policy).(ChildSessionDelivery); ok {
-			delivered := sessions.DeliverToChildSession(route.SessionID, route.EventName, eventData)
+			delivered := sessions.DeliverToChildSession(route.SessionID, route.EventName, eventData, sender)
 			e.settleChildren()
 			return delivered
 		}
@@ -1363,9 +1403,9 @@ func (e *Engine[S, E]) deliverRoutedNow(event E, route ScheduledRoute, eventData
 // queue as every other delayed send, which is what lets one `<cancel sendid>`
 // (§scxml-6.3) reach it. event is this machine's own spelling of the event,
 // used for the internal queue; a child or a parent resolves route.EventName.
-func (e *Engine[S, E]) ScheduleRoutedEvent(event E, delay time.Duration, sendID, eventData, origin string, route ScheduledRoute) string {
+func (e *Engine[S, E]) ScheduleRoutedEvent(event E, delay time.Duration, sendID, eventData, sender string, route ScheduledRoute) string {
 	readyAtMs := e.schedNowMs() + int64(delay/time.Millisecond)
-	return e.scheduler.ScheduleRoutedAt(event, readyAtMs, sendID, eventData, origin, route)
+	return e.scheduler.ScheduleRoutedAt(event, readyAtMs, sendID, eventData, sender, route)
 }
 
 // deliverRouted delivers a delayed send whose wait is over to the target it
@@ -1377,7 +1417,7 @@ func (e *Engine[S, E]) ScheduleRoutedEvent(event E, delay time.Duration, sendID,
 // the dispatch is this delivery, so an invocation that has ended in the
 // meantime is reported here, not when the send was made.
 func (e *Engine[S, E]) deliverRouted(act ReadyAct[E]) {
-	if e.deliverRoutedNow(act.Event, *act.Route, act.Data, act.SendID, act.Origin) {
+	if e.deliverRoutedNow(act.Event, *act.Route, act.Data, act.SendID, act.Sender) {
 		return
 	}
 	if communicationError, ok := e.policy.GetEventFromName("error.communication"); ok {
@@ -1961,7 +2001,9 @@ func (e *Engine[S, E]) PerformHTTPSend(target, eventName, content string, params
 		SendID:    sendID,
 	})
 	if resp != nil {
-		metadata := ExternalMetadata("", "")
+		// The BasicHTTP processor's rules give a response no reply address
+		// beyond its data, so it carries no origin (docs/adr/0090, section 2).
+		metadata := ExternalMetadata("")
 		metadata.Data = resp.EventData
 		if meta, ok := e.arrivingEvent(resp.EventName, metadata); ok {
 			e.enqueueExternal(meta)

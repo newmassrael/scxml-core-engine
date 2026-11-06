@@ -28,11 +28,11 @@ type scheduledEntry[E any] struct {
 	event     E
 	eventData string
 	sendID    string
-	// origin is the sending session, which `_event.origin` publishes when the
-	// event arrives (§scxml-C-1). A delayed send is the same event as an
-	// immediate one, only later, so waiting must not cost it the address a
-	// reply goes back to.
-	origin string
+	// sender is the id of the sending session, whose published location the
+	// SCXML processor writes as the event's origin when it arrives (§scxml-C-1,
+	// docs/adr/0090). A delayed send is the same event as an immediate one,
+	// only later, so waiting must not cost it the address a reply goes back to.
+	sender string
 	// name is the name the event was sent under when that is not event's own
 	// (§scxml-5.10): a `<send eventexpr>` computes it, and the member that takes
 	// it is the document's event of that name, the longest token prefix of it the
@@ -118,14 +118,14 @@ func NewPullScheduler[E any]() *PullScheduler[E] {
 // (caller can use it to cancel). Matches Rust PullScheduler::schedule_event_at:
 // the deadline is resolved by the caller, which is the only party that knows
 // which clock the engine reads.
-func (s *PullScheduler[E]) ScheduleEventAt(event E, readyAtMs int64, sendID, eventData, origin string) string {
-	return s.ScheduleEventNamedAt(event, readyAtMs, sendID, eventData, origin, "")
+func (s *PullScheduler[E]) ScheduleEventAt(event E, readyAtMs int64, sendID, eventData, sender string) string {
+	return s.ScheduleEventNamedAt(event, readyAtMs, sendID, eventData, sender, "")
 }
 
 // ScheduleEventNamedAt is ScheduleEventAt for an event sent under name when that
 // is not the member's own (§scxml-5.10): the name is kept with the entry and is
 // `_event.name` when it comes due.
-func (s *PullScheduler[E]) ScheduleEventNamedAt(event E, readyAtMs int64, sendID, eventData, origin, name string) string {
+func (s *PullScheduler[E]) ScheduleEventNamedAt(event E, readyAtMs int64, sendID, eventData, sender, name string) string {
 	effectiveSendID := sendID
 	if effectiveSendID == "" {
 		s.nextAutoSendID++
@@ -135,7 +135,7 @@ func (s *PullScheduler[E]) ScheduleEventNamedAt(event E, readyAtMs int64, sendID
 		event:     event,
 		eventData: eventData,
 		sendID:    effectiveSendID,
-		origin:    origin,
+		sender:    sender,
 		name:      name,
 		readyAtMs: readyAtMs,
 	})
@@ -149,8 +149,8 @@ func (s *PullScheduler[E]) ScheduleEventNamedAt(event E, readyAtMs int64, sendID
 // `<cancel sendid>` path (§scxml-6.3) and one NextReadyAtMs cover it. event is
 // this machine's own spelling of the event, used when the route is this
 // session's internal queue.
-func (s *PullScheduler[E]) ScheduleRoutedAt(event E, readyAtMs int64, sendID, eventData, origin string, route ScheduledRoute) string {
-	effectiveSendID := s.ScheduleEventAt(event, readyAtMs, sendID, eventData, origin)
+func (s *PullScheduler[E]) ScheduleRoutedAt(event E, readyAtMs int64, sendID, eventData, sender string, route ScheduledRoute) string {
+	effectiveSendID := s.ScheduleEventAt(event, readyAtMs, sendID, eventData, sender)
 	held := route
 	s.entries[len(s.entries)-1].route = &held
 	return effectiveSendID
@@ -293,16 +293,16 @@ func (s *PullScheduler[E]) PopReadyEventAt(nowMs int64) (E, string, bool) {
 // to perform, or a host-run invocation's deadline.
 //
 // HostSend is nil for an ordinary delayed send, in which case Event, Data,
-// SendID and Origin are what to raise; when it is non-nil the entry IS the act
+// SendID and Sender are what to raise; when it is non-nil the entry IS the act
 // and the event fields carry nothing meaningful. The same holds for Deadline.
 type ReadyAct[E any] struct {
 	Event E
 	Data  string
 	// SendID is the `<send>`'s id, which `_event.sendid` carries (§scxml-5.10.1).
 	SendID string
-	// Origin is the sending session, which `_event.origin` publishes
-	// (§scxml-C-1).
-	Origin string
+	// Sender is the id of the sending session, whose published location is
+	// the event's origin when it arrives (§scxml-C-1, docs/adr/0090).
+	Sender string
 	// Name is the name Event was sent under when that is not its own
 	// (§scxml-5.10), or empty.
 	Name     string
@@ -337,7 +337,7 @@ func (s *PullScheduler[E]) PopReadyActAt(nowMs int64) (ReadyAct[E], bool) {
 		Event:    entry.event,
 		Data:     entry.eventData,
 		SendID:   entry.sendID,
-		Origin:   entry.origin,
+		Sender:   entry.sender,
 		Name:     entry.name,
 		HostSend: entry.hostSend,
 		Deadline: entry.deadline,
@@ -393,7 +393,7 @@ func (s *PullScheduler[E]) Pending() []PendingAct[E] {
 				Event:    entry.event,
 				Data:     entry.eventData,
 				SendID:   entry.sendID,
-				Origin:   entry.origin,
+				Sender:   entry.sender,
 				Name:     entry.name,
 				HostSend: entry.hostSend,
 				Deadline: entry.deadline,

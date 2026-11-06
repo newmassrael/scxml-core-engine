@@ -48,7 +48,7 @@ func TestAStateIsStillActiveWhileItsOwnOnexitRuns(t *testing.T) {
 		t.Fatalf("fixture came up as %v; the run has to start inside `inner`", entry)
 	}
 
-	engine.RaiseExternal(OnexitRunsBeforeTheStateLeavesEventLeave, "", "")
+	engine.RaiseExternal(OnexitRunsBeforeTheStateLeavesEventLeave, "")
 	engine.Step()
 
 	settled := engine.GetActiveStates()

@@ -55,7 +55,7 @@ func TestEveryRegionTakesItsOwnTransition(t *testing.T) {
 			"testing what it claims", entry)
 	}
 
-	engine.RaiseExternal(ParallelRegionsTakeOwnTransitionsEventE, "", "")
+	engine.RaiseExternal(ParallelRegionsTakeOwnTransitionsEventE, "")
 	engine.Step()
 
 	after := engine.GetActiveStates()
@@ -69,7 +69,7 @@ func TestEveryRegionTakesItsOwnTransition(t *testing.T) {
 			"target of its own external self-transition (active: %v)", after)
 	}
 
-	engine.RaiseExternal(ParallelRegionsTakeOwnTransitionsEventCheck, "", "")
+	engine.RaiseExternal(ParallelRegionsTakeOwnTransitionsEventCheck, "")
 	engine.Step()
 
 	settled := engine.GetActiveStates()

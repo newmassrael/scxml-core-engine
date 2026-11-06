@@ -160,7 +160,7 @@ func (l loop) verdict(done bool) {
 	if done {
 		payload = `{"done":true}`
 	}
-	l.engine.RaiseExternal(AiLoopEventJudge, payload, "")
+	l.engine.RaiseExternal(AiLoopEventJudge, payload)
 	l.engine.Step()
 }
 
@@ -635,7 +635,6 @@ func TestWhatAReflectionWritesIsWhatTheMachineThenHolds(t *testing.T) {
 	l.engine.RaiseExternal(
 		AiLoopEventReflectApplied,
 		`{"start_prompt":"Resuming. Milestone: refined","turn_prompt":"Continue toward: refined","milestone":"refined"}`,
-		"",
 	)
 	l.engine.Step()
 
@@ -764,7 +763,6 @@ func TestACorrectlyDrivenRunReportsNoErrors(t *testing.T) {
 	l.engine.RaiseExternal(
 		AiLoopEventReflectApplied,
 		`{"start_prompt":"Resuming. Milestone: refined","turn_prompt":"Continue toward: refined","milestone":"refined"}`,
-		"",
 	)
 	l.engine.Step()
 	l.step(AiLoopEventSessionReady)

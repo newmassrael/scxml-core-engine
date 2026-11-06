@@ -329,7 +329,7 @@ func TestEveryStateReadsBackFromItsOwnName(t *testing.T) {
 func TestAConfigurationJournalledAsNamesIsAcceptedBack(t *testing.T) {
 	writer, writerEngine := newParallelWithEngine()
 	writerEngine.Initialize()
-	writerEngine.RaiseExternal(parallel.ParallelRegionsTakeOwnTransitionsEventE, "", "")
+	writerEngine.RaiseExternal(parallel.ParallelRegionsTakeOwnTransitionsEventE, "")
 	writerEngine.Step()
 
 	journal := make([]string, 0, 8)

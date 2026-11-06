@@ -60,7 +60,7 @@ func TestAnAncestorEnteredOnTheWayToATargetTakesNoDefaultChild(t *testing.T) {
 
 	// Pass one: the parallel is not active, so `run` is entered as a parallel
 	// ancestor and `drive` and `outer` as compound ones.
-	engine.RaiseExternal(AncestorEntryIsNotDefaultEntryEventCross, "", "")
+	engine.RaiseExternal(AncestorEntryIsNotDefaultEntryEventCross, "")
 	engine.Step()
 
 	crossed := engine.GetActiveStates()
@@ -81,9 +81,9 @@ func TestAnAncestorEnteredOnTheWayToATargetTakesNoDefaultChild(t *testing.T) {
 	// Pass two: the parallel is already active now, so `run` and `drive` are
 	// skipped and only `outer` is entered. That is a different branch of the
 	// entry walk, and it is the one a running machine takes.
-	engine.RaiseExternal(AncestorEntryIsNotDefaultEntryEventBack, "", "")
+	engine.RaiseExternal(AncestorEntryIsNotDefaultEntryEventBack, "")
 	engine.Step()
-	engine.RaiseExternal(AncestorEntryIsNotDefaultEntryEventAgain, "", "")
+	engine.RaiseExternal(AncestorEntryIsNotDefaultEntryEventAgain, "")
 	engine.Step()
 
 	again := engine.GetActiveStates()
@@ -93,7 +93,7 @@ func TestAnAncestorEnteredOnTheWayToATargetTakesNoDefaultChild(t *testing.T) {
 			"the worked example hits every time a person answers a dialog", again)
 	}
 
-	engine.RaiseExternal(AncestorEntryIsNotDefaultEntryEventCheck, "", "")
+	engine.RaiseExternal(AncestorEntryIsNotDefaultEntryEventCheck, "")
 	engine.Step()
 
 	if ended, ok := engine.TerminalState(); !ok || ended != AncestorEntryIsNotDefaultEntryStateSettled {
