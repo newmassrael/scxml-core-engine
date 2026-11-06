@@ -462,15 +462,28 @@ class LuaScriptEngine(IScriptEngine):
             event_table["data"] = data_value
         if args.event_type:
             event_table["type"] = args.event_type
-        if args.send_id:
-            event_table["sendid"] = args.send_id
-        # §scxml-5.10.1 — always set origin/origintype so
-        # `targetexpr="_event.origin"` evaluates to "" (not nil) when
-        # origin is unset (test 336).
-        event_table["origin"] = args.origin
-        event_table["origintype"] = args.origin_type
-        if args.invoke_id:
-            event_table["invokeid"] = args.invoke_id
+        # §scxml-5.10.1 has the Processor leave four fields blank: `sendid`
+        # when the sender named none, `origin` and `origintype` for internal
+        # and platform events, `invokeid` when no invoked process returned
+        # the event. In the ECMAScript data model blank is undefined, not
+        # the empty string, and a Lua session holds undefined as nil. The
+        # args carry "none" as the empty string, so an empty field is left
+        # unset and `_event.origin === ''` answers false for an event no
+        # processor delivered (tests/ecmascript/event_blank_fields.json).
+        #
+        # `origin` and `origintype` used to be bound as "" whatever the
+        # event, so that `targetexpr="_event.origin"` read a string (test
+        # 336). That test reads the origin of an event the session sent
+        # itself, which carries its origin, so it never needed the blank one
+        # to be a string.
+        for field, value in (
+            ("sendid", args.send_id),
+            ("origin", args.origin),
+            ("origintype", args.origin_type),
+            ("invokeid", args.invoke_id),
+        ):
+            if value:
+                event_table[field] = value
         session.runtime.globals()["_event"] = event_table
         return reading
 
