@@ -160,9 +160,142 @@ several format-2 writers saved the SCXML type beside an event no processor stamp
 nothing. An empty `origintype` beside an address is the SCXML processor's, which is what format 2 meant by it
 (`HostInvokeEnding.originType`: "empty keeps the SCXML processor's").
 
-Each backend's writer moves to format 3 in the saved-state step. The shared instances in
-`sce-build/tests/fixtures/static_datamodel/saved/` move with it, and a format-2 instance written by C11 and one
-written by another backend join `saved/format2/` as reading fixtures.
+"No scheme" in the second row means that the text holds no `://`, which is how every reader tests it. A session id
+is an XML Nmtoken and may hold a `:` (`peer:1`), so a colon alone does not mark a scheme. The third row comes before
+the fourth whatever type was saved: a value that starts `sce://scxml/` and names a session is that session's pair. A
+format-1 text holds `origin` and `origintype` in the same members, with the same meaning, so the table reads it too.
+
+A waiting send of a format-1 or format-2 text stores only `origin`, which is the sending session's id, or its
+location as C11 stored it. A reader takes the id, decoding a location, and reads the act as that session's SCXML pair
+with the id as its `sender`. An `internal` act is the one exception, because the event it delivers is an internal
+event, and an internal event has no origin (§scxml-5.10.1, section 2). Its stored `origin` is therefore not read,
+and the act is read as having no origin and no sender.
+
+This reading is one function, shared by every backend: the stored-origin reader each runtime already holds. It is
+`IOProcessorHelper::readStoredOrigin` and `readStoredSender` in C++, with their ports in the other runtimes and
+`sce_saved_origin_read` in C11. Two builds therefore read one format-2 text as the same pairs. A build that reads
+only formats 1 and 2 refuses `"format":3` by its `format` member before it reads anything else. It never reads part
+of the text.
+
+#### Text form
+
+Format 3 is format 2 with the origin held as the pair. Every member that is not named here is written as format 2
+writes it, and the text stays compact. The bytes below are what every backend writes after the same run, and what
+the shared instances hold.
+
+- **`format`** is the JSON number `3`, the first member of the root. Format 3 applies to the whole text: a format-3
+  writer writes `3` for every text it writes, including one that holds no event and no waiting send. A child
+  session does not state the format again. One format per text keeps one rule for the reader (judge `format`
+  first) and one for the writer.
+- **`shape`** is the format-2 shape (docs/adr/0045, section 2). The pair changes no document, so each machine's
+  format-2 shape constants serve format 3 as they are, and no generated tree changes because of this step.
+- **Which records carry the pair.** These records carry it:
+  - every element of a session's `external`, in every session of the tree, whatever delivered the event: a session's
+    send, a host invocation's ending queued with its `hostinvoketoken`, a host-posted event, a host send's reply, a
+    Mesh peer event or RPC reply, a BasicHTTP event;
+  - every waiting send in `pending` whose `act` is `raise`, `internal`, `parent` or `child`.
+
+  These carry no pair: a `host` act, a `hostinvokes` entry (the Mesh request `sce:mesh-rpc` among them) and an
+  `invokes` entry. Each of them is a request a processor performs or a session that runs, not an event a session
+  will take. When the reply to one of them arrives, it is an event, and it is queued in `external` with its own
+  pair. These are the record kinds that held `origin` in format 2. `origintype` was held only by the elements of
+  `external`.
+- **Where the two members sit.** `origin` then `sender` take the place that format 2's `origin` (and in `external`,
+  `origintype`) held:
+  - an element of `external` is `name`, `data`, `type`, `sendid`, `origin`, `sender`, `invokeid`,
+    `hostinvoketoken`;
+  - a waiting send is `due`, `act`, then `invokeid` for a `child` act only, then `event`, `data`, `sendid`, `origin`,
+    `sender`.
+- **Always written.** Both members are in every record that carries the pair, and `null` stands where there is
+  none. Format 2 already follows this rule: a member of a record that may hold nothing is written as `null`
+  (`hostinvoketoken`, a host invocation's `due`, an absent optional value). The only members it leaves out are
+  `revisions` and `features`, which a session holds or lacks as a whole, and which texts written before they
+  existed lack. The pair is a member of every event, not such a member. One rule with no exception means that no
+  writer decides when to leave a member out.
+- **The pair** is the object `{"processor":"<processor>","address":"<address>"}`. `processor` comes first and
+  `address` second, the object has no other member, and neither member is empty. Every record of the format is
+  written in the order its definition declares, never sorted (`name` before `data`, `due` before `act`). Section 1
+  declares `EventOrigin { processor, address }`. Format 2's order, the address `origin` before `origintype`, was
+  the order of two members of the event, and it does not carry into the new object. `processor` is the canonical
+  type URI (section 4). For the SCXML processor this is `http://www.w3.org/TR/scxml/#SCXMLEventProcessor`.
+  `address` is the address as the delivering processor wrote it.
+- **The SCXML pair's address** is `scxmlLocation(sender)`: the prefix `sce://scxml/`, then the UTF-8 bytes of the
+  session id, with each byte outside `A-Z a-z 0-9 - . _ ~` written as `%` and two uppercase hexadecimal digits.
+  This is the same function that writes the session's `_ioprocessors` entry. `fixture-root` is written
+  `sce://scxml/fixture-root`, and `peer:1` is written `sce://scxml/peer%3A1`.
+- **`sender`** is the session id as a JSON string, or `null`. It is set only when the SCXML processor delivered the
+  event. When it is set, `origin` is the SCXML pair of that id, byte for byte. An SCXML pair whose address names
+  no session has `sender` `null`: the `mesh://ecu` row of a format-2 text is read that way.
+- **A waiting send.**
+  - A `raise`, `parent` or `child` act is always this session's own send, and the SCXML processor delivers it. It
+    carries this session's pair and this session's id.
+  - An `internal` act carries `"origin":null,"sender":null`, because the event it delivers is internal. A backend
+    whose scheduled entry keeps the sender for such an act does not write it.
+  - Each act carries the pair and the sender that its event will carry when it is delivered, which is why it holds
+    both even where one could be derived from the other.
+- **`null`** is the four letters `null`, in lower case. As in format 2, the text has no whitespace outside strings.
+  A string is escaped by the one rule of `tests/json_text/string_escape.json`.
+
+A queued event and a waiting send in format 2 (the shared tree text before this step):
+
+```json
+{"name":"answer","data":"","type":"external","sendid":"","origin":"fixture-root.working.2.worker","origintype":"http://www.w3.org/TR/scxml/#SCXMLEventProcessor","invokeid":"worker","hostinvoketoken":null}
+{"due":"1700000005000","act":"child","invokeid":"worker","event":"nudge","data":"","sendid":"poke","origin":"fixture-root"}
+```
+
+The same two records in format 3, with an event that no processor stamped and an internal act:
+
+```json
+{"name":"answer","data":"","type":"external","sendid":"","origin":{"processor":"http://www.w3.org/TR/scxml/#SCXMLEventProcessor","address":"sce://scxml/fixture-root.working.2.worker"},"sender":"fixture-root.working.2.worker","invokeid":"worker","hostinvoketoken":null}
+{"due":"1700000005000","act":"child","invokeid":"worker","event":"nudge","data":"","sendid":"poke","origin":{"processor":"http://www.w3.org/TR/scxml/#SCXMLEventProcessor","address":"sce://scxml/fixture-root"},"sender":"fixture-root"}
+{"name":"swap","data":"","type":"external","sendid":"","origin":null,"sender":null,"invokeid":"","hostinvoketoken":null}
+{"due":"1700000001000","act":"internal","event":"inner","data":"","sendid":"__send_2","origin":null,"sender":null}
+```
+
+A format-3 reader takes both members as they are written and derives neither one from the other. It refuses, and
+names the record, in these cases:
+
+- an `origin` that is neither `null` nor a pair;
+- a pair with a member missing, empty or added;
+- a `sender` that is not a session id;
+- a `sender` beside an `origin` other than the SCXML pair of that id;
+- a `raise`, `parent` or `child` act with no `sender`;
+- an `internal` act that holds either member.
+
+The reader refuses these texts and does not repair them, as it refuses every other text that it cannot read whole.
+
+A build that reads format 3 refuses any other `format` with one reason on every backend: `the saved state is
+format <the member as written>, and this runtime reads formats 1, 2 and 3`. This is the format-2 reason, with the
+list of formats grown.
+
+**What a format-3 build writes.**
+
+- It writes format 3 for every state that it saves from a machine.
+- A state read from a format-2 text holds the pairs that the table gives, and it is written back as format 3.
+- A state read from a format-1 text and written back without a machine (a runtime's own read-and-write test) stays
+  format 1. Format 1 has no place for a child's session. Its `origin` and `origintype` are written by the rule that
+  format 2 uses today: the sender's id for a session's send and the address otherwise, then the pair's processor;
+  both are empty for none.
+
+**The fixtures.** Each backend's writer moves to format 3 in the saved-state step, all at once.
+
+- The shared instances in `sce-build/tests/fixtures/static_datamodel/saved/` and
+  `sce-build/tests/fixtures/host_processor/saved/` move with it.
+  - The instances that hold an origin are moved through the table, so an SCXML pair keeps its sender.
+  - Every other instance changes only its `format`.
+- `sce-build/tests/fixtures/static_datamodel/saved/format2/` holds the format-2 reading fixtures:
+  - the shared tree as the backends other than C11 wrote it before this ADR;
+  - the same tree as C11 stores a queued event's origin, the location `sce://scxml/<id>`;
+  - a tree whose root queue holds one event for each row of the table and each type beside it;
+  - the shared timers, whose `internal` act stored the sender.
+- `saved/format2/read_as/` holds, under the same name, the format-3 text that each fixture is read as. Every
+  backend restores each fixture, saves at once, and gets that text.
+  - The C11 tree and the tree of the other backends are both read as the shared format-3 tree.
+  - The timers are read as the shared format-3 timers.
+- `saved/format2/README.md` lists the pair and the sender that each record is read as.
+- `host_processor` has no `format2/`. Its instances hold no event and no session's send, and a host act and a host
+  invocation have the grammar that format 2 gave them. Their format-2 text differs from their format-3 text only
+  in `format`, and the static data model fixtures already reach every path that reads a stored origin.
 
 ## Tests
 
@@ -180,8 +313,10 @@ Each new integration stem is wired on all eight lanes (the Interpreter and the s
    `sce://scxml/motor` and default the type to SCXML.
 4. On the Mesh lanes, the RPC reply's origin is the address the transport gives that peer. The C++ lane fails this
    test today.
-5. Saved state. `sce-build/tests/saved_state_schema.rs` validates format 3. Each backend restores both format-2
-   reading fixtures and reaches the pair in the table of section 7.
+5. Saved state. `sce-build/tests/saved_state_schema.rs` validates format 3. It also holds each format-2 reading
+   fixture to the format-3 text it is read as, by the table of section 7. Each backend restores every reading
+   fixture in `saved/format2/`, saves it at once, and gets the text `saved/format2/read_as/` holds for it, byte for
+   byte.
 6. A unit test of the SCXML address codec (`scxmlLocation`, `sessionIdFromScxmlLocation`, round trip with a
    reserved character) on every runtime. Today C++, Python and Kotlin have none.
 

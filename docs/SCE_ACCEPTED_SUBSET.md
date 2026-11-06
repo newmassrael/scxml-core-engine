@@ -6228,6 +6228,24 @@ restore every backend moves to.
   are added by the first backend that writes them, together with a scenario
   member that saves and restores the machine at a step.
 
+**Format 3: an event's origin as one pair.** Format 3 is format 2's tree, but each
+queued event and each waiting send of an event holds its origin the way the
+processor that delivered it wrote it (docs/adr/0090, section 7;
+`schemas/sce-saved-state.v3.schema.json`). It holds `origin`, which is the pair
+`{"processor": ..., "address": ...}` or `null`, and `sender`, which is the id of the
+session that sent the event or `null`. These replace format 2's `origin` text and
+`origintype`. Both members are always written. An `internal` waiting send writes
+both as `null`, because the event it delivers is internal and carries no origin.
+Format 3 applies to the whole text: every text holds `"format":3`, including one
+that holds no event. Every backend writes it byte for byte, in the text form the
+ADR fixes, and every backend reads formats 1 and 2 too. A format-2 origin is
+read by the table of that section, so the location `sce://scxml/<id>` that C11
+stored and the bare id that the other backends stored are read as the same pair
+and the same sender. The shared instances under `saved/` are format 3. The
+format-2 reading fixtures are under `saved/format2/`, each beside the format-3
+text it is read as, in `saved/format2/read_as/`. A build that reads only formats 1
+and 2 refuses a format-3 text by its `format`.
+
 **Running host invocations.** An `<invoke>` a declared host invoker serves
 (§scxml-6.4.1) is part of the state for the same reason, and what is lost with
 the process that ran it is the host's side of it. A saved state lists each one
