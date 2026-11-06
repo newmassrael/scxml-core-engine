@@ -127,7 +127,8 @@ static void a_session_sends_with_its_type_at_its_location(void) {
           "and an event with no origin has no sender");
 }
 
-// Only the SCXML processor's stamp makes a sender, whatever pair another names.
+// On C11, which runs no remote child, only the SCXML processor's stamp makes a sender, whatever
+// pair another names.
 static void an_event_no_session_sent_has_no_sender(void) {
     sce_event_origin_t origin;
     char sender[SCE_MAX_SESSION_ID_LEN];
@@ -208,6 +209,8 @@ static void a_stored_origin_reads_back_as_the_table_of_section_7_says(void) {
     // A value that starts `sce://scxml/` and names a session is that session's pair whatever type
     // was saved beside it (`ask` of the format-2 reading fixture).
     reads_as("sce://scxml/peer%3A1", "x-sce-host", scxml, "sce://scxml/peer%3A1", "peer:1");
+    // The prefix alone names no session: the pair as saved, sent by no session.
+    reads_as("sce://scxml/", "", scxml, "sce://scxml/", "");
     reads_as("motor", "x-sce-host", "x-sce-host", "motor", "");
     reads_as("mesh://hmi", scxml, scxml, "mesh://hmi", "");
     // An empty `origin` is none whatever type was saved beside it: format 2 saved the SCXML type

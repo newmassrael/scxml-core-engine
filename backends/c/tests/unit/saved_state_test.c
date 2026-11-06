@@ -351,6 +351,13 @@ static void a_format_three_origin_is_read_as_it_is_written(void) {
               strcmp(event.origin.address, "sce://scxml/peer%3A1") == 0 && event.from_session == 1u,
           "the format-2 location: '%s' '%s' %u", event.origin.processor, event.origin.address,
           (unsigned)event.from_session);
+    // The SCXML prefix alone names no session: a queued event that stores it is not refused, and is
+    // read as the pair as saved, sent by no session.
+    queue_of("\"origin\":\"sce://scxml/\",\"origintype\":\"\"", queue, sizeof(queue));
+    CHECK(tree_holding(2, "[]", queue, &session, &err) && first_event(&session, &event, &err), "%s", err.message);
+    CHECK(strcmp(event.origin.processor, SCXML_TYPE) == 0 && strcmp(event.origin.address, "sce://scxml/") == 0 &&
+              event.from_session == 0u,
+          "the prefix alone: '%s' '%s' %u", event.origin.processor, event.origin.address, (unsigned)event.from_session);
     // And a format-2 text holds its origin as a text, not as a pair.
     queue_of("\"origin\":{\"processor\":\"x-sce-host\",\"address\":\"motor\"},\"origintype\":\"\"", queue,
              sizeof(queue));
@@ -514,6 +521,20 @@ static void a_format_three_act_holds_what_its_event_will_carry(void) {
     CHECK(tree_holding(2, pending, "[]", &session, &err), "%s", err.message);
     // A format-2 session's act stored with an empty origin is sent by the session that holds it.
     pending_of("raise", "\"origin\":\"\"", pending, sizeof(pending));
+    CHECK(tree_holding(2, pending, "[]", &session, &err), "%s", err.message);
+    // The SCXML prefix alone names no session, so a session's act that stores it is refused; an
+    // internal act's origin is not read.
+    pending_of("raise", "\"origin\":\"sce://scxml/\"", pending, sizeof(pending));
+    CHECK(!tree_holding(2, pending, "[]", &session, &err) &&
+              strcmp(err.message, "'pending[0].origin' is 'sce://scxml/', a location that names no session: a "
+                                  "raise act is this session's own send") == 0,
+          "%s", err.message);
+    pending_of("child", "\"origin\":\"sce://scxml/\"", pending, sizeof(pending));
+    CHECK(!tree_holding(2, pending, "[]", &session, &err) &&
+              strcmp(err.message, "'pending[0].origin' is 'sce://scxml/', a location that names no session: a "
+                                  "child act is this session's own send") == 0,
+          "%s", err.message);
+    pending_of("internal", "\"origin\":\"sce://scxml/\"", pending, sizeof(pending));
     CHECK(tree_holding(2, pending, "[]", &session, &err), "%s", err.message);
     pending_of("raise", "\"origin\":null", pending, sizeof(pending));
     CHECK(!tree_holding(2, pending, "[]", &session, &err) &&

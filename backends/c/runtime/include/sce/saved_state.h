@@ -698,8 +698,18 @@ static inline bool sce_saved_send_read(sce_jv_t v, const char *what, int form, s
         /* The sending session's id, or its location as this backend once stored it, and always
          * this session's: a session's act is its own send, so one stored empty is read as sent by
          * the session that holds it, and an `internal` act's is not read, since its event has no
-         * origin (docs/adr/0090, section 7). The machine that restores it arms it as its own. */
-        return sce_saved_member_text_(v, what, "origin", &out->origin, err);
+         * origin (docs/adr/0090, section 7). The machine that restores it arms it as its own. The
+         * SCXML prefix alone names no session, so a session's act that stores it is refused. */
+        if (!sce_saved_member_text_(v, what, "origin", &out->origin, err)) {
+            return false;
+        }
+        if (out->act != SCE_SAVED_ACT_INTERNAL && sce_jv_string_is(out->origin, SCE_SCXML_LOCATION_PREFIX)) {
+            return sce_saved_refuse(err,
+                                    "'%s.origin' is '%s', a location that names no session: a %s act is this "
+                                    "session's own send",
+                                    what, SCE_SCXML_LOCATION_PREFIX, name);
+        }
+        return true;
     }
     {
         sce_event_origin_t pair;
