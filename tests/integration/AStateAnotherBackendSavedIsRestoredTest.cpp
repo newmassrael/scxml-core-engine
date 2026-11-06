@@ -38,6 +38,7 @@
 #include <gtest/gtest.h>
 #include <map>
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <string>
 
@@ -172,27 +173,40 @@ TEST(AStateAnotherBackendSavedIsRestored, EveryFormatTwoReadingTextIsHeldToItsMa
     EXPECT_GE(textsOf(kSaved / "format2").size(), 4u) << "the format-2 reading texts lost instances";
 }
 
-// docs/adr/0090, section 7: only the SCXML processor sets a sender, and it writes the
-// sender's own location as the origin, so a queued event whose sender stands beside any
-// other origin is one format 3 cannot carry. The save refuses it rather than write a text
-// no reader takes or drop the session the event names.
-TEST(AStateAnotherBackendSavedIsRestored, AQueuedEventWhoseSenderStandsBesideAnotherOriginIsNotSaved) {
+// docs/adr/0090, section 7: a queued event's sender is the session that sent it and its
+// origin the reply address the processor that carried it wrote, two fields no rule ties
+// together. A Mesh remote child's event (MeshDispatch) names the child's session beside the
+// endpoint it answers at; it is saved as it is queued, read back unchanged, and restored and
+// saved again as the same text.
+TEST(AStateAnotherBackendSavedIsRestored, AQueuedEventWhoseSenderStandsBesideAMeshEndpointIsSavedAsItIs) {
     std::ifstream in(kSaved / "static_timers.json");
     std::stringstream held;
     held << in.rdbuf();
+    const std::string scxml = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor";
+    const std::string endpoint = "mesh://dev/machine/child";
     G::static_timers::static_timers machine;
     machine.setClock(std::make_shared<SCE::ManualClock>(0));
     machine.restoreAt(::SCE::Saved::SavedState::fromJson(held.str()), kSavedAtMs);
-    machine.raiseExternal(::SCE::Common::ForwardedEvent{
-        "beat", "", ::SCE::Core::EventOrigin("x-sce-mesh", "mesh://ecu"), "ecu", "", "external", ""});
-    try {
-        static_cast<void>(machine.saveAt(kSavedAtMs));
-        FAIL() << "the machine was saved";
-    } catch (const ::SCE::Saved::StateRefusal &refused) {
-        EXPECT_EQ(std::string(refused.what()),
-                  "the queued event 'beat' has the sender 'ecu' beside an origin the SCXML processor did not "
-                  "write, which a saved state does not carry");
-    }
+    machine.raiseExternal(::SCE::Common::ForwardedEvent{"beat", "", ::SCE::Core::EventOrigin(scxml, endpoint),
+                                                        "fixture-root.work.1.child", "", "external", ""});
+    const ::SCE::Saved::SavedState saved = machine.saveAt(kSavedAtMs);
+    ASSERT_EQ(saved.external.size(), 1u);
+    EXPECT_EQ(saved.external[0].origin,
+              std::optional<::SCE::Core::EventOrigin>(::SCE::Core::EventOrigin(scxml, endpoint)));
+    EXPECT_EQ(saved.external[0].sender, "fixture-root.work.1.child");
+
+    const std::string text = saved.toJson();
+    EXPECT_NE(
+        text.find(R"("external":[{"name":"beat","data":"","type":"external","sendid":"","origin":{"processor":")" +
+                  scxml + R"(","address":")" + endpoint +
+                  R"("},"sender":"fixture-root.work.1.child","invokeid":"","hostinvoketoken":null}])"),
+        std::string::npos)
+        << text;
+    const ::SCE::Saved::SavedState read = ::SCE::Saved::SavedState::fromJson(text);
+    ASSERT_EQ(read.external.size(), 1u);
+    EXPECT_EQ(read.external[0].origin, saved.external[0].origin);
+    EXPECT_EQ(read.external[0].sender, saved.external[0].sender);
+    EXPECT_EQ(machines().at("static_timers")(text), text);
 }
 
 }  // namespace Tests

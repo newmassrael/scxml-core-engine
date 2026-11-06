@@ -228,24 +228,22 @@ TEST(SavedState, AFormatThreeOriginThatIsNotOneTheFormatHoldsIsRefusedNamingItsR
         {format3Queuing(R"("origin":null,"sender":1)"), "'external[0].sender' is neither null nor a text"},
         {format3Queuing(R"("origin":null,"sender":"a b")"),
          "'external[0].sender' (a b) is not an XML Nmtoken, which a session id is"},
+        // A session that sent an event gave a reply address.
         {format3Queuing(R"("origin":null,"sender":"root")"),
-         "'external[0]' has the sender 'root', and its origin is not the SCXML pair of that session, whose "
-         "address is sce://scxml/root"},
-        {format3Queuing(R"("origin":)" + pairText("x-sce-host", "motor") + R"(,"sender":"root")"),
-         "'external[0]' has the sender 'root', and its origin is not the SCXML pair of that session, whose "
-         "address is sce://scxml/root"},
-        // The address is the sender's id percent-encoded, byte for byte.
-        {format3Queuing(R"("origin":)" + pairText(kScxmlType, "sce://scxml/peer:1") + R"(,"sender":"peer:1")"),
-         "'external[0]' has the sender 'peer:1', and its origin is not the SCXML pair of that session, whose "
-         "address is sce://scxml/peer%3A1"},
+         "'external[0]' has the sender 'root' and no origin, and a session that sends an event gives a reply "
+         "address"},
         {format3Waiting("raise", R"("origin":)" + root + R"(,"sender":null)"),
          "'pending[0]' is a raise act with no sender, and it is a send of the session that saved it"},
         {format3Waiting("parent", R"("origin":null,"sender":null)"),
          "'pending[0]' is a parent act with no sender, and it is a send of the session that saved it"},
         {format3Waiting("child", R"("origin":null)"), "'pending[0]' has no 'sender'"},
+        // A session's own act carries its own pair, its id percent-encoded byte for byte.
         {format3Waiting("child", R"("origin":)" + pairText("x-sce-host", "motor") + R"(,"sender":"root")"),
          "'pending[0]' has the sender 'root', and its origin is not the SCXML pair of that session, whose "
          "address is sce://scxml/root"},
+        {format3Waiting("raise", R"("origin":)" + pairText(kScxmlType, "sce://scxml/peer:1") + R"(,"sender":"peer:1")"),
+         "'pending[0]' has the sender 'peer:1', and its origin is not the SCXML pair of that session, whose "
+         "address is sce://scxml/peer%3A1"},
         {format3Waiting("internal", R"("origin":null,"sender":"root")"),
          "'pending[0]' is an internal act and holds an origin or a sender, and the internal event it delivers "
          "has neither"},
@@ -261,7 +259,7 @@ TEST(SavedState, AFormatThreeOriginThatIsNotOneTheFormatHoldsIsRefusedNamingItsR
 
 // docs/adr/0090, section 7: what format 3 holds is read as it is written, derived from nothing,
 // and written back byte for byte: an SCXML pair whose address names no session has no sender,
-// and a host's pair keeps its own type.
+// a host's pair keeps its own type, and a queued event's sender is independent of its address.
 TEST(SavedState, AFormatThreeOriginIsReadAsItIsWrittenAndWrittenBackAsItWas) {
     const std::string mesh = format3Queuing(R"("origin":)" + pairText(kScxmlType, "mesh://ecu") + R"(,"sender":null)");
     const SavedState meshRead = SavedState::fromJson(mesh);
@@ -284,6 +282,15 @@ TEST(SavedState, AFormatThreeOriginIsReadAsItIsWrittenAndWrittenBackAsItWas) {
               std::optional<SCE::Core::EventOrigin>(SCE::IOProcessorHelper::scxmlOrigin("peer:1")));
     EXPECT_EQ(sentRead.external[0].sender, "peer:1");
     EXPECT_EQ(sentRead.toJson(), sent);
+
+    // A Mesh remote child's event: the session that sent it beside the endpoint it answers at.
+    const std::string remote = format3Queuing(R"("origin":)" + pairText(kScxmlType, "mesh://dev/machine/child") +
+                                              R"(,"sender":"root.work.1.child")");
+    const SavedState remoteRead = SavedState::fromJson(remote);
+    EXPECT_EQ(remoteRead.external[0].origin,
+              std::optional<SCE::Core::EventOrigin>(SCE::Core::EventOrigin(kScxmlType, "mesh://dev/machine/child")));
+    EXPECT_EQ(remoteRead.external[0].sender, "root.work.1.child");
+    EXPECT_EQ(remoteRead.toJson(), remote);
 
     const std::string waiting =
         format3Waiting("raise", R"("origin":)" + pairText(kScxmlType, "sce://scxml/root") + R"(,"sender":"root")");
@@ -374,6 +381,49 @@ TEST(SavedState, AFormatTwoOriginIsReadAsThePairTheTableGives) {
             EXPECT_EQ(send.act.sender, "fixture-root") << send.act.event;
         }
     }
+}
+
+// docs/adr/0090, section 7: a raise, parent or child act of a format-2 text whose stored origin
+// is empty is read as sent by the session that holds it, the `sessionid` of its own session
+// record, and is written back with that session's pair; an internal act stays without one.
+TEST(SavedState, AFormatTwoActWithAnEmptyOriginIsTheSendOfTheSessionThatHoldsIt) {
+    const std::string raise = R"({"due":"5","act":"raise","event":"e","data":"","sendid":"a","origin":""})";
+    const std::string internal = R"({"due":"6","act":"internal","event":"i","data":"","sendid":"b","origin":""})";
+    const std::string parent = R"({"due":"7","act":"parent","event":"p","data":"","sendid":"c","origin":""})";
+    const std::string childSession = replaceFirst(replaceFirst(kMinimal, R"("root")", R"("root.w")"), R"("pending":[])",
+                                                  R"("pending":[)" + parent + "]");
+    const std::string child =
+        R"({"id":"w","start":"1","invokeid":"w","document":"w","session":{)" + childSession + "}}";
+    std::string rootSession =
+        replaceFirst(kMinimal, R"("pending":[])", R"("pending":[)" + raise + "," + internal + "]");
+    rootSession = replaceFirst(rootSession, R"("invokes":[])", R"("invokes":[)" + child + "]");
+    const SavedState read = SavedState::fromJson(R"({"format":2,)" + rootSession + "}");
+
+    ASSERT_EQ(read.pending.size(), 2U);
+    EXPECT_EQ(read.pending[0].act.origin,
+              std::optional<SCE::Core::EventOrigin>(SCE::IOProcessorHelper::scxmlOrigin("root")));
+    EXPECT_EQ(read.pending[0].act.sender, "root");
+    EXPECT_FALSE(read.pending[1].act.origin.has_value());
+    EXPECT_EQ(read.pending[1].act.sender, "");
+    ASSERT_EQ(read.invokes.children.size(), 1U);
+    const SavedState &held = *read.invokes.children[0].session;
+    ASSERT_EQ(held.pending.size(), 1U);
+    EXPECT_EQ(held.pending[0].act.origin,
+              std::optional<SCE::Core::EventOrigin>(SCE::IOProcessorHelper::scxmlOrigin("root.w")));
+    EXPECT_EQ(held.pending[0].act.sender, "root.w");
+
+    // Written back as format 3, which reads again as it was written.
+    const std::string text = read.toJson();
+    EXPECT_NE(text.find(R"("sendid":"a","origin":{"processor":")" + kScxmlType +
+                        R"(","address":"sce://scxml/root"},"sender":"root"})"),
+              std::string::npos)
+        << text;
+    EXPECT_NE(text.find(R"("sendid":"b","origin":null,"sender":null})"), std::string::npos) << text;
+    EXPECT_NE(text.find(R"("sendid":"c","origin":{"processor":")" + kScxmlType +
+                        R"(","address":"sce://scxml/root.w"},"sender":"root.w"})"),
+              std::string::npos)
+        << text;
+    EXPECT_EQ(SavedState::fromJson(text).toJson(), text);
 }
 
 // docs/adr/0090, section 7: a format-1 text holds `origin` and `origintype` with format 2's

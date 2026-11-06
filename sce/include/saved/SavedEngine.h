@@ -319,16 +319,8 @@ struct EngineAccess {
             // An event nothing stamped a type on was taken off this queue, which is external.
             event.type = queued.type.empty() ? "external" : queued.type;
             event.sendId = queued.sendId;
-            // docs/adr/0090, section 7: the pair the delivering processor wrote, and the sender
-            // beside it. Only the SCXML processor sets a sender, and it writes the sender's own
-            // location, so a sender beside any other origin is one the format cannot carry: left
-            // out, a restore would lose the session the event names, and kept, the text is one
-            // no reader takes.
-            if (!queued.sender.empty() && queued.origin != IOProcessorHelper::scxmlOrigin(queued.sender)) {
-                throw StateRefusal("the queued event '" + event.name + "' has the sender '" + queued.sender +
-                                   "' beside an origin the SCXML processor did not write, which a saved state "
-                                   "does not carry");
-            }
+            // docs/adr/0090, section 7: the reply address the delivering processor wrote, and
+            // beside it the session that sent the event, each as the event carries it.
             event.origin = queued.origin;
             event.sender = queued.sender;
             event.invokeId = queued.invokeId;
@@ -733,18 +725,22 @@ private:
         using Event = typename Engine::Event;
         using Kind = ::SCE::ScheduledRoute::Kind;
         const std::uint64_t now = engine.nowMs();
+        // A format-1 act whose stored origin is empty names no session, and the machine that
+        // restores it arms it as its own send (docs/adr/0090, section 7).
+        const std::string own = engine.policy_.sessionIdText();
         for (const auto &read : pending) {
             const SavedAct &act = read.act;
             const std::uint64_t fireAt = detail::readyAt(now, read.due, wallNowMs);
-            // The sender a session's act was read with (docs/adr/0090, section 7), which the
-            // delivery stamps as the SCXML processor's pair of it; none for an internal act.
+            // The sender a session's act was read with, which the delivery stamps as the SCXML
+            // processor's pair of it; none for an internal act.
+            const std::string &sender = act.sender.empty() ? own : act.sender;
             switch (act.kind) {
             case SavedActKind::Raise: {
                 const std::string arrival = engine.arrivalNameOf(*read.event, act.event);
                 if (arrival.empty()) {
-                    engine.scheduler_.scheduleEventAt(*read.event, fireAt, act.sendId, act.data, act.sender);
+                    engine.scheduler_.scheduleEventAt(*read.event, fireAt, act.sendId, act.data, sender);
                 } else {
-                    engine.scheduler_.scheduleRoutedAt(*read.event, fireAt, act.sendId, act.data, act.sender,
+                    engine.scheduler_.scheduleRoutedAt(*read.event, fireAt, act.sendId, act.data, sender,
                                                        ::SCE::ScheduledRoute{Kind::ExternalQueue, act.event});
                 }
                 break;
@@ -768,11 +764,11 @@ private:
                 break;
             }
             case SavedActKind::Parent:
-                engine.scheduler_.scheduleRoutedAt(Event{}, fireAt, act.sendId, act.data, act.sender,
+                engine.scheduler_.scheduleRoutedAt(Event{}, fireAt, act.sendId, act.data, sender,
                                                    ::SCE::ScheduledRoute{Kind::Parent, act.event});
                 break;
             case SavedActKind::Child:
-                engine.scheduler_.scheduleRoutedAt(Event{}, fireAt, act.sendId, act.data, act.sender,
+                engine.scheduler_.scheduleRoutedAt(Event{}, fireAt, act.sendId, act.data, sender,
                                                    ::SCE::ScheduledRoute{Kind::Invocation, act.event, act.invokeId});
                 break;
             }

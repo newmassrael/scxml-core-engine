@@ -179,9 +179,11 @@ struct SavedEvent {
     /// `_event.origin` and `_event.origintype` as the one pair the processor that delivered
     /// the event wrote (docs/adr/0090), nullopt for an event no processor stamped.
     std::optional<Core::EventOrigin> origin;
-    /// The id of the session that sent the event, set only when the SCXML processor
-    /// delivered it and empty otherwise. When it is set, `origin` is that session's SCXML
-    /// pair (IOProcessorHelper::scxmlOrigin).
+    /// The id of the session that sent the event, as the processor that delivered it from
+    /// that session wrote it (the SCXML processor for a local session, the Mesh transport
+    /// for a remote child or parent), and empty for any other sender. It is independent of
+    /// `origin`'s address, which is the reply address that processor wrote; a session that
+    /// sent an event always gave one, so a sender never stands beside no origin.
     std::string sender;
     std::string invokeId;
     /// The token a host-run invocation's completion or failure was stamped with when it was
@@ -907,9 +909,9 @@ inline StoredOrigin savedOriginPairFromJson(const JsonObject &members, const std
     return read;
 }
 
-/// Refuses `what` when it names a sender and its origin is not that session's SCXML pair: only
-/// the SCXML processor sets a sender, and it writes the sender's own location as the address
-/// (docs/adr/0090, section 7).
+/// Refuses `what`, a waiting send of a session, when its origin is not the SCXML pair of its
+/// sender: the act is the session's own send, which the SCXML processor delivers with the
+/// session's own location as the address (docs/adr/0090, section 7).
 inline void checkSenderOrigin(const StoredOrigin &read, const std::string &what) {
     if (!read.sender.empty() && read.origin != IOProcessorHelper::scxmlOrigin(read.sender)) {
         refuse("'" + what + "' has the sender '" + read.sender +
@@ -933,7 +935,14 @@ inline SavedEvent savedEventFromJson(const JsonValue &value, const std::string &
     StoredOrigin read;
     if (format == kSavedFormat3) {
         read = savedOriginPairFromJson(members, what);
-        checkSenderOrigin(read, what);
+        // The sender is the session that sent the event and the origin the reply address the
+        // processor that carried it wrote, two fields no rule ties together: a Mesh remote
+        // child's event names its session beside the endpoint it answers at. A session that
+        // sent an event always gave a reply address, so a sender beside no origin is refused.
+        if (!read.sender.empty() && !read.origin.has_value()) {
+            refuse("'" + what + "' has the sender '" + read.sender +
+                   "' and no origin, and a session that sends an event gives a reply address");
+        }
     } else {
         const std::string origin = memberText(members, what, "origin");
         read = IOProcessorHelper::readStoredOrigin(origin, memberText(members, what, "origintype"));
@@ -964,7 +973,10 @@ inline SavedHostInvoke savedHostInvokeFromJson(const JsonValue &value, const std
 ///
 /// Formats 1 and 2 store only `origin`, the sending session's id or its location as one
 /// backend stored it, read as that session's pair with the id as its sender
-/// (IOProcessorHelper::readStoredSender); an internal act's stored origin is not read.
+/// (IOProcessorHelper::readStoredSender); an internal act's stored origin is not read. An
+/// empty stored origin is left with no sender here: in format 2 the act is the send of the
+/// session that holds it, whose `sessionid` savedSessionFromJson gives it once it is read, and
+/// a format-1 text names no session, so the machine that restores it arms it as its own.
 inline void savedActOriginFromJson(const JsonObject &members, const std::string &what, int format, SavedAct &act) {
     const bool internal = act.kind == SavedActKind::Internal;
     if (format != kSavedFormat3) {
@@ -1161,6 +1173,19 @@ inline SavedState savedSessionFromJson(const JsonObject &members, int format) {
             refuse("'sessionid' (" + sessionId + ") is not an XML Nmtoken, which a session id is");
         }
         state.sessionId = sessionId;
+        // docs/adr/0090, section 7: a raise, parent or child act of a format-2 text whose stored
+        // origin is empty is read as sent by the session that holds it.
+        if (format == kSavedFormat2) {
+            for (SavedSend &send : state.pending) {
+                SavedAct &act = send.act;
+                const bool ownSend = act.kind == SavedActKind::Raise || act.kind == SavedActKind::Parent ||
+                                     act.kind == SavedActKind::Child;
+                if (ownSend && act.sender.empty()) {
+                    act.sender = sessionId;
+                    act.origin = IOProcessorHelper::scxmlOrigin(sessionId);
+                }
+            }
+        }
         const JsonValue &counted = field("invokestarts");
         if (!counted.isObject()) {
             refuse("'invokestarts' is not an object");
