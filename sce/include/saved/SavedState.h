@@ -238,6 +238,12 @@ inline const char *savedActName(SavedActKind kind) {
     return "";
 }
 
+/// Whether an act of `kind` is a send of the session that saved it, to itself, its parent or a
+/// child: the acts that carry the session's SCXML pair and id (docs/adr/0090, section 7).
+inline bool savedActIsOwnSend(SavedActKind kind) {
+    return kind == SavedActKind::Raise || kind == SavedActKind::Parent || kind == SavedActKind::Child;
+}
+
 /// What a waiting `<send>` does when it comes due. A delayed send to any other session is
 /// none of the five kinds, and a document that makes one is generated without the save API
 /// (§2.15).
@@ -1178,11 +1184,22 @@ inline SavedState savedSessionFromJson(const JsonObject &members, int format) {
         if (format == kSavedFormat2) {
             for (SavedSend &send : state.pending) {
                 SavedAct &act = send.act;
-                const bool ownSend = act.kind == SavedActKind::Raise || act.kind == SavedActKind::Parent ||
-                                     act.kind == SavedActKind::Child;
-                if (ownSend && act.sender.empty()) {
+                if (savedActIsOwnSend(act.kind) && act.sender.empty()) {
                     act.sender = sessionId;
                     act.origin = IOProcessorHelper::scxmlOrigin(sessionId);
+                }
+            }
+        }
+        // docs/adr/0090, section 7: a format-3 raise, parent or child act carries this session's
+        // pair and this session's id, so one that names another session is no act this session
+        // saved. Judged here, once the session's id is read, for the root and every child.
+        if (format == kSavedFormat3) {
+            for (std::size_t at = 0; at < state.pending.size(); ++at) {
+                const SavedAct &act = state.pending[at].act;
+                if (savedActIsOwnSend(act.kind) && act.sender != sessionId) {
+                    refuse("'pending[" + std::to_string(at) + "].sender' is '" + act.sender +
+                           "', and this session is '" + sessionId + "': a " + savedActName(act.kind) +
+                           " act is this session's own send");
                 }
             }
         }

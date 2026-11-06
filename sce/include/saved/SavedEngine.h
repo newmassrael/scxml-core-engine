@@ -503,8 +503,7 @@ private:
             // which the SCXML processor delivers with this session's pair and id. An internal
             // act's event is an internal event and carries neither, whatever sender the entry
             // kept, and a host act is a request a processor performs.
-            if (act.kind == SavedActKind::Raise || act.kind == SavedActKind::Parent ||
-                act.kind == SavedActKind::Child) {
+            if (savedActIsOwnSend(act.kind)) {
                 act.origin = IOProcessorHelper::scxmlOrigin(sessionId);
                 act.sender = sessionId;
             }

@@ -300,6 +300,32 @@ TEST(SavedState, AFormatThreeOriginIsReadAsItIsWrittenAndWrittenBackAsItWas) {
     EXPECT_EQ(waitingRead.toJson(), waiting);
 }
 
+// docs/adr/0090, section 7: a format-3 raise, parent or child act carries this session's pair
+// and this session's id, so an act that names another session, even with that session's own
+// pair beside it, is refused, in the root and in every child session.
+TEST(SavedState, AFormatThreeActThatNamesAnotherSessionIsRefused) {
+    const std::string other = R"("origin":)" + pairText(kScxmlType, "sce://scxml/other") + R"(,"sender":"other")";
+    EXPECT_EQ(refusalOf(format3Waiting("raise", other)),
+              "'pending[0].sender' is 'other', and this session is 'root': a raise act is this session's own send");
+    EXPECT_EQ(refusalOf(format3Waiting("child", other)),
+              "'pending[0].sender' is 'other', and this session is 'root': a child act is this session's own send");
+
+    // In a child session, the child's own id is the one its acts carry.
+    const std::string parentAct = R"({"due":"5","act":"parent","event":"e","data":"","sendid":"",)" + other + "}";
+    const std::string childSession = replaceFirst(replaceFirst(kMinimal, R"("root")", R"("root.w")"), R"("pending":[])",
+                                                  R"("pending":[)" + parentAct + "]");
+    const std::string child =
+        R"({"id":"w","start":"1","invokeid":"w","document":"w","session":{)" + childSession + "}}";
+    EXPECT_EQ(
+        refusalOf(R"({"format":3,)" + replaceFirst(kMinimal, R"("invokes":[])", R"("invokes":[)" + child + "]") + "}"),
+        "the session at invokes[0].session: 'pending[0].sender' is 'other', and this session is 'root.w': a "
+        "parent act is this session's own send");
+
+    // The session's own id is read.
+    const std::string own = R"("origin":)" + pairText(kScxmlType, "sce://scxml/root") + R"(,"sender":"root")";
+    EXPECT_EQ(refusalOf(format3Waiting("raise", own)), "");
+}
+
 // docs/adr/0090, section 7: a tree is written as format 3 whatever its acts were given. An
 // internal act delivers an internal event, which has no origin, so it is written with neither
 // member even where the entry it was saved from kept a sender.
