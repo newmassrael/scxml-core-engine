@@ -1,0 +1,144 @@
+{
+  "about": [
+    "What an `_event` field that has no value reads as — the question",
+    "§scxml-B-2-8 answers and that every SCE script engine answers for itself.",
+    "",
+    "§scxml-5.10.1 tells the Processor to LEAVE A FIELD BLANK in four places:",
+    "`sendid` when the sending entity named none and the event is no error of a",
+    "failed send; `origin` and `origintype` for internal and platform events;",
+    "`invokeid` when the event was not returned by an invoked process. §scxml-B-2-8",
+    "says what blank is in the ECMAScript data model: \"In cases where this",
+    "specification does not specify a value for one of these fields or states that",
+    "the field is empty or has no value, the Processor MUST set the value to",
+    "ECMAScript undefined.\" Not the empty string: `_event.sendid === ''` is false",
+    "for an event that carries no send id, and `typeof _event.sendid` is",
+    "`undefined`.",
+    "",
+    "An engine that lowers ECMAScript to Lua holds undefined as nil, so the `lua`",
+    "spelling of each case asks for nil where `source` asks for undefined.",
+    "",
+    "Why a table. On 2026-11-07 the C++ QuickJS binding bound `''` for every",
+    "blank field, below a comment that states the rule (`sce/src/scripting/",
+    "JSEngineImpl.cpp`), and nothing failed: W3C tests 333 and 339 ask",
+    "`_event.sendid` and `_event.invokeid` as conditions, where the empty string",
+    "and undefined are both false. No test could tell the two answers apart, so",
+    "each engine is held to this one table rather than to its own copy.",
+    "",
+    "Each case names the event a binding is handed (`event`: a member that is",
+    "absent is a field the Processor left blank), the author's ECMAScript",
+    "(`source`), its Lua spelling (`lua`), the answer, and the sentence that",
+    "decides it. Each blank case keeps a neighbour that carries the field, so a",
+    "binding cannot pass by dropping the field always."
+  ],
+  "cases": [
+    {
+      "group": "sendid",
+      "note": "An external event whose sender named no id.",
+      "event": {"name": "brief", "type": "external"},
+      "source": "_event.sendid === undefined",
+      "lua": "_event.sendid == nil",
+      "expect": {"bool": true},
+      "clause": "§scxml-5.10.1 sendid — \"Otherwise it MUST leave it blank\"; §scxml-B-2-8 — blank is ECMAScript undefined"
+    },
+    {
+      "group": "sendid",
+      "note": "The same question as the empty string, which is the value the defect bound.",
+      "event": {"name": "brief", "type": "external"},
+      "source": "_event.sendid === ''",
+      "lua": "_event.sendid == ''",
+      "expect": {"bool": false},
+      "clause": "§scxml-B-2-8 — blank is ECMAScript undefined, not the empty string"
+    },
+    {
+      "group": "sendid",
+      "note": "The neighbour: a sender that named an id.",
+      "event": {"name": "brief", "type": "external", "sendid": "s-1"},
+      "source": "_event.sendid === 's-1'",
+      "lua": "_event.sendid == 's-1'",
+      "expect": {"bool": true},
+      "clause": "§scxml-5.10.1 sendid — \"the Processor MUST set this field to that value\""
+    },
+    {
+      "group": "invokeid",
+      "note": "An event no invoked process returned.",
+      "event": {"name": "brief", "type": "external"},
+      "source": "_event.invokeid === undefined",
+      "lua": "_event.invokeid == nil",
+      "expect": {"bool": true},
+      "clause": "§scxml-5.10.1 invokeid — \"Otherwise it MUST leave it blank\"; §scxml-B-2-8 — blank is ECMAScript undefined"
+    },
+    {
+      "group": "invokeid",
+      "note": "The neighbour: an event an invoked process returned.",
+      "event": {"name": "brief", "type": "external", "invokeid": "worker"},
+      "source": "_event.invokeid === 'worker'",
+      "lua": "_event.invokeid == 'worker'",
+      "expect": {"bool": true},
+      "clause": "§scxml-5.10.1 invokeid — the invoke id of the invocation that triggered the child process"
+    },
+    {
+      "group": "origin",
+      "note": "An internal event: no processor delivered it, so it has no reply address.",
+      "event": {"name": "brief", "type": "internal"},
+      "source": "_event.origin === undefined",
+      "lua": "_event.origin == nil",
+      "expect": {"bool": true},
+      "clause": "§scxml-5.10.1 origin — \"For internal and platform events, the Processor MUST leave this field blank\"; §scxml-B-2-8"
+    },
+    {
+      "group": "origin",
+      "note": "A platform event, raised by the Processor itself.",
+      "event": {"name": "error.execution", "type": "platform"},
+      "source": "_event.origin === undefined",
+      "lua": "_event.origin == nil",
+      "expect": {"bool": true},
+      "clause": "§scxml-5.10.1 origin — \"For internal and platform events, the Processor MUST leave this field blank\"; §scxml-B-2-8"
+    },
+    {
+      "group": "origin",
+      "note": "The neighbour: an external event a session sent.",
+      "event": {
+        "name": "brief",
+        "type": "external",
+        "origin": "sce://scxml/peer-1",
+        "origintype": "http://www.w3.org/TR/scxml/#SCXMLEventProcessor"
+      },
+      "source": "_event.origin === 'sce://scxml/peer-1'",
+      "lua": "_event.origin == 'sce://scxml/peer-1'",
+      "expect": {"bool": true},
+      "clause": "§scxml-5.10.1 origin — a URI that the receiver can use to send a response back"
+    },
+    {
+      "group": "origintype",
+      "note": "An internal event.",
+      "event": {"name": "brief", "type": "internal"},
+      "source": "_event.origintype === undefined",
+      "lua": "_event.origintype == nil",
+      "expect": {"bool": true},
+      "clause": "§scxml-5.10.1 origintype — \"For internal and platform events, the Processor MUST leave this field blank\"; §scxml-B-2-8"
+    },
+    {
+      "group": "origintype",
+      "note": "The neighbour: the processor that delivered an external event.",
+      "event": {
+        "name": "brief",
+        "type": "external",
+        "origin": "sce://scxml/peer-1",
+        "origintype": "http://www.w3.org/TR/scxml/#SCXMLEventProcessor"
+      },
+      "source": "_event.origintype === 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'",
+      "lua": "_event.origintype == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'",
+      "expect": {"bool": true},
+      "clause": "§scxml-5.10.1 origintype — the type of the Event I/O Processor the receiver can use to reply"
+    },
+    {
+      "group": "never blank",
+      "note": "`name` and `type` always have a value; a binding that read every empty-looking field as blank would still give them.",
+      "event": {"name": "brief", "type": "internal"},
+      "source": "_event.name === 'brief' && _event.type === 'internal'",
+      "lua": "_event.name == 'brief' and _event.type == 'internal'",
+      "expect": {"bool": true},
+      "clause": "§scxml-5.10.1 name, type — the event's name and its kind, set for every event"
+    }
+  ]
+}
