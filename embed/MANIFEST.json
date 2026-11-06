@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.1 (1ubuntu1~24.04.2)",
-  "embed_version": "2925ca1",
+  "embed_version": "b105725",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 529,
+  "symbol_count": 537,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -259,12 +259,12 @@
       "header": "common/ForwardedEvent.h",
       "kind": "struct",
       "members": [
+        "field std::optional<Core::EventOrigin> origin",
         "field std::string data",
         "field std::string invokeId",
         "field std::string name",
-        "field std::string origin",
-        "field std::string originType",
         "field std::string sendId",
+        "field std::string sender",
         "field std::string type",
         "method ForwardedEvent &(ForwardedEvent &&) operator=",
         "method ForwardedEvent &(const ForwardedEvent &) operator=",
@@ -279,12 +279,12 @@
       "header": "common/ForwardedEvent.h",
       "kind": "struct",
       "members": [
+        "field std::optional<Core::EventOrigin> origin",
         "field std::string data",
         "field std::string invokeId",
         "field std::string name",
-        "field std::string origin",
-        "field std::string originType",
         "field std::string sendId",
+        "field std::string sender",
         "field std::string type",
         "method ForwardedEvent &(ForwardedEvent &&) operator=",
         "method ForwardedEvent &(const ForwardedEvent &) operator=",
@@ -325,6 +325,20 @@
       "kind": "class",
       "members": [],
       "name": "SCE::IOProcessorHelper"
+    },
+    {
+      "header": "common/IOProcessorHelper.h",
+      "kind": "struct",
+      "members": [
+        "field std::optional<Core::EventOrigin> origin",
+        "field std::string sender",
+        "method StoredOrigin &(StoredOrigin &&) operator=",
+        "method StoredOrigin &(const StoredOrigin &) operator=",
+        "method void () ~StoredOrigin",
+        "method void (StoredOrigin &&) StoredOrigin",
+        "method void (const StoredOrigin &) StoredOrigin"
+      ],
+      "name": "SCE::StoredOrigin"
     },
     {
       "header": "common/IOProcessorHelper.h",
@@ -475,6 +489,18 @@
       "kind": "class",
       "members": [],
       "name": "SCE::Common::LogicalTimeScheduler<T>"
+    },
+    {
+      "header": "common/MeshEndpoint.h",
+      "kind": "function",
+      "name": "SCE::Common::isMeshSessionEndpoint",
+      "signature": "bool SCE::Common::isMeshSessionEndpoint(const std::string &)"
+    },
+    {
+      "header": "common/MeshEndpoint.h",
+      "kind": "function",
+      "name": "SCE::Common::meshSessionEndpoint",
+      "signature": "std::string SCE::Common::meshSessionEndpoint(const std::string &, const std::string &, const std::string &)"
     },
     {
       "header": "common/NamelistHelper.h",
@@ -928,13 +954,13 @@
       "header": "core/EventMetadata.h",
       "kind": "struct",
       "members": [
+        "field std::optional<EventOrigin> origin",
         "field std::optional<ScriptValue> typedData",
         "field std::string data",
         "field std::string invokeId",
         "field std::string name",
-        "field std::string originSessionId",
-        "field std::string originType",
         "field std::string sendId",
+        "field std::string sender",
         "field std::string type",
         "method EventMetadata &(EventMetadata &&) operator=",
         "method EventMetadata &(const EventMetadata &) operator=",
@@ -942,7 +968,7 @@
         "method void (EventMetadata &&) EventMetadata",
         "method void (const EventMetadata &) EventMetadata",
         "method void (const std::string &, const std::string &) EventMetadata",
-        "method void (const std::string &, const std::string &, const std::string &, const std::string &, const std::string &, const std::string &, const std::string &) EventMetadata"
+        "method void (const std::string &, const std::string &, const std::string &, const std::string &, const std::string &, std::optional<EventOrigin>, std::string) EventMetadata"
       ],
       "name": "SCE::Core::EventMetadata"
     },
@@ -951,6 +977,33 @@
       "kind": "function",
       "name": "SCE::Core::resolveArrivingEventName<T>",
       "signature": "auto SCE::Core::resolveArrivingEventName<T>(std::string_view, Lookup &&)"
+    },
+    {
+      "header": "core/EventOrigin.h",
+      "kind": "function",
+      "name": "SCE::Core::originAddressOf",
+      "signature": "std::string SCE::Core::originAddressOf(const std::optional<EventOrigin> &)"
+    },
+    {
+      "header": "core/EventOrigin.h",
+      "kind": "function",
+      "name": "SCE::Core::originProcessorOf",
+      "signature": "std::string SCE::Core::originProcessorOf(const std::optional<EventOrigin> &)"
+    },
+    {
+      "header": "core/EventOrigin.h",
+      "kind": "struct",
+      "members": [
+        "field std::string address",
+        "field std::string processor",
+        "method EventOrigin &(EventOrigin &&) noexcept operator=",
+        "method EventOrigin &(const EventOrigin &) noexcept(false) operator=",
+        "method void () noexcept ~EventOrigin",
+        "method void (EventOrigin &&) noexcept EventOrigin",
+        "method void (const EventOrigin &) noexcept(false) EventOrigin",
+        "method void (std::string, std::string) EventOrigin"
+      ],
+      "name": "SCE::Core::EventOrigin"
     },
     {
       "header": "core/EventProcessingAlgorithms.h",
@@ -1062,10 +1115,9 @@
       "kind": "struct",
       "members": [
         "field bool failed",
+        "field std::optional<EventOrigin> origin",
         "field std::string data",
         "field std::string invokeId",
-        "field std::string origin",
-        "field std::string originType",
         "field uint64_t token",
         "method HostInvokeEnded &(HostInvokeEnded &&) noexcept operator=",
         "method HostInvokeEnded &(const HostInvokeEnded &) noexcept(false) operator=",
@@ -1172,10 +1224,9 @@
       "kind": "struct",
       "members": [
         "field bool done",
+        "field std::optional<Core::EventOrigin> origin",
         "field std::string data",
         "field std::string invokeId",
-        "field std::string origin",
-        "field std::string originType",
         "field std::string processorType",
         "field uint64_t token",
         "method HostInvokeEnding &(HostInvokeEnding &&) operator=",
@@ -1191,10 +1242,9 @@
       "kind": "struct",
       "members": [
         "field bool done",
+        "field std::optional<Core::EventOrigin> origin",
         "field std::string data",
         "field std::string invokeId",
-        "field std::string origin",
-        "field std::string originType",
         "field std::string processorType",
         "field uint64_t token",
         "method HostInvokeEnding &(HostInvokeEnding &&) operator=",
@@ -1298,6 +1348,36 @@
       "header": "core/HostProcessor.h",
       "kind": "struct",
       "members": [
+        "field std::optional<Core::EventOrigin> origin",
+        "field std::string eventData",
+        "field std::string eventName",
+        "method HostSendResponse &(HostSendResponse &&) operator=",
+        "method HostSendResponse &(const HostSendResponse &) operator=",
+        "method void () noexcept ~HostSendResponse",
+        "method void (HostSendResponse &&) HostSendResponse",
+        "method void (const HostSendResponse &) HostSendResponse"
+      ],
+      "name": "SCE::HostSendResponse"
+    },
+    {
+      "header": "core/HostProcessor.h",
+      "kind": "struct",
+      "members": [
+        "field std::optional<Core::EventOrigin> origin",
+        "field std::string eventData",
+        "field std::string eventName",
+        "method HostSendResponse &(HostSendResponse &&) operator=",
+        "method HostSendResponse &(const HostSendResponse &) operator=",
+        "method void () ~HostSendResponse",
+        "method void (HostSendResponse &&) HostSendResponse",
+        "method void (const HostSendResponse &) HostSendResponse"
+      ],
+      "name": "SCE::HostSendResponse"
+    },
+    {
+      "header": "core/HostProcessor.h",
+      "kind": "struct",
+      "members": [
         "field std::optional<HostInvokeCancel> cancel",
         "field std::optional<HostInvokeRequest> start",
         "method void () noexcept HostInvokeEvent",
@@ -1339,34 +1419,6 @@
         "field std::optional<std::string> refusal"
       ],
       "name": "SCE::HostInvokeResponse"
-    },
-    {
-      "header": "core/HostProcessor.h",
-      "kind": "struct",
-      "members": [
-        "field std::string eventData",
-        "field std::string eventName",
-        "method HostSendResponse &(HostSendResponse &&) operator=",
-        "method HostSendResponse &(const HostSendResponse &) operator=",
-        "method void () noexcept ~HostSendResponse",
-        "method void (HostSendResponse &&) HostSendResponse",
-        "method void (const HostSendResponse &) HostSendResponse"
-      ],
-      "name": "SCE::HostSendResponse"
-    },
-    {
-      "header": "core/HostProcessor.h",
-      "kind": "struct",
-      "members": [
-        "field std::string eventData",
-        "field std::string eventName",
-        "method HostSendResponse &(HostSendResponse &&) operator=",
-        "method HostSendResponse &(const HostSendResponse &) operator=",
-        "method void () ~HostSendResponse",
-        "method void (HostSendResponse &&) HostSendResponse",
-        "method void (const HostSendResponse &) HostSendResponse"
-      ],
-      "name": "SCE::HostSendResponse"
     },
     {
       "header": "core/HostProcessor.h",
@@ -1592,6 +1644,18 @@
       "kind": "struct",
       "members": [],
       "name": "SCE::Core::HasInvokeSupportTrait<T>"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "struct",
+      "members": [],
+      "name": "SCE::Core::HasMachineSessionIdTrait<T>"
+    },
+    {
+      "header": "core/StatePolicyConcepts.h",
+      "kind": "struct",
+      "members": [],
+      "name": "SCE::Core::HasMeshEndpointDeliveryTrait<T>"
     },
     {
       "header": "core/StatePolicyConcepts.h",
