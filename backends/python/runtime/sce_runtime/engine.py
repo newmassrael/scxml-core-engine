@@ -2198,9 +2198,11 @@ class Engine(Generic[S, E]):
         invoke's metadata intact.
 
         `origin` is the pair the processor that delivers the event wrote, and
-        `sender` the id of the session that sent it when that processor is the
-        SCXML one (docs/adr/0090). A host that posts an event names its origin
-        in its own terms, or none; nothing here fills one in.
+        `sender` the id of the session that sent it, written by the processor
+        that delivered it from that session (the SCXML one for a local session,
+        the Mesh transport for a remote child or parent) and `None` for any
+        other sender (docs/adr/0090). A host that posts an event names its
+        origin in its own terms, or none; nothing here fills one in.
 
         `host_invoke_token` is `complete_host_invoke`'s to set. A host-run
         invocation's ``done.invoke`` without it is refused here, by its wire

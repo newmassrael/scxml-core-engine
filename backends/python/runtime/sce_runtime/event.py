@@ -24,9 +24,13 @@ class EventMetadata:
     # the delivering processor wrote, as one value (docs/adr/0090); `None` for
     # an event no processor stamped, which reads both fields as ''.
     origin: Optional[EventOrigin] = None
-    # The id of the session that sent the event, set only by the SCXML Event
-    # I/O Processor. Not an `_event` field: it is what the lookups that find a
-    # session read, and nothing reads the origin's address to find one.
+    # The id of the session that sent the event, written by the processor that
+    # delivered it from that session: the SCXML Event I/O Processor for a local
+    # session, the Mesh transport for a remote child or parent; `None` for any
+    # other sender (docs/adr/0090). Independent of `origin`, whose address is
+    # whatever reply address that processor wrote. Not an `_event` field: it is
+    # what the lookups that find a session read, and nothing reads the origin's
+    # address to find one.
     sender: Optional[str] = None
     invoke_id: str = ""
     # §scxml-6.4: the token of the host-run invocation this event completes,
