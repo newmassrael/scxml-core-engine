@@ -424,6 +424,10 @@ interface ScxmlScriptEngine {
  *
  * Bundles the seven `_event.*` metadata fields (name + 6 metadata) that every
  * script engine impl must surface before guard evaluation / action execution.
+ * The empty string in [sendId], [origin], [originType] or [invokeId] is a field
+ * the processor left blank (§scxml-5.10), which an ECMAScript binding surfaces
+ * as undefined and a Lua binding as nil, never as `''`
+ * (`tests/ecmascript/event_blank_fields.json`).
  * Cross-language sibling: `SCE::SetCurrentEventArgs` in C++ and
  * `sce_rust_runtime::SetCurrentEventArgs` in Rust.
  */

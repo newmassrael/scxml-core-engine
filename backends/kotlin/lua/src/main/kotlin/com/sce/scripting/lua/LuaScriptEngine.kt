@@ -562,10 +562,14 @@ class LuaScriptEngine : ScxmlScriptEngine {
         LuaNative.createTable(L, 0, 8)
         pushField(L, "name", args.name)
         pushField(L, "type", args.type.ifEmpty { "external" })
-        pushField(L, "sendid", args.sendId)
-        pushField(L, "origin", args.origin)
-        pushField(L, "origintype", args.originType)
-        pushField(L, "invokeid", args.invokeId)
+        // §scxml-5.10.1 leaves these four blank for some events, and the
+        // engine interface carries blank as the empty string; §scxml-B-2-8
+        // makes blank ECMAScript undefined, which this engine holds as nil,
+        // so `''` is never bound.
+        pushBlankableField(L, "sendid", args.sendId)
+        pushBlankableField(L, "origin", args.origin)
+        pushBlankableField(L, "origintype", args.originType)
+        pushBlankableField(L, "invokeid", args.invokeId)
 
         if (args.data.isNotEmpty()) {
             // Every rung of the ladder leaves a value on the stack, so the
@@ -918,6 +922,16 @@ class LuaScriptEngine : ScxmlScriptEngine {
     private fun pushField(L: Long, key: String, value: String) {
         LuaNative.pushString(L, value)
         LuaNative.setField(L, -2, key)
+    }
+
+    /** A field that may be blank: the empty string is bound as nil, anything else as itself. */
+    private fun pushBlankableField(L: Long, key: String, value: String) {
+        if (value.isEmpty()) {
+            LuaNative.pushNil(L)
+            LuaNative.setField(L, -2, key)
+        } else {
+            pushField(L, key, value)
+        }
     }
 
     private fun isSimpleVariableName(name: String): Boolean {

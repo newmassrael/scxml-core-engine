@@ -257,15 +257,19 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
         val handle = session.handle
         val typeStr = args.type.ifEmpty { "external" }
 
-        // Build _event object with basic properties
+        // §scxml-5.10.1 leaves `sendid`, `origin`, `origintype` and
+        // `invokeid` blank for some events, and the engine interface carries
+        // blank as the empty string; §scxml-B-2-8 makes blank ECMAScript
+        // undefined, so `''` is never bound. The property is still defined
+        // (`'sendid' in _event` holds), with the value undefined.
         QuickJSNative.eval(handle, """
             _event = {
                 name: ${jsStringLiteral(args.name)},
                 type: ${jsStringLiteral(typeStr)},
-                sendid: ${jsStringLiteral(args.sendId)},
-                origin: ${jsStringLiteral(args.origin)},
-                origintype: ${jsStringLiteral(args.originType)},
-                invokeid: ${jsStringLiteral(args.invokeId)},
+                sendid: ${blankFieldLiteral(args.sendId)},
+                origin: ${blankFieldLiteral(args.origin)},
+                origintype: ${blankFieldLiteral(args.originType)},
+                invokeid: ${blankFieldLiteral(args.invokeId)},
                 data: undefined
             }
         """.trimIndent())
@@ -688,6 +692,14 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
             sb.append('"')
             return sb.toString()
         }
+
+        /**
+         * A `_event` field as a JavaScript literal: the string it carries, or,
+         * for a blank field (the empty string), `void 0`, which is undefined
+         * whatever a document has done to the name `undefined`.
+         */
+        internal fun blankFieldLiteral(s: String): String =
+            if (s.isEmpty()) "void 0" else jsStringLiteral(s)
 
         private val BUILTINS = setOf(
             "true", "false", "null", "undefined", "NaN", "Infinity",

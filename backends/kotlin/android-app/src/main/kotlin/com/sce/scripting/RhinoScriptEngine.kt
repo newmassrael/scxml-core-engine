@@ -215,10 +215,14 @@ class RhinoScriptEngine : ScxmlScriptEngine {
             val eventObj = cx.newObject(scope)
             ScriptableObject.putProperty(eventObj, "name", args.name)
             ScriptableObject.putProperty(eventObj, "type", args.type.ifEmpty { "external" })
-            ScriptableObject.putProperty(eventObj, "sendid", args.sendId)
-            ScriptableObject.putProperty(eventObj, "origin", args.origin)
-            ScriptableObject.putProperty(eventObj, "origintype", args.originType)
-            ScriptableObject.putProperty(eventObj, "invokeid", args.invokeId)
+            // §scxml-5.10.1 leaves these four blank for some events, and the
+            // engine interface carries blank as the empty string;
+            // §scxml-B-2-8 makes blank ECMAScript undefined, so `''` is never
+            // bound. The property is still defined, as it is for every event.
+            ScriptableObject.putProperty(eventObj, "sendid", blankAsUndefined(args.sendId))
+            ScriptableObject.putProperty(eventObj, "origin", blankAsUndefined(args.origin))
+            ScriptableObject.putProperty(eventObj, "origintype", blankAsUndefined(args.originType))
+            ScriptableObject.putProperty(eventObj, "invokeid", blankAsUndefined(args.invokeId))
 
             if (args.data.isNotEmpty()) {
                 val parsed = parseDataValueInternal(cx, scope, args.data)
@@ -234,6 +238,9 @@ class RhinoScriptEngine : ScxmlScriptEngine {
         }
         return reading
     }
+
+    /** A blank `_event` field as ECMAScript reads it: undefined, never the empty string. */
+    private fun blankAsUndefined(value: String): Any = if (value.isEmpty()) Undefined.instance else value
 
     override fun clearCurrentEvent(sessionId: String) {
         val session = sessions[sessionId] ?: return
