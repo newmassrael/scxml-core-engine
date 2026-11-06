@@ -87,6 +87,9 @@ TEST_TREES = (
     "tests/w3c/dist/*.cpp",
     "backends/kotlin/mesh/src/commonTest/kotlin/com/sce/mesh/*.kt",
     "backends/kotlin/mesh/src/jvmTest/kotlin/com/sce/mesh/*.kt",
+    # The Swift WebSocket client's tests, by their directory and no deeper: `Generated/` beside
+    # them holds the peer table the build writes, which is output and not a witness.
+    "backends/swift/mesh-wss/Tests/SceMeshWssTests/*.swift",
 )
 
 MARKER_RE = re.compile(r"^\s*(?://|#)\s*SCE-VERIFIES:\s*(.+?)\s*$")

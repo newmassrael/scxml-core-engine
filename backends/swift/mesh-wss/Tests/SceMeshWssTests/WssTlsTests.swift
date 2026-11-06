@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
+// SCE-VERIFIES: mesh-18 mesh-18.1
+//
 // The `wss://` half of the binding's client (SCE_MESH.md §mesh-18.1): what a link does when the
 // socket is TLS. A certificate is made when the test runs, as the Rust core's tests make theirs, so
 // no private key is committed; the server presents it and the client either trusts it or does not.

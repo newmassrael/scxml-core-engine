@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
+// SCE-VERIFIES: mesh-18 mesh-18.1 mesh-18.2 mesh-18.3
+//
 // The SwiftNIO client of the WebSocket binding (SCE_MESH.md §mesh-18) against a real WebSocket
 // server, the Swift twin of the Kotlin and Rust bindings' socket tests. It pins what the client puts
 // on the wire and how it reports the link: the path that names the client (§mesh-18.1), one envelope

@@ -3086,6 +3086,18 @@
         {
           "file": "backends/swift/mesh-wss/Sources/SceMeshWss/WssClient.swift",
           "kind": "references"
+        },
+        {
+          "file": "backends/swift/mesh-wss/Tests/SceMeshWssTests/WssClientTests.swift",
+          "kind": "verifies"
+        },
+        {
+          "file": "backends/swift/mesh-wss/Tests/SceMeshWssTests/LoopbackTests.swift",
+          "kind": "verifies"
+        },
+        {
+          "file": "backends/swift/mesh-wss/Tests/SceMeshWssTests/WssTlsTests.swift",
+          "kind": "verifies"
         }
       ]
     },
@@ -3146,6 +3158,14 @@
         {
           "file": "backends/swift/mesh-wss/Sources/SceMeshWss/WssClient.swift",
           "kind": "implements"
+        },
+        {
+          "file": "backends/swift/mesh-wss/Tests/SceMeshWssTests/WssClientTests.swift",
+          "kind": "verifies"
+        },
+        {
+          "file": "backends/swift/mesh-wss/Tests/SceMeshWssTests/WssTlsTests.swift",
+          "kind": "verifies"
         }
       ]
     },
@@ -3174,6 +3194,14 @@
         {
           "file": "backends/swift/mesh-wss/Sources/SceMeshWss/WssClient.swift",
           "kind": "implements"
+        },
+        {
+          "file": "backends/swift/mesh-wss/Tests/SceMeshWssTests/WssClientTests.swift",
+          "kind": "verifies"
+        },
+        {
+          "file": "backends/swift/mesh-wss/Tests/SceMeshWssTests/LoopbackTests.swift",
+          "kind": "verifies"
         }
       ]
     },
@@ -3230,6 +3258,10 @@
         {
           "file": "backends/swift/mesh-wss/Sources/SceMeshWss/WssClient.swift",
           "kind": "implements"
+        },
+        {
+          "file": "backends/swift/mesh-wss/Tests/SceMeshWssTests/WssClientTests.swift",
+          "kind": "verifies"
         }
       ]
     },
@@ -3262,6 +3294,10 @@
         {
           "file": "backends/swift/mesh-wss/Sources/SceMeshWss/WssClient.swift",
           "kind": "implements"
+        },
+        {
+          "file": "backends/swift/mesh-wss/Tests/SceMeshWssTests/LoopbackTests.swift",
+          "kind": "verifies"
         }
       ]
     },
@@ -3337,6 +3373,10 @@
         {
           "file": "backends/swift/mesh/Sources/SceMesh/Rpc.swift",
           "kind": "references"
+        },
+        {
+          "file": "backends/swift/mesh-wss/Tests/SceMeshWssTests/LoopbackTests.swift",
+          "kind": "verifies"
         }
       ]
     },

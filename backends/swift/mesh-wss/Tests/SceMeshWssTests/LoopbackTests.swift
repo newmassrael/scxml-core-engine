@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
+// SCE-VERIFIES: mesh-18 mesh-18.2 mesh-18.4 mesh-19
+//
 // The Swift core against the Rust core over one real WebSocket (SCE_MESH.md §mesh-18). The Rust side
 // is backends/rust/mesh/examples/wss_peer.rs, a server machine that answers each `ping` with a `pong`
 // carrying the same `_event.data`; the lane that runs this builds it and names its path in

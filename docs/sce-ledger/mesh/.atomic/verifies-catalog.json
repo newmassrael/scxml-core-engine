@@ -60,6 +60,31 @@
       ]
     },
     {
+      "file": "backends/swift/mesh-wss/Tests/SceMeshWssTests/LoopbackTests.swift",
+      "section_ids": [
+        "mesh-18",
+        "mesh-18.2",
+        "mesh-18.4",
+        "mesh-19"
+      ]
+    },
+    {
+      "file": "backends/swift/mesh-wss/Tests/SceMeshWssTests/WssClientTests.swift",
+      "section_ids": [
+        "mesh-18",
+        "mesh-18.1",
+        "mesh-18.2",
+        "mesh-18.3"
+      ]
+    },
+    {
+      "file": "backends/swift/mesh-wss/Tests/SceMeshWssTests/WssTlsTests.swift",
+      "section_ids": [
+        "mesh-18",
+        "mesh-18.1"
+      ]
+    },
+    {
       "file": "sce-build/tests/mesh_error_format_json.rs",
       "section_ids": [
         "mesh-18",
