@@ -192,6 +192,7 @@ pub mod static_string_capacity_sm;
 pub mod static_string_literal_sm;
 pub mod static_text_record_sm;
 pub mod static_timers_sm;
+pub mod static_union_sm;
 pub mod static_whole_payload_sm;
 pub mod static_wire_enum_sm;
 pub mod static_wire_wide_sm;

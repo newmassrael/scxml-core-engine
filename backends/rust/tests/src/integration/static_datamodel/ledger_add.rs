@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9aa28cb8a6152625fb0eb1560e8ab3014da5864745e85b6f3b6e37672c04dcf6
+// source-hash: ad4bedcb756956ce54bdaf3d75bb21306a16abe1845fd50a6c67924ec38392a8
 #![doc = "SCE-MAP: algorithm_ledger_add.scxml:8 :: _forge_body"]
 // SCE-MAP: algorithm_ledger_add.scxml:8 :: _forge_body
 
