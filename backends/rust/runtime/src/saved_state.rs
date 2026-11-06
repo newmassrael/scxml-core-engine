@@ -60,7 +60,6 @@ use core::fmt;
 use crate::helpers::configuration::ConfigurationRejection;
 use crate::helpers::io_processors::{
     read_stored_origin, read_stored_sender, scxml_origin, scxml_origin_of, stored_origin_text,
-    SCXML_LOCATION_PREFIX,
 };
 use crate::json::{self, Value};
 use crate::scheduler_storage::sealed::SchedulerOps;
@@ -981,21 +980,24 @@ impl SavedSend {
                 Ok(sender)
             } else {
                 let origin = text("origin")?;
-                // The SCXML location prefix alone names no session, so it is no
-                // sender a session's act can have. A queued event that stored it
-                // is read as the pair as saved instead (docs/adr/0090, section 7).
-                if origin == SCXML_LOCATION_PREFIX {
+                if origin.is_empty() {
+                    return Ok(session_id.to_string());
+                }
+                // A stored origin names the act's session by its id or by its
+                // SCXML location, and the sender read from it is that id, an
+                // XML Nmtoken. Any other text, the location prefix alone among
+                // them, names no session; a queued event that stored such a
+                // text is read as the pair as saved instead (docs/adr/0090,
+                // section 7).
+                let stored = read_stored_sender(&origin);
+                if !crate::helpers::session_id::is_nmtoken(&stored) {
                     return Err(StateRefusal::new(format!(
                         "'{what}.origin' is '{origin}', which names no session: a {act} act \
-                         is the send of a session"
+                         is a session's own send, and its stored origin is that session's id \
+                         or its SCXML location"
                     )));
                 }
-                let stored = read_stored_sender(&origin);
-                Ok(if stored.is_empty() {
-                    session_id.to_string()
-                } else {
-                    stored
-                })
+                Ok(stored)
             }
         };
         let due = read_moment(&text("due")?, &format!("{what}.due"))?;
@@ -4131,7 +4133,7 @@ mod tests {
             )
         };
         let stored = text(
-            r#"{"due":"1","act":"internal","event":"i","data":"","sendid":"","origin":"s1"},{"due":"2","act":"raise","event":"r","data":"","sendid":"","origin":"sce://scxml/a%20b"},{"due":"3","act":"raise","event":"z","data":"","sendid":"","origin":""}"#,
+            r#"{"due":"1","act":"internal","event":"i","data":"","sendid":"","origin":"s1"},{"due":"2","act":"raise","event":"r","data":"","sendid":"","origin":"sce://scxml/peer%3A1"},{"due":"3","act":"raise","event":"z","data":"","sendid":"","origin":""}"#,
             &[
                 event("s1", ""),
                 event("sce://scxml/a%20b", "x-sce-host"),
@@ -4140,7 +4142,7 @@ mod tests {
             .join(","),
         );
         let written = text(
-            r#"{"due":"1","act":"internal","event":"i","data":"","sendid":"","origin":""},{"due":"2","act":"raise","event":"r","data":"","sendid":"","origin":"a b"},{"due":"3","act":"raise","event":"z","data":"","sendid":"","origin":""}"#,
+            r#"{"due":"1","act":"internal","event":"i","data":"","sendid":"","origin":""},{"due":"2","act":"raise","event":"r","data":"","sendid":"","origin":"peer:1"},{"due":"3","act":"raise","event":"z","data":"","sendid":"","origin":""}"#,
             &[event("s1", SCXML), event("a b", SCXML), event("", "")].join(","),
         );
         let state = SavedState::from_json(&stored).expect("a format-1 state reads");
@@ -4172,48 +4174,62 @@ mod tests {
         assert_eq!(state.to_json(), format3);
     }
 
-    /// docs/adr/0090, section 7: the SCXML location prefix alone names no
-    /// session. A format-1 or format-2 act that stored it is refused, since an
-    /// act is a session's send; a queued event that stored it is read as the
-    /// pair as saved, with no sender.
+    /// docs/adr/0090, section 7: a format-1 or format-2 act's stored origin
+    /// names its session by an id or by a location with an id, and the sender
+    /// read from it is an XML Nmtoken. Any other text names no session, and
+    /// the act is refused: the SCXML location prefix alone, an address with
+    /// no SCXML location, and a location whose id decodes to no Nmtoken. A
+    /// queued event that stored the prefix alone is read as the pair as
+    /// saved, with no sender.
     #[test]
-    fn a_format_2_origin_of_the_scxml_prefix_alone_names_no_session() {
+    fn a_format_2_act_origin_that_names_no_session_is_refused() {
         let format2 = |pending: &str, external: &str| {
             format!(
                 r#"{{"format":2,"shape":"d","sessionid":"s1","configuration":[],"current":"s","variables":{{}},"history":{{}},"pending":[{pending}],"invokes":[],"invokestarts":{{}},"hostinvokes":[],"hostinvoketoken":"0","sendseq":"0","external":[{external}]}}"#
             )
         };
-        for (act, invoke_id) in [
-            ("raise", ""),
-            ("parent", ""),
-            ("child", r#""invokeid":"w","#),
-        ] {
-            let text = format2(
-                &format!(
-                    r#"{{"due":"1","act":"{act}",{invoke_id}"event":"e","data":"","sendid":"","origin":"sce://scxml/"}}"#
-                ),
-                "",
-            );
-            let refusal = SavedState::from_json(&text).expect_err(act);
+        let act_text = |act: &str, origin: &str| {
+            let invoke_id = if act == "child" {
+                r#""invokeid":"w","#
+            } else {
+                ""
+            };
+            format!(
+                r#"{{"due":"1","act":"{act}",{invoke_id}"event":"e","data":"","sendid":"","origin":"{origin}"}}"#
+            )
+        };
+        let reason = |origin: &str, act: &str| {
+            format!(
+                "'pending[0].origin' is '{origin}', which names no session: a {act} act is a \
+                 session's own send, and its stored origin is that session's id or its SCXML \
+                 location"
+            )
+        };
+        for origin in ["sce://scxml/", "mesh://elsewhere", "sce://scxml/a%20b"] {
+            for act in ["raise", "parent", "child"] {
+                let refusal = SavedState::from_json(&format2(&act_text(act, origin), ""))
+                    .expect_err("a format-2 act origin that names no session");
+                assert_eq!(refusal.reason(), reason(origin, act), "{act} of {origin}");
+            }
+            // The same in format 1, whose one session's act is `raise`.
+            let refusal = SavedState::from_json(&with_pending(&act_text("raise", origin)))
+                .expect_err("a format-1 act origin that names no session");
             assert_eq!(
                 refusal.reason(),
-                format!(
-                    "'pending[0].origin' is 'sce://scxml/', which names no session: a {act} \
-                     act is the send of a session"
-                ),
-                "{act}"
+                reason(origin, "raise"),
+                "format 1, {origin}"
             );
         }
-        // The same in format 1, whose one session's act is `raise`.
-        let refusal = SavedState::from_json(&with_pending(
-            r#"{"due":"1","act":"raise","event":"e","data":"","sendid":"","origin":"sce://scxml/"}"#,
-        ))
-        .expect_err("a format-1 raise act");
-        assert_eq!(
-            refusal.reason(),
-            "'pending[0].origin' is 'sce://scxml/', which names no session: a raise act is \
-             the send of a session"
-        );
+        // A neighbour that names a session: its id, read from the location.
+        for origin in ["peer:1", "sce://scxml/peer%3A1"] {
+            let state = SavedState::from_json(&format2(&act_text("raise", origin), ""))
+                .expect("an act origin that names a session reads");
+            assert!(
+                matches!(&state.pending[0].act, SavedAct::Raise { sender, .. } if sender == "peer:1"),
+                "{origin}: {:?}",
+                state.pending[0]
+            );
+        }
         let state = SavedState::from_json(&format2(
             "",
             r#"{"name":"go","data":"","type":"external","sendid":"","origin":"sce://scxml/","origintype":"","invokeid":"","hostinvoketoken":null}"#,
