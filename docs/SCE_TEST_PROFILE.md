@@ -728,7 +728,9 @@ inside a `list-match` (B.1.3.2, §8.1); a template whose references form a cycle
 - `<sce:module-parameter id type value>` declares a module parameter (-1 §8.2.1) and its default. Its type is a
   scalar, `string[N]` or `bytes[N]` type, and `value` is a literal of §11.4. Every `<data sce:module-parameter="true">`
   of a component reached from the suite has a declaration here with its `id` and type.
-- Feature conditions appear only on `<sce:execute>`. The other kinds of the profile take none.
+- Feature conditions appear only on `<sce:execute>`. The other kinds of the profile take none: a `test-component`
+  that imports a `feature-model` is refused (`test-profile/component-construct`), and a `requires` with no model to
+  read it against is refused by ADR 0057's own rules (§11.10).
 - At most one `feature-model` import. A `requires` names only its features
   (`validation/feature-undeclared`, the code ADR 0057 gives a condition that names a feature its model does not
   declare; ADR 0091 §3).
@@ -738,3 +740,33 @@ inside a `list-match` (B.1.3.2, §8.1); a template whose references form a cycle
 The six kinds are parsed and checked on every backend from the step that lands them. Until the native runtime of the
 order of work step 3 lands in a backend, generating a document of the profile on it is refused by name
 (`generate/unsupported-feature`).
+
+### 11.10 The rules under feature derivation
+
+ADR 0057 §5 asks of every rule how it behaves under the derivation `π_c`, which removes each element whose condition
+is false in the configuration `c`. ADR 0091 §3 asks that every world of a suite's features be a valid suite.
+
+- **Where `π_c` acts.** Only `<sce:execute>` takes a condition (§11.8). A `test-component` imports no `feature-model`,
+  and a template, a port type, a configuration and a test case have no element that takes one. So `π_c` is the
+  identity on every document of the profile except a suite, and on a suite it removes `<sce:execute>` entries and
+  nothing else. This is the TTCN-3 reading: a control part selects test cases (-1 §26.1), and a test case runs its
+  components as written.
+- **Rules of the kinds `π_c` leaves as written.** Every rule of a template, a port type, a component, a configuration
+  and a test case, together with the rules of the statechart that a component is held to, holds in `π_c(D)` exactly
+  when it holds in `D`, because the two documents are the same.
+- **Rules of the suite.** Each holds in a suite with fewer `<sce:execute>` entries when it holds in the suite with all
+  of them:
+  - a test case is listed no more often;
+  - the imports are not gated, so a listed case is still imported;
+  - a `guard` and an `<sce:module-parameter>` are not removed;
+  - the components reached from fewer test cases read no module parameter that the components reached from all of
+    them did not read (`test-profile/module-parameter`).
+- **The suite's selection.** A malformed condition, a feature the model does not declare and a second `feature-model`
+  are the product line's own rules (`Family`), judged once on the suite as written.
+
+So every world of a suite's features is a valid suite exactly when the suite as written is, and no rule of the profile
+needs a variant judged on its own. The registry (`DiagnosticCode::derivation_class`) lists each `test-profile/` code as
+`ProductOnly`, the class ADR 0057 gives every rule when it lands and calls sound for any rule. The codes do not move
+to `PreservedByRemoval`, because that class claims more than the argument above proves. It claims that a rule holds in
+every sub-document, and some do not: removing an `<invoke>` breaks "every PTC is created by exactly one `<invoke>`"
+(`test-profile/ptc-invocation`). Those rules hold in every world only because `π_c` never removes the element.

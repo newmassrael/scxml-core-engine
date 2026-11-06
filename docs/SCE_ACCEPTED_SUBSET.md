@@ -566,9 +566,13 @@ A `test-component` is held to the refusals of docs/adr/0091 §3 and
 statechart is asked of it. A native condition (`cpp:`, `kt:`) is
 `test-profile/native-code`; a cause the script-engine analysis names is
 `test-profile/script-engine`; `<parallel>`, `<history>`, `<script>`, `<donedata>`,
-`<raise>` and `<cancel>` are `test-profile/component-construct`; `_event` read anywhere
-but in the executable content of a receive branch, a branch's `cond` among those places,
-is `test-profile/message-read`. A `<send>` is exactly `type` (the test-port processor),
+`<raise>`, `<cancel>` and an `<sce:import kind="feature-model">` (feature conditions
+appear only on a suite's `<sce:execute>`, `docs/SCE_TEST_PROFILE.md` §11.8, §11.10) are
+`test-profile/component-construct`; `_event` read anywhere but in the executable content
+of a receive branch, a branch's `cond` among those places, or in a receive any branch,
+which stores no message (ES 201 873-1 §22.2.2, restriction d), is
+`test-profile/message-read`, as is a receive branch that reads the message of a record
+the component does not import as an `event-schema`; the message is typed by that record. A `<send>` is exactly `type` (the test-port processor),
 `target` (a declared port), `sce:test-template` and `sce:template-args`: another type, a
 target of `#_internal`, `event`, `eventexpr`, `targetexpr`, `typeexpr`, `delay`,
 `delayexpr`, `namelist`, `id`, `idlocation`, a `<param>` or a `<content>` is

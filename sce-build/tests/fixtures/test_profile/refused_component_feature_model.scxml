@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Refused: a test component that imports a feature model to gate its own
+     elements. Feature conditions appear only on a suite's <sce:execute>, which
+     selects the test cases a world of the features runs; each component is run
+     as written (docs/SCE_TEST_PROFILE.md §11.8). -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="refused_component_feature_model"
+       datamodel="sce-static" initial="waiting">
+  <sce:import kind="feature-model" src="job_features.scxml" as="Features"/>
+  <sce:test-timer id="reply" duration="2s"/>
+  <state id="waiting">
+    <onentry>
+      <sce:start-timer timer="reply"/>
+    </onentry>
+    <transition sce:timeout="reply" target="done" sce:requires="job-timeout"/>
+  </state>
+  <final id="done"/>
+</scxml>

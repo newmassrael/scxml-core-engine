@@ -667,12 +667,16 @@ pub enum TestProfileRule {
     /// `test-profile/script-engine`.
     ScriptEngine,
     /// §8.2: an element a `test-component` does not hold: `<parallel>`,
-    /// `<history>`, `<script>`, `<donedata>`, `<raise>`, `<cancel>`. Wire
-    /// code `test-profile/component-construct`.
+    /// `<history>`, `<script>`, `<donedata>`, `<raise>`, `<cancel>`; §11.8:
+    /// an `<sce:import kind="feature-model">`, since feature conditions appear
+    /// only on a suite's `<sce:execute>`. Wire code
+    /// `test-profile/component-construct`.
     ComponentConstruct,
     /// §4.4 (P4) and docs/adr/0091 §3: `_event` read anywhere but in the
-    /// executable content of a receive branch, a `cond` among them. Wire
-    /// code `test-profile/message-read`.
+    /// executable content of a receive branch, a `cond` among them, or in a
+    /// receive any branch (ES 201 873-1 §22.2.2, restriction d); §11.5: a
+    /// receive branch that reads the message of a record the component does
+    /// not import. Wire code `test-profile/message-read`.
     MessageRead,
     /// §8.2 and §11.5: a `<send>` that is not the send of the profile: a type
     /// other than the test-port processor, a target of `#_internal`, an

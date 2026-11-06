@@ -713,6 +713,12 @@ const COMPONENT_REFUSALS: &[(&str, DiagnosticCode, Option<&str>)] = &[
         DiagnosticCode::TestProfileComponentConstruct,
         Some("parallel"),
     ),
+    // §11.8: feature conditions appear only on a suite's <sce:execute>.
+    (
+        "refused_component_feature_model.scxml",
+        DiagnosticCode::TestProfileComponentConstruct,
+        Some("feature-model"),
+    ),
     (
         "refused_component_history.scxml",
         DiagnosticCode::TestProfileComponentConstruct,

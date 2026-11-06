@@ -317,11 +317,37 @@ pub(crate) fn check_document(
             .filter_map(|n| n.attribute("id").map(|id| id.trim().to_string()))
             .collect(),
     };
+    no_feature_model(root, &component)?;
     declarations(root, &component)?;
     for node in own_elements(*root) {
         element(&node, &component)?;
     }
     Ok(())
+}
+
+/// docs/SCE_TEST_PROFILE.md §11.8: feature conditions appear only on a
+/// suite's `<sce:execute>`, which selects the test cases a world of the
+/// features runs, as a TTCN-3 control part does (ES 201 873-1 §26.1); a
+/// component imports no `feature-model`, so no element of it is gated and
+/// derivation leaves it as written. A `requires` with no model to read it
+/// against is refused by ADR 0057's own rule.
+fn no_feature_model(root: &roxmltree::Node, c: &Component) -> Result<(), Located<ForgeError>> {
+    let import = root.children().find(|node| {
+        is_sce(node, "import") && node.attribute("kind").map(str::trim) == Some("feature-model")
+    });
+    match import {
+        Some(node) => Err(c.refused_element(
+            &node,
+            TestProfileRule::ComponentConstruct,
+            "feature-model",
+            "<sce:import kind=\"feature-model\">: a test component takes no feature condition; \
+             a world of the features selects the test cases a suite runs, on its \
+             <sce:execute>, and leaves each component as written (docs/SCE_TEST_PROFILE.md \
+             §11.8)"
+                .to_string(),
+        )),
+        None => Ok(()),
+    }
 }
 
 /// The ports and the timers (docs/SCE_TEST_PROFILE.md §11.5): each declared
