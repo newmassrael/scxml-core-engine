@@ -42,13 +42,19 @@ object IoProcessors {
     private const val UNRESERVED = "-_.~"
 
     /**
+     * What every [scxmlLocation] begins with, before the session id. Alone it
+     * names no session ([sessionIdFromScxmlLocation] reads it as none).
+     */
+    const val SCXML_LOCATION_PREFIX = "sce://scxml/"
+
+    /**
      * Address that reaches this session over the SCXML Event I/O Processor.
      *
      * §scxml-C-1 leaves the transport platform-specific, so the address is an
      * SCE-scheme URI naming the session. The session id is percent-encoded
      * because it is not constrained to URI-safe characters.
      */
-    fun scxmlLocation(sessionId: String): String = "sce://scxml/" + percentEncode(sessionId)
+    fun scxmlLocation(sessionId: String): String = SCXML_LOCATION_PREFIX + percentEncode(sessionId)
 
     /**
      * Session id an SCXML Event I/O Processor location names, or `""`.
@@ -59,9 +65,8 @@ object IoProcessors {
      * something can read a session back out of it.
      */
     fun sessionIdFromScxmlLocation(uri: String): String {
-        val prefix = "sce://scxml/"
-        if (uri.length <= prefix.length || !uri.startsWith(prefix)) return ""
-        return percentDecode(uri.substring(prefix.length))
+        if (uri.length <= SCXML_LOCATION_PREFIX.length || !uri.startsWith(SCXML_LOCATION_PREFIX)) return ""
+        return percentDecode(uri.substring(SCXML_LOCATION_PREFIX.length))
     }
 
     /**
