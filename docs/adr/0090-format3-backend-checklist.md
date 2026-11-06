@@ -295,10 +295,26 @@ disagree.
    `scxmlLocation(sender)`, and names that as the reason.
 8. **Fixtures.**
    - `saved/format2/static_invoke_tree_working_origins.json` now stores both of its session-to-session acts with an
-     empty `origin`. It also holds a tenth root event, `go`, stored as the prefix alone. Its `read_as/` twin gained
+     empty `origin`. It also holds a tenth root event, `question`, stored as the prefix alone. (It was first added
+     as a second `go`, then renamed so that every root event has a name of its own.) Its `read_as/` twin gained
      that event's reading; the acts read as before.
    - Restore it and compare as before.
    - Any new reading fixture must be named `static_invoke_tree_working*` or `static_timers*`.
+9. **R1: a session's act is this session's own send (format 3).**
+   - A `raise`, `parent` or `child` act whose `sender` is not the `sessionid` of the session record it sits in is
+     refused, in the root and in every child session.
+   - C11 refuses it today. The other six accept it and save it back under their own id, which is what the rule
+     stops.
+   - The reason text is the backend's own, for example `'pending[0].sender' is 'y', and this session is 'x': a raise
+     act is this session's own send`.
+   - The oracle is `acts_sent_by_another_session` in `sce-build/tests/saved_state_schema.rs`; the schema cannot
+     compare two members.
+10. **R2: the prefix `sce://scxml/` alone in a format-2 act is refused.** This is item 5 restated, with the event
+    case kept apart:
+    - a `raise`, `parent` or `child` act whose stored `origin` is exactly `sce://scxml/` names no session, and is
+      refused;
+    - a queued event stored so is not refused. It is read as the pair as saved with no sender: the root event
+      `question` of `static_invoke_tree_working_origins.json`.
 
 ## What the round merges and runs once
 
