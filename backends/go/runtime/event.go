@@ -66,9 +66,13 @@ type EventMetadata struct {
 	// document reads both fields as the empty string.
 	Origin *EventOrigin
 
-	// Sender is the id of the session that sent the event, set only by the
-	// SCXML Event I/O Processor; empty otherwise. Not an `_event` field:
-	// `<finalize>` and a saved state find the sending session by it, and
+	// Sender is the id of the session that sent the event, written by the
+	// processor that delivered it from that session: the SCXML Event I/O
+	// Processor for a local session, and the Mesh transport for a remote child
+	// or parent session. Empty for every other sender (a host, BasicHTTP, a
+	// Mesh peer that is no session of this tree). It is independent of Origin,
+	// whose address is the reply address that processor wrote. Not an `_event`
+	// field: `<finalize>` and a saved state find the sending session by it, and
 	// nothing reads the origin's address to find a session (docs/adr/0090,
 	// section 1).
 	Sender string

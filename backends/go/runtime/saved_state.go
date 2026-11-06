@@ -181,9 +181,10 @@ type SavedEvent struct {
 	// (docs/adr/0090, section 1). A format-1 or format-2 text's `origin` and
 	// `origintype` are read as it by ReadStoredOrigin.
 	Origin *EventOrigin
-	// Sender is the id of the session that sent the event, set only for an event
-	// the SCXML processor delivered, and then Origin is that session's SCXML
-	// pair; empty otherwise.
+	// Sender is the id of the session that sent the event, written by the
+	// processor that delivered it from that session (EventMetadata.Sender), and
+	// then Origin is never nil: it is the reply address that processor wrote,
+	// which no rule ties to the sender. Empty for an event no session sent.
 	Sender   string
 	InvokeID string
 	// HostInvokeToken is the token a host-run invocation's completion or failure
