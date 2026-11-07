@@ -863,6 +863,34 @@ test-component invoker on clones of the context and starts the machine; `deliver
 `--no-std`, since the profile's runtime is `std` only. The machine's session is named by the component, `mtc` or the
 id of the `<invoke>` that creates it, which the parse holds to an XML Name.
 
+Kotlin generates `test-component` (§12.6, slice 6). The unit is the statechart machine the Kotlin generator writes for
+any `sce-static` document, `<file>Sm.kt`, lowered through the same doors by the same lowering and spelled for the
+Kotlin runtime (`com.sce.runtime.test`):
+
+- a branch's guard, the statement taking it, the statements of the profile and a `<log>` are calls on the component's
+  `ComponentContext`, which the machine is constructed with (`sceTestContext`). A receive branch's match is
+  `receives` over its template's `matches`; every declaration of a template's unit is named by the unit's package
+  (`com.sce.generated.<document>`), as one unit names another's, so the machine imports no template's package. A
+  variable bound to a formal parameter is handed over as the machine holds it, since the unit takes every parameter
+  by value; a variable of an enum crosses into the variant of the same declared name of the enum unit's class, and
+  an optional value of an enum is refused by name, as on C++ and Rust;
+- a receive branch whose content reads the message copies it, field by field, into the payload data class the
+  machine's channel holds its record's event in, which the content reads as `_event.data`. The machine and the
+  record's unit hold a number, a `bool`, a text and a byte string in the same Kotlin types, which are copied as they
+  are, and an enum in classes of their own, so an enum field takes the variant of the machine's class of the same
+  declared name, an optional one where it is present. Kotlin so generates the message of a record with a text, a
+  byte string or an enum field that Rust refuses;
+- a send hands the test-port processor the specific template's value as `HostSendRequest.value`.
+
+Beside the machine the file declares `<Name>Component`, which implements `com.sce.runtime.test.ComponentMachine`:
+`start` constructs the machine with the context, under the session the component's name gives, registers the
+test-port processor and the test-component invoker on it and starts it (`initialize`); `deliverSnapshot` sends the
+snapshot event and runs the macrostep it starts (`tick`); `terminated` is the machine's having entered a top-level
+`<final>`. Kotlin refuses by name a component that declares `<sce:action>`, whose machine is constructed with a host
+the component is given nothing of, and, until it generates a suite's tables, a component that declares a module
+parameter. A component's machine always has a saved shape, which a session id it is given needs: what would leave
+it none, a delayed send or an invoke a restore cannot start, the profile refuses.
+
 A module parameter (§11.5) is a variable of the machine declared with its type and no value of the document's: the
 static lowering, written once for every backend, lowers no initial value for it. Its value is the run's. Before
 `start` starts the machine it hands the machine the run's module parameters through the context
@@ -1058,4 +1086,7 @@ the equivalence law (order of work step 6).
    type for type and held to its cases, with `textLength` for a template's length restriction, since a Kotlin text
    counts UTF-16 units; and the Kotlin host send request carries a test-port send's value (`HostSendRequest.value`).
    Kotlin generates templates, a template over a union among them, and the refusal of §11.9 is lifted for Kotlin
-   for `test-template`.
+   for `test-template`. Kotlin generates test components next, through the doors of §12.3, and runs them through
+   `com.sce.runtime.test.TestCaseRun`; the refusal is lifted for Kotlin for `test-component`, but for a component
+   that declares a module parameter, whose value Kotlin's suite tables give, and for one that declares
+   `<sce:action>`.
