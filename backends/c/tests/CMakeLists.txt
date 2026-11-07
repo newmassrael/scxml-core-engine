@@ -1796,6 +1796,39 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # §scxml-5.10 + §scxml-B-2-8: a write that changes a system variable fails
+    # (tests/ecmascript/system_variable_writes.json, which every backend reads).
+    # A document of this channel alone, beside the C test: this backend binds the
+    # system variables in the generated machine, so a machine carries the table's
+    # event and the test asks each case of the state the machine bound.
+    sce_generate_static_integration_c_test(system_variable_writes
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_CURRENT_SOURCE_DIR}/integration_resources/system_variable_writes/system_variable_writes.scxml"
+    )
+    add_executable(sce_c_integration_system_variable_writes
+        integration/test_system_variable_writes.c
+        ${INTEGRATION_C_TEST_system_variable_writes_SOURCES}
+    )
+    target_compile_definitions(sce_c_integration_system_variable_writes PRIVATE
+        SCE_SYSTEM_VARIABLE_WRITES_TABLE="${CMAKE_SOURCE_DIR}/tests/ecmascript/system_variable_writes.json"
+    )
+    sce_c_link_runtime(sce_c_integration_system_variable_writes)
+    target_include_directories(sce_c_integration_system_variable_writes PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_system_variable_writes PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_system_variable_writes
+        COMMAND sce_c_integration_system_variable_writes
+    )
+    set_tests_properties(c11_integration_system_variable_writes PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML 6.5 + docs/adr/0090, sections 1 and 6: `<finalize>` runs for the
     # child's own send and not for a host's event that spells the child's pair as
     # its origin. A document of this channel alone, beside the C test: this

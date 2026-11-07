@@ -9,8 +9,8 @@
 # (§scxml-5.10), not the descriptor it was matched through. A generated C machine
 # carries the event as the enum member of a name its document writes, so the whole
 # name has to travel beside it: `<machine>_arrive` records it in
-# `event_with_meta_t.name` and `set_current_event` writes it over the member's name
-# in `_event`.
+# `event_with_meta_t.name` and `set_current_event` binds it in `_event` in place of
+# the member's name.
 # `integration_resources/an_event_keeps_the_name_it_was_sent_under/` is the
 # document: the parent writes `request.new`, the child only `request`, and the
 # child reports `arrivedShortened` unless it is told the whole name.
@@ -39,6 +39,6 @@ PY
 
 mutation_case "the recorded name is never written over the member's" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     "    if (evt->name[0] != '\\0') {\n        lua_getglobal(L, \"_event\");",
-     "    if (evt->name[0] != '\\0' && 0) {\n        lua_getglobal(L, \"_event\");")
+     "    const char *name = evt->name[0] != '\\0' ? evt->name : NULL;\n",
+     "    const char *name = NULL;\n")
 PY

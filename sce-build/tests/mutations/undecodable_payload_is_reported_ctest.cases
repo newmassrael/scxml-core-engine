@@ -156,14 +156,14 @@ PY
 
 # ── C11: the chunk stops reporting which rung it took ──────────────
 #
-# `_sce_payload_decoded` is the only thing that separates the two text
+# The chunk's second result is the only thing that separates the two text
 # readings, because only the Lua side attempted the structured parse. Pinning
 # it true makes every payload look like it parsed.
 
 mutation_case "the c11 chunk always claims the structured read succeeded" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     """                          "_sce_payload_decoded = _ok and true or false; \"""",
-     """                          "_sce_payload_decoded = true; \"""")
+     """                                      "return _scxml_normalize_ws(_c), false");""",
+     """                                      "return _scxml_normalize_ws(_c), true");""")
 PY
 
 # ── C11: the dequeue drops the reading ─────────────────────────────

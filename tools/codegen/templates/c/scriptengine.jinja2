@@ -33,29 +33,47 @@
    handling. Decision: jinja2-inline only —
    no helper class, no shared .c file. #}
 
+{# §scxml-5.10: store the value at the top of the stack as the data model
+   variable `name`, a name the document chose, and pop it. Through
+   `set_document_global` (a protected `lua_setglobal`, emitted by
+   state_machine.c.jinja2), because the shared globals refuse a write of a
+   system variable's name, and a refusal raised outside a protected call ends
+   the process: a `<data id="_event">` is a write that fails, which the clause
+   answers with error.execution. #}
+{% macro lua_set_document_global_top(name) %}
+            if (!set_document_global(sm->L, "{{ name | escape_c }}")) {
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    "<data id='{{ name | escape_c }}'> could not be stored");
+            }
+{% endmacro %}
+
 {# W3C SCXML 5.3: give the data model variable `name` the value of the lowered
    expression `lua_value`. The value is evaluated as `return (<value>)` and
-   stored with `lua_setglobal`, keyed by the name as a string: a `<data id>`
+   stored as a global keyed by the name as a string: a `<data id>`
    is an XML name, and `screen-rules = (4)` — the chunk this used to run — is
    a subtraction to Lua, so a legal declaration was never initialised. The
    other Lua backends key the variable the same way.
 
    `fallback`, when given, is the literal an inline `<data>` content
    (W3C SCXML 5.3.2) that does not evaluate becomes (W3C SCXML B.2); without it the failure is the
-   expression's, and raises error.execution. #}
+   expression's, and raises error.execution.
+
+   The store is `lua_set_document_global_top`'s, as for every name a document
+   chooses. #}
 {% macro lua_set_data_global(name, lua_value, fallback=none) %}
         if ((luaL_loadstring(sm->L, "return ({{ lua_value | escape_c }})") || lua_pcall(sm->L, 0, 1, 0)) != 0) {
             lua_pop(sm->L, 1);
 {% if fallback is not none %}
             lua_pushliteral(sm->L, "{{ fallback | escape_c }}");
-            lua_setglobal(sm->L, "{{ name | escape_c }}");
+{{ lua_set_document_global_top(name) }}
 {% else %}
             {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                 sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
                 "<data id='{{ name | escape_c }}'> expr failed to evaluate");
 {% endif %}
         } else {
-            lua_setglobal(sm->L, "{{ name | escape_c }}");
+{{ lua_set_document_global_top(name) }}
         }
 {% endmacro %}
 
@@ -124,36 +142,43 @@
            that constrain the value — that it identifies the session, and
            that it is an NMTOKEN — and then satisfied only what was left.
 
-           Read-only behaviour is enforced at codegen time in
-           `state_machine.c.jinja2`'s emit_action assign branch (any
-           <assign location> targeting a reserved system variable lowers to
-           error.execution rather than a luaL_dostring), so the Lua state
-           itself never sees a re-binding attempt. */
-        {
-            char _sce_sysvar_chunk[SCE_MAX_URI_LEN + 64];
-            (void)snprintf(_sce_sysvar_chunk, sizeof(_sce_sysvar_chunk),
-                           "_sessionid = '%s'", sm->session_id);
-            (void)luaL_dostring(sm->L, _sce_sysvar_chunk);
+           §scxml-5.10, §scxml-B-2-8: "any attempt to change the value of a
+           system variable" fails, whichever way it is made. The assign guard
+           in `state_machine.c.jinja2`'s emit_action refuses an `<assign>` to
+           the whole variable before any Lua runs, and the Lua state refuses
+           everything else — `_sessionid = 'x'` in a `<script>`, a write into
+           `_event` or an `_ioprocessors` entry — because each of the four is
+           bound through `bind_system_variable`, which hands it to the shared
+           `_scxml_bind_system`. The shared semantics above define that
+           function, so they are loaded before this first bind. These were
+           plain globals set by `luaL_dostring` until 2026-11-08, and a
+           document's `<script>` could rebind any of them.
+
+           A bind that fails is the shared Lua missing, not a document's
+           error, and it is said out loud (`bind_system_variable` writes the
+           reason) and raised as error.execution, as a failing script is. */
+        lua_pushstring(sm->L, sm->session_id);
+        if (!bind_system_variable(sm->L, "_sessionid")) {
+            {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                "the system variable _sessionid could not be bound");
         }
         /* W3C SCXML 5.10: `_name` is the SCXML element's `name` attribute
            (cpp `LuaEngine.cpp` calls this `sessionName`). Falls back to
            the document identity when the SCXML omits the attribute, which
            is W3C 5.10 §3.2.1's "the processor MUST generate a name".
 
-           The value crosses two literal boundaries here and only here:
-           it is Lua source, and that Lua source sits inside a C string
-           literal. `escape_lua | escape_c` is the composition the send
-           path already uses for the same reason; a host-only escape
-           yields a translation unit that compiles and Lua that does not
-           parse. Emitted into a double-quoted Lua string because
-           `escape_lua` escapes `"` and not `'` — with single quotes, a
-           name of `it's` produced `_name = 'it's'`.
-
-           Same read-only enforcement as _sessionid: the codegen-time
-           assign guard rejects <assign location="_name"> before any
-           luaL_dostring is invoked. */
-        (void)luaL_dostring(sm->L,
-            "_name = \"{{ model.scxml_name | default('') | w3c_session_name(model.name) | escape_lua | escape_c }}\"");
+           Pushed as a value, so the name crosses one literal boundary, the
+           C string's, and `escape_c` is the whole of its escaping. It used to
+           be spliced into a Lua chunk as well, which needed `escape_lua`
+           first and a double-quoted Lua string: with single quotes, a name of
+           `it's` produced `_name = 'it's'`. */
+        lua_pushstring(sm->L, "{{ model.scxml_name | default('') | w3c_session_name(model.name) | escape_c }}");
+        if (!bind_system_variable(sm->L, "_name")) {
+            {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                "the system variable _name could not be bound");
+        }
         /* W3C SCXML C.1.1 / C.2.3: `_ioprocessors` holds one entry per
            processor the deployment supports, each with a `location` field
            naming the address that reaches this session through it. Entry
@@ -167,38 +192,41 @@
            restore carries on under) by `sce_scxml_location` — the one encoder
            that also spells the origin of every event this session sends
            (docs/adr/0090), so the address the session publishes and the
-           address its events carry cannot differ. The id is percent-encoded
-           there as on every other runtime, which also leaves the location
-           nothing a Lua string literal would end at. */
-        {
-            char _sce_ioproc_chunk[SCE_MAX_URI_LEN + 256];
-            (void)snprintf(_sce_ioproc_chunk, sizeof(_sce_ioproc_chunk),
-                "local _scxml_loc = '%s'\n"
-                "_ioprocessors = {\n"
-                "  ['http://www.w3.org/TR/scxml/#SCXMLEventProcessor'] = {location = _scxml_loc},\n"
-                "  scxml = {location = _scxml_loc},\n"
-                "}",
-                sm->scxml_location);
-            (void)luaL_dostring(sm->L, _sce_ioproc_chunk);
-        }
-        /* W3C SCXML C.2.3: the BasicHTTP entry lands only once the deployment
+           address its events carry cannot differ.
+
+           W3C SCXML C.2.3: the BasicHTTP entry lands only once the deployment
            has declared an inbound endpoint. Support for that processor is
            optional and per-deployment, so a machine with no listener publishes
-           no entry rather than an address nothing answers on. The URI is
-           pushed through the Lua C API rather than folded into the chunk
-           above: it arrives from outside the generated code, and a quote in it
-           would otherwise end the string literal and be read as Lua. */
-        if (sm->basic_http_access_uri[0] != '\0') {
-            lua_getglobal(sm->L, "_ioprocessors");
+           no entry rather than an address nothing answers on.
+
+           The table is built through the Lua C API, every location pushed as a
+           value — the BasicHTTP URI arrives from outside the generated code,
+           and spliced into a chunk a quote in it would end the string literal
+           and be read as Lua — and bound whole, once: §scxml-B-2-8 makes each
+           entry and its `location` part of the read-only variable, so nothing
+           can be added to it after the bind, this machine included. */
+        {
+            static const char *const _scxml_entry[2] = {"http://www.w3.org/TR/scxml/#SCXMLEventProcessor", "scxml"};
+            static const char *const _http_entry[2] = {"http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor",
+                                                       "basichttp"};
+            lua_newtable(sm->L);
             for (int _proc = 0; _proc < 2; _proc++) {
                 lua_newtable(sm->L);
-                lua_pushstring(sm->L, sm->basic_http_access_uri);
+                lua_pushstring(sm->L, sm->scxml_location);
                 lua_setfield(sm->L, -2, "location");
-                lua_setfield(sm->L, -2,
-                             _proc == 0 ? "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
-                                        : "basichttp");
+                lua_setfield(sm->L, -2, _scxml_entry[_proc]);
+                if (sm->basic_http_access_uri[0] != '\0') {
+                    lua_newtable(sm->L);
+                    lua_pushstring(sm->L, sm->basic_http_access_uri);
+                    lua_setfield(sm->L, -2, "location");
+                    lua_setfield(sm->L, -2, _http_entry[_proc]);
+                }
             }
-            lua_pop(sm->L, 1);
+            if (!bind_system_variable(sm->L, "_ioprocessors")) {
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    "the system variable _ioprocessors could not be bound");
+            }
         }
         /* W3C SCXML 5.5 + 3.7: the final-state entry emit evaluates
            `<donedata>` into `_sce_donedata` (string / number / table). A
@@ -254,8 +282,11 @@
            a `_scxml_declared` table mirroring cpp `LuaSessionContext::declaredVars`
            (see `LuaEngine.cpp:99-118`, `isUndeclaredIdentifier`). Both the
            donedata param evaluator and the namelist evaluator inspect
-           this set together with `rawget(_G, base)` — same two-source check
-           as cpp. The set spans top-level <data> and every state-local
+           this set together with `_G[base]` — same two-source check
+           as cpp, whose `lua_getglobal` reads through `_G`'s metatable as
+           `_G[base]` does, and so finds the system variables
+           (§scxml-5.10), which `_scxml_bind_system` holds outside `_G`
+           itself; a `rawget` would call `_event` undeclared. The set spans top-level <data> and every state-local
            <datamodel> entry so binding mode (early / late) is irrelevant
            to membership; the lua values are placeholder booleans because
            only the keys are read. Emitted only for fixtures that actually
@@ -298,9 +329,9 @@
            (sce/src/common/DataModelInitHelper.cpp:103-118) 1:1 mirror —
            cpp's `setVariableAsDOM` lowers to `LuaDOMBinding::pushDOMObject
            + lua_setglobal`, which is what `sce_lua_dom_push_object`
-           emits below. */
+           and the protected store below emit. */
         sce_lua_dom_push_object_or_nil(sm->L, {{ var.content | c_text_expr }});
-        lua_setglobal(sm->L, "{{ var.id }}");
+{{ lua_set_document_global_top(var.id) }}
         {% else %}
         /* W3C SCXML 5.3/B.2: <data id="{{ var.id }}"> inline non-XML
            content. cpp `DataModelInitHelper::initializeVariable`
@@ -327,7 +358,7 @@
         {% if (_src_content | trim) is startingwith('<') %}
         /* W3C SCXML B.2: src= file's first non-WS char is `<` → DOM. */
         sce_lua_dom_push_object_or_nil(sm->L, {{ _src_content | c_text_expr }});
-        lua_setglobal(sm->L, "{{ var.id }}");
+{{ lua_set_document_global_top(var.id) }}
         {% else %}
 {{ lua_set_data_global(var.id, _src_content | to_lua_data_content, _src_content | normalize_ws) }}
         {% endif %}
@@ -362,7 +393,7 @@
         {% if (var.content | trim) is startingwith('<') %}
         /* W3C SCXML B.2 (early): state '{{ state_id }}' <data id="{{ var.id }}"> inline XML content → DOM. */
         sce_lua_dom_push_object_or_nil(sm->L, {{ var.content | c_text_expr }});
-        lua_setglobal(sm->L, "{{ var.id }}");
+{{ lua_set_document_global_top(var.id) }}
         {% else %}
         /* W3C SCXML 5.3/B.2 (early): state '{{ state_id }}' <data id="{{ var.id }}"> inline non-XML content. eval+whitespace-fallback per top-level branch above. */
 {{ lua_set_data_global(var.id, var.content | to_lua_data_content, var.content | normalize_ws) }}
@@ -372,7 +403,7 @@
         {%- set _src_content = var.src | read_data_src(model.scxml_base_path) %}
         {% if (_src_content | trim) is startingwith('<') %}
         sce_lua_dom_push_object_or_nil(sm->L, {{ _src_content | c_text_expr }});
-        lua_setglobal(sm->L, "{{ var.id }}");
+{{ lua_set_document_global_top(var.id) }}
         {% else %}
 {{ lua_set_data_global(var.id, _src_content | to_lua_data_content, _src_content | normalize_ws) }}
         {% endif %}
@@ -445,7 +476,7 @@
     {% if (var.content | trim) is startingwith('<') %}
     /* W3C SCXML B.2 (late): state '{{ state_id }}' <data id="{{ var.id }}"> inline XML content → DOM. */
     sce_lua_dom_push_object_or_nil(sm->L, {{ var.content | c_text_expr }});
-    lua_setglobal(sm->L, "{{ var.id }}");
+{{ lua_set_document_global_top(var.id) }}
     {% else %}
     /* W3C SCXML 5.3/B.2 (late): state '{{ state_id }}' <data id="{{ var.id }}"> inline non-XML content. eval+whitespace-fallback per top-level branch in the early-binding macro above. */
 {{ lua_set_data_global(var.id, var.content | to_lua_data_content, var.content | normalize_ws) }}
@@ -455,7 +486,7 @@
     {%- set _src_content = var.src | read_data_src(model.scxml_base_path) %}
     {% if (_src_content | trim) is startingwith('<') %}
     sce_lua_dom_push_object_or_nil(sm->L, {{ _src_content | c_text_expr }});
-    lua_setglobal(sm->L, "{{ var.id }}");
+{{ lua_set_document_global_top(var.id) }}
     {% else %}
 {{ lua_set_data_global(var.id, _src_content | to_lua_data_content, _src_content | normalize_ws) }}
     {% endif %}
@@ -695,9 +726,9 @@
    that check inside the lua chunk: extract the base identifier of the
    chosen expression (everything up to the first `.` / `[` / operator),
    look it up in `_scxml_declared` (set up in `lua_init_engine` to mirror
-   cpp's `declaredVars`) and `rawget(_G, base)` (covers Lua standard
-   globals like `math` / `string` and any system var written via
-   `_xxx = ...`). Missing on both paths is undeclared → error → upstream
+   cpp's `declaredVars`) and `_G[base]` (covers Lua standard globals like
+   `math` / `string`, and the system variables, which `_G`'s metatable
+   reads from outside the table — see `lua_init_engine`). Missing on both paths is undeclared → error → upstream
    pcall catches it and the macro raises error.execution. The base
    extraction uses lua's pattern `^[%a_][%w_]*` so multi-segment
    expressions like `Var1.foo` only check the first segment, exactly
@@ -707,7 +738,7 @@
         "do "
           "local _expr = '{{ chosen_expr | escape_c }}'; "
           "local _base = _expr:match('^[%a_][%w_]*'); "
-          "if _base and not _scxml_declared[_base] and rawget(_G, _base) == nil then "
+          "if _base and not _scxml_declared[_base] and _G[_base] == nil then "
             "error('ReferenceError: ' .. _base .. ' is not defined') "
           "end; "
           "_sce_donedata[\"{{ param_name | escape_lua | escape_c }}\"] = ({{ chosen_expr | to_lua_expr | escape_c }}) "
@@ -919,15 +950,15 @@
    the frontend stayed silent on it.
 
    The declared-guard is the same two-source check that macro uses
-   (`_scxml_declared` for the document's own declarations, `rawget` for what
-   the running machine has bound since). A miss leaves `out_ok` false and the
+   (`_scxml_declared` for the document's own declarations, `_G` for what
+   the running machine has bound since, its system variables included). A miss leaves `out_ok` false and the
    caller discards the message, per §scxml-6.2.3. #}
 {% macro lua_namelist_var_to_wire_string(var_name, out_buf, out_cap, out_ok, record_as=none) %}
     {{ out_ok }} = false;
     {{ out_buf }}[0] = '\0';
     if (luaL_dostring(sm->L,
         "if not _scxml_declared['{{ var_name | escape_c }}'] and "
-          "rawget(_G, '{{ var_name | escape_c }}') == nil then "
+          "_G['{{ var_name | escape_c }}'] == nil then "
           "error('namelist variable not declared: {{ var_name | escape_c }}') "
         "end\n"
         "local v = ({{ var_name | escape_c }})\n"
@@ -1016,7 +1047,13 @@
    function / userdata) collapse to nil — no fixture in the W3C corpus
    passes those; the first one forces a typed-payload helper. nil and
    none transfer as nil. The pop on `src_L` keeps the parent's stack
-   balanced for sibling-param iteration. #}
+   balanced for sibling-param iteration.
+
+   §scxml-5.10: the child's variable is named by the document, so it is
+   stored through `set_document_global`, protected; a name the child's shared
+   globals refuse (a system variable's) is a value that could not be given,
+   raised on the parent as error.execution like a `<param>` that could not be
+   read, and the child starts one pair short. #}
 {% macro lua_xfer_top_to_child(src_L, dst_L, dst_name) %}
         {
             int _xfer_t = lua_type({{ src_L }}, -1);
@@ -1039,7 +1076,11 @@
             } else {
                 lua_pushnil({{ dst_L }});
             }
-            lua_setglobal({{ dst_L }}, "{{ dst_name }}");
+            if (!set_document_global({{ dst_L }}, "{{ dst_name | escape_c }}")) {
+                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                    "<invoke> could not give the child '{{ dst_name | escape_c }}'");
+            }
             lua_pop({{ src_L }}, 1);
         }
 {% endmacro %}
