@@ -25,6 +25,7 @@ use std::path::Path;
 mod cpp_source;
 mod cpp_test_tables;
 mod cpp_test_template;
+mod kotlin_test_template;
 mod length_guard;
 mod rust_source;
 mod rust_test_tables;
@@ -25468,10 +25469,15 @@ pub fn generate_kotlin_with_imports(
         // docs/adr/0092, section 7: Kotlin lowers a union to a sealed
         // interface, one case per variant of its tag's enum.
         ForgeDocument::Union(m) => render_union_kotlin(&env, m, imports, options)?,
-        // docs/SCE_TEST_PROFILE.md §11.9: no backend generates a document of
-        // the test profile until its runtime lands, so each is refused by name.
-        ForgeDocument::TestTemplate(_)
-        | ForgeDocument::TestPortType(_)
+        // docs/SCE_TEST_PROFILE.md §11.9, §12.6, slice 6: a template's `matches`
+        // and a specific template's `value`, a union matched by an `is` test of
+        // its case (`codegen_matrix::TEST_TEMPLATE_BACKENDS`).
+        ForgeDocument::TestTemplate(m) => {
+            kotlin_test_template::render_test_template_kotlin(&env, m, imports)?
+        }
+        // docs/SCE_TEST_PROFILE.md §11.9: the other kinds of the test profile
+        // are refused by name until their runtime lands here.
+        ForgeDocument::TestPortType(_)
         | ForgeDocument::TestConfiguration(_)
         | ForgeDocument::TestCase(_)
         | ForgeDocument::TestSuite(_) => {

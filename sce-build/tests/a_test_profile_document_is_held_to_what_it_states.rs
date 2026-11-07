@@ -1217,8 +1217,9 @@ fn not_generated(kind: &str, language: Language, err: Located<ForgeError>) {
 /// `a_test_template_is_generated_in_rust.rs`), a component
 /// (`a_test_component_is_generated_in_cpp.rs`,
 /// `a_test_component_is_generated_in_rust.rs`) and the tables of a test
-/// (`a_test_suite_is_generated_in_cpp.rs`, `a_test_suite_is_generated_in_rust.rs`);
-/// each example generates where its kind is generated.
+/// (`a_test_suite_is_generated_in_cpp.rs`, `a_test_suite_is_generated_in_rust.rs`),
+/// and Kotlin a template (`a_test_template_is_generated_in_kotlin.rs`); each
+/// example generates where its kind is generated.
 #[test]
 fn a_document_of_the_profile_is_refused_by_name_where_its_kind_is_not_generated() {
     for &kind in ForgeKind::TEST_PROFILE {
@@ -1259,9 +1260,11 @@ fn a_document_of_the_profile_is_refused_by_name_where_its_kind_is_not_generated(
             // (`a_test_template_is_generated_in_cpp.rs`,
             // `a_test_suite_is_generated_in_cpp.rs`,
             // `a_test_template_is_generated_in_rust.rs`,
-            // `a_test_suite_is_generated_in_rust.rs`); a port type writes no
-            // file.
-            let generated_here = matches!(language, Language::Rust | Language::Cpp);
+            // `a_test_suite_is_generated_in_rust.rs`), and Kotlin a template
+            // (`a_test_template_is_generated_in_kotlin.rs`); a port type writes
+            // no file.
+            let generated_here = matches!(language, Language::Rust | Language::Cpp)
+                || (language == Language::Kotlin && parsed == ForgeKind::TestTemplate);
             if generated_here {
                 assert_eq!(codegen_matrix::lookup(parsed, language), EmitOutcome::Emit);
                 let output =

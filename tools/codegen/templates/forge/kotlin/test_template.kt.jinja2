@@ -1,0 +1,48 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "kotlin", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="test-template")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+
+package {{ package | kotlin_forge_package }}
+
+{# Every enum, record, union and referenced template is named by the package of
+   its document, so the unit imports no package and no name of another unit
+   (each template's own `Value`, `matches` and `value` among them) can hide one
+   of its own. #}
+/** The type the template `{{ template_name }}` matches: `{{ template_type }}`, as the unit of its type declares it. */
+typealias Value = {{ value_type }}
+
+{# `UNUSED_PARAMETER`: a formal parameter a matcher does not read is still one a
+   reference binds, and a matcher that holds no value to compare (`any-value`)
+   reads no `value`. `SENSELESS_COMPARISON` and `USELESS_IS_CHECK`: the tests
+   of a matcher are joined as the walk every backend shares writes them, which
+   may test whether an optional value is absent, or which case a union is in,
+   where a test before it in the same expression decided it, and Kotlin's flow
+   analysis reports the second test. #}
+/**
+ * Whether [value] matches the template `{{ template_name }}` (ES 201 873-1 Annex B.1,
+ * docs/SCE_TEST_PROFILE.md §6.1).
+{% for p in parameters %}
+ *
+ * @param {{ p.name }} the formal parameter `{{ p.id }}`, of type `{{ p.sce_type }}`.
+{% endfor %}
+ */
+@Suppress("UNUSED_PARAMETER", "SENSELESS_COMPARISON", "USELESS_IS_CHECK")
+fun matches(value: Value{% for p in parameters %}, {{ p.name }}: {{ p.ty }}{% endfor %}): Boolean =
+    {{ match_expr }}
+{% if value_expr %}
+
+/**
+ * The value the specific template `{{ template_name }}` sends (docs/SCE_TEST_PROFILE.md
+ * §6.2): every field it names at its value, every field it omits absent. It matches the
+ * template by [matches], given the same parameters.
+ */
+@Suppress("UNUSED_PARAMETER")
+fun value({% for p in parameters %}{{ p.name }}: {{ p.ty }}{% if not loop.last %}, {% endif %}{% endfor %}): Value =
+    {{ value_expr }}
+{% endif %}

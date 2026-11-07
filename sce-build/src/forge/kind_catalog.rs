@@ -822,9 +822,9 @@ pub const fn guide(kind: ForgeKind) -> KindGuide {
                  names it with param, and a reference binds it with args",
                 "a template a send names is specific: values only, no matching symbol \
                  (docs/SCE_TEST_PROFILE.md §6.2)",
-                "C++ and Rust generate it: a unit that declares match (Rust: matches) and, for \
-                 a specific template, value, Rust also over a union; every other backend \
-                 refuses it by name",
+                "C++, Rust and Kotlin generate it: a unit that declares match (Rust and \
+                 Kotlin: matches) and, for a specific template, value, Rust and Kotlin also \
+                 over a union; every other backend refuses it by name",
             ],
             example: Example::Document(include_str!("../../kind-examples/test-template.scxml")),
         },
