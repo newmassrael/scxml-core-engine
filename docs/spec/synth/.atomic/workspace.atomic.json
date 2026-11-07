@@ -364,11 +364,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce-build/src/forge/generator.rs",
-          "symbol": "BC_MUTATING_METHODS",
-          "kind": "references"
-        },
-        {
           "file": "sce-build/src/forge/namespace.rs",
           "symbol": "check",
           "kind": "implements"
@@ -390,6 +385,11 @@
         },
         {
           "file": "tools/codegen/templates/forge/swift/algorithm.swift.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "COLLECTION_MUTATING_METHODS",
           "kind": "references"
         }
       ]
@@ -1244,11 +1244,6 @@
         },
         {
           "file": "backends/go/forge-runtime/codec/codec.go",
-          "symbol": "ErrTlvChainOverflow",
-          "kind": "references"
-        },
-        {
-          "file": "backends/go/forge-runtime/codec/codec.go",
           "symbol": "ErrVLEWidthOverflow",
           "kind": "references"
         },
@@ -1711,6 +1706,11 @@
         },
         {
           "file": "tools/codegen/templates/forge/swift/codec.swift.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/forge-runtime/codec/codec.go",
+          "symbol": "ErrTooManyElements",
           "kind": "references"
         }
       ]
@@ -3121,11 +3121,6 @@
         {
           "file": "sce-build/src/forge/target_plugin.rs",
           "symbol": "parse_target_plugin_yaml",
-          "kind": "implements"
-        },
-        {
-          "file": "sce-build/src/lib.rs",
-          "symbol": "validate_worker_inbox_ordering_placement",
           "kind": "implements"
         },
         {
@@ -7543,6 +7538,24 @@
       "target_kind": "section",
       "target_id": "synth-5-J-2",
       "reason": "uncalled once donedata Literal was retired; file removed"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-A",
+      "reason": "renamed to COLLECTION_MUTATING_METHODS when the call target resolution was shared"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-B",
+      "reason": "the overflow policy left the grammar; a chain past max-depth is ErrTooManyElements"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "synth-5-I",
+      "reason": "the inbox ordering placement rule was removed with the ordering attribute; nothing implements it"
     }
   ],
   "frames": {},
