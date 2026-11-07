@@ -30,6 +30,7 @@
 #include "codec_chain_flag_carrier.h"
 #include "codec_chain_prev_carrier.h"
 #include "codec_embed_basic.h"
+#include "codec_ext_encoding_info.h"
 #include "codec_init_syn_body.h"
 #include "codec_init_syn_envelope.h"
 #include "codec_length_ref.h"
@@ -37,6 +38,7 @@
 #include "codec_little_endian.h"
 #include "codec_origin_envelope.h"
 #include "codec_present_if_basic.h"
+#include "codec_present_if_length_ref.h"
 #include "codec_repeat_basic.h"
 #include "codec_repeat_present_if_basic.h"
 #include "codec_simple_frame.h"
@@ -1213,6 +1215,77 @@ void a_list_is_held_to_the_law_its_entries_say_its_flag_by() {
           "the carrier's T is the list's start, which clears the bit it presents");
 }
 
+namespace LengthRef = ::SCE::Generated::CodecPresentIfLengthRef;
+using LengthRefValue = LengthRef::CodecPresentIfLengthRef;
+using LengthRefGroup = std::decay_t<decltype(std::declval<const LengthRefValue &>().flags_has_payload())>;
+using WithPayload = std::variant_alternative_t<0, LengthRefGroup>;
+using WithoutPayload = std::variant_alternative_t<1, LengthRefGroup>;
+namespace EncodingInfo = ::SCE::Generated::CodecExtEncodingInfo;
+using EncodingInfoValue = EncodingInfo::CodecExtEncodingInfo;
+using EncodingInfoGroup = std::decay_t<decltype(std::declval<const EncodingInfoValue &>().combined_id_has_schema())>;
+using WithSchema = std::variant_alternative_t<0, EncodingInfoGroup>;
+using WithoutSchema = std::variant_alternative_t<1, EncodingInfoGroup>;
+using OwnedBytes = ::SCE::Forge::Bounded<std::vector<std::uint8_t>, 32>;
+
+// The encode keeps the view of a byte string it reads off an arm past the
+// read, so a read must present what lives on: a reference or a view, and not
+// a list that owns its bytes returned by value, which would die under it.
+static_assert(::SCE::Forge::Detail::Lasting<const OwnedBytes &>::value, "a reference lives on");
+static_assert(::SCE::Forge::Detail::Lasting<::SCE::Forge::Bytes<32>>::value, "a view lives on");
+static_assert(!::SCE::Forge::Detail::Lasting<OwnedBytes>::value, "an owned list by value does not");
+static_assert(!::SCE::Forge::Detail::Lasting<std::vector<std::uint8_t>>::value, "a vector by value does not");
+
+void a_byte_string_on_one_side_of_a_gate_is_the_arm_that_holds_it() {
+    // The length is derived from the bytes on the side that holds them, and
+    // is what the other side states where they are not.
+    const std::vector<std::uint8_t> three{0xAA, 0xBB, 0xCC};
+    const auto payload = ::SCE::Forge::Bytes<32>::make(three);
+    CHECK(payload.has_value(), "three bytes lie within a bound of 32");
+    if (!payload) {
+        return;
+    }
+    const LengthRefValue with{0x00, WithPayload{*payload}};
+    const LengthRefValue without{0x00, WithoutPayload{0x07}};
+    const std::vector<std::uint8_t> with_frame{0x01, 0x03, 0xAA, 0xBB, 0xCC};
+    const std::vector<std::uint8_t> without_frame{0x00, 0x07};
+    const std::vector<std::uint8_t> default_frame{0x00, 0x00};
+    CHECK(with.encode_to_vec() == with_frame, "the bytes set their flag and their length is derived");
+    CHECK(without.encode_to_vec() == without_frame, "the side without bytes writes the length it states");
+    CHECK(std::holds_alternative<WithoutPayload>(LengthRefValue{}.flags_has_payload()),
+          "a value made by default holds the side present while no gate holds");
+    CHECK(LengthRefValue{}.encode_to_vec() == default_frame, "and states a length of zero");
+
+    ::SCE::Forge::SceCursor cursor(with_frame.data(), with_frame.size());
+    const auto decoded = LengthRefValue::decode(cursor);
+    const auto *held = decoded ? std::get_if<WithPayload>(&decoded->flags_has_payload()) : nullptr;
+    CHECK(held != nullptr && held->payload() == three, "a frame whose flag is set holds the bytes it read");
+    CHECK(decoded.has_value() && decoded->encode_to_vec() == with_frame, "and encodes back to it");
+
+    ::SCE::Forge::SceCursor cursor_without(without_frame.data(), without_frame.size());
+    const auto decoded_without = LengthRefValue::decode(cursor_without);
+    const auto *stated = decoded_without ? std::get_if<WithoutPayload>(&decoded_without->flags_has_payload()) : nullptr;
+    CHECK(stated != nullptr && stated->payload_size() == 0x07,
+          "a frame whose flag is clear holds the length it states");
+
+    // A VLE carrier: bit 0 of its value says whether the schema is there.
+    const std::vector<std::uint8_t> schema_bytes{0x10, 0x20};
+    const auto schema = ::SCE::Forge::Bytes<64>::make(schema_bytes);
+    CHECK(schema.has_value(), "two bytes lie within a bound of 64");
+    if (!schema) {
+        return;
+    }
+    const EncodingInfoValue info{0x04, WithSchema{*schema}};
+    const EncodingInfoValue bare{0x04, WithoutSchema{0x00}};
+    const std::vector<std::uint8_t> info_frame{0x05, 0x02, 0x10, 0x20};
+    const std::vector<std::uint8_t> bare_frame{0x04, 0x00};
+    CHECK(info.encode_to_vec() == info_frame, "the schema sets bit 0 of the carrier and is counted");
+    CHECK(bare.encode_to_vec() == bare_frame, "no schema clears it");
+    ::SCE::Forge::SceCursor info_cursor(info_frame.data(), info_frame.size());
+    const auto decoded_info = EncodingInfoValue::decode(info_cursor);
+    const auto *with_schema = decoded_info ? std::get_if<WithSchema>(&decoded_info->combined_id_has_schema()) : nullptr;
+    CHECK(with_schema != nullptr && with_schema->schema() == schema_bytes, "a decoded carrier holds the schema");
+}
+
 void encode_source_reports_the_sinks_failure() {
     std::uint8_t buffer[3] = {};
     ::SCE::Forge::SpanSink sink(buffer, sizeof buffer);
@@ -1245,6 +1318,7 @@ int main() {
     a_flag_every_arm_says_is_the_arms_word();
     fields_on_each_side_of_a_gate_are_the_arm_the_value_holds();
     a_list_is_held_to_the_law_its_entries_say_its_flag_by();
+    a_byte_string_on_one_side_of_a_gate_is_the_arm_that_holds_it();
     encode_source_reports_the_sinks_failure();
     if (failures != 0) {
         std::fprintf(stderr, "codec_source_generated_test: %d failure(s)\n", failures);
