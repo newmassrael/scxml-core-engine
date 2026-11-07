@@ -253,8 +253,10 @@ pub(super) enum CaseTest<'h, 's, A> {
     Holds { inner: &'h A, then: &'h Held<'s, A> },
 }
 
-/// `test`, or the test that holds where it does not, where `negated`.
-fn negate(test: String, negated: bool) -> String {
+/// `test`, or the test that holds where it does not, where `negated`: `!`
+/// before it, which binds it whole only where it is a call, a name or a
+/// postfix expression.
+pub(super) fn negate(test: String, negated: bool) -> String {
     if negated {
         format!("!{test}")
     } else {
@@ -389,13 +391,16 @@ pub(super) trait JoinSpelling: TemplateSpelling {
         stands: Stands,
     ) -> String;
     /// Whether the union `union` at `at` is in the case `variant`, and what
-    /// its record holds there (`record`).
+    /// its record holds there (`record`), or, where `negated`, the test that
+    /// holds where it does not: a language whose `!` binds tighter than its
+    /// test of a case writes the negation its own way.
     fn case_test(
         &self,
         at: &Self::At,
         union: &ScopedUnion,
         variant: &str,
         record: CaseTest<'_, '_, Self::At>,
+        negated: bool,
     ) -> String;
 
     /// `held` as one expression standing at `stands`, negated where
@@ -433,7 +438,7 @@ pub(super) trait JoinSpelling: TemplateSpelling {
                         },
                     },
                 };
-                negate(self.case_test(&at.at, union, variant, record), negated)
+                self.case_test(&at.at, union, variant, record, negated)
             }
         }
     }
@@ -540,6 +545,27 @@ impl<B: TemplateSpelling> TemplateWalk<'_, B> {
         {
             if let Some(alias) = crate::forge::test_profile::union_reached(ty, scope) {
                 return Err(self.refused(crate::forge::value_type::union_unlowered(&alias)));
+            }
+        }
+        Ok(())
+    }
+
+    /// Refuse the template where its type or a parameter's holds, at its
+    /// leaf, a value of an enum no import of the document reads, in `scope`: a
+    /// backend that names an enum through the document that declares it has
+    /// no name for one no import reads.
+    pub(super) fn refuse_unread_enums(&self, scope: &TypeScope) -> Result<(), ForgeError> {
+        let m = self.template;
+        for ty in
+            std::iter::once(&m.template_type).chain(m.parameters.iter().map(|p| &p.parameter_type))
+        {
+            if let Some(reference) = ty.enum_leaf() {
+                if !scope.enums.contains_key(&reference.alias) {
+                    return Err(self.refused(format!(
+                        "`enum:{}` names no enum the document imports",
+                        reference.alias
+                    )));
+                }
             }
         }
         Ok(())

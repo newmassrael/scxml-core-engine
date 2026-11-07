@@ -27,7 +27,7 @@
 //! join.
 
 use super::test_template_walk::{
-    integer_literal, CaseTest, Held, JoinSpelling, Op, Position, Stands, TemplateFunction,
+    integer_literal, negate, CaseTest, Held, JoinSpelling, Op, Position, Stands, TemplateFunction,
     TemplateSpelling, TemplateWalk, Use,
 };
 use super::*;
@@ -54,18 +54,7 @@ pub(super) fn render_test_template_rust(
         spelling: &spelling,
     };
     walk.refuse_unlowered_unions(&scope)?;
-    let typed =
-        std::iter::once(&m.template_type).chain(m.parameters.iter().map(|p| &p.parameter_type));
-    for ty in typed {
-        if let Some(reference) = ty.enum_leaf() {
-            if !scope.enums.contains_key(&reference.alias) {
-                return Err(walk.refused(format!(
-                    "`enum:{}` names no enum the document imports",
-                    reference.alias
-                )));
-            }
-        }
-    }
+    walk.refuse_unread_enums(&scope)?;
     let names = RustNames { scope: &scope };
     let spell = |ty: &ValueType| {
         unit_type(Language::Rust, ty, &names, &mut C11Declarations::default())
@@ -302,13 +291,14 @@ impl JoinSpelling for RustSpelling {
     }
 
     /// `matches!` on the case, its record bound and held by the guard where
-    /// the case's matcher reads it.
+    /// the case's matcher reads it; `!` before it where `negated`.
     fn case_test(
         &self,
         at: &RustAt,
         union: &ScopedUnion,
         variant: &str,
         record: CaseTest<'_, '_, RustAt>,
+        negated: bool,
     ) -> String {
         let case = format!(
             "{}::{}",
@@ -316,7 +306,7 @@ impl JoinSpelling for RustSpelling {
             crate::forge::composed_lowering::rust_case_ident(variant)
         );
         let scrutinee = at.borrowed();
-        match record {
+        let test = match record {
             CaseTest::Empty => format!("matches!({scrutinee}, {case})"),
             CaseTest::AnyRecord => format!("matches!({scrutinee}, {case}(_))"),
             CaseTest::Holds { inner, then } => format!(
@@ -324,7 +314,8 @@ impl JoinSpelling for RustSpelling {
                 inner.base,
                 self.join(then, false, Stands::Whole)
             ),
-        }
+        };
+        negate(test, negated)
     }
 }
 
