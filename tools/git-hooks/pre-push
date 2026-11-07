@@ -44,45 +44,20 @@ set -euo pipefail
 # consumers below walk this variable instead.
 PUSHED_REFS="$(cat)"
 
-# ── The landing queue's own refs (bx RFC 0024, section 12).
-#
-# `bx --land` and its integrator push refs under refs/bx-land/<branch>/ beside
-# the branch they land on. None of them moves a branch, so none is a push the
-# gates judge here: the integrator judges each candidate by running THIS hook
-# for the landing push's own line (`refs/heads/main <candidate> refs/heads/main
-# <value>`), and the landing push itself runs it again, which moves main and
-# meets every gate below as any push to main does.
-#
-#   .../log, .../lease  the queue's record and its integrators' lease: commits
-#                       of bx's own bookkeeping, sharing no history with this
-#                       repository's and written by bx, not by a person. They
-#                       meet the term check alone (they are published text);
-#                       given to the others, the identity check would refuse
-#                       bx's author, the tree check would refuse a commit that
-#                       is not HEAD, and the gate selection, finding no base,
-#                       would run the whole suite.
-#   .../items/<id>      a submitted item: this repository's commit, published
-#                       before it lands. It meets every check of what a push
-#                       publishes (terms, identities, the consumer guide) and
-#                       no gate: its tree is judged on its candidate.
-#
-# PUBLISHED_REFS is every pushed ref but the record's and the lease's;
-# GATED_REFS is those that move a branch the gates judge.
-PUBLISHED_REFS=""
-GATED_REFS=""
-while read -r qlocal_ref qlocal_sha qremote_ref qremote_sha; do
-    [[ -z "${qlocal_sha:-}" ]] && continue
-    qline="$qlocal_ref $qlocal_sha $qremote_ref $qremote_sha"
-    if [[ "$qremote_ref" =~ ^refs/bx-land/.+/(log|lease)$ ]]; then
-        continue
-    fi
-    PUBLISHED_REFS+="$qline"$'\n'
-    [[ "$qremote_ref" =~ ^refs/bx-land/.+/items/[^/]+$ ]] && continue
-    GATED_REFS+="$qline"$'\n'
-done <<<"$PUSHED_REFS"
-
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
+
+# ── The refs of a bx landing queue (bx RFC 0024, section 12).
+#
+# A ref under refs/bx-land/ asks for a test of its CONTENT, and only passing it
+# narrows what the ref meets: a genuine record or lease meets the term check
+# alone, a genuine item every check of what a push publishes and no gate.
+# Anything else, whatever it is named, is checked as any push. The tests and
+# their reasons are bx-land-refs.sh's. PUBLISHED_REFS and GATED_REFS are the
+# lists the checks below walk; the term check walks every pushed ref.
+# shellcheck source=tools/git-hooks/bx-land-refs.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/bx-land-refs.sh"
+bx_land_classify <<<"$PUSHED_REFS"
 
 # ── What this push would publish, against the restricted-term list.
 #
