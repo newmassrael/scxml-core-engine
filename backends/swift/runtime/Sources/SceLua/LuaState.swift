@@ -73,6 +73,8 @@ public final class LuaState {
     /// `return (<expression>)`, whatever kind of value that is: a table or a function can be held by
     /// the session though `LuaValue` cannot carry it out. The name is a string and not source text, so
     /// a `<data id>` that is an XML name and not a Lua identifier (`screen-rules`) is still one global.
+    /// The name is the document's, so it may be a system variable's: once the library is loaded such
+    /// a write is refused (§scxml-5.10) and throws, inside the shim's protected call.
     public func defineGlobal(_ name: String, as expression: String, chunkName: String = "=expression") throws {
         let status = withBytes(of: expression) { bytes, length in
             name.withCString { global in
@@ -96,7 +98,9 @@ public final class LuaState {
         }
     }
 
-    /// Gives the global `name` the value `value`.
+    /// Gives the global `name` the value `value`. As for `defineGlobal`, a system variable's name is
+    /// refused once the library is loaded (§scxml-5.10), and the write throws; the system variables
+    /// are bound through `_scxml_bind_system` (`SystemVariables.swift`) and never through here.
     public func setGlobal(_ name: String, _ value: LuaValue) throws {
         var raw = sce_lua_value()
         let status: sce_lua_status

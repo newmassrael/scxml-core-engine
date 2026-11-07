@@ -49,37 +49,61 @@ private func askTheHost(_ context: UnsafeMutableRawPointer?, _ stateID: UnsafePo
 }
 
 extension LuaState {
+    /// The transient globals the session chunk reads. They are removed again before the call
+    /// returns, so a document never sees them.
+    private static let sessionGlobals = ["_sce_session_id", "_sce_session_name", "_sce_http_location"]
+
+    /// A fixed chunk with nothing interpolated but the binder. Every entry is a table of its own, so
+    /// the two names of one processor are two read-only views and not one table under two keys. The
+    /// three system variables are bound through `bind` (`SystemVariables.swift`) and never set as
+    /// globals: §scxml-5.10 has every change to one fail, the document's and an ordinary global
+    /// write alike.
+    private static let sessionChunk = """
+        do
+            \(LuaState.systemVariableBinder)
+            local location = _scxml_location
+            local entries = {
+                ['http://www.w3.org/TR/scxml/#SCXMLEventProcessor'] = {location = location},
+                scxml = {location = location},
+            }
+            local http = _sce_http_location
+            if http ~= nil then
+                entries['http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'] = {location = http}
+                entries.basichttp = {location = http}
+            end
+            local id, name = _sce_session_id, _sce_session_name
+            _sce_session_id, _sce_session_name, _sce_http_location = nil, nil, nil
+            bind('_sessionid', id)
+            bind('_name', name)
+            bind('_ioprocessors', entries)
+        end
+        """
+
     /// Binds `_sessionid`, `_name`, `_scxml_location` and `_ioprocessors` (§scxml-C-1). Entry names
     /// and locations are what the other backends publish, so a machine reads the same table
-    /// whichever one runs it. The read-only rule for these names is the generator's: an `<assign>` to
-    /// one is lowered to `error.execution` and never reaches this state.
+    /// whichever one runs it. Needs the library of `loadEcmaScriptLibrary()`, whose
+    /// `_scxml_bind_system` makes the three system variables read-only (§scxml-5.10): a write to one
+    /// fails in this state, whether or not the generator lowered it to `error.execution` first.
+    /// `_scxml_location` is not a system variable and is an ordinary global.
     public func bindSession(_ session: LuaSession) throws {
-        try setGlobal("_sessionid", .string(session.sessionID))
-        try setGlobal("_name", .string(session.name))
-        try setGlobal("_scxml_location", .string(session.scxmlLocation))
-        if let http = session.basicHTTPLocation, !http.isEmpty {
-            try setGlobal("_sce_http_location", .string(http))
-        } else {
-            try setGlobal("_sce_http_location", .nilValue)
+        do {
+            try setGlobal("_sce_session_id", .string(session.sessionID))
+            try setGlobal("_sce_session_name", .string(session.name))
+            try setGlobal("_scxml_location", .string(session.scxmlLocation))
+            if let http = session.basicHTTPLocation, !http.isEmpty {
+                try setGlobal("_sce_http_location", .string(http))
+            } else {
+                try setGlobal("_sce_http_location", .nilValue)
+            }
+            try execute(Self.sessionChunk, name: "=bindSession")
+        } catch {
+            // A failure part way leaves the transient globals behind; take them away so the
+            // next binding starts from nothing.
+            for name in Self.sessionGlobals {
+                try? setGlobal(name, .nilValue)
+            }
+            throw error
         }
-        // A fixed chunk with nothing interpolated. Every entry is a table of its own: a document
-        // that writes through one name must not change what the other answers.
-        try execute(
-            """
-            do
-                local location = _scxml_location
-                _ioprocessors = {
-                    ['http://www.w3.org/TR/scxml/#SCXMLEventProcessor'] = {location = location},
-                    scxml = {location = location},
-                }
-                local http = _sce_http_location
-                if http ~= nil then
-                    _ioprocessors['http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'] = {location = http}
-                    _ioprocessors.basichttp = {location = http}
-                end
-                _sce_http_location = nil
-            end
-            """, name: "=bindSession")
     }
 
     /// Gives the session `In(state_id)`, which asks `query`; `nil` removes it. `query` runs inside a

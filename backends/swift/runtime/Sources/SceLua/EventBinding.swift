@@ -91,10 +91,16 @@ extension LuaState {
     /// and parses as a document becomes its DOM, one that parses as JSON becomes the value, and
     /// anything else is the space-normalized string. Answers which rung was taken: `dom`,
     /// `structured` or `text`.
+    ///
+    /// The event is built whole in a local table and only then bound, through `bind`
+    /// (`SystemVariables.swift`): the bound `_event` is a read-only view (§scxml-5.10,
+    /// §scxml-B-2-8), so nothing is written into it once it is bound, this chunk included. The
+    /// payload `data` holds stays writable inside, as the shared table says.
     private static let bindingChunk = """
         (function()
+            \(LuaState.systemVariableBinder)
             local raw = _sce_event_raw
-            _event = {
+            local event = {
                 name = _sce_event_name, type = _sce_event_type, sendid = _sce_event_sendid,
                 origin = _sce_event_origin, origintype = _sce_event_origintype,
                 invokeid = _sce_event_invokeid, raw = raw,
@@ -107,21 +113,22 @@ extension LuaState {
                     document = parsed and tree or nil
                 end
                 if document then
-                    _event.data = document
+                    event.data = document
                     rung = 'dom'
                 else
                     local value, ok = JSON._parse_document(raw)
                     if ok then
-                        _event.data = value
+                        event.data = value
                         rung = 'structured'
                     else
-                        _event.data = _scxml_normalize_ws(raw)
+                        event.data = _scxml_normalize_ws(raw)
                     end
                 end
             end
             _sce_event_name, _sce_event_type, _sce_event_sendid = nil, nil, nil
             _sce_event_origin, _sce_event_origintype, _sce_event_invokeid = nil, nil, nil
             _sce_event_raw = nil
+            bind('_event', event)
             return rung
         end)()
         """
