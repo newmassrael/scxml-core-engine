@@ -1247,6 +1247,13 @@ path = "tests/a_machine_waiting_on_another_session_has_no_save_api.rs"
 required-features = ["cli"]
 
 [[test]]
+# Spawns `sce-codegen generate -l go --go-module-prefix`, the one entry that
+# gives a statechart the module path its template packages are imported by.
+name = "a_test_component_is_generated_in_go"
+path = "tests/a_test_component_is_generated_in_go.rs"
+required-features = ["cli"]
+
+[[test]]
 # Spawns `sce-codegen` for every backend and reads what it wrote.
 name = "a_childs_ids_come_from_the_tree"
 path = "tests/a_childs_ids_come_from_the_tree.rs"
