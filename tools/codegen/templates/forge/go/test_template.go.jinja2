@@ -1,0 +1,55 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "go", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="test-template")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+
+package {{ package }}
+{# `go_imports` are the packages the unit's text names, read off it by the
+   renderer: `bytes` where a byte string is compared or copied, the profile's
+   runtime where a text's characters are counted, and the package of each
+   document whose enum, record or template the unit names. `uses_optional` is
+   read off the text by the render door: a value that may be absent is the
+   runtime's `optional.Of[T]` (docs/adr/0055). #}
+{% if go_imports or uses_optional or std_imports %}
+
+import (
+{% for p in std_imports %}
+	"{{ p }}"
+{% endfor %}
+{% if uses_optional %}
+	"github.com/newmassrael/sce-forge-runtime/optional"
+{% endif %}
+{% for imp in go_imports %}
+	{{ imp }}
+{% endfor %}
+)
+{% endif %}
+
+// Value is the type the template `{{ template_name }}` matches: `{{ template_type }}`, as the unit of
+// its type declares it.
+type Value = {{ value_type }}
+
+// Matches reports whether value matches the template `{{ template_name }}` (ES 201 873-1 Annex B.1,
+// docs/SCE_TEST_PROFILE.md §6.1).
+{% for p in parameters %}
+//
+// {{ p.name }} is the formal parameter `{{ p.id }}`, of type `{{ p.sce_type }}`.
+{% endfor %}
+func Matches(value Value{% for p in parameters %}, {{ p.name }} {{ p.ty }}{% endfor %}) bool {
+	return {{ match_expr }}
+}
+{% if value_expr %}
+
+// Specific is the value the specific template `{{ template_name }}` sends (docs/SCE_TEST_PROFILE.md
+// §6.2): every field it names at its value, every field it omits absent. It matches the template by
+// Matches, given the same parameters. It is not named Value, as the other backends name it, since Go
+// keeps the type Value and the package's functions in one namespace.
+func Specific({% for p in parameters %}{{ p.name }} {{ p.ty }}{% if not loop.last %}, {% endif %}{% endfor %}) Value {
+	return {{ value_expr }}
+}
+{% endif %}

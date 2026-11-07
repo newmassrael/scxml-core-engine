@@ -25,6 +25,7 @@ use std::path::Path;
 mod cpp_source;
 mod cpp_test_tables;
 mod cpp_test_template;
+mod go_test_template;
 mod kotlin_test_tables;
 mod kotlin_test_template;
 mod length_guard;
@@ -30121,10 +30122,16 @@ pub fn generate_go_with_imports(
         ForgeDocument::Union(m) => {
             return Err(crate::forge::union_check::document_unlowered(m).into())
         }
-        // docs/SCE_TEST_PROFILE.md §11.9: no backend generates a document of
-        // the test profile until its runtime lands, so each is refused by name.
-        ForgeDocument::TestTemplate(_)
-        | ForgeDocument::TestPortType(_)
+        // docs/SCE_TEST_PROFILE.md §11.9, §12.6, slice 6: a template's `Matches`
+        // and a specific template's `Specific` (`codegen_matrix::TEST_TEMPLATE_BACKENDS`);
+        // Go lowers no union, so one whose type reaches a union is refused by
+        // the union's own refusal.
+        ForgeDocument::TestTemplate(m) => {
+            go_test_template::render_test_template_go(&env, m, imports, options)?
+        }
+        // docs/SCE_TEST_PROFILE.md §11.9: the other kinds of the test profile
+        // are refused by name until their runtime lands here.
+        ForgeDocument::TestPortType(_)
         | ForgeDocument::TestConfiguration(_)
         | ForgeDocument::TestCase(_)
         | ForgeDocument::TestSuite(_) => {
