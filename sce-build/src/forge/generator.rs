@@ -30,6 +30,7 @@ mod rust_source;
 mod rust_test_template;
 mod rust_view;
 mod swift_codec;
+mod test_tables;
 mod test_template_walk;
 
 /// A byte case of the Rust conformance harness, its source a literal of the
