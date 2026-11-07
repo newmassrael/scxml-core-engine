@@ -9,3 +9,9 @@ session = "a847ea6f-343a-4b5f-b93e-4b20b24837b2"
 worktree = "/home/coin/scxml-core-engine/.claude/worktrees/adr0091-rust-c"
 branch = "adr0091-rust-c"
 at = 1794059180
+
+[return]
+reason = "violated"
+detail = ""
+report = "coin-Legion-Pro-5-16IRX9:/home/coin/.local/state/bx/land/013cda10b0e07f57-main/0000000002-55d32a39b700/attempt-1.log"
+at = 1794062941
