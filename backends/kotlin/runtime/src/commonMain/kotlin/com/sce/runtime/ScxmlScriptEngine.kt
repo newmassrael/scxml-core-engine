@@ -442,6 +442,23 @@ data class SetCurrentEventArgs(
 )
 
 /**
+ * The system variables an engine binds, which a script cannot change; the
+ * clause is the one [ScxmlScriptEngine.setupSystemVariables] and
+ * [ScxmlScriptEngine.setCurrentEvent] cite.
+ *
+ * "The Processor MUST cause any attempt to change the value of a system
+ * variable to fail and MUST place the error 'error.execution' on the internal
+ * event queue." An engine refuses every write of one of these names, and,
+ * for `_event` and `_ioprocessors`, every write into the value the
+ * ECMAScript data model gives each, by failing the script that made it; the
+ * caller turns that failure into `error.execution`. Which writes are refused
+ * is `tests/ecmascript/system_variable_writes.json`, which every engine is
+ * held to. The Lua engine names these in the shared `ecma_semantics.lua`
+ * instead, where its binding lives.
+ */
+val SYSTEM_VARIABLE_NAMES: Set<String> = setOf("_event", "_sessionid", "_name", "_ioprocessors")
+
+/**
  * Which reading of §scxml-B-2-8-1 a payload actually got.
  *
  * The clause gives `_event.data` three readings and no fourth: content the

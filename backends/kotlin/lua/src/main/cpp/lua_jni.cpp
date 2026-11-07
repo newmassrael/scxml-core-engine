@@ -49,6 +49,32 @@ static inline jlong toHandle(lua_State *L) {
     return reinterpret_cast<jlong>(L);
 }
 
+// ---------------------------------------------------------------------------
+// Helper: call the function below `nargs` arguments in protected mode, with no
+// results. Null on success; otherwise the error message, popped.
+//
+// A Lua error raised outside a protected call has nowhere to go but the panic
+// handler, which aborts the process: here, the JVM. The shared globals refuse a
+// write of a system variable's name with a Lua error (§scxml-5.10,
+// `_scxml_bind_system` in `sce/include/scripting/ecma_semantics.lua`), so every
+// write that can meet that refusal goes through here.
+// ---------------------------------------------------------------------------
+static jstring callProtected(JNIEnv *env, lua_State *L, int nargs) {
+    if (lua_pcall(L, nargs, 0, 0) == LUA_OK) {
+        return nullptr;
+    }
+    const char *err = lua_tostring(L, -1);
+    jstring result = toJString(env, err ? err : "unknown error");
+    lua_pop(L, 1);
+    return result;
+}
+
+// (name, value): the value is at the top, as `lua_setglobal` takes it.
+static int setGlobalOf(lua_State *L) {
+    lua_setglobal(L, lua_tostring(L, 1));
+    return 0;
+}
+
 // JNI package: com.sce.scripting.lua.LuaNative
 #define JNI_METHOD(name) Java_com_sce_scripting_lua_LuaNative_##name
 
@@ -148,6 +174,10 @@ JNIEXPORT void JNICALL JNI_METHOD(pushString)(JNIEnv *env, jclass, jlong handle,
     lua_pushstring(L, s.c_str());
 }
 
+JNIEXPORT void JNICALL JNI_METHOD(pushValue)(JNIEnv *, jclass, jlong handle, jint index) {
+    lua_pushvalue(toState(handle), index);
+}
+
 // === Get Operations ===
 
 JNIEXPORT jboolean JNICALL JNI_METHOD(toBoolean)(JNIEnv *, jclass, jlong handle, jint index) {
@@ -237,9 +267,33 @@ JNIEXPORT jint JNICALL JNI_METHOD(next)(JNIEnv *, jclass, jlong handle, jint ind
 
 // === Global Variables ===
 
-JNIEXPORT void JNICALL JNI_METHOD(setGlobal)(JNIEnv *env, jclass, jlong handle, jstring name) {
+// Set global `name` to the value at the top of the stack, and pop it. In a
+// protected call, so a write the shared globals refuse is returned as its
+// message instead of panicking the JVM; the C++ engine's `setDocumentGlobal`
+// is the same call.
+JNIEXPORT jstring JNICALL JNI_METHOD(setGlobal)(JNIEnv *env, jclass, jlong handle, jstring name) {
+    lua_State *L = toState(handle);
     std::string n = jstringToString(env, name);
-    lua_setglobal(toState(handle), n.c_str());
+    lua_pushcfunction(L, setGlobalOf);  // value, set
+    lua_insert(L, -2);                  // set, value
+    lua_pushstring(L, n.c_str());       // set, value, name
+    lua_insert(L, -2);                  // set, name, value
+    return callProtected(env, L, 2);
+}
+
+// §scxml-5.10: bind the value at the top of the stack as system variable
+// `name`, and pop it. Through `_scxml_bind_system`, which binds a read-only
+// view and is the one way a system variable is set; the C++ engine's
+// `bindSystemVariable` is the same call. If the shared file was never loaded
+// the global is nil, and the call fails here rather than binding nothing.
+JNIEXPORT jstring JNICALL JNI_METHOD(bindSystemVariable)(JNIEnv *env, jclass, jlong handle, jstring name) {
+    lua_State *L = toState(handle);
+    std::string n = jstringToString(env, name);
+    lua_getglobal(L, "_scxml_bind_system");  // value, bind
+    lua_insert(L, -2);                       // bind, value
+    lua_pushstring(L, n.c_str());            // bind, value, name
+    lua_insert(L, -2);                       // bind, name, value
+    return callProtected(env, L, 2);
 }
 
 JNIEXPORT jint JNICALL JNI_METHOD(getGlobal)(JNIEnv *env, jclass, jlong handle, jstring name) {

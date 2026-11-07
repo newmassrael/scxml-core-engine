@@ -43,11 +43,13 @@ object QuickJSNative {
     /** Evaluate condition. Returns -1=error, 0=false, 1=true. */
     @JvmStatic external fun evalToBoolean(handle: Long, code: String): Int
 
-    // Global variable setters
-    @JvmStatic external fun setGlobalString(handle: Long, name: String, value: String)
-    @JvmStatic external fun setGlobalInt(handle: Long, name: String, value: Long)
-    @JvmStatic external fun setGlobalDouble(handle: Long, name: String, value: Double)
-    @JvmStatic external fun setGlobalBoolean(handle: Long, name: String, value: Boolean)
+    // Global variable setters. Each returns null on success and the error
+    // message when the global object refuses the write, as it refuses a system
+    // variable's name (§scxml-5.10).
+    @JvmStatic external fun setGlobalString(handle: Long, name: String, value: String): String?
+    @JvmStatic external fun setGlobalInt(handle: Long, name: String, value: Long): String?
+    @JvmStatic external fun setGlobalDouble(handle: Long, name: String, value: Double): String?
+    @JvmStatic external fun setGlobalBoolean(handle: Long, name: String, value: Boolean): String?
     /**
      * Whether the global object carries [name].
      *
@@ -58,8 +60,8 @@ object QuickJSNative {
      */
     @JvmStatic external fun hasGlobal(handle: Long, name: String): Boolean
 
-    @JvmStatic external fun setGlobalNull(handle: Long, name: String)
-    @JvmStatic external fun setGlobalUndefined(handle: Long, name: String)
+    @JvmStatic external fun setGlobalNull(handle: Long, name: String): String?
+    @JvmStatic external fun setGlobalUndefined(handle: Long, name: String): String?
 
     // Error handling
 
