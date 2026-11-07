@@ -461,6 +461,8 @@ func savePending[S comparable, E comparable](
 			return nil, refuse("the deadline of the invocation '%s' belongs to no invocation this machine is running",
 				act.Deadline.InvokeID)
 		case act.HostSend != nil:
+			// The request's Value is not saved: a send that carries one has no
+			// delay, so it is never pending here.
 			saved = SavedAct{
 				Kind:          SavedActHost,
 				ProcessorType: act.HostSend.ProcessorType,
@@ -946,6 +948,8 @@ func armPending[S comparable, E comparable](
 			engine.scheduler.ScheduleRoutedAt(read.event, readyAt(read.due), act.SendID, act.Data, sender,
 				ScheduledRoute{Kind: RouteInternalQueue})
 		case SavedActHost:
+			// Value is left nil: a send that carries a value has no delay, so
+			// none is saved.
 			engine.scheduler.ScheduleHostSendAt(HostSendRequest{
 				ProcessorType: act.ProcessorType,
 				EventName:     act.Event,
