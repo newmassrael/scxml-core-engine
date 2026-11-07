@@ -14,6 +14,7 @@ package com.sce.scripting.quickjs
 
 import com.sce.runtime.EngineHeldValue
 import com.sce.runtime.IoProcessorDescriptor
+import com.sce.runtime.SYSTEM_VARIABLE_NAMES
 import com.sce.runtime.SceXmlDom
 import com.sce.runtime.PayloadReading
 import com.sce.runtime.ScriptEngineException
@@ -91,13 +92,6 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
         ioProcessors: List<IoProcessorDescriptor>,
     ) {
         val session = sessions[sessionId] ?: return
-        val handle = session.handle
-
-        // W3C SCXML 5.10: _sessionid
-        QuickJSNative.setGlobalString(handle, "_sessionid", sessionId)
-
-        // W3C SCXML 5.10: _name
-        QuickJSNative.setGlobalString(handle, "_name", machineName)
 
         // §scxml-C-1-1 / §scxml-C-2-3: one entry per processor the deployment
         // supports, each with a 'location' field. Names and locations are
@@ -108,7 +102,13 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
         val entries = ioProcessors.joinToString(", ") { processor ->
             "[${jsStringLiteral(processor.name)}]: { location: ${jsStringLiteral(processor.location)} }"
         }
-        QuickJSNative.eval(handle, "_ioprocessors = { $entries }")
+        // §scxml-5.10: each bound read-only, through `__sce_bind_system`.
+        bindSystemVariables(
+            session.handle,
+            "__sce_bind_system(\"_sessionid\", ${jsStringLiteral(sessionId)});\n" +
+                "__sce_bind_system(\"_name\", ${jsStringLiteral(machineName)});\n" +
+                "__sce_bind_system(\"_ioprocessors\", { $entries });",
+        )
     }
 
     override fun evaluateCondition(sessionId: String, expr: String): Boolean {
@@ -175,7 +175,10 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
         // name but no identifier — `screen-rules` — is stored like any other.
         val target = globalReference(name)
 
-        when (value) {
+        // The name is the document's (`<data id>`), so it may be a system
+        // variable's, whose write the global object refuses (§scxml-5.10):
+        // every arm answers with the refusal, and it is this engine's error.
+        val refused: String? = when (value) {
             null -> QuickJSNative.setGlobalUndefined(handle, name)
             is Boolean -> QuickJSNative.setGlobalBoolean(handle, name, value)
             is Int -> QuickJSNative.setGlobalInt(handle, name, value.toLong())
@@ -190,9 +193,11 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
                             "origin=0x${value.originHandle.toString(16)} " +
                             "target=0x${handle.toString(16)}")
                 }
-                // Restore from JS-side registry and release the ref
+                // Restore from JS-side registry and release the ref, whether
+                // or not the write is taken.
                 QuickJSNative.eval(handle,
-                    "$target = __sce_refs[${value.refId}]; delete __sce_refs[${value.refId}]")
+                    "try { $target = __sce_refs[${value.refId}]; } " +
+                        "finally { delete __sce_refs[${value.refId}]; }")
             }
             is List<*> -> {
                 val json = toJSON(value)
@@ -203,6 +208,9 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
                 QuickJSNative.eval(handle, "$target = JSON.parse(${jsStringLiteral(json)})")
             }
             else -> QuickJSNative.setGlobalString(handle, name, value.toString())
+        }
+        if (refused != null) {
+            throw ScriptEngineException("Cannot set '$name': $refused")
         }
     }
 
@@ -257,30 +265,50 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
         val handle = session.handle
         val typeStr = args.type.ifEmpty { "external" }
 
+        // The payload is read first, into a slot of its own: `_event` is
+        // bound read-only (§scxml-5.10), so it is complete when it is bound
+        // and nothing is written into it afterwards.
+        val staged = args.data.isNotEmpty()
+        val reading = if (staged) stageEventData(handle, args.data) else PayloadReading.Absent
+        val data = if (staged) "globalThis.$EVENT_DATA_SLOT" else "void 0"
+
         // §scxml-5.10.1 leaves `sendid`, `origin`, `origintype` and
         // `invokeid` blank for some events, and the engine interface carries
         // blank as the empty string; §scxml-B-2-8 makes blank ECMAScript
         // undefined, so `''` is never bound. The property is still defined
         // (`'sendid' in _event` holds), with the value undefined.
-        QuickJSNative.eval(handle, """
-            _event = {
-                name: ${jsStringLiteral(args.name)},
-                type: ${jsStringLiteral(typeStr)},
-                sendid: ${blankFieldLiteral(args.sendId)},
-                origin: ${blankFieldLiteral(args.origin)},
-                origintype: ${blankFieldLiteral(args.originType)},
-                invokeid: ${blankFieldLiteral(args.invokeId)},
-                data: undefined
+        bindSystemVariables(handle, """
+            try {
+                __sce_bind_system("_event", {
+                    name: ${jsStringLiteral(args.name)},
+                    type: ${jsStringLiteral(typeStr)},
+                    sendid: ${blankFieldLiteral(args.sendId)},
+                    origin: ${blankFieldLiteral(args.origin)},
+                    origintype: ${blankFieldLiteral(args.originType)},
+                    invokeid: ${blankFieldLiteral(args.invokeId)},
+                    data: $data
+                });
+            } finally {
+                delete globalThis.$EVENT_DATA_SLOT;
             }
         """.trimIndent())
-
-        // Parse and set data if present
-        return if (args.data.isNotEmpty()) setEventData(handle, args.data) else PayloadReading.Absent
+        return reading
     }
 
     override fun clearCurrentEvent(sessionId: String) {
         val session = sessions[sessionId] ?: return
-        QuickJSNative.setGlobalUndefined(session.handle, "_event")
+        bindSystemVariables(session.handle, "__sce_bind_system(\"_event\", void 0);")
+    }
+
+    /**
+     * §scxml-5.10: run [script], whose calls of `__sce_bind_system` are the
+     * one way this engine binds a system variable, and report a failure of it
+     * as this engine's error.
+     */
+    private fun bindSystemVariables(handle: Long, script: String) {
+        QuickJSNative.eval(handle, script)?.let { err ->
+            throw ScriptEngineException("Binding the system variables failed: $err")
+        }
     }
 
     override fun setStateQueryCallback(sessionId: String, callback: ((String) -> Boolean)?) {
@@ -427,6 +455,10 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
         var err = QuickJSNative.eval(handle, "var __sce_refs = {}")
         if (err != null) throw ScriptEngineException("Failed to initialize ref registry: $err")
 
+        // §scxml-5.10: the system variables, before anything can write one.
+        err = QuickJSNative.eval(handle, SYSTEM_VARIABLES_SETUP)
+        if (err != null) throw ScriptEngineException("Failed to initialize the system variables: $err")
+
         // W3C SCXML 5.9.2: In() predicate via lookup table
         err = QuickJSNative.eval(handle, """
             var __sce_active_states = {};
@@ -440,16 +472,19 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
     }
 
     /**
-     * Parse and set _event.data from raw string.
-     * Detection order: XML DOM, JS expression, JSON, normalized string.
+     * Parse a raw event payload into the global [EVENT_DATA_SLOT], from which
+     * [setCurrentEvent] binds it as `_event.data` and then deletes it.
+     * Detection order: XML DOM, JSON, normalized string.
      */
-    private fun setEventData(handle: Long, data: String): PayloadReading {
+    private fun stageEventData(handle: Long, data: String): PayloadReading {
+        val slot = "globalThis.$EVENT_DATA_SLOT"
+
         // Step 1: XML DOM
         val firstNonWs = data.indexOfFirst { !it.isWhitespace() }
         if (firstNonWs >= 0 && data[firstNonWs] == '<') {
             val domExpr = buildDOMExpression(data)
             if (domExpr != null) {
-                val err = QuickJSNative.eval(handle, "_event.data = $domExpr")
+                val err = QuickJSNative.eval(handle, "$slot = $domExpr")
                 if (err == null) return PayloadReading.Dom
             }
         }
@@ -478,12 +513,12 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
         // `JSON.stringify` output (§scxml-B-2-9), so removing it makes the
         // two engines of this backend answer the same question the same way.
         val err2 = QuickJSNative.eval(handle,
-            "_event.data = JSON.parse(${jsStringLiteral(data)})")
+            "$slot = JSON.parse(${jsStringLiteral(data)})")
         if (err2 == null) return PayloadReading.Structured
 
         // Step 3: Normalized string
         QuickJSNative.eval(handle,
-            "_event.data = ${jsStringLiteral(normalizeWhitespace(data))}")
+            "$slot = ${jsStringLiteral(normalizeWhitespace(data))}")
         // Which of the two third-rung readings this is. The clause treats them
         // the same and a host does not: prose arriving as text is the ladder
         // working (W3C test 562), and a payload that opened with a brace and
@@ -700,6 +735,81 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
          */
         internal fun blankFieldLiteral(s: String): String =
             if (s.isEmpty()) "void 0" else jsStringLiteral(s)
+
+        /** The global a payload is read into before `_event` is bound with it. */
+        private const val EVENT_DATA_SLOT = "__sce_event_data"
+
+        // §scxml-5.10: "The Processor MUST cause any attempt to change the
+        // value of a system variable to fail and MUST place the error
+        // 'error.execution' on the internal event queue." Each system variable
+        // is an accessor of the global object whose setter throws, and
+        // `__sce_bind_system` is the one way one is set; the value is held in
+        // this closure, out of a script's reach. A throw fails the script
+        // that made the write, and the caller raises `error.execution` for
+        // that failure. An unbound name reads as undefined, as a Lua engine
+        // reads it as nil.
+        //
+        // §scxml-B-2-8: `_event` and `_ioprocessors` and each of its entries
+        // are bound as views that refuse every change: a write of a property,
+        // a new one included, a definition, a deletion, a change of prototype
+        // and making the object non-extensible. A Proxy rather than a frozen
+        // object, because sloppy code ignores a write to a frozen one, and the
+        // clause asks for the failure; the C++ QuickJS binding's
+        // `_scxmlReadOnlyView` is the same Proxy. Reads pass through, so the
+        // payload `_event.data` holds stays writable inside
+        // (`tests/ecmascript/system_variable_writes.json` says why).
+        private val SYSTEM_VARIABLES_SETUP = """
+            (function (global, names) {
+                var bound = {};
+                function refuse(what) {
+                    throw new TypeError("§scxml-5.10: " + what + " is a system variable and cannot be changed");
+                }
+                function view(target, what) {
+                    function refuseKey(key) { refuse(what + "." + String(key)); }
+                    return new Proxy(target, {
+                        set: function (t, key) { refuseKey(key); },
+                        defineProperty: function (t, key) { refuseKey(key); },
+                        deleteProperty: function (t, key) { refuseKey(key); },
+                        setPrototypeOf: function () { refuse(what); },
+                        preventExtensions: function () { refuse(what); }
+                    });
+                }
+                function isObject(value) {
+                    return typeof value === "object" && value !== null;
+                }
+                names.forEach(function (name) {
+                    Object.defineProperty(global, name, {
+                        get: function () { return bound[name]; },
+                        set: function () { refuse(name); },
+                        enumerable: true,
+                        configurable: false
+                    });
+                });
+                Object.defineProperty(global, "__sce_bind_system", {
+                    value: function (name, value) {
+                        if (names.indexOf(name) < 0) {
+                            throw new TypeError("__sce_bind_system: " + String(name) + " is not a system variable");
+                        }
+                        if (name === "_event" && isObject(value)) {
+                            value = view(value, "_event");
+                        } else if (name === "_ioprocessors" && isObject(value)) {
+                            var entries = {};
+                            Object.keys(value).forEach(function (processor) {
+                                var entry = value[processor];
+                                entries[processor] = isObject(entry)
+                                    ? view(entry, "_ioprocessors['" + processor + "']")
+                                    : entry;
+                            });
+                            value = view(entries, "_ioprocessors");
+                        }
+                        bound[name] = value;
+                    },
+                    enumerable: false,
+                    writable: false,
+                    configurable: false
+                });
+            })(this, [${SYSTEM_VARIABLE_NAMES.joinToString(", ") { jsStringLiteral(it) }}]);
+        """.trimIndent()
 
         private val BUILTINS = setOf(
             "true", "false", "null", "undefined", "NaN", "Infinity",

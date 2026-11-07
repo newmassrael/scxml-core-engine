@@ -159,7 +159,12 @@ class LuaScriptEngine : ScxmlScriptEngine {
         if (handle == 0L) throw ScriptEngineException("Failed to create Lua state")
         val session = Session(handle)
         sessions[sessionId] = session
-        registerBuiltins(handle)
+        try {
+            registerBuiltins(handle)
+        } catch (failure: ScriptEngineException) {
+            destroySession(sessionId)
+            throw failure
+        }
         // Taken here and nowhere else: after the runtime has installed
         // everything it installs and before the document has run anything.
         session.runtimeGlobals.addAll(LuaNative.globalNames(handle))
@@ -186,19 +191,20 @@ class LuaScriptEngine : ScxmlScriptEngine {
         val session = sessions[sessionId] ?: return
         val L = session.handle
 
-        // W3C SCXML 5.10: _sessionid
+        // §scxml-5.10: each bound read-only, through [bindSystemVariable].
         LuaNative.pushString(L, sessionId)
-        LuaNative.setGlobal(L, "_sessionid")
+        bindSystemVariable(L, "_sessionid")
 
-        // W3C SCXML 5.10: _name
         LuaNative.pushString(L, machineName)
-        LuaNative.setGlobal(L, "_name")
+        bindSystemVariable(L, "_name")
 
         // §scxml-C-1-1 / §scxml-C-2-3: one entry per processor the deployment
         // supports, each with a 'location' field holding the address that
         // reaches this session through it. Names and locations are decided by
         // IoProcessors.build, so this engine's view of `_ioprocessors` matches
-        // every other backend's.
+        // every other backend's. The tables are fresh and have no metatable,
+        // so the `setField`s below cannot meet a refusal; the binding makes
+        // each entry read-only.
         LuaNative.createTable(L, 0, ioProcessors.size)
         for (processor in ioProcessors) {
             LuaNative.createTable(L, 0, 1)
@@ -206,7 +212,7 @@ class LuaScriptEngine : ScxmlScriptEngine {
             LuaNative.setField(L, -2, "location")
             LuaNative.setField(L, -2, processor.name)
         }
-        LuaNative.setGlobal(L, "_ioprocessors")
+        bindSystemVariable(L, "_ioprocessors")
 
         session.declaredVars.addAll(listOf("_sessionid", "_name", "_ioprocessors", "_event"))
         // §scxml-5.10: the system variables are part of the datamodel a guard
@@ -463,10 +469,17 @@ class LuaScriptEngine : ScxmlScriptEngine {
         val session = sessions[sessionId] ?: return
         val L = session.handle
         pushKotlinValue(L, value)
-        LuaNative.setGlobal(L, name)
+        // The name is the document's (`<data id>`), so it may be a system
+        // variable's, which the global table refuses (§scxml-5.10). The value
+        // has left the stack either way, so the reference it came from is
+        // released either way.
+        try {
+            setGlobal(L, name)
+        } finally {
+            unrefIfNeeded(session, value)
+        }
         session.declaredVars.add(name)
         offerToScope(session, name)
-        unrefIfNeeded(session, value)
     }
 
     /**
@@ -583,14 +596,16 @@ class LuaScriptEngine : ScxmlScriptEngine {
             LuaNative.setField(L, -2, "data")
         }
 
-        LuaNative.setGlobal(L, "_event")
+        // §scxml-5.10: the table is complete before it is bound, because the
+        // binding is read-only and nothing is written into `_event` after it.
+        bindSystemVariable(L, "_event")
         return reading
     }
 
     override fun clearCurrentEvent(sessionId: String) {
         val session = sessions[sessionId] ?: return
         LuaNative.pushNil(session.handle)
-        LuaNative.setGlobal(session.handle, "_event")
+        bindSystemVariable(session.handle, "_event")
     }
 
     override fun setStateQueryCallback(sessionId: String, callback: ((String) -> Boolean)?) {
@@ -649,14 +664,16 @@ class LuaScriptEngine : ScxmlScriptEngine {
                 val element = luaToKotlin(L, -1)
                 LuaNative.pop(L, 1)
 
-                // Set item variable
+                // Set item variable. Both names are the document's, so a
+                // system variable's is refused here (§scxml-5.10) and ends the
+                // loop as the <foreach>'s own error.
                 pushKotlinValue(L, element)
-                LuaNative.setGlobal(L, item)
+                setGlobal(L, item)
 
                 // Set index variable (0-based for ECMAScript compatibility)
                 if (index.isNotEmpty()) {
                     LuaNative.pushInteger(L, i - 1)
-                    LuaNative.setGlobal(L, index)
+                    setGlobal(L, index)
                 }
 
                 body()
@@ -703,7 +720,9 @@ class LuaScriptEngine : ScxmlScriptEngine {
             return LuaRef(ref, session.handle)
         }
         if (LuaNative.isTable(L, -1) && LuaNative.getMetatable(L, -1)) {
-            // Sentinel tables (_NULL, _UNDEFINED) have metatables but are safe to convert
+            // Sentinel tables (_NULL, _UNDEFINED) have metatables but are safe to convert,
+            // and so are the read-only views `_event` and `_ioprocessors` are bound as:
+            // their own table is empty too, and [luaToKotlin] reads them through `pairs`.
             val isSentinel = LuaNative.rawLen(L, -1) == 0L && !hasNonMetaKeys(L, -1)
             if (!isSentinel) {
                 // DOM object or similar — preserve via registry
@@ -786,7 +805,7 @@ class LuaScriptEngine : ScxmlScriptEngine {
         // In() predicate — delegates to Kotlin callback via global lookup
         // Since JNI callbacks are expensive, we store a lookup table that Kotlin updates
         LuaNative.createTable(L, 0, 0)
-        LuaNative.setGlobal(L, "__sce_active_states")
+        setGlobal(L, "__sce_active_states")
         LuaNative.doString(L, """
             function In(stateId)
                 return __sce_active_states[stateId] == true
@@ -797,7 +816,15 @@ class LuaScriptEngine : ScxmlScriptEngine {
         // `==` and the bitwise family. Single Source of Truth at
         // sce/include/scripting/ecma_semantics.lua; the code sce-build emits
         // calls these by name on every backend.
-        LuaNative.doString(L, loadEcmaSemantics())
+        //
+        // §scxml-5.10: the same file defines `_scxml_bind_system`, the one way
+        // a system variable is bound, and makes the global table refuse a
+        // write of one. A session it did not load into cannot bind its system
+        // variables read-only, so a failed load fails the session here rather
+        // than at its first binding.
+        LuaNative.doString(L, loadEcmaSemantics())?.let { err ->
+            throw ScriptEngineException("Loading ecma_semantics.lua failed: $err")
+        }
 
         // W3C SCXML B.2: JSON.stringify / JSON.parse (Single Source of Truth)
         // Shared with C++ LuaEngine (CMake header) and Rust sce-rust-lua (include_str!)
@@ -826,7 +853,7 @@ class LuaScriptEngine : ScxmlScriptEngine {
             LuaNative.pushBoolean(L, true)
             LuaNative.setField(L, -2, stateId)
         }
-        LuaNative.setGlobal(L, "__sce_active_states")
+        setGlobal(L, "__sce_active_states")
     }
 
     private fun evaluateLuaBoolean(session: Session, luaExpr: String, originalExpr: String): Boolean {
@@ -892,6 +919,7 @@ class LuaScriptEngine : ScxmlScriptEngine {
             LuaNative.type(L, index) == LuaNative.typeString() -> LuaNative.toJString(L, index)
             LuaNative.isInteger(L, index) -> LuaNative.toInteger(L, index)
             LuaNative.isNumber(L, index) -> LuaNative.toNumber(L, index)
+            LuaNative.isTable(L, index) && LuaNative.getMetatable(L, index) -> metatabledTableToKotlin(L, index)
             LuaNative.isTable(L, index) -> {
                 val len = LuaNative.rawLen(L, index)
                 if (len > 0) {
@@ -916,6 +944,65 @@ class LuaScriptEngine : ScxmlScriptEngine {
                 }
             }
             else -> null
+        }
+    }
+
+    /**
+     * A table with a metatable, read as the pairs a script's `pairs` walks.
+     *
+     * `_event` and `_ioprocessors` are bound as read-only views (§scxml-5.10,
+     * `_scxml_bind_system` in the shared `ecma_semantics.lua`): the view's own
+     * table is empty and every field is reached through its metatable, so the
+     * raw `lua_next` walk the plain branch of [luaToKotlin] makes found none
+     * of them, and a `namelist="_event"` reached the host as an empty object.
+     * `pairs` honours the view's `__pairs`, and for a table whose metatable
+     * has none (a DOM node, the `_NULL` sentinel) it is the same walk as
+     * `lua_next`. The copy it fills has no metatable, so reading the copy
+     * takes the plain branch.
+     */
+    private fun metatabledTableToKotlin(L: Long, index: Int): Any? {
+        LuaNative.pushValue(L, index)
+        setGlobal(L, VIEW_SLOT)
+        val status = LuaNative.loadAndCall(L, PLAIN_COPY_CHUNK, 1)
+        if (status != 0) {
+            val err = LuaNative.getError(L)
+            LuaNative.pop(L, 1)
+            throw ScriptEngineException("Reading a table through pairs failed: $err")
+        }
+        try {
+            return luaToKotlin(L, -1)
+        } finally {
+            LuaNative.pop(L, 1)
+        }
+    }
+
+    /**
+     * Set global [name] to the value at the top of the stack, and pop it.
+     *
+     * Every global this engine writes goes through here, the document's
+     * (`<data id>`, a `<foreach>` item) and its own alike: the global table
+     * refuses a system variable's name (§scxml-5.10), and the write is made in
+     * a protected call, so the refusal is this engine's error and not a Lua
+     * panic that ends the JVM.
+     */
+    private fun setGlobal(L: Long, name: String) {
+        LuaNative.setGlobal(L, name)?.let { err ->
+            throw ScriptEngineException("Cannot set '$name': $err")
+        }
+    }
+
+    /**
+     * §scxml-5.10, §scxml-B-2-8: bind the value at the top of the stack as
+     * system variable [name], read-only, and pop it.
+     *
+     * Through the shared `_scxml_bind_system` and nothing else, as the C++
+     * engine's `bindSystemVariable` does: `_event` and `_ioprocessors` become
+     * views that refuse every write, and the value is held outside the global
+     * table, whose metatable refuses an ordinary write of the name.
+     */
+    private fun bindSystemVariable(L: Long, name: String) {
+        LuaNative.bindSystemVariable(L, name)?.let { err ->
+            throw ScriptEngineException("Binding $name failed: $err")
         }
     }
 
@@ -1037,12 +1124,12 @@ class LuaScriptEngine : ScxmlScriptEngine {
         // The sender ships JSON (§scxml-B-2-9), so the two rungs the clause
         // names are the two that are here.
         LuaNative.pushString(L, data)
-        LuaNative.setGlobal(L, "__sce_tmp")
+        setGlobal(L, "__sce_tmp")
         val jsonStatus = LuaNative.loadAndCall(L,
             "local d = __sce_tmp; __sce_tmp = nil; if d then return JSON.parse(d) end", 1)
         if (jsonStatus != 0) {
             LuaNative.pop(L, 1)
-            LuaNative.pushNil(L); LuaNative.setGlobal(L, "__sce_tmp")
+            LuaNative.pushNil(L); setGlobal(L, "__sce_tmp")
         } else if (!LuaNative.isNil(L, -1)) {
             return PayloadReading.Structured
         } else {
@@ -1180,6 +1267,14 @@ class LuaScriptEngine : ScxmlScriptEngine {
         }
 
         private fun loadEcmaSemantics(): String = ECMA_SEMANTICS
+
+        /** The global [metatabledTableToKotlin] hands its table to Lua through, cleared at once. */
+        private const val VIEW_SLOT = "__sce_view"
+
+        /** A shallow copy of [VIEW_SLOT]'s table, walked with `pairs`. */
+        private const val PLAIN_COPY_CHUNK =
+            "local view = $VIEW_SLOT; $VIEW_SLOT = nil; local copy = {}; " +
+                "for key, value in pairs(view) do copy[key] = value end; return copy"
 
         /**
          * Lua's own keywords — the names a global lookup cannot answer for.

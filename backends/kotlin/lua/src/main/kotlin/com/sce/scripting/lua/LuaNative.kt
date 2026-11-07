@@ -48,6 +48,8 @@ object LuaNative {
     @JvmStatic external fun pushInteger(handle: Long, value: Long)
     @JvmStatic external fun pushNumber(handle: Long, value: Double)
     @JvmStatic external fun pushString(handle: Long, value: String)
+    /** Push a copy of the value at [index] (`lua_pushvalue`). */
+    @JvmStatic external fun pushValue(handle: Long, index: Int)
 
     // Get operations
     @JvmStatic external fun toBoolean(handle: Long, index: Int): Boolean
@@ -74,7 +76,25 @@ object LuaNative {
     @JvmStatic external fun next(handle: Long, index: Int): Int
 
     // Global variables
-    @JvmStatic external fun setGlobal(handle: Long, name: String)
+
+    /**
+     * Set global [name] to the value at the top of the stack, and pop it.
+     * Returns null on success, the error message when the write is refused.
+     *
+     * In a protected call: the shared globals refuse a write of a system
+     * variable's name with a Lua error (§scxml-5.10), and a Lua error outside
+     * a protected call aborts the JVM.
+     */
+    @JvmStatic external fun setGlobal(handle: Long, name: String): String?
+
+    /**
+     * §scxml-5.10: bind the value at the top of the stack as system variable
+     * [name] through the shared `_scxml_bind_system`, and pop it. Returns null
+     * on success, the error message on failure. The one way a system variable
+     * is set: [setGlobal] of one is refused.
+     */
+    @JvmStatic external fun bindSystemVariable(handle: Long, name: String): String?
+
     @JvmStatic external fun getGlobal(handle: Long, name: String): Int
 
     /**

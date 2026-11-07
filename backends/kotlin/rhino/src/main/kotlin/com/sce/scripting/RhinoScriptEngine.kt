@@ -6,6 +6,7 @@
 package com.sce.scripting
 
 import com.sce.runtime.IoProcessorDescriptor
+import com.sce.runtime.SYSTEM_VARIABLE_NAMES
 import com.sce.runtime.SceXmlDom
 import com.sce.runtime.PayloadReading
 import com.sce.runtime.ScriptEngineException
@@ -13,8 +14,11 @@ import com.sce.runtime.ScxmlScriptEngine
 import com.sce.runtime.SetCurrentEventArgs
 import com.sce.runtime.strictEcmascriptAssignment
 import org.mozilla.javascript.Context
+import org.mozilla.javascript.RhinoException
+import org.mozilla.javascript.ScriptRuntime
 import org.mozilla.javascript.ScriptableObject
 import org.mozilla.javascript.Scriptable
+import org.mozilla.javascript.Symbol
 import org.mozilla.javascript.Undefined
 import org.w3c.dom.Node
 
@@ -31,7 +35,7 @@ import org.w3c.dom.Node
 class RhinoScriptEngine : ScxmlScriptEngine {
 
     private data class Session(
-        val scope: ScriptableObject,
+        val scope: SessionScope,
         var stateQueryCallback: ((String) -> Boolean)? = null
     )
 
@@ -43,7 +47,8 @@ class RhinoScriptEngine : ScxmlScriptEngine {
             // ES5 mode avoids Rhino-specific optimizations that break standard behavior
             cx.languageVersion = Context.VERSION_ES6
             cx.optimizationLevel = -1  // Interpreted mode (safe for Android compatibility)
-            val scope = cx.initStandardObjects()
+            val scope = SessionScope()
+            cx.initStandardObjects(scope)
             sessions[sessionId] = Session(scope)
         } finally {
             Context.exit()
@@ -64,23 +69,27 @@ class RhinoScriptEngine : ScxmlScriptEngine {
         try {
             val scope = session.scope
 
-            // W3C SCXML 5.10: _sessionid
-            ScriptableObject.putProperty(scope, "_sessionid", sessionId)
-
-            // W3C SCXML 5.10: _name
-            ScriptableObject.putProperty(scope, "_name", machineName)
+            // §scxml-5.10: each bound read-only, held by the scope apart from
+            // the document's variables (SessionScope).
+            scope.bindSystemVariable("_sessionid", sessionId)
+            scope.bindSystemVariable("_name", machineName)
 
             // §scxml-C-1-1 / §scxml-C-2-3: one entry per processor the
             // deployment supports, each with a 'location' field. Names and
             // locations are decided by IoProcessors.build, so this engine's
             // view of `_ioprocessors` matches every other backend's.
+            // §scxml-B-2-8: the object and each entry are read-only views.
             val ioProc = cx.newObject(scope)
             for (processor in ioProcessors) {
                 val entry = cx.newObject(scope)
                 ScriptableObject.putProperty(entry, "location", processor.location)
-                ScriptableObject.putProperty(ioProc, processor.name, entry)
+                ScriptableObject.putProperty(
+                    ioProc,
+                    processor.name,
+                    ReadOnlyView(entry, "_ioprocessors['${processor.name}']"),
+                )
             }
-            ScriptableObject.putProperty(scope, "_ioprocessors", ioProc)
+            scope.bindSystemVariable("_ioprocessors", ReadOnlyView(ioProc, "_ioprocessors"))
 
             // W3C SCXML 5.9.2: Register In() function
             registerInFunction(scope, session)
@@ -146,6 +155,10 @@ class RhinoScriptEngine : ScxmlScriptEngine {
                 else -> Context.javaToJS(value, session.scope)
             }
             ScriptableObject.putProperty(session.scope, name, wrapped)
+        } catch (e: RhinoException) {
+            // The name is the document's (`<data id>`), so it may be a system
+            // variable's, which the scope refuses (§scxml-5.10).
+            throw ScriptEngineException("Cannot set '$name'", e)
         } finally {
             Context.exit()
         }
@@ -229,7 +242,10 @@ class RhinoScriptEngine : ScxmlScriptEngine {
                 ScriptableObject.putProperty(eventObj, "data", Undefined.instance)
             }
 
-            ScriptableObject.putProperty(scope, "_event", eventObj)
+            // §scxml-5.10, §scxml-B-2-8: complete before it is bound, as a
+            // view that refuses every write; the payload `data` holds stays
+            // writable inside.
+            scope.bindSystemVariable("_event", ReadOnlyView(eventObj, "_event"))
         } finally {
             Context.exit()
         }
@@ -241,12 +257,7 @@ class RhinoScriptEngine : ScxmlScriptEngine {
 
     override fun clearCurrentEvent(sessionId: String) {
         val session = sessions[sessionId] ?: return
-        Context.enter()
-        try {
-            ScriptableObject.putProperty(session.scope, "_event", Undefined.instance)
-        } finally {
-            Context.exit()
-        }
+        session.scope.bindSystemVariable("_event", Undefined.instance)
     }
 
     override fun setStateQueryCallback(sessionId: String, callback: ((String) -> Boolean)?) {
@@ -605,6 +616,141 @@ class RhinoScriptEngine : ScxmlScriptEngine {
     }
 
     /**
+     * A session's global object, which holds the system variables apart from
+     * the document's own variables and refuses every write of one.
+     *
+     * §scxml-5.10: "The Processor MUST cause any attempt to change the value
+     * of a system variable to fail and MUST place the error 'error.execution'
+     * on the internal event queue." A property of Rhino's global object takes
+     * a write, and one marked read-only ignores it silently outside strict
+     * code, so the names are answered here instead: a read reaches the value
+     * this engine bound, and a write, a deletion or a definition of the name
+     * raises a TypeError, which fails the script that made it; the caller
+     * raises `error.execution` for that failure. It is the role the shared
+     * `ecma_semantics.lua` gives the global table's metatable in the Lua
+     * engines. An unbound name reads as undefined, as a Lua engine reads it as
+     * nil.
+     */
+    private class SessionScope : ScriptableObject() {
+
+        private val system = HashMap<String, Any>()
+
+        /** Bind system variable [name] to [value]; the one way one is set. */
+        fun bindSystemVariable(name: String, value: Any) {
+            require(name in SYSTEM_VARIABLE_NAMES) { "$name is not a system variable" }
+            system[name] = value
+        }
+
+        override fun getClassName(): String = "global"
+
+        override fun get(name: String, start: Scriptable): Any? =
+            if (name in SYSTEM_VARIABLE_NAMES) system[name] ?: Undefined.instance else super.get(name, start)
+
+        override fun has(name: String, start: Scriptable): Boolean =
+            name in SYSTEM_VARIABLE_NAMES || super.has(name, start)
+
+        override fun put(name: String, start: Scriptable, value: Any?) {
+            if (name in SYSTEM_VARIABLE_NAMES) {
+                refuseSystemWrite(name)
+            }
+            super.put(name, start, value)
+        }
+
+        override fun delete(name: String) {
+            if (name in SYSTEM_VARIABLE_NAMES) {
+                refuseSystemWrite(name)
+            }
+            super.delete(name)
+        }
+
+        override fun defineOwnProperty(cx: Context, id: Any, desc: ScriptableObject) {
+            if (id is String && id in SYSTEM_VARIABLE_NAMES) {
+                refuseSystemWrite(id)
+            }
+            super.defineOwnProperty(cx, id, desc)
+        }
+    }
+
+    /**
+     * A system variable's value as a script sees it: [target] read through,
+     * every change refused.
+     *
+     * §scxml-B-2-8 makes `_event` "an object with properties for each of the
+     * fields" and `_ioprocessors` an object with a property per I/O processor,
+     * each holding its `location`, all of them part of a read-only variable.
+     * So a write of a property, a new one included, a deletion, a definition,
+     * a change of prototype and making the object non-extensible are each
+     * refused with a TypeError; a frozen object would not do, since sloppy
+     * code ignores a write to one. Reads are [target]'s own, so a value a
+     * property holds is the value itself: the payload `_event.data` holds stays
+     * writable inside, which `tests/ecmascript/system_variable_writes.json`
+     * says why.
+     *
+     * The view's own slots stay empty, so a write of any key reaches [put].
+     * Its prototype is [target]'s, so a name neither holds resolves where it
+     * would for [target].
+     */
+    private class ReadOnlyView(
+        private val target: Scriptable,
+        private val what: String,
+    ) : ScriptableObject() {
+
+        init {
+            parentScope = target.parentScope
+        }
+
+        override fun getClassName(): String = target.className
+
+        override fun getPrototype(): Scriptable? = target.prototype
+
+        override fun setPrototype(prototype: Scriptable?) {
+            refuseSystemWrite(what)
+        }
+
+        override fun get(name: String, start: Scriptable): Any? = target.get(name, target)
+
+        override fun get(index: Int, start: Scriptable): Any? = target.get(index, target)
+
+        override fun has(name: String, start: Scriptable): Boolean = target.has(name, target)
+
+        override fun has(index: Int, start: Scriptable): Boolean = target.has(index, target)
+
+        override fun getIds(): Array<Any> = target.ids
+
+        override fun put(name: String, start: Scriptable, value: Any?) {
+            refuseSystemWrite("$what.$name")
+        }
+
+        override fun put(index: Int, start: Scriptable, value: Any?) {
+            refuseSystemWrite("$what[$index]")
+        }
+
+        override fun put(key: Symbol, start: Scriptable, value: Any?) {
+            refuseSystemWrite("$what[$key]")
+        }
+
+        override fun delete(name: String) {
+            refuseSystemWrite("$what.$name")
+        }
+
+        override fun delete(index: Int) {
+            refuseSystemWrite("$what[$index]")
+        }
+
+        override fun delete(key: Symbol) {
+            refuseSystemWrite("$what[$key]")
+        }
+
+        override fun defineOwnProperty(cx: Context, id: Any, desc: ScriptableObject) {
+            refuseSystemWrite("$what.$id")
+        }
+
+        override fun preventExtensions() {
+            refuseSystemWrite(what)
+        }
+    }
+
+    /**
      * W3C SCXML B.2: Space normalization for plain text data.
      * C++ parseEventData fallback: collapse whitespace, strip leading/trailing.
      */
@@ -692,3 +838,11 @@ class RhinoScriptEngine : ScxmlScriptEngine {
         }
     }
 }
+
+/**
+ * §scxml-5.10: refuse a change to a system variable, as a TypeError the
+ * script that attempted it fails with. The same message as the Lua engines'
+ * refusal in the shared `ecma_semantics.lua`.
+ */
+private fun refuseSystemWrite(what: String): Nothing =
+    throw ScriptRuntime.typeError("§scxml-5.10: $what is a system variable and cannot be changed")
