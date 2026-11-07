@@ -850,6 +850,9 @@ impl StatePolicy for StatechartStaticDelayedHostSendPolicy {
                                 // parent carries it (§scxml-6.4.1). Analysis keeps the field on
                                 // every machine with a host-served send.
                                 invoke_id: self.pending_event_invokeid.to_string(),
+                                // docs/SCE_TEST_PROFILE.md §12.3: only a test-port send carries
+                                // its message as a value; this one carries its data as text.
+                                value: None,
                             };
                             let __sce_delay_ms = 500_u64;
                             // W3C SCXML 6.2.4: arm it. The engine performs the act when the

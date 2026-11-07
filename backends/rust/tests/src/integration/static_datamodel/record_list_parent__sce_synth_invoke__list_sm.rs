@@ -6899,6 +6899,9 @@ None,
                                     // parent carries it (§scxml-6.4.1). Analysis keeps the field on
                                     // every machine with a host-served send.
                                     invoke_id: self.pending_event_invokeid.to_string(),
+                                    // docs/SCE_TEST_PROFILE.md §12.3: only a test-port send carries
+                                    // its message as a value; this one carries its data as text.
+                                    value: None,
                                 };
                                 let __sce_served = engine.perform_host_send(__sce_request);
                                 // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -7002,6 +7005,9 @@ None,
                                     // parent carries it (§scxml-6.4.1). Analysis keeps the field on
                                     // every machine with a host-served send.
                                     invoke_id: self.pending_event_invokeid.to_string(),
+                                    // docs/SCE_TEST_PROFILE.md §12.3: only a test-port send carries
+                                    // its message as a value; this one carries its data as text.
+                                    value: None,
                                 };
                                 let __sce_served = engine.perform_host_send(__sce_request);
                                 // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -7101,6 +7107,9 @@ None,
                                     // parent carries it (§scxml-6.4.1). Analysis keeps the field on
                                     // every machine with a host-served send.
                                     invoke_id: self.pending_event_invokeid.to_string(),
+                                    // docs/SCE_TEST_PROFILE.md §12.3: only a test-port send carries
+                                    // its message as a value; this one carries its data as text.
+                                    value: None,
                                 };
                                 let __sce_served = engine.perform_host_send(__sce_request);
                                 // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -7204,6 +7213,9 @@ None,
                                     // parent carries it (§scxml-6.4.1). Analysis keeps the field on
                                     // every machine with a host-served send.
                                     invoke_id: self.pending_event_invokeid.to_string(),
+                                    // docs/SCE_TEST_PROFILE.md §12.3: only a test-port send carries
+                                    // its message as a value; this one carries its data as text.
+                                    value: None,
                                 };
                                 let __sce_served = engine.perform_host_send(__sce_request);
                                 // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -7297,6 +7309,9 @@ None,
                                     // parent carries it (§scxml-6.4.1). Analysis keeps the field on
                                     // every machine with a host-served send.
                                     invoke_id: self.pending_event_invokeid.to_string(),
+                                    // docs/SCE_TEST_PROFILE.md §12.3: only a test-port send carries
+                                    // its message as a value; this one carries its data as text.
+                                    value: None,
                                 };
                                 let __sce_served = engine.perform_host_send(__sce_request);
                                 // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -7408,6 +7423,9 @@ None,
                                     // parent carries it (§scxml-6.4.1). Analysis keeps the field on
                                     // every machine with a host-served send.
                                     invoke_id: self.pending_event_invokeid.to_string(),
+                                    // docs/SCE_TEST_PROFILE.md §12.3: only a test-port send carries
+                                    // its message as a value; this one carries its data as text.
+                                    value: None,
                                 };
                                 let __sce_served = engine.perform_host_send(__sce_request);
                                 // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -7501,6 +7519,9 @@ None,
                                     // parent carries it (§scxml-6.4.1). Analysis keeps the field on
                                     // every machine with a host-served send.
                                     invoke_id: self.pending_event_invokeid.to_string(),
+                                    // docs/SCE_TEST_PROFILE.md §12.3: only a test-port send carries
+                                    // its message as a value; this one carries its data as text.
+                                    value: None,
                                 };
                                 let __sce_served = engine.perform_host_send(__sce_request);
                                 // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -7612,6 +7633,9 @@ None,
                                     // parent carries it (§scxml-6.4.1). Analysis keeps the field on
                                     // every machine with a host-served send.
                                     invoke_id: self.pending_event_invokeid.to_string(),
+                                    // docs/SCE_TEST_PROFILE.md §12.3: only a test-port send carries
+                                    // its message as a value; this one carries its data as text.
+                                    value: None,
                                 };
                                 let __sce_served = engine.perform_host_send(__sce_request);
                                 // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -9217,6 +9241,9 @@ None,
                                     // parent carries it (§scxml-6.4.1). Analysis keeps the field on
                                     // every machine with a host-served send.
                                     invoke_id: self.pending_event_invokeid.to_string(),
+                                    // docs/SCE_TEST_PROFILE.md §12.3: only a test-port send carries
+                                    // its message as a value; this one carries its data as text.
+                                    value: None,
                                 };
                                 let __sce_served = engine.perform_host_send(__sce_request);
                                 // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -9368,6 +9395,9 @@ None,
                                     // parent carries it (§scxml-6.4.1). Analysis keeps the field on
                                     // every machine with a host-served send.
                                     invoke_id: self.pending_event_invokeid.to_string(),
+                                    // docs/SCE_TEST_PROFILE.md §12.3: only a test-port send carries
+                                    // its message as a value; this one carries its data as text.
+                                    value: None,
                                 };
                                 let __sce_served = engine.perform_host_send(__sce_request);
                                 // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -9604,6 +9634,9 @@ None,
                                         // parent carries it (§scxml-6.4.1). Analysis keeps the field on
                                         // every machine with a host-served send.
                                         invoke_id: self.pending_event_invokeid.to_string(),
+                                        // docs/SCE_TEST_PROFILE.md §12.3: only a test-port send carries
+                                        // its message as a value; this one carries its data as text.
+                                        value: None,
                                     };
                                     let __sce_served = engine.perform_host_send(__sce_request);
                                     // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -9678,6 +9711,9 @@ None,
                                         // parent carries it (§scxml-6.4.1). Analysis keeps the field on
                                         // every machine with a host-served send.
                                         invoke_id: self.pending_event_invokeid.to_string(),
+                                        // docs/SCE_TEST_PROFILE.md §12.3: only a test-port send carries
+                                        // its message as a value; this one carries its data as text.
+                                        value: None,
                                     };
                                     let __sce_served = engine.perform_host_send(__sce_request);
                                     // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -10099,6 +10135,9 @@ None,
                                     // parent carries it (§scxml-6.4.1). Analysis keeps the field on
                                     // every machine with a host-served send.
                                     invoke_id: self.pending_event_invokeid.to_string(),
+                                    // docs/SCE_TEST_PROFILE.md §12.3: only a test-port send carries
+                                    // its message as a value; this one carries its data as text.
+                                    value: None,
                                 };
                                 let __sce_served = engine.perform_host_send(__sce_request);
                                 // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -10189,6 +10228,9 @@ None,
                                     // parent carries it (§scxml-6.4.1). Analysis keeps the field on
                                     // every machine with a host-served send.
                                     invoke_id: self.pending_event_invokeid.to_string(),
+                                    // docs/SCE_TEST_PROFILE.md §12.3: only a test-port send carries
+                                    // its message as a value; this one carries its data as text.
+                                    value: None,
                                 };
                                 let __sce_served = engine.perform_host_send(__sce_request);
                                 // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -10727,6 +10769,9 @@ if !self.hub {
             // parent carries it (§scxml-6.4.1). Analysis keeps the field on
             // every machine with a host-served send.
             invoke_id: self.pending_event_invokeid.to_string(),
+            // docs/SCE_TEST_PROFILE.md §12.3: only a test-port send carries
+            // its message as a value; this one carries its data as text.
+            value: None,
         };
         let __sce_served = engine.perform_host_send(__sce_request);
         // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -10802,6 +10847,9 @@ if self.hub {
             // parent carries it (§scxml-6.4.1). Analysis keeps the field on
             // every machine with a host-served send.
             invoke_id: self.pending_event_invokeid.to_string(),
+            // docs/SCE_TEST_PROFILE.md §12.3: only a test-port send carries
+            // its message as a value; this one carries its data as text.
+            value: None,
         };
         let __sce_served = engine.perform_host_send(__sce_request);
         // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -10930,6 +10978,9 @@ if !self.hub {
             // parent carries it (§scxml-6.4.1). Analysis keeps the field on
             // every machine with a host-served send.
             invoke_id: self.pending_event_invokeid.to_string(),
+            // docs/SCE_TEST_PROFILE.md §12.3: only a test-port send carries
+            // its message as a value; this one carries its data as text.
+            value: None,
         };
         let __sce_served = engine.perform_host_send(__sce_request);
         // W3C SCXML 6.2: a declared type with no handler registered is,
@@ -11003,6 +11054,9 @@ if self.hub {
             // parent carries it (§scxml-6.4.1). Analysis keeps the field on
             // every machine with a host-served send.
             invoke_id: self.pending_event_invokeid.to_string(),
+            // docs/SCE_TEST_PROFILE.md §12.3: only a test-port send carries
+            // its message as a value; this one carries its data as text.
+            value: None,
         };
         let __sce_served = engine.perform_host_send(__sce_request);
         // W3C SCXML 6.2: a declared type with no handler registered is,
