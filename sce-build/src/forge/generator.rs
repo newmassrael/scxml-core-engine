@@ -7374,6 +7374,16 @@ fn kotlin_payload_present_reader(f: &EntryField, l: &LangCtx) -> String {
     format!("fields.{reader}(\"{id}\")")
 }
 
+/// The data class the typed payload channel of the Kotlin machine `machine`
+/// holds `event`'s payload in ([`build_kotlin_event_payload`]): one name for
+/// the declaration and for every site that builds one.
+pub(crate) fn kotlin_payload_class(machine: &str, event: &str) -> String {
+    format!(
+        "{machine}{}Payload",
+        filters::to_event_variant(event.to_string())
+    )
+}
+
 /// Build the [`KotlinEventPayload`] for `model`. Same SSOT guard selection
 /// ([`select_native_typed_guards`]) as the Rust / Go / C11 / C++ builders.
 pub fn build_kotlin_event_payload(
@@ -7462,7 +7472,7 @@ pub fn build_kotlin_event_payload(
     for event in &guarded_events {
         let schema = &entry_schemas[event];
         let variant = filters::to_event_variant(event.clone());
-        let class_name = format!("{machine}{variant}Payload");
+        let class_name = kotlin_payload_class(&machine, event);
         let field = format!("pending{variant}Payload");
         let event_ref = format!(
             "{machine}Event.{}",

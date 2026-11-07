@@ -137,7 +137,9 @@ safeEvaluateGuard({{ trans.cond | to_script_source_guard }})
 {% if not arm.closed %}
 {% set arm.target = "TransitionsPart" ~ transition_part_of[state_id][loop.index0] ~ ".transition" ~ (state_id | to_state_class_name) ~ "At" ~ trans.transition_index %}
 {% set arm.kind = 'eventless' if not trans.event else ('any' if trans.matches_any_event else 'named') %}
-{% if not trans.cond %}
+{# A guard lowered with no `cond` written is a branch of a test component's
+   match on the round's snapshot (docs/SCE_TEST_PROFILE.md §12.3). #}
+{% if not trans.cond and not trans.native_guard %}
 {% set arm.guard = 'none' %}
 {% elif trans.is_pure_in_predicate or trans.is_kt_condition or trans.native_guard or trans.is_cpp_condition or model.needs_script_engine %}
 {% set arm.guard = 'runtime' %}

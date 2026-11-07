@@ -566,9 +566,9 @@ impl ForgeKind {
             Self::Union => RuntimeDep::None,
             // docs/SCE_TEST_PROFILE.md §12.3: a test component's machine is a
             // statechart's, built on the SCE runtime as a statechart is; the
-            // runtime that drives it (`sce/include/test/`, and
-            // `sce_rust_runtime::test` in Rust) ships with SCE's runtime and is
-            // no forge tier. The tables of a configuration, a
+            // runtime that drives it (`sce/include/test/`,
+            // `sce_rust_runtime::test` in Rust and `com.sce.runtime.test` in
+            // Kotlin) ships with SCE's runtime and is no forge tier. The tables of a configuration, a
             // test case and a suite (§12.2) name the machines of the components
             // they run, and the profile's runtime and runner.
             Self::TestComponent | Self::TestConfiguration | Self::TestCase | Self::TestSuite => {

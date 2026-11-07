@@ -2301,8 +2301,9 @@ pub trait StaticTarget {
     }
     /// The line that imports the unit of the test template named `unit`
     /// ([`crate::test_component::TestTemplateUnit::unit`]), which a branch
-    /// matches with or a send sends. `None` for a target whose test component
-    /// has not landed.
+    /// matches with or a send sends; the empty line for a target that names
+    /// every declaration of the unit by where it is declared and so imports
+    /// nothing. `None` for a target whose test component has not landed.
     fn test_template_import(&self, _unit: &str) -> Option<String> {
         None
     }
@@ -2355,6 +2356,50 @@ pub trait StaticTarget {
 /// document's variable or local is spelled as, since a variable is a property
 /// named `v<PascalCase>` and a local keeps the author's spelling.
 const KOTLIN_PRESENT: &str = "scePresent";
+
+/// How a guard or a statement of a test component's Kotlin machine reaches the
+/// component's runtime context (docs/SCE_TEST_PROFILE.md §12.3): the property
+/// the component the runtime drives constructs the machine with
+/// (`kotlin/state_machine.kt.jinja2`), so the context is bound before the
+/// machine starts. Spelled with the prefix [`KOTLIN_PRESENT`] is, which no
+/// variable's property and no local takes.
+const KOTLIN_TEST_CONTEXT: &str = "sceTestContext";
+
+/// The profile's Kotlin runtime
+/// (`backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/test/`).
+const KOTLIN_TEST_RUNTIME: &str = "com.sce.runtime.test";
+
+/// `text` as a Kotlin string literal.
+fn kotlin_text(text: &str) -> String {
+    format!("\"{}\"", filters::escape_kotlin(text.to_string()))
+}
+
+/// The declaration `name` (`Value`, `matches`, `value`) of the Kotlin unit of
+/// the test template named `unit`, by the unit's package
+/// (`forge/kotlin/test_template.kt.jinja2`): as one unit names another's, so
+/// the `matches` of two templates a machine uses never meet in its file.
+fn kotlin_test_template(unit: &str, name: &str) -> String {
+    crate::forge::generator::kotlin_qualified(unit, name)
+}
+
+/// The text a Kotlin `<log>` writes before its value: the label and a colon,
+/// or nothing for a log that writes no label. One spelling for the engine's
+/// log ([`StaticTarget::log`]) and a test component's
+/// ([`StaticTarget::test_log`]), so the two show a value alike.
+fn kotlin_log_label(label: &str) -> String {
+    if label.is_empty() {
+        String::new()
+    } else {
+        format!("\"{}: \" + ", filters::escape_kotlin(label.to_string()))
+    }
+}
+
+/// The constant of the profile runtime's `Verdict` a document's verdict is:
+/// Kotlin's enum declares the variants of [`runtime_verdict`] under the same
+/// names in upper case (`com.sce.runtime.test.Verdict`).
+fn kotlin_verdict(verdict: crate::test_component::Verdict) -> String {
+    runtime_verdict(verdict).to_ascii_uppercase()
+}
 
 /// What the closure of a Swift `Optional.map` names the present value it is given: an
 /// argument of its own, since a closure that has arguments cannot read the `$0` of the
@@ -3058,12 +3103,7 @@ impl StaticTarget for KotlinTarget {
         format!("{target} = {target}.copy({field} = {value})")
     }
     fn log(&self, label: &str, value: &str, _ty: InferredType) -> String {
-        let label = if label.is_empty() {
-            String::new()
-        } else {
-            format!("\"{}: \" + ", filters::escape_kotlin(label.to_string()))
-        };
-        format!("println({label}{value})")
+        format!("println({}{value})", kotlin_log_label(label))
     }
     // The runtime's `EventPayload.liftRecord` reads the text and hands the fields
     // to a lambda that reads each through the reader a delivery's value of its
@@ -3316,6 +3356,178 @@ impl StaticTarget for KotlinTarget {
             InferredType::Str,
             &format!("com.sce.runtime.EventPayload.bytesAsText({value})"),
         ))
+    }
+    // The machine is constructed with the component's runtime context
+    // ([`KOTLIN_TEST_CONTEXT`]) by the component the runtime drives
+    // (`kotlin/state_machine.kt.jinja2`). A receive branch with a template asks
+    // the runtime for the snapshot's head as the template's type, under its
+    // record's event, and calls the template's `matches` on it in place, the
+    // lambda written inside the call's parentheses so the guard stands as one
+    // expression wherever a `when` arm puts it.
+    fn snapshot_match(&self, branch: &SnapshotBranch, args: &[String]) -> Option<String> {
+        Some(match branch {
+            SnapshotBranch::Receive {
+                port,
+                template: None,
+            } => format!(
+                "{KOTLIN_TEST_CONTEXT}.snapshotPresent({})",
+                kotlin_text(port)
+            ),
+            SnapshotBranch::Receive {
+                port,
+                template: Some(template),
+            } => {
+                let bound: String = args.iter().map(|arg| format!(", {arg}")).collect();
+                format!(
+                    "{KOTLIN_TEST_RUNTIME}.receives<{}>({KOTLIN_TEST_CONTEXT}, {}, {}, \
+                     {{ sceMessage -> {}(sceMessage{bound}) }})",
+                    kotlin_test_template(&template.unit, "Value"),
+                    kotlin_text(port),
+                    kotlin_text(&template.event),
+                    kotlin_test_template(&template.unit, "matches")
+                )
+            }
+            SnapshotBranch::Timeout { timer } => {
+                format!("{KOTLIN_TEST_CONTEXT}.timedOut({})", kotlin_text(timer))
+            }
+            SnapshotBranch::Done { ptc } => {
+                format!("{KOTLIN_TEST_CONTEXT}.done({})", kotlin_text(ptc))
+            }
+        })
+    }
+    // A message a receive branch's content reads is copied, field by field,
+    // into the member the machine's payload channel holds its record's event
+    // in, which the content reads `_event.data` through
+    // ([`Self::payload_accessor`]): the schema unit's data class and the
+    // machine's are two declarations of one record. The two hold a number, a
+    // `bool`, a text and a byte string in the same Kotlin types, so those are
+    // copied as they are; the byte string is shared, as the machine never
+    // writes into one. An enum is held in the machine's own enum class, which
+    // takes the variant of the same declared name as the enum unit's value,
+    // an optional one where it is present (docs/adr/0055), as the payload
+    // channel lifts a delivery's (`forge::generator::build_kotlin_event_payload`).
+    fn take_branch(
+        &self,
+        machine: &str,
+        branch: &SnapshotBranch,
+        payload: Option<&EntrySchema>,
+    ) -> Option<String> {
+        Some(match (branch, payload) {
+            (
+                SnapshotBranch::Receive {
+                    port,
+                    template: Some(template),
+                },
+                Some(schema),
+            ) => {
+                let copies = schema
+                    .fields
+                    .iter()
+                    .map(|f| {
+                        let read = format!(
+                            "sceValue.{}",
+                            crate::forge::generator::event_schema_field_ident(
+                                &f.id,
+                                Language::Kotlin
+                            )
+                        );
+                        let held = match f.sce_type.present_type() {
+                            SceType::Enum(reference) => {
+                                let ty = self.enum_type(machine, &reference.alias)?;
+                                let crossed = |value: &str| {
+                                    format!(
+                                        "{ty}.entries.first {{ it.declaredName == \
+                                         {value}.declaredName() }}"
+                                    )
+                                };
+                                match &f.sce_type {
+                                    EntryType::Optional { .. } => format!(
+                                        "{read}?.let {{ {KOTLIN_PRESENT} -> {} }}",
+                                        crossed(KOTLIN_PRESENT)
+                                    ),
+                                    EntryType::Scalar(_) => crossed(read.as_str()),
+                                }
+                            }
+                            _ => read,
+                        };
+                        Some((f.id.clone(), held))
+                    })
+                    .collect::<Option<Vec<(String, String)>>>()?;
+                let record = self.record_value(
+                    &crate::forge::generator::kotlin_payload_class(machine, &template.event),
+                    &copies,
+                );
+                format!(
+                    "val sceMessage = {KOTLIN_TEST_CONTEXT}.receive({})\n\
+                     val sceValue = checkNotNull(sceMessage.valueAs<{}>()) {{ \
+                     \"a receive branch takes the message its guard matched\" }}\n\
+                     {} = {record}",
+                    kotlin_text(port),
+                    kotlin_test_template(&template.unit, "Value"),
+                    kotlin_payload_field(&template.event)
+                )
+            }
+            (SnapshotBranch::Receive { port, .. }, _) => {
+                format!("{KOTLIN_TEST_CONTEXT}.receive({})", kotlin_text(port))
+            }
+            (SnapshotBranch::Timeout { timer }, _) => {
+                format!("{KOTLIN_TEST_CONTEXT}.timeout({})", kotlin_text(timer))
+            }
+            (SnapshotBranch::Done { ptc }, _) => {
+                format!("{KOTLIN_TEST_CONTEXT}.doneTaken({})", kotlin_text(ptc))
+            }
+        })
+    }
+    // A duration is whole microseconds (§3.3), the runtime's `Duration`, a
+    // `Long`: one past it has no value there. A verdict with no reason is set
+    // with the empty one, as the other runtimes set it.
+    fn test_statement(&self, statement: &TestStatement, reason: Option<&str>) -> Option<String> {
+        Some(match statement {
+            TestStatement::Setverdict { verdict, .. } => format!(
+                "{KOTLIN_TEST_CONTEXT}.setverdict({KOTLIN_TEST_RUNTIME}.Verdict.{}, {})",
+                kotlin_verdict(*verdict),
+                reason.unwrap_or("\"\"")
+            ),
+            TestStatement::StartTimer { timer, duration } => {
+                let micros =
+                    crate::forge::test_profile::duration_us(duration.as_deref()?.trim()).ok()?;
+                let micros = i64::try_from(micros).ok()?;
+                format!(
+                    "{KOTLIN_TEST_CONTEXT}.startTimer({}, {micros}L)",
+                    kotlin_text(timer)
+                )
+            }
+            TestStatement::StopTimer { timer } => {
+                format!("{KOTLIN_TEST_CONTEXT}.stopTimer({})", kotlin_text(timer))
+            }
+        })
+    }
+    // The text the engine's `<log>` would show ([`Self::log`]): the label,
+    // then the value as a Kotlin string template shows it, `null` for an
+    // absent one.
+    fn test_log(&self, label: &str, value: Option<&str>, _ty: InferredType) -> Option<String> {
+        Some(match value {
+            None => format!("{KOTLIN_TEST_CONTEXT}.log({})", kotlin_text(label)),
+            Some(value) => format!(
+                "{KOTLIN_TEST_CONTEXT}.log({}({value}).toString())",
+                kotlin_log_label(label)
+            ),
+        })
+    }
+    // The specific template's `value`, which the send hands its processor as the
+    // request's value (`HostSendRequest.value`, `kotlin/actions/send.kt.jinja2`).
+    fn test_message(&self, message: &TemplateRef, args: &[String]) -> Option<String> {
+        Some(format!(
+            "{}({})",
+            kotlin_test_template(&message.unit, "value"),
+            args.join(", ")
+        ))
+    }
+    // No line: every declaration of the unit is named by its package
+    // ([`kotlin_test_template`]), and an import of two templates' packages
+    // would bring two `matches` into the machine's file.
+    fn test_template_import(&self, _unit: &str) -> Option<String> {
+        Some(String::new())
     }
 }
 
@@ -6806,12 +7018,15 @@ pub fn lower(
     // with or a send sends, whose `match` and `value` the machine calls.
     imports.extend(test_template_enum_imports(model, &rewrites));
     for unit in test_template_units(model) {
-        imports.insert(target.test_template_import(&unit).ok_or_else(|| {
+        let line = target.test_template_import(&unit).ok_or_else(|| {
             GenerateError::unsupported(format!(
                 "the test template `{unit}` a test component uses has no {lang} lowering yet \
                  (docs/SCE_TEST_PROFILE.md §12.6)"
             ))
-        })?);
+        })?;
+        if !line.is_empty() {
+            imports.insert(line);
+        }
     }
     let imports: Vec<String> = imports.into_iter().collect();
     let scratch = target
@@ -8541,7 +8756,8 @@ fn cpp_test_template_namespace(unit: &str) -> String {
 /// The variant of the profile runtime's verdict a document's verdict is, one
 /// name on every backend that runs a test component: C++'s `SCE::Test::Verdict`
 /// (`sce/include/test/Verdict.h`) and Rust's `sce_rust_runtime::test::Verdict`
-/// (`backends/rust/runtime/src/test/verdict.rs`) declare the same variants.
+/// (`backends/rust/runtime/src/test/verdict.rs`) declare the same variants, and
+/// Kotlin's the same names in upper case ([`kotlin_verdict`]).
 fn runtime_verdict(verdict: crate::test_component::Verdict) -> &'static str {
     match verdict {
         crate::test_component::Verdict::Pass => "Pass",
