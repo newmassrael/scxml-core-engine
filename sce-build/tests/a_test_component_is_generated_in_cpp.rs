@@ -8,7 +8,8 @@
 //! profile and a send as calls on the component's runtime context, a PTC
 //! through the host invoker door; and beside the machine the component the
 //! profile's runtime drives. A component whose template reaches a union is
-//! refused on C++, and every other backend refuses a component by name.
+//! refused on C++, and every backend that has not landed a component refuses
+//! one by name.
 //!
 //! What the generated components do when they run is held by
 //! `tests/integration/ATestComponentRunsThroughItsDoorsTest.cpp`, which
@@ -17,6 +18,7 @@
 
 use std::path::{Path, PathBuf};
 
+use sce_build::forge::codegen_matrix::TEST_COMPONENT_BACKENDS;
 use sce_build::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
 use sce_build::forge::error::{ForgeError, GenerateError, Located};
 use sce_build::forge::test_profile::NOT_GENERATED_YET;
@@ -374,13 +376,14 @@ fn a_component_whose_template_reaches_a_union_is_refused_on_cpp() {
     assert!(detail.contains(NOT_LOWERED_YET), "{detail}");
 }
 
-/// Every backend but C++ refuses a test component by name, until the
-/// profile's runtime lands there.
+/// Every backend that does not generate a test component refuses one by
+/// name, until the profile's runtime lands there; Rust's is held by
+/// `a_test_component_is_generated_in_rust.rs`.
 #[test]
 fn every_other_backend_refuses_a_test_component_by_name() {
     let path = runtime_dir().join("asker.scxml");
     for &language in Language::ALL {
-        if language == Language::Cpp {
+        if TEST_COMPONENT_BACKENDS.contains(&language) {
             continue;
         }
         let Err(err) = generate(&path, language) else {

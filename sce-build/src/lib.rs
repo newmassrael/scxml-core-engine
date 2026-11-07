@@ -11613,6 +11613,25 @@ fn validate_no_std_compatibility_impl(
         );
     }
 
+    // docs/SCE_TEST_PROFILE.md §12.2, §12.3: a test component is driven by the
+    // profile's runtime (`sce_rust_runtime::test`), which holds a run's
+    // values, queues and log on the heap and is compiled under `std` alone, so
+    // its machine has no context to bind on a no_std build.
+    if model.test_component.is_some() {
+        return Some(
+            model.locate(
+                GenerateError::unsupported(format!(
+                    "test-component '{}' has no Rust no_std lowering: the profile's runtime \
+                     that drives it is std only (docs/SCE_TEST_PROFILE.md §12.2)",
+                    model.name
+                ))
+                .into(),
+                model.source_location.as_ref(),
+                &diag_label,
+            ),
+        );
+    }
+
     None
 }
 

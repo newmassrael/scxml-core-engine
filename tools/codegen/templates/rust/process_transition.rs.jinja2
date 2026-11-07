@@ -148,7 +148,9 @@
             {{ machine_name }}State::{{ state_id | to_state_variant }} => {
 {% for trans in state.transitions %}
                 if {{ event_match(trans) }} {
-{% if trans.cond %}
+{# A guard lowered with no `cond` written is a branch of a test component's
+   match on the round's snapshot (docs/SCE_TEST_PROFILE.md §12.3). #}
+{% if trans.cond or trans.native_guard %}
                     if {{ guard_expr(trans) }} {
 {% else %}
                     {
@@ -182,13 +184,21 @@
         match transition.0 {
 {% for state_id, state in model.states | dictsort %}
 {% for trans in state.transitions %}
-{% if trans.actions %}
+{% if trans.actions or trans.native_prelude %}
             // {{ state_id }}, transition {{ trans.transition_index }}
             {{ tables.written[state_id][trans.transition_index] }} => {  {{- annot.annotation_comment(trans, "rust", "                ") }}
 {% if trans.source_location %}
                 {{ sce_map.source_marker(trans.source_location, "rust", stmt_level=true, symbol_state=trans.symbol_state_path, symbol_artifact=trans.symbol_artifact) | trim }}
 {% endif %}
                 // W3C SCXML 3.13: Transition {{ trans.transition_index }} actions
+{#  docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3: taking a branch of a test
+    component removes what it matched on the round's snapshot before its
+    content runs, and a message the content reads is its `_event.data`, bound
+    as `ev`, from here on (`Transition::native_prelude`). #}
+{% if trans.native_prelude %}
+                // docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
+{{ trans.native_prelude }}
+{% endif %}
 {#  SCE Accepted Subset §2.15: content that reads the event's typed payload
     cannot run for a delivery that did not carry one, so it binds the payload
     once, before any of it runs, or does not run — raising nothing: the engine

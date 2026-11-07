@@ -1003,6 +1003,13 @@ pub struct {{ machine_name }}Policy{{ policy_generics_decl }} {
     // empty for a session its host started.
     pub parent_session_id: String,
 {% endif %}
+{% if model.test_component %}
+    // docs/SCE_TEST_PROFILE.md §12.3: the runtime context of the test
+    // component this machine is, which its branches' guards read the round's
+    // snapshot through and its statements call. Bound by the component the
+    // runtime drives ({{ machine_name }}Component) before the machine starts.
+    test_context: Option<::sce_rust_runtime::test::ComponentContext>,
+{% endif %}
 }
 
 {# What every constructor takes beside the session id, and passes on to
@@ -1157,6 +1164,9 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
             invoke_id: String::new(),
             child_session_id: String::new(),
             parent_session_id: String::new(),
+{% endif %}
+{% if model.test_component %}
+            test_context: None,
 {% endif %}
         }
     }
@@ -1329,6 +1339,18 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
     /// to — read back, e.g. a recording host's calls, since the machine owns it.
     pub fn actions(&self) -> &A {
         &self.actions
+    }
+{% endif %}
+{% if model.test_component %}
+
+    /// docs/SCE_TEST_PROFILE.md §12.3: the runtime context every guard of a
+    /// branch and every statement of the profile reads, one spelling for all
+    /// of them. The component binds it before the machine starts, since the
+    /// initial state's `<onentry>` may already start a timer or set a verdict.
+    fn test_context(&self) -> &::sce_rust_runtime::test::ComponentContext {
+        self.test_context
+            .as_ref()
+            .expect("a test component's context is bound before its machine starts")
     }
 {% endif %}
 {% if ns_seed.any %}
@@ -2139,6 +2161,100 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     }
 {% endif %}
 }
+{% if model.test_component %}
+
+// ======================================================================
+// The test component the profile's runtime drives (docs/SCE_TEST_PROFILE.md §12.3)
+// ======================================================================
+
+/// The test component `{{ model.name }}` as the profile's runtime drives it
+/// (docs/SCE_TEST_PROFILE.md §12.3).
+///
+/// It owns the machine above, unchanged, and reaches it only through the doors
+/// the engine already has: the machine's sends on a port leave through the
+/// test-port processor and its PTCs through the test-component invoker, both
+/// registered here over clones of the component's runtime context
+/// (docs/adr/0084), and each round's snapshot is the one external event every
+/// branch is a transition on. The runtime never reports a PTC's completion to
+/// the engine: a done branch reads it from the snapshot, so the engine cancels
+/// every PTC it started when the invoking state is exited, which is P9's kill.
+/// One thread; the engine's clock and scheduler take no part, since a
+/// component sends nothing delayed.
+///
+/// The machine is built when the component starts, around a policy the context
+/// is already bound to, and there is none before.
+#[derive(Default)]
+pub struct {{ machine_name }}Component {
+    machine: Option<Engine<{{ machine_name }}Policy>>,
+}
+
+impl ::sce_rust_runtime::test::ComponentMachine for {{ machine_name }}Component {
+    fn start(&mut self, context: ::sce_rust_runtime::test::ComponentContext) {
+        // The session is named by the component, `mtc` or the PTC's `<invoke
+        // id>`, an XML name and so an Nmtoken (docs/adr/0045); named and not
+        // drawn, so the component builds on a target with no randomness too.
+        let mut policy = {{ machine_name }}Policy::new_with_session_id(context.name())
+            .expect("a test component's name is an XML name, which names a session");
+        policy.test_context = Some(context.clone());
+        let mut machine = Engine::new(policy);
+        // P6: a send on a port is appended to the queue of the port it is
+        // connected to, or handed to the system adapter where it is mapped. A
+        // test-port send always carries its template's value
+        // (`forge::static_lowering`, `StaticTarget::test_message`).
+        let sender = context.clone();
+        machine.register_event_processor(
+            "{{ test_port_processor | escape_rust }}",
+            move |request: ::sce_rust_runtime::HostSendRequest| {
+                let value = request
+                    .value
+                    .expect("a test-port send carries its template's value");
+                sender.send(
+                    &request.target,
+                    ::sce_rust_runtime::test::Message {
+                        event: request.event_name,
+                        value,
+                    },
+                );
+                Vec::new()
+            },
+        );
+        // P9: the start of a PTC's invocation creates and starts it, and its
+        // cancel removes it, whether it is still running or already done.
+        machine.register_invoker(
+            "{{ test_component_invoke_type | escape_rust }}",
+            move |event: ::sce_rust_runtime::HostInvokeEvent| {
+                match event {
+                    ::sce_rust_runtime::HostInvokeEvent::Start(request) => {
+                        context.create(&request.invoke_id);
+                    }
+                    ::sce_rust_runtime::HostInvokeEvent::Cancel(cancel) => {
+                        context.kill(&cancel.invoke_id);
+                    }
+                }
+                None
+            },
+        );
+        machine.initialize();
+        self.machine = Some(machine);
+    }
+
+    // §3.2 step 3: the round's snapshot, on which the machine takes the first
+    // branch whose guard holds (P3) and completes its macrostep (P4), or takes
+    // none and discards the event (§7).
+    fn deliver_snapshot(&mut self) {
+        if let Some(machine) = self.machine.as_mut() {
+            machine.process_event({{ machine_name }}Event::{{ snapshot_event | to_event_variant }});
+        }
+    }
+
+    // P10: the machine entered a top-level `<final>`.
+    fn terminated(&self) -> bool {
+        self.machine
+            .as_ref()
+            .is_some_and(|machine| machine.is_in_final_state())
+    }
+}
+{% endif %}
 {% if model.on_sample_links %}
 
 // ======================================================================

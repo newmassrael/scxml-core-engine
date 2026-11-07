@@ -892,10 +892,11 @@ pub const fn guide(kind: ForgeKind) -> KindGuide {
                  sce:test-template=\"<alias>\"> sends a specific template",
                 "a <data sce:module-parameter=\"true\"> has no expr: its value is the suite's \
                  module parameter of the same id",
-                "C++ generates it: its statechart machine, each branch a transition on the \
-                 round's snapshot, and beside it the component the profile's runtime drives, \
-                 which reads each module parameter from the run before the machine starts; \
-                 every other backend refuses it by name",
+                "C++ and Rust generate it: its statechart machine, each branch a transition on \
+                 the round's snapshot, and beside it the component the profile's runtime \
+                 drives, which on C++ reads each module parameter from the run before the \
+                 machine starts; Rust refuses one that declares a module parameter, and every \
+                 other backend refuses it by name",
             ],
             example: Example::Document(include_str!("../../kind-examples/test-component.scxml")),
         },

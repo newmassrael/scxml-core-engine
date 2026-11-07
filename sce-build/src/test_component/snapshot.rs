@@ -100,11 +100,26 @@ impl SnapshotBranch {
 /// A module parameter needs nothing here: its variable is the statechart's,
 /// declared with no initial value ([`crate::forge::static_lowering::StaticField::module_parameter`]),
 /// and the component reads the suite's value into it before the machine
-/// starts (§11.5, §12.3).
+/// starts (§11.5, §12.3). That value is the suite's, so a backend that does not
+/// generate the suite's tables yet ([`crate::forge::codegen_matrix::TEST_SUITE_BACKENDS`])
+/// refuses a component that declares one by name: its component has no read
+/// of the value, and none is made up in its place.
 pub fn lower(model: &SCXMLModel, language: Language) -> Result<SCXMLModel, GenerateError> {
     let Some(profile) = &model.test_component else {
         return Ok(model.clone());
     };
+    if let Some(parameter) = profile
+        .module_parameters
+        .first()
+        .filter(|_| !crate::forge::codegen_matrix::TEST_SUITE_BACKENDS.contains(&language))
+    {
+        return Err(GenerateError::unsupported(format!(
+            "test-component '{}': the module parameter '{parameter}' takes the value the suite \
+             declares, which {language:?} reads into a component once it generates the tables \
+             of a suite (docs/SCE_TEST_PROFILE.md §11.8, §12.6)",
+            model.name
+        )));
+    }
     let mut lowered = model.clone();
 
     // §12.3: a send leaves through the test-port processor, and a PTC is run
@@ -486,6 +501,24 @@ mod tests {
                 .as_ref()
                 .map(|profile| profile.module_parameters.clone()),
             Some(vec!["limit".to_string()])
+        );
+    }
+
+    /// §11.8, §12.6: a backend that generates a component and not the suite's
+    /// tables has no value for a module parameter, so it refuses a component
+    /// that declares one by name, and lowers one that declares none.
+    #[test]
+    fn a_module_parameter_is_refused_where_the_suites_tables_are_not_generated() {
+        assert!(!crate::forge::codegen_matrix::TEST_SUITE_BACKENDS.contains(&Language::Rust));
+        assert!(lower(&component(), Language::Rust).is_ok());
+        let mut model = component();
+        if let Some(profile) = model.test_component.as_mut() {
+            profile.module_parameters.push("limit".to_string());
+        }
+        let refused = lower(&model, Language::Rust).expect_err("Rust generates no suite yet");
+        assert!(
+            format!("{refused:?}").contains("the module parameter 'limit' takes the value"),
+            "{refused:?}"
         );
     }
 }

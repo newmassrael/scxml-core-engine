@@ -311,8 +311,8 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
     (Language::Swift, "forge kind `test-template`", Why::NotYet(TEST_TEMPLATE_NOT_YET)),
     // The test component (docs/SCE_TEST_PROFILE.md §12.6,
     // `codegen_matrix::TEST_COMPONENT_BACKENDS`): its machine is driven by the
-    // profile's runtime, which lands in one backend first, C++.
-    (Language::Rust, "forge kind `test-component`", Why::NotYet(TEST_COMPONENT_NOT_YET)),
+    // profile's runtime, which lands in one backend at a time, C++ first and
+    // Rust next.
     (Language::Kotlin, "forge kind `test-component`", Why::NotYet(TEST_COMPONENT_NOT_YET)),
     (Language::Go, "forge kind `test-component`", Why::NotYet(TEST_COMPONENT_NOT_YET)),
     (Language::Python, "forge kind `test-component`", Why::NotYet(TEST_COMPONENT_NOT_YET)),

@@ -358,11 +358,11 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
         // Which have landed is [`TEST_TEMPLATE_BACKENDS`], the one list both
         // this answer and [`awaits_runtime`] read.
         ForgeKind::TestTemplate => lists(TEST_TEMPLATE_BACKENDS, lang),
-        // docs/SCE_TEST_PROFILE.md §12.6, slice 4: a test component's machine,
-        // driven by the profile's runtime through the doors of §12.3, lands one
-        // backend at a time, C++ first. Which have landed is
-        // [`TEST_COMPONENT_BACKENDS`], the one list both this answer and
-        // [`awaits_runtime`] read.
+        // docs/SCE_TEST_PROFILE.md §12.6, slices 4 and 6: a test component's
+        // machine, driven by the profile's runtime through the doors of §12.3,
+        // lands one backend at a time, C++ first and Rust next. Which have
+        // landed is [`TEST_COMPONENT_BACKENDS`], the one list both this answer
+        // and [`awaits_runtime`] read.
         ForgeKind::TestComponent => lists(TEST_COMPONENT_BACKENDS, lang),
         // docs/SCE_TEST_PROFILE.md §12.6, slice 5: the tables of a
         // configuration, a test case and a suite, which the profile's runner
@@ -417,7 +417,13 @@ pub const TEST_TEMPLATE_BACKENDS: &[Language] = &[Language::Rust, Language::Cpp]
 /// reason [`BROADCAST_LOG_BACKENDS`] gives. A backend not listed refuses a test
 /// component by name where a machine is written (`generate/unsupported-feature`,
 /// [`crate::forge::test_profile::document_not_generated`]).
-pub const TEST_COMPONENT_BACKENDS: &[Language] = &[Language::Cpp];
+///
+/// A listed backend that does not generate the suite's tables
+/// ([`TEST_SUITE_BACKENDS`]) refuses a component that declares a module
+/// parameter by name, since the value is the suite's
+/// ([`crate::test_component::snapshot::lower`]); it reads one in the change
+/// that joins it to that list.
+pub const TEST_COMPONENT_BACKENDS: &[Language] = &[Language::Rust, Language::Cpp];
 
 /// The backends that run a test suite (docs/SCE_TEST_PROFILE.md §11.9,
 /// §12.6): a unit of the tables of each test configuration, test case and test
@@ -1162,21 +1168,24 @@ mod tests {
     }
 
     /// docs/SCE_TEST_PROFILE.md §11.9, §12.6: C++ generates every kind of the
-    /// test profile, Rust a template besides, and every other pair of a backend
-    /// and a kind of the profile awaits the profile's runtime there, letting the
-    /// document through the matrix to the dispatch that refuses it by name.
+    /// test profile, Rust a template and a component besides, and every other
+    /// pair of a backend and a kind of the profile awaits the profile's runtime
+    /// there, letting the document through the matrix to the dispatch that
+    /// refuses it by name.
     #[test]
     fn cpp_emits_every_kind_of_the_profile_and_every_other_pair_awaits_it() {
         assert_eq!(ForgeKind::TEST_PROFILE.len(), 6);
         assert_eq!(TEST_TEMPLATE_BACKENDS, [Language::Rust, Language::Cpp]);
+        assert_eq!(TEST_COMPONENT_BACKENDS, [Language::Rust, Language::Cpp]);
         for &kind in ForgeKind::TEST_PROFILE {
             assert!(kind.is_test_profile(), "{kind:?}");
             assert_eq!(kind_class(kind), KindClass::Generic, "{kind:?}");
-            let landed: &[Language] = if kind == ForgeKind::TestTemplate {
-                &[Language::Rust, Language::Cpp]
-            } else {
-                &[Language::Cpp]
-            };
+            let landed: &[Language] =
+                if matches!(kind, ForgeKind::TestTemplate | ForgeKind::TestComponent) {
+                    &[Language::Rust, Language::Cpp]
+                } else {
+                    &[Language::Cpp]
+                };
             for &lang in Language::ALL {
                 let want = if landed.contains(&lang) {
                     EmitOutcome::Emit
