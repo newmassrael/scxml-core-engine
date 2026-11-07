@@ -373,3 +373,118 @@ fn a_template_is_specific_through_the_templates_it_references() {
         &imports_dir()
     ));
 }
+
+/// A schema of no field, written beside the two templates below: an event
+/// that carries no data (docs/SCE_ACCEPTED_SUBSET.md, "Fieldless schema").
+const FIELDLESS_SCHEMA: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="job_nothing"
+       sce:event-name="job.nothing">
+  <datamodel sce:payload="none"/>
+</scxml>
+"#;
+
+/// A template whose own type is the record of the schema of no field.
+const OVER_FIELDLESS: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="over_nothing"
+       sce:type="record:Nothing">
+  <sce:import kind="event-schema" src="job_nothing.scxml" as="Nothing"/>
+  <sce:any-value/>
+</scxml>
+"#;
+
+/// A template over a number with a formal parameter that may hold the record
+/// of the schema of no field.
+const PARAMETER_FIELDLESS: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="nothing_given"
+       sce:type="uint8">
+  <sce:import kind="event-schema" src="job_nothing.scxml" as="Nothing"/>
+  <datamodel>
+    <data id="spare" sce:type="optional&lt;record:Nothing&gt;" sce:direction="in"/>
+  </datamodel>
+  <sce:any-value/>
+</scxml>
+"#;
+
+/// The 1-based line of `text` the first occurrence of `token` stands on.
+fn line_of(text: &str, token: &str) -> u32 {
+    let at = text
+        .find(token)
+        .unwrap_or_else(|| panic!("`{token}` is in the document"));
+    u32::try_from(text[..at].matches('\n').count()).expect("a line number") + 1
+}
+
+/// A schema of no field names an event that carries no data, and no backend
+/// emits a payload type for it, so a template whose type, or a formal
+/// parameter's, holds its record is refused by name before any backend
+/// generates it (`validation/attribute-rule-violated`, on the `sce:type` that
+/// reaches it), on every backend that generates a template
+/// (`codegen_matrix::TEST_TEMPLATE_BACKENDS`: Rust, C++ and Kotlin). The
+/// documents are a test's alone, written into a directory of their own.
+#[test]
+fn a_record_of_a_schema_with_no_field_is_refused_on_every_backend_that_generates_templates() {
+    let dir = tempfile::tempdir().expect("a directory for the documents");
+    std::fs::write(dir.path().join("job_nothing.scxml"), FIELDLESS_SCHEMA).expect("the schema");
+    let cases = [
+        (
+            "over_nothing.scxml",
+            OVER_FIELDLESS,
+            "record:Nothing",
+            line_of(OVER_FIELDLESS, "<scxml"),
+        ),
+        (
+            "nothing_given.scxml",
+            PARAMETER_FIELDLESS,
+            "optional<record:Nothing>",
+            line_of(PARAMETER_FIELDLESS, "<data id=\"spare\""),
+        ),
+    ];
+    assert_eq!(
+        TEST_TEMPLATE_BACKENDS,
+        [Language::Rust, Language::Cpp, Language::Kotlin]
+    );
+    for (name, text, ty, line) in cases {
+        let path = dir.path().join(name);
+        std::fs::write(&path, text).expect("the template");
+        // The shared check refuses it, whatever backend follows.
+        let checked = test_template_check::check(&parse_in(dir.path(), name), dir.path(), name);
+        let Err(err) = checked else {
+            panic!("{name} holds a record of a schema of no field and is accepted");
+        };
+        assert_eq!(
+            record(&err),
+            (
+                DiagnosticCode::ValidationAttributeRuleViolated.as_str(),
+                Some(ty.to_string()),
+                Some(line)
+            ),
+            "{name}: {err:?}"
+        );
+        let expected = err.error.to_diagnostics()[0].expected.clone();
+        assert!(
+            expected
+                .as_ref()
+                .is_some_and(|rules| rules[0].contains("`Nothing` declares none")),
+            "{name}: {expected:?}"
+        );
+        for &language in TEST_TEMPLATE_BACKENDS {
+            let Err(err) = sce_build::compile_forge_file(&path, language, &[], &options()) else {
+                panic!("{name} generated on {language:?}");
+            };
+            assert_eq!(
+                record(&err),
+                (
+                    DiagnosticCode::ValidationAttributeRuleViolated.as_str(),
+                    Some(ty.to_string()),
+                    Some(line)
+                ),
+                "{name} on {language:?}: {err:?}"
+            );
+        }
+    }
+}

@@ -69,6 +69,7 @@ pub fn check(
     refuse_reference_cycle(template, &parsed.imports, base_dir, document)?;
 
     let own = type_scope(&parsed.imports, base_dir);
+    refuse_fieldless_records(template, &own, document)?;
     let references: Vec<Reference> = parsed
         .imports
         .iter()
@@ -90,6 +91,60 @@ pub fn check(
         references: &references,
     };
     checker.matcher(&template.matcher, &template.template_type, &own)
+}
+
+/// Refuse a template whose type, or a formal parameter's, holds at any depth a
+/// record whose schema declares no field
+/// ([`test_profile::fieldless_record_reached`]):
+/// `validation/attribute-rule-violated` on the root's or the parameter's
+/// `sce:type`, the refusal a statechart's `record:<alias>` variable of such a
+/// schema gets. A schema with no field names an event that carries no data,
+/// and no backend emits a payload type for it, so a unit of the template would
+/// name a type no unit declares; it is refused here, for every backend, before
+/// any generates it.
+fn refuse_fieldless_records(
+    template: &TestTemplateModel,
+    scope: &TypeScope,
+    document: &str,
+) -> Result<(), Located<ForgeError>> {
+    let root = template
+        .source_location
+        .as_ref()
+        .and_then(|location| location.line);
+    let typed = std::iter::once((
+        "<scxml sce:kind=\"test-template\">".to_string(),
+        &template.template_type,
+        root,
+    ))
+    .chain(template.parameters.iter().map(|p| {
+        (
+            format!("<data id=\"{}\">", p.id),
+            &p.parameter_type,
+            p.source_line,
+        )
+    }));
+    for (element, ty, line) in typed {
+        if let Some(alias) = test_profile::fieldless_record_reached(ty, scope) {
+            return Err(Located::new(
+                ValidationError::AttributeRuleViolated {
+                    element,
+                    attr: "sce:type".into(),
+                    value: ty.to_string(),
+                    rule: format!(
+                        "a type that holds no record of a schema with no field — `{alias}` \
+                         declares none, so the event it names carries no payload and no record \
+                         type is generated for it (docs/SCE_ACCEPTED_SUBSET.md, Fieldless \
+                         schema)"
+                    ),
+                }
+                .into(),
+                document,
+                line,
+                None,
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Whether `template` is specific (docs/SCE_TEST_PROFILE.md §6.2, §11.4):

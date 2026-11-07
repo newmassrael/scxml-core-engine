@@ -609,7 +609,9 @@ names one twice or names one the record does not have; a `union-match` whose var
 `value-list` with fewer than two items; a literal outside its type; a `param` or `args` entry that is not a formal
 parameter or whose type differs from the position's; a `length-min` greater than `length-max`; `any-value-or-none`
 inside a `list-match` (B.1.3.2, §8.1); a template whose references form a cycle; a template whose type contains
-`float32` or `float64` (§8.1).
+`float32` or `float64` (§8.1); a template whose type, or a formal parameter's, holds at any depth a record whose
+schema declares no field (`validation/attribute-rule-violated`): such a schema names an event that carries no data,
+and no backend generates a record type for it (`docs/SCE_ACCEPTED_SUBSET.md`, "Fieldless schema").
 
 ### 11.5 `test-component`
 
