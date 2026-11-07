@@ -110,21 +110,27 @@ state has no enabled eventless transition, so that it can proceed only by a snap
    every input of the trace and every timer expiry due at the new `NOW` is delivered: inputs appended to their port
    queues in trace order, timers set to `TIMEOUT`.
 3. **Snapshot.** Every waiting component takes its snapshot at once (-4 §9.3.1).
-4. **Selection.** Each waiting component evaluates its branches over its own snapshot (§4.3). Components whose
-   selection finds a branch take it.
-5. **Execution.** Each component that took a branch runs its macrostep to completion (§4.4). Messages it sends are
-   appended to the receiving port queues. They are not in any snapshot of this round, because every snapshot of the
-   round was taken in step 3.
+4. **Selection.** The waiting components evaluate their branches, each over its own snapshot (§4.3), one at a time in
+   the order they were created: the MTC first, then each PTC in the order of its creation.
+5. **Execution.** A component whose selection found a branch takes it and runs its macrostep to completion (§4.4)
+   before the next component selects. Messages it sends are appended to the receiving port queues. They are not in
+   any snapshot of this round, because every snapshot of the round was taken in step 3. A component that was removed
+   or that terminated earlier in the round does not select (P9, P10).
 6. The round ends when quiescence holds again.
 
-Within a round, the order in which components run steps 4 and 5 does not change the result. Each component reads only
-its own snapshot and its own variables, and nothing it writes is read by another component in the same round. So the
-run is determined by the input trace and the document.
+The order of steps 4 and 5 is fixed because it can change the result. A component reads only its own snapshot and
+its own variables, so in most rounds it does not; but a component can remove another that has not yet selected in the
+round: by leaving the state that invoked it (P9), or, for the MTC, by terminating (P10). Whether the removed component
+takes its step then decides whether its verdict changes and whether a send to its ports is an error (P6). Running the
+removed component's step first, or deferring every removal to the end of the round, does not remove the dependence:
+two components can each remove a component the other sends to, and then every -4 order of the two ends in a send to
+a removed port. With the order fixed, the run is determined by the input trace and the document.
 
 **Lemma 3.2 (the schedule is a TTCN-3 schedule).** Every round is a sequence of steps that -4's evaluation procedure
 may take: the update phase delivers input and advances timers (-4 §8.6.1.2); the selection phase may select the
-entities in the order the round uses (-4 §8.6.1.3); taking a snapshot and evaluating branches are separate nodes of
-`<alt-stmt>` (-4 §9.3.0), so other entities may run between one entity's snapshot and its evaluation.
+entities in the order the round uses, and may select one entity repeatedly until its macrostep is done
+(-4 §8.6.1.3); taking a snapshot and evaluating branches are separate nodes of `<alt-stmt>` (-4 §9.3.0), so other
+entities may take their snapshots and run between one entity's snapshot and its evaluation.
 
 ### 3.3 Time
 
@@ -483,7 +489,9 @@ contributes to Titan therefore has two parts, both carried by Titan's Main Contr
 
 - **rounds**: a component that waits in an `alt` does not take its snapshot until the Main Controller grants a round,
   and the Main Controller grants one only at quiescence (§3.2 step 1), which it decides from every component's report
-  of waiting, with its counts of port messages sent and received, in the current epoch;
+  of waiting, with its counts of port messages sent and received, in the current epoch. A grant has two phases:
+  every waiting component takes its snapshot, and then the components evaluate their branches one at a time in the
+  order of §3.2 step 4, each running its macrostep to its next wait before the next is granted;
 - **the logical clock**: when no branch of any component fired in the previous round's grant, the next grant first
   advances `NOW` (§3.3).
 
@@ -825,14 +833,16 @@ the component's macrostep has completed and it is waiting (§3.2) or terminated 
 
 ### 12.4 The scheduler
 
-All the components of a test case run on one thread, in the order they were created. §3.2 shows that the order within
-a round does not change the result. On one thread, quiescence (§3.2 step 1) holds whenever no delivery is in progress,
-because a send appends to its queue before it returns.
+All the components of a test case run on one thread, in the order they were created, which is the order §3.2 step 4
+fixes. On one thread, quiescence (§3.2 step 1) holds whenever no delivery is in progress, because a send appends to
+its queue before it returns.
 
 A round:
 
 1. Deliver every input of the system adapter and every timer expiry due at `NOW` (§3.2 step 2).
-2. Take every waiting component's snapshot, then deliver the snapshot event to each.
+2. Take every waiting component's snapshot, then deliver the snapshot event to each, in that order, skipping a
+   component removed or terminated earlier in the round. Once the MTC has terminated, or the run has met a dynamic
+   error, nothing more is delivered.
 3. If some component took a branch, start the next round at the same `NOW`.
 4. Otherwise advance `NOW` to the least of the next timer expiry, the next input instant the adapter announces, and
    the guard instant (§3.3), and start the next round.
