@@ -95,24 +95,16 @@ impl SnapshotBranch {
 /// directory its imports are written relative to; where it uses a template
 /// whose type reaches a union on a backend that lowers none, which generates
 /// no unit of that template (docs/adr/0092, section 7;
-/// docs/SCE_TEST_PROFILE.md §11.9); and where it declares a module parameter,
-/// whose value the suite's tables give (§12.6, slice 5).
+/// docs/SCE_TEST_PROFILE.md §11.9).
+///
+/// A module parameter needs nothing here: its variable is the statechart's,
+/// declared with no initial value ([`crate::forge::static_lowering::StaticField::module_parameter`]),
+/// and the component reads the suite's value into it before the machine
+/// starts (§11.5, §12.3).
 pub fn lower(model: &SCXMLModel, language: Language) -> Result<SCXMLModel, GenerateError> {
     let Some(profile) = &model.test_component else {
         return Ok(model.clone());
     };
-    // §11.5, §11.8: a module parameter's value is the suite's, which the
-    // runtime is given by the suite's tables (§12.6, slice 5). Until they land
-    // a component that declares one has no value to start it with, and none is
-    // made up for it.
-    if let Some(parameter) = profile.module_parameters.first() {
-        return Err(GenerateError::unsupported(format!(
-            "test-component '{}': the module parameter '{parameter}' takes the value the suite \
-             declares, which the runtime gives a component once the tables of the suite land \
-             (docs/SCE_TEST_PROFILE.md §11.8, §12.6, slice 5)",
-            model.name
-        )));
-    }
     let mut lowered = model.clone();
 
     // §12.3: a send leaves through the test-port processor, and a PTC is run
@@ -478,18 +470,22 @@ mod tests {
         assert!(lower(&model, Language::Rust).is_ok());
     }
 
-    /// §11.8, §12.6: a module parameter has the suite's value, which no
-    /// runtime gives a component yet; no value is made up for it.
+    /// §11.5, §12.3: a module parameter is a variable of the statechart, which
+    /// the component reads the suite's value into; the lowering leaves the
+    /// declaration as it is.
     #[test]
-    fn a_component_that_declares_a_module_parameter_waits_for_the_suites_tables() {
+    fn a_component_that_declares_a_module_parameter_lowers_with_it() {
         let mut model = component();
         if let Some(profile) = model.test_component.as_mut() {
             profile.module_parameters.push("limit".to_string());
         }
-        let refused = lower(&model, Language::Cpp).expect_err("no runtime gives it a value");
-        assert!(
-            format!("{refused:?}").contains("the module parameter 'limit'"),
-            "{refused:?}"
+        let lowered = lower(&model, Language::Cpp).expect("a module parameter lowers");
+        assert_eq!(
+            lowered
+                .test_component
+                .as_ref()
+                .map(|profile| profile.module_parameters.clone()),
+            Some(vec!["limit".to_string()])
         );
     }
 }

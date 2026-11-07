@@ -34,7 +34,14 @@ fn imports_dir() -> PathBuf {
 }
 
 /// Every component of the runtime's end-to-end test.
-const COMPONENTS: [&str; 5] = ["asker", "coordinator", "answerer", "keeper", "idler"];
+const COMPONENTS: [&str; 6] = [
+    "asker",
+    "coordinator",
+    "answerer",
+    "keeper",
+    "idler",
+    "param_asker",
+];
 
 fn generate(path: &Path, language: Language) -> Result<Vec<(String, String)>, Located<ForgeError>> {
     sce_build::compile_scxml_lang_typed(
@@ -278,6 +285,45 @@ fn a_log_is_recorded_in_the_test_log() {
         "a test component's log is not the engine's"
     );
     assert!(text("answerer").contains("this->testContext_->log(::std::string(\"asked\"));"));
+}
+
+/// The text of the file of the component `name` whose name ends in `suffix`.
+fn file_of(name: &str, suffix: &str) -> String {
+    files(name)
+        .into_iter()
+        .find(|(path, _)| path.ends_with(suffix))
+        .map(|(_, code)| code)
+        .unwrap_or_else(|| panic!("{name} has a file ending in {suffix}"))
+}
+
+/// §11.5, §11.8, §12.3: a module parameter is declared with its type and no
+/// value of the document's; the component reads the run's value into it, as
+/// a saved value of its type is read back, before the machine starts, and does
+/// not start the machine when the read is refused.
+#[test]
+fn a_module_parameter_is_read_from_the_run_before_the_machine_starts() {
+    let header = file_of("param_asker", "_sm.h");
+    for needle in [
+        "v_job {};",
+        "void acceptModuleParameters(const ::SCE::Test::ModuleParameters& given) {",
+        "this->policy_.v_job = ::SCE::Saved::savedReadUint32(given.of(\"job\"), \"job\");",
+        "[this](const ::SCE::Test::ModuleParameters& given) { machine_.acceptModuleParameters(given); }",
+    ] {
+        assert!(header.contains(needle), "param_asker holds `{needle}`");
+    }
+    let read = at(&header, "if (!context.readModuleParameters(");
+    let bound = at(&header, "machine_.bindTestContext(context);");
+    let started = at(&header, "machine_.initialize();");
+    assert!(
+        bound < read && read < started,
+        "the parameters are read after the context is bound and before the machine starts"
+    );
+    // The variable that is no module parameter starts at its `expr`.
+    assert!(!header.contains("v_answered {};"), "{header}");
+    assert!(
+        !text("asker").contains("acceptModuleParameters"),
+        "a component with no module parameter reads none"
+    );
 }
 
 /// docs/adr/0092, section 7: a component whose template reaches a union is

@@ -1261,6 +1261,20 @@ public:
     void bindTestContext(::SCE::Test::ComponentContext& context) {
         this->policy_.testContext_ = &context;
     }
+{% if model.test_component.module_parameters %}
+
+    /// docs/SCE_TEST_PROFILE.md §11.5, §11.8: each module parameter takes the
+    /// value the suite gives it, read as a saved value of its declared type is
+    /// read back, before the machine starts. A value not given, not of the
+    /// type or past its bound is refused by name, and nothing is converted.
+    void acceptModuleParameters(const ::SCE::Test::ModuleParameters& given) {
+{% for field in static_fields %}
+{% if field.module_parameter %}
+        this->policy_.{{ field.name }} = {{ saved_value.read(field, 'given.of("' ~ (field.id | escape_cpp) ~ '")') }};
+{% endif %}
+{% endfor %}
+    }
+{% endif %}
 {% endif %}
 {% if static_fields %}
 {% for field in static_published %}
@@ -1652,6 +1666,16 @@ class {{ model.name }}Component final : public ::SCE::Test::ComponentMachine {
 public:
     void start(::SCE::Test::ComponentContext& context) override {
         machine_.bindTestContext(context);
+{% if model.test_component.module_parameters %}
+        // §11.5, §11.8: the module parameters take the suite's values before the
+        // machine starts. Without one, or with one not of its type, the run ends
+        // in error (P13), and the machine is not started on a value made up in
+        // its place.
+        if (!context.readModuleParameters(
+                [this](const ::SCE::Test::ModuleParameters& given) { machine_.acceptModuleParameters(given); })) {
+            return;
+        }
+{% endif %}
         // P6: a send on a port is appended to the queue of the port it is
         // connected to, or handed to the system adapter where it is mapped.
         machine_.registerEventProcessor("{{ test_port_processor | escape_cpp }}",

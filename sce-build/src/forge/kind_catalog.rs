@@ -890,9 +890,9 @@ pub const fn guide(kind: ForgeKind) -> KindGuide {
                 "a <data sce:module-parameter=\"true\"> has no expr: its value is the suite's \
                  module parameter of the same id",
                 "C++ generates it: its statechart machine, each branch a transition on the \
-                 round's snapshot, and beside it the component the profile's runtime drives; \
-                 one that declares a module parameter waits for the suite's tables, and every \
-                 other backend refuses it by name",
+                 round's snapshot, and beside it the component the profile's runtime drives, \
+                 which reads each module parameter from the run before the machine starts; \
+                 every other backend refuses it by name",
             ],
             example: Example::Document(include_str!("../../kind-examples/test-component.scxml")),
         },

@@ -1266,26 +1266,15 @@ fn a_document_of_the_profile_is_refused_by_name_where_its_kind_is_not_generated(
             language,
         );
         // C++ generates a test component (`a_test_component_is_generated_in_cpp.rs`),
-        // and refuses one that declares a module parameter, as the example does,
-        // by that parameter until the suite's tables give it its value
+        // the example's module parameter read from the suite's value
         // (docs/SCE_TEST_PROFILE.md §12.6, slice 5).
         if language == Language::Cpp {
             assert_eq!(
                 codegen_matrix::lookup(ForgeKind::TestComponent, language),
                 EmitOutcome::Emit
             );
-            let Err(err) = generated else {
-                panic!("the example's module parameter has a value on C++");
-            };
-            match err.error {
-                ForgeError::Generate(boxed) => match *boxed {
-                    GenerateError::UnsupportedFeature { detail, .. } => assert!(
-                        detail.contains("the module parameter 'limit' takes the value the suite"),
-                        "{detail}"
-                    ),
-                    other => panic!("test-component on C++: {other:?}"),
-                },
-                other => panic!("test-component on C++: {other:?}"),
+            if let Err(err) = generated {
+                panic!("the example component does not generate on C++: {err:?}");
             }
             continue;
         }
