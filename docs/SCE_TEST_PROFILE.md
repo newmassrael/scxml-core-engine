@@ -778,6 +778,24 @@ C++ generates `test-template` (§12.6, slice 3). The unit is a header `<name>.h`
 A template whose type reaches a union at any depth is refused on C++ as a field of a union is (ADR 0092, section
 7).
 
+Rust generates `test-template` (§12.6, slice 6). The unit is a file `<name>.rs`, named by the document's file as
+every forge unit is, which declares:
+
+- `Value`, the template's type as the unit of an `event-schema` spells a field of that type (a record is the
+  schema's payload struct, a union the enum its unit declares);
+- `fn matches(value: &Value, <the formal parameters, in order>) -> bool`, which holds each mechanism of §6.1 by the
+  rules C++ holds it by. A number, a `bool`, a value of an enum and an optional one are passed by value, every other
+  parameter is lent. A length restriction on a `string[N]` counts characters (`chars().count()`), and on `bytes[N]`
+  and `list<T>[B]` octets and elements. A `union-match` holds where the union is in the case its `variant` names,
+  and the case's record matches the case's matcher;
+- for a specific template (§6.2) alone, `fn value(<the formal parameters>) -> Value`, the value it sends, which
+  matches it.
+
+Every enum, record and union the unit names is named through the sibling module of the document that declares it
+(`super::<document>`), so an enum a record of another document holds is named by its one declaration. The walk over
+the matchers, which decides each matcher's tests, the optional rules, the bounds a range leaves out and the binding
+of a reference's parameters, is one for both backends (`forge::generator::test_template_walk`); a backend spells it.
+
 C++ generates `test-component` (§12.6, slice 4). The unit is the statechart machine the C++ generator writes for any
 `sce-static` document, `<file>_sm.h` and its `<file>_sm.inl`, in the namespace `SCE::Generated::<name>`, lowered
 through the doors of §12.3 before it is rendered (`test_component::snapshot::lower`, written once for every
@@ -953,4 +971,5 @@ the equivalence law (order of work step 6).
    `test-component`, but for a component that declares a module parameter, whose value slice 5 gives.
 5. C++ generation of the configuration, case and suite tables, a runner, and the examples run end to end with the
    verdicts they expect. The refusal is lifted for the remaining kinds, and for a component's module parameter.
-6. The other backends, one at a time.
+6. The other backends, one at a time. Rust generates templates first, a template over a union among them; the
+   refusal of §11.9 is lifted for Rust for `test-template`.

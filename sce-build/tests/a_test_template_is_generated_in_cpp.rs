@@ -7,7 +7,7 @@
 //! specific template alone, a `value`; each matching mechanism is spelled over
 //! the record types the event schema's unit declares. A template whose type
 //! reaches a union is refused on C++ as a schema unit's union field is, and
-//! every other backend refuses a template by name.
+//! every backend that generates no template refuses one by name.
 //!
 //! What the generated headers do when they run is held by
 //! `tests/integration/ATestTemplateMatchesItsValuesTest.cpp`, which compiles
@@ -15,6 +15,7 @@
 
 use std::path::{Path, PathBuf};
 
+use sce_build::forge::codegen_matrix::TEST_TEMPLATE_BACKENDS;
 use sce_build::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
 use sce_build::forge::error::{ForgeError, GenerateError, Located};
 use sce_build::forge::test_profile::NOT_GENERATED_YET;
@@ -325,13 +326,14 @@ fn a_template_that_reaches_a_union_is_refused_on_cpp() {
     }
 }
 
-/// Every backend but C++ refuses a template by name, until the profile's
-/// runtime lands there.
+/// Every backend that does not generate a template
+/// (`codegen_matrix::TEST_TEMPLATE_BACKENDS`) refuses one by name, until the
+/// profile's runtime lands there.
 #[test]
 fn every_other_backend_refuses_a_template_by_name() {
     let path = profile_dir().join("job_report.scxml");
     for &language in Language::ALL {
-        if language == Language::Cpp {
+        if TEST_TEMPLATE_BACKENDS.contains(&language) {
             continue;
         }
         let Err(err) = sce_build::compile_forge_file(&path, language, &[], &options()) else {

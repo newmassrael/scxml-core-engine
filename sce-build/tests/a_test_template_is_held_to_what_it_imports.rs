@@ -17,6 +17,7 @@
 
 use std::path::{Path, PathBuf};
 
+use sce_build::forge::codegen_matrix::TEST_TEMPLATE_BACKENDS;
 use sce_build::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
 use sce_build::forge::error::{ForgeError, GenerateError, Located};
 use sce_build::forge::model::{ForgeDocument, ForgeImport, ParsedForge, TestTemplateModel};
@@ -124,13 +125,19 @@ fn a_template_that_keeps_every_rule_of_its_imports_is_accepted() {
 }
 
 /// The compile asks the same rules: the accepted template reaches the
-/// generation, which refuses every document of the profile by name, and a
-/// refused one is refused with its own code before it.
+/// generation, which a backend that generates no template
+/// (`codegen_matrix::TEST_TEMPLATE_BACKENDS`) refuses by name, and a refused
+/// one is refused with its own code before it.
 #[test]
 fn the_compile_holds_a_template_to_its_imports_before_it_refuses_to_generate_one() {
+    let refusing = Language::ALL
+        .iter()
+        .copied()
+        .find(|language| !TEST_TEMPLATE_BACKENDS.contains(language))
+        .expect("a backend that generates no template");
     match sce_build::compile_forge_file(
         &imports_dir().join("order_placed_match.scxml"),
-        Language::Rust,
+        refusing,
         &[],
         &options(),
     ) {

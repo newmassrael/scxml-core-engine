@@ -303,8 +303,7 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
     (Language::Swift, "forge kind `union`", Why::NotYet(UNION_NOT_YET)),
     // The test template (docs/SCE_TEST_PROFILE.md §12.6,
     // `codegen_matrix::TEST_TEMPLATE_BACKENDS`): the profile's runtime lands in
-    // one backend first, C++.
-    (Language::Rust, "forge kind `test-template`", Why::NotYet(TEST_TEMPLATE_NOT_YET)),
+    // one backend at a time, C++ first and Rust next.
     (Language::Kotlin, "forge kind `test-template`", Why::NotYet(TEST_TEMPLATE_NOT_YET)),
     (Language::Go, "forge kind `test-template`", Why::NotYet(TEST_TEMPLATE_NOT_YET)),
     (Language::Python, "forge kind `test-template`", Why::NotYet(TEST_TEMPLATE_NOT_YET)),

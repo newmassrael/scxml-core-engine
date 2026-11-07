@@ -27,6 +27,7 @@ mod cpp_test_tables;
 mod cpp_test_template;
 mod length_guard;
 mod rust_source;
+mod rust_test_template;
 mod rust_view;
 mod swift_codec;
 mod test_template_walk;
@@ -25526,10 +25527,15 @@ pub fn generate_rust_with_imports_and_externs(
         // docs/adr/0092, section 7: Rust lowers a union to an enum, one
         // variant per variant of its tag's enum.
         ForgeDocument::Union(m) => render_union_rust(&env, m, imports, options)?,
-        // docs/SCE_TEST_PROFILE.md §11.9: no backend generates a document of
-        // the test profile until its runtime lands, so each is refused by name.
-        ForgeDocument::TestTemplate(_)
-        | ForgeDocument::TestPortType(_)
+        // docs/SCE_TEST_PROFILE.md §11.9, §12.6, slice 6: a template's `matches`
+        // and a specific template's `value`, a union matched by the variant of
+        // its case (`codegen_matrix::TEST_TEMPLATE_BACKENDS`).
+        ForgeDocument::TestTemplate(m) => {
+            rust_test_template::render_test_template_rust(&env, m, imports)?
+        }
+        // docs/SCE_TEST_PROFILE.md §11.9: the other kinds of the test profile
+        // are refused by name until their runtime lands here.
+        ForgeDocument::TestPortType(_)
         | ForgeDocument::TestConfiguration(_)
         | ForgeDocument::TestCase(_)
         | ForgeDocument::TestSuite(_) => {

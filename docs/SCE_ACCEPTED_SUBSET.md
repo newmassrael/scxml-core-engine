@@ -538,7 +538,9 @@ do not bind the template's formal parameters one to one, each by a parameter of 
 the profile only once its runtime lands there for the document's kind, and until then
 generation refuses one by name (`generate/unsupported-feature`). C++ generates a template
 (`docs/SCE_TEST_PROFILE.md` §11.9), and refuses one whose type reaches a union at any
-depth by the union's own refusal (`generate/unsupported-feature`). C++ generates a test
+depth by the union's own refusal (`generate/unsupported-feature`). Rust generates a
+template too, one whose type reaches a union among them, a `union-match` holding where
+the union is in the case its `variant` names. C++ generates a test
 component, its machine driven by the profile's runtime through the doors of
 `docs/SCE_TEST_PROFILE.md` §12.3, each module parameter read from the run before the
 machine starts, and refuses, with `generate/unsupported-feature`, one that uses a template
@@ -546,8 +548,8 @@ whose type reaches a union. A module parameter whose type is not a scalar, `stri
 `bytes[N]` is refused by name (`generate/unsupported-feature`) on every backend. C++
 generates the tables of a test configuration, a test case and a suite, and writes no file
 for a port type (§11.9, §12.6, slice 5); it refuses a suite whose guard is past the
-microseconds the runtime's clock counts to. Every kind of the profile is refused on every
-other backend.
+microseconds the runtime's clock counts to. Every other pair of a backend and a kind of
+the profile is refused by name.
 
 A port type, a configuration, a test case and a suite are then held to the rules their
 imports decide (`docs/SCE_TEST_PROFILE.md` §11.3, §11.6 to §11.8), and a document a

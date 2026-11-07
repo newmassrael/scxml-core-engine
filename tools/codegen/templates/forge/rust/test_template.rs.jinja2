@@ -1,0 +1,40 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "rust", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="test-template")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+
+{# Every enum, record and union is named through the sibling module of its
+   document (`super::<snake>`), so the unit has no import line to leave
+   unread. #}
+/// The type the template `{{ template_name }}` matches: `{{ template_type }}`, as the
+/// unit of its type declares it.
+#[allow(dead_code)]
+pub type Value = {{ value_type }};
+
+{# `unused_variables`: a formal parameter a matcher does not read is still one a
+   reference binds, and a matcher that holds no value to compare (`any-value`)
+   reads no `value`. #}
+/// Whether `value` matches the template `{{ template_name }}` (ES 201 873-1 Annex B.1,
+/// docs/SCE_TEST_PROFILE.md §6.1).
+{% for p in parameters %}
+/// - `{{ p.name }}`: the formal parameter `{{ p.id }}`, of type `{{ p.sce_type }}`.
+{% endfor %}
+#[allow(dead_code, unused_variables{% if parameters | length >= 7 %}, clippy::too_many_arguments{% endif %})]
+pub fn matches(value: &Value{% for p in parameters %}, {{ p.name }}: {{ p.ty }}{% endfor %}) -> bool {
+    {{ match_expr }}
+}
+{% if value_expr %}
+
+/// The value the specific template `{{ template_name }}` sends (docs/SCE_TEST_PROFILE.md
+/// §6.2): every field it names at its value, every field it omits absent. It matches the
+/// template by `matches`, given the same parameters.
+#[allow(dead_code, unused_variables{% if parameters | length > 7 %}, clippy::too_many_arguments{% endif %})]
+pub fn value({% for p in parameters %}{{ p.name }}: {{ p.ty }}{% if not loop.last %}, {% endif %}{% endfor %}) -> Value {
+    {{ value_expr }}
+}
+{% endif %}
