@@ -440,3 +440,34 @@ fn a_machine_with_a_history_is_generated_with_the_save_api() {
         assert!(has, "{language}: a machine with a history saves it");
     }
 }
+
+/// What binds a root's session id where the machine is created, per backend:
+/// the Rust constructor a host gives the id to and the Kotlin constructor's
+/// call that binds the given id or draws one.
+const ROOT_SESSION_ID: [(&str, &str); 2] = [
+    ("rust", "pub fn new_with_session_id("),
+    ("kotlin", "bindRootSessionId(sessionId)"),
+];
+
+#[test]
+fn a_machine_without_the_save_api_still_binds_its_root_session_id() {
+    // docs/adr/0045, "Questions the owner answered" 2: a root's id is bound
+    // when the machine is created and is never empty, as §scxml-5.10 binds
+    // `_sessionid` at load. Whether a saved state can hold the machine decides
+    // only whether it saves, not whether it has an id.
+    let extra =
+        r##"<onentry><send event="go" target="#_scxml_child_session" delay="5s"/></onentry>"##;
+    let document = machine(extra);
+    for (language, marker) in ROOT_SESSION_ID {
+        let (ok, text) = generate_beside(language, &document, &[], &[]);
+        assert!(ok, "{language}: the machine does not generate:\n{text}");
+        assert!(
+            !has_save_api(language, &text),
+            "{language}: the control: this machine waits on a session outside the tree"
+        );
+        assert!(
+            text.contains(marker),
+            "{language}: a machine that does not save still binds its root's id ({marker})"
+        );
+    }
+}
