@@ -775,9 +775,10 @@ static inline void sce_queue_lscq_consumer_release(sce_queue_lscq_t *q, uint32_t
 }
 
 /* Takes a copy of `*value` into the queue, or reports SCE_QUEUE_PUSH_OUT_OF_MEMORY
- * when the newest segment is closed and the allocator will not give another; the
- * value is the caller's either way. `hazard` is the slot the producer place came
- * with. Lock-free when the allocator is. */
+ * when the newest segment is closed and the allocator will not give another, after
+ * the domain was asked to free the retired segments no hazard names; the value is
+ * the caller's either way. `hazard` is the slot the producer place came with.
+ * Lock-free when the allocator is. */
 static inline sce_queue_push_status_t sce_queue_lscq_try_push(sce_queue_lscq_t *q, uint32_t hazard, const void *value) {
     for (;;) {
         sce_queue_lscq_segment_t *tail =
@@ -797,6 +798,16 @@ static inline sce_queue_push_status_t sce_queue_lscq_try_push(sce_queue_lscq_t *
         /* The segment is closed. Put the element in a segment of our own before
          * anyone can see it, then try to link it behind this one. */
         fresh = sce_queue_lscq_new_segment(q);
+        if (fresh == NULL) {
+            /* The segments consumers retired hold the allocator's budget until a
+             * scan, and a scan runs only on a retirement once twice the slots are
+             * waiting. A refusal therefore asks the domain to give back what no
+             * hazard names and asks the allocator once more: without it a push
+             * could be refused for as long as nobody pops, however empty the
+             * queue. */
+            sce_hazard_collect(q->domain);
+            fresh = sce_queue_lscq_new_segment(q);
+        }
         if (fresh == NULL) {
             sce_hazard_clear(q->domain, hazard);
             return SCE_QUEUE_PUSH_OUT_OF_MEMORY;

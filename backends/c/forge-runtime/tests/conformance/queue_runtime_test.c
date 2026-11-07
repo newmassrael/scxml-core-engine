@@ -573,6 +573,37 @@ static size_t live_blocks(const test_allocator_t *a) {
     return sce_atomic_load_acquire_usize(&a->live);
 }
 
+/* The system allocator with a budget of blocks out at once: it refuses past `limit`
+ * blocks live and takes a block's place back when it is given back. The
+ * `test_allocator_t` above counts blocks given in all, which a free does not
+ * restore, so it cannot show a push refused while the blocks that hold the budget
+ * are retired segments waiting for a scan. */
+typedef struct budget_allocator {
+    size_t limit;
+    size_t live;
+} budget_allocator_t;
+
+static void *budget_allocate(void *context, size_t size, size_t align) {
+    budget_allocator_t *a = (budget_allocator_t *)context;
+    void *block;
+    if (sce_atomic_load_acquire_usize(&a->live) >= a->limit) {
+        return NULL;
+    }
+    block = aligned_alloc(align, sce_queue_align_up(size, align));
+    if (block != NULL) {
+        (void)sce_atomic_fetch_add_acq_rel_usize(&a->live, 1u);
+    }
+    return block;
+}
+
+static void budget_deallocate(void *context, void *block, size_t size, size_t align) {
+    budget_allocator_t *a = (budget_allocator_t *)context;
+    (void)size;
+    (void)align;
+    free(block);
+    (void)sce_atomic_fetch_sub_acq_rel_usize(&a->live, 1u);
+}
+
 /* One interface over the two segmented queues, so one reading of the steps serves
  * both. */
 typedef struct segmented_subject {
@@ -696,6 +727,60 @@ static void every_segmented_scenario_holds(void) {
         ran++;
     }
     CHECK(ran > 0u, "a contract with no segmented scenario checks nothing of the segmented queues");
+}
+
+/* A segment a consumer retired holds the allocator's budget until a scan, and the
+ * scan runs only when twice the domain's slots are waiting. A push the allocator
+ * refuses must therefore ask the domain to free what no hazard names before it
+ * reports out-of-memory; otherwise a queue holding one element refuses a push for
+ * as long as nobody pops. The budget is three segments of one element, all three
+ * filled: the second pop retires the first, the live third is full (a segment's
+ * ring reuses a slot only once its element is popped, and nothing was popped from
+ * it), and the next push needs a fourth, which the retired first segment's block
+ * stands in front of. */
+static void a_refused_push_frees_the_retired_segments_and_asks_again(void) {
+    budget_allocator_t budget = {3u, 0u};
+    sce_queue_allocator_t allocator;
+    sce_hazard_slot_t slots[4];
+    sce_hazard_domain_t domain;
+    sce_queue_lscq_t q;
+    uint32_t producer;
+    uint32_t consumer;
+    uint32_t value;
+    uint32_t out = 0u;
+    allocator.context = &budget;
+    allocator.allocate = budget_allocate;
+    allocator.deallocate = budget_deallocate;
+    allocator.progress = SCE_QUEUE_PROGRESS_BLOCKING;
+    CHECK(sce_hazard_domain_init(&domain, slots, 4u), "a domain of four slots");
+    CHECK(sce_queue_lscq_init(&q, &domain, &allocator, SCE_QUEUE_PROGRESS_BLOCKING, sizeof(uint32_t),
+                              _Alignof(uint32_t), 1u, 2u),
+          "the allocator gives the first segment");
+    CHECK(sce_queue_lscq_producer_acquire(&q, &producer) && sce_queue_lscq_consumer_acquire(&q, &consumer),
+          "a place a side");
+
+    for (value = 0u; value < 3u; value++) {
+        CHECK(sce_queue_lscq_try_push(&q, producer, &value) == SCE_QUEUE_PUSH_OK,
+              "each push fills a segment and the next links another");
+    }
+    CHECK(budget.live == 3u, "the budget is spent on three live segments");
+    CHECK(sce_queue_lscq_try_pop(&q, consumer, &out) && out == 0u, "the first segment drains");
+    /* The pop that finds the drained segment empty and closed moves `head` to its
+     * successor and retires it, and answers from the successor. */
+    CHECK(sce_queue_lscq_try_pop(&q, consumer, &out) && out == 1u, "the second segment answers");
+    CHECK(sce_hazard_waiting(&domain) == 1u, "the first is retired, not yet scanned");
+    CHECK(budget.live == 3u, "so it still holds a block of the budget");
+
+    value = 3u;
+    CHECK(sce_queue_lscq_try_push(&q, producer, &value) == SCE_QUEUE_PUSH_OK,
+          "a refusal asks the domain to give the retired segment back and succeeds");
+    CHECK(sce_queue_lscq_try_pop(&q, consumer, &out) && out == 2u, "the elements still come out in order");
+    CHECK(sce_queue_lscq_try_pop(&q, consumer, &out) && out == 3u, "the pushed one comes last");
+
+    sce_queue_lscq_producer_release(&q, producer);
+    sce_queue_lscq_consumer_release(&q, consumer);
+    sce_queue_lscq_destroy(&q);
+    CHECK(budget.live == 0u, "destroying the queue gave every block back");
 }
 
 static void a_segmented_queue_refuses_what_it_cannot_run(void) {
@@ -1291,6 +1376,7 @@ int main(void) {
     an_intrusive_queue_refuses_a_shape_it_cannot_run();
     every_segmented_scenario_holds();
     a_segmented_queue_refuses_what_it_cannot_run();
+    a_refused_push_frees_the_retired_segments_and_asks_again();
     an_lscq_queue_hands_out_no_more_places_than_its_ring_and_domain_have();
     linked_rings_lose_nothing_between_threads();
     an_lscq_queue_loses_nothing_between_threads();
