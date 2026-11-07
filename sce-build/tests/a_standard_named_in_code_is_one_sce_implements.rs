@@ -241,6 +241,11 @@ const IMPLEMENTED: &[Implemented] = &[
             "backends/rust/mesh/src/lib.rs",
             "backends/rust/mesh/examples/zenoh_probe.rs",
             "tools/codegen/templates/mesh_router/",
+            "backends/swift/mesh/Package.swift",
+            "backends/swift/mesh/Sources/SceMesh/ZenohInbox.swift",
+            "backends/swift/mesh/Sources/SceMesh/ZenohReconnectingInbox.swift",
+            "backends/swift/mesh/Sources/SceMesh/Peers.swift",
+            "backends/swift/mesh/Sources/SceMeshZenohKit/",
         ],
         why: "SCE speaks Zenoh: transport/zenoh.rs plans the key \
               expressions and liveliness tokens, and templates/mesh/cpp \
@@ -263,7 +268,15 @@ const IMPLEMENTED: &[Implemented] = &[
               lib.rs declares those modules behind their features; and \
               examples/zenoh_probe.rs measures the round trip over that \
               same session. Eight paths, not the crate: the rest of it \
-              speaks WebSocket.",
+              speaks WebSocket. The Swift Mesh core carries the same \
+              binding over a client its host supplies: ZenohInbox.swift \
+              holds the key space, the seam and the readiness rule, \
+              ZenohReconnectingInbox.swift opens it again on a new \
+              session, Peers.swift names the peer table link a \
+              `zenoh_inbox` binding becomes, Package.swift names the kit \
+              product, and SceMeshZenohKit is the in-memory router and the \
+              conformance scenarios a client is held to. Four files and \
+              one directory that is Zenoh throughout, not the package.",
     },
     Implemented {
         token: "RFC 4122",
