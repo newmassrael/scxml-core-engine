@@ -2190,11 +2190,17 @@ pub struct {{ machine_name }}Component {
 
 impl ::sce_rust_runtime::test::ComponentMachine for {{ machine_name }}Component {
     fn start(&mut self, context: ::sce_rust_runtime::test::ComponentContext) {
-        // The session is named by the component, `mtc` or the PTC's `<invoke
-        // id>`, an XML name and so an Nmtoken (docs/adr/0045); named and not
-        // drawn, so the component builds on a target with no randomness too.
+        // The session is named by the component, and named rather than drawn,
+        // so the component builds on a target with no randomness too. The name
+        // is `mtc` or the id of the `<invoke>` that creates the PTC
+        // (`ComponentContext::create`, which creates nothing under a name its
+        // configuration has no PTC of), and every `<invoke id>` is refused
+        // where its document is parsed unless it is an XML Name
+        // (`scxml_identifier::IDENTIFIER_ATTRIBUTES`, `reject_malformed` in
+        // sce-build), which is an Nmtoken (docs/adr/0045). The refusal below
+        // is therefore unreachable for a component a generated one creates.
         let mut policy = {{ machine_name }}Policy::new_with_session_id(context.name())
-            .expect("a test component's name is an XML name, which names a session");
+            .expect("a test component's name is an XML Name, which names a session");
         policy.test_context = Some(context.clone());
         let mut machine = Engine::new(policy);
         // P6: a send on a port is appended to the queue of the port it is

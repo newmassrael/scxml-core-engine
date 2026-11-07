@@ -24,7 +24,7 @@
 use std::path::{Path, PathBuf};
 
 use sce_build::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
-use sce_build::forge::error::{ForgeError, GenerateError, Located};
+use sce_build::forge::error::{ForgeError, GenerateError, Located, ValidationError};
 use sce_build::generator::Language;
 
 /// The directory of the components the runtime's end-to-end test runs.
@@ -444,4 +444,248 @@ fn a_component_that_declares_a_module_parameter_is_refused_on_rust() {
         detail.contains("the module parameter 'job' takes the value the suite declares"),
         "{detail}"
     );
+}
+
+/// Writes each `(file, text)` into `dir`.
+fn write_all(dir: &Path, documents: &[(&str, String)]) {
+    for (file, text) in documents {
+        std::fs::write(dir.join(file), text).unwrap_or_else(|e| panic!("{file} is written: {e}"));
+    }
+}
+
+/// A port type that receives the event schema `schema_file` declares,
+/// imported as `alias`.
+fn port_of(alias: &str, schema_file: &str) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-port-type" name="watched_port">
+  <sce:import kind="event-schema" src="{schema_file}" as="{alias}"/>
+  <sce:message type="{alias}" direction="in"/>
+</scxml>
+"#
+    )
+}
+
+/// A component that waits on its port `sut` for a message its template
+/// `template` matches, given the variable `wanted` of type `wanted_type`
+/// declared at `wanted_expr`.
+fn color_watcher(template: &str, wanted_type: &str, wanted_expr: &str) -> String {
+    let imports = imports_dir();
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="color_watcher"
+       datamodel="sce-static" initial="watching">
+  <sce:import kind="test-port-type" src="watched_port.scxml" as="WatchedPort"/>
+  <sce:import kind="test-template" src="{template}.scxml" as="Watched"/>
+  <sce:import kind="enum" src="{imports}/paint_color.scxml" as="Color"/>
+  <sce:test-port id="sut" type="WatchedPort"/>
+  <datamodel>
+    <data id="wanted" sce:type="{wanted_type}" expr="{wanted_expr}"/>
+  </datamodel>
+  <state id="watching">
+    <transition sce:receive="sut" sce:test-template="Watched"
+                sce:template-args="wanted" target="done">
+      <sce:setverdict value="pass"/>
+    </transition>
+  </state>
+  <final id="done"/>
+</scxml>
+"#,
+        imports = imports.display()
+    )
+}
+
+/// docs/SCE_TEST_PROFILE.md §11.9: the machine holds a value of an enum in its
+/// own type and a template's unit takes the type the enum document's unit
+/// declares, so a variable of an enum bound to a parameter crosses into the
+/// variant of the same declared name, as a value handed to an algorithm
+/// does, and the machine imports the enum's unit. C++ generates the same
+/// component through the same crossing.
+#[test]
+fn an_enum_argument_crosses_into_the_templates_enum() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let imports = imports_dir();
+    let template = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="line_of_color"
+       sce:type="record:OrderLine">
+  <sce:import kind="event-schema" src="{imports}/order_line.scxml" as="OrderLine"/>
+  <sce:import kind="enum" src="{imports}/paint_color.scxml" as="Color"/>
+  <datamodel>
+    <data id="color" sce:type="enum:Color" sce:direction="in"/>
+  </datamodel>
+  <sce:record-match>
+    <sce:any-value field="sku"/>
+    <sce:any-value field="quantity"/>
+    <sce:specific field="color" param="color"/>
+  </sce:record-match>
+</scxml>
+"#,
+        imports = imports.display()
+    );
+    let schema = format!("{}/order_line.scxml", imports.display());
+    write_all(
+        dir.path(),
+        &[
+            ("watched_port.scxml", port_of("OrderLine", &schema)),
+            ("line_of_color.scxml", template),
+            (
+                "color_watcher.scxml",
+                color_watcher("line_of_color", "enum:Color", "Color.blue"),
+            ),
+        ],
+    );
+    let path = dir.path().join("color_watcher.scxml");
+    let code = text_at(&path);
+    assert!(
+        code.contains("line_of_color::matches(sce_message, match self.wanted {"),
+        "the argument crosses where the template is called: {code}"
+    );
+    assert!(code.contains("=> paint_color::PaintColor::"), "{code}");
+    assert!(code.contains("use super::paint_color;"), "{code}");
+    if let Err(err) = generate(&path, Language::Cpp) {
+        panic!("the same component generates on C++: {err:?}");
+    }
+}
+
+/// An optional value of an enum has no crossing into a template's unit yet,
+/// so a variable of one bound to a parameter is refused by name.
+#[test]
+fn an_optional_enum_argument_is_refused_by_name() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let imports = imports_dir();
+    let schema = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="tinted"
+       sce:event-name="tinted">
+  <sce:import kind="enum" src="{imports}/paint_color.scxml" as="Color"/>
+  <datamodel>
+    <data id="tint" sce:type="optional&lt;enum:Color&gt;" sce:direction="in"/>
+  </datamodel>
+</scxml>
+"#,
+        imports = imports.display()
+    );
+    let template = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="tint_of"
+       sce:type="record:Tinted">
+  <sce:import kind="event-schema" src="tinted.scxml" as="Tinted"/>
+  <sce:import kind="enum" src="{imports}/paint_color.scxml" as="Color"/>
+  <datamodel>
+    <data id="tint" sce:type="optional&lt;enum:Color&gt;" sce:direction="in"/>
+  </datamodel>
+  <sce:record-match>
+    <sce:specific field="tint" param="tint"/>
+  </sce:record-match>
+</scxml>
+"#,
+        imports = imports.display()
+    );
+    write_all(
+        dir.path(),
+        &[
+            ("tinted.scxml", schema),
+            ("watched_port.scxml", port_of("Tinted", "tinted.scxml")),
+            ("tint_of.scxml", template),
+            (
+                "color_watcher.scxml",
+                color_watcher("tint_of", "optional&lt;enum:Color&gt;", "null"),
+            ),
+        ],
+    );
+    let Err(err) = generate(&dir.path().join("color_watcher.scxml"), Language::Rust) else {
+        panic!("an optional enum argument generated on Rust");
+    };
+    let detail = unsupported("color_watcher", err);
+    assert!(
+        detail.contains("an optional value of the enum `Color` bound to a parameter of a test"),
+        "{detail}"
+    );
+}
+
+/// docs/SCE_TEST_PROFILE.md §12.3: the component the runtime drives builds its
+/// machine itself, and a machine that declares `<sce:action>` is a policy over
+/// a host the component is given by nothing, so Rust refuses such a component
+/// by name.
+#[test]
+fn a_component_that_declares_a_host_action_is_refused_on_rust() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let component = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="beeper"
+       datamodel="sce-static" initial="beeping">
+  <sce:test-timer id="pause" duration="1ms"/>
+  <datamodel>
+    <data id="beeps" sce:type="uint32" expr="1"/>
+  </datamodel>
+  <state id="beeping">
+    <onentry>
+      <sce:action name="showBeeps" effect="notice">
+        <sce:arg name="count" expr="beeps"/>
+      </sce:action>
+      <sce:start-timer timer="pause"/>
+    </onentry>
+    <transition sce:timeout="pause" target="done">
+      <sce:setverdict value="pass"/>
+    </transition>
+  </state>
+  <final id="done"/>
+</scxml>
+"#;
+    let path = dir.path().join("beeper.scxml");
+    std::fs::write(&path, component).expect("the component is written");
+    let Err(err) = generate(&path, Language::Rust) else {
+        panic!("a component that declares <sce:action> generated on Rust");
+    };
+    let detail = unsupported("beeper", err);
+    assert!(
+        detail.starts_with("test-component 'beeper' declares <sce:action>"),
+        "{detail}"
+    );
+}
+
+/// The component names its session by the component's name, `mtc` or the id
+/// of the `<invoke>` that creates it, which the runtime's session id holds to
+/// the Nmtoken rule. An `<invoke id>` that is not an XML Name is refused where
+/// the document is parsed, so no generated component creates a PTC under a
+/// name its session cannot take.
+#[test]
+fn an_invoke_id_that_is_no_xml_name_is_refused_where_it_is_parsed() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let component = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="spawner"
+       datamodel="sce-static" initial="spawning">
+  <sce:test-timer id="pause" duration="1ms"/>
+  <state id="spawning">
+    <invoke type="http://sce.dev/ext/test-component" src="{runtime}/idler.scxml" id="no peer"/>
+    <onentry>
+      <sce:start-timer timer="pause"/>
+    </onentry>
+    <transition sce:timeout="pause" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>
+"#,
+        runtime = runtime_dir().display()
+    );
+    let path = dir.path().join("spawner.scxml");
+    std::fs::write(&path, component).expect("the component is written");
+    let Err(err) = generate(&path, Language::Rust) else {
+        panic!("an <invoke id> that is no XML Name generated on Rust");
+    };
+    match err.error {
+        ForgeError::Validation(boxed) => assert!(
+            matches!(&*boxed, ValidationError::MalformedIdentifier { attr, .. } if attr == "id"),
+            "{boxed:?}"
+        ),
+        other => panic!("refused at the parse: {other:?}"),
+    }
 }

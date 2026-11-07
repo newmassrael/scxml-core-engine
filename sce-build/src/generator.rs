@@ -3486,6 +3486,23 @@ fn render_rust(
     // baseline (the generic `Policy<A>` never appears).
     let native =
         crate::forge::native_action::render(&mut model_lowered, &machine_name, Language::Rust);
+    // docs/SCE_TEST_PROFILE.md §12.3: the component the profile's runtime
+    // drives builds its machine itself when it starts, and a machine that
+    // declares `<sce:action>`s is a policy over its host, a value the component
+    // is given by nothing: the runtime makes a component from its type alone
+    // (`MachineFactory`). So such a component is refused by name rather than
+    // built around a host made up for it.
+    if native.any && model.test_component.is_some() {
+        return Err(GenerateError::unsupported_at(
+            format!(
+                "test-component '{}' declares <sce:action>, whose host is a type parameter of \
+                 the Rust machine that the component the profile's runtime builds has no value \
+                 of (docs/SCE_TEST_PROFILE.md §12.6)",
+                model.name
+            ),
+            model.source_location.clone(),
+        ));
+    }
     // `Engine<P: StatePolicy>` requires `P: 'static` (the runtime stores the
     // policy and erases lifetimes through it), so the host `Actions` type
     // parameter carries the same bound. A host impl is a plain owned type, so
