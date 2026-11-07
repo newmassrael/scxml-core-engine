@@ -8,7 +8,8 @@
 // `src/integration/static_datamodel/` (regen:
 // `scripts/regen_static_datamodel_rust.sh`), driven only through the doors of
 // §12.3; the configuration, the factory of machines and the system adapter are
-// written here, so that each component is held apart from any generated table.
+// written here, so that each component is held apart from the generated
+// tables, which `a_test_suite_runs_through_its_runner.rs` runs.
 //
 // Each case is the twin of the C++ gtest of the same name in
 // `tests/integration/ATestComponentRunsThroughItsDoorsTest.cpp`
