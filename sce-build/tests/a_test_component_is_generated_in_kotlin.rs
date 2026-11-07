@@ -11,11 +11,11 @@
 //! The twin of `a_test_component_is_generated_in_rust.rs`, over the same
 //! fixtures.
 //!
-//! Kotlin holds a text, a byte string and an enum of a received message where
-//! the record's unit holds them, so it copies a message the content reads that
-//! Rust refuses. What Kotlin refuses is held here too: a component that
-//! declares a module parameter, whose value Kotlin's suite tables do not give
-//! yet, and one that declares `<sce:action>`.
+//! A module parameter is read from the run before the machine starts, as on
+//! Rust and C++. Kotlin holds a text, a byte string and an enum of a received
+//! message where the record's unit holds them, so it copies a message the
+//! content reads that Rust refuses. What Kotlin refuses is held here too: a
+//! component that declares `<sce:action>`.
 //!
 //! What the generated components do when they run is held by
 //! `backends/kotlin/tests/src/test/kotlin/com/sce/integration/ATestComponentRunsThroughItsDoorsTest.kt`,
@@ -45,15 +45,14 @@ fn profile_dir() -> PathBuf {
 }
 
 /// Every component of the runtime's end-to-end test that Kotlin generates,
-/// each with the name its machine is spelled by. `param_asker`, which declares
-/// a module parameter, is refused
-/// (`a_module_parameter_is_refused_until_kotlin_generates_a_suite`).
-const COMPONENTS: [(&str, &str); 5] = [
+/// each with the name its machine is spelled by.
+const COMPONENTS: [(&str, &str); 6] = [
     ("asker", "Asker"),
     ("coordinator", "Coordinator"),
     ("answerer", "Answerer"),
     ("keeper", "Keeper"),
     ("idler", "Idler"),
+    ("param_asker", "ParamAsker"),
 ];
 
 fn generate(path: &Path, language: Language) -> Result<Vec<(String, String)>, Located<ForgeError>> {
@@ -698,22 +697,143 @@ fn an_optional_enum_argument_is_refused_by_name() {
     );
 }
 
-/// §11.8, §12.6: Kotlin generates a component and not yet the suite's tables,
-/// so a component that declares a module parameter, whose value is the
-/// suite's, is refused by that parameter's name.
+/// §11.5, §11.8, §12.3: a module parameter is declared with its type and no
+/// value of the document's, at its type's zero, which nothing reads; the
+/// component reads the run's value into it, as a saved value of its type is
+/// read back, after the machine is constructed with the context and before
+/// any door is registered on it or it starts, and does not start the machine
+/// when the read is refused. The twin of the Rust test of the same name.
 #[test]
-fn a_module_parameter_is_refused_until_kotlin_generates_a_suite() {
-    assert!(!sce_build::forge::codegen_matrix::TEST_SUITE_BACKENDS.contains(&Language::Kotlin));
-    let Err(err) = generate(&runtime_dir().join("param_asker.scxml"), Language::Kotlin) else {
-        panic!("a component's module parameter has no value on Kotlin");
-    };
-    let detail = unsupported("param_asker", err);
-    assert!(
-        detail.contains(
-            "the module parameter 'job' takes the value the suite declares, which Kotlin reads"
-        ),
-        "{detail}"
+fn a_module_parameter_is_read_from_the_run_before_the_machine_starts() {
+    assert!(sce_build::forge::codegen_matrix::TEST_SUITE_BACKENDS.contains(&Language::Kotlin));
+    let code = text("param_asker");
+    for needle in [
+        "* docs/SCE_TEST_PROFILE.md §11.5: the module parameter `job`, which takes the",
+        "private var vJob: UInt = 0u",
+        "internal fun acceptModuleParameters(given: com.sce.runtime.test.ModuleParameters) {",
+        "acceptModuleParametersPart0(given)",
+        "private fun acceptModuleParametersPart0(given: com.sce.runtime.test.ModuleParameters) {",
+        "vJob = SavedValues.uint32(given.of(\"job\"), \"job\")",
+    ] {
+        assert!(
+            code.contains(needle),
+            "param_asker holds `{needle}`:\n{code}"
+        );
+    }
+    let built = at(&code, "val machine = ParamAskerStateMachine(");
+    let read = at(
+        &code,
+        "if (!context.readModuleParameters { given -> machine.acceptModuleParameters(given) }) {",
     );
+    let served = at(&code, "machine.registerEventProcessor(");
+    let started = at(&code, "machine.initialize()");
+    assert!(
+        built < read && read < served && served < started,
+        "the parameters are read after the machine is built and before it starts"
+    );
+    assert!(
+        code[read..served].contains("return"),
+        "a refused read leaves the machine unstarted"
+    );
+    // The variable that is no module parameter starts at its `expr`.
+    assert!(
+        code.contains("private var vAnswered: UInt = 0.toUInt()"),
+        "{code}"
+    );
+    assert!(
+        !text("asker").contains("acceptModuleParameters"),
+        "a component with no module parameter reads none"
+    );
+}
+
+/// §11.8: a byte string module parameter is read back held to its bound, as a
+/// restored byte string is, and a text by the reader of its bounded type; each
+/// starts at its type's zero.
+#[test]
+fn a_bounded_module_parameter_is_read_back_held_to_its_bound() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let component = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="keyed"
+       datamodel="sce-static" initial="checking">
+  <sce:test-timer id="pause" duration="1ms"/>
+  <datamodel>
+    <data id="key" sce:type="bytes[2]" sce:module-parameter="true"/>
+    <data id="label" sce:type="string[8]" sce:module-parameter="true"/>
+  </datamodel>
+  <state id="checking">
+    <onentry>
+      <sce:start-timer timer="pause"/>
+    </onentry>
+    <transition sce:timeout="pause" target="done">
+      <sce:setverdict value="pass"/>
+    </transition>
+  </state>
+  <final id="done"/>
+</scxml>
+"#;
+    let path = dir.path().join("keyed.scxml");
+    std::fs::write(&path, component).expect("the component is written");
+    let code = text_at(&path);
+    for needle in [
+        "private var vKey: ByteArray = byteArrayOf()",
+        "private var vLabel: String = \"\"",
+        "vKey = SavedValues.bytes(given.of(\"key\"), \"key\", 2)",
+        "vLabel = SavedValues.string(given.of(\"label\"), \"label\", 8)",
+    ] {
+        assert!(code.contains(needle), "keyed holds `{needle}`:\n{code}");
+    }
+}
+
+/// A component whose module parameter `tint` is of the enum `Color`, and
+/// whose state waits a millisecond before it passes.
+fn color_picker() -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="color_picker"
+       datamodel="sce-static" initial="picking">
+  <sce:import kind="enum" src="{imports}/paint_color.scxml" as="Color"/>
+  <sce:test-timer id="pause" duration="1ms"/>
+  <datamodel>
+    <data id="tint" sce:type="enum:Color" sce:module-parameter="true"/>
+  </datamodel>
+  <state id="picking">
+    <onentry>
+      <sce:start-timer timer="pause"/>
+    </onentry>
+    <transition sce:timeout="pause" target="done">
+      <sce:setverdict value="pass"/>
+    </transition>
+  </state>
+  <final id="done"/>
+</scxml>
+"#,
+        imports = imports_dir().display()
+    )
+}
+
+/// §11.8: a module parameter of an enum is read through the enum's saved
+/// form, the `fromSaved` its machine type declares whether or not a saved
+/// state of the machine can be written. The machine's enum type has no zero,
+/// so the variable starts at the variant its document declares first, which
+/// nothing reads before the run's value replaces it.
+#[test]
+fn an_enum_module_parameter_is_read_through_the_enums_saved_form() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let path = dir.path().join("color_picker.scxml");
+    std::fs::write(&path, color_picker()).expect("the component is written");
+    let code = text_at(&path);
+    for needle in [
+        "fun fromSaved(value: Any?, what: String): ColorPickerColorEnum {",
+        "private var vTint: ColorPickerColorEnum = ColorPickerColorEnum.RED",
+        "vTint = ColorPickerColorEnum.fromSaved(given.of(\"tint\"), \"tint\")",
+    ] {
+        assert!(
+            code.contains(needle),
+            "color_picker holds `{needle}`:\n{code}"
+        );
+    }
 }
 
 /// docs/SCE_TEST_PROFILE.md §12.3: the component the runtime drives builds its
