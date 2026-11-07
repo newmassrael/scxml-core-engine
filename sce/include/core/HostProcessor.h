@@ -77,8 +77,8 @@ struct HostSendRequest {
     /// test-port processor, whose send carries its specific template's value,
     /// a record of the type the event schema's unit declares
     /// (docs/SCE_TEST_PROFILE.md §12.3; docs/adr/0091, C2). Empty for every
-    /// other send, whose data is `eventData`. A C++ field alone until the
-    /// runtime of another backend carries the same value its own way.
+    /// other send, whose data is `eventData`. The Rust runtime carries the
+    /// same value as `HostSendRequest::value`.
     std::any value;
 };
 
