@@ -15,6 +15,7 @@
 #pragma once
 
 #include <algorithm>
+#include <any>
 #include <functional>
 #include <map>
 #include <memory>
@@ -556,6 +557,25 @@ inline void ComponentContext::kill(const std::string &ptc) {
 
 inline Instant ComponentContext::now() const {
     return run_.now_;
+}
+
+/**
+ * @brief Whether a receive branch with a template matches the snapshot of
+ *        @p context (P2, docs/SCE_TEST_PROFILE.md §12.3)
+ *
+ * The snapshot saw a message at the head of @p port, under @p event, the event
+ * name of the template's record, whose value is a `Value`, and @p matches, the
+ * template's `match` bound to its arguments, holds of that value. A message of
+ * another record, or one whose value is of another type, does not match.
+ */
+template <typename Value, typename Matches>
+bool receives(const ComponentContext &context, const std::string &port, const std::string &event, Matches &&matches) {
+    const Message *head = context.snapshotOf(port);
+    if (head == nullptr || head->event != event) {
+        return false;
+    }
+    const Value *value = std::any_cast<Value>(&head->value);
+    return value != nullptr && std::forward<Matches>(matches)(*value);
 }
 
 }  // namespace SCE::Test

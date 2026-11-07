@@ -362,6 +362,56 @@ TEST(TestCaseRunTest, ADoneBranchSeesAPtcThatTerminated) {
     EXPECT_TRUE(logged(result, "echo", LogKind::Done));
 }
 
+/// P2, §12.3: a receive branch with a template matches only a message of its
+/// record, under its record's event, whose value its `match` holds; the guard
+/// reads the snapshot and removes nothing.
+TEST(TestCaseRunTest, AReceiveWithATemplateMatchesOnlyItsRecordsValue) {
+    Configuration configuration;
+    configuration.mtcType = "Reader";
+    configuration.portsOfType = {{"Reader", {"p"}}};
+    configuration.mappings = {{{"mtc", "p"}, "sut"}};
+    std::vector<std::string> seen;
+    Machines machines;
+    machines.types["Reader"] = {[](ComponentContext &, Scripted &) {},
+                                [&seen](ComponentContext &context, Scripted &self) {
+                                    const auto isSeven = [](const int &value) { return value == 7; };
+                                    if (SCE::Test::receives<int>(context, "p", "number", isSeven)) {
+                                        seen.push_back("seven");
+                                        EXPECT_TRUE(SCE::Test::receives<int>(context, "p", "number", isSeven))
+                                            << "a guard that matched removed the message";
+                                        context.receive("p");
+                                        self.end();
+                                    } else if (context.snapshotOf("p") != nullptr) {
+                                        seen.push_back(context.snapshotOf("p")->event);
+                                        context.receive("p");
+                                    }
+                                }};
+
+    class Inputs : public TraceAdapter {
+    public:
+        std::vector<std::pair<std::string, Message>> takeInputsDue(Instant now) override {
+            std::vector<std::pair<std::string, Message>> due;
+            if (now == 0 && !given_) {
+                given_ = true;
+                due.emplace_back("sut", Message{"number", std::string("7")});
+                due.emplace_back("sut", Message{"other", 7});
+                due.emplace_back("sut", Message{"number", 6});
+                due.emplace_back("sut", Message{"number", 7});
+            }
+            return due;
+        }
+
+    private:
+        bool given_ = false;
+    };
+
+    Inputs adapter;
+    TestCaseResult result = TestCaseRun(configuration, machines.factory(), adapter, std::nullopt).run();
+    EXPECT_EQ(seen, (std::vector<std::string>{"number", "other", "number", "seven"}))
+        << "a value of another type, another event and another value do not match";
+    EXPECT_EQ(result.verdict, Verdict::None);
+}
+
 /// P6, P13: a send on a port whose peer is not present is a dynamic error.
 TEST(TestCaseRunTest, ASendToAnAbsentPeerIsAnError) {
     Configuration configuration = mtcAndEcho();
