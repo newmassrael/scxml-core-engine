@@ -60,7 +60,9 @@
 //! stalled one started. A push is as strong as the allocator it calls
 //! ([`SegmentAllocator::PROGRESS`], held to the declared rank by a compile-time
 //! assertion in [`Lscq::new`]); a refusal hands the element back as
-//! [`PushError::OutOfMemory`].
+//! [`PushError::OutOfMemory`]. Before it is given the domain is asked to free the
+//! retired segments no hazard names, because they hold the allocator's budget
+//! until a scan and a scan runs only on a retirement.
 //!
 //! **Sizes.** Each ring is an `Scq<T, N, R>`: `N` elements a segment, `R` slots
 //! in its index rings, a power of two at least `N` and at least the most producers
@@ -354,7 +356,16 @@ where
             }
             // The segment is closed. Put the element in a segment of our own
             // before anyone can see it, then try to link it behind this one.
-            let Some(fresh) = place(queue.allocator, Segment::<T, N, R>::new) else {
+            // The segments consumers retired hold the allocator's budget until a
+            // scan, and a scan runs only on a retirement once twice the slots are
+            // waiting. A refusal therefore asks the domain to give back what no
+            // hazard names and asks the allocator once more: without it a push
+            // could be refused for as long as nobody pops, however empty the queue.
+            let fresh = place(queue.allocator, Segment::<T, N, R>::new).or_else(|| {
+                queue.domain.collect();
+                place(queue.allocator, Segment::<T, N, R>::new)
+            });
+            let Some(fresh) = fresh else {
                 self.hazard.clear();
                 return Err(PushError::OutOfMemory(value));
             };
@@ -520,6 +531,91 @@ mod tests {
             unsafe { std::alloc::dealloc(ptr.as_ptr(), layout) };
             self.live.fetch_sub(1, Ordering::SeqCst);
         }
+    }
+
+    /// An allocator that has a budget of blocks out and refuses past it, as a
+    /// target that budgets does.
+    struct Budgeted {
+        live: AtomicUsize,
+        limit: usize,
+    }
+
+    // SAFETY: as `Counting`'s: blocks come from the system allocator with the
+    // layout asked for and go back to it with the same; the count is atomic.
+    unsafe impl SegmentAllocator for Budgeted {
+        const PROGRESS: Progress = Progress::Blocking;
+
+        fn allocate(&self, layout: Layout) -> Option<NonNull<u8>> {
+            if self.live.load(Ordering::SeqCst) >= self.limit {
+                return None;
+            }
+            // SAFETY: a segment's layout is never zero-sized.
+            let block = NonNull::new(unsafe { std::alloc::alloc(layout) })?;
+            self.live.fetch_add(1, Ordering::SeqCst);
+            Some(block)
+        }
+
+        unsafe fn deallocate(&self, ptr: NonNull<u8>, layout: Layout) {
+            // SAFETY: the caller's contract: `ptr` came from `allocate` with `layout`.
+            unsafe { std::alloc::dealloc(ptr.as_ptr(), layout) };
+            self.live.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
+
+    /// A segment a consumer retired holds the allocator's budget until a scan, and
+    /// the scan runs only when twice the domain's slots are waiting. A push the
+    /// allocator refuses must therefore ask the domain to free what no hazard
+    /// names before it reports `OutOfMemory`; otherwise a queue holding one element
+    /// refuses a push for as long as nobody pops. The budget is three segments of
+    /// one element, all three filled: the second pop retires the first, the live
+    /// third is full (a segment's ring reuses a slot only once its element is
+    /// popped, and nothing was popped from it), and the next push needs a fourth,
+    /// which the retired first segment's block stands in front of.
+    #[test]
+    fn a_refused_push_frees_the_retired_segments_and_asks_again() {
+        let allocator = Budgeted {
+            live: AtomicUsize::new(0),
+            limit: 3,
+        };
+        let domain = HazardDomain::<4>::new();
+        let queue = Lscq::<u64, 1, 2, 4, Budgeted, 0>::new(&allocator, &domain).unwrap();
+        let (producer, consumer) = (queue.producer().unwrap(), queue.consumer().unwrap());
+
+        for value in 0..3 {
+            assert!(
+                producer.try_push(value).is_ok(),
+                "each push fills a segment and the next links another"
+            );
+        }
+        assert_eq!(
+            allocator.live.load(Ordering::SeqCst),
+            3,
+            "the budget is spent on three live segments"
+        );
+        assert_eq!(consumer.try_pop(), Some(0), "the first segment drains");
+        // The pop that finds the drained segment empty and closed moves `head` to
+        // its successor and retires it, and answers from the successor.
+        assert_eq!(consumer.try_pop(), Some(1), "the second segment answers");
+        assert_eq!(domain.waiting(), 1, "the first is retired, not yet scanned");
+        assert_eq!(
+            allocator.live.load(Ordering::SeqCst),
+            3,
+            "so it still holds a block of the budget"
+        );
+
+        assert!(
+            producer.try_push(3).is_ok(),
+            "a refusal asks the domain to give the retired segment back and succeeds"
+        );
+        assert_eq!(consumer.try_pop(), Some(2));
+        assert_eq!(consumer.try_pop(), Some(3));
+        drop((producer, consumer));
+        drop(queue);
+        assert_eq!(
+            allocator.live.load(Ordering::SeqCst),
+            0,
+            "dropping the queue gave every block back"
+        );
     }
 
     /// A producer that has linked a successor and not yet moved `tail` leaves
