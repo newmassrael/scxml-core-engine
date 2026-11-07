@@ -316,6 +316,7 @@ outputs = [
     "backends/rust/mesh/src/generated/*",
     "backends/rust/mesh/src/generated.rs",
     "backends/rust/mesh/examples/generated/*",
+    "backends/kotlin/w3c/src/**",
     "backends/kotlin/tests/src/**",
     "backends/kotlin/method-size/src/main/kotlin/com/sce/methodsize/**",
     "backends/kotlin/mesh/src/commonMain/kotlin/generated/**",

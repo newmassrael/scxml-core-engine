@@ -619,14 +619,17 @@ jobs:
       if: always()
       with:
         name: w3c-test-results-kotlin
-        path: backends/kotlin/tests/build/reports/tests/test/
+        # Both suites a row runs: the W3C machines and the integration machines.
+        path: |
+          backends/kotlin/w3c/build/reports/tests/test/
+          backends/kotlin/tests/build/reports/tests/test/
         retention-days: 30
 
     - name: Publish Test Report
       uses: mikepenz/action-junit-report@v6
       if: always()
       with:
-        report_paths: 'backends/kotlin/tests/build/test-results/test/*.xml'
+        report_paths: 'backends/kotlin/{w3c,tests}/build/test-results/test/*.xml'
         detailed_summary: true
         include_passed: true
         fail_on_failure: false
@@ -642,11 +645,12 @@ jobs:
         echo "## W3C SCXML Test Results (Kotlin/JVM - last engine run)" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
 
-        REPORT_DIR="backends/kotlin/tests/build/test-results/test"
-        if [ -d "$REPORT_DIR" ]; then
-          total=$(grep -roh 'tests="[0-9]*"' "$REPORT_DIR"/*.xml | grep -oP '\d+' | paste -sd+ | bc)
-          failures=$(grep -roh 'failures="[0-9]*"' "$REPORT_DIR"/*.xml | grep -oP '\d+' | paste -sd+ | bc)
-          errors=$(grep -roh 'errors="[0-9]*"' "$REPORT_DIR"/*.xml | grep -oP '\d+' | paste -sd+ | bc)
+        # Both suites a row runs write their own result directory.
+        REPORT_DIRS="backends/kotlin/w3c/build/test-results/test backends/kotlin/tests/build/test-results/test"
+        if [ -d backends/kotlin/w3c/build/test-results/test ] && [ -d backends/kotlin/tests/build/test-results/test ]; then
+          total=$(for d in $REPORT_DIRS; do grep -roh 'tests="[0-9]*"' "$d"/*.xml; done | grep -oP '\d+' | paste -sd+ | bc)
+          failures=$(for d in $REPORT_DIRS; do grep -roh 'failures="[0-9]*"' "$d"/*.xml; done | grep -oP '\d+' | paste -sd+ | bc)
+          errors=$(for d in $REPORT_DIRS; do grep -roh 'errors="[0-9]*"' "$d"/*.xml; done | grep -oP '\d+' | paste -sd+ | bc)
           passed=$((total - failures - errors))
           echo "| Metric | Count |" >> $GITHUB_STEP_SUMMARY
           echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY

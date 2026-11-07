@@ -473,17 +473,18 @@ fn kotlin_gate_pairs(code: &str) -> Vec<String> {
 ///
 /// Structural rather than textual, because "the gate mentions the verdict
 /// somewhere" and "the gate asks for it once per row" are different claims and
-/// only the second one is worth anything: `$REPORTS` is a single directory
+/// only the second one is worth anything: each suite's `$REPORTS` directory is
 /// rewritten by every row, so a check hoisted out of this loop reads whichever
 /// run finished last and reports it as all four.
 fn kotlin_gate_row_loop(code: &str) -> String {
     let lines: Vec<&str> = code.lines().collect();
     let gradle = lines
         .iter()
-        .position(|line| line.contains("./gradlew --console=plain :sce-kotlin-tests:test"))
+        .position(|line| line.contains("./gradlew --console=plain \"${row_tasks[@]}\""))
         .expect(
-            "the Kotlin gate must run the suite through `./gradlew --console=plain \
-             :sce-kotlin-tests:test`, which is the invocation every row is built around",
+            "the Kotlin gate must run the suites through `./gradlew --console=plain \
+             \"${row_tasks[@]}\"` (every suite's `test`, from `KOTLIN_SUITES`), which \
+             is the invocation every row is built around",
         );
     let start = lines[..gradle]
         .iter()
@@ -874,19 +875,36 @@ fn a_declared_refusal_names_producers_that_exist() {
 /// returns on its first line, no file is written, and the lane's ceiling
 /// passes over a run that measured nothing — which is why the gate's
 /// file-absent check and this one are a pair rather than a duplicate.
+///
+/// The forward lives in `gradle/sce-kotlin-suite.gradle.kts`, which every suite
+/// module the gate's rows run applies (since 2026-11-07 there are two), so both
+/// halves are held: the script forwards, and each suite applies the script.
 #[test]
 fn the_kotlin_test_task_forwards_the_lowering_census() {
-    let build = std::fs::read_to_string(repo_root().join("backends/kotlin/tests/build.gradle.kts"))
-        .expect("the Kotlin test module's build file is readable");
-    let code: String = build
-        .lines()
-        .filter(|line| !line.trim_start().starts_with("//"))
-        .collect::<Vec<_>>()
-        .join("\n");
+    let uncommented = |path: &str| -> String {
+        std::fs::read_to_string(repo_root().join(path))
+            .unwrap_or_else(|error| panic!("{path} is readable: {error}"))
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    for suite in [
+        "backends/kotlin/w3c/build.gradle.kts",
+        "backends/kotlin/tests/build.gradle.kts",
+    ] {
+        assert!(
+            uncommented(suite).contains("gradle/sce-kotlin-suite.gradle.kts"),
+            "⚠ `{suite}` no longer applies gradle/sce-kotlin-suite.gradle.kts, \
+             which is where its test task forwards `sce.lua.loweringCensus`: that \
+             suite's rows would then write no census"
+        );
+    }
+    let code = uncommented("gradle/sce-kotlin-suite.gradle.kts");
 
     assert!(
         code.contains("systemProperty(\"sce.lua.loweringCensus\""),
-        "⚠ `backends/kotlin/tests/build.gradle.kts` no longer forwards \
+        "⚠ `gradle/sce-kotlin-suite.gradle.kts` no longer forwards \
          `sce.lua.loweringCensus` to the test JVM. The property named on the \
          Gradle command line then reaches Gradle and stops there, the engine \
          writes no census, and the lane's rewriter ceiling is satisfied by a \
@@ -900,13 +918,14 @@ fn the_kotlin_test_task_forwards_the_lowering_census() {
     );
 }
 
-/// The Kotlin suite re-runs when the gate it reads changes.
+/// The Kotlin harness's tests re-run when the gate they read changes.
 ///
-/// `GateEnginePairsTest` holds `KOTLIN_ENGINE_PAIRS` to the routes this backend
-/// actually has, and it reads the gate script off disk. Gradle knows nothing
-/// about that read: the gate is not on the compile classpath, so without an
-/// explicit input declaration the test task stays UP-TO-DATE across every edit
-/// to the file the test is about.
+/// `GateEnginePairsTest` (in `:sce-kotlin-test-harness` since 2026-11-07)
+/// holds `KOTLIN_ENGINE_PAIRS` to the routes this backend actually has, and it
+/// reads the gate script off disk. Gradle knows nothing about that read: the
+/// gate is not on the compile classpath, so without an explicit input
+/// declaration the test task stays UP-TO-DATE across every edit to the file
+/// the test is about.
 ///
 /// Measured 2026-08-30, before the declaration existed: deleting the `lua:lua`
 /// row — the row the change adding it exists to add — left
@@ -919,8 +938,9 @@ fn the_kotlin_test_task_forwards_the_lowering_census() {
 /// staleness — the run that would report it is the run that does not happen.
 #[test]
 fn the_kotlin_suite_reruns_when_the_gate_it_reads_changes() {
-    let build = std::fs::read_to_string(repo_root().join("backends/kotlin/tests/build.gradle.kts"))
-        .expect("the Kotlin test build file is readable");
+    let build =
+        std::fs::read_to_string(repo_root().join("backends/kotlin/test-harness/build.gradle.kts"))
+            .expect("the Kotlin harness build file is readable");
     let code: String = build
         .lines()
         .filter(|line| !line.trim_start().starts_with("//"))
@@ -929,7 +949,7 @@ fn the_kotlin_suite_reruns_when_the_gate_it_reads_changes() {
 
     assert!(
         code.contains("scripts/gates/w3c-kotlin.sh"),
-        "⚠ `backends/kotlin/tests/build.gradle.kts` no longer declares \
+        "⚠ `backends/kotlin/test-harness/build.gradle.kts` no longer declares \
          scripts/gates/w3c-kotlin.sh as an input of the test task. \
          `GateEnginePairsTest` reads that file to check the gate covers every \
          engine route, and Gradle cannot see the read: editing the gate then \

@@ -1269,12 +1269,17 @@ cargo test --release -p sce-rust-tests test144
 
 ```bash
 # W3C conformance (Lua, default — the committed machines are lowered Lua)
-./gradlew :sce-kotlin-tests:test
+./gradlew :sce-kotlin-w3c:test
 
-# W3C conformance (Rhino or QuickJS) — needs machines emitted for ECMAScript
+# W3C conformance (Rhino or QuickJS) — needs machines emitted for ECMAScript.
+# The overlay is a tree shaped like this repository; each suite module reads
+# its own part of it.
 sce-codegen generate-w3c -l kotlin --script-engine ecmascript --output-dir /tmp/kt-ecma
-./gradlew :sce-kotlin-tests:test -Psce.script.engine=rhino \
-    -Psce.generated.overlay=/tmp/kt-ecma/backends/kotlin/tests
+./gradlew :sce-kotlin-w3c:test -Psce.script.engine=rhino \
+    -Psce.generated.overlay=/tmp/kt-ecma
+
+# Integration suite (generated integration machines, shared scenarios and tables)
+./gradlew :sce-kotlin-tests:test
 
 # JMH benchmark (quick)
 ./gradlew :sce-kotlin-benchmark:jmh --no-configuration-cache -Pjmh.f=1 -Pjmh.wi=1 -Pjmh.i=1

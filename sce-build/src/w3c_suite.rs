@@ -127,8 +127,9 @@ pub fn rewrite_python_conftest(source: &str, sce_root: &std::path::Path) -> Resu
 /// Packages beneath `com.sce.` that belong to the SCE **runtime**, not
 /// to the conformance suite.
 ///
-/// Everything else under that root is the suite's own — the tests
-/// module owns `w3c`, `http` and `generated` — which is what makes the
+/// Everything else under that root is the suite's own — `w3c`, `http`
+/// and `generated`, held by the W3C suite and the harness it runs with
+/// (`backends/kotlin/w3c`, `backends/kotlin/test-harness`) — which is what makes the
 /// rewrite below a rule rather than a hand-list that silently misses a
 /// package. It missed one exactly that way: `com.sce.http` held the
 /// BasicHTTP test server, was not in the list, and the emitted Kotlin
@@ -147,23 +148,29 @@ pub const KOTLIN_SUITE_SOURCES: &[(&str, &str, &str)] = &[
     (
         "src/test/kotlin",
         "w3c/W3CTestBase.kt",
-        include_str!("../../backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CTestBase.kt"),
+        include_str!(
+            "../../backends/kotlin/test-harness/src/main/kotlin/com/sce/w3c/W3CTestBase.kt"
+        ),
     ),
     (
         "src/test/kotlin",
         "w3c/VirtualDrive.kt",
-        include_str!("../../backends/kotlin/tests/src/test/kotlin/com/sce/w3c/VirtualDrive.kt"),
+        include_str!(
+            "../../backends/kotlin/test-harness/src/main/kotlin/com/sce/w3c/VirtualDrive.kt"
+        ),
     ),
     (
         "src/test/kotlin",
         "w3c/W3CHttpTestBase.kt",
-        include_str!("../../backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt"),
+        include_str!(
+            "../../backends/kotlin/test-harness/src/main/kotlin/com/sce/w3c/W3CHttpTestBase.kt"
+        ),
     ),
     (
         "src/main/kotlin",
         "http/W3CHttpTestServer.kt",
         include_str!(
-            "../../backends/kotlin/tests/src/main/kotlin/com/sce/http/W3CHttpTestServer.kt"
+            "../../backends/kotlin/test-harness/src/main/kotlin/com/sce/http/W3CHttpTestServer.kt"
         ),
     ),
 ];

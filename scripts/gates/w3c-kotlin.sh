@@ -34,6 +34,31 @@ sce_gate_require_jdk "$SCE_REPO_ROOT/.github/workflows/w3c-tests.yml"
 LOG="$(mktemp -d)"
 sce_gate_on_exit "rm -rf '$LOG'"
 
+# ── The suites every row runs ──────────────────────────────────────
+#
+# Two modules, each `<Gradle path>=<directory>`, in the order Gradle runs them
+# (`:sce-kotlin-tests` orders its compile and its tests after
+# `:sce-kotlin-w3c`'s). The W3C machines and the integration machines were one
+# module until 2026-11-07, one 13.8 MB compile that the compile daemon needed
+# about 1.85 GB for; backends/kotlin/w3c/build.gradle.kts says why they are
+# two. Every check below that reads a suite's sources, its overlay or its
+# reports reads them from this list, so a third suite is one entry here.
+#
+# The harness both suites run with (`:sce-kotlin-test-harness`) carries no
+# machine and no language, so no row varies it: its own tests run once, with
+# the other modules' at the end of this gate.
+KOTLIN_SUITES=(":sce-kotlin-w3c=backends/kotlin/w3c" ":sce-kotlin-tests=backends/kotlin/tests")
+KOTLIN_HARNESS="backends/kotlin/test-harness"
+suite_dirs() { local suite; for suite in "${KOTLIN_SUITES[@]}"; do printf '%s\n' "${suite#*=}"; done; }
+# Each suite's `<task>` as Gradle arguments, `--rerun` after each when asked.
+suite_tasks() {
+    local suite
+    for suite in "${KOTLIN_SUITES[@]}"; do
+        printf '%s\n' "${suite%%=*}:$1"
+        [ -z "${2:-}" ] || printf '%s\n' "$2"
+    done
+}
+
 # What this gate can honestly claim about the timestamp pin is that THIS RUN
 # left the tree as it found it. Comparing against HEAD answers a different
 # question — whether the working tree is clean — and an author mid-round
@@ -42,7 +67,10 @@ sce_gate_on_exit "rm -rf '$LOG'"
 # baseline is the tree as it stands now, hashed, and the comparison after the
 # run is against that.
 kotlin_tree_hashes() {
-    find backends/kotlin/tests/src -type f -print0 2>/dev/null \
+    local roots=() dir
+    while IFS= read -r dir; do roots+=("$dir/src"); done < <(suite_dirs)
+    roots+=("$KOTLIN_HARNESS/src")
+    find "${roots[@]}" -type f -print0 2>/dev/null \
         | sort -z | xargs -0 -r sha256sum
 }
 TREE_BEFORE="$(kotlin_tree_hashes)"
@@ -175,7 +203,9 @@ REFUSALS_JSON="tests/ecmascript/kotlin_frontend_refusals.json"
 # sources. A name that is neither is red rather than skipped, which is what
 # makes retiring test307 take that entry with it.
 FIXTURES_JSON="tests/w3c/conformance/fixtures.json"
-KOTLIN_TEST_SOURCES="backends/kotlin/tests/src/test/kotlin"
+# Every suite's test sources, as one list of directories.
+KOTLIN_TEST_SOURCES=()
+while IFS= read -r _dir; do KOTLIN_TEST_SOURCES+=("$_dir/src/test/kotlin"); done < <(suite_dirs)
 
 # ⚠⚠⚠ AND A FLOOR UNDER THE FRONTEND, which is not decoration. Measured
 # 2026-08-30, twice: a probe that wrote to `System.err` reported ZERO
@@ -187,7 +217,9 @@ KOTLIN_TEST_SOURCES="backends/kotlin/tests/src/test/kotlin"
 # of times, so anything near zero means the census did not happen.
 FRONTEND_FLOOR=1000
 CENSUS="$LOG/lowering-census.tsv"
-REPORTS="backends/kotlin/tests/build/test-results/test"
+# Each suite's JUnit results, as `--reports` arguments for the verdict.
+REPORTS=()
+while IFS= read -r _dir; do REPORTS+=(--reports "$_dir/build/test-results/test"); done < <(suite_dirs)
 
 # ── Which language the committed machines are emitted for ─────────
 #
@@ -212,10 +244,10 @@ REPORTS="backends/kotlin/tests/build/test-results/test"
 # bottom of this gate fails if the result differs from what is committed. So
 # the committed tree IS the default-target output, checked on this run, not
 # claimed.
-# The committed machines. Named once: the overlay replaces exactly this
-# directory, and the "did the selection reach the templates" check below
-# compares against exactly it.
-COMMITTED_MACHINES="backends/kotlin/tests/src/main/kotlin/com/sce/generated"
+# The committed W3C machines: what `generate-w3c` writes, and so what the "did
+# the selection reach the templates" check below compares a generated tree
+# against.
+COMMITTED_MACHINES="backends/kotlin/w3c/src/main/kotlin/com/sce/generated"
 [ -d "$COMMITTED_MACHINES" ] \
     || sce_gate_fail "$COMMITTED_MACHINES is missing — there are no committed Kotlin machines for the rows below to run or to compare a generated tree against."
 
@@ -285,7 +317,7 @@ kotlin_default_engine_of() {
 # `-Psce.script.engine` hands the committed machines.
 _suite_default="$(
     kotlin_default_engine_of "conformance suite" \
-        "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CTestBase.kt" \
+        "$KOTLIN_HARNESS/src/main/kotlin/com/sce/w3c/W3CTestBase.kt" \
         'const val DEFAULT_ENGINE: String = "[a-z0-9]+"' \
     | sed -E 's/.*"([a-z0-9]+)"/\1/'
 )"
@@ -326,6 +358,121 @@ done
 # inside a `$( … )` it would end the SUBSHELL, and the gate would carry on
 # past a tree it had just refused to accept.
 KOTLIN_TREE_FOR_LANGUAGE=""
+
+# Whether the overlay `$2` (a tree shaped like this repository) replaces suite
+# module `$3` completely for language `$1`: the two checks below, for that
+# module's own part. The number of committed sources there that carry a
+# language lands in `SUITE_CARRIERS`, not on stdout, for the reason
+# `KOTLIN_TREE_FOR_LANGUAGE` does.
+SUITE_CARRIERS=0
+overlay_covers_suite() {
+    local language="$1" tree="$2" suite_dir="$3"
+    local committed_root="$suite_dir/src/main/kotlin"
+    local overlay_root="$tree/$committed_root"
+    local replaced overlay_files committed_in_replaced uncovered
+    local carriers carrier_count stray name handwritten hand carrier
+
+    # WHICH populations the build will replace, asked of the overlay exactly as
+    # `gradle/sce-kotlin-suite.gradle.kts` asks it: each `com/sce/<name>` the
+    # module's part carries AND the module holds is added as a source directory,
+    # and the committed `com/sce/<name>/**` is excluded wholesale. A directory
+    # the module does not hold is another module's (a standalone suite's tree
+    # also carries the harness's `com/sce/http`), and the build leaves it out.
+    # A module whose part replaces nothing is refused there, so it is refused
+    # here first.
+    replaced="$(comm -12 \
+        <(cd "$overlay_root/com/sce" 2>/dev/null \
+            && find . -mindepth 1 -maxdepth 1 -type d | sed 's|^\./||' | sort || true) \
+        <(cd "$committed_root/com/sce" 2>/dev/null \
+            && find . -mindepth 1 -maxdepth 1 -type d | sed 's|^\./||' | sort || true))"
+    [ -n "$replaced" ] \
+        || sce_gate_fail "the $language overlay carries none of the package directories $suite_dir holds under $overlay_root/com/sce, so the build would replace nothing there and compile its committed machines while this row claims to measure $language"
+
+    # ── The hand-authored files inside a replaced population ──────────
+    #
+    # A replaced directory is excluded WHOLESALE, and not everything in one is
+    # generated. `com/sce/integration/package-info.kt` says so in its own KDoc
+    # — *"the only hand-authored file under `com.sce.integration`"* — and no
+    # generator emits it, so no amount of regeneration would put it back. It
+    # also cannot vary with the script-engine language, having no machine in
+    # it, so carrying the committed copy across is exact rather than
+    # approximate.
+    #
+    # ⚠ The discriminator is this repository's own `// Source:` marker, and it
+    # is what keeps this from becoming a hole: a GENERATED file missing from
+    # the overlay is a producer that did not run, and copying it here would
+    # paper over exactly the defect the check below exists to find. Only files
+    # without the marker move.
+    handwritten="$(
+        for name in $replaced; do
+            find "$committed_root/com/sce/$name" -name '*.kt' \
+                -exec grep -L '^// Source:' {} \; 2>/dev/null
+        done | sed "s|^$committed_root/||" | sort -u
+    )"
+    while IFS= read -r hand; do
+        [ -n "$hand" ] || continue
+        [ -e "$overlay_root/$hand" ] && continue
+        mkdir -p "$overlay_root/$(dirname "$hand")"
+        cp "$committed_root/$hand" "$overlay_root/$hand" \
+            || sce_gate_fail "could not carry the hand-authored $hand into the $language overlay"
+    done <<<"$handwritten"
+
+    overlay_files="$(cd "$overlay_root" 2>/dev/null && find . -name '*.kt' \
+        | sed 's|^\./||' | sort -u || true)"
+
+    # (1) EVERY committed file in a replaced population must be in the overlay
+    # — not only the ones that carry a language.
+    #
+    # ⚠ Measured 2026-08-30, and this check was WRONG the first time. It
+    # compared only the sources constructing a `ScriptSource`, passed with
+    # "covers all 200", and the build then failed to compile: the exclusion is
+    # per-DIRECTORY, so `statechart_bytes` and `statechart_delayed_host_send`
+    # — two stems that carry no script at all — were excluded with their
+    # neighbours and the overlay had no copy to put back. A predicate narrower
+    # than the exclusion it guards is a predicate that passes for the wrong
+    # reason.
+    committed_in_replaced="$(
+        for name in $replaced; do
+            find "$committed_root/com/sce/$name" -name '*.kt' 2>/dev/null
+        done | sed "s|^$committed_root/||" | sort -u
+    )"
+    uncovered="$(comm -23 \
+        <(printf '%s\n' "$committed_in_replaced" | grep -v '^$') \
+        <(printf '%s\n' "$overlay_files" | grep -v '^$'))"
+    if [ -n "$uncovered" ]; then
+        printf '%s\n' "committed sources the $language overlay excludes without replacing in $suite_dir:" >&2
+        printf '%s\n' "$uncovered" | head -n 10 >&2
+        sce_gate_fail "the $language overlay replaces $(printf '%s\n' "$replaced" | tr '\n' ' ')in $suite_dir but does not carry $(printf '%s\n' "$uncovered" | wc -l) committed file(s) inside them. The build excludes those directories wholesale, so each missing file is an unresolved reference at compile time. Generate those stems for $language too"
+    fi
+
+    # (2) And every source that CARRIES a language must be inside a replaced
+    # population, or it survives the exclusion in the committed language and
+    # is handed to this row's engine anyway — which is the mis-supply that
+    # HANGS rather than fails. The floor under this reading is held over every
+    # suite together, by the caller.
+    carriers="$(grep -rlE 'ScriptSource\.(lua|ecmascript)\(' "$committed_root" \
+        --include='*.kt' 2>/dev/null | sed "s|^$committed_root/||" | sort -u || true)"
+    carrier_count="$(printf '%s\n' "$carriers" | grep -c . || true)"
+
+    stray=""
+    while IFS= read -r carrier; do
+        [ -n "$carrier" ] || continue
+        case "$carrier" in
+            com/sce/*) name="${carrier#com/sce/}"; name="${name%%/*}" ;;
+            *) name="" ;;
+        esac
+        printf '%s\n' "$replaced" | grep -qx "$name" || stray="$stray$carrier"$'\n'
+    done <<<"$carriers"
+    if [ -n "$stray" ]; then
+        printf '%s\n' "committed sources in $suite_dir that carry a language and are outside every replaced population:" >&2
+        printf '%s\n' "$stray" | head -n 10 >&2
+        sce_gate_fail "$(printf '%s\n' "$stray" | grep -c .) committed source(s) in $suite_dir carry a script-engine language and sit outside the directories this $language overlay replaces, so they compile as $COMMITTED_LANGUAGE and are handed to the $language row's engine. That mis-supply does not fail this suite, it HANGS it — a machine whose events the engine cannot read never settles its eventless macrostep"
+    fi
+
+    SUITE_CARRIERS="$carrier_count"
+    sce_gate_step "the $language overlay replaces $(printf '%s\n' "$replaced" | tr '\n' ' ')in $suite_dir and carries every committed file inside them, including all $carrier_count that carry a language"
+}
+
 kotlin_tree_for_language() {
     local language="$1" tree="$LOG/tree-$1"
     if [ ! -d "$tree" ]; then
@@ -341,10 +488,10 @@ kotlin_tree_for_language() {
         # rather than assumed. A test class that starts varying makes this
         # fail here instead of running the wrong pairing quietly.
         local emitted committed name
-        for emitted in "$tree/backends/kotlin/tests/src/test/kotlin/com/sce/w3c/"Test*.kt; do
+        for emitted in "$tree/backends/kotlin/w3c/src/test/kotlin/com/sce/w3c/"Test*.kt; do
             [ -e "$emitted" ] || sce_gate_fail "the $language generation emitted no JUnit classes under $tree"
             name="$(basename "$emitted")"
-            committed="backends/kotlin/tests/src/test/kotlin/com/sce/w3c/$name"
+            committed="backends/kotlin/w3c/src/test/kotlin/com/sce/w3c/$name"
             cmp -s "$emitted" "$committed" \
                 || sce_gate_fail "the generated JUnit class $name differs between the $COMMITTED_LANGUAGE and $language artifacts, so overlaying only the machines would run the committed test class against machines it was not generated with. Widen the overlay to the test sources, or keep the classes language-independent."
         done
@@ -360,7 +507,7 @@ kotlin_tree_for_language() {
         # Whole-tree rather than per-file: which machines differ depends on
         # which documents carry expressions, and that is the registry's
         # business, not this check's. What must be true is that SOMETHING did.
-        local machines="$tree/backends/kotlin/tests/src/main/kotlin/com/sce/generated"
+        local machines="$tree/$COMMITTED_MACHINES"
         [ -d "$machines" ] \
             || sce_gate_fail "the $language generation wrote no machines under $machines"
         if diff -rq "$COMMITTED_MACHINES" "$machines" >/dev/null 2>&1; then
@@ -430,122 +577,30 @@ kotlin_tree_for_language() {
         #
         # The population is DERIVED rather than listed. A file that constructs
         # a `ScriptSource` hands its engine text in a NAMED language and can be
-        # mis-supplied; a file that constructs none cannot. `com/sce/http` and
-        # `com/sce/interpreter` hold one support file each and construct none,
-        # so they leave this set on their own — no exemption names them, and
-        # nothing has to be remembered when a fifth directory arrives.
-        local committed_root="backends/kotlin/tests/src/main/kotlin"
-        local overlay_root="$tree/$committed_root"
-        local replaced overlay_files committed_in_replaced uncovered
-        local carriers carrier_count stray name
-
-        # WHICH populations the build will replace, asked of the overlay
-        # exactly as `backends/kotlin/tests/build.gradle.kts` asks it: it adds
-        # each `com/sce/<name>` the overlay carries as a source directory and
-        # excludes the committed `com/sce/<name>/**` wholesale.
-        replaced="$(cd "$overlay_root/com/sce" 2>/dev/null \
-            && find . -mindepth 1 -maxdepth 1 -type d | sed 's|^\./||' | sort || true)"
-        [ -n "$replaced" ] \
-            || sce_gate_fail "the $language overlay carries no package directory under $overlay_root/com/sce, so the build would replace nothing and compile the committed machines while this row claims to measure $language"
-
-        overlay_files="$(cd "$overlay_root" 2>/dev/null && find . -name '*.kt' \
-            | sed 's|^\./||' | sort -u || true)"
-
-        # ── The hand-authored files inside a replaced population ──────────
+        # mis-supplied; a file that constructs none cannot. The forge helpers
+        # under the integration suite's `com/sce/generated` construct none, so
+        # they leave this set on their own — no exemption names them, and
+        # nothing has to be remembered when another directory arrives.
         #
-        # A replaced directory is excluded WHOLESALE, and not everything in one
-        # is generated. `com/sce/integration/package-info.kt` says so in its own
-        # KDoc — *"the only hand-authored file under `com.sce.integration`"* —
-        # and no generator emits it, so no amount of regeneration would put it
-        # back. It also cannot vary with the script-engine language, having no
-        # machine in it, so carrying the committed copy across is exact rather
-        # than approximate.
-        #
-        # ⚠ The discriminator is this repository's own `// Source:` marker, and
-        # it is what keeps this from becoming a hole: a GENERATED file missing
-        # from the overlay is a producer that did not run, and copying it here
-        # would paper over exactly the defect the check below exists to find.
-        # Only files without the marker move.
-        local handwritten
-        handwritten="$(
-            for name in $replaced; do
-                find "$committed_root/com/sce/$name" -name '*.kt' \
-                    -exec grep -L '^// Source:' {} \; 2>/dev/null
-            done | sed "s|^$committed_root/||" | sort -u
-        )"
-        while IFS= read -r hand; do
-            [ -n "$hand" ] || continue
-            [ -e "$overlay_root/$hand" ] && continue
-            mkdir -p "$overlay_root/$(dirname "$hand")"
-            cp "$committed_root/$hand" "$overlay_root/$hand" \
-                || sce_gate_fail "could not carry the hand-authored $hand into the $language overlay"
-        done <<<"$handwritten"
-
-        # ⚠ Re-read, because the copies above changed it.
-        overlay_files="$(cd "$overlay_root" 2>/dev/null && find . -name '*.kt' \
-            | sed 's|^\./||' | sort -u || true)"
-
-        # (1) EVERY committed file in a replaced population must be in the
-        # overlay — not only the ones that carry a language.
-        #
-        # ⚠ Measured 2026-08-30, and this check was WRONG the first time. It
-        # compared only the sources constructing a `ScriptSource`, passed with
-        # "covers all 200", and the build then failed to compile: the exclusion
-        # is per-DIRECTORY, so `statechart_bytes` and
-        # `statechart_delayed_host_send` — two stems that carry no script at
-        # all — were excluded with their neighbours and the overlay had no copy
-        # to put back. A predicate narrower than the exclusion it guards is a
-        # predicate that passes for the wrong reason.
-        committed_in_replaced="$(
-            for name in $replaced; do
-                find "$committed_root/com/sce/$name" -name '*.kt' 2>/dev/null
-            done | sed "s|^$committed_root/||" | sort -u
-        )"
-        uncovered="$(comm -23 \
-            <(printf '%s\n' "$committed_in_replaced" | grep -v '^$') \
-            <(printf '%s\n' "$overlay_files" | grep -v '^$'))"
-        if [ -n "$uncovered" ]; then
-            printf '%s\n' "committed sources the $language overlay excludes without replacing:" >&2
-            printf '%s\n' "$uncovered" | head -n 10 >&2
-            sce_gate_fail "the $language overlay replaces $(printf '%s\n' "$replaced" | tr '\n' ' ')but does not carry $(printf '%s\n' "$uncovered" | wc -l) committed file(s) inside them. The build excludes those directories wholesale, so each missing file is an unresolved reference at compile time. Generate those stems for $language too"
-        fi
-
-        # (2) And every source that CARRIES a language must be inside a
-        # replaced population, or it survives the exclusion in the committed
-        # language and is handed to this row's engine anyway — which is the
-        # mis-supply that HANGS rather than fails.
-        carriers="$(grep -rlE 'ScriptSource\.(lua|ecmascript)\(' "$committed_root" \
-            --include='*.kt' 2>/dev/null | sed "s|^$committed_root/||" | sort -u || true)"
-        carrier_count="$(printf '%s\n' "$carriers" | grep -c . || true)"
+        # Asked of every suite module, because the build replaces each one's
+        # own part of the overlay (gradle/sce-kotlin-suite.gradle.kts).
+        local suite_dir total_carriers=0
+        while IFS= read -r suite_dir; do
+            overlay_covers_suite "$language" "$tree" "$suite_dir"
+            total_carriers=$((total_carriers + SUITE_CARRIERS))
+        done < <(suite_dirs)
 
         # ⚠⚠ The floor, and it is the half a reader deletes as redundant. If
-        # the pattern above ever stops matching, check (2) compares an EMPTY
-        # set and passes — reporting full coverage for a tree it could not
-        # read. Measured 2026-08-30: 200 committed sources construct a
-        # `ScriptSource` (159 under `generated`, 41 under `integration`), so a
-        # number near zero means the reading failed rather than that nothing
-        # carries a language.
+        # the carrier pattern ever stops matching, check (2) of every suite
+        # compares an EMPTY set and passes — reporting full coverage for a tree
+        # it could not read. Measured 2026-11-07: 249 committed sources
+        # construct a `ScriptSource` (159 W3C machines, 90 integration files),
+        # so a number near zero means the reading failed rather than that
+        # nothing carries a language.
         local CARRIER_FLOOR=100
-        if (( carrier_count < CARRIER_FLOOR )); then
-            sce_gate_fail "only $carrier_count committed Kotlin source(s) were read as carrying a script-engine language, under the floor of $CARRIER_FLOOR. This tree emits a \`ScriptSource\` in every machine that has a script, so a number this low means the reading failed — and a reading that failed reports every overlay as complete"
+        if (( total_carriers < CARRIER_FLOOR )); then
+            sce_gate_fail "only $total_carriers committed Kotlin source(s) were read as carrying a script-engine language across $(suite_dirs | tr '\n' ' '), under the floor of $CARRIER_FLOOR. This tree emits a \`ScriptSource\` in every machine that has a script, so a number this low means the reading failed — and a reading that failed reports every overlay as complete"
         fi
-
-        stray=""
-        while IFS= read -r carrier; do
-            [ -n "$carrier" ] || continue
-            case "$carrier" in
-                com/sce/*) name="${carrier#com/sce/}"; name="${name%%/*}" ;;
-                *) name="" ;;
-            esac
-            printf '%s\n' "$replaced" | grep -qx "$name" || stray="$stray$carrier"$'\n'
-        done <<<"$carriers"
-        if [ -n "$stray" ]; then
-            printf '%s\n' "committed sources that carry a language and are outside every replaced population:" >&2
-            printf '%s\n' "$stray" | head -n 10 >&2
-            sce_gate_fail "$(printf '%s\n' "$stray" | grep -c .) committed source(s) carry a script-engine language and sit outside the directories this $language overlay replaces, so they compile as $COMMITTED_LANGUAGE and are handed to the $language row's engine. That mis-supply does not fail this suite, it HANGS it — a machine whose events the engine cannot read never settles its eventless macrostep"
-        fi
-
-        sce_gate_step "the $language overlay replaces $(printf '%s\n' "$replaced" | tr '\n' ' ')and carries every committed file inside them, including all $carrier_count that carry a language"
     fi
     KOTLIN_TREE_FOR_LANGUAGE="$tree"
 }
@@ -595,11 +650,17 @@ KOTLIN_RUNNABLE="$LOG/runnable-classes.txt"
 # derivation, in `kotlin_coverage.py`. It refuses rather than printing a short
 # list, so a reader that parsed nothing cannot hand the rows below an empty set
 # for them all to match.
-python3 "$KOTLIN_COVERAGE" derive "$KOTLIN_TEST_SOURCES" >"$KOTLIN_RUNNABLE" \
-    || sce_gate_fail "the set of test classes that must run could not be derived from $KOTLIN_TEST_SOURCES — the refusal is above. Every row below compares its report against that set, so without it there is nothing to compare against"
+#
+# The harness's sources are read for their SUPERTYPES only: every generated
+# W3C class inherits its `@Test` from `W3CTestBase`, which the harness module
+# holds, so the fixpoint needs it, and nothing in the harness is a class a row
+# runs (its own tests run once, at the end of this gate).
+python3 "$KOTLIN_COVERAGE" derive "${KOTLIN_TEST_SOURCES[@]}" \
+    --supertypes-from "$KOTLIN_HARNESS/src/main/kotlin" >"$KOTLIN_RUNNABLE" \
+    || sce_gate_fail "the set of test classes that must run could not be derived from ${KOTLIN_TEST_SOURCES[*]} — the refusal is above. Every row below compares its report against that set, so without it there is nothing to compare against"
 
 runnable_count="$(grep -c . "$KOTLIN_RUNNABLE" || true)"
-sce_gate_step "$runnable_count runnable test class(es) derived from $KOTLIN_TEST_SOURCES; every row below must report exactly them"
+sce_gate_step "$runnable_count runnable test class(es) derived from ${KOTLIN_TEST_SOURCES[*]}; every row below must report exactly them"
 
 # ── The heap each row's two JVMs used, read from their own GC logs ──
 #
@@ -632,8 +693,10 @@ sce_gate_step "$runnable_count runnable test class(es) derived from $KOTLIN_TEST
 # compile daemon on a build host (its own `kotlin.daemon.options=runFilesPath`)
 # compiled the same Lua machines and read 1,382 MB, so the earlier rows left
 # about 70 MB in the daemon. Fresh daemons per row would buy back no more than
-# that, and what ran out was the compile itself: on the Lua tree it needs about
-# 1.85 GB in a fresh daemon (the bisection `gradle.properties` records). Those
+# that, and what ran out was the compile itself: on the Lua tree it needed
+# about 1.85 GB in a fresh daemon while the W3C and integration machines were
+# one unit (the bisection `gradle.properties` records, with the two units'
+# figures since). Those
 # live readings are lower bounds sampled at whatever moments the collector ran,
 # so they are compared here only between like runs, never against the budget.
 JVM_HEAP_REPORT="$SCE_REPO_ROOT/scripts/gates/jvm_heap_report.py"
@@ -676,13 +739,16 @@ for pair in "${KOTLIN_ENGINE_PAIRS[@]}"; do
     else
         sce_gate_step "generating $language machines and running the Kotlin W3C suite on $engine over them"
         kotlin_tree_for_language "$language"
-        overlay=(-Psce.generated.overlay="$KOTLIN_TREE_FOR_LANGUAGE/backends/kotlin/tests")
+        # The whole repository-shaped tree: each suite module reads its own
+        # part of it (gradle/sce-kotlin-suite.gradle.kts).
+        overlay=(-Psce.generated.overlay="$KOTLIN_TREE_FOR_LANGUAGE")
     fi
 
     gradle_gc_from="$(log_size "$GRADLE_GC_LOG")"
     kotlin_gc_from="$(log_size "$KOTLIN_GC_LOG")"
     status=0
-    ./gradlew --console=plain :sce-kotlin-tests:test "-Psce.script.engine=$engine" \
+    mapfile -t row_tasks < <(suite_tasks test)
+    ./gradlew --console=plain "${row_tasks[@]}" "-Psce.script.engine=$engine" \
         "-Psce.lua.loweringCensus=$CENSUS" \
         "${HEAP_OBSERVED[@]}" \
         "${overlay[@]}" \
@@ -709,15 +775,20 @@ for pair in "${KOTLIN_ENGINE_PAIRS[@]}"; do
     # and a total of 0 says that nothing ran without saying which claims went
     # unmade.
     #
-    # ⚠⚠ `$REPORTS` is shared by all four rows and is NOT emptied here, which
-    # would make a class that stopped running in row 2 invisible behind row 1's
-    # leftover file. That it does not is measured rather than assumed: a probe
-    # file placed in that directory on 2026-08-31 was gone after the next
-    # invocation, so Gradle's Test task clears its own result directory before
-    # it writes. Were that to change, the leftovers of a row that ran MORE
-    # classes would surface as an unaccounted class on the row that ran fewer.
+    # ⚠⚠ Each suite's result directory is shared by all four rows and is NOT
+    # emptied here, which would make a class that stopped running in row 2
+    # invisible behind row 1's leftover file. That it does not is measured
+    # rather than assumed: a probe file placed in that directory on 2026-08-31
+    # was gone after the next invocation, so Gradle's Test task clears its own
+    # result directory before it writes. Were that to change, the leftovers of
+    # a row that ran MORE classes would surface as an unaccounted class on the
+    # row that ran fewer.
+    #
+    # Every suite's directory is read together, against the one class set
+    # derived from every suite's sources: a class that moved between suites
+    # is still the same claim, and one reported by both is refused.
     cases="$(python3 "$KOTLIN_COVERAGE" verdict \
-        --reports "$REPORTS" \
+        "${REPORTS[@]}" \
         --runnable "$KOTLIN_RUNNABLE" \
         --label "$engine over $language machines")" \
         || sce_gate_fail "Kotlin conformance on $engine over $language machines: the row's coverage verdict refused — its diagnosis is above"
@@ -731,7 +802,7 @@ done
 # census and a run with nothing to report are the same small number, so the
 # frontend's successes are asserted as well as the refusals.
 [ -f "$CENSUS" ] \
-    || sce_gate_fail "no lowering census at $CENSUS — the suite ran without recording which half answered each expression, so this run cannot say what the Kotlin backend refused. The property is forwarded by backends/kotlin/tests/build.gradle.kts; a Test task that stopped forwarding it would look exactly like a backend that refused nothing"
+    || sce_gate_fail "no lowering census at $CENSUS — the suite ran without recording which half answered each expression, so this run cannot say what the Kotlin backend refused. The property is forwarded by gradle/sce-kotlin-suite.gradle.kts; a Test task that stopped forwarding it would look exactly like a backend that refused nothing"
 
 frontend_hits="$(grep -c '^frontend' "$CENSUS" || true)"; frontend_hits="${frontend_hits:-0}"
 refused_hits="$(grep -c '^refused' "$CENSUS" || true)"; refused_hits="${refused_hits:-0}"
@@ -782,7 +853,7 @@ fi
 # nobody re-measured. Digits resolve against the conformance registry and
 # anything else against the Kotlin test sources — a name that is neither is
 # unclassified, and unclassified is red rather than skipped.
-declared_rows="$(python3 - "$REFUSALS_JSON" "$FIXTURES_JSON" "$KOTLIN_TEST_SOURCES" <<'PY'
+declared_rows="$(python3 - "$REFUSALS_JSON" "$FIXTURES_JSON" "${KOTLIN_TEST_SOURCES[@]}" <<'PY'
 import json
 import pathlib
 import sys
@@ -805,7 +876,8 @@ fixtures = {
     fixture["id"]
     for fixture in json.load(open(sys.argv[2], encoding="utf-8"))["fixtures"]
 }
-classes = {path.stem for path in pathlib.Path(sys.argv[3]).rglob("*.kt")}
+sources = sys.argv[3:]
+classes = {path.stem for root in sources for path in pathlib.Path(root).rglob("*.kt")}
 
 faults = []
 for index, entry in enumerate(entries):
@@ -844,7 +916,7 @@ for index, entry in enumerate(entries):
             faults.append(
                 f"{text!r} names producer {name!r}, which is neither a "
                 f"registered W3C fixture id nor a test class under "
-                f"{sys.argv[3]}"
+                f"{' or '.join(sources)}"
             )
 
 if faults:
@@ -855,7 +927,7 @@ if faults:
 for entry in entries:
     print(f"{DISPOSITION[entry['kind']]}\t{entry['text']}")
 PY
-)" || sce_gate_fail "$REFUSALS_JSON does not declare its refusals in full. Every entry carries a kind from the closed set, the clause it rests on, why it is a refusal rather than a gap, and the producers that reach it — each of which must resolve to a fixture $FIXTURES_JSON registers or a test class under $KOTLIN_TEST_SOURCES. An entry missing any of them is a text somebody added to quiet this lane rather than a refusal anybody classified"
+)" || sce_gate_fail "$REFUSALS_JSON does not declare its refusals in full. Every entry carries a kind from the closed set, the clause it rests on, why it is a refusal rather than a gap, and the producers that reach it — each of which must resolve to a fixture $FIXTURES_JSON registers or a test class under ${KOTLIN_TEST_SOURCES[*]}. An entry missing any of them is a text somebody added to quiet this lane rather than a refusal anybody classified"
 
 declared_refusals="$(printf '%s\n' "$declared_rows" | cut -f2-)"
 observed_refusals="$(grep '^refused' "$CENSUS" | cut -f3- | sort -u || true)"
@@ -934,14 +1006,22 @@ sce_gate_step "committed tree unchanged after ${#KOTLIN_ENGINE_PAIRS[@]} engine/
 # ⚠ The probe's daemon must be fresh, or it measures a daemon that already
 # holds something, or holds a different heap. Three things see to that, and the
 # third checks the first two:
-#   - its `-Xmx` and its GC log path are its own, and the Kotlin plugin reuses a
-#     daemon only when the JVM arguments match;
-#   - `runFilesPath` is a directory of its own, so no daemon started elsewhere
-#     can be found;
+#   - the probe is its own Gradle process (`--no-daemon`), with a
+#     `runFilesPath` of its own, so neither a connection the rows' Gradle
+#     daemon already holds nor a compile daemon started elsewhere can be
+#     reached. ⚠ Measured 2026-11-07 on a build host: run in the Gradle daemon
+#     that had just compiled with a 2 GB compile daemon, a probe asking for
+#     1,365 MB compiled both suites in 22 s and its own GC log was never
+#     written, so the compile ran in a JVM this probe did not start; the 2 GB
+#     daemon was the one alive. Why the plugin chose it is not measured here
+#     (its daemon selection accepts more than identical arguments); that it
+#     can is, and a fresh Gradle process and a private directory leave it
+#     nothing to choose;
 #   - its GC log is removed before and must exist after: only a JVM started with
 #     this run's log path writes it. The same refusal covers the plugin falling
 #     back to compiling inside the Gradle daemon, which
-#     `kotlin.daemon.useFallbackStrategy=false` also turns off.
+#     `kotlin.daemon.useFallbackStrategy=false` also turns off. It is what
+#     refused the run above, which is why it is not the only line.
 #
 # ⚠ The probe's daemon is stopped as soon as the compile returns, and on any
 # exit of this gate. A daemon left idle holds its heap until its idle timeout,
@@ -988,10 +1068,18 @@ sce_gate_on_exit "stop_probe_daemon"
 rm -f "$PROBE_GC_LOG"
 mkdir -p "$PROBE_RUN_FILES"
 
-sce_gate_step "compiling the committed $COMMITTED_LANGUAGE machines again in a fresh compile daemon of $PROBE_MB MB, two thirds of the $KOTLIN_BUDGET_MB MB budget"
+# Every suite's compile, in one invocation and so in one daemon, each from
+# scratch (`--rerun`). Together rather than one at a time on purpose: the
+# suites' compiles are ordered so that they never overlap
+# (backends/kotlin/tests/build.gradle.kts), and their sum needs more than the
+# budget's two thirds, so an ordering lost to a later edit fails here rather
+# than in a row that happens to schedule them together.
+mapfile -t probe_tasks < <(suite_tasks compileKotlin --rerun)
+sce_gate_step "compiling the committed $COMMITTED_LANGUAGE machines of every suite again in a fresh compile daemon of $PROBE_MB MB, two thirds of the $KOTLIN_BUDGET_MB MB budget"
 probe_status=0
-./gradlew --console=plain :sce-kotlin-tests:compileKotlin --rerun --no-build-cache \
-    "$GRADLE_OBSERVED" \
+# No `$GRADLE_OBSERVED` here: that names the rows' Gradle GC log, and a second
+# JVM started with the same log path empties it.
+./gradlew --console=plain --no-daemon "${probe_tasks[@]}" --no-build-cache \
     "-Pkotlin.daemon.jvmargs=$PROBE_JVMARGS $PROBE_GC_FLAG" \
     "-Pkotlin.daemon.options=runFilesPath=$PROBE_RUN_FILES,autoshutdownIdleSeconds=60" \
     -Pkotlin.daemon.useFallbackStrategy=false \
@@ -1032,7 +1120,7 @@ sce_gate_on_exit "rm -rf '$SUITE'"
     || sce_gate_fail "emitting a standalone Kotlin suite"
 
 suite_status=0
-./gradlew -p "$SUITE/backends/kotlin/tests" test --console=plain \
+./gradlew -p "$SUITE/backends/kotlin/w3c" test --console=plain \
     >"$LOG/gradle-suite.log" 2>&1 || suite_status=$?
 if (( suite_status != 0 )); then
     tail -n 40 "$LOG/gradle-suite.log" >&2
@@ -1041,7 +1129,7 @@ fi
 
 # Same reason as the floor above: BUILD SUCCESSFUL covers a test task that
 # compiled and ran nothing, and here that is one missing line rather than 202.
-SUITE_REPORTS="$SUITE/backends/kotlin/tests/build/test-results/test"
+SUITE_REPORTS="$SUITE/backends/kotlin/w3c/build/test-results/test"
 [ -d "$SUITE_REPORTS" ] \
     || sce_gate_fail "the emitted Kotlin suite reported success without producing a result file"
 
@@ -1074,6 +1162,10 @@ sce_gate_step "the emitted Kotlin suite built and passed $suite_cases case(s)"
 # compiled and run once here rather than in all four rows above: it carries no
 # script-engine language, and in `:sce-kotlin-tests` it was most of each row's
 # compile heap (backends/kotlin/method-size/build.gradle.kts gives the numbers).
+# `:sce-kotlin-test-harness` is what both suites run their machines with; its
+# tests hold it to what the lane says about itself (the engine a row names is
+# the engine it runs, and the rows are every route into every engine), which
+# no row varies.
 #
 # A multiplatform module's tests are `jvmTest` (its `commonTest` and `jvmTest`
 # source sets); a JVM module's are `test` (`src/test`). The result directory is
@@ -1118,3 +1210,4 @@ PY
 kotlin_module_tests :sce-kotlin-mesh:jvmTest backends/kotlin/mesh "the Kotlin Mesh core"
 kotlin_module_tests :sce-kotlin-scenarios:jvmTest backends/kotlin/scenarios "the Kotlin scenario replay"
 kotlin_module_tests :sce-kotlin-method-size:test backends/kotlin/method-size "the Kotlin machine past one JVM method"
+kotlin_module_tests :sce-kotlin-test-harness:test "$KOTLIN_HARNESS" "the Kotlin suite harness"

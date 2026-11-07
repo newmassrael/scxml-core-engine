@@ -503,7 +503,7 @@ fn every_file_of_a_swept_tree_is_generated_or_written_by_hand() {
         .iter()
         .filter(|rel| {
             rel.starts_with("backends/rust/tests/src/generated/")
-                || rel.starts_with("backends/kotlin/tests/src/main/kotlin/com/sce/generated/test")
+                || rel.starts_with("backends/kotlin/w3c/src/main/kotlin/com/sce/generated/test")
         })
         .collect();
     assert!(

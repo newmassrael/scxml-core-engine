@@ -7,8 +7,8 @@
 // the module documentation of `sce_rust_world::external`).
 //
 // A MODULE OF ITS OWN rather than a source set of `:sce-kotlin-tests`. That module
-// compiles every generated W3C and integration machine (about 390 directories) and runs
-// its code generator first; a world test needs one machine, and the JVM it starts is
+// compiles every generated integration machine and forge helper (about 190 directories);
+// a world test needs one machine, and the JVM it starts is
 // paid for once per actor per test, so what it loads is what it waits for. The machines
 // compiled here are the committed generated ones, read from that module's tree and not
 // copied: a machine regenerated there is the machine this module hosts, and there is no

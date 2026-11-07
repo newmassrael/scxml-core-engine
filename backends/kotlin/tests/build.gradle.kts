@@ -1,3 +1,14 @@
+// The Kotlin integration suite: the integration machines
+// (`src/main/kotlin/com/sce/integration/`), the forge helpers and integration
+// fixtures generated under `com.sce.generated`, and the tests that hold them to
+// the scenarios, tables and specifications every backend shares. Each machine
+// is written by its own regeneration script (`scripts/regen_<stem>_kotlin.sh`,
+// or `sce-codegen generate-integration -l kotlin`) and committed.
+//
+// The W3C conformance machines left this module on 2026-11-07 for
+// `:sce-kotlin-w3c` (backends/kotlin/w3c/build.gradle.kts says why), and the
+// harness both suites run with for `:sce-kotlin-test-harness`.
+
 plugins {
     alias(libs.plugins.kotlin.jvm)
 }
@@ -17,6 +28,9 @@ dependencies {
     implementation(project(":sce-kotlin-lua"))
     implementation(project(":sce-kotlin-quickjs"))
 
+    // `W3CTestBase` and the virtual-time drive, which the integration tests run
+    // their machines with.
+    testImplementation(project(":sce-kotlin-test-harness"))
     testImplementation(kotlin("test"))
     // The Mesh host core, for the tests that run a generated machine's
     // `<invoke type="sce:mesh-rpc">` through the router a host actually
@@ -39,144 +53,25 @@ dependencies {
     testImplementation(libs.kotlinx.serialization.json)
 }
 
-// ---------------------------------------------------------------------------
-// SCXML Code Generation (CMake parity)
-//
-// Uses sce-codegen (Rust binary) to generate:
-//   - src/main/kotlin/com/sce/generated/testXXX/  (state machine code)
-//   - src/test/kotlin/com/sce/w3c/TestXXX.kt      (JUnit5 test classes)
-//
-// Build sce-codegen: cargo build --bin sce-codegen --features cli -p sce-build
-// Incremental: only runs when SCXML files, templates, or test registry change.
-// Generated files are kept in git so builds work without sce-codegen.
-// ---------------------------------------------------------------------------
-
-// Configuration-cache-safe codegen binary resolution.  The search order —
-// and the fact that this build names no profile — lives in
-// gradle/sce-codegen.gradle.kts; the value it hands back is a plain string
-// evaluated eagerly, so no Gradle script object leaks into task state.
-apply(from = rootProject.file("gradle/sce-codegen.gradle.kts"))
+// How a row replaces these machines with the other language's, and how the
+// suite's tests run: shared with `:sce-kotlin-w3c`.
+apply(from = rootProject.file("gradle/sce-kotlin-suite.gradle.kts"))
 val rootDir: String = rootProject.projectDir.absolutePath
-val sceCodegenAbsoluteOrNull: String? by rootProject.extra
-val sceCodegenBinary: String? = sceCodegenAbsoluteOrNull
-val hasCodegen: Boolean = sceCodegenBinary != null
 
-// ---------------------------------------------------------------------------
-// The committed tree carries ONE language; this backend emits for two.
-//
-// `Language::Kotlin` owns both arms of the language seam: the machines can
-// hand their engine the author's ECMAScript, or the Lua that `sce-build`'s
-// frontend lowered at build time (`sce-codegen generate-w3c --script-engine`).
-// Only one of those can be the committed tree, and the engines are not
-// interchangeable about which they are handed — `ScxmlScriptEngine` refuses a
-// language it does not accept rather than guessing.
-//
-// So the other language's machines are generated somewhere else and named
-// here. The caller owns that directory: `scripts/gates/w3c-kotlin.sh` decides
-// which language each engine needs, generates it, and points this at the
-// result. Nothing about which language is which lives here — a second copy of
-// that decision is exactly the drift this seam has already paid for twice.
-//
-// WHICH populations move is DERIVED from what the overlay carries, and is
-// never listed here.
-//
-// ⚠ This comment said "only `com/sce/generated` moves" and the code below
-// hardcoded that one name. The day the backend's default artifact flipped to
-// Lua it cost over an hour of a CI runner: `com/sce/integration` holds 41 more
-// generated machine directories, they stayed in the committed language, were
-// compiled beside the overlay and handed to an engine that cannot read them.
-// That does not fail the suite — it HANGS it, because Rhino answers every
-// `setCurrentEvent` with an `EcmaError` and the eventless drain never settles.
-//
-// Reading the overlay's own directories means a caller that generates a
-// population this file has never heard of replaces it too, with nothing here
-// to update. What this CANNOT do is notice a population the caller forgot to
-// generate; that is `scripts/gates/w3c-kotlin.sh`, which refuses an overlay
-// not covering every committed source that carries a script-engine language.
-//
-// The generated JUnit classes under `com/sce/w3c` do not mention the engine
-// language at all and stay committed, which the gate holds to a diff rather
-// than to this comment. The 40 integration test classes are hand-written and
-// carry no `// Source:` line, so there is nothing to compare for them.
-val generatedOverlay: String? = providers.gradleProperty("sce.generated.overlay").orNull
-val overlayPackages: File? = generatedOverlay?.let { File("$it/src/main/kotlin/com/sce") }
-
-if (overlayPackages != null) {
-    require(overlayPackages.isDirectory) {
-        "sce.generated.overlay=$generatedOverlay names no generated tree at " +
-            "$overlayPackages. The overlay replaces the committed machines rather " +
-            "than adding to them, so an empty one would compile a suite with no " +
-            "state machines in it and report that as a pass."
-    }
-    val overlaid =
-        overlayPackages.listFiles().orEmpty().filter { it.isDirectory }.map { it.name }.sorted()
-    require(overlaid.isNotEmpty()) {
-        "sce.generated.overlay=$generatedOverlay carries no package directory under " +
-            "$overlayPackages, so this build would replace nothing while compiling the " +
-            "committed machines under a property that says otherwise."
-    }
-    for (name in overlaid) {
-        // Each population is added at its OWN directory rather than at the
-        // shared `src/main/kotlin` root, and that is load-bearing: a file in
-        // the overlay is then reached at `<stem>/<file>.kt`, which the
-        // exclusion below cannot match, while its committed copy is reached at
-        // `com/sce/<name>/<stem>/<file>.kt`, which it does. Adding the root
-        // instead would exclude BOTH copies and compile neither.
-        sourceSets["main"].kotlin.srcDir(File(overlayPackages, name))
-        // The committed copies are the OTHER language's. Excluding them is what
-        // makes this a replacement: kept, they would be duplicate declarations
-        // of every generated class, and dropped from the exclude they would be
-        // the ones that compiled.
-        sourceSets["main"].kotlin.exclude("com/sce/$name/**")
-    }
-}
-val overlayMachines: String? = generatedOverlay?.let { "$it/src/main/kotlin/com/sce/generated" }
-
-val generateScxml by tasks.registering(Exec::class) {
-    group = "code generation"
-    description = "Generate Kotlin state machines and test classes from W3C SCXML tests"
-
-    // An overlay run compiles machines the caller generated, so regenerating
-    // the committed ones would be work whose output nothing reads.
-    enabled = hasCodegen && overlayMachines == null
-    // The committed machines are regenerated in place, so the generator must
-    // be the one these sources build — never an older binary that happens to
-    // be lying around (gradle/sce-codegen.gradle.kts states the measurement).
-    dependsOn(":buildSceCodegen")
-
-    workingDir = File(rootDir)
-    commandLine(sceCodegenBinary ?: "sce-codegen", "generate-w3c", "-l", "kotlin")
-
-    // Inputs: SCXML sources + codegen infrastructure + test registry
-    inputs.dir(File(rootDir, "resources"))
-        .withPropertyName("scxmlResources")
-        .withPathSensitivity(PathSensitivity.RELATIVE)
-    inputs.dir(File(rootDir, "tools/codegen/templates"))
-        .withPropertyName("codegenTemplates")
-        .withPathSensitivity(PathSensitivity.RELATIVE)
-    inputs.file(File(rootDir, "tests/CMakeLists.txt"))
-        .withPropertyName("testRegistry")
-        .withPathSensitivity(PathSensitivity.RELATIVE)
-
-    // Outputs: generated state machines + test classes
-    outputs.dir("src/main/kotlin/com/sce/generated")
-        .withPropertyName("generatedSources")
-    outputs.dir("src/test/kotlin/com/sce/w3c")
-        .withPropertyName("generatedTests")
-
-    // Skip if sce-codegen is not available (use existing generated files)
-    isIgnoreExitValue = false
-}
-
+// ⚠ After `:sce-kotlin-w3c`, never beside it. Its compile needs about 0.8 GB
+// and this one about 1.3 GB (measured 2026-11-07), and `org.gradle.parallel`
+// would otherwise run the two at once in the one compile daemon, needing more
+// heap together than the single compile they replaced. The test tasks are
+// ordered for the same kind of reason: each forks half the machine's
+// processors (gradle/sce-kotlin-suite.gradle.kts states the measurement behind
+// that), so two at once would schedule the wall-clock cases twice as thin.
+// `mustRunAfter` orders without depending: either task still runs alone.
 tasks.named("compileKotlin") {
-    dependsOn(generateScxml)
+    mustRunAfter(":sce-kotlin-w3c:compileKotlin")
 }
 
 tasks.test {
-    useJUnitPlatform()
-
-    // C++ DataModelInitHelper pattern: resolve data src paths relative to project root
-    workingDir = File(rootDir)
+    mustRunAfter(":sce-kotlin-w3c:test")
 
     // Data this suite reads through `workingDir` at RUN time, declared so
     // Gradle knows the task is out of date when it changes.
@@ -214,18 +109,6 @@ tasks.test {
         .withPropertyName("sharedExternalEventBudgetTables")
         .withPathSensitivity(PathSensitivity.RELATIVE)
 
-    // Same reason, same failure mode, measured the same way.
-    // `GateEnginePairsTest` reads the conformance gate and holds its
-    // `KOTLIN_ENGINE_PAIRS` array to the routes this backend actually has.
-    // The gate is not on the compile classpath either, so editing it left
-    // `:sce-kotlin-tests:test UP-TO-DATE`: measured 2026-08-30 by deleting the
-    // `lua:lua` row — the row that whole change exists to add — which the test
-    // must reject and instead reported BUILD SUCCESSFUL in 500ms without
-    // running a test. A gate nothing re-reads is a gate that cannot be wrong.
-    inputs.file(File(rootDir, "scripts/gates/w3c-kotlin.sh"))
-        .withPropertyName("kotlinConformanceGate")
-        .withPathSensitivity(PathSensitivity.RELATIVE)
-
     // Same reason, same failure mode. `StaticScenarioTest` replays the scenarios every
     // engine shares and `StaticDatamodelTest` reads the saved states they share, both
     // from `sce-build/tests/fixtures/static_datamodel` at RUN time, and the saved-state
@@ -246,83 +129,6 @@ tasks.test {
     inputs.dir(File(rootDir, "backends/kotlin/tests/fixtures/jvm_long_text"))
         .withPropertyName("jvmLongTextDocuments")
         .withPathSensitivity(PathSensitivity.RELATIVE)
-
-    // Native library paths (Lua + QuickJS JNI)
-    val luaLibDir = project(":sce-kotlin-lua").layout.buildDirectory.dir("native/lib")
-    val quickjsLibDir = project(":sce-kotlin-quickjs").layout.buildDirectory.dir("native/lib")
-    val sep = File.pathSeparator
-    systemProperty("java.library.path",
-        "${luaLibDir.get().asFile.absolutePath}${sep}${quickjsLibDir.get().asFile.absolutePath}")
-
-    // Forward script engine selection: ./gradlew test -Psce.script.engine=lua
-    val engineProp = providers.gradleProperty("sce.script.engine")
-    if (engineProp.isPresent) {
-        systemProperty("sce.script.engine", engineProp.get())
-    }
-
-    // Where the Lua engine appends its lowering census, when asked for one.
-    //
-    // ⚠ Forwarded as a PROPERTY, and that is the whole reason this block
-    // exists. A Gradle `Test` task forks its own JVM, so `-Dsce…` given to
-    // Gradle reaches Gradle and not the tests, and the test JVM's `System.err`
-    // does not reach Gradle's log either. Measured 2026-08-30: two runs of a
-    // stderr-based probe reported ZERO fallbacks over a run that took the
-    // fallback 100 times, because the stream was swallowed. The census goes to
-    // a FILE the caller names, so nothing between here and the reader can
-    // silently drop it.
-    val censusProp = providers.gradleProperty("sce.lua.loweringCensus")
-    if (censusProp.isPresent) {
-        systemProperty("sce.lua.loweringCensus", censusProp.get())
-    }
-
-    // W3C test timeouts: 10s per test (most complete in <100ms)
-    systemProperty("junit.jupiter.execution.timeout.default", "10s")
-
-    // Two independent parallelism knobs act on this one suite, and they
-    // MULTIPLY. Gradle forks `maxParallelForks` test JVMs; JUnit then sizes a
-    // pool inside each one. Sized separately, each is reasonable and the
-    // product is not: on a 32-processor machine the fork count was 16 and the
-    // `dynamic` strategy asked each fork for `availableProcessors * 2` = 64,
-    // because a forked JVM sees the whole machine and knows nothing about its
-    // 15 siblings. That is 1024 concurrent tests on 32 processors.
-    //
-    // Almost every test here is a few microsteps and does not notice. The one
-    // that does is any test whose VERDICT is wall-clock: a W3C document that
-    // arms `<send event="timeout" delay="2s"/>` as its own failure timer is
-    // racing real time, and the harness's `tick()` loop has to be scheduled
-    // often enough to finish the document's work before that timer fires.
-    // Measured 2026-08-22, test253 (an `<invoke type="scxml">` handshake behind
-    // exactly such a timer) took 0.51s run alone and 5.5s run in the suite, and
-    // failed every time in the suite — including on `main`, where the red had
-    // been standing unread.
-    //
-    // So the fork count stays, and the per-fork pool is derived FROM it rather
-    // than from the machine a second time. Both numbers now come from one
-    // reading of `availableProcessors`, and their product is that reading.
-    val cpus = Runtime.getRuntime().availableProcessors()
-    val forks = (cpus / 2).coerceAtLeast(1)
-
-    // JUnit5 parallel execution, bounded so the whole suite fits the machine.
-    systemProperty("junit.jupiter.execution.parallel.enabled", "true")
-    systemProperty("junit.jupiter.execution.parallel.mode.default", "concurrent")
-    // `fixed` rather than `dynamic`: the dynamic strategy multiplies a factor
-    // by the processor count the JVM can see, which is the whole machine no
-    // matter how many forks are sharing it. A fixed number is the only way to
-    // say "this fraction of the machine".
-    systemProperty("junit.jupiter.execution.parallel.config.strategy", "fixed")
-    systemProperty(
-        "junit.jupiter.execution.parallel.config.fixed.parallelism",
-        (cpus / forks).coerceAtLeast(1).toString()
-    )
-
-    // Gradle-level fork control
-    maxParallelForks = forks
-
-    testLogging {
-        events("passed", "skipped", "failed")
-        showStandardStreams = false
-        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
-    }
 }
 
 kotlin {

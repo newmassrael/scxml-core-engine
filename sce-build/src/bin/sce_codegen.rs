@@ -11164,7 +11164,13 @@ struct KotlinBackend {
 }
 
 impl KotlinBackend {
-    const RELATIVE_ROOT: &'static str = "backends/kotlin/tests";
+    /// The module that holds the W3C suite and nothing else
+    /// (`:sce-kotlin-w3c`, backends/kotlin/w3c/build.gradle.kts). The
+    /// integration machines are `:sce-kotlin-tests`'s, written by
+    /// `generate-integration` and the per-stem scripts; keeping the two
+    /// populations in separate modules is what keeps either one's compile
+    /// from growing with the other's.
+    const RELATIVE_ROOT: &'static str = "backends/kotlin/w3c";
 
     fn new(
         output_root: &Path,

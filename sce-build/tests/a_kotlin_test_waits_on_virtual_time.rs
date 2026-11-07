@@ -32,7 +32,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 /// What reads the wall, and why a virtual clock cannot do it instead.
-const REAL_TIME: [(&str, &str); 3] = [
+const REAL_TIME: [(&str, &str); 4] = [
+    (
+        "com/sce/http/W3CHttpTestServer.kt",
+        "the mock HTTP server answers real sockets on its own threads; it is the I/O the HTTP tests wait on, not a wait",
+    ),
     (
         "com/sce/integration/ADelayedHttpSendIsPostedWhenDueTest.kt",
         "its second test runs the engine's coroutine on Dispatchers.Default and measures real elapsed time",
@@ -49,11 +53,23 @@ const REAL_TIME: [(&str, &str); 3] = [
 
 const WALL: [&str; 3] = ["currentTimeMillis", "Thread.sleep", "nanoTime"];
 
-fn root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
+/// Every Kotlin tree a suite's tests run from: both suites' test sources, and
+/// the harness they share (`W3CHttpTestBase` and `VirtualDrive` live there). A
+/// path below is relative to whichever of these holds it.
+fn roots() -> Vec<PathBuf> {
+    let repo = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .expect("sce-build has a parent directory")
-        .join("backends/kotlin/tests/src/test/kotlin")
+        .to_path_buf();
+    [
+        "backends/kotlin/w3c/src/test/kotlin",
+        "backends/kotlin/tests/src/test/kotlin",
+        "backends/kotlin/test-harness/src/main/kotlin",
+        "backends/kotlin/test-harness/src/test/kotlin",
+    ]
+    .iter()
+    .map(|tree| repo.join(tree))
+    .collect()
 }
 
 fn sources(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -91,19 +107,22 @@ fn reads_the_wall(code: &str) -> bool {
 }
 
 fn files_reading_the_wall() -> (usize, Vec<String>) {
-    let base = root();
-    let mut files = Vec::new();
-    sources(&base, &mut files);
+    let mut population = 0;
     let mut reading = Vec::new();
-    for file in &files {
-        let text = fs::read_to_string(file).expect("a Kotlin test source is text");
-        if reads_the_wall(&code_of(&text)) {
-            let relative = file.strip_prefix(&base).expect("under the test tree");
-            reading.push(relative.to_string_lossy().replace('\\', "/"));
+    for base in roots() {
+        let mut files = Vec::new();
+        sources(&base, &mut files);
+        population += files.len();
+        for file in &files {
+            let text = fs::read_to_string(file).expect("a Kotlin test source is text");
+            if reads_the_wall(&code_of(&text)) {
+                let relative = file.strip_prefix(&base).expect("under the test tree");
+                reading.push(relative.to_string_lossy().replace('\\', "/"));
+            }
         }
     }
     reading.sort();
-    (files.len(), reading)
+    (population, reading)
 }
 
 /// The files that read the wall without a reason named for them.

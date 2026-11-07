@@ -92,9 +92,9 @@ done
 ENDPOINT_PATH="$(sce_http_endpoint_path "$SCE_REPO_ROOT")" \
     || sce_gate_fail "$OWNER no longer declares a readable test path"
 PATH_MIRRORS=(
-    "backends/kotlin/tests/src/main/kotlin/com/sce/http/W3CHttpTestServer.kt|private val path: String = \""
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt|W3CHttpTestServer(port = 0, path = \""
-    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt|http://localhost:\$actualPort"
+    "backends/kotlin/test-harness/src/main/kotlin/com/sce/http/W3CHttpTestServer.kt|private val path: String = \""
+    "backends/kotlin/test-harness/src/main/kotlin/com/sce/w3c/W3CHttpTestBase.kt|W3CHttpTestServer(port = 0, path = \""
+    "backends/kotlin/test-harness/src/main/kotlin/com/sce/w3c/W3CHttpTestBase.kt|http://localhost:\$actualPort"
 )
 
 for entry in "${PATH_MIRRORS[@]}"; do
