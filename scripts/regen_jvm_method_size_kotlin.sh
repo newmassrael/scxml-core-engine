@@ -3,8 +3,8 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
 # Regenerate the Kotlin machine under
-# backends/kotlin/tests/src/main/kotlin/com/sce/integration/jvm_method_size_static/
-# from the document of backends/kotlin/tests/fixtures/jvm_method_size/.
+# backends/kotlin/method-size/src/main/kotlin/com/sce/methodsize/jvm_method_size_static/
+# from the document of backends/kotlin/method-size/fixtures/.
 #
 # The document's transition content, written into one method as the Kotlin
 # machine once wrote it, passes the 65,535 bytes of code one JVM method holds,
@@ -12,6 +12,12 @@
 # beside it says why and writes it). It is not under `integration_resources/`:
 # a stem there is a contract with every channel, and the question this answers
 # belongs to the JVM's class file, which only the Kotlin channel compiles to.
+#
+# It is not under `backends/kotlin/tests/` either: the module of its own it
+# lives in compiles it once, rather than in every compile of `:sce-kotlin-tests`
+# (backends/kotlin/method-size/build.gradle.kts says why). Its document carries
+# no script-engine language, so it has no other-language tree and takes no
+# `SCE_KOTLIN_GENERATED_ROOT`.
 #
 # Usage (from repo root):
 #   scripts/regen_jvm_method_size_kotlin.sh
@@ -26,9 +32,9 @@ set -euo pipefail
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
-INPUT_ROOT="backends/kotlin/tests/fixtures/jvm_method_size"
-GENERATED_ROOT="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration"
-PACKAGE_PREFIX="com.sce.integration"
+INPUT_ROOT="backends/kotlin/method-size/fixtures"
+GENERATED_ROOT="backends/kotlin/method-size/src/main/kotlin/com/sce/methodsize"
+PACKAGE_PREFIX="com.sce.methodsize"
 STEM="jvm_method_size_static"
 
 # Step 1: resolve sce-codegen, building it when no profile holds one.

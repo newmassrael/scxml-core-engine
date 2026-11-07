@@ -36,6 +36,11 @@ include(":sce-kotlin-quickjs")
 project(":sce-kotlin-quickjs").projectDir = file("backends/kotlin/quickjs")
 include(":sce-kotlin-tests")
 project(":sce-kotlin-tests").projectDir = file("backends/kotlin/tests")
+// The machine of a statechart too large for one JVM method and its test. Its own
+// module so the 1.5 MB stress fixture compiles once, and not in every compile of
+// `:sce-kotlin-tests` (backends/kotlin/method-size/build.gradle.kts says why).
+include(":sce-kotlin-method-size")
+project(":sce-kotlin-method-size").projectDir = file("backends/kotlin/method-size")
 include(":sce-kotlin-mesh")
 project(":sce-kotlin-mesh").projectDir = file("backends/kotlin/mesh")
 // A step server for the world simulation (backends/rust/world): one generated machine

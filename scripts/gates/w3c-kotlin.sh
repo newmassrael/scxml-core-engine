@@ -956,7 +956,15 @@ sce_gate_step "the emitted Kotlin suite built and passed $suite_cases case(s)"
 # core's bytes. `:sce-kotlin-scenarios` is the replay the suite above, and a
 # build outside this repository, hold a generated machine to a scenario with;
 # its tests hold the replay to what it judges, which the suite cannot: a replay
-# that judged nothing would pass every scenario there.
+# that judged nothing would pass every scenario there. `:sce-kotlin-method-size`
+# is the machine too large for one JVM method under the old generated shape,
+# compiled and run once here rather than in all four rows above: it carries no
+# script-engine language, and in `:sce-kotlin-tests` it was most of each row's
+# compile heap (backends/kotlin/method-size/build.gradle.kts gives the numbers).
+#
+# A multiplatform module's tests are `jvmTest` (its `commonTest` and `jvmTest`
+# source sets); a JVM module's are `test` (`src/test`). The result directory is
+# the task's own name in either, so it is read from the task.
 #
 # The count is DERIVED from the module's own `@Test` declarations and held as
 # an equality, for the reason the suite rows above read JUnit XML: Gradle says
@@ -966,15 +974,16 @@ kotlin_module_tests() {
     local task="$1" module="$2" what="$3"
     local declared status=0 log reports cases failures errors
     sce_gate_step "running $what's own tests"
-    # Every test source set `jvmTest` compiles: the common one and the JVM one.
-    declared="$(grep -rh '^\s*@Test' "$module"/src/*Test | grep -c . || true)"
+    # Every test source set the task compiles: `commonTest` and `jvmTest` for a
+    # multiplatform module, `test` for a JVM one.
+    declared="$(grep -rh '^\s*@Test' "$module"/src/*[tT]est | grep -c . || true)"
     log="$LOG/kotlin-$(basename "$module").log"
     ./gradlew --console=plain "$task" >"$log" 2>&1 || status=$?
     if (( status != 0 )); then
         tail -n 40 "$log" >&2
         sce_gate_fail "$what's tests failed"
     fi
-    reports="$module/build/test-results/jvmTest"
+    reports="$module/build/test-results/${task##*:}"
     [ -d "$reports" ] \
         || sce_gate_fail "$what reported success without producing a result file"
     read -r cases failures errors < <(
@@ -995,3 +1004,4 @@ PY
 
 kotlin_module_tests :sce-kotlin-mesh:jvmTest backends/kotlin/mesh "the Kotlin Mesh core"
 kotlin_module_tests :sce-kotlin-scenarios:jvmTest backends/kotlin/scenarios "the Kotlin scenario replay"
+kotlin_module_tests :sce-kotlin-method-size:test backends/kotlin/method-size "the Kotlin machine past one JVM method"

@@ -2,11 +2,11 @@
 // source-hash: 94319e0f85e446bb7e0735339186d8473ef8c4107d93765af322b396282256c5
 
 // GENERATED CODE — DO NOT EDIT
-// Source: backends/kotlin/tests/fixtures/jvm_method_size/jvm_method_size_static.scxml
+// Source: backends/kotlin/method-size/fixtures/jvm_method_size_static.scxml
 // Generator: SCE Kotlin Code Generator v1.0
 // SCE-MAP: jvm_method_size_static.scxml:14 :: _machine
 
-package com.sce.integration.jvm_method_size_static
+package com.sce.methodsize.jvm_method_size_static
 
 import com.sce.runtime.*
 

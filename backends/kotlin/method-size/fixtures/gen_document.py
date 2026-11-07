@@ -25,9 +25,9 @@ is the point.
 
 Usage, from the repository root:
 
-    python3 backends/kotlin/tests/fixtures/jvm_method_size/gen_document.py
-    python3 backends/kotlin/tests/fixtures/jvm_method_size/gen_document.py --check
-    python3 backends/kotlin/tests/fixtures/jvm_method_size/gen_document.py --out DIR
+    python3 backends/kotlin/method-size/fixtures/gen_document.py
+    python3 backends/kotlin/method-size/fixtures/gen_document.py --check
+    python3 backends/kotlin/method-size/fixtures/gen_document.py --out DIR
 
 `--check` exits 1 when the committed document differs from what this writes;
 `--out` writes the document into DIR instead of beside this file.

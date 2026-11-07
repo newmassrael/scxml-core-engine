@@ -247,12 +247,6 @@ tasks.test {
         .withPropertyName("jvmLongTextDocuments")
         .withPathSensitivity(PathSensitivity.RELATIVE)
 
-    // Same reason. `JvmMethodSizeTest` reads the document its machine was
-    // generated from, at RUN time, as the sums each transition must add up.
-    inputs.dir(File(rootDir, "backends/kotlin/tests/fixtures/jvm_method_size"))
-        .withPropertyName("jvmMethodSizeDocument")
-        .withPathSensitivity(PathSensitivity.RELATIVE)
-
     // Native library paths (Lua + QuickJS JNI)
     val luaLibDir = project(":sce-kotlin-lua").layout.buildDirectory.dir("native/lib")
     val quickjsLibDir = project(":sce-kotlin-quickjs").layout.buildDirectory.dir("native/lib")

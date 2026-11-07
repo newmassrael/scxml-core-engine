@@ -20,17 +20,21 @@
 // The bound on every generated method is held without a JVM by
 // sce-build/tests/no_generated_kotlin_method_grows_with_the_document.rs.
 //
-// Fixture: backends/kotlin/tests/fixtures/jvm_method_size/jvm_method_size_static.scxml,
+// Fixture: backends/kotlin/method-size/fixtures/jvm_method_size_static.scxml,
 // written by gen_document.py beside it.
+//
+// A module of its own (`:sce-kotlin-method-size`), so the 1.5 MB machine
+// compiles once rather than in every compile of `:sce-kotlin-tests`
+// (backends/kotlin/method-size/build.gradle.kts says why).
 //
 // Regeneration (after fixture or template edit):
 //   scripts/regen_jvm_method_size_kotlin.sh
 
-package com.sce.integration
+package com.sce.methodsize
 
-import com.sce.integration.jvm_method_size_static.JvmMethodSizeStaticEvent
-import com.sce.integration.jvm_method_size_static.JvmMethodSizeStaticState
-import com.sce.integration.jvm_method_size_static.JvmMethodSizeStaticStateMachine
+import com.sce.methodsize.jvm_method_size_static.JvmMethodSizeStaticEvent
+import com.sce.methodsize.jvm_method_size_static.JvmMethodSizeStaticState
+import com.sce.methodsize.jvm_method_size_static.JvmMethodSizeStaticStateMachine
 import java.io.File
 import javax.xml.parsers.DocumentBuilderFactory
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -45,7 +49,7 @@ class JvmMethodSizeTest {
     private val scxml = "http://www.w3.org/2005/07/scxml"
 
     /** The fixture, relative to the working directory: the repository root. */
-    private val fixture = "backends/kotlin/tests/fixtures/jvm_method_size/jvm_method_size_static.scxml"
+    private val fixture = "backends/kotlin/method-size/fixtures/jvm_method_size_static.scxml"
 
     /** The most bytes of code one JVM method holds. */
     private val oneMethod = 65_535

@@ -151,6 +151,7 @@ sce_generated_trees() {
         backends/kotlin/tests/src/main/kotlin/com/sce/generated \
         backends/kotlin/tests/src/main/kotlin/com/sce/integration \
         backends/kotlin/tests/src/test/kotlin/com/sce/w3c \
+        backends/kotlin/method-size/src/main/kotlin/com/sce/methodsize \
         backends/go/tests/generated \
         backends/go/tests/integration \
         backends/python/tests/generated \
