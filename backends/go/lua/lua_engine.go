@@ -7,8 +7,9 @@
 // Shopify/go-lua library for Lua 5.2 embedding (no CGo required).
 //
 // Each state machine gets its own Lua session (isolated L state) via
-// CreateSession/DestroySession. System variables (_sessionid, _name, _event)
-// are set per the W3C SCXML specification.
+// CreateSession/DestroySession. The system variables (_sessionid, _name,
+// _ioprocessors, _event) are bound only through the shared
+// `_scxml_bind_system`, which makes them read-only (§scxml-5.10).
 package scelua
 
 import (
@@ -148,7 +149,14 @@ func (e *LuaEngine) ExecuteScript(sessionID, script string) error {
 	if err != nil {
 		return err
 	}
-	return lua.DoString(sess.l, script)
+	// A failed chunk leaves its error object on the stack, and a chunk that
+	// returns leaves what it returned. A refused write to a system variable
+	// (§scxml-5.10) is a failure a document can repeat once per event, so the
+	// stack is put back either way rather than left to grow.
+	top := sess.l.Top()
+	err = lua.DoString(sess.l, script)
+	sess.l.SetTop(top)
+	return err
 }
 
 func (e *LuaEngine) EvaluateExpression(sessionID, expr string) (interface{}, error) {
@@ -171,9 +179,9 @@ func (e *LuaEngine) EvaluateExpression(sessionID, expr string) (interface{}, err
 		return nil, err
 	}
 
-	result := e.luaToGo(sess.l, -1)
-	sess.l.Pop(1)
-	return result, nil
+	// The chunk may return more than one value; the first is the answer.
+	sess.l.SetTop(top + 1)
+	return e.popGoValue(sess.l)
 }
 
 func (e *LuaEngine) SetVariable(sessionID, name string, value interface{}) error {
@@ -182,7 +190,9 @@ func (e *LuaEngine) SetVariable(sessionID, name string, value interface{}) error
 		return err
 	}
 	e.pushGoValue(sess.l, value)
-	sess.l.SetGlobal(name)
+	if err := setDocumentGlobal(sess.l, name); err != nil {
+		return err
+	}
 	sess.declaredVars[name] = true
 	return nil
 }
@@ -193,9 +203,7 @@ func (e *LuaEngine) GetVariable(sessionID, name string) (interface{}, error) {
 		return nil, err
 	}
 	sess.l.Global(name)
-	result := e.luaToGo(sess.l, -1)
-	sess.l.Pop(1)
-	return result, nil
+	return e.popGoValue(sess.l)
 }
 
 func (e *LuaEngine) HasVariable(sessionID, name string) bool {
@@ -211,9 +219,18 @@ func (e *LuaEngine) SetupSystemVariables(sessionID, sessionName string, ioProces
 	if err != nil {
 		return err
 	}
-	// W3C SCXML 5.10: Initialize system variables
-	_ = e.SetVariable(sessionID, "_sessionid", sessionID)
-	_ = e.SetVariable(sessionID, "_name", sessionName)
+	// §scxml-5.10: the system variables, bound read-only. They used to be set
+	// as ordinary globals, so `_sessionid = 'x'` from a script changed the
+	// session id the document reads; a write now fails, and the failure is the
+	// script's (tests/ecmascript/system_variable_writes.json).
+	sess.l.PushString(sessionID)
+	if err := bindSystemVariable(sess.l, "_sessionid"); err != nil {
+		return err
+	}
+	sess.l.PushString(sessionName)
+	if err := bindSystemVariable(sess.l, "_name"); err != nil {
+		return err
+	}
 	// W3C SCXML C.1.1 / C.2.3: one entry per processor the deployment
 	// supports, each with a location field holding the address that reaches
 	// this session through it. Names and locations are decided by
@@ -225,7 +242,10 @@ func (e *LuaEngine) SetupSystemVariables(sessionID, sessionName string, ioProces
 			"location": processor.Location,
 		}
 	}
-	_ = e.SetVariable(sessionID, "_ioprocessors", ioTable)
+	e.pushGoValue(sess.l, ioTable)
+	if err := bindSystemVariable(sess.l, "_ioprocessors"); err != nil {
+		return err
+	}
 	sess.declaredVars["_event"] = true
 	sess.declaredVars["_sessionid"] = true
 	sess.declaredVars["_name"] = true
@@ -361,7 +381,13 @@ func (e *LuaEngine) SetCurrentEvent(sessionID string, args sce.SetCurrentEventAr
 		sess.l.SetField(-2, field.name)
 	}
 
-	sess.l.SetGlobal("_event")
+	// §scxml-5.10, §scxml-B-2-8: `_event` is bound as a read-only view of the
+	// table just built, so neither a field nor the variable can be replaced by
+	// a script. `_event.data` holds the payload itself, which stays writable
+	// inside (the shared table's `about` says why).
+	if err := bindSystemVariable(sess.l, "_event"); err != nil {
+		return sce.PayloadAbsent, err
+	}
 	return reading, nil
 }
 
@@ -576,7 +602,9 @@ func (e *LuaEngine) SetVariableAsDOM(sessionID, name, xmlContent string) error {
 	if !e.pushDOMTable(sess, xmlContent) {
 		sess.l.PushNil()
 	}
-	sess.l.SetGlobal(name)
+	if err := setDocumentGlobal(sess.l, name); err != nil {
+		return err
+	}
 	sess.declaredVars[name] = true
 	return nil
 }
@@ -609,6 +637,68 @@ func (e *LuaEngine) SetStateQueryCallback(sessionID string, cb func(stateID stri
 }
 
 // ── Internal helpers ───────────────────────────────────────────────
+
+// bindSystemVariable binds the §scxml-5.10 system variable name to the value
+// on top of the stack, and pops it.
+//
+// The binding is the shared `_scxml_bind_system` of ecma_semantics.lua, which
+// CreateSession loads before any session can be asked for one: one
+// implementation of what is read-only, for every Lua engine. An ordinary
+// global set of one of these names is refused by that file, so this is the
+// only way the engine can bind one. The call is protected, so a refusal comes
+// back as an error rather than a Go panic.
+func bindSystemVariable(l *lua.State, name string) error {
+	l.Global("_scxml_bind_system")
+	l.Insert(-2) // binder, value
+	l.PushString(name)
+	l.Insert(-2) // binder, name, value
+	if err := l.ProtectedCall(2, 0, 0); err != nil {
+		l.Pop(1) // the error object
+		return fmt.Errorf("cannot bind the system variable %s: %w", name, err)
+	}
+	return nil
+}
+
+// setDocumentGlobal assigns the value on top of the stack to the global name,
+// and pops it.
+//
+// The name is one a document chose — a `<data>` id, a `<foreach>` item — and
+// the globals refuse a write of a system variable's name (§scxml-5.10), so the
+// assignment can raise. `SetGlobal` raises by panicking when no protected call
+// is running, so it runs inside one and the refusal is this call's error.
+func setDocumentGlobal(l *lua.State, name string) error {
+	l.PushGoFunction(func(l *lua.State) int {
+		l.SetGlobal(name)
+		return 0
+	})
+	l.Insert(-2) // setter, value
+	if err := l.ProtectedCall(1, 0, 0); err != nil {
+		l.Pop(1) // the error object
+		return err
+	}
+	return nil
+}
+
+// popGoValue converts the value on top of the stack to a Go value, and pops
+// it.
+//
+// Converting a table asks its metamethods — `__len`, `__index`, `__pairs` —
+// because a system variable is a read-only view whose own table is empty, and
+// a metamethod can raise. The conversion runs inside a protected call, so a
+// raise is this call's error rather than a Go panic.
+func (e *LuaEngine) popGoValue(l *lua.State) (interface{}, error) {
+	var result interface{}
+	l.PushGoFunction(func(l *lua.State) int {
+		result = e.luaToGo(l, 1)
+		return 0
+	})
+	l.Insert(-2) // converter, value
+	if err := l.ProtectedCall(1, 0, 0); err != nil {
+		l.Pop(1) // the error object
+		return nil, err
+	}
+	return result, nil
+}
 
 // luaToGo converts a Lua stack value to a Go interface{}.
 //
@@ -644,10 +734,16 @@ func (e *LuaEngine) luaToGo(l *lua.State, idx int) interface{} {
 }
 
 // luaTableToGo converts a Lua table to a Go map or slice.
+//
+// The table is read as a script reads it — `#t`, `t[i]` and `pairs(t)` — not
+// raw. A system variable is bound as a read-only view whose own table is
+// empty (§scxml-5.10, `_scxml_bind_system`), so a raw walk of `_event` or
+// `_ioprocessors` answered an empty map.
 func (e *LuaEngine) luaTableToGo(l *lua.State, idx int) interface{} {
-	if idx < 0 {
-		idx = l.AbsIndex(idx)
-	}
+	idx = l.AbsIndex(idx)
+	// Six slots per level of nesting: the pairs walk holds the iterator, its
+	// state and control, a key, a value and a copy of the key.
+	lua.CheckStackWithMessage(l, 6, "converting a nested table")
 
 	// Check if it's an array (has sequential integer keys)
 	l.Length(idx)
@@ -659,7 +755,8 @@ func (e *LuaEngine) luaTableToGo(l *lua.State, idx int) interface{} {
 		// Treat as array
 		result := make([]interface{}, length)
 		for i := 1; i <= length; i++ {
-			l.RawGetInt(idx, i)
+			l.PushInteger(i)
+			l.Table(idx)
 			result[i-1] = e.luaToGo(l, -1)
 			l.Pop(1)
 		}
@@ -668,15 +765,48 @@ func (e *LuaEngine) luaTableToGo(l *lua.State, idx int) interface{} {
 
 	// Treat as object
 	result := make(map[string]interface{})
-	l.PushNil()
-	for l.Next(idx) {
-		key, ok := l.ToString(-2)
+	forEachPair(l, idx, func() {
+		// A copy of the key: `ToString` turns a number into a string where
+		// it stands, and the walk needs the key it was given back.
+		l.PushValue(-2)
+		key, ok := l.ToString(-1)
+		l.Pop(1)
 		if ok {
 			result[key] = e.luaToGo(l, -1)
 		}
-		l.Pop(1)
-	}
+	})
 	return result
+}
+
+// forEachPair walks the table at idx as Lua 5.2's `pairs` does: through its
+// `__pairs` metamethod when it has one, with `next` otherwise. visit is called
+// with the key at -2 and the value at -1, and must leave the stack as it
+// found it.
+func forEachPair(l *lua.State, idx int, visit func()) {
+	idx = l.AbsIndex(idx)
+	if !lua.MetaField(l, idx, "__pairs") {
+		l.PushNil()
+		for l.Next(idx) {
+			visit()
+			l.Pop(1)
+		}
+		return
+	}
+	l.PushValue(idx)
+	l.Call(1, 3) // iterator, state, control
+	for {
+		l.PushValue(-3)
+		l.PushValue(-3)
+		l.PushValue(-3)
+		l.Call(2, 2) // iterator, state, control, key, value
+		if l.IsNil(-2) {
+			l.Pop(5)
+			return
+		}
+		visit()
+		l.Pop(1)      // iterator, state, control, key
+		l.Replace(-2) // iterator, state, key: the key is the next control
+	}
 }
 
 // pushGoValue pushes a Go value onto the Lua stack.
