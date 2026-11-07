@@ -44,6 +44,11 @@ public final class InMemoryZenohFactory: ZenohClientFactory {
         state.withLock { $0.attempts }
     }
 
+    /// Every client this factory made, in the order it made them.
+    public var clients: [InMemoryZenohClient] {
+        state.withLock { $0.clients }
+    }
+
     /// The client of the most recent connection that was made, if any.
     public var latest: InMemoryZenohClient? {
         state.withLock { $0.clients.last }
