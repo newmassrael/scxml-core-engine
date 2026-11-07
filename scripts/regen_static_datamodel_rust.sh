@@ -160,12 +160,19 @@ UNIONS=(shape_kind shape_radius shape_rect union_shape)
 # profile's runtime (docs/SCE_TEST_PROFILE.md §12.3), each its statechart machine and the
 # component beside it, generated beside the records and the templates their machines
 # name as `super::<name>`. The port types are read where the components are and write
-# no file; param_asker, which declares a module parameter, waits for Rust's suite tables
-# (docs/SCE_TEST_PROFILE.md §12.6). The C++ suite runs the same components
-# (tests/integration/ATestComponentRunsThroughItsDoorsTest.cpp).
+# no file; param_asker reads the module parameter the suite below gives it. The C++
+# suite runs the same components (tests/integration/ATestComponentRunsThroughItsDoorsTest.cpp).
 TEST_PROFILE_RUNTIME_DIR="$TEST_PROFILE_DIR/runtime"
 TEST_PROFILE_RUNTIME=(job_request job_reply request_of any_request reply_ok reply_of)
-TEST_COMPONENTS=(asker coordinator answerer keeper idler)
+TEST_COMPONENTS=(asker coordinator answerer keeper idler param_asker)
+# The tables of the suite tests/a_test_suite_runs_through_its_runner.rs runs through the
+# profile's runner (docs/SCE_TEST_PROFILE.md §11.6 to §11.8, §12.2): each configuration's
+# unit names the machines of its components above as `super::<name>_sm`, each test
+# case's its configuration's and the suite's its test cases' as `super::<name>`. The
+# feature model writes no file. The C++ suite runs the same tables
+# (tests/integration/ATestSuiteRunsEndToEndTest.cpp).
+TEST_TABLES=(asking_configuration serving_configuration keeping_configuration)
+TEST_TABLES+=(answers_the_job answers_before_the_guard serves_a_ptc keeps_a_ptc runtime_suite)
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -197,7 +204,7 @@ done
 for document in "${UNIONS[@]}"; do
     "$CODEGEN" generate "sce-build/tests/fixtures/union/$document.scxml" -l rust -o "$TMP/"
 done
-for document in "${TEST_PROFILE_RUNTIME[@]}" "${TEST_COMPONENTS[@]}"; do
+for document in "${TEST_PROFILE_RUNTIME[@]}" "${TEST_COMPONENTS[@]}" "${TEST_TABLES[@]}"; do
     "$CODEGEN" generate "$TEST_PROFILE_RUNTIME_DIR/$document.scxml" -l rust -o "$TMP/"
 done
 
@@ -223,4 +230,4 @@ MODRS="$GENERATED_DIR/mod.rs"
 source "$REPO_ROOT/scripts/lib/sce_rustfmt.sh"
 sce_rustfmt_dir "$GENERATED_DIR" "$REPO_ROOT"
 
-echo "Regenerated: ${MACHINES[*]} ${STANDARD_MACHINES[*]}, ${SCHEMAS[*]}, ${ALGORITHMS[*]}, ${STD_ALGORITHMS[*]} and ${CALLED[*]} under $GENERATED_DIR/ from $INPUT_ROOT, and ${TEST_PROFILE[*]} ${TEST_PROFILE_IMPORTS[*]} ${UNIONS[*]} ${TEST_PROFILE_RUNTIME[*]} ${TEST_COMPONENTS[*]} from $TEST_PROFILE_DIR and sce-build/tests/fixtures/union"
+echo "Regenerated: ${MACHINES[*]} ${STANDARD_MACHINES[*]}, ${SCHEMAS[*]}, ${ALGORITHMS[*]}, ${STD_ALGORITHMS[*]} and ${CALLED[*]} under $GENERATED_DIR/ from $INPUT_ROOT, and ${TEST_PROFILE[*]} ${TEST_PROFILE_IMPORTS[*]} ${UNIONS[*]} ${TEST_PROFILE_RUNTIME[*]} ${TEST_COMPONENTS[*]} ${TEST_TABLES[*]} from $TEST_PROFILE_DIR and sce-build/tests/fixtures/union"
