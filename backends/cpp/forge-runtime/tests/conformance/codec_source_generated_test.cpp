@@ -43,6 +43,7 @@
 #include "codec_repeat_basic.h"
 #include "codec_repeat_present_if_basic.h"
 #include "codec_simple_frame.h"
+#include "codec_variant_peek_basic.h"
 #include "codec_zenoh_decl_subscriber.h"
 #include "codec_zenoh_declaration.h"
 #include "codec_zenoh_ext_entry.h"
@@ -1547,6 +1548,34 @@ void a_chain_holds_entries_that_say_an_input_in_some_arms_to_its_law() {
     CHECK(decoded.has_value() && decoded->encode_to_vec() == frame, "and encodes back to it");
 }
 
+namespace PeekBasic = ::SCE::Generated::CodecVariantPeekBasic;
+using PeekBasicValue = PeekBasic::CodecVariantPeekBasic;
+using PeekArmA = ::SCE::Generated::CodecPeekArmA::CodecPeekArmA;
+using PeekArmB = ::SCE::Generated::CodecPeekArmB::CodecPeekArmB;
+
+void a_tag_the_arms_own_header_holds_is_written_by_the_arm() {
+    // The arm's own header holds the tag, so the arm the value holds writes it
+    // with the rest of itself and the value writes nothing of its own; an arm
+    // made by default holds the kind its codec declares.
+    CHECK(PeekArmA{}.encode_to_vec() == (std::vector<std::uint8_t>{0x00, 0x00}) &&
+              PeekArmB{}.encode_to_vec() == (std::vector<std::uint8_t>{0x01, 0x00, 0x00}),
+          "an arm made by default holds the kind that names it");
+    const PeekBasicValue a{PeekBasic::CodecVariantPeekBasicVariant{std::in_place_index<0>, PeekArmA{0x00, 0x55}}};
+    const PeekBasicValue b{PeekBasic::CodecVariantPeekBasicVariant{std::in_place_index<1>, PeekArmB{0x01, 0x1234}}};
+    const std::vector<std::uint8_t> a_frame{0x00, 0x55};
+    const std::vector<std::uint8_t> b_frame{0x01, 0x12, 0x34};
+    CHECK(a.encode_to_vec() == a_frame, "the first arm writes its header and its payload");
+    CHECK(b.encode_to_vec() == b_frame, "the second arm writes its own");
+    CHECK(PeekBasicValue{}.encode_to_vec() == (std::vector<std::uint8_t>{0x00, 0x00}),
+          "a value made by default holds the arm marked default");
+
+    ::SCE::Forge::SceCursor cursor(b_frame.data(), b_frame.size());
+    const auto decoded = PeekBasicValue::decode(cursor);
+    const auto *held = decoded ? std::get_if<1>(&decoded->body()) : nullptr;
+    CHECK(held != nullptr && held->payload() == 0x1234, "the peeked kind picks the arm, which reads it as its header");
+    CHECK(decoded.has_value() && decoded->encode_to_vec() == b_frame, "and encodes back to it");
+}
+
 namespace Disjunction = ::SCE::Generated::CodecPresentIfDisjunction;
 using DisjunctionValue = Disjunction::CodecPresentIfDisjunction;
 using DisjunctionGroup =
@@ -1617,6 +1646,7 @@ int main() {
     an_input_an_arm_says_is_read_off_the_arm_the_value_holds();
     a_chain_holds_entries_that_say_an_input_in_some_arms_to_its_law();
     a_flag_of_a_disjunction_is_derived_from_the_arm_the_value_holds();
+    a_tag_the_arms_own_header_holds_is_written_by_the_arm();
     encode_source_reports_the_sinks_failure();
     if (failures != 0) {
         std::fprintf(stderr, "codec_source_generated_test: %d failure(s)\n", failures);

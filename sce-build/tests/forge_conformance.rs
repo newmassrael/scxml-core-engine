@@ -8994,9 +8994,11 @@ fn forge_codec_variant_default_marker_outer_emits_declared_arm_cpp() {
     // default="true". The outer body member must select index 1, not
     // 0 (the legacy std::variant default). We use `in_place_index_t`
     // explicitly (not `in_place_index<N>{}`, which is a variable
-    // template and won't parse in member-init position).
+    // template and won't parse in member-init position). The codec is
+    // printed from its plan (docs/adr/0081 step 4), which holds the body
+    // privately as `body_`.
     assert!(
-        generated.contains("body{std::in_place_index_t<1>{}}"),
+        generated.contains("body_{std::in_place_index_t<1>{}}"),
         "outer body must use `std::in_place_index_t<1>{{}}` to select \
          the declared-default arm B. Generated source:\n{generated}"
     );

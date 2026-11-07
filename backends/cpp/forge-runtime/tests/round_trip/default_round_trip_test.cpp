@@ -56,9 +56,9 @@ int main() {
 
     if (decoded.has_value()) {
         // std::variant indices: 0 = ArmA, 1 = ArmB, 2 = Default catch-all.
-        EXPECT(decoded->body.index() == 1, "round-trip must land in arm B (the marked-default arm); "
-                                           "index 0 = legacy first-arm picked; index 2 = catch-all "
-                                           "fallback (inner Default zero-filled the dispatch byte)");
+        EXPECT(decoded->body().index() == 1, "round-trip must land in arm B (the marked-default arm); "
+                                             "index 0 = legacy first-arm picked; index 2 = catch-all "
+                                             "fallback (inner Default zero-filled the dispatch byte)");
 
         const auto re_encoded = decoded->encode_to_vec();
         EXPECT(re_encoded == bytes, "re-encoding the decoded value must produce byte-equal output");

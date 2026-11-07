@@ -558,6 +558,13 @@ old encode, the old encode and its templates are removed in the same landing.
    hold a printed entry that says its input against the flag it binds: the list's law reads what each entry
    says as the runtime's automata take it, nothing from an entry that says nothing, which follows any state
    (§6 R8b). The printed set is 127 codecs.
+
+   *The twenty-second C++ landing, 2026-11-08:* a variant whose arm's own header holds its tag (a peek byte).
+   The decode peeks the byte and leaves it for the arm, which reads it as its header; the arm's header holds
+   the tag, which an arm made by default holds as its codec declares it, so the encode writes the arm the value
+   holds and nothing of its own, as the Rust encode does, and the plan derives no tag. The catch-all arm holds the tag it was read with, as for any variant,
+   and writes its body. The envelope whose arms are two such variants moves with them. The printed set is 132
+   codecs.
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences

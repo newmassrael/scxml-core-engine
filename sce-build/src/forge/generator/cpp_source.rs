@@ -40,15 +40,13 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
     let mut forms = Vec::new();
     // A variant is presented as the arm the value holds, each arm's body a
     // source of its codec, and written by that codec's encode; its tag is
-    // derived from the arm into a field of the codec's own. One whose caller
-    // hands the tag, whose arm's own header holds it, or one with an arm a build
-    // feature decides, is not yet.
+    // derived from the arm into a field of the codec's own, or, where the arm's
+    // own header holds it (a peek byte), written by the arm's codec with the
+    // rest of the arm. One whose caller hands the tag, or one with an arm a
+    // build feature decides, is not yet.
     if let Some(variant) = &m.variant {
         if variant.tag_field.is_none() {
             forms.push("a variant whose caller hands its tag".to_string());
-        }
-        if variant.peek_byte.is_some() {
-            forms.push("a variant whose arm's own header holds its tag".to_string());
         }
         for arm in &plan.arms {
             if arm.feature.is_some() {

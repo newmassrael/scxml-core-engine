@@ -1424,6 +1424,19 @@ resources, 127 in all: `codec_zenoh_value_entry` and `codec_zenoh_query_value`).
   input otherwise than the entry before them gives it, and an entry whose arm does not read the input follows
   any entry.
 
+## A printed C++ codec writes a variant whose arm's own header holds its tag (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C++ tree is regenerated after it. It moves the codecs whose
+variant reads its tag from a peek byte the arm reads again as its own header, and the envelope of two of them
+(5 more codecs of the resources, 132 in all: `codec_variant_default_marker`, `codec_variant_peek_basic`,
+`codec_zenoh_request`, `codec_zenoh_response` and `codec_zenoh_network_envelope`).
+
+- The value is the class made of its fields and its `body`, a `std::variant` of each arm's value in turn, the
+  catch-all last, where `body` was a public member; a caller reads `value.body()` and makes the value with its
+  constructor.
+- The tag is the arm's own: the arm's header holds it, an arm made by default holding the value its codec
+  declares, so a consumer type presents the arm alone, as a source of the arm's codec, and the encode writes it.
+
 ## A payload schema states its keys in the order the document declares them (ADR 0087 §1.1)
 
 Landing: the commit that adds this section; every tree holding a `JSON_SCHEMA` constant or a GBNF table (the Rust,
