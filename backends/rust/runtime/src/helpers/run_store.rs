@@ -121,8 +121,8 @@ impl<'a> RunStoreRef<'a> {
         self.configuration().contains(state)
     }
 
-    /// What `history` recorded when its parent was last exited; `None` before
-    /// that ever happened.
+    /// What `history` recorded when its parent was last exited (§scxml-3.10);
+    /// `None` before that ever happened.
     #[inline]
     pub fn history_value(self, history: HistoryId) -> Option<StateSetRef<'a>> {
         if !*self.recorded.get(history.index())? {

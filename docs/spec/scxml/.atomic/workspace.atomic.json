@@ -119,11 +119,6 @@
       "decision_status": "active",
       "bindings": [
         {
-          "file": "backends/rust/runtime/src/engine.rs",
-          "symbol": "process_next_external_event",
-          "kind": "references"
-        },
-        {
           "file": "backends/go/runtime/engine.go",
           "symbol": "processNextExternalEvent",
           "kind": "references"
@@ -404,11 +399,6 @@
         },
         {
           "file": "backends/rust/runtime/src/policy.rs",
-          "symbol": "history_value",
-          "kind": "references"
-        },
-        {
-          "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "execute_exit_actions",
           "kind": "references"
         },
@@ -512,6 +502,11 @@
         {
           "file": "sce/include/core/ConfigurationHelper.h",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/run_store.rs",
+          "symbol": "history_value",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -590,11 +585,6 @@
         },
         {
           "file": "backends/rust/runtime/src/policy.rs",
-          "symbol": "get_history_default_targets",
-          "kind": "references"
-        },
-        {
-          "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "execute_history_default_content",
           "kind": "references"
         },
@@ -623,6 +613,11 @@
         },
         {
           "file": "sce-build/src/gui_structure.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/tables.rs",
+          "symbol": "HistoryRow",
           "kind": "references"
         }
       ],
@@ -2406,11 +2401,6 @@
           "kind": "references"
         },
         {
-          "file": "backends/rust/runtime/src/policy.rs",
-          "symbol": "get_document_initial_targets",
-          "kind": "references"
-        },
-        {
           "file": "backends/go/runtime/policy.go",
           "symbol": "StatePolicy",
           "kind": "references"
@@ -2681,11 +2671,6 @@
           "kind": "implements"
         },
         {
-          "file": "backends/rust/runtime/src/policy.rs",
-          "symbol": "get_initial_targets",
-          "kind": "references"
-        },
-        {
           "file": "backends/python/runtime/sce_runtime/microstep.py",
           "symbol": "add_descendant_states_to_enter",
           "kind": "references"
@@ -2730,6 +2715,11 @@
         {
           "file": "backends/rust/runtime/src/helpers/microstep.rs",
           "symbol": "walk_entry",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/tables.rs",
+          "symbol": "StateRow",
           "kind": "references"
         }
       ],
@@ -2935,11 +2925,6 @@
           "kind": "references"
         },
         {
-          "file": "backends/rust/runtime/src/policy.rs",
-          "symbol": "set_active_states",
-          "kind": "references"
-        },
-        {
           "file": "sce/include/core/EntrySetHelper.h",
           "symbol": "addRegionDefaults",
           "kind": "implements"
@@ -2980,11 +2965,6 @@
         {
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "Configuration",
-          "kind": "references"
-        },
-        {
-          "file": "backends/rust/runtime/src/policy.rs",
-          "symbol": "MAX_CONFIGURATION",
           "kind": "references"
         },
         {
@@ -5250,11 +5230,6 @@
           "kind": "references"
         },
         {
-          "file": "backends/rust/runtime/src/engine.rs",
-          "symbol": "process_next_external_event",
-          "kind": "implements"
-        },
-        {
           "file": "sce-build/src/filters.rs",
           "symbol": "w3c_session_name",
           "kind": "implements"
@@ -6124,11 +6099,6 @@
         {
           "file": "backends/rust/runtime/src/engine.rs",
           "symbol": "take_internal_event",
-          "kind": "references"
-        },
-        {
-          "file": "backends/rust/runtime/src/engine.rs",
-          "symbol": "process_next_external_event",
           "kind": "references"
         },
         {
@@ -8897,11 +8867,6 @@
         },
         {
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
-          "symbol": "parseDelay",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "scheduleSend",
           "kind": "implements"
         },
@@ -11012,11 +10977,6 @@
           "kind": "implements"
         },
         {
-          "file": "backends/rust/runtime/src/engine.rs",
-          "symbol": "process_next_external_event",
-          "kind": "implements"
-        },
-        {
           "file": "backends/go/runtime/constants.go",
           "symbol": "InvokeTargetPrefix",
           "kind": "references"
@@ -11253,17 +11213,7 @@
         },
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
-          "symbol": "_run_entry",
-          "kind": "references"
-        },
-        {
-          "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "_run_main_event_loop",
-          "kind": "references"
-        },
-        {
-          "file": "backends/python/runtime/sce_runtime/engine.py",
-          "symbol": "_take_transitions",
           "kind": "references"
         },
         {
@@ -11869,6 +11819,16 @@
           "file": "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
           "symbol": "handToChild",
           "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "admit_external",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/engine.py",
+          "symbol": "enter_state",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -12150,11 +12110,6 @@
         {
           "file": "sce/include/core/HostProcessor.h",
           "symbol": "invokeId",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "hostInvokers_",
           "kind": "implements"
         },
         {
@@ -12478,11 +12433,6 @@
           "kind": "implements"
         },
         {
-          "file": "backends/rust/runtime/src/engine.rs",
-          "symbol": "process_next_external_event",
-          "kind": "implements"
-        },
-        {
           "file": "backends/go/runtime/engine.go",
           "symbol": "processNextExternalEvent",
           "kind": "implements"
@@ -12728,11 +12678,6 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "processNextExternalEvent",
-          "kind": "implements"
-        },
-        {
-          "file": "backends/rust/runtime/src/engine.rs",
-          "symbol": "process_next_external_event",
           "kind": "implements"
         },
         {
@@ -16111,11 +16056,6 @@
         },
         {
           "file": "backends/python/runtime/sce_runtime/engine.py",
-          "symbol": "_compute_exit_set",
-          "kind": "references"
-        },
-        {
-          "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "__init__",
           "kind": "references"
         },
@@ -16430,11 +16370,6 @@
           "file": "sce/include/core/ParallelTransitionHelper.h",
           "symbol": "computeExitSet",
           "kind": "implements"
-        },
-        {
-          "file": "backends/rust/runtime/src/helpers/microstep.rs",
-          "symbol": "is_targetless",
-          "kind": "references"
         },
         {
           "file": "backends/rust/runtime/src/helpers/microstep.rs",
@@ -16762,11 +16697,6 @@
         {
           "file": "backends/rust/runtime/src/helpers/microstep.rs",
           "symbol": "enter_entry_set",
-          "kind": "references"
-        },
-        {
-          "file": "backends/rust/runtime/src/helpers/microstep.rs",
-          "symbol": "sort_in_entry_order",
           "kind": "references"
         }
       ],
@@ -22549,6 +22479,120 @@
       "target_kind": "section",
       "target_id": "scxml-C-1",
       "reason": "ADR 0090 step 7: the port is deleted; every event carries the EventOrigin pair its processor wrote"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.1.2",
+      "reason": "renamed away by the numeric engine; the discard count it pointed at is end_external_event, already bound here"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10",
+      "reason": "split into take_external_event and bind_queued; bind_queued, already bound as implements, populates the event metadata"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-5.10.1",
+      "reason": "split; take_external_event, already bound as implements, marks the event as taken off the external queue"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4",
+      "reason": "split; the late done.invoke refusal moved to admit_external, autoforward to bind_queued (already bound)"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4.2",
+      "reason": "split; autoforward at dequeue lives in bind_queued, already bound as implements"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.5",
+      "reason": "split; finalize before transition matching lives in bind_queued, already bound as implements"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.10",
+      "reason": "history records moved out of the policy into the engine's run store"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.10.2",
+      "reason": "a history's default transition is now a column of its row in the document tables"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.2",
+      "reason": "the document's initial transition is DocumentTables::initial; DocumentTables is already bound here"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.3",
+      "reason": "a state's initial transition is now a column of its row in the document tables"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "the engine keeps the configuration; enter_at, already bound as implements, sets it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-3.4",
+      "reason": "the bound is the N of the Configuration type, which is already bound here"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.2",
+      "reason": "moved to SendHelper.parseDelayMs, already bound as implements"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4",
+      "reason": "entry moved to the microstep host; invokes are deferred in enter_state"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4",
+      "reason": "exit moved to the microstep host; exit_state, already bound here, cancels the invokes"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-GlobalVariables",
+      "reason": "exit set moved to microstep.compute_exit_set; the globals are held by __init__ and enter_at, already bound"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4.1",
+      "reason": "renamed to invokers_ over TreeInvokers, both bound; registerInvoker and performHostInvoke implement"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-computeExitSet",
+      "reason": "the targetless guard is inlined in compute_exit_set, already bound as implements"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-D-enterStates",
+      "reason": "the entry set is a state set read in document order; enter_entry_set, already bound, enters it"
     }
   ],
   "frames": {},

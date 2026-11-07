@@ -146,6 +146,10 @@ const fn field_of(id: Option<u16>) -> u16 {
 /// One state of the document, in 6 bytes (docs/adr/0067): its parent, its last
 /// descendant, and its kind in the top two bits of its initial transition.
 ///
+/// A compound state's initial transition is the one its `initial` attribute or
+/// its `<initial>` child names, or, without either, one to its first child state
+/// in document order (§scxml-3.3).
+///
 /// The kind rides with the initial transition rather than the parent because
 /// the parent is read on every walk up the tree and the initial transition only
 /// when a compound state is entered by default: the field read most is the one
@@ -232,7 +236,9 @@ const _: () = assert!(core::mem::size_of::<Target>() == 2);
 const DEEP_BIT: u16 = 1 << 15;
 
 /// One `<history>` of the document, in 4 bytes (docs/adr/0067): whether it is
-/// deep in the top bit of its parent, and its default transition.
+/// deep in the top bit of its parent, and its default transition: the one its
+/// `<transition>` child writes, whose target is the default history
+/// configuration (§scxml-3.10.2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HistoryRow {
     deep_parent: u16,
