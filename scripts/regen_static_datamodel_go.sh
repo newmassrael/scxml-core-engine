@@ -4,9 +4,11 @@
 #
 # Regenerate backends/go/tests/integration/static_datamodel/<machine>/ from
 # sce-build/tests/fixtures/static_datamodel/<machine>.scxml, for every machine
-# the Go backend lowers; and the test profile's templates from
+# the Go backend lowers; the test profile's templates from
 # sce-build/tests/fixtures/test_profile/ with the documents they name, a package
-# each beside the machines.
+# each beside the machines; and the test components of
+# sce-build/tests/fixtures/test_profile/runtime/, a package each, with the
+# records and templates they name.
 #
 # The Go compile+run gate for datamodel="sce-static"
 # (docs/SCE_ACCEPTED_SUBSET.md §2.15), the twin of
@@ -197,6 +199,17 @@ TEST_PROFILE_DIR="sce-build/tests/fixtures/test_profile"
 TEST_PROFILE=(job_status elapsed_at_most every_matcher job_report job_report_of report_within)
 TEST_PROFILE_IMPORTS=(paint_color order_line quantity_two quantity_at_most order_line_exact order_line_bounded)
 TEST_PROFILE_IMPORTS+=(card_payment card_within voucher_payment voucher_is)
+# The test components a_test_component_runs_through_its_doors_test.go runs through the
+# profile's runtime (docs/SCE_TEST_PROFILE.md §12.3): each its statechart machine and the
+# component beside it, generated into a package of its own as a fixture's machine is,
+# beside the records and the templates its machine imports by their packages, which are
+# generated as the templates above are. The port types are read where the components are
+# and write no file; param_asker, which declares a module parameter, waits for Go's suite
+# tables (docs/SCE_TEST_PROFILE.md §12.6). The Rust and Kotlin trees generate the same
+# components (scripts/regen_static_datamodel_rust.sh, scripts/regen_static_datamodel_kotlin.sh).
+TEST_PROFILE_RUNTIME_DIR="$TEST_PROFILE_DIR/runtime"
+TEST_PROFILE_RUNTIME=(job_request job_reply request_of any_request reply_ok reply_of)
+TEST_COMPONENTS=(asker coordinator answerer keeper idler)
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -230,6 +243,12 @@ for document in "${TEST_PROFILE[@]}"; do
 done
 for document in "${TEST_PROFILE_IMPORTS[@]}"; do
     "$CODEGEN" generate "$TEST_PROFILE_DIR/imports/$document.scxml" -l go -o "$TMP/profile_$document/" --go-module-prefix "$GO_MODULE_PREFIX"
+done
+for document in "${TEST_PROFILE_RUNTIME[@]}"; do
+    "$CODEGEN" generate "$TEST_PROFILE_RUNTIME_DIR/$document.scxml" -l go -o "$TMP/runtime_$document/" --go-module-prefix "$GO_MODULE_PREFIX"
+done
+for component in "${TEST_COMPONENTS[@]}"; do
+    "$CODEGEN" generate "$TEST_PROFILE_RUNTIME_DIR/$component.scxml" -l go -o "$TMP/component_$component/" --go-module-prefix "$GO_MODULE_PREFIX"
 done
 
 mkdir -p "$GENERATED_DIR"
@@ -273,6 +292,21 @@ for document in "${TEST_PROFILE[@]}" "${TEST_PROFILE_IMPORTS[@]}"; do
         cp "$generated" "$GENERATED_DIR/$package/"
         PACKAGES+=("$package")
     done
+done
+for document in "${TEST_PROFILE_RUNTIME[@]}"; do
+    for generated in "$TMP/runtime_$document"/*.go; do
+        package="$(basename "$generated" .go)"
+        mkdir -p "$GENERATED_DIR/$package"
+        cp "$generated" "$GENERATED_DIR/$package/"
+        PACKAGES+=("$package")
+    done
+done
+# A component's machine is copied as a fixture's is: its `_sm.go` alone, into the package
+# named by its document, which the test's factory of machines imports.
+for component in "${TEST_COMPONENTS[@]}"; do
+    mkdir -p "$GENERATED_DIR/$component"
+    cp "$TMP/component_$component"/*_sm.go "$GENERATED_DIR/$component/"
+    MACHINES+=("$component")
 done
 
 echo "Regenerated: ${MACHINES[*]} and the algorithms ${PACKAGES[*]:-none} under $GENERATED_DIR/"
