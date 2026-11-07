@@ -20,11 +20,18 @@ func repositoryRoot(file: String = #filePath) -> URL {
     return url
 }
 
-/// The cases of the shared table `tests/ecmascript/<table>`.
-func cases(of table: String) throws -> [[String: Any]] {
+/// The shared table `tests/ecmascript/<table>`, whole: a table whose cases all run against one
+/// setting (a session, an event) keeps that setting beside its cases.
+func sharedTable(_ table: String) throws -> [String: Any] {
     let url = repositoryRoot().appendingPathComponent("tests/ecmascript").appendingPathComponent(table)
     let object = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any]
-    return try #require(object?["cases"] as? [[String: Any]])
+    return try #require(object)
+}
+
+/// The cases of the shared table `tests/ecmascript/<table>`.
+func cases(of table: String) throws -> [[String: Any]] {
+    let object = try sharedTable(table)
+    return try #require(object["cases"] as? [[String: Any]])
 }
 
 /// Whether `actual` is the answer `expect` names. An engine may hold a whole number as an integer or

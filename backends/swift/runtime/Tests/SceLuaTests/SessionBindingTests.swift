@@ -57,13 +57,15 @@ private func boundState(_ session: LuaSession) throws -> LuaState {
     #expect(try lua.evaluate("_ioprocessors['\(httpProcessor)'].location") == .string("http://127.0.0.1:8080/scxml"))
 }
 
-// Every entry is a table of its own: a document that writes through one name must not change what
-// the other answers.
-@Test func theEntriesOfOneProcessorDoNotShareATable() throws {
+// An entry is read-only under either of its names (§scxml-5.10, §scxml-B-2-8): a write through the
+// short name fails and changes what neither name answers.
+@Test func aWriteThroughEitherNameOfAProcessorIsRefusedAndChangesNeither() throws {
     let lua = try boundState(session(http: "http://h/"))
-    try lua.execute("_ioprocessors.scxml.location = 'changed'")
+    #expect(throws: LuaError.self) { try lua.execute("_ioprocessors.scxml.location = 'changed'") }
+    #expect(try lua.evaluate("_ioprocessors.scxml.location") == .string("#_scxml_machine.7"))
     #expect(try lua.evaluate("_ioprocessors['\(scxmlProcessor)'].location") == .string("#_scxml_machine.7"))
-    try lua.execute("_ioprocessors.basichttp.location = 'changed'")
+    #expect(throws: LuaError.self) { try lua.execute("_ioprocessors.basichttp.location = 'changed'") }
+    #expect(try lua.evaluate("_ioprocessors.basichttp.location") == .string("http://h/"))
     #expect(try lua.evaluate("_ioprocessors['\(httpProcessor)'].location") == .string("http://h/"))
 }
 
