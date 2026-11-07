@@ -177,10 +177,12 @@ pub fn enum_model_in(
 }
 
 /// The enum an enum document is, as a type that holds it is sized
-/// (docs/adr/0086, sections 2 and 9.2): each variant with its declared name and
-/// number (`value=`), its underlying type, and whether it is closed.
+/// (docs/adr/0086, sections 2 and 9.2): the document's name, each variant with
+/// its declared name and number (`value=`), its underlying type, and whether it
+/// is closed.
 pub fn scoped_enum(model: &crate::forge::model::EnumModel) -> ScopedEnum {
     ScopedEnum {
+        name: model.name.clone(),
         variants: model
             .variants
             .iter()

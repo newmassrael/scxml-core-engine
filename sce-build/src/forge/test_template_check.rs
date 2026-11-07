@@ -649,6 +649,7 @@ mod tests {
 
     fn color(variants: &[&str]) -> ScopedEnum {
         ScopedEnum {
+            name: "paint_color".to_string(),
             variants: variants
                 .iter()
                 .zip(0..)

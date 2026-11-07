@@ -133,9 +133,11 @@ fn fields(table: &[(&str, &str)]) -> Vec<(String, BuildType)> {
         .collect()
 }
 
-/// The enum the build reads for `descriptor`.
-fn scoped(descriptor: &EnumType) -> ScopedEnum {
+/// The enum the build reads for `descriptor`, under the name `name`, which no
+/// size reads.
+fn scoped(name: &str, descriptor: &EnumType) -> ScopedEnum {
     ScopedEnum {
+        name: name.to_string(),
         variants: descriptor
             .variants
             .iter()
@@ -173,12 +175,12 @@ fn scope() -> TypeScope {
     let mut item_scope = TypeScope::default();
     item_scope
         .enums
-        .insert("SignalLevel".to_string(), scoped(&LEVEL));
+        .insert("SignalLevel".to_string(), scoped("SignalLevel", &LEVEL));
     let mut batch_scope = TypeScope::default();
     for (alias, descriptor) in ENUMS {
         batch_scope
             .enums
-            .insert(alias.to_string(), scoped(descriptor));
+            .insert(alias.to_string(), scoped(alias, descriptor));
     }
     batch_scope.records.insert(
         "Item".to_string(),

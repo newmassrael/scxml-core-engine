@@ -366,6 +366,7 @@ mod tests {
             value,
         };
         let tag = ScopedEnum {
+            name: "shape_kind".into(),
             variants: vec![variant("dot", 0), variant("wide", 1)],
             underlying: SceType::Uint8,
             strict: true,

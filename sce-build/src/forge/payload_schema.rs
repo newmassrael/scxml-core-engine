@@ -552,6 +552,7 @@ mod tests {
         scope.enums.insert(
             "Code".into(),
             ScopedEnum {
+                name: "code".into(),
                 variants: vec![ScopedVariant {
                     name: "ok".into(),
                     value: 0,

@@ -1454,11 +1454,15 @@ pub trait TypeEnv {
     fn union_type(&self, alias: &str) -> Option<&ScopedUnion>;
 }
 
-/// An enum, as a size reads it: its variants, its underlying type, and whether
-/// it is closed. Its JSON value is the name of a variant; its CBOR value is a
-/// number (docs/adr/0086, section 9.2).
+/// An enum, as a size reads it: the name of its document, its variants, its
+/// underlying type, and whether it is closed. Its JSON value is the name of a
+/// variant; its CBOR value is a number (docs/adr/0086, section 9.2).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScopedEnum {
+    /// The document's name, which its unit is named by on every backend: what
+    /// a unit that holds a value of the enum through a record of another
+    /// document names the enum's type by.
+    pub name: String,
     /// Every variant, in declaration order.
     pub variants: Vec<ScopedVariant>,
     /// The integer its numbers are (`sce:underlying-type`).
@@ -1467,6 +1471,18 @@ pub struct ScopedEnum {
     /// true unless the document says otherwise). A closed enum holds only its
     /// declared numbers; an open one every number of its underlying type.
     pub strict: bool,
+}
+
+impl ScopedEnum {
+    /// Whether `other` holds the values this enum holds: the same variants
+    /// with the same numbers, the same underlying type, closed alike. Two such
+    /// enums are one type whatever documents declare them (docs/adr/0086,
+    /// section 5.1), so the name of a document tells none apart.
+    pub fn holds_the_values_of(&self, other: &ScopedEnum) -> bool {
+        self.variants == other.variants
+            && self.underlying == other.underlying
+            && self.strict == other.strict
+    }
 }
 
 /// A variant of an enum, as a size reads it: its declared name and its
@@ -3709,6 +3725,7 @@ mod tests {
 
     fn scoped_enum(underlying: SceType, variants: &[(&str, i128)], strict: bool) -> ScopedEnum {
         ScopedEnum {
+            name: "level".to_string(),
             variants: variants
                 .iter()
                 .map(|(name, value)| ScopedVariant {

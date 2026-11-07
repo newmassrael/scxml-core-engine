@@ -848,7 +848,7 @@ impl crate::forge::value_type::TypeIdentity for ScopedNames<'_> {
             scope.and_then(|scope| scope.enums.get(alias)).cloned()
         };
         match (held(self.from, from), held(self.to, to)) {
-            (Some(a), Some(b)) => a == b,
+            (Some(a), Some(b)) => a.holds_the_values_of(&b),
             (None, None) => from == to,
             _ => false,
         }

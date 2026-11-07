@@ -1938,6 +1938,7 @@ mod tests {
         scope.enums.insert(
             "ShapeKind".to_string(),
             ScopedEnum {
+                name: "shape_kind".to_string(),
                 variants: variants.clone(),
                 underlying: SceType::Uint8,
                 strict: true,
