@@ -58,6 +58,13 @@ const NEEDS = [
         'a call of an imported transform, condition, lookup, interpolation or validator: '
             + 'the Interpreter has no lowering of it yet',
     ],
+    // The lowering refuses a union variable (docs/adr/0092, step 4 lands Rust
+    // first), and the scenario lists the Interpreter as not yet lowered
+    // (`NOT_YET_LOWERED` in a_static_datamodel_holds_every_variable_to_a_type.rs).
+    [
+        /\bsce:type="[^"]*\bunion:/,
+        'a union variable: the Interpreter has no lowering of a union yet',
+    ],
 ];
 
 /** Why a scenario cannot be replayed here, or null when it can. */
