@@ -1,0 +1,11 @@
+seq = 3
+id = "2f49f9216c83"
+
+[submit]
+commit = "d9f54d12407288633a6177ac5ceef7a7bb707a1f"
+base = "0b7793826c896622501f9001e92fbd57ad7b6b65"
+machine = "coin-Legion-Pro-5-16IRX9"
+session = "e0a5e7ca-3b45-4715-995f-ccd55f13bba4"
+worktree = "/home/coin/scxml-core-engine/.claude/worktrees/swift-refusals"
+branch = ""
+at = 1794059212
