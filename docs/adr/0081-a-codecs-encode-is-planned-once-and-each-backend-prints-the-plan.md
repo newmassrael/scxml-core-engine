@@ -527,6 +527,16 @@ old encode, the old encode and its templates are removed in the same landing.
    view of what it reads off the arm until it writes it, so a source must present such a member as something that
    lives on past the read, a reference or a view, which the runtime's `Detail::Lasting` asks of the read: the
    lifetime the Rust source states by its borrow. The printed set is 122 codecs.
+
+   *The nineteenth C++ landing, 2026-11-07:* a list or a body on one side of a gate. Unlike a byte string, which
+   any source presents as something that converts to the one view the value holds, a list or a body is
+   presented as whatever type the source holds it in, so the encode cannot convert it into a local of one type
+   before it knows the arm. It reads it once, off the one arm that holds it, and keeps what the read returns
+   (`Detail::Kept`): what a reference names, by its address, or what a read by value returns, whole, so no view
+   outlives what it views; the count of the list is derived from what it kept, zero where the arm is not there.
+   The decode holds the list it read to its bound before the arm is made of it, and moves a body in. A list or a
+   body more than one arm holds would need one type across the arms the source presents, and a list a group
+   holds held to a law, the law's start in each arm; both stay unlowered. The printed set is 123 codecs.
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences

@@ -189,7 +189,8 @@ struct CodecZenohValueEntry {
             if (auto _e = _p->encode(w); _e) return _e;
         }
         if (auto _p = std::get_if<::SCE::Generated::CodecZenohValueZbuf::CodecZenohValueZbuf>(&body)) {
-            if (auto _e = _p->encode(w, after_shm); _e) return _e;
+            if ((::SCE::Generated::CodecZenohValueZbuf::input_after_shm(*_p) & 0x1u) != (after_shm & 0x1u)) return ::SCE::Forge::CodecError::PresentIfMismatch;
+            if (auto _e = _p->encode(w); _e) return _e;
         }
         if (auto _p = std::get_if<CodecZenohValueEntryDefault>(&body)) {
             if (auto _e = _p->body.encode(w); _e) return _e;

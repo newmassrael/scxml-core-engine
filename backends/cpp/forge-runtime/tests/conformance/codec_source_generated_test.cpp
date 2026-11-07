@@ -50,6 +50,7 @@
 #include "codec_zenoh_interest_body.h"
 #include "codec_zenoh_locator.h"
 #include "codec_zenoh_open_body.h"
+#include "codec_zenoh_value_zbuf.h"
 #include "codec_zenoh_wireexpr.h"
 
 #include <cstdint>
@@ -1286,6 +1287,134 @@ void a_byte_string_on_one_side_of_a_gate_is_the_arm_that_holds_it() {
     CHECK(with_schema != nullptr && with_schema->schema() == schema_bytes, "a decoded carrier holds the schema");
 }
 
+namespace Zbuf = ::SCE::Generated::CodecZenohValueZbuf;
+using ZbufValue = Zbuf::CodecZenohValueZbuf;
+using ZbufGroup = std::decay_t<decltype(std::declval<const ZbufValue &>().after_shm())>;
+using ZbufSliced = std::variant_alternative_t<0, ZbufGroup>;
+using ZbufFlat = std::variant_alternative_t<1, ZbufGroup>;
+using Slice = ::SCE::Generated::CodecZenohValueSlice::CodecZenohValueSlice;
+using SliceList = ::SCE::Forge::Bounded<std::vector<Slice>, ::SCE::Forge::kUnbounded>;
+using SliceView = ::SCE::Forge::List<Slice, ::SCE::Forge::kUnbounded>;
+using ZbufBytes = ::SCE::Forge::Bytes<4294967295>;
+
+namespace zbuf_consumer {
+
+/// The arm that holds the slices, which it returns by reference.
+struct Sliced {
+    std::uint64_t logical;
+    std::uint64_t enc;
+    SliceList list;
+
+    [[nodiscard]] std::uint64_t value_len() const noexcept {
+        return logical;
+    }
+
+    [[nodiscard]] std::uint64_t encoding() const noexcept {
+        return enc;
+    }
+
+    [[nodiscard]] const SliceList &slices() const noexcept {
+        return list;
+    }
+};
+
+/// The arm that holds the bytes whole.
+struct Flat {
+    ZbufBytes bytes;
+
+    [[nodiscard]] ZbufBytes value() const noexcept {
+        return bytes;
+    }
+};
+
+/// A buffer the consumer holds as either arm.
+struct Buffer {
+    std::variant<Sliced, Flat> arm;
+
+    [[nodiscard]] const std::variant<Sliced, Flat> &after_shm() const noexcept {
+        return arm;
+    }
+};
+
+}  // namespace zbuf_consumer
+
+static_assert(Zbuf::is_source<ZbufValue>::value, "the generated value is a source of its own codec");
+static_assert(Zbuf::is_source<zbuf_consumer::Buffer>::value,
+              "a list one arm holds, of the consumer's own type within the bound, is a source");
+static_assert(Zbuf::is_nothrow_source<zbuf_consumer::Buffer>::value, "keeping a list by reference throws nothing");
+static_assert(std::is_same<decltype(std::declval<const ZbufSliced &>().slices()), SliceView>::value,
+              "an arm presents its list as a view of its entries held to its bound");
+
+void a_list_on_one_side_of_a_gate_is_kept_as_the_arm_presents_it() {
+    // The encode keeps a read it makes on one arm's path only: what a
+    // reference names, by its address; what a read by value returns, whole.
+    // A slice's bytes are a view, so what it views is named first.
+    const std::vector<std::uint8_t> first_bytes{0xAA, 0xBB};
+    const std::vector<std::uint8_t> second_bytes{0xCC};
+    const auto first = ZbufBytes::make(first_bytes);
+    const auto second = ZbufBytes::make(second_bytes);
+    CHECK(first.has_value() && second.has_value(), "a slice's bytes lie within their bound");
+    if (!first || !second) {
+        return;
+    }
+    const std::vector<Slice> two{Slice{0x01, *first}, Slice{0x02, *second}};
+    const auto held = SliceList::make(two);
+    CHECK(held.has_value(), "two entries lie within no bound");
+    if (!held) {
+        return;
+    }
+    ::SCE::Forge::Detail::Kept<const SliceList &> by_address;
+    CHECK(!by_address.has_value(), "a read not yet kept is not there");
+    by_address.keep(*held);
+    CHECK(by_address.has_value() && &*by_address == &*held, "a reference is kept as the object it names");
+    ::SCE::Forge::Detail::Kept<SliceView> by_value;
+    by_value.keep(SliceView(*held));
+    CHECK(by_value && by_value->size() == 2, "a view returned by value is kept whole");
+
+    // Sliced: the logical length the arm states, the encoding, the count
+    // derived from the slices, then each slice.
+    const std::vector<std::uint8_t> sliced_frame{0x05, 0x03, 0x02, 0x01, 0x02, 0xAA, 0xBB, 0x02, 0x01, 0xCC};
+    const zbuf_consumer::Buffer sliced{zbuf_consumer::Sliced{0x05, 0x03, *held}};
+    std::vector<std::uint8_t> out;
+    ::SCE::Forge::VectorSink sink(out);
+    CHECK(!Zbuf::Wire::encode_source(sliced, sink).has_value() && out == sliced_frame,
+          "the arm that holds the slices writes them, their count derived");
+    CHECK(Zbuf::input_after_shm(sliced) == 1, "the arm holding the slices says after_shm");
+
+    // Flat: the length derived from the bytes, then the bytes.
+    const std::vector<std::uint8_t> three{0x10, 0x20, 0x30};
+    const std::vector<std::uint8_t> flat_frame{0x03, 0x10, 0x20, 0x30};
+    const auto whole_bytes = ZbufBytes::make(three);
+    CHECK(whole_bytes.has_value(), "three bytes lie within their bound");
+    if (!whole_bytes) {
+        return;
+    }
+    const zbuf_consumer::Buffer flat{zbuf_consumer::Flat{*whole_bytes}};
+    std::vector<std::uint8_t> flat_out;
+    ::SCE::Forge::VectorSink flat_sink(flat_out);
+    CHECK(!Zbuf::Wire::encode_source(flat, flat_sink).has_value() && flat_out == flat_frame,
+          "the arm that holds the bytes writes them, their length derived");
+    CHECK(Zbuf::input_after_shm(flat) == 0, "the arm holding the bytes does not say after_shm");
+
+    CHECK(std::holds_alternative<ZbufFlat>(ZbufValue{}.after_shm()),
+          "a value made by default holds the side present while no gate holds");
+    CHECK(ZbufValue{}.encode_to_vec() == (std::vector<std::uint8_t>{0x00}), "and states a length of zero");
+
+    ::SCE::Forge::SceCursor cursor(sliced_frame.data(), sliced_frame.size());
+    const auto decoded = ZbufValue::decode(cursor, 1);
+    const auto *slices = decoded ? std::get_if<ZbufSliced>(&decoded->after_shm()) : nullptr;
+    CHECK(slices != nullptr && slices->slices().size() == 2 && slices->slices()[1].kind() == 0x02 &&
+              slices->value_len() == 0x05,
+          "a frame after the marker holds the slices it read and the length it states");
+    CHECK(decoded.has_value() && decoded->encode_to_vec() == sliced_frame, "and encodes back to it");
+
+    ::SCE::Forge::SceCursor flat_cursor(flat_frame.data(), flat_frame.size());
+    const auto decoded_flat = ZbufValue::decode(flat_cursor, 0);
+    const auto *whole = decoded_flat ? std::get_if<ZbufFlat>(&decoded_flat->after_shm()) : nullptr;
+    CHECK(whole != nullptr && whole->value() == three, "a frame with no marker holds the bytes it read");
+    CHECK(decoded_flat.has_value() && decoded_flat->encode_to_vec() == flat_frame, "and encodes back to it");
+}
+
 void encode_source_reports_the_sinks_failure() {
     std::uint8_t buffer[3] = {};
     ::SCE::Forge::SpanSink sink(buffer, sizeof buffer);
@@ -1319,6 +1448,7 @@ int main() {
     fields_on_each_side_of_a_gate_are_the_arm_the_value_holds();
     a_list_is_held_to_the_law_its_entries_say_its_flag_by();
     a_byte_string_on_one_side_of_a_gate_is_the_arm_that_holds_it();
+    a_list_on_one_side_of_a_gate_is_kept_as_the_arm_presents_it();
     encode_source_reports_the_sinks_failure();
     if (failures != 0) {
         std::fprintf(stderr, "codec_source_generated_test: %d failure(s)\n", failures);
