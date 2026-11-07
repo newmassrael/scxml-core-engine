@@ -4,9 +4,11 @@
 #
 # Regenerate backends/kotlin/tests/src/main/kotlin/com/sce/integration/<machine>/
 # from sce-build/tests/fixtures/static_datamodel/<machine>.scxml, for every
-# machine in MACHINES; and the test profile's templates from
+# machine in MACHINES; the test profile's templates from
 # sce-build/tests/fixtures/test_profile/ with the documents they name, under
-# backends/kotlin/tests/src/main/kotlin/com/sce/generated/.
+# backends/kotlin/tests/src/main/kotlin/com/sce/generated/; and the test
+# components of sce-build/tests/fixtures/test_profile/runtime/ beside the
+# machines, with the records and templates they name.
 #
 # The Kotlin compile+run gate for datamodel="sce-static"
 # (docs/SCE_ACCEPTED_SUBSET.md §2.15). The committed machines compile as part
@@ -300,6 +302,31 @@ done
 for document in "${UNIONS[@]}"; do
     "$CODEGEN" generate "sce-build/tests/fixtures/union/$document.scxml" -l kotlin -o "$TMP/union_$document/"
     install_generated "$TMP/union_$document"
+done
+
+# The test components ATestComponentRunsThroughItsDoorsTest.kt runs through the profile's
+# runtime (docs/SCE_TEST_PROFILE.md §12.3): each its statechart machine and the component
+# beside it, generated into a package of its own as a fixture's machine is, beside the
+# records and templates its machine names by their packages, which are generated as the
+# units above are. The port types are read where the components are and write no file;
+# param_asker, which declares a module parameter, waits for Kotlin's suite tables
+# (docs/SCE_TEST_PROFILE.md §12.6). The Rust tree generates the same components
+# (scripts/regen_static_datamodel_rust.sh).
+TEST_PROFILE_RUNTIME_DIR="$TEST_PROFILE_DIR/runtime"
+TEST_PROFILE_RUNTIME=(job_request job_reply request_of any_request reply_ok reply_of)
+TEST_COMPONENTS=(asker coordinator answerer keeper idler)
+for document in "${TEST_PROFILE_RUNTIME[@]}"; do
+    "$CODEGEN" generate "$TEST_PROFILE_RUNTIME_DIR/$document.scxml" -l kotlin -o "$TMP/runtime_$document/"
+    install_generated "$TMP/runtime_$document"
+done
+for component in "${TEST_COMPONENTS[@]}"; do
+    "$CODEGEN" generate "$TEST_PROFILE_RUNTIME_DIR/$component.scxml" -l kotlin -o "$TMP/component_$component/" \
+        --kotlin-package-prefix "$PACKAGE_PREFIX"
+    dir="$GENERATED_ROOT/$component"
+    mkdir -p "$dir"
+    sce_generated_tree_clear "$dir"
+    cp "$TMP/component_$component"/*Sm.kt "$dir/"
+    MACHINES+=("$component")
 done
 
 echo "Regenerated: ${MACHINES[*]} under $GENERATED_ROOT/ and ${PACKAGES[*]:-none} under $ALGORITHM_ROOT/ from $INPUT_ROOT"
