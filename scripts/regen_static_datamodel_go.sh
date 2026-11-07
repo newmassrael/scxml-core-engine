@@ -4,7 +4,9 @@
 #
 # Regenerate backends/go/tests/integration/static_datamodel/<machine>/ from
 # sce-build/tests/fixtures/static_datamodel/<machine>.scxml, for every machine
-# the Go backend lowers.
+# the Go backend lowers; and the test profile's templates from
+# sce-build/tests/fixtures/test_profile/ with the documents they name, a package
+# each beside the machines.
 #
 # The Go compile+run gate for datamodel="sce-static"
 # (docs/SCE_ACCEPTED_SUBSET.md §2.15), the twin of
@@ -184,6 +186,17 @@ done
 if [ "${#ENUMS[@]}" -gt 0 ]; then
     mapfile -t ENUMS < <(printf '%s\n' "${ENUMS[@]}" | sort -u)
 fi
+# The test profile's templates (docs/SCE_TEST_PROFILE.md §11.4, §11.9), each a document
+# of its own kind whose unit declares its `Matches` and, for a specific one, its
+# `Specific`, generated as a package of its own beside the records and enums their
+# units name through their packages; a_test_template_matches_its_values_test.go matches
+# them against values. The Rust and Kotlin trees generate the same templates
+# (scripts/regen_static_datamodel_rust.sh, scripts/regen_static_datamodel_kotlin.sh),
+# and the two over a union besides, which Go, lowering no union, refuses by name.
+TEST_PROFILE_DIR="sce-build/tests/fixtures/test_profile"
+TEST_PROFILE=(job_status elapsed_at_most every_matcher job_report job_report_of report_within)
+TEST_PROFILE_IMPORTS=(paint_color order_line quantity_two quantity_at_most order_line_exact order_line_bounded)
+TEST_PROFILE_IMPORTS+=(card_payment card_within voucher_payment voucher_is)
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -211,6 +224,12 @@ for i in "${!SCHEMAS[@]}"; do
 done
 for i in "${!ENUMS[@]}"; do
     "$CODEGEN" generate "${ENUMS[$i]}" -l go -o "$TMP/enum_$i/" --go-module-prefix "$GO_MODULE_PREFIX"
+done
+for document in "${TEST_PROFILE[@]}"; do
+    "$CODEGEN" generate "$TEST_PROFILE_DIR/$document.scxml" -l go -o "$TMP/profile_$document/" --go-module-prefix "$GO_MODULE_PREFIX"
+done
+for document in "${TEST_PROFILE_IMPORTS[@]}"; do
+    "$CODEGEN" generate "$TEST_PROFILE_DIR/imports/$document.scxml" -l go -o "$TMP/profile_$document/" --go-module-prefix "$GO_MODULE_PREFIX"
 done
 
 mkdir -p "$GENERATED_DIR"
@@ -241,6 +260,14 @@ for i in "${!SCHEMAS[@]}"; do
 done
 for i in "${!ENUMS[@]}"; do
     for generated in "$TMP/enum_$i"/*.go; do
+        package="$(basename "$generated" .go)"
+        mkdir -p "$GENERATED_DIR/$package"
+        cp "$generated" "$GENERATED_DIR/$package/"
+        PACKAGES+=("$package")
+    done
+done
+for document in "${TEST_PROFILE[@]}" "${TEST_PROFILE_IMPORTS[@]}"; do
+    for generated in "$TMP/profile_$document"/*.go; do
         package="$(basename "$generated" .go)"
         mkdir -p "$GENERATED_DIR/$package"
         cp "$generated" "$GENERATED_DIR/$package/"
