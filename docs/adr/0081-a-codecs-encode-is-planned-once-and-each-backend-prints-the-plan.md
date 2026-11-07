@@ -565,6 +565,13 @@ old encode, the old encode and its templates are removed in the same landing.
    holds and nothing of its own, as the Rust encode does, and the plan derives no tag. The catch-all arm holds the tag it was read with, as for any variant,
    and writes its body. The envelope whose arms are two such variants moves with them. The printed set is 132
    codecs.
+
+   *The twenty-third C++ landing, 2026-11-08:* a flag of a parent that dispatches the variant of a body it
+   embeds (`<sce:variant-dispatch>`). The encode derives the flag from the arm the body holds, each arm's tag
+   masked to the flag's bits, the catch-all's the tag it holds, and nothing where a gate leaves the body out;
+   the bits of the carrier no such flag names stay the value's, as for any derived flag. Such a parent is no
+   conformance fixture, so its C++ round trip is judged beside the variant it embeds. The printed set is 133
+   codecs.
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences

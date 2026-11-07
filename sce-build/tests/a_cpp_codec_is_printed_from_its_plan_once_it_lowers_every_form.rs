@@ -42,6 +42,7 @@ const PRINTED: &[&str] = &[
     "codec_default_marker_arm_b",
     "codec_dma_aligned_basic",
     "codec_embed_basic",
+    "codec_embed_variant_dispatch",
     "codec_enum_fields",
     "codec_enum_gated",
     "codec_ext_attachment",

@@ -74,6 +74,7 @@ set(FIXTURES
     codec_default_marker_arm_a
     codec_default_marker_arm_b
     codec_variant_default_marker
+    codec_embed_variant_dispatch
 )
 
 # The fixtures are generated into one directory, so they claim in one list: a

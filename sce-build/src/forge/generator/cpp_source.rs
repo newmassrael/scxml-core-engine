@@ -450,6 +450,13 @@ fn derivation_unlowered(derived: &crate::forge::encode_plan::Derived<'_>) -> Opt
         // A flag of a disjunction that decides a group: what the arm the
         // value holds gives it (docs/adr/0065 §6 R4c).
         (ElementId::Flag { .. }, Derive::ArmFlag { .. }) => None,
+        // The tag of the arm each embedded body's variant holds, masked to the
+        // flag's bits; an arm a build feature decides is not yet.
+        (ElementId::Flag { .. }, Derive::ParentTag(tag)) => tag
+            .terms
+            .iter()
+            .any(|term| term.arms.iter().any(|arm| arm.feature.is_some()))
+            .then(|| format!("`{element}`, a tag an arm a build feature decides fills")),
         (ElementId::Field(id), _) => Some(format!("`{id}`, a tag or a flag the encode derives")),
         _ => Some(format!("`{element}`, a flag the encode derives")),
     }
@@ -2620,6 +2627,63 @@ pub(super) fn render(
                         unreachable!("`unlowered` refuses a variant whose caller hands its tag")
                     }
                 }
+            }
+            // The tag of the arm each embedded body's variant holds, masked to
+            // the flag's bits, the catch-all's the tag it holds; nothing where
+            // a gate leaves the body out. The arms are in the order the body's
+            // variant holds them, the catch-all last.
+            (ElementId::Flag { field, flag }, Derive::ParentTag(tag)) => {
+                let local = format!(
+                    "_p_{}_{}",
+                    l.codec_field_id(field),
+                    filters::to_snake_case(flag.clone())
+                );
+                before.push_str(&format!("        std::uint64_t {local} = 0;\n"));
+                for term in &tag.terms {
+                    let e = element(term.body)
+                        .expect("a parent tag is filled by a body the value presents");
+                    let held = e
+                        .body
+                        .as_ref()
+                        .expect("a parent tag is filled by an embedded body");
+                    let mut cases = String::new();
+                    for (index, arm) in term.arms.iter().enumerate() {
+                        cases.push_str(&format!(
+                            "                case {index}: {local} |= 0x{:X}ull; break;\n",
+                            arm.tag
+                        ));
+                    }
+                    if term.catch_all {
+                        let index = term.arms.len();
+                        cases.push_str(&format!(
+                            "                case {index}: {local} |= static_cast<std::uint64_t>(std::get_if<{index}>(&_v)->tag) & 0x{:X}ull; break;\n",
+                            term.mask
+                        ));
+                    }
+                    let (open, read) = if e.optional {
+                        (
+                            format!("if ({}.has_value()) ", e.local()),
+                            format!("*{}", e.local()),
+                        )
+                    } else {
+                        (String::new(), e.local())
+                    };
+                    before.push_str(&format!(
+                        "        {open}{{\n\
+                         \x20           const auto& _v = {}::source::body({read});\n\
+                         \x20           switch (_v.index()) {{\n\
+                         {cases}\
+                         \x20               default: break;\n\
+                         \x20           }}\n\
+                         \x20       }}\n",
+                        held.namespace
+                    ));
+                }
+                folds.entry(field.as_str()).or_default().push(Fold {
+                    flag: flag.clone(),
+                    bits: local,
+                    present: None,
+                });
             }
             // Set by the walk of the chain that holds the entry, not here.
             (ElementId::Flag { .. }, Derive::ChainContinuation) => {}

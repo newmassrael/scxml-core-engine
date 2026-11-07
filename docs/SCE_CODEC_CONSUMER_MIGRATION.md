@@ -1437,6 +1437,16 @@ variant reads its tag from a peek byte the arm reads again as its own header, an
 - The tag is the arm's own: the arm's header holds it, an arm made by default holding the value its codec
   declares, so a consumer type presents the arm alone, as a source of the arm's codec, and the encode writes it.
 
+## A printed C++ codec derives the flag that dispatches the variant of a body it embeds (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C++ tree is regenerated after it. It moves the codec whose
+flag the import declares as the dispatch of the embedded variant (1 more codec of the resources, 133 in all:
+`codec_embed_variant_dispatch`).
+
+- The value is the class with its carrier and its body, where they were public members, and the flag is derived
+  from the arm the body holds: a caller that set it by hand drops that code, and the carrier's other bits stay
+  what the value presents.
+
 ## A payload schema states its keys in the order the document declares them (ADR 0087 §1.1)
 
 Landing: the commit that adds this section; every tree holding a `JSON_SCHEMA` constant or a GBNF table (the Rust,

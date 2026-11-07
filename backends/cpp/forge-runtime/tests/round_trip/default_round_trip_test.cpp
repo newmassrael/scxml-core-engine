@@ -24,9 +24,11 @@
 
 #include "codec_default_marker_arm_a.h"
 #include "codec_default_marker_arm_b.h"
+#include "codec_embed_variant_dispatch.h"
 #include "codec_variant_default_marker.h"
 
 using ::SCE::Forge::SceCursor;
+using ::SCE::Generated::CodecEmbedVariantDispatch::CodecEmbedVariantDispatch;
 using ::SCE::Generated::CodecVariantDefaultMarker::CodecVariantDefaultMarker;
 
 static int failures = 0;
@@ -94,6 +96,33 @@ int main() {
             EXPECT(err.has_value() && *err == ::SCE::Forge::CodecError::BufferOverflow,
                    "SpanSink encode must surface BufferOverflow when cap < bytes.size()");
         }
+    }
+
+    // A parent whose flag dispatches the embedded variant derives the flag
+    // from the arm the body holds: the arm's tag, masked to the flag's bits,
+    // or the tag the catch-all holds.
+    {
+        namespace Marker = ::SCE::Generated::CodecVariantDefaultMarker;
+        using ArmA = ::SCE::Generated::CodecDefaultMarkerArmA::CodecDefaultMarkerArmA;
+        using ArmB = ::SCE::Generated::CodecDefaultMarkerArmB::CodecDefaultMarkerArmB;
+        const CodecEmbedVariantDispatch held_b{0x00, CodecVariantDefaultMarker{}};
+        EXPECT(held_b.encode_to_vec() == (std::vector<std::uint8_t>{0x02, 0x02, 0x00, 0x00}),
+               "the parent's kind is arm B's tag, whatever the header presents");
+        const CodecEmbedVariantDispatch held_a{0xFC, CodecVariantDefaultMarker{Marker::CodecVariantDefaultMarkerVariant{
+                                                         std::in_place_index<0>, ArmA{0x01, 0x07}}}};
+        const std::vector<std::uint8_t> a_frame{0xFD, 0x01, 0x07};
+        EXPECT(held_a.encode_to_vec() == a_frame, "arm A sets kind to 1 and keeps the header's other bits");
+        const CodecEmbedVariantDispatch unknown{
+            0x00, CodecVariantDefaultMarker{Marker::CodecVariantDefaultMarkerVariant{
+                      Marker::CodecVariantDefaultMarkerDefault{0x07, ArmB{0x03, 0x0000}}}}};
+        EXPECT(unknown.encode_to_vec() == (std::vector<std::uint8_t>{0x03, 0x03, 0x00, 0x00}),
+               "the catch-all's tag, masked to kind's two bits, is the parent's kind");
+
+        SceCursor dispatch_cursor(a_frame.data(), a_frame.size());
+        const auto decoded_a = CodecEmbedVariantDispatch::decode(dispatch_cursor);
+        EXPECT(decoded_a.has_value() && decoded_a->body().body().index() == 0,
+               "the parent's kind dispatches the embedded variant to arm A");
+        EXPECT(decoded_a.has_value() && decoded_a->encode_to_vec() == a_frame, "and encodes back to it");
     }
 
     if (failures == 0) {
