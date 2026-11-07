@@ -44,6 +44,43 @@ set -euo pipefail
 # consumers below walk this variable instead.
 PUSHED_REFS="$(cat)"
 
+# ── The landing queue's own refs (bx RFC 0024, section 12).
+#
+# `bx --land` and its integrator push refs under refs/bx-land/<branch>/ beside
+# the branch they land on. None of them moves a branch, so none is a push the
+# gates judge here: the integrator judges each candidate by running THIS hook
+# for the landing push's own line (`refs/heads/main <candidate> refs/heads/main
+# <value>`), and the landing push itself runs it again, which moves main and
+# meets every gate below as any push to main does.
+#
+#   .../log, .../lease  the queue's record and its integrators' lease: commits
+#                       of bx's own bookkeeping, sharing no history with this
+#                       repository's and written by bx, not by a person. They
+#                       meet the term check alone (they are published text);
+#                       given to the others, the identity check would refuse
+#                       bx's author, the tree check would refuse a commit that
+#                       is not HEAD, and the gate selection, finding no base,
+#                       would run the whole suite.
+#   .../items/<id>      a submitted item: this repository's commit, published
+#                       before it lands. It meets every check of what a push
+#                       publishes (terms, identities, the consumer guide) and
+#                       no gate: its tree is judged on its candidate.
+#
+# PUBLISHED_REFS is every pushed ref but the record's and the lease's;
+# GATED_REFS is those that move a branch the gates judge.
+PUBLISHED_REFS=""
+GATED_REFS=""
+while read -r qlocal_ref qlocal_sha qremote_ref qremote_sha; do
+    [[ -z "${qlocal_sha:-}" ]] && continue
+    qline="$qlocal_ref $qlocal_sha $qremote_ref $qremote_sha"
+    if [[ "$qremote_ref" =~ ^refs/bx-land/.+/(log|lease)$ ]]; then
+        continue
+    fi
+    PUBLISHED_REFS+="$qline"$'\n'
+    [[ "$qremote_ref" =~ ^refs/bx-land/.+/items/[^/]+$ ]] && continue
+    GATED_REFS+="$qline"$'\n'
+done <<<"$PUSHED_REFS"
+
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
@@ -92,7 +129,7 @@ while read -r _iref ilocal _irref iremote; do
         ident_range="${iremote}..${ilocal}"
     fi
     ident_gate_range "pre-push" "$ident_range" || ident_push_failed=1
-done <<<"$PUSHED_REFS"
+done <<<"$PUBLISHED_REFS"
 if (( ident_push_failed )); then
     printf '\npre-push: rewrite the offending commits before pushing — the remote is\n' >&2
     printf 'pre-push: public and a push does not un-publish.\n' >&2
@@ -115,7 +152,7 @@ while read -r _gref glocal _grref gremote; do
         gbase="$gremote"
     fi
     consumer_guide_gate_range "${gbase}..${glocal}" || guide_push_failed=1
-done <<<"$PUSHED_REFS"
+done <<<"$PUBLISHED_REFS"
 if (( guide_push_failed )); then
     exit 1
 fi
@@ -152,7 +189,7 @@ while read -r href hlocal _hrref _hremote; do
             "$href" "${hlocal:0:12}" "${HEAD_SHA:0:12}" >&2
         tree_mismatch=1
     fi
-done <<<"$PUSHED_REFS"
+done <<<"$GATED_REFS"
 if (( publishes )) && ! git diff --quiet HEAD --; then
     printf '\nERROR pre-push: the tracked tree differs from HEAD, so the gates would\n' >&2
     printf 'pre-push: judge edits this push does not publish:\n' >&2
@@ -253,7 +290,7 @@ while read -r _local_ref local_sha _remote_ref remote_sha; do
     fi
     git diff --name-only "$base" "$local_sha" >>"$CHANGED_FILE"
     RANGE_ARGS+=(--changed-in "${base}..${local_sha}")
-done <<<"$PUSHED_REFS"
+done <<<"$GATED_REFS"
 
 # githooks(5): git writes one line per ref it is about to push. No lines
 # therefore means there is nothing to push — an already-up-to-date `git
