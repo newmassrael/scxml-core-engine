@@ -38,6 +38,7 @@
 #include "codec_little_endian.h"
 #include "codec_origin_envelope.h"
 #include "codec_present_if_basic.h"
+#include "codec_present_if_disjunction.h"
 #include "codec_present_if_length_ref.h"
 #include "codec_repeat_basic.h"
 #include "codec_repeat_present_if_basic.h"
@@ -1415,6 +1416,39 @@ void a_list_on_one_side_of_a_gate_is_kept_as_the_arm_presents_it() {
     CHECK(decoded_flat.has_value() && decoded_flat->encode_to_vec() == flat_frame, "and encodes back to it");
 }
 
+namespace Disjunction = ::SCE::Generated::CodecPresentIfDisjunction;
+using DisjunctionValue = Disjunction::CodecPresentIfDisjunction;
+using DisjunctionGroup =
+    typename std::decay_t<decltype(std::declval<const DisjunctionValue &>().flags_wants_a_or_wants_b())>::value_type;
+using WantsA = std::variant_alternative_t<0, DisjunctionGroup>;
+using WantsB = std::variant_alternative_t<1, DisjunctionGroup>;
+using WantsBoth = std::variant_alternative_t<2, DisjunctionGroup>;
+
+void a_flag_of_a_disjunction_is_derived_from_the_arm_the_value_holds() {
+    // Each arm sets the flags it holds and clears the others; bits of the
+    // carrier no gate names are the value's own.
+    const DisjunctionValue a{0xF0, DisjunctionGroup{WantsA{0x1234}}};
+    const DisjunctionValue b{0x00, DisjunctionGroup{WantsB{0x1234}}};
+    const DisjunctionValue both{0x00, DisjunctionGroup{WantsBoth{0x1234}}};
+    const DisjunctionValue none{0x03, std::nullopt};
+    const std::vector<std::uint8_t> a_frame{0xF1, 0x12, 0x34};
+    const std::vector<std::uint8_t> b_frame{0x02, 0x12, 0x34};
+    const std::vector<std::uint8_t> both_frame{0x03, 0x12, 0x34};
+    const std::vector<std::uint8_t> none_frame{0x00};
+    CHECK(a.encode_to_vec() == a_frame, "the first arm sets wants_a alone and keeps the carrier's other bits");
+    CHECK(b.encode_to_vec() == b_frame, "the second arm sets wants_b alone");
+    CHECK(both.encode_to_vec() == both_frame, "the third arm sets both");
+    CHECK(none.encode_to_vec() == none_frame, "no arm clears both, whatever bits the value presents");
+
+    ::SCE::Forge::SceCursor cursor(b_frame.data(), b_frame.size());
+    const auto decoded = DisjunctionValue::decode(cursor);
+    const auto *held = decoded && decoded->flags_wants_a_or_wants_b()
+                           ? std::get_if<WantsB>(&*decoded->flags_wants_a_or_wants_b())
+                           : nullptr;
+    CHECK(held != nullptr && held->seq() == 0x1234, "a frame with wants_b alone holds the second arm");
+    CHECK(decoded.has_value() && decoded->encode_to_vec() == b_frame, "and encodes back to it");
+}
+
 void encode_source_reports_the_sinks_failure() {
     std::uint8_t buffer[3] = {};
     ::SCE::Forge::SpanSink sink(buffer, sizeof buffer);
@@ -1449,6 +1483,7 @@ int main() {
     a_list_is_held_to_the_law_its_entries_say_its_flag_by();
     a_byte_string_on_one_side_of_a_gate_is_the_arm_that_holds_it();
     a_list_on_one_side_of_a_gate_is_kept_as_the_arm_presents_it();
+    a_flag_of_a_disjunction_is_derived_from_the_arm_the_value_holds();
     encode_source_reports_the_sinks_failure();
     if (failures != 0) {
         std::fprintf(stderr, "codec_source_generated_test: %d failure(s)\n", failures);

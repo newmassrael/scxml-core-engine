@@ -537,6 +537,16 @@ old encode, the old encode and its templates are removed in the same landing.
    The decode holds the list it read to its bound before the arm is made of it, and moves a body in. A list or a
    body more than one arm holds would need one type across the arms the source presents, and a list a group
    holds held to a law, the law's start in each arm; both stay unlowered. The printed set is 123 codecs.
+
+   *The twentieth C++ landing, 2026-11-07:* the flags of a disjunction that decides a group (docs/adr/0065 §6
+   R4c), and a body or a list more than one arm holds. A gate `a || b` makes an arm for each way the flags can
+   hold it, so the value says which flags hold by the arm it holds, and the encode folds each flag into its
+   carrier from that arm, clear while the value holds none; the carrier's other bits stay the value's. The fields
+   such a gate decides are in every arm, so a body or a list among them is held by several arms. The Rust group
+   holds such a member as one type parameter in all of its arms; the C++ group asks the same of a source, that
+   every arm presenting the member presents it as one type, which the encode then keeps once whichever arm the
+   value holds. The landing's own forbidding of a member several arms hold is lifted with it. The printed set is
+   125 codecs.
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences

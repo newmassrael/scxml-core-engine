@@ -106,10 +106,9 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
     // members of its one side, held optionally, or as a variant of a class for
     // each of its arms; its members are integers, byte strings, texts, bodies
     // or lists, its gates flag inputs or one-bit flags of the codec's own. The
-    // encode keeps a body or a list as the arm that holds it presents it, so
-    // one more than one arm holds is not yet, nor one held to a law; nor is a
-    // group of a chain's memberships or of lists that share a count, or one
-    // that holds an enum.
+    // encode keeps a body or a list as the arms that hold it present it, all
+    // as one type; one held to a law is not yet, nor is a group of a chain's
+    // memberships or of lists that share a count, or one that holds an enum.
     for group in plan.groups() {
         let label = group
             .gates
@@ -141,16 +140,6 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
                     forms.extend(held_codec_forms(plan, imports, id, &value));
                     if matches!(&value, Value::List { law, .. } if !law.is_none()) {
                         forms.push(format!("`{id}`, a list a group holds held to a law"));
-                    }
-                    let holding = group
-                        .arms
-                        .iter()
-                        .filter(|arm| arm.fields.iter().any(|f| f == id))
-                        .count();
-                    if holding > 1 {
-                        forms.push(format!(
-                            "`{id}`, a body or a list more than one arm of a group holds"
-                        ));
                     }
                 }
                 Value::Scalar(_) => forms.push(format!(
@@ -465,6 +454,9 @@ fn derivation_unlowered(derived: &crate::forge::encode_plan::Derived<'_>) -> Opt
         // The flag a chain's entry is closed by, which the walk of the chain
         // sets on each entry as it writes it.
         (ElementId::Flag { .. }, Derive::ChainContinuation) => None,
+        // A flag of a disjunction that decides a group: what the arm the
+        // value holds gives it (docs/adr/0065 §6 R4c).
+        (ElementId::Flag { .. }, Derive::ArmFlag { .. }) => None,
         (ElementId::Field(id), _) => Some(format!("`{id}`, a tag or a flag the encode derives")),
         _ => Some(format!("`{element}`, a flag the encode derives")),
     }
@@ -1288,12 +1280,47 @@ impl<'p> GroupPart<'p> {
             .map(|i| format!("class G{i}"))
             .collect();
         let args: Vec<String> = (0..self.arms.len()).map(|i| format!("G{i}")).collect();
-        let accepts: Vec<String> = self
+        let mut accepts: Vec<String> = self
             .arms
             .iter()
             .enumerate()
             .map(|(i, arm)| format!("{}<G{i}>", arm.members_trait))
             .collect();
+        // A body or a list the encode keeps is kept as one type, so every arm
+        // that holds it presents it as the type the first one does, as the Rust
+        // group holds it as one type parameter in every arm.
+        for m in self.members.iter().filter(|m| m.kept_as_read()) {
+            let holding: Vec<usize> = self
+                .arms
+                .iter()
+                .enumerate()
+                .filter(|(_, arm)| arm.members.iter().any(|a| a.name == m.name))
+                .map(|(i, _)| i)
+                .collect();
+            if let [first, rest @ ..] = holding.as_slice() {
+                if !rest.is_empty() {
+                    let member = &m.name;
+                    let read = |ty: &str| {
+                        format!("decltype(source::{member}(std::declval<const {ty}&>()))")
+                    };
+                    out.push_str(&format!(
+                        "/// Whether `A` and `B` both present `{member}`, as one type.\n\
+                         template <class A, class B, class = void>\n\
+                         struct is_{member}_read_alike : std::false_type {{}};\n\
+                         template <class A, class B>\n\
+                         struct is_{member}_read_alike<A, B, std::void_t<{}, {}>>\n\
+                         \x20   : std::is_same<{}, {}> {{}};\n\n",
+                        read("A"),
+                        read("B"),
+                        read("A"),
+                        read("B")
+                    ));
+                }
+                for i in rest {
+                    accepts.push(format!("is_{}_read_alike<G{first}, G{i}>", m.name));
+                }
+            }
+        }
         let variant = format!("std::variant<{}>", args.join(", "));
         let (shape, of) = if self.optional() {
             (
@@ -1351,8 +1378,8 @@ impl<'p> GroupPart<'p> {
     /// The encode's binding of each member to its local from the arm the value
     /// holds, where it holds one that holds the member: an optional value of
     /// its type (`_e_<member>`), or, for a body or a list, the read kept as
-    /// the one arm that holds it returns it (`_r_<member>`, a
-    /// `::SCE::Forge::Detail::Kept`).
+    /// the arms that hold it return it, one type in all of them (`_r_<member>`,
+    /// a `::SCE::Forge::Detail::Kept`).
     fn bind_members(&self) -> String {
         let name = &self.name;
         let mut out = format!("        const auto& _r_{name} = source::{name}(src);\n");
@@ -2516,6 +2543,18 @@ pub(super) fn render(
             }
             // Set by the walk of the chain that holds the entry, not here.
             (ElementId::Flag { .. }, Derive::ChainContinuation) => {}
+            // A flag of a disjunction that decides a group: the value the arm
+            // the value holds gives it, or the one it has while the value
+            // holds no arm (docs/adr/0065 §6 R4c).
+            (ElementId::Flag { field, flag }, Derive::ArmFlag { group, gate }) => {
+                let g = &groups[*group];
+                let value = g.gate_value(&g.group.gates[*gate], &format!("_r_{}", g.name));
+                folds.entry(field.as_str()).or_default().push(Fold {
+                    flag: flag.clone(),
+                    bits: format!("static_cast<std::uint64_t>({value})"),
+                    present: None,
+                });
+            }
             _ => unreachable!("`unlowered` refuses a derivation the printer does not lower"),
         }
     }

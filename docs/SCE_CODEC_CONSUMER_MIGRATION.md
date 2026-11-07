@@ -1393,6 +1393,20 @@ list of entries is one arm of a gate (1 more codec of the resources, 123 in all:
   (`::SCE::Forge::Detail::Kept`), until it writes it. A list or a body that more than one arm holds is not
   printed yet.
 
+## A printed C++ codec derives the flags of a disjunction from the arm it holds (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C++ tree is regenerated after it. It moves the codecs whose
+fields a gate `a || b` decides (2 more codecs of the resources, 125 in all: `codec_present_if_disjunction` and
+`codec_zenoh_interest`).
+
+- The fields such a gate decides are `value.<gate>()`, a `std::optional` of a `std::variant` with an arm for each
+  way the flags hold the gate (`...WantsA`, `...WantsB`, `...WantsAWantsB`), where they were public members, and
+  the flags are derived from the arm: a caller that set them by hand drops that code, and the carrier's other bits
+  stay what the value presents.
+- A consumer type that presents such a group to `Wire::encode_source` presents a body or a list that several arms
+  hold as one type in all of them (the trait `is_<member>_read_alike`), as the Rust group holds it as one type
+  parameter. The previous section's exception for a list or a body more than one arm holds no longer applies.
+
 ## A payload schema states its keys in the order the document declares them (ADR 0087 §1.1)
 
 Landing: the commit that adds this section; every tree holding a `JSON_SCHEMA` constant or a GBNF table (the Rust,
