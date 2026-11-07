@@ -912,6 +912,40 @@ snapshot event and runs the macrostep it starts (`tick`); `terminated` is the ma
 the component is given nothing of. A component's machine always has a saved shape, which a session id it is given
 needs: what would leave it none, a delayed send or an invoke a restore cannot start, the profile refuses.
 
+Go generates `test-component` (§12.6, slice 6). The unit is the statechart machine the Go generator writes for any
+`sce-static` document, `<file>_sm.go`, the package `<file>`, lowered through the same doors by the same lowering
+and spelled for the Go runtime (the package `testprofile` of `sce-go-runtime`, which the machine imports as
+`scetestprofile`, under the generator's own prefix, so no local an author names hides it):
+
+- a branch's guard, the statement taking it, the statements of the profile and a `<log>` are calls on the component's
+  `*ComponentContext`, which the machine's policy holds (`sceTestContext`). A receive branch's match is `Receives`
+  over a function literal that calls its template's `Matches`, the literal naming the template's `Value`, from
+  which Go infers the runtime's type parameter. Every declaration of a template's unit is named through its package
+  under the alias `sce_<document>` every Go unit imports a sibling package by, and the machine imports the package of
+  each template its text names, under the module path the run is given (`--go-module-prefix`), so a component that
+  uses a template is refused without one. A variable bound to a formal parameter is handed over as the machine holds
+  it; a variable of an enum crosses into the variant of the same declared name of the enum unit's type, and an
+  optional value of an enum is refused by name, as on the other backends;
+- a receive branch whose content reads the message copies it, field by field, into the payload field of the policy
+  the machine's channel holds its record's event in, which the content reads as `_event.data`. The machine and the
+  record's unit hold a number, a `bool`, a text, a byte string and an optional value of one in the same Go types,
+  which are copied as they are, and an enum in types of their own, so an enum field takes the variant of the
+  machine's type that its declared name names (`DeclaredName`, read as a saved value of that type is,
+  `<Type>FromSaved`), an optional one where it is present. Go so generates the message of a record with a text, a
+  byte string or an enum field that Rust refuses, as Kotlin does;
+- a `<log>` records its label, a colon and its value as the engine's `<log>` formats it (`%v`);
+- a send hands the test-port processor the specific template's value (`Specific`) as `HostSendRequest.Value`.
+
+Beside the policy the file declares `<Name>Component`, which implements `testprofile.ComponentMachine`: `Start`
+builds the policy, gives it the session the component's name gives (`SetSessionID`), sets the context on it, builds
+the engine on it, registers the test-port processor and the test-component invoker on the engine and starts it
+(`Initialize`); `DeliverSnapshot` processes the snapshot event (`ProcessEvent`); `Terminated` is the machine's having
+entered a top-level `<final>`. Every `sce-static` policy declares `SetSessionID` and draws an id when none is given,
+whether or not a saved state can hold its machine, so the component's session id needs no saved shape. Go refuses by
+name a component that declares `<sce:action>`, whose policy is constructed with a host the component is given
+nothing of; one that uses a template whose type reaches a union, which Go does not lower (ADR 0092, section 7); and,
+until it generates a suite's tables, a component that declares a module parameter.
+
 A module parameter (§11.5) is a variable of the machine declared with its type and no value of the document's: the
 static lowering, written once for every backend, lowers no initial value for it. Its value is the run's. Before
 `start` starts the machine it hands the machine the run's module parameters through the context
@@ -1148,4 +1182,7 @@ the equivalence law (order of work step 6).
    is not Go's `test`, which the toolchain gives its own files and packages; it has `TextLength` for a template's
    length restriction, since a Go text is held as bytes, and the Go host send request carries a test-port send's
    value (`HostSendRequest.Value`). Go generates templates, and the refusal of §11.9 is lifted for Go for
-   `test-template`; Go lowers no union, so a template whose type reaches one stays refused there, as on C++.
+   `test-template`; Go lowers no union, so a template whose type reaches one stays refused there, as on C++. Go
+   generates test components next, through the doors of §12.3, and runs them through `testprofile.TestCaseRun`; the
+   refusal is lifted for Go for `test-component`, but for a component that declares a module parameter, whose value
+   Go's suite tables give, for one that declares `<sce:action>`, and for one whose template reaches a union.
