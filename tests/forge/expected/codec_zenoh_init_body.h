@@ -238,8 +238,6 @@ struct Wire {
             _e_sn_res = static_cast<uint8_t>(source::sn_res(*_r_s));
             _e_batch_size = static_cast<uint16_t>(source::batch_size(*_r_s));
         }
-        const std::uint8_t s = static_cast<std::uint8_t>(_r_s.has_value() ? 1 : 0);
-        (void)s;
         const std::uint8_t a = static_cast<std::uint8_t>(_e_cookie.has_value() ? 1 : 0);
         (void)a;
         const uint64_t _d_cookie_len = _e_cookie.has_value() ? static_cast<uint64_t>(_e_cookie->size()) : uint64_t{0};

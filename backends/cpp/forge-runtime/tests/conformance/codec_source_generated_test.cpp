@@ -51,6 +51,8 @@
 #include "codec_zenoh_interest_body.h"
 #include "codec_zenoh_locator.h"
 #include "codec_zenoh_open_body.h"
+#include "codec_zenoh_query_value.h"
+#include "codec_zenoh_value_entry.h"
 #include "codec_zenoh_value_zbuf.h"
 #include "codec_zenoh_wireexpr.h"
 
@@ -1416,6 +1418,135 @@ void a_list_on_one_side_of_a_gate_is_kept_as_the_arm_presents_it() {
     CHECK(decoded_flat.has_value() && decoded_flat->encode_to_vec() == flat_frame, "and encodes back to it");
 }
 
+namespace ValueEntry = ::SCE::Generated::CodecZenohValueEntry;
+using ValueEntryValue = ValueEntry::CodecZenohValueEntry;
+using ValueEntryBody = std::variant<ExtUnit, ExtZint, zbuf_consumer::Buffer, ValueEntry::CodecZenohValueEntryDefault>;
+
+namespace value_entry_consumer {
+
+/// An extension whose body is the consumer's own variant, the ZBuf arm a
+/// buffer of its own.
+struct Extension {
+    std::uint8_t head;
+    ValueEntryBody arm;
+
+    [[nodiscard]] std::uint8_t header() const noexcept {
+        return head;
+    }
+
+    [[nodiscard]] const ValueEntryBody &body() const noexcept {
+        return arm;
+    }
+};
+
+}  // namespace value_entry_consumer
+
+static_assert(ValueEntry::is_source<value_entry_consumer::Extension>::value,
+              "a variant whose ZBuf arm is the consumer's own buffer is a body a source may present");
+static_assert(std::is_same<decltype(ValueEntry::input_after_shm(std::declval<const ValueEntryValue &>())),
+                           std::optional<std::uint8_t>>::value,
+              "an input one arm says is answered optionally");
+
+void an_input_an_arm_says_is_read_off_the_arm_the_value_holds() {
+    const std::vector<std::uint8_t> first_bytes{0xAA, 0xBB};
+    const std::vector<std::uint8_t> second_bytes{0xCC};
+    const auto first = ZbufBytes::make(first_bytes);
+    const auto second = ZbufBytes::make(second_bytes);
+    const std::vector<std::uint8_t> three{0x10, 0x20, 0x30};
+    const auto whole_bytes = ZbufBytes::make(three);
+    CHECK(first.has_value() && second.has_value() && whole_bytes.has_value(), "the bytes lie within their bound");
+    if (!first || !second || !whole_bytes) {
+        return;
+    }
+    const std::vector<Slice> two{Slice{0x01, *first}, Slice{0x02, *second}};
+    const auto held = SliceList::make(two);
+    CHECK(held.has_value(), "two entries lie within no bound");
+    if (!held) {
+        return;
+    }
+
+    // The ZBuf arm says after_shm as its own codec does; the header's enc
+    // bits are its tag, beside the header's other bits.
+    const value_entry_consumer::Extension sliced{
+        0x01, ValueEntryBody{std::in_place_index<2>, zbuf_consumer::Buffer{zbuf_consumer::Sliced{0x05, 0x03, *held}}}};
+    const value_entry_consumer::Extension flat{
+        0x01, ValueEntryBody{std::in_place_index<2>, zbuf_consumer::Buffer{zbuf_consumer::Flat{*whole_bytes}}}};
+    const value_entry_consumer::Extension unit{0x01, ValueEntryBody{std::in_place_index<0>, ExtUnit{}}};
+    CHECK(ValueEntry::input_after_shm(sliced) == std::optional<std::uint8_t>(1),
+          "an arm holding the slices says after_shm");
+    CHECK(ValueEntry::input_after_shm(flat) == std::optional<std::uint8_t>(0),
+          "an arm holding the bytes says it clear");
+    CHECK(!ValueEntry::input_after_shm(unit).has_value(), "an arm that does not read it says nothing");
+
+    const std::vector<std::uint8_t> sliced_frame{0x41, 0x05, 0x03, 0x02, 0x01, 0x02, 0xAA, 0xBB, 0x02, 0x01, 0xCC};
+    std::vector<std::uint8_t> out;
+    ::SCE::Forge::VectorSink sink(out);
+    CHECK(!ValueEntry::Wire::encode_source(sliced, sink).has_value() && out == sliced_frame,
+          "the ZBuf arm is written by its codec, the header's enc bits its tag");
+
+    ::SCE::Forge::SceCursor cursor(sliced_frame.data(), sliced_frame.size());
+    const auto decoded = ValueEntryValue::decode(cursor, 1);
+    CHECK(decoded.has_value() && decoded->body().index() == 2 &&
+              ValueEntry::input_after_shm(*decoded) == std::optional<std::uint8_t>(1),
+          "a frame after the marker decodes to the ZBuf arm, which says after_shm");
+    CHECK(decoded.has_value() && decoded->encode_to_vec() == sliced_frame, "and encodes back to it");
+
+    const std::vector<std::uint8_t> unit_frame{0x01};
+    ::SCE::Forge::SceCursor unit_cursor(unit_frame.data(), unit_frame.size());
+    const auto decoded_unit = ValueEntryValue::decode(unit_cursor, 0);
+    CHECK(decoded_unit.has_value() && !ValueEntry::input_after_shm(*decoded_unit).has_value(),
+          "a decoded unit arm says nothing of after_shm");
+}
+
+namespace QueryValue = ::SCE::Generated::CodecZenohQueryValue;
+using QueryValueValue = QueryValue::CodecZenohQueryValue;
+using QueryExts = std::decay_t<decltype(std::declval<const QueryValueValue &>().exts())>;
+
+void a_chain_holds_entries_that_say_an_input_in_some_arms_to_its_law() {
+    // after_shm is set exactly when the entry before is the marker 0x4; an
+    // entry whose arm does not read it says nothing and follows any state.
+    const std::vector<std::uint8_t> sliced_frame{0x41, 0x05, 0x03, 0x02, 0x01, 0x02, 0xAA, 0xBB, 0x02, 0x01, 0xCC};
+    ::SCE::Forge::SceCursor sliced_cursor(sliced_frame.data(), sliced_frame.size());
+    const auto sliced = ValueEntryValue::decode(sliced_cursor, 1);
+    CHECK(sliced.has_value(), "an entry holding the slices decodes after the marker");
+    if (!sliced) {
+        return;
+    }
+    const ValueEntryValue marker{0x04, ValueEntry::CodecZenohValueEntryVariant{std::in_place_index<0>, ExtUnit{}}};
+    const ValueEntryValue unit{0x01, ValueEntry::CodecZenohValueEntryVariant{std::in_place_index<0>, ExtUnit{}}};
+
+    const std::vector<ValueEntryValue> after_marker{marker, *sliced};
+    const std::vector<ValueEntryValue> unmarked{unit, *sliced};
+    const std::vector<ValueEntryValue> silent{marker, unit};
+    const auto after_marker_list = QueryExts::list_type::make(after_marker);
+    const auto unmarked_list = QueryExts::list_type::make(unmarked);
+    const auto silent_list = QueryExts::list_type::make(silent);
+    CHECK(after_marker_list.has_value() && unmarked_list.has_value() && silent_list.has_value(),
+          "two entries lie within the chain's bound");
+    if (!after_marker_list || !unmarked_list || !silent_list) {
+        return;
+    }
+    CHECK(!QueryExts::make(QueryExts::start_type{}, *unmarked_list).has_value(),
+          "the slices say after_shm where no marker came before");
+    CHECK(QueryExts::make(QueryExts::start_type{}, *silent_list).has_value(),
+          "an entry whose arm does not read after_shm follows the marker");
+    const auto lawful = QueryExts::make(QueryExts::start_type{}, *after_marker_list);
+    CHECK(lawful.has_value(), "the slices after the marker follow the law");
+    if (!lawful) {
+        return;
+    }
+
+    const std::vector<std::uint8_t> frame{0x84, 0x41, 0x05, 0x03, 0x02, 0x01, 0x02, 0xAA, 0xBB, 0x02, 0x01, 0xCC};
+    const QueryValueValue value{*lawful};
+    CHECK(value.encode_to_vec() == frame, "each entry is written by its codec, Z set on all but the last");
+
+    ::SCE::Forge::SceCursor cursor(frame.data(), frame.size());
+    const auto decoded = QueryValueValue::decode(cursor);
+    CHECK(decoded.has_value() && decoded->exts().size() == 2 && decoded->exts()[1].body().index() == 2,
+          "a decoded chain hands the entry after the marker after_shm and holds its slices");
+    CHECK(decoded.has_value() && decoded->encode_to_vec() == frame, "and encodes back to it");
+}
+
 namespace Disjunction = ::SCE::Generated::CodecPresentIfDisjunction;
 using DisjunctionValue = Disjunction::CodecPresentIfDisjunction;
 using DisjunctionGroup =
@@ -1483,6 +1614,8 @@ int main() {
     a_list_is_held_to_the_law_its_entries_say_its_flag_by();
     a_byte_string_on_one_side_of_a_gate_is_the_arm_that_holds_it();
     a_list_on_one_side_of_a_gate_is_kept_as_the_arm_presents_it();
+    an_input_an_arm_says_is_read_off_the_arm_the_value_holds();
+    a_chain_holds_entries_that_say_an_input_in_some_arms_to_its_law();
     a_flag_of_a_disjunction_is_derived_from_the_arm_the_value_holds();
     encode_source_reports_the_sinks_failure();
     if (failures != 0) {

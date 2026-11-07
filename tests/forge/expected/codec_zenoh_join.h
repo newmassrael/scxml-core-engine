@@ -278,8 +278,6 @@ struct Wire {
             _e_sn_res = static_cast<uint8_t>(source::sn_res(*_r_s));
             _e_batch_size = static_cast<uint16_t>(source::batch_size(*_r_s));
         }
-        const std::uint8_t s = static_cast<std::uint8_t>(_r_s.has_value() ? 1 : 0);
-        (void)s;
         std::uint64_t _f_cbyte = static_cast<std::uint64_t>(source::cbyte(src));
         _f_cbyte = (_f_cbyte & ~0xF0ull) | (static_cast<std::uint64_t>(_e_zid.size() - 1u) << 4);
         const uint8_t _c_cbyte = static_cast<uint8_t>(_f_cbyte);

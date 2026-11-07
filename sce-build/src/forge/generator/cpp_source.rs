@@ -165,8 +165,10 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
     );
     // An input the caller hands the encode is a parameter of it. One the value
     // says (docs/adr/0065 §6 R4a) is read off it: off the field gated on it
-    // alone, off the group gated on it, or off the body always there that
-    // says it in every value; one a variant or a list says is not yet.
+    // alone, off the group gated on it, off the body always there that says it
+    // in every value, off the arm of the variant the value holds (§6 R4d, R4e),
+    // or off the start of the list held to it (§6 R8). A body a gate leaves out,
+    // or one that says it in some of its values only, is not yet.
     let gated = |id: &str| {
         grouped(id)
             || plan
@@ -177,7 +179,11 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
     for said in &plan.said {
         let name = &said.input.name;
         match &plan.roles.inputs[name] {
-            InputSource::Gate { .. } | InputSource::Group | InputSource::List { .. } => {}
+            InputSource::Gate { .. }
+            | InputSource::Group
+            | InputSource::List { .. }
+            | InputSource::EveryArm { .. }
+            | InputSource::SomeArms { .. } => {}
             // A body a gate leaves out says nothing of the input it forwards.
             InputSource::Forward { embed, .. } if gated(embed) => {
                 forms.push(format!("`{name}`, a flag input a body a gate decides says"))
@@ -186,7 +192,6 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
             InputSource::Forward { partly: true, .. } => forms.push(format!(
                 "`{name}`, a flag input a body says in some of its values only"
             )),
-            _ => forms.push(format!("`{name}`, a flag input a variant says")),
         }
     }
     // A body's said input is read through the body's codec, which says it in
@@ -358,8 +363,8 @@ fn held_printed(imports: &[ImportContext], alias: &str) -> bool {
 /// where the protocol states none (docs/adr/0077 §7), and walked entry by
 /// entry, each written by its codec's encode over the source the list holds it
 /// as. One whose entries say the inputs it hands them is held to its law
-/// (docs/adr/0065 §6 R8); one whose entries say an input in some of their
-/// values only is not yet.
+/// (docs/adr/0065 §6 R8), an entry that says an input in some of its values
+/// only agreeing with any state of it from the others (R8b).
 fn held_codec_forms(
     plan: &EncodePlan<'_>,
     imports: &[ImportContext],
@@ -383,20 +388,10 @@ fn held_codec_forms(
                 forms.push(format!("`{id}`, a body handed an input nothing binds"));
             }
         }
-        Value::List { codec, law, .. } => {
+        Value::List { codec, .. } => {
             if !held_printed(imports, codec) {
                 forms.push(format!(
                     "`{id}`, a list of entries of a codec the printer does not print"
-                ));
-            }
-            let partly = law.inputs.iter().any(|input| {
-                imports.iter().any(|import| {
-                    import.alias == *codec && import.codec_partly_says_inputs.contains(&input.input)
-                })
-            });
-            if partly {
-                forms.push(format!(
-                    "`{id}`, a list whose entries say an input in some of their values only"
                 ));
             }
             if unbound(codec) {
@@ -576,11 +571,15 @@ enum Read {
 /// (docs/adr/0065 §6 R4a): set exactly when the field gated on it alone is
 /// present (absent, for a field gated on its clear state), or what the body
 /// that forwards it says, read through that body's codec. [`unlowered`] refuses
-/// every other way a value says one.
+/// every other way a value says one. An input the arms of the variant say is
+/// read off `_r_body`, the body as the value holds it, which the encode and the
+/// input's own function bind before they read it.
 fn said_input(
     plan: &EncodePlan<'_>,
+    imports: &[ImportContext],
     elements: &[Presented<'_>],
     groups: &[GroupPart<'_>],
+    variant: Option<&VariantPart>,
     input: &str,
     at: Read,
 ) -> String {
@@ -676,8 +675,65 @@ fn said_input(
                 ),
             }
         }
-        _ => unreachable!("`unlowered` refuses an input said by a variant"),
+        // What the arm the value holds says, read through that arm's codec
+        // (docs/adr/0065 §6 R4d). A body that holds no arm says nothing, as its
+        // write writes nothing.
+        InputSource::EveryArm { arms } => {
+            let said = arm_said_input(imports, variant, arms, false);
+            format!("({said}std::uint8_t{{0}})")
+        }
+        // As above, and nothing from an arm that does not read the input: it
+        // has no bit the input could change (docs/adr/0065 §6 R4e). No gate of
+        // the codec reads such an input, so only a parent asks for it.
+        InputSource::SomeArms { arms } => match at {
+            Read::Source => {
+                let said = arm_said_input(imports, variant, arms, true);
+                format!("({said}std::optional<std::uint8_t>{{}})")
+            }
+            Read::Encode => {
+                unreachable!("no gate reads an input some arms of the variant say")
+            }
+        },
     }
+}
+
+/// `_r_body.index() == i ? <said> : ` for each arm `i` of the variant whose
+/// codec `arms` binds an input of, `<said>` being that input as the codec's
+/// `input_<name>` reads it off the arm; held `optional`, an arm whose codec says
+/// it in every value is wrapped as one.
+fn arm_said_input(
+    imports: &[ImportContext],
+    variant: Option<&VariantPart>,
+    arms: &std::collections::BTreeMap<String, String>,
+    optional: bool,
+) -> String {
+    let variant = variant.expect("an input the arms say is said by a codec with a variant");
+    variant
+        .arms
+        .iter()
+        .enumerate()
+        .filter_map(|(index, (held, tag))| {
+            let input = arms.get(&held.alias)?;
+            let arm = match tag {
+                Some(_) => format!("*std::get_if<{index}>(&_r_body)"),
+                None => format!("std::get_if<{index}>(&_r_body)->body"),
+            };
+            let read = format!(
+                "{}::input_{}({arm})",
+                held.namespace,
+                filters::to_snake_case(input.clone())
+            );
+            let partly = imports.iter().any(|import| {
+                import.alias == held.alias && import.codec_partly_says_inputs.contains(input)
+            });
+            let read = if optional && !partly {
+                format!("std::optional<std::uint8_t>({read})")
+            } else {
+                read
+            };
+            Some(format!("_r_body.index() == {index} ? {read} : "))
+        })
+        .collect()
 }
 
 /// The types each list held to a law is held by (docs/adr/0065 §6 R8), in the
@@ -688,6 +744,7 @@ fn said_input(
 /// for each input, several run together as `Laws`.
 fn law_definitions(
     plan: &EncodePlan<'_>,
+    imports: &[ImportContext],
     elements: &[Presented<'_>],
     l: &LangCtx,
     struct_name: &str,
@@ -701,17 +758,33 @@ fn law_definitions(
         for law in super::rust_source::list_laws(&plan.roles, field) {
             let input = &law.binder.input;
             let says = super::rust_source::says_type(struct_name, field, input);
+            let read = format!(
+                "{ns}::input_{}(entry)",
+                filters::to_snake_case(input.clone())
+            );
+            // An entry that says the input in some of its values only answers
+            // nothing from the others, which disagrees with no state (R8b).
+            let partly = imports.iter().any(|import| {
+                import.alias == law.binder.alias && import.codec_partly_says_inputs.contains(input)
+            });
+            let said = if partly {
+                format!(
+                    "const std::optional<std::uint8_t> said = {read};\n\
+                     \x20       return said.has_value() ? std::optional<bool>(*said != 0) : std::nullopt;"
+                )
+            } else {
+                format!("return {read} != 0;")
+            };
             out.push_str(&format!(
                 "/// The input `{input}` each entry of `{field}` says, which the list hands every\n\
                  /// entry as {} and holds to its law (docs/adr/0065 §6 R8).\n\
                  struct {says} {{\n\
                  \x20   template <class E>\n\
                  \x20   [[nodiscard]] static std::optional<bool> says(const E& entry) {{\n\
-                 \x20       return {ns}::input_{}(entry) != 0;\n\
+                 \x20       {said}\n\
                  \x20   }}\n\
                  }};\n\n",
                 law.against,
-                filters::to_snake_case(input.clone())
             ));
             if let InputValue::PreviousEntry { id } = law.against {
                 if !keys.contains(&id) {
@@ -2089,7 +2162,7 @@ pub(super) fn render(
     for g in &groups {
         before.push_str(&g.class_text());
     }
-    before.push_str(&law_definitions(plan, &elements, l, struct_name));
+    before.push_str(&law_definitions(plan, imports, &elements, l, struct_name));
     for trait_text in elements
         .iter()
         .filter_map(|e| e.list_trait().or_else(|| e.body_trait()))
@@ -2251,14 +2324,23 @@ pub(super) fn render(
             .find(|e| e.field.id == f.id)
     };
     let optional = |f: &CodecField| element(f).is_some_and(|e| e.optional);
-    // Each input the value says (docs/adr/0065 §6 R4a), read off what it holds
-    // under the name a gate reads it by, as [`said_input`] reads it for a
-    // parent.
-    for said in &plan.said {
+    // Each input the value says (docs/adr/0065 §6 R4a) that a gate of the
+    // codec reads, read off what it holds under the name the gate reads it by,
+    // as [`said_input`] reads it for a parent; one no gate reads is left to the
+    // parent that asks for it.
+    for said in plan.said.iter().filter(|said| said.read) {
         let name = input_name(&said.input.name);
         before.push_str(&format!(
             "        const std::uint8_t {name} = {};\n        (void){name};\n",
-            said_input(plan, &elements, &groups, &said.input.name, Read::Encode)
+            said_input(
+                plan,
+                imports,
+                &elements,
+                &groups,
+                variant.as_ref(),
+                &said.input.name,
+                Read::Encode
+            )
         ));
     }
 
@@ -2922,16 +3004,34 @@ pub(super) fn render(
         } else {
             ("std::uint8_t", "")
         };
+        // An input the arms say is read off the body, read once.
+        let body = if matches!(
+            plan.roles.inputs[&said.input.name],
+            InputSource::EveryArm { .. } | InputSource::SomeArms { .. }
+        ) {
+            "    const auto& _r_body = source::body(src);\n"
+        } else {
+            ""
+        };
         before.push_str(&format!(
             "/// The flag input `{}` a source of `{struct_name}` says, which its encode is not\n\
              /// handed (docs/adr/0065 §6 R4a){nothing}.\n\
              template <class S>\n\
              [[nodiscard]] {answer} input_{name}(const S& src) noexcept(is_nothrow_source<S>::value) {{\n\
              \x20   static_assert(is_source<S>::value, \"S presents every element of {struct_name}\");\n\
+             {body}\
              \x20   return {};\n\
              }}\n\n",
             said.input.name,
-            said_input(plan, &elements, &groups, &said.input.name, Read::Source)
+            said_input(
+                plan,
+                imports,
+                &elements,
+                &groups,
+                variant.as_ref(),
+                &said.input.name,
+                Read::Source
+            )
         ));
     }
 

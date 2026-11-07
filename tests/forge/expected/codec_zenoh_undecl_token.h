@@ -99,8 +99,6 @@ struct Wire {
     [[nodiscard]] static std::optional<::SCE::Forge::CodecError> encode_source(const S& src, ::SCE::Forge::SceSink& w) noexcept(is_nothrow_source<S>::value) {
         static_assert(is_source<S>::value, "S presents every element of CodecZenohUndeclToken: id, ext_keyexpr");
         const auto& _r_ext_keyexpr = source::ext_keyexpr(src);
-        const std::uint8_t z = static_cast<std::uint8_t>(_r_ext_keyexpr.has_value() ? 1 : 0);
-        (void)z;
         if (auto _e = w.write_vle_u32(static_cast<std::uint32_t>(source::id(src))); _e) return _e;
         if (_r_ext_keyexpr) {
             if (auto _e = ::SCE::Generated::CodecZenohDeclExtKeyexpr::Wire::encode_source(*_r_ext_keyexpr, w); _e) return _e;

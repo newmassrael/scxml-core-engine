@@ -547,6 +547,17 @@ old encode, the old encode and its templates are removed in the same landing.
    every arm presenting the member presents it as one type, which the encode then keeps once whichever arm the
    value holds. The landing's own forbidding of a member several arms hold is lifted with it. The printed set is
    125 codecs.
+
+   *The twenty-first C++ landing, 2026-11-08:* a flag input the arms of a variant say (docs/adr/0065 §6 R4d,
+   R4e). The value holds one arm, so the arm says the input, through its codec's `input_<name>`, and a parent
+   reads it off the body as the value holds it: a `std::uint8_t` where every arm says it, a
+   `std::optional<std::uint8_t>` where some arm does not read it and so says nothing. A body that holds no arm
+   says nothing either, as its write writes nothing. No gate of the codec reads such an input, so the encode
+   binds a said input only where a gate reads it (`Said::read`), as the Rust encode does; before, it bound each
+   one and discarded those no gate read. A chain of such entries moves with it, as the template's encode cannot
+   hold a printed entry that says its input against the flag it binds: the list's law reads what each entry
+   says as the runtime's automata take it, nothing from an entry that says nothing, which follows any state
+   (§6 R8b). The printed set is 127 codecs.
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences

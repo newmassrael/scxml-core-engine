@@ -1407,6 +1407,23 @@ fields a gate `a || b` decides (2 more codecs of the resources, 125 in all: `cod
   hold as one type in all of them (the trait `is_<member>_read_alike`), as the Rust group holds it as one type
   parameter. The previous section's exception for a list or a body more than one arm holds no longer applies.
 
+## A printed C++ codec reads a flag input off the arm of its variant that says it (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C++ tree is regenerated after it. It moves the codec whose
+variant has an arm that says a flag input the codec takes, and the chain of its entries (2 more codecs of the
+resources, 127 in all: `codec_zenoh_value_entry` and `codec_zenoh_query_value`).
+
+- The value is the class with its header and its body, a `std::variant` of each arm's value in turn, the
+  catch-all last, as for any printed variant. `encode` and `encode_to_vec` no longer take the input the arm says,
+  which they checked against the arm: a caller drops the argument.
+- `input_<name>(src)` answers what the arm the source holds says: a `std::optional<std::uint8_t>`, empty while
+  the source holds an arm that does not read the input. A parent that hands the decode the input derives it from
+  here for the encode.
+- A chain of such entries is `value.<chain>()`, a `Lawful` list held to the law its entries say the input by,
+  where it was a public `std::vector`: a caller makes the list with `make`, which refuses entries that say the
+  input otherwise than the entry before them gives it, and an entry whose arm does not read the input follows
+  any entry.
+
 ## A payload schema states its keys in the order the document declares them (ADR 0087 §1.1)
 
 Landing: the commit that adds this section; every tree holding a `JSON_SCHEMA` constant or a GBNF table (the Rust,

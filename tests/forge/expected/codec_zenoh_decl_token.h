@@ -92,8 +92,6 @@ struct Wire {
     [[nodiscard]] static std::optional<::SCE::Forge::CodecError> encode_source(const S& src, ::SCE::Forge::SceSink& w) noexcept(is_nothrow_source<S>::value) {
         static_assert(is_source<S>::value, "S presents every element of CodecZenohDeclToken: id, wireexpr");
         const auto& _r_wireexpr = source::wireexpr(src);
-        const std::uint8_t n = ::SCE::Generated::CodecZenohWireexpr::input_n(_r_wireexpr);
-        (void)n;
         if (auto _e = w.write_vle_u32(static_cast<std::uint32_t>(source::id(src))); _e) return _e;
         if (auto _e = ::SCE::Generated::CodecZenohWireexpr::Wire::encode_source(_r_wireexpr, w); _e) return _e;
         return std::nullopt;

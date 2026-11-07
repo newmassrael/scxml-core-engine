@@ -194,10 +194,6 @@ struct Wire {
             _e_ext_type = static_cast<uint8_t>(source::ext_type(*_r_z));
             _e_ext_value = static_cast<uint64_t>(source::ext_value(*_r_z));
         }
-        const std::uint8_t n = ::SCE::Generated::CodecZenohWireexpr::input_n(_r_wireexpr);
-        (void)n;
-        const std::uint8_t z = static_cast<std::uint8_t>(_r_z.has_value() ? 1 : 0);
-        (void)z;
         if (auto _e = w.write_vle_u32(static_cast<std::uint32_t>(source::id(src))); _e) return _e;
         if (auto _e = ::SCE::Generated::CodecZenohWireexpr::Wire::encode_source(_r_wireexpr, w); _e) return _e;
         if (_e_ext_type) {

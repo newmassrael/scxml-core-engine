@@ -127,8 +127,6 @@ struct Wire {
     [[nodiscard]] static std::optional<::SCE::Forge::CodecError> encode_source(const S& src, ::SCE::Forge::SceSink& w) noexcept(is_nothrow_source<S>::value) {
         static_assert(is_source<S>::value, "S presents every element of CodecChainFlagForward: head, entries");
         const auto& _r_entries = source::entries(src);
-        const std::uint8_t wide = (_r_entries.has_value() ? static_cast<std::uint8_t>((*_r_entries).start()) : std::uint8_t{0});
-        (void)wide;
         std::uint64_t _f_head = static_cast<std::uint64_t>(source::head(src));
         _f_head = (_f_head & ~0x1ull) | static_cast<std::uint64_t>(_r_entries.has_value());
         const uint8_t _c_head = static_cast<uint8_t>(_f_head);

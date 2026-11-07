@@ -201,8 +201,6 @@ struct Wire {
         if (const auto* _a = std::get_if<1>(&_r_wide)) {
             _e_short_value = static_cast<uint8_t>(source::short_value(*_a));
         }
-        const std::uint8_t wide = static_cast<std::uint8_t>((_r_wide.index() == 0u) ? 1 : 0);
-        (void)wide;
         std::uint64_t _f_header = static_cast<std::uint64_t>(source::header(src));
         if (overrides.header_z.has_value()) {
             _f_header = (_f_header & ~0x80ull) | (static_cast<std::uint64_t>(*overrides.header_z) << 7);
