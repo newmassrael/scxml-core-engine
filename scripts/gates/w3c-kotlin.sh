@@ -612,28 +612,46 @@ sce_gate_step "$runnable_count runnable test class(es) derived from $KOTLIN_TEST
 # after every row, whatever its outcome and before any refusal below,
 # `jvm_heap_report.py` reports what that row added to each log: the peak, the
 # live set after full collections, and the share of the row spent in pauses,
-# against the `-Xmx` the JVM was given, warning when the live set reaches 80%
-# of it. Its header says why those numbers.
+# beside the `-Xmx` the JVM was given. Its header says why those numbers, and
+# why no margin is read from them: the headroom probe after the rows is what
+# measures the margin.
 #
-# ⚠ The heap is NOT changed by this. Both daemons get `org.gradle.jvmargs` as
-# `gradle.properties` declares it, read from there rather than restated, with
-# only the log flag added. The Kotlin daemon was inheriting exactly those
-# arguments, since `gradle.properties` sets no `kotlin.daemon.jvmargs`; it now
-# receives them explicitly, because a `kotlin.daemon.jvmargs` that carried the
-# log flag alone would replace the inherited `-Xmx` with the JVM's default and
-# measure a different lane. The arguments are the same on every row, so each
-# daemon is reused across rows as before: what is measured is the lane as it
-# runs, not a lane changed to be measured.
+# ⚠ Each daemon gets the arguments `gradle.properties` declares for it, read
+# from there rather than restated, with only the log flag added:
+# `org.gradle.jvmargs` for the Gradle daemon and `kotlin.daemon.jvmargs` for
+# the compile daemon. A `kotlin.daemon.jvmargs` that carried the log flag alone
+# would replace the declared `-Xmx` with the JVM's default and measure a
+# different lane. The arguments are the same on every row, so each daemon is
+# reused across rows: what is measured is the lane as it runs, not a lane
+# changed to be measured.
+#
+# ⚠⚠ Reusing the compile daemon across rows is measured, not assumed harmless.
+# Run 42353262993 (5e91b12b6a, 2026-11-07, when the compile daemon inherited
+# the Gradle daemon's 2 GB) read 1,041 MB live on its first row
+# (`rhino:ecmascript`) and 1,449 MB on its last (`lua:lua`). A fresh private
+# compile daemon on a build host (its own `kotlin.daemon.options=runFilesPath`)
+# compiled the same Lua machines and read 1,382 MB, so the earlier rows left
+# about 70 MB in the daemon. Fresh daemons per row would buy back no more than
+# that, and what ran out was the compile itself: on the Lua tree it needs about
+# 1.85 GB in a fresh daemon (the bisection `gradle.properties` records). Those
+# live readings are lower bounds sampled at whatever moments the collector ran,
+# so they are compared here only between like runs, never against the budget.
 JVM_HEAP_REPORT="$SCE_REPO_ROOT/scripts/gates/jvm_heap_report.py"
 GRADLE_JVMARGS="$(sed -n 's/^org\.gradle\.jvmargs=//p' gradle.properties)"
 [ -n "$GRADLE_JVMARGS" ] \
-    || sce_gate_fail "gradle.properties sets no org.gradle.jvmargs, so there is no declared heap for the rows' daemons to be started with and measured against"
+    || sce_gate_fail "gradle.properties sets no org.gradle.jvmargs, so there is no declared heap for the Gradle daemon to be started with and measured against"
+KOTLIN_JVMARGS="$(sed -n 's/^kotlin\.daemon\.jvmargs=//p' gradle.properties)"
+[ -n "$KOTLIN_JVMARGS" ] \
+    || sce_gate_fail "gradle.properties sets no kotlin.daemon.jvmargs, so the compile daemon would inherit the Gradle daemon's heap, which is not the budget its compiles were measured against (gradle.properties records that measurement)"
 GRADLE_GC_LOG="$LOG/gradle-daemon-gc.log"
 KOTLIN_GC_LOG="$LOG/kotlin-daemon-gc.log"
-gc_log_flag() { printf -- '-Xlog:gc:file=%s:uptime,level,tags:filecount=0' "$1"; }
+# The second argument, when given, replaces the decorations (the headroom probe
+# adds `pid`, by which its daemon is stopped).
+gc_log_flag() { printf -- '-Xlog:gc:file=%s:%s:filecount=0' "$1" "${2:-uptime,level,tags}"; }
+GRADLE_OBSERVED="-Dorg.gradle.jvmargs=$GRADLE_JVMARGS $(gc_log_flag "$GRADLE_GC_LOG")"
 HEAP_OBSERVED=(
-    "-Dorg.gradle.jvmargs=$GRADLE_JVMARGS $(gc_log_flag "$GRADLE_GC_LOG")"
-    "-Pkotlin.daemon.jvmargs=$GRADLE_JVMARGS $(gc_log_flag "$KOTLIN_GC_LOG")"
+    "$GRADLE_OBSERVED"
+    "-Pkotlin.daemon.jvmargs=$KOTLIN_JVMARGS $(gc_log_flag "$KOTLIN_GC_LOG")"
 )
 log_size() { if [ -f "$1" ]; then stat -c %s "$1"; else echo 0; fi; }
 # The Gradle daemon runs every row, so its log MUST exist after one: a missing
@@ -645,7 +663,7 @@ report_row_heap() {
         "--jvmargs=$GRADLE_JVMARGS" --label "Gradle daemon, $1" --must-exist \
         || sce_gate_fail "the Gradle daemon's heap on $1 was not observed — the reason is above"
     python3 "$JVM_HEAP_REPORT" report --log "$KOTLIN_GC_LOG" --from-byte "$3" \
-        "--jvmargs=$GRADLE_JVMARGS" --label "Kotlin compile daemon, $1" \
+        "--jvmargs=$KOTLIN_JVMARGS" --label "Kotlin compile daemon, $1" \
         || sce_gate_fail "the Kotlin compile daemon's heap on $1 could not be read — the reason is above"
 }
 
@@ -896,6 +914,101 @@ if [[ "$(kotlin_tree_hashes)" != "$TREE_BEFORE" ]]; then
 fi
 
 sce_gate_step "committed tree unchanged after ${#KOTLIN_ENGINE_PAIRS[@]} engine/language pair(s)"
+
+# ── The compile daemon's headroom, measured by compiling with less ──
+#
+# `kotlin.daemon.jvmargs` is the smallest heap the committed tree's compile
+# succeeded in, times 1.5 (`gradle.properties` records that bisection). That
+# margin is a claim about the tree as it was measured, and every generated
+# machine added since moves it, so it is measured again here on every run: the
+# committed tree is compiled once more, from scratch, in a fresh compile daemon
+# given two thirds of the budget. If that compile fits, the budget still holds
+# at least 1.5 times what the compile needs; if it does not, the margin is gone
+# while the rows above still pass, which is the point at which it is cheap to
+# act. On 2026-11-05 it was found instead by a red lane.
+#
+# A threshold on the live set the rows report could not do this:
+# `jvm_heap_report.py` says why. The probe does not read the heap; it asks the
+# question the budget answers, whether the compile fits.
+#
+# ⚠ The probe's daemon must be fresh, or it measures a daemon that already
+# holds something, or holds a different heap. Three things see to that, and the
+# third checks the first two:
+#   - its `-Xmx` and its GC log path are its own, and the Kotlin plugin reuses a
+#     daemon only when the JVM arguments match;
+#   - `runFilesPath` is a directory of its own, so no daemon started elsewhere
+#     can be found;
+#   - its GC log is removed before and must exist after: only a JVM started with
+#     this run's log path writes it. The same refusal covers the plugin falling
+#     back to compiling inside the Gradle daemon, which
+#     `kotlin.daemon.useFallbackStrategy=false` also turns off.
+#
+# ⚠ The probe's daemon is stopped as soon as the compile returns, and on any
+# exit of this gate. A daemon left idle holds its heap until its idle timeout,
+# which is set short as the second line of defence. It is stopped by the
+# process id its own GC log names (the `pid` decoration), and only while that
+# process still carries this run's exact `-Xlog` argument, so an id the system
+# has since given to another process is left alone. Matching command lines
+# instead is not an identity test: any shell that carries the same text
+# matches too.
+KOTLIN_BUDGET_MB="$(python3 "$JVM_HEAP_REPORT" budget "--jvmargs=$KOTLIN_JVMARGS")" \
+    || sce_gate_fail "the budget of kotlin.daemon.jvmargs ($KOTLIN_JVMARGS) could not be read — the reason is above"
+PROBE_MB=$(( KOTLIN_BUDGET_MB * 2 / 3 ))
+# The budget's own `-Xmx` is taken out rather than overridden by a later one:
+# which of two the Kotlin plugin keeps when it parses them is its choice, and
+# a probe that silently ran at the full budget would pass every time.
+PROBE_JVMARGS="$(sed -E 's/(^|[[:space:]])-Xmx[^[:space:]]+//g' <<<"$KOTLIN_JVMARGS") -Xmx${PROBE_MB}m"
+PROBE_GC_LOG="$LOG/kotlin-headroom-gc.log"
+PROBE_RUN_FILES="$LOG/kotlin-headroom-daemon"
+PROBE_GC_FLAG="$(gc_log_flag "$PROBE_GC_LOG" uptime,pid,level,tags)"
+# True while process $1 runs with this run's probe flag as one of its own
+# arguments, compared whole.
+probe_daemon_is() {
+    local argument arguments=()
+    [ -r "/proc/$1/cmdline" ] || return 1
+    mapfile -d '' arguments <"/proc/$1/cmdline" 2>/dev/null || return 1
+    for argument in "${arguments[@]}"; do
+        [ "$argument" = "$PROBE_GC_FLAG" ] && return 0
+    done
+    return 1
+}
+stop_probe_daemon() {
+    local pid _
+    [ -f "$PROBE_GC_LOG" ] || return 0
+    pid="$(python3 "$JVM_HEAP_REPORT" pid --log "$PROBE_GC_LOG")" || return 0
+    probe_daemon_is "$pid" || return 0
+    kill "$pid" 2>/dev/null || true
+    for _ in $(seq 1 30); do
+        probe_daemon_is "$pid" || return 0
+        sleep 1
+    done
+    kill -9 "$pid" 2>/dev/null || true
+}
+sce_gate_on_exit "stop_probe_daemon"
+rm -f "$PROBE_GC_LOG"
+mkdir -p "$PROBE_RUN_FILES"
+
+sce_gate_step "compiling the committed $COMMITTED_LANGUAGE machines again in a fresh compile daemon of $PROBE_MB MB, two thirds of the $KOTLIN_BUDGET_MB MB budget"
+probe_status=0
+./gradlew --console=plain :sce-kotlin-tests:compileKotlin --rerun --no-build-cache \
+    "$GRADLE_OBSERVED" \
+    "-Pkotlin.daemon.jvmargs=$PROBE_JVMARGS $PROBE_GC_FLAG" \
+    "-Pkotlin.daemon.options=runFilesPath=$PROBE_RUN_FILES,autoshutdownIdleSeconds=60" \
+    -Pkotlin.daemon.useFallbackStrategy=false \
+    >"$LOG/kotlin-headroom.log" 2>&1 || probe_status=$?
+stop_probe_daemon
+python3 "$JVM_HEAP_REPORT" report --log "$PROBE_GC_LOG" --from-byte 0 \
+    "--jvmargs=$PROBE_JVMARGS" --label "Kotlin compile daemon, headroom probe" --must-exist \
+    || { tail -n 30 "$LOG/kotlin-headroom.log" >&2
+         sce_gate_fail "the headroom probe did not compile in a fresh daemon of its own, so it measured nothing — the reason is above"; }
+if (( probe_status != 0 )); then
+    tail -n 30 "$LOG/kotlin-headroom.log" >&2
+    if grep -qE 'OutOfMemoryError|Not enough memory to run compilation' "$LOG/kotlin-headroom.log"; then
+        sce_gate_fail "the committed Kotlin tree no longer compiles in $PROBE_MB MB, two thirds of the $KOTLIN_BUDGET_MB MB compile budget, so that budget no longer holds 1.5 times what the compile needs. Either measure the compile's smallest heap again (the bisection gradle.properties records) and size kotlin.daemon.jvmargs from it, or make the compilation unit smaller"
+    fi
+    sce_gate_fail "the headroom probe's compile failed for a reason other than memory, on a tree the rows above compiled — the log is above"
+fi
+sce_gate_step "the committed tree compiled in $PROBE_MB MB: the $KOTLIN_BUDGET_MB MB compile budget holds at least 1.5 times what it needs"
 
 # The same generator, asked for a project of the caller's own.
 #

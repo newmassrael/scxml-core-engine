@@ -126,7 +126,6 @@ fn a_row_reports_its_peak_its_live_set_and_its_budget() {
         "peak 1200 MB",
         "live 700 MB after the largest of 1 full collection(s)",
         "budget -Xmx 2048 MB",
-        "(34% of it live)",
     ] {
         assert!(
             out.stdout.contains(expected),
@@ -134,11 +133,6 @@ fn a_row_reports_its_peak_its_live_set_and_its_budget() {
             out.stdout
         );
     }
-    assert!(
-        !out.stderr.contains("WARNING"),
-        "a live set of a third of the budget was warned about\nstderr: {}",
-        out.stderr
-    );
 }
 
 /// The share of the row spent in pauses is what the JVM's "GC overhead limit
@@ -161,40 +155,63 @@ fn the_share_of_the_row_spent_in_pauses_is_reported() {
     );
 }
 
+/// One collection covers only its own pause, so a share over that window is
+/// 100% by construction. Run 42353262993 printed "100.0% of 0.0s in pauses" for
+/// a daemon that collected once in a row.
 #[test]
-fn a_live_set_close_to_the_budget_is_a_warning_and_not_a_refusal() {
-    let (_dir, log) = log_of(&[collection(5.0, 0, true, 1900, 1700, 900.0)]);
-
+fn one_collection_has_no_pause_share() {
+    let (_dir, log) = log_of(&[collection(5.0, 0, false, 700, 200, 30.0)]);
     let out = report(&log, 0, BUDGET, &[], false);
-    assert_eq!(
-        out.code, 0,
-        "a live set near the budget refused the row (exit {}). The budget is a choice \
-         made from these numbers, so the reader warns and leaves the row's verdict alone\n\
-         stderr: {}",
-        out.code, out.stderr
-    );
+    assert_eq!(out.code, 0, "stderr: {}", out.stderr);
     assert!(
-        out.stderr.contains(
-            "WARNING the row: the live set is 1700 MB, at or above 80% of the 2048 MB budget"
-        ),
-        "no warning for a live set at 83% of the budget\nstderr: {}",
-        out.stderr
-    );
-    assert!(
-        !out.stdout.contains("::warning"),
-        "an annotation was written outside GitHub Actions\nstdout: {}",
+        out.stdout
+            .contains("no pause share (one collection covers only its own pause)"),
+        "one collection was not said to have no share\nstdout: {}",
         out.stdout
     );
-
-    let on_github = report(&log, 0, BUDGET, &[], true);
     assert!(
-        on_github
-            .stdout
-            .contains("::warning title=JVM heap close to its budget::"),
-        "under GitHub Actions the warning is not an annotation, so the run page would \
-         not show a lane closing on its budget\nstdout: {}",
-        on_github.stdout
+        !out.stdout.contains("% of "),
+        "one collection was given a share of time\nstdout: {}",
+        out.stdout
     );
+}
+
+/// The live share of the budget does not tell a JVM about to fail from one
+/// with room: on 2026-11-07 the Lua tree's compile failed at 1,792 MB and below
+/// with about 78% live, and compiled at 2,048 MB with about 50%. A ratio or a
+/// warning drawn from it would claim a margin nobody measured, so the reader
+/// draws neither, and the gate's headroom probe measures the margin instead.
+#[test]
+fn the_budget_is_printed_and_no_ratio_or_warning_is_drawn_from_it() {
+    let (_dir, log) = log_of(&[collection(5.0, 0, true, 1900, 1700, 900.0)]);
+
+    for github in [false, true] {
+        let out = report(&log, 0, BUDGET, &[], github);
+        assert_eq!(
+            out.code, 0,
+            "a live set near the budget refused the row (exit {}); the reader reports \
+             and leaves the row's verdict alone\nstderr: {}",
+            out.code, out.stderr
+        );
+        assert!(
+            out.stdout.contains("live 1700 MB") && out.stdout.contains("budget -Xmx 2048 MB"),
+            "the live set and the budget were not both printed\nstdout: {}",
+            out.stdout
+        );
+        assert!(
+            !out.stdout.contains("% of it live"),
+            "a share of the budget was drawn from the live set (GITHUB_ACTIONS={github})\n\
+             stdout: {}",
+            out.stdout
+        );
+        assert!(
+            !out.stderr.contains("WARNING") && !out.stdout.contains("::warning"),
+            "a warning was drawn from the live set (GITHUB_ACTIONS={github})\n\
+             stdout: {}\nstderr: {}",
+            out.stdout,
+            out.stderr
+        );
+    }
 }
 
 /// The gate notes where a log ended before a row and asks only about what the
@@ -216,9 +233,9 @@ fn only_what_the_row_added_is_read() {
         out.stdout
     );
     assert!(
-        !out.stderr.contains("WARNING"),
-        "the earlier row's live set was charged to this one\nstderr: {}",
-        out.stderr
+        !out.stdout.contains("1800"),
+        "the earlier row's live set was charged to this one\nstdout: {}",
+        out.stdout
     );
 }
 
@@ -233,11 +250,6 @@ fn a_row_with_no_full_collection_reports_its_live_set_as_a_bound_only() {
         "a young collection's after-heap was reported as the live set; it still holds \
          the old generation's garbage\nstdout: {}",
         out.stdout
-    );
-    assert!(
-        !out.stderr.contains("WARNING"),
-        "a bound was warned about as if it were the live set\nstderr: {}",
-        out.stderr
     );
 }
 
@@ -268,6 +280,104 @@ fn a_log_that_must_exist_and_does_not_is_refused() {
         absent.stdout.contains("did not start during the row"),
         "a daemon that did not start was not said to have not started\nstdout: {}",
         absent.stdout
+    );
+}
+
+fn budget_of(jvmargs: &str) -> Outcome {
+    let out = Command::new("python3")
+        .arg(program())
+        .arg("budget")
+        .arg(format!("--jvmargs={jvmargs}"))
+        .output()
+        .expect("python3 runs the heap reader");
+    Outcome {
+        code: out
+            .status
+            .code()
+            .expect("the program exited rather than signalled"),
+        stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+    }
+}
+
+/// The gate sizes its headroom probe from this reading, and appends the
+/// probe's `-Xmx` after the budget's: the last one is the one the JVM takes,
+/// so it must be the one read here too.
+#[test]
+fn the_budget_is_the_last_xmx_in_mb() {
+    for (jvmargs, expected) in [
+        ("-Xmx3g -XX:+UseParallelGC", "3072"),
+        ("-XX:+UseParallelGC -Xmx1536m", "1536"),
+        ("-Xmx3g -XX:+UseParallelGC -Xmx2048m", "2048"),
+    ] {
+        let out = budget_of(jvmargs);
+        assert_eq!(out.code, 0, "`{jvmargs}`\nstderr: {}", out.stderr);
+        assert_eq!(
+            out.stdout.trim(),
+            expected,
+            "the budget of `{jvmargs}` was misread"
+        );
+    }
+    let none = budget_of("-XX:+UseParallelGC");
+    assert_eq!(
+        none.code, REFUSED,
+        "arguments with no -Xmx were given a budget (exit {})\nstdout: {}",
+        none.code, none.stdout
+    );
+}
+
+fn pid_of(log: &Path) -> Outcome {
+    let out = Command::new("python3")
+        .arg(program())
+        .arg("pid")
+        .arg("--log")
+        .arg(log)
+        .output()
+        .expect("python3 runs the heap reader");
+    Outcome {
+        code: out
+            .status
+            .code()
+            .expect("the program exited rather than signalled"),
+        stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+    }
+}
+
+/// The gate's headroom probe logs with `uptime,pid,level,tags`, and stops its
+/// daemon by the pid read here: a recorded id, where matching command lines
+/// would also match whatever shell happens to carry the same text.
+#[test]
+fn the_writer_of_a_pid_decorated_log_is_named_and_its_collections_read_the_same() {
+    let dir = tempfile::tempdir().expect("a scratch directory");
+    let log = dir.path().join("gc.log");
+    let plain = collection(3.0, 2, true, 1000, 700, 500.0);
+    let decorated = plain.replacen("][info]", "][48213][info]", 1);
+    fs::write(
+        &log,
+        format!("[0.002s][48213][info][gc] Using Parallel\n{decorated}"),
+    )
+    .expect("the log is writable");
+
+    let pid = pid_of(&log);
+    assert_eq!(pid.code, 0, "stderr: {}", pid.stderr);
+    assert_eq!(pid.stdout.trim(), "48213", "the writer's pid was misread");
+
+    let out = report(&log, 0, BUDGET, &[], false);
+    assert!(
+        out.stdout.contains("1 collection(s)") && out.stdout.contains("live 700 MB"),
+        "a collection with a pid decoration was not read\nstdout: {}",
+        out.stdout
+    );
+
+    // The control: a log written without `pid` names no process, and the gate
+    // must not be handed a number to kill.
+    let (_plain_dir, undecorated) = log_of(&[plain]);
+    let none = pid_of(&undecorated);
+    assert_eq!(
+        none.code, REFUSED,
+        "a log with no pid decoration was given a writer (exit {})\nstdout: {}",
+        none.code, none.stdout
     );
 }
 

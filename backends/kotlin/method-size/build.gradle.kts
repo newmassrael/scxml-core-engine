@@ -7,11 +7,17 @@
 // transition content would pass the 65,535 bytes one JVM method holds if the
 // generator still wrote it as one method. Compiling it is what it is FOR, and
 // compiling it is expensive. Measured 2026-11-07, on a fresh Kotlin compile
-// daemon of the 2 GB `gradle.properties` gives it, the whole of
-// `:sce-kotlin-tests` with this machine in it left 1,581 MB live after its full
-// collections (77% of the budget, 49 full collections, 121.6 s), and the same
-// module without it 1,019 MB (50%, 6 full collections, 37.9 s). That one file
-// was most of the heap and two thirds of the time of the compile it shared.
+// daemon of 2 GB (the heap it then inherited from `org.gradle.jvmargs`), the
+// whole of `:sce-kotlin-tests` on the committed Lua machines took 49 full
+// collections and 121.6 s with this machine in it, and 6 full collections and
+// 37.9 s without it. That one file was two thirds of the time of the compile it
+// shared, and most of the collector's work.
+//
+// The live sets those runs printed (1,581 and 1,019 MB) are lower bounds,
+// sampled at whatever moments the collector ran: the module without this
+// machine still needs about 1.85 GB to compile, measured by bisecting the heap
+// (`gradle.properties` records it). Read them as a comparison between two like
+// runs, not as what either compile needs.
 //
 // It shared that compile four times per Kotlin W3C run, because
 // `scripts/gates/w3c-kotlin.sh` compiles `:sce-kotlin-tests` once per
