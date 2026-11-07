@@ -817,6 +817,28 @@ declares it, so the unit imports no package. Rust and Kotlin join the tests the 
 (`test_template_walk::JoinSpelling`): a negation carried down to the tests, and a test the walk decides for every
 value left out of its join.
 
+Go generates `test-template` (§12.6, slice 6). The unit is a file `<name>.go`, the package `<name>` of the
+directory `<name>` below the module `--go-module-prefix` names, named by the document's file as every forge unit
+is, which declares:
+
+- `Value`, a type alias of the template's type as the unit of an `event-schema` spells a field of that type (a
+  record is the schema's payload struct, a value that may be absent the forge runtime's `optional.Of[T]`);
+- `func Matches(value Value, <the formal parameters, in order>) bool`, which holds each mechanism of §6.1 by the
+  rules C++ holds it by. A value that may be absent is tested by `IsPresent` and read by `Proven` behind that
+  test, a value that may be absent and a parameter of its type are compared by `Equal`, and a byte string by its
+  octets (`bytes.Equal`). A length restriction on a `string[N]` counts characters, through the profile's runtime
+  (`testprofile.TextLength`), and on `bytes[N]` and `list<T>[B]` octets and elements (`len`);
+- for a specific template (§6.2) alone, `func Specific(<the formal parameters>) Value`, the value it sends, which
+  matches it; a byte string a parameter gives is copied into it, and a value that may be absent is built with its
+  element type named (`optional.Some[T]`, `optional.None[T]`). It is not `Value`, since Go keeps the type and the
+  package's functions in one namespace.
+
+Every enum, record and referenced template the unit names is named through the package of the document that
+declares it, under the alias `sce_<document>` every Go unit imports a sibling package by, so an enum a record of
+another document holds is named by its one declaration; the unit imports exactly the packages its text names, as
+Go requires. Go joins the tests as Rust and Kotlin do. Go lowers no union, so a template whose type reaches a union
+at any depth is refused on Go as on C++ (ADR 0092, section 7).
+
 C++ generates `test-component` (§12.6, slice 4). The unit is the statechart machine the C++ generator writes for any
 `sce-static` document, `<file>_sm.h` and its `<file>_sm.inl`, in the namespace `SCE::Generated::<name>`, lowered
 through the doors of §12.3 before it is rendered (`test_component::snapshot::lower`, written once for every
@@ -1125,4 +1147,5 @@ the equivalence law (order of work step 6).
    `testprofile` of `sce-go-runtime`, the Rust one ported type for type and held to its cases, under a name that
    is not Go's `test`, which the toolchain gives its own files and packages; it has `TextLength` for a template's
    length restriction, since a Go text is held as bytes, and the Go host send request carries a test-port send's
-   value (`HostSendRequest.Value`).
+   value (`HostSendRequest.Value`). Go generates templates, and the refusal of §11.9 is lifted for Go for
+   `test-template`; Go lowers no union, so a template whose type reaches one stays refused there, as on C++.
