@@ -487,16 +487,22 @@ fn first_unlowered_composed_use(
     for action in blocks.iter().copied().flatten() {
         action.walk(&mut |a| {
             // A `<send>` carries the event's data in its params, which a
-            // lowering that sends a composed value writes; a `<raise>` carries
-            // no data, so no lowering writes the composed value it lacks.
-            let carries = match a.action_type.as_str() {
-                "send" => !lowers_sends,
-                "raise" => true,
-                _ => false,
-            };
-            if sent.is_none() && carries {
+            // lowering that sends a composed value writes, when one of them
+            // (a `<param>` or a `namelist` name) gives the composed field; a
+            // `<send>` that gives none lacks the value as a `<raise>` does,
+            // which carries no data, and no lowering writes a value it lacks.
+            if sent.is_none() {
                 if let Some((schema, composed)) = composed_schema(a.event.as_str()) {
-                    sent = Some((schema, composed, a));
+                    let gives = a.params.iter().any(|p| p.name == composed.field)
+                        || a.namelist.split_whitespace().any(|n| n == composed.field);
+                    let lacks = match a.action_type.as_str() {
+                        "send" => !lowers_sends || !gives,
+                        "raise" => true,
+                        _ => false,
+                    };
+                    if lacks {
+                        sent = Some((schema, composed, a));
+                    }
                 }
             }
             if copied.is_none()
@@ -510,10 +516,17 @@ fn first_unlowered_composed_use(
         });
     }
     if let Some((schema, composed, action)) = sent {
+        // Where sends are lowered, a `<send>` is refused only for the value
+        // it does not give, which is what its refusal says.
+        let what = if action.action_type == "send" && lowers_sends {
+            "a statechart's <send> of its event that gives the field no value".to_string()
+        } else {
+            format!("a statechart's <{}> of its event", action.action_type)
+        };
         return refused(
             schema,
             composed,
-            &format!("a statechart's <{}> of its event", action.action_type),
+            &what,
             at_location(&action.source_location),
         );
     }

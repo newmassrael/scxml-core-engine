@@ -378,6 +378,22 @@ fn a_send_or_raise_of_the_event_of_a_composed_schema_is_refused_by_name() {
         ),
     );
     assert!(out.contains("a statechart's <raise> of its event"), "{out}");
+    // A `<send>` that gives the composed field no value lacks it as a
+    // `<raise>` does, where sends are lowered too: a field of the schema's
+    // first revision is carried by every delivery (ADR 0086 section 10.1).
+    let out = refusal_of(
+        &["check", "-l", "rust"],
+        &reader(
+            "",
+            r##"<send event="batch.sent" target="#_internal"/>"##,
+            r#"<transition event="go" target="idle"/>"#,
+        ),
+    );
+    assert!(out.contains("the field `items`"), "{out}");
+    assert!(
+        out.contains("a statechart's <send> of its event that gives the field no value"),
+        "{out}"
+    );
 }
 
 #[test]
