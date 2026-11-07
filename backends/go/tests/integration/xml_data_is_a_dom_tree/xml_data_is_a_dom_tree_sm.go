@@ -286,11 +286,9 @@ func (p *XmlDataIsADomTreePolicy) InitializeDataModel(eng *sce.Engine[XmlDataIsA
 	engine := p.ScriptEngine
 	sessionID := p.SessionID
 
-	// W3C SCXML 5.3: Initialize _sessionid
-	_ = engine.SetVariable(sessionID, "_sessionid", sessionID)
-
-	// W3C SCXML 5.3: Initialize _name
-	_ = engine.SetVariable(sessionID, "_name", "xml_data_is_a_dom_tree")
+	// `_sessionid` and `_name` are bound by `ensureScriptEngine`, through
+	// `SetupSystemVariables`; they are system variables, which a write by name
+	// cannot change (§scxml-5.10), so writing them again here would be refused.
 
 	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML B.2: XML inline content for doc

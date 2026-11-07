@@ -322,11 +322,9 @@ func (p *APayloadRidesOnItsOwnEventPolicy) InitializeDataModel(eng *sce.Engine[A
 	engine := p.ScriptEngine
 	sessionID := p.SessionID
 
-	// W3C SCXML 5.3: Initialize _sessionid
-	_ = engine.SetVariable(sessionID, "_sessionid", sessionID)
-
-	// W3C SCXML 5.3: Initialize _name
-	_ = engine.SetVariable(sessionID, "_name", "a_payload_rides_on_its_own_event")
+	// `_sessionid` and `_name` are bound by `ensureScriptEngine`, through
+	// `SetupSystemVariables`; they are system variables, which a write by name
+	// cannot change (§scxml-5.10), so writing them again here would be refused.
 
 	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML 5.2/5.3: Initialize got from expr="0"
