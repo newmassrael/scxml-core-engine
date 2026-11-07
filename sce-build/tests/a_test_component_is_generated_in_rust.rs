@@ -512,6 +512,102 @@ fn a_bounded_module_parameter_is_read_back_held_to_its_bound() {
     }
 }
 
+/// A component whose module parameter `tint` is of the enum `Color`, and
+/// whose state waits a millisecond before it passes; `extra` is written into
+/// that state.
+fn color_picker(extra: &str) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="color_picker"
+       datamodel="sce-static" initial="picking">
+  <sce:import kind="enum" src="{imports}/paint_color.scxml" as="Color"/>
+  <sce:test-timer id="pause" duration="1ms"/>
+  <datamodel>
+    <data id="tint" sce:type="enum:Color" sce:module-parameter="true"/>
+  </datamodel>
+  <state id="picking">
+    <onentry>
+      <sce:start-timer timer="pause"/>{extra}
+    </onentry>
+    <transition sce:timeout="pause" target="done">
+      <sce:setverdict value="pass"/>
+    </transition>
+  </state>
+  <final id="done"/>
+</scxml>
+"#,
+        imports = imports_dir().display()
+    )
+}
+
+/// §11.8: a module parameter of an enum is read through the enum's saved
+/// form, which the machine holds whether or not a saved state of it can be
+/// written: on Rust the `SavedValue` of the machine's own enum type, emitted
+/// for a machine with no saved shape too, and on C++ the `FromSaved` written
+/// beside the type. The machine's own enum type has no `Default`, so the
+/// variable starts at the variant its document declares first, which nothing
+/// reads before the run's value replaces it.
+#[test]
+fn an_enum_module_parameter_is_read_through_the_enums_saved_form() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let path = dir.path().join("color_picker.scxml");
+    std::fs::write(&path, color_picker("")).expect("the component is written");
+    let code = text_at(&path);
+    for needle in [
+        "impl ::sce_rust_runtime::saved_state::SavedValue for ColorPickerColorEnum {",
+        "let tint: ColorPickerColorEnum = ColorPickerColorEnum::Red;",
+        "self.tint = ::sce_rust_runtime::saved_state::SavedValue::from_saved(given.of(\"tint\")?, \
+         \"tint\")?;",
+    ] {
+        assert!(
+            code.contains(needle),
+            "color_picker holds `{needle}`:\n{code}"
+        );
+    }
+    assert!(!code.contains("let tint: ColorPickerColorEnum = Default::default();"));
+
+    let header = generate(&path, Language::Cpp)
+        .unwrap_or_else(|e| panic!("color_picker generates on C++: {e:?}"))
+        .into_iter()
+        .map(|(_, code)| code)
+        .collect::<Vec<_>>()
+        .join("\n");
+    for needle in [
+        "FromSaved(const ::SCE::Saved::JsonValue &value, const std::string &what) {",
+        "FromSaved(given.of(\"tint\"), \"tint\");",
+    ] {
+        assert!(
+            header.contains(needle),
+            "color_picker holds `{needle}`:\n{header}"
+        );
+    }
+}
+
+/// What would leave a component's machine with no saved shape is refused by
+/// the profile itself: a component waits on no session outside its tree, since
+/// its only sends leave through its ports and have no delay, and its only
+/// `<invoke>` creates a PTC its host serves. So a refused delayed send is the
+/// test of that, on both backends.
+#[test]
+fn a_delayed_send_that_would_leave_no_saved_shape_is_refused() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let path = dir.path().join("color_picker.scxml");
+    let delayed =
+        "\n      <send type=\"http://sce.dev/ext/test-port\" target=\"sut\" delay=\"1s\"/>";
+    std::fs::write(&path, color_picker(delayed)).expect("the component is written");
+    for language in [Language::Rust, Language::Cpp] {
+        let Err(err) = generate(&path, language) else {
+            panic!("a delayed send of a test component generated on {language:?}");
+        };
+        let refusal = format!("{err:?}");
+        assert!(
+            refusal.contains("<send> writes delay") && refusal.contains("a send has no delay"),
+            "{language:?}: {refusal}"
+        );
+    }
+}
+
 /// Writes each `(file, text)` into `dir`.
 fn write_all(dir: &Path, documents: &[(&str, String)]) {
     for (file, text) in documents {
