@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 3e662d3bbddd658a2d3b6f6a012f7bf4d21db1a4e6f0de7d35c1bd71b309f5a0
+// source-hash: b2921c03007062914a1e69cc4069c6b54c8d66f97313a50f3246eed3d071c790
 #![doc = "SCE-MAP: algorithm_item_status_count.scxml:8 :: _forge_body"]
 // SCE-MAP: algorithm_item_status_count.scxml:8 :: _forge_body
 
