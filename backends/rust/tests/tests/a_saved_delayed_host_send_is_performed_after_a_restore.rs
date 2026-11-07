@@ -76,6 +76,9 @@ fn rich_request() -> HostSendRequest {
         send_id: "rich".to_string(),
         event_data: r#"{"kind":["first","second"],"count":["3"]}"#.to_string(),
         invoke_id: "inv".to_string(),
+        // The one field a saved state does not carry: a send with a value has
+        // no delay, so none is pending when a machine is saved.
+        value: None,
     }
 }
 

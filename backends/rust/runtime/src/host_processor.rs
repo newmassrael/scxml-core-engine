@@ -74,6 +74,18 @@ pub struct HostSendRequest {
     /// §mesh-10.7). Taken when the send executes, so a delayed one carries
     /// the invokeid current then, not when it fires.
     pub invoke_id: String,
+    /// The message as the value the generated code holds, for a processor
+    /// whose messages are values and never encodings: the test profile's
+    /// test-port processor, whose send carries its specific template's value,
+    /// a record of the type the event schema's unit declares
+    /// (docs/SCE_TEST_PROFILE.md §12.3; docs/adr/0091, C2). None for every
+    /// other send, whose data is `event_data`.
+    ///
+    /// Shared rather than boxed so that the request stays `Clone`; a value is
+    /// never changed once sent. A saved state does not carry it: a test-port
+    /// send has no delay (the test profile's P6), so none is pending when a
+    /// machine is saved.
+    pub value: Option<crate::test::MessageValue>,
 }
 
 /// One event a host-served act produced.

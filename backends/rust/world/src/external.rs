@@ -475,6 +475,8 @@ impl Process {
             send_id: self.string(one, "send_id")?,
             event_data: self.string(one, "data")?,
             invoke_id: self.string(one, "invoke_id")?,
+            // A child process reports its sends as text; a value does not cross it.
+            value: None,
         })
     }
 }

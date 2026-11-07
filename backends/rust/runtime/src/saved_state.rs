@@ -3318,6 +3318,8 @@ fn arm_pending<P: StatePolicy>(
                     send_id: host.send_id.clone(),
                     event_data: host.data.clone(),
                     invoke_id: host.invoke_id.clone(),
+                    // A send that carries a value has no delay, so none is saved.
+                    value: None,
                 };
                 engine
                     .scheduler

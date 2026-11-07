@@ -12,7 +12,10 @@
 // is `test_case_run_test::an_answered_request_...`), with the same scenario,
 // verdict, `NOW` and log. The cases of `the_shared_handle` hold what only the
 // Rust runtime has to: its context is a handle, which is refused re-entrant
-// use, and outlives no component it names.
+// use, and outlives no component it names. The case of `the_doors` reaches the
+// run only through the two host processors a generated component registers on
+// its engine (§12.3), written here with the bounds the engine registers them
+// under.
 
 // The test profile's runtime is the `std` profile's.
 #![cfg(feature = "std")]
@@ -1049,5 +1052,169 @@ mod the_shared_handle {
                 ),
             );
         run(mtc_and_echo(), &machines, TraceAdapter::default(), None);
+    }
+}
+
+mod the_doors {
+    use super::*;
+    use sce_rust_runtime::{
+        HostInvokeCancel, HostInvokeEvent, HostInvokeRequest, HostInvokeResponse, HostSendRequest,
+        HostSendResponse,
+    };
+
+    /// The test-port processor, under the bounds `Engine::register_event_processor`
+    /// takes a handler with.
+    type SendProcessor = Box<dyn FnMut(HostSendRequest) -> Vec<HostSendResponse> + Send + 'static>;
+
+    /// The test-component invoker, under the bounds `Engine::register_invoker`
+    /// takes a handler with.
+    type Invoker = Box<dyn FnMut(HostInvokeEvent) -> Option<HostInvokeResponse> + Send + 'static>;
+
+    /// A send (P6): the request carries the template's value, which the run
+    /// appends to the connected port, or hands the system adapter.
+    fn test_port_processor(context: ComponentContext) -> SendProcessor {
+        Box::new(move |request: HostSendRequest| {
+            let value = request
+                .value
+                .expect("a test-port send carries its template's value");
+            context.send(
+                &request.target,
+                Message {
+                    event: request.event_name,
+                    value,
+                },
+            );
+            Vec::new()
+        })
+    }
+
+    /// A PTC (P9): the start creates it, the cancel removes it.
+    fn test_component_invoker(context: ComponentContext) -> Invoker {
+        Box::new(move |event: HostInvokeEvent| {
+            match event {
+                HostInvokeEvent::Start(request) => context.create(&request.invoke_id),
+                HostInvokeEvent::Cancel(cancel) => context.kill(&cancel.invoke_id),
+            }
+            None
+        })
+    }
+
+    /// The record a template of the port type reads.
+    struct Ping {
+        n: u32,
+    }
+
+    /// An MTC wired as a generated one is: its start registers the two
+    /// processors, each holding a clone of its context, and it reaches the doors
+    /// of the run only through them. Entering its state invokes `echo` and
+    /// sends it a `Ping`; a timeout leaves the state, which cancels the invoke.
+    #[derive(Default)]
+    struct Tester {
+        invoker: Option<Invoker>,
+        context: Option<ComponentContext>,
+        ended: bool,
+    }
+
+    impl ComponentMachine for Tester {
+        fn start(&mut self, context: ComponentContext) {
+            let mut send = test_port_processor(context.clone());
+            let mut invoker = test_component_invoker(context.clone());
+            invoker(HostInvokeEvent::Start(HostInvokeRequest {
+                invoke_id: "echo".to_string(),
+                ..HostInvokeRequest::default()
+            }));
+            send(HostSendRequest {
+                event_name: "ping".to_string(),
+                target: "p".to_string(),
+                value: Some(Arc::new(Ping { n: 3 })),
+                ..HostSendRequest::default()
+            });
+            context.start_timer("reply", 10);
+            self.invoker = Some(invoker);
+            self.context = Some(context);
+        }
+
+        fn deliver_snapshot(&mut self) {
+            let context = self
+                .context
+                .clone()
+                .expect("a snapshot is delivered only to a started machine");
+            if !context.timed_out("reply") {
+                return;
+            }
+            context.timeout("reply");
+            let invoker = self
+                .invoker
+                .as_mut()
+                .expect("the start registered the invoker");
+            invoker(HostInvokeEvent::Cancel(HostInvokeCancel {
+                invoke_id: "echo".to_string(),
+                ..HostInvokeCancel::default()
+            }));
+            context.setverdict(Verdict::Pass, "");
+            self.ended = true;
+        }
+
+        fn terminated(&self) -> bool {
+            self.ended
+        }
+    }
+
+    fn position(result: &TestCaseResult, component: &str, kind: LogKind) -> usize {
+        result
+            .log
+            .iter()
+            .position(|record| record.component == component && record.kind == kind)
+            .unwrap_or_else(|| panic!("no {kind:?} of {component} in {:?}", result.log))
+    }
+
+    /// §12.3: the PTC the invoker's start creates receives the value the
+    /// processor's send carried, by its type, and the invoker's cancel removes
+    /// it at the timeout, before the MTC's verdict.
+    #[test]
+    fn a_send_and_a_ptc_go_through_the_host_processors() {
+        let echo = step(|context, _| {
+            if receives::<Ping>(context, "q", "ping", |ping| ping.n == 3) {
+                context.receive("q");
+                context.setverdict(Verdict::Pass, "the value arrived");
+            } else if context.snapshot_present("q") {
+                context.receive("q");
+                context.setverdict(Verdict::Fail, "another value arrived");
+            }
+        });
+        let factory: MachineFactory = Arc::new(
+            move |component_type: &str| -> Option<Box<dyn ComponentMachine>> {
+                match component_type {
+                    "Tester" => Some(Box::new(Tester::default())),
+                    "Echo" => Some(Box::new(Scripted {
+                        on_start: idle(),
+                        on_snapshot: Arc::clone(&echo),
+                        context: None,
+                        ended: false,
+                    })),
+                    _ => None,
+                }
+            },
+        );
+        let result = TestCaseRun::new(
+            mtc_and_echo(),
+            factory,
+            Box::new(TraceAdapter::default()),
+            None,
+            ModuleParameters::default(),
+        )
+        .run();
+        assert_eq!(result.verdict, Verdict::Pass, "{:?}", result.log);
+        let created = position(&result, "echo", LogKind::Create);
+        let sent = position(&result, "mtc", LogKind::Send);
+        let received = position(&result, "echo", LogKind::Receive);
+        let killed = position(&result, "echo", LogKind::Kill);
+        let verdict = position(&result, "mtc", LogKind::Verdict);
+        assert!(created < sent && sent < received, "{:?}", result.log);
+        assert_eq!(result.log[sent].detail, "p ping");
+        assert_eq!(result.log[received].detail, "q ping");
+        assert_eq!(result.log[killed].at, 10, "the cancel came at the timeout");
+        assert!(killed < verdict, "the cancel removed the PTC, not the end");
+        assert!(logged(&result, "echo", LogKind::Verdict));
     }
 }
