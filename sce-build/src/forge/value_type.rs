@@ -6226,8 +6226,8 @@ mod tests {
     /// that holds none; a list of unions is held by neither yet.
     #[test]
     fn a_variable_holds_a_union_only_where_its_lowering_holds_one() {
-        let union = ty("union:Shape");
-        let optional = ty("optional<union:Shape>");
+        let union = WrittenType::read("union:Shape").unwrap();
+        let optional = WrittenType::read("optional<union:Shape>").unwrap();
         let listed = WrittenType::read("list<union:Shape>[2]").unwrap();
         assert!(union.variable_view(true).is_ok());
         assert!(optional.variable_view(true).is_ok());
@@ -6237,7 +6237,10 @@ mod tests {
             "union"
         );
         assert_eq!(listed.variable_view(true).unwrap_err().place, "union:Shape");
-        assert!(ty("uint8").variable_view(false).is_ok());
+        assert!(WrittenType::read("uint8")
+            .unwrap()
+            .variable_view(false)
+            .is_ok());
     }
 
     #[test]
