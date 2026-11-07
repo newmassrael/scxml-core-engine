@@ -597,12 +597,74 @@ void JSEngine::setupSCXMLBuiltins(JSContext *ctx, [[maybe_unused]] const std::st
     JS_FreeValue(ctx, global);
 }
 
+void JSEngine::defineReadOnlyView(JSContext *ctx, const std::string &sessionId) {
+    ::JSValue global = JS_GetGlobalObject(ctx);
+    ::JSValue existing = JS_GetPropertyStr(ctx, global, "_scxmlReadOnlyView");
+    const bool defined = JS_IsFunction(ctx, existing);
+    JS_FreeValue(ctx, existing);
+    if (defined) {
+        JS_FreeValue(ctx, global);
+        return;
+    }
+
+    // §scxml-5.10: a view of `target` that refuses every change — a write of
+    // any key, a new one included, a definition, a deletion — with
+    // error.execution. A non-extensible or frozen object would not do: outside
+    // strict mode ECMAScript ignores a write to one silently, and the clause
+    // asks for the error. `_event` (setupEventObject) and `_ioprocessors`
+    // (setupSystemVariablesInternal) are both built from it, and either may be
+    // set up first, so each asks for it here. The rule is
+    // tests/ecmascript/system_variable_writes.json.
+    //
+    // The session id reaches the script as a value, not as source text, for
+    // the reason setupSystemVariablesInternal stashes its values.
+    JS_SetPropertyStr(ctx, global, "__scxmlReadOnlyViewSession", JS_NewString(ctx, sessionId.c_str()));
+    static const char *const kSetup = R"(
+        (function() {
+            var sessionId = this.__scxmlReadOnlyViewSession;
+            delete this.__scxmlReadOnlyViewSession;
+            Object.defineProperty(this, '_scxmlReadOnlyView', {
+                value: function(target, what) {
+                    function refuse(key) {
+                        _queueErrorEvent(sessionId, 'error.execution');
+                        throw new Error('Cannot modify read-only system variable ' + what +
+                                        (key === undefined ? '' : '.' + String(key)));
+                    }
+                    return new Proxy(target, {
+                        set: function(t, key) { refuse(key); },
+                        defineProperty: function(t, key) { refuse(key); },
+                        deleteProperty: function(t, key) { refuse(key); },
+                        setPrototypeOf: function() { refuse(); },
+                        preventExtensions: function() { refuse(); }
+                    });
+                },
+                enumerable: false,
+                writable: false,
+                configurable: false
+            });
+        }).call(this);
+    )";
+    ::JSValue result = JS_Eval(ctx, kSetup, strlen(kSetup), "<read_only_view_setup>", JS_EVAL_TYPE_GLOBAL);
+    if (JS_IsException(result)) {
+        ::JSValue exception = JS_GetException(ctx);
+        const char *errorStr = JS_ToCString(ctx, exception);
+        SCE_LOG_ERROR("JSEngine: read-only view setup error: {}", errorStr ? errorStr : "unknown");
+        if (errorStr) {
+            JS_FreeCString(ctx, errorStr);
+        }
+        JS_FreeValue(ctx, exception);
+    }
+    JS_FreeValue(ctx, result);
+    JS_FreeValue(ctx, global);
+}
+
 void JSEngine::setupEventObject(JSContext *ctx, const std::string &sessionId) {
     ::JSValue global = JS_GetGlobalObject(ctx);
 
     // Register native function for error event queueing (SOLID: Interface Segregation)
     ::JSValue queueErrorFunc = JS_NewCFunction(ctx, queueErrorEventWrapper, "_queueErrorEvent", 2);
     JS_SetPropertyStr(ctx, global, "_queueErrorEvent", queueErrorFunc);
+    defineReadOnlyView(ctx, sessionId);
 
     // Create a SCXML W3C compliant read-only _event object using JavaScript
     // This approach uses Object.defineProperty with getters to enforce read-only behavior
@@ -627,8 +689,9 @@ void JSEngine::setupEventObject(JSContext *ctx, const std::string &sessionId) {
 
             // Create the _event object with read-only properties
             var eventObject = {};
+            var eventView;
             Object.defineProperty(this, '_event', {
-                get: function() { return eventObject; },
+                get: function() { return eventView; },
                 set: function(value) {
                     // SCXML W3C Spec: Attempts to modify system variables should fail
                     console.log('SCE Error: Attempt to assign to read-only system variable _event');
@@ -640,25 +703,19 @@ void JSEngine::setupEventObject(JSContext *ctx, const std::string &sessionId) {
                 configurable: false
             });
 
-            // Define each property with getter only to make them read-only
+            // Each field reads the current event; every write reaches the view's
+            // traps instead, which refuse it, so the fields need no setter.
             var eventProps = ['name', 'type', 'sendid', 'origin', 'origintype', 'invokeid', 'data', 'raw'];
             for (var i = 0; i < eventProps.length; i++) {
                 (function(propName) {
-                    Object.defineProperty(_event, propName, {
+                    Object.defineProperty(eventObject, propName, {
                         get: function() { return __eventData[propName]; },
-                        set: function(value) {
-                            // SCXML W3C Spec: Attempts to modify system variables should fail
-                            // and place 'error.execution' on internal event queue
-                            console.log('SCE Error: Attempt to modify read-only system variable _event.' + propName);
-                            // Queue error.execution event per SCXML W3C specification
-                            _queueErrorEvent(sessionId, 'error.execution');
-                            throw new Error('Cannot modify read-only system variable _event.' + propName);
-                        },
                         enumerable: true,
                         configurable: false
                     });
                 })(eventProps[i]);
             }
+            eventView = _scxmlReadOnlyView(eventObject, '_event');
 
             // C++ directly accesses __eventData, no helper function needed
 

@@ -688,6 +688,7 @@ ScriptResult JSEngine::setupSystemVariablesInternal(const std::string &sessionId
     // Register _queueErrorEvent function for error.execution raising from read-only property setters
     ::JSValue queueErrorFunc = JS_NewCFunction(ctx, queueErrorEventWrapper, "_queueErrorEvent", 2);
     JS_SetPropertyStr(ctx, global, "_queueErrorEvent", queueErrorFunc);
+    defineReadOnlyView(ctx, sessionId);
 
     // §scxml-5.10: System variables must be read-only and raise error.execution on modification attempts
     // Use JavaScript code to define read-only properties with error handlers (tests 322, 326, 346)
@@ -751,9 +752,18 @@ ScriptResult JSEngine::setupSystemVariablesInternal(const std::string &sessionId
                 configurable: false
             });
 
-            // W3C SCXML 5.10: Define read-only _ioprocessors with error.execution on write
+            // W3C SCXML 5.10: Define read-only _ioprocessors with error.execution on write.
+            // §scxml-B-2-8: its entries and their `location` are part of it, so
+            // the object and each entry are read-only views
+            // (`_scxmlReadOnlyView`, JSEngine.cpp's event setup).
+            var ioprocessors = __systemVars.ioprocessors;
+            for (var processor in ioprocessors) {
+                ioprocessors[processor] = _scxmlReadOnlyView(ioprocessors[processor],
+                                                             "_ioprocessors['" + processor + "']");
+            }
+            var ioprocessorsView = _scxmlReadOnlyView(ioprocessors, '_ioprocessors');
             Object.defineProperty(this, '_ioprocessors', {
-                get: function() { return __systemVars.ioprocessors; },
+                get: function() { return ioprocessorsView; },
                 set: function(value) {
                     console.log('SCE Error: Attempt to assign to read-only system variable _ioprocessors');
                     _queueErrorEvent(sessionId, 'error.execution');

@@ -99,10 +99,15 @@ end
 -- because `[]` is the value a document constructs and `{}` is the one it does
 -- not ask this question about; the ambiguity itself is a limit of the
 -- representation rather than a choice.
+--
+-- The emptiness test walks with `pairs` rather than `next`: a system variable
+-- is a read-only view whose own table is empty (`_scxml_bind_system`, below),
+-- and `pairs` reaches its contents through `__pairs` where `next` cannot.
 function _isArray(v)
     if type(v) ~= "table" then return false end
     if #v > 0 then return true end
-    return next(v) == nil
+    local step, state, start = pairs(v)
+    return step(state, start) == nil
 end
 
 -- ECMA-262 7.1.4 ToNumber, over the value domain the SCXML datamodel
@@ -794,4 +799,109 @@ end
 
 function Boolean(value)
     return _scxml_truthy(value)
+end
+
+-- §scxml-5.10, §scxml-B-2-8: the system variables, which a script cannot
+-- change.
+--
+-- "The Processor MUST cause any attempt to change the value of a system
+-- variable to fail and MUST place the error 'error.execution' on the internal
+-- event queue." A Lua global is an ordinary table slot and a Lua table takes
+-- any write, so until 2026-11-07 every Lua engine answered `_event.name = 'x'`
+-- by changing `_event.name`; W3C tests 322, 326 and 346 only `<assign>` to a
+-- whole system variable, which the Processor refuses before any engine is
+-- asked. `tests/ecmascript/system_variable_writes.json` is the rule, and every
+-- engine reads it.
+--
+-- One implementation here rather than one per engine, for the reason this
+-- file's header gives. An engine binds a system variable ONLY through
+-- `_scxml_bind_system`; a global set the ordinary way is refused like any
+-- other write, so an engine that forgot fails loudly instead of binding a
+-- writable copy.
+--
+-- What is read-only follows §scxml-B-2-8: the variable itself, `_event`'s
+-- fields, and each `_ioprocessors` entry with its `location`. The value
+-- `_event.data` holds is the payload and stays writable inside, as an
+-- ECMAScript read-only property holding an object does (the table's `about`
+-- says why).
+--
+-- ⚠ ONE `do` block with no blank line inside, and that is load-bearing. The
+-- C11 embed splits this file on blank lines and hands each piece to its own
+-- `luaL_dostring` (`sce-build/tests/shared_lua_assets.rs` asserts the worst
+-- such split), and a `local` is visible only inside the chunk that declares
+-- it. Measured 2026-11-08: split across paragraphs, the `__index` below named
+-- the store as a GLOBAL, which asked `__index` again, until the stack ran out.
+do
+    local _scxml_system_names = {
+        _event = true,
+        _sessionid = true,
+        _name = true,
+        _ioprocessors = true,
+    }
+    local _scxml_system = {}
+    --
+    -- A refused write is a script that fails: each engine reports that
+    -- failure, and the Processor turns it into `error.execution`.
+    local function _scxml_refuse_write(what)
+        error("§scxml-5.10: " .. what .. " is a system variable and cannot be changed", 3)
+    end
+    --
+    -- A view of `t` that reads as `t` and refuses every write. Its own table
+    -- stays empty, so every write, of a key `t` holds or of a new one, reaches
+    -- `__newindex`. `pairs` walks `t` through `__pairs` (Lua 5.2 on), `#` reads
+    -- it through `__len`, and `ipairs` reaches it through `__index` (5.3 on) or
+    -- `__ipairs` (5.2, which the Go engine embeds).
+    local function _scxml_readonly(t, what)
+        return setmetatable({}, {
+            __index = t,
+            __newindex = function(_, key)
+                _scxml_refuse_write(what .. "." .. tostring(key))
+            end,
+            __pairs = function() return next, t, nil end,
+            __ipairs = function() return ipairs(t) end,
+            __len = function() return #t end,
+        })
+    end
+    --
+    -- Bind system variable `name` to `value`. The one way an engine sets one.
+    --
+    -- ⚠ It is a global, as every helper in this file is, so a document's own
+    -- script can name it, as it can name `_scxml_add`. Names beginning with `_`
+    -- are the system's (§scxml-5.10), and a document that calls this one is
+    -- calling into the Processor rather than writing a variable; keeping it out
+    -- of reach would mean every engine holding it outside the globals, which is
+    -- not done for any helper here.
+    function _scxml_bind_system(name, value)
+        if not _scxml_system_names[name] then
+            error("_scxml_bind_system: " .. tostring(name) .. " is not a system variable", 2)
+        end
+        if name == "_event" and type(value) == "table" then
+            value = _scxml_readonly(value, "_event")
+        elseif name == "_ioprocessors" and type(value) == "table" then
+            local entries = {}
+            for processor, entry in pairs(value) do
+                if type(entry) == "table" then
+                    entry = _scxml_readonly(entry, "_ioprocessors['" .. tostring(processor) .. "']")
+                end
+                entries[processor] = entry
+            end
+            value = _scxml_readonly(entries, "_ioprocessors")
+        end
+        -- A copy an engine set before this file was loaded would shadow the
+        -- read-only binding, since `__index` is asked only for absent keys.
+        rawset(_G, name, nil)
+        _scxml_system[name] = value
+    end
+    --
+    setmetatable(_G, {
+        __index = function(_, key)
+            return _scxml_system[key]
+        end,
+        __newindex = function(globals, key, value)
+            if _scxml_system_names[key] then
+                _scxml_refuse_write(key)
+            end
+            rawset(globals, key, value)
+        end,
+    })
 end
