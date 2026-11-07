@@ -5815,6 +5815,40 @@
           "file": "sce/src/runtime/EventRaiserImpl.h",
           "symbol": "sender",
           "kind": "references"
+        },
+        {
+          "file": "sce/src/scripting/LuaEngine.cpp",
+          "symbol": "bindSystemVariable",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/scripting/LuaEngine.cpp",
+          "symbol": "setDocumentGlobal",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/scripting/LuaEngine.cpp",
+          "symbol": "LuaEngine::setupSystemVariables",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/scripting/JSEngine.cpp",
+          "symbol": "JSEngine::defineReadOnlyView",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/scripting/JSEngine.h",
+          "symbol": "defineReadOnlyView",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/scripting/ecma_semantics.lua",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/scripting/LuaEngine.cpp",
+          "symbol": "LuaEngine::luaToScriptValue",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -14076,6 +14110,10 @@
           "file": "sce/src/scripting/JSEngineImpl.cpp",
           "symbol": "JSEngine::setCurrentEventInternal",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/scripting/ecma_semantics.lua",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",

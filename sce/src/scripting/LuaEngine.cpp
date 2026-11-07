@@ -118,6 +118,50 @@ void setBlankableEventField(lua_State *L, const char *field, const std::string &
     lua_setfield(L, -2, field);
 }
 
+// §scxml-5.10: bind the value at the top of the stack as system variable
+// `name`, and pop it. Through `_scxml_bind_system` (the shared
+// `ecma_semantics.lua`, loaded when the session was created), which binds a
+// read-only view and is the one way a system variable is set: a plain
+// `lua_setglobal` of one is refused there like a document's write, so it would
+// fail here rather than leave a writable copy. The call is protected, so a
+// refusal is an error this engine reports instead of a panic.
+std::string bindSystemVariable(lua_State *L, const char *name) {
+    lua_getglobal(L, "_scxml_bind_system");  // value, bind
+    lua_insert(L, -2);                       // bind, value
+    lua_pushstring(L, name);                 // bind, value, name
+    lua_insert(L, -2);                       // bind, name, value
+    if (lua_pcall(L, 2, 0, 0) == LUA_OK) {
+        return {};
+    }
+    std::string message = lua_tostring(L, -1) ? lua_tostring(L, -1) : "unknown error";
+    lua_pop(L, 1);
+    return message;
+}
+
+int setGlobalOf(lua_State *L) {
+    // (name, value): the value is at the top, as `lua_setglobal` takes it.
+    lua_setglobal(L, lua_tostring(L, 1));
+    return 0;
+}
+
+// Set the global a DOCUMENT names (`<data id>`, `<assign location>`) to the
+// value at the top of the stack, and pop it. A write the shared globals refuse
+// — a system variable's name (§scxml-5.10, `_scxml_bind_system`) — is raised
+// inside a protected call and returned, where an unprotected `lua_setglobal`
+// would panic the process on the same refusal.
+std::string setDocumentGlobal(lua_State *L, const std::string &name) {
+    lua_pushcfunction(L, setGlobalOf);  // value, set
+    lua_insert(L, -2);                  // set, value
+    lua_pushstring(L, name.c_str());    // set, value, name
+    lua_insert(L, -2);                  // set, name, value
+    if (lua_pcall(L, 2, 0, 0) == LUA_OK) {
+        return {};
+    }
+    std::string message = lua_tostring(L, -1) ? lua_tostring(L, -1) : "unknown error";
+    lua_pop(L, 1);
+    return message;
+}
+
 }  // anonymous namespace
 
 namespace SCE {
@@ -989,7 +1033,9 @@ ScriptResult LuaEngine::setVariableInternal(const std::string &sessionId, const 
 
     lua_State *L = it->second->L;
     pushScriptValue(L, value);
-    lua_setglobal(L, name.c_str());
+    if (const std::string refused = setDocumentGlobal(L, name); !refused.empty()) {
+        return ScriptResult::createError(refused);
+    }
 
     // Track declared variables (Lua nil == undeclared, so we need explicit tracking)
     it->second->declaredVars.insert(name);
@@ -1041,7 +1087,11 @@ std::future<ScriptResult> LuaEngine::setVariableAsDOM(const std::string &session
         SCE_LOG_ERROR("LuaEngine: <data> content is not a valid XML document, leaving '{}' unbound", name);
         lua_pushnil(L);
     }
-    lua_setglobal(L, name.c_str());
+    if (const std::string refused = setDocumentGlobal(L, name); !refused.empty()) {
+        std::promise<ScriptResult> p;
+        p.set_value(ScriptResult::createError(refused));
+        return p.get_future();
+    }
 
     // §scxml-5.3: a `<data>` whose content is XML is still a `<data id>`, and
     // the frontend has to be told about it by the same rule as any other. It
@@ -1144,13 +1194,18 @@ std::future<ScriptResult> LuaEngine::setupSystemVariables(const std::string &ses
     lua_State *L = it->second->L;
     it->second->sessionName = sessionName;
 
-    // _sessionid (read-only system variable)
-    lua_pushstring(L, sessionId.c_str());
-    lua_setglobal(L, "_sessionid");
+    // §scxml-5.10: each bound read-only, through `bindSystemVariable`.
+    std::string failure;
 
-    // _name (read-only system variable)
+    lua_pushstring(L, sessionId.c_str());
+    failure = bindSystemVariable(L, "_sessionid");
+
     lua_pushstring(L, sessionName.c_str());
-    lua_setglobal(L, "_name");
+    if (failure.empty()) {
+        failure = bindSystemVariable(L, "_name");
+    } else {
+        lua_pop(L, 1);
+    }
 
     // §scxml-C-1-1 / §scxml-C-2-3: _ioprocessors carries one entry per
     // processor the deployment supports, each with a 'location' field holding
@@ -1164,11 +1219,19 @@ std::future<ScriptResult> LuaEngine::setupSystemVariables(const std::string &ses
         lua_setfield(L, -2, "location");
         lua_setfield(L, -2, processor.name.c_str());
     }
-    lua_setglobal(L, "_ioprocessors");
-
-    it->second->systemVarsInitialized = true;
+    if (failure.empty()) {
+        failure = bindSystemVariable(L, "_ioprocessors");
+    } else {
+        lua_pop(L, 1);
+    }
 
     std::promise<ScriptResult> p;
+    if (!failure.empty()) {
+        SCE_LOG_ERROR("LuaEngine: binding the system variables of '{}' failed: {}", sessionId, failure);
+        p.set_value(ScriptResult::createError("binding the system variables failed: " + failure));
+        return p.get_future();
+    }
+    it->second->systemVarsInitialized = true;
     p.set_value(ScriptResult::createSuccess(true));
     return p.get_future();
 }
@@ -1218,14 +1281,18 @@ std::future<SetCurrentEventResult> LuaEngine::setCurrentEvent(const std::string 
         pushScriptValue(L, event->getTypedData().value());
         lua_setfield(L, -2, "data");
 
-        lua_setglobal(L, "_event");
+        std::promise<SetCurrentEventResult> p;
+        const std::string failure = bindSystemVariable(L, "_event");
+        if (!failure.empty()) {
+            p.set_value({ScriptResult::createError("binding _event failed: " + failure), PayloadReading::Absent});
+            return p.get_future();
+        }
 
         // The typed path never walks §scxml-B-2-8-1's ladder: the value was
         // already a value when it arrived, so there was no reading to choose
         // and nothing that could have been lost. `Structured` rather than
         // `Absent`, because a payload IS present and a host asking "did my
         // data survive" should not be told there was none.
-        std::promise<SetCurrentEventResult> p;
         p.set_value({ScriptResult::createSuccess(true), PayloadReading::Structured});
         return p.get_future();
     }
@@ -1342,9 +1409,12 @@ std::future<SetCurrentEventResult> LuaEngine::setCurrentEvent(const std::string 
         lua_setfield(L, -2, "data");
     }
 
-    lua_setglobal(L, "_event");
-
     std::promise<SetCurrentEventResult> p;
+    const std::string failure = bindSystemVariable(L, "_event");
+    if (!failure.empty()) {
+        p.set_value({ScriptResult::createError("binding _event failed: " + failure), PayloadReading::Absent});
+        return p.get_future();
+    }
     p.set_value({ScriptResult::createSuccess(true), reading});
     return p.get_future();
 }
@@ -1535,29 +1605,48 @@ ScriptValue LuaEngine::luaToScriptValue(lua_State *L, int index) {
     case LUA_TSTRING:
         return std::string(lua_tostring(L, index));
     case LUA_TTABLE: {
+        const int top = lua_gettop(L);
+        int absIndex = index < 0 ? top + index + 1 : index;
+        // §scxml-5.10: a system variable is a read-only VIEW whose own table
+        // is empty (`_scxml_bind_system`, ecma_semantics.lua), so reading it
+        // raw copies nothing: `<data id="Var1" expr="_ioprocessors"/>` (W3C
+        // test 326) would hand the document an empty object. A view's
+        // `__pairs` answers `next, <the table it views>, nil`, so the table to
+        // read is the second thing it returns; any other table is read as it
+        // is. Protected, so a document's own `__pairs` that fails leaves the
+        // table read raw rather than unwinding through this function.
+        if (luaL_getmetafield(L, absIndex, "__pairs") != LUA_TNIL) {
+            lua_pushvalue(L, absIndex);
+            if (lua_pcall(L, 1, 3, 0) == LUA_OK && lua_istable(L, -2)) {
+                absIndex = lua_gettop(L) - 1;
+            }
+        }
+        ScriptValue converted;
         // Check if it's an array (sequential integer keys)
-        int len = static_cast<int>(lua_rawlen(L, index));
+        int len = static_cast<int>(lua_rawlen(L, absIndex));
         if (len > 0) {
             auto arr = std::make_shared<ScriptArray>();
             for (int i = 1; i <= len; ++i) {
-                lua_rawgeti(L, index, i);
+                lua_rawgeti(L, absIndex, i);
                 arr->elements.push_back(luaToScriptValue(L, -1));
                 lua_pop(L, 1);
             }
-            return ScriptValue(arr);
-        }
-        // Object
-        auto obj = std::make_shared<ScriptObject>();
-        int absIndex = index < 0 ? lua_gettop(L) + index + 1 : index;
-        lua_pushnil(L);
-        while (lua_next(L, absIndex) != 0) {
-            if (lua_isstring(L, -2)) {
-                std::string key = lua_tostring(L, -2);
-                obj->properties[key] = luaToScriptValue(L, -1);
+            converted = ScriptValue(arr);
+        } else {
+            // Object
+            auto obj = std::make_shared<ScriptObject>();
+            lua_pushnil(L);
+            while (lua_next(L, absIndex) != 0) {
+                if (lua_isstring(L, -2)) {
+                    std::string key = lua_tostring(L, -2);
+                    obj->properties[key] = luaToScriptValue(L, -1);
+                }
+                lua_pop(L, 1);
             }
-            lua_pop(L, 1);
+            converted = ScriptValue(obj);
         }
-        return ScriptValue(obj);
+        lua_settop(L, top);
+        return converted;
     }
     case LUA_TLIGHTUSERDATA: {
         // §scxml-B-2: Convert null/undefined sentinels back to ScriptValue types

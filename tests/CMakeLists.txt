@@ -1359,6 +1359,40 @@ apply_sce_test_policies(event_blank_fields_test)
 add_test(NAME EventBlankFields COMMAND event_blank_fields_test)
 
 # ============================================================================
+# System variable writes (§scxml-5.10, §scxml-B-2-8)
+#
+# Separate target for the reason event_blank_fields_test is: it names
+# LuaEngine as well as reading the provider. The table is shared with every
+# backend.
+# ============================================================================
+add_executable(system_variable_writes_test
+    engine/SystemVariableWritesTest.cpp
+)
+
+target_include_directories(system_variable_writes_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/sce/include
+        ${CMAKE_SOURCE_DIR}/tests
+)
+
+target_link_libraries(system_variable_writes_test
+    PRIVATE
+        sce_runtime
+        GTest::gtest_main
+        pthread
+)
+
+target_compile_definitions(system_variable_writes_test
+    PRIVATE
+        SCE_SYSTEM_VARIABLE_WRITES_CASES_PATH="${CMAKE_SOURCE_DIR}/tests/ecmascript/system_variable_writes.json"
+)
+
+apply_sce_test_policies(system_variable_writes_test)
+
+add_test(NAME SystemVariableWrites COMMAND system_variable_writes_test)
+
+# ============================================================================
 # The script-engine language seam
 #
 # Separate target for the reason its two neighbours above are separate: it

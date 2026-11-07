@@ -1,0 +1,235 @@
+{
+  "about": [
+    "Which writes to a system variable a script engine refuses — the question",
+    "§scxml-5.10 and §scxml-B-2-8 answer and that every SCE script engine answers",
+    "for itself.",
+    "",
+    "§scxml-5.10: \"The Processor MUST cause any attempt to change the value of a",
+    "system variable to fail and MUST place the error 'error.execution' on the",
+    "internal event queue when such an attempt is made.\" §scxml-B-2-8 says what",
+    "a system variable is in the ECMAScript data model: \"an ECMAScript read-only",
+    "variable\", `_event` \"an object with properties for each of the fields\" of",
+    "§scxml-5.10.1, and `_ioprocessors` \"an object with a named property for each",
+    "Event I/O processor\", each holding a `location`.",
+    "",
+    "The rule these cases hold every engine to, and why that rule:",
+    "",
+    "  - REFUSED: rebinding a system variable (`_event`, `_sessionid`, `_name`,",
+    "    `_ioprocessors`); writing, adding or replacing a property §scxml-B-2-8",
+    "    defines on one (`_event`'s fields, an `_ioprocessors` entry and its",
+    "    `location`); and the same writes made through another name for the same",
+    "    object, which change the same value.",
+    "  - NOT REFUSED: a write INSIDE the value `_event.data` holds. §scxml-B-2-8",
+    "    gives `data` no structure (\"data can be of any type\"), and an ECMAScript",
+    "    read-only property is a binding that cannot be replaced, not an object",
+    "    that cannot change: the C++ QuickJS binding, which held this rule before",
+    "    any other engine (`sce/src/scripting/JSEngine.cpp`, accessors with a",
+    "    throwing setter per field), leaves the payload writable too. The case is",
+    "    in the table so that the line is drawn in one place rather than by",
+    "    whatever each engine happens to do.",
+    "",
+    "A refused write is a script that FAILS, which is what each engine reports",
+    "and what the Processor turns into `error.execution` on the internal queue.",
+    "",
+    "Why a table. On 2026-11-07 the Lua engines answered `_event.name = 'x'` by",
+    "changing `_event.name`, while QuickJS refused it: the Lua engines bind",
+    "`_event` as a plain table and the system variables as plain globals. W3C",
+    "tests 322, 326 and 346 ask only for `<assign>` to a whole system variable,",
+    "which the Processor refuses before any engine is asked, so no test could see",
+    "a member write go through. Each engine is held to this one table rather than",
+    "to its own copy.",
+    "",
+    "Each case names the write (`write`, ECMAScript; `write_lua`, its Lua",
+    "spelling), whether it is refused, and a condition that must hold afterwards",
+    "(`after`, `after_lua`) — the value the write would have changed, read back,",
+    "so an engine cannot pass by reporting a failure while the write landed.",
+    "Every case runs with the session's system variables (`session`) bound and",
+    "`event` as the current event; `event.data` is the payload text handed to the",
+    "binding. A control case that must NOT be refused stands beside the refused",
+    "ones, so an engine cannot pass by refusing every write."
+  ],
+  "session": {
+    "sessionid": "session-1",
+    "name": "machine",
+    "ioprocessors": {
+      "scxml": "sce://scxml/session-1"
+    }
+  },
+  "event": {
+    "name": "brief",
+    "type": "external",
+    "sendid": "send-1",
+    "origin": "sce://scxml/peer",
+    "origintype": "http://www.w3.org/TR/scxml/#SCXMLEventProcessor",
+    "invokeid": "invoke-1",
+    "data": "{\"n\": 1}"
+  },
+  "cases": [
+    {
+      "group": "rebinding",
+      "write": "_event = 1",
+      "write_lua": "_event = 1",
+      "refused": true,
+      "after": "_event.name === 'brief'",
+      "after_lua": "_event.name == 'brief'",
+      "clause": "§scxml-5.10 — any attempt to change the value of a system variable fails; §scxml-B-2-8 — a read-only variable"
+    },
+    {
+      "group": "rebinding",
+      "write": "_sessionid = 'x'",
+      "write_lua": "_sessionid = 'x'",
+      "refused": true,
+      "after": "_sessionid === 'session-1'",
+      "after_lua": "_sessionid == 'session-1'",
+      "clause": "§scxml-5.10 _sessionid — bound until the session terminates"
+    },
+    {
+      "group": "rebinding",
+      "write": "_name = 'x'",
+      "write_lua": "_name = 'x'",
+      "refused": true,
+      "after": "_name === 'machine'",
+      "after_lua": "_name == 'machine'",
+      "clause": "§scxml-5.10 _name — bound until the session terminates"
+    },
+    {
+      "group": "rebinding",
+      "write": "_ioprocessors = 1",
+      "write_lua": "_ioprocessors = 1",
+      "refused": true,
+      "after": "_ioprocessors['scxml'].location === 'sce://scxml/session-1'",
+      "after_lua": "_ioprocessors['scxml'].location == 'sce://scxml/session-1'",
+      "clause": "§scxml-5.10 _ioprocessors — bound until the session terminates"
+    },
+    {
+      "group": "an _event field",
+      "write": "_event.name = 'x'",
+      "write_lua": "_event.name = 'x'",
+      "refused": true,
+      "after": "_event.name === 'brief'",
+      "after_lua": "_event.name == 'brief'",
+      "clause": "§scxml-B-2-8 — `_event` is an object with a property for each field, and a read-only variable"
+    },
+    {
+      "group": "an _event field",
+      "write": "_event.type = 'x'",
+      "write_lua": "_event.type = 'x'",
+      "refused": true,
+      "after": "_event.type === 'external'",
+      "after_lua": "_event.type == 'external'",
+      "clause": "§scxml-B-2-8"
+    },
+    {
+      "group": "an _event field",
+      "write": "_event.sendid = 'x'",
+      "write_lua": "_event.sendid = 'x'",
+      "refused": true,
+      "after": "_event.sendid === 'send-1'",
+      "after_lua": "_event.sendid == 'send-1'",
+      "clause": "§scxml-B-2-8"
+    },
+    {
+      "group": "an _event field",
+      "write": "_event.origin = 'x'",
+      "write_lua": "_event.origin = 'x'",
+      "refused": true,
+      "after": "_event.origin === 'sce://scxml/peer'",
+      "after_lua": "_event.origin == 'sce://scxml/peer'",
+      "clause": "§scxml-B-2-8"
+    },
+    {
+      "group": "an _event field",
+      "write": "_event.origintype = 'x'",
+      "write_lua": "_event.origintype = 'x'",
+      "refused": true,
+      "after": "_event.origintype === 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'",
+      "after_lua": "_event.origintype == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'",
+      "clause": "§scxml-B-2-8"
+    },
+    {
+      "group": "an _event field",
+      "write": "_event.invokeid = 'x'",
+      "write_lua": "_event.invokeid = 'x'",
+      "refused": true,
+      "after": "_event.invokeid === 'invoke-1'",
+      "after_lua": "_event.invokeid == 'invoke-1'",
+      "clause": "§scxml-B-2-8"
+    },
+    {
+      "group": "an _event field",
+      "write": "_event.data = 'x'",
+      "write_lua": "_event.data = 'x'",
+      "refused": true,
+      "after": "_event.data.n === 1",
+      "after_lua": "_event.data.n == 1",
+      "clause": "§scxml-B-2-8 — `data` is one of the fields; it may hold any type, but the field itself is read-only"
+    },
+    {
+      "group": "an _event field",
+      "note": "Adding a property changes the value of `_event` as surely as replacing one.",
+      "write": "_event.extra = 1",
+      "write_lua": "_event.extra = 1",
+      "refused": true,
+      "after": "_event.extra === undefined",
+      "after_lua": "_event.extra == nil",
+      "clause": "§scxml-5.10 — any attempt to change the value of a system variable"
+    },
+    {
+      "group": "another name for _event",
+      "note": "The write reaches the same object through a variable of the document's own, so it changes the same value.",
+      "write": "var e = _event; e.name = 'x'",
+      "write_lua": "local e = _event; e.name = 'x'",
+      "refused": true,
+      "after": "_event.name === 'brief'",
+      "after_lua": "_event.name == 'brief'",
+      "clause": "§scxml-5.10 — any attempt to change the value of a system variable"
+    },
+    {
+      "group": "an _ioprocessors entry",
+      "write": "_ioprocessors['scxml'].location = 'x'",
+      "write_lua": "_ioprocessors['scxml'].location = 'x'",
+      "refused": true,
+      "after": "_ioprocessors['scxml'].location === 'sce://scxml/session-1'",
+      "after_lua": "_ioprocessors['scxml'].location == 'sce://scxml/session-1'",
+      "clause": "§scxml-B-2-8 — each I/O processor's object carries its `location`, part of the read-only `_ioprocessors`"
+    },
+    {
+      "group": "an _ioprocessors entry",
+      "write": "_ioprocessors['scxml'] = 1",
+      "write_lua": "_ioprocessors['scxml'] = 1",
+      "refused": true,
+      "after": "_ioprocessors['scxml'].location === 'sce://scxml/session-1'",
+      "after_lua": "_ioprocessors['scxml'].location == 'sce://scxml/session-1'",
+      "clause": "§scxml-B-2-8 — a named property for each Event I/O processor"
+    },
+    {
+      "group": "an _ioprocessors entry",
+      "write": "_ioprocessors['extra'] = 1",
+      "write_lua": "_ioprocessors['extra'] = 1",
+      "refused": true,
+      "after": "_ioprocessors['extra'] === undefined",
+      "after_lua": "_ioprocessors['extra'] == nil",
+      "clause": "§scxml-5.10 — any attempt to change the value of a system variable"
+    },
+    {
+      "group": "not refused",
+      "note": "Inside the payload: §scxml-B-2-8 gives `data` no structure, and a read-only property is a binding, not a frozen object (see `about`).",
+      "write": "_event.data.n = 2",
+      "write_lua": "_event.data.n = 2",
+      "refused": false,
+      "after": "_event.data.n === 2",
+      "after_lua": "_event.data.n == 2",
+      "clause": "§scxml-B-2-8 — data can be of any type"
+    },
+    {
+      "group": "not refused",
+      "note": "A variable of the document's own, so a binding cannot pass by refusing every write.",
+      "write": "var v = 0; v = 1",
+      "write_lua": "v = 0; v = 1",
+      "refused": false,
+      "after": "v === 1",
+      "after_lua": "v == 1",
+      "clause": "§scxml-5.10 — the protected portion is the system variables, not the data model"
+    }
+  ]
+}

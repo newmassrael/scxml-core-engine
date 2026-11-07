@@ -528,6 +528,9 @@ private:
     bool setupQuickJSContext(JSContext *ctx, const std::string &sessionId);
     void setupSCXMLBuiltins(JSContext *ctx, const std::string &sessionId);
     void setupEventObject(JSContext *ctx, const std::string &sessionId);
+    /// §scxml-5.10: define `_scxmlReadOnlyView`, which `_event` and
+    /// `_ioprocessors` are built from, once per context.
+    void defineReadOnlyView(JSContext *ctx, const std::string &sessionId);
     void setupConsoleObject(JSContext *ctx);
     void setupMathObject(JSContext *ctx);
     void setupSystemVariables(JSContext *ctx);
