@@ -1218,8 +1218,10 @@ fn not_generated(kind: &str, language: Language, err: Located<ForgeError>) {
 /// (`a_test_component_is_generated_in_cpp.rs`,
 /// `a_test_component_is_generated_in_rust.rs`) and the tables of a test
 /// (`a_test_suite_is_generated_in_cpp.rs`, `a_test_suite_is_generated_in_rust.rs`),
-/// and Kotlin a template (`a_test_template_is_generated_in_kotlin.rs`); each
-/// example generates where its kind is generated.
+/// and Kotlin a template (`a_test_template_is_generated_in_kotlin.rs`) and a
+/// component (`a_test_component_is_generated_in_kotlin.rs`); each example
+/// generates where its kind is generated, but for the component's on Kotlin,
+/// whose module parameter waits for Kotlin's suite tables.
 #[test]
 fn a_document_of_the_profile_is_refused_by_name_where_its_kind_is_not_generated() {
     for &kind in ForgeKind::TEST_PROFILE {
@@ -1313,6 +1315,29 @@ fn a_document_of_the_profile_is_refused_by_name_where_its_kind_is_not_generated(
             );
             if let Err(err) = generated {
                 panic!("the example component does not generate on {language:?}: {err:?}");
+            }
+            continue;
+        }
+        // Kotlin generates a test component (`a_test_component_is_generated_in_kotlin.rs`)
+        // and not yet the suite's tables, so it refuses the example, which
+        // declares a module parameter, by that parameter (§12.6, slice 6).
+        if language == Language::Kotlin {
+            assert_eq!(
+                codegen_matrix::lookup(ForgeKind::TestComponent, language),
+                EmitOutcome::Emit
+            );
+            let Err(err) = generated else {
+                panic!("the example's module parameter has no value on Kotlin");
+            };
+            match err.error {
+                ForgeError::Generate(boxed) => match *boxed {
+                    GenerateError::UnsupportedFeature { detail, .. } => assert!(
+                        detail.contains("the module parameter 'limit' takes the value the suite"),
+                        "{detail}"
+                    ),
+                    other => panic!("test-component on Kotlin: {other:?}"),
+                },
+                other => panic!("test-component on Kotlin: {other:?}"),
             }
             continue;
         }
