@@ -46,11 +46,25 @@ from typing import Any, Callable, Dict, List, Optional
 from ..io_processors import IoProcessorDescriptor
 from ..payload_reading import PayloadReading, payload_reading_of_text
 
+# Lua 5.4, named rather than lupa's default. `import lupa` hands out whatever
+# Lua the installed lupa makes its default, and that differs by install.
+# Measured 2026-11-08 on one build host: lupa 2.8 installed with pip
+# defaults to Lua 5.5, while the distribution's python3-lupa 1.14.1, which
+# the fleet account there imports, defaults to Lua 5.1. Under that 5.1 the
+# accessors below failed on their first line ("attempt to index global
+# '_ENV'"), 67 cases of the shared tables at once, so the Lua this engine
+# ran was a property of the machine. Every other SCE Lua engine
+# embeds 5.4 (Go's 5.2 aside), and the system-variable views of the shared
+# `ecma_semantics.lua` need 5.2 or later (`__pairs`, `__len`), which LuaJIT
+# and 5.1 do not consult on a table. Each lupa runtime module carries its own
+# `LuaRuntime`, `LuaError` and `lua_type`, so binding the module to the name
+# `lupa` keeps every use below on the one runtime.
 try:
-    import lupa  # type: ignore[import-not-found]
+    import lupa.lua54 as lupa  # type: ignore[import-not-found]
 except ImportError as _exc:  # pragma: no cover — surfaces during dependency install
     raise ImportError(
-        "lupa is required for the SCE Python AOT runtime — install with `pip install lupa`"
+        "lupa with its Lua 5.4 runtime (`lupa.lua54`, lupa 2.0 or later) is required "
+        "for the SCE Python AOT runtime — install with `pip install 'lupa>=2.0'`"
     ) from _exc
 
 from .i_script_engine import (
@@ -98,13 +112,8 @@ class _LuaSession:
     )
 
     def __init__(self) -> None:
-        # `lupa.LuaRuntime` is the newest PUC Lua the installed lupa
-        # bundles, and LuaJIT only when it bundles no PUC Lua at all: with
-        # lupa 2.8 that is Lua 5.5. The engine needs 5.2 or later, for two
-        # reasons: the frontend reads a keyword-named variable as
-        # `_ENV["name"]`, and the system-variable proxies answer `pairs` and
-        # `#` through `__pairs` / `__len`, which Lua 5.1 and LuaJIT do not
-        # consult on a table.
+        # Lua 5.4, pinned at the import (`lupa.lua54`, below the module
+        # docstring) for the reasons given there.
         # `unpack_returned_tuples=True` so multi-return Lua functions
         # (e.g., `string.find`) decompose naturally on the Python side.
         self.runtime = lupa.LuaRuntime(unpack_returned_tuples=True)
