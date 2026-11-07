@@ -99,10 +99,12 @@ fn run_on(args: &[&str], path: &Path) -> (bool, String) {
     )
 }
 
-/// A statechart that holds the variables `data` and, as it starts, sends
-/// `batch.sent` to itself with `params`, after a param for each composed field
-/// of the schema's first revision, which every delivery carries
-/// (docs/adr/0086, section 10.1), each from a variable of its own type.
+/// A statechart that holds the variables `data` and, on each `batch.sent`,
+/// sends `batch.sent` to itself with `params`, after a param for each composed
+/// field of the schema's first revision, which every delivery carries
+/// (docs/adr/0086, section 10.1), each the received event's own (a variable
+/// cannot hold a list of records that hold lists, so `static_composed_send`
+/// passes them on the same way).
 fn sender(data: &str, params: &str) -> String {
     format!(
         r##"<?xml version="1.0" encoding="UTF-8"?>
@@ -112,24 +114,19 @@ fn sender(data: &str, params: &str) -> String {
   <sce:import kind="event-schema" src="event_batch_item.scxml" as="Item"/>
   <sce:import kind="enum" src="enum_signal_level.scxml" as="SignalLevel"/>
   <datamodel>
-    <data id="f_items" sce:type="list&lt;record:Item&gt;[batch_items=3]"/>
-    <data id="f_grid" sce:type="list&lt;list&lt;uint8&gt;[2]&gt;[2]"/>
-    <data id="f_levels" sce:type="list&lt;enum:SignalLevel&gt;[2]"/>
-    <data id="f_maybe" sce:type="list&lt;optional&lt;uint16&gt;&gt;[2]"/>
-    <data id="f_spare" sce:type="optional&lt;list&lt;uint8&gt;[2]&gt;" expr="null"/>
     {data}
   </datamodel>
   <state id="idle">
-    <onentry>
+    <transition event="batch.sent" target="idle">
       <send event="batch.sent" target="#_internal">
-        <param name="items" expr="f_items"/>
-        <param name="grid" expr="f_grid"/>
-        <param name="levels" expr="f_levels"/>
-        <param name="maybe" expr="f_maybe"/>
-        <param name="spare" expr="f_spare"/>
+        <param name="items" expr="_event.data.items"/>
+        <param name="grid" expr="_event.data.grid"/>
+        <param name="levels" expr="_event.data.levels"/>
+        <param name="maybe" expr="_event.data.maybe"/>
+        <param name="spare" expr="_event.data.spare"/>
         {params}
       </send>
-    </onentry>
+    </transition>
   </state>
 </scxml>
 "##
