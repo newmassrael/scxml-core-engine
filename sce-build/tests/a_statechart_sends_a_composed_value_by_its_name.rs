@@ -100,7 +100,9 @@ fn run_on(args: &[&str], path: &Path) -> (bool, String) {
 }
 
 /// A statechart that holds the variables `data` and, as it starts, sends
-/// `batch.sent` to itself with `params`.
+/// `batch.sent` to itself with `params`, after a param for each composed field
+/// of the schema's first revision, which every delivery carries
+/// (docs/adr/0086, section 10.1), each from a variable of its own type.
 fn sender(data: &str, params: &str) -> String {
     format!(
         r##"<?xml version="1.0" encoding="UTF-8"?>
@@ -110,11 +112,21 @@ fn sender(data: &str, params: &str) -> String {
   <sce:import kind="event-schema" src="event_batch_item.scxml" as="Item"/>
   <sce:import kind="enum" src="enum_signal_level.scxml" as="SignalLevel"/>
   <datamodel>
+    <data id="f_items" sce:type="list&lt;record:Item&gt;[batch_items=3]"/>
+    <data id="f_grid" sce:type="list&lt;list&lt;uint8&gt;[2]&gt;[2]"/>
+    <data id="f_levels" sce:type="list&lt;enum:SignalLevel&gt;[2]"/>
+    <data id="f_maybe" sce:type="list&lt;optional&lt;uint16&gt;&gt;[2]"/>
+    <data id="f_spare" sce:type="optional&lt;list&lt;uint8&gt;[2]&gt;"/>
     {data}
   </datamodel>
   <state id="idle">
     <onentry>
       <send event="batch.sent" target="#_internal">
+        <param name="items" expr="f_items"/>
+        <param name="grid" expr="f_grid"/>
+        <param name="levels" expr="f_levels"/>
+        <param name="maybe" expr="f_maybe"/>
+        <param name="spare" expr="f_spare"/>
         {params}
       </send>
     </onentry>

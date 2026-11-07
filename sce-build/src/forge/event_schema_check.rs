@@ -487,21 +487,34 @@ fn first_unlowered_composed_use(
     for action in blocks.iter().copied().flatten() {
         action.walk(&mut |a| {
             // A `<send>` carries the event's data in its params, which a
-            // lowering that sends a composed value writes, when one of them
-            // (a `<param>` or a `namelist` name) gives the composed field; a
-            // `<send>` that gives none lacks the value as a `<raise>` does,
-            // which carries no data, and no lowering writes a value it lacks.
+            // lowering that sends a composed value writes. A composed field of
+            // the schema's first revision is carried by every delivery
+            // (docs/adr/0086, section 10.1), so a `<send>` that gives one of
+            // them no `<param>` or `namelist` name lacks its value as a
+            // `<raise>` does, which carries no data, and no lowering writes a
+            // value it lacks. A list a later revision adds (`sce:since`) reads
+            // empty when it is not sent (section 10.2), so it may be left out.
             if sent.is_none() {
                 if let Some((schema, composed)) = composed_schema(a.event.as_str()) {
-                    let gives = a.params.iter().any(|p| p.name == composed.field)
-                        || a.namelist.split_whitespace().any(|n| n == composed.field);
-                    let lacks = match a.action_type.as_str() {
-                        "send" => !lowers_sends || !gives,
-                        "raise" => true,
-                        _ => false,
+                    let gives = |field: &str| {
+                        a.params.iter().any(|p| p.name == field)
+                            || a.namelist.split_whitespace().any(|n| n == field)
                     };
-                    if lacks {
-                        sent = Some((schema, composed, a));
+                    let lacking = schema
+                        .fields
+                        .iter()
+                        .filter(|f| f.since.is_none())
+                        .filter_map(|f| f.entry_field().err())
+                        .find(|c| !gives(&c.field));
+                    match a.action_type.as_str() {
+                        "send" if !lowers_sends => sent = Some((schema, composed, a)),
+                        "send" => {
+                            if let Some(lacking) = lacking {
+                                sent = Some((schema, lacking, a));
+                            }
+                        }
+                        "raise" => sent = Some((schema, composed, a)),
+                        _ => {}
                     }
                 }
             }
