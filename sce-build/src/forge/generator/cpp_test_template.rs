@@ -6,11 +6,11 @@
 //! matches it (ES 201 873-1 Annex B.1); and, for a specific template (§6.2),
 //! `value`, the one value it sends.
 //!
-//! The matcher is a tree, so it is lowered here, one expression per matcher
-//! and the expression of a matcher made of its children's, and the template
-//! (`forge/cpp/test_template.h.jinja2`) writes the declarations around the two
-//! expressions. Matching is on the values the event schema's unit declares, not
-//! on an encoding (ADR 0091 C2).
+//! What each matcher holds is decided by the walk every backend shares
+//! ([`super::test_template_walk`]); this file spells it in C++, one expression
+//! per matcher and the expression of a matcher made of its children's, and the
+//! template (`forge/cpp/test_template.h.jinja2`) writes the declarations around
+//! the two expressions.
 //!
 //! Every type is the one the schema unit spells. The template's own type and
 //! its parameters' are spelled by [`unit_type`], as a field of that type is.
@@ -20,10 +20,12 @@
 //! holds is named by the one declaration of it, whatever document imports it
 //! and under whatever alias.
 
+use super::test_template_walk::{
+    integer_literal, Held, Position, TemplateFunction, TemplateSpelling, TemplateWalk, Use,
+};
 use super::*;
-use crate::forge::expr::{wide_literal_spelling, WideLiteral};
 use crate::forge::schema_unit_type::{unit_type, C11Declarations};
-use crate::forge::value_type::{ScopedRecord, TypeOf, TypeScope, ValueType};
+use crate::forge::value_type::{ScopedRecord, TypeOf, ValueType};
 use crate::generator::Language;
 
 /// The header of the test profile's runtime that declares the length of a
@@ -43,22 +45,19 @@ pub(super) fn render_test_template_cpp(
 ) -> Result<String, ForgeError> {
     let l = LangCtx::new(Language::Cpp, imports);
     let scope = import_type_scope(imports);
-    let unit = TemplateUnit {
-        template: m,
-        imports,
+    let spelling = CppSpelling {
         counts_characters: std::cell::Cell::new(false),
     };
-    for ty in
-        std::iter::once(&m.template_type).chain(m.parameters.iter().map(|p| &p.parameter_type))
-    {
-        if let Some(alias) = crate::forge::test_profile::union_reached(ty, &scope) {
-            return Err(unit.refused(crate::forge::value_type::union_unlowered(&alias)));
-        }
-    }
+    let walk = TemplateWalk {
+        template: m,
+        imports,
+        spelling: &spelling,
+    };
+    walk.refuse_unlowered_unions(&scope)?;
     let names = SchemaUnitNames { l: &l, imports };
     let spell = |ty: &ValueType| {
         unit_type(Language::Cpp, ty, &names, &mut C11Declarations::default())
-            .map_err(|why| unit.refused(why))
+            .map_err(|why| walk.refused(why))
     };
     let value_type = spell(&m.template_type)?;
     let parameters: Vec<serde_json::Value> = m
@@ -73,10 +72,10 @@ pub(super) fn render_test_template_cpp(
             }))
         })
         .collect::<Result<_, ForgeError>>()?;
-    let root = Position::root(&m.template_type, &scope);
-    let match_expr = unit.matches(&m.matcher, &root)?;
-    let value_expr = if unit.specific() {
-        Some(unit.value(&m.matcher, &root)?)
+    let root = walk.root(&scope);
+    let match_expr = spelling.join(&walk, &walk.matches(&m.matcher, &root)?)?;
+    let value_expr = if walk.specific() {
+        Some(walk.value(&m.matcher, &root)?)
     } else {
         None
     };
@@ -96,7 +95,7 @@ pub(super) fn render_test_template_cpp(
     // and nowhere else.
     ctx.insert(
         "counts_characters".into(),
-        unit.counts_characters.get().into(),
+        spelling.counts_characters.get().into(),
     );
     ctx.insert("text_length_header".into(), TEXT_LENGTH_HEADER.into());
     l.render(env, "test_template", ctx)
@@ -109,70 +108,11 @@ fn cpp_parameter(id: &str) -> String {
     format!("param_{id}")
 }
 
-/// One position of the value a matcher stands at.
-#[derive(Clone)]
-struct Position<'s> {
-    /// The C++ expression of the value at the position, in `match`.
-    expr: String,
-    /// The C++ type the value at the position is held in, as the unit of its
-    /// schema declares it.
-    cpp: String,
-    /// The type of the position, read in `scope`.
-    ty: ValueType,
-    scope: &'s TypeScope,
-}
-
-impl<'s> Position<'s> {
-    /// The template's own value: `match`'s parameter `value`, of type `Value`.
-    fn root(ty: &ValueType, scope: &'s TypeScope) -> Self {
-        Position {
-            expr: "value".to_string(),
-            cpp: "Value".to_string(),
-            ty: ty.clone(),
-            scope,
-        }
-    }
-
-    /// Whether the position is an `optional<T>`, which may hold no value.
-    fn optional(&self) -> bool {
-        matches!(self.ty, TypeOf::Optional { .. })
-    }
-
-    /// The value an optional position holds where it holds one, and any other
-    /// position as it is.
-    fn present(&self) -> Self {
-        match &self.ty {
-            TypeOf::Optional { elem } => Position {
-                expr: format!("(*{})", self.expr),
-                cpp: format!("{}::value_type", self.cpp),
-                ty: (**elem).clone(),
-                scope: self.scope,
-            },
-            _ => self.clone(),
-        }
-    }
-
-    /// The element at `index` of the list this position holds.
-    fn element(&self, index: usize, elem: &ValueType) -> Self {
-        Position {
-            expr: format!("{}[{index}]", self.expr),
-            cpp: format!("{}::value_type", self.cpp),
-            ty: elem.clone(),
-            scope: self.scope,
-        }
-    }
-
-    /// The field `id`, of type `ty`, of the record whose unit's payload type
-    /// is `payload` and whose document reads its types in `scope`.
-    fn field(&self, payload: &str, id: &str, ty: &ValueType, scope: &'s TypeScope) -> Self {
-        let member = event_schema_field_ident(id, Language::Cpp);
-        Position {
-            expr: format!("{}.{member}", self.expr),
-            cpp: format!("decltype({payload}::{member})"),
-            ty: ty.clone(),
-            scope,
-        }
-    }
+/// An integer literal of the profile as C++ writes it
+/// ([`integer_literal`]): what a suite's module parameter default is written
+/// by too.
+pub(super) fn cpp_integer_literal(text: &str) -> Option<String> {
+    integer_literal(Language::Cpp, text)
 }
 
 /// The conjunction of `parts`, each already one operand: `true` for none.
@@ -194,234 +134,56 @@ fn any(parts: Vec<String>) -> String {
     }
 }
 
-/// An integer literal of the profile (`test_profile::decimal_integer`) as C++
-/// writes it: the two values no decimal constant of C++ holds as written are
-/// spelled as every C++ expression of them is ([`wide_literal_spelling`]). A
-/// suite's module parameter default is written by the same spelling.
-pub(super) fn integer_literal(text: &str) -> Option<String> {
-    let n = crate::forge::test_profile::decimal_integer(text)?;
-    let raw = n.to_string();
-    let wide = u64::try_from(n)
-        .ok()
-        .and_then(WideLiteral::of_unsigned)
-        .or_else(|| i64::try_from(n).ok().and_then(WideLiteral::of_signed));
-    Some(
-        wide.and_then(|wide| wide_literal_spelling(Language::Cpp, wide, &raw))
-            .unwrap_or(raw),
-    )
+/// One position of the value a matcher stands at, in C++.
+#[derive(Clone)]
+struct CppAt {
+    /// The C++ expression of the value at the position, in `match`.
+    expr: String,
+    /// The C++ type the value at the position is held in, as the unit of its
+    /// schema declares it.
+    cpp: String,
 }
 
-/// One template, lowered: what each matcher of it matches and the value of a
-/// specific one.
-struct TemplateUnit<'a> {
-    template: &'a TestTemplateModel,
-    imports: &'a [ImportContext],
+/// The C++ spelling of a template's unit.
+struct CppSpelling {
     /// Whether a matcher counts the characters of a text, which the runtime's
     /// [`TEXT_LENGTH_HEADER`] declares.
     counts_characters: std::cell::Cell<bool>,
 }
 
-impl TemplateUnit<'_> {
-    /// The refusal of the template, by name, for `why`.
-    fn refused(&self, why: impl std::fmt::Display) -> ForgeError {
-        GenerateError::unsupported_at(
-            format!("test-template '{}': {why}", self.template.name),
-            self.template.source_location.clone(),
-        )
-        .into()
-    }
-
-    /// The template the import `alias` names: the namespace of its unit and
-    /// what the import read of it.
-    fn reference(&self, alias: &str) -> Result<(&str, &TestTemplateImport), ForgeError> {
-        self.imports
-            .iter()
-            .find(|i| i.alias == alias && i.kind == "test-template")
-            .and_then(|i| {
-                i.test_template
-                    .as_ref()
-                    .map(|read| (i.namespace.as_str(), read))
-            })
-            .ok_or_else(|| {
-                self.refused(format!(
-                    "<sce:template-ref template=\"{alias}\"> names no test template the document \
-                     imports"
-                ))
-            })
-    }
-
-    /// Whether the template is specific (docs/SCE_TEST_PROFILE.md §6.2): its
-    /// own matchers are values alone, and every template it references is
-    /// specific in turn, as its import read it.
-    fn specific(&self) -> bool {
-        if !self.template.is_specific() {
-            return false;
-        }
-        let mut pending = vec![&self.template.matcher];
-        while let Some(matcher) = pending.pop() {
-            if let TestMatcherForm::TemplateRef { template, .. } = &matcher.form {
-                match self.reference(template) {
-                    Ok((_, referenced)) if referenced.specific => {}
-                    _ => return false,
-                }
-            }
-            pending.extend(matcher.children());
-        }
-        true
-    }
-
-    /// The call of the function `function` of the referenced template's unit
-    /// in `namespace`, given `first` (the value `match` is asked of, or none
-    /// for `value`) and the arguments `args` binds, each one of the unit's own
-    /// parameters (-1 §15.1).
-    fn call(namespace: &str, function: &str, first: Option<&str>, args: &[String]) -> String {
-        let arguments: Vec<String> = first
-            .map(str::to_string)
-            .into_iter()
-            .chain(args.iter().map(|arg| cpp_parameter(arg)))
-            .collect();
-        format!("{namespace}::{function}({})", arguments.join(", "))
-    }
-
-    /// The record a record position names, with the payload type its unit
-    /// declares.
-    fn record<'s>(&self, at: &Position<'s>) -> Result<(&'s ScopedRecord, String), ForgeError> {
-        let TypeOf::Record { alias } = &at.ty else {
-            return Err(self.refused(format!(
-                "a <sce:record-match> stands where a value of {} is matched",
-                at.ty
-            )));
-        };
-        let record =
-            at.scope.records.get(alias).ok_or_else(|| {
-                self.refused(format!("`record:{alias}` names no event schema read"))
-            })?;
-        let payload = event_schema_payload_type(&record.name, Language::Cpp);
-        Ok((record, payload))
-    }
-
-    /// Whether the value at `at` matches `m`: its form, then its length
-    /// restriction, then `ifpresent` (B.1.4.1, B.1.4.2).
-    fn matches(&self, m: &TestMatcher, at: &Position<'_>) -> Result<String, ForgeError> {
-        let mut held = self.form(m, at)?;
-        if m.length_min.is_some() || m.length_max.is_some() {
-            held = all(vec![held, self.length(m, at)?]);
-        }
-        if m.ifpresent && at.optional() {
-            held = format!("(!{}.has_value() || {held})", at.expr);
-        }
-        Ok(held)
-    }
-
-    /// Whether `m`, standing at an optional position, reads whether the
-    /// position holds a value, rather than the value it holds: `omit` and
-    /// `any-value-or-none` (B.1.2.4, B.1.2.8), a list or a complement of
-    /// matchers at the same position, each of which may be one, a parameter
-    /// and a reference whose type is the optional's own.
-    fn reads_absence(&self, m: &TestMatcher) -> bool {
-        let optional = |ty: &ValueType| matches!(ty, TypeOf::Optional { .. });
-        match &m.form {
-            TestMatcherForm::Omit
-            | TestMatcherForm::AnyValueOrNone
-            | TestMatcherForm::ValueList { .. }
-            | TestMatcherForm::Complement { .. } => true,
-            TestMatcherForm::Specific {
-                value: TestValue::Param(name),
-            } => self
-                .template
-                .parameter(name)
-                .is_some_and(|p| optional(&p.parameter_type)),
-            TestMatcherForm::TemplateRef { template, .. } => self
-                .reference(template)
-                .is_ok_and(|(_, referenced)| optional(&referenced.template_type)),
-            TestMatcherForm::Specific { .. }
-            | TestMatcherForm::RecordMatch { .. }
-            | TestMatcherForm::ListMatch { .. }
-            | TestMatcherForm::UnionMatch { .. }
-            | TestMatcherForm::AnyValue
-            | TestMatcherForm::ValueRange { .. } => false,
-        }
-    }
-
-    /// Whether the value at `at` matches the form of `m`. At an optional
-    /// position a matcher of the value's type requires the value present.
-    fn form(&self, m: &TestMatcher, at: &Position<'_>) -> Result<String, ForgeError> {
-        if at.optional() && !self.reads_absence(m) {
-            let held = self.form(m, &at.present())?;
-            return Ok(all(vec![format!("{}.has_value()", at.expr), held]));
-        }
-        Ok(match &m.form {
-            TestMatcherForm::AnyValue | TestMatcherForm::AnyValueOrNone => "true".to_string(),
-            TestMatcherForm::Omit => format!("!{}.has_value()", at.expr),
-            TestMatcherForm::Specific { value } => {
-                format!("({} == {})", at.expr, self.specific_value(value, at)?)
-            }
-            TestMatcherForm::RecordMatch { fields } => {
-                let (record, payload) = self.record(at)?;
-                let mut parts = Vec::new();
-                for (id, ty) in &record.fields {
-                    let matcher = fields
-                        .iter()
-                        .find(|f| f.field.as_deref() == Some(id.as_str()))
-                        .ok_or_else(|| self.refused(format!("no matcher for the field `{id}`")))?;
-                    let field = at.field(&payload, id, ty, &record.scope);
-                    parts.push(self.matches(matcher, &field)?);
-                }
-                all(parts)
-            }
-            TestMatcherForm::ListMatch { elements } => {
-                let elem = self.list_element(at)?;
-                let mut parts = vec![format!("({}.size() == {}u)", at.expr, elements.len())];
-                for (index, element) in elements.iter().enumerate() {
-                    parts.push(self.matches(element, &at.element(index, &elem))?);
-                }
-                all(parts)
-            }
-            TestMatcherForm::ValueList { items } => any(items
+impl CppSpelling {
+    /// `held` as one C++ expression, every operand of a join in parentheses.
+    fn join(
+        &self,
+        walk: &TemplateWalk<'_, Self>,
+        held: &Held<'_, CppAt>,
+    ) -> Result<String, ForgeError> {
+        let joined = |parts: &[Held<'_, CppAt>]| {
+            parts
                 .iter()
-                .map(|item| self.matches(item, at))
-                .collect::<Result<_, _>>()?),
-            TestMatcherForm::Complement { items } => format!(
-                "!{}",
-                any(items
-                    .iter()
-                    .map(|item| self.matches(item, at))
-                    .collect::<Result<_, _>>()?)
+                .map(|part| self.join(walk, part))
+                .collect::<Result<Vec<_>, _>>()
+        };
+        Ok(match held {
+            Held::True => "true".to_string(),
+            Held::Compare { at, op, rhs } => format!("({} {} {rhs})", at.at.expr, op.symbol()),
+            Held::Count { at, op, n } => format!("({} {} {n}u)", self.count(at), op.symbol()),
+            Held::Call(call) => call.clone(),
+            Held::Absent(at) => format!("!{}.has_value()", at.at.expr),
+            Held::Present { at, then, .. } => all(vec![
+                format!("{}.has_value()", at.at.expr),
+                self.join(walk, then)?,
+            ]),
+            Held::AbsentOr { at, then, .. } => format!(
+                "(!{}.has_value() || {})",
+                at.at.expr,
+                self.join(walk, then)?
             ),
-            TestMatcherForm::ValueRange { lower, upper } => {
-                let TypeOf::Scalar(scalar) = &at.ty else {
-                    return Err(self.refused(format!("a value range over {}", at.ty)));
-                };
-                let (least, most) = scalar
-                    .int_value_range()
-                    .ok_or_else(|| self.refused(format!("a value range over {}", at.ty)))?;
-                let mut parts = Vec::new();
-                for (bound, op, limit) in [(lower, ">=", least), (upper, "<=", most)] {
-                    let Some(bound) = bound else {
-                        continue;
-                    };
-                    // A literal bound at the type's own limit holds every
-                    // value, and its comparison is one a compiler warns is
-                    // always true: it is left out, as a missing bound is.
-                    if let TestValue::Value(text) = bound {
-                        if crate::forge::test_profile::decimal_integer(text) == Some(limit) {
-                            continue;
-                        }
-                    }
-                    parts.push(format!(
-                        "({} {op} {})",
-                        at.expr,
-                        self.specific_value(bound, at)?
-                    ));
-                }
-                all(parts)
-            }
-            TestMatcherForm::TemplateRef { template, args } => {
-                let (namespace, _) = self.reference(template)?;
-                Self::call(namespace, "match", Some(at.expr.as_str()), args)
-            }
-            TestMatcherForm::UnionMatch { .. } => {
-                return Err(self.refused(format!(
+            Held::All(parts) => all(joined(parts.as_slice())?),
+            Held::Any(parts) => any(joined(parts.as_slice())?),
+            Held::Not(part) => format!("!{}", self.join(walk, part)?),
+            Held::Case { at, .. } => {
+                return Err(walk.refused(format!(
                     "a <sce:union-match> stands where a value of {} is matched",
                     at.ty
                 )))
@@ -429,59 +191,77 @@ impl TemplateUnit<'_> {
         })
     }
 
-    /// The type of the elements of the list at `at`.
-    fn list_element(&self, at: &Position<'_>) -> Result<ValueType, ForgeError> {
+    /// What a length restriction counts at `at`: the characters of a text,
+    /// through the runtime's [`TEXT_LENGTH`], and the octets or the elements
+    /// of anything else the walk counts.
+    fn count(&self, at: &Position<'_, CppAt>) -> String {
         match &at.ty {
-            TypeOf::List { elem, .. } => Ok((**elem).clone()),
-            other => Err(self.refused(format!(
-                "a <sce:list-match> stands where a value of {other} is matched"
-            ))),
-        }
-    }
-
-    /// The length restriction of `m` on the value at `at`
-    /// (B.1.4.1): characters of a text, octets of a byte string, elements of a
-    /// list. An absent optional value is held to none: whether it may be
-    /// absent is the matcher's own question.
-    fn length(&self, m: &TestMatcher, at: &Position<'_>) -> Result<String, ForgeError> {
-        let present = at.present();
-        let count = match &present.ty {
             TypeOf::Text { .. } => {
                 self.counts_characters.set(true);
-                format!("{TEXT_LENGTH}({})", present.expr)
+                format!("{TEXT_LENGTH}({})", at.at.expr)
             }
-            TypeOf::Bytes { .. } | TypeOf::List { .. } => format!("{}.size()", present.expr),
-            other => return Err(self.refused(format!("a length restriction on {other}"))),
-        };
-        let mut parts = Vec::new();
-        if let Some(least) = m.length_min.filter(|least| *least > 0) {
-            parts.push(format!("({count} >= {least}u)"));
+            _ => format!("{}.size()", at.at.expr),
         }
-        if let Some(most) = m.length_max {
-            parts.push(format!("({count} <= {most}u)"));
-        }
-        let held = all(parts);
-        Ok(if at.optional() && held != "true" {
-            format!("(!{}.has_value() || {held})", at.expr)
-        } else {
-            held
-        })
+    }
+}
+
+impl TemplateSpelling for CppSpelling {
+    type At = CppAt;
+
+    fn language(&self) -> Language {
+        Language::Cpp
     }
 
-    /// A value a matcher names, at `at`: a formal parameter, or a literal of
-    /// the type of the value the position holds.
-    fn specific_value(&self, value: &TestValue, at: &Position<'_>) -> Result<String, ForgeError> {
-        match value {
-            TestValue::Param(name) => Ok(cpp_parameter(name)),
-            TestValue::Value(text) => self.literal(text, &at.present()),
+    /// `match`'s parameter `value`, of type `Value`.
+    fn root(&self) -> CppAt {
+        CppAt {
+            expr: "value".to_string(),
+            cpp: "Value".to_string(),
         }
     }
 
-    /// The literal `text` of the type of `at` (docs/SCE_TEST_PROFILE.md §11.4):
-    /// an integer in decimal, `true` or `false`, a variant of an enum, a text,
-    /// or a byte string in hex.
-    fn literal(&self, text: &str, at: &Position<'_>) -> Result<String, ForgeError> {
-        let refused = || self.refused(format!("'{text}' is no literal of {}", at.ty));
+    fn present(&self, at: &CppAt) -> CppAt {
+        CppAt {
+            expr: format!("(*{})", at.expr),
+            cpp: format!("{}::value_type", at.cpp),
+        }
+    }
+
+    fn element(&self, at: &CppAt, index: usize) -> CppAt {
+        CppAt {
+            expr: format!("{}[{index}]", at.expr),
+            cpp: format!("{}::value_type", at.cpp),
+        }
+    }
+
+    fn field(&self, at: &CppAt, record: &ScopedRecord, id: &str, _ty: &ValueType) -> CppAt {
+        let member = event_schema_field_ident(id, Language::Cpp);
+        let payload = event_schema_payload_type(&record.name, Language::Cpp);
+        CppAt {
+            expr: format!("{}.{member}", at.expr),
+            cpp: format!("decltype({payload}::{member})"),
+        }
+    }
+
+    fn parameter(
+        &self,
+        name: &str,
+        _ty: &ValueType,
+        _at: &Position<'_, CppAt>,
+        _purpose: Use,
+    ) -> String {
+        cpp_parameter(name)
+    }
+
+    /// An integer in decimal, `true` or `false`, a variant of an enum, a
+    /// text, or a byte string in hex: one spelling compares and builds.
+    fn literal(
+        &self,
+        text: &str,
+        at: &Position<'_, CppAt>,
+        _purpose: Use,
+    ) -> Result<String, String> {
+        let refused = || format!("'{text}' is no literal of {}", at.ty);
         match &at.ty {
             TypeOf::Scalar(SceType::Bool) => match text.trim() {
                 held @ ("true" | "false") => Ok(held.to_string()),
@@ -492,7 +272,7 @@ impl TemplateUnit<'_> {
             // declares the enum.
             TypeOf::Scalar(SceType::Enum(reference)) => Ok(format!(
                 "{}::{}",
-                at.cpp,
+                at.at.cpp,
                 crate::forge::enum_naming::variant_ident(
                     Language::Cpp,
                     &reference.alias,
@@ -500,7 +280,7 @@ impl TemplateUnit<'_> {
                 )
             )),
             TypeOf::Scalar(scalar) if scalar.int_value_range().is_some() => {
-                integer_literal(text).ok_or_else(refused)
+                cpp_integer_literal(text).ok_or_else(refused)
             }
             TypeOf::Text { .. } => Ok(filters::cpp_text_expression(text)),
             TypeOf::Bytes { .. } => {
@@ -511,63 +291,55 @@ impl TemplateUnit<'_> {
                     .map(|pair| pair.iter().map(|b| char::from(*b)).collect::<String>())
                     .map(|pair| format!("0x{pair}"))
                     .collect();
-                Ok(format!("{}{{{}}}", at.cpp, octets.join(", ")))
+                Ok(format!("{}{{{}}}", at.at.cpp, octets.join(", ")))
             }
             _ => Err(refused()),
         }
     }
 
-    /// The value the specific matcher `m` sends at `at`
-    /// (docs/SCE_TEST_PROFILE.md §6.2), as an expression of a type the
-    /// position's converts from: a record's fields in the order its schema
-    /// declares them, a list's elements in order, an absent optional value,
-    /// and a referenced template's own `value`.
-    fn value(&self, m: &TestMatcher, at: &Position<'_>) -> Result<String, ForgeError> {
-        Ok(match &m.form {
-            TestMatcherForm::Omit => "std::nullopt".to_string(),
-            TestMatcherForm::Specific { value } => self.specific_value(value, at)?,
-            TestMatcherForm::RecordMatch { fields } => {
-                let present = at.present();
-                let (record, payload) = self.record(&present)?;
-                let mut members = Vec::new();
-                for (id, ty) in &record.fields {
-                    let matcher = fields
-                        .iter()
-                        .find(|f| f.field.as_deref() == Some(id.as_str()))
-                        .ok_or_else(|| self.refused(format!("no matcher for the field `{id}`")))?;
-                    let field = present.field(&payload, id, ty, &record.scope);
-                    members.push((
-                        event_schema_field_ident(id, Language::Cpp),
-                        self.value(matcher, &field)?,
-                    ));
-                }
-                format!("{payload}{{{}}}", cpp_positional_init(&members))
-            }
-            TestMatcherForm::ListMatch { elements } => {
-                let present = at.present();
-                let elem = self.list_element(&present)?;
-                let values: Vec<String> = elements
-                    .iter()
-                    .enumerate()
-                    .map(|(index, element)| self.value(element, &present.element(index, &elem)))
-                    .collect::<Result<_, _>>()?;
-                format!("{}{{{}}}", present.cpp, values.join(", "))
-            }
-            TestMatcherForm::TemplateRef { template, args } => {
-                let (namespace, _) = self.reference(template)?;
-                Self::call(namespace, "value", None, args)
-            }
-            TestMatcherForm::UnionMatch { .. }
-            | TestMatcherForm::ValueList { .. }
-            | TestMatcherForm::Complement { .. }
-            | TestMatcherForm::AnyValue
-            | TestMatcherForm::AnyValueOrNone
-            | TestMatcherForm::ValueRange { .. } => {
-                return Err(self.refused(format!(
-                    "<sce:{}> has no value to send: a specific template holds values alone",
-                    m.form.element()
-                )))
-            }
-        })
+    fn call(
+        &self,
+        import: &ImportContext,
+        function: TemplateFunction,
+        first: Option<&CppAt>,
+        args: &[String],
+    ) -> String {
+        let function = match function {
+            TemplateFunction::Match => "match",
+            TemplateFunction::Value => "value",
+        };
+        let arguments: Vec<String> = first
+            .map(|at| at.expr.clone())
+            .into_iter()
+            .chain(args.iter().map(|arg| cpp_parameter(arg)))
+            .collect();
+        format!("{}::{function}({})", import.namespace, arguments.join(", "))
+    }
+
+    fn absent(&self) -> String {
+        "std::nullopt".to_string()
+    }
+
+    /// As it is: a `std::optional<T>` converts from a value of `T`.
+    fn present_value(&self, _at: &Position<'_, CppAt>, value: String) -> String {
+        value
+    }
+
+    fn record_value(
+        &self,
+        _at: &Position<'_, CppAt>,
+        record: &ScopedRecord,
+        fields: Vec<(String, String)>,
+    ) -> String {
+        let payload = event_schema_payload_type(&record.name, Language::Cpp);
+        let members: Vec<(String, String)> = fields
+            .into_iter()
+            .map(|(id, value)| (event_schema_field_ident(&id, Language::Cpp), value))
+            .collect();
+        format!("{payload}{{{}}}", cpp_positional_init(&members))
+    }
+
+    fn list_value(&self, at: &Position<'_, CppAt>, elements: Vec<String>) -> String {
+        format!("{}{{{}}}", at.at.cpp, elements.join(", "))
     }
 }

@@ -374,7 +374,7 @@ fn saved_default(ty: &crate::forge::value_type::ValueType, value: &str) -> Optio
                 "::SCE::Saved::savedWrite{}{rest}({}{{{}}})",
                 first.to_uppercase(),
                 cpp_type(scalar),
-                super::cpp_test_template::integer_literal(value)?
+                super::cpp_test_template::cpp_integer_literal(value)?
             ))
         }
         TypeOf::Text { .. } => Some(format!(

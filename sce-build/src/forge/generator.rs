@@ -29,6 +29,7 @@ mod length_guard;
 mod rust_source;
 mod rust_view;
 mod swift_codec;
+mod test_template_walk;
 
 /// A byte case of the Rust conformance harness, its source a literal of the
 /// codec's ready-made source (docs/adr/0081 §5). See [`rust_source::source_case`].
