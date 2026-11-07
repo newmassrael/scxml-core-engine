@@ -758,8 +758,9 @@ inside a `list-match` (B.1.3.2, §8.1); a template whose references form a cycle
 The six kinds are parsed and checked on every backend from the step that lands them. Until the native runtime of the
 order of work step 3 lands in a backend for a kind, generating a document of that kind on it is refused by name
 (`generate/unsupported-feature`). The backends land one kind at a time, in the order of §12.6, and
-`codegen_matrix::TEST_TEMPLATE_BACKENDS` and `codegen_matrix::TEST_COMPONENT_BACKENDS` list those that generate a
-template and a component.
+`codegen_matrix::TEST_TEMPLATE_BACKENDS`, `codegen_matrix::TEST_COMPONENT_BACKENDS` and
+`codegen_matrix::TEST_SUITE_BACKENDS` list those that generate a template, a component, and the tables of a test
+with the port types they read.
 
 C++ generates `test-template` (§12.6, slice 3). The unit is a header `<name>.h` in the namespace
 `SCE::Generated::<Name>`, which declares:
@@ -797,11 +798,36 @@ backend):
 Beside the machine the header declares `<name>Component`, which implements `SCE::Test::ComponentMachine`: `start`
 binds the context, registers the test-port processor and the test-component invoker on it and starts the machine;
 `deliverSnapshot` delivers the snapshot event; `terminated` is the machine's having entered a top-level `<final>`.
-A component that declares a module parameter is refused by that parameter until the tables of slice 5 give the
-runtime the suite's value for it, since no value is made up in its place. A component that uses a template whose
-type reaches a union is refused on C++ as the template is.
+A component that uses a template whose type reaches a union is refused on C++ as the template is.
 
-The other kinds stay refused on C++, and every kind on the other backends, until their slices land.
+A module parameter (§11.5) is a variable of the machine declared with its type and no value of the document's: the
+static lowering, written once for every backend, lowers no initial value for it. Its value is the run's. Before
+`start` starts the machine it hands the machine the run's module parameters through the context
+(`ComponentContext::readModuleParameters`), and the machine reads each of its module parameters from them as a saved
+state's variable of that type is read back (`sce/include/saved/SavedValues.h`). A value the run does not give, or
+one not of the type or past its bound, ends the run with `error` (P13), and the machine is not started, since no
+value is made up in its place. The runtime holds each value as the one JSON value model a saved state is made of
+(`SCE::Test::ModuleParameters`), so it knows the type of none, and the component's reader and the suite's writer
+(below) are each chosen by the type its own document declares, which §11.8 holds to be one type.
+
+C++ generates `test-configuration`, `test-case` and `test-suite`, and writes no file for `test-port-type` (§12.6,
+slice 5; `codegen_matrix::TEST_SUITE_BACKENDS`): the units of the components and configurations that read a port
+type hold what they need of it by name. Each table is a header `<name>.h` in the namespace `SCE::Generated::<Name>`,
+and names only the units of its own imports:
+
+- a configuration declares `configuration()`, the `SCE::Test::Configuration` the runtime reads, its component types
+  named by their machines; `machine(type)`, which makes the `<machine>Component` of each type and none for another
+  type, which the run ends with `error` where it is created; and `moduleParameters()`, the ids its components read;
+- a test case declares `NAME` and `testCase()`, the `SCE::Test::TestCase` of its name, its configuration's tables
+  and the module parameters they read;
+- a suite declares `suite()`, the `SCE::Test::Suite` of its module parameters at their defaults, each written by
+  the saved writer of its declared type (an enum's as the name its document declares for the variant), and of its
+  `<sce:execute>` entries in run order, each with its test case, its guard in microseconds and its selection: the
+  condition lowered to a function of the world's features, `all` a conjunction and `any` a disjunction. A guard
+  past the microseconds the runtime's clock counts to is refused by name.
+
+The runner `SCE::Test::runSuite` (`sce/include/test/Suite.h`) runs the test cases a world selects (§12.4). Every
+kind stays refused on the other backends until their slices land.
 
 ### 11.10 The rules under feature derivation
 
@@ -872,6 +898,10 @@ requires.
 | a send (P6) | a host Event I/O Processor for the test-port URI, registered by the runtime (ADR 0084). The request names the port and carries the template's value, as the value the generated code holds and never an encoding (C++: `HostSendRequest::value`). The runtime appends the value to the queue of the connected port, or hands it to the system adapter when the port is mapped. |
 | a PTC (P9) | a host invoke processor for the test-component URI, registered by the runtime. The engine asks for the start when the macrostep that entered the state ends (§scxml-6.4), which is when P9 creates, connects, maps and starts the PTC. It asks for the cancel when the state is exited, which is P9's kill. The runtime never reports a completion to the engine: `done` is read from the snapshot (P2). So a PTC that has terminated is still running for the engine, and the engine delivers the cancel for it too, which P9's kill requires. |
 
+A module parameter (§11.5) takes no door of the engine. It is a variable of the machine, and the component writes
+the run's value into it before the machine starts, as a host writes a restored variable, so the engine starts on it
+as on any initial value.
+
 A component has no other source of external events: `<raise>` and `<cancel>` are refused (§8.2), a send has no delay
 (P6) and goes to a port, and every `<invoke>` is a PTC. So when the engine returns from delivering the snapshot event,
 the component's macrostep has completed and it is waiting (§3.2) or terminated (P10).
@@ -897,6 +927,14 @@ part, because a component starts no delayed send.
 
 When no component took a branch and there is no instant to advance to, the test case can never end, and the runtime
 ends it with `error` (P13). The lane's clock does the same (§10), so the two runs agree (C3).
+
+A suite is run by a library function, with no `main` of its own (C++: `SCE::Test::runSuite`): given the suite's
+tables, a world of its features and a factory of system adapters, it runs the test cases the world selects, one at
+a time on the calling thread, in the suite's order (P11), each a fresh run from `NOW = 0` against a fresh adapter,
+and returns each one's result. The caller may give a module parameter another value than the suite's default; a
+value for a parameter the suite does not declare is the caller's mistake and is refused before any test case runs.
+A test case whose components read a module parameter the run has no value for, or for which no adapter is given,
+ends with `error` (P13) before any of its components is created.
 
 ### 12.5 Verdicts and the result
 
