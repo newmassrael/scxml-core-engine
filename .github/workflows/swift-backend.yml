@@ -85,6 +85,10 @@ on:
       - 'scripts/regen_swift_ecma262_lowered.sh'
       - 'tools/generate_lowered_ecma262_fixture.py'
       - 'tests/ecmascript/**'
+      # The shared Lua the Swift Lua engine loads. `SceLua/Library/*.lua` are
+      # symlinks to these, and an edit lands on the target's path, which no
+      # `backends/swift/**` pattern matches.
+      - 'sce/include/scripting/*.lua'
       - 'scripts/gates/lib.sh'
       - 'bx.toml'
       - '.github/workflows/swift-backend.yml'

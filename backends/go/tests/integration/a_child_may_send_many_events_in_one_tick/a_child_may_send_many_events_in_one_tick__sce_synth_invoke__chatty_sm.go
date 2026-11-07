@@ -271,11 +271,9 @@ func (p *AChildMaySendManyEventsInOneTickSceSynthInvokeChattyPolicy) InitializeD
 	engine := p.ScriptEngine
 	sessionID := p.SessionID
 
-	// W3C SCXML 5.3: Initialize _sessionid
-	_ = engine.SetVariable(sessionID, "_sessionid", sessionID)
-
-	// W3C SCXML 5.3: Initialize _name
-	_ = engine.SetVariable(sessionID, "_name", "a_child_may_send_many_events_in_one_tick__sce_synth_invoke__chatty")
+	// `_sessionid` and `_name` are bound by `ensureScriptEngine`, through
+	// `SetupSystemVariables`; they are system variables, which a write by name
+	// cannot change (§scxml-5.10), so writing them again here would be refused.
 
 	// W3C SCXML 5.3.3: Initialize global datamodel variables
 	// W3C SCXML 5.2/5.3: Initialize items from expr="[1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1,                                     1, 1, 1, 1, 1, 1, 1, 1, 1, 1]"
