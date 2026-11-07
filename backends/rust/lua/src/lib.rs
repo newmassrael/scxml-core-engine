@@ -298,12 +298,23 @@ fn lua_value_to_script(val: &LuaValue) -> ScriptValue {
         }
         LuaValue::String(s) => ScriptValue::String(s.to_string_lossy().to_string()),
         LuaValue::Table(t) => {
+            // A table is read the way a script reads it: its length through
+            // `__len`, its elements through `__index` and its entries through
+            // `__pairs`. §scxml-5.10: `_scxml_bind_system` binds `_event` and
+            // `_ioprocessors` as read-only views whose own tables are empty,
+            // so a raw read copied `<data id="v" expr="_ioprocessors"/>` as an
+            // empty table. A table with no metatable reads as it did raw.
+            //
             // Heuristic: sequence table (1..n keys) = Array, else Object
-            let len = t.raw_len();
+            let len = t
+                .len()
+                .ok()
+                .and_then(|n| usize::try_from(n).ok())
+                .unwrap_or(0);
             if len > 0 {
                 let mut arr = Vec::with_capacity(len);
                 for i in 1..=len {
-                    if let Ok(v) = t.raw_get::<LuaValue>(i) {
+                    if let Ok(v) = t.get::<LuaValue>(i) {
                         arr.push(lua_value_to_script(&v));
                     }
                 }
@@ -311,11 +322,7 @@ fn lua_value_to_script(val: &LuaValue) -> ScriptValue {
             } else {
                 let mut map = HashMap::new();
                 let mut is_empty = true;
-                if let Ok(pairs) = t
-                    .clone()
-                    .pairs::<LuaValue, LuaValue>()
-                    .collect::<Result<Vec<_>, _>>()
-                {
+                if let Ok(pairs) = table_entries(t) {
                     for (k, v) in pairs {
                         is_empty = false;
                         let key = match &k {
@@ -336,6 +343,34 @@ fn lua_value_to_script(val: &LuaValue) -> ScriptValue {
         }
         LuaValue::Function(_) => ScriptValue::String("[function]".to_string()),
         _ => ScriptValue::Null,
+    }
+}
+
+/// The entries of `t` as Lua's own `pairs` walks them: through the `__pairs`
+/// metamethod when `t`'s metatable holds one, and raw otherwise.
+///
+/// mlua's `Table::pairs` never asks `__pairs`, which is the one way to reach
+/// the entries of a read-only view (`lua_value_to_script` says why that
+/// matters).
+fn table_entries(t: &LuaTable) -> LuaResult<Vec<(LuaValue, LuaValue)>> {
+    let walker = match t.metatable() {
+        Some(metatable) => metatable.raw_get::<Option<LuaFunction>>("__pairs")?,
+        None => None,
+    };
+    let Some(walker) = walker else {
+        return t.pairs::<LuaValue, LuaValue>().collect();
+    };
+    // The generic `for` protocol: `__pairs(t)` answers an iterator, its state
+    // and the first control value, and the walk ends at a nil key.
+    let (next, state, mut key): (LuaFunction, LuaValue, LuaValue) = walker.call(t)?;
+    let mut entries = Vec::new();
+    loop {
+        let (found, value): (LuaValue, LuaValue) = next.call((state.clone(), key))?;
+        if found.is_nil() {
+            return Ok(entries);
+        }
+        key = found.clone();
+        entries.push((found, value));
     }
 }
 
@@ -431,6 +466,25 @@ fn map_lua_err(e: mlua::Error) -> ScriptError {
     }
 }
 
+/// Bind system variable `name` to `value` (§scxml-5.10, §scxml-B-2-8).
+///
+/// The shared `_scxml_bind_system` in sce/include/scripting/ecma_semantics.lua
+/// is the one way a system variable is bound: it makes `_event` and
+/// `_ioprocessors` read-only views and keeps all four names out of the
+/// globals' own slots, so that any write a script makes to one fails. An
+/// ordinary `globals().set` of one of these names is refused by that same
+/// file, which is why there is no other path here. `create_session` loads the
+/// file before any session exists to bind into; a session whose builtins
+/// failed to load has no `_scxml_bind_system`, and the bind fails rather than
+/// leaving a writable copy.
+fn bind_system_variable(lua: &Lua, name: &str, value: impl IntoLua) -> ScriptResult<()> {
+    let bind: LuaFunction = lua
+        .globals()
+        .get("_scxml_bind_system")
+        .map_err(map_lua_err)?;
+    bind.call::<()>((name, value)).map_err(map_lua_err)
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // IScriptEngine implementation
 // ═══════════════════════════════════════════════════════════════════════════
@@ -507,6 +561,9 @@ impl IScriptEngine for LuaEngine {
             .get_mut(session_id)
             .ok_or_else(|| ScriptError::SessionNotFound(session_id.to_string()))?;
         let lua_val = script_value_to_lua(&session.lua, &value).map_err(map_lua_err)?;
+        // The document chooses `name`. §scxml-5.10: a system variable's name
+        // is refused by the globals' `__newindex`, and that refusal is this
+        // call's error, so the Processor raises `error.execution`.
         session
             .lua
             .globals()
@@ -542,6 +599,7 @@ impl IScriptEngine for LuaEngine {
         let value = push_xml_as_userdata(&session.lua, xml_content)
             .map_err(map_lua_err)?
             .unwrap_or(LuaValue::Nil);
+        // A system variable's name is refused here as in `set_variable`.
         session
             .lua
             .globals()
@@ -574,21 +632,22 @@ impl IScriptEngine for LuaEngine {
         let session = sessions
             .get_mut(session_id)
             .ok_or_else(|| ScriptError::SessionNotFound(session_id.to_string()))?;
-        let globals = session.lua.globals();
 
-        // _sessionid
-        globals.set("_sessionid", session_id).map_err(map_lua_err)?;
+        // §scxml-5.10: each system variable is bound through
+        // `bind_system_variable`, so a script's write to it fails.
+        bind_system_variable(&session.lua, "_sessionid", session_id)?;
         session.declared_vars.insert("_sessionid".to_string());
 
-        // _name
-        globals.set("_name", session_name).map_err(map_lua_err)?;
+        bind_system_variable(&session.lua, "_name", session_name)?;
         session.declared_vars.insert("_name".to_string());
 
         // §scxml-C-1-1 / §scxml-C-2-3: one entry per processor the deployment
         // supports, each with a 'location' field holding the address that
         // reaches this session through it. Both names and locations are
         // decided by `helpers::io_processors::build`, so this engine's view of
-        // `_ioprocessors` matches every other backend's.
+        // `_ioprocessors` matches every other backend's. The table is built
+        // whole before it is bound: the binding makes it and each entry
+        // read-only.
         let io_table = session.lua.create_table().map_err(map_lua_err)?;
         for processor in io_processors {
             let proc_entry = session.lua.create_table().map_err(map_lua_err)?;
@@ -599,9 +658,7 @@ impl IScriptEngine for LuaEngine {
                 .set(processor.name.as_str(), proc_entry)
                 .map_err(map_lua_err)?;
         }
-        globals
-            .set("_ioprocessors", io_table)
-            .map_err(map_lua_err)?;
+        bind_system_variable(&session.lua, "_ioprocessors", io_table)?;
         session.declared_vars.insert("_ioprocessors".to_string());
 
         // _event is NOT initialized here — W3C SCXML B.2: _event is unbound
@@ -741,11 +798,9 @@ impl IScriptEngine for LuaEngine {
             }
         }
 
-        session
-            .lua
-            .globals()
-            .set("_event", event_table)
-            .map_err(map_lua_err)?;
+        // §scxml-B-2-8: every field is filled in above, before the bind; once
+        // bound, `_event` is a read-only view and refuses any write.
+        bind_system_variable(&session.lua, "_event", event_table)?;
         Ok(reading)
     }
 
