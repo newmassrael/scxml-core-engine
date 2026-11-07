@@ -1219,6 +1219,23 @@ pub(crate) fn kotlin_forge_package(snake: &str) -> String {
     format!("{KOTLIN_FORGE_PACKAGE_ROOT}.{snake}")
 }
 
+/// The declaration `name` of the unit of the forge document `document`,
+/// written by its package (`com.sce.generated.<snake>.<name>`): how a Kotlin
+/// unit names a declaration of another document where a name of its own, or a
+/// second import, could hide the bare one.
+pub(crate) fn kotlin_qualified(document: &str, name: &str) -> String {
+    format!(
+        "{}.{name}",
+        kotlin_forge_package(&filters::to_snake_case(document.to_string()))
+    )
+}
+
+/// The class a case of a Kotlin union is nested in its sealed interface as:
+/// its variant in Pascal case (docs/adr/0092, section 7, the Kotlin row).
+pub(crate) fn kotlin_case_ident(variant: &str) -> String {
+    filters::to_pascal_case(variant.to_string())
+}
+
 /// Where the unit generated from the forge document named `canonical` lives,
 /// as a directory below the root an importer's import line resolves against.
 ///
@@ -4616,18 +4633,11 @@ fn render_union_kotlin(
 ) -> Result<String, ForgeError> {
     use crate::generator::Language;
     let unit = UnionUnit::read(m, imports)?;
-    // A name of the unit of the document `document`, by its package.
-    let qualified = |document: &str, ty: String| {
-        format!(
-            "{}.{ty}",
-            kotlin_forge_package(&filters::to_snake_case(document.to_string()))
-        )
-    };
     let tag = unit.tag;
     let union_type = filters::to_pascal_case(m.name.clone());
-    let kind_type = qualified(
+    let kind_type = kotlin_qualified(
         &tag.document_name,
-        filters::to_pascal_case(tag.document_name.clone()),
+        &filters::to_pascal_case(tag.document_name.clone()),
     );
     // Two variants whose Pascal spellings are one would be two classes of one
     // name: refused by name rather than left to the compiler.
@@ -4635,7 +4645,7 @@ fn render_union_kotlin(
     let mut cases = Vec::with_capacity(unit.cases.len());
     for (variant, record) in &unit.cases {
         let variant = variant.as_str();
-        let ident = filters::to_pascal_case(variant.to_string());
+        let ident = kotlin_case_ident(variant);
         if let Some(first) = spelled.insert(ident.clone(), variant) {
             return Err(union_refused(
                 m,
@@ -4643,9 +4653,9 @@ fn render_union_kotlin(
             ));
         }
         let record = record.map(|import| {
-            qualified(
+            kotlin_qualified(
                 &import.document_name,
-                event_schema_payload_type(&import.document_name, Language::Kotlin),
+                &event_schema_payload_type(&import.document_name, Language::Kotlin),
             )
         });
         cases.push(serde_json::json!({
@@ -4667,7 +4677,7 @@ fn render_union_kotlin(
     ctx.insert("union_type".into(), union_type.clone().into());
     ctx.insert(
         "union_qualified".into(),
-        qualified(&m.name, union_type).into(),
+        kotlin_qualified(&m.name, &union_type).into(),
     );
     ctx.insert("kind_type".into(), kind_type.into());
     ctx.insert("cases".into(), serde_json::json!(cases));
