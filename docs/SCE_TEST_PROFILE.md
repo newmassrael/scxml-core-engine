@@ -852,7 +852,10 @@ value is made up in its place. The runtime holds each value as the one JSON valu
 (`SCE::Test::ModuleParameters`), so it knows the type of none, and the component's reader and the suite's writer
 (below) are each chosen by the type its own document declares, which §11.8 holds to be one type.
 
-Rust reads a module parameter the same way: the field is declared at its type's default, which nothing reads, and
+Rust reads a module parameter the same way: the field is declared at its type's default, or for an enum, whose
+machine type has none, at the variant its document declares first, neither of which anything reads. An enum's
+saved form (`SavedValue`), which the read goes through, is emitted for a machine with an enum module parameter
+whether or not the machine has a saved shape. Then
 `start`, after it binds the context and before it builds the machine, calls
 `ComponentContext::read_module_parameters` with the policy's `accept_module_parameters`, which reads each module
 parameter from the run's values as a restored variable of its type is read (`SavedValue::from_saved`, a byte string

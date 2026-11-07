@@ -409,25 +409,25 @@ impl{{ policy_generics_decl }} {{ machine_name }}Observe for Engine<{{ machine_n
     }
 }
 
-{% if static_saved_shape and not no_std %}
-{% set history_type = (machine_name ~ "History") if model.history_states else "::sce_rust_runtime::NoHistory" %}
-{# The value a saved state holds for the variable `field`, read as the field's
-   own type — one spelling for the judge of a saved state and for the restore
-   that writes what it read. A text and a list hold their bound in their type
-   (docs/adr/0086, section 7.4), so their own `SavedValue` holds a restored one
-   to it; a byte string is saved as its Latin-1 text, which its own reader
-   reads back. An optional value is read absent from `null` and otherwise as
-   its present value is (docs/adr/0055). #}
-{% macro saved_read(field) -%}
-{% if field.saved_kind == "optional" and field.bound is not none and field.saved_type == "bytes" -%}
-::sce_rust_runtime::saved_state::optional(saved.variable("{{ field.id }}")?, |present| ::sce_rust_runtime::saved_state::bounded_bytes(present, "{{ field.id }}"))?
-{%- elif field.bound is not none and field.saved_type == "bytes" -%}
-::sce_rust_runtime::saved_state::bounded_bytes(saved.variable("{{ field.id }}")?, "{{ field.id }}")?
-{%- else -%}
-::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("{{ field.id }}")?, "{{ field.id }}")?
-{%- endif %}
-{%- endmacro %}
+{# docs/SCE_TEST_PROFILE.md §11.8: a test component's module parameter of an
+   enum is read through the enum's saved form from the run's values, so the
+   saved form is emitted wherever the machine holds one, whether or not a saved
+   state of the machine can be written. #}
+{% set ns_enum_parameter = namespace(any=false) %}
+{% for field in static_fields %}
+{% if field.module_parameter and field.saved_kind == "enum" %}
+{% set ns_enum_parameter.any = true %}
+{% endif %}
+{% endfor %}
+{% if (static_saved_shape or ns_enum_parameter.any) and not no_std %}
+{% if static_saved_shape %}
 // ── SCE Accepted Subset §2.15: saving a sce-static machine and restoring it ──
+{% else %}
+// ── docs/SCE_TEST_PROFILE.md §11.8: the saved form a module parameter of an enum is read by ──
+{% endif %}
+{# SCE Accepted Subset §2.15: the saved form of an enum the machine holds, the
+   name its document declares for each variant, which a saved state writes and
+   a restore reads back. #}
 {% for enum in static_enums %}
 
 impl ::sce_rust_runtime::saved_state::SavedValue for {{ enum.ty }} {
@@ -462,6 +462,25 @@ impl ::sce_rust_runtime::saved_state::SavedValue for {{ enum.ty }} {
     }
 }
 {% endfor %}
+{% endif %}
+{% if static_saved_shape and not no_std %}
+{% set history_type = (machine_name ~ "History") if model.history_states else "::sce_rust_runtime::NoHistory" %}
+{# The value a saved state holds for the variable `field`, read as the field's
+   own type — one spelling for the judge of a saved state and for the restore
+   that writes what it read. A text and a list hold their bound in their type
+   (docs/adr/0086, section 7.4), so their own `SavedValue` holds a restored one
+   to it; a byte string is saved as its Latin-1 text, which its own reader
+   reads back. An optional value is read absent from `null` and otherwise as
+   its present value is (docs/adr/0055). #}
+{% macro saved_read(field) -%}
+{% if field.saved_kind == "optional" and field.bound is not none and field.saved_type == "bytes" -%}
+::sce_rust_runtime::saved_state::optional(saved.variable("{{ field.id }}")?, |present| ::sce_rust_runtime::saved_state::bounded_bytes(present, "{{ field.id }}"))?
+{%- elif field.bound is not none and field.saved_type == "bytes" -%}
+::sce_rust_runtime::saved_state::bounded_bytes(saved.variable("{{ field.id }}")?, "{{ field.id }}")?
+{%- else -%}
+::sce_rust_runtime::saved_state::SavedValue::from_saved(saved.variable("{{ field.id }}")?, "{{ field.id }}")?
+{%- endif %}
+{%- endmacro %}
 {% for record in static_records %}
 
 impl ::sce_rust_runtime::saved_state::SavedValue for {{ record.ty }} {
@@ -1096,7 +1115,16 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
    declaration order — an initial value reads the variables declared before
    it by these names. #}
 {% for field in static_fields %}
-{% if field.module_parameter %}
+{% if field.module_parameter and field.saved_kind == "enum" %}
+        {# docs/SCE_TEST_PROFILE.md §11.5: as below; the machine's own type for an
+           enum has no `Default`, so it starts at the variant its document
+           declares first, which nothing reads either. #}
+{% for enum in static_enums %}
+{% if enum.ty == field.ty %}
+        let {{ field.name }}: {{ field.ty }} = {{ field.ty }}::{{ enum.variants[0].ident }};
+{% endif %}
+{% endfor %}
+{% elif field.module_parameter %}
         {# docs/SCE_TEST_PROFILE.md §11.5: a module parameter has no initial value
            of the document's; the component fills it from the run's module
            parameters before the machine starts, so it starts at its type's
