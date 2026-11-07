@@ -398,25 +398,6 @@ pub fn check(
             }
         }
     }
-    // docs/SCE_TEST_PROFILE.md §11.5: the `reason` of a test component's
-    // `<sce:setverdict>` is an expression of this data model of type string,
-    // read over the component's variables.
-    if let Some(profile) = &model.test_component {
-        for statement in &profile.statements {
-            if let crate::test_component::TestStatementKind::Setverdict {
-                reason: Some(reason),
-                ..
-            } = &statement.statement
-            {
-                judge.expr(
-                    &plain,
-                    reason,
-                    statement.reason_spelling.as_ref(),
-                    Expected::Slot(InferredType::Str),
-                )?;
-            }
-        }
-    }
     // An imported algorithm — or a transform, condition, lookup, interpolation or
     // validator (docs/adr/0048) — is imported to be called. One nothing calls is
     // refused rather than dropped in silence — a statechart keeps no import
@@ -4591,6 +4572,23 @@ impl<'a> Judge<'a> {
                 }
             }
             "sce_render" => self.render(ctx, action)?,
+            // docs/SCE_TEST_PROFILE.md §11.5: the `reason` of a test
+            // component's `<sce:setverdict>` is an expression of this data
+            // model of type string, read where the statement runs.
+            "sce_setverdict" => {
+                if let Some(crate::test_component::TestStatement::Setverdict {
+                    reason: Some(reason),
+                    ..
+                }) = &action.test_statement
+                {
+                    self.expr(
+                        ctx,
+                        reason,
+                        action.spellings.get("reason"),
+                        Expected::Slot(InferredType::Str),
+                    )?;
+                }
+            }
             "sce_clear" => {
                 if self.list_var(&action.location).is_none() {
                     return Err(self.not_a_list(action, state));

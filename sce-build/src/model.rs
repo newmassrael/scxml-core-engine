@@ -389,6 +389,13 @@ pub struct Action {
     /// every action of a document that is not a `test-component`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub test_template: Option<crate::test_component::TemplateUse>,
+    /// The statement of a `test-component` this action is
+    /// (`<sce:setverdict>`, `<sce:start-timer>`, `<sce:stop-timer>`;
+    /// docs/SCE_TEST_PROFILE.md §4.7, §5.1, §11.5), whose
+    /// [`crate::test_component::TestStatement::action_type`] is
+    /// [`Self::action_type`]. `None` on every other action.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub test_statement: Option<crate::test_component::TestStatement>,
 
     /// `true` when a written `target` is a value the SCXML Event I/O
     /// Processor cannot address (§scxml-6.2.4) — decided by
@@ -1054,6 +1061,7 @@ impl Action {
             "sce_clear" => &["location"],
             "sce_lift" => &["lift_text", "lift_schema", "location", "lift_refusal"],
             "sce_render" => &["render_template", "location", "render_sets"],
+            "sce_setverdict" | "sce_start_timer" | "sce_stop_timer" => &["test_statement"],
             "script" => &["content"],
             "send" => &[
                 "event",
@@ -1116,14 +1124,16 @@ impl Action {
         }
     }
 
-    /// The thirteen tags an `action_type` can hold, in the order the parser
+    /// The sixteen tags an `action_type` can hold, in the order the parser
     /// and the template branches list them. `sce_append` / `sce_clear` are a
     /// `sce-static` list's statements (`<sce:append>` / `<sce:clear>`),
     /// `sce_lift` the statement that reads a text into a record or keeps why
-    /// it could not (`<sce:lift>`, docs/adr/0087), and `sce_render` the
+    /// it could not (`<sce:lift>`, docs/adr/0087), `sce_render` the
     /// statement that renders a text template into a string variable
-    /// (`<sce:render>`, docs/adr/0087), each prefixed so no reader
-    /// mistakes it for an SCXML element's name.
+    /// (`<sce:render>`, docs/adr/0087), and `sce_setverdict`,
+    /// `sce_start_timer` and `sce_stop_timer` a test component's statements
+    /// ([`crate::test_component::TestStatement::ACTION_TYPES`]), each prefixed
+    /// so no reader mistakes it for an SCXML element's name.
     pub const TAGS: &'static [&'static str] = &[
         "assign",
         "cancel",
@@ -1136,6 +1146,9 @@ impl Action {
         "sce_clear",
         "sce_lift",
         "sce_render",
+        "sce_setverdict",
+        "sce_start_timer",
+        "sce_stop_timer",
         "script",
         "send",
     ];

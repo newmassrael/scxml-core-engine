@@ -8,16 +8,17 @@
 //! parser ([`crate::parser::SCXMLParser`]). What the profile adds is recorded
 //! on the model where it belongs: [`read`] takes the declarations of the
 //! root (`<sce:test-port>`, `<sce:test-timer>`), the `sce:module-parameter`
-//! of a `<data>`, the statements the profile adds to executable content
-//! (`<sce:setverdict>`, `<sce:start-timer>`, `<sce:stop-timer>`) and the PTCs
-//! the component invokes, into [`TestComponentProfile`]; a transition's
-//! branch ([`TestBranch`]) and a send's template ([`TemplateUse`]) are read
-//! where the parser reads the transition and the send.
+//! of a `<data>` and the PTCs the component invokes, into
+//! [`TestComponentProfile`]; a transition's branch ([`TestBranch`]) and a
+//! send's template ([`TemplateUse`]) are read where the parser reads the
+//! transition and the send. The statements the profile adds to executable
+//! content (`<sce:setverdict>`, `<sce:start-timer>`, `<sce:stop-timer>`) are
+//! actions of that content, read by [`read_statement`] where the parser reads
+//! the rest of it, so each runs in its place among the others (P4).
 //!
 //! In any other statechart nothing reads them: each attribute is refused as
-//! unread (`validation/sce-attribute-unread`), and the elements are read by
-//! nothing, as any other element of the SCE namespace in executable content
-//! is.
+//! unread (`validation/sce-attribute-unread`), and each statement as an
+//! element its executable content does not take.
 //!
 //! What this module refuses is what makes a record of the document
 //! impossible: a data model other than `sce-static` (§11.2), a declaration or
@@ -43,8 +44,7 @@ pub const TEST_PORT_PROCESSOR: &str = "http://sce.dev/ext/test-port";
 /// a test component (docs/SCE_TEST_PROFILE.md §11.1).
 pub const TEST_COMPONENT_INVOKE_TYPE: &str = "http://sce.dev/ext/test-component";
 
-/// The declarations, statements and PTCs of a test component, in document
-/// order.
+/// The declarations and PTCs of a test component, in document order.
 #[derive(Debug, Clone, Default, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct TestComponentProfile {
@@ -54,8 +54,6 @@ pub struct TestComponentProfile {
     pub timers: Vec<TestTimer>,
     /// The `id` of each `<data sce:module-parameter="true">`.
     pub module_parameters: Vec<String>,
-    /// The statements the profile adds to executable content.
-    pub statements: Vec<TestStatement>,
     /// The `<invoke>` of each PTC the component creates.
     pub invocations: Vec<TestInvocation>,
 }
@@ -83,29 +81,15 @@ pub struct TestTimer {
     pub source_location: Option<SourceLocation>,
 }
 
-/// A statement the profile adds to executable content, and the state whose
-/// executable content holds it.
-#[derive(Debug, Clone, Serialize)]
-#[cfg_attr(test, derive(schemars::JsonSchema))]
-pub struct TestStatement {
-    pub state: String,
-    pub statement: TestStatementKind,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source_location: Option<SourceLocation>,
-    /// The `reason` of a `<sce:setverdict>` as written and where, so a
-    /// refusal of the expression is placed on it. `None` on every other
-    /// statement. Not part of the IR, as [`crate::model::Transition::cond_spelling`]
-    /// is not.
-    #[serde(skip)]
-    pub reason_spelling: Option<crate::attribute_spelling::AttributeSpelling>,
-}
-
-/// What a [`TestStatement`] does, one variant per element, named by the
-/// element's local name.
+/// A statement the profile adds to executable content, one variant per
+/// element, named by the element's local name. It is the
+/// [`crate::model::Action::test_statement`] of an action whose
+/// `action_type` is [`TestStatement::action_type`], in its place among the
+/// other actions of its block.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "kebab-case")]
-pub enum TestStatementKind {
+pub enum TestStatement {
     /// `<sce:setverdict value reason>` (P12): `reason` is a `sce-static`
     /// expression of type `string`, as written.
     Setverdict {
@@ -121,6 +105,23 @@ pub enum TestStatementKind {
     },
     /// `<sce:stop-timer timer>` (P7).
     StopTimer { timer: String },
+}
+
+impl TestStatement {
+    /// The `action_type` of each statement's action, prefixed as the other
+    /// statements of the SCE namespace are, so no reader mistakes it for an
+    /// SCXML element's name.
+    pub const ACTION_TYPES: [&'static str; 3] =
+        ["sce_setverdict", "sce_start_timer", "sce_stop_timer"];
+
+    /// The `action_type` of this statement's action.
+    pub fn action_type(&self) -> &'static str {
+        match self {
+            Self::Setverdict { .. } => Self::ACTION_TYPES[0],
+            Self::StartTimer { .. } => Self::ACTION_TYPES[1],
+            Self::StopTimer { .. } => Self::ACTION_TYPES[2],
+        }
+    }
 }
 
 /// A verdict a document sets (docs/SCE_TEST_PROFILE.md §5.1). `error` is the
@@ -293,8 +294,8 @@ fn required(
     }
 }
 
-/// The profile's declarations, statements and PTCs of the test component
-/// whose root is `root`, named `name`, which declares `datamodel`.
+/// The profile's declarations and PTCs of the test component whose root is
+/// `root`, named `name`, which declares `datamodel`.
 pub(crate) fn read(
     root: &roxmltree::Node,
     name: &str,
@@ -380,20 +381,6 @@ pub(crate) fn read(
                 source_location: crate::parser::source_location_of(&node, diag_label),
             });
         }
-        if let Some(statement) = read_statement(&node, diag_label)? {
-            let reason_spelling = match statement {
-                TestStatementKind::Setverdict {
-                    reason: Some(_), ..
-                } => crate::attribute_spelling::AttributeSpelling::of(&node, None, "reason"),
-                _ => None,
-            };
-            profile.statements.push(TestStatement {
-                state: crate::parser::owning_state(&node),
-                statement,
-                source_location: crate::parser::source_location_of(&node, diag_label),
-                reason_spelling,
-            });
-        }
         let mut children: Vec<roxmltree::Node> =
             node.children().filter(|n| n.is_element()).collect();
         children.reverse();
@@ -402,11 +389,13 @@ pub(crate) fn read(
     Ok(profile)
 }
 
-/// The statement `node` is, when it is one of the profile's.
-fn read_statement(
+/// The statement `node` is, when it is one of the profile's: the parser asks
+/// it of each element of the SCE namespace in a test component's executable
+/// content.
+pub(crate) fn read_statement(
     node: &roxmltree::Node,
     diag_label: &str,
-) -> Result<Option<TestStatementKind>, Located<ForgeError>> {
+) -> Result<Option<TestStatement>, Located<ForgeError>> {
     if node.tag_name().namespace() != Some(SCE_NAMESPACE) {
         return Ok(None);
     }
@@ -428,16 +417,16 @@ fn read_statement(
                     },
                 )
             })?;
-            TestStatementKind::Setverdict {
+            TestStatement::Setverdict {
                 verdict,
                 reason: node.attribute("reason").map(str::to_string),
             }
         }
-        "start-timer" => TestStatementKind::StartTimer {
+        "start-timer" => TestStatement::StartTimer {
             timer: required(node, "<sce:start-timer>", "timer", diag_label)?,
             duration: node.attribute("duration").map(|d| d.trim().to_string()),
         },
-        "stop-timer" => TestStatementKind::StopTimer {
+        "stop-timer" => TestStatement::StopTimer {
             timer: required(node, "<sce:stop-timer>", "timer", diag_label)?,
         },
         _ => return Ok(None),

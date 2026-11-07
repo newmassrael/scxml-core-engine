@@ -496,6 +496,11 @@ impl<'m> Analysis<'m> {
             // A lift writes a record or a refusal and raises nothing
             // (docs/adr/0087, section 2.1): `actions/sce_lift.rs.jinja2`.
             "sce_lift" => Ok(Cost::NONE),
+            // A test component's statements raise nothing: a verdict is the
+            // component's own, and a timer's expiry is seen on a snapshot of
+            // a later round, not on the internal queue
+            // (docs/SCE_TEST_PROFILE.md §3.2, §4.7, §5.1).
+            "sce_setverdict" | "sce_start_timer" | "sce_stop_timer" => Ok(Cost::NONE),
             // A native action with no argument is a bare host call, which
             // cannot fail; one with arguments raises when one fails or the
             // payload it reads was not delivered.

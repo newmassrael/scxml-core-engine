@@ -26,7 +26,7 @@ use sce_build::forge::model::{
 use sce_build::forge::parser::parse_forge_with_imports;
 use sce_build::generator::Language;
 use sce_build::parser::SCXMLParser;
-use sce_build::test_component::{TestStatementKind, Verdict};
+use sce_build::test_component::{TestStatement, Verdict};
 use sce_build::{DocumentLabel, ForgeCompileOptions};
 
 fn fixture(name: &str) -> PathBuf {
@@ -622,43 +622,62 @@ fn a_test_component_records_its_declarations_branches_sends_and_statements() {
     assert_eq!(profile.invocations[0].src.as_deref(), Some("helper.scxml"));
     assert_eq!(profile.invocations[0].state, "requesting");
 
-    let kinds: Vec<(&str, &TestStatementKind)> = profile
-        .statements
-        .iter()
-        .map(|s| (s.state.as_str(), &s.statement))
-        .collect();
-    // In document order: the entry's start, the receive's stop, the
-    // timeout's verdict, then the second state's start and verdict.
-    assert_eq!(kinds.len(), 5, "{kinds:?}");
-    assert!(matches!(
-        kinds[0],
-        ("requesting", TestStatementKind::StartTimer { timer, duration: None }) if timer == "reply"
-    ));
-    assert!(matches!(
-        kinds[1],
-        ("requesting", TestStatementKind::StopTimer { timer }) if timer == "reply"
-    ));
-    assert!(matches!(
-        kinds[2],
-        ("requesting", TestStatementKind::Setverdict { verdict: Verdict::Fail, reason: Some(r) })
-            if r == "'no reply in time'"
-    ));
-    assert!(matches!(
-        kinds[3],
-        ("settling", TestStatementKind::StartTimer { duration: Some(d), .. }) if d == "500ms"
-    ));
-    assert!(matches!(
-        kinds[4],
-        (
-            "settling",
-            TestStatementKind::Setverdict {
-                verdict: Verdict::Pass,
-                reason: None
-            }
-        )
-    ));
-
+    // Each statement is an action of the block that holds it, in its place
+    // among the block's other actions (P4), so it runs where it is written.
+    let types = |actions: &[sce_build::model::Action]| -> Vec<String> {
+        actions.iter().map(|a| a.action_type.clone()).collect()
+    };
+    let statement = |actions: &[sce_build::model::Action], at: usize| -> TestStatement {
+        actions[at]
+            .test_statement
+            .clone()
+            .unwrap_or_else(|| panic!("action {at} is a statement: {:?}", types(actions)))
+    };
     let requesting = &model.states["requesting"];
+    let settling = &model.states["settling"];
+    let entry = &requesting.on_entry_blocks[0];
+    let received = &requesting.transitions[0].actions;
+    let timed_out = &requesting.transitions[1].actions;
+    assert_eq!(types(entry), ["send", "sce_start_timer"]);
+    assert_eq!(types(received), ["sce_stop_timer", "assign", "send"]);
+    assert_eq!(types(timed_out), ["sce_setverdict"]);
+    assert_eq!(types(&settling.on_entry_blocks[0]), ["sce_start_timer"]);
+    assert_eq!(types(&settling.transitions[0].actions), ["sce_setverdict"]);
+    assert_eq!(
+        statement(entry, 1),
+        TestStatement::StartTimer {
+            timer: "reply".into(),
+            duration: None
+        }
+    );
+    assert_eq!(
+        statement(received, 0),
+        TestStatement::StopTimer {
+            timer: "reply".into()
+        }
+    );
+    assert_eq!(
+        statement(timed_out, 0),
+        TestStatement::Setverdict {
+            verdict: Verdict::Fail,
+            reason: Some("'no reply in time'".into())
+        }
+    );
+    assert_eq!(
+        statement(&settling.on_entry_blocks[0], 0),
+        TestStatement::StartTimer {
+            timer: "settle".into(),
+            duration: Some("500ms".into())
+        }
+    );
+    assert_eq!(
+        statement(&settling.transitions[0].actions, 0),
+        TestStatement::Setverdict {
+            verdict: Verdict::Pass,
+            reason: None
+        }
+    );
+
     let receive = requesting.transitions[0]
         .test_branch
         .as_ref()
@@ -1092,6 +1111,47 @@ fn a_statechart_that_is_no_test_component_does_not_read_a_branch() {
     );
 }
 
+/// A statement of the profile in a statechart that is not a test component is
+/// an element its executable content does not take, refused on its row rather
+/// than skipped, so a verdict the author wrote is never dropped in silence.
+#[test]
+fn a_statechart_that_is_no_test_component_refuses_a_statement() {
+    for (statement, child) in [
+        (r#"<sce:setverdict value="pass"/>"#, "sce:setverdict"),
+        (r#"<sce:start-timer timer="t"/>"#, "sce:start-timer"),
+        (r#"<sce:stop-timer timer="t"/>"#, "sce:stop-timer"),
+    ] {
+        let text = format!(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="statechart" name="no_test_component"
+       datamodel="null" initial="waiting">
+  <state id="waiting">
+    <onentry>
+      {statement}
+    </onentry>
+    <transition event="go" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>
+"#
+        );
+        let err = SCXMLParser::new()
+            .parse_string(&text, "no_test_component")
+            .expect_err("refused");
+        let (code, actual, line) = record(&err);
+        assert_eq!(
+            (code, actual.as_deref(), line),
+            (
+                DiagnosticCode::ValidationUnexpectedChildElement.as_str(),
+                Some(child),
+                Some(7)
+            ),
+            "{statement}"
+        );
+    }
+}
+
 /// The pseudocode page of a test component says what its profile declares,
 /// a transition's branch and a send's template.
 #[test]
@@ -1106,7 +1166,11 @@ fn a_test_components_page_shows_its_profile() {
         "branch receive sut template EveryMatcher args limit",
         "branch timeout reply",
         "test-template JobReport",
-        "setverdict fail in requesting reason 'no reply in time'",
+        "start-timer reply",
+        "stop-timer reply",
+        "setverdict fail reason 'no reply in time'",
+        "start-timer settle duration 500ms",
+        "setverdict pass",
     ] {
         assert!(page.contains(line), "`{line}` is not on the page:\n{page}");
     }

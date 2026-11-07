@@ -5334,6 +5334,37 @@ impl SCXMLParser {
                     });
                 }
             }
+            // docs/SCE_TEST_PROFILE.md §4.4, §11.5: a test component's statements are actions of
+            // the block that holds them, run in their place among its other actions (P4). Only a
+            // test component reads them: in any other statechart each is an element its
+            // executable content does not take, refused rather than skipped, so a verdict the
+            // author wrote is never dropped in silence.
+            (false, "setverdict" | "start-timer" | "stop-timer") => {
+                if model.test_component.is_none() {
+                    let pos = child.document().text_pos_at(child.range().start);
+                    return Err(crate::forge::error::Located::new(
+                        crate::forge::error::ValidationError::UnexpectedChildElement {
+                            parent: child
+                                .parent_element()
+                                .map(|parent| format!("<{}>", parent.tag_name().name()))
+                                .unwrap_or_else(|| "<scxml>".to_string()),
+                            child: format!("sce:{tag}"),
+                            allowed: EXECUTABLE_CONTENT_ELEMENTS
+                                .iter()
+                                .map(|name| (*name).to_string())
+                                .collect(),
+                        }
+                        .into(),
+                        source_name,
+                        Some(pos.row),
+                        Some(pos.col),
+                    ));
+                }
+                let statement = crate::test_component::read_statement(child, source_name)?
+                    .expect("each of the three local names is a statement of the profile");
+                action.action_type = statement.action_type().to_string();
+                action.test_statement = Some(statement);
+            }
             // §scxml-4.10: an element of the SCXML namespace here is executable content, and the
             // ones that are not (`<onentry>` inside a `<transition>`, a `<state>` inside an
             // `<onexit>`, a misspelt `<asign>`) have no place. They used to be skipped with

@@ -280,6 +280,17 @@
           },
           "type": "array"
         },
+        "test_statement": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/TestStatement"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The statement of a `test-component` this action is (`<sce:setverdict>`, `<sce:start-timer>`, `<sce:stop-timer>`; docs/SCE_TEST_PROFILE.md §4.7, §5.1, §11.5), whose [`crate::test_component::TestStatement::action_type`] is [`Self::action_type`]. `None` on every other action."
+        },
         "test_template": {
           "anyOf": [
             {
@@ -7273,7 +7284,7 @@
       "type": "object"
     },
     "TestComponentProfile": {
-      "description": "The declarations, statements and PTCs of a test component, in document order.",
+      "description": "The declarations and PTCs of a test component, in document order.",
       "properties": {
         "invocations": {
           "description": "The `<invoke>` of each PTC the component creates.",
@@ -7296,13 +7307,6 @@
           },
           "type": "array"
         },
-        "statements": {
-          "description": "The statements the profile adds to executable content.",
-          "items": {
-            "$ref": "#/definitions/TestStatement"
-          },
-          "type": "array"
-        },
         "timers": {
           "description": "The `<sce:test-timer>` declarations.",
           "items": {
@@ -7315,7 +7319,6 @@
         "invocations",
         "module_parameters",
         "ports",
-        "statements",
         "timers"
       ],
       "type": "object"
@@ -7818,33 +7821,7 @@
       "type": "object"
     },
     "TestStatement": {
-      "description": "A statement the profile adds to executable content, and the state whose executable content holds it.",
-      "properties": {
-        "source_location": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/SourceLocation"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "state": {
-          "type": "string"
-        },
-        "statement": {
-          "$ref": "#/definitions/TestStatementKind"
-        }
-      },
-      "required": [
-        "state",
-        "statement"
-      ],
-      "type": "object"
-    },
-    "TestStatementKind": {
-      "description": "What a [`TestStatement`] does, one variant per element, named by the element's local name.",
+      "description": "A statement the profile adds to executable content, one variant per element, named by the element's local name. It is the [`crate::model::Action::test_statement`] of an action whose `action_type` is [`TestStatement::action_type`], in its place among the other actions of its block.",
       "oneOf": [
         {
           "description": "`<sce:setverdict value reason>` (P12): `reason` is a `sce-static` expression of type `string`, as written.",

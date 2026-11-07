@@ -640,6 +640,11 @@ inside a `list-match` (B.1.3.2, §8.1); a template whose references form a cycle
     an `sce-static` expression of type `string`;
   - `<sce:start-timer timer="T" duration="…"/>` and `<sce:stop-timer timer="T"/>` (P7). A start with no `duration`
     needs a default on the timer.
+
+  Each is executable content like `<assign>`: it runs in its place among the other elements of its block, in
+  document order (§scxml-4.1). So a `reason` read in a receive branch reads the received message as the branch's
+  `<assign>` does. In a statechart that is not a `test-component`, each is an element its executable content does not
+  take (`validation/unexpected-child-element`).
 - **Template arguments.** `sce:template-args` on a `<send>` or a receive branch lists component variables, separated
   by spaces, bound in order to the template's formal parameters. Like SCXML's `namelist`, it names locations, not
   expressions. It is an attribute so that the children of `<transition>` stay executable content (ADR 0057 §3).

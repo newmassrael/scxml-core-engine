@@ -3111,7 +3111,6 @@ fn render_test_component_profile(
     profile: &crate::test_component::TestComponentProfile,
     out: &mut Out<'_>,
 ) {
-    use crate::test_component::TestStatementKind;
     for port in &profile.ports {
         out.line(&format!(
             "test-port {} type {}",
@@ -3129,32 +3128,31 @@ fn render_test_component_profile(
     for id in &profile.module_parameters {
         out.line(&format!("module-parameter {}", text(id)));
     }
-    for statement in &profile.statements {
-        let line = match &statement.statement {
-            TestStatementKind::Setverdict { verdict, reason } => {
-                let mut line = format!(
-                    "setverdict {} in {}",
-                    verdict.as_attr(),
-                    text(&statement.state)
-                );
-                if let Some(reason) = reason {
-                    let _ = write!(line, " reason {}", text(reason));
-                }
-                line
+}
+
+/// A test component's statement, in its place in its block
+/// (docs/SCE_TEST_PROFILE.md §4.7, §5.1). Each name is one word, and the one
+/// free-text value, a verdict's reason, is last on the line.
+fn render_test_statement(statement: &crate::test_component::TestStatement, out: &mut Out<'_>) {
+    use crate::test_component::TestStatement;
+    let line = match statement {
+        TestStatement::Setverdict { verdict, reason } => {
+            let mut line = format!("setverdict {}", verdict.as_attr());
+            if let Some(reason) = reason {
+                let _ = write!(line, " reason {}", text(reason));
             }
-            TestStatementKind::StartTimer { timer, duration } => {
-                let mut line = format!("start-timer {} in {}", text(timer), text(&statement.state));
-                if let Some(duration) = duration {
-                    let _ = write!(line, " duration {}", text(duration));
-                }
-                line
+            line
+        }
+        TestStatement::StartTimer { timer, duration } => {
+            let mut line = format!("start-timer {}", text(timer));
+            if let Some(duration) = duration {
+                let _ = write!(line, " duration {}", text(duration));
             }
-            TestStatementKind::StopTimer { timer } => {
-                format!("stop-timer {} in {}", text(timer), text(&statement.state))
-            }
-        };
-        out.line(&line);
-    }
+            line
+        }
+        TestStatement::StopTimer { timer } => format!("stop-timer {}", text(timer)),
+    };
+    out.line(&line);
 }
 
 /// The branch a transition of a `test-component` is
@@ -3428,6 +3426,10 @@ fn render_scxml_action_body(a: &crate::model::Action, out: &mut Out<'_>) {
                 }
             });
         }
+        "sce_setverdict" | "sce_start_timer" | "sce_stop_timer" => match &a.test_statement {
+            Some(statement) => render_test_statement(statement, out),
+            None => out.line(&format!("<unrendered action {}>", text(&a.action_type))),
+        },
         other => out.line(&format!("<unrendered action {}>", text(other))),
     }
 }

@@ -587,7 +587,9 @@ state or a state inside it, is `test-profile/done-branch`. A module parameter wi
 `expr`, or written by `<assign>`, `<foreach>`, `<sce:append>`, `<sce:clear>`, `<sce:lift>`
 or `<sce:render>`, is `test-profile/module-parameter-written`. A timer's default or a
 `<sce:start-timer>` duration that is not a delay in whole microseconds is
-`test-profile/duration`. Read with the documents it names: `sce:template-args` whose count
+`test-profile/duration`. `<sce:setverdict>`, `<sce:start-timer>` and `<sce:stop-timer>`
+are executable content, run in their place in their block; in a statechart that is not
+a `test-component` each is `validation/unexpected-child-element`. Read with the documents it names: `sce:template-args` whose count
 or whose variables' types differ from the template's formal parameters is
 `test-profile/template-parameter`; a sent template whose record is not on its port type's
 `out` list, or a received one not on its `in` list, is `test-profile/port-direction`; a

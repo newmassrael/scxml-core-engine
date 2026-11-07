@@ -200,10 +200,11 @@ fn a_test_component_is_exported_through_the_statechart_arm() {
         document["test_component"]["timers"][0]["duration"],
         Value::from("500ms")
     );
-    assert_eq!(
-        document["test_component"]["statements"][0]["statement"]["kind"],
-        Value::from("start-timer")
-    );
+    // A statement is an action of its block, carrying what it does.
+    let start = &document["states"]["waiting"]["on_entry_blocks"][0][0];
+    assert_eq!(start["type"], Value::from("sce_start_timer"));
+    assert_eq!(start["test_statement"]["kind"], Value::from("start-timer"));
+    assert_eq!(start["test_statement"]["timer"], Value::from("reply"));
 }
 
 #[test]
