@@ -1,6 +1,7 @@
 # SCE test profile — operational semantics
 
-- Status: specification of ADR 0091, order of work step 1 (§1 to §10), and the document forms of step 2 (§11).
+- Status: specification of ADR 0091, order of work step 1 (§1 to §10), the document forms of step 2 (§11), and the
+  structure of the native runtime of step 3 (§12).
 - Decision: `docs/adr/0091-a-test-is-a-document-of-the-test-profile-and-its-ttcn-3-export-runs-and-agrees-with-it.md`.
   Where this document and the ADR disagree, the ADR is amended or this document is wrong; neither is read as
   overriding the other.
@@ -286,6 +287,9 @@ component's variables (-4 §9.3.2). A `cond` may not read the received message (
 
 - a dynamic error (-4 §8.6.2 d, §9.17.3);
 - the guard of §4.11;
+- a test case that can never end: no branch of any component fires on a round's snapshot, and there is no instant to
+  advance `NOW` to (§3.3), so every later round would be the same. -4 gives such a run no verdict, because it never
+  ends; the profile ends it, and with `error`, because the document did not decide its outcome;
 - a codec or adapter failure;
 - a disagreement under ADR 0091 C3, which the lane records after the run.
 
@@ -484,7 +488,8 @@ contributes to Titan therefore has two parts, both carried by Titan's Main Contr
   advances `NOW` (§3.3).
 
 The two share the one condition and the one protocol: a grant either starts a round at the present instant or
-advances time and then starts one.
+advances time and then starts one. When it can do neither, because no branch fired and no instant is pending, the Main
+Controller ends the test case with `error` (P13).
 
 Titan's clock must compare instants as integers of microseconds (§3.3). Titan holds time as a `double` of seconds, and
 the sum of a start instant and a duration in `double` arithmetic can differ in its last bit from the instant a trace
@@ -775,3 +780,83 @@ needs a variant judged on its own. The registry (`DiagnosticCode::derivation_cla
 to `PreservedByRemoval`, because that class claims more than the argument above proves. It claims that a rule holds in
 every sub-document, and some do not: removing an `<invoke>` breaks "every PTC is created by exactly one `<invoke>`"
 (`test-profile/ptc-invocation`). Those rules hold in every world only because `π_c` never removes the element.
+
+## 12. The native runtime
+
+ADR 0091 order of work step 3 builds a runtime that runs a suite as §2 to §5 define, first in one backend and then in
+the others. This section fixes its structure. It changes no rule of §2 to §11.
+
+### 12.1 Which backend first
+
+C++. The corpus that ADR 0091's Context measured, 432 documents that pair `cpp:` conditions with C++ message types,
+runs in C++, and its migration (order of work step 7) needs a C++ runtime to migrate onto. The other backends follow
+one at a time. Each lifts the refusal of §11.9 for itself when its runtime lands.
+
+### 12.2 What is generated and what is library
+
+| Part | Where | Why there |
+|---|---|---|
+| Round scheduler, `NOW`, port queues and snapshots, timer bindings, verdicts, entity table, guard | a runtime library per backend (C++: `sce/include/test/`) | it is the same for every suite, so it is written once and tested on its own (Zero Duplication) |
+| A component's machine | generated from the `test-component`, by the backend's statechart generator | it is a statechart (§7) |
+| A template's matcher and a specific template's value | generated from the `test-template`, over the record types the statechart generator already writes for an `event-schema` | matching is on values, not on encoded bytes, so no codec takes part (C2) |
+| Which port is connected or mapped to which, and the MTC and PTC of each component | generated tables from the `test-configuration` and `test-case` | they are data |
+| The test cases a world of the features runs, with guards and module parameters | a generated table from the `test-suite` | it is data |
+| The SUT's side of a mapped port | a system adapter: an interface the runtime calls, shaped after TRI's `triSend` and `triEnqueueMsg` (ADR 0091 answer 1) | the codec and the transport are the adapter's |
+
+### 12.3 A component is an unchanged statechart machine
+
+The runtime reaches a component's machine only through doors the engine already has. The engine's macrostep, its
+exit and entry order, its eventless transitions and its executable content are used as they are, which is what §7
+requires.
+
+| Profile | Engine door |
+|---|---|
+| a round's snapshot (§3.2 step 3) | one external event of a reserved name, delivered to each waiting component. No document can write the name, because `test-profile/branch` refuses every `event` on a transition but `done.invoke.<id>`. |
+| a branch (P2) | a transition on that event whose guard is the branch's `cond` and its match: receive, the port's `SNAP-VALUE` is present and matches the template; receive any, it is present; timeout, the timer's `SNAP-STATUS` is `TIMEOUT`; done, the PTC is in the snapshot's `DONE`. |
+| the order of P3 | the engine's `selectTransitions` (§scxml-D), unchanged. When no branch matches, no transition is enabled and the engine discards the event: nothing is removed, as §7 requires. |
+| taking a branch, P4 step 1 | one statement the generator puts before the branch's executable content. A receive branch removes the head of its port's queue and holds it as the transition's `_event.data`, in the payload member of its record's event (`Transition::payload_event`). A timeout branch sets its timer to `IDLE`. Every branch's statement also tells the runtime that the component took a branch in this round. |
+| `<sce:setverdict>`, `<sce:start-timer>`, `<sce:stop-timer>` | actions of their block (§11.5) that call the component's runtime context |
+| a send (P6) | a host Event I/O Processor for the test-port URI, registered by the runtime (ADR 0084). The request names the port and carries the template's value. The runtime appends the value to the queue of the connected port, or hands it to the system adapter when the port is mapped. |
+| a PTC (P9) | a host invoke processor for the test-component URI, registered by the runtime. The engine asks for the start when the macrostep that entered the state ends (§scxml-6.4), which is when P9 creates, connects, maps and starts the PTC. It asks for the cancel when the state is exited, which is P9's kill. The runtime never reports a completion to the engine: `done` is read from the snapshot (P2). So a PTC that has terminated is still running for the engine, and the engine delivers the cancel for it too, which P9's kill requires. |
+
+A component has no other source of external events: `<raise>` and `<cancel>` are refused (§8.2), a send has no delay
+(P6) and goes to a port, and every `<invoke>` is a PTC. So when the engine returns from delivering the snapshot event,
+the component's macrostep has completed and it is waiting (§3.2) or terminated (P10).
+
+### 12.4 The scheduler
+
+All the components of a test case run on one thread, in the order they were created. §3.2 shows that the order within
+a round does not change the result. On one thread, quiescence (§3.2 step 1) holds whenever no delivery is in progress,
+because a send appends to its queue before it returns.
+
+A round:
+
+1. Deliver every input of the system adapter and every timer expiry due at `NOW` (§3.2 step 2).
+2. Take every waiting component's snapshot, then deliver the snapshot event to each.
+3. If some component took a branch, start the next round at the same `NOW`.
+4. Otherwise advance `NOW` to the least of the next timer expiry, the next input instant the adapter announces, and
+   the guard instant (§3.3), and start the next round.
+
+`NOW` is a signed 64-bit count of microseconds, owned by the runtime. The engine's own clock and scheduler take no
+part, because a component starts no delayed send.
+
+When no component took a branch and there is no instant to advance to, the test case can never end, and the runtime
+ends it with `error` (P13). The lane's clock does the same (§10), so the two runs agree (C3).
+
+### 12.5 Verdicts and the result
+
+The runtime keeps `E-VERDICT` for each component and computes `TC-VERDICT` over the MTC and every PTC, removed or not
+(P14), with `error` above the four verdicts a document sets (P13). A test case's result is its verdict and its log:
+each send, receive, timeout, verdict and log line, with its `NOW` and its component. The log's schema is fixed with
+the equivalence law (order of work step 6).
+
+### 12.6 The order of the slices
+
+1. A test component's statements are actions of their blocks (§11.5).
+2. The C++ runtime library of §12.2, with unit tests over hand-written components, before any generation.
+3. C++ generation of templates: the matcher of each template and the value of each specific template.
+4. C++ generation of test components through the doors of §12.3. The refusal of §11.9 is lifted for C++ for
+   `test-component` and `test-template`.
+5. C++ generation of the configuration, case and suite tables, a runner, and the examples run end to end with the
+   verdicts they expect. The refusal is lifted for the remaining kinds.
+6. The other backends, one at a time.
