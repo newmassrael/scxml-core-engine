@@ -1200,7 +1200,21 @@ abstract class StateMachineEngine<S : State, E : Event>(
          * Taken when the send executes, so a delayed one carries the invokeid
          * current then, not when it fires.
          */
-        val invokeId: String = ""
+        val invokeId: String = "",
+        /**
+         * The message as the value the generated code holds, for a processor
+         * whose messages are values and never encodings: the test profile's
+         * test-port processor, whose send carries its specific template's
+         * value, a record of the type the event schema's unit declares
+         * (docs/SCE_TEST_PROFILE.md §12.3; docs/adr/0091, C2). Null for every
+         * other send, whose data is [eventData], so a send site that names no
+         * value is unchanged.
+         *
+         * A saved state does not carry it: a test-port send has no delay (the
+         * test profile's P6), so none is pending when a machine is saved, and a
+         * restored host send is one of another processor, whose value is null.
+         */
+        val value: Any? = null,
     )
 
     /**
@@ -3362,6 +3376,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
                             "the deadline of the invocation '${deadline.invokeId}' belongs to no " +
                                 "invocation this machine is running")
                     }
+                // The request's value is not saved: a send that carries one has
+                // no delay, so it is never pending here.
                 hostSend != null -> SavedAct.Host(
                     processorType = hostSend.processorType,
                     event = hostSend.eventName,
@@ -3894,6 +3910,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
                         sendId = act.sendId,
                         eventData = act.data,
                         invokeId = act.invokeId,
+                        // A send that carries a value has no delay, so none is saved.
+                        value = null,
                     ),
                 )
             }
