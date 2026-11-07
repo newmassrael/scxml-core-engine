@@ -2170,6 +2170,11 @@ pub const JSON_BUILTINS_LUA: &str = include_str!("../../sce/include/scripting/js
 /// costs nothing: a chunk simply grows past `MAX_CHUNK` until the function it
 /// is inside ends.
 ///
+/// The lines that hold only a comment are left out of every chunk
+/// (`without_comment_lines`): a definition can grow past the literal floor on
+/// its explanation alone, and the explanation is read in the `.lua` file, not
+/// in the generated C.
+///
 /// Public so the split can be exercised against a real interpreter rather
 /// than reviewed: `sce-build/tests/shared_lua_assets.rs` loads these chunks
 /// one at a time into one state and then calls what they define.
@@ -2181,6 +2186,10 @@ pub fn c11_lua_chunks(text: &str) -> Vec<String> {
     let mut current = String::new();
     let mut depth: usize = 0;
     for paragraph in text.split("\n\n") {
+        let paragraph = without_comment_lines(paragraph);
+        if paragraph.trim().is_empty() {
+            continue;
+        }
         // `depth == 0` is the whole guard: a boundary is legal only between
         // definitions. The shared assets write every `function` at column 0
         // and close it with an `end` at column 0, which is what makes this
@@ -2194,8 +2203,8 @@ pub fn c11_lua_chunks(text: &str) -> Vec<String> {
         if !current.is_empty() {
             current.push_str("\n\n");
         }
-        current.push_str(paragraph);
-        depth = lua_depth_after(paragraph, depth);
+        current.push_str(&paragraph);
+        depth = lua_depth_after(&paragraph, depth);
     }
     if !current.is_empty() {
         chunks.push(current);
@@ -2203,12 +2212,39 @@ pub fn c11_lua_chunks(text: &str) -> Vec<String> {
     chunks
 }
 
+/// `paragraph` without the lines that hold only a comment.
+///
+/// The shared assets carry their reasoning in comments, which a chunk does not
+/// need when it runs and which count against the literal's 4095 like code
+/// does. Measured 2026-11-08: the block of `ecma_semantics.lua` that binds the
+/// system variables read-only is one paragraph of about 4,860 bytes, three
+/// fifths of them comment, so with its comments it was a literal no
+/// conforming compiler need accept, and without them it is under 2,000.
+///
+/// A paragraph holding a long bracket (`[[`, `[=`) is kept whole: a line of a
+/// long string that begins with `--` is text rather than a comment, and the
+/// line that opens a long comment cannot be dropped alone without turning the
+/// comment's body into code. The shared assets hold neither today, so this
+/// only keeps the rule from being wrong for a file that one day does.
+fn without_comment_lines(paragraph: &str) -> String {
+    if paragraph.contains("[[") || paragraph.contains("[=") {
+        return paragraph.to_string();
+    }
+    paragraph
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("--"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// Function nesting depth after reading `paragraph`, starting from `depth`.
 ///
 /// Counts only the column-0 spellings the shared Lua assets use, because that
 /// is the property being relied on rather than a general Lua parse: a
-/// `function` at column 0 opens a definition and an `end` at column 0 closes
-/// it. Anything indented belongs to a body and cannot be a boundary anyway.
+/// `function` or a `do` at column 0 opens a definition (a `do` block holds
+/// file-local helpers for the definitions inside it) and an `end` at column 0
+/// closes it. Anything indented belongs to a body and cannot be a boundary
+/// anyway.
 fn lua_depth_after(paragraph: &str, depth: usize) -> usize {
     let mut depth = depth;
     for line in paragraph.lines() {
@@ -2220,6 +2256,8 @@ fn lua_depth_after(paragraph: &str, depth: usize) -> usize {
             if !line.ends_with(" end") {
                 depth += 1;
             }
+        } else if line == "do" {
+            depth += 1;
         } else if line == "end" {
             depth = depth.saturating_sub(1);
         }

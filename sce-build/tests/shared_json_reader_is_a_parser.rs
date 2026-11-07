@@ -270,6 +270,76 @@ fn a_blank_line_inside_a_function_is_not_a_chunk_boundary() {
     }
 }
 
+/// A blank line inside a column-0 `do` block is not a boundary either.
+///
+/// A `do` block is how a shared asset keeps helpers file-local for the
+/// definitions inside it, and a `local` is visible only inside the chunk that
+/// declares it: split at the blank line below, the second half names `_h` as a
+/// global that is not there. Compiled, as above, and then run in one state, so
+/// a split that compiled in pieces but lost the local is a red too.
+#[test]
+fn a_blank_line_inside_a_do_block_is_not_a_chunk_boundary() {
+    let filler = "    _pad[#_pad + 1] = 1\n".repeat(200);
+    let source = format!(
+        "_pad = {{}}\n\ndo\n    local function _h() return 1 end\n{filler}\n{filler}    function _probe_d() return _h() end\nend\n\nfunction _probe_e()\n    return 2\nend\n"
+    );
+    let chunks = c11_lua_chunks(&source);
+    let lua = mlua::Lua::new();
+    for (i, chunk) in chunks.iter().enumerate() {
+        lua.load(chunk.as_str())
+            .exec()
+            .unwrap_or_else(|e| panic!("chunk {i} of {} split a `do` block: {e}", chunks.len()));
+    }
+    let answered: i64 = lua
+        .load("return _probe_d()")
+        .eval()
+        .expect("the function defined inside the block reaches its local helper");
+    assert_eq!(answered, 1);
+}
+
+/// A line that holds only a comment does not reach a chunk, and the code
+/// beside it does.
+///
+/// The paragraph below is under the floor as code and far over it with its
+/// comment, which is the shape of the shared block that binds the system
+/// variables: carried whole, it was a string literal no conforming C compiler
+/// need accept.
+#[test]
+fn a_comment_line_is_not_carried_into_a_chunk() {
+    let comment = "-- the reasoning, which the generated C does not need\n".repeat(100);
+    let source = format!("function _probe_c()\n{comment}    --\n    return 3\nend\n");
+    let chunks = c11_lua_chunks(&source);
+    assert_eq!(chunks.len(), 1, "one definition is one chunk");
+    assert!(
+        chunks[0]
+            .lines()
+            .all(|line| !line.trim_start().starts_with("--")),
+        "a comment line reached the chunk:\n{}",
+        chunks[0]
+    );
+    let lua = mlua::Lua::new();
+    lua.load(chunks[0].as_str())
+        .exec()
+        .expect("the chunk without its comments still defines the function");
+    let answered: i64 = lua.load("return _probe_c()").eval().expect("callable");
+    assert_eq!(answered, 3);
+}
+
+/// A paragraph holding a long bracket is carried whole: a line of a long
+/// string that begins with `--` is text, and dropping it would change the
+/// string.
+#[test]
+fn a_long_string_keeps_its_lines() {
+    let source = "_probe_s = [[\n-- not a comment\n]]\n";
+    let chunks = c11_lua_chunks(source);
+    let lua = mlua::Lua::new();
+    for chunk in &chunks {
+        lua.load(chunk.as_str()).exec().expect("chunk executes");
+    }
+    let text: String = lua.load("return _probe_s").eval().expect("bound");
+    assert_eq!(text, "-- not a comment\n");
+}
+
 /// Chunks stay under the size the splitter exists to respect.
 ///
 /// C99 guarantees only 4095 characters in a string literal after
@@ -316,12 +386,19 @@ fn the_chunker_tracks_function_depth_in_both_shared_assets() {
                 if !line.ends_with(" end") {
                     depth += 1;
                 }
+            } else if line == "do" {
+                // A column-0 block, which holds file-local helpers for the
+                // definitions inside it, opens like a function does.
+                depth += 1;
             } else if line == "end" {
                 depth -= 1;
                 lowest = lowest.min(depth);
             }
         }
-        assert_eq!(depth, 0, "{name}: unbalanced column-0 function/end count");
+        assert_eq!(
+            depth, 0,
+            "{name}: unbalanced column-0 function/do/end count"
+        );
         assert_eq!(lowest, 0, "{name}: a column-0 `end` closed nothing");
     }
 }
