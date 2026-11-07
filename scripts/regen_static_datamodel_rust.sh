@@ -156,6 +156,16 @@ TEST_PROFILE_IMPORTS+=(card_payment card_within voucher_payment voucher_is)
 TEST_PROFILE_IMPORTS+=(payment_kind order_customer order_payment order_placed order_placed_match)
 # ... and the union shape_is_circle matches, with its tag's enum and its cases' records.
 UNIONS=(shape_kind shape_radius shape_rect union_shape)
+# The test components tests/a_test_component_runs_through_its_doors.rs runs through the
+# profile's runtime (docs/SCE_TEST_PROFILE.md §12.3), each its statechart machine and the
+# component beside it, generated beside the records and the templates their machines
+# name as `super::<name>`. The port types are read where the components are and write
+# no file; param_asker, which declares a module parameter, waits for Rust's suite tables
+# (docs/SCE_TEST_PROFILE.md §12.6). The C++ suite runs the same components
+# (tests/integration/ATestComponentRunsThroughItsDoorsTest.cpp).
+TEST_PROFILE_RUNTIME_DIR="$TEST_PROFILE_DIR/runtime"
+TEST_PROFILE_RUNTIME=(job_request job_reply request_of any_request reply_ok reply_of)
+TEST_COMPONENTS=(asker coordinator answerer keeper idler)
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -187,6 +197,9 @@ done
 for document in "${UNIONS[@]}"; do
     "$CODEGEN" generate "sce-build/tests/fixtures/union/$document.scxml" -l rust -o "$TMP/"
 done
+for document in "${TEST_PROFILE_RUNTIME[@]}" "${TEST_COMPONENTS[@]}"; do
+    "$CODEGEN" generate "$TEST_PROFILE_RUNTIME_DIR/$document.scxml" -l rust -o "$TMP/"
+done
 
 mkdir -p "$GENERATED_DIR"
 source "$REPO_ROOT/scripts/lib/sce_generated_tree.sh"
@@ -210,4 +223,4 @@ MODRS="$GENERATED_DIR/mod.rs"
 source "$REPO_ROOT/scripts/lib/sce_rustfmt.sh"
 sce_rustfmt_dir "$GENERATED_DIR" "$REPO_ROOT"
 
-echo "Regenerated: ${MACHINES[*]} ${STANDARD_MACHINES[*]}, ${SCHEMAS[*]}, ${ALGORITHMS[*]}, ${STD_ALGORITHMS[*]} and ${CALLED[*]} under $GENERATED_DIR/ from $INPUT_ROOT, and ${TEST_PROFILE[*]} ${TEST_PROFILE_IMPORTS[*]} ${UNIONS[*]} from $TEST_PROFILE_DIR and sce-build/tests/fixtures/union"
+echo "Regenerated: ${MACHINES[*]} ${STANDARD_MACHINES[*]}, ${SCHEMAS[*]}, ${ALGORITHMS[*]}, ${STD_ALGORITHMS[*]} and ${CALLED[*]} under $GENERATED_DIR/ from $INPUT_ROOT, and ${TEST_PROFILE[*]} ${TEST_PROFILE_IMPORTS[*]} ${UNIONS[*]} ${TEST_PROFILE_RUNTIME[*]} ${TEST_COMPONENTS[*]} from $TEST_PROFILE_DIR and sce-build/tests/fixtures/union"
