@@ -2278,10 +2278,18 @@ pub trait StaticTarget {
     /// docs/SCE_TEST_PROFILE.md §4.8 (P8), §12.3: a test component's `<log>`,
     /// recorded in the test log, with the instant and the component, as a call
     /// on the component's runtime context: `label` and `value`, the lowered
-    /// `expr` where it writes one, as the engine's log shows them. `None` for a
-    /// target whose test component has not landed.
-    fn test_log(&self, _label: &str, _value: Option<&str>) -> Option<String> {
+    /// `expr` where it writes one, of type `ty`, as the engine's log shows them
+    /// ([`Self::log`]). `None` for a target whose test component has not
+    /// landed.
+    fn test_log(&self, _label: &str, _value: Option<&str>, _ty: InferredType) -> Option<String> {
         None
+    }
+    /// `value`, the lowered read of a variable bound to a formal parameter of a
+    /// test template (`sce:template-args`) of type `ty`, as the template's
+    /// `match` and `value` take it. The value itself by default, for a target
+    /// whose template unit takes every parameter as it is read.
+    fn template_argument(&self, value: &str, _ty: InferredType) -> String {
+        value.to_string()
     }
     /// docs/SCE_TEST_PROFILE.md §4.6 (P6), §12.3: the value a `<send>` of a
     /// test component carries to the test-port processor, the specific
@@ -3315,6 +3323,35 @@ impl StaticTarget for KotlinTarget {
 /// plain `Copy` struct updated in place, a list a `BoundedList` whose bound is
 /// its type's (docs/adr/0086, section 7.4).
 pub struct RustTarget;
+
+/// How a guard or a statement of a test component's Rust machine reaches the
+/// component's runtime context (docs/SCE_TEST_PROFILE.md §12.3): the policy's
+/// accessor of the context the component binds before the machine starts
+/// (`rust/state_machine.rs.jinja2`).
+const RUST_TEST_CONTEXT: &str = "self.test_context()";
+
+/// The profile's Rust runtime (`backends/rust/runtime/src/test/`), from the
+/// crate root.
+const RUST_TEST_RUNTIME: &str = "::sce_rust_runtime::test";
+
+/// `text` as a Rust string literal.
+fn rust_text(text: &str) -> String {
+    format!("\"{}\"", filters::escape_rust(text.to_string()))
+}
+
+/// The module of the Rust unit of the test template named `unit`, as the
+/// machine's import of it brings it into scope ([`StaticTarget::test_template_import`]):
+/// where its own generation put its `Value`, `matches` and `value`
+/// (`forge/rust/test_template.rs.jinja2`).
+fn rust_test_template_module(unit: &str) -> String {
+    crate::forge::generator::forge_import_identity(
+        unit,
+        &Language::Rust,
+        false,
+        &crate::ForgeCompileOptions::default(),
+    )
+    .namespace
+}
 
 impl RustTarget {
     /// `lines` as the text of one expression spread over several lines, each as
@@ -4556,6 +4593,203 @@ impl StaticTarget for RustTarget {
     }
     fn lends_wire_bytes(&self) -> bool {
         true
+    }
+    // The policy holds the component's runtime context, read through its
+    // accessor ([`RUST_TEST_CONTEXT`]), which the component the runtime drives
+    // binds before the machine starts (`rust/state_machine.rs.jinja2`). A
+    // receive branch with a template asks the runtime for the snapshot's head
+    // as the template's type, under its record's event, and calls the
+    // template's `matches` on it in place, borrowing nothing of the run.
+    fn snapshot_match(&self, branch: &SnapshotBranch, args: &[String]) -> Option<String> {
+        Some(match branch {
+            SnapshotBranch::Receive {
+                port,
+                template: None,
+            } => format!("{RUST_TEST_CONTEXT}.snapshot_present({})", rust_text(port)),
+            SnapshotBranch::Receive {
+                port,
+                template: Some(template),
+            } => {
+                let unit = rust_test_template_module(&template.unit);
+                let bound: String = args.iter().map(|arg| format!(", {arg}")).collect();
+                format!(
+                    "{RUST_TEST_RUNTIME}::receives::<{unit}::Value>({RUST_TEST_CONTEXT}, {}, {}, \
+                     |sce_message| {unit}::matches(sce_message{bound}))",
+                    rust_text(port),
+                    rust_text(&template.event)
+                )
+            }
+            SnapshotBranch::Timeout { timer } => {
+                format!("{RUST_TEST_CONTEXT}.timed_out({})", rust_text(timer))
+            }
+            SnapshotBranch::Done { ptc } => {
+                format!("{RUST_TEST_CONTEXT}.done({})", rust_text(ptc))
+            }
+        })
+    }
+    // A message a receive branch's content reads is copied, field by field,
+    // into `ev`, the binding the content reads `_event.data` through
+    // ([`Self::payload_accessor`]), built as the payload struct the machine's
+    // channel holds its record's event in: the schema unit's type and the
+    // machine's are two declarations of one record. The two spell a number and
+    // a `bool` alike. They do not spell a text, a byte string or an enum alike:
+    // the machine holds a text in the runtime's `SceString` and a byte string
+    // in its `SceBytes`, where the unit holds the bounded types of the portable
+    // crate, and an enum in its own type, where the unit holds the enum unit's
+    // (`forge::generator::build_rust_event_payload`). So a message of a record
+    // with such a field is refused by name, as C++ refuses one with an enum
+    // field.
+    fn take_branch(
+        &self,
+        machine: &str,
+        branch: &SnapshotBranch,
+        payload: Option<&EntrySchema>,
+    ) -> Option<String> {
+        Some(match (branch, payload) {
+            (
+                SnapshotBranch::Receive {
+                    port,
+                    template: Some(template),
+                },
+                Some(schema),
+            ) => {
+                if schema.fields.iter().any(|f| {
+                    matches!(
+                        f.sce_type.present_type(),
+                        SceType::Enum(_) | SceType::String | SceType::Bytes
+                    )
+                }) {
+                    return None;
+                }
+                let unit = rust_test_template_module(&template.unit);
+                let copies: Vec<String> = schema
+                    .fields
+                    .iter()
+                    .map(|f| {
+                        format!(
+                            "{}: sce_value.{}",
+                            f.id,
+                            crate::forge::generator::event_schema_field_ident(
+                                &f.id,
+                                Language::Rust
+                            )
+                        )
+                    })
+                    .collect();
+                format!(
+                    "let sce_message = {RUST_TEST_CONTEXT}.receive({});\n\
+                     let sce_value = sce_message.value_as::<{unit}::Value>().expect(\
+                     \"a receive branch takes the message its guard matched\");\n\
+                     let ev = {} {{ {} }};",
+                    rust_text(port),
+                    crate::forge::generator::rust_payload_struct(machine, &template.event),
+                    copies.join(", ")
+                )
+            }
+            (SnapshotBranch::Receive { port, .. }, _) => {
+                format!("{RUST_TEST_CONTEXT}.receive({});", rust_text(port))
+            }
+            (SnapshotBranch::Timeout { timer }, _) => {
+                format!("{RUST_TEST_CONTEXT}.timeout({});", rust_text(timer))
+            }
+            (SnapshotBranch::Done { ptc }, _) => {
+                format!("{RUST_TEST_CONTEXT}.done_taken({});", rust_text(ptc))
+            }
+        })
+    }
+    // A duration is whole microseconds (§3.3), the runtime's `Duration`, a
+    // signed 64-bit count: one past it has no value there. A `reason` is bound
+    // before it is lent, so the context takes the `&str` any text it lowers to
+    // derefs to.
+    fn test_statement(&self, statement: &TestStatement, reason: Option<&str>) -> Option<String> {
+        Some(match statement {
+            TestStatement::Setverdict { verdict, .. } => {
+                let verdict = format!(
+                    "{RUST_TEST_RUNTIME}::Verdict::{}",
+                    runtime_verdict(*verdict)
+                );
+                match reason {
+                    Some(reason) => format!(
+                        "{{ let sce_reason = {reason}; \
+                         {RUST_TEST_CONTEXT}.setverdict({verdict}, &sce_reason); }}"
+                    ),
+                    None => format!("{RUST_TEST_CONTEXT}.setverdict({verdict}, \"\");"),
+                }
+            }
+            TestStatement::StartTimer { timer, duration } => {
+                let micros =
+                    crate::forge::test_profile::duration_us(duration.as_deref()?.trim()).ok()?;
+                let micros = i64::try_from(micros).ok()?;
+                format!(
+                    "{RUST_TEST_CONTEXT}.start_timer({}, {micros});",
+                    rust_text(timer)
+                )
+            }
+            TestStatement::StopTimer { timer } => {
+                format!("{RUST_TEST_CONTEXT}.stop_timer({});", rust_text(timer))
+            }
+        })
+    }
+    // The text the engine's `<log>` would show ([`Self::log`]): the label,
+    // then the value by its `Debug` formatting, an optional one by its present
+    // value or `null`.
+    fn test_log(&self, label: &str, value: Option<&str>, ty: InferredType) -> Option<String> {
+        let label = filters::escape_rust(label.to_string());
+        Some(match value {
+            None => format!("{RUST_TEST_CONTEXT}.log(\"{label}\");"),
+            Some(value) => {
+                let value = if ty.is_optional() {
+                    crate::forge::rust_optional::logged(value)
+                } else {
+                    value.to_string()
+                };
+                if label.is_empty() {
+                    format!("{RUST_TEST_CONTEXT}.log(&::std::format!(\"{{:?}}\", {value}));")
+                } else {
+                    format!(
+                        "{RUST_TEST_CONTEXT}.log(&::std::format!(\"{{}}: {{:?}}\", \"{label}\", \
+                         {value}));"
+                    )
+                }
+            }
+        })
+    }
+    // The specific template's `value`, which the send hands its processor as the
+    // request's value (`HostSendRequest::value`, `rust/actions/send.rs.jinja2`).
+    fn test_message(&self, message: &TemplateRef, args: &[String]) -> Option<String> {
+        Some(format!(
+            "{}::value({})",
+            rust_test_template_module(&message.unit),
+            args.join(", ")
+        ))
+    }
+    // The line that brings the unit's module into scope, as for a schema.
+    fn test_template_import(&self, unit: &str) -> Option<String> {
+        self.schema_import(unit)
+    }
+    // The unit takes a number, a `bool`, a value of an enum and an optional one
+    // of them by value, and lends every other parameter
+    // (`forge::generator::rust_test_template`).
+    fn template_argument(&self, value: &str, ty: InferredType) -> String {
+        use crate::forge::types::OptionalElem;
+        let lent = match ty {
+            InferredType::Str
+            | InferredType::Bytes
+            | InferredType::BytesBuffer
+            | InferredType::List(_)
+            | InferredType::ListBuffer(_)
+            | InferredType::Record(_) => true,
+            InferredType::Optional(elem) => !matches!(
+                elem,
+                OptionalElem::Number(_) | OptionalElem::Bool | OptionalElem::Enum
+            ),
+            _ => false,
+        };
+        if lent {
+            format!("&{value}")
+        } else {
+            value.to_string()
+        }
     }
 }
 
@@ -8302,9 +8536,11 @@ fn cpp_test_template_namespace(unit: &str) -> String {
     format!("::{}", identity.namespace)
 }
 
-/// The enumerator of the runtime's `SCE::Test::Verdict` a document's verdict
-/// is (`sce/include/test/Verdict.h`).
-fn cpp_verdict(verdict: crate::test_component::Verdict) -> &'static str {
+/// The variant of the profile runtime's verdict a document's verdict is, one
+/// name on every backend that runs a test component: C++'s `SCE::Test::Verdict`
+/// (`sce/include/test/Verdict.h`) and Rust's `sce_rust_runtime::test::Verdict`
+/// (`backends/rust/runtime/src/test/verdict.rs`) declare the same variants.
+fn runtime_verdict(verdict: crate::test_component::Verdict) -> &'static str {
     match verdict {
         crate::test_component::Verdict::Pass => "Pass",
         crate::test_component::Verdict::Inconclusive => "Inconclusive",
@@ -9489,7 +9725,7 @@ impl StaticTarget for CppTarget {
         Some(match statement {
             TestStatement::Setverdict { verdict, .. } => format!(
                 "{CPP_TEST_CONTEXT}->setverdict(::SCE::Test::Verdict::{}, {});",
-                cpp_verdict(*verdict),
+                runtime_verdict(*verdict),
                 reason.unwrap_or("::std::string()")
             ),
             TestStatement::StartTimer { timer, duration } => {
@@ -9508,8 +9744,8 @@ impl StaticTarget for CppTarget {
     }
     // The text the engine's `<log>` would show (`Self::log`): the label, then
     // the value as `sceLogName` names it and the forge runtime writes it
-    // (`SCE::Forge::presentText`).
-    fn test_log(&self, label: &str, value: Option<&str>) -> Option<String> {
+    // (`SCE::Forge::presentText`), which formats by the value's own type.
+    fn test_log(&self, label: &str, value: Option<&str>, _ty: InferredType) -> Option<String> {
         let label = filters::escape_cpp(label.to_string());
         let text = match (label.is_empty(), value) {
             (_, None) => format!("::std::string(\"{label}\")"),
@@ -16002,25 +16238,32 @@ fn lower_snapshot_branch(
 }
 
 /// The variables `args` names, bound in order to a test template's formal
-/// parameters (`sce:template-args`), each read as the target reads it.
+/// parameters (`sce:template-args`), each read as the target reads it and
+/// handed over as the template's unit takes a value of its type
+/// ([`StaticTarget::template_argument`]).
 fn test_template_args(
     args: &[String],
     ctx: &crate::forge::types::TypeCtx<'_>,
     renames: &HashMap<&str, &str>,
     rewrites: &Rewrites<'_>,
 ) -> Result<Vec<String>, GenerateError> {
-    let lang = rewrites.target.name();
+    let target = rewrites.target;
+    let lang = target.name();
+    let unlowered = |arg: &str, why: String| {
+        GenerateError::unsupported(format!("`{arg}` has no {lang} lowering: {why}"))
+    };
     args.iter()
         .map(|arg| {
-            rewrites
+            let read = rewrites
                 .receiving(arg, ctx, renames, InferredType::Unknown)
-                .map(|read| read.text)
-                .map_err(|r| {
-                    GenerateError::unsupported(format!(
-                        "`{arg}` has no {lang} lowering: {}",
-                        r.error
-                    ))
-                })
+                .map_err(|r| unlowered(arg, r.error.to_string()))?;
+            let ty = crate::forge::expr::judge_into(
+                &rewrites.as_lowered(arg),
+                ctx,
+                crate::forge::expr::Expected::Hint(InferredType::Unknown),
+            )
+            .map_err(|r| unlowered(arg, r.error.to_string()))?;
+            Ok(target.template_argument(&read.text, ty))
         })
         .collect()
 }
@@ -16496,19 +16739,34 @@ fn lower_action(
                 ))
             };
             if action.expr.trim().is_empty() {
-                action.native_code = target.test_log(&label, None).ok_or_else(unspelled)?;
+                action.native_code = target
+                    .test_log(&label, None, InferredType::Unknown)
+                    .ok_or_else(unspelled)?;
                 action.native_fails = false;
             } else {
                 reads_payload = reads(&action.expr);
                 let value = lower(&action.expr, InferredType::Unknown)?;
                 rewrites.note(&action.expr, action.spellings.get("expr"), &value.text);
-                if target.test_log(&label, Some(&value.text)).is_none() {
+                // The value's own type, which a target that formats by it
+                // reads, as the engine's `<log>` reads it (below).
+                let ty = crate::forge::expr::judge_into(
+                    &rewrites.as_lowered(&action.expr),
+                    ctx,
+                    crate::forge::expr::Expected::Hint(InferredType::Unknown),
+                )
+                .map_err(|r| {
+                    GenerateError::unsupported(format!(
+                        "`{}` has no {lang} lowering: {}",
+                        action.expr, r.error
+                    ))
+                })?;
+                if target.test_log(&label, Some(&value.text), ty).is_none() {
                     return Err(unspelled());
                 }
                 (action.native_code, action.native_fails) = statement(
                     &value,
                     InferredType::Unknown,
-                    &|v| target.test_log(&label, Some(v)).unwrap_or_default(),
+                    &|v| target.test_log(&label, Some(v), ty).unwrap_or_default(),
                     "<log>".to_string(),
                 );
             }

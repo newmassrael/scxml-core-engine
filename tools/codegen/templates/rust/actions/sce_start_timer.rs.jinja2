@@ -1,0 +1,11 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# docs/SCE_TEST_PROFILE.md §4.7 (P7), §12.3: start a test component's timer,
+   a call on the component's runtime context with the duration in whole
+   microseconds, its timer's own where the statement writes none. Lowered
+   ahead of the template by `forge::static_lowering` and stored on
+   `action.native_code`. #}
+{% import 'actions/_native_statement.rs.jinja2' as native %}
+// docs/SCE_TEST_PROFILE.md §4.7: <sce:start-timer>
+{{ native.emit(action, in_action_block is defined and in_action_block) }}

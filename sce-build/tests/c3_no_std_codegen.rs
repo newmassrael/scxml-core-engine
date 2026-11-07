@@ -377,3 +377,44 @@ fn every_no_std_axis_locates_on_a_row() {
         );
     }
 }
+
+// ───────────────────────────────────────────────────────────────────
+// A test component (docs/SCE_TEST_PROFILE.md §12.2, §12.3)
+// ───────────────────────────────────────────────────────────────────
+
+const TEST_COMPONENT: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="waiter"
+       datamodel="sce-static" initial="waiting">
+  <sce:test-timer id="patience" duration="1ms"/>
+  <state id="waiting">
+    <onentry>
+      <sce:start-timer timer="patience"/>
+    </onentry>
+    <transition sce:timeout="patience" target="done">
+      <sce:setverdict value="pass"/>
+    </transition>
+  </state>
+  <final id="done"/>
+</scxml>
+"#;
+
+/// The profile's runtime that drives a test component is std only, so a
+/// test component is refused under --no-std by name, on its row.
+#[test]
+fn a_test_component_is_refused_under_no_std() {
+    let model = parse(TEST_COMPONENT, "waiter");
+    let located = validate_no_std_compatibility(&model, Path::new("waiter.scxml"))
+        .expect_err("a test component must reject under --no-std");
+    assert!(located.location.line.is_some(), "{:?}", located.error);
+    match located.error {
+        ForgeError::Generate(boxed) => match *boxed {
+            GenerateError::UnsupportedFeature { detail, .. } => assert!(
+                detail.starts_with("test-component 'waiter' has no Rust no_std lowering"),
+                "{detail}"
+            ),
+            other => panic!("expected UnsupportedFeature, got: {other:?}"),
+        },
+        other => panic!("expected UnsupportedFeature, got: {other:?}"),
+    }
+}

@@ -3643,6 +3643,12 @@ fn render_rust(
         static_enums => minijinja::Value::from_serialize(&static_lowering.enums),
         static_unions => minijinja::Value::from_serialize(&static_lowering.unions),
         static_saved_shape => &static_lowering.saved_shape,
+        // docs/SCE_TEST_PROFILE.md §12.3: the doors a test component's machine
+        // reaches its runtime through, which the component the runtime drives
+        // registers and delivers the snapshot by.
+        test_port_processor => crate::test_component::TEST_PORT_PROCESSOR,
+        test_component_invoke_type => crate::test_component::TEST_COMPONENT_INVOKE_TYPE,
+        snapshot_event => crate::test_component::SNAPSHOT_EVENT,
     };
     tmpl.render(ctx).map_err(render_error)
 }

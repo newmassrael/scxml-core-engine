@@ -168,8 +168,9 @@ pub struct TransitionRow {
     pub internal: bool,
     /// Whether it carries executable content: that of the `<transition>`, of
     /// the `<initial>` element's transition, or of the `<history>`'s default
-    /// transition. False for the document's own initial transition, which has
-    /// none.
+    /// transition, or the statement a branch of a test component runs before
+    /// its content (docs/SCE_TEST_PROFILE.md §12.3). False for the document's
+    /// own initial transition, which has none.
     pub has_content: bool,
 }
 
@@ -437,7 +438,12 @@ impl DocumentTables {
                     },
                     targets: names.push_targets(&mut targets, &transition.targets, &referrer)?,
                     internal: transition.transition_type == "internal",
-                    has_content: !transition.actions.is_empty(),
+                    // docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3: a
+                    // branch of a test component runs the statement taking it
+                    // before its content, so it has content even where the
+                    // document wrote none.
+                    has_content: !transition.actions.is_empty()
+                        || transition.snapshot_branch.is_some(),
                 });
             }
         }
@@ -640,6 +646,27 @@ mod tests {
         assert_eq!(tables.transition_id("busy", 1), Some(2));
         assert_eq!(tables.transition_id("busy", 2), None);
         assert_eq!(tables.transition_id("done", 0), None);
+    }
+
+    /// docs/SCE_TEST_PROFILE.md §12.3: a branch of a test component, lowered
+    /// for generation, has content even where the document wrote none, since
+    /// taking it runs the statement that removes what it matched.
+    #[test]
+    fn a_branch_of_a_test_component_has_content_where_none_is_written() {
+        let (mut model, tables) = tables_of(
+            r#" initial="idle">
+  <state id="idle"><transition event="go" target="done"/></state>
+  <final id="done"/>
+"#,
+        );
+        let written = tables.transition_id("idle", 0).expect("the transition") as usize;
+        assert!(!tables.transitions[written].has_content);
+        model.states.get_mut("idle").expect("idle").transitions[0].snapshot_branch =
+            Some(crate::test_component::snapshot::SnapshotBranch::Timeout {
+                timer: "patience".to_string(),
+            });
+        let tables = DocumentTables::of(&model).expect("tables");
+        assert!(tables.transitions[written].has_content);
     }
 
     #[test]

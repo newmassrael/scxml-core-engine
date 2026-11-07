@@ -4844,6 +4844,16 @@ pub struct RustEventPayload {
     pub lift: String,
 }
 
+/// The struct the typed payload channel of the Rust machine `machine_name`
+/// holds `event`'s payload in ([`build_rust_event_payload`]): one name for the
+/// declaration and for every site that builds one.
+pub(crate) fn rust_payload_struct(machine_name: &str, event: &str) -> String {
+    format!(
+        "{machine_name}{}Payload",
+        filters::to_event_variant(event.to_string())
+    )
+}
+
 /// Build the [`RustEventPayload`] for `model`.
 ///
 /// The typed-payload channel is activated only when at least one
@@ -4948,7 +4958,7 @@ pub fn build_rust_event_payload(
     let mut lift_arms = String::new();
     for event in &payload_events {
         let variant = filters::to_event_variant(event.clone());
-        let struct_name = format!("{machine_name}{variant}Payload");
+        let struct_name = rust_payload_struct(machine_name, event);
         // Per-event typed inject wrapper: one call binds the event name and
         // the matching payload variant, so a caller cannot pair them
         // inconsistently (the generic `raise_external_typed` is the
