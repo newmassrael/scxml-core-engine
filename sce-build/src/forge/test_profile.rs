@@ -18,7 +18,7 @@ use crate::forge::error::{GenerateError, SourceLocation, TestProfileRule};
 use crate::forge::model::{
     ForgeKind, SceType, TestMatcher, TestMatcherForm, TestTemplateParameter, TestValue,
 };
-use crate::forge::value_type::{TypeOf, ValueType};
+use crate::forge::value_type::{TypeOf, TypeScope, ValueType};
 
 /// Why a backend does not generate a document of the test profile yet, as
 /// every refusal of one says it.
@@ -118,6 +118,27 @@ pub fn duration_us(text: &str) -> Result<u64, DurationRefusal> {
 }
 
 // ── Types, literals and matchers ───────────────────────────────
+
+/// The alias of the first union `ty`, read in `scope`, holds at any depth: in
+/// itself, an optional's value, a list's elements, or a field of a record,
+/// read in the record's own document. A backend that lowers no union refuses a
+/// template whose type reaches one, and a test component that uses such a
+/// template, as it refuses a schema unit's union field (docs/adr/0092, section
+/// 7; docs/SCE_TEST_PROFILE.md §11.9).
+pub fn union_reached(ty: &ValueType, scope: &TypeScope) -> Option<String> {
+    match ty {
+        TypeOf::Union { alias } => Some(alias.clone()),
+        TypeOf::Optional { elem } | TypeOf::List { elem, .. } => union_reached(elem, scope),
+        TypeOf::Record { alias } => {
+            let record = scope.records.get(alias)?;
+            record
+                .fields
+                .iter()
+                .find_map(|(_, field)| union_reached(field, &record.scope))
+        }
+        TypeOf::Scalar(_) | TypeOf::Text { .. } | TypeOf::Bytes { .. } => None,
+    }
+}
 
 /// Whether `ty` holds a `float32` or a `float64` anywhere its own spelling
 /// reaches (docs/SCE_TEST_PROFILE.md §8.1). A record or a union is named by

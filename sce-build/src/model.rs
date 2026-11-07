@@ -181,6 +181,24 @@ pub struct Transition {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[cfg_attr(test, schemars(skip))]
     pub native_guard_fails: bool,
+    /// The branch of a test component this transition is, once the document
+    /// is lowered for generation ([`crate::test_component::snapshot::lower`]):
+    /// its `event` is then the round's snapshot event, and this says what its
+    /// guard matches on the snapshot and what taking it removes
+    /// (docs/SCE_TEST_PROFILE.md §12.3). `None` on every transition before
+    /// that lowering and on every transition of any other document. Not part
+    /// of the IR.
+    #[serde(skip)]
+    pub snapshot_branch: Option<crate::test_component::snapshot::SnapshotBranch>,
+    /// Codegen-internal: the statement taking a branch of a test component runs
+    /// before the branch's executable content (P4 step 1,
+    /// docs/SCE_TEST_PROFILE.md §12.3), in the rendering backend's own code,
+    /// written by `forge::static_lowering` from [`Self::snapshot_branch`] on the
+    /// cloned single-language model. Empty on every other transition. Outside
+    /// the AST contract, as [`Self::native_guard`] is.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_prelude: String,
     /// The canonical path of the
     /// state that OWNS this transition, paired with
     /// [`symbol_artifact`](Self::symbol_artifact) to form the identity
@@ -739,6 +757,24 @@ pub struct Action {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[cfg_attr(test, schemars(skip))]
     pub native_content_value_fails: bool,
+    /// The message a `<send>` of a test component sends, once the document is
+    /// lowered for generation ([`crate::test_component::snapshot::lower`]): its
+    /// template as the machine names it, the event name of the template's
+    /// record, which the lowering also writes into [`Self::event`], and the
+    /// variables bound to the template's parameters (docs/SCE_TEST_PROFILE.md
+    /// §11.5, §12.3). `None` before that lowering and on every other action. Not
+    /// part of the IR.
+    #[serde(skip)]
+    pub test_message: Option<crate::test_component::snapshot::TemplateRef>,
+    /// Codegen-internal: the value of [`Self::test_message`] in the rendering
+    /// backend's own code — the specific template's value, given the variables
+    /// bound to its parameters — which the send hands its processor as the
+    /// request's value (docs/SCE_TEST_PROFILE.md §12.3). Written by
+    /// `forge::static_lowering`. Transient and outside the AST contract, as
+    /// [`Self::native_code`] is.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_message: String,
 
     /// `<sce:lift text>` (docs/adr/0087, section 2.1): the name of the text the
     /// statement reads, a value of `string[N]`. The variable the statement
@@ -4228,6 +4264,15 @@ pub struct SCXMLModel {
     /// statechart and without sibling files, and not serialized.
     #[serde(skip)]
     pub received_records: std::collections::BTreeMap<String, String>,
+    /// For each `test-template` a test component imports, by its alias, the
+    /// unit a machine generated from the component names it by and the event
+    /// its record's messages travel under (docs/SCE_TEST_PROFILE.md §11.5,
+    /// §12.3), which the lowering for generation reads
+    /// ([`crate::test_component::snapshot::lower`]). Read where
+    /// [`Self::received_records`] is; empty for every other statechart and
+    /// without sibling files, and not serialized.
+    #[serde(skip)]
+    pub test_templates: std::collections::BTreeMap<String, crate::test_component::TestTemplateUnit>,
     /// EventSchema MCU native lowering —
     /// the statechart's `<sce:import kind="event-schema">` declarations
     /// resolved to their `EventSchemaModel`, keyed by SCXML event name

@@ -3496,10 +3496,13 @@ impl SCXMLParser {
             // docs/SCE_TEST_PROFILE.md §11.5: what a test component asks of
             // the port types, templates and components it names, read from
             // the same directory every reader below reads, and the record each
-            // template a receive branch matches with is of. Nothing for any
-            // other statechart.
-            model.received_records =
+            // template a receive branch matches with is of, and what a machine
+            // names of each template it imports. Nothing for any other
+            // statechart.
+            let profile =
                 crate::test_component::rules::read_imports(&root, &model, dir, diag_label)?;
+            model.received_records = profile.received_records;
+            model.test_templates = profile.templates;
             let (schemas_by_stem, enums_by_stem) =
                 Self::parse_imported_forge_siblings(&model, dir, diag_label)?;
             model.imported_event_schemas =

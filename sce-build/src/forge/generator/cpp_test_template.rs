@@ -51,7 +51,7 @@ pub(super) fn render_test_template_cpp(
     for ty in
         std::iter::once(&m.template_type).chain(m.parameters.iter().map(|p| &p.parameter_type))
     {
-        if let Some(alias) = union_reached(ty, &scope) {
+        if let Some(alias) = crate::forge::test_profile::union_reached(ty, &scope) {
             return Err(unit.refused(crate::forge::value_type::union_unlowered(&alias)));
         }
     }
@@ -107,24 +107,6 @@ pub(super) fn render_test_template_cpp(
 /// (`Value`, `value`, `match`) or a keyword of the language.
 fn cpp_parameter(id: &str) -> String {
     format!("param_{id}")
-}
-
-/// The alias of the first union `ty`, read in `scope`, holds at any depth: in
-/// itself, an optional's value, a list's elements, or a field of a record,
-/// read in the record's own document.
-fn union_reached(ty: &ValueType, scope: &TypeScope) -> Option<String> {
-    match ty {
-        TypeOf::Union { alias } => Some(alias.clone()),
-        TypeOf::Optional { elem } | TypeOf::List { elem, .. } => union_reached(elem, scope),
-        TypeOf::Record { alias } => {
-            let record = scope.records.get(alias)?;
-            record
-                .fields
-                .iter()
-                .find_map(|(_, field)| union_reached(field, &record.scope))
-        }
-        TypeOf::Scalar(_) | TypeOf::Text { .. } | TypeOf::Bytes { .. } => None,
-    }
 }
 
 /// One position of the value a matcher stands at.

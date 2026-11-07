@@ -34,6 +34,7 @@ use crate::forge::model::{ForgeKind, SCE_NAMESPACE};
 use crate::model::{Datamodel, SCXML_NAMESPACE};
 
 pub(crate) mod rules;
+pub mod snapshot;
 
 /// The type URI of the Event I/O Processor whose addresses are ports: the
 /// `type` of every `<send>` of a test component (docs/SCE_TEST_PROFILE.md
@@ -43,6 +44,32 @@ pub const TEST_PORT_PROCESSOR: &str = "http://sce.dev/ext/test-port";
 /// The type URI of the invocation of a PTC: the `type` of every `<invoke>` of
 /// a test component (docs/SCE_TEST_PROFILE.md §11.1).
 pub const TEST_COMPONENT_INVOKE_TYPE: &str = "http://sce.dev/ext/test-component";
+
+/// The one external event a generated component is delivered each round: the
+/// round's snapshot (docs/SCE_TEST_PROFILE.md §3.2 step 3, §12.3). Every
+/// branch is a transition on it once the document is lowered for generation
+/// ([`snapshot::lower`]). No document can write it: a transition of a test
+/// component names no `event` but `done.invoke.<id>` (`test-profile/branch`).
+pub const SNAPSHOT_EVENT: &str = "sce.test.snapshot";
+
+/// What a test component reads of a `test-template` it imports, for the
+/// machine it is generated into (docs/SCE_TEST_PROFILE.md §11.5, §12.3).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TestTemplateUnit {
+    /// The name the template's generated unit is named by: its document's
+    /// file stem, as every forge unit's is.
+    pub unit: String,
+    /// The event name a message of the template's record travels under, read
+    /// from the record's event schema; `None` for a template of no record, or
+    /// one whose record could not be read.
+    pub event: Option<String>,
+    /// The alias of the first union the template's type reaches at any depth
+    /// ([`crate::forge::test_profile::union_reached`]), read in the template's
+    /// own document: a backend that lowers no union generates no unit of the
+    /// template, and so no component that uses it. `None` for every other
+    /// template.
+    pub union: Option<String>,
+}
 
 /// The declarations and PTCs of a test component, in document order.
 #[derive(Debug, Clone, Default, Serialize)]

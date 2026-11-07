@@ -1038,7 +1038,7 @@ fn any_action(model: &SCXMLModel, pred: &mut impl FnMut(&Action) -> bool) -> boo
 }
 
 /// Apply `visit` to every action in `model` and everything nested inside it.
-fn visit_actions_mut(model: &mut SCXMLModel, visit: &mut impl FnMut(&mut Action)) {
+pub(crate) fn visit_actions_mut(model: &mut SCXMLModel, visit: &mut impl FnMut(&mut Action)) {
     fn walk(actions: &mut [Action], visit: &mut impl FnMut(&mut Action)) {
         for action in actions {
             visit(action);

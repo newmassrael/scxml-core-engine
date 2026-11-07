@@ -40,7 +40,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use super::{
-    is_sce, is_scxml, required, TestComponentProfile, TEST_COMPONENT_INVOKE_TYPE,
+    is_sce, is_scxml, required, TestComponentProfile, TestTemplateUnit, TEST_COMPONENT_INVOKE_TYPE,
     TEST_PORT_PROCESSOR,
 };
 use crate::forge::error::{ForgeError, ImportError, Located, TestProfileRule, ValidationError};
@@ -1037,7 +1037,9 @@ enum Direction {
 /// of its template's record.
 ///
 /// Returns, for each template a receive branch matches with, the alias the
-/// component imports its record under ([`SCXMLModel::received_records`]).
+/// component imports its record under ([`SCXMLModel::received_records`]), and
+/// for each template the component imports, what the machine it is generated
+/// into names of it ([`SCXMLModel::test_templates`]).
 ///
 /// Nothing for a statechart that is no test component. A name
 /// [`check_document`] refused never reaches here.
@@ -1046,10 +1048,10 @@ pub(crate) fn read_imports(
     model: &SCXMLModel,
     dir: &Path,
     diag_label: &str,
-) -> Result<BTreeMap<String, String>, Located<ForgeError>> {
+) -> Result<ImportedProfile, Located<ForgeError>> {
     let mut received = BTreeMap::new();
     let Some(profile) = &model.test_component else {
-        return Ok(received);
+        return Ok(ImportedProfile::default());
     };
     let c = Component {
         document: &model.name,
@@ -1095,6 +1097,33 @@ pub(crate) fn read_imports(
             _ => {}
         }
     }
+    // What a machine names of each template: its unit, named by the file of
+    // its document as every forge unit is (`DocumentLabel::for_input_path`),
+    // and the event its record's messages travel under.
+    let units: BTreeMap<String, TestTemplateUnit> = templates
+        .iter()
+        .filter_map(|(alias, template)| {
+            let import = model.forge_imports.iter().find(|i| i.alias == *alias)?;
+            let unit = Path::new(&import.src)
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .unwrap_or(&import.src)
+                .to_string();
+            let scope = template.scope();
+            let types = crate::forge::import_source::type_scope(scope.imports, scope.dir);
+            Some((
+                alias.to_string(),
+                TestTemplateUnit {
+                    unit,
+                    event: message_event(template),
+                    union: crate::forge::test_profile::union_reached(
+                        &template.model.template_type,
+                        &types,
+                    ),
+                },
+            ))
+        })
+        .collect();
 
     // Every variable of the component with the type it declares, bounded as
     // the data model holds it.
@@ -1192,7 +1221,40 @@ pub(crate) fn read_imports(
             }
         }
     }
-    Ok(received)
+    Ok(ImportedProfile {
+        received_records: received,
+        templates: units,
+    })
+}
+
+/// What [`read_imports`] reads of the documents a test component names, for
+/// the model ([`SCXMLModel::received_records`], [`SCXMLModel::test_templates`]).
+#[derive(Debug, Default)]
+pub(crate) struct ImportedProfile {
+    /// For each template a receive branch matches with, the alias the
+    /// component imports its record under.
+    pub received_records: BTreeMap<String, String>,
+    /// For each template the component imports, by its alias, its unit and
+    /// the event of its record.
+    pub templates: BTreeMap<String, TestTemplateUnit>,
+}
+
+/// The event name a message of `template`'s record travels under: the
+/// `sce:event-name` of the event schema the template's own document imports
+/// as its record. `None` for a template of no record, and for a record whose
+/// document cannot be read as an event schema, which generating the template
+/// itself refuses where it is read.
+fn message_event(template: &Imported<TestTemplateModel>) -> Option<String> {
+    let TypeOf::Record { alias } = &template.model.template_type else {
+        return None;
+    };
+    let scope = template.scope();
+    let import = scope.imports.iter().find(|i| i.alias == *alias)?;
+    let source = ImportSource::read(scope.dir, import).ok()?;
+    match source.parse().ok()??.document {
+        ForgeDocument::EventSchema(schema) => Some(schema.event_name),
+        _ => None,
+    }
 }
 
 /// The alias under which `component` imports the event-schema that is the
