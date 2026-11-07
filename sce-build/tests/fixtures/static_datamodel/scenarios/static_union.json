@@ -1,0 +1,135 @@
+{
+  "machine": "static_union",
+  "about": "A payload that holds a union, read by testing its tag (docs/adr/0092, sections 4 and 6.1): each case of `one`, the empty case, the tag last in the text, keys in another order, a key of another case and a `null` under one (both stepped over), each shape of `many` narrowed on the loop's item, and the present value of `maybe` read where a test proves it present and in its case. The built variable `built` has a field of its proven case written on each delivery, and `kept` takes `one` whole. A delivery outside its type (an unknown tag, a tag that is a number, a field of the case missing inside `many`) is refused whole and counted in `refusals`. A text is lifted into `lifted` whole, or the refusal of it kept in `lift_why`: an unknown tag, a field of the case missing, `null` where it is not optional, an optional key left out, a text past its bound, a text that is no object and a container past the depth. A step that restores reads every union back from the saved state by its tag. Expected values are derived from the document and the refusal order of section 4.1, not observed from a backend.",
+  "steps": [
+    { "note": "a built union starts at its case, an optional one absent",
+      "expect": { "state": "idle", "variables": {
+        "built": {"kind": "rect", "width": 1, "height": 2}, "kept": null, "last_kind": "dot",
+        "lifted": null, "lift_why": null, "refusals": 0, "dots": 0, "many_shapes": 0 } } },
+
+    { "note": "a circle, a shared field under the test of both cases, and each shape of many",
+      "event": "shapes.sent",
+      "data": {"one": {"kind": "circle", "radius": 7},
+               "many": [{"kind": "rect", "width": 3, "height": 4}, {"kind": "disc", "radius": 5}, {"kind": "dot"}],
+               "maybe": null},
+      "expect": { "variables": {
+        "last_kind": "circle", "radius": 7, "many_shapes": 3, "many_width": 3, "many_radius": 5,
+        "maybe_width": 0, "built": {"kind": "rect", "width": 2, "height": 2},
+        "kept": {"kind": "circle", "radius": 7}, "refusals": 0 } } },
+
+    { "note": "a label with its tag last and its keys in another order; a key of another case and null under it are stepped over; maybe present and a rect",
+      "event": "shapes.sent",
+      "data": {"one": {"note": null, "text": "hi", "kind": "label"},
+               "many": [{"kind": "circle", "radius": 9, "width": null}],
+               "maybe": {"height": 2, "kind": "rect", "width": 6}},
+      "expect": { "variables": {
+        "last_kind": "label", "labels": 1, "many_shapes": 4, "many_radius": 9, "maybe_width": 6,
+        "built": {"kind": "rect", "width": 3, "height": 2},
+        "kept": {"kind": "label", "text": "hi", "note": null}, "refusals": 0 } } },
+
+    { "note": "a path's list walked where its case is proven; maybe present in another case reads nothing",
+      "event": "shapes.sent",
+      "data": {"one": {"kind": "path", "points": [1, 2, 3]},
+               "many": [{"kind": "dot"}],
+               "maybe": {"kind": "circle", "radius": 1}},
+      "expect": { "variables": {
+        "last_kind": "path", "points": 3, "many_shapes": 5, "maybe_width": 6,
+        "built": {"kind": "rect", "width": 4, "height": 2},
+        "kept": {"kind": "path", "points": [1, 2, 3]}, "refusals": 0 } } },
+
+    { "note": "a tag no variant names is refused whole",
+      "event": "shapes.sent",
+      "data": {"one": {"kind": "oval"}, "many": [{"kind": "dot"}], "maybe": null},
+      "expect": { "variables": {
+        "refusals": 1, "last_kind": "path", "many_shapes": 5,
+        "built": {"kind": "rect", "width": 4, "height": 2},
+        "kept": {"kind": "path", "points": [1, 2, 3]} } } },
+
+    { "note": "a field of its case missing inside many is refused whole",
+      "event": "shapes.sent",
+      "data": {"one": {"kind": "dot"}, "many": [{"kind": "rect", "width": 3}], "maybe": null},
+      "expect": { "variables": {
+        "refusals": 2, "dots": 0, "many_shapes": 5, "built": {"kind": "rect", "width": 4, "height": 2} } } },
+
+    { "note": "a tag that is a number is refused whole",
+      "event": "shapes.sent",
+      "data": {"one": {"kind": 3}, "many": [{"kind": "dot"}], "maybe": null},
+      "expect": { "variables": { "refusals": 3, "last_kind": "path" } } },
+
+    { "note": "the empty case, null under a key of another case stepped over",
+      "event": "shapes.sent",
+      "data": {"one": {"kind": "dot", "radius": null}, "many": [{"kind": "dot"}], "maybe": null},
+      "expect": { "variables": {
+        "last_kind": "dot", "dots": 1, "many_shapes": 6,
+        "built": {"kind": "rect", "width": 5, "height": 2}, "kept": {"kind": "dot"}, "refusals": 3 } } },
+
+    { "note": "a text lifted into a union whole, its case named by its tag",
+      "event": "shape.said", "data": {"text": "{\"kind\":\"rect\",\"width\":6,\"height\":2}"},
+      "expect": { "variables": {
+        "lifted": {"kind": "rect", "width": 6, "height": 2}, "lift_why": null,
+        "kept": {"kind": "dot"}, "refusals": 3 } } },
+
+    { "note": "the tag last, a present optional field",
+      "event": "shape.said", "data": {"text": "{\"note\":\"ok\",\"text\":\"abc\",\"kind\":\"label\"}"},
+      "expect": { "variables": {
+        "lifted": {"kind": "label", "text": "abc", "note": "ok"}, "lift_why": null } } },
+
+    { "note": "a tag no variant names: the refusal is kept and the variable left as it was",
+      "event": "shape.said", "data": {"text": "{\"kind\":\"oval\"}"},
+      "expect": { "variables": {
+        "lifted": {"kind": "label", "text": "abc", "note": "ok"},
+        "lift_why": {"code": "unknownVariant", "path": "/kind", "bound": null} } } },
+
+    { "note": "a field of the case missing",
+      "event": "shape.said", "data": {"text": "{\"kind\":\"circle\"}"},
+      "expect": { "variables": {
+        "lifted": {"kind": "label", "text": "abc", "note": "ok"},
+        "lift_why": {"code": "missing", "path": "/radius", "bound": null} } } },
+
+    { "note": "null where the case's field is not optional",
+      "event": "shape.said", "data": {"text": "{\"kind\":\"circle\",\"radius\":null}"},
+      "expect": { "variables": {
+        "lift_why": {"code": "nullNotOptional", "path": "/radius", "bound": null} } } },
+
+    { "note": "an optional field's key left out is missing, as a record's is",
+      "event": "shape.said", "data": {"text": "{\"kind\":\"label\",\"text\":\"abc\"}"},
+      "expect": { "variables": {
+        "lift_why": {"code": "missing", "path": "/note", "bound": null} } } },
+
+    { "note": "a text of 9 bytes past its bound of 8 inside the label",
+      "event": "shape.said", "data": {"text": "{\"kind\":\"label\",\"text\":\"abcdefghi\",\"note\":null}"},
+      "expect": { "variables": {
+        "lift_why": {"code": "tooLong", "path": "/text", "bound": 8} } } },
+
+    { "note": "an array is no union",
+      "event": "shape.said", "data": {"text": "[1]"},
+      "expect": { "variables": {
+        "lift_why": {"code": "notObject", "path": "", "bound": null} } } },
+
+    { "note": "a container past the union's depth of 2 is refused before the text is read",
+      "event": "shape.said", "data": {"text": "{\"kind\":\"path\",\"points\":[[1]]}"},
+      "expect": { "variables": {
+        "lift_why": {"code": "tooDeep", "path": "/points/0", "bound": 2} } } },
+
+    { "note": "a tag that is a number",
+      "event": "shape.said", "data": {"text": "{\"kind\":3}"},
+      "expect": { "variables": {
+        "lifted": {"kind": "label", "text": "abc", "note": "ok"},
+        "lift_why": {"code": "wrongKind", "path": "/kind", "bound": null} } } },
+
+    { "note": "a text of the union again makes the refusal absent",
+      "event": "shape.said", "data": {"text": "{\"kind\":\"disc\",\"radius\":4}"},
+      "expect": { "variables": {
+        "lifted": {"kind": "disc", "radius": 4}, "lift_why": null } } },
+
+    { "note": "restored from its saved state, every union is read back by its tag and the machine carries on",
+      "restore": true,
+      "event": "shapes.sent",
+      "data": {"one": {"kind": "rect", "width": 8, "height": 9}, "many": [{"kind": "dot"}], "maybe": null},
+      "expect": { "state": "idle", "variables": {
+        "last_kind": "rect", "width": 8, "height": 9, "many_shapes": 7, "dots": 1, "labels": 1,
+        "points": 3, "refusals": 3, "built": {"kind": "rect", "width": 6, "height": 2},
+        "kept": {"kind": "rect", "width": 8, "height": 9},
+        "lifted": {"kind": "disc", "radius": 4}, "lift_why": null } } }
+  ]
+}

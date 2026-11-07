@@ -8,8 +8,10 @@
   the same tests on the loop's item; and the present value of `maybe`, where a
   test proves it present and in its case. A union variable built where it is
   declared has a field of its case written where the case is proven, and an
-  optional one takes the payload's `one` whole. A delivery outside its type is
-  refused whole and counted. Every out variable is what a host reads back.
+  optional one takes the payload's `one` whole. A text is lifted into an
+  optional union whole, or the refusal of it kept beside it. A delivery outside
+  its type is refused whole and counted. Every out variable is what a host
+  reads back, and scenarios/static_union.json replays it.
 
   The Rust backend lowers it; every other backend refuses the union by its own
   name until it lowers one (section 7). Rust compile+run gate:
@@ -29,6 +31,8 @@
   <sce:import kind="event-schema" src="shape_label.scxml" as="Label"/>
   <sce:import kind="event-schema" src="shape_path.scxml" as="Path"/>
   <sce:import kind="union" src="union_shape.scxml" as="Shape"/>
+  <sce:import kind="event-schema" src="event_shape_said.scxml" as="Said"/>
+  <sce:import kind="event-schema" src="sce:std/lift/refusal.scxml" as="LiftRefusal"/>
   <datamodel>
     <!-- A union variable is built where it is declared, a case and each of its
          fields; one with no case to start at is optional and starts absent
@@ -51,6 +55,10 @@
     <data id="many_shapes" sce:type="uint32" expr="0" sce:direction="out"/>
     <data id="maybe_width" sce:type="uint16" expr="0" sce:direction="out"/>
     <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
+    <!-- A text lifted into a union whole, or why it is none (section 6.1
+         item 5; docs/adr/0087, section 2.1). -->
+    <data id="lifted" sce:type="optional&lt;union:Shape&gt;" expr="null" sce:direction="out"/>
+    <data id="lift_why" sce:type="optional&lt;record:LiftRefusal&gt;" expr="null" sce:direction="out"/>
   </datamodel>
   <state id="idle">
     <transition event="shapes.sent" type="internal">
@@ -86,6 +94,9 @@
         <assign location="built.width" expr="built.width + 1"/>
       </if>
       <assign location="kept" expr="_event.data.one"/>
+    </transition>
+    <transition event="shape.said" type="internal">
+      <sce:lift text="_event.data.text" schema="Shape" location="lifted" refusal="lift_why"/>
     </transition>
     <!-- A delivery outside its type is refused whole: none of the content above
          runs, and error.execution says so once. -->

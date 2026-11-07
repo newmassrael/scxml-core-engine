@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A shape said as a text (docs/adr/0092, section 6.1 item 5): what
+  `static_union.scxml` lifts into a variable of the union whole.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="event_shape_said"
+       sce:event-name="shape.said">
+  <datamodel>
+    <data id="text" sce:type="string[96]" sce:direction="in"/>
+  </datamodel>
+</scxml>

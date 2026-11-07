@@ -212,6 +212,9 @@ use sce_rust_tests::integration::static_datamodel::static_text_record_sm::{
 use sce_rust_tests::integration::static_datamodel::static_timers_sm::{
     StaticTimersPersist, StaticTimersPolicy,
 };
+use sce_rust_tests::integration::static_datamodel::static_union_sm::{
+    StaticUnionPersist, StaticUnionPolicy,
+};
 use sce_rust_tests::integration::static_datamodel::static_whole_payload_sm::{
     StaticWholePayloadPersist, StaticWholePayloadPolicy,
 };
@@ -610,6 +613,30 @@ fn static_lift_reads_a_text_into_a_record_or_keeps_its_refusal() {
         |engine| engine.save().expect("saves"),
         include_str!(
             "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_lift.json"
+        ),
+    );
+}
+
+// A payload that holds a union, read by testing its tag; a union variable built
+// at a case, written by a proven field and taken whole; a text lifted into a
+// union or its refusal kept; and every union read back from a saved state by
+// its tag (docs/adr/0092, sections 4 and 6.1).
+#[test]
+fn static_union_reads_writes_lifts_and_restores_a_union_by_its_tag() {
+    replay_with_hosts(
+        Engine::new(StaticUnionPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        Hosts::none().restorer(|saved| {
+            Engine::<StaticUnionPolicy>::restore_with(
+                StaticUnionPolicy::new(),
+                saved,
+                SceClock::default(),
+                0,
+            )
+            .expect("the saved machine restores")
+        }),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/static_union.json"
         ),
     );
 }

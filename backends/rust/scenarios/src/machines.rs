@@ -268,6 +268,7 @@ scenarios! {
     "static_text_record" => static_text_record_sm::{StaticTextRecordPolicy, StaticTextRecordPersist};
     "static_timers" => static_timers_sm::{StaticTimersPolicy, StaticTimersPersist} @ Manual;
     "static_timers_stop" => static_timers_sm::{StaticTimersPolicy, StaticTimersPersist} @ Manual;
+    "static_union" => static_union_sm::{StaticUnionPolicy, StaticUnionPersist};
     "static_whole_payload" => static_whole_payload_sm::{StaticWholePayloadPolicy, StaticWholePayloadPersist};
     "static_wire_enum" => static_wire_enum_sm::{StaticWireEnumPolicy, StaticWireEnumPersist};
     "static_wire_wide" => static_wire_wide_sm::{StaticWireWidePolicy, StaticWireWidePersist};

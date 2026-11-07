@@ -159,3 +159,20 @@ fn a_union_variable_is_written_where_its_case_is_proven_and_taken_whole() {
     // The tag is never written as a field of the sum.
     assert!(!code.contains("self.built.kind ="), "{code}");
 }
+
+/// Pinned by `Lifted::Union` and `RustTarget::lift`
+/// (`sce-build/src/forge/static_lowering.rs`): the text `shape.said` carries is
+/// lifted into the optional union whole, at the union's depth of 2 (`path`
+/// holds a list), and the refusal is made absent where it is read.
+#[test]
+fn a_text_is_lifted_into_the_optional_union_whole() {
+    let code = machine();
+    holds(
+        &code,
+        &[
+            "::sce_rust_runtime::event_payload::lift_value(&",
+            ", \"Shape\", 2, ",
+            "Ok(sce_lifted) => { self.lifted = Some(sce_lifted); self.lift_why = None; }",
+        ],
+    );
+}

@@ -6116,9 +6116,22 @@ const INTERPRETER: &str = "interpreter";
 /// an engine takes that engine's line off and replays the scenario in its driver;
 /// the test below fails for a line whose engine lowers the machine, and for a
 /// machine no engine lowers that does not name every engine here.
-/// Empty since step 5 of docs/adr/0055 lowered an optional value on all seven, and
-/// again since step 9 lowered an optional record on all seven.
-const NOT_YET_LOWERED: &[(&str, &str, &str)] = &[];
+/// Emptied once by step 5 of docs/adr/0055 and again by its step 9; the scenario of
+/// a union (docs/adr/0092, step 4) is replayed on Rust alone until each engine's
+/// step lowers a statechart that holds one.
+const NOT_YET_LOWERED: &[(&str, &str, &str)] = &[
+    ("static_union", "kotlin", UNION_NOT_LOWERED),
+    ("static_union", "cpp", UNION_NOT_LOWERED),
+    ("static_union", "go", UNION_NOT_LOWERED),
+    ("static_union", "python", UNION_NOT_LOWERED),
+    ("static_union", "c11", UNION_NOT_LOWERED),
+    ("static_union", "swift", UNION_NOT_LOWERED),
+    ("static_union", INTERPRETER, UNION_NOT_LOWERED),
+];
+
+/// Why the scenario of a union is not replayed on an engine yet.
+const UNION_NOT_LOWERED: &str =
+    "a statechart that holds a union has no lowering on it yet (docs/adr/0092, step 4)";
 
 /// Where each backend's regen script commits a machine: the file that exists
 /// only if it did.
