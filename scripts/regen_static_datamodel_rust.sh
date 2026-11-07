@@ -4,7 +4,8 @@
 #
 # Regenerate backends/rust/tests/src/integration/static_datamodel/ from
 # sce-build/tests/fixtures/static_datamodel/<machine>.scxml, for every machine
-# in MACHINES, and the algorithms they call.
+# in MACHINES, and the algorithms they call; and the test profile's templates
+# from sce-build/tests/fixtures/test_profile/ with the documents they name.
 #
 # The Rust compile+run gate for datamodel="sce-static"
 # (docs/SCE_ACCEPTED_SUBSET.md §2.15), the twin of
@@ -142,6 +143,19 @@ CALLED=(forge_call_high forge_call_offset forge_call_ratio forge_call_code forge
 # to, with the enums that value crosses into each by, which a called document and the
 # machine's crossing both name as `super::<name>` (docs/adr/0051).
 CALLED+=(forge_call_next forge_call_weight forge_call_named forge_call_status forge_call_level)
+# The test profile's templates (docs/SCE_TEST_PROFILE.md §11.4, §11.9), each a document
+# of its own kind whose unit declares its `matches` and, for a specific one, its `value`,
+# generated beside the records, enums and unions their units name as `super::<name>`;
+# tests/a_test_template_matches_its_values.rs matches them against values. The C++
+# suite generates the same templates (tests/CMakeLists.txt); Rust, which lowers a union,
+# generates the two over a union besides.
+TEST_PROFILE_DIR="sce-build/tests/fixtures/test_profile"
+TEST_PROFILE=(job_status elapsed_at_most every_matcher job_report job_report_of report_within shape_is_circle)
+TEST_PROFILE_IMPORTS=(paint_color order_line quantity_two quantity_at_most order_line_exact order_line_bounded)
+TEST_PROFILE_IMPORTS+=(card_payment card_within voucher_payment voucher_is)
+TEST_PROFILE_IMPORTS+=(payment_kind order_customer order_payment order_placed order_placed_match)
+# ... and the union shape_is_circle matches, with its tag's enum and its cases' records.
+UNIONS=(shape_kind shape_radius shape_rect union_shape)
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -163,6 +177,15 @@ for algorithm in "${STD_ALGORITHMS[@]}"; do
 done
 for document in "${CALLED[@]}"; do
     "$CODEGEN" generate "$INPUT_ROOT/$document.scxml" -l rust -o "$TMP/"
+done
+for document in "${TEST_PROFILE[@]}"; do
+    "$CODEGEN" generate "$TEST_PROFILE_DIR/$document.scxml" -l rust -o "$TMP/"
+done
+for document in "${TEST_PROFILE_IMPORTS[@]}"; do
+    "$CODEGEN" generate "$TEST_PROFILE_DIR/imports/$document.scxml" -l rust -o "$TMP/"
+done
+for document in "${UNIONS[@]}"; do
+    "$CODEGEN" generate "sce-build/tests/fixtures/union/$document.scxml" -l rust -o "$TMP/"
 done
 
 mkdir -p "$GENERATED_DIR"
@@ -187,4 +210,4 @@ MODRS="$GENERATED_DIR/mod.rs"
 source "$REPO_ROOT/scripts/lib/sce_rustfmt.sh"
 sce_rustfmt_dir "$GENERATED_DIR" "$REPO_ROOT"
 
-echo "Regenerated: ${MACHINES[*]} ${STANDARD_MACHINES[*]}, ${SCHEMAS[*]}, ${ALGORITHMS[*]}, ${STD_ALGORITHMS[*]} and ${CALLED[*]} under $GENERATED_DIR/ from $INPUT_ROOT"
+echo "Regenerated: ${MACHINES[*]} ${STANDARD_MACHINES[*]}, ${SCHEMAS[*]}, ${ALGORITHMS[*]}, ${STD_ALGORITHMS[*]} and ${CALLED[*]} under $GENERATED_DIR/ from $INPUT_ROOT, and ${TEST_PROFILE[*]} ${TEST_PROFILE_IMPORTS[*]} ${UNIONS[*]} from $TEST_PROFILE_DIR and sce-build/tests/fixtures/union"
