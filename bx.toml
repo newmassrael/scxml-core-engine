@@ -367,3 +367,12 @@ outputs = [
 [checks.prepush]
 plan  = ["bash", "scripts/gate", "--plan", "--all"]
 cache = true
+
+# The landing queue (bx RFC 0024): `bx --land` submits a commit, and the
+# integrator rebases it onto main and judges it with tools/git-hooks/pre-push,
+# run for the landing push's own line, before the landing push moves main.
+# Two sessions that land at once no longer lose a whole gate run to the race
+# for the ref. The defaults hold: rebase, a window of 3 to 20, the hook as the
+# judge. `derive = ["regen"]` waits for regen to be split into actions bx
+# caches; until then each candidate would pay a full regeneration.
+[land]
