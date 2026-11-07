@@ -837,8 +837,7 @@ runtime (`sce_rust_runtime::test`):
 Beside the machine the file declares `<Name>Component`, which implements `sce_rust_runtime::test::ComponentMachine`:
 `start` builds the machine around a policy the context is bound to, registers the test-port processor and the
 test-component invoker on clones of the context and starts the machine; `deliver_snapshot` delivers the snapshot event;
-`terminated` is the machine's having entered a top-level `<final>`. Rust refuses by name a component that declares a
-module parameter, whose value is the suite's, until it generates the suite's tables; a component that declares
+`terminated` is the machine's having entered a top-level `<final>`. Rust refuses by name a component that declares
 `<sce:action>`, whose machine is a policy over a host the component is given nothing of; and every component under
 `--no-std`, since the profile's runtime is `std` only. The machine's session is named by the component, `mtc` or the
 id of the `<invoke>` that creates it, which the parse holds to an XML Name.
@@ -852,6 +851,14 @@ one not of the type or past its bound, ends the run with `error` (P13), and the 
 value is made up in its place. The runtime holds each value as the one JSON value model a saved state is made of
 (`SCE::Test::ModuleParameters`), so it knows the type of none, and the component's reader and the suite's writer
 (below) are each chosen by the type its own document declares, which §11.8 holds to be one type.
+
+Rust reads a module parameter the same way: the field is declared at its type's default, which nothing reads, and
+`start`, after it binds the context and before it builds the machine, calls
+`ComponentContext::read_module_parameters` with the policy's `accept_module_parameters`, which reads each module
+parameter from the run's values as a restored variable of its type is read (`SavedValue::from_saved`, a byte string
+held to its bound by `saved_state::bounded_bytes`). A refused read ends the run with `error` and leaves the machine
+unbuilt. A backend that generates a component and not the suite's tables refuses a component that declares a module
+parameter by name (`test_component::snapshot::lower`), since its value is the suite's; C++ and Rust generate both.
 
 C++ generates `test-configuration`, `test-case` and `test-suite`, and writes no file for `test-port-type` (§12.6,
 slice 5; `codegen_matrix::TEST_SUITE_BACKENDS`): the units of the components and configurations that read a port
@@ -869,8 +876,28 @@ and names only the units of its own imports:
   condition lowered to a function of the world's features, `all` a conjunction and `any` a disjunction. A guard
   past the microseconds the runtime's clock counts to is refused by name.
 
-The runner `SCE::Test::runSuite` (`sce/include/test/Suite.h`) runs the test cases a world selects (§12.4). Every
-kind stays refused on the other backends until their slices land.
+The runner `SCE::Test::runSuite` (`sce/include/test/Suite.h`) runs the test cases a world selects (§12.4).
+
+Rust generates `test-configuration`, `test-case` and `test-suite`, and writes no file for `test-port-type` (§12.6,
+slice 6). Each table is a file `<name>.rs`, named by the document's file as every forge unit is, over
+`sce_rust_runtime::test`, and names each unit it reads through its sibling module: a test case's configuration and a
+suite's test cases as `super::<file>`, a component's machine as `super::<name>_sm`, so no unit has an import line:
+
+- a configuration declares `configuration()`, the `Configuration` the runtime reads, every field written and an empty
+  table as empty; `machine(component_type)`, which makes the `<Name>Component` of each type and none for another; and
+  `module_parameters()`, the ids its components read;
+- a test case declares `NAME` and `test_case()`, the `TestCase` of its name, its configuration's tables, its
+  configuration's `machine` as the factory of machines, and the module parameters they read;
+- a suite declares `suite()`, the `Suite` of its module parameters at their defaults, each the saved value of its
+  declared type (an integer by its own type's `SavedValue::to_saved`, which writes a 64-bit one as its text; a
+  `bool`, a text and an enum's variant name as the JSON value they are; a byte string by
+  `saved_state::bytes_to_saved`), and of its `<sce:execute>` entries in run order, each with its test case, its guard
+  in microseconds and its selection as a closure over the world's features. The outermost join of a selection is the
+  closure's body and stands bare, every join inside it in parentheses.
+
+Which rows each table holds, in which order, and what is refused is decided once for both backends
+(`forge::generator::test_tables`); a backend spells them. The runner `sce_rust_runtime::test::run_suite` runs the test
+cases a world selects (§12.4). Every kind stays refused on the other backends until their slices land.
 
 ### 11.10 The rules under feature derivation
 
@@ -917,7 +944,7 @@ one at a time. Each lifts the refusal of §11.9 for itself when its runtime land
 
 | Part | Where | Why there |
 |---|---|---|
-| Round scheduler, `NOW`, port queues and snapshots, timer bindings, verdicts, entity table, guard | a runtime library per backend (C++: `sce/include/test/`) | it is the same for every suite, so it is written once and tested on its own (Zero Duplication) |
+| Round scheduler, `NOW`, port queues and snapshots, timer bindings, verdicts, entity table, guard | a runtime library per backend (C++: `sce/include/test/`, Rust: `sce_rust_runtime::test`) | it is the same for every suite, so it is written once and tested on its own (Zero Duplication) |
 | A component's machine | generated from the `test-component`, by the backend's statechart generator | it is a statechart (§7) |
 | A template's matcher and a specific template's value | generated from the `test-template`, over the record types the statechart generator already writes for an `event-schema` | matching is on values, not on encoded bytes, so no codec takes part (C2) |
 | Which port is connected or mapped to which, and the MTC and PTC of each component | generated tables from the `test-configuration` and `test-case` | they are data |
@@ -971,7 +998,8 @@ part, because a component starts no delayed send.
 When no component took a branch and there is no instant to advance to, the test case can never end, and the runtime
 ends it with `error` (P13). The lane's clock does the same (§10), so the two runs agree (C3).
 
-A suite is run by a library function, with no `main` of its own (C++: `SCE::Test::runSuite`): given the suite's
+A suite is run by a library function, with no `main` of its own (C++: `SCE::Test::runSuite`, Rust:
+`sce_rust_runtime::test::run_suite`): given the suite's
 tables, a world of its features and a factory of system adapters, it runs the test cases the world selects, one at
 a time on the calling thread, in the suite's order (P11), each a fresh run from `NOW = 0` against a fresh adapter,
 and returns each one's result. The caller may give a module parameter another value than the suite's default; a
@@ -999,4 +1027,7 @@ the equivalence law (order of work step 6).
 6. The other backends, one at a time. Rust generates templates first, a template over a union among them; the
    refusal of §11.9 is lifted for Rust for `test-template`. Rust generates test components next, through the doors of
    §12.3, and the refusal is lifted for Rust for `test-component`, but for a component that declares a module
-   parameter, whose value Rust's suite tables give.
+   parameter, whose value Rust's suite tables give. Rust then generates the configuration, case and suite tables
+   over the rows C++ spells (`forge::generator::test_tables`) and runs the examples end to end through
+   `sce_rust_runtime::test::run_suite`; the refusal is lifted for Rust for the remaining kinds, and for a
+   component's module parameter.
