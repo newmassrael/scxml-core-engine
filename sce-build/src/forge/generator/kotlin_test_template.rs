@@ -155,8 +155,9 @@ fn kotlin_case_type(union: &ScopedUnion, variant: &str) -> String {
 /// the conversion Kotlin has for it, since an integer literal is an `Int` or
 /// a `Long` and an unsigned one a `UInt` or a `ULong`, and `==` converts
 /// neither. The least `Int` and `Long` are their constants, since Kotlin
-/// reads `-2147483648` as the negation of a `Long`.
-fn kotlin_integer_literal(scalar: &SceType, text: &str) -> Option<String> {
+/// reads `-2147483648` as the negation of a `Long`. The default a suite gives
+/// a module parameter of `scalar` is written by it too (`kotlin_test_tables`).
+pub(super) fn kotlin_integer_literal(scalar: &SceType, text: &str) -> Option<String> {
     let n = crate::forge::test_profile::decimal_integer(text)?;
     Some(match scalar {
         SceType::Int8 => format!("({n}).toByte()"),
@@ -176,6 +177,26 @@ fn kotlin_integer_literal(scalar: &SceType, text: &str) -> Option<String> {
         | SceType::Bytes
         | SceType::Enum(_) => return None,
     })
+}
+
+/// The byte string the hex literal `text` writes, two hex digits an octet, as
+/// a `ByteArray` of its octets; `None` for a literal that is no hex. The
+/// default a suite gives a module parameter of `bytes[N]` is written by it too
+/// (`kotlin_test_tables`).
+pub(super) fn kotlin_bytes_literal(text: &str) -> Option<String> {
+    let hex = text.trim();
+    if !hex.len().is_multiple_of(2) || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    let octets: Vec<String> = hex
+        .as_bytes()
+        .chunks(2)
+        .map(|pair| {
+            let pair: String = pair.iter().map(|b| char::from(*b)).collect();
+            format!("0x{}.toByte()", pair.to_ascii_lowercase())
+        })
+        .collect();
+    Some(format!("byteArrayOf({})", octets.join(", ")))
 }
 
 /// What a Kotlin template's unit names from outside it, read in the template's
@@ -434,21 +455,7 @@ impl TemplateSpelling for KotlinSpelling {
             }
             TypeOf::Scalar(scalar) => kotlin_integer_literal(scalar, text).ok_or_else(refused),
             TypeOf::Text { .. } => Ok(filters::kotlin_text_expression(text)),
-            TypeOf::Bytes { .. } => {
-                let hex = text.trim();
-                if !hex.len().is_multiple_of(2) || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
-                    return Err(refused());
-                }
-                let octets: Vec<String> = hex
-                    .as_bytes()
-                    .chunks(2)
-                    .map(|pair| {
-                        let pair: String = pair.iter().map(|b| char::from(*b)).collect();
-                        format!("0x{}.toByte()", pair.to_ascii_lowercase())
-                    })
-                    .collect();
-                Ok(format!("byteArrayOf({})", octets.join(", ")))
-            }
+            TypeOf::Bytes { .. } => kotlin_bytes_literal(text).ok_or_else(refused),
             _ => Err(refused()),
         }
     }

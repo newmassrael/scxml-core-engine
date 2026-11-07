@@ -176,6 +176,15 @@ class {{ machine_name }}Component : com.sce.runtime.test.ComponentMachine {
         // delayed send or an invoke a restore cannot start, the profile
         // refuses.
         val machine = {{ machine_name }}StateMachine(sceTestContext = context, sessionId = context.name)
+{% if model.test_component.module_parameters %}
+        // §11.5, §11.8: the module parameters take the suite's values before the
+        // machine starts. Without one, or with one not of its type, the run ends
+        // in error (P13), and the machine is not started on a value made up in
+        // its place.
+        if (!context.readModuleParameters { given -> machine.acceptModuleParameters(given) }) {
+            return
+        }
+{% endif %}
         // P6: a send on a port is appended to the queue of the port it is
         // connected to, or handed to the system adapter where it is mapped. A
         // test-port send always carries its template's value
@@ -295,6 +304,34 @@ class {{ machine_name }}StateMachine(
         }
     }
 {% endif %}
+{# The value a saved value `value` reads back as for a variable of the kind
+   `kind` and the type `type`, held to its `bound`, `what` naming it in a
+   refusal: what a restore reads each variable by (below), and what a test
+   component reads each module parameter by from the run's values
+   (docs/SCE_TEST_PROFILE.md §11.8), whether or not the machine saves. #}
+{% macro saved_read(kind, type, value, what, bound, elem) -%}
+{%- if kind == "optional" and (elem == "enum" or elem == "record") -%}
+SavedValues.optional({{ value }}, {{ what }}) { e, w -> {{ type }}.fromSaved(e, w) }
+{%- elif kind == "optional" and type == "bytes" -%}
+SavedValues.optional({{ value }}, {{ what }}) { e, w -> SavedValues.bytes(e, w, {{ bound if bound is not none else "Int.MAX_VALUE" }}) }
+{%- elif kind == "optional" and type == "string" and bound is not none -%}
+SavedValues.optional({{ value }}, {{ what }}) { e, w -> SavedValues.string(e, w, {{ bound }}) }
+{%- elif kind == "optional" -%}
+SavedValues.optional({{ value }}, {{ what }}) { e, w -> SavedValues.{{ type }}(e, w) }
+{%- elif kind == "record" or kind == "enum" -%}
+{{ type }}.fromSaved({{ value }}, {{ what }})
+{%- elif kind == "list" -%}
+SavedValues.list({{ value }}, {{ what }}, {{ bound }}) { e, w -> SavedValues.{{ type }}(e, w) }
+{%- elif kind == "record_list" -%}
+SavedValues.list({{ value }}, {{ what }}, {{ bound }}) { e, w -> {{ type }}.fromSaved(e, w) }
+{%- elif type == "bytes" -%}
+SavedValues.bytes({{ value }}, {{ what }}, {{ bound if bound is not none else "Int.MAX_VALUE" }})
+{%- elif type == "string" and bound is not none -%}
+SavedValues.string({{ value }}, {{ what }}, {{ bound }})
+{%- else -%}
+SavedValues.{{ type }}({{ value }}, {{ what }})
+{%- endif -%}
+{%- endmacro %}
 {% if static_fields %}
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ─────
@@ -317,18 +354,28 @@ class {{ machine_name }}StateMachine(
 {% macro handed_out(field) -%}
 {% if field.saved_type == "bytes" and field.saved_kind == "optional" %}{{ field.name }}?.copyOf(){% elif field.saved_type == "bytes" %}{{ field.name }}.copyOf(){% elif field.holds_bytes and field.saved_kind == "record" %}{{ field.name }}.detached(){% elif field.holds_bytes and field.saved_kind == "optional" %}{{ field.name }}?.detached(){% elif field.holds_bytes and field.saved_kind == "record_list" %}{{ field.name }}.map { it.detached() }{% else %}{{ field.name }}{% endif %}
 {%- endmacro %}
+{# docs/SCE_TEST_PROFILE.md §11.5: a module parameter has no initial value of
+   its document's; the component reads the run's value into it before the
+   machine starts, so it starts at a value nothing reads
+   (`module_parameter_starts`: its type's zero, or an enum's first variant). #}
 {% for field in static_fields %}
-{% if field.published %}
+{% if field.module_parameter %}
+    /**
+     * docs/SCE_TEST_PROFILE.md §11.5: the module parameter `{{ field.id }}`, which takes the
+     * suite's value before the machine starts{% if field.published %}, published (`sce:direction="out"`){% endif %}.
+     */
+    private var {{ field.name }}: {{ field.ty }} = {{ module_parameter_starts[field.id] }}
+{% elif field.published %}
     /** W3C SCXML 5.2: the `{{ field.id }}` datamodel variable, published (`sce:direction="out"`). */
     private var {{ field.name }}: {{ field.ty }} = {{ field.init }}
-{% if field.reader %}
-
-    /** What the published `{{ field.id }}` holds. */
-    val {{ field.reader }}: {{ field.ty }} get() = {{ handed_out(field) }}
-{% endif %}
 {% else %}
     /** W3C SCXML 5.2: the `{{ field.id }}` datamodel variable, the machine's own. */
     private var {{ field.name }}: {{ field.ty }} = {{ field.init }}
+{% endif %}
+{% if field.published and field.reader %}
+
+    /** What the published `{{ field.id }}` holds. */
+    val {{ field.reader }}: {{ field.ty }} get() = {{ handed_out(field) }}
 {% endif %}
 {% endfor %}
 {# §scxml-6.4.1: a variable a parent may hand a value to — a bool, a string, an
@@ -373,6 +420,34 @@ class {{ machine_name }}StateMachine(
     private fun acceptParamsPart{{ loop.index0 }}(params: InvokeParams) {
 {% for field in part %}
         params.{{ field.id | to_camel_case }}?.let { {{ field.name }} = it }
+{% endfor %}
+    }
+{% endfor %}
+{% endif %}
+{% if model.test_component and model.test_component.module_parameters %}
+{# By parts of at most `kotlin_method_items` module parameters, for the reason
+   a save is (dispatch.kt.jinja2). #}
+{% set parameter_parts = static_fields | selectattr('module_parameter') | list | batch(kotlin_method_items) | list %}
+
+    /**
+     * docs/SCE_TEST_PROFILE.md §11.5, §11.8: each module parameter takes the
+     * value the suite gives it, read as a saved value of its declared type is
+     * read back, before the machine starts. Called by the component the
+     * profile's runtime drives ({{ machine_name }}Component), before [initialize].
+     *
+     * @throws StateRefusal naming the module parameter whose value is not given,
+     *   not of its type or past its bound; nothing is converted.
+     */
+    internal fun acceptModuleParameters(given: com.sce.runtime.test.ModuleParameters) {
+{% for part in parameter_parts %}
+        acceptModuleParametersPart{{ loop.index0 }}(given)
+{% endfor %}
+    }
+{% for part in parameter_parts %}
+
+    private fun acceptModuleParametersPart{{ loop.index0 }}(given: com.sce.runtime.test.ModuleParameters) {
+{% for field in part %}
+        {{ field.name }} = {{ saved_read(field.saved_kind, field.saved_type, 'given.of("' ~ field.id ~ '")', '"' ~ field.id ~ '"', field.bound, field.saved_elem) }}
 {% endfor %}
     }
 {% endfor %}
@@ -445,30 +520,9 @@ SavedValues.list({{ name }}) { it.toSaved() }
 SavedValues.of({{ name }})
 {%- endif -%}
 {%- endmacro %}
-{% macro saved_read(kind, type, value, what, bound, elem) -%}
-{%- if kind == "optional" and (elem == "enum" or elem == "record") -%}
-SavedValues.optional({{ value }}, {{ what }}) { e, w -> {{ type }}.fromSaved(e, w) }
-{%- elif kind == "optional" and type == "bytes" -%}
-SavedValues.optional({{ value }}, {{ what }}) { e, w -> SavedValues.bytes(e, w, {{ bound if bound is not none else "Int.MAX_VALUE" }}) }
-{%- elif kind == "optional" and type == "string" and bound is not none -%}
-SavedValues.optional({{ value }}, {{ what }}) { e, w -> SavedValues.string(e, w, {{ bound }}) }
-{%- elif kind == "optional" -%}
-SavedValues.optional({{ value }}, {{ what }}) { e, w -> SavedValues.{{ type }}(e, w) }
-{%- elif kind == "record" or kind == "enum" -%}
-{{ type }}.fromSaved({{ value }}, {{ what }})
-{%- elif kind == "list" -%}
-SavedValues.list({{ value }}, {{ what }}, {{ bound }}) { e, w -> SavedValues.{{ type }}(e, w) }
-{%- elif kind == "record_list" -%}
-SavedValues.list({{ value }}, {{ what }}, {{ bound }}) { e, w -> {{ type }}.fromSaved(e, w) }
-{%- elif type == "bytes" -%}
-SavedValues.bytes({{ value }}, {{ what }}, {{ bound if bound is not none else "Int.MAX_VALUE" }})
-{%- elif type == "string" and bound is not none -%}
-SavedValues.string({{ value }}, {{ what }}, {{ bound }})
-{%- else -%}
-SavedValues.{{ type }}({{ value }}, {{ what }})
-{%- endif -%}
-{%- endmacro %}
-{# A record's or an enum's saved form is its own type's (`toSaved` /
+{# `saved_read`, the reads of each restored variable, is declared above the
+   variables, since a test component's module parameter is read by it too. A
+   record's or an enum's saved form is its own type's (`toSaved` /
    `fromSaved`, emitted with the type by the static lowering). A per-type function here, named by
    prefixing the record's type, would reserve every variable name that prefix
    could match (`crate::reader_names` reads a template name as a pattern), and

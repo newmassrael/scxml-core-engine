@@ -4357,6 +4357,10 @@ fn render_kotlin(
     // unit; the statechart imports no enum document's own.
     let static_lowering =
         crate::forge::static_lowering::lower_kotlin(&mut model_lowered, &native_machine_name)?;
+    // docs/SCE_TEST_PROFILE.md §11.5: what each module parameter of a test
+    // component starts at before the component reads the suite's value into it.
+    let module_parameter_starts =
+        crate::forge::generator::kotlin_module_parameter_starts(&static_lowering)?;
     let payload_events: std::collections::BTreeSet<String> = native
         .payload_events
         .union(&static_lowering.payload_events)
@@ -4454,6 +4458,7 @@ fn render_kotlin(
         static_imports => &static_lowering.imports,
         static_records => minijinja::Value::from_serialize(&static_lowering.records),
         static_saved_shape => &static_lowering.saved_shape,
+        module_parameter_starts => &module_parameter_starts,
         has_native_actions => native.any,
         has_native_duties => native.has_duty,
         accepts_simulated_host => native.has_duty || model.any_child_states_duties(),

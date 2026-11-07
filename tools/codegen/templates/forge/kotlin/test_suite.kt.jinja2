@@ -1,0 +1,44 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "kotlin", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="test-suite")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+
+package {{ package | kotlin_forge_package }}
+
+{# Each test case's unit is named by the package of its document, and the
+   feature model writes no unit, so the unit imports no package and no name of
+   another unit can hide one of its own. #}
+/**
+ * The test suite `{{ suite_name }}` (docs/SCE_TEST_PROFILE.md §11.8) as the runner reads it
+ * (`{{ runtime }}.runSuite`): each module parameter at its default, held as the saved value
+ * of its declared type, and each `<sce:execute>` in run order, with its test case, its guard
+ * and the selection that runs it in a world of the suite's features.
+ */
+fun suite(): {{ runtime }}.Suite {
+    val moduleParameters = {{ runtime }}.ModuleParameters()
+{% for parameter in parameters %}
+    moduleParameters.set({{ parameter.id }}, {{ parameter.value }})
+{% endfor %}
+    return {{ runtime }}.Suite(
+        name = {{ name_literal }},
+        moduleParameters = moduleParameters,
+{% if executes %}
+        executes = listOf(
+{% for execute in executes %}
+            {{ runtime }}.Execute(
+                testCase = {{ execute.test_case }},
+                guard = {{ execute.guard }},
+                selection = {{ execute.selection }},
+            ),
+{% endfor %}
+        ),
+{% else %}
+        executes = emptyList(),
+{% endif %}
+    )
+}
