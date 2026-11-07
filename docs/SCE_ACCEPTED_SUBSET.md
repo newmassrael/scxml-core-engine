@@ -5230,6 +5230,17 @@ a list reached through an index, a whole copy from one, and a byte string copied
 into a larger bound are refused by name on Rust, and so is every composed value
 of a machine built without an allocator (`--no-std`).
 
+The Kotlin backend reads a composed payload as the Rust backend does (docs/adr/0086,
+section 7.1, the Kotlin row): its payload class holds each field in `List<T>`,
+`String`, `ByteArray`, `T?` and the machine's data class, each record it names
+declared once; the lift reads each field by one call of the runtime's
+`EventPayload.Value` per constructor and refuses the delivery whole, naming the
+path, at the first value outside its type; the inject seam writes the payload it
+builds as the JSON a lift reads back; and `len`, an index, a field of a record
+element and a `<foreach>` over a list the payload or an enclosing loop's item holds
+lower at any depth. A payload that holds a union, at any depth, is refused by name
+on Kotlin, which holds no union yet (docs/adr/0092, section 7).
+
 A `<send>` of the event of a schema whose field is composed gives that field by
 a `<param>` naming the place that holds the value whole (docs/adr/0086, section
 5.2): a variable, a field of a record variable, or a part of the payload of the

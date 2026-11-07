@@ -7351,6 +7351,179 @@ fn kotlin_payload_present_reader(f: &EntryField, l: &LangCtx) -> String {
     format!("fields.{reader}(\"{id}\")")
 }
 
+/// What the Kotlin typed channel holds and reads of one event's payload
+/// ([`build_kotlin_event_payload`]).
+struct KotlinPayloadParts {
+    /// The payload class's constructor parameters, each a `val`.
+    ctor_params: String,
+    /// The inject seam's parameters, one per field.
+    call_params: String,
+    /// The lift's argument for each member, out of the decoded `fields`, in
+    /// the schema's order.
+    lift_args: String,
+    /// The JSON of the defaults of the fields a later revision added, or
+    /// `None` for a schema that added none.
+    defaults: Option<String>,
+    /// The statements the inject seam runs before it sends, each a line of
+    /// its own; empty where it needs none.
+    prelude: String,
+    /// The typed carrier the inject seam sends.
+    typed_payload: String,
+    /// The JSON text the inject seam writes beside the typed carrier.
+    data: String,
+}
+
+/// [`KotlinPayloadParts`] of a schema each field of which is one entry, the
+/// class `class_name`: each field read by the reader of its declared type.
+fn kotlin_entry_payload(schema: &EntrySchema, l: &LangCtx, class_name: &str) -> KotlinPayloadParts {
+    // Constructor params / inject params / call args. Fields are the
+    // verbatim schema ids (matching the verbatim property emit of
+    // `expr.rs::emit_kotlin`) so the lowered guard's `<field>!!.<id>`
+    // resolves against the data class member.
+    let mut ctor_params = String::new();
+    let mut call_params = String::new();
+    let mut call_args = String::new();
+    // What the lift reads back out of `data`, and what the inject seam
+    // writes into it beside the typed carrier: the same fields, named once.
+    let mut lift_args = String::new();
+    let mut data_items = String::new();
+    for f in &schema.fields {
+        // An optional field is held in the one optional type over its
+        // present value's (docs/adr/0055).
+        let present = l.type_name(f.sce_type.present_type()).into_owned();
+        let ty = match &f.sce_type {
+            EntryType::Scalar(_) => present,
+            EntryType::Optional { .. } => l
+                .optional_of(&present)
+                .expect("Kotlin spells an optional value"),
+        };
+        if !ctor_params.is_empty() {
+            ctor_params.push_str(", ");
+        }
+        ctor_params.push_str(&format!("val {}: {ty}", f.id));
+        if !call_params.is_empty() {
+            call_params.push_str(", ");
+        }
+        call_params.push_str(&format!("{}: {ty}", f.id));
+        if !call_args.is_empty() {
+            call_args.push_str(", ");
+            lift_args.push_str(", ");
+            data_items.push_str(", ");
+        }
+        call_args.push_str(&f.id);
+        lift_args.push_str(&kotlin_payload_reader(f, l));
+        // An enum rides as the name its document declares for the value; an
+        // absent value as `null`, its key always written (docs/adr/0055).
+        let written = match (&f.sce_type, f.sce_type.present_type()) {
+            (EntryType::Optional { .. }, SceType::Enum(_)) => {
+                format!("{}?.declaredName", f.id)
+            }
+            (_, SceType::Enum(_)) => format!("{}.declaredName", f.id),
+            _ => f.id.clone(),
+        };
+        data_items.push_str(&format!("\"{}\" to {written}", f.id));
+    }
+    KotlinPayloadParts {
+        ctor_params,
+        call_params,
+        lift_args,
+        defaults: crate::forge::schema_revision::defaults_wire(schema),
+        prelude: String::new(),
+        typed_payload: format!("{class_name}({call_args})"),
+        data: format!("EventPayload.encode(mapOf({data_items}))"),
+    }
+}
+
+/// [`KotlinPayloadParts`] of the payload of `event`, the class `class_name`,
+/// whose schema holds a composition (docs/adr/0086), by the walks over its type
+/// ([`crate::forge::composed_lowering`]): each member in the type the machine
+/// holds it in (section 7.1, the Kotlin row), each read by one runtime call per
+/// constructor, which refuses the delivery whole, naming the path, at the first
+/// value outside its type (section 4), and written as its JSON (section 3.1)
+/// from the payload the inject seam builds first.
+///
+/// The static lowering declared every record and enum the payload names before
+/// the channel is built ([`crate::forge::static_lowering::lower_kotlin`]), so a
+/// walk that fails here is a routing defect.
+fn kotlin_composed_payload(
+    model: &crate::model::SCXMLModel,
+    machine_name: &str,
+    event: &str,
+    static_enums: &[crate::forge::static_lowering::StaticEnumType],
+    class_name: &str,
+) -> KotlinPayloadParts {
+    use crate::forge::composed_lowering::{self as composed, ComposedSpelling, RecordEnv};
+    let unlowered = |why: &str| -> String {
+        format!(
+            "the payload of `{event}` reached the Kotlin typed channel unlowered ({why}): the \
+             static lowering declares what a composed payload names before the channel is built"
+        )
+    };
+    let schema = model
+        .imported_event_schemas
+        .get(event)
+        .unwrap_or_else(|| panic!("{}", unlowered("no schema")));
+    let alias = model
+        .imported_records
+        .iter()
+        .find(|(_, held)| held.name == schema.name)
+        .map(|(alias, _)| alias.as_str())
+        .unwrap_or_else(|| panic!("{}", unlowered("no record of its schema")));
+    let records = composed::StatechartRecords::of(model);
+    let enums: std::collections::BTreeMap<String, composed::MachineEnum> = static_enums
+        .iter()
+        .map(|e| (e.alias.clone(), e.machine_enum()))
+        .collect();
+    let spelling = composed::KotlinComposed {
+        machine: machine_name,
+    };
+    let walked = |result: Result<Vec<(String, String)>, String>| {
+        result.unwrap_or_else(|why| panic!("{}", unlowered(&why)))
+    };
+    let held = records
+        .record(None, alias)
+        .unwrap_or_else(|why| panic!("{}", unlowered(&why)));
+    let members = walked(composed::record_members(alias, &records, &enums, &spelling));
+    let readers = walked(composed::field_readers(held, &records, &enums, &spelling));
+    // The inject seam builds the payload first, so each field is written from
+    // the value the typed carrier holds. The local is named in the prefix the
+    // generator keeps for its own names, so it shadows no parameter of the
+    // seam, each of which a field names.
+    const PAYLOAD_LOCAL: &str = "scePayload";
+    let writers = walked(composed::field_writers(
+        held,
+        &records,
+        &spelling,
+        &composed::Held::place(PAYLOAD_LOCAL),
+    ));
+    let joined = |parts: Vec<String>| parts.join(", ");
+    let call_args = joined(members.iter().map(|(id, _)| id.clone()).collect());
+    KotlinPayloadParts {
+        ctor_params: joined(
+            members
+                .iter()
+                .map(|(id, ty)| format!("val {id}: {ty}"))
+                .collect(),
+        ),
+        call_params: joined(
+            members
+                .iter()
+                .map(|(id, ty)| format!("{id}: {ty}"))
+                .collect(),
+        ),
+        lift_args: joined(
+            readers
+                .iter()
+                .map(|(id, read)| format!("fields.field(\"{id}\").let {{ {read} }}"))
+                .collect(),
+        ),
+        defaults: crate::forge::schema_revision::composed_defaults_wire(schema),
+        prelude: format!("        val {PAYLOAD_LOCAL} = {class_name}({call_args})\n"),
+        typed_payload: PAYLOAD_LOCAL.to_string(),
+        data: format!("{}.json", spelling.write_record(&writers)),
+    }
+}
+
 /// Build the [`KotlinEventPayload`] for `model`. Same SSOT guard selection
 /// ([`select_native_typed_guards`]) as the Rust / Go / C11 / C++ builders.
 pub fn build_kotlin_event_payload(
@@ -7437,7 +7610,6 @@ pub fn build_kotlin_event_payload(
     populate.push_str("        when (val tp = metadata.typedPayload) {\n");
 
     for event in &guarded_events {
-        let schema = &entry_schemas[event];
         let variant = filters::to_event_variant(event.clone());
         let class_name = format!("{machine}{variant}Payload");
         let field = format!("pending{variant}Payload");
@@ -7446,53 +7618,23 @@ pub fn build_kotlin_event_payload(
             crate::kotlin::to_event_ref(event, &branch_events)
         );
 
-        // Constructor params / inject params / call args. Fields are the
-        // verbatim schema ids (matching the verbatim property emit of
-        // `expr.rs::emit_kotlin`) so the lowered guard's `<field>!!.<id>`
-        // resolves against the data class member.
-        let mut ctor_params = String::new();
-        let mut call_params = String::new();
-        let mut call_args = String::new();
-        // What the lift reads back out of `data`, and what the inject seam
-        // writes into it beside the typed carrier: the same fields, named once.
-        let mut lift_args = String::new();
-        let mut data_items = String::new();
-        for f in &schema.fields {
-            // An optional field is held in the one optional type over its
-            // present value's (docs/adr/0055).
-            let present = l.type_name(f.sce_type.present_type()).into_owned();
-            let ty = match &f.sce_type {
-                EntryType::Scalar(_) => present,
-                EntryType::Optional { .. } => l
-                    .optional_of(&present)
-                    .expect("Kotlin spells an optional value"),
-            };
-            if !ctor_params.is_empty() {
-                ctor_params.push_str(", ");
-            }
-            ctor_params.push_str(&format!("val {}: {ty}", f.id));
-            if !call_params.is_empty() {
-                call_params.push_str(", ");
-            }
-            call_params.push_str(&format!("{}: {ty}", f.id));
-            if !call_args.is_empty() {
-                call_args.push_str(", ");
-                lift_args.push_str(", ");
-                data_items.push_str(", ");
-            }
-            call_args.push_str(&f.id);
-            lift_args.push_str(&kotlin_payload_reader(f, &l));
-            // An enum rides as the name its document declares for the value; an
-            // absent value as `null`, its key always written (docs/adr/0055).
-            let written = match (&f.sce_type, f.sce_type.present_type()) {
-                (EntryType::Optional { .. }, SceType::Enum(_)) => {
-                    format!("{}?.declaredName", f.id)
-                }
-                (_, SceType::Enum(_)) => format!("{}.declaredName", f.id),
-                _ => f.id.clone(),
-            };
-            data_items.push_str(&format!("\"{}\" to {written}", f.id));
-        }
+        // The class's members, the lift's reader of each, the inject seam's
+        // carriers and the defaults of the fields a later revision added: a
+        // schema of entries field by field, and one that holds a composition by
+        // the walks over its type (docs/adr/0086), which the static lowering
+        // reads a payload of only on a target that spells them.
+        let KotlinPayloadParts {
+            ctor_params,
+            call_params,
+            lift_args,
+            defaults,
+            prelude,
+            typed_payload,
+            data,
+        } = match entry_schemas.get(event) {
+            Some(schema) => kotlin_entry_payload(schema, &l, &class_name),
+            None => kotlin_composed_payload(model, &machine, event, static_enums, &class_name),
+        };
         // ⚠ The decode is INSIDE the branch, not above the chain: an event
         // whose name this document schema'd is the only one whose data must
         // read as fields. Decoding first would refuse every ordinary event —
@@ -7512,7 +7654,7 @@ pub fn build_kotlin_event_payload(
         // schema's defaults where the delivery lacks it
         // (`crate::forge::schema_revision`); a schema with none reads the
         // delivery alone, as it always has.
-        let decode_args = match crate::forge::schema_revision::defaults_wire(schema) {
+        let decode_args = match defaults {
             Some(defaults) => format!("metadata.data, \"{}\"", filters::escape_kotlin(defaults)),
             None => "metadata.data".to_string(),
         };
@@ -7543,16 +7685,16 @@ data class {class_name}({ctor_params})\n\n"
         inject.push_str(&format!(
             "    // NL\u{2192}IR Item C1 Path A typed `_event.data` inject seam for\n    \
 // `{event}` — binds the event name and the payload field values in one call.\n    \
-fun raise{variant}({call_params}) {{\n        \
+fun raise{variant}({call_params}) {{\n{prelude}        \
 send(\n            {event_ref},\n            \
 EventMetadata(\n                \
 type = \"external\",\n                \
-typedPayload = {class_name}({call_args}),\n                \
+typedPayload = {typed_payload},\n                \
 // Both carriers are filled: the typed one a native guard reads, and\n                \
 // `data`, which is what the script engine binds `_event.data` from.\n                \
 // Filling only the first left an `<assign expr=\"_event.data.x\">` on\n                \
 // this event reading nothing, on every backend alike.\n                \
-data = EventPayload.encode(mapOf({data_items}))\n            \
+data = {data}\n            \
 )\n        )\n    }}\n"
         ));
     }

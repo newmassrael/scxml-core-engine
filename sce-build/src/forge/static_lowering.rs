@@ -2804,11 +2804,22 @@ impl StaticTarget for KotlinTarget {
     fn scalar_view(&self, _ty: &SceType) -> Option<String> {
         None
     }
+    // One spelling of a record's type, whether a variable or a composed value
+    // holds it.
     fn record_type(&self, machine: &str, alias: &str) -> String {
-        format!(
-            "{machine}{}Record",
-            filters::to_pascal_case(alias.to_string())
-        )
+        use crate::forge::composed_lowering::{ComposedSpelling, KotlinComposed};
+        KotlinComposed { machine }.record_type(alias)
+    }
+    // The runtime's `EventPayload.Value` reads each constructor of a composed
+    // payload, and its writers write the JSON the inject seam carries
+    // (docs/adr/0086, section 7.1, the Kotlin row).
+    fn composed_spelling<'a>(
+        &self,
+        machine: &'a str,
+    ) -> Option<Box<dyn crate::forge::composed_lowering::ComposedSpelling + 'a>> {
+        Some(Box::new(crate::forge::composed_lowering::KotlinComposed {
+            machine,
+        }))
     }
     fn record_def(
         &self,
