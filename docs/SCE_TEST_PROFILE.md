@@ -758,7 +758,8 @@ inside a `list-match` (B.1.3.2, §8.1); a template whose references form a cycle
 The six kinds are parsed and checked on every backend from the step that lands them. Until the native runtime of the
 order of work step 3 lands in a backend for a kind, generating a document of that kind on it is refused by name
 (`generate/unsupported-feature`). The backends land one kind at a time, in the order of §12.6, and
-`codegen_matrix::TEST_TEMPLATE_BACKENDS` lists those that generate a template.
+`codegen_matrix::TEST_TEMPLATE_BACKENDS` and `codegen_matrix::TEST_COMPONENT_BACKENDS` list those that generate a
+template and a component.
 
 C++ generates `test-template` (§12.6, slice 3). The unit is a header `<name>.h` in the namespace
 `SCE::Generated::<Name>`, which declares:
@@ -774,7 +775,31 @@ C++ generates `test-template` (§12.6, slice 3). The unit is a header `<name>.h`
   it.
 
 A template whose type reaches a union at any depth is refused on C++ as a field of a union is (ADR 0092, section
-7). The other kinds stay refused on C++, and every kind on the other backends, until their slices land.
+7).
+
+C++ generates `test-component` (§12.6, slice 4). The unit is the statechart machine the C++ generator writes for any
+`sce-static` document, `<file>_sm.h` and its `<file>_sm.inl`, in the namespace `SCE::Generated::<name>`, lowered
+through the doors of §12.3 before it is rendered (`test_component::snapshot::lower`, written once for every
+backend):
+
+- every branch is a transition on the snapshot event `sce.test.snapshot`, in its document place, whose guard is
+  its `cond` and then its match; taking it runs, before its content, the statement of P4 step 1. A receive
+  branch's match asks the runtime for the snapshot's head under its template's record's event and calls the
+  template's `match` on it, so the machine includes the unit of every template it uses;
+- `<sce:setverdict>`, `<sce:start-timer>` and `<sce:stop-timer>` are calls on the component's
+  `SCE::Test::ComponentContext`, a duration in whole microseconds, a timer's own where the statement writes none;
+- a send names its template's record's event and hands the test-port processor the specific template's value,
+  as a value (`HostSendRequest::value`) and never an encoding (ADR 0091, C2); a PTC's `<invoke>` is run by the
+  test-component invoker.
+
+Beside the machine the header declares `<name>Component`, which implements `SCE::Test::ComponentMachine`: `start`
+binds the context, registers the test-port processor and the test-component invoker on it and starts the machine;
+`deliverSnapshot` delivers the snapshot event; `terminated` is the machine's having entered a top-level `<final>`.
+A component that declares a module parameter is refused by that parameter until the tables of slice 5 give the
+runtime the suite's value for it, since no value is made up in its place. A component that uses a template whose
+type reaches a union is refused on C++ as the template is.
+
+The other kinds stay refused on C++, and every kind on the other backends, until their slices land.
 
 ### 11.10 The rules under feature derivation
 
@@ -841,7 +866,7 @@ requires.
 | the order of P3 | the engine's `selectTransitions` (§scxml-D), unchanged. When no branch matches, no transition is enabled and the engine discards the event: nothing is removed, as §7 requires. |
 | taking a branch, P4 step 1 | one statement the generator puts before the branch's executable content. A receive branch removes the head of its port's queue and holds it as the transition's `_event.data`, in the payload member of its record's event (`Transition::payload_event`). A timeout branch sets its timer to `IDLE`. Every branch's statement also tells the runtime that the component took a branch in this round. |
 | `<sce:setverdict>`, `<sce:start-timer>`, `<sce:stop-timer>` | actions of their block (§11.5) that call the component's runtime context |
-| a send (P6) | a host Event I/O Processor for the test-port URI, registered by the runtime (ADR 0084). The request names the port and carries the template's value. The runtime appends the value to the queue of the connected port, or hands it to the system adapter when the port is mapped. |
+| a send (P6) | a host Event I/O Processor for the test-port URI, registered by the runtime (ADR 0084). The request names the port and carries the template's value, as the value the generated code holds and never an encoding (C++: `HostSendRequest::value`). The runtime appends the value to the queue of the connected port, or hands it to the system adapter when the port is mapped. |
 | a PTC (P9) | a host invoke processor for the test-component URI, registered by the runtime. The engine asks for the start when the macrostep that entered the state ends (§scxml-6.4), which is when P9 creates, connects, maps and starts the PTC. It asks for the cancel when the state is exited, which is P9's kill. The runtime never reports a completion to the engine: `done` is read from the snapshot (P2). So a PTC that has terminated is still running for the engine, and the engine delivers the cancel for it too, which P9's kill requires. |
 
 A component has no other source of external events: `<raise>` and `<cancel>` are refused (§8.2), a send has no delay
@@ -884,7 +909,7 @@ the equivalence law (order of work step 6).
 3. C++ generation of templates: the matcher of each template and the value of each specific template. The
    refusal of §11.9 is lifted for C++ for `test-template`.
 4. C++ generation of test components through the doors of §12.3. The refusal of §11.9 is lifted for C++ for
-   `test-component`.
+   `test-component`, but for a component that declares a module parameter, whose value slice 5 gives.
 5. C++ generation of the configuration, case and suite tables, a runner, and the examples run end to end with the
-   verdicts they expect. The refusal is lifted for the remaining kinds.
+   verdicts they expect. The refusal is lifted for the remaining kinds, and for a component's module parameter.
 6. The other backends, one at a time.

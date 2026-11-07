@@ -538,8 +538,12 @@ do not bind the template's formal parameters one to one, each by a parameter of 
 the profile only once its runtime lands there for the document's kind, and until then
 generation refuses one by name (`generate/unsupported-feature`). C++ generates a template
 (`docs/SCE_TEST_PROFILE.md` §11.9), and refuses one whose type reaches a union at any
-depth by the union's own refusal (`generate/unsupported-feature`); every other kind, and
-a template on every other backend, is refused.
+depth by the union's own refusal (`generate/unsupported-feature`). C++ generates a test
+component, its machine driven by the profile's runtime through the doors of
+`docs/SCE_TEST_PROFILE.md` §12.3, and refuses, with `generate/unsupported-feature`, one
+that uses a template whose type reaches a union and one that declares a module parameter,
+whose value the suite's tables give (§12.6, slice 5). Every other kind, and a template and
+a component on every other backend, is refused.
 
 A port type, a configuration, a test case and a suite are then held to the rules their
 imports decide (`docs/SCE_TEST_PROFILE.md` §11.3, §11.6 to §11.8), and a document a
