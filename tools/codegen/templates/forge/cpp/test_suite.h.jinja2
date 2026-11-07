@@ -1,0 +1,48 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "cpp", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="test-suite")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+
+#pragma once
+#ifndef {{ guard }}
+#define {{ guard }}
+
+#include <cstdint>
+#include <optional>
+#include <string>
+#include <vector>
+{% for header in std_includes %}#include <{{ header }}>
+{% endfor %}
+
+#include "saved/SavedValues.h"
+#include "test/Suite.h"
+{% for inc in case_includes %}
+{{ inc }}
+{% endfor %}
+
+namespace SCE::Generated::{{ namespace }} {
+
+/// The test suite `{{ suite_name }}` (docs/SCE_TEST_PROFILE.md §11.8) as the runner reads it
+/// (`SCE::Test::runSuite`): each module parameter at its default, held as the saved value of
+/// its declared type, and each `<sce:execute>` in run order, with its test case, its guard and
+/// the selection that runs it in a world of the suite's features.
+inline ::SCE::Test::Suite suite() {
+    ::SCE::Test::Suite suite;
+    suite.name = {{ name_literal }};
+{% for parameter in parameters %}
+    suite.moduleParameters.set({{ parameter.id }}, {{ parameter.value }});
+{% endfor %}
+{% for execute in executes %}
+    suite.executes.push_back(::SCE::Test::Execute{ {{- execute.test_case }}, {{ execute.guard }}, {{ execute.selection -}} });
+{% endfor %}
+    return suite;
+}
+
+}  // namespace SCE::Generated::{{ namespace }}
+
+#endif  // {{ guard }}

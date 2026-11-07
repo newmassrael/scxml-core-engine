@@ -7672,6 +7672,12 @@ fn validate_and_enrich_imports(
                     .map(|(method, params, ret)| (format!("{}.{}", ctx.alias, method), params, ret))
                     .collect();
             }
+        } else if let Some(component) = source.parse_test_component()? {
+            // A test component is a statechart, which the forge parser leaves to
+            // the statechart parser: what a configuration's tables name of it,
+            // its machine, its ports and timers and the module parameters it
+            // reads, is read here (docs/SCE_TEST_PROFILE.md §11.6, §12.2).
+            ctx.test_component = forge::generator::TestComponentImport::of(&component);
         }
     }
     Ok(())

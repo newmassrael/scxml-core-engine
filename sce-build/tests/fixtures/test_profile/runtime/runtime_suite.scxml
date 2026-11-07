@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §11.8, §12.6: the suite the runtime runs end to
+     end. Its test cases end with each verdict the profile has: a job answered
+     in time passes, a PTC served passes, a removed PTC's inconclusive
+     outweighs its MTC's pass, and a guard shorter than the answer ends in
+     error. The last three run only in a world with the features they name. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-suite" name="runtime_suite">
+  <sce:import kind="feature-model" src="runtime_features.scxml" as="Features"/>
+  <sce:import kind="test-case" src="answers_the_job.scxml" as="AnswersTheJob"/>
+  <sce:import kind="test-case" src="serves_a_ptc.scxml" as="ServesAPtc"/>
+  <sce:import kind="test-case" src="keeps_a_ptc.scxml" as="KeepsAPtc"/>
+  <sce:import kind="test-case" src="answers_before_the_guard.scxml" as="AnswersBeforeTheGuard"/>
+  <sce:module-parameter id="job" type="uint32" value="7"/>
+  <sce:execute test-case="AnswersTheJob" guard="10s"/>
+  <sce:execute test-case="ServesAPtc" requires="ptcs"/>
+  <sce:execute test-case="KeepsAPtc" requires="all(ptcs, removal)"/>
+  <sce:execute test-case="AnswersBeforeTheGuard" guard="0.1ms" requires="any(guard, removal)"/>
+</scxml>

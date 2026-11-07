@@ -477,7 +477,8 @@ impl ForgeKind {
             // docs/adr/0091: no importer holds a document of the test profile
             // as an instance: a template's unit is functions, a component is
             // created by the runtime (docs/SCE_TEST_PROFILE.md §4.9), and the
-            // other kinds are not generated yet.
+            // tables of the other kinds are functions that return data
+            // (§12.2).
             Self::TestTemplate
             | Self::TestPortType
             | Self::TestComponent
@@ -566,19 +567,18 @@ impl ForgeKind {
             // docs/SCE_TEST_PROFILE.md §12.3: a test component's machine is a
             // statechart's, built on the SCE runtime as a statechart is; the
             // runtime that drives it (`sce/include/test/`) ships with SCE's
-            // headers and is no forge tier.
-            Self::TestComponent => RuntimeDep::SceRuntime,
+            // headers and is no forge tier. The tables of a configuration, a
+            // test case and a suite (§12.2) name the machines of the components
+            // they run, and the profile's runtime and runner.
+            Self::TestComponent | Self::TestConfiguration | Self::TestCase | Self::TestSuite => {
+                RuntimeDep::SceRuntime
+            }
             // docs/SCE_TEST_PROFILE.md §11.9, §12.2: a template's unit names
             // nothing of the forge runtime; a length restriction on a text
             // reads the test profile's own runtime (`sce/include/test/`), which
-            // ships with SCE's headers and is no forge tier. No backend
-            // generates the other kinds yet, so none emits anything or depends
-            // on anything.
-            Self::TestTemplate
-            | Self::TestPortType
-            | Self::TestConfiguration
-            | Self::TestCase
-            | Self::TestSuite => RuntimeDep::None,
+            // ships with SCE's headers and is no forge tier. A port type writes
+            // no file.
+            Self::TestTemplate | Self::TestPortType => RuntimeDep::None,
         }
     }
 
@@ -7054,13 +7054,13 @@ impl ForgeDocument {
             // A union's unit is a sum type of the language's own.
             Self::Union(_) => RuntimeDep::None,
             // A template's unit names nothing of the forge runtime
-            // (docs/SCE_TEST_PROFILE.md §12.2), and no backend generates the
-            // other documents of the test profile yet (§11.9).
-            Self::TestTemplate(_)
-            | Self::TestPortType(_)
-            | Self::TestConfiguration(_)
-            | Self::TestCase(_)
-            | Self::TestSuite(_) => RuntimeDep::None,
+            // (docs/SCE_TEST_PROFILE.md §12.2), and a port type writes no file;
+            // the tables of a configuration, a test case and a suite are their
+            // kinds', on the SCE runtime.
+            Self::TestTemplate(_) | Self::TestPortType(_) => RuntimeDep::None,
+            Self::TestConfiguration(_) | Self::TestCase(_) | Self::TestSuite(_) => {
+                self.kind().max_runtime_dep()
+            }
         }
     }
 }

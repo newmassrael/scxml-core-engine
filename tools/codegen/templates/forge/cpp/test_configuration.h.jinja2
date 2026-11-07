@@ -1,0 +1,75 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "cpp", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="test-configuration")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+
+#pragma once
+#ifndef {{ guard }}
+#define {{ guard }}
+
+#include <memory>
+#include <string>
+#include <vector>
+{% for header in std_includes %}#include <{{ header }}>
+{% endfor %}
+
+#include "test/TestCaseRun.h"
+{% for header in machine_headers %}
+#include "{{ header }}"
+{% endfor %}
+
+namespace SCE::Generated::{{ namespace }} {
+
+/// The test configuration `{{ configuration_name }}` (docs/SCE_TEST_PROFILE.md §11.6) as the
+/// profile's runtime reads it: the MTC's component type and each PTC's, the ports and timers
+/// each type declares, each `<sce:connect>` and each `<sce:map>`.
+inline ::SCE::Test::Configuration configuration() {
+    ::SCE::Test::Configuration configuration;
+    configuration.mtcType = {{ mtc_type }};
+{% for ptc in ptcs %}
+    configuration.ptcTypes.emplace({{ ptc.id }}, {{ ptc.component_type }});
+{% endfor %}
+{% for declared in component_types %}
+{% if declared.ports %}
+    configuration.portsOfType.emplace({{ declared.name }}, ::std::vector<::std::string>{ {{- declared.ports -}} });
+{% endif %}
+{% if declared.timers %}
+    configuration.timersOfType.emplace({{ declared.name }}, ::std::vector<::std::string>{ {{- declared.timers -}} });
+{% endif %}
+{% endfor %}
+{% for connection in connections %}
+    configuration.connections.push_back({{ connection }});
+{% endfor %}
+{% for mapping in mappings %}
+    configuration.mappings.push_back({{ mapping }});
+{% endfor %}
+    return configuration;
+}
+
+/// The machine of each component type of the configuration: the component the
+/// profile's runtime drives, generated beside its test component's machine
+/// (docs/SCE_TEST_PROFILE.md §12.3). None for a type the configuration does not
+/// name, which the run ends with `error` where it is created.
+inline ::std::unique_ptr<::SCE::Test::ComponentMachine> machine(const ::std::string &componentType) {
+{% for declared in component_types %}
+    if (componentType == {{ declared.name }}) {
+        return ::std::make_unique<{{ declared.component }}>();
+    }
+{% endfor %}
+    return nullptr;
+}
+
+/// The module parameters the components of the configuration read
+/// (docs/SCE_TEST_PROFILE.md §11.5), each of which a suite that runs it gives a value.
+inline ::std::vector<::std::string> moduleParameters() {
+    return { {{- module_parameters | join(", ") -}} };
+}
+
+}  // namespace SCE::Generated::{{ namespace }}
+
+#endif  // {{ guard }}

@@ -319,6 +319,33 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
     (Language::Python, "forge kind `test-component`", Why::NotYet(TEST_COMPONENT_NOT_YET)),
     (Language::C11, "forge kind `test-component`", Why::NotYet(TEST_COMPONENT_NOT_YET)),
     (Language::Swift, "forge kind `test-component`", Why::NotYet(TEST_COMPONENT_NOT_YET)),
+    // The tables of a test and the port type they read (docs/SCE_TEST_PROFILE.md
+    // §12.6, `codegen_matrix::TEST_SUITE_BACKENDS`): the profile's runner, which
+    // lands in one backend first, C++.
+    (Language::Rust, "forge kind `test-port-type`", Why::NotYet(TEST_SUITE_NOT_YET)),
+    (Language::Kotlin, "forge kind `test-port-type`", Why::NotYet(TEST_SUITE_NOT_YET)),
+    (Language::Go, "forge kind `test-port-type`", Why::NotYet(TEST_SUITE_NOT_YET)),
+    (Language::Python, "forge kind `test-port-type`", Why::NotYet(TEST_SUITE_NOT_YET)),
+    (Language::C11, "forge kind `test-port-type`", Why::NotYet(TEST_SUITE_NOT_YET)),
+    (Language::Swift, "forge kind `test-port-type`", Why::NotYet(TEST_SUITE_NOT_YET)),
+    (Language::Rust, "forge kind `test-configuration`", Why::NotYet(TEST_SUITE_NOT_YET)),
+    (Language::Kotlin, "forge kind `test-configuration`", Why::NotYet(TEST_SUITE_NOT_YET)),
+    (Language::Go, "forge kind `test-configuration`", Why::NotYet(TEST_SUITE_NOT_YET)),
+    (Language::Python, "forge kind `test-configuration`", Why::NotYet(TEST_SUITE_NOT_YET)),
+    (Language::C11, "forge kind `test-configuration`", Why::NotYet(TEST_SUITE_NOT_YET)),
+    (Language::Swift, "forge kind `test-configuration`", Why::NotYet(TEST_SUITE_NOT_YET)),
+    (Language::Rust, "forge kind `test-case`", Why::NotYet(TEST_SUITE_NOT_YET)),
+    (Language::Kotlin, "forge kind `test-case`", Why::NotYet(TEST_SUITE_NOT_YET)),
+    (Language::Go, "forge kind `test-case`", Why::NotYet(TEST_SUITE_NOT_YET)),
+    (Language::Python, "forge kind `test-case`", Why::NotYet(TEST_SUITE_NOT_YET)),
+    (Language::C11, "forge kind `test-case`", Why::NotYet(TEST_SUITE_NOT_YET)),
+    (Language::Swift, "forge kind `test-case`", Why::NotYet(TEST_SUITE_NOT_YET)),
+    (Language::Rust, "forge kind `test-suite`", Why::NotYet(TEST_SUITE_NOT_YET)),
+    (Language::Kotlin, "forge kind `test-suite`", Why::NotYet(TEST_SUITE_NOT_YET)),
+    (Language::Go, "forge kind `test-suite`", Why::NotYet(TEST_SUITE_NOT_YET)),
+    (Language::Python, "forge kind `test-suite`", Why::NotYet(TEST_SUITE_NOT_YET)),
+    (Language::C11, "forge kind `test-suite`", Why::NotYet(TEST_SUITE_NOT_YET)),
+    (Language::Swift, "forge kind `test-suite`", Why::NotYet(TEST_SUITE_NOT_YET)),
     // The CLI routes (cli_language.rs, `LanguageRoute::exclusion_reason`).
     (
         Language::C11,
@@ -503,6 +530,13 @@ const TEST_COMPONENT_NOT_YET: &str =
     "the test profile's runtime lands in C++ first and in the other backends one at a time: \
      until it lands here the route that writes a machine refuses a test component by name \
      (`test_profile::document_not_generated`)";
+
+/// The tables of a test are generated one backend at a time (docs/SCE_TEST_PROFILE.md §12.1,
+/// §12.6).
+const TEST_SUITE_NOT_YET: &str =
+    "the test profile's runner lands in C++ first and in the other backends one at a time: \
+     until it lands here the dispatch refuses a port type, a configuration, a test case and a \
+     suite by name (`test_profile::document_not_generated`)";
 
 /// Swift writes a statechart in part, so what reads a whole one does not exist for it.
 const SWIFT_NO_EMITTER: &str =

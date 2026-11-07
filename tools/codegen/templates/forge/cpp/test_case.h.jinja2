@@ -1,0 +1,35 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "cpp", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="test-case")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+
+#pragma once
+#ifndef {{ guard }}
+#define {{ guard }}
+
+{% for header in std_includes %}#include <{{ header }}>
+{% endfor %}
+#include "test/Suite.h"
+{{ configuration_include }}
+
+namespace SCE::Generated::{{ namespace }} {
+
+/// The test case's name in the suite and in the test log (docs/SCE_TEST_PROFILE.md §11.7).
+inline constexpr const char *NAME = {{ name_literal }};
+
+/// The test case `{{ case_name }}` (docs/SCE_TEST_PROFILE.md §11.7) as the runner reads it:
+/// its name, its configuration and the machines of its components, and the module
+/// parameters those components read.
+inline ::SCE::Test::TestCase testCase() {
+    return ::SCE::Test::TestCase{NAME, {{ configuration }}::configuration(), &{{ configuration }}::machine,
+                                 {{ configuration }}::moduleParameters()};
+}
+
+}  // namespace SCE::Generated::{{ namespace }}
+
+#endif  // {{ guard }}

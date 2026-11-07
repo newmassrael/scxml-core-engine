@@ -23,6 +23,7 @@ use crate::generator::{self, GeneratedOutput};
 use std::path::Path;
 
 mod cpp_source;
+mod cpp_test_tables;
 mod cpp_test_template;
 mod length_guard;
 mod rust_source;
@@ -711,6 +712,44 @@ pub struct ImportContext {
     /// every other import.
     #[serde(skip)]
     pub test_template: Option<TestTemplateImport>,
+    /// For an imported `sce:kind="test-component"`: what the tables of a test
+    /// configuration that runs it name of it (docs/SCE_TEST_PROFILE.md §11.6,
+    /// §12.2). `None` for every other import.
+    #[serde(skip)]
+    pub test_component: Option<TestComponentImport>,
+}
+
+/// A test component a configuration runs, as the configuration's tables read
+/// it (docs/SCE_TEST_PROFILE.md §11.6, §12.2): the machine it is generated as,
+/// the ports and timers it declares and the module parameters it reads, each
+/// in document order.
+#[derive(Debug, Clone)]
+pub struct TestComponentImport {
+    /// The name its machine and its component are generated under: the file
+    /// stem of its document, as every statechart's machine is named.
+    pub machine: String,
+    pub ports: Vec<String>,
+    pub timers: Vec<String>,
+    pub module_parameters: Vec<String>,
+}
+
+impl TestComponentImport {
+    /// What a configuration reads of `component`, a test component read by
+    /// the statechart parser; `None` for a statechart that is no test
+    /// component.
+    pub fn of(component: &crate::model::SCXMLModel) -> Option<Self> {
+        let profile = component.test_component.as_ref()?;
+        Some(Self {
+            machine: component.name.clone(),
+            ports: profile.ports.iter().map(|port| port.id.clone()).collect(),
+            timers: profile
+                .timers
+                .iter()
+                .map(|timer| timer.id.clone())
+                .collect(),
+            module_parameters: profile.module_parameters.clone(),
+        })
+    }
 }
 
 /// A test template another references (`<sce:template-ref>`), as the
@@ -1386,6 +1425,7 @@ fn resolve_single_import(
         record_composed: None,
         enum_slots: None,
         test_template: None,
+        test_component: None,
     }
 }
 
@@ -2041,20 +2081,17 @@ pub fn generate_cpp_with_imports_and_externs(
         ForgeDocument::TestTemplate(m) => {
             cpp_test_template::render_test_template_cpp(&env, m, imports)?
         }
-        // docs/SCE_TEST_PROFILE.md §11.9: no backend generates the other
-        // documents of the test profile until its runtime lands, so each is
-        // refused by name.
-        ForgeDocument::TestPortType(_)
-        | ForgeDocument::TestConfiguration(_)
-        | ForgeDocument::TestCase(_)
-        | ForgeDocument::TestSuite(_) => {
-            return Err(crate::forge::test_profile::document_not_generated(
-                doc.kind(),
-                doc.name(),
-                crate::forge::provenance::forge_doc_source_location(doc).cloned(),
-            )
-            .into())
+        // docs/SCE_TEST_PROFILE.md §12.6, slice 5
+        // (`codegen_matrix::TEST_SUITE_BACKENDS`): a port type writes no file,
+        // since the units of the components and of the configuration that read
+        // it hold what they need of it by name; a configuration, a test case and
+        // a suite are tables the profile's runtime reads.
+        ForgeDocument::TestPortType(_) => return Ok(GeneratedOutput::default()),
+        ForgeDocument::TestConfiguration(m) => {
+            cpp_test_tables::render_test_configuration_cpp(&env, m, imports)?
         }
+        ForgeDocument::TestCase(m) => cpp_test_tables::render_test_case_cpp(&env, m, imports)?,
+        ForgeDocument::TestSuite(m) => cpp_test_tables::render_test_suite_cpp(&env, m, imports)?,
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));
@@ -44553,6 +44590,7 @@ mod tests {
             record_composed: None,
             enum_slots: None,
             test_template: None,
+            test_component: None,
         }
     }
 
@@ -45466,6 +45504,7 @@ mod tests {
                 record_composed: None,
                 enum_slots: None,
                 test_template: None,
+                test_component: None,
             },
             ImportContext {
                 alias: "c".to_string(),
@@ -45533,6 +45572,7 @@ mod tests {
                 record_composed: None,
                 enum_slots: None,
                 test_template: None,
+                test_component: None,
             },
         ];
         let (has, _all, _stateful) = build_template_imports(&imports);

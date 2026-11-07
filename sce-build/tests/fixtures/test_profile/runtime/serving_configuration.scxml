@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §11.6: the coordinator as the MTC and the
+     answerer it invokes as a PTC, their two ports connected to each other. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-configuration" name="serving_configuration">
+  <sce:import kind="test-component" src="coordinator.scxml" as="Coordinator"/>
+  <sce:import kind="test-component" src="answerer.scxml" as="Answerer"/>
+  <sce:mtc type="Coordinator"/>
+  <sce:ptc id="answerer" type="Answerer"/>
+  <sce:connect>
+    <sce:endpoint component="mtc" port="peer"/>
+    <sce:endpoint component="answerer" port="peer"/>
+  </sce:connect>
+</scxml>

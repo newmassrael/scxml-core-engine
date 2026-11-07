@@ -1212,17 +1212,25 @@ fn not_generated(kind: &str, language: Language, err: Located<ForgeError>) {
 /// docs/SCE_TEST_PROFILE.md §11.9: a backend refuses a document of the
 /// profile by name until its runtime lands there for the document's kind, the
 /// declaration kinds at the forge dispatch and the test component where a
-/// machine is written. C++ generates a template
-/// (`a_test_template_is_generated_in_cpp.rs`) and a component
-/// (`a_test_component_is_generated_in_cpp.rs`), and nothing else yet.
+/// machine is written. C++ generates every kind: a template
+/// (`a_test_template_is_generated_in_cpp.rs`), a component
+/// (`a_test_component_is_generated_in_cpp.rs`) and the tables of a test
+/// (`a_test_suite_is_generated_in_cpp.rs`); each example generates there.
 #[test]
 fn a_document_of_the_profile_is_refused_by_name_where_its_kind_is_not_generated() {
     for &kind in ForgeKind::TEST_PROFILE {
         assert!(kind.is_supported(), "{kind:?}");
         assert!(!kind.needs_instance(), "{kind:?}");
         assert!(!kind.is_inline_eligible(), "{kind:?}");
-        // A component's machine is a statechart's, on the SCE runtime.
-        let tier = if kind == ForgeKind::TestComponent {
+        // A component's machine is a statechart's, on the SCE runtime, and the
+        // tables of a test name those machines and the profile's runner.
+        let tier = if matches!(
+            kind,
+            ForgeKind::TestComponent
+                | ForgeKind::TestConfiguration
+                | ForgeKind::TestCase
+                | ForgeKind::TestSuite
+        ) {
             RuntimeDep::SceRuntime
         } else {
             RuntimeDep::None
@@ -1244,8 +1252,24 @@ fn a_document_of_the_profile_is_refused_by_name_where_its_kind_is_not_generated(
             "test-suite",
         ] {
             let parsed = ForgeKind::from_attr(kind).expect("a kind");
-            if parsed == ForgeKind::TestTemplate && language == Language::Cpp {
+            // C++ generates every kind of the profile
+            // (`a_test_template_is_generated_in_cpp.rs`,
+            // `a_test_suite_is_generated_in_cpp.rs`); a port type writes no file.
+            if language == Language::Cpp {
                 assert_eq!(codegen_matrix::lookup(parsed, language), EmitOutcome::Emit);
+                let output =
+                    sce_build::compile_forge_file(&example(kind), language, &[], &options())
+                        .unwrap_or_else(|e| panic!("{kind} does not generate on C++: {e:?}"));
+                assert_eq!(
+                    output.files.is_empty(),
+                    parsed == ForgeKind::TestPortType,
+                    "{kind}: {:?}",
+                    output
+                        .files
+                        .iter()
+                        .map(|(file, _)| file)
+                        .collect::<Vec<_>>()
+                );
                 continue;
             }
             assert_eq!(

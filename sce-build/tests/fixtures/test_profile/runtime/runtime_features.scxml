@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §11.8: the features the runtime's example suite
+     selects its test cases by (ADR 0057 §2): a product with parallel test
+     components, one that also removes them, and one held to a tight guard. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="feature-model" name="runtime_features">
+  <sce:feature name="ptcs"/>
+  <sce:feature name="removal" requires="ptcs"/>
+  <sce:feature name="guard"/>
+</scxml>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §11.7: the system under test answers the job the
+     suite's module parameter names. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-case" name="answers_the_job"
+       sce:configuration="Asking">
+  <sce:import kind="test-configuration" src="asking_configuration.scxml" as="Asking"/>
+</scxml>

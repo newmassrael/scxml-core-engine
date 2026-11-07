@@ -196,8 +196,9 @@ fn any(parts: Vec<String>) -> String {
 
 /// An integer literal of the profile (`test_profile::decimal_integer`) as C++
 /// writes it: the two values no decimal constant of C++ holds as written are
-/// spelled as every C++ expression of them is ([`wide_literal_spelling`]).
-fn integer_literal(text: &str) -> Option<String> {
+/// spelled as every C++ expression of them is ([`wide_literal_spelling`]). A
+/// suite's module parameter default is written by the same spelling.
+pub(super) fn integer_literal(text: &str) -> Option<String> {
     let n = crate::forge::test_profile::decimal_integer(text)?;
     let raw = n.to_string();
     let wide = u64::try_from(n)
