@@ -17616,8 +17616,8 @@ fn composed_wire_value(
             "a composed value read through an index has no {lang} lowering of a send yet"
         )));
     }
-    let held = place_text(&path, ctx, renames, target, &*spelling).map_err(&refused)?;
-    let within = composed::within_of(&place.scope, &names.records).map_err(&refused)?;
+    let held = place_text(&path, ctx, renames, target, &*spelling).map_err(refused)?;
+    let within = composed::within_of(&place.scope, &names.records).map_err(refused)?;
     let wired = composed::writer(
         &place.ty,
         within.as_deref(),
@@ -17625,7 +17625,7 @@ fn composed_wire_value(
         &*spelling,
         &composed::Held::place(held.clone()),
     )
-    .map_err(&refused)?;
+    .map_err(refused)?;
     rewrites.note(written, param.spelling, &held);
     Ok(Some(wired))
 }
