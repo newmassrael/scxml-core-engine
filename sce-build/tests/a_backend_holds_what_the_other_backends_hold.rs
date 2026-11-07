@@ -557,8 +557,9 @@ const SWIFT_STATIC_IN_PART: &str =
 
 /// Swift writes the Forge kinds in part (`codegen_matrix::ships_in_part`).
 const SWIFT_NO_FORGE: &str =
-    "Swift writes each Forge kind in part and refuses the rest of it by name; the codec shapes beyond \
-     fixed-width integer frames and the procedure and observer kinds are built after them";
+    "Swift writes each Forge kind in part and refuses the rest of it by name (`has no Swift lowering \
+     yet`, from the kind's own `*_unlowered` check); a kind leaves this list when it has no refusal \
+     left and `ships_in_part` no longer names it";
 
 /// What the comparison found: gaps with no entry, and entries whose gap is
 /// not there.
