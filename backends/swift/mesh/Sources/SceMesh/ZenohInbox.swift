@@ -206,10 +206,13 @@ struct ZenohSessionState {
     }
 }
 
-/// A session's state and the queue of what the core has yet to be told, behind one lock.
-final class ZenohSessionCell: Sendable {
+/// What the core has yet to be told, in order, and the one thread at a time that tells it.
+///
+/// The queue belongs to the host's sink and not to a session: a binding that opens itself again on a new
+/// session (`ZenohReconnectingInbox`) hands every session the same queue, so what one session said, its
+/// losses at its end, is in the queue before the next session's first event can be.
+final class ZenohEventQueue: Sendable {
     private struct Inner {
-        var state = ZenohSessionState()
         var queue: [LinkEvent] = []
         var draining = false
     }
@@ -221,19 +224,27 @@ final class ZenohSessionCell: Sendable {
         self.sink = sink
     }
 
-    /// Change the state and queue the events the change stands for, in one step, then give the queue to the
-    /// sink if no other thread is already doing so. A thread that finds a drainer at work leaves its events
-    /// to it, so the sink is called by one thread at a time and in the order the state changed.
-    func apply(_ change: (inout ZenohSessionState) -> [LinkEvent]) {
-        let drain = inner.withLock { inner -> Bool in
-            inner.queue.append(contentsOf: change(&inner.state))
+    /// Queue events. A caller whose events must be in the order of another change's order calls it inside
+    /// that change's lock, and `drain` after it has let go.
+    func enqueue(_ events: [LinkEvent]) {
+        if events.isEmpty {
+            return
+        }
+        inner.withLock { $0.queue.append(contentsOf: events) }
+    }
+
+    /// Give the queue to the sink, unless another thread is already doing so: a thread that finds a drainer
+    /// at work leaves its events to it, so the sink is called by one thread at a time, outside every lock of
+    /// the binding, in the order the events were queued.
+    func drain() {
+        let mine = inner.withLock { inner -> Bool in
             if inner.draining || inner.queue.isEmpty {
                 return false
             }
             inner.draining = true
             return true
         }
-        guard drain else {
+        guard mine else {
             return
         }
         while true {
@@ -250,6 +261,23 @@ final class ZenohSessionCell: Sendable {
             sink(event)
         }
     }
+}
+
+/// A session's state, and the queue its events go to.
+final class ZenohSessionCell: Sendable {
+    private let state = Mutex(ZenohSessionState())
+    private let queue: ZenohEventQueue
+
+    init(queue: ZenohEventQueue) {
+        self.queue = queue
+    }
+
+    /// Change the state and queue the events the change stands for, in one step under the state's lock, then
+    /// let the queue drain. The state and the order of what the core is told cannot part.
+    func apply(_ change: (inout ZenohSessionState) -> [LinkEvent]) {
+        state.withLock { state in queue.enqueue(change(&state)) }
+        queue.drain()
+    }
 
     /// Queue one event that changes no state.
     func emit(_ event: LinkEvent) {
@@ -257,7 +285,7 @@ final class ZenohSessionCell: Sendable {
     }
 
     var endedWords: String? {
-        inner.withLock { $0.state.endedWords }
+        state.withLock { $0.endedWords }
     }
 }
 
@@ -295,16 +323,34 @@ public final class ZenohInbox: Transport, Sendable {
         machine: String,
         events: @escaping @Sendable (LinkEvent) -> Void
     ) throws(ZenohError) -> ZenohInbox {
+        try open(client: client, machine: machine, queue: ZenohEventQueue(sink: events), onEnd: nil)
+    }
+
+    /// The one path every binding is opened by, so the order of the declarations is one copy: the end notice,
+    /// then the inbox, then presence with history, then the token. `queue` is where its events go, and
+    /// `onEnd` is called with the client's words after the binding has queued the losses the end stands for:
+    /// the first end of a session only, and never for a second.
+    static func open(
+        client: any ZenohClient,
+        machine: String,
+        queue: ZenohEventQueue,
+        onEnd: (@Sendable (String) -> Void)?
+    ) throws(ZenohError) -> ZenohInbox {
         try checkZenohMachineName(machine)
-        let session = ZenohSessionCell(sink: events)
+        let session = ZenohSessionCell(queue: queue)
         let inbox = ZenohInbox(client: client, machine: machine, session: session)
         do throws(ZenohClientError) {
             try client.onSessionEnd { words in
+                var first = false
                 session.apply { state in
                     guard let peers = state.end(words) else {
                         return []
                     }
+                    first = true
                     return peers.map { .lost(peer: $0, reason: zenohSessionEndedWords) }
+                }
+                if first {
+                    onEnd?(words)
                 }
             }
             inbox.adopt(
