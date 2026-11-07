@@ -1627,8 +1627,14 @@ impl<'a> Judge<'a> {
                 ));
             }
         }
-        // A `<data>` with no `expr` is refused before this pass is asked, so
-        // the value is written.
+        // The parser refuses a `<data>` with no `expr` but for a test
+        // component's module parameter, whose value is the suite's
+        // (docs/SCE_TEST_PROFILE.md §11.5, §11.8): it starts at no value of the
+        // document's, so there is no start to judge, as for a variable of any
+        // other type; the enum it holds is held closed above all the same.
+        if var.expr.trim().is_empty() {
+            return Ok(());
+        }
         let (expr, spelling) = (&var.expr, var.expr_spelling.as_ref());
         match holding {
             EnumHolding::Present => self.expr_of_enum(ctx, expr, spelling, alias),
