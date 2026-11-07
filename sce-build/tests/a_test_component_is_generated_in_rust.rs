@@ -10,10 +10,10 @@
 //! the profile's runtime drives. The twin of
 //! `a_test_component_is_generated_in_cpp.rs`, over the same fixtures.
 //!
-//! What Rust refuses that C++ does not is held here too: a component that
-//! declares a module parameter, whose value the suite's tables give and which
-//! Rust does not generate yet, and a receive branch whose content reads a
-//! message of a record the machine spells otherwise than the record's unit.
+//! A module parameter is read from the run before the machine starts, as on
+//! C++. What Rust refuses that C++ does not is held here too: a receive branch
+//! whose content reads a message of a record the machine spells otherwise than
+//! the record's unit.
 //!
 //! What the generated components do when they run is held by
 //! `backends/rust/tests/tests/a_test_component_runs_through_its_doors.rs`,
@@ -44,12 +44,13 @@ fn profile_dir() -> PathBuf {
 
 /// Every component of the runtime's end-to-end test that Rust generates, each
 /// with the name its machine is spelled by.
-const COMPONENTS: [(&str, &str); 5] = [
+const COMPONENTS: [(&str, &str); 6] = [
     ("asker", "Asker"),
     ("coordinator", "Coordinator"),
     ("answerer", "Answerer"),
     ("keeper", "Keeper"),
     ("idler", "Idler"),
+    ("param_asker", "ParamAsker"),
 ];
 
 fn generate(path: &Path, language: Language) -> Result<Vec<(String, String)>, Located<ForgeError>> {
@@ -430,20 +431,85 @@ fn a_message_with_a_text_field_its_content_reads_is_refused_on_rust() {
     ));
 }
 
-/// §11.8, §12.6: a module parameter's value is the suite's, and Rust does not
-/// generate the suite's tables yet, so a component that declares one is
-/// refused by name rather than started on a value made up for it.
+/// §11.5, §11.8, §12.3: a module parameter is declared with its type and no
+/// value of the document's; the component reads the run's value into it, as
+/// a saved value of its type is read back, after the context is bound and
+/// before the machine is built, and does not start the machine when the read
+/// is refused. The twin of the C++ test of the same name.
 #[test]
-fn a_component_that_declares_a_module_parameter_is_refused_on_rust() {
-    let path = runtime_dir().join("param_asker.scxml");
-    let Err(err) = generate(&path, Language::Rust) else {
-        panic!("a component that declares a module parameter generated on Rust");
-    };
-    let detail = unsupported("param_asker", err);
-    assert!(
-        detail.contains("the module parameter 'job' takes the value the suite declares"),
-        "{detail}"
+fn a_module_parameter_is_read_from_the_run_before_the_machine_starts() {
+    let code = text("param_asker");
+    for needle in [
+        "/// docs/SCE_TEST_PROFILE.md §11.5: the module parameter `job`, which",
+        "let job: u32 = Default::default();",
+        "fn accept_module_parameters(",
+        "given: &::sce_rust_runtime::test::ModuleParameters,",
+        "self.job = ::sce_rust_runtime::saved_state::SavedValue::from_saved(given.of(\"job\")?, \
+         \"job\")?;",
+    ] {
+        assert!(code.contains(needle), "param_asker holds `{needle}`");
+    }
+    let bound = at(&code, "policy.test_context = Some(context.clone());");
+    let read = at(
+        &code,
+        "if !context.read_module_parameters(|given| policy.accept_module_parameters(given)) {",
     );
+    let built = at(&code, "let mut machine = Engine::new(policy);");
+    let started = at(&code, "machine.initialize();");
+    assert!(
+        bound < read && read < built && built < started,
+        "the parameters are read after the context is bound and before the machine starts"
+    );
+    assert!(
+        code[read..built].contains("return;"),
+        "a refused read leaves the machine unbuilt"
+    );
+    // The variable that is no module parameter starts at its `expr`.
+    assert!(
+        !code.contains("let answered: u32 = Default::default();"),
+        "{code}"
+    );
+    assert!(
+        !text("asker").contains("accept_module_parameters"),
+        "a component with no module parameter reads none"
+    );
+}
+
+/// §11.8: a byte string module parameter is read back held to its bound, as a
+/// restored byte string is, and a text by its own bounded type's reader.
+#[test]
+fn a_bounded_module_parameter_is_read_back_held_to_its_bound() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let component = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="keyed"
+       datamodel="sce-static" initial="checking">
+  <sce:test-timer id="pause" duration="1ms"/>
+  <datamodel>
+    <data id="key" sce:type="bytes[2]" sce:module-parameter="true"/>
+    <data id="label" sce:type="string[8]" sce:module-parameter="true"/>
+  </datamodel>
+  <state id="checking">
+    <onentry>
+      <sce:start-timer timer="pause"/>
+    </onentry>
+    <transition sce:timeout="pause" target="done">
+      <sce:setverdict value="pass"/>
+    </transition>
+  </state>
+  <final id="done"/>
+</scxml>
+"#;
+    let path = dir.path().join("keyed.scxml");
+    std::fs::write(&path, component).expect("the component is written");
+    let code = text_at(&path);
+    for needle in [
+        "self.key = ::sce_rust_runtime::saved_state::bounded_bytes(given.of(\"key\")?, \"key\")?;",
+        "self.label = ::sce_rust_runtime::saved_state::SavedValue::from_saved(given.of(\"label\")?, \
+         \"label\")?;",
+    ] {
+        assert!(code.contains(needle), "keyed holds `{needle}`:\n{code}");
+    }
 }
 
 /// Writes each `(file, text)` into `dir`.

@@ -27,6 +27,7 @@ mod cpp_test_tables;
 mod cpp_test_template;
 mod length_guard;
 mod rust_source;
+mod rust_test_tables;
 mod rust_test_template;
 mod rust_view;
 mod swift_codec;
@@ -25544,19 +25545,17 @@ pub fn generate_rust_with_imports_and_externs(
         ForgeDocument::TestTemplate(m) => {
             rust_test_template::render_test_template_rust(&env, m, imports)?
         }
-        // docs/SCE_TEST_PROFILE.md §11.9: the other kinds of the test profile
-        // are refused by name until their runtime lands here.
-        ForgeDocument::TestPortType(_)
-        | ForgeDocument::TestConfiguration(_)
-        | ForgeDocument::TestCase(_)
-        | ForgeDocument::TestSuite(_) => {
-            return Err(crate::forge::test_profile::document_not_generated(
-                doc.kind(),
-                doc.name(),
-                crate::forge::provenance::forge_doc_source_location(doc).cloned(),
-            )
-            .into())
+        // docs/SCE_TEST_PROFILE.md §12.6, slice 6
+        // (`codegen_matrix::TEST_SUITE_BACKENDS`): a port type writes no file,
+        // since the units of the components and of the configuration that read
+        // it hold what they need of it by name; a configuration, a test case and
+        // a suite are tables the profile's runtime reads.
+        ForgeDocument::TestPortType(_) => return Ok(GeneratedOutput::default()),
+        ForgeDocument::TestConfiguration(m) => {
+            rust_test_tables::render_test_configuration_rust(&env, m, imports)?
         }
+        ForgeDocument::TestCase(m) => rust_test_tables::render_test_case_rust(&env, m, imports)?,
+        ForgeDocument::TestSuite(m) => rust_test_tables::render_test_suite_rust(&env, m, imports)?,
     };
 
     let filename = format!("{}.rs", filters::to_snake_case(doc.name().to_string()));
