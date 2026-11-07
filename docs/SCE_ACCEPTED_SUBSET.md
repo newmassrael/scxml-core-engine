@@ -547,8 +547,10 @@ machine starts, and refuses, with `generate/unsupported-feature`, one that uses 
 whose type reaches a union. Rust generates a test component too, through the same doors,
 and refuses with `generate/unsupported-feature` one that declares a module parameter, whose
 value is the suite's and Rust generates no suite yet, one whose receive branch's content
-reads a message of a record with a text, byte string or enum field, and every one under
-`--no-std`, since the profile's runtime is `std` only. A module parameter whose type is not
+reads a message of a record with a text, byte string or enum field, one that declares
+`<sce:action>`, and every one under `--no-std`, since the profile's runtime is `std` only.
+On both backends a variable of an enum bound to a template's parameter crosses into the
+enum unit's type, and one of an optional enum is refused by name. A module parameter whose type is not
 a scalar, `string[N]` or `bytes[N]` is refused by name (`generate/unsupported-feature`) on
 every backend. C++ generates the tables of a test configuration, a test case and a suite,
 and writes no file
