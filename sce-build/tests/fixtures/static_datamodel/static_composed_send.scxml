@@ -9,10 +9,13 @@
   delivery is what the first held, and the second delivery fits its schema
   (`refusals` stays 0).
 
-  The Rust backend lowers it; every other backend refuses the read and the send
-  by its own name until it lowers them (section 7.3). Rust compile+run gate:
-  scripts/regen_static_datamodel_rust.sh commits the generated machine, and
-  backends/rust/tests/tests/a_composed_value_is_sent_by_its_name.rs drives it.
+  The Rust and Kotlin backends lower it; every other backend refuses the read
+  and the send by its own name until it lowers them (section 7.3). Rust
+  compile+run gate: scripts/regen_static_datamodel_rust.sh commits the generated
+  machine, and backends/rust/tests/tests/a_composed_value_is_sent_by_its_name.rs
+  drives it. Kotlin compile+run gate: scripts/regen_static_datamodel_kotlin.sh
+  commits the generated machine, and AComposedValueIsSentByItsNameTest.kt under
+  backends/kotlin/tests/src/test/kotlin/com/sce/integration/ drives it.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
