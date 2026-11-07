@@ -1,0 +1,11 @@
+seq = 4
+id = "7ed863ed703a"
+
+[submit]
+commit = "fd00a8eb5a2794cfb9e5e0db008d6560aa79e2e0"
+base = "0b7793826c896622501f9001e92fbd57ad7b6b65"
+machine = "coin-Legion-Pro-5-16IRX9"
+session = "d3623fba-78fe-4b55-b930-a59025204e76"
+worktree = "/home/coin/scxml-core-engine/.claude/worktrees/adr0077-declared-bound"
+branch = "cpp-landing-2"
+at = 1794060457
