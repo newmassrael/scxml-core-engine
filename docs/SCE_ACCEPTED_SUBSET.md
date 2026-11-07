@@ -8778,8 +8778,9 @@ has it, and none of the typed-payload machinery below exists for it. What the
 build does refuse is a use that needs a field: `_event.data.<field>` in a guard
 (`validation/cross-kind-field-not-found`, with no candidates to offer), a
 `<param>` sent with the event (`validation/event-payload-field-unknown`), and a
-record made of it — a `record:<alias>` variable or parameter
-(`validation/attribute-rule-violated`) or a host-run `<invoke>` request or
+record made of it — a `record:<alias>` variable or parameter, or a test
+template's type or formal parameter that holds one at any depth
+(`validation/attribute-rule-violated`), or a host-run `<invoke>` request or
 result (`validation/typed-invoke-schema`).
 
 **Schemaless fallback** (DL-9'): events without an imported

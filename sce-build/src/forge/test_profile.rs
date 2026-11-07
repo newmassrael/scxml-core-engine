@@ -140,6 +140,47 @@ pub fn union_reached(ty: &ValueType, scope: &TypeScope) -> Option<String> {
     }
 }
 
+/// The alias of the first record whose schema declares no field that `ty`,
+/// read in `scope`, holds at any depth: in itself, an optional's value, a
+/// list's elements, a field of a record or the record of a union's case, each
+/// read in its own document. A schema with no field names an event that
+/// carries no data, and no backend emits a payload type for it
+/// (docs/SCE_ACCEPTED_SUBSET.md, "Fieldless schema"), so no value of a
+/// template and no formal parameter can be of a type that holds one.
+pub fn fieldless_record_reached(ty: &ValueType, scope: &TypeScope) -> Option<String> {
+    match ty {
+        TypeOf::Record { alias } => {
+            let record = scope.records.get(alias)?;
+            if record.fields.is_empty() {
+                return Some(alias.clone());
+            }
+            record
+                .fields
+                .iter()
+                .find_map(|(_, field)| fieldless_record_reached(field, &record.scope))
+        }
+        TypeOf::Union { alias } => {
+            let union = scope.unions.get(alias)?;
+            union
+                .cases
+                .iter()
+                .filter_map(|case| case.record.as_ref())
+                .find_map(|record| {
+                    fieldless_record_reached(
+                        &TypeOf::Record {
+                            alias: record.clone(),
+                        },
+                        &union.scope,
+                    )
+                })
+        }
+        TypeOf::Optional { elem } | TypeOf::List { elem, .. } => {
+            fieldless_record_reached(elem, scope)
+        }
+        TypeOf::Scalar(_) | TypeOf::Text { .. } | TypeOf::Bytes { .. } => None,
+    }
+}
+
 /// Whether `ty` holds a `float32` or a `float64` anywhere its own spelling
 /// reaches (docs/SCE_TEST_PROFILE.md §8.1). A record or a union is named by
 /// its alias, and what it holds is asked of its document.
