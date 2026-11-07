@@ -825,7 +825,9 @@ runtime (`sce_rust_runtime::test`):
 - a branch's guard, the statement taking it, the statements of the profile and a `<log>` are calls on the component's
   `ComponentContext`, which the machine's policy holds and reads through one accessor. A receive branch's match is
   `receives` over its template's `matches`, the template's unit brought into scope as `super::<file>`, and a variable
-  bound to a formal parameter is handed over as the unit takes it, by value or lent;
+  bound to a formal parameter is handed over as the unit takes it, by value or lent. A variable of an enum crosses into
+  the variant of the same declared name of the enum unit's type, as a value handed to an algorithm does, on C++ and on
+  Rust alike; an optional value of an enum has no crossing yet and is refused by name;
 - a receive branch whose content reads the message copies it, field by field, into the payload struct the machine's
   channel holds its record's event in, bound as the content's `_event.data`. The machine holds a text, a byte string
   and an enum in types of its own, which the record's unit does not, so a message of a record with such a field that
@@ -836,8 +838,10 @@ Beside the machine the file declares `<Name>Component`, which implements `sce_ru
 `start` builds the machine around a policy the context is bound to, registers the test-port processor and the
 test-component invoker on clones of the context and starts the machine; `deliver_snapshot` delivers the snapshot event;
 `terminated` is the machine's having entered a top-level `<final>`. Rust refuses by name a component that declares a
-module parameter, whose value is the suite's, until it generates the suite's tables, and every component under
-`--no-std`, since the profile's runtime is `std` only.
+module parameter, whose value is the suite's, until it generates the suite's tables; a component that declares
+`<sce:action>`, whose machine is a policy over a host the component is given nothing of; and every component under
+`--no-std`, since the profile's runtime is `std` only. The machine's session is named by the component, `mtc` or the
+id of the `<invoke>` that creates it, which the parse holds to an XML Name.
 
 A module parameter (§11.5) is a variable of the machine declared with its type and no value of the document's: the
 static lowering, written once for every backend, lowers no initial value for it. Its value is the run's. Before
