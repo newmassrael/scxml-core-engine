@@ -4,7 +4,9 @@
 #
 # Regenerate backends/kotlin/tests/src/main/kotlin/com/sce/integration/<machine>/
 # from sce-build/tests/fixtures/static_datamodel/<machine>.scxml, for every
-# machine in MACHINES.
+# machine in MACHINES; and the test profile's templates from
+# sce-build/tests/fixtures/test_profile/ with the documents they name, under
+# backends/kotlin/tests/src/main/kotlin/com/sce/generated/.
 #
 # The Kotlin compile+run gate for datamodel="sce-static"
 # (docs/SCE_ACCEPTED_SUBSET.md §2.15). The committed machines compile as part
@@ -272,6 +274,32 @@ done
 for i in "${!ALGORITHMS[@]}"; do
     "$CODEGEN" generate "${ALGORITHMS[$i]}" -l kotlin -o "$TMP/algorithm_$i/"
     install_generated "$TMP/algorithm_$i"
+done
+
+# The test profile's templates (docs/SCE_TEST_PROFILE.md §11.4, §11.9), each a document
+# of its own kind whose unit declares its `matches` and, for a specific one, its `value`,
+# generated beside the records, enums and unions their units name by package;
+# ATestTemplateMatchesItsValuesTest.kt matches them against values. The Rust tree
+# generates the same templates (scripts/regen_static_datamodel_rust.sh); Kotlin, which
+# lowers a union, generates the two over a union besides.
+TEST_PROFILE_DIR="sce-build/tests/fixtures/test_profile"
+TEST_PROFILE=(job_status elapsed_at_most every_matcher job_report job_report_of report_within shape_is_circle)
+TEST_PROFILE_IMPORTS=(paint_color order_line quantity_two quantity_at_most order_line_exact order_line_bounded)
+TEST_PROFILE_IMPORTS+=(card_payment card_within voucher_payment voucher_is)
+TEST_PROFILE_IMPORTS+=(payment_kind order_customer order_payment order_placed order_placed_match)
+# ... and the union shape_is_circle matches, with its tag's enum and its cases' records.
+UNIONS=(shape_kind shape_radius shape_rect union_shape)
+for document in "${TEST_PROFILE[@]}"; do
+    "$CODEGEN" generate "$TEST_PROFILE_DIR/$document.scxml" -l kotlin -o "$TMP/profile_$document/"
+    install_generated "$TMP/profile_$document"
+done
+for document in "${TEST_PROFILE_IMPORTS[@]}"; do
+    "$CODEGEN" generate "$TEST_PROFILE_DIR/imports/$document.scxml" -l kotlin -o "$TMP/profile_$document/"
+    install_generated "$TMP/profile_$document"
+done
+for document in "${UNIONS[@]}"; do
+    "$CODEGEN" generate "sce-build/tests/fixtures/union/$document.scxml" -l kotlin -o "$TMP/union_$document/"
+    install_generated "$TMP/union_$document"
 done
 
 echo "Regenerated: ${MACHINES[*]} under $GENERATED_ROOT/ and ${PACKAGES[*]:-none} under $ALGORITHM_ROOT/ from $INPUT_ROOT"
