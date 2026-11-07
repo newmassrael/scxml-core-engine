@@ -6,7 +6,8 @@
 // The machines are the statecharts sce-codegen writes from the fixtures under
 // sce-build/tests/fixtures/test_profile/runtime/, driven only through the doors
 // of §12.3; the configuration, the factory of machines and the system adapter
-// are written here, since the tables and the runner are the next slice's.
+// are written here, so that each component is held apart from the generated
+// tables, which ATestSuiteRunsEndToEndTest runs.
 
 #include <gtest/gtest.h>
 

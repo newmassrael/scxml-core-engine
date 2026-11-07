@@ -559,6 +559,7 @@ add_executable(static_datamodel_generated_cpp_test
     integration/ASavedChildSessionIsResumedAfterARestoreTest.cpp
     integration/ATestTemplateMatchesItsValuesTest.cpp
     integration/ATestComponentRunsThroughItsDoorsTest.cpp
+    integration/ATestSuiteRunsEndToEndTest.cpp
 )
 
 # The Forge runtime the generated machines include (sce/forge/*.h) arrives with
@@ -789,10 +790,22 @@ foreach(_TEST_PROFILE_DOCUMENT job_request job_reply request_of any_request repl
         SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/test_profile/runtime/${_TEST_PROFILE_DOCUMENT}.scxml
     )
 endforeach()
-foreach(_TEST_COMPONENT asker coordinator answerer keeper idler)
+foreach(_TEST_COMPONENT asker coordinator answerer keeper idler param_asker)
     sce_add_state_machine(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/test_profile/runtime/${_TEST_COMPONENT}.scxml
+    )
+endforeach()
+# ATestSuiteRunsEndToEndTest's: the tables of a test suite (docs/SCE_TEST_PROFILE.md
+# §11.6 to §11.8, §12.2), each configuration's header including the machines of
+# its components above, each test case's its configuration's, and the suite's its
+# test cases'. The port types and the feature model write no file.
+foreach(_TEST_PROFILE_DOCUMENT asking_configuration serving_configuration keeping_configuration
+                               answers_the_job answers_before_the_guard serves_a_ptc keeps_a_ptc
+                               runtime_suite)
+    sce_add_algorithm(
+        TARGET static_datamodel_generated_cpp_test
+        SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/test_profile/runtime/${_TEST_PROFILE_DOCUMENT}.scxml
     )
 endforeach()
 
