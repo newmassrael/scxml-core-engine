@@ -544,9 +544,14 @@ the union is in the case its `variant` names. C++ generates a test
 component, its machine driven by the profile's runtime through the doors of
 `docs/SCE_TEST_PROFILE.md` §12.3, each module parameter read from the run before the
 machine starts, and refuses, with `generate/unsupported-feature`, one that uses a template
-whose type reaches a union. A module parameter whose type is not a scalar, `string[N]` or
-`bytes[N]` is refused by name (`generate/unsupported-feature`) on every backend. C++
-generates the tables of a test configuration, a test case and a suite, and writes no file
+whose type reaches a union. Rust generates a test component too, through the same doors,
+and refuses with `generate/unsupported-feature` one that declares a module parameter, whose
+value is the suite's and Rust generates no suite yet, one whose receive branch's content
+reads a message of a record with a text, byte string or enum field, and every one under
+`--no-std`, since the profile's runtime is `std` only. A module parameter whose type is not
+a scalar, `string[N]` or `bytes[N]` is refused by name (`generate/unsupported-feature`) on
+every backend. C++ generates the tables of a test configuration, a test case and a suite,
+and writes no file
 for a port type (§11.9, §12.6, slice 5); it refuses a suite whose guard is past the
 microseconds the runtime's clock counts to. Every other pair of a backend and a kind of
 the profile is refused by name.
