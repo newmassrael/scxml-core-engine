@@ -7371,6 +7371,10 @@ struct KotlinPayloadParts {
     typed_payload: String,
     /// The JSON text the inject seam writes beside the typed carrier.
     data: String,
+    /// What follows the payload class's constructor: its body, an `init` that
+    /// holds a value a host makes to every bound its type declares
+    /// (docs/adr/0086, section 5.4), or nothing where none is to check.
+    class_body: String,
 }
 
 /// [`KotlinPayloadParts`] of a schema each field of which is one entry, the
@@ -7431,6 +7435,7 @@ fn kotlin_entry_payload(schema: &EntrySchema, l: &LangCtx, class_name: &str) -> 
         prelude: String::new(),
         typed_payload: format!("{class_name}({call_args})"),
         data: format!("EventPayload.encode(mapOf({data_items}))"),
+        class_body: String::new(),
     }
 }
 
@@ -7497,6 +7502,12 @@ fn kotlin_composed_payload(
         &spelling,
         &composed::Held::place(PAYLOAD_LOCAL),
     ));
+    // The payload a host hands the inject seam is refused where it is made,
+    // in its class's `init`, at the first value past a bound its type declares
+    // at any depth (docs/adr/0086, section 5.4), as each record it holds is in
+    // its own.
+    let checks = composed::record_checks(alias, &records, &spelling)
+        .unwrap_or_else(|why| panic!("{}", unlowered(&why)));
     let joined = |parts: Vec<String>| parts.join(", ");
     let call_args = joined(members.iter().map(|(id, _)| id.clone()).collect());
     KotlinPayloadParts {
@@ -7522,6 +7533,7 @@ fn kotlin_composed_payload(
         prelude: format!("        val {PAYLOAD_LOCAL} = {class_name}({call_args})\n"),
         typed_payload: PAYLOAD_LOCAL.to_string(),
         data: format!("{}.json", spelling.write_record(&writers)),
+        class_body: composed::kotlin_init_block(&checks),
     }
 }
 
@@ -7632,6 +7644,7 @@ pub fn build_kotlin_event_payload(
             prelude,
             typed_payload,
             data,
+            class_body,
         } = match entry_schemas.get(event) {
             Some(schema) => kotlin_entry_payload(schema, &l, &class_name),
             None => kotlin_composed_payload(model, &machine, event, static_enums, &class_name),
@@ -7668,7 +7681,7 @@ val fields = EventPayload.decode({decode_args})\n                    \
             "// {class_name} is the NL\u{2192}IR Item C1 Path A typed `_event.data`\n\
 // payload for `{event}`. Consumers inject it via the `raise{variant}` seam\n\
 // on the machine — they never name this class directly.\n\
-data class {class_name}({ctor_params})\n\n"
+data class {class_name}({ctor_params}){class_body}\n\n"
         ));
         policy_fields.push_str(&format!("    private var {field}: {class_name}? = null\n"));
         when_arms.push_str(&format!("            is {class_name} -> {field} = tp\n"));

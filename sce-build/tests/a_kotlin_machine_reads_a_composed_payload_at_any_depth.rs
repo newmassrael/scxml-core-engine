@@ -154,6 +154,77 @@ fn the_payload_is_held_in_the_machine_types_each_record_declared_once() {
     );
 }
 
+/// Pinned by `KotlinComposed::field_checks` and `kotlin_init_block`
+/// (`sce-build/src/forge/composed_lowering.rs`), the `class_body`
+/// `kotlin_composed_payload` gives the payload class
+/// (`sce-build/src/forge/generator.rs`) and the checks `declare_composed`
+/// hands each record (`sce-build/src/forge/static_lowering.rs`): a value a
+/// host makes, the payload it hands the inject seam and each record it builds
+/// for it, is refused in its class's `init`, where it is made, at the first
+/// value past a bound its type declares at any depth (docs/adr/0086, section
+/// 5.4).
+#[test]
+fn a_value_a_host_makes_is_held_to_every_bound_where_it_is_made() {
+    let code = reader_machine();
+    let b = "com.sce.runtime.ValueBounds";
+    holds(
+        &code,
+        &[
+            "val late: List<UByte>) {\n    init {\n",
+            &format!("        {b}.list(\"items\", items, 3) {{ _, _ -> }}\n"),
+            &format!(
+                "        {b}.list(\"grid\", grid, 2) {{ scePath0, sceValue0 -> \
+                 {b}.list(scePath0, sceValue0, 2) {{ _, _ -> }} }}\n"
+            ),
+            &format!("        {b}.list(\"maybe\", maybe, 2) {{ _, _ -> }}\n"),
+            &format!(
+                "        {b}.optional(\"spare\", spare) {{ scePath0, sceValue0 -> \
+                 {b}.list(scePath0, sceValue0, 2) {{ _, _ -> }} }}\n"
+            ),
+            &format!("        {b}.text(\"note\", note, 4)\n"),
+            &format!("        {b}.list(\"late\", late, 2) {{ _, _ -> }}\n"),
+            "val tags: List<String>) {\n    init {\n",
+            &format!("        {b}.text(\"label\", label, 8)\n"),
+            &format!("        {b}.bytes(\"blob\", blob, 4)\n"),
+            &format!(
+                "        {b}.list(\"tags\", tags, 4) {{ scePath0, sceValue0 -> \
+                 {b}.text(scePath0, sceValue0, 8) }}\n"
+            ),
+        ],
+    );
+}
+
+/// Pinned by the fit the judge asks of a whole copy (`Judge`,
+/// `sce-build/src/forge/static_datamodel.rs`) before any backend lowers it: a
+/// list that may hold more than the variable it is taken into is refused on
+/// Kotlin where the document is checked, so the copy Kotlin writes as the list
+/// itself never puts a list past its bound into a variable.
+#[test]
+fn a_copy_that_may_pass_the_variables_bound_is_refused_on_kotlin() {
+    let document = READER.replace(
+        "<data id=\"seen\"",
+        "<data id=\"small\" sce:type=\"list&lt;uint8&gt;[1]\"/>\n    <data id=\"seen\"",
+    );
+    let document = document.replace(
+        "<transition event=\"batch.sent\" target=\"idle\">",
+        "<transition event=\"batch.sent\" target=\"idle\">\n      \
+         <assign location=\"small\" expr=\"_event.data.late\"/>",
+    );
+    let (ok, out) = run(
+        &["check", "-l", "kotlin"],
+        &fixtures(),
+        &SIBLINGS,
+        "batch_reader.scxml",
+        &document,
+    );
+    assert!(!ok, "a list of 2 may not fit a variable of 1:\n{out}");
+    assert!(out.contains("scxml/static-datamodel-rule"), "{out}");
+    assert!(
+        out.contains("which may hold more than the list<uint8>[1] expected there"),
+        "{out}"
+    );
+}
+
 /// Pinned by `KotlinComposed::read_list`, `KotlinComposed::read_record`,
 /// `KotlinComposed::read_text`, `KotlinComposed::read_optional` and
 /// `KotlinComposed::read_enum`, and by `composed_defaults_wire`

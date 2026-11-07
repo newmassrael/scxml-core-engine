@@ -304,8 +304,25 @@ pub trait ComposedSpelling {
     /// held in.
     fn record_type(&self, alias: &str) -> String;
     /// The declaration of the record type `ty` of the schema imported as
-    /// `alias`, one member per field, `(id, type)`, in the schema's order.
-    fn record_def(&self, ty: &str, alias: &str, fields: &[(String, String)]) -> String;
+    /// `alias`, one member per field, `(id, type)`, in the schema's order, and
+    /// `checks`, what a value of it runs over its fields where it is made
+    /// ([`Self::field_checks`]).
+    fn record_def(
+        &self,
+        ty: &str,
+        alias: &str,
+        fields: &[(String, String)],
+        checks: &[String],
+    ) -> String;
+    /// The statements that refuse, where a record is made, a value of one of
+    /// `fields` (each its id with its type, in the schema's order) past a
+    /// bound its type declares at any depth (docs/adr/0086, section 5.4): a
+    /// host's value is refused where it is made, so a value that exists is one
+    /// of its type. None for a backend whose types hold every bound themselves
+    /// (Rust, section 7.4), which a value past it is no value of.
+    fn field_checks(&self, _fields: &[(&str, &ValueType)]) -> Vec<String> {
+        Vec::new()
+    }
 
     /// The name a reader binds the value of an element, a present value or a
     /// field to, which the reader of that part reads.
@@ -1046,6 +1063,25 @@ pub fn record_members(
         .collect()
 }
 
+/// What a value of the record the statechart holds as `alias` runs over its
+/// fields where it is made ([`ComposedSpelling::field_checks`]), in the
+/// schema's order: what holds a host's value to its type (docs/adr/0086,
+/// section 5.4).
+pub fn record_checks(
+    alias: &str,
+    records: &dyn RecordEnv,
+    spelling: &dyn ComposedSpelling,
+) -> Result<Vec<String>, String> {
+    let held = records.record(None, alias)?;
+    let fields: Vec<(&str, &ValueType)> = held
+        .schema
+        .fields
+        .iter()
+        .map(|field| (field.id.as_str(), &field.sce_type))
+        .collect();
+    Ok(spelling.field_checks(&fields))
+}
+
 /// The reader of a value of `ty` at `value`, written in the scope `within`
 /// names: one call of the runtime per constructor, the reader of each part
 /// inside the call of the part that holds it.
@@ -1399,8 +1435,15 @@ impl ComposedSpelling for RustComposed<'_> {
         )
     }
     // Owned and compared whole, as a record of entries that owns a buffer is;
-    // no default, since an enum a field holds has none.
-    fn record_def(&self, ty: &str, alias: &str, fields: &[(String, String)]) -> String {
+    // no default, since an enum a field holds has none. Every bound is held by
+    // a member's type (section 7.4), so there is nothing to check.
+    fn record_def(
+        &self,
+        ty: &str,
+        alias: &str,
+        fields: &[(String, String)],
+        _checks: &[String],
+    ) -> String {
         let members: String = fields
             .iter()
             .map(|(id, ty)| format!("    pub {id}: {ty},\n"))
@@ -1883,6 +1926,73 @@ pub enum KotlinCarrier {
 /// The runtime object the Kotlin readers and writers are members of.
 const KOTLIN_PAYLOAD: &str = "com.sce.runtime.EventPayload";
 
+/// The runtime object whose checks a Kotlin record runs where it is made.
+const KOTLIN_BOUNDS: &str = "com.sce.runtime.ValueBounds";
+
+/// The check of a Kotlin value of `ty` at `value`, named `path` (an expression
+/// of a text), that throws the runtime's `BoundExceeded`, naming the path to
+/// the place, where the value is past a bound its type declares at any depth
+/// (docs/adr/0086, section 5.4): one call of `ValueBounds` per constructor,
+/// the check of an element or a present value inside the call of the list or
+/// optional value that holds it, each binding names of its own `depth`, so no
+/// lambda shadows another's. `None` for a type that holds no bound of its own:
+/// a number, an enum, a record (whose own `init` checks its fields) and an
+/// optional value of one of those.
+fn kotlin_bound_check(ty: &ValueType, path: &str, value: &str, depth: usize) -> Option<String> {
+    let (inner_path, inner_value) = (format!("scePath{depth}"), format!("sceValue{depth}"));
+    match ty {
+        ValueType::Text { max } => Some(format!(
+            "{KOTLIN_BOUNDS}.text({path}, {value}, {})",
+            max.max
+        )),
+        ValueType::Bytes { max } => Some(format!(
+            "{KOTLIN_BOUNDS}.bytes({path}, {value}, {})",
+            max.max
+        )),
+        // The count is held whatever the elements are; an element with
+        // nothing of its own to check binds nothing.
+        ValueType::List { elem, max } => {
+            let each = match kotlin_bound_check(elem, &inner_path, &inner_value, depth + 1) {
+                Some(inner) => format!("{inner_path}, {inner_value} -> {inner}"),
+                None => "_, _ ->".to_string(),
+            };
+            Some(if max.min == 0 {
+                format!(
+                    "{KOTLIN_BOUNDS}.list({path}, {value}, {}) {{ {each} }}",
+                    max.max
+                )
+            } else {
+                format!(
+                    "{KOTLIN_BOUNDS}.listWithin({path}, {value}, {}, {}) {{ {each} }}",
+                    max.min, max.max
+                )
+            })
+        }
+        ValueType::Optional { elem } => {
+            kotlin_bound_check(elem, &inner_path, &inner_value, depth + 1).map(|inner| {
+                format!(
+                    "{KOTLIN_BOUNDS}.optional({path}, {value}) {{ {inner_path}, {inner_value} -> \
+                     {inner} }}"
+                )
+            })
+        }
+        ValueType::Scalar(_) | ValueType::Record { .. } | ValueType::Union { .. } => None,
+    }
+}
+
+/// The body a Kotlin data class takes for `checks`: an `init` that runs each
+/// where a value is made, or nothing where there is none.
+pub(crate) fn kotlin_init_block(checks: &[String]) -> String {
+    if checks.is_empty() {
+        return String::new();
+    }
+    let body: String = checks
+        .iter()
+        .map(|check| format!("        {check}\n"))
+        .collect();
+    format!(" {{\n    init {{\n{body}    }}\n}}")
+}
+
 /// Why a Kotlin walk meets no union: the one decision of what is lowered
 /// refuses a union on Kotlin before any walk reaches one
 /// ([`crate::forge::event_schema_check::ComposedLowering::unions`]).
@@ -1919,17 +2029,41 @@ impl ComposedSpelling for KotlinComposed<'_> {
         )
     }
     // Immutable and compared whole, as a record of entries is; each member
-    // named as the schema names its field, which is how a read names it.
-    fn record_def(&self, ty: &str, alias: &str, fields: &[(String, String)]) -> String {
+    // named as the schema names its field, which is how a read names it. A
+    // value past a bound is refused in its `init`, where it is made.
+    fn record_def(
+        &self,
+        ty: &str,
+        alias: &str,
+        fields: &[(String, String)],
+        checks: &[String],
+    ) -> String {
         let params: Vec<String> = fields
             .iter()
             .map(|(id, ty)| format!("val {id}: {ty}"))
             .collect();
         format!(
             "/** SCE Accepted Subset §2.15: a `record:{alias}` value that holds a composed \
-             value (docs/adr/0086). */\ndata class {ty}({})",
-            params.join(", ")
+             value (docs/adr/0086). */\ndata class {ty}({}){}",
+            params.join(", "),
+            kotlin_init_block(checks)
         )
+    }
+    // One check of the runtime's `ValueBounds` per constructor that holds a
+    // bound, recursively through each list and optional value; a record a
+    // field holds checks its own fields in its own `init`.
+    fn field_checks(&self, fields: &[(&str, &ValueType)]) -> Vec<String> {
+        fields
+            .iter()
+            .filter_map(|(id, ty)| {
+                kotlin_bound_check(
+                    ty,
+                    &format!("\"{}\"", crate::filters::escape_kotlin(id.to_string())),
+                    id,
+                    0,
+                )
+            })
+            .collect()
     }
 
     fn read_binding(&self) -> &'static str {
@@ -2644,7 +2778,11 @@ mod tests {
                 ),
             ]
         );
-        let def = RUST.record_def("MItemRecord", "Item", &members);
+        // Every bound is held by a member's type, so a Rust record checks
+        // nothing where it is made.
+        let checks = record_checks("Item", &held, &RUST).expect("checks");
+        assert!(checks.is_empty(), "{checks:?}");
+        let def = RUST.record_def("MItemRecord", "Item", &members, &checks);
         assert!(
             def.contains("pub struct MItemRecord {\n    pub id: u32,\n"),
             "{def}"
@@ -2871,14 +3009,72 @@ mod tests {
         assert_eq!(spelled("optional<list<uint8>[2]>"), "List<UByte>?");
         assert_eq!(spelled("list<optional<uint16>>[2]"), "List<UShort?>");
         let members = record_members("Item", &held, &enums, &KOTLIN).expect("members");
-        let def = KOTLIN.record_def("MItemRecord", "Item", &members);
+        let checks = record_checks("Item", &held, &KOTLIN).expect("checks");
+        let def = KOTLIN.record_def("MItemRecord", "Item", &members, &checks);
         assert!(
             def.ends_with(
                 "data class MItemRecord(val id: UInt, val level: MLevelEnum, val due: Long?, \
-                 val blob: ByteArray, val tags: List<String>)"
+                 val blob: ByteArray, val tags: List<String>) {\n    init {\n        \
+                 com.sce.runtime.ValueBounds.bytes(\"blob\", blob, 4)\n        \
+                 com.sce.runtime.ValueBounds.list(\"tags\", tags, 4) { scePath0, sceValue0 -> \
+                 com.sce.runtime.ValueBounds.text(scePath0, sceValue0, 8) }\n    }\n}"
             ),
             "{def}"
         );
+    }
+
+    /// A Kotlin record holds a host's value to every bound where it is made
+    /// (docs/adr/0086, section 5.4): one check per constructor that holds a
+    /// bound, an element's or a present value's inside its holder's, each
+    /// binding names of its own depth; a lower count is held too; a number, an
+    /// enum and a record (which checks itself) are not checked here.
+    #[test]
+    fn a_kotlin_record_checks_each_bound_where_it_is_made() {
+        let b = "com.sce.runtime.ValueBounds";
+        let checks = |fields: &[(&str, &str)]| {
+            let typed: Vec<(String, ValueType)> = fields
+                .iter()
+                .map(|(id, text)| (id.to_string(), ty(text)))
+                .collect();
+            let view: Vec<(&str, &ValueType)> = typed
+                .iter()
+                .map(|(id, written)| (id.as_str(), written))
+                .collect();
+            KOTLIN.field_checks(&view)
+        };
+        assert_eq!(
+            checks(&[
+                ("n", "uint8"),
+                ("level", "enum:Level"),
+                ("item", "record:Item"),
+                ("due", "optional<int64>"),
+            ]),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            checks(&[("grid", "list<list<uint8>[2]>[2..3]")]),
+            vec![format!(
+                "{b}.listWithin(\"grid\", grid, 2, 3) {{ scePath0, sceValue0 -> \
+                 {b}.list(scePath0, sceValue0, 2) {{ _, _ -> }} }}"
+            )]
+        );
+        assert_eq!(
+            checks(&[("spare", "optional<list<string[4]>[2]>")]),
+            vec![format!(
+                "{b}.optional(\"spare\", spare) {{ scePath0, sceValue0 -> \
+                 {b}.list(scePath0, sceValue0, 2) {{ scePath1, sceValue1 -> \
+                 {b}.text(scePath1, sceValue1, 4) }} }}"
+            )]
+        );
+        assert_eq!(
+            checks(&[("items", "list<record:Item>[3]")]),
+            vec![format!("{b}.list(\"items\", items, 3) {{ _, _ -> }}")]
+        );
+        // A Rust record holds every bound in a member's type.
+        let held = held();
+        assert!(record_checks("Batch", &held, &RUST)
+            .expect("checks")
+            .is_empty());
     }
 
     /// One call of the runtime's `EventPayload.Value` per constructor, every

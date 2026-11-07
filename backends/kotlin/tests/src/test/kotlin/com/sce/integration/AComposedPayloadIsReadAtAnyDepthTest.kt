@@ -12,13 +12,21 @@
 // A delivery whose every list is full is lifted into the machine's own types,
 // and each read at depths 1 to 3 is what a host reads back. A delivery one
 // past a bound at depth 2 is refused whole (section 4.2): none of the content
-// runs, and `error.execution` is raised once.
+// runs, and `error.execution` is raised once. A value a host injects through
+// the seam is held to every bound where it is made (section 5.4): within them
+// it is read as any delivery, and one past a bound at any depth throws
+// `BoundExceeded` from the `init` of the class that holds it, before anything
+// is sent.
 
 package com.sce.integration
 
+import com.sce.integration.static_composed_payload.StaticComposedPayloadItemRecord
+import com.sce.integration.static_composed_payload.StaticComposedPayloadSignalLevelEnum
 import com.sce.integration.static_composed_payload.StaticComposedPayloadStateMachine
+import com.sce.runtime.BoundExceeded
 import com.sce.runtime.EventMetadata
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 
@@ -71,6 +79,78 @@ class AComposedPayloadIsReadAtAnyDepthTest {
             // A list taken whole into a list of a larger bound.
             assertEquals(listOf(5.toUByte(), 6.toUByte()), sm.late)
         }
+    }
+
+    /** An item a host builds, its `tags` holding [tags] texts. */
+    private fun hostItem(id: UInt, tags: Int): StaticComposedPayloadItemRecord =
+        StaticComposedPayloadItemRecord(
+            id = id,
+            amount = 2L,
+            label = "abc",
+            level = StaticComposedPayloadSignalLevelEnum.entries.first(),
+            due = null,
+            blob = "wx".toByteArray(),
+            tags = List(tags) { "t$it" },
+        )
+
+    /** [body] run over a machine whose host injected `batch.sent` with [late] and [items] through its seam. */
+    private fun injected(
+        late: List<UByte>,
+        items: List<StaticComposedPayloadItemRecord>,
+        body: (StaticComposedPayloadStateMachine) -> Unit,
+    ) {
+        val sm = StaticComposedPayloadStateMachine()
+        sm.initialize()
+        try {
+            sm.raiseBatchSent(
+                items,
+                listOf(listOf<UByte>(1u, 2u)),
+                listOf(StaticComposedPayloadSignalLevelEnum.entries.first()),
+                listOf<UShort?>(9u, null),
+                null,
+                "ab",
+                late,
+            )
+            sm.tick()
+            body(sm)
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun aValueAHostInjectsWithinItsBoundsIsReadAsAnyDelivery() {
+        injected(listOf<UByte>(5u, 6u), listOf(hostItem(4u, 2))) { sm ->
+            assertEquals(0u, sm.refusals)
+            assertEquals(1u, sm.itemCount)
+            assertEquals(2u, sm.tagCount)
+            assertEquals(4u, sm.idSum)
+            assertEquals(3u, sm.cellSum)
+            assertEquals(9.toUShort(), sm.firstMaybe)
+            assertEquals(listOf(5.toUByte(), 6.toUByte()), sm.late)
+        }
+    }
+
+    @Test
+    fun aListAHostInjectsOnePastItsBoundIsRefusedWhereItIsMade() {
+        // `late` is a list<uint8>[2]: three elements are no value of its type,
+        // and the seam's payload refuses them before anything is sent.
+        val refusal = assertThrows(BoundExceeded::class.java) {
+            injected(listOf<UByte>(5u, 6u, 7u), listOf(hostItem(4u, 2))) { }
+        }
+        assertEquals("'late' holds 3 elements, past the 2 its type declares", refusal.message)
+    }
+
+    @Test
+    fun aRecordAHostBuildsOnePastAnInnerBoundIsRefusedWhereItIsMade() {
+        // `tags` is a list<string[8]>[4] inside each item: an item of five is
+        // refused where the host builds it, and a tag of nine bytes too.
+        val many = assertThrows(BoundExceeded::class.java) { hostItem(1u, 5) }
+        assertEquals("'tags' holds 5 elements, past the 4 its type declares", many.message)
+        val long = assertThrows(BoundExceeded::class.java) {
+            hostItem(1u, 1).copy(tags = listOf("ninebytes"))
+        }
+        assertEquals("'tags/0' is 9 bytes, past the 8 its type declares", long.message)
     }
 
     @Test

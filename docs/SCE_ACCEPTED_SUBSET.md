@@ -5236,7 +5236,10 @@ section 7.1, the Kotlin row): its payload class holds each field in `List<T>`,
 declared once; the lift reads each field by one call of the runtime's
 `EventPayload.Value` per constructor and refuses the delivery whole, naming the
 path, at the first value outside its type; the inject seam writes the payload it
-builds as the JSON a lift reads back; and `len`, an index, a field of a record
+builds as the JSON a lift reads back, a value a host hands it held to every bound
+its type declares at any depth where it is made, in the `init` of the payload class
+and of each record it holds, which throws the runtime's `BoundExceeded` naming the
+path (docs/adr/0086, section 5.4); and `len`, an index, a field of a record
 element and a `<foreach>` over a list the payload or an enclosing loop's item holds
 lower at any depth. A list a place holds is taken whole into a list variable whose
 type it fits as it is: no Kotlin type carries a bound, so the two places are one

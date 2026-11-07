@@ -7016,9 +7016,13 @@ fn declare_composed(
                 if declarations.declared.insert(ty.clone()) {
                     let members = composed::record_members(alias, &records, &enums, &*spelling)
                         .map_err(refused)?;
+                    // A value a host makes is held to every bound where it is
+                    // made (docs/adr/0086, section 5.4).
+                    let checks =
+                        composed::record_checks(alias, &records, &*spelling).map_err(refused)?;
                     declarations
                         .type_defs
-                        .push(spelling.record_def(&ty, alias, &members));
+                        .push(spelling.record_def(&ty, alias, &members, &checks));
                 }
                 if saved && declarations.saved_composed.insert(ty.clone()) {
                     let schema = model.imported_records.get(alias).ok_or_else(|| {
