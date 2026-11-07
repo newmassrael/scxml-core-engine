@@ -1,8 +1,9 @@
 # ADR 0093 — A copy's durable state is its journal of operations, and its own change is taken in once its layer accepts it
 
-- Status: Proposed (2026-11-07), awaiting the owner's acceptance. Written at the owner's order of that day, under the
-  rule of 2026-10-26 and 2026-10-27: the most long-term correct structure, textbook in its foundations, cost ignored.
-  Nothing of it has landed; "Landing order" lists the steps, each with the test that holds it.
+- Status: Accepted (2026-11-07). Written at the owner's order of that day, under the rule of 2026-10-26 and
+  2026-10-27: the most long-term correct structure, textbook in its foundations, cost ignored. The owner accepted it
+  and took the recommendation of each of the seven questions in "Open questions", which are therefore decided as
+  recommended there. Nothing of it has landed; "Landing order" lists the steps, each with the test that holds it.
 - Date: 2026-11-07
 - Amends, once accepted (each amended ADR gains an "Amended by: ADR 0093" line in the landing that moves it):
   - ADR 0046 section 4 ("What a copy does to itself never waits on what it sends"): a copy that has a delivery layer
