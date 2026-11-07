@@ -25,6 +25,7 @@ use std::path::Path;
 mod cpp_source;
 mod cpp_test_tables;
 mod cpp_test_template;
+mod kotlin_test_tables;
 mod kotlin_test_template;
 mod length_guard;
 mod rust_source;
@@ -25329,18 +25330,20 @@ pub fn generate_kotlin_with_imports(
         ForgeDocument::TestTemplate(m) => {
             kotlin_test_template::render_test_template_kotlin(&env, m, imports)?
         }
-        // docs/SCE_TEST_PROFILE.md §11.9: the other kinds of the test profile
-        // are refused by name until their runtime lands here.
-        ForgeDocument::TestPortType(_)
-        | ForgeDocument::TestConfiguration(_)
-        | ForgeDocument::TestCase(_)
-        | ForgeDocument::TestSuite(_) => {
-            return Err(crate::forge::test_profile::document_not_generated(
-                doc.kind(),
-                doc.name(),
-                crate::forge::provenance::forge_doc_source_location(doc).cloned(),
-            )
-            .into())
+        // docs/SCE_TEST_PROFILE.md §12.6, slice 6
+        // (`codegen_matrix::TEST_SUITE_BACKENDS`): a port type writes no file,
+        // since the units of the components and of the configuration that read
+        // it hold what they need of it by name; a configuration, a test case and
+        // a suite are tables the profile's runtime reads.
+        ForgeDocument::TestPortType(_) => return Ok(GeneratedOutput::default()),
+        ForgeDocument::TestConfiguration(m) => {
+            kotlin_test_tables::render_test_configuration_kotlin(&env, m, imports)?
+        }
+        ForgeDocument::TestCase(m) => {
+            kotlin_test_tables::render_test_case_kotlin(&env, m, imports)?
+        }
+        ForgeDocument::TestSuite(m) => {
+            kotlin_test_tables::render_test_suite_kotlin(&env, m, imports)?
         }
     };
 
@@ -33277,6 +33280,47 @@ fn kotlin_default(ty: &SceType) -> &'static str {
              from a context built with the document's imports"
         ),
     }
+}
+
+/// docs/SCE_TEST_PROFILE.md §11.5: the value each module parameter of the
+/// Kotlin machine `lowering` lowered starts at, by its id. A module parameter
+/// has no initial value of its document's: the component reads the suite's
+/// value into it before the machine starts, so it starts at its type's zero
+/// ([`kotlin_default`]), or for an enum, whose machine type has no zero, at the
+/// variant its document declares first; nothing reads either. Every other
+/// variable starts at its `expr` and has no entry.
+///
+/// Refused by name where a module parameter is of no type the lowering
+/// declares, which a lowering that held it to a scalar type cannot reach.
+pub(crate) fn kotlin_module_parameter_starts(
+    lowering: &crate::forge::static_lowering::StaticLowering,
+) -> Result<std::collections::BTreeMap<String, String>, GenerateError> {
+    let start = |field: &crate::forge::static_lowering::StaticField| -> Option<String> {
+        if field.saved_kind == "enum" {
+            let declared = lowering.enums.iter().find(|e| e.ty == field.ty)?;
+            let first = declared.variants.first()?;
+            return Some(format!("{}.{}", declared.ty, first.ident));
+        }
+        match SceType::from_attr(&field.saved_type)? {
+            SceType::Enum(_) => None,
+            scalar => Some(kotlin_default(&scalar).to_string()),
+        }
+    };
+    lowering
+        .fields
+        .iter()
+        .filter(|field| field.module_parameter)
+        .map(|field| -> Result<(String, String), GenerateError> {
+            let value = start(field).ok_or_else(|| {
+                GenerateError::unsupported(format!(
+                    "<data id=\"{}\" sce:module-parameter=\"true\">: a module parameter of {} \
+                     has no Kotlin value to start at",
+                    field.id, field.ty
+                ))
+            })?;
+            Ok((field.id.clone(), value))
+        })
+        .collect()
 }
 
 /// Default zero-value for Rust types.

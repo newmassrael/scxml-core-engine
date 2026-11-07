@@ -1,0 +1,92 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "kotlin", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="test-configuration")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+
+package {{ package | kotlin_forge_package }}
+
+{# Every component's machine and every type of the runtime is named by its
+   package, so the unit imports no package and no name of another unit can hide
+   one of its own. Every field of the configuration is written, an empty table
+   as empty, so a field the runtime adds is one this template is told of. #}
+/**
+ * The test configuration `{{ configuration_name }}` (docs/SCE_TEST_PROFILE.md §11.6) as the
+ * profile's runtime reads it: the MTC's component type and each PTC's, the ports and timers
+ * each type declares, each `<sce:connect>` and each `<sce:map>`.
+ */
+fun configuration(): {{ runtime }}.Configuration = {{ runtime }}.Configuration(
+    mtcType = {{ mtc_type }},
+{% if ptc_types %}
+    ptcTypes = mapOf(
+{% for entry in ptc_types %}
+        {{ entry }},
+{% endfor %}
+    ),
+{% else %}
+    ptcTypes = emptyMap(),
+{% endif %}
+{% if ports_of_type %}
+    portsOfType = mapOf(
+{% for entry in ports_of_type %}
+        {{ entry }},
+{% endfor %}
+    ),
+{% else %}
+    portsOfType = emptyMap(),
+{% endif %}
+{% if timers_of_type %}
+    timersOfType = mapOf(
+{% for entry in timers_of_type %}
+        {{ entry }},
+{% endfor %}
+    ),
+{% else %}
+    timersOfType = emptyMap(),
+{% endif %}
+{% if connections %}
+    connections = listOf(
+{% for connection in connections %}
+        {{ connection }},
+{% endfor %}
+    ),
+{% else %}
+    connections = emptyList(),
+{% endif %}
+{% if mappings %}
+    mappings = listOf(
+{% for mapping in mappings %}
+        {{ mapping }},
+{% endfor %}
+    ),
+{% else %}
+    mappings = emptyList(),
+{% endif %}
+)
+
+/**
+ * The machine of each component type of the configuration: the component the profile's
+ * runtime drives, generated beside its test component's machine (docs/SCE_TEST_PROFILE.md
+ * §12.3). Null for a type the configuration does not name, which the run ends with `error`
+ * where it is created.
+ */
+fun machine(componentType: String): {{ runtime }}.ComponentMachine? = when (componentType) {
+{% for declared in machines %}
+    {{ declared.name }} -> {{ declared.component }}()
+{% endfor %}
+    else -> null
+}
+
+/**
+ * The module parameters the components of the configuration read
+ * (docs/SCE_TEST_PROFILE.md §11.5), each of which a suite that runs it gives a value.
+ */
+{% if module_parameters %}
+fun moduleParameters(): List<String> = listOf({{ module_parameters | join(", ") }})
+{% else %}
+fun moduleParameters(): List<String> = emptyList()
+{% endif %}

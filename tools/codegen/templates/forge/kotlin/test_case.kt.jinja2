@@ -1,0 +1,28 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "kotlin", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="test-case")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+
+package {{ package | kotlin_forge_package }}
+
+{# The configuration's unit is named by the package of its document, so the unit
+   imports no package and no name of another unit can hide one of its own. #}
+/** The test case's name in the suite and in the test log (docs/SCE_TEST_PROFILE.md §11.7). */
+const val NAME: String = {{ name_literal }}
+
+/**
+ * The test case `{{ case_name }}` (docs/SCE_TEST_PROFILE.md §11.7) as the runner reads it:
+ * its name, its configuration and the machines of its components, and the module
+ * parameters those components read.
+ */
+fun testCase(): {{ runtime }}.TestCase = {{ runtime }}.TestCase(
+    name = NAME,
+    configuration = {{ configuration }}(),
+    machines = { componentType -> {{ machine }}(componentType) },
+    moduleParameters = {{ module_parameters }}(),
+)
