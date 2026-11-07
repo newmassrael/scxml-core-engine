@@ -887,9 +887,8 @@ Beside the machine the file declares `<Name>Component`, which implements `com.sc
 test-port processor and the test-component invoker on it and starts it (`initialize`); `deliverSnapshot` sends the
 snapshot event and runs the macrostep it starts (`tick`); `terminated` is the machine's having entered a top-level
 `<final>`. Kotlin refuses by name a component that declares `<sce:action>`, whose machine is constructed with a host
-the component is given nothing of, and, until it generates a suite's tables, a component that declares a module
-parameter. A component's machine always has a saved shape, which a session id it is given needs: what would leave
-it none, a delayed send or an invoke a restore cannot start, the profile refuses.
+the component is given nothing of. A component's machine always has a saved shape, which a session id it is given
+needs: what would leave it none, a delayed send or an invoke a restore cannot start, the profile refuses.
 
 A module parameter (§11.5) is a variable of the machine declared with its type and no value of the document's: the
 static lowering, written once for every backend, lowers no initial value for it. Its value is the run's. Before
@@ -909,8 +908,18 @@ whether or not the machine has a saved shape. Then
 `ComponentContext::read_module_parameters` with the policy's `accept_module_parameters`, which reads each module
 parameter from the run's values as a restored variable of its type is read (`SavedValue::from_saved`, a byte string
 held to its bound by `saved_state::bounded_bytes`). A refused read ends the run with `error` and leaves the machine
-unbuilt. A backend that generates a component and not the suite's tables refuses a component that declares a module
-parameter by name (`test_component::snapshot::lower`), since its value is the suite's; C++ and Rust generate both.
+unbuilt.
+
+Kotlin reads a module parameter the same way: the field is declared at its type's zero, or for an enum at the
+variant its document declares first (`forge::generator::kotlin_module_parameter_starts`), neither of which anything
+reads; an enum's class declares its saved form (`fromSaved`) whether or not the machine saves. Then `start`, after
+it constructs the machine with the context and before it registers a door on it or starts it, calls
+`ComponentContext.readModuleParameters` with the machine's `acceptModuleParameters`, which reads each module
+parameter from the run's values by the reader a restore reads a variable of its type by (`SavedValues`, a text and a
+byte string held to their bounds). A refused read ends the run with `error` and leaves the machine unstarted.
+
+A backend that generates a component and not the suite's tables refuses a component that declares a module parameter
+by name (`test_component::snapshot::lower`), since its value is the suite's; C++, Rust and Kotlin generate both.
 
 C++ generates `test-configuration`, `test-case` and `test-suite`, and writes no file for `test-port-type` (§12.6,
 slice 5; `codegen_matrix::TEST_SUITE_BACKENDS`): the units of the components and configurations that read a port
@@ -947,8 +956,30 @@ suite's test cases as `super::<file>`, a component's machine as `super::<name>_s
   in microseconds and its selection as a closure over the world's features. The outermost join of a selection is the
   closure's body and stands bare, every join inside it in parentheses.
 
-Which rows each table holds, in which order, and what is refused is decided once for both backends
-(`forge::generator::test_tables`); a backend spells them. The runner `sce_rust_runtime::test::run_suite` runs the test
+The runner `sce_rust_runtime::test::run_suite` runs the test cases a world selects (§12.4).
+
+Kotlin generates `test-configuration`, `test-case` and `test-suite`, and writes no file for `test-port-type` (§12.6,
+slice 6). Each table is a file `<Name>.kt` in the package `com.sce.generated.<document>`, named by the document's file
+as every forge unit is, over `com.sce.runtime.test`, and names each unit it reads by its package, so no unit has an
+import line: a test case's configuration and a suite's test cases by the package of their documents, and a
+component's class by the package its statechart is generated into when no `--kotlin-package-prefix` is given
+(`com.sce.generated.<name>`, `generator::kotlin_machine_package`), since a configuration cannot know the prefix
+another run chose. A component a configuration runs is generated with no prefix:
+
+- a configuration declares `configuration()`, the `Configuration` the runtime reads, every field written and an empty
+  table as empty; `machine(componentType)`, which makes the `<Name>Component` of each type and null for another; and
+  `moduleParameters()`, the ids its components read;
+- a test case declares `NAME` and `testCase()`, the `TestCase` of its name, its configuration's tables, a factory of
+  machines that calls its configuration's `machine`, and the module parameters they read;
+- a suite declares `suite()`, the `Suite` of its module parameters at their defaults, each the saved value of its
+  declared type (a number, a `bool`, a text and a byte string by `SavedValues.of` of a literal of the type, which
+  writes a 64-bit integer as its text and a byte string as its Latin-1 text; an enum's variant by the name its
+  document declares), and of its `<sce:execute>` entries in run order, each with its test case, its guard in
+  microseconds and its selection as a lambda over the world's features, whose body stands bare as Rust's closure's
+  does.
+
+Which rows each table holds, in which order, and what is refused is decided once for every backend
+(`forge::generator::test_tables`); a backend spells them. The runner `com.sce.runtime.test.runSuite` runs the test
 cases a world selects (§12.4). Every kind stays refused on the other backends until their slices land.
 
 ### 11.10 The rules under feature derivation
@@ -1088,5 +1119,6 @@ the equivalence law (order of work step 6).
    Kotlin generates templates, a template over a union among them, and the refusal of §11.9 is lifted for Kotlin
    for `test-template`. Kotlin generates test components next, through the doors of §12.3, and runs them through
    `com.sce.runtime.test.TestCaseRun`; the refusal is lifted for Kotlin for `test-component`, but for a component
-   that declares a module parameter, whose value Kotlin's suite tables give, and for one that declares
-   `<sce:action>`.
+   that declares `<sce:action>`. Kotlin then generates the configuration, case and suite tables over the same rows
+   and runs the examples end to end through `com.sce.runtime.test.runSuite`; the refusal is lifted for Kotlin for
+   the remaining kinds, and for a component's module parameter.

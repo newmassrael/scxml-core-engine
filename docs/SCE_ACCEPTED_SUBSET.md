@@ -549,17 +549,18 @@ each module parameter read from the run before the machine starts, and refuses w
 `generate/unsupported-feature` one whose receive branch's content reads a message of a
 record with a text, byte string or enum field, one that declares `<sce:action>`, and every
 one under `--no-std`, since the profile's runtime is `std` only. Kotlin generates a test
-component too, through the same doors, copies a message of a record with a text, byte
-string or enum field that a branch's content reads, and refuses with
-`generate/unsupported-feature` one that declares `<sce:action>`. A backend that generates a
-component and not a suite's tables, Kotlin among them, refuses one that declares a module
-parameter by name. On every such backend a variable of an enum bound to a template's
-parameter crosses into the enum unit's type, and one of an optional enum is refused by name. A module parameter whose type is not
-a scalar, `string[N]` or `bytes[N]` is refused by name (`generate/unsupported-feature`) on
-every backend. C++ and Rust generate the tables of a test configuration, a test case and
-a suite, and write no file for a port type (§11.9, §12.6, slices 5 and 6); each refuses a
-suite whose guard is past the microseconds the runtime's clock counts to. Every other pair
-of a backend and a kind of the profile is refused by name.
+component too, through the same doors, each module parameter read from the run before the
+machine starts, copies a message of a record with a text, byte string or enum field that a
+branch's content reads, and refuses with `generate/unsupported-feature` one that declares
+`<sce:action>`. A backend that generates a component and not a suite's tables refuses one
+that declares a module parameter by name. On every such backend a variable of an enum bound
+to a template's parameter crosses into the enum unit's type, and one of an optional enum is
+refused by name. A module parameter whose type is not a scalar, `string[N]` or `bytes[N]` is
+refused by name (`generate/unsupported-feature`) on every backend. C++, Rust and Kotlin
+generate the tables of a test configuration, a test case and a suite, and write no file for
+a port type (§11.9, §12.6, slices 5 and 6); each refuses a suite whose guard is past the
+microseconds the runtime's clock counts to. Every other pair of a backend and a kind of the
+profile is refused by name.
 
 A port type, a configuration, a test case and a suite are then held to the rules their
 imports decide (`docs/SCE_TEST_PROFILE.md` §11.3, §11.6 to §11.8), and a document a
