@@ -534,9 +534,12 @@ enum that names none of its variants is `test-profile/literal`; a `template-ref`
 template's type is not its position's is `test-profile/matcher-type`, and one whose `args`
 do not bind the template's formal parameters one to one, each by a parameter of its type,
 `test-profile/template-parameter`; references that form a cycle are
-`validation/cross-kind-circular-dependency`. No backend generates a
-document of the profile until its runtime lands: generation refuses one by name
-(`generate/unsupported-feature`).
+`validation/cross-kind-circular-dependency`. A backend generates a document of
+the profile only once its runtime lands there for the document's kind, and until then
+generation refuses one by name (`generate/unsupported-feature`). C++ generates a template
+(`docs/SCE_TEST_PROFILE.md` §11.9), and refuses one whose type reaches a union at any
+depth by the union's own refusal (`generate/unsupported-feature`); every other kind, and
+a template on every other backend, is refused.
 
 A port type, a configuration, a test case and a suite are then held to the rules their
 imports decide (`docs/SCE_TEST_PROFILE.md` §11.3, §11.6 to §11.8), and a document a

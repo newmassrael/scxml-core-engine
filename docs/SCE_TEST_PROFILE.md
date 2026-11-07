@@ -756,8 +756,25 @@ inside a `list-match` (B.1.3.2, §8.1); a template whose references form a cycle
 ### 11.9 Generation
 
 The six kinds are parsed and checked on every backend from the step that lands them. Until the native runtime of the
-order of work step 3 lands in a backend, generating a document of the profile on it is refused by name
-(`generate/unsupported-feature`).
+order of work step 3 lands in a backend for a kind, generating a document of that kind on it is refused by name
+(`generate/unsupported-feature`). The backends land one kind at a time, in the order of §12.6, and
+`codegen_matrix::TEST_TEMPLATE_BACKENDS` lists those that generate a template.
+
+C++ generates `test-template` (§12.6, slice 3). The unit is a header `<name>.h` in the namespace
+`SCE::Generated::<Name>`, which declares:
+
+- `Value`, the template's type as the unit of an `event-schema` spells a field of that type (a record is the
+  schema's payload struct);
+- `bool match(const Value &value, <the formal parameters, in order>)`, which holds each mechanism of §6.1 as
+  ES 201 873-1 Annex B.1 defines it. A matcher of a value's type on an `optional<T>` field requires the field
+  present; `omit`, `any-value-or-none`, `ifpresent`, a value list or complement and a parameter or a reference of
+  the optional type itself take an absent one. A length restriction on a `string[N]` counts characters, through
+  the profile's runtime (`sce/include/test/Length.h`), and on `bytes[N]` and `list<T>[B]` octets and elements;
+- for a specific template (§6.2) alone, `Value value(<the formal parameters>)`, the value it sends, which matches
+  it.
+
+A template whose type reaches a union at any depth is refused on C++ as a field of a union is (ADR 0092, section
+7). The other kinds stay refused on C++, and every kind on the other backends, until their slices land.
 
 ### 11.10 The rules under feature derivation
 
@@ -864,9 +881,10 @@ the equivalence law (order of work step 6).
 
 1. A test component's statements are actions of their blocks (§11.5).
 2. The C++ runtime library of §12.2, with unit tests over hand-written components, before any generation.
-3. C++ generation of templates: the matcher of each template and the value of each specific template.
+3. C++ generation of templates: the matcher of each template and the value of each specific template. The
+   refusal of §11.9 is lifted for C++ for `test-template`.
 4. C++ generation of test components through the doors of §12.3. The refusal of §11.9 is lifted for C++ for
-   `test-component` and `test-template`.
+   `test-component`.
 5. C++ generation of the configuration, case and suite tables, a runner, and the examples run end to end with the
    verdicts they expect. The refusal is lifted for the remaining kinds.
 6. The other backends, one at a time.
