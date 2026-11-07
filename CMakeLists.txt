@@ -614,7 +614,9 @@ endif()
 # sce_mesh_common only exists when SCE_ENABLE_MESH=ON; shipping the
 # headers unconditionally would leave stale mesh/*.h on disk without the
 # archive that defines their symbols.
-foreach(_sce_core_dir core static common backends wrappers dispatchers)
+# `test` is the test profile's runtime (docs/SCE_TEST_PROFILE.md §12), header-only:
+# a generated test component reaches it, so it ships with the code that does.
+foreach(_sce_core_dir core static common backends wrappers dispatchers test)
     install(DIRECTORY sce/include/${_sce_core_dir}
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
         COMPONENT Core
@@ -639,6 +641,7 @@ install(DIRECTORY sce/include/
         PATTERN "runtime"     EXCLUDE
         PATTERN "scripting"   EXCLUDE
         PATTERN "static"      EXCLUDE
+        PATTERN "test"        EXCLUDE
         PATTERN "wrappers"    EXCLUDE
 )
 

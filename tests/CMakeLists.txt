@@ -250,6 +250,9 @@ add_executable(sce_scxml_tests
     # docs/adr/0084 D5: the bookkeeping of host-run invocations, apart from any
     # engine.
     core/HostInvokeLedgerTest.cpp
+    # docs/SCE_TEST_PROFILE.md §12.2: the test profile's runtime, with
+    # components written by hand, apart from any generated machine.
+    test_runtime/TestCaseRunTest.cpp
     concurrency/TypeRegistryThreadSafetyTest.cpp
     common/EventDataHelperTest.cpp
     common/TestSummaryExitStatusTest.cpp
