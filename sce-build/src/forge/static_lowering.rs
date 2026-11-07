@@ -4815,9 +4815,8 @@ fn union_variable_field(
     })?;
     let held = composed::StatechartRecords::of(model);
     let union_type =
-        composed::machine_type(&union_ty, None, &held, &enums, &*spelling).map_err(&refused)?;
-    let field_ty =
-        composed::machine_type(&ty, None, &held, &enums, &*spelling).map_err(&refused)?;
+        composed::machine_type(&union_ty, None, &held, &enums, &*spelling).map_err(refused)?;
+    let field_ty = composed::machine_type(&ty, None, &held, &enums, &*spelling).map_err(refused)?;
     let init = match start {
         UnionStart::Absent => absent_value(target, &union_type, &what)?,
         UnionStart::Built => {
@@ -16806,7 +16805,7 @@ fn whole_union_copy(
             return Err(refused(format!("{} spells no union", target.name())));
         };
         let present = composed::machine_type(elem, None, &names.records, &names.enums, &*spelling)
-            .map_err(&refused)?;
+            .map_err(refused)?;
         return absent_value(target, &present, location).map(Some);
     }
     let Some((path, from)) = crate::forge::expr::written_place(&action.expr)
@@ -16891,10 +16890,10 @@ fn union_field_place(
         Some(holder),
         Some(&ctx.proven),
     );
-    let holder_text = place_text(holder, ctx, renames, target, &*spelling).map_err(&refused)?;
+    let holder_text = place_text(holder, ctx, renames, target, &*spelling).map_err(refused)?;
     let written = spelling
         .union_member_place(&holder_text, union, &left, member.trim())
-        .map_err(&refused)?;
+        .map_err(refused)?;
     Ok(Some((written, field)))
 }
 
