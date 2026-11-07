@@ -260,10 +260,12 @@ class {{ machine_name }}StateMachine(
      */
     private val acceptSimulatedHost: Boolean = false,
 {% endif %}
-{% if static_saved_shape %}
+{% if model.datamodel == "sce-static" %}
 {# docs/adr/0045, "Questions the owner answered" 2: the last parameter,
    defaulted, so a caller that builds this machine as before still compiles. A
-   root is never without an id: the host gives it here, or it is drawn. #}
+   root is never without an id: the host gives it here, or it is drawn. Every
+   `sce-static` root binds one, whether or not a saved state can hold it:
+   whether it saves is `static_saved_shape`'s question, not this one. #}
     /**
      * docs/adr/0045: the id of this machine's session (`_sessionid`), which a
      * saved state names it by and a peer addresses it by (`#_scxml_<id>`), given
@@ -278,7 +280,7 @@ class {{ machine_name }}StateMachine(
 {% else %}
 ) : StateMachineEngine<{{ machine_name }}State, {{ machine_name }}Event>() {
 {% endif %}
-{% if static_saved_shape %}
+{% if model.datamodel == "sce-static" %}
 
     init {
         bindRootSessionId(sessionId)
