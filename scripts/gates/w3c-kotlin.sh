@@ -601,6 +601,54 @@ python3 "$KOTLIN_COVERAGE" derive "$KOTLIN_TEST_SOURCES" >"$KOTLIN_RUNNABLE" \
 runnable_count="$(grep -c . "$KOTLIN_RUNNABLE" || true)"
 sce_gate_step "$runnable_count runnable test class(es) derived from $KOTLIN_TEST_SOURCES; every row below must report exactly them"
 
+# ── The heap each row's two JVMs used, read from their own GC logs ──
+#
+# From 2026-11-05 the `lua:lua` row died in `:sce-kotlin-tests:compileKotlin`
+# with `OutOfMemoryError: GC overhead limit exceeded` in the Kotlin compile
+# daemon, on every run on main. The same compiles in the same order, in one
+# daemon of the same 2 GB, succeeded on a build host (measured 2026-11-07), so
+# the heap the failing run used could be read nowhere but in the run that
+# fails. Both daemons the rows share are therefore started with a GC log, and
+# after every row, whatever its outcome and before any refusal below,
+# `jvm_heap_report.py` reports what that row added to each log: the peak, the
+# live set after full collections, and the share of the row spent in pauses,
+# against the `-Xmx` the JVM was given, warning when the live set reaches 80%
+# of it. Its header says why those numbers.
+#
+# ⚠ The heap is NOT changed by this. Both daemons get `org.gradle.jvmargs` as
+# `gradle.properties` declares it, read from there rather than restated, with
+# only the log flag added. The Kotlin daemon was inheriting exactly those
+# arguments, since `gradle.properties` sets no `kotlin.daemon.jvmargs`; it now
+# receives them explicitly, because a `kotlin.daemon.jvmargs` that carried the
+# log flag alone would replace the inherited `-Xmx` with the JVM's default and
+# measure a different lane. The arguments are the same on every row, so each
+# daemon is reused across rows as before: what is measured is the lane as it
+# runs, not a lane changed to be measured.
+JVM_HEAP_REPORT="$SCE_REPO_ROOT/scripts/gates/jvm_heap_report.py"
+GRADLE_JVMARGS="$(sed -n 's/^org\.gradle\.jvmargs=//p' gradle.properties)"
+[ -n "$GRADLE_JVMARGS" ] \
+    || sce_gate_fail "gradle.properties sets no org.gradle.jvmargs, so there is no declared heap for the rows' daemons to be started with and measured against"
+GRADLE_GC_LOG="$LOG/gradle-daemon-gc.log"
+KOTLIN_GC_LOG="$LOG/kotlin-daemon-gc.log"
+gc_log_flag() { printf -- '-Xlog:gc:file=%s:uptime,level,tags:filecount=0' "$1"; }
+HEAP_OBSERVED=(
+    "-Dorg.gradle.jvmargs=$GRADLE_JVMARGS $(gc_log_flag "$GRADLE_GC_LOG")"
+    "-Pkotlin.daemon.jvmargs=$GRADLE_JVMARGS $(gc_log_flag "$KOTLIN_GC_LOG")"
+)
+log_size() { if [ -f "$1" ]; then stat -c %s "$1"; else echo 0; fi; }
+# The Gradle daemon runs every row, so its log MUST exist after one: a missing
+# log means the flag never reached the JVM and the row was not observed. The
+# Kotlin daemon starts only when a row compiles Kotlin, so its absence is
+# reported as that rather than refused.
+report_row_heap() {
+    python3 "$JVM_HEAP_REPORT" report --log "$GRADLE_GC_LOG" --from-byte "$2" \
+        "--jvmargs=$GRADLE_JVMARGS" --label "Gradle daemon, $1" --must-exist \
+        || sce_gate_fail "the Gradle daemon's heap on $1 was not observed — the reason is above"
+    python3 "$JVM_HEAP_REPORT" report --log "$KOTLIN_GC_LOG" --from-byte "$3" \
+        "--jvmargs=$GRADLE_JVMARGS" --label "Kotlin compile daemon, $1" \
+        || sce_gate_fail "the Kotlin compile daemon's heap on $1 could not be read — the reason is above"
+}
+
 for pair in "${KOTLIN_ENGINE_PAIRS[@]}"; do
     engine="${pair%%:*}"
     language="${pair##*:}"
@@ -613,12 +661,16 @@ for pair in "${KOTLIN_ENGINE_PAIRS[@]}"; do
         overlay=(-Psce.generated.overlay="$KOTLIN_TREE_FOR_LANGUAGE/backends/kotlin/tests")
     fi
 
+    gradle_gc_from="$(log_size "$GRADLE_GC_LOG")"
+    kotlin_gc_from="$(log_size "$KOTLIN_GC_LOG")"
     status=0
     ./gradlew --console=plain :sce-kotlin-tests:test "-Psce.script.engine=$engine" \
         "-Psce.lua.loweringCensus=$CENSUS" \
+        "${HEAP_OBSERVED[@]}" \
         "${overlay[@]}" \
         >"$LOG/kotlin-$engine-$language.log" 2>&1 || status=$?
     cat "$LOG/kotlin-$engine-$language.log"
+    report_row_heap "$engine over $language machines" "$gradle_gc_from" "$kotlin_gc_from"
 
     if (( status != 0 )); then
         grep -iE 'FAILED|BUILD FAILED|^\s+[A-Za-z0-9_.]+ > ' "$LOG/kotlin-$engine-$language.log" | head -n 20 >&2
