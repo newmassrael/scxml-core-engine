@@ -947,7 +947,7 @@ one at a time. Each lifts the refusal of §11.9 for itself when its runtime land
 
 | Part | Where | Why there |
 |---|---|---|
-| Round scheduler, `NOW`, port queues and snapshots, timer bindings, verdicts, entity table, guard | a runtime library per backend (C++: `sce/include/test/`, Rust: `sce_rust_runtime::test`) | it is the same for every suite, so it is written once and tested on its own (Zero Duplication) |
+| Round scheduler, `NOW`, port queues and snapshots, timer bindings, verdicts, entity table, guard | a runtime library per backend (C++: `sce/include/test/`, Rust: `sce_rust_runtime::test`, Kotlin: `com.sce.runtime.test`) | it is the same for every suite, so it is written once and tested on its own (Zero Duplication) |
 | A component's machine | generated from the `test-component`, by the backend's statechart generator | it is a statechart (§7) |
 | A template's matcher and a specific template's value | generated from the `test-template`, over the record types the statechart generator already writes for an `event-schema` | matching is on values, not on encoded bytes, so no codec takes part (C2) |
 | Which port is connected or mapped to which, and the MTC and PTC of each component | generated tables from the `test-configuration` and `test-case` | they are data |
@@ -968,7 +968,7 @@ requires.
 | taking a branch, P4 step 1 | one statement the generator puts before the branch's executable content. A receive branch removes the head of its port's queue and holds it as the transition's `_event.data`, in the payload member of its record's event (`Transition::payload_event`). A timeout branch sets its timer to `IDLE`. Every branch's statement also tells the runtime that the component took a branch in this round. |
 | `<sce:setverdict>`, `<sce:start-timer>`, `<sce:stop-timer>` | actions of their block (§11.5) that call the component's runtime context |
 | a `<log>` (P8) | the same action of its block, which calls the runtime context instead of the engine's log, so the test log records it with `NOW` and the component |
-| a send (P6) | a host Event I/O Processor for the test-port URI, registered by the runtime (ADR 0084). The request names the port and carries the template's value, as the value the generated code holds and never an encoding (C++: `HostSendRequest::value`). The runtime appends the value to the queue of the connected port, or hands it to the system adapter when the port is mapped. |
+| a send (P6) | a host Event I/O Processor for the test-port URI, registered by the runtime (ADR 0084). The request names the port and carries the template's value, as the value the generated code holds and never an encoding (C++ and Rust: `HostSendRequest::value`, Kotlin: `HostSendRequest.value`). The runtime appends the value to the queue of the connected port, or hands it to the system adapter when the port is mapped. |
 | a PTC (P9) | a host invoke processor for the test-component URI, registered by the runtime. The engine asks for the start when the macrostep that entered the state ends (§scxml-6.4), which is when P9 creates, connects, maps and starts the PTC. It asks for the cancel when the state is exited, which is P9's kill. The runtime never reports a completion to the engine: `done` is read from the snapshot (P2). So a PTC that has terminated is still running for the engine, and the engine delivers the cancel for it too, which P9's kill requires. |
 
 A module parameter (§11.5) takes no door of the engine. It is a variable of the machine, and the component writes
@@ -1002,7 +1002,7 @@ When no component took a branch and there is no instant to advance to, the test 
 ends it with `error` (P13). The lane's clock does the same (§10), so the two runs agree (C3).
 
 A suite is run by a library function, with no `main` of its own (C++: `SCE::Test::runSuite`, Rust:
-`sce_rust_runtime::test::run_suite`): given the suite's
+`sce_rust_runtime::test::run_suite`, Kotlin: `com.sce.runtime.test.runSuite`): given the suite's
 tables, a world of its features and a factory of system adapters, it runs the test cases the world selects, one at
 a time on the calling thread, in the suite's order (P11), each a fresh run from `NOW = 0` against a fresh adapter,
 and returns each one's result. The caller may give a module parameter another value than the suite's default; a
@@ -1033,4 +1033,6 @@ the equivalence law (order of work step 6).
    parameter, whose value Rust's suite tables give. Rust then generates the configuration, case and suite tables
    over the rows C++ spells (`forge::generator::test_tables`) and runs the examples end to end through
    `sce_rust_runtime::test::run_suite`; the refusal is lifted for Rust for the remaining kinds, and for a
-   component's module parameter.
+   component's module parameter. Kotlin's runtime library of §12.2 (`com.sce.runtime.test`) is the Rust one ported
+   type for type and held to its cases, with `textLength` for a template's length restriction, since a Kotlin text
+   counts UTF-16 units; and the Kotlin host send request carries a test-port send's value (`HostSendRequest.value`).
