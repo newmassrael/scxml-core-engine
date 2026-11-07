@@ -1,0 +1,11 @@
+seq = 5
+id = "ce3220f0db78"
+
+[submit]
+commit = "bf6c22164b3f1a0b5d7af100dadf8608047d53e3"
+base = "285c8f570df95751f538635f0a7beb28458c496f"
+machine = "coin-Legion-Pro-5-16IRX9"
+session = "e8591da3-4e45-401c-92a8-7f143d82816d"
+worktree = "/home/coin/scxml-core-engine/.claude/worktrees/ledger-dead-bindings"
+branch = "kt-hermetic-rows"
+at = 1794060756
