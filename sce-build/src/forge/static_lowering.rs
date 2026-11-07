@@ -6829,8 +6829,10 @@ pub fn lower(
             }
         }
     }
-    // docs/SCE_TEST_PROFILE.md §12.3: the unit of each template a branch
-    // matches with or a send sends, whose `match` and `value` the machine calls.
+    // docs/SCE_TEST_PROFILE.md §12.3: the unit of each enum a template's
+    // argument crosses into, and the unit of each template a branch matches
+    // with or a send sends, whose `match` and `value` the machine calls.
+    imports.extend(test_template_enum_imports(model, &rewrites));
     for unit in test_template_units(model) {
         imports.insert(target.test_template_import(&unit).ok_or_else(|| {
             GenerateError::unsupported(format!(
@@ -16273,6 +16275,14 @@ fn lower_snapshot_branch(
 /// parameters (`sce:template-args`), each read as the target reads it and
 /// handed over as the template's unit takes a value of its type
 /// ([`StaticTarget::template_argument`]).
+///
+/// The machine holds a value of an enum in a type of its own, and the
+/// template's unit takes the type the enum document's unit declares
+/// (docs/SCE_TEST_PROFILE.md §11.9), so a variable of an enum crosses into the
+/// variant of the same declared name, as a value handed to an algorithm does
+/// ([`StaticTarget::enum_crossing`]); [`test_template_enum_imports`] imports the
+/// enum's unit the crossing names. A target with no crossing, and an optional
+/// value of an enum, which no crossing maps yet, are refused by name.
 fn test_template_args(
     args: &[String],
     ctx: &crate::forge::types::TypeCtx<'_>,
@@ -16289,6 +16299,31 @@ fn test_template_args(
             let read = rewrites
                 .receiving(arg, ctx, renames, InferredType::Unknown)
                 .map_err(|r| unlowered(arg, r.error.to_string()))?;
+            if let Some(alias) = rewrites.enum_of_wire_value(arg.trim()) {
+                let crossed = rewrites.held_enums.get(&alias).and_then(|model| {
+                    let machine_type = target.enum_type(rewrites.machine, &alias)?;
+                    target.enum_crossing(&machine_type, model, &read.text, Crossing::ToAlgorithm)
+                });
+                return crossed.ok_or_else(|| {
+                    unlowered(
+                        arg,
+                        format!(
+                            "a value of the enum `{alias}` has no crossing into the unit of a \
+                             test template yet (docs/SCE_TEST_PROFILE.md §12.6)"
+                        ),
+                    )
+                });
+            }
+            let present = crate::forge::static_enum::present_value_path(arg.trim());
+            if let Some(alias) = rewrites.enum_of_wire_value(&present) {
+                return Err(unlowered(
+                    arg,
+                    format!(
+                        "an optional value of the enum `{alias}` bound to a parameter of a test \
+                         template has no crossing yet (docs/SCE_TEST_PROFILE.md §12.6)"
+                    ),
+                ));
+            }
             let ty = crate::forge::expr::judge_into(
                 &rewrites.as_lowered(arg),
                 ctx,
@@ -16300,11 +16335,38 @@ fn test_template_args(
         .collect()
 }
 
+/// The line that imports the unit of each enum a variable bound to a parameter
+/// of a test template of `model` crosses into ([`test_template_args`]).
+fn test_template_enum_imports(model: &SCXMLModel, rewrites: &Rewrites<'_>) -> BTreeSet<String> {
+    test_template_refs(model)
+        .iter()
+        .flat_map(|template| template.args.iter())
+        .filter_map(|arg| rewrites.enum_of_wire_value(arg.trim()))
+        .filter_map(|alias| {
+            rewrites
+                .held_enums
+                .get(&alias)
+                .and_then(|enum_model| rewrites.target.enum_import(&enum_model.name))
+        })
+        .collect()
+}
+
 /// The unit of every test template a branch of `model` matches with or a send
 /// of it sends, once the document is lowered for generation
 /// ([`crate::test_component::snapshot::lower`]).
 fn test_template_units(model: &SCXMLModel) -> BTreeSet<String> {
-    let mut units = BTreeSet::new();
+    test_template_refs(model)
+        .into_iter()
+        .map(|template| template.unit)
+        .collect()
+}
+
+/// Every use of a test template in `model`, once the document is lowered for
+/// generation: each branch's template and each send's
+/// ([`crate::test_component::snapshot::lower`]), with the variables bound to
+/// its parameters.
+fn test_template_refs(model: &SCXMLModel) -> Vec<TemplateRef> {
+    let mut refs = Vec::new();
     for state in model.states.values() {
         for transition in &state.transitions {
             if let Some(template) = transition
@@ -16312,16 +16374,16 @@ fn test_template_units(model: &SCXMLModel) -> BTreeSet<String> {
                 .as_ref()
                 .and_then(SnapshotBranch::template)
             {
-                units.insert(template.unit.clone());
+                refs.push(template.clone());
             }
         }
     }
     crate::host_processor_analyzer::walk_model_actions(model, &mut |_, action| {
         if let Some(message) = &action.test_message {
-            units.insert(message.unit.clone());
+            refs.push(message.clone());
         }
     });
-    units
+    refs
 }
 
 /// Lower every action of `actions` in place. `true` when any expression
