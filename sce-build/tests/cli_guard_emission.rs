@@ -555,11 +555,26 @@ fn every_guard_the_backends_emit_natively_has_a_value() {
         // file, so that its imports resolve.
         let model = if model.datamodel == sce_build::model::Datamodel::SceStatic {
             let path = root.join(document);
-            let mut model = SCXMLParser::new()
-                .parse_file(&path.to_string_lossy())
-                .unwrap_or_else(|e| {
-                    panic!("{document} parsed as a string but not as a file: {e:?}")
-                });
+            let mut model = match SCXMLParser::new().parse_file(&path.to_string_lossy()) {
+                Ok(model) => model,
+                // A rule that reads another document (the kind of an
+                // `<invoke src>`, the fields of an imported record) runs only
+                // when the document is read from its file, so a document kept
+                // to be refused by one parses as a string and is refused here.
+                // The generator refuses it the same way and renders nothing.
+                // An import or manifest that does not resolve is not a
+                // refusal by a rule, and stays a defect.
+                Err(e)
+                    if !matches!(
+                        e.error,
+                        sce_build::forge::error::ForgeError::Import(_)
+                            | sce_build::forge::error::ForgeError::Manifest(_)
+                    ) =>
+                {
+                    continue;
+                }
+                Err(e) => panic!("{document} parsed as a string but not as a file: {e:?}"),
+            };
             // The machine name only names the record classes it declares,
             // which no guard reads.
             match sce_build::forge::static_lowering::lower_kotlin(&mut model, "Sweep") {
