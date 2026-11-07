@@ -206,6 +206,42 @@ private:
     std::atomic<std::size_t> live_{0};
 };
 
+/// The system allocator with a budget of blocks out at once: it refuses past
+/// `limit` blocks live and takes a block's place back when it is given back. The
+/// `TestAllocator` above counts blocks given in all, which a free does not
+/// restore, so it cannot show a push refused while the blocks that hold the
+/// budget are retired segments waiting for a scan.
+class LiveBudgetAllocator {
+public:
+    static constexpr queue::Progress kProgress = queue::Progress::Blocking;
+
+    explicit LiveBudgetAllocator(std::size_t limit) noexcept : limit_(limit) {}
+
+    void *allocate(std::size_t size, std::size_t align) noexcept {
+        if (live_.load(std::memory_order_seq_cst) >= limit_) {
+            return nullptr;
+        }
+        void *block = ::operator new(size, std::align_val_t(align), std::nothrow);
+        if (block != nullptr) {
+            live_.fetch_add(1, std::memory_order_seq_cst);
+        }
+        return block;
+    }
+
+    void deallocate(void *block, std::size_t, std::size_t align) noexcept {
+        ::operator delete(block, std::align_val_t(align));
+        live_.fetch_sub(1, std::memory_order_seq_cst);
+    }
+
+    std::size_t live() const noexcept {
+        return live_.load(std::memory_order_seq_cst);
+    }
+
+private:
+    std::size_t limit_;
+    std::atomic<std::size_t> live_{0};
+};
+
 /// The steps of a `segmented` scenario against the `push` and `pop` of one queue.
 /// Returns the list a `destroy` step expects, which ends the run, so the caller
 /// destroys its queue and judges what was destroyed.
@@ -955,6 +991,51 @@ void an_lscq_queue_hands_out_no_more_places_than_its_ring_and_its_domain_have() 
     CHECK(!linked.valid() && !linked.producer().has_value(), "the linked rings say the same");
 }
 
+/// A segment a consumer retired holds the allocator's budget until a scan, and the
+/// scan runs only when twice the domain's slots are waiting. A push the allocator
+/// refuses must therefore ask the domain to free what no hazard names before it
+/// reports `OutOfMemory`; otherwise a queue holding one element refuses a push for
+/// as long as nobody pops. The budget is three segments of one element, all three
+/// filled: the second pop retires the first, the live third is full (a segment's
+/// ring reuses a slot only once its element is popped, and nothing was popped from
+/// it), and the next push needs a fourth, which the retired first segment's block
+/// stands in front of.
+void a_refused_push_frees_the_retired_segments_and_asks_again() {
+    LiveBudgetAllocator allocator(3);
+    queue::HazardDomain<4> domain;
+    {
+        queue::Lscq<std::uint8_t, 1, 2, 4, LiveBudgetAllocator, queue::Progress::Blocking> q(allocator, domain);
+        CHECK(q.valid(), "the allocator gives the first segment");
+        auto producer = q.producer();
+        auto consumer = q.consumer();
+        CHECK(producer.has_value() && consumer.has_value(), "a place a side");
+
+        for (std::uint8_t value = 0; value < 3; ++value) {
+            CHECK(producer->try_push(std::uint8_t{value}) == queue::PushStatus::Ok,
+                  "each push fills a segment and the next links another");
+        }
+        CHECK(allocator.live() == 3, "the budget is spent on three live segments");
+        std::optional<std::uint8_t> first = consumer->try_pop();
+        CHECK(first.has_value() && *first == 0, "the first segment drains");
+        // The pop that finds the drained segment empty and closed moves `head` to its
+        // successor and retires it, and answers from the successor.
+        std::optional<std::uint8_t> second = consumer->try_pop();
+        CHECK(second.has_value() && *second == 1, "the second segment answers");
+        CHECK(domain.waiting() == 1, "the first is retired, not yet scanned");
+        CHECK(allocator.live() == 3, "so it still holds a block of the budget");
+
+        CHECK(producer->try_push(std::uint8_t{3}) == queue::PushStatus::Ok,
+              "a refusal asks the domain to give the retired segment back and succeeds");
+        std::optional<std::uint8_t> third = consumer->try_pop();
+        std::optional<std::uint8_t> fourth = consumer->try_pop();
+        CHECK(third.has_value() && *third == 2 && fourth.has_value() && *fourth == 3,
+              "the elements still come out in order");
+        producer.reset();
+        consumer.reset();
+    }
+    CHECK(allocator.live() == 0, "destroying the queue gave every block back");
+}
+
 }  // namespace
 
 int main() {
@@ -972,6 +1053,7 @@ int main() {
     an_lscq_queue_loses_nothing_between_threads();
     a_dropped_segmented_queue_destroys_each_element_once_and_frees_every_segment();
     an_lscq_queue_hands_out_no_more_places_than_its_ring_and_its_domain_have();
+    a_refused_push_frees_the_retired_segments_and_asks_again();
 
     if (failures != 0) {
         std::fprintf(stderr, "%d check(s) failed\n", failures);

@@ -770,7 +770,8 @@ public:
         }
 
         /// Push `value`, or leave it untouched and report `OutOfMemory` when the
-        /// newest segment is closed and the allocator will not give another.
+        /// newest segment is closed and the allocator will not give another, after
+        /// the domain was asked to free the retired segments no hazard names.
         /// Lock-free when the allocator is.
         PushStatus try_push(T &&value) noexcept {
             Lscq &queue = *queue_;
@@ -792,6 +793,15 @@ public:
                 // The segment is closed. Put the element in a segment of our own
                 // before anyone can see it, then try to link it behind this one.
                 Segment *fresh = detail::place<Segment>(queue.allocator_);
+                if (fresh == nullptr) {
+                    // The segments consumers retired hold the allocator's budget until a
+                    // scan, and a scan runs only on a retirement once twice the slots are
+                    // waiting. A refusal therefore asks the domain to give back what no
+                    // hazard names and asks the allocator once more: without it a push
+                    // could be refused for as long as nobody pops, however empty the queue.
+                    queue.domain_.collect();
+                    fresh = detail::place<Segment>(queue.allocator_);
+                }
                 if (fresh == nullptr) {
                     hazard_.clear();
                     return PushStatus::OutOfMemory;
