@@ -205,9 +205,12 @@ fn a_value_that_names_no_place_is_refused() {
     assert!(out.contains("names no such place"), "{out}");
 }
 
-/// Pinned by the gate's `<send>` arm and `ComposedLowering::of`
-/// (`sce-build/src/forge/event_schema_check.rs`): a backend that does not send
-/// a composed value yet refuses the send by its own name.
+/// Pinned by `ComposedLowering::of` (`sce-build/src/forge/event_schema_check.rs`):
+/// a backend that does not send a composed value yet refuses the document by
+/// name, never generating it. A whole send gives every composed field of the
+/// first revision from a variable of its type, and such a backend refuses the
+/// first of those variables before it reaches the `<send>`; the gate's `<send>`
+/// arm is held by `a_send_or_raise_of_the_event_of_a_composed_schema_is_refused_by_name`.
 #[test]
 fn a_backend_that_sends_none_refuses_the_send_by_name() {
     let document = sender(
@@ -221,12 +224,7 @@ fn a_backend_that_sends_none_refuses_the_send_by_name() {
             out.contains("generate/unsupported-feature"),
             "{language}: {out}"
         );
-        assert!(
-            out.contains(&format!(
-                "a statechart's <send> of its event has no {language} lowering of its list"
-            )),
-            "{language}: {out}"
-        );
+        assert!(out.contains("lowering of its list"), "{language}: {out}");
     }
     let (ok, out) = run(&["check", "-l", "rust"], &document);
     assert!(ok, "Rust sends a list variable that fits:\n{out}");
