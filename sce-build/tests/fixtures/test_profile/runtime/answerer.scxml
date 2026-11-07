@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §4.9, §11.5: a parallel test component that asks
+     the component it is connected to for job 42 as it starts, and passes on a
+     reply of success. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="answerer"
+       datamodel="sce-static" initial="asking">
+  <sce:import kind="test-port-type" src="exchange_port.scxml" as="ExchangePort"/>
+  <sce:import kind="test-template" src="request_of.scxml" as="RequestOf"/>
+  <sce:import kind="test-template" src="reply_ok.scxml" as="ReplyOk"/>
+  <sce:test-port id="peer" type="ExchangePort"/>
+  <datamodel>
+    <data id="job" sce:type="uint32" expr="42"/>
+  </datamodel>
+  <state id="asking">
+    <onentry>
+      <send type="http://sce.dev/ext/test-port" target="peer"
+            sce:test-template="RequestOf" sce:template-args="job"/>
+    </onentry>
+    <transition sce:receive="peer" sce:test-template="ReplyOk" target="done">
+      <sce:setverdict value="pass"/>
+    </transition>
+  </state>
+  <final id="done"/>
+</scxml>

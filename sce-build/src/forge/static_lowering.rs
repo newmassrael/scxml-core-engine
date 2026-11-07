@@ -37,6 +37,8 @@ use crate::forge::type_ctx::{
 use crate::forge::types::{CallReading, InferredType};
 use crate::generator::Language;
 use crate::model::{Action, SCXMLModel};
+use crate::test_component::snapshot::{SnapshotBranch, TemplateRef};
+use crate::test_component::TestStatement;
 
 /// One variable of a `sce-static` machine as the backend declares it: its
 /// document id, the field name generated code spells, the backend type, and
@@ -2228,6 +2230,58 @@ pub trait StaticTarget {
     /// whose failing condition is statements (C) takes it on the value.
     fn payload_guards_the_value(&self) -> bool {
         false
+    }
+    /// docs/SCE_TEST_PROFILE.md §12.3: the condition under which `branch`, a
+    /// branch of a test component lowered for generation
+    /// ([`crate::test_component::snapshot::lower`]), matches the round's
+    /// snapshot, `args` its template's arguments as this target reads the
+    /// variables they name. A branch's guard is its `cond` and then this.
+    /// `None` for a target whose test component has not landed
+    /// ([`crate::forge::codegen_matrix::TEST_COMPONENT_BACKENDS`]), which
+    /// refuses the branch by name.
+    fn snapshot_match(&self, _branch: &SnapshotBranch, _args: &[String]) -> Option<String> {
+        None
+    }
+    /// docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3: the statement taking
+    /// `branch` runs before its content, which removes what the branch matched
+    /// and tells the component's runtime that it took a branch. `payload` is
+    /// the schema of the message a receive branch takes when its content reads
+    /// the message, which the statement then holds as the content's
+    /// `_event.data`, in the member the payload channel of the machine
+    /// `machine` reads it from ([`Self::payload_accessor`]). `None` for a
+    /// target whose test component has not landed.
+    fn take_branch(
+        &self,
+        _machine: &str,
+        _branch: &SnapshotBranch,
+        _payload: Option<&EntrySchema>,
+    ) -> Option<String> {
+        None
+    }
+    /// docs/SCE_TEST_PROFILE.md §11.5, §12.3: `statement`, a statement of a
+    /// test component, as a call on the component's runtime context, `reason`
+    /// the lowered `reason` of a `<sce:setverdict>` that writes one. A
+    /// `<sce:start-timer>` reaches here with its duration, its timer's where it
+    /// writes none ([`crate::test_component::snapshot::lower`]). `None` for a
+    /// target whose test component has not landed, and for a duration this
+    /// target cannot hold.
+    fn test_statement(&self, _statement: &TestStatement, _reason: Option<&str>) -> Option<String> {
+        None
+    }
+    /// docs/SCE_TEST_PROFILE.md §4.6 (P6), §12.3: the value a `<send>` of a
+    /// test component carries to the test-port processor, the specific
+    /// template `message` names given `args`, its arguments as this target
+    /// reads the variables they name. `None` for a target whose test component
+    /// has not landed.
+    fn test_message(&self, _message: &TemplateRef, _args: &[String]) -> Option<String> {
+        None
+    }
+    /// The line that imports the unit of the test template named `unit`
+    /// ([`crate::test_component::TestTemplateUnit::unit`]), which a branch
+    /// matches with or a send sends. `None` for a target whose test component
+    /// has not landed.
+    fn test_template_import(&self, _unit: &str) -> Option<String> {
+        None
     }
     /// `value`, a lowered expression of type `ty` ([`InferredType::wire_param_slot`]
     /// admits the bool, string, narrow-integer and real types), as the typed
@@ -6166,6 +6220,13 @@ pub fn lower(
                 payload_events.insert(trigger);
                 transition.content_reads_payload = true;
             }
+            // docs/SCE_TEST_PROFILE.md §12.3: a branch of a test component is
+            // enabled by its `cond` and its match on the round's snapshot, and
+            // taking it runs the statement that removes what it matched before
+            // its content.
+            if let Some(branch) = transition.snapshot_branch.clone() {
+                lower_snapshot_branch(transition, &branch, schema, &ctx, &renames, &rewrites)?;
+            }
         }
         rewrites.open_payload(None);
     }
@@ -6439,6 +6500,16 @@ pub fn lower(
                 imports.insert(line);
             }
         }
+    }
+    // docs/SCE_TEST_PROFILE.md §12.3: the unit of each template a branch
+    // matches with or a send sends, whose `match` and `value` the machine calls.
+    for unit in test_template_units(model) {
+        imports.insert(target.test_template_import(&unit).ok_or_else(|| {
+            GenerateError::unsupported(format!(
+                "the test template `{unit}` a test component uses has no {lang} lowering yet \
+                 (docs/SCE_TEST_PROFILE.md §12.6)"
+            ))
+        })?);
     }
     let imports: Vec<String> = imports.into_iter().collect();
     let scratch = target
@@ -8137,6 +8208,41 @@ pub struct CppTarget;
 /// takes no `sce` prefix.
 const CPP_PRESENT: &str = "scePresent";
 
+/// How a guard or a statement of a test component's machine reaches the
+/// component's runtime context (docs/SCE_TEST_PROFILE.md §12.3): the member of
+/// the policy the component binds before the machine starts
+/// (`state_machine.jinja2`).
+const CPP_TEST_CONTEXT: &str = "this->testContext_";
+
+/// `text` as a C++ string literal.
+fn cpp_text(text: &str) -> String {
+    format!("\"{}\"", filters::escape_cpp(text.to_string()))
+}
+
+/// The namespace of the C++ unit of the test template named `unit`, from the
+/// global namespace: where its own generation put its `Value`, `match` and
+/// `value` (`forge/cpp/test_template.h.jinja2`).
+fn cpp_test_template_namespace(unit: &str) -> String {
+    let identity = crate::forge::generator::forge_import_identity(
+        unit,
+        &Language::Cpp,
+        false,
+        &crate::ForgeCompileOptions::default(),
+    );
+    format!("::{}", identity.namespace)
+}
+
+/// The enumerator of the runtime's `SCE::Test::Verdict` a document's verdict
+/// is (`sce/include/test/Verdict.h`).
+fn cpp_verdict(verdict: crate::test_component::Verdict) -> &'static str {
+    match verdict {
+        crate::test_component::Verdict::Pass => "Pass",
+        crate::test_component::Verdict::Inconclusive => "Inconclusive",
+        crate::test_component::Verdict::Fail => "Fail",
+        crate::test_component::Verdict::None => "None",
+    }
+}
+
 impl CppTarget {
     /// The first action of `actions`, or of a block nested in one, that this
     /// target has no lowering for yet.
@@ -8158,6 +8264,9 @@ impl CppTarget {
                 // (docs/adr/0005, decision 4). A literal `<content>` is the text it
                 // spells.
                 "send" => {}
+                // A test component's statements are calls on its runtime context
+                // (docs/SCE_TEST_PROFILE.md §12.3).
+                "sce_setverdict" | "sce_start_timer" | "sce_stop_timer" => {}
                 other => return Some(format!("<{other}>")),
             }
             for block in action.nested_blocks() {
@@ -9210,6 +9319,141 @@ impl StaticTarget for CppTarget {
         format!(
             "pendingPayloadTag_ == {machine}PayloadTag::{} && ({lowered})",
             filters::to_event_variant(event.to_string())
+        )
+    }
+    // The policy holds the component's runtime context ([`CPP_TEST_CONTEXT`]),
+    // which the component the runtime drives binds before the machine starts
+    // (`state_machine.jinja2`). A receive branch with a template asks the
+    // runtime for the snapshot's head as the template's type, under its record's
+    // event, and calls the template's `match` on it in place.
+    fn snapshot_match(&self, branch: &SnapshotBranch, args: &[String]) -> Option<String> {
+        Some(match branch {
+            SnapshotBranch::Receive {
+                port,
+                template: None,
+            } => format!(
+                "{CPP_TEST_CONTEXT}->snapshotOf({}) != nullptr",
+                cpp_text(port)
+            ),
+            SnapshotBranch::Receive {
+                port,
+                template: Some(template),
+            } => {
+                let unit = cpp_test_template_namespace(&template.unit);
+                let bound: String = args.iter().map(|arg| format!(", {arg}")).collect();
+                format!(
+                    "::SCE::Test::receives<{unit}::Value>(*{CPP_TEST_CONTEXT}, {}, {}, \
+                     [&](const {unit}::Value &sceMessage) {{ return {unit}::match(sceMessage{bound}); }})",
+                    cpp_text(port),
+                    cpp_text(&template.event)
+                )
+            }
+            SnapshotBranch::Timeout { timer } => {
+                format!("{CPP_TEST_CONTEXT}->timedOut({})", cpp_text(timer))
+            }
+            SnapshotBranch::Done { ptc } => format!("{CPP_TEST_CONTEXT}->done({})", cpp_text(ptc)),
+        })
+    }
+    // A message a receive branch's content reads is copied, field by field,
+    // into the member the payload channel holds its record's event in, under
+    // the tag that says the channel holds it: the schema unit's type and the
+    // machine's are two declarations of one record. An enum field is held in
+    // the machine's own type for its enum, which a value of the enum unit's is
+    // not, so such a message is refused by name.
+    fn take_branch(
+        &self,
+        machine: &str,
+        branch: &SnapshotBranch,
+        payload: Option<&EntrySchema>,
+    ) -> Option<String> {
+        Some(match (branch, payload) {
+            (
+                SnapshotBranch::Receive {
+                    port,
+                    template: Some(template),
+                },
+                Some(schema),
+            ) => {
+                if schema
+                    .fields
+                    .iter()
+                    .any(|f| matches!(f.sce_type.present_type(), SceType::Enum(_)))
+                {
+                    return None;
+                }
+                let unit = cpp_test_template_namespace(&template.unit);
+                let member = self.payload_accessor(&template.event);
+                let copies: String = schema
+                    .fields
+                    .iter()
+                    .map(|f| {
+                        format!(
+                            "    {member}.{} = sceValue.{};\n",
+                            f.id,
+                            crate::forge::generator::event_schema_field_ident(&f.id, Language::Cpp)
+                        )
+                    })
+                    .collect();
+                format!(
+                    "{{\n    const ::SCE::Test::Message sceMessage = {CPP_TEST_CONTEXT}->receive({});\n    \
+                     const auto &sceValue = ::std::any_cast<const {unit}::Value &>(sceMessage.value);\n\
+                     {copies}    pendingPayloadTag_ = {machine}PayloadTag::{};\n}}",
+                    cpp_text(port),
+                    filters::to_event_variant(template.event.clone())
+                )
+            }
+            (SnapshotBranch::Receive { port, .. }, _) => {
+                format!("{CPP_TEST_CONTEXT}->receive({});", cpp_text(port))
+            }
+            (SnapshotBranch::Timeout { timer }, _) => {
+                format!("{CPP_TEST_CONTEXT}->timeout({});", cpp_text(timer))
+            }
+            (SnapshotBranch::Done { ptc }, _) => {
+                format!("{CPP_TEST_CONTEXT}->doneTaken({});", cpp_text(ptc))
+            }
+        })
+    }
+    // A duration is whole microseconds (§3.3), the runtime's `Duration`, a
+    // signed 64-bit count: one past it has no value there.
+    fn test_statement(&self, statement: &TestStatement, reason: Option<&str>) -> Option<String> {
+        Some(match statement {
+            TestStatement::Setverdict { verdict, .. } => format!(
+                "{CPP_TEST_CONTEXT}->setverdict(::SCE::Test::Verdict::{}, {});",
+                cpp_verdict(*verdict),
+                reason.unwrap_or("::std::string()")
+            ),
+            TestStatement::StartTimer { timer, duration } => {
+                let micros =
+                    crate::forge::test_profile::duration_us(duration.as_deref()?.trim()).ok()?;
+                let micros = i64::try_from(micros).ok()?;
+                format!(
+                    "{CPP_TEST_CONTEXT}->startTimer({}, ::SCE::Test::Duration{{{micros}}});",
+                    cpp_text(timer)
+                )
+            }
+            TestStatement::StopTimer { timer } => {
+                format!("{CPP_TEST_CONTEXT}->stopTimer({});", cpp_text(timer))
+            }
+        })
+    }
+    // The specific template's `value`, which the send hands its processor as the
+    // request's value (`HostSendRequest::value`, `actions/send.jinja2`).
+    fn test_message(&self, message: &TemplateRef, args: &[String]) -> Option<String> {
+        Some(format!(
+            "{}::value({})",
+            cpp_test_template_namespace(&message.unit),
+            args.join(", ")
+        ))
+    }
+    fn test_template_import(&self, unit: &str) -> Option<String> {
+        Some(
+            crate::forge::generator::forge_import_identity(
+                unit,
+                &Language::Cpp,
+                false,
+                &crate::ForgeCompileOptions::default(),
+            )
+            .include_stmt,
         )
     }
     // The runtime's `ScriptValue`, which `DoneDataHelper::collectParams` writes
@@ -15618,6 +15862,109 @@ fn expand_computed_type(send: &Action, if_ordinal: u32) -> Action {
     chain
 }
 
+/// docs/SCE_TEST_PROFILE.md §12.3: `branch`, the branch `transition` is, as
+/// the target spells it — its match after the `cond` already lowered into
+/// [`crate::model::Transition::native_guard`], and the statement taking it
+/// ([`crate::model::Transition::native_prelude`]). `schema` is the schema of
+/// the message a receive branch takes, when the component imports its record.
+///
+/// The statement of a receive branch whose content reads the message holds the
+/// message as that content's `_event.data`, so the content runs with no check
+/// of its own that the delivery carried one: the snapshot's event carries none
+/// and the branch's message is the payload.
+fn lower_snapshot_branch(
+    transition: &mut crate::model::Transition,
+    branch: &SnapshotBranch,
+    schema: Option<&EntrySchema>,
+    ctx: &crate::forge::types::TypeCtx<'_>,
+    renames: &HashMap<&str, &str>,
+    rewrites: &Rewrites<'_>,
+) -> Result<(), GenerateError> {
+    let target = rewrites.target;
+    let lang = target.name();
+    let unspelled = |what: &str| {
+        GenerateError::unsupported(format!(
+            "{what} of a test component has no {lang} lowering yet (docs/SCE_TEST_PROFILE.md \
+             §12.6)"
+        ))
+    };
+    let args = match branch.template() {
+        Some(template) => test_template_args(&template.args, ctx, renames, rewrites)?,
+        None => Vec::new(),
+    };
+    let matched = target
+        .snapshot_match(branch, &args)
+        .ok_or_else(|| unspelled("a branch"))?;
+    transition.native_guard = if transition.native_guard.is_empty() {
+        matched
+    } else {
+        format!("({}) && ({matched})", transition.native_guard)
+    };
+    // The guard is the lowered one from here on, whatever arm a template reads
+    // a pure `In()` condition through.
+    transition.is_pure_in_predicate = false;
+    let bound = if transition.content_reads_payload {
+        Some(schema.ok_or_else(|| unspelled("a receive branch that reads a composed message"))?)
+    } else {
+        None
+    };
+    transition.native_prelude = target
+        .take_branch(rewrites.machine, branch, bound)
+        .ok_or_else(|| unspelled("taking a branch"))?;
+    if bound.is_some() {
+        transition.content_reads_payload = false;
+    }
+    Ok(())
+}
+
+/// The variables `args` names, bound in order to a test template's formal
+/// parameters (`sce:template-args`), each read as the target reads it.
+fn test_template_args(
+    args: &[String],
+    ctx: &crate::forge::types::TypeCtx<'_>,
+    renames: &HashMap<&str, &str>,
+    rewrites: &Rewrites<'_>,
+) -> Result<Vec<String>, GenerateError> {
+    let lang = rewrites.target.name();
+    args.iter()
+        .map(|arg| {
+            rewrites
+                .receiving(arg, ctx, renames, InferredType::Unknown)
+                .map(|read| read.text)
+                .map_err(|r| {
+                    GenerateError::unsupported(format!(
+                        "`{arg}` has no {lang} lowering: {}",
+                        r.error
+                    ))
+                })
+        })
+        .collect()
+}
+
+/// The unit of every test template a branch of `model` matches with or a send
+/// of it sends, once the document is lowered for generation
+/// ([`crate::test_component::snapshot::lower`]).
+fn test_template_units(model: &SCXMLModel) -> BTreeSet<String> {
+    let mut units = BTreeSet::new();
+    for state in model.states.values() {
+        for transition in &state.transitions {
+            if let Some(template) = transition
+                .snapshot_branch
+                .as_ref()
+                .and_then(SnapshotBranch::template)
+            {
+                units.insert(template.unit.clone());
+            }
+        }
+    }
+    crate::host_processor_analyzer::walk_model_actions(model, &mut |_, action| {
+        if let Some(message) = &action.test_message {
+            units.insert(message.unit.clone());
+        }
+    });
+    units
+}
+
 /// Lower every action of `actions` in place. `true` when any expression
 /// lowered reads the triggering event's payload.
 ///
@@ -15708,6 +16055,18 @@ fn lower_action(
             }
             None => *action = expand_computed_type(action, rewrites.take_if_ordinal()),
         }
+    }
+    // docs/SCE_TEST_PROFILE.md §12.3: a send of a test component carries the
+    // value of its specific template, given the variables bound to the
+    // template's parameters, read when the send runs (P6).
+    if let Some(message) = action.test_message.clone() {
+        let args = test_template_args(&message.args, ctx, renames, rewrites)?;
+        action.native_message = target.test_message(&message, &args).ok_or_else(|| {
+            GenerateError::unsupported(format!(
+                "a <send> of a test component has no {lang} lowering yet \
+                 (docs/SCE_TEST_PROFILE.md §12.6)"
+            ))
+        })?;
     }
     // Each statement lands whole in `native_code`, and each condition in
     // `native_cond` — the slots every backend's action dispatcher reads before
@@ -16682,6 +17041,55 @@ fn lower_action(
                     action.content_text_spelling.as_ref(),
                     &action.native_content,
                 );
+            }
+        }
+        // docs/SCE_TEST_PROFILE.md §11.5, §12.3: a statement of a test
+        // component is a call on the component's runtime context, in its place
+        // among the other actions of its block (P4). A verdict's `reason` is an
+        // expression of type string, read where the statement runs; one that
+        // fails ends the block as any statement that fails does (§scxml-4.9).
+        "sce_setverdict" | "sce_start_timer" | "sce_stop_timer" => {
+            let unspelled = || {
+                GenerateError::unsupported(format!(
+                    "the statement <{}> of a test component has no {lang} lowering yet \
+                     (docs/SCE_TEST_PROFILE.md §12.6)",
+                    action.action_type
+                ))
+            };
+            let Some(test_statement) = action.test_statement.clone() else {
+                return Err(unspelled());
+            };
+            match &test_statement {
+                TestStatement::Setverdict {
+                    reason: Some(reason),
+                    ..
+                } => {
+                    reads_payload = reads(reason);
+                    let value = lower(reason.as_str(), InferredType::Str)?;
+                    rewrites.note(reason, action.spellings.get("reason"), &value.text);
+                    if target
+                        .test_statement(&test_statement, Some(&value.text))
+                        .is_none()
+                    {
+                        return Err(unspelled());
+                    }
+                    (action.native_code, action.native_fails) = statement(
+                        &value,
+                        InferredType::Str,
+                        &|v| {
+                            target
+                                .test_statement(&test_statement, Some(v))
+                                .unwrap_or_default()
+                        },
+                        "<sce:setverdict>".to_string(),
+                    );
+                }
+                _ => {
+                    action.native_code = target
+                        .test_statement(&test_statement, None)
+                        .ok_or_else(unspelled)?;
+                    action.native_fails = false;
+                }
             }
         }
         // The id of the send a `<cancel>` removes is the string its expression

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §4.9, §11.5: a parallel test component that sets
+     its verdict inconclusive and waits for any message on a port nothing
+     sends to, so it runs until it is removed. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="idler"
+       datamodel="sce-static" initial="idling">
+  <sce:import kind="test-port-type" src="exchange_port.scxml" as="ExchangePort"/>
+  <sce:test-port id="peer" type="ExchangePort"/>
+  <state id="idling">
+    <onentry>
+      <sce:setverdict value="inconclusive"/>
+    </onentry>
+    <transition sce:receive="peer" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>

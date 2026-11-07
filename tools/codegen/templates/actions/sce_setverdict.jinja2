@@ -1,0 +1,11 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# docs/SCE_TEST_PROFILE.md §5.1 (P12), §12.3: a test component's verdict, a
+   call on the component's runtime context. The call, with the `reason` the
+   document writes read where the statement runs, is lowered ahead of the
+   template by `forge::static_lowering` and stored on `action.native_code`. A
+   reason whose value fails sets no verdict and ends its block as any element
+   that raised does (W3C SCXML 4.9). #}
+// docs/SCE_TEST_PROFILE.md §5.1: <sce:setverdict>
+{% include 'actions/_native_statement.jinja2' %}

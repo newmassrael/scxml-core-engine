@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §6.2, §11.4: the specific request for the job
+     its formal parameter names. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="request_of"
+       sce:type="record:JobRequest">
+  <sce:import kind="event-schema" src="job_request.scxml" as="JobRequest"/>
+  <datamodel>
+    <data id="job" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+  <sce:record-match>
+    <sce:specific field="job" param="job"/>
+  </sce:record-match>
+</scxml>

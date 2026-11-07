@@ -787,6 +787,12 @@ engine.raise(typename Engine::EventWithMetadata(
     // delivery of this send would carry.
     hostRequest.params = params;
     hostRequest.eventData = eventData;
+{% if action.native_message %}
+    // docs/SCE_TEST_PROFILE.md §12.3: a test component's message is the value
+    // of its specific template, handed to the test-port processor as a value
+    // and never as an encoding (docs/adr/0091, C2).
+    hostRequest.value = {{ action.native_message }};
+{% endif %}
     // SCE_MESH.md §mesh-10.7: the invokeid of the event being processed now,
     // carried back out as a W3C child's send to its parent carries it
     // (§scxml-6.4.1) — the value the non-host Mesh route already reads.

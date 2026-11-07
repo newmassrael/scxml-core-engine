@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §11.3: the port of the side that answers:
+     requests in, replies out. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-port-type" name="serving_port">
+  <sce:import kind="event-schema" src="job_request.scxml" as="JobRequest"/>
+  <sce:import kind="event-schema" src="job_reply.scxml" as="JobReply"/>
+  <sce:message type="JobRequest" direction="in"/>
+  <sce:message type="JobReply" direction="out"/>
+</scxml>

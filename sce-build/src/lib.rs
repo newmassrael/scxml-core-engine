@@ -2101,9 +2101,19 @@ pub fn emit_model_artifacts(
     options: &ModelEmitOptions<'_>,
 ) -> Result<generator::GeneratedOutput, CompileError> {
     // docs/SCE_TEST_PROFILE.md §11.9: a `test-component` is read and checked
-    // on every backend, and no backend generates one until the profile's
-    // runtime lands; every route that writes a machine comes through here.
-    if model.test_component.is_some() {
+    // on every backend, and a backend generates one only once the profile's
+    // runtime lands there (`codegen_matrix::TEST_COMPONENT_BACKENDS`); every
+    // route that writes a machine comes through here. Where it has landed, the
+    // machine is the statechart's, lowered through the doors of §12.3 once for
+    // every backend (`test_component::snapshot::lower`).
+    let lowered_component;
+    let model = if model.test_component.is_none() {
+        model
+    } else if forge::codegen_matrix::TEST_COMPONENT_BACKENDS.contains(&language) {
+        lowered_component = test_component::snapshot::lower(model, language)
+            .map_err(|e| locate_codegen_error(e, source_name, model))?;
+        &lowered_component
+    } else {
         return Err(forge::error::Located::new(
             forge::test_profile::document_not_generated(
                 model.kind(),
@@ -2115,7 +2125,7 @@ pub fn emit_model_artifacts(
             model.source_location.as_ref().and_then(|at| at.line),
             model.source_location.as_ref().and_then(|at| at.col),
         ));
-    }
+    };
     // ADR 0057 §6: a document that carries feature conditions is generated one
     // variant at a time, except by a backend that keeps the variability in
     // its output (§9), given the variants. The parse of a selection

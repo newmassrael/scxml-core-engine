@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §4.9 (P9): a main test component that creates a
+     parallel test component and leaves the state that invoked it when its
+     patience runs out, which removes the PTC while it still runs; it passes
+     after lingering a while longer. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="keeper"
+       datamodel="sce-static" initial="watching">
+  <sce:test-timer id="patience" duration="10ms"/>
+  <sce:test-timer id="linger" duration="5ms"/>
+  <state id="watching">
+    <invoke type="http://sce.dev/ext/test-component" src="idler.scxml" id="idler"/>
+    <onentry>
+      <sce:start-timer timer="patience"/>
+    </onentry>
+    <transition sce:timeout="patience" target="lingering"/>
+  </state>
+  <state id="lingering">
+    <onentry>
+      <sce:start-timer timer="linger"/>
+    </onentry>
+    <transition sce:timeout="linger" target="passed">
+      <sce:setverdict value="pass"/>
+    </transition>
+  </state>
+  <final id="passed"/>
+</scxml>

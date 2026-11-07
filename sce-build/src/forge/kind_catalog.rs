@@ -889,7 +889,10 @@ pub const fn guide(kind: ForgeKind) -> KindGuide {
                  sce:test-template=\"<alias>\"> sends a specific template",
                 "a <data sce:module-parameter=\"true\"> has no expr: its value is the suite's \
                  module parameter of the same id",
-                "no backend generates it yet, so generation refuses it by name",
+                "C++ generates it: its statechart machine, each branch a transition on the \
+                 round's snapshot, and beside it the component the profile's runtime drives; \
+                 one that declares a module parameter waits for the suite's tables, and every \
+                 other backend refuses it by name",
             ],
             example: Example::Document(include_str!("../../kind-examples/test-component.scxml")),
         },

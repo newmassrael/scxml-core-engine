@@ -3840,6 +3840,12 @@ fn render_cpp(
         static_imports => &static_lowering.imports,
         static_format2_shape => format2_keys(&static_lowering),
         static_saved_shape => &static_lowering.saved_shape,
+        // docs/SCE_TEST_PROFILE.md §12.3: the doors a test component's machine
+        // reaches its runtime through, which the component the runtime drives
+        // registers and delivers the snapshot by.
+        test_port_processor => crate::test_component::TEST_PORT_PROCESSOR,
+        test_component_invoke_type => crate::test_component::TEST_COMPONENT_INVOKE_TYPE,
+        snapshot_event => crate::test_component::SNAPSHOT_EVENT,
     };
     let inl_ctx = minijinja::context! {
         model => &model_val,

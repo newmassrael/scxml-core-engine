@@ -64,6 +64,14 @@
 {% endif %}
 {% endfor %}
 #include "static/StaticExecutionEngine.h"
+{% if model.test_component %}
+// docs/SCE_TEST_PROFILE.md §12.2, §12.3: the runtime that drives a test
+// component, and the doors its machine reaches it through.
+#include <optional>
+#include <vector>
+#include "core/HostProcessor.h"
+#include "test/TestCaseRun.h"
+{% endif %}
 {% if holds_session_id %}
 // docs/adr/0045: the id a session draws when its host gives none, and what an id may be.
 #include "saved/SessionId.h"
@@ -94,10 +102,13 @@
    text, which this header-only helper spells. #}
 #include "common/Latin1Bytes.h"
 {% endif %}
+{% endif %}
+{# The unit of each document the lowering names, whether or not the machine
+   holds a variable: a test component with none still calls the templates its
+   branches match with (docs/SCE_TEST_PROFILE.md §12.3). #}
 {% for line in static_imports %}
 {{ line }}
 {% endfor %}
-{% endif %}
 {# §scxml-3.2: `constexprStrEq` backs the compile-time round trip between
    `getStateName` and `getStateFromName` in utility_methods.jinja2, and
    `validateConfiguration` is what `enterAt` refuses with. Unconditional
@@ -558,6 +569,14 @@ struct {{ model.name }}Policy {
     {{ ctx.cpp_type if ctx.cpp_type else (ctx.id | capitalize + 'T') }}* {{ ctx.id }}_ = nullptr;
     {% endfor %}
     {% endif %}
+{% if model.test_component %}
+
+    // docs/SCE_TEST_PROFILE.md §12.3: the runtime context of the test
+    // component this machine is, which its branches' guards read the round's
+    // snapshot through and its statements call. Bound by the component the
+    // runtime drives ({{ model.name }}Component) before the machine starts.
+    ::SCE::Test::ComponentContext* testContext_ = nullptr;
+{% endif %}
 
     {# W3C SCXML 5.3: the datamodel has ONE home, and it is not this class.
 
@@ -1221,6 +1240,16 @@ public:
         this->policy_.setBasicHttpAccessUri(::std::move(accessUri));
 {% endif %}
     }
+{% if model.test_component %}
+
+    /// docs/SCE_TEST_PROFILE.md §12.3: the runtime context of the test
+    /// component this machine is. Bound before `initialize()`, since the
+    /// initial state's `<onentry>` may already start a timer or set a verdict;
+    /// it outlives the machine.
+    void bindTestContext(::SCE::Test::ComponentContext& context) {
+        this->policy_.testContext_ = &context;
+    }
+{% endif %}
 {% if static_fields %}
 {% for field in static_published %}
 {% if field.reader %}
@@ -1590,6 +1619,66 @@ static_assert(::SCE::Core::ParallelStatePolicyTrait<{{ model.name }}Policy>::val
 static_assert({{ model.name }}Policy::getStateFromName({{ model.name }}Policy::getStateName({{ model.name }}Policy::State::{{ state_id | capitalize }})) == {{ model.name }}Policy::State::{{ state_id | capitalize }},
     "getStateName / getStateFromName disagree about `{{ state_id }}`");
 {% endfor %}
+{% endif %}
+{% if model.test_component %}
+
+/**
+ * @brief The test component `{{ model.name }}` as the profile's runtime drives it
+ *        (docs/SCE_TEST_PROFILE.md §12.3)
+ *
+ * It owns the machine above, unchanged, and reaches it only through the doors
+ * the engine already has: the machine's sends on a port leave through the
+ * test-port processor and its PTCs through the test-component invoker, both
+ * registered here on the component's runtime context (docs/adr/0084), and each
+ * round's snapshot is the one external event every branch is a transition on.
+ * The runtime never reports a PTC's completion to the engine: a done branch
+ * reads it from the snapshot, so the engine cancels every PTC it started when
+ * the invoking state is exited, which is P9's kill. One thread; the engine's
+ * clock and scheduler take no part, since a component sends nothing delayed.
+ */
+class {{ model.name }}Component final : public ::SCE::Test::ComponentMachine {
+public:
+    void start(::SCE::Test::ComponentContext& context) override {
+        machine_.bindTestContext(context);
+        // P6: a send on a port is appended to the queue of the port it is
+        // connected to, or handed to the system adapter where it is mapped.
+        machine_.registerEventProcessor("{{ test_port_processor | escape_cpp }}",
+                                        [&context](const ::SCE::HostSendRequest& request) {
+                                            context.send(request.target,
+                                                         ::SCE::Test::Message{request.eventName, request.value});
+                                            return ::std::vector<::SCE::HostSendResponse>{};
+                                        });
+        // P9: the start of a PTC's invocation creates and starts it, and its
+        // cancel removes it, whether it is still running or already done.
+        machine_.registerInvoker(
+            "{{ test_component_invoke_type | escape_cpp }}",
+            [&context](const ::SCE::HostInvokeEvent& event) -> ::std::optional<::SCE::HostInvokeResponse> {
+                if (event.start.has_value()) {
+                    context.create(event.start->invokeId);
+                }
+                if (event.cancel.has_value()) {
+                    context.kill(event.cancel->invokeId);
+                }
+                return ::std::nullopt;
+            });
+        machine_.initialize();
+    }
+
+    // §3.2 step 3: the round's snapshot, on which the machine takes the first
+    // branch whose guard holds (P3) and completes its macrostep (P4), or takes
+    // none and discards the event (§7).
+    void deliverSnapshot() override {
+        machine_.processEvent(Event::{{ snapshot_event | to_cpp_event_variant }});
+    }
+
+    // P10: the machine entered a top-level `<final>`.
+    bool terminated() const override {
+        return machine_.isInFinalState();
+    }
+
+private:
+    {{ model.name }}{% if _has_sm_tpl %}<>{% endif %} machine_;
+};
 {% endif %}
 
 } // namespace SCE::Generated::{{ cpp_ns_prefix }}{{ model.name }}{% if model.partition_self_name %}::P_{{ model.partition_self_name }}{% endif %}

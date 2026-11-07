@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §11.5, §12.3: a main test component that asks
+     the system under test for job 7 and waits a second for a reply of
+     success. The reply it takes passes only if it answers job 7, which the
+     component reads from the message; no reply that matches in time fails. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="asker"
+       datamodel="sce-static" initial="asking">
+  <sce:import kind="test-port-type" src="exchange_port.scxml" as="ExchangePort"/>
+  <sce:import kind="test-template" src="request_of.scxml" as="RequestOf"/>
+  <sce:import kind="test-template" src="reply_ok.scxml" as="ReplyOk"/>
+  <sce:import kind="event-schema" src="job_reply.scxml" as="JobReply"/>
+  <sce:test-port id="sut" type="ExchangePort"/>
+  <sce:test-timer id="reply" duration="1s"/>
+  <datamodel>
+    <data id="job" sce:type="uint32" expr="7"/>
+    <data id="answered" sce:type="uint32" expr="0"/>
+  </datamodel>
+  <state id="asking">
+    <onentry>
+      <send type="http://sce.dev/ext/test-port" target="sut"
+            sce:test-template="RequestOf" sce:template-args="job"/>
+      <sce:start-timer timer="reply"/>
+    </onentry>
+    <transition sce:receive="sut" sce:test-template="ReplyOk" target="checking">
+      <sce:stop-timer timer="reply"/>
+      <assign location="answered" expr="_event.data.job"/>
+    </transition>
+    <transition sce:timeout="reply" target="failed">
+      <sce:setverdict value="fail" reason="'no matching reply in time'"/>
+    </transition>
+  </state>
+  <state id="checking">
+    <transition cond="answered === job" target="passed">
+      <sce:setverdict value="pass"/>
+    </transition>
+    <transition target="failed">
+      <sce:setverdict value="fail" reason="'the reply answers another job'"/>
+    </transition>
+  </state>
+  <final id="passed"/>
+  <final id="failed"/>
+</scxml>

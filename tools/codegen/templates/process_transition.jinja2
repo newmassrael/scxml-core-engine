@@ -113,7 +113,9 @@ public:
         case State::{{ state_id | capitalize }}:
 {% for trans in state.transitions %}
             if ({{ event_match(trans) }}) {
-{% if trans.cond %}
+{# A guard lowered with no `cond` written is a branch of a test component's
+   match on the round's snapshot (docs/SCE_TEST_PROFILE.md §12.3). #}
+{% if trans.cond or trans.native_guard %}
 {% if model.needs_script_engine and not trans.is_cpp_condition and not trans.is_pure_in_predicate and not trans.native_guard %}
                 this->ensureScriptEngine();
                 [[maybe_unused]] auto& scriptEngine = getScriptEngine();
@@ -125,7 +127,7 @@ public:
                     AOT_DEBUG("AOT firstEnabledTransition: {{ state_id }} transition {{ trans.transition_index }} is enabled");
                     return TransitionInfo{State::{{ state_id | capitalize }},
                                           { {%- for t in trans.targets %}{{ et.entry_target(t, model.history_states) }}{{ ", " if not loop.last }}{% endfor -%} },
-                                          {{ trans.transition_index }}, {{ 'true' if trans.actions else 'false' }},
+                                          {{ trans.transition_index }}, {{ 'true' if (trans.actions or trans.native_prelude) else 'false' }},
                                           {{ 'true' if trans.type == 'internal' else 'false' }}};
                 }
             }
@@ -147,11 +149,11 @@ public:
 {% if model.has_transition_actions %}
         switch (source) {
 {% for state_id, state in model.states | dictsort %}
-{% if state.transitions | selectattr('actions') | list %}
+{% if (state.transitions | selectattr('actions') | list) or (state.transitions | selectattr('native_prelude') | list) %}
         case State::{{ state_id | capitalize }}:
             switch (transitionIndex) {
 {% for trans in state.transitions %}
-{% if trans.actions %}
+{% if trans.actions or trans.native_prelude %}
             case {{ trans.transition_index }}:
 {{ annot.annotation_block(trans, "cpp", "                ") }}{% if trans.source_location %}
                 {{ sce_map.source_marker(trans.source_location, "cpp", stmt_level=true, symbol_state=trans.symbol_state_path, symbol_artifact=trans.symbol_artifact) | trim }}
@@ -161,6 +163,14 @@ public:
 {% if model.needs_script_engine %}
                     this->ensureScriptEngine();
                     [[maybe_unused]] auto& scriptEngine = getScriptEngine();
+{% endif %}
+{#  docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3: taking a branch of a test
+    component removes what it matched on the round's snapshot before its
+    content runs, and a message the content reads is its `_event.data` from
+    here on (`Transition::native_prelude`). #}
+{% if trans.native_prelude %}
+                    // docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
+{{ trans.native_prelude }}
 {% endif %}
 {#  SCE Accepted Subset §2.15: content that reads the event's typed payload
     cannot run for a delivery that did not carry one, and an error stops the

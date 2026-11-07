@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §11.4: a reply of success, for any job. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="reply_ok"
+       sce:type="record:JobReply">
+  <sce:import kind="event-schema" src="job_reply.scxml" as="JobReply"/>
+  <sce:record-match>
+    <sce:any-value field="job"/>
+    <sce:specific field="code" value="0"/>
+  </sce:record-match>
+</scxml>

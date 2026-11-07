@@ -310,6 +310,15 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
     (Language::Python, "forge kind `test-template`", Why::NotYet(TEST_TEMPLATE_NOT_YET)),
     (Language::C11, "forge kind `test-template`", Why::NotYet(TEST_TEMPLATE_NOT_YET)),
     (Language::Swift, "forge kind `test-template`", Why::NotYet(TEST_TEMPLATE_NOT_YET)),
+    // The test component (docs/SCE_TEST_PROFILE.md §12.6,
+    // `codegen_matrix::TEST_COMPONENT_BACKENDS`): its machine is driven by the
+    // profile's runtime, which lands in one backend first, C++.
+    (Language::Rust, "forge kind `test-component`", Why::NotYet(TEST_COMPONENT_NOT_YET)),
+    (Language::Kotlin, "forge kind `test-component`", Why::NotYet(TEST_COMPONENT_NOT_YET)),
+    (Language::Go, "forge kind `test-component`", Why::NotYet(TEST_COMPONENT_NOT_YET)),
+    (Language::Python, "forge kind `test-component`", Why::NotYet(TEST_COMPONENT_NOT_YET)),
+    (Language::C11, "forge kind `test-component`", Why::NotYet(TEST_COMPONENT_NOT_YET)),
+    (Language::Swift, "forge kind `test-component`", Why::NotYet(TEST_COMPONENT_NOT_YET)),
     // The CLI routes (cli_language.rs, `LanguageRoute::exclusion_reason`).
     (
         Language::C11,
@@ -487,6 +496,12 @@ const UNION_NOT_YET: &str =
 const TEST_TEMPLATE_NOT_YET: &str =
     "the test profile's runtime lands in C++ first and in the other backends one at a time: \
      until it lands here the dispatch refuses a test template by name \
+     (`test_profile::document_not_generated`)";
+
+/// A test component is generated one backend at a time (docs/SCE_TEST_PROFILE.md §12.1, §12.6).
+const TEST_COMPONENT_NOT_YET: &str =
+    "the test profile's runtime lands in C++ first and in the other backends one at a time: \
+     until it lands here the route that writes a machine refuses a test component by name \
      (`test_profile::document_not_generated`)";
 
 /// Swift writes a statechart in part, so what reads a whole one does not exist for it.

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §4.9, §11.5, §12.3: a main test component that
+     creates a parallel test component connected to it, answers the request
+     the PTC sends with a reply of success for the same job, and passes once
+     the PTC is done; leaving the state that invoked it removes the PTC. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="coordinator"
+       datamodel="sce-static" initial="working">
+  <sce:import kind="test-port-type" src="serving_port.scxml" as="ServingPort"/>
+  <sce:import kind="test-template" src="any_request.scxml" as="AnyRequest"/>
+  <sce:import kind="test-template" src="reply_of.scxml" as="ReplyOf"/>
+  <sce:import kind="event-schema" src="job_request.scxml" as="JobRequest"/>
+  <sce:test-port id="peer" type="ServingPort"/>
+  <datamodel>
+    <data id="job" sce:type="uint32" expr="0"/>
+    <data id="ok" sce:type="uint32" expr="0"/>
+  </datamodel>
+  <state id="working" initial="serving">
+    <invoke type="http://sce.dev/ext/test-component" src="answerer.scxml" id="answerer"/>
+    <transition event="done.invoke.answerer" target="passed">
+      <sce:setverdict value="pass"/>
+    </transition>
+    <state id="serving">
+      <transition sce:receive="peer" sce:test-template="AnyRequest" target="served">
+        <assign location="job" expr="_event.data.job"/>
+        <send type="http://sce.dev/ext/test-port" target="peer"
+              sce:test-template="ReplyOf" sce:template-args="job ok"/>
+      </transition>
+    </state>
+    <state id="served"/>
+  </state>
+  <final id="passed"/>
+</scxml>

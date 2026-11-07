@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §12.3: the reply to a job request, naming the
+     job it answers and a code, 0 for success. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="job_reply"
+       sce:event-name="job.reply">
+  <datamodel>
+    <data id="job" sce:type="uint32" sce:direction="in"/>
+    <data id="code" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+</scxml>
