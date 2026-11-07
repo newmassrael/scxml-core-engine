@@ -116,7 +116,7 @@ fn sender(data: &str, params: &str) -> String {
     <data id="f_grid" sce:type="list&lt;list&lt;uint8&gt;[2]&gt;[2]"/>
     <data id="f_levels" sce:type="list&lt;enum:SignalLevel&gt;[2]"/>
     <data id="f_maybe" sce:type="list&lt;optional&lt;uint16&gt;&gt;[2]"/>
-    <data id="f_spare" sce:type="optional&lt;list&lt;uint8&gt;[2]&gt;"/>
+    <data id="f_spare" sce:type="optional&lt;list&lt;uint8&gt;[2]&gt;" expr="null"/>
     {data}
   </datamodel>
   <state id="idle">
