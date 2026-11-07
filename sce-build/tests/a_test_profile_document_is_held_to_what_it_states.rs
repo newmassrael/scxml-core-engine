@@ -581,13 +581,7 @@ fn every_refusal_fixture_is_judged() {
                 .iter()
                 .map(|(name, _, _)| (*name).to_string()),
         )
-        .chain(
-            [
-                "refused_component_datamodel.scxml",
-                "refused_statechart_receive.scxml",
-            ]
-            .map(str::to_string),
-        )
+        .chain(["refused_component_datamodel.scxml"].map(str::to_string))
         .collect();
     judged.sort();
     assert_eq!(on_disk, judged);
@@ -1068,12 +1062,34 @@ fn a_receive_branch_reads_the_message_as_its_templates_record() {
 }
 
 /// In a statechart that is not a test component nothing reads the profile's
-/// attributes, so each is refused as unread.
+/// attributes, so each is refused as unread, on the row that holds it.
+///
+/// The document is written here, not committed as a fixture: the tree
+/// commits no document carrying an `sce:` attribute nothing reads
+/// (`an_sce_attribute_nothing_reads_is_refused_not_ignored`).
 #[test]
 fn a_statechart_that_is_no_test_component_does_not_read_a_branch() {
-    let err = statechart("refused_statechart_receive.scxml").expect_err("refused");
-    let (code, _, _) = record(&err);
-    assert_eq!(code, DiagnosticCode::ValidationSceAttributeUnread.as_str());
+    let text = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="statechart" name="no_test_component"
+       datamodel="null" initial="waiting">
+  <state id="waiting">
+    <transition event="go" sce:receive="sut" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>
+"#;
+    let err = SCXMLParser::new()
+        .parse_string(text, "no_test_component")
+        .expect_err("refused");
+    let (code, _, line) = record(&err);
+    assert_eq!(
+        (code, line),
+        (
+            DiagnosticCode::ValidationSceAttributeUnread.as_str(),
+            Some(6)
+        )
+    );
 }
 
 /// The pseudocode page of a test component says what its profile declares,
