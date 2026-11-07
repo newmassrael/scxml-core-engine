@@ -1,0 +1,11 @@
+seq = 1
+id = "954b19c50ef5"
+
+[submit]
+commit = "ede00c7326c465720161b2653f0620188717e82d"
+base = "688ae99266404de38697db8e78651fa2bea21ae4"
+machine = "coin-Legion-Pro-5-16IRX9"
+session = "50b0e8b6-c0e0-4abe-893f-bd3a87a37221"
+worktree = "/home/coin/scxml-core-engine/.claude/worktrees/agent-ac19d76a9ddb79bec"
+branch = "agent-ac19d76a9ddb79bec"
+at = 1794045189
