@@ -21,7 +21,7 @@ use super::test_tables::{
     configuration_rows, execute_rows, module_parameter_defaults, selection_body,
     test_case_configuration, EndpointRow,
 };
-use super::test_template_walk::integer_literal;
+use super::test_template_walk::{hex_octets, integer_literal};
 use super::*;
 use crate::forge::value_type::{TypeOf, ValueType};
 use crate::generator::Language;
@@ -231,17 +231,9 @@ fn saved_default(ty: &ValueType, value: &str) -> Option<String> {
             owned(value)
         )),
         TypeOf::Bytes { .. } => {
-            let hex = value.trim();
-            if !hex.len().is_multiple_of(2) || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
-                return None;
-            }
-            let octets: String = hex
-                .as_bytes()
-                .chunks(2)
-                .map(|pair| {
-                    let pair: String = pair.iter().map(|b| char::from(*b)).collect();
-                    format!("\\x{}", pair.to_ascii_lowercase())
-                })
+            let octets: String = hex_octets(value)?
+                .into_iter()
+                .map(|pair| format!("\\x{pair}"))
                 .collect();
             Some(format!(
                 "::sce_rust_runtime::saved_state::bytes_to_saved(b\"{octets}\")"

@@ -31,8 +31,8 @@
 //! inside a record, a list or a union is compared whole.
 
 use super::test_template_walk::{
-    negate, CaseTest, Held, JoinSpelling, Op, Position, Stands, TemplateFunction, TemplateSpelling,
-    TemplateWalk, Use,
+    hex_octets, negate, CaseTest, Held, JoinSpelling, Op, Position, Stands, TemplateFunction,
+    TemplateSpelling, TemplateWalk, Use,
 };
 use super::*;
 use crate::forge::schema_unit_type::{unit_type, C11Declarations, UnitNames};
@@ -184,17 +184,9 @@ pub(super) fn kotlin_integer_literal(scalar: &SceType, text: &str) -> Option<Str
 /// default a suite gives a module parameter of `bytes[N]` is written by it too
 /// (`kotlin_test_tables`).
 pub(super) fn kotlin_bytes_literal(text: &str) -> Option<String> {
-    let hex = text.trim();
-    if !hex.len().is_multiple_of(2) || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return None;
-    }
-    let octets: Vec<String> = hex
-        .as_bytes()
-        .chunks(2)
-        .map(|pair| {
-            let pair: String = pair.iter().map(|b| char::from(*b)).collect();
-            format!("0x{}.toByte()", pair.to_ascii_lowercase())
-        })
+    let octets: Vec<String> = hex_octets(text)?
+        .into_iter()
+        .map(|pair| format!("0x{pair}.toByte()"))
         .collect();
     Some(format!("byteArrayOf({})", octets.join(", ")))
 }
@@ -483,7 +475,7 @@ impl TemplateSpelling for KotlinSpelling {
         )
     }
 
-    fn absent(&self) -> String {
+    fn absent(&self, _at: &Position<'_, KotlinAt>) -> String {
         "null".to_string()
     }
 

@@ -27,8 +27,8 @@
 //! join.
 
 use super::test_template_walk::{
-    integer_literal, negate, CaseTest, Held, JoinSpelling, Op, Position, Stands, TemplateFunction,
-    TemplateSpelling, TemplateWalk, Use,
+    hex_octets, integer_literal, negate, CaseTest, Held, JoinSpelling, Op, Position, Stands,
+    TemplateFunction, TemplateSpelling, TemplateWalk, Use,
 };
 use super::*;
 use crate::forge::schema_unit_type::{unit_type, C11Declarations, UnitNames};
@@ -432,17 +432,10 @@ impl TemplateSpelling for RustSpelling {
                 })
             }
             TypeOf::Bytes { max } => {
-                let hex = text.trim();
-                if !hex.len().is_multiple_of(2) || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
-                    return Err(refused());
-                }
-                let octets: String = hex
-                    .as_bytes()
-                    .chunks(2)
-                    .map(|pair| {
-                        let pair: String = pair.iter().map(|b| char::from(*b)).collect();
-                        format!("\\x{}", pair.to_ascii_lowercase())
-                    })
+                let octets: String = hex_octets(text)
+                    .ok_or_else(refused)?
+                    .into_iter()
+                    .map(|pair| format!("\\x{pair}"))
                     .collect();
                 let literal = format!("b\"{octets}\"");
                 Ok(match purpose {
@@ -478,7 +471,7 @@ impl TemplateSpelling for RustSpelling {
         )
     }
 
-    fn absent(&self) -> String {
+    fn absent(&self, _at: &Position<'_, RustAt>) -> String {
         "None".to_string()
     }
 

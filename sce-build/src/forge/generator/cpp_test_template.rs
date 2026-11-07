@@ -316,7 +316,7 @@ impl TemplateSpelling for CppSpelling {
         format!("{}::{function}({})", import.namespace, arguments.join(", "))
     }
 
-    fn absent(&self) -> String {
+    fn absent(&self, _at: &Position<'_, CppAt>) -> String {
         "std::nullopt".to_string()
     }
 

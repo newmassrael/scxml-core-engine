@@ -46,6 +46,28 @@ pub(super) fn integer_literal(lang: Language, text: &str) -> Option<String> {
     )
 }
 
+/// The octets a byte-string literal of the profile writes in hex, two hex
+/// digits an octet, each pair in lower case, in order; `None` for a literal
+/// that is no hex. A template's literal and a suite's module parameter default
+/// of `bytes[N]` are read by it, and each backend writes the pairs as its
+/// language writes an octet.
+pub(super) fn hex_octets(text: &str) -> Option<Vec<String>> {
+    let hex = text.trim();
+    if !hex.len().is_multiple_of(2) || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    Some(
+        hex.as_bytes()
+            .chunks(2)
+            .map(|pair| {
+                pair.iter()
+                    .map(|b| char::from(b.to_ascii_lowercase()))
+                    .collect::<String>()
+            })
+            .collect(),
+    )
+}
+
 /// What a value is spelled for: a test that compares it with the value at a
 /// position, or a value the template sends.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -329,8 +351,9 @@ pub(super) trait TemplateSpelling {
         args: &[String],
     ) -> String;
 
-    /// An absent optional value.
-    fn absent(&self) -> String;
+    /// The absent value of the optional position `at`: a backend whose absent
+    /// value names its type reads the type there.
+    fn absent(&self, at: &Position<'_, Self::At>) -> String;
     /// `value`, a value of the present type of the optional position `at`, as
     /// that position holds it.
     fn present_value(&self, at: &Position<'_, Self::At>, value: String) -> String;
@@ -1007,7 +1030,7 @@ impl<B: TemplateSpelling> TemplateWalk<'_, B> {
     ) -> Result<String, ForgeError> {
         let present = self.present(at);
         let (built, of_present) = match &m.form {
-            TestMatcherForm::Omit => return Ok(self.spelling.absent()),
+            TestMatcherForm::Omit => return Ok(self.spelling.absent(at)),
             TestMatcherForm::Specific {
                 value: TestValue::Param(name),
             } => {
