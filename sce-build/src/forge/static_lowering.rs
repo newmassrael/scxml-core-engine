@@ -2807,8 +2807,12 @@ impl StaticTarget for KotlinTarget {
     // One spelling of a record's type, whether a variable or a composed value
     // holds it.
     fn record_type(&self, machine: &str, alias: &str) -> String {
-        use crate::forge::composed_lowering::{ComposedSpelling, KotlinComposed};
-        KotlinComposed { machine }.record_type(alias)
+        use crate::forge::composed_lowering::{ComposedSpelling, KotlinCarrier, KotlinComposed};
+        KotlinComposed {
+            machine,
+            carrier: KotlinCarrier::Json,
+        }
+        .record_type(alias)
     }
     // The runtime's `EventPayload.Value` reads each constructor of a composed
     // payload, and its writers write the JSON the inject seam carries
@@ -2819,6 +2823,19 @@ impl StaticTarget for KotlinTarget {
     ) -> Option<Box<dyn crate::forge::composed_lowering::ComposedSpelling + 'a>> {
         Some(Box::new(crate::forge::composed_lowering::KotlinComposed {
             machine,
+            carrier: crate::forge::composed_lowering::KotlinCarrier::Json,
+        }))
+    }
+    // The walks of `composed_spelling`, each writer writing the value every
+    // param of a `<send>` is held in (`wire_value`) until the engine's
+    // `valueToJson` writes them as one JSON object (docs/adr/0086, section 5.3).
+    fn composed_send_spelling<'a>(
+        &self,
+        machine: &'a str,
+    ) -> Option<Box<dyn crate::forge::composed_lowering::ComposedSpelling + 'a>> {
+        Some(Box::new(crate::forge::composed_lowering::KotlinComposed {
+            machine,
+            carrier: crate::forge::composed_lowering::KotlinCarrier::Wire,
         }))
     }
     fn record_def(

@@ -237,8 +237,8 @@ pub struct ComposedLowering {
     /// `optional<union:U>` (docs/adr/0092, section 6.1 item 5 and its
     /// amendment of 2026-11-07): the machine's own sum of the union's
     /// records, built at the declaration or starting absent. A lowering that
-    /// holds none reads and sends no payload that holds a union at any depth
-    /// either, whatever it reads and sends of any other composed value.
+    /// holds none reads no payload that holds a union at any depth either,
+    /// whatever it reads of any other composed value.
     pub unions: bool,
     /// Whether it lowers a `<send>` of the event of a schema that holds a
     /// composition (section 5.2): each composed field given by a `<param>`
@@ -272,22 +272,21 @@ impl ComposedLowering {
 
     /// What the backend `language` lowers: Rust reads a composed payload at
     /// any depth, takes a list whole, holds a union variable and sends a
-    /// composed value; Kotlin reads a composed payload that holds no union and
-    /// takes a list whole. Each is a backend whose machine spells the walks
-    /// over a composed value
+    /// composed value; Kotlin does each of those but hold a union, and so
+    /// reads no payload that holds one. Each is a backend whose
+    /// machine spells the walks over a composed value
     /// ([`crate::forge::static_lowering::StaticTarget::composed_spelling`],
     /// [`crate::forge::static_lowering::StaticTarget::composed_send_spelling`]);
     /// every other backend lowers no composed value yet.
     pub fn of(language: crate::generator::Language) -> Self {
         use crate::generator::Language;
-        let rust = matches!(language, Language::Rust);
         let walks = matches!(language, Language::Rust | Language::Kotlin);
         Self {
             name: language.canonical_name(),
             reads: walks,
             copies: walks,
-            unions: rust,
-            sends: rust,
+            unions: matches!(language, Language::Rust),
+            sends: walks,
         }
     }
 }
@@ -300,10 +299,10 @@ impl ComposedLowering {
 /// record or an optional over either, a read of `_event.data` on a transition
 /// taken on such a schema's event (unless `lowering` reads one,
 /// [`ComposedLowering::reads`]), a `<send>` of that event (unless `lowering`
-/// sends one, [`ComposedLowering::sends`]) and a `<raise>` of it, a read and a
-/// `<send>` of a payload that holds a union at any depth where `lowering`
-/// holds none ([`ComposedLowering::unions`]), and a list taken whole into a
-/// list variable from a place.
+/// sends one, [`ComposedLowering::sends`]) and a `<raise>` of it, a read of a
+/// payload that holds a union at any depth where `lowering` holds none
+/// ([`ComposedLowering::unions`]), and a list taken whole into a list variable
+/// from a place.
 ///
 /// Each refusal names the construct and the lowering that asks and has none of
 /// it, as every backend's refusal of what it does not lower yet names the
@@ -450,11 +449,13 @@ fn first_unlowered_composed_use(
     let at_location = |location: &Option<SourceLocation>| {
         location.clone().filter(|location| location.line.is_some())
     };
-    // A lowering that holds no union reads and sends no payload that holds one
-    // at any depth (docs/adr/0092, section 7), whatever else it lowers of a
-    // composed value: the field that holds it, and the union as it is written.
-    // The records are read only where that is asked.
-    let union_records = (!lowers_unions && (lowers_reads || lowers_sends))
+    // A lowering that holds no union reads no payload that holds one at any
+    // depth (docs/adr/0092, section 7), whatever else it reads of a composed
+    // value: the field that holds it, and the union as it is written. A place
+    // that holds a union is a payload's or a variable's, each refused here
+    // first, so no `<send>` that such a lowering writes meets one. The records
+    // are read only where that is asked.
+    let union_records = (!lowers_unions && lowers_reads)
         .then(|| crate::forge::composed_lowering::StatechartRecords::of(scxml));
     let unlowered_union = |schema: &EventSchemaModel| {
         let records = union_records.as_ref()?;
@@ -541,18 +542,14 @@ fn first_unlowered_composed_use(
                         .filter(|f| f.since.is_none())
                         .filter_map(|f| f.entry_field().err())
                         .find(|c| !gives(&c.field));
-                    // Each refusal with whether it is of a value the `<send>`
-                    // does not give, which is what its sentence then says.
                     match a.action_type.as_str() {
-                        "send" if !lowers_sends => sent = Some((schema, composed, a, false)),
+                        "send" if !lowers_sends => sent = Some((schema, composed, a)),
                         "send" => {
-                            if let Some(union) = unlowered_union(schema) {
-                                sent = Some((schema, union, a, false));
-                            } else if let Some(lacking) = lacking {
-                                sent = Some((schema, lacking, a, true));
+                            if let Some(lacking) = lacking {
+                                sent = Some((schema, lacking, a));
                             }
                         }
-                        "raise" => sent = Some((schema, composed, a, false)),
+                        "raise" => sent = Some((schema, composed, a)),
                         _ => {}
                     }
                 }
@@ -567,11 +564,10 @@ fn first_unlowered_composed_use(
             }
         });
     }
-    if let Some((schema, composed, action, lacks)) = sent {
-        // Where sends are lowered, a `<send>` is refused for the value it does
-        // not give, or for a union the lowering does not hold, and its refusal
-        // says which.
-        let what = if lacks {
+    if let Some((schema, composed, action)) = sent {
+        // Where sends are lowered, a `<send>` is refused only for the value
+        // it does not give, which is what its refusal says.
+        let what = if action.action_type == "send" && lowers_sends {
             "a statechart's <send> of its event that gives the field no value".to_string()
         } else {
             format!("a statechart's <{}> of its event", action.action_type)
@@ -2633,9 +2629,9 @@ mod tests {
     }
 
     /// Rust reads a composed payload, takes a list whole and sends a composed
-    /// value (docs/adr/0086, sections 5 and 6), Kotlin reads one and takes a
-    /// list whole, and every other backend refuses each by its own name until
-    /// its step lowers it.
+    /// value (docs/adr/0086, sections 5 and 6), Kotlin does each of those but
+    /// hold a union, and every other backend refuses each by its own name
+    /// until its step lowers it.
     #[test]
     fn each_backend_lowers_the_composed_positions_its_step_landed() {
         use crate::generator::Language;
@@ -2646,7 +2642,7 @@ mod tests {
             assert_eq!(lowering.reads, rust || kotlin, "{language:?}");
             assert_eq!(lowering.copies, rust || kotlin, "{language:?}");
             assert_eq!(lowering.unions, rust, "{language:?}");
-            assert_eq!(lowering.sends, rust, "{language:?}");
+            assert_eq!(lowering.sends, rust || kotlin, "{language:?}");
             assert_eq!(lowering.name, language.canonical_name());
         }
     }

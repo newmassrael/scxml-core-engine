@@ -1853,13 +1853,31 @@ impl ComposedSpelling for RustComposed<'_> {
 
 /// The Kotlin spellings of the walks, for the machine `machine` (section 7.1,
 /// the Kotlin row): the runtime's `EventPayload.Value` reads each constructor,
-/// and its writers write each as the JSON the wire carries (section 3.1).
+/// and its writers write them into `carrier`.
 ///
 /// Every binding is Kotlin's implicit `it`, so a lambda nested in another
 /// declares no parameter that could shadow its holder's: a generated machine is
 /// compiled with every warning an error.
 pub struct KotlinComposed<'a> {
     pub machine: &'a str,
+    pub carrier: KotlinCarrier,
+}
+
+/// What a Kotlin writer spells a composed value into: one walk of the value's
+/// type, written as the carrier the place that takes it holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KotlinCarrier {
+    /// The JSON text itself, by the runtime's `EventPayload.listJson`,
+    /// `recordJson` and `valueJson`: what the inject seam writes beside the
+    /// typed carrier (section 3.1).
+    Json,
+    /// The value a `<send>` holds each param in (`StaticTarget::wire_value`)
+    /// until the engine's `valueToJson` writes them as one JSON object: a list
+    /// as a `List` of its elements, a record as a `Map` of its fields, whose
+    /// keys the engine orders by their UTF-8 bytes at every depth, an absent
+    /// value as `null`, and every scalar as a `<send>`'s scalar param is
+    /// (section 5.3; ARCHITECTURE.md, "JSON Object Key Order").
+    Wire,
 }
 
 /// The runtime object the Kotlin readers and writers are members of.
@@ -2001,47 +2019,89 @@ impl ComposedSpelling for KotlinComposed<'_> {
     fn write_binding(&self) -> &'static str {
         "it"
     }
-    // The runtime spells a number of every width, a truth value, a text and a
-    // byte string as one JSON value: a 64-bit integer as the text of its
-    // digits, a byte string as its Latin-1 text.
-    fn write_scalar(&self, _ty: &SceType, held: &Held) -> String {
-        format!("{KOTLIN_PAYLOAD}.valueJson({})", held.text)
+    fn write_scalar(&self, ty: &SceType, held: &Held) -> String {
+        match self.carrier {
+            // The runtime spells a number of every width and a truth value as
+            // one JSON value, a 64-bit integer as the text of its digits.
+            KotlinCarrier::Json => format!("{KOTLIN_PAYLOAD}.valueJson({})", held.text),
+            // As a scalar param is: an integer of at most 32 bits widened to a
+            // `Long` and a `Float` to a `Double`, both exactly, and a 64-bit
+            // integer as the text of its digits.
+            KotlinCarrier::Wire => match ty {
+                SceType::Uint8
+                | SceType::Uint16
+                | SceType::Uint32
+                | SceType::Int8
+                | SceType::Int16
+                | SceType::Int32 => format!("({}).toLong()", held.text),
+                SceType::Uint64 | SceType::Int64 => format!("({}).toString()", held.text),
+                SceType::Float32 => format!("({}).toDouble()", held.text),
+                SceType::Float64 | SceType::Bool => held.text.clone(),
+                SceType::String | SceType::Bytes | SceType::Enum(_) => unreachable!(
+                    "a text, a byte string and an enum are cases of their own in the walk, \
+                     never a scalar of a value type"
+                ),
+            },
+        }
     }
     // The machine's enum declares the name its document gives the variant.
     fn write_enum(&self, held: &Held) -> String {
-        format!("{KOTLIN_PAYLOAD}.valueJson({}.declaredName)", held.text)
+        match self.carrier {
+            KotlinCarrier::Json => {
+                format!("{KOTLIN_PAYLOAD}.valueJson({}.declaredName)", held.text)
+            }
+            KotlinCarrier::Wire => format!("{}.declaredName", held.text),
+        }
     }
     fn write_text(&self, held: &Held) -> String {
-        format!("{KOTLIN_PAYLOAD}.valueJson({})", held.text)
+        match self.carrier {
+            KotlinCarrier::Json => format!("{KOTLIN_PAYLOAD}.valueJson({})", held.text),
+            KotlinCarrier::Wire => held.text.clone(),
+        }
     }
+    // JSON has no byte string: it crosses as its byte-exact Latin-1 text.
     fn write_bytes(&self, held: &Held) -> String {
-        format!("{KOTLIN_PAYLOAD}.valueJson({})", held.text)
+        match self.carrier {
+            KotlinCarrier::Json => format!("{KOTLIN_PAYLOAD}.valueJson({})", held.text),
+            KotlinCarrier::Wire => format!("{KOTLIN_PAYLOAD}.bytesAsText({})", held.text),
+        }
     }
     // Parenthesised whole, so the elvis binds inside the member it is written
-    // in: an infix `to` binds tighter than `?:`.
+    // in: an infix `to` binds tighter than `?:`. `null` where the value is
+    // absent, as an absent scalar param is.
     fn write_optional(&self, held: &Held, elem: &str) -> String {
-        format!(
-            "(({})?.let {{ {elem} }} ?: {KOTLIN_PAYLOAD}.valueJson(null))",
-            held.text
-        )
+        match self.carrier {
+            KotlinCarrier::Json => format!(
+                "(({})?.let {{ {elem} }} ?: {KOTLIN_PAYLOAD}.valueJson(null))",
+                held.text
+            ),
+            KotlinCarrier::Wire => format!("(({})?.let {{ {elem} }})", held.text),
+        }
     }
     fn write_list(&self, held: &Held, elem: &str) -> String {
-        format!("{KOTLIN_PAYLOAD}.listJson({}) {{ {elem} }}", held.text)
+        match self.carrier {
+            KotlinCarrier::Json => {
+                format!("{KOTLIN_PAYLOAD}.listJson({}) {{ {elem} }}", held.text)
+            }
+            KotlinCarrier::Wire => format!("({}).map {{ {elem} }}", held.text),
+        }
     }
     fn write_field(&self, held: &Held, field: &str) -> String {
         format!("{}.{field}", held.text)
     }
     // The runtime orders the keys by their UTF-8 bytes at every depth
-    // (ARCHITECTURE.md, "JSON Object Key Order").
+    // (ARCHITECTURE.md, "JSON Object Key Order"), the JSON writer and the
+    // engine's alike.
     fn write_record(&self, fields: &[(String, String)]) -> String {
         let members: Vec<String> = fields
             .iter()
             .map(|(id, json)| format!("\"{id}\" to {json}"))
             .collect();
-        format!(
-            "{KOTLIN_PAYLOAD}.recordJson(mapOf<String, Any?>({}))",
-            members.join(", ")
-        )
+        let map = format!("mapOf<String, Any?>({})", members.join(", "));
+        match self.carrier {
+            KotlinCarrier::Json => format!("{KOTLIN_PAYLOAD}.recordJson({map})"),
+            KotlinCarrier::Wire => map,
+        }
     }
 
     fn copy_binding(&self) -> &'static str {
@@ -2751,7 +2811,46 @@ mod tests {
         );
     }
 
-    const KOTLIN: KotlinComposed<'static> = KotlinComposed { machine: "M" };
+    const KOTLIN: KotlinComposed<'static> = KotlinComposed {
+        machine: "M",
+        carrier: KotlinCarrier::Json,
+    };
+
+    /// The value a Kotlin `<send>` holds a composed param in: a `List`, a `Map`
+    /// whose keys the engine orders, `null` where a value is absent, and each
+    /// scalar as a scalar param is (a narrow integer widened to `Long`, a
+    /// 64-bit one as its digits, a byte string as its Latin-1 text).
+    #[test]
+    fn a_kotlin_send_writes_each_constructor_into_the_value_it_holds_params_in() {
+        let held = held();
+        let wire = KotlinComposed {
+            machine: "M",
+            carrier: KotlinCarrier::Wire,
+        };
+        let write =
+            |text: &str, at: Held| writer(&ty(text), None, &held, &wire, &at).expect("write");
+        let p = "com.sce.runtime.EventPayload";
+        assert_eq!(write("uint8", Held::place("x.n")), "(x.n).toLong()");
+        assert_eq!(write("int64", Held::place("x.n")), "(x.n).toString()");
+        assert_eq!(write("float32", Held::place("x.n")), "(x.n).toDouble()");
+        assert_eq!(write("float64", Held::place("x.n")), "x.n");
+        assert_eq!(
+            write("list<list<uint8>[2]>[2]", Held::place("x.grid")),
+            "(x.grid).map { (it).map { (it).toLong() } }"
+        );
+        assert_eq!(
+            write("optional<list<uint8>[2]>", Held::place("x.spare")),
+            "((x.spare)?.let { (it).map { (it).toLong() } })"
+        );
+        assert_eq!(
+            write("list<record:Item>[3]", Held::place("x.items")),
+            format!(
+                "(x.items).map {{ mapOf<String, Any?>(\"id\" to (it.id).toLong(), \"level\" to \
+                 it.level.declaredName, \"due\" to ((it.due)?.let {{ (it).toString() }}), \
+                 \"blob\" to {p}.bytesAsText(it.blob), \"tags\" to (it.tags).map {{ it }}) }}"
+            )
+        );
+    }
 
     /// The Kotlin row of section 7.1: no type carries a bound, a value that
     /// may be absent is the type over `?`, a record is the machine's data

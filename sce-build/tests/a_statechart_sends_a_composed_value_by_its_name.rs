@@ -6,17 +6,21 @@
 //! schema the document imports for the event names a variable, a field of a
 //! record variable, or a part of the payload of the event the transition is
 //! on, and is accepted when the place's type fits the field's (section 5.1).
-//! The Rust backend writes it by walking its type (section 5.3).
+//! The Rust and Kotlin backends write it by walking its type (section 5.3).
 //!
 //! # What is held
 //!
-//! * `check -l rust` takes `static_composed_send`, which forwards four lists
-//!   and an optional list of the payload and sends a list variable.
+//! * `check -l rust` and `check -l kotlin` take `static_composed_send`, which
+//!   forwards four lists and an optional list of the payload and sends a list
+//!   variable.
 //! * The Rust machine writes each value into the runtime's `ScriptValue` by
 //!   one case per constructor: a list as an `Array` of its elements, a record
 //!   as an `Object` of its fields, an absent value as `Null`, a 64-bit integer
 //!   as the text of its digits, a byte string as its Latin-1 text and an enum
 //!   value as its declared name, as a scalar param crosses.
+//! * The Kotlin machine writes each into the value its `<send>` holds params
+//!   in: a list as a `List`, a record as a `Map`, an absent value as `null`,
+//!   and each scalar as a scalar param crosses.
 //! * A value whose type may not fit the field's is refused where it is
 //!   written, naming the field, the schema that reads it and the place.
 //! * A value that names no place is refused.
@@ -45,22 +49,30 @@ const SIBLINGS: [&str; 3] = [
     "event_batch.scxml",
 ];
 
-/// The Rust machine of `static_composed_send`, generated where the fixture is.
-fn sender_machine() -> String {
+/// The machine of `static_composed_send` for `language`, generated where the
+/// fixture is: the file whose name ends in `suffix`.
+fn generated_sender(language: sce_build::generator::Language, suffix: &str) -> String {
     let path = fixtures().join("static_composed_send.scxml");
-    let language = sce_build::generator::Language::Rust;
     let output = compile_scxml_lang_typed(
         path.to_str().expect("a utf-8 path"),
         &find_template_dir_for(language),
         language,
     )
-    .unwrap_or_else(|e| panic!("Rust sends a composed value: {e:?}"));
+    .unwrap_or_else(|e| panic!("{language:?} sends a composed value: {e:?}"));
     output
         .files
         .into_iter()
-        .find(|(name, _)| name == "static_composed_send_sm.rs")
+        .find(|(name, _)| name.ends_with(suffix))
         .map(|(_, code)| code)
-        .expect("the machine's Rust is generated")
+        .unwrap_or_else(|| panic!("the machine's {language:?} is generated"))
+}
+
+/// The Rust machine of `static_composed_send`.
+fn sender_machine() -> String {
+    generated_sender(
+        sce_build::generator::Language::Rust,
+        "static_composed_send_sm.rs",
+    )
 }
 
 /// `code` holds each of `lines`.
@@ -137,12 +149,43 @@ fn sender(data: &str, params: &str) -> String {
 /// (`sce-build/src/forge/event_schema_check.rs`) and by
 /// `Judge::composed_param` (`sce-build/src/forge/static_datamodel.rs`).
 #[test]
-fn rust_takes_a_send_of_composed_values_that_fit() {
-    let (ok, out) = run_on(
-        &["check", "-l", "rust"],
-        &fixtures().join("static_composed_send.scxml"),
+fn rust_and_kotlin_take_a_send_of_composed_values_that_fit() {
+    for language in ["rust", "kotlin"] {
+        let (ok, out) = run_on(
+            &["check", "-l", language],
+            &fixtures().join("static_composed_send.scxml"),
+        );
+        assert!(ok, "{language} sends a composed value that fits:\n{out}");
+    }
+}
+
+/// Pinned by `KotlinComposed`'s writers under `KotlinCarrier::Wire`
+/// (`sce-build/src/forge/composed_lowering.rs`), `KotlinTarget::composed_send_spelling`
+/// and `composed_wire_value` (`sce-build/src/forge/static_lowering.rs`): each part
+/// of the payload is written from the place it is read at into the value a Kotlin
+/// `<send>` holds its params in, a list as a `List` and a record as a `Map`, which
+/// the engine writes as the event's JSON.
+#[test]
+fn each_value_is_written_by_walking_its_type_on_kotlin() {
+    let code = generated_sender(sce_build::generator::Language::Kotlin, "Sm.kt");
+    let p = "com.sce.runtime.EventPayload";
+    holds(
+        &code,
+        &[
+            &format!(
+                "putParam(sendPayload, \"items\", (pendingBatchSentPayload!!.items).map {{ \
+                 mapOf<String, Any?>(\"id\" to (it.id).toLong(), \"amount\" to (it.amount).toString(), \
+                 \"label\" to it.label, \"level\" to it.level.declaredName, \"due\" to \
+                 ((it.due)?.let {{ (it).toString() }}), \"blob\" to {p}.bytesAsText(it.blob), \
+                 \"tags\" to (it.tags).map {{ it }}) }})"
+            ),
+            "putParam(sendPayload, \"grid\", (pendingBatchSentPayload!!.grid).map { (it).map { (it).toLong() } })",
+            "putParam(sendPayload, \"levels\", (pendingBatchSentPayload!!.levels).map { it.declaredName })",
+            "putParam(sendPayload, \"maybe\", (pendingBatchSentPayload!!.maybe).map { ((it)?.let { (it).toLong() }) })",
+            "putParam(sendPayload, \"spare\", ((pendingBatchSentPayload!!.spare)?.let { (it).map { (it).toLong() } }))",
+            "putParam(sendPayload, \"late\", (vLate).map { (it).toLong() })",
+        ],
     );
-    assert!(ok, "Rust sends a composed value that fits:\n{out}");
 }
 
 /// Pinned by `RustComposed`'s writers under `RustCarrier::ScriptValue`
@@ -214,7 +257,7 @@ fn a_backend_that_sends_none_refuses_the_send_by_name() {
         r#"<data id="kept" sce:type="list&lt;uint8&gt;[2]"/>"#,
         r#"<param name="late" expr="kept"/>"#,
     );
-    for language in ["kotlin", "cpp", "go", "python", "c11"] {
+    for language in ["cpp", "go", "python", "c11"] {
         let (ok, out) = run(&["check", "-l", language], &document);
         assert!(!ok, "{language} sends no composed value yet:\n{out}");
         assert!(
@@ -223,6 +266,8 @@ fn a_backend_that_sends_none_refuses_the_send_by_name() {
         );
         assert!(out.contains("lowering of its list"), "{language}: {out}");
     }
-    let (ok, out) = run(&["check", "-l", "rust"], &document);
-    assert!(ok, "Rust sends a list variable that fits:\n{out}");
+    for language in ["rust", "kotlin"] {
+        let (ok, out) = run(&["check", "-l", language], &document);
+        assert!(ok, "{language} sends a list variable that fits:\n{out}");
+    }
 }

@@ -7476,6 +7476,7 @@ fn kotlin_composed_payload(
         .collect();
     let spelling = composed::KotlinComposed {
         machine: machine_name,
+        carrier: composed::KotlinCarrier::Json,
     };
     let walked = |result: Result<Vec<(String, String)>, String>| {
         result.unwrap_or_else(|why| panic!("{}", unlowered(&why)))

@@ -5255,7 +5255,11 @@ no place is refused as the expression it is or by the same rule. The Rust
 backend writes the value by walking its type into the `ScriptValue` its send
 holds each param in, a list as an array and a record as an object, which the
 runtime writes as the event's JSON, keys ascending at every depth; a place read
-through an index is refused by name on Rust.
+through an index is refused by name on Rust. The Kotlin backend writes it the same
+way into the value its send holds each param in, a list as a `List`, a record as a
+`Map` and an absent value as `null`, each scalar as a scalar param crosses, which
+the engine writes as the event's JSON, keys ascending at every depth; a place read
+through an index is refused by name on Kotlin too.
 
 What no backend lowers yet is refused by name where the machine is generated, in
 the one gate every route asks first (`check` with or without a backend,

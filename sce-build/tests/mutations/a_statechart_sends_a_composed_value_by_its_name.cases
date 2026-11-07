@@ -40,8 +40,8 @@ PY
 # Every backend sends a composed value: one that lowers none meets it.
 mutation_case "every backend is let send a composed value" <<'PY'
 edit("sce-build/src/forge/event_schema_check.rs",
-     r'''                        "send" if !lowers_sends => sent = Some((schema, composed, a, false)),''',
-     r'''                        "send" if false => sent = Some((schema, composed, a, false)),''')
+     r'''                        "send" if !lowers_sends => sent = Some((schema, composed, a)),''',
+     r'''                        "send" if false => sent = Some((schema, composed, a)),''')
 PY
 
 # A list is written as the JSON text where a ScriptValue is held.
