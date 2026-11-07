@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "sce/forge/bounded.h"
+#include "sce/forge/law.h"
 #include "sce/forge/utf8.h"
 
 namespace SCE::Forge {

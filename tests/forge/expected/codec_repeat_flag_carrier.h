@@ -12,16 +12,136 @@
 #include <cstring>
 #include <optional>
 #include <vector>
+#include <type_traits>
+#include <utility>
 
 #include "sce/forge/codec.h"
 #include "codec_chain_flag_entry.h"
 
 namespace SCE::Generated::CodecRepeatFlagCarrier {
 
+/// The elements a value of `CodecRepeatFlagCarrier` presents, each read by name: the
+/// member function where the type has one, otherwise a function the type's own
+/// namespace declares (docs/adr/0081, step 4).
+namespace source {
+namespace detail_head {
+void head() = delete;
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferMember) noexcept(noexcept(s.head())) -> decltype(s.head()) {
+    return s.head();
+}
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferFree) noexcept(noexcept(head(s))) -> decltype(head(s)) {
+    return head(s);
+}
+struct Read {
+    template <class S>
+    constexpr auto operator()(const S& s) const
+        noexcept(noexcept(read(s, ::SCE::Forge::PreferMember{})))
+        -> decltype(read(s, ::SCE::Forge::PreferMember{})) {
+        return read(s, ::SCE::Forge::PreferMember{});
+    }
+};
+}  // namespace detail_head
+/// The `head` element of a source.
+inline constexpr detail_head::Read head{};
+namespace detail_entries {
+void entries() = delete;
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferMember) noexcept(noexcept(s.entries())) -> decltype(s.entries()) {
+    return s.entries();
+}
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferFree) noexcept(noexcept(entries(s))) -> decltype(entries(s)) {
+    return entries(s);
+}
+struct Read {
+    template <class S>
+    constexpr auto operator()(const S& s) const
+        noexcept(noexcept(read(s, ::SCE::Forge::PreferMember{})))
+        -> decltype(read(s, ::SCE::Forge::PreferMember{})) {
+        return read(s, ::SCE::Forge::PreferMember{});
+    }
+};
+}  // namespace detail_entries
+/// The `entries` element of a source.
+inline constexpr detail_entries::Read entries{};
+}  // namespace source
+
+/// The input `wide` each entry of `entries` says, which the list hands every
+/// entry as `head.W` and holds to its law (docs/adr/0065 §6 R8).
+struct CodecRepeatFlagCarrierEntriesWide {
+    template <class E>
+    [[nodiscard]] static std::optional<bool> says(const E& entry) {
+        return ::SCE::Generated::CodecChainFlagEntry::input_wide(entry) != 0;
+    }
+};
+
+/// The law the entries of `entries` follow in the inputs they say, which the
+/// list holds them to (docs/adr/0065 §6 R8).
+using CodecRepeatFlagCarrierEntriesLaw = ::SCE::Forge::Uniform<CodecRepeatFlagCarrierEntriesWide>;
+
+/// Whether `R` is a list a source may present for `entries`: held to bounds
+/// within its own, of any type, each entry a source of the entry codec.
+template <class R, class = void>
+struct is_entries_bounded : std::false_type {};
+template <class R>
+struct is_entries_bounded<R, std::enable_if_t<::SCE::Forge::Detail::IsBoundedWithin<R, 4>::value>>
+    : ::SCE::Generated::CodecChainFlagEntry::is_source<::SCE::Forge::Detail::ElementOf<R>> {};
+
+/// Whether `R` is a list a source may present for `entries`: a list
+/// `is_entries_bounded` accepts, held to `CodecRepeatFlagCarrierEntriesLaw` (docs/adr/0065 §6 R8).
+template <class R>
+struct is_entries_list : std::false_type {};
+template <class L>
+struct is_entries_list<::SCE::Forge::Lawful<L, CodecRepeatFlagCarrierEntriesLaw>> : is_entries_bounded<L> {};
+
+/// Whether `S` presents every element of `CodecRepeatFlagCarrier`, each convertible to
+/// its type (a C++17 trait, ADR 0059 §3).
+template <class S, class = void>
+struct is_source : std::false_type {};
+template <class S>
+struct is_source<S, std::void_t<decltype(source::head(std::declval<const S&>())), decltype(source::entries(std::declval<const S&>()))>>
+    : std::conjunction<std::is_convertible<decltype(source::head(std::declval<const S&>())), uint8_t>, is_entries_list<std::decay_t<decltype(source::entries(std::declval<const S&>()))>>> {};
+
+/// Whether reading every element of a source `S` throws nothing.
+template <class S, class = void>
+struct is_nothrow_source : std::false_type {};
+template <class S>
+struct is_nothrow_source<S, std::enable_if_t<is_source<S>::value>>
+    : std::bool_constant<noexcept(::SCE::Forge::Detail::converts_to<uint8_t>(source::head(std::declval<const S&>()))) && noexcept(source::entries(std::declval<const S&>())) && ::SCE::Generated::CodecChainFlagEntry::is_nothrow_source<::SCE::Forge::Detail::ElementOf<std::decay_t<decltype(source::entries(std::declval<const S&>()))>>>::value> {};
+
+/// The encode of `CodecRepeatFlagCarrier` over any source of it: each element read
+/// through `source`, written as the plan lays it out (docs/adr/0081). It
+/// refuses nothing; what it returns is the sink's own failure, and it
+/// throws only what a read of `src` throws.
+struct Wire {
+    template <class S>
+    [[nodiscard]] static std::optional<::SCE::Forge::CodecError> encode_source(const S& src, ::SCE::Forge::SceSink& w) noexcept(is_nothrow_source<S>::value) {
+        static_assert(is_source<S>::value, "S presents every element of CodecRepeatFlagCarrier: head, entries");
+        const auto& _r_entries = source::entries(src);
+        const uint8_t _d_count = static_cast<uint8_t>(_r_entries.size());
+        std::uint64_t _f_head = static_cast<std::uint64_t>(source::head(src));
+        _f_head = (_f_head & ~0x1ull) | static_cast<std::uint64_t>(static_cast<std::size_t>(_r_entries.start()));
+        const uint8_t _c_head = static_cast<uint8_t>(_f_head);
+        if (auto _e = w.write_u8(static_cast<std::uint8_t>(_c_head)); _e) return _e;
+        if (auto _e = w.write_u8(static_cast<std::uint8_t>(_d_count)); _e) return _e;
+        for (const auto& _x : _r_entries) {
+            if (auto _e = ::SCE::Generated::CodecChainFlagEntry::Wire::encode_source(_x, w); _e) return _e;
+        }
+        return std::nullopt;
+    }
+};
+
 struct CodecRepeatFlagCarrier {
-    uint8_t head{};
-    uint8_t count{};
-    std::vector<::SCE::Generated::CodecChainFlagEntry::CodecChainFlagEntry> entries{};
+    CodecRepeatFlagCarrier() = default;
+    /// The value of each element it presents, in declaration order (ADR 0059 §5).
+    CodecRepeatFlagCarrier(uint8_t head, ::SCE::Forge::Lawful<::SCE::Forge::List<::SCE::Generated::CodecChainFlagEntry::CodecChainFlagEntry, 4>, CodecRepeatFlagCarrierEntriesLaw> entries)
+        : head_(head), entries_(entries) {}
+    /// The `head` element.
+    [[nodiscard]] constexpr uint8_t head() const noexcept { return head_; }
+    /// The `entries` element, the entries it holds.
+    [[nodiscard]] ::SCE::Forge::Lawful<::SCE::Forge::List<::SCE::Generated::CodecChainFlagEntry::CodecChainFlagEntry, 4>, CodecRepeatFlagCarrierEntriesLaw> entries() const noexcept { return entries_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
@@ -65,11 +185,22 @@ struct CodecRepeatFlagCarrier {
             if (!_elem.has_value()) return std::nullopt;
             entries.push_back(*_elem);
         }
-        return CodecRepeatFlagCarrier{
+        const auto _l_entries = ::SCE::Forge::Lawful<::SCE::Forge::List<::SCE::Generated::CodecChainFlagEntry::CodecChainFlagEntry, 4>, CodecRepeatFlagCarrierEntriesLaw>::list_type::make(entries);
+        if (!_l_entries) {
+            cursor.refuse(::SCE::Forge::CodecError::TooManyElements);
+            return std::nullopt;
+        }
+        const auto _b_entries = ::SCE::Forge::Lawful<::SCE::Forge::List<::SCE::Generated::CodecChainFlagEntry::CodecChainFlagEntry, 4>, CodecRepeatFlagCarrierEntriesLaw>::make((((head >> 0) & 0x1) != 0), *_l_entries);
+        if (!_b_entries) {
+            cursor.refuse(::SCE::Forge::CodecError::PresentIfMismatch);
+            return std::nullopt;
+        }
+        (void)count;
+        CodecRepeatFlagCarrier _decoded{
             /*head=*/head,
-            /*count=*/count,
-            /*entries=*/entries,
+            /*entries=*/*_b_entries,
         };
+        return _decoded;
     }
 
     // RFC §synth-5-B flags primitive: per-bit-range accessors.
@@ -78,14 +209,14 @@ struct CodecRepeatFlagCarrier {
     // mask + shift on the way in so out-of-range callers can't corrupt
     // sibling bits. Wire layout is unchanged.
     bool w() const noexcept {
-        return (this->head & 0x01) != 0;
+        return (this->head_ & 0x01) != 0;
     }
 
     void set_w(bool v) noexcept {
         if (v) {
-            this->head = static_cast<uint8_t>(this->head | 0x01);
+            this->head_ = static_cast<uint8_t>(this->head_ | 0x01);
         } else {
-            this->head = static_cast<uint8_t>(this->head & static_cast<uint8_t>(~0x01));
+            this->head_ = static_cast<uint8_t>(this->head_ & static_cast<uint8_t>(~0x01));
         }
     }
 
@@ -100,43 +231,27 @@ struct CodecRepeatFlagCarrier {
     /// destination has insufficient remaining capacity; growable sinks
     /// (e.g. `VectorSink`) are effectively infallible.
     [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink& w) const noexcept {
-        if (entries.size() > 4) return ::SCE::Forge::CodecError::TooManyElements;
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when absent, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`.
-        if (auto _e = w.write_u8(head); _e) return _e;
-        if (auto _e = w.write_u8(count); _e) return _e;
-        for (const auto& _e : entries) {
-            if (auto _se = _e.encode(w, static_cast<std::uint8_t>((this->head >> 0) & 0x1)); _se) return _se;
-        }
-        return std::nullopt;
+        // The encode over any source of the codec, this value one of them,
+        // handed the inputs the caller hands this encode.
+        return Wire::encode_source(*this, w);
     }
 
     /// Heap-backed convenience facade. Pre-reserves `MAX_ENCODED_BYTES`
     /// so the worst-case write path performs at most one allocation,
     /// then delegates to `encode` over a `VectorSink`. Returns the
-    /// freshly-encoded byte vector, or `std::nullopt` when `encode`
-    /// refuses the value before its first byte: a gated field and the
-    /// `sce:present-if` that gates it contradict each other
-    /// (`CodecError::PresentIfMismatch`), or a byte string, text or list
-    /// lies outside its bound (`CodecError::LengthOutOfRange`,
-    /// `CodecError::TooManyElements`). Callers that need the reason, and
-    /// zero-alloc hot paths, call `encode` directly against a caller-owned
-    /// sink.
-    [[nodiscard]] std::optional<std::vector<std::uint8_t>> encode_to_vec() const {
+    /// freshly-encoded byte vector. Callers targeting zero-alloc hot
+    /// paths should call `encode` directly against a caller-owned sink.
+    [[nodiscard]] std::vector<std::uint8_t> encode_to_vec() const {
         std::vector<std::uint8_t> _sce_v;
         _sce_v.reserve(MAX_ENCODED_BYTES);
         ::SCE::Forge::VectorSink _sce_sink(_sce_v);
-        if (encode(_sce_sink)) {
-            return std::nullopt;
-        }
+        (void)encode(_sce_sink);
         return _sce_v;
     }
+
+private:
+    uint8_t head_{};
+    ::SCE::Forge::Lawful<::SCE::Forge::Bounded<std::vector<::SCE::Generated::CodecChainFlagEntry::CodecChainFlagEntry>, 4>, CodecRepeatFlagCarrierEntriesLaw> entries_{};
 };
 
 }  // namespace SCE::Generated::CodecRepeatFlagCarrier

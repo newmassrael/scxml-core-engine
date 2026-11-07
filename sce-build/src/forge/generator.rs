@@ -16411,6 +16411,11 @@ struct SaidCheck {
     handed: String,
     /// The bits of the input.
     mask: u64,
+    /// Whether the held codec says the input in some of its values only
+    /// (docs/adr/0065 §6 R4e), so that its `input_<name>` answers a
+    /// `std::optional`, empty where it says nothing of it: a value that says
+    /// nothing disagrees with no flag.
+    partial: bool,
 }
 
 impl EmbedThreadArgs {
@@ -16422,13 +16427,23 @@ impl EmbedThreadArgs {
         self.said
             .iter()
             .map(|check| {
-                format!(
-                    "{indent}if (({}::input_{}({held}) & 0x{mask:X}u) != ({} & 0x{mask:X}u)) return ::SCE::Forge::CodecError::PresentIfMismatch;\n",
-                    check.namespace,
-                    check.reader,
-                    check.handed,
-                    mask = check.mask
-                )
+                if check.partial {
+                    format!(
+                        "{indent}if (const auto _s = {}::input_{}({held}); _s && ((*_s & 0x{mask:X}u) != ({} & 0x{mask:X}u))) return ::SCE::Forge::CodecError::PresentIfMismatch;\n",
+                        check.namespace,
+                        check.reader,
+                        check.handed,
+                        mask = check.mask
+                    )
+                } else {
+                    format!(
+                        "{indent}if (({}::input_{}({held}) & 0x{mask:X}u) != ({} & 0x{mask:X}u)) return ::SCE::Forge::CodecError::PresentIfMismatch;\n",
+                        check.namespace,
+                        check.reader,
+                        check.handed,
+                        mask = check.mask
+                    )
+                }
             })
             .collect()
     }
@@ -16581,6 +16596,7 @@ fn embed_flag_bind_thread_args_supplying(
                     reader: filters::to_snake_case(input.name.clone()),
                     handed: handed.trim_start_matches(", ").to_string(),
                     mask: (1u64 << input.width.clamp(1, 8)) - 1,
+                    partial: imp.codec_partly_says_inputs.contains(&input.name),
                 });
             }
         };

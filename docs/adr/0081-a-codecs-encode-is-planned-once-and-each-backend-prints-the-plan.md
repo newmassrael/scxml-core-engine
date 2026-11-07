@@ -498,6 +498,18 @@ old encode, the old encode and its templates are removed in the same landing.
    *The fifteenth C++ landing, 2026-11-07:* a count of a list a gate decides. The encode counts the list where the
    value holds it, and the count field, gated beside the list, is written only there; where a flag holds the count,
    it keeps the bits the value presents. The printed set is 108 codecs, the Zenoh hello among them.
+
+   *The sixteenth C++ landing, 2026-11-07:* fields on each side of a gate, and a list held to the law its entries
+   say their inputs by (docs/adr/0065 §6 R4c, R8). A group of more than one arm is a `std::variant` of a class for
+   each arm, in the plan's order, and the encode derives each gate from the arm the value holds. A list whose
+   entries say the inputs it hands them is a `SCE::Forge::Lawful` of the list and its law (`sce/forge/law.h`, the
+   C++ form of the Rust runtime's `Lawful`: `Uniform` for a flag bound to every entry, `AfterKey` for an input a
+   chain supplies from the entry before, `Laws` for several), checked once by `make`; the flag the parent binds is
+   the list's start, and the decode holds what it read to the law from the start the frame gave. These forms move
+   together: a codec that says its own input, printed while its parent keeps the template's encode, is refused in
+   that parent's list (the twelfth landing), so the chain entries move with every carrier of them. An input a
+   gated list says is read as a `std::optional`, empty where the list is absent, and a parent on the template's
+   encode holds such an input against its flag only where it is said. The printed set is 118 codecs.
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences

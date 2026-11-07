@@ -19190,6 +19190,7 @@ fn chain_flag_cpp_program() -> String {
         r#"#include <cstdint>
 #include <cstdio>
 #include <optional>
+#include <variant>
 #include <vector>
 
 #include "codec_chain_flag_carrier.h"
@@ -19202,6 +19203,8 @@ using Forward = ::SCE::Generated::CodecChainFlagForward::CodecChainFlagForward;
 using Repeat = ::SCE::Generated::CodecRepeatFlagCarrier::CodecRepeatFlagCarrier;
 using Gated = ::SCE::Generated::CodecRepeatFlagGated::CodecRepeatFlagGated;
 using Entry = ::SCE::Generated::CodecChainFlagEntry::CodecChainFlagEntry;
+using Wide = ::SCE::Generated::CodecChainFlagEntry::CodecChainFlagEntryWideWide;
+using Narrow = ::SCE::Generated::CodecChainFlagEntry::CodecChainFlagEntryWideNotWide;
 
 namespace {
 const std::vector<std::uint8_t> NARROW = {@NARROW@};
@@ -19223,9 +19226,20 @@ void expect(bool ok, const char* what) {
     }
 }
 
+// An entry holds the short value while `wide` does not hold and the long one
+// while it does, as the arm of its `wide` group.
 bool entry_is(const Entry& e, std::uint8_t header, std::optional<std::uint8_t> s,
               std::optional<std::uint16_t> l) {
-    return e.header == header && e.short_value == s && e.long_value == l;
+    if (e.header() != header) {
+        return false;
+    }
+    if (const auto* narrow = std::get_if<Narrow>(&e.wide())) {
+        return s == narrow->short_value() && !l;
+    }
+    if (const auto* wide = std::get_if<Wide>(&e.wide())) {
+        return l == wide->long_value() && !s;
+    }
+    return false;
 }
 
 std::optional<Carrier> carrier(const std::vector<std::uint8_t>& frame) {
@@ -19253,11 +19267,14 @@ int main() {
     const std::optional<std::uint8_t> none8;
     const std::optional<std::uint16_t> none16;
 
+    // A printed carrier derives its flag from the start of the entries' law, so
+    // its encode is handed nothing (docs/adr/0065 §6 R8).
     auto c = carrier(NARROW);
     expect(c.has_value(), "carrier narrow decode");
     if (c) {
-        expect(c->entries.size() == 2 && entry_is(c->entries[0], 0x83, 0x11, none16) &&
-                   entry_is(c->entries[1], 0x05, 0x22, none16),
+        const auto entries = c->entries();
+        expect(entries.size() == 2 && entry_is(entries[0], 0x83, 0x11, none16) &&
+                   entry_is(entries[1], 0x05, 0x22, none16) && !entries.start(),
                "carrier narrow");
         expect(c->encode_to_vec() == NARROW, "carrier narrow round trip");
     }
@@ -19265,51 +19282,61 @@ int main() {
     c = carrier(WIDE);
     expect(c.has_value(), "carrier wide decode");
     if (c) {
-        expect(c->entries.size() == 2 && entry_is(c->entries[0], 0x83, none8, 0x1234) &&
-                   entry_is(c->entries[1], 0x05, none8, 0xABCD),
+        const auto entries = c->entries();
+        expect(entries.size() == 2 && entry_is(entries[0], 0x83, none8, 0x1234) &&
+                   entry_is(entries[1], 0x05, none8, 0xABCD) && entries.start(),
                "carrier wide");
         expect(c->encode_to_vec() == WIDE, "carrier wide round trip");
     }
 
     auto f = forward(FWD_NARROW, 0);
-    expect(f.has_value() && f->entries.has_value(), "forward narrow decode");
-    if (f && f->entries) {
-        expect(f->entries->size() == 2 && entry_is((*f->entries)[0], 0x83, 0x11, none16) &&
-                   entry_is((*f->entries)[1], 0x05, 0x22, none16),
+    expect(f.has_value() && f->entries().has_value(), "forward narrow decode");
+    if (f && f->entries()) {
+        const auto entries = *f->entries();
+        expect(entries.size() == 2 && entry_is(entries[0], 0x83, 0x11, none16) &&
+                   entry_is(entries[1], 0x05, 0x22, none16),
                "forward narrow");
-        expect(f->encode_to_vec(0) == FWD_NARROW, "forward narrow round trip");
+        expect(::SCE::Generated::CodecChainFlagForward::input_wide(*f) == std::optional<std::uint8_t>(0),
+               "forward narrow says its input clear");
+        expect(f->encode_to_vec() == FWD_NARROW, "forward narrow round trip");
     }
 
     f = forward(WIDE, 1);
-    expect(f.has_value() && f->entries.has_value(), "forward wide decode");
-    if (f && f->entries) {
-        expect(f->entries->size() == 2 && entry_is((*f->entries)[0], 0x83, none8, 0x1234) &&
-                   entry_is((*f->entries)[1], 0x05, none8, 0xABCD),
+    expect(f.has_value() && f->entries().has_value(), "forward wide decode");
+    if (f && f->entries()) {
+        const auto entries = *f->entries();
+        expect(entries.size() == 2 && entry_is(entries[0], 0x83, none8, 0x1234) &&
+                   entry_is(entries[1], 0x05, none8, 0xABCD),
                "forward wide");
-        expect(f->encode_to_vec(1) == WIDE, "forward wide round trip");
+        expect(::SCE::Generated::CodecChainFlagForward::input_wide(*f) == std::optional<std::uint8_t>(1),
+               "forward wide says its input set");
+        expect(f->encode_to_vec() == WIDE, "forward wide round trip");
     }
 
     // The same bytes under the other answer: the caller's value reached the
     // entries, and they are not read as wide.
     f = forward(WIDE, 0);
-    expect(f.has_value() && f->entries.has_value() && !f->entries->empty(), "forward flag decode");
-    if (f && f->entries && !f->entries->empty()) {
-        expect(!(*f->entries)[0].long_value && (*f->entries)[0].short_value == 0x12,
-               "forward flag ignored");
+    expect(f.has_value() && f->entries().has_value() && !f->entries()->empty(), "forward flag decode");
+    if (f && f->entries() && !f->entries()->empty()) {
+        const auto* narrow = std::get_if<Narrow>(&(*f->entries())[0].wide());
+        expect(narrow != nullptr && narrow->short_value() == 0x12, "forward flag ignored");
     }
 
     f = forward(FWD_ABSENT, 1);
-    expect(f.has_value() && !f->entries.has_value(), "forward chain without its gate");
+    expect(f.has_value() && !f->entries().has_value(), "forward chain without its gate");
     if (f) {
-        expect(f->encode_to_vec(1) == FWD_ABSENT, "forward absent round trip");
+        expect(!::SCE::Generated::CodecChainFlagForward::input_wide(*f).has_value(),
+               "forward without its chain says nothing of its input");
+        expect(f->encode_to_vec() == FWD_ABSENT, "forward absent round trip");
     }
 
     // A repeat hands its elements the same value, plain and gated.
     auto r = repeat(REP_NARROW);
     expect(r.has_value(), "repeat narrow decode");
     if (r) {
-        expect(r->entries.size() == 2 && entry_is(r->entries[0], 0x83, 0x11, none16) &&
-                   entry_is(r->entries[1], 0x05, 0x22, none16),
+        const auto entries = r->entries();
+        expect(entries.size() == 2 && entry_is(entries[0], 0x83, 0x11, none16) &&
+                   entry_is(entries[1], 0x05, 0x22, none16),
                "repeat narrow");
         expect(r->encode_to_vec() == REP_NARROW, "repeat narrow round trip");
     }
@@ -19317,32 +19344,35 @@ int main() {
     r = repeat(REP_WIDE);
     expect(r.has_value(), "repeat wide decode");
     if (r) {
-        expect(r->entries.size() == 2 && entry_is(r->entries[0], 0x83, none8, 0x1234) &&
-                   entry_is(r->entries[1], 0x05, none8, 0xABCD),
+        const auto entries = r->entries();
+        expect(entries.size() == 2 && entry_is(entries[0], 0x83, none8, 0x1234) &&
+                   entry_is(entries[1], 0x05, none8, 0xABCD),
                "repeat wide");
         expect(r->encode_to_vec() == REP_WIDE, "repeat wide round trip");
     }
 
     auto g = gated(GATED_NARROW);
-    expect(g.has_value() && g->entries.has_value(), "gated repeat narrow decode");
-    if (g && g->entries) {
-        expect(g->entries->size() == 2 && entry_is((*g->entries)[0], 0x83, 0x11, none16) &&
-                   entry_is((*g->entries)[1], 0x05, 0x22, none16),
+    expect(g.has_value() && g->entries().has_value(), "gated repeat narrow decode");
+    if (g && g->entries()) {
+        const auto entries = *g->entries();
+        expect(entries.size() == 2 && entry_is(entries[0], 0x83, 0x11, none16) &&
+                   entry_is(entries[1], 0x05, 0x22, none16),
                "gated repeat narrow");
         expect(g->encode_to_vec() == GATED_NARROW, "gated repeat narrow round trip");
     }
 
     g = gated(GATED_WIDE);
-    expect(g.has_value() && g->entries.has_value(), "gated repeat wide decode");
-    if (g && g->entries) {
-        expect(g->entries->size() == 2 && entry_is((*g->entries)[0], 0x83, none8, 0x1234) &&
-                   entry_is((*g->entries)[1], 0x05, none8, 0xABCD),
+    expect(g.has_value() && g->entries().has_value(), "gated repeat wide decode");
+    if (g && g->entries()) {
+        const auto entries = *g->entries();
+        expect(entries.size() == 2 && entry_is(entries[0], 0x83, none8, 0x1234) &&
+                   entry_is(entries[1], 0x05, none8, 0xABCD),
                "gated repeat wide");
         expect(g->encode_to_vec() == GATED_WIDE, "gated repeat wide round trip");
     }
 
     g = gated(GATED_ABSENT);
-    expect(g.has_value() && !g->entries.has_value(), "gated repeat without its gate");
+    expect(g.has_value() && !g->entries().has_value(), "gated repeat without its gate");
     if (g) {
         expect(g->encode_to_vec() == GATED_ABSENT, "gated repeat absent round trip");
     }
@@ -20127,6 +20157,7 @@ fn chain_prev_cpp_program() -> String {
         r#"#include <cstdint>
 #include <cstdio>
 #include <optional>
+#include <variant>
 #include <vector>
 
 #include "codec_chain_prev_carrier.h"
@@ -20162,9 +20193,22 @@ void expect(bool ok, const char* what) {
 
 using Bytes = std::optional<std::uint8_t>;
 using Wide = std::optional<std::uint16_t>;
+using After = ::SCE::Generated::CodecChainPrevEntry::CodecChainPrevEntryAfterMarkerAfterMarker;
+using NotAfter = ::SCE::Generated::CodecChainPrevEntry::CodecChainPrevEntryAfterMarkerNotAfterMarker;
 
+// An entry holds the short value while `after_marker` does not hold and the
+// long one while it does, as the arm of its `after_marker` group.
 bool entry_is(const Entry& e, std::uint8_t header, Bytes s, Wide l, Bytes tag) {
-    return e.header == header && e.short_value == s && e.long_value == l && e.tag == tag;
+    if (e.header() != header || e.tag() != tag) {
+        return false;
+    }
+    if (const auto* before = std::get_if<NotAfter>(&e.after_marker())) {
+        return s == before->short_value() && !l;
+    }
+    if (const auto* after = std::get_if<After>(&e.after_marker())) {
+        return l == after->long_value() && !s;
+    }
+    return false;
 }
 
 std::optional<Carrier> carrier(const std::vector<std::uint8_t>& frame) {
@@ -20195,8 +20239,8 @@ int main() {
     auto c = carrier(AFTER);
     expect(c.has_value(), "after the marker decode");
     if (c) {
-        expect(c->entries.size() == 2 && entry_is(c->entries[0], 0x84, 0x11, none16, none8) &&
-                   entry_is(c->entries[1], 0x03, none8, 0x1234, none8),
+        expect(c->entries().size() == 2 && entry_is(c->entries()[0], 0x84, 0x11, none16, none8) &&
+                   entry_is(c->entries()[1], 0x03, none8, 0x1234, none8),
                "after the marker");
         expect(c->encode_to_vec() == AFTER, "after the marker round trip");
     }
@@ -20204,8 +20248,8 @@ int main() {
     c = carrier(NONE);
     expect(c.has_value(), "no marker decode");
     if (c) {
-        expect(c->entries.size() == 2 && entry_is(c->entries[0], 0x83, 0x11, none16, none8) &&
-                   entry_is(c->entries[1], 0x03, 0x22, none16, none8),
+        expect(c->entries().size() == 2 && entry_is(c->entries()[0], 0x83, 0x11, none16, none8) &&
+                   entry_is(c->entries()[1], 0x03, 0x22, none16, none8),
                "no marker");
         expect(c->encode_to_vec() == NONE, "no marker round trip");
     }
@@ -20213,9 +20257,9 @@ int main() {
     c = carrier(ADJ);
     expect(c.has_value(), "adjacent decode");
     if (c) {
-        expect(c->entries.size() == 3 && entry_is(c->entries[0], 0x84, 0x11, none16, none8) &&
-                   entry_is(c->entries[1], 0x83, none8, 0x1234, none8) &&
-                   entry_is(c->entries[2], 0x03, 0x77, none16, none8),
+        expect(c->entries().size() == 3 && entry_is(c->entries()[0], 0x84, 0x11, none16, none8) &&
+                   entry_is(c->entries()[1], 0x83, none8, 0x1234, none8) &&
+                   entry_is(c->entries()[2], 0x03, 0x77, none16, none8),
                "only the entry right after the marker");
         expect(c->encode_to_vec() == ADJ, "adjacent round trip");
     }
@@ -20223,8 +20267,8 @@ int main() {
     c = carrier(TAGGED);
     expect(c.has_value(), "tagged decode");
     if (c) {
-        expect(c->entries.size() == 2 && entry_is(c->entries[0], 0x84, 0x11, none16, 0xA1) &&
-                   entry_is(c->entries[1], 0x03, none8, 0x1234, 0xA2),
+        expect(c->entries().size() == 2 && entry_is(c->entries()[0], 0x84, 0x11, none16, 0xA1) &&
+                   entry_is(c->entries()[1], 0x03, none8, 0x1234, 0xA2),
                "tagged");
         expect(c->encode_to_vec() == TAGGED, "tagged round trip");
     }
@@ -20232,15 +20276,15 @@ int main() {
     c = carrier(ONLY);
     expect(c.has_value(), "the marker alone decode");
     if (c) {
-        expect(c->entries.size() == 1 && entry_is(c->entries[0], 0x04, 0x11, none16, none8),
+        expect(c->entries().size() == 1 && entry_is(c->entries()[0], 0x04, 0x11, none16, none8),
                "the marker alone");
         expect(c->encode_to_vec() == ONLY, "the marker alone round trip");
     }
 
     auto g = gated(G_AFTER);
-    expect(g.has_value() && g->entries.has_value(), "gated after the marker decode");
-    if (g && g->entries) {
-        const auto& list = *g->entries;
+    expect(g.has_value() && g->entries().has_value(), "gated after the marker decode");
+    if (g && g->entries()) {
+        const auto list = *g->entries();
         expect(list.size() == 2 && entry_is(list[0], 0x84, 0x11, none16, none8) &&
                    entry_is(list[1], 0x03, none8, 0x1234, none8),
                "gated after the marker");
@@ -20248,9 +20292,9 @@ int main() {
     }
 
     g = gated(G_MIDDLE);
-    expect(g.has_value() && g->entries.has_value(), "gated marker with Z set decode");
-    if (g && g->entries) {
-        const auto& list = *g->entries;
+    expect(g.has_value() && g->entries().has_value(), "gated marker with Z set decode");
+    if (g && g->entries()) {
+        const auto list = *g->entries();
         expect(list.size() == 3 && entry_is(list[0], 0x83, 0x11, none16, none8) &&
                    entry_is(list[1], 0x84, 0x22, none16, none8) &&
                    entry_is(list[2], 0x03, none8, 0x1234, none8),
@@ -20259,9 +20303,9 @@ int main() {
     }
 
     g = gated(G_TAGGED);
-    expect(g.has_value() && g->entries.has_value(), "gated tagged decode");
-    if (g && g->entries) {
-        const auto& list = *g->entries;
+    expect(g.has_value() && g->entries().has_value(), "gated tagged decode");
+    if (g && g->entries()) {
+        const auto list = *g->entries();
         expect(list.size() == 2 && entry_is(list[0], 0x84, 0x11, none16, 0xA1) &&
                    entry_is(list[1], 0x03, none8, 0x1234, 0xA2),
                "gated tagged");
@@ -20269,7 +20313,7 @@ int main() {
     }
 
     g = gated(G_ABSENT);
-    expect(g.has_value() && !g->entries.has_value(), "gated chain without its gate");
+    expect(g.has_value() && !g->entries().has_value(), "gated chain without its gate");
     if (g) {
         expect(g->encode_to_vec() == G_ABSENT, "gated absent round trip");
     }
@@ -20278,8 +20322,8 @@ int main() {
     auto t = tail(AFTER);
     expect(t.has_value(), "tail after the marker decode");
     if (t) {
-        expect(t->entries.size() == 2 && entry_is(t->entries[0], 0x84, 0x11, none16, none8) &&
-                   entry_is(t->entries[1], 0x03, none8, 0x1234, none8),
+        expect(t->entries().size() == 2 && entry_is(t->entries()[0], 0x84, 0x11, none16, none8) &&
+                   entry_is(t->entries()[1], 0x03, none8, 0x1234, none8),
                "tail after the marker");
         expect(t->encode_to_vec() == AFTER, "tail after the marker round trip");
     }
@@ -20287,9 +20331,9 @@ int main() {
     t = tail(ADJ);
     expect(t.has_value(), "tail adjacent decode");
     if (t) {
-        expect(t->entries.size() == 3 && entry_is(t->entries[0], 0x84, 0x11, none16, none8) &&
-                   entry_is(t->entries[1], 0x83, none8, 0x1234, none8) &&
-                   entry_is(t->entries[2], 0x03, 0x77, none16, none8),
+        expect(t->entries().size() == 3 && entry_is(t->entries()[0], 0x84, 0x11, none16, none8) &&
+                   entry_is(t->entries()[1], 0x83, none8, 0x1234, none8) &&
+                   entry_is(t->entries()[2], 0x03, 0x77, none16, none8),
                "tail only the entry right after the marker");
         expect(t->encode_to_vec() == ADJ, "tail adjacent round trip");
     }
@@ -20297,16 +20341,16 @@ int main() {
     t = tail(TAGGED);
     expect(t.has_value(), "tail tagged decode");
     if (t) {
-        expect(t->entries.size() == 2 && entry_is(t->entries[0], 0x84, 0x11, none16, 0xA1) &&
-                   entry_is(t->entries[1], 0x03, none8, 0x1234, 0xA2),
+        expect(t->entries().size() == 2 && entry_is(t->entries()[0], 0x84, 0x11, none16, 0xA1) &&
+                   entry_is(t->entries()[1], 0x03, none8, 0x1234, 0xA2),
                "tail tagged");
         expect(t->encode_to_vec() == TAGGED, "tail tagged round trip");
     }
 
     auto tg = tail_gated(G_AFTER);
-    expect(tg.has_value() && tg->entries.has_value(), "tail gated after the marker decode");
-    if (tg && tg->entries) {
-        const auto& list = *tg->entries;
+    expect(tg.has_value() && tg->entries().has_value(), "tail gated after the marker decode");
+    if (tg && tg->entries()) {
+        const auto list = *tg->entries();
         expect(list.size() == 2 && entry_is(list[0], 0x84, 0x11, none16, none8) &&
                    entry_is(list[1], 0x03, none8, 0x1234, none8),
                "tail gated after the marker");
@@ -20314,9 +20358,9 @@ int main() {
     }
 
     tg = tail_gated(G_MIDDLE);
-    expect(tg.has_value() && tg->entries.has_value(), "tail gated marker with Z set decode");
-    if (tg && tg->entries) {
-        const auto& list = *tg->entries;
+    expect(tg.has_value() && tg->entries().has_value(), "tail gated marker with Z set decode");
+    if (tg && tg->entries()) {
+        const auto list = *tg->entries();
         expect(list.size() == 3 && entry_is(list[0], 0x83, 0x11, none16, none8) &&
                    entry_is(list[1], 0x84, 0x22, none16, none8) &&
                    entry_is(list[2], 0x03, none8, 0x1234, none8),
@@ -20325,7 +20369,7 @@ int main() {
     }
 
     tg = tail_gated(G_ABSENT);
-    expect(tg.has_value() && !tg->entries.has_value(), "tail gated chain without its gate");
+    expect(tg.has_value() && !tg->entries().has_value(), "tail gated chain without its gate");
     if (tg) {
         expect(tg->encode_to_vec() == G_ABSENT, "tail gated absent round trip");
     }

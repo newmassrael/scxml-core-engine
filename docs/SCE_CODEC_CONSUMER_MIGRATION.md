@@ -1329,6 +1329,27 @@ repeat-with-present-if fixture).
 - The list is `value.<element>()`, a `std::optional<::SCE::Forge::List<Entry, N>>`, as for any list a gate decides;
   the flag it is gated on is derived from whether it is there (hello's `L` is read by `input_l(value)`).
 
+## A printed C++ codec holds fields on each side of a gate as a variant, and a list to its entries' law (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C++ tree is regenerated after it. It moves the chain entries
+whose fields lie on each side of a gate and every carrier of them (10 more codecs of the resources, 118 in all:
+the chain entries `codec_chain_flag_entry` and `codec_chain_prev_entry`, and the chains and repeats that hold
+them).
+
+- Fields on each side of one gate are `value.<gate>()`, a `std::variant` of one class for each side, the side
+  where the gate holds first (`CodecChainFlagEntryWideWide{long_value}`, `CodecChainFlagEntryWideNotWide{short_value}`),
+  where each was a member `std::optional<T>` of its own. The gate is derived from the side the value holds and read
+  by `input_<gate>(value)`; the encode is no longer handed it. A value made by default holds the side where no gate
+  holds.
+- A list whose entries say an input the list hands them is a `::SCE::Forge::Lawful<List<Entry, N, M>, Law>`
+  (`sce/forge/law.h`), where it was a public `std::vector` member. It is made by `Lawful<...>::make(start, list)`,
+  which refuses entries that say another value than their place asks: the start is the flag the parent binds to
+  every entry (`head.W`), a `std::tuple` of one start for each input where the entries say several, and
+  `::SCE::Forge::FixedStart{}` for an input a chain supplies from the entry before. The parent's flag is derived
+  from the start, so a caller that set it by hand drops that code.
+- The input a list a gate decides says (`codec_chain_flag_forward`'s `wide`) is read by `input_<name>(value)` as a
+  `std::optional<std::uint8_t>`, empty where the list is absent, and the encode is no longer handed it.
+
 ## A payload schema states its keys in the order the document declares them (ADR 0087 §1.1)
 
 Landing: the commit that adds this section; every tree holding a `JSON_SCHEMA` constant or a GBNF table (the Rust,

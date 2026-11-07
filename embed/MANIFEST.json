@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.1 (1ubuntu1~24.04.2)",
-  "embed_version": "b105725",
+  "embed_version": "82596f3",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 537,
+  "symbol_count": 548,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -3565,6 +3565,96 @@
       "kind": "function",
       "name": "SCE::Forge::linear<T>",
       "signature": "double SCE::Forge::linear<T>(const double (&)[N], const double (&)[N], double) noexcept"
+    },
+    {
+      "header": "sce/forge/law.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Forge::Lawful<T>"
+    },
+    {
+      "header": "sce/forge/law.h",
+      "kind": "function",
+      "name": "SCE::Forge::Detail::follows<T>",
+      "signature": "bool SCE::Forge::Detail::follows<T>(const typename A::Start &, const L &)"
+    },
+    {
+      "header": "sce/forge/law.h",
+      "kind": "function",
+      "name": "SCE::Forge::operator!=",
+      "signature": "bool SCE::Forge::operator!=(FixedStart, FixedStart) noexcept"
+    },
+    {
+      "header": "sce/forge/law.h",
+      "kind": "function",
+      "name": "SCE::Forge::operator!=<T>",
+      "signature": "bool SCE::Forge::operator!=<T>(const Lawful<L, A> &, const Lawful<L2, A> &)"
+    },
+    {
+      "header": "sce/forge/law.h",
+      "kind": "function",
+      "name": "SCE::Forge::operator==",
+      "signature": "bool SCE::Forge::operator==(FixedStart, FixedStart) noexcept"
+    },
+    {
+      "header": "sce/forge/law.h",
+      "kind": "function",
+      "name": "SCE::Forge::operator==<T>",
+      "signature": "bool SCE::Forge::operator==<T>(const Lawful<L, A> &, const Lawful<L2, A> &)"
+    },
+    {
+      "header": "sce/forge/law.h",
+      "kind": "struct",
+      "members": [
+        "method State (Start) noexcept start",
+        "template FunctionTemplateDecl start_of",
+        "template FunctionTemplateDecl step",
+        "using Start = FixedStart",
+        "using State = bool"
+      ],
+      "name": "SCE::Forge::AfterKey<T>"
+    },
+    {
+      "header": "sce/forge/law.h",
+      "kind": "struct",
+      "members": [
+        "method State (Start) noexcept start",
+        "template FunctionTemplateDecl start_of",
+        "template FunctionTemplateDecl step",
+        "using Start = bool",
+        "using State = bool"
+      ],
+      "name": "SCE::Forge::Uniform<T>"
+    },
+    {
+      "header": "sce/forge/law.h",
+      "kind": "struct",
+      "members": [
+        "method State (const Start &) start",
+        "template FunctionTemplateDecl start_at",
+        "template FunctionTemplateDecl start_of",
+        "template FunctionTemplateDecl step",
+        "template FunctionTemplateDecl step_at",
+        "using Start = std::tuple<typename A::Start...>",
+        "using State = std::tuple<typename A::State...>"
+      ],
+      "name": "SCE::Forge::Laws<T>"
+    },
+    {
+      "header": "sce/forge/law.h",
+      "kind": "struct",
+      "members": [
+        "method void () FixedStart",
+        "method void (FixedStart &&) FixedStart",
+        "method void (const FixedStart &) FixedStart"
+      ],
+      "name": "SCE::Forge::FixedStart"
+    },
+    {
+      "header": "sce/forge/law.h",
+      "kind": "struct",
+      "members": [],
+      "name": "SCE::Forge::FixedStart"
     },
     {
       "header": "sce/forge/lookup.h",

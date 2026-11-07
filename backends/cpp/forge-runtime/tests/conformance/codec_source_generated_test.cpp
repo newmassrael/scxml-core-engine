@@ -27,6 +27,8 @@
 
 #include "codec_chain_depth_gated.h"
 #include "codec_chain_depth_plain.h"
+#include "codec_chain_flag_carrier.h"
+#include "codec_chain_prev_carrier.h"
 #include "codec_embed_basic.h"
 #include "codec_init_syn_body.h"
 #include "codec_init_syn_envelope.h"
@@ -1124,6 +1126,93 @@ void a_flag_every_arm_says_is_the_arms_word() {
           "an arm that holds no group clears the S the header presents");
 }
 
+namespace FlagEntry = ::SCE::Generated::CodecChainFlagEntry;
+namespace FlagCarrier = ::SCE::Generated::CodecChainFlagCarrier;
+namespace PrevEntry = ::SCE::Generated::CodecChainPrevEntry;
+namespace PrevCarrier = ::SCE::Generated::CodecChainPrevCarrier;
+using FlagEntryValue = FlagEntry::CodecChainFlagEntry;
+using PrevEntryValue = PrevEntry::CodecChainPrevEntry;
+
+static_assert(
+    std::is_same<FlagEntry::CodecChainFlagEntryWide, std::variant<FlagEntry::CodecChainFlagEntryWideWide,
+                                                                  FlagEntry::CodecChainFlagEntryWideNotWide>>::value,
+    "fields on each side of one gate are a variant of an arm for each side");
+
+void fields_on_each_side_of_a_gate_are_the_arm_the_value_holds() {
+    // `wide` holds the long value, and does not hold the short one; the
+    // encode derives it from the arm, so no caller hands it.
+    const FlagEntryValue wide{0x03, FlagEntry::CodecChainFlagEntryWideWide{0x1234}};
+    const FlagEntryValue narrow{0x03, FlagEntry::CodecChainFlagEntryWideNotWide{0x11}};
+    CHECK(wide.encode_to_vec() == (std::vector<std::uint8_t>{0x03, 0x12, 0x34}), "the arm that holds writes its field");
+    CHECK(narrow.encode_to_vec() == (std::vector<std::uint8_t>{0x03, 0x11}), "the other arm writes its own");
+    CHECK(FlagEntry::input_wide(wide) == 1 && FlagEntry::input_wide(narrow) == 0,
+          "the input is which arm the value holds");
+    CHECK(std::holds_alternative<FlagEntry::CodecChainFlagEntryWideNotWide>(FlagEntryValue{}.wide()),
+          "a value made by default holds the arm present while no gate holds");
+
+    const std::vector<std::uint8_t> frame{0x03, 0x12, 0x34};
+    ::SCE::Forge::SceCursor cursor(frame.data(), frame.size());
+    const auto decoded = FlagEntryValue::decode(cursor, 1);
+    const auto *arm = decoded ? std::get_if<FlagEntry::CodecChainFlagEntryWideWide>(&decoded->wide()) : nullptr;
+    CHECK(arm != nullptr && arm->long_value() == 0x1234, "a decode handed the gate holds the arm it gives");
+}
+
+void a_list_is_held_to_the_law_its_entries_say_its_flag_by() {
+    // Every entry says `wide`, which the carrier binds to `head.W`: the list's
+    // start is the flag, and an entry that says otherwise has no frame.
+    const std::vector<FlagEntryValue> wide_entries{
+        FlagEntryValue{0x03, FlagEntry::CodecChainFlagEntryWideWide{0x1234}},
+        FlagEntryValue{0x05, FlagEntry::CodecChainFlagEntryWideWide{0xABCD}}};
+    using Entries = ::SCE::Forge::List<FlagEntryValue, 4, 1>;
+    using LawfulEntries = ::SCE::Forge::Lawful<Entries, FlagCarrier::CodecChainFlagCarrierEntriesLaw>;
+    const auto entries = Entries::make(wide_entries);
+    CHECK(entries.has_value(), "two entries lie within 1 to 4");
+    if (!entries) {
+        return;
+    }
+    CHECK(!LawfulEntries::make(false, *entries).has_value(), "wide entries do not follow a clear flag");
+    const auto lawful = LawfulEntries::make(true, *entries);
+    CHECK(lawful.has_value(), "wide entries follow a set flag");
+    if (!lawful) {
+        return;
+    }
+    const std::vector<std::uint8_t> frame{0x01, 0x83, 0x12, 0x34, 0x05, 0xAB, 0xCD};
+    const FlagCarrier::CodecChainFlagCarrier value{0x00, *lawful};
+    CHECK(value.encode_to_vec() == frame, "the flag is the list's start, and Z is set on all but the last entry");
+
+    ::SCE::Forge::SceCursor cursor(frame.data(), frame.size());
+    const auto decoded = FlagCarrier::CodecChainFlagCarrier::decode(cursor);
+    CHECK(decoded.has_value() && decoded->entries().size() == 2 && decoded->entries().start(),
+          "a decoded list starts from the flag the frame gave");
+
+    // Each entry says `after_marker` set exactly when the entry before is the
+    // marker 0x4, and `tagged` as the carrier's `head.T`.
+    const std::vector<PrevEntryValue> chain{
+        PrevEntryValue{0x04, PrevEntry::CodecChainPrevEntryAfterMarkerNotAfterMarker{0x11}, std::nullopt},
+        PrevEntryValue{0x03, PrevEntry::CodecChainPrevEntryAfterMarkerAfterMarker{0x1234}, std::nullopt}};
+    const std::vector<PrevEntryValue> stays{
+        PrevEntryValue{0x04, PrevEntry::CodecChainPrevEntryAfterMarkerNotAfterMarker{0x11}, std::nullopt},
+        PrevEntryValue{0x03, PrevEntry::CodecChainPrevEntryAfterMarkerNotAfterMarker{0x22}, std::nullopt}};
+    using PrevEntries = ::SCE::Forge::List<PrevEntryValue, 4, 1>;
+    using LawfulPrev = ::SCE::Forge::Lawful<PrevEntries, PrevCarrier::CodecChainPrevCarrierEntriesLaw>;
+    const auto prev = PrevEntries::make(chain);
+    const auto wrong = PrevEntries::make(stays);
+    CHECK(prev.has_value() && wrong.has_value(), "two entries lie within 1 to 4");
+    if (!prev || !wrong) {
+        return;
+    }
+    const LawfulPrev::start_type untagged{false, ::SCE::Forge::FixedStart{}};
+    CHECK(!LawfulPrev::make(untagged, *wrong).has_value(), "the entry right after the marker says it set");
+    const auto held = LawfulPrev::make(untagged, *prev);
+    CHECK(held.has_value(), "the entry after the marker is wide");
+    if (!held) {
+        return;
+    }
+    const PrevCarrier::CodecChainPrevCarrier carrier{0x01, *held};
+    CHECK(carrier.encode_to_vec() == (std::vector<std::uint8_t>{0x00, 0x84, 0x11, 0x03, 0x12, 0x34}),
+          "the carrier's T is the list's start, which clears the bit it presents");
+}
+
 void encode_source_reports_the_sinks_failure() {
     std::uint8_t buffer[3] = {};
     ::SCE::Forge::SpanSink sink(buffer, sizeof buffer);
@@ -1154,6 +1243,8 @@ int main() {
     a_flag_an_arm_says_is_derived_from_the_arm_the_value_holds();
     fields_one_gate_decides_are_held_and_written_together();
     a_flag_every_arm_says_is_the_arms_word();
+    fields_on_each_side_of_a_gate_are_the_arm_the_value_holds();
+    a_list_is_held_to_the_law_its_entries_say_its_flag_by();
     encode_source_reports_the_sinks_failure();
     if (failures != 0) {
         std::fprintf(stderr, "codec_source_generated_test: %d failure(s)\n", failures);

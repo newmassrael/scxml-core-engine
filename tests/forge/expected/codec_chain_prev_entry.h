@@ -12,16 +12,268 @@
 #include <cstring>
 #include <optional>
 #include <vector>
+#include <type_traits>
+#include <utility>
 
 #include "sce/forge/codec.h"
 
 namespace SCE::Generated::CodecChainPrevEntry {
 
+/// The elements a value of `CodecChainPrevEntry` presents, each read by name: the
+/// member function where the type has one, otherwise a function the type's own
+/// namespace declares (docs/adr/0081, step 4).
+namespace source {
+namespace detail_header {
+void header() = delete;
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferMember) noexcept(noexcept(s.header())) -> decltype(s.header()) {
+    return s.header();
+}
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferFree) noexcept(noexcept(header(s))) -> decltype(header(s)) {
+    return header(s);
+}
+struct Read {
+    template <class S>
+    constexpr auto operator()(const S& s) const
+        noexcept(noexcept(read(s, ::SCE::Forge::PreferMember{})))
+        -> decltype(read(s, ::SCE::Forge::PreferMember{})) {
+        return read(s, ::SCE::Forge::PreferMember{});
+    }
+};
+}  // namespace detail_header
+/// The `header` element of a source.
+inline constexpr detail_header::Read header{};
+namespace detail_after_marker {
+void after_marker() = delete;
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferMember) noexcept(noexcept(s.after_marker())) -> decltype(s.after_marker()) {
+    return s.after_marker();
+}
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferFree) noexcept(noexcept(after_marker(s))) -> decltype(after_marker(s)) {
+    return after_marker(s);
+}
+struct Read {
+    template <class S>
+    constexpr auto operator()(const S& s) const
+        noexcept(noexcept(read(s, ::SCE::Forge::PreferMember{})))
+        -> decltype(read(s, ::SCE::Forge::PreferMember{})) {
+        return read(s, ::SCE::Forge::PreferMember{});
+    }
+};
+}  // namespace detail_after_marker
+/// The `after_marker` element of a source.
+inline constexpr detail_after_marker::Read after_marker{};
+namespace detail_tag {
+void tag() = delete;
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferMember) noexcept(noexcept(s.tag())) -> decltype(s.tag()) {
+    return s.tag();
+}
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferFree) noexcept(noexcept(tag(s))) -> decltype(tag(s)) {
+    return tag(s);
+}
+struct Read {
+    template <class S>
+    constexpr auto operator()(const S& s) const
+        noexcept(noexcept(read(s, ::SCE::Forge::PreferMember{})))
+        -> decltype(read(s, ::SCE::Forge::PreferMember{})) {
+        return read(s, ::SCE::Forge::PreferMember{});
+    }
+};
+}  // namespace detail_tag
+/// The `tag` element of a source.
+inline constexpr detail_tag::Read tag{};
+namespace detail_short_value {
+void short_value() = delete;
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferMember) noexcept(noexcept(s.short_value())) -> decltype(s.short_value()) {
+    return s.short_value();
+}
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferFree) noexcept(noexcept(short_value(s))) -> decltype(short_value(s)) {
+    return short_value(s);
+}
+struct Read {
+    template <class S>
+    constexpr auto operator()(const S& s) const
+        noexcept(noexcept(read(s, ::SCE::Forge::PreferMember{})))
+        -> decltype(read(s, ::SCE::Forge::PreferMember{})) {
+        return read(s, ::SCE::Forge::PreferMember{});
+    }
+};
+}  // namespace detail_short_value
+/// The `short_value` element of a source.
+inline constexpr detail_short_value::Read short_value{};
+namespace detail_long_value {
+void long_value() = delete;
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferMember) noexcept(noexcept(s.long_value())) -> decltype(s.long_value()) {
+    return s.long_value();
+}
+template <class S>
+constexpr auto read(const S& s, ::SCE::Forge::PreferFree) noexcept(noexcept(long_value(s))) -> decltype(long_value(s)) {
+    return long_value(s);
+}
+struct Read {
+    template <class S>
+    constexpr auto operator()(const S& s) const
+        noexcept(noexcept(read(s, ::SCE::Forge::PreferMember{})))
+        -> decltype(read(s, ::SCE::Forge::PreferMember{})) {
+        return read(s, ::SCE::Forge::PreferMember{});
+    }
+};
+}  // namespace detail_long_value
+/// The `long_value` element of a source.
+inline constexpr detail_long_value::Read long_value{};
+}  // namespace source
+
+/// The fields `after_marker` decides (docs/adr/0065 §6 R4b, R4c) present while `after_marker` holds.
+class CodecChainPrevEntryAfterMarkerAfterMarker {
+public:
+    CodecChainPrevEntryAfterMarkerAfterMarker() = default;
+    /// The value of each field, in declaration order.
+    constexpr CodecChainPrevEntryAfterMarkerAfterMarker(uint16_t long_value) noexcept
+        : long_value_(long_value) {}
+    /// The `long_value` field.
+    [[nodiscard]] constexpr uint16_t long_value() const noexcept { return long_value_; }
+
+private:
+    uint16_t long_value_{};
+};
+
+/// The fields `after_marker` decides (docs/adr/0065 §6 R4b, R4c) present while `after_marker` does not hold.
+class CodecChainPrevEntryAfterMarkerNotAfterMarker {
+public:
+    CodecChainPrevEntryAfterMarkerNotAfterMarker() = default;
+    /// The value of each field, in declaration order.
+    constexpr CodecChainPrevEntryAfterMarkerNotAfterMarker(uint8_t short_value) noexcept
+        : short_value_(short_value) {}
+    /// The `short_value` field.
+    [[nodiscard]] constexpr uint8_t short_value() const noexcept { return short_value_; }
+
+private:
+    uint8_t short_value_{};
+};
+
+/// The fields `after_marker` decides (docs/adr/0065 §6 R4b, R4c): a value holds one
+/// arm, and its encode derives the gates from which.
+using CodecChainPrevEntryAfterMarker = std::variant<CodecChainPrevEntryAfterMarkerAfterMarker, CodecChainPrevEntryAfterMarkerNotAfterMarker>;
+
+/// Whether `G` presents every field of `CodecChainPrevEntryAfterMarkerAfterMarker`, each convertible to its type.
+template <class G, class = void>
+struct is_after_marker_after_marker_members : std::false_type {};
+template <class G>
+struct is_after_marker_after_marker_members<G, std::void_t<decltype(source::long_value(std::declval<const G&>()))>>
+    : std::conjunction<std::is_convertible<decltype(source::long_value(std::declval<const G&>())), uint16_t>> {};
+/// Whether `G` presents every field of `CodecChainPrevEntryAfterMarkerNotAfterMarker`, each convertible to its type.
+template <class G, class = void>
+struct is_after_marker_not_after_marker_members : std::false_type {};
+template <class G>
+struct is_after_marker_not_after_marker_members<G, std::void_t<decltype(source::short_value(std::declval<const G&>()))>>
+    : std::conjunction<std::is_convertible<decltype(source::short_value(std::declval<const G&>())), uint8_t>> {};
+/// Whether `R` is what a source may present for `after_marker`, the fields `after_marker`
+/// decides: a `std::variant` of a type for each arm, in order, that presents its fields.
+template <class R>
+struct is_after_marker_group : std::false_type {};
+template <class G0, class G1>
+struct is_after_marker_group<std::variant<G0, G1>>
+    : std::conjunction<is_after_marker_after_marker_members<G0>, is_after_marker_not_after_marker_members<G1>> {};
+
+/// Whether `S` presents every element of `CodecChainPrevEntry`, each convertible to
+/// its type (a C++17 trait, ADR 0059 §3).
+template <class S, class = void>
+struct is_source : std::false_type {};
+template <class S>
+struct is_source<S, std::void_t<decltype(source::header(std::declval<const S&>())), decltype(source::after_marker(std::declval<const S&>())), decltype(source::tag(std::declval<const S&>()))>>
+    : std::conjunction<std::is_convertible<decltype(source::header(std::declval<const S&>())), uint8_t>, is_after_marker_group<std::decay_t<decltype(source::after_marker(std::declval<const S&>()))>>, std::is_convertible<decltype(source::tag(std::declval<const S&>())), std::optional<uint8_t>>> {};
+
+/// Whether reading every element of a source `S` throws nothing.
+template <class S, class = void>
+struct is_nothrow_source : std::false_type {};
+template <class S>
+struct is_nothrow_source<S, std::enable_if_t<is_source<S>::value>>
+    : std::bool_constant<noexcept(::SCE::Forge::Detail::converts_to<uint8_t>(source::header(std::declval<const S&>()))) && noexcept(source::after_marker(std::declval<const S&>())) && noexcept(::SCE::Forge::Detail::converts_to<uint16_t>(source::long_value(std::declval<const std::variant_alternative_t<0, std::decay_t<decltype(source::after_marker(std::declval<const S&>()))>>&>()))) && noexcept(::SCE::Forge::Detail::converts_to<uint8_t>(source::short_value(std::declval<const std::variant_alternative_t<1, std::decay_t<decltype(source::after_marker(std::declval<const S&>()))>>&>()))) && noexcept(::SCE::Forge::Detail::converts_to<std::optional<uint8_t>>(source::tag(std::declval<const S&>())))> {};
+
+/// One-bit flags of `CodecChainPrevEntry` a parent may set in place of the ones a value
+/// presents, such as the flag a chain whose entries are `CodecChainPrevEntry` ends them
+/// on, which the chain derives from where each entry stands.
+struct Overrides {
+    /// The `Z` flag of `header`, where a parent sets it.
+    std::optional<bool> header_z;
+};
+
+/// The encode of `CodecChainPrevEntry` over any source of it: each element read
+/// through `source`, written as the plan lays it out (docs/adr/0081). It
+/// refuses nothing; what it returns is the sink's own failure, and it
+/// throws only what a read of `src` throws.
+struct Wire {
+    template <class S>
+    [[nodiscard]] static std::optional<::SCE::Forge::CodecError> encode_source(const S& src, ::SCE::Forge::SceSink& w, const Overrides& overrides = Overrides{}) noexcept(is_nothrow_source<S>::value) {
+        static_assert(is_source<S>::value, "S presents every element of CodecChainPrevEntry: header, after_marker, tag");
+        const auto& _r_tag = source::tag(src);
+        const std::optional<uint8_t> _e_tag = _r_tag;
+        const auto& _r_after_marker = source::after_marker(src);
+        std::optional<uint8_t> _e_short_value;
+        std::optional<uint16_t> _e_long_value;
+        if (const auto* _a = std::get_if<0>(&_r_after_marker)) {
+            _e_long_value = static_cast<uint16_t>(source::long_value(*_a));
+        }
+        if (const auto* _a = std::get_if<1>(&_r_after_marker)) {
+            _e_short_value = static_cast<uint8_t>(source::short_value(*_a));
+        }
+        const std::uint8_t after_marker = static_cast<std::uint8_t>((_r_after_marker.index() == 0u) ? 1 : 0);
+        (void)after_marker;
+        const std::uint8_t tagged = static_cast<std::uint8_t>(_e_tag.has_value() ? 1 : 0);
+        (void)tagged;
+        std::uint64_t _f_header = static_cast<std::uint64_t>(source::header(src));
+        if (overrides.header_z.has_value()) {
+            _f_header = (_f_header & ~0x80ull) | (static_cast<std::uint64_t>(*overrides.header_z) << 7);
+        }
+        const uint8_t _c_header = static_cast<uint8_t>(_f_header);
+        if (auto _e = w.write_u8(static_cast<std::uint8_t>(_c_header)); _e) return _e;
+        if (_e_short_value) {
+            if (auto _e = w.write_u8(static_cast<std::uint8_t>((*_e_short_value))); _e) return _e;
+        }
+        if (_e_long_value) {
+            if (auto _e = w.write_u16_be(static_cast<std::uint16_t>((*_e_long_value))); _e) return _e;
+        }
+        if (_e_tag) {
+            if (auto _e = w.write_u8(static_cast<std::uint8_t>((*_e_tag))); _e) return _e;
+        }
+        return std::nullopt;
+    }
+};
+
+/// The flag input `after_marker` a source of `CodecChainPrevEntry` says, which its encode is not
+/// handed (docs/adr/0065 §6 R4a).
+template <class S>
+[[nodiscard]] std::uint8_t input_after_marker(const S& src) noexcept(is_nothrow_source<S>::value) {
+    static_assert(is_source<S>::value, "S presents every element of CodecChainPrevEntry");
+    return static_cast<std::uint8_t>((source::after_marker(src).index() == 0u) ? 1 : 0);
+}
+
+/// The flag input `tagged` a source of `CodecChainPrevEntry` says, which its encode is not
+/// handed (docs/adr/0065 §6 R4a).
+template <class S>
+[[nodiscard]] std::uint8_t input_tagged(const S& src) noexcept(is_nothrow_source<S>::value) {
+    static_assert(is_source<S>::value, "S presents every element of CodecChainPrevEntry");
+    return static_cast<std::uint8_t>(static_cast<std::optional<uint8_t>>(source::tag(src)).has_value() ? 1 : 0);
+}
+
 struct CodecChainPrevEntry {
-    uint8_t header{};
-    std::optional<uint8_t> short_value{};
-    std::optional<uint16_t> long_value{};
-    std::optional<uint8_t> tag{};
+    CodecChainPrevEntry() = default;
+    /// The value of each element it presents, in declaration order (ADR 0059 §5).
+    constexpr CodecChainPrevEntry(uint8_t header, CodecChainPrevEntryAfterMarker after_marker, std::optional<uint8_t> tag) noexcept
+        : header_(header), after_marker_(after_marker), tag_(tag) {}
+    /// The `header` element.
+    [[nodiscard]] constexpr uint8_t header() const noexcept { return header_; }
+    /// The fields `after_marker` decides, as the arm the value holds.
+    [[nodiscard]] constexpr const CodecChainPrevEntryAfterMarker& after_marker() const noexcept { return after_marker_; }
+    /// The `tag` element, where a gate leaves it in.
+    [[nodiscard]] constexpr std::optional<uint8_t> tag() const noexcept { return tag_; }
 
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
@@ -74,12 +326,18 @@ struct CodecChainPrevEntry {
             tag = static_cast<uint8_t>(raw[0]);
             if (!cursor.advance(1)) return std::nullopt;
         }
-        return CodecChainPrevEntry{
+        CodecChainPrevEntryAfterMarker _g_after_marker;
+        if (((after_marker & 0x01) != 0)) {
+            _g_after_marker.emplace<0>(*long_value);
+        } else if (((after_marker & 0x01) == 0)) {
+            _g_after_marker.emplace<1>(*short_value);
+        }
+        CodecChainPrevEntry _decoded{
             /*header=*/header,
-            /*short_value=*/short_value,
-            /*long_value=*/long_value,
+            /*after_marker=*/_g_after_marker,
             /*tag=*/tag,
         };
+        return _decoded;
     }
 
     // RFC §synth-5-B flags primitive: per-bit-range accessors.
@@ -89,7 +347,7 @@ struct CodecChainPrevEntry {
     // sibling bits. Wire layout is unchanged.
     uint8_t ext_id() const noexcept {
         return static_cast<uint8_t>(
-            (this->header >> 0) & static_cast<uint8_t>(0x0F)
+            (this->header_ >> 0) & static_cast<uint8_t>(0x0F)
         );
     }
 
@@ -102,20 +360,20 @@ struct CodecChainPrevEntry {
             static_cast<uint8_t>(
                 (static_cast<uint8_t>(v) & static_cast<uint8_t>(0x0F)) << 0
             );
-        this->header = static_cast<uint8_t>(
-            (this->header & static_cast<uint8_t>(~_shifted_mask)) | _val
+        this->header_ = static_cast<uint8_t>(
+            (this->header_ & static_cast<uint8_t>(~_shifted_mask)) | _val
         );
     }
 
     bool z() const noexcept {
-        return (this->header & 0x80) != 0;
+        return (this->header_ & 0x80) != 0;
     }
 
     void set_z(bool v) noexcept {
         if (v) {
-            this->header = static_cast<uint8_t>(this->header | 0x80);
+            this->header_ = static_cast<uint8_t>(this->header_ | 0x80);
         } else {
-            this->header = static_cast<uint8_t>(this->header & static_cast<uint8_t>(~0x80));
+            this->header_ = static_cast<uint8_t>(this->header_ & static_cast<uint8_t>(~0x80));
         }
     }
 
@@ -129,41 +387,10 @@ struct CodecChainPrevEntry {
     /// `CodecError::BufferOverflow` from a bounded sink when the
     /// destination has insufficient remaining capacity; growable sinks
     /// (e.g. `VectorSink`) are effectively infallible.
-    [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink& w, std::uint8_t after_marker, std::uint8_t tagged) const noexcept {
-        (void)after_marker;
-        (void)tagged;
-        if ((after_marker & 0x01) == 0) {
-            if (!short_value.has_value()) return ::SCE::Forge::CodecError::PresentIfMismatch;
-        } else if (short_value.has_value()) return ::SCE::Forge::CodecError::PresentIfMismatch;
-        if ((after_marker & 0x01) != 0) {
-            if (!long_value.has_value()) return ::SCE::Forge::CodecError::PresentIfMismatch;
-        } else if (long_value.has_value()) return ::SCE::Forge::CodecError::PresentIfMismatch;
-        if ((tagged & 0x01) != 0) {
-            if (!tag.has_value()) return ::SCE::Forge::CodecError::PresentIfMismatch;
-        } else if (tag.has_value()) return ::SCE::Forge::CodecError::PresentIfMismatch;
-        // Streaming cursor encode (SSOT selection: `needs_streaming`).
-        // Mirrors the streaming decode: every field appends its own bytes
-        // in declaration order through the per-field encode blocks, so a
-        // gated field skips its append when absent, and a fixed field after
-        // a variable-length payload lands after the payload (the positional
-        // path appends variable fields last, placing it ahead on the wire).
-        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
-        // dedicated helpers; everything else uses `present_if_encode_block`.
-        if (auto _e = w.write_u8(header); _e) return _e;
-        if (short_value.has_value()) {
-            auto _v = *short_value;
-            if (auto _e = w.write_u8(_v); _e) return _e;
-        }
-        if (long_value.has_value()) {
-            auto _v = *long_value;
-            if (auto _e = w.write_u8(static_cast<uint8_t>((_v >> 8) & 0xFF)); _e) return _e;
-            if (auto _e = w.write_u8(static_cast<uint8_t>(_v & 0xFF)); _e) return _e;
-        }
-        if (tag.has_value()) {
-            auto _v = *tag;
-            if (auto _e = w.write_u8(_v); _e) return _e;
-        }
-        return std::nullopt;
+    [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink& w) const noexcept {
+        // The encode over any source of the codec, this value one of them,
+        // handed the inputs the caller hands this encode.
+        return Wire::encode_source(*this, w);
     }
 
     /// Heap-backed convenience facade. Pre-reserves `MAX_ENCODED_BYTES`
@@ -177,15 +404,20 @@ struct CodecChainPrevEntry {
     /// `CodecError::TooManyElements`). Callers that need the reason, and
     /// zero-alloc hot paths, call `encode` directly against a caller-owned
     /// sink.
-    [[nodiscard]] std::optional<std::vector<std::uint8_t>> encode_to_vec(std::uint8_t after_marker, std::uint8_t tagged) const {
+    [[nodiscard]] std::optional<std::vector<std::uint8_t>> encode_to_vec() const {
         std::vector<std::uint8_t> _sce_v;
         _sce_v.reserve(MAX_ENCODED_BYTES);
         ::SCE::Forge::VectorSink _sce_sink(_sce_v);
-        if (encode(_sce_sink, after_marker, tagged)) {
+        if (encode(_sce_sink)) {
             return std::nullopt;
         }
         return _sce_v;
     }
+
+private:
+    uint8_t header_{};
+    CodecChainPrevEntryAfterMarker after_marker_{std::in_place_index_t<1>{}};
+    std::optional<uint8_t> tag_{};
 };
 
 }  // namespace SCE::Generated::CodecChainPrevEntry
