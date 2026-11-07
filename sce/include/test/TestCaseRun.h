@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <any>
+#include <exception>
 #include <functional>
 #include <map>
 #include <memory>
@@ -26,6 +27,7 @@
 #include <utility>
 #include <vector>
 
+#include "test/ModuleParameters.h"
 #include "test/Port.h"
 #include "test/Timer.h"
 #include "test/Verdict.h"
@@ -138,7 +140,8 @@ public:
     virtual bool terminated() const = 0;
 };
 
-/// Builds the machine of a component type.
+/// Builds the machine of a component type, or none for a type it does not make,
+/// which ends the run with `error` where a component of that type is created.
 using MachineFactory = std::function<std::unique_ptr<ComponentMachine>(const std::string &componentType)>;
 
 /**
@@ -192,6 +195,16 @@ public:
     /// The cancel of that invocation: the PTC is removed (P9).
     void kill(const std::string &ptc);
 
+    // ── Module parameters (§11.5, §11.8) ─────────────────────────────
+
+    /// Hands @p read the module parameters of the run, which it reads into the
+    /// variables the component declares as module parameters, before the
+    /// component's machine starts. A value the run was not given, or one @p read
+    /// refuses as not of the type the component declares, is a dynamic error
+    /// (P13): the run ends with `error` and false is returned, so the machine is
+    /// not started on a value made up in its place.
+    template <typename Read> bool readModuleParameters(Read &&read);
+
     Instant now() const;
 
 private:
@@ -215,9 +228,12 @@ private:
 class TestCaseRun {
 public:
     /// @param guard The test case's guard duration (P11), if it has one.
+    /// @param moduleParameters The values of the module parameters the
+    ///        components read (§11.8): the suite's, with any the caller overrides.
     TestCaseRun(Configuration configuration, MachineFactory factory, SystemAdapter &adapter,
-                std::optional<Duration> guard)
-        : configuration_(std::move(configuration)), factory_(std::move(factory)), adapter_(adapter), guard_(guard) {}
+                std::optional<Duration> guard, ModuleParameters moduleParameters = ModuleParameters())
+        : configuration_(std::move(configuration)), factory_(std::move(factory)), adapter_(adapter), guard_(guard),
+          moduleParameters_(std::move(moduleParameters)) {}
 
     /// Runs the test case to its end and returns its verdict and log.
     TestCaseResult run() {
@@ -370,6 +386,11 @@ private:
     // ── Entities (§2.1, P9) ──────────────────────────────────────────
 
     void createEntity(const std::string &name, const std::string &type) {
+        std::unique_ptr<ComponentMachine> machine = factory_(type);
+        if (!machine) {
+            fail(name, "is of the component type '" + type + "', which the factory of machines does not make");
+            return;
+        }
         Entity entity;
         entity.serial = ++created_;
         entity.type = type;
@@ -384,13 +405,13 @@ private:
                 entity.context->timers_[timer];
             }
         }
-        entity.machine = factory_(type);
+        entity.machine = std::move(machine);
         ComponentContext &context = *entity.context;
-        ComponentMachine &machine = *entity.machine;
+        ComponentMachine &started = *entity.machine;
         entities_.emplace(name, std::move(entity));
         order_.push_back(name);
         record(name, name == MTC_NAME ? LogKind::Start : LogKind::Create, type);
-        machine.start(context);
+        started.start(context);
         settle(name);
     }
 
@@ -480,6 +501,7 @@ private:
     MachineFactory factory_;
     SystemAdapter &adapter_;
     std::optional<Duration> guard_;
+    ModuleParameters moduleParameters_;
 
     Instant now_ = 0;
     std::uint64_t created_ = 0;
@@ -553,6 +575,17 @@ inline void ComponentContext::create(const std::string &ptc) {
 
 inline void ComponentContext::kill(const std::string &ptc) {
     run_.removeEntity(ptc);
+}
+
+template <typename Read> bool ComponentContext::readModuleParameters(Read &&read) {
+    try {
+        const ModuleParameters &given = run_.moduleParameters_;
+        std::forward<Read>(read)(given);
+        return true;
+    } catch (const std::exception &refused) {
+        run_.fail(name_, refused.what());
+        return false;
+    }
 }
 
 inline Instant ComponentContext::now() const {

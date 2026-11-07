@@ -4,17 +4,23 @@
 // The test profile's runtime (docs/SCE_TEST_PROFILE.md §12.2), held to the
 // rules of §2 to §5 with components written here by hand, before any machine
 // is generated: each one reads its snapshot and calls its context as a
-// generated machine does (§12.3).
+// generated machine does (§12.3). The runner of a suite (test/Suite.h) is
+// held to P11 over test cases made of the same components.
 
 #include <gtest/gtest.h>
 
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "saved/SavedValues.h"
+#include "test/Suite.h"
 #include "test/TestCaseRun.h"
 
 namespace {
@@ -412,6 +418,83 @@ TEST(TestCaseRunTest, AReceiveWithATemplateMatchesOnlyItsRecordsValue) {
     EXPECT_EQ(result.verdict, Verdict::None);
 }
 
+/// §11.5, §11.8: a component reads the module parameters of its run into its
+/// variables before it starts, as a generated machine reads each through the
+/// reader of the type it declares.
+Scripted::Step readsJob(std::optional<std::uint32_t> &job) {
+    return [&job](ComponentContext &context, Scripted &self) {
+        const bool read = context.readModuleParameters([&job](const SCE::Test::ModuleParameters &given) {
+            job = SCE::Saved::savedReadUint32(given.of("job"), "job");
+        });
+        if (!read) {
+            return;
+        }
+        context.setverdict(Verdict::Pass, "");
+        self.end();
+    };
+}
+
+Configuration lone(const std::string &type) {
+    Configuration configuration;
+    configuration.mtcType = type;
+    return configuration;
+}
+
+/// §11.8: the value the run is given is the one the component reads, and the
+/// component starts on it.
+TEST(TestCaseRunTest, AComponentReadsTheModuleParameterItsRunIsGiven) {
+    std::optional<std::uint32_t> job;
+    Machines machines;
+    machines.types["Reader"] = {readsJob(job), [](ComponentContext &, Scripted &) {}};
+    SCE::Test::ModuleParameters parameters;
+    parameters.set("job", SCE::Saved::savedWriteUint32(7));
+    TraceAdapter adapter;
+    TestCaseResult result = TestCaseRun(lone("Reader"), machines.factory(), adapter, std::nullopt, parameters).run();
+    EXPECT_EQ(job, std::optional<std::uint32_t>(7));
+    EXPECT_EQ(result.verdict, Verdict::Pass);
+}
+
+/// P13: a module parameter the run has no value for is a dynamic error, named
+/// in the log, and the component goes no further than the read.
+TEST(TestCaseRunTest, AModuleParameterTheRunIsNotGivenIsAnError) {
+    std::optional<std::uint32_t> job;
+    Machines machines;
+    machines.types["Reader"] = {readsJob(job), [](ComponentContext &, Scripted &) {}};
+    TraceAdapter adapter;
+    TestCaseResult result = TestCaseRun(lone("Reader"), machines.factory(), adapter, std::nullopt).run();
+    EXPECT_EQ(result.verdict, Verdict::Error);
+    EXPECT_FALSE(job.has_value());
+    ASSERT_FALSE(result.log.empty());
+    EXPECT_EQ(result.log.back().kind, LogKind::Error);
+    EXPECT_NE(result.log.back().detail.find("'job'"), std::string::npos) << result.log.back().detail;
+}
+
+/// P13: a value that is not of the type the component declares is refused as a
+/// restored value of another type is, and not converted.
+TEST(TestCaseRunTest, AModuleParameterOfAnotherTypeIsAnError) {
+    std::optional<std::uint32_t> job;
+    Machines machines;
+    machines.types["Reader"] = {readsJob(job), [](ComponentContext &, Scripted &) {}};
+    SCE::Test::ModuleParameters parameters;
+    parameters.set("job", SCE::Saved::savedWriteString("seven"));
+    TraceAdapter adapter;
+    TestCaseResult result = TestCaseRun(lone("Reader"), machines.factory(), adapter, std::nullopt, parameters).run();
+    EXPECT_EQ(result.verdict, Verdict::Error);
+    EXPECT_FALSE(job.has_value());
+    EXPECT_TRUE(logged(result, "mtc", LogKind::Error));
+}
+
+/// P13: a component type the factory of machines makes no machine for ends the
+/// run with error where a component of it is created.
+TEST(TestCaseRunTest, AComponentTypeWithNoMachineIsAnError) {
+    SCE::Test::MachineFactory none = [](const std::string &) -> std::unique_ptr<ComponentMachine> { return nullptr; };
+    TraceAdapter adapter;
+    TestCaseResult result = TestCaseRun(lone("Ghost"), none, adapter, std::nullopt).run();
+    EXPECT_EQ(result.verdict, Verdict::Error);
+    EXPECT_TRUE(logged(result, "mtc", LogKind::Error));
+    EXPECT_FALSE(logged(result, "mtc", LogKind::Start)) << "no component of the type was created";
+}
+
 /// P6, P13: a send on a port whose peer is not present is a dynamic error.
 TEST(TestCaseRunTest, ASendToAnAbsentPeerIsAnError) {
     Configuration configuration = mtcAndEcho();
@@ -422,6 +505,126 @@ TEST(TestCaseRunTest, ASendToAnAbsentPeerIsAnError) {
     TestCaseResult result = TestCaseRun(configuration, machines.factory(), adapter, std::nullopt).run();
     EXPECT_EQ(result.verdict, Verdict::Error);
     EXPECT_EQ(result.endedAt, 0);
+}
+
+// ── The runner of a suite (test/Suite.h, P11) ────────────────────────
+
+/// A test case whose MTC, of type @p type, sets @p verdict as it starts and
+/// ends there.
+SCE::Test::TestCase endsWith(const std::string &name, const std::string &type, Verdict verdict) {
+    Machines machines;
+    machines.types[type] = {[verdict](ComponentContext &context, Scripted &self) {
+                                context.setverdict(verdict, "");
+                                self.end();
+                            },
+                            [](ComponentContext &, Scripted &) {}};
+    return SCE::Test::TestCase{name, lone(type), machines.factory(), {}};
+}
+
+/// The adapters of a suite's run, each a fresh TraceAdapter, recording the test
+/// case each was built for.
+SCE::Test::AdapterFactory tracing(std::vector<std::string> &built) {
+    return [&built](const std::string &testCase) -> std::unique_ptr<SystemAdapter> {
+        built.push_back(testCase);
+        return std::make_unique<TraceAdapter>();
+    };
+}
+
+/// P11: the runner runs the test cases a world selects, in the suite's order,
+/// and skips the others; a test case with no selection runs in every world.
+TEST(TestSuiteRun, RunsTheTestCasesAWorldSelectsInTheSuitesOrder) {
+    SCE::Test::Suite suite;
+    suite.name = "ordered";
+    suite.executes.push_back(SCE::Test::Execute{endsWith("first", "First", Verdict::Pass), std::nullopt, nullptr});
+    suite.executes.push_back(
+        SCE::Test::Execute{endsWith("second", "Second", Verdict::Fail), std::nullopt,
+                           [](const SCE::Test::Features &world) { return SCE::Test::enabled(world, "x"); }});
+    suite.executes.push_back(
+        SCE::Test::Execute{endsWith("third", "Third", Verdict::Inconclusive), std::nullopt,
+                           [](const SCE::Test::Features &world) { return SCE::Test::enabled(world, "y"); }});
+    std::vector<std::string> built;
+    const auto results = SCE::Test::runSuite(suite, {"y"}, tracing(built));
+    ASSERT_EQ(results.size(), 2u);
+    EXPECT_EQ(results[0].testCase, "first");
+    EXPECT_EQ(results[0].result.verdict, Verdict::Pass);
+    EXPECT_EQ(results[1].testCase, "third");
+    EXPECT_EQ(results[1].result.verdict, Verdict::Inconclusive);
+    EXPECT_EQ(built, (std::vector<std::string>{"first", "third"})) << "an adapter is built for each case run";
+}
+
+/// P11: each test case is a fresh run from NOW = 0 under its own guard.
+TEST(TestSuiteRun, EachTestCaseIsAFreshRunUnderItsOwnGuard) {
+    Machines waiting;
+    waiting.types["Waiter"] = {[](ComponentContext &, Scripted &) {}, [](ComponentContext &, Scripted &) {}};
+    Configuration waiter = lone("Waiter");
+    SCE::Test::Suite suite;
+    suite.name = "guarded";
+    suite.executes.push_back(
+        SCE::Test::Execute{SCE::Test::TestCase{"stuck", waiter, waiting.factory(), {}}, 5 * SECOND, nullptr});
+    suite.executes.push_back(SCE::Test::Execute{endsWith("quick", "Quick", Verdict::Pass), std::nullopt, nullptr});
+    std::vector<std::string> built;
+    const auto results = SCE::Test::runSuite(suite, {}, tracing(built));
+    ASSERT_EQ(results.size(), 2u);
+    EXPECT_EQ(results[0].result.verdict, Verdict::Error);
+    EXPECT_EQ(results[0].result.endedAt, 5 * SECOND) << "the guard ends the first";
+    EXPECT_EQ(results[1].result.verdict, Verdict::Pass);
+    EXPECT_EQ(results[1].result.endedAt, 0) << "the second starts again at NOW = 0";
+}
+
+/// -1 §8.2.1: a value the caller gives a module parameter replaces the suite's
+/// default, and a parameter the suite does not declare cannot be given one.
+TEST(TestSuiteRun, AnOverrideReplacesTheDefaultOfAModuleParameterTheSuiteDeclares) {
+    std::optional<std::uint32_t> job;
+    Machines machines;
+    machines.types["Reader"] = {readsJob(job), [](ComponentContext &, Scripted &) {}};
+    SCE::Test::Suite suite;
+    suite.name = "parameters";
+    suite.moduleParameters.set("job", SCE::Saved::savedWriteUint32(7));
+    suite.executes.push_back(SCE::Test::Execute{
+        SCE::Test::TestCase{"reads", lone("Reader"), machines.factory(), {"job"}}, std::nullopt, nullptr});
+    std::vector<std::string> built;
+    auto results = SCE::Test::runSuite(suite, {}, tracing(built));
+    ASSERT_EQ(results.size(), 1u);
+    EXPECT_EQ(results[0].result.verdict, Verdict::Pass);
+    EXPECT_EQ(job, std::optional<std::uint32_t>(7)) << "the default";
+
+    SCE::Test::ModuleParameters overrides;
+    overrides.set("job", SCE::Saved::savedWriteUint32(9));
+    results = SCE::Test::runSuite(suite, {}, tracing(built), overrides);
+    ASSERT_EQ(results.size(), 1u);
+    EXPECT_EQ(job, std::optional<std::uint32_t>(9)) << "the override";
+
+    SCE::Test::ModuleParameters stray;
+    stray.set("limit", SCE::Saved::savedWriteUint32(1));
+    EXPECT_THROW(SCE::Test::runSuite(suite, {}, tracing(built), stray), std::invalid_argument);
+}
+
+/// P13: a test case whose components read a module parameter the run has no
+/// value for ends with error before anything of it runs, its adapter included.
+TEST(TestSuiteRun, ATestCaseThatReadsAModuleParameterWithNoValueIsAnError) {
+    SCE::Test::TestCase reads = endsWith("reads", "Reader", Verdict::Pass);
+    reads.moduleParameters = {"job"};
+    SCE::Test::Suite suite;
+    suite.name = "undeclared";
+    suite.executes.push_back(SCE::Test::Execute{reads, std::nullopt, nullptr});
+    std::vector<std::string> built;
+    const auto results = SCE::Test::runSuite(suite, {}, tracing(built));
+    ASSERT_EQ(results.size(), 1u);
+    EXPECT_EQ(results[0].result.verdict, Verdict::Error);
+    ASSERT_EQ(results[0].result.log.size(), 1u);
+    EXPECT_NE(results[0].result.log[0].detail.find("'job'"), std::string::npos);
+    EXPECT_TRUE(built.empty()) << "no adapter is built for a case that cannot start";
+}
+
+/// P13: a test case the caller gives no system adapter ends with error.
+TEST(TestSuiteRun, ATestCaseWithNoSystemAdapterIsAnError) {
+    SCE::Test::Suite suite;
+    suite.name = "unadapted";
+    suite.executes.push_back(SCE::Test::Execute{endsWith("only", "Only", Verdict::Pass), std::nullopt, nullptr});
+    const auto results =
+        SCE::Test::runSuite(suite, {}, [](const std::string &) -> std::unique_ptr<SystemAdapter> { return nullptr; });
+    ASSERT_EQ(results.size(), 1u);
+    EXPECT_EQ(results[0].result.verdict, Verdict::Error);
 }
 
 }  // namespace
