@@ -1841,5 +1841,19 @@ name = "a_cpp_machine_whose_invokes_are_all_remote_has_no_queue_to_drain"
 path = "tests/a_cpp_machine_whose_invokes_are_all_remote_has_no_queue_to_drain.rs"
 required-features = ["cli"]
 
+# A union is read where a backend carries one and refused by name where it does not. It runs
+# `sce-codegen`, so it carries the `cli` gate.
+[[test]]
+name = "a_union_type_is_read_and_refused_by_name_where_it_is_not_lowered"
+path = "tests/a_union_type_is_read_and_refused_by_name_where_it_is_not_lowered.rs"
+required-features = ["cli"]
+
+# A union variable is built where it is declared or starts absent. It runs `sce-codegen`, so it
+# carries the `cli` gate.
+[[test]]
+name = "a_union_variable_is_built_where_it_is_declared_or_starts_absent"
+path = "tests/a_union_variable_is_built_where_it_is_declared_or_starts_absent.rs"
+required-features = ["cli"]
+
 [lints]
 workspace = true
