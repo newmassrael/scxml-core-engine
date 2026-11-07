@@ -75,6 +75,7 @@ const PRINTED: &[&str] = &[
     "codec_present_if_tail",
     "codec_present_if_vle",
     "codec_qos_byte",
+    "codec_quantity_temperature",
     "codec_repeat_basic",
     "codec_repeat_elem",
     "codec_repeat_flag_carrier",

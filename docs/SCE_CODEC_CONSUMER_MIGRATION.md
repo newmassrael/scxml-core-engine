@@ -1447,6 +1447,17 @@ flag the import declares as the dispatch of the embedded variant (1 more codec o
   from the arm the body holds: a caller that set it by hand drops that code, and the carrier's other bits stay
   what the value presents.
 
+## A printed C++ codec holds a physical quantity behind its unit accessors (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C++ tree is regenerated after it. It moves the codec whose
+field declares `sce:quantity` (1 more codec of the resources, 134 in all: `codec_quantity_temperature`).
+
+- The value is the class with the raw field behind its accessor, where it was a public member: read it as
+  `raw_temp()` and set it in its unit with `set_raw_temp_phys(...)`; `raw_temp_phys()` reads it in its unit as
+  before. The wire is unchanged.
+- The unit getter converts with `static_cast<double>` where it used a C-style cast; the value it returns is the
+  same.
+
 ## A payload schema states its keys in the order the document declares them (ADR 0087 §1.1)
 
 Landing: the commit that adds this section; every tree holding a `JSON_SCHEMA` constant or a GBNF table (the Rust,

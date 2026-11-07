@@ -214,12 +214,6 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
     if !plan.gate_checks.is_empty() || !plan.input_checks.is_empty() || !plan.totality.is_total() {
         forms.push("an encode that can refuse".to_string());
     }
-    forms.extend(
-        m.fields
-            .iter()
-            .filter(|f| f.quantity.is_some())
-            .map(|field| format!("`{}`, a physical quantity", field.id)),
-    );
     let gated_element = |f: &CodecField| gated(&f.id);
     for write in &plan.program {
         match write {

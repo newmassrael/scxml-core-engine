@@ -25,10 +25,12 @@
 #include "codec_default_marker_arm_a.h"
 #include "codec_default_marker_arm_b.h"
 #include "codec_embed_variant_dispatch.h"
+#include "codec_quantity_temperature.h"
 #include "codec_variant_default_marker.h"
 
 using ::SCE::Forge::SceCursor;
 using ::SCE::Generated::CodecEmbedVariantDispatch::CodecEmbedVariantDispatch;
+using ::SCE::Generated::CodecQuantityTemperature::CodecQuantityTemperature;
 using ::SCE::Generated::CodecVariantDefaultMarker::CodecVariantDefaultMarker;
 
 static int failures = 0;
@@ -123,6 +125,24 @@ int main() {
         EXPECT(decoded_a.has_value() && decoded_a->body().body().index() == 0,
                "the parent's kind dispatches the embedded variant to arm A");
         EXPECT(decoded_a.has_value() && decoded_a->encode_to_vec() == a_frame, "and encodes back to it");
+    }
+
+    // A physical quantity is the raw value the wire holds, read and set in
+    // its unit through `raw * scale + offset`; the wire is the raw value.
+    {
+        CodecQuantityTemperature reading{static_cast<std::int8_t>(-10)};
+        EXPECT(reading.raw_temp_phys() == -45.0, "raw -10 is -10 * 0.5 - 40 degrees");
+        EXPECT(reading.encode_to_vec() == (std::vector<std::uint8_t>{0xF6}), "the wire holds the raw value");
+
+        reading.set_raw_temp_phys(-20.0);
+        EXPECT(reading.raw_temp() == 40, "-20 degrees is raw (-20 + 40) / 0.5");
+        const std::vector<std::uint8_t> frame{0x28};
+        EXPECT(reading.encode_to_vec() == frame, "and the wire holds the raw value set");
+
+        SceCursor quantity_cursor(frame.data(), frame.size());
+        const auto decoded_q = CodecQuantityTemperature::decode(quantity_cursor);
+        EXPECT(decoded_q.has_value() && decoded_q->raw_temp_phys() == -20.0,
+               "the decoded raw value reads back in degrees");
     }
 
     if (failures == 0) {

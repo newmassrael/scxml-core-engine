@@ -572,6 +572,12 @@ old encode, the old encode and its templates are removed in the same landing.
    the bits of the carrier no such flag names stay the value's, as for any derived flag. Such a parent is no
    conformance fixture, so its C++ round trip is judged beside the variant it embeds. The printed set is 133
    codecs.
+
+   *The twenty-fourth C++ landing, 2026-11-08:* a field that holds a physical quantity (`sce:quantity`). The
+   wire holds the raw value, which the plan already writes; what the quantity adds is the pair of accessors
+   that read and set the value in its unit, and they read and write the raw value where the printed value
+   holds it, its private member, as the flag accessors do. The C++ value of such a codec had been compiled
+   nowhere, so its round trip is judged beside the other non-fixture codecs. The printed set is 134 codecs.
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences

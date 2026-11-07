@@ -174,9 +174,11 @@ fn raw_to_phys_expr(raw_member: &str, scale_lit: &str, offset_lit: &str, lang: L
         // multiplication uses double-precision arithmetic; the offset
         // adds in f64 directly.
         Language::Rust => format!("{raw_member} as f64 * {scale_lit} + {offset_lit}"),
-        // C / C11 / C++: explicit cast then arithmetic.
-        Language::C11 | Language::Cpp => {
-            format!("(double){raw_member} * {scale_lit} + {offset_lit}")
+        // C11: explicit cast then arithmetic.
+        Language::C11 => format!("(double){raw_member} * {scale_lit} + {offset_lit}"),
+        // C++: the same, with the cast C++ names for a numeric conversion.
+        Language::Cpp => {
+            format!("static_cast<double>({raw_member}) * {scale_lit} + {offset_lit}")
         }
         // Kotlin: `.toDouble()` is the canonical promote.
         Language::Kotlin => format!("{raw_member}.toDouble() * {scale_lit} + {offset_lit}"),

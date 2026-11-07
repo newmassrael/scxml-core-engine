@@ -12001,15 +12001,12 @@ fn render_codec(
             // The name the value holds the field under: its own where the
             // field is a public member, the private one a C++ value printed
             // from its plan holds behind its accessor (docs/adr/0081 step 4).
-            obj.insert(
-                "member".into(),
-                if cpp_printed.is_some() {
-                    cpp_source::member(&l.codec_field_id(&f.id))
-                } else {
-                    l.codec_field_id(&f.id)
-                }
-                .into(),
-            );
+            let member = if cpp_printed.is_some() {
+                cpp_source::member(&l.codec_field_id(&f.id))
+            } else {
+                l.codec_field_id(&f.id)
+            };
+            obj.insert("member".into(), member.clone().into());
             // RFC §synth-5-B flags primitive: pre-render per-flag accessor
             // context. Each flag carries a language-specific accessor name,
             // setter name, and the precomputed bitmask literal.
@@ -12240,8 +12237,14 @@ fn render_codec(
             // on `{% if field.quantity_accessor %}`. Absent annotation
             // preserves the legacy byte-identical codec emission.
             if let Some(q) = f.quantity {
-                let id_target = l.codec_field_id(&f.id);
-                let raw_ref = l.codec_field_ref(&id_target);
+                // The accessors read and write the raw value where the value
+                // holds it: a C++ value printed from its plan holds it in its
+                // private member, as its flag accessors do.
+                let raw_ref = if cpp_printed.is_some() {
+                    member.clone()
+                } else {
+                    l.codec_field_ref(&l.codec_field_id(&f.id))
+                };
                 let payload = crate::forge::quantity_codegen::build_accessor_payload(
                     q,
                     &f.sce_type,
