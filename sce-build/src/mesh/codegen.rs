@@ -2289,7 +2289,7 @@ fn generate_host_mesh(
     // per language, and a peer table naming a transport the backend's core
     // has no `PeerLink` for would not compile there (or, worse, would be read
     // as another link). `wss` is in every host core; `zenoh_inbox` is in the
-    // Rust one only.
+    // Rust and the Swift one.
     for t in targets {
         let name = t.state.transport_name();
         if !transport::host_core_languages(name).contains(&language) {

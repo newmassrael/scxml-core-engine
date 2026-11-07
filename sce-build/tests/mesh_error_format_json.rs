@@ -395,6 +395,58 @@ fn zenoh_inbox_reaches_the_rust_peer_table_as_a_link_with_no_parameters() {
 }
 
 #[test]
+fn zenoh_inbox_reaches_the_swift_peer_table_as_a_link_with_no_parameters() {
+    // SCE_MESH.md §mesh-20.4: the Swift core carries the Zenoh binding over a
+    // client the host supplies, so its peer table names the link the way the
+    // Rust one does, with no URL and no key.
+    let dir = ScratchDir::new("mesh-zenoh-mesh-swift");
+    let scxml = dir.write("client.scxml", CLIENT_SCXML);
+    dir.write("server.scxml", SERVER_SCXML);
+    let deploy = dir.write("deploy.yaml", &zenoh_inbox_deploy("transport: zenoh_inbox"));
+    let out = run_with_deploy_for("swift", &scxml, &deploy, dir.path());
+    assert!(
+        out.status.success(),
+        "the Swift host core carries zenoh_inbox; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let table = swift_peer_table_under(dir.path());
+    assert!(
+        table.contains("link: .zenohInbox"),
+        "the peer is reached through the host's Zenoh session:\n{table}"
+    );
+    assert!(
+        table.contains("transport: \"zenoh_inbox\","),
+        "the peer carries the registry's name:\n{table}"
+    );
+    assert!(
+        !table.contains(".wss"),
+        "a Zenoh peer must not be read as a WebSocket one:\n{table}"
+    );
+}
+
+/// The Swift peer table `sce-codegen generate --deploy` wrote under `dir`.
+fn swift_peer_table_under(dir: &std::path::Path) -> String {
+    fn find(dir: &std::path::Path) -> Option<PathBuf> {
+        for entry in std::fs::read_dir(dir).ok()?.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                if let Some(found) = find(&path) {
+                    return Some(found);
+                }
+            } else if path
+                .file_name()
+                .is_some_and(|name| name.to_string_lossy().ends_with("MeshPeers.swift"))
+            {
+                return Some(path);
+            }
+        }
+        None
+    }
+    let path = find(dir).expect("the Swift backend writes `<Document>MeshPeers.swift`");
+    std::fs::read_to_string(path).expect("read the peer table")
+}
+
+#[test]
 fn a_zenoh_inbox_binding_takes_no_key_of_its_own() {
     // The key is derived from the two machine names (§mesh-20.1), so a
     // `key:` here would be a setting that parses and then does nothing. It
@@ -425,9 +477,10 @@ fn a_zenoh_inbox_binding_takes_no_key_of_its_own() {
 
 #[test]
 fn the_kotlin_core_has_no_zenoh_adapter_so_its_peer_table_refuses_zenoh_inbox() {
-    // SCE_MESH.md §mesh-20: only the Rust core carries the Zenoh adapter. A
-    // Kotlin peer table naming it would have no `PeerLink` to read, so it is
-    // refused by name, and the repair points at the backend that has it.
+    // SCE_MESH.md §mesh-20: the Rust and the Swift core carry the Zenoh
+    // binding, and the Kotlin one does not. A Kotlin peer table naming it would
+    // have no `PeerLink` to read, so it is refused by name, and the repair
+    // points at every backend that has it, read from the registry.
     let dir = ScratchDir::new("mesh-zenoh-mesh-kotlin");
     let scxml = dir.write("client.scxml", CLIENT_SCXML);
     dir.write("server.scxml", SERVER_SCXML);
@@ -449,7 +502,7 @@ fn the_kotlin_core_has_no_zenoh_adapter_so_its_peer_table_refuses_zenoh_inbox() 
     assert!(
         message.contains("transport 'zenoh_inbox'")
             && message.contains("kotlin host Mesh core")
-            && message.contains("--lang rust"),
+            && message.contains("`--lang rust` or `--lang swift`"),
         "record: {rec}"
     );
 }

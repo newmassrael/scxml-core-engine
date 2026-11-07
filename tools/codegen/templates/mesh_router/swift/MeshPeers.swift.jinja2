@@ -59,6 +59,8 @@ public enum {{ document_pascal }}MeshPeers {
                 )
 {%- elif peer.link.kind == "wss_accept" %}
                 link: .wssAccept(keepaliveMs: {% if peer.link.keepalive_ms %}{{ peer.link.keepalive_ms }}{% else %}nil{% endif %})
+{%- elif peer.link.kind == "zenoh_inbox" %}
+                link: .zenohInbox
 {%- endif %}
             ),
 {%- endfor %}
