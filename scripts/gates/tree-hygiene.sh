@@ -254,3 +254,9 @@ cargo test -p sce-build --features cli,ffi \
     --test a_documents_tables_are_its_tree_in_document_order \
     --test a_workflow_names_the_image_it_runs_on \
     || sce_gate_fail "tree-wide hygiene gates"
+
+# The pre-push hook exempts a bx landing queue's ref by what it holds, never by
+# its name alone (tools/git-hooks/bx-land-refs.sh): the test builds a repository
+# of each case, a commit of this repository pushed under a queue's name among them.
+bash tools/git-hooks/test-bx-land-refs.sh \
+    || sce_gate_fail "the pre-push hook's judgement of bx landing refs"
