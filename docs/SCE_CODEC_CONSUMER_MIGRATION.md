@@ -1317,6 +1317,18 @@ all: the Zenoh declaration, declare and interest body, the transport envelope an
 - Where the value holds an arm that does not say the input (a declaration's `decl_final`, an undeclaration of a key
   expression), or no gated body, the flag is the bit the header you pass holds.
 
+## A printed C++ codec derives the count of a list a gate decides (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C++ tree is regenerated after it. It moves the codecs whose count
+field is gated beside the list it counts (2 more codecs of the resources, 108 in all: the Zenoh hello and the
+repeat-with-present-if fixture).
+
+- The count is no longer an element of the value: `num_locators` (hello) and `num_elems`, which were members
+  `std::optional<T>` of their own, are derived from the list where the value holds it, and written only there. A
+  caller that set the count by hand drops that code.
+- The list is `value.<element>()`, a `std::optional<::SCE::Forge::List<Entry, N>>`, as for any list a gate decides;
+  the flag it is gated on is derived from whether it is there (hello's `L` is read by `input_l(value)`).
+
 ## A payload schema states its keys in the order the document declares them (ADR 0087 §1.1)
 
 Landing: the commit that adds this section; every tree holding a `JSON_SCHEMA` constant or a GBNF table (the Rust,

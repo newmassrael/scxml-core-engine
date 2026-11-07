@@ -36,11 +36,13 @@
 #include "codec_origin_envelope.h"
 #include "codec_present_if_basic.h"
 #include "codec_repeat_basic.h"
+#include "codec_repeat_present_if_basic.h"
 #include "codec_simple_frame.h"
 #include "codec_zenoh_decl_subscriber.h"
 #include "codec_zenoh_declaration.h"
 #include "codec_zenoh_ext_entry.h"
 #include "codec_zenoh_ext_envelope.h"
+#include "codec_zenoh_hello.h"
 #include "codec_zenoh_interest_body.h"
 #include "codec_zenoh_locator.h"
 #include "codec_zenoh_open_body.h"
@@ -619,6 +621,60 @@ void a_list_is_written_entry_by_entry_and_its_count_derived() {
           "a decoded value holds its entries");
 }
 
+namespace GatedList = ::SCE::Generated::CodecRepeatPresentIfBasic;
+namespace Hello = ::SCE::Generated::CodecZenohHello;
+
+void a_count_a_gate_decides_is_derived_where_the_list_is_there() {
+    // Bit 0 of the carrier says the list is there; its count follows, then
+    // its entries. The carrier the value presents claims it is there.
+    const std::vector<Fragment> entries{Fragment{0xBEEF}, Fragment{0xFACE}};
+    const auto elems = ::SCE::Forge::List<Fragment, 32>::make(entries);
+    const std::vector<Fragment> none;
+    const auto empty = ::SCE::Forge::List<Fragment, 32>::make(none);
+    CHECK(elems.has_value() && empty.has_value(), "two entries and none lie within a bound of 32");
+    if (!elems || !empty) {
+        return;
+    }
+    const std::vector<std::uint8_t> two{0x01, 0x02, 0xBE, 0xEF, 0xFA, 0xCE};
+    const GatedList::CodecRepeatPresentIfBasic holds_two{0x00, *elems};
+    const GatedList::CodecRepeatPresentIfBasic holds_none{0x00, *empty};
+    const GatedList::CodecRepeatPresentIfBasic holds_no_list{0x01, std::nullopt};
+    CHECK(holds_two.encode_to_vec() == two, "a list the value holds sets its flag and is counted before its entries");
+    CHECK(holds_none.encode_to_vec() == (std::vector<std::uint8_t>{0x01, 0x00}),
+          "an empty list the value holds is there, of count zero");
+    CHECK(holds_no_list.encode_to_vec() == std::vector<std::uint8_t>{0x00},
+          "no list writes neither its count nor its entries, and clears the flag the carrier presents");
+
+    ::SCE::Forge::SceCursor cursor(two.data(), two.size());
+    const auto decoded = GatedList::CodecRepeatPresentIfBasic::decode(cursor);
+    CHECK(decoded.has_value() && decoded->elems().has_value() && decoded->elems()->size() == 2 &&
+              (*decoded->elems())[1].seq() == 0xFACE,
+          "a decoded value holds the entries its count said");
+
+    // A hello says L, the flag its holder sets, where it holds locators; the
+    // count is a VLE before them.
+    const std::vector<std::uint8_t> zid_byte{0xAB};
+    const auto zid = ::SCE::Forge::Bytes<16, 1>::make(zid_byte);
+    const auto text = ::SCE::Forge::Text<255>::make(std::string_view("tcp/x"));
+    CHECK(zid.has_value() && text.has_value(), "one byte and five ASCII bytes lie within their bounds");
+    if (!zid || !text) {
+        return;
+    }
+    const std::vector<Locator::CodecZenohLocator> one{Locator::CodecZenohLocator{*text}};
+    const auto locators = ::SCE::Forge::List<Locator::CodecZenohLocator, ::SCE::Forge::kUnbounded>::make(one);
+    CHECK(locators.has_value(), "one locator lies within no stated bound");
+    if (!locators) {
+        return;
+    }
+    const Hello::CodecZenohHello with{0x01, 0x02, *zid, *locators};
+    const Hello::CodecZenohHello without{0x01, 0x02, *zid, std::nullopt};
+    CHECK(with.encode_to_vec() == (std::vector<std::uint8_t>{0x01, 0x02, 0xAB, 0x01, 0x05, 't', 'c', 'p', '/', 'x'}),
+          "the locators the value holds are counted before them");
+    CHECK(without.encode_to_vec() == (std::vector<std::uint8_t>{0x01, 0x02, 0xAB}), "no locators writes no count");
+    CHECK(Hello::input_l(with) == 1 && Hello::input_l(without) == 0,
+          "L is whether the value holds locators, which its holder sets");
+}
+
 namespace ExtEntry = ::SCE::Generated::CodecZenohExtEntry;
 using ExtUnit = ::SCE::Generated::CodecZenohExtUnit::CodecZenohExtUnit;
 using ExtZint = ::SCE::Generated::CodecZenohExtZint::CodecZenohExtZint;
@@ -1089,6 +1145,7 @@ int main() {
     a_body_is_encoded_over_the_source_its_holder_presents();
     an_input_the_value_says_is_read_off_the_value_and_handed_on();
     a_list_is_written_entry_by_entry_and_its_count_derived();
+    a_count_a_gate_decides_is_derived_where_the_list_is_there();
     a_variant_derives_its_tag_from_the_arm_it_holds();
     a_chain_sets_the_flag_its_entries_end_on();
     a_body_a_gate_decides_is_written_where_it_is_present();

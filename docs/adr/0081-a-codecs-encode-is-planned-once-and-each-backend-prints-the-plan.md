@@ -494,6 +494,10 @@ old encode, the old encode and its templates are removed in the same landing.
    arm says leaves the value's word out of the wire. The printed set is 106 codecs, the declaration and its declare
    among them, so no resource keeps a template parent whose printed arm says an input: the check the twelfth landing
    gave such a parent is held by its generated text alone.
+
+   *The fifteenth C++ landing, 2026-11-07:* a count of a list a gate decides. The encode counts the list where the
+   value holds it, and the count field, gated beside the list, is written only there; where a flag holds the count,
+   it keeps the bits the value presents. The printed set is 108 codecs, the Zenoh hello among them.
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences

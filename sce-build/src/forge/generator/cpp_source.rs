@@ -394,8 +394,11 @@ fn held_codec<'i>(imports: &'i [ImportContext], alias: &str) -> (&'i str, &'i st
 ///   into a field it always fits (zero where a gate leaves the bytes out and the
 ///   field is gated beside them) or into a flag of a carrier (which keeps the
 ///   bits the value presents where the bytes are absent);
-/// - the input a body always there says, or the arm the value holds says
-///   where it holds one that says it, into a field or a flag likewise.
+/// - how many entries one list holds, into a field or a flag likewise (zero
+///   where a gate leaves the list out);
+/// - the input a body says where the value holds the body, or the arm the
+///   value holds says where it holds one that says it, into a field or a flag
+///   likewise.
 fn derivation_unlowered(derived: &crate::forge::encode_plan::Derived<'_>) -> Option<String> {
     let element = &derived.element;
     match (element, &derived.by) {
@@ -448,8 +451,8 @@ fn number_unlowered(element: &ElementId, number: &Number<'_>) -> Option<String> 
         // The input a body says, read through the body's codec, where the
         // value holds the body.
         Measured::Says { .. } => {}
-        // How many entries a list always there holds.
-        Measured::Entries { .. } if !measure.gated => {}
+        // How many entries a list holds, where the value holds the list.
+        Measured::Entries { .. } => {}
         // The input the arm the value holds says, read through the arm's
         // codec, where it holds one that says it (docs/adr/0065 §6 R4a).
         Measured::ArmSays { .. } => {}
