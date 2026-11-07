@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The carrier of tests/ecmascript/system_variable_writes.json on the C11
+  channel: which writes to a system variable the script engine refuses
+  (W3C SCXML 5.10, B.2.8). A document of this channel alone, beside its C
+  test: the other channels ask the same table of their engines' bindings
+  directly, and this backend binds the system variables in the generated
+  machine (`lua_init_engine`, `set_current_event`), so a machine is what
+  carries the question here.
+
+  `listening` takes the table's event and stays where it is, so the `_event`
+  the dequeue bound is still bound when the test asks a case. `taken` counts
+  the events taken, and gives the document the script engine whose binding is
+  under test.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="listening"
+       name="system_variable_writes">
+  <datamodel>
+    <data id="taken" expr="0"/>
+  </datamodel>
+
+  <state id="listening">
+    <transition event="brief">
+      <assign location="taken" expr="taken + 1"/>
+    </transition>
+  </state>
+</scxml>

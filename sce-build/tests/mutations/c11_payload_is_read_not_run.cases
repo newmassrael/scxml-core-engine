@@ -33,14 +33,15 @@ mutation_oracles backends/c/tests/integration/test_event_data_arrives_as_sent.c 
 
 mutation_case "the c11 receiver evaluates the payload as Lua again" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     '''                          "local _val, _ok = JSON._parse_document(_c); "
-                          "if _ok then _event.data = _val "
-                          "else _event.data = _scxml_normalize_ws(_c) end; "''',
-     '''                          "local _try = _c:gsub('\\"([^\\"]*)\\"%s*:', '[\\"%1\\"]='); "
-                          "local _fn = load('return (' .. _try .. ')'); "
-                          "local _ok, _val = false, nil; "
-                          "if _fn then _ok, _val = pcall(_fn) end; "
-                          "if _ok then _event.data = _val else _event.data = _c end; "''')
+     '''                                      "local _val, _ok = JSON._parse_document(_c)\\n"
+                                      "if _ok then return _val, true end\\n"
+                                      "return _scxml_normalize_ws(_c), false");''',
+     '''                                      "local _try = _c:gsub('\\"([^\\"]*)\\"%s*:', '[\\"%1\\"]=')\\n"
+                                      "local _fn = load('return (' .. _try .. ')')\\n"
+                                      "local _ok, _val = false, nil\\n"
+                                      "if _fn then _ok, _val = pcall(_fn) end\\n"
+                                      "if _ok then return _val, true end\\n"
+                                      "return _c, false");''')
 PY
 
 # The wire the other half of the pair writes. C11 assembles the params in its

@@ -166,7 +166,7 @@
                    message is discarded and the block stops. */
                 if (luaL_dostring(sm->L,
                     "if not _scxml_declared['{{ var_name | escape_lua | escape_c }}'] and "
-                      "rawget(_G, '{{ var_name | escape_lua | escape_c }}') == nil then "
+                      "_G['{{ var_name | escape_lua | escape_c }}'] == nil then "
                       "error('namelist variable not declared') end; "
                     "table.insert(_sce_send_pairs, {'{{ var_name | escape_lua | escape_c }}', ({{ var_name }})})") != 0) {
                     lua_pop(sm->L, 1);
@@ -496,6 +496,68 @@
    no weak-symbol fallback (silent zero clock would freeze the schedule
    and silently mis-fire timeouts). */
 #include <sce/clock.h>
+{% endif %}
+{% if model.needs_script_engine %}
+
+/* §scxml-5.10, §scxml-B-2-8: the two ways this machine writes a global of its
+   Lua state, and the only two.
+
+   "The Processor MUST cause any attempt to change the value of a system
+   variable to fail and MUST place the error 'error.execution' on the internal
+   event queue." A system variable (`_event`, `_sessionid`, `_name`,
+   `_ioprocessors`) is bound through `bind_system_variable`, which hands it to
+   `_scxml_bind_system` — defined by the shared
+   sce/include/scripting/ecma_semantics.lua, which `lua_init_engine` loads
+   before the first bind. That binds a read-only view held outside `_G`, and
+   `_G`'s metatable refuses every ordinary write of the four names, so a
+   document's `_event.name = 'x'` is a script that fails, which every caller
+   here already answers with error.execution.
+
+   A global whose NAME the document chooses (`<data id>`, the child's variable
+   an `<invoke>`'s `<param>` seeds) is stored through `set_document_global`, a
+   protected `lua_setglobal`. The metatable refuses a document name that is a
+   system variable's as well, and a refusal raised outside a protected call is
+   Lua's panic, which ends the process, where this one is a failed write.
+
+   Both take the value at the top of `L`'s stack and pop it, and answer whether
+   it was written; a failure's message is popped too. They are the C++ engine's
+   `bindSystemVariable` and `setDocumentGlobal`
+   (sce/src/scripting/LuaEngine.cpp). */
+SCE_SM_FN static bool bind_system_variable(lua_State *L, const char *name) {
+    lua_getglobal(L, "_scxml_bind_system"); /* value, bind */
+    lua_insert(L, -2);                      /* bind, value */
+    lua_pushstring(L, name);                /* bind, value, name */
+    lua_insert(L, -2);                      /* bind, name, value */
+    if (lua_pcall(L, 2, 0, 0) == LUA_OK) {
+        return true;
+    }
+    /* The binder refuses only a name that is not a system variable's, so a
+       failure here is the shared Lua missing from this state: this engine's
+       own invariant, said out loud rather than left to a nil read later. */
+    (void)fprintf(stderr, "SCE: binding the system variable %s failed: %s\n", name,
+                  lua_tostring(L, -1) != NULL ? lua_tostring(L, -1) : "unknown error");
+    lua_pop(L, 1);
+    return false;
+}
+
+/* The protected half of `set_document_global`: called as (name, value), the
+   value at the top, as `lua_setglobal` takes it. */
+SCE_SM_FN static SCE_C_UNUSED int set_global_named_by_first_argument(lua_State *L) {
+    lua_setglobal(L, lua_tostring(L, 1));
+    return 0;
+}
+
+SCE_SM_FN static SCE_C_UNUSED bool set_document_global(lua_State *L, const char *name) {
+    lua_pushcfunction(L, set_global_named_by_first_argument); /* value, set */
+    lua_insert(L, -2);                                        /* set, value */
+    lua_pushstring(L, name);                                  /* set, value, name */
+    lua_insert(L, -2);                                        /* set, name, value */
+    if (lua_pcall(L, 2, 0, 0) == LUA_OK) {
+        return true;
+    }
+    lua_pop(L, 1);
+    return false;
+}
 {% endif %}
 {% if model.needs_event_scheduler %}
 
@@ -2296,9 +2358,8 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
            a fixture's log output remains diagnosable. `_event.raw` and
            `_event.invokeid` route through the same Lua eval path — the
            `set_current_event` helper binds both fields onto `_event` from
-           the `_pending_event_raw`/`_pending_event_invokeid` globals
-           seeded above so the script engine sees them like any other
-           `_event` member. */
+           the dequeued event's record, so the script engine sees them like
+           any other `_event` member. */
 {% if action.expr %}
 {% if model.needs_script_engine %}
         {
@@ -4086,14 +4147,8 @@ SCE_SM_FN static SCE_C_UNUSED void scheduled_cancel({{ csym_prefix }}{{ model.na
    next dequeue promoted, which let an event dequeued first take another
    event's payload.
 
-   The other W3C 5.10.1 metadata fields (.type/.sendid/.origin/
-   .origintype/.invokeid) land with the first fixture that reads them
-   (spec-mirror parity carve-out per feedback_spec_mirror_parity.md).
    The helper is emitted only when the fixture uses the script engine;
-   datamodel-less fixtures have no lua_State and no consumer for _event.
-   The (void) casts keep the helper warning-free under -Wextra when the
-   fixture declares no events (then both the switch and the parameters
-   fall through unused). #}
+   datamodel-less fixtures have no lua_State and no consumer for _event. #}
 {% if model.needs_script_engine %}
 {# §scxml-B-2-8-1: the helper RETURNS the reading it gave the payload rather
    than recording it, because this function holds `L` and the event and not the
@@ -4116,137 +4171,86 @@ SCE_SM_FN static void push_blankable_event_field(lua_State *L, const char *value
 }
 
 SCE_SM_FN static sce_payload_reading_t set_current_event(lua_State *L, const {{ csym_prefix }}{{ model.name }}_event_with_meta_t *evt) {
-    (void)L;
-    (void)evt;
-    /* W3C SCXML 5.10.1 (test332): expose `evt->send_id` to the lua side
-       via a transient global so the dispatch chunk below can embed it
-       without per-event snprintf. Empty send_id (i.e. the meta field
-       was zero-initialised by `<raise>` or non-`<send>` raises) is set to
-       lua nil — test333 verifies that non-error events have `_event.sendid`
-       blank, which lua-side reads as nil and ECMAScript surfaces as the
-       same `undefined`/falsy contract the cpp engine returns through its
-       optional-shaped `pendingEventSendId_` carry.
+    /* §scxml-5.10, §scxml-B-2-8: `_event` is a system variable, so the table
+       is built here with every field it carries, and then bound ONCE through
+       `bind_system_variable`, at the end of this function: after the bind it
+       is a read-only view, and a field written into it — by this function or
+       by a document — is refused. It used to be the other way round: a chunk
+       ran `_event = {...}` and `.name` and `.data` were written into the
+       global afterwards, which worked only while `_event` was a plain table
+       that a document could write into as well.
 
-       W3C SCXML 5.10.1 (test331): `_event.type` is the spec's
-       three-way category: 'platform' for events the SCXML processor
-       itself raised (error.foo and done.foo families), 'internal'
-       for events dispatched off the internal queue (e.g. <raise>),
-       'external' for everything off the external queue (bare
-       <send>, delayed <send>). cpp carries the literal on
-       `EventWithMetadata.type` (StaticExecutionEngine.h:578 default
-       'external'); C11 mirrors it via the `_pending_event_type` lua
-       global written by process_event_queues' internal/external pop
-       sites — the per-enum case below reads it back, with the
-       error and done families overriding to 'platform' regardless
-       of which queue popped them.
+       Every field is set on the table through the C API, from the event
+       record, so nothing about the event is staged in a global the next
+       event could find (the fields used to travel as `_pending_*` globals a
+       per-event chunk read back). */
+    /* §scxml-5.10: `_event.name` is the name the event ARRIVED under: the enum
+       member's own, unless a door resolved a longer name through a prefix
+       (§scxml-3.12.1), which then rides in `evt->name`.
 
-       W3C SCXML 5.10.1 (test336): `_event.origin` and
-       `_event.origintype` carry the address plus processor type the
-       receiver can hand back to <send target=...> for bidirectional
-       communication: the pair the processor that delivered the event
-       wrote into `evt->origin` where it built the event (docs/adr/0090),
-       read here as it is, on every queue. An event that carries none —
-       an internal or platform event, a host's event naming no party —
-       leaves both blank, which reads as nil (see the helper above).
-
-       W3C SCXML 5.10.1 (.invokeid): cpp `LuaEngine::setCurrentEvent`
-       (LuaEngine.cpp:1138-1139) pushes `invokeId.c_str()` onto
-       `_event.invokeid` for every event — non-invoke events arrive
-       with `Event::getInvokeId()` returning an empty std::string,
-       cpp emits an empty lua string, C11 mirrors via the
-       `_pending_event_invokeid` lua global with the
-       `_pending_event_origin`/`_pending_event_origintype`
-       precedent (undef=nil baseline + chunk-end reset). No
-       process_event_queues pop site seeds it yet — both internal
-       and external dequeues leave it nil, mirroring the empty
-       string cpp emits for non-invoke events under the same
-       lua-side absence semantic the sibling fields already use.
-       The invoke dispatch path lands the seeding when the invoke
-       milestone activates (cpp `Event::setInvokeId(invokeId)` at
-       the invoke handler is the seed site to mirror). Lifted as
-       spec-mirror parity rather than waiting for the first
-       force fixture (feedback_spec_mirror_parity.md
-       §"Spec-mirror parity (N-backend codegen)" — cpp's branch
-       is the contract; missing the field would be silent
-       semantic drift on the W3C 5.10.1 metadata family. */
-    push_blankable_event_field(L, evt->send_id);
-    lua_setglobal(L, "_pending_send_id");
-    /* §scxml-5.10.1 (test336): the event's pair, or two blank fields for an
-       event that carries none (docs/adr/0090, section 1). */
-    push_blankable_event_field(L, sce_event_origin_address(&evt->origin));
-    lua_setglobal(L, "_pending_event_origin");
-    push_blankable_event_field(L, sce_event_origin_processor(&evt->origin));
-    lua_setglobal(L, "_pending_event_origintype");
-    /* W3C SCXML 5.10.1 (.invokeid, test228/338): seed the lua-side
-       carry from the dequeued event's `invoke_id` meta field so the
-       per-enum chunk below promotes it onto `_event.invokeid`. cpp's
-       `LuaEngine::setCurrentEvent` (LuaEngine.cpp:1138-1139) emits the
-       same value via `lua_pushstring(invokeId.c_str())` — non-invoke
-       events arrive with an empty C string, which we convert to lua
-       nil so the dispatch chunk's `invokeid = _pending_event_invokeid`
-       reads as the same `undefined`/falsy contract cpp surfaces for
-       `Event::getInvokeId().empty()`. The pop-side `current_event_
-       invoke_id` cache (process_event_queues lines below) keeps the
-       C-side state for any non-Lua consumers; the lua push here is
-       what the ECMAScript datamodel reads. */
-    push_blankable_event_field(L, evt->invoke_id);
-    lua_setglobal(L, "_pending_event_invokeid");
-    /* W3C SCXML testing extension (.raw): cpp `JSEngineImpl.cpp:510` sets
-       `_event.raw` to the unparsed event data string before donedata
-       evaluation rewrites the slot into a typed table. C11 mirrors via
-       `_pending_event_raw` seeded from `evt->data` (the raw bounded
-       string buffer in `event_with_meta_t`); the per-enum chunk below
-       binds it onto `_event.raw`. Empty data buffer maps to lua nil so
-       `_event.raw` reads as the same falsy contract cpp surfaces for
-       events arrived without a data payload. */
-    if (evt->data[0] != '\0') {
-        lua_pushstring(L, evt->data);
-    } else {
-        lua_pushnil(L);
-    }
-    lua_setglobal(L, "_pending_event_raw");
+       W3C SCXML 5.10.1 (test331): `_event.type` is the spec's three-way
+       category: 'platform' for events the SCXML processor itself raised (the
+       error and done families, whichever queue popped them), otherwise
+       'internal' or 'external' by the queue the event came off, which the
+       dequeue sites in process_event_queues leave in `_pending_event_type`
+       (cpp carries it on `EventWithMetadata.type`). */
+    const char *name = evt->name[0] != '\0' ? evt->name : NULL;
+    bool platform = false;
     switch (evt->event) {
     {% for event_name in model.events | sort %}
     case {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ event_name | to_c11_upper_ident }}:
-        (void)luaL_dostring(L,
-            "_event = {name = '{{ event_name | escape_c }}', "
-              {% if event_name.startswith('error.') or event_name.startswith('done.') %}
-              "type = 'platform', "
-              {% else %}
-              "type = _pending_event_type, "
-              {% endif %}
-              "origin = _pending_event_origin, "
-              "origintype = _pending_event_origintype, "
-              "invokeid = _pending_event_invokeid, "
-              "raw = _pending_event_raw, "
-              "sendid = _pending_send_id}; "
-            "_pending_send_id = nil; "
-            "_pending_event_type = nil; "
-            "_pending_event_origin = nil; "
-            "_pending_event_origintype = nil; "
-            "_pending_event_invokeid = nil; "
-            "_pending_event_raw = nil");
+        if (name == NULL) {
+            name = "{{ event_name | escape_c }}";
+        }
+        {% if event_name.startswith('error.') or event_name.startswith('done.') %}
+        platform = true;
+        {% endif %}
         break;
     {% endfor %}
     default:
         break;
     }
-    /* §scxml-5.10: `_event.name` is the name the event ARRIVED under. The chunk
-       above wrote the enum member's own name; when a door resolved a longer name
-       through a prefix (§scxml-3.12.1) it rides in `evt->name`, and replaces it. */
-    if (evt->name[0] != '\0') {
-        lua_getglobal(L, "_event");
-        if (lua_istable(L, -1)) {
-            lua_pushstring(L, evt->name);
-            lua_setfield(L, -2, "name");
-        }
-        lua_pop(L, 1);
+    lua_newtable(L);
+    if (name != NULL) {
+        lua_pushstring(L, name);
+        lua_setfield(L, -2, "name");
     }
+    if (platform) {
+        lua_pushliteral(L, "platform");
+    } else {
+        lua_getglobal(L, "_pending_event_type");
+    }
+    lua_setfield(L, -2, "type");
+    lua_pushnil(L);
+    lua_setglobal(L, "_pending_event_type");
+    /* W3C SCXML 5.10.1 (test332, test333): `sendid`, blank unless a `<send>`
+       made the event (an error event names the send that failed). */
+    push_blankable_event_field(L, evt->send_id);
+    lua_setfield(L, -2, "sendid");
+    /* W3C SCXML 5.10.1 (test336): `origin` and `origintype`, the pair the
+       processor that delivered the event wrote into `evt->origin` where it
+       built the event (docs/adr/0090), read here as it is, on every queue. An
+       event that carries none — an internal or platform event, a host's event
+       naming no party — leaves both blank. */
+    push_blankable_event_field(L, sce_event_origin_address(&evt->origin));
+    lua_setfield(L, -2, "origin");
+    push_blankable_event_field(L, sce_event_origin_processor(&evt->origin));
+    lua_setfield(L, -2, "origintype");
+    /* W3C SCXML 5.10.1 (test228, test338): `invokeid`, the id of the
+       invocation that returned the event, blank for any other event (cpp
+       `LuaEngine::setCurrentEvent` binds `Event::getInvokeId()` the same way). */
+    push_blankable_event_field(L, evt->invoke_id);
+    lua_setfield(L, -2, "invokeid");
+    /* W3C SCXML testing extension (.raw): the unparsed text of the event's
+       data, as cpp `JSEngineImpl.cpp` sets `_event.raw` before the payload is
+       read into `.data`; nil for an event that carried none. */
+    push_blankable_event_field(L, evt->data);
+    lua_setfield(L, -2, "raw");
     /* W3C SCXML 6.2 / 6.4 (test233): hydrate `_event.data` from the
        payload the event itself carried — the only place a payload rides.
        Every `<send>`, HTTP reply, done event and host-injected event puts
        it on the event's own `data` field; none is staged anywhere an
-       event dequeued earlier could take it. The per-enum chunk above
+       event dequeued earlier could take it. A per-event chunk here
        used to bind `_event.data = _pending_donedata`, a slot the next
        dequeue promoted whichever event that was.
 
@@ -4291,6 +4295,7 @@ SCE_SM_FN static sce_payload_reading_t set_current_event(lua_State *L, const {{ 
        is checked: a failure here is this engine's own invariant breaking,
        and W3C 4.9's `<log>` seam is where such a thing is said out loud
        rather than swallowed. */
+    sce_payload_reading_t reading = SCE_PAYLOAD_ABSENT;
     if (evt->data[0] != '\0') {
         /* §scxml-B-2-8-1's first rung, which this backend did not have: "if
            the Processor can interpret the content as a valid XML document, it
@@ -4310,54 +4315,56 @@ SCE_SM_FN static sce_payload_reading_t set_current_event(lua_State *L, const {{ 
             _scan++;
         }
         if (*_scan == '<' && sce_lua_dom_push_object(L, evt->data) == 1) {
-            lua_getglobal(L, "_event");
-            lua_pushvalue(L, -2);
             lua_setfield(L, -2, "data");
-            lua_pop(L, 2);
-            return SCE_PAYLOAD_DOM;
-        }
-        lua_pushstring(L, evt->data);
-        lua_setglobal(L, "_sce_raw_event_data");
-        /* §scxml-B-2-8-1: the chunk reports which of the two remaining rungs
-           it took, because only the side that ATTEMPTED the structured read
-           knows whether it attempted one. A caller inspecting `_event.data`
-           afterwards can tell a string from a table, but not a string chosen
-           because the content was prose from one chosen because the parse
-           refused — and that is exactly the difference a host acts on.
+            reading = SCE_PAYLOAD_DOM;
+        } else {
+            /* §scxml-B-2-8-1: the chunk returns which of the two remaining
+               rungs it took beside the value, because only the side that
+               ATTEMPTED the structured read knows whether it attempted one. A
+               caller inspecting `_event.data` afterwards can tell a string
+               from a table, but not a string chosen because the content was
+               prose from one chosen because the parse refused — and that is
+               exactly the difference a host acts on.
 
-           `_sce_payload_decoded` rather than a return value: `luaL_dostring`
-           answers only whether the chunk itself ran, and the chunk running is
-           this engine's invariant rather than the payload's reading. */
-        if (luaL_dostring(L,
-                          "do "
-                          "local _c = _sce_raw_event_data; "
-                          "local _val, _ok = JSON._parse_document(_c); "
-                          "if _ok then _event.data = _val "
-                          "else _event.data = _scxml_normalize_ws(_c) end; "
-                          "_sce_payload_decoded = _ok and true or false; "
-                          "_sce_raw_event_data = nil "
-                          "end") != 0) {
-            (void)fprintf(stderr, "SCE: event payload decode failed: %s\n",
-                          lua_tostring(L, -1) != NULL ? lua_tostring(L, -1) : "unknown error");
-            lua_pop(L, 1);
-            /* The chunk itself broke, so `_event.data` holds whatever the
-               previous delivery left. That is this engine's invariant failing
-               rather than the payload's reading, and it is already said out
-               loud above; claiming a rung here would file an engine fault
-               under the host's payload. */
-            return SCE_PAYLOAD_ABSENT;
+               The text is the chunk's argument and the value its result, so
+               neither passes through a global on the way. */
+            int _rc = luaL_loadstring(L,
+                                      "local _c = ...\n"
+                                      "local _val, _ok = JSON._parse_document(_c)\n"
+                                      "if _ok then return _val, true end\n"
+                                      "return _scxml_normalize_ws(_c), false");
+            if (_rc == LUA_OK) {
+                lua_pushstring(L, evt->data);
+                _rc = lua_pcall(L, 1, 2, 0);
+            }
+            if (_rc != LUA_OK) {
+                (void)fprintf(stderr, "SCE: event payload decode failed: %s\n",
+                              lua_tostring(L, -1) != NULL ? lua_tostring(L, -1) : "unknown error");
+                lua_pop(L, 1);
+                /* The chunk itself broke, so `_event.data` is left nil. That is
+                   this engine's invariant failing rather than the payload's
+                   reading, and it is already said out loud above; claiming a
+                   rung here would file an engine fault under the host's
+                   payload. */
+            } else {
+                const bool _decoded = lua_toboolean(L, -1) != 0;
+                lua_pop(L, 1);
+                lua_setfield(L, -2, "data");
+                /* The third rung splits in two, and `sce_payload_reading_of_text`
+                   is where that split is defined for every C11 machine — see
+                   the header for why only `{` and `[` announce structure. */
+                reading = _decoded ? SCE_PAYLOAD_STRUCTURED : sce_payload_reading_of_text(evt->data);
+            }
         }
-        lua_getglobal(L, "_sce_payload_decoded");
-        const bool _decoded = lua_toboolean(L, -1) != 0;
-        lua_pop(L, 1);
-        lua_pushnil(L);
-        lua_setglobal(L, "_sce_payload_decoded");
-        /* The third rung splits in two, and `sce_payload_reading_of_text` is
-           where that split is defined for every C11 machine — see the header
-           for why only `{` and `[` announce structure. */
-        return _decoded ? SCE_PAYLOAD_STRUCTURED : sce_payload_reading_of_text(evt->data);
     }
-    return SCE_PAYLOAD_ABSENT;
+    /* §scxml-5.10: the finished table, bound read-only. A bind that fails
+       leaves the previous `_event` bound and is this engine's invariant
+       breaking (`bind_system_variable` says so), not a reading of the
+       payload, so no rung is claimed for it. */
+    if (!bind_system_variable(L, "_event")) {
+        return SCE_PAYLOAD_ABSENT;
+    }
+    return reading;
 }
 
 /* §scxml-B-2-8-1: turn the reading above into something the host can read
@@ -4559,8 +4566,8 @@ SCE_SM_FN static void process_internal_queue({{ csym_prefix }}{{ model.name }}_t
         {% endif %}
         {% if model.needs_script_engine %}
         /* W3C SCXML 5.10.1 (test331): seed `_event.type` carry — internal
-           queue pop is the spec's 'internal' category. set_current_event's
-           per-enum case reads `_pending_event_type` back, with the
+           queue pop is the spec's 'internal' category. set_current_event
+           reads `_pending_event_type` back (and clears it), with the
            error and done event families overriding to 'platform'. */
         (void)luaL_dostring(sm->L, "_pending_event_type = 'internal'");
         note_payload_reading(sm, &evt, set_current_event(sm->L, &evt));
