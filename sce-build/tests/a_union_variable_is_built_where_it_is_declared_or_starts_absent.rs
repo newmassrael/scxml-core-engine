@@ -26,6 +26,27 @@ fn statechart(data: &str) -> String {
 
 /// [`statechart`] whose one state runs `entry` when it is entered.
 fn statechart_with(data: &str, entry: &str) -> String {
+    document("", data, entry)
+}
+
+/// [`statechart_with`] that imports the standard refusal record a lift keeps
+/// why a text is no value in, and declares the text `said` (`string[64]`) and
+/// the refusal `why` beside `data`.
+fn lifting(data: &str, entry: &str) -> String {
+    document(
+        r#"
+  <sce:import kind="event-schema" src="sce:std/lift/refusal.scxml" as="LiftRefusal"/>"#,
+        &format!(
+            r#"    <data id="said" sce:type="string[64]" expr="''"/>
+    <data id="why" sce:type="optional&lt;record:LiftRefusal&gt;" expr="null"/>
+{data}"#
+        ),
+        entry,
+    )
+}
+
+/// The statechart of [`statechart_with`], with `imports` after its own.
+fn document(imports: &str, data: &str, entry: &str) -> String {
     let state = if entry.is_empty() {
         "<state id=\"idle\"/>".to_string()
     } else {
@@ -38,7 +59,7 @@ fn statechart_with(data: &str, entry: &str) -> String {
   <sce:import kind="enum" src="shape_kind.scxml" as="Kind"/>
   <sce:import kind="union" src="union_shape.scxml" as="Shape"/>
   <sce:import kind="event-schema" src="shape_radius.scxml" as="Radius"/>
-  <sce:import kind="event-schema" src="shape_rect.scxml" as="Rect"/>
+  <sce:import kind="event-schema" src="shape_rect.scxml" as="Rect"/>{imports}
   <datamodel>
 {data}
   </datamodel>
@@ -404,6 +425,88 @@ fn a_union_variable_is_put_whole_from_a_value_of_its_union() {
         &[
             "scxml/static-datamodel-rule",
             "nothing in an expression makes a union",
+        ],
+    );
+}
+
+/// Pinned by `Lifted::Union` and `RustTarget::lift`
+/// (`sce-build/src/forge/static_lowering.rs`) and the runtime's `lift_value`:
+/// a lift whose schema is a union reads the whole text as one value of it, by
+/// the reader a delivery's field of the union is read by (its tag first), and
+/// puts it into the variable whole, present where the variable is optional
+/// (docs/adr/0092, section 6.1 item 5).
+#[test]
+fn a_lift_into_a_union_variable_reads_the_text_whole_by_its_tag() {
+    let code = rust_machine(&lifting(
+        &format!("{CIRCLE}\n{LAST}"),
+        r#"      <sce:lift text="said" schema="Shape" location="last" refusal="why"/>
+      <sce:lift text="said" schema="Shape" location="shape" refusal="why"/>"#,
+    ));
+    for line in [
+        "::sce_rust_runtime::event_payload::lift_value(&",
+        ", \"Shape\", 1, ",
+        "|v| v.union(\"kind\", |v| ",
+        "Ok(sce_lifted) => { self.last = Some(sce_lifted);",
+        "Ok(sce_lifted) => { self.shape = sce_lifted;",
+    ] {
+        assert!(code.contains(line), "expected `{line}` in:\n{code}");
+    }
+    assert!(
+        !code.contains("lift_record(&"),
+        "a union is read whole, never field by field as a record:\n{code}"
+    );
+}
+
+/// Pinned by `Judge::lift` (`sce-build/src/forge/static_datamodel.rs`): a lift
+/// whose schema is a union replaces a variable of that union, and names it in
+/// the refusal of any other location.
+#[test]
+fn a_lift_into_a_union_replaces_only_a_variable_of_that_union() {
+    let (ok, text) = checked(
+        "rust",
+        &lifting(
+            &format!("{CIRCLE}\n    <data id=\"count\" sce:type=\"uint32\" expr=\"0\"/>"),
+            r#"      <sce:lift text="said" schema="Shape" location="count" refusal="why"/>"#,
+        ),
+    );
+    assert!(!ok, "a lift into a number is refused:\n{text}");
+    refused_with(
+        &text,
+        &[
+            "validation/lift-location",
+            "names a variable of uint32",
+            "union:Shape or optional<union:Shape>",
+        ],
+    );
+    let (ok, text) = checked(
+        "rust",
+        &lifting(
+            CIRCLE,
+            r#"      <sce:lift text="said" schema="Shape" location="shape" refusal="why"/>"#,
+        ),
+    );
+    assert!(ok, "a lift into a variable of the union is held:\n{text}");
+}
+
+/// Pinned by `ComposedLowering::of` (`sce-build/src/forge/event_schema_check.rs`):
+/// a backend that holds no union variable refuses a lift into one by naming the
+/// variable, before it is asked for the lift.
+#[test]
+fn a_backend_that_holds_no_union_refuses_a_lift_into_one_by_name() {
+    let (ok, text) = checked(
+        "kotlin",
+        &lifting(
+            LAST,
+            r#"      <sce:lift text="said" schema="Shape" location="last" refusal="why"/>"#,
+        ),
+    );
+    assert!(!ok, "Kotlin lifts into no union yet:\n{text}");
+    refused_with(
+        &text,
+        &[
+            "generate/unsupported-feature",
+            "<data id=\\\"last\\\">: `union:Shape` in a statechart's variable",
+            "kotlin lowering of its union",
         ],
     );
 }

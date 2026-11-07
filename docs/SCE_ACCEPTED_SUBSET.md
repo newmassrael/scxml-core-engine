@@ -4664,7 +4664,12 @@ written where the tests leave the variable in cases that each declare it, as it 
 new tag. The case changes by a whole assignment from another value of the same union
 by its name (a variable, a payload field, a `<foreach>` item, the present value of an
 optional one), or `null` into an optional one; any other value is
-`scxml/static-datamodel-rule`. The Rust machine holds
+`scxml/static-datamodel-rule`. A `<sce:lift schema="Shape">` whose schema names the
+union puts a text into a variable of it whole (`union:Shape` or
+`optional<union:Shape>`; any other location is `validation/lift-location`), read as a
+delivery's field of the union is read, its tag first, from the text's root; and an
+`sce:answer` may name the union, whose answer schema is named by its tag enum's
+revision, which the statechart must import the enum to know. The Rust machine holds
 either in its own sum (or `Option` of it), lent to a host by reference; a saved state
 holds the value as one object, its tag beside its case's fields, and the saved shape
 names the union's document and each case's record. Every other backend refuses the

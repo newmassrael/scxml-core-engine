@@ -1000,10 +1000,10 @@ pub struct LiftStatement<'a> {
     /// The text read, lent in place: an expression of the target's language
     /// that is the text ([`crate::forge::expr::transpile_into_copied`]).
     pub text: &'a str,
-    /// The schema the text is read as a record of, by the alias the document
-    /// imports it under, and its fields, each one entry.
+    /// The schema the text is read as a value of, by the alias the document
+    /// imports it under, and what the value is ([`Lifted`]).
     pub alias: &'a str,
-    pub schema: &'a EntrySchema,
+    pub lifted: Lifted<'a>,
     /// `depth(R)` ([`crate::forge::lift::depth`]).
     pub depth: u32,
     /// The JSON object of the defaults of the fields a later revision of the
@@ -1024,7 +1024,30 @@ pub struct LiftStatement<'a> {
     pub enums: &'a std::collections::BTreeMap<String, EnumModel>,
 }
 
-impl LiftStatement<'_> {
+/// What a [`LiftStatement`] reads its text as.
+pub enum Lifted<'a> {
+    /// A record of an event schema whose fields are each one entry, which a
+    /// target reads field by field.
+    Record(&'a EntrySchema),
+    /// A value of a union, put into a union variable whole (docs/adr/0092,
+    /// section 6.1 item 5): `reader` is the expression that reads it out of
+    /// the value its binding names, spelled by the target's composed walk
+    /// ([`crate::forge::composed_lowering::reader`]), which only a target that
+    /// spells a composed value is handed.
+    Union { reader: String },
+}
+
+impl<'a> LiftStatement<'a> {
+    /// The schema of the record the text is read as, or `None` for a lift into
+    /// a union ([`Lifted::Union`]), which a target that reads only records
+    /// refuses by name by answering `None` from its lift.
+    pub fn record(&self) -> Option<&'a EntrySchema> {
+        match self.lifted {
+            Lifted::Record(schema) => Some(schema),
+            Lifted::Union { .. } => None,
+        }
+    }
+
     /// The enum the refusal record's `code` holds a value of: the alias the
     /// machine holds it by, and the enum document.
     pub fn refusal_code(&self) -> Option<(&str, &EnumModel)> {
@@ -2990,8 +3013,9 @@ impl StaticTarget for KotlinTarget {
                 scalar => format!("{v}.{}()", scalar.as_attr()),
             })
         };
-        let mut members = Vec::with_capacity(lift.schema.fields.len());
-        for field in &lift.schema.fields {
+        let schema = lift.record()?;
+        let mut members = Vec::with_capacity(schema.fields.len());
+        for field in &schema.fields {
             let reader = match &field.sce_type {
                 EntryType::Scalar(ty) => read(ty, field.max_size, "v")?,
                 // The present value is bound to a name of its own, so the lambda
@@ -4114,11 +4138,12 @@ impl StaticTarget for RustTarget {
     }
     // The runtime's `lift_record` reads the text and hands the record of its
     // fields to the readers a composed record is read by (`RustComposed`), so a
-    // field is held to its type by the very call a delivery's is. A refusal is
-    // matched code by code onto the machine's enum of the standard refusal
-    // document, an exhaustive match the compiler holds to the runtime's codes.
-    // The pointer fits the record's path: the judge held its bound to the
-    // longest pointer of the schema.
+    // field is held to its type by the very call a delivery's is; its
+    // `lift_value` reads a union whole by the composed reader of the union. A
+    // refusal is matched code by code onto the machine's enum of the standard
+    // refusal document, an exhaustive match the compiler holds to the
+    // runtime's codes. The pointer fits the record's path: the judge held its
+    // bound to the longest pointer of the schema.
     fn lift(&self, lift: &LiftStatement<'_>) -> Option<String> {
         use crate::forge::composed_lowering::{ComposedSpelling, MachineEnum, RustComposed};
         const PAYLOAD: &str = "::sce_rust_runtime::event_payload";
@@ -4149,25 +4174,46 @@ impl StaticTarget for RustTarget {
                 scalar => spelling.read_scalar(scalar, "v"),
             })
         };
-        let mut members = Vec::with_capacity(lift.schema.fields.len());
-        for field in &lift.schema.fields {
-            let reader = match &field.sce_type {
-                EntryType::Scalar(ty) => read(ty, field.max_size)?,
-                EntryType::Optional { elem } => {
-                    spelling.read_optional("v", &read(elem, field.max_size)?)
-                }
-            };
-            members.push((
-                self.record_field(&field.id),
-                format!("r.field(\"{}\").and_then(|v| {reader})?", field.id),
-            ));
-        }
-        let record = self.record_value(&self.record_type(lift.machine, lift.alias), &members);
         let path_bound = lift.path_bound()?;
-        let defaults = lift.defaults.as_ref().map_or_else(
-            || "None".to_string(),
-            |json| format!("Some(\"{}\")", filters::escape_rust(json.clone())),
-        );
+        let schema = filters::escape_rust(lift.alias.to_string());
+        // The call that reads the text: a record field by field through
+        // `lift_record`, or a union whole through `lift_value`, by the reader
+        // a delivery's field of the union is read by (docs/adr/0092, section
+        // 6.1 item 5), which has no defaults to read.
+        let call = match &lift.lifted {
+            Lifted::Record(entries) => {
+                let mut members = Vec::with_capacity(entries.fields.len());
+                for field in &entries.fields {
+                    let reader = match &field.sce_type {
+                        EntryType::Scalar(ty) => read(ty, field.max_size)?,
+                        EntryType::Optional { elem } => {
+                            spelling.read_optional("v", &read(elem, field.max_size)?)
+                        }
+                    };
+                    members.push((
+                        self.record_field(&field.id),
+                        format!("r.field(\"{}\").and_then(|v| {reader})?", field.id),
+                    ));
+                }
+                let record =
+                    self.record_value(&self.record_type(lift.machine, lift.alias), &members);
+                let defaults = lift.defaults.as_ref().map_or_else(
+                    || "None".to_string(),
+                    |json| format!("Some(\"{}\")", filters::escape_rust(json.clone())),
+                );
+                format!(
+                    "{PAYLOAD}::lift_record(&{text}, \"{schema}\", {depth}, {path_bound}, \
+                     {defaults}, |r| Ok({record}))",
+                    text = lift.text,
+                    depth = lift.depth,
+                )
+            }
+            Lifted::Union { reader } => format!(
+                "{PAYLOAD}::lift_value(&{text}, \"{schema}\", {depth}, {path_bound}, |v| {reader})",
+                text = lift.text,
+                depth = lift.depth,
+            ),
+        };
         // The refusal, as a record of the standard refusal document.
         let (code_alias, code_model) = lift.refusal_code()?;
         let code_ty = self.enum_type(lift.machine, code_alias)?;
@@ -4204,12 +4250,8 @@ impl StaticTarget for RustTarget {
             "sce_lifted".to_string()
         };
         Some(format!(
-            "match {PAYLOAD}::lift_record(&{text}, \"{schema}\", {depth}, {path_bound}, {defaults}, \
-             |r| Ok({record})) {{ Ok(sce_lifted) => {{ {write} {absent} }} Err(sce_refusal) => {{ \
+            "match {call} {{ Ok(sce_lifted) => {{ {write} {absent} }} Err(sce_refusal) => {{ \
              {refused} }} }}",
-            text = lift.text,
-            schema = filters::escape_rust(lift.alias.to_string()),
-            depth = lift.depth,
             write = self.assign(lift.location, &lifted),
             absent = self.assign(lift.refusal, &self.optional_none("")?),
             refused = self.assign(lift.refusal, &refusal_present),
@@ -8897,9 +8939,10 @@ impl StaticTarget for CppTarget {
                 _ => format!("{value}.readInteger({into})"),
             })
         };
+        let schema = lift.record()?;
         let record_ty = self.record_type(lift.machine, lift.alias);
         let mut reads = String::new();
-        for field in &lift.schema.fields {
+        for field in &schema.fields {
             let into = format!("out.{}", self.record_field(&field.id));
             let reader = match &field.sce_type {
                 EntryType::Scalar(ty) => read(ty, field.max_size, "v", &into)?,
@@ -10223,10 +10266,11 @@ impl StaticTarget for GoTarget<'_> {
                 SceType::Enum(reference) => enum_reader(&reference.alias)?,
             })
         };
+        let schema = lift.record()?;
         let record_ty = self.record_type(lift.machine, lift.alias);
         let mut reads = String::new();
-        let mut members = Vec::with_capacity(lift.schema.fields.len());
-        for (index, field) in lift.schema.fields.iter().enumerate() {
+        let mut members = Vec::with_capacity(schema.fields.len());
+        for (index, field) in schema.fields.iter().enumerate() {
             let reader = match &field.sce_type {
                 EntryType::Scalar(ty) => read(ty, field.max_size)?.1,
                 EntryType::Optional { elem } => {
@@ -11282,8 +11326,9 @@ impl StaticTarget for PythonTarget {
                 }
             })
         };
-        let mut fields = Vec::with_capacity(lift.schema.fields.len());
-        for field in &lift.schema.fields {
+        let schema = lift.record()?;
+        let mut fields = Vec::with_capacity(schema.fields.len());
+        for field in &schema.fields {
             let declared = match &field.sce_type {
                 EntryType::Scalar(ty) => declared_type(ty, field.max_size)?,
                 EntryType::Optional { elem } => format!(
@@ -13266,8 +13311,9 @@ impl StaticTarget for CTarget {
                 "sce_refusal = sce_payload_value_{reader}({value}, &{into});"
             ))
         };
+        let schema = lift.record()?;
         let mut reads = String::new();
-        for field in &lift.schema.fields {
+        for field in &schema.fields {
             let into = format!("sce_lifted.{}", self.record_field(&field.id));
             // An optional field is absent at `null`, which the zeroed record already
             // is, and otherwise its present value read as the element's.
@@ -14872,8 +14918,9 @@ impl StaticTarget for SwiftTarget {
                 SceType::Enum(reference) => enum_reader(&reference.alias, value)?,
             })
         };
-        let mut members = Vec::with_capacity(lift.schema.fields.len());
-        for field in &lift.schema.fields {
+        let schema = lift.record()?;
+        let mut members = Vec::with_capacity(schema.fields.len());
+        for field in &schema.fields {
             let at = format!("r.field(\"{}\")", field.id);
             let reader = match &field.sce_type {
                 EntryType::Scalar(ty) => read(ty, field.max_size, &format!("(try {at})"))?,
@@ -16191,11 +16238,47 @@ fn lower_action(
             let construct = format!("<sce:lift text=\"{}\">", action.lift_text.trim());
             let unlowered = |why: &str| GenerateError::unsupported(format!("{construct}: {why}"));
             let alias = action.lift_schema.trim();
-            let schema = rewrites
-                .schemas
-                .get(alias)
-                .ok_or_else(|| unlowered("its schema is no record of entries this build read"))?;
             let location = action.location.trim();
+            // A union is read whole by the composed reader of its type, which
+            // only a target that spells a composed value has (docs/adr/0092,
+            // section 6.1 item 5); a record field by field by the target.
+            let (lifted, location_optional) = if rewrites.type_scope.unions.contains_key(alias) {
+                use crate::forge::value_type::ValueType;
+                let to = ctx
+                    .value_of(location)
+                    .ok_or_else(|| unlowered("its location names no variable this build typed"))?;
+                let (Some(names), Some(spelling)) = (
+                    rewrites.composed.as_ref(),
+                    target.composed_spelling(rewrites.machine),
+                ) else {
+                    return Err(unlowered(&format!(
+                        "{lang} spells no union (docs/adr/0092, section 7)"
+                    )));
+                };
+                let reader = crate::forge::composed_lowering::reader(
+                    &ValueType::Union {
+                        alias: alias.to_string(),
+                    },
+                    None,
+                    &names.records,
+                    &names.enums,
+                    &*spelling,
+                    spelling.read_binding(),
+                )
+                .map_err(|why| unlowered(&why))?;
+                (
+                    Lifted::Union { reader },
+                    matches!(to.ty, ValueType::Optional { .. }),
+                )
+            } else {
+                let schema = rewrites.schemas.get(alias).ok_or_else(|| {
+                    unlowered("its schema is no record of entries this build read")
+                })?;
+                (
+                    Lifted::Record(schema),
+                    rewrites.optional_records.contains_key(location),
+                )
+            };
             let refusal = action.lift_refusal.trim();
             let refusal_place = rewrites
                 .optional_records
@@ -16214,15 +16297,19 @@ fn lower_action(
             // so the text is not noted beside it.
             let depth = crate::forge::lift::depth(alias, &rewrites.type_scope)
                 .map_err(|e| unlowered(&format!("its schema has no depth: {e}")))?;
+            let defaults = match &lifted {
+                Lifted::Record(schema) => crate::forge::schema_revision::defaults_wire(schema),
+                Lifted::Union { .. } => None,
+            };
             let statement = LiftStatement {
                 machine: rewrites.machine,
                 text: &text.text,
                 alias,
-                schema,
+                lifted,
                 depth,
-                defaults: crate::forge::schema_revision::defaults_wire(schema),
+                defaults,
                 location: renames.get(location).copied().unwrap_or(location),
-                location_optional: rewrites.optional_records.contains_key(location),
+                location_optional,
                 refusal: renames.get(refusal).copied().unwrap_or(refusal),
                 refusal_alias: &refusal_place.alias,
                 refusal_schema: &refusal_place.schema,

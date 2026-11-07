@@ -2063,15 +2063,24 @@ impl<'a> Judge<'a> {
                 .unwrap_or_default()
         };
 
-        // The schema: an event schema the document imports.
+        // The schema: an event schema the document imports, or a union it
+        // imports, whose value a lift puts into a union variable whole
+        // (docs/adr/0092, section 6.1 item 5). A backend that holds no union
+        // variable refuses the location's variable by its own name.
         let schema = action.lift_schema.trim();
-        if !self.lift_schemas.contains_key(schema) {
+        let union = self.type_scope.unions.contains_key(schema);
+        if !union && !self.lift_schemas.contains_key(schema) {
             return Err(located(
                 ValidationError::InvalidAttribute {
                     element: "<sce:lift>".to_string(),
                     attr: "schema".to_string(),
                     value: schema.to_string(),
-                    allowed: self.lift_schemas.keys().cloned().collect(),
+                    allowed: self
+                        .lift_schemas
+                        .keys()
+                        .chain(self.type_scope.unions.keys())
+                        .cloned()
+                        .collect(),
                 }
                 .into(),
                 "schema",
@@ -2081,7 +2090,7 @@ impl<'a> Judge<'a> {
         // the composed readers lower for every backend (docs/adr/0086, step 3;
         // docs/adr/0087, section 7.1): refused by name until then, never read
         // in part.
-        if !self.schemas.contains_key(schema) {
+        if !union && !self.schemas.contains_key(schema) {
             let composed = self.lift_schemas[schema]
                 .fields
                 .iter()
@@ -2105,19 +2114,34 @@ impl<'a> Judge<'a> {
             ));
         }
 
-        // The location: a variable of the record, or of an optional one.
+        // The location: a variable of the record or the union, or of an
+        // optional one.
         let location = action.location.trim();
-        let wanted = format!("record:{schema} or optional<record:{schema}>");
+        let kind = if union { "union" } else { "record" };
+        let wanted = format!("{kind}:{schema} or optional<{kind}:{schema}>");
+        let union_alias = |t: &crate::forge::model::AlgorithmValueType| -> Option<String> {
+            match t {
+                crate::forge::model::AlgorithmValueType::Union { alias } => Some(alias.clone()),
+                _ => None,
+            }
+        };
         let location_fits = variable(location).is_some_and(|var| {
-            var.value_type
-                .as_ref()
-                .and_then(|t| {
-                    t.record_alias()
-                        .or_else(|| t.optional_elem().and_then(|elem| elem.record_alias()))
-                })
-                .is_some_and(|alias| {
-                    crate::forge::lift::same_record(alias, schema, &self.type_scope)
-                })
+            let Some(t) = var.value_type.as_ref() else {
+                return false;
+            };
+            if union {
+                union_alias(t)
+                    .or_else(|| t.optional_elem().and_then(union_alias))
+                    .is_some_and(|alias| {
+                        crate::forge::lift::same_union(&alias, schema, &self.type_scope)
+                    })
+            } else {
+                t.record_alias()
+                    .or_else(|| t.optional_elem().and_then(|elem| elem.record_alias()))
+                    .is_some_and(|alias| {
+                        crate::forge::lift::same_record(alias, schema, &self.type_scope)
+                    })
+            }
         });
         if !location_fits {
             let detail = match variable(location) {

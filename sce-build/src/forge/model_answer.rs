@@ -95,33 +95,46 @@ pub fn resolve(
         if alias.is_empty() {
             return Err(refuse("the attribute names no event schema".to_string()));
         }
-        let (Some(schema), Some(scoped)) = (
-            model.imported_records.get(alias),
-            model.imported_type_scope.records.get(alias),
-        ) else {
-            return Err(refuse(
-                "names no event schema this document imports".to_string(),
-            ));
+        let (name, payload) = match answer_document(model, alias) {
+            Some(AnswerDocument::Record { schema, scoped }) => (
+                &schema.name,
+                PayloadSchema::of(
+                    &schema.name,
+                    schema.revision(),
+                    &scoped.fields,
+                    &scoped.scope,
+                    None,
+                ),
+            ),
+            // docs/adr/0092, section 3.1 item 4: a union has a payload schema of
+            // its own, named by its tag enum's revision (section 8.1).
+            Some(AnswerDocument::Union { union, revision }) => {
+                let Some(revision) = revision else {
+                    return Err(refuse(format!(
+                        "names union:{alias}, whose tag's enum this document does not import, \
+                         and a union's revision is its tag enum's: import the enum `{}` tags \
+                         its cases with",
+                        union.name
+                    )));
+                };
+                (&union.name, PayloadSchema::of_union(revision, union, None))
+            }
+            None => {
+                return Err(refuse(
+                    "names no event schema this document imports".to_string(),
+                ))
+            }
         };
-        let payload = PayloadSchema::of(
-            &schema.name,
-            schema.revision(),
-            &scoped.fields,
-            &scoped.scope,
-            None,
-        )
-        .map_err(|why| {
+        let payload = payload.map_err(|why| {
             refuse(format!(
-                "names {}, whose payload has no grammar a model can be held to: {why}",
-                schema.name
+                "names {name}, whose payload has no grammar a model can be held to: {why}"
             ))
         })?;
         if let Some(bound) = answer_schema_bound(model, info) {
             if payload.id.len() > bound as usize {
                 return Err(refuse(format!(
-                    "names {}, whose id `{}` is {} bytes, past the {bound} the request's \
+                    "names {name}, whose id `{}` is {} bytes, past the {bound} the request's \
                      {ANSWER_SCHEMA_FIELD} holds: shorten the schema's document name",
-                    schema.name,
                     payload.id,
                     payload.id.len()
                 )));
@@ -131,9 +144,9 @@ pub fn resolve(
             Some(entry) if *entry == payload => {}
             Some(_) => {
                 return Err(refuse(format!(
-                    "names {}, whose id `{}` is the id of another answer schema of this \
+                    "names {name}, whose id `{}` is the id of another answer schema of this \
                      machine, and a host resolves one id to one schema",
-                    schema.name, payload.id
+                    payload.id
                 )))
             }
             None => table.push(payload),
@@ -158,14 +171,50 @@ fn answer_schema_bound(model: &SCXMLModel, info: &UnsupportedInvokeInfo) -> Opti
         })
 }
 
+/// The document an `sce:answer` names: an event schema the statechart imports,
+/// with the record its type scope reads it as, or a union it imports
+/// (docs/adr/0092, section 3.1 item 4), with its tag enum's revision where the
+/// statechart imports that enum.
+enum AnswerDocument<'m> {
+    Record {
+        schema: &'m crate::forge::model::EventSchemaModel,
+        scoped: &'m crate::forge::value_type::ScopedRecord,
+    },
+    Union {
+        union: &'m crate::forge::value_type::ScopedUnion,
+        revision: Option<u32>,
+    },
+}
+
+/// The document `alias` names in `model` ([`AnswerDocument`]), or `None` for
+/// an alias that names no event schema and no union of its imports.
+fn answer_document<'m>(model: &'m SCXMLModel, alias: &str) -> Option<AnswerDocument<'m>> {
+    if let (Some(schema), Some(scoped)) = (
+        model.imported_records.get(alias),
+        model.imported_type_scope.records.get(alias),
+    ) {
+        return Some(AnswerDocument::Record { schema, scoped });
+    }
+    let union = model.imported_type_scope.unions.get(alias)?;
+    let revision = crate::forge::value_path::tag_enum_alias(&model.imported_type_scope, union)
+        .and_then(|tag| model.imported_enums.get(&tag))
+        .map(|tag| tag.revision());
+    Some(AnswerDocument::Union { union, revision })
+}
+
 /// The id the request of `info` carries: its answer schema's, or empty for an
 /// invoke that names none.
 fn answer_schema_id(model: &SCXMLModel, info: &UnsupportedInvokeInfo) -> String {
-    model
-        .imported_records
-        .get(&info.answer_schema)
-        .map(|schema| schema_id(&schema.name, schema.revision()))
-        .unwrap_or_default()
+    if let Some(schema) = model.imported_records.get(&info.answer_schema) {
+        return schema_id(&schema.name, schema.revision());
+    }
+    match answer_document(model, &info.answer_schema) {
+        Some(AnswerDocument::Union {
+            union,
+            revision: Some(revision),
+        }) => schema_id(&union.name, revision),
+        _ => String::new(),
+    }
 }
 
 /// Write the `answer_schema` of every host-served invoke of
@@ -299,6 +348,106 @@ mod tests {
             why.contains("names no event schema this document imports"),
             "{why}"
         );
+    }
+
+    /// A union named as an answer (docs/adr/0092, section 3.1 item 4) enters
+    /// the table under its tag enum's revision (section 8.1), and the request
+    /// carries that id; one whose tag's enum the document does not import has
+    /// no revision to be named by, and is refused naming the repair.
+    #[test]
+    fn a_union_answer_is_named_by_its_tag_enums_revision() {
+        use crate::forge::model::{EnumModel, EnumVariant, SceType};
+        use crate::forge::value_type::{
+            ScopedCase, ScopedEnum, ScopedRecord, ScopedUnion, ScopedVariant, TypeScope,
+            WrittenType,
+        };
+        let variant = |name: &str, value: i128| ScopedVariant {
+            name: name.to_string(),
+            value,
+        };
+        let tag = ScopedEnum {
+            variants: vec![variant("dot", 0), variant("wide", 1)],
+            underlying: SceType::Uint8,
+            strict: true,
+        };
+        let mut inner = TypeScope::default();
+        inner.enums.insert("ShapeKind".into(), tag.clone());
+        inner.records.insert(
+            "Wide".into(),
+            ScopedRecord {
+                identity: "/here/wide.scxml".into(),
+                name: "wide".into(),
+                fields: vec![(
+                    "breadth".into(),
+                    WrittenType::read("uint8").unwrap().bounded().unwrap(),
+                )],
+                scope: TypeScope::default(),
+            },
+        );
+        let union = ScopedUnion {
+            identity: "/here/shape.scxml".into(),
+            name: "shape".into(),
+            tag: "kind".into(),
+            tag_enum: "ShapeKind".into(),
+            cases: vec![
+                ScopedCase {
+                    variant: variant("dot", 0),
+                    record: None,
+                },
+                ScopedCase {
+                    variant: variant("wide", 1),
+                    record: Some("Wide".into()),
+                },
+            ],
+            scope: inner,
+        };
+        let mut model = with(model_invoke("Shape", true));
+        model
+            .imported_type_scope
+            .unions
+            .insert("Shape".into(), union);
+        let why = refusal(&model);
+        assert!(
+            why.contains("whose tag's enum this document does not import"),
+            "{why}"
+        );
+        model.imported_type_scope.enums.insert("Kind".into(), tag);
+        model.imported_enums.insert(
+            "Kind".into(),
+            EnumModel {
+                name: "shape_kind".into(),
+                underlying_type: SceType::Uint8,
+                variants: ["dot", "wide"]
+                    .iter()
+                    .zip(0..)
+                    .map(|(name, value)| EnumVariant {
+                        name: (*name).to_string(),
+                        value,
+                        value_text: String::new(),
+                        text: None,
+                        since: None,
+                        source_line: None,
+                    })
+                    .collect(),
+                strict_variants: true,
+                revision: Some(2),
+                source_location: None,
+            },
+        );
+        let table = resolve(&model, "probe.scxml").expect("a union is an answer");
+        assert_eq!(table.len(), 1);
+        assert_eq!(table[0].id, "urn:sce:schema:shape:2");
+        write_requests(&mut model);
+        let Invoke::Unsupported(info) = &model.states["asking"].invokes[0] else {
+            unreachable!("the invoke is host-run")
+        };
+        let written = info
+            .base
+            .params
+            .iter()
+            .find(|p| p.name == ANSWER_SCHEMA_FIELD)
+            .expect("the id is written");
+        assert_eq!(written.static_value, "urn:sce:schema:shape:2");
     }
 
     #[test]

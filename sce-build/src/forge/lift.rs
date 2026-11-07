@@ -75,27 +75,47 @@ pub fn path_bound(alias: &str, scope: &TypeScope) -> Option<u32> {
         })
 }
 
-/// `depth(R)` of the record the statechart imports as `alias`
-/// ([`crate::forge::value_type::container_depth`]).
-pub fn depth(alias: &str, scope: &TypeScope) -> Result<u32, SizeError> {
-    crate::forge::value_type::container_depth(
-        &ValueType::Record {
-            alias: alias.to_string(),
-        },
-        scope,
-    )
+/// Whether the aliases `a` and `b` of one statechart name one union document
+/// (docs/adr/0092, section 1.1: a union type is its document).
+pub fn same_union(a: &str, b: &str, scope: &TypeScope) -> bool {
+    if a == b {
+        return scope.unions.contains_key(a);
+    }
+    match (scope.unions.get(a), scope.unions.get(b)) {
+        (Some(first), Some(second)) => {
+            !first.identity.is_empty() && first.identity == second.identity
+        }
+        _ => false,
+    }
 }
 
-/// The longest pointer to a place the record the statechart imports as
-/// `alias` declares, with its length in bytes
-/// ([`crate::forge::value_type::longest_pointer`]).
-pub fn longest_pointer(alias: &str, scope: &TypeScope) -> Result<(String, u64), SizeError> {
-    crate::forge::value_type::longest_pointer(
-        &ValueType::Record {
+/// The type a lift whose `schema` is `alias` reads its text as: the union the
+/// statechart imports as `alias` where it imports one (docs/adr/0092, section
+/// 6.1 item 5: a whole union is put into a variable from a lift), and the
+/// record of the event schema `alias` names otherwise.
+pub fn lifted_type(alias: &str, scope: &TypeScope) -> ValueType {
+    if scope.unions.contains_key(alias) {
+        ValueType::Union {
             alias: alias.to_string(),
-        },
-        scope,
-    )
+        }
+    } else {
+        ValueType::Record {
+            alias: alias.to_string(),
+        }
+    }
+}
+
+/// `depth(R)` of the record or union the statechart imports as `alias`
+/// ([`lifted_type`], [`crate::forge::value_type::container_depth`]).
+pub fn depth(alias: &str, scope: &TypeScope) -> Result<u32, SizeError> {
+    crate::forge::value_type::container_depth(&lifted_type(alias, scope), scope)
+}
+
+/// The longest pointer to a place the record or union the statechart imports
+/// as `alias` declares, with its length in bytes ([`lifted_type`],
+/// [`crate::forge::value_type::longest_pointer`]).
+pub fn longest_pointer(alias: &str, scope: &TypeScope) -> Result<(String, u64), SizeError> {
+    crate::forge::value_type::longest_pointer(&lifted_type(alias, scope), scope)
 }
 
 #[cfg(test)]
@@ -169,6 +189,66 @@ mod tests {
         assert!(same_record("Answer", "Answer", &scope));
         assert!(!same_record("Answer", "LiftRefusal", &scope));
         assert!(!same_record("Answer", "Missing", &scope));
+    }
+
+    /// A lift whose schema names a union reads the union: one level deep, as
+    /// a record is, its longest pointer the tag's or a case's field's, and two
+    /// aliases of one union document name one union.
+    #[test]
+    fn a_union_alias_is_lifted_as_the_union() {
+        use crate::forge::value_type::{ScopedCase, ScopedUnion, ScopedVariant};
+        let mut scope = scope();
+        let mut inner = TypeScope::default();
+        inner.records.insert(
+            "Wide".into(),
+            record("/here/wide.scxml", &[("breadth", "uint8")]),
+        );
+        let union = ScopedUnion {
+            identity: "/here/shape.scxml".into(),
+            name: "shape".into(),
+            tag: "kind".into(),
+            tag_enum: "Kind".into(),
+            cases: vec![
+                ScopedCase {
+                    variant: ScopedVariant {
+                        name: "dot".into(),
+                        value: 0,
+                    },
+                    record: None,
+                },
+                ScopedCase {
+                    variant: ScopedVariant {
+                        name: "wide".into(),
+                        value: 1,
+                    },
+                    record: Some("Wide".into()),
+                },
+            ],
+            scope: inner,
+        };
+        scope.unions.insert("Shape".into(), union.clone());
+        scope.unions.insert("Form".into(), union);
+        assert_eq!(
+            lifted_type("Shape", &scope),
+            ValueType::Union {
+                alias: "Shape".into()
+            }
+        );
+        assert_eq!(
+            lifted_type("Answer", &scope),
+            ValueType::Record {
+                alias: "Answer".into()
+            }
+        );
+        assert_eq!(depth("Shape", &scope), Ok(1));
+        assert_eq!(
+            longest_pointer("Shape", &scope),
+            Ok(("/breadth".to_string(), 8))
+        );
+        assert!(same_union("Shape", "Form", &scope));
+        assert!(same_union("Shape", "Shape", &scope));
+        assert!(!same_union("Shape", "Answer", &scope));
+        assert!(!same_union("Answer", "Answer", &scope));
     }
 
     /// A record of scalars is one level deep, and its longest pointer is its

@@ -787,8 +787,9 @@ impl StaticTarget for JsTarget {
                 other => field_kind(other, &[])?,
             })
         };
-        let mut fields = Vec::with_capacity(lift.schema.fields.len());
-        for field in &lift.schema.fields {
+        let schema = lift.record()?;
+        let mut fields = Vec::with_capacity(schema.fields.len());
+        for field in &schema.fields {
             let declared = match &field.sce_type {
                 EntryType::Scalar(ty) => kind(ty, field.max_size)?,
                 EntryType::Optional { elem } => {

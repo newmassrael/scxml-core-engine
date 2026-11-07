@@ -255,16 +255,51 @@ pub fn lift_record<T>(
 ) -> Result<T, PayloadRefusal> {
     let lifted = PayloadFields::lift(text, depth, path_bound, defaults)
         .and_then(|fields| read(&fields.record()));
-    match &lifted {
-        Ok(_) => crate::sce_log_info!("<sce:lift>: the text is a record of {schema}"),
+    log_lift("record", schema, &lifted);
+    lifted
+}
+
+/// What a `<sce:lift>` into a variable of a union reads (docs/adr/0092,
+/// section 6.1 item 5): `text` as one value of the union named `schema`, which
+/// `read` reads out of the whole object it is handed, by the reader a
+/// delivery's field of the union is read by ([`PayloadValue::union`]: its tag
+/// first, then the record of the case the tag names); or the refusal of the
+/// first place that is not one. What is refused before the value is read is
+/// what [`PayloadFields::lift`] refuses, a text that is no object among it,
+/// and a union has no defaults: its revision is its tag enum's, so no field is
+/// added to a case by one. Logged as [`lift_record`] logs.
+pub fn lift_value<T>(
+    text: &str,
+    schema: &str,
+    depth: u32,
+    path_bound: u32,
+    read: impl FnOnce(&PayloadValue<'_>) -> Result<T, PayloadRefusal>,
+) -> Result<T, PayloadRefusal> {
+    let lifted = PayloadFields::lift(text, depth, path_bound, None).and_then(|fields| {
+        let object = Value::Object(fields.fields);
+        read(&PayloadValue {
+            value: &object,
+            path: String::new(),
+            pointer: String::new(),
+        })
+    });
+    log_lift("value", schema, &lifted);
+    lifted
+}
+
+/// The line a lift logs of its outcome: the schema's name and, for a refusal,
+/// its code, pointer and bound, never the text, since nothing bounds what a
+/// sender writes in it. `what` is what the text is read as.
+fn log_lift<T>(what: &str, schema: &str, lifted: &Result<T, PayloadRefusal>) {
+    match lifted {
+        Ok(_) => crate::sce_log_info!("<sce:lift>: the text is a {what} of {schema}"),
         Err(refusal) => crate::sce_log_info!(
-            "<sce:lift>: the text is no record of {schema}: {} at '{}', bound {:?} ({refusal})",
+            "<sce:lift>: the text is no {what} of {schema}: {} at '{}', bound {:?} ({refusal})",
             refusal.code().name(),
             refusal.pointer(),
             refusal.bound()
         ),
     }
-    lifted
 }
 
 /// The refusal of a container `text` opens deeper than `depth`, the deepest a
@@ -1250,7 +1285,7 @@ pub fn union_json<'k>(tag: &'k str, variant: &str, mut members: Vec<(&'k str, St
 mod tests {
     use super::{
         list_json, optional_json, quote, record_json, union_json, PayloadFields, PayloadRefusal,
-        RefusalCode,
+        PayloadValue, RefusalCode,
     };
 
     const DEFAULTS: &str = r#"{"layout":"week","count":"7","urgent":true}"#;
@@ -1939,7 +1974,13 @@ mod tests {
 
     fn read_shape(data: &str) -> Result<Shape, PayloadRefusal> {
         let fields = PayloadFields::decode(data).expect("the text is an object");
-        fields.field("s")?.union(
+        shape_at(&fields.field("s")?)
+    }
+
+    /// The [`Shape`] `value` holds, read as a generated reader of a union reads
+    /// it.
+    fn shape_at(value: &PayloadValue<'_>) -> Result<Shape, PayloadRefusal> {
+        value.union(
             "kind",
             |tag| {
                 tag.name().and_then(|name| match name {
@@ -2016,6 +2057,36 @@ mod tests {
         assert_eq!(
             refused(r#"{"s":{"kind":"disc","radius":null}}"#),
             Err((RefusalCode::NullNotOptional, "/s/radius".into()))
+        );
+    }
+
+    /// A lift into a union reads the whole text as one value of it, by the
+    /// reader a delivery's field of the union is read by, after a lift's own
+    /// refusals: its pointers start at the text's root, not under a field.
+    #[test]
+    fn a_lift_into_a_union_reads_the_whole_text_by_its_tag() {
+        let lifted = |text: &str| {
+            super::lift_value(text, "Shape", 1, 256, shape_at)
+                .map_err(|r| (r.code(), r.pointer().to_string()))
+        };
+        assert_eq!(lifted(r#"{"radius":3,"kind":"disc"}"#), Ok(Shape::Disc(3)));
+        assert_eq!(lifted(r#"{"kind":"dot","radius":null}"#), Ok(Shape::Dot));
+        assert_eq!(lifted(" "), Err((RefusalCode::NotJson, String::new())));
+        assert_eq!(
+            lifted(r#"{"kind":"circle","radius":[1]}"#),
+            Err((RefusalCode::TooDeep, "/radius".into()))
+        );
+        assert_eq!(
+            lifted(r#""dot""#),
+            Err((RefusalCode::NotObject, String::new()))
+        );
+        assert_eq!(
+            lifted(r#"{"radius":2}"#),
+            Err((RefusalCode::Missing, "/kind".into()))
+        );
+        assert_eq!(
+            lifted(r#"{"kind":"circle"}"#),
+            Err((RefusalCode::Missing, "/radius".into()))
         );
     }
 
