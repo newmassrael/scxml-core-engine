@@ -159,7 +159,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 #
 # `a_regeneration_removes_what_it_no_longer_writes` is here because what it
 # holds together lives in no workflow's `paths:`: the regeneration helper under
-# `scripts/lib/`, the outputs of `[actions.regen]` in bx.toml, and every
+# `scripts/lib/`, the `regen-<step>` actions of bx.toml, and every
 # committed file of the generated trees, which it reads to prove each one is
 # recognised as generated or written by hand. The file whose kind the helper
 # does not know is a NEW kind, in a tree a filter over today's files would not

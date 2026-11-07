@@ -368,10 +368,10 @@ const UNFILTERABLE_GATES: &[&str] = &[
     "the_pin_is_read_from_one_place",
     // Asks `git ls-files` for every committed file of the trees a regeneration
     // sets aside and holds each to being recognised as generated or written by
-    // hand, and holds those trees to the outputs bx.toml declares for the regen
-    // action. The file that breaks it is a new kind of generated file, in
-    // whichever tree a generator writes it into next, and neither the helper
-    // under `scripts/lib/` nor bx.toml is in any lane's filter.
+    // hand, and holds each step's trees to the outputs bx.toml declares for
+    // that step's action. The file that breaks it is a new kind of generated
+    // file, in whichever tree a generator writes it into next, and neither the
+    // helper under `scripts/lib/` nor bx.toml is in any lane's filter.
     "a_regeneration_removes_what_it_no_longer_writes",
     // Asks `git ls-files` for every C++ unit and counts the generated machines each
     // includes. The unit that breaks the bound is one an author writes next, in a

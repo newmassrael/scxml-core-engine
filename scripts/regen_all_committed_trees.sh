@@ -3,13 +3,18 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
 # Master regeneration for every committed §synth-6.2.6 generated tree
-# tracked by the SCE workspace. Runs in three groups:
+# tracked by the SCE workspace, as a list of STEPS. A step owns the trees it
+# writes: no other step writes into them, and no step reads what another
+# writes, so each step runs on its own and the order between them is not part
+# of the result. The steps and the trees each owns are listed once, in
+# scripts/lib/sce_generated_tree.sh (`sce_regen_steps`, `sce_generated_trees`);
+# the work of each is a `step_<name>` function below.
 #
-#   1. W3C IRP committed trees (Rust + Kotlin)
-#   2. Integration committed trees (Rust + Kotlin + Go) via the
-#      new `generate-integration` CLI surface (RFC
-#      committed-tree refresh policy).
-#   3. Forge round-trip Go codec tree.
+# Each step is also a bx action of its own, `[actions.regen-<step>]` in
+# bx.toml, whose `run` is this script given that step. bx keeps each action's
+# result and spreads the actions over the build machines; `bx --actions` runs
+# every one of them, which is "regenerate everything" on the build machines.
+# bx.toml says why the steps are grouped as they are.
 #
 # Build-time backends (cpp / c11 / Python) are intentionally absent
 # — their generated trees materialise at CMake / CI time without a
@@ -20,13 +25,15 @@
 # beyond the files that edit actually changes: the §synth-6.2.6 header
 # carries only facts about each file's inputs, so nothing is re-stamped
 # that did not change. A generated file the generator no longer writes is
-# removed, and named at the end of the run, so the diff carries deletions as
+# removed, and named when its step ends, so the diff carries deletions as
 # well as edits. Running this script + `git add -A` produces a
 # single coherent commit across every tracked context in one shot, and
 # `scripts/gate regen-reproduces` is the check that it did.
 #
 # Usage (from repo root):
-#   scripts/regen_all_committed_trees.sh
+#   scripts/regen_all_committed_trees.sh            # every step, in order
+#   scripts/regen_all_committed_trees.sh STEP...    # only the steps named
+#   scripts/regen_all_committed_trees.sh --list     # the names of the steps
 
 set -euo pipefail
 
@@ -50,34 +57,191 @@ stage() {
     return 0
 }
 
-stage "Resolving sce-codegen (builds it when the binary is stale)"
 source "$REPO_ROOT/scripts/lib/sce_codegen.sh"
-CODEGEN="$(sce_codegen_require "$REPO_ROOT")"
-
-# Every tree below is REPLACED, not written over: its generated files are set
-# aside now, each stage has to write again what it still produces, and the
-# settle at the end removes -- and names -- each file no stage wrote again. A
-# file a stage wrote with the same bytes gets its old copy back, mtime and all.
-#
-# Writing over a tree removes nothing. Measured 2026-10-21: after the escaping
-# of synthesized invoke ids changed, this script wrote
-# `test192__sce_synth_invoke__0zinvokedzuchild_sm.rs` (and its Kotlin twin)
-# beside the `..._invokedChild_sm.rs` the generator no longer wrote, and both
-# old files stayed committed for days. The rules for which file is generated,
-# and the reason each tree is or is not in the set, are in
-# scripts/lib/sce_generated_tree.sh.
-#
-# A stage that fails puts every file back (the EXIT trap), since a run that
-# stopped half way says nothing about what the generator no longer writes.
-stage "Setting aside the generated files of every tree the stages write"
 source "$REPO_ROOT/scripts/lib/sce_generated_tree.sh"
-mapfile -t GENERATED_TREES < <(sce_generated_trees)
-trap sce_generated_tree_on_exit EXIT
-sce_generated_tree_stash "${GENERATED_TREES[@]}"
 
-stage "W3C committed trees"
-"$CODEGEN" generate-w3c -l rust
-"$CODEGEN" generate-w3c -l kotlin
+# The generator, resolved by the first step that calls it (and built when the
+# binary is stale); the steps that only run scripts let each script resolve it.
+CODEGEN=""
+require_codegen() {
+    if [[ -z "$CODEGEN" ]]; then
+        stage "Resolving sce-codegen (builds it when the binary is stale)"
+        CODEGEN="$(sce_codegen_require "$REPO_ROOT")"
+    fi
+}
+
+# ── rust-tests: the committed trees of backends/rust/tests ──────────────
+#
+# One step, because its last stage reads and rewrites every Rust file the
+# others write: rustfmt is part of the committed form of the crate.
+step_rust_tests() {
+    require_codegen
+
+    stage "W3C Rust tree"
+    "$CODEGEN" generate-w3c -l rust
+
+    stage "Integration Rust tree"
+    "$CODEGEN" generate-integration -l rust
+
+    # EventSchema native-lowering gates (NL→IR C1 Path A). Per-backend committed
+    # trees driven by their own regen scripts (not the `generate-integration`
+    # fan-out): each gate reuses the canonical fixture directly so its receive-side
+    # schema sibling resolves, and lives next to its own backend's test harness.
+    # Every backend (Rust, Go, Kotlin, Python; cpp/c11 gates run at CMake/CI time)
+    # now lowers the typed `_event.data` guard to a script-engine-free comparison.
+    stage "EventSchema native-lowering Rust tree"
+    scripts/regen_event_schema_native.sh
+
+    # datamodel="sce-static" (SCE Accepted Subset §2.15) — the backends that
+    # lower the model (generator.rs `STATIC_DATAMODEL_BACKENDS`); the others
+    # refuse it.
+    stage "Static datamodel Rust tree"
+    scripts/regen_static_datamodel_rust.sh
+
+    # W3C SCXML G.7 `<sce:action>` native host dispatch gate, driven by its own
+    # regen script like the EventSchema gates above.
+    #
+    # The "Rust-only" this comment used to claim stopped being true on 2026-08-24,
+    # when every backend grew a native-action path and the refusal the other five
+    # raised was retired. Three of the six commit a tree — Rust, Go and Kotlin —
+    # and each is part of its language's test module, so it is really compiled and
+    # its §6.2.6 header must refresh with every template edit alongside the rest.
+    # Each has a script of its own, run by its language's step. The other three are
+    # not here and each for its own reason: Python's module is gitignored
+    # (`scripts/gates/w3c-python.sh` regenerates it), and C++ and C11 generate at
+    # build time from their own CMake registrations.
+    stage "Native-action host-dispatch Rust tree"
+    scripts/regen_native_action.sh
+
+    # W3C SCXML 6.2.5 host-served Event I/O Processor gate, and W3C SCXML 6.2.4's
+    # delayed form beside it. Driven by their own scripts rather than the
+    # `generate-integration` fan-out because the fixtures need a per-stem flag
+    # (`--host-processor`) that the fan-out has no way to carry.
+    #
+    # The "Rust-only" this comment used to claim stopped being true when the
+    # surface reached every backend: the Go and Kotlin steps run their own
+    # scripts. The Python tree is generated by the `w3c-python` gate instead,
+    # because `backends/python/tests/integration/*/*_sm.py` is gitignored — there
+    # is no committed artefact here for this script to keep current.
+    stage "Host-processor send Rust tree"
+    scripts/regen_host_processor.sh
+
+    # The AI supervision loop example. Its input is `examples/ai_loop/ai_loop.scxml`
+    # rather than a stem under `integration_resources/`, so the `generate-integration`
+    # fan-out above does not reach it — and a committed tree this script does not
+    # know about is exactly the stale-artifact shape described for the W3C Go and
+    # Python trees. It renders from the same template tree as everything else, so
+    # a template edit can change it as readily as any of them.
+    stage "AI loop example Rust tree"
+    scripts/regen_ai_loop.sh
+
+    # Named here for the same reason the AI loop is, with a different cause: the
+    # transition-domain witness document is not under `integration_resources/`
+    # because a stem there is a SEVEN-channel contract and this document has six
+    # drivers — there is no mesh channel for it. (Until 2026-08-25 the reason given
+    # here was that some engines did not yet meet the rule; all six do now, and the
+    # arity is what keeps the document where it is.) The `generate-integration`
+    # fan-out therefore never sees it, and a tree this script does not know about is
+    # exactly the stale-artifact shape the AI-loop entries were added to prevent.
+    stage "Transition-domain witness Rust tree"
+    scripts/regen_parallel_region_root_external_domain.sh
+
+    # The child-deadline document sits outside `integration_resources/` for the same
+    # arity reason, with a different cause: it asks a host's question — when does
+    # this machine next need a tick? — and C11 and the C++ Interpreter expose no such
+    # query, so a stem there would commit to channels with nothing to assert. The
+    # `generate-integration` fan-out never sees it, and a tree this script does not
+    # know about is the stale-artifact shape the entries above were added to prevent.
+    stage "Child-deadline document Rust tree"
+    scripts/regen_a_child_timer_is_a_deadline_of_its_parent.sh
+
+    # The external-event budget's document sits outside `integration_resources/` for
+    # the arity reason, with its own cause: it holds each engine to one contract
+    # (ARCHITECTURE.md "External-Event Budget"), and a stem there is a seven-channel
+    # contract. Each engine's tree is added here with its driver.
+    stage "External-event budget document Rust tree"
+    scripts/regen_external_chain_is_bounded.sh
+
+    # The committed Rust trees are generator output *as rustfmt leaves it*, not
+    # as the emitter writes it. `backends/rust/tests` is a workspace member, so
+    # `cargo fmt --all` reformats it and `fmt-check.yml` requires that state —
+    # but nothing in the emitter produces it. Without this stage the script's
+    # stated aim, "regenerate and expect no diff", is false for the W3C Rust
+    # tree: a plain regeneration leaves ~450 files differing from HEAD by
+    # whitespace alone. That gap used to be closed by accident, at commit time,
+    # by the pre-commit `cargo fmt --all -- --check` gate refusing the push
+    # until the developer ran the formatter — which meant the documented
+    # procedure did not reproduce the committed state, and a reviewer could not
+    # tell whitespace churn from a real emitter change.
+    #
+    # Scoped to the crate holding the committed generated Rust rather than
+    # `--all`, so the stage says what it is for. Last in the step, before the
+    # settle: a file is judged on the bytes it is committed with, and rustfmt is
+    # part of those.
+    stage "Formatting the committed Rust trees (rustfmt is part of their committed form)"
+    cargo fmt -p sce-rust-tests
+}
+
+# ── kotlin-tests: the committed trees of backends/kotlin/tests ──────────
+#
+# One step, because the trees are shared: the static datamodel's algorithms are
+# packages under com/sce/generated, beside the W3C machines, and its machines
+# sit under com/sce/integration with every integration stem.
+step_kotlin_tests() {
+    require_codegen
+
+    stage "W3C Kotlin tree"
+    "$CODEGEN" generate-w3c -l kotlin
+
+    stage "Integration Kotlin tree"
+    "$CODEGEN" generate-integration -l kotlin
+
+    stage "EventSchema native-lowering Kotlin tree"
+    scripts/regen_event_schema_native_kotlin.sh
+    stage "Static datamodel Kotlin tree"
+    scripts/regen_static_datamodel_kotlin.sh
+    stage "Native-action host-dispatch Kotlin tree"
+    scripts/regen_native_action_kotlin.sh
+
+    # Called here rather than only by hand: nothing else reaches it — the
+    # `w3c-kotlin` gate regenerates only the W3C and `generate-integration` trees —
+    # so the committed Kotlin host-processor trees could drift with nothing to say
+    # so. Naming it here is what puts them under `regen-reproduces`.
+    stage "Host-processor send Kotlin trees"
+    scripts/regen_host_processor_kotlin.sh
+
+    # Same reason as the Kotlin host-processor trees above: a committed Kotlin tree
+    # this script does not know about could drift with nothing to say so.
+    stage "AI loop example Kotlin tree"
+    scripts/regen_ai_loop_kotlin.sh
+    stage "Transition-domain witness Kotlin tree"
+    scripts/regen_parallel_region_root_external_domain_kotlin.sh
+    stage "Child-deadline document Kotlin tree"
+    scripts/regen_a_child_timer_is_a_deadline_of_its_parent_kotlin.sh
+    stage "External-event budget document Kotlin tree"
+    scripts/regen_external_chain_is_bounded_kotlin.sh
+
+    # The two documents whose texts are past one JVM class-file constant sit outside
+    # `integration_resources/` for the arity reason, with their own cause: the limit
+    # they reach is the class file's, so only the Kotlin channel has a question to
+    # ask of them. The `generate-integration` fan-out never sees them.
+    stage "Long-text documents Kotlin trees"
+    scripts/regen_jvm_long_text_kotlin.sh
+}
+
+# ── kotlin-method-size: the module of the JVM method-size document ──────
+#
+# The document whose transition content, written as one method, passes the
+# 65,535 bytes of code one JVM method holds sits beside the long-text documents
+# for the same reason: the limit it reaches is the class file's. It lives in a
+# module of its own (backends/kotlin/method-size), so it is a step of its own.
+step_kotlin_method_size() {
+    stage "Method-size document Kotlin tree"
+    scripts/regen_jvm_method_size_kotlin.sh
+}
+
+# ── go-w3c / python-w3c: the gitignored W3C trees ──────────────────────
+#
 # The Go and Python W3C trees are .gitignored, so nothing committed changes
 # when they are regenerated — but they are still real trees on a developer's
 # disk, and leaving them out of the master refresh let them keep serving
@@ -86,187 +250,105 @@ stage "W3C committed trees"
 # walks the filesystem — and to the test suite: dropping a runtime symbol a
 # template no longer emits left the stale Python tree importing it, failing
 # collection for all 202 W3C modules at once.
-"$CODEGEN" generate-w3c -l go
-"$CODEGEN" generate-w3c -l python
+step_go_w3c() {
+    require_codegen
+    stage "W3C Go tree"
+    "$CODEGEN" generate-w3c -l go
+}
 
-stage "Integration trees (Rust / Kotlin / Go / Swift committed; Python gitignored)"
-"$CODEGEN" generate-integration -l rust
-"$CODEGEN" generate-integration -l kotlin
-"$CODEGEN" generate-integration -l go
-"$CODEGEN" generate-integration -l python
-"$CODEGEN" generate-integration -l swift
+step_python_w3c() {
+    require_codegen
+    stage "W3C Python tree"
+    "$CODEGEN" generate-w3c -l python
+}
 
-stage "Forge round-trip Go codec tree"
-backends/go/forge-runtime/round_trip/generate.sh
+# ── go-integration: backends/go/tests/integration ───────────────────────
+step_go_integration() {
+    require_codegen
 
-# EventSchema native-lowering gates (NL→IR C1 Path A). Per-backend committed
-# trees driven by their own regen scripts (not the `generate-integration`
-# fan-out): each gate reuses the canonical fixture directly so its receive-side
-# schema sibling resolves, and lives next to its own backend's test harness.
-# Every backend (Rust, Go, Kotlin, Python; cpp/c11 gates run at CMake/CI time)
-# now lowers the typed `_event.data` guard to a script-engine-free comparison.
-stage "EventSchema native-lowering Rust tree"
-scripts/regen_event_schema_native.sh
-stage "EventSchema native-lowering Go tree"
-scripts/regen_event_schema_native_go.sh
-stage "EventSchema native-lowering Kotlin tree"
-scripts/regen_event_schema_native_kotlin.sh
-stage "EventSchema native-lowering Python tree"
-scripts/regen_event_schema_native_python.sh
+    stage "Integration Go tree"
+    "$CODEGEN" generate-integration -l go
 
-# datamodel="sce-static" (SCE Accepted Subset §2.15) — the backends that
-# lower the model (generator.rs `STATIC_DATAMODEL_BACKENDS`); the others
-# refuse it.
-stage "Static datamodel Kotlin tree"
-scripts/regen_static_datamodel_kotlin.sh
-stage "Static datamodel Rust tree"
-scripts/regen_static_datamodel_rust.sh
-stage "Static datamodel Go tree"
-scripts/regen_static_datamodel_go.sh
+    stage "EventSchema native-lowering Go tree"
+    scripts/regen_event_schema_native_go.sh
+    stage "Static datamodel Go tree"
+    scripts/regen_static_datamodel_go.sh
+    stage "Native-action host-dispatch Go tree"
+    scripts/regen_native_action_go.sh
+    stage "Host-processor send Go trees"
+    scripts/regen_host_processor_go.sh
 
-# The Swift backend: its statecharts are the fixtures of
-# `sce-build/tests/fixtures/swift_statecharts`, a committed tree of its own that
-# compiles against the Swift runtime.
-stage "Swift statechart tree"
-scripts/regen_swift_statecharts.sh
-# ... and the machines of the static datamodel fixtures it lowers, another target of
-# the same package.
-stage "Static datamodel Swift tree"
-scripts/regen_static_datamodel_swift.sh
-# ... and the `datamodel="ecmascript"` machines it lowers to Lua, a third target of the
-# same package: the one that links the `SceLua` engine.
-stage "ECMAScript Swift tree"
-scripts/regen_swift_ecmascript.sh
+    # The channels are held to a single scenario set by `ai_loop_channel_parity`,
+    # so a tree that went stale here would make one engine's answers about a
+    # document the others no longer generate from.
+    stage "AI loop example Go tree"
+    scripts/regen_ai_loop_go.sh
+    stage "Transition-domain witness Go tree"
+    scripts/regen_parallel_region_root_external_domain_go.sh
+    stage "Child-deadline document Go tree"
+    scripts/regen_a_child_timer_is_a_deadline_of_its_parent_go.sh
+    stage "External-event budget document Go tree"
+    scripts/regen_external_chain_is_bounded_go.sh
+}
 
-# W3C SCXML G.7 `<sce:action>` native host dispatch gate, driven by its own
-# regen script like the EventSchema gates above.
+# ── python-integration: backends/python/tests/integration (gitignored) ─
+step_python_integration() {
+    require_codegen
+
+    stage "Integration Python tree"
+    "$CODEGEN" generate-integration -l python
+
+    stage "EventSchema native-lowering Python tree"
+    scripts/regen_event_schema_native_python.sh
+
+    # Named here because the `generate-integration` fan-out enumerates
+    # `integration_resources/` stems and this input is an example.
+    stage "AI loop example Python tree"
+    scripts/regen_ai_loop_python.sh
+
+    # The Python modules are gitignored, like every other module in
+    # `backends/python/tests/integration/`, so they contribute no diff here. They
+    # are named anyway for the reason `regen_ai_loop_python.sh` is: this script is
+    # the one place that says "regenerate everything", and a local tree whose
+    # Python module is missing fails at import rather than at an assertion.
+    stage "Transition-domain witness Python tree"
+    scripts/regen_parallel_region_root_external_domain_python.sh
+    stage "Child-deadline document Python tree"
+    scripts/regen_a_child_timer_is_a_deadline_of_its_parent_python.sh
+    stage "External-event budget document Python tree"
+    scripts/regen_external_chain_is_bounded_python.sh
+}
+
+# ── swift-tests: the committed machines of backends/swift/tests ─────────
+step_swift_tests() {
+    require_codegen
+
+    stage "Integration Swift tree"
+    "$CODEGEN" generate-integration -l swift
+
+    # The Swift backend: its statecharts are the fixtures of
+    # `sce-build/tests/fixtures/swift_statecharts`, a committed tree of its own that
+    # compiles against the Swift runtime.
+    stage "Swift statechart tree"
+    scripts/regen_swift_statecharts.sh
+    # ... and the machines of the static datamodel fixtures it lowers, another target of
+    # the same package.
+    stage "Static datamodel Swift tree"
+    scripts/regen_static_datamodel_swift.sh
+    # ... and the `datamodel="ecmascript"` machines it lowers to Lua, a third target of the
+    # same package: the one that links the `SceLua` engine.
+    stage "ECMAScript Swift tree"
+    scripts/regen_swift_ecmascript.sh
+}
+
+# ── go-round-trip: the forge round-trip Go codec tree ──────────────────
+step_go_round_trip() {
+    stage "Forge round-trip Go codec tree"
+    backends/go/forge-runtime/round_trip/generate.sh
+}
+
+# ── mesh-*: the Mesh trees, one step for each ──────────────────────────
 #
-# The "Rust-only" this comment used to claim stopped being true on 2026-08-24,
-# when every backend grew a native-action path and the refusal the other five
-# raised was retired. Three of the six commit a tree — Rust, Go and Kotlin —
-# and each is part of its language's test module, so it is really compiled and
-# its §6.2.6 header must refresh with every template edit alongside the rest.
-# The other three are not here and each for its own reason: Python's module is
-# gitignored (`scripts/gates/w3c-python.sh` regenerates it), and C++ and C11
-# generate at build time from their own CMake registrations.
-stage "Native-action host-dispatch Rust + Go + Kotlin trees"
-scripts/regen_native_action.sh
-
-# W3C SCXML 6.2.5 host-served Event I/O Processor gate, and W3C SCXML 6.2.4's
-# delayed form beside it. Driven by their own scripts rather than the
-# `generate-integration` fan-out because the fixtures need a per-stem flag
-# (`--host-processor`) that the fan-out has no way to carry.
-#
-# The "Rust-only" this comment used to claim stopped being true when the
-# surface reached every backend: the first script also emits the Go trees, and
-# the Kotlin one below emits Kotlin's. The Python tree is generated by the
-# `w3c-python` gate instead, because `backends/python/tests/integration/*/*_sm.py`
-# is gitignored — there is no committed artefact here for this script to keep
-# current.
-stage "Host-processor send Rust + Go trees"
-scripts/regen_host_processor.sh
-
-# The Kotlin half. Called here rather than only by hand: nothing else reaches
-# it — `regen_all_committed_trees.sh` did not know about it and the `w3c-kotlin`
-# gate regenerates only the W3C and `generate-integration` trees — so the
-# committed Kotlin host-processor trees could drift with nothing to say so.
-# Naming it here is what puts them under `regen-reproduces`.
-stage "Host-processor send Kotlin trees"
-scripts/regen_host_processor_kotlin.sh
-
-# The AI supervision loop example. Its input is `examples/ai_loop/ai_loop.scxml`
-# rather than a stem under `integration_resources/`, so the `generate-integration`
-# fan-out above does not reach it — and a committed tree this script does not
-# know about is exactly the stale-artifact shape described for the W3C Go and
-# Python trees. It renders from the same template tree as everything else, so
-# a template edit can change it as readily as any of them.
-stage "AI loop example Rust tree"
-scripts/regen_ai_loop.sh
-
-# The Go half of the same example, for the same reason and with one more: the
-# channels are held to a single scenario set by `ai_loop_channel_parity`, so a
-# tree that went stale here would make one engine's answers about a document
-# the others no longer generate from.
-stage "AI loop example Go tree"
-scripts/regen_ai_loop_go.sh
-
-# The Kotlin third. Same reason as the Go one above, and the same reason
-# `regen_host_processor_kotlin.sh` is named here rather than left to the
-# `w3c-kotlin` gate: that gate regenerates only the W3C and
-# `generate-integration` trees, so a committed Kotlin tree this script does not
-# know about could drift with nothing to say so.
-stage "AI loop example Kotlin tree"
-scripts/regen_ai_loop_kotlin.sh
-
-# The Python fourth. Same reason as the two above; named here because the
-# `generate-integration` fan-out enumerates `integration_resources/` stems and
-# this input is an example.
-stage "AI loop example Python tree"
-scripts/regen_ai_loop_python.sh
-
-# Named here for the same reason the four above are, with a different cause:
-# the transition-domain witness document is not under `integration_resources/`
-# because a stem there is a SEVEN-channel contract and this document has six
-# drivers — there is no mesh channel for it. (Until 2026-08-25 the reason given
-# here was that some engines did not yet meet the rule; all six do now, and the
-# arity is what keeps the document where it is.) The `generate-integration`
-# fan-out therefore never sees it, and a tree this script does not know about is
-# exactly the stale-artifact shape the AI-loop entries were added to prevent.
-stage "Transition-domain witness Rust tree"
-scripts/regen_parallel_region_root_external_domain.sh
-stage "Transition-domain witness Go tree"
-scripts/regen_parallel_region_root_external_domain_go.sh
-stage "Transition-domain witness Kotlin tree"
-scripts/regen_parallel_region_root_external_domain_kotlin.sh
-# The Python half emits into a gitignored module, like every other module in
-# `backends/python/tests/integration/`, so it contributes no diff here. It is
-# named anyway for the reason `regen_ai_loop_python.sh` is: this script is the
-# one place that says "regenerate everything", and a local tree whose Python
-# module is missing fails at import rather than at an assertion.
-stage "Transition-domain witness Python tree"
-scripts/regen_parallel_region_root_external_domain_python.sh
-
-# The child-deadline document sits outside `integration_resources/` for the same
-# arity reason, with a different cause: it asks a host's question — when does
-# this machine next need a tick? — and C11 and the C++ Interpreter expose no such
-# query, so a stem there would commit to channels with nothing to assert. The
-# `generate-integration` fan-out never sees it, and a tree this script does not
-# know about is the stale-artifact shape the entries above were added to prevent.
-stage "Child-deadline document Rust tree"
-scripts/regen_a_child_timer_is_a_deadline_of_its_parent.sh
-stage "Child-deadline document Go tree"
-scripts/regen_a_child_timer_is_a_deadline_of_its_parent_go.sh
-stage "Child-deadline document Kotlin tree"
-scripts/regen_a_child_timer_is_a_deadline_of_its_parent_kotlin.sh
-stage "Child-deadline document Python tree"
-scripts/regen_a_child_timer_is_a_deadline_of_its_parent_python.sh
-
-# The external-event budget's document sits outside `integration_resources/` for
-# the arity reason, with its own cause: it holds each engine to one contract
-# (ARCHITECTURE.md "External-Event Budget"), and a stem there is a seven-channel
-# contract. Each engine's tree is added here with its driver.
-stage "External-event budget document Rust tree"
-scripts/regen_external_chain_is_bounded.sh
-stage "External-event budget document Go tree"
-scripts/regen_external_chain_is_bounded_go.sh
-stage "External-event budget document Kotlin tree"
-scripts/regen_external_chain_is_bounded_kotlin.sh
-stage "External-event budget document Python tree"
-scripts/regen_external_chain_is_bounded_python.sh
-
-# The two documents whose texts are past one JVM class-file constant sit outside
-# `integration_resources/` for the arity reason, with their own cause: the limit
-# they reach is the class file's, so only the Kotlin channel has a question to
-# ask of them. The `generate-integration` fan-out never sees them.
-stage "Long-text documents Kotlin trees"
-scripts/regen_jvm_long_text_kotlin.sh
-
-# The document whose transition content, written as one method, passes the
-# 65,535 bytes of code one JVM method holds sits beside them for the same reason:
-# the limit it reaches is the class file's.
-stage "Method-size document Kotlin tree"
-scripts/regen_jvm_method_size_kotlin.sh
-
 # The Mesh trees are generated from the standard library's stdlib/mesh by
 # their own scripts, and this script did not know about them — so a change
 # to what a source-hash covers left all three stale with nothing here to
@@ -275,42 +357,45 @@ scripts/regen_jvm_method_size_kotlin.sh
 # everything" includes them (measured 2026-09-28: the source-hash fix that
 # stopped folding the whole library into them regenerated every other tree
 # and not these).
-stage "Mesh Rust tree"
-backends/rust/mesh/generate.sh
-stage "Mesh C++ envelope tree"
-sce/src/mesh/generate_envelope.sh
-stage "Mesh Kotlin tree"
-backends/kotlin/mesh/generate.sh
-stage "Mesh Swift tree"
-backends/swift/mesh/generate.sh
-stage "Mesh Swift loopback peer table"
-backends/swift/mesh-wss/generate.sh
+step_mesh_rust() {
+    stage "Mesh Rust tree"
+    backends/rust/mesh/generate.sh
+}
 
+step_mesh_cpp() {
+    stage "Mesh C++ envelope tree"
+    sce/src/mesh/generate_envelope.sh
+}
+
+step_mesh_kotlin() {
+    stage "Mesh Kotlin tree"
+    backends/kotlin/mesh/generate.sh
+}
+
+step_mesh_swift() {
+    stage "Mesh Swift tree"
+    backends/swift/mesh/generate.sh
+}
+
+step_mesh_swift_wss() {
+    stage "Mesh Swift loopback peer table"
+    backends/swift/mesh-wss/generate.sh
+}
+
+# ── specs: the specs crate's request machines ──────────────────────────
+#
 # The specs folder's request machine is generated from the document that holds the
 # rules of a generation request, and it lives in the specs crate, outside
 # `backends/`. Named here so that a change to the generator or to the document
 # is carried into it by "regenerate everything", and so that `regen-reproduces`,
 # which compares the whole tree after this script has run, judges it.
-stage "Specs request machine"
-sce-specs/machines/generate.sh
+step_specs() {
+    stage "Specs request machine"
+    sce-specs/machines/generate.sh
+}
 
-# The committed Rust trees are generator output *as rustfmt leaves it*, not
-# as the emitter writes it. `backends/rust/tests` is a workspace member, so
-# `cargo fmt --all` reformats it and `fmt-check.yml` requires that state —
-# but nothing in the emitter produces it. Without this step the script's
-# stated aim, "regenerate and expect no diff", is false for the W3C Rust
-# tree: a plain regeneration leaves ~450 files differing from HEAD by
-# whitespace alone. That gap used to be closed by accident, at commit time,
-# by the pre-commit `cargo fmt --all -- --check` gate refusing the push
-# until the developer ran the formatter — which meant the documented
-# procedure did not reproduce the committed state, and a reviewer could not
-# tell whitespace churn from a real emitter change.
+# ── forge-goldens: tests/forge/expected ────────────────────────────────
 #
-# Scoped to the crate holding the committed generated Rust rather than
-# `--all`, so the step says what it is for.
-stage "Formatting the committed Rust trees (rustfmt is part of their committed form)"
-cargo fmt -p sce-rust-tests
-
 # The forge conformance goldens are generated from the same templates as
 # everything above, and this script did not know about them.
 #
@@ -324,16 +409,22 @@ cargo fmt -p sce-rust-tests
 # Regenerating them here is what makes this script's stated aim true for the
 # whole tree rather than for the parts it happened to enumerate. The
 # conformance test is the generator: with UPDATE_GOLDEN set it writes the
-# expectation instead of asserting against it.
+# expectation instead of asserting against it. It reads no tree another step
+# writes: the runtimes it compiles against are written by hand, and of the Go
+# forge runtime it imports packages, never `round_trip/generated`.
 #
 # ⚠ It writes only the goldens a test still reads. Those two files are gone:
 # `c8d25c2f920` replaced the inline-kind goldens with a comparison against the
 # standalone document path, after which nothing read or wrote them, and the
 # sixteen `inline_*` files were deleted on 2026-09-28. A golden no test names
-# is not refreshed by this stage, so it goes stale without failing anything.
-stage "Regenerating the forge conformance goldens"
-UPDATE_GOLDEN=1 cargo test -p sce-build --features cli --test forge_conformance --quiet
+# is not refreshed by this step, so it goes stale without failing anything.
+step_forge_goldens() {
+    stage "Regenerating the forge conformance goldens"
+    UPDATE_GOLDEN=1 cargo test -p sce-build --features cli --test forge_conformance --quiet
+}
 
+# ── embed-manifest: embed/MANIFEST.json and its stamp ──────────────────
+#
 # The embed manifest is a committed generated file too: clang's reading of the
 # public headers package_embed.sh ships. It was outside this script, so a
 # header edit left it stale until the CI lane `embed-vendor` noticed after the
@@ -345,23 +436,118 @@ UPDATE_GOLDEN=1 cargo test -p sce-build --features cli --test forge_conformance 
 # Packaged into a scratch directory, not over embed/: package_embed.sh starts
 # by removing its output. The manifest's label fields (the HEAD of the emit and
 # the compiler) change with every run, so where the rest of it is unchanged the
-# committed bytes are kept, as every other stage keeps a file it writes with
+# committed bytes are kept, as every other step keeps a file it writes with
 # the same content; the stamp holds no label and is taken as emitted.
-stage "Emitting the embed manifest and its stamp (clang-19)"
-EMBED_SCRATCH="$(mktemp -d --suffix=.embed)"
-"$REPO_ROOT/scripts/package_embed.sh" -o "$EMBED_SCRATCH" --skip-manifest >/dev/null
-"$REPO_ROOT/scripts/emit_embed_manifest.sh" -d "$EMBED_SCRATCH"
-if [[ "$(python3 scripts/embed_manifest.py canon "$EMBED_SCRATCH/MANIFEST.json")" \
-      != "$(python3 scripts/embed_manifest.py canon embed/MANIFEST.json)" ]]; then
-    cp "$EMBED_SCRATCH/MANIFEST.json" embed/MANIFEST.json
-fi
-cp "$EMBED_SCRATCH/MANIFEST.inputs" embed/MANIFEST.inputs
-rm -rf "$EMBED_SCRATCH"
+step_embed_manifest() {
+    local scratch
+    stage "Emitting the embed manifest and its stamp (clang-19)"
+    scratch="$(mktemp -d --suffix=.embed)"
+    "$REPO_ROOT/scripts/package_embed.sh" -o "$scratch" --skip-manifest >/dev/null
+    "$REPO_ROOT/scripts/emit_embed_manifest.sh" -d "$scratch"
+    if [[ "$(python3 scripts/embed_manifest.py canon "$scratch/MANIFEST.json")" \
+          != "$(python3 scripts/embed_manifest.py canon embed/MANIFEST.json)" ]]; then
+        cp "$scratch/MANIFEST.json" embed/MANIFEST.json
+    fi
+    cp "$scratch/MANIFEST.inputs" embed/MANIFEST.inputs
+    rm -rf "$scratch"
+}
 
-# Last, after the format pass: a file is judged on the bytes it is committed
-# with, and rustfmt is part of those.
-stage "Settling every tree: what no stage wrote again is removed"
-sce_generated_tree_settle 0
+# The function that does the work of STEP.
+step_function() {
+    printf 'step_%s\n' "${1//-/_}"
+}
+
+# Run STEP: set its trees' generated files aside, do its work, and settle its
+# trees. Every tree is REPLACED, not written over: the step has to write again
+# what it still produces, and the settle removes -- and names -- each file it
+# did not write again. A file it wrote with the same bytes gets its old copy
+# back, mtime and all.
+#
+# Writing over a tree removes nothing. Measured 2026-10-21: after the escaping
+# of synthesized invoke ids changed, this script wrote
+# `test192__sce_synth_invoke__0zinvokedzuchild_sm.rs` (and its Kotlin twin)
+# beside the `..._invokedChild_sm.rs` the generator no longer wrote, and both
+# old files stayed committed for days. The rules for which file is generated,
+# and the reason each tree belongs to the step it does, are in
+# scripts/lib/sce_generated_tree.sh.
+#
+# Settled when the step ends, not when the run does: a removal is a change of
+# that step's trees, and its bx action carries it back only as part of that
+# step's result. A step that fails puts its files back (the EXIT trap), since a
+# step that stopped half way says nothing about what the generator no longer
+# writes; the steps before it stay settled, each having finished.
+run_step() {
+    local step="$1"
+    local -a trees=()
+    mapfile -t trees < <(sce_generated_trees "$step")
+    echo "=== step $step"
+    if (( ${#trees[@]} > 0 )); then
+        stage "Setting aside the generated files of the trees of $step"
+        sce_generated_tree_stash "${trees[@]}"
+    fi
+    "$(step_function "$step")"
+    if (( ${#trees[@]} > 0 )); then
+        stage "Settling the trees of $step: what it did not write again is removed"
+        sce_generated_tree_settle 0
+    fi
+}
+
+mapfile -t ALL_STEPS < <(sce_regen_steps)
+
+# Every step the list names has its function here, and the other way round, so
+# that a step added to one place and not the other is refused before any tree
+# is touched rather than skipped.
+for step in "${ALL_STEPS[@]}"; do
+    if ! declare -F "$(step_function "$step")" >/dev/null; then
+        echo "regen_all_committed_trees.sh: step '$step' has no $(step_function "$step") function" >&2
+        exit 2
+    fi
+done
+while read -r _ _ fn; do
+    case "$fn" in
+        step_function) continue ;;
+        step_*) ;;
+        *) continue ;;
+    esac
+    found=0
+    for step in "${ALL_STEPS[@]}"; do
+        if [[ "$(step_function "$step")" == "$fn" ]]; then
+            found=1
+        fi
+    done
+    if (( ! found )); then
+        echo "regen_all_committed_trees.sh: $fn is no step of sce_regen_steps" >&2
+        exit 2
+    fi
+done < <(declare -F)
+
+if [[ "${1:-}" == "--list" ]]; then
+    printf '%s\n' "${ALL_STEPS[@]}"
+    exit 0
+fi
+
+if (( $# == 0 )); then
+    STEPS=("${ALL_STEPS[@]}")
+else
+    STEPS=("$@")
+    for step in "${STEPS[@]}"; do
+        known=0
+        for name in "${ALL_STEPS[@]}"; do
+            if [[ "$name" == "$step" ]]; then
+                known=1
+            fi
+        done
+        if (( ! known )); then
+            echo "regen_all_committed_trees.sh: no step named '$step' (the steps: ${ALL_STEPS[*]})" >&2
+            exit 2
+        fi
+    done
+fi
+
+trap sce_generated_tree_on_exit EXIT
+for step in "${STEPS[@]}"; do
+    run_step "$step"
+done
 
 stage ""
-echo "All committed §6.2.6 trees regenerated in ${SECONDS}s."
+echo "Regenerated the committed §6.2.6 trees of ${STEPS[*]} in ${SECONDS}s."

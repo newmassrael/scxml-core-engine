@@ -408,63 +408,810 @@ run = "cargo build --bin sce-codegen --features cli -p sce-build && cmake -S . -
 [commands.verify]
 run = "ctest --test-dir build --output-on-failure; c=$?; node tests/w3c/standalone_http_server.js 8080 /test & srv=$!; sleep 1; cargo test --workspace --features cli --no-fail-fast; r=$?; kill $srv 2>/dev/null; exit $(( c | r ))"
 
-# Regenerating the committed generated trees writes into the tree, so `writes`
-# keeps a plain `bx -- scripts/regen_...` on this machine. Declared as an
-# action it runs on a build machine and only the files it rewrote come back
-# (`bx --action regen`). Measured by the bx session on a build machine: the
-# whole regeneration took 341 s with nothing left to change, against 40-60 min
-# on this machine under load (RFC 0003 section 12, step 0); the forge goldens
-# alone took 91 s and goldens plus the Rust mesh tree 125 s.
+# THE REGENERATION OF THE COMMITTED GENERATED TREES, AS ONE ACTION PER STEP (2026-11-07). A step
+# writes into the tree; declared as an action it runs on a build machine and only the files it
+# rewrote come back. `scripts/regen_all_committed_trees.sh` is made of steps, listed once in
+# scripts/lib/sce_generated_tree.sh (`sce_regen_steps`), and each step is an action below,
+# `regen-<step>`, whose `run` is the script given that step. The script given no step runs them
+# all in order on one machine, which is how a person runs it and how `regen-reproduces` judges it.
 #
-# It is ONE action, the whole regeneration, because two actions that both read
-# `**` cannot be declared together: bx refuses an action reading what another
-# writes, and cannot yet declare an order between them (RFC 0003 section 6).
-# The script regenerates the forge goldens and the Rust mesh tree among its
-# steps, so the action that did only those is part of this one. Split it into
-# one action per step when bx can order them, which is also what lets it run
-# the steps on several machines at once (RFC 0003 section 10).
+# REGENERATE EVERYTHING: `bx --actions`. It runs every action this file declares as the units of
+# one set, spread over the build machines, and writes their results only when every one of them is
+# good (bx RFC 0004, section 12). Every action here is a step of the regeneration, which is what
+# lets the bare `bx --actions` mean "regenerate everything"; a declared action that is not one would
+# have to come with the list instead (`bx --actions -- regen-rust-tests regen-kotlin-tests ...`).
+# One step alone: `bx --action regen-<step>`, e.g. `bx --action regen-embed-manifest` after a public
+# header edit. Measured for the single action this replaced: 341 s on a build machine with nothing
+# left to change, 956-1971 s with changes, against 40-60 min on this machine under load.
 #
-# `inputs = ["**"]` is deliberate: the steps build the generator from the whole
-# workspace and read the templates, the standard library and every fixture, so
-# no narrower list is honest, and with it nothing is cached or isolated, which
-# suits a run nothing else reuses. The outputs are every tree a step writes; a
-# change outside them refuses the whole result.
+# NO `regen` ACTION GROUPS THE OTHERS, although bx has the form (`deps` and no `run`, RFC 0029
+# section 4.8). bx runs a group as ONE chain: every part after the one before, in one copy on one
+# machine, and the result of a chain is never kept (crates/bx-fleet/src/action.rs `spec`,
+# fanout_actions.rs `plan`). Declared, it would also make `bx --actions` run the group alone, since
+# every part is in its chain. A group would give back the one serial, uncached run this split ends.
 #
-# A REMOVAL is a change like a write. The script removes each generated file
-# no step writes again (scripts/lib/sce_generated_tree.sh), the far side's git
-# reports it deleted, and the bundle carries it with no content: applied here,
-# the file is deleted when it still holds what HEAD held. So every tree the
-# script sets aside has to be covered below, or a removal in it refuses the
-# whole result; `a_regeneration_removes_what_it_no_longer_writes` holds the two
-# lists together. The mesh example and jvmTest trees joined for that reason:
-# the mesh scripts had always rewritten them, and a change there would have
-# been refused.
-[actions.regen]
-run = 'cargo build --bin sce-codegen --features cli -p sce-build && scripts/regen_all_committed_trees.sh'
-inputs = ["**"]
+# Until 2026-11-07 this was one action, the whole script, because bx refused an action reading what
+# another writes and had no way to order actions (RFC 0003 section 6). It has one now: an action
+# whose `inputs` can meet another's `outputs` runs after it, in the same chain (RFC 0029 section 4.8).
+# The steps below are kept apart instead, so that no action is in another's chain, since a chain
+# runs on one machine and is not cached. `a_regeneration_removes_what_it_no_longer_writes` holds the
+# inputs of each action to the outputs of every other.
+#
+# WHAT IS ONE STEP, AND WHY. A step owns trees, and its parts are one step where a real
+# read-after-write or a shared tree joins them:
+#   - regen-rust-tests: the W3C, integration and nine per-document Rust trees all write into
+#     backends/rust/tests, and its last stage, `cargo fmt -p sce-rust-tests`, reads and rewrites
+#     every file the others write. The integration stems are a directory each under src/integration,
+#     found at run time, so no output can be declared for each.
+#   - regen-kotlin-tests: the static datamodel writes its algorithms as packages under
+#     com/sce/generated, the W3C tree, and its machines under com/sce/integration, the integration one.
+#   - regen-go-integration, regen-python-integration, regen-swift-tests: the integration fan-out and
+#     the per-document scripts write a directory each into one tree. The W3C Go and Python trees are
+#     directories of their own, and steps of their own.
+#   - The native-action and host-processor scripts each wrote the Rust, Go and Kotlin trees of one
+#     document, and belonged to no step. They are split by language (scripts/regen_native_action_go.sh,
+#     regen_native_action_kotlin.sh, regen_host_processor_go.sh), each run by its language's step.
+#   Every other step owns one tree alone: the Kotlin method-size module, the forge round-trip Go tree,
+#   each Mesh tree, the specs machines, the forge goldens and the embed manifest.
+#
+# WHAT LOOKS LIKE A READ-AFTER-WRITE AND IS NOT ONE:
+#   - The forge goldens (`UPDATE_GOLDEN=1 cargo test --test forge_conformance`) compile against the
+#     hand-written runtimes. Of the Go forge runtime they import packages, never round_trip/generated,
+#     which regen-go-round-trip writes; their inputs name the runtime's Go files (`*/*.go`), which no
+#     output of that step can be.
+#   - sce-codegen compiles in hand-written files that sit inside the language test trees
+#     (sce-build/src/w3c_suite.rs: the Rust harness, the Go harness and go.sum, the Python conftest,
+#     three Kotlin W3C base classes). Every action that builds the generator reads them, so a language
+#     step declares as outputs only the generated parts of its trees (src/generated, src/integration,
+#     `test_*.rs`, `Test*.kt`, ...), never the files beside them: one output over a whole tree would
+#     put every other action in that step's chain.
+#   - The embed manifest reads sce/src, beside sce/src/mesh/generated (regen-mesh-cpp). Its inputs
+#     name the source directories one by one, the mesh one left out, for that reason alone.
+#   - integration_resources was an output of the single action and is none now: the generator writes
+#     nothing beside a document it reads, and `regen-reproduces` fails on any untracked file a run leaves.
+#
+# INPUTS are directories wherever that is honest, so that a new fixture in a directory a step reads
+# is never outside them. The first block of each action that runs the generator is the generator:
+# the workspace manifests cargo reads, sce-build, and every file it compiles in or reads at run time
+# (the templates, the standard library, the schemas, the files named above). Files are named one by
+# one only where their directory also holds another step's outputs. A traced run of each action
+# (`bx-fleet action learn regen-<step>`) has not yet checked them.
+#
+# A REMOVAL is a change like a write. Each step sets aside the generated files of its own trees and
+# settles them when it ends (scripts/lib/sce_generated_tree.sh); the far side's git reports a file
+# the step no longer writes as deleted, and the bundle carries it with no content: applied here, the
+# file is deleted when it still holds what HEAD held. So every generated file of a step's trees has
+# to be inside that step's outputs, or the removal refuses the whole result;
+# `a_regeneration_removes_what_it_no_longer_writes` holds the two lists together.
+#
+# NO `cache = true` YET, on any of them. A cached action runs isolated, twice and traced (RFC 0003
+# section 9), and a traced run of regen-forge-goldens, which builds and runs C11 drivers under
+# AddressSanitizer, fails until bx's trace turns leak detection off (the `trace-sanitizers` branch,
+# RFC 0003 section 9a): measured 2026-11-07, five of 1299 such runs failed only for being traced.
+# Turn it on per action once that bx is installed and `bx-fleet action learn` agrees with the inputs
+# below. Two actions need more first, because a cached action may not read what it writes and its
+# outputs are replaced whole: regen-rust-tests reads the crate it writes into (the format pass), and
+# a directory output that also holds hand-written files (src/integration/mod.rs, the Go `*_test.go`
+# beside the machines) has to name the generated files instead.
+[actions.regen-rust-tests]
+run = 'scripts/regen_all_committed_trees.sh rust-tests'
+inputs = [
+    ".cargo/**",
+    "Cargo.toml",
+    "Cargo.lock",
+    "backends/rust/*/Cargo.toml",
+    "sce-build-wasm/Cargo.toml",
+    "sce-revision/Cargo.toml",
+    "sce-specs/Cargo.toml",
+    "sce-build/**",
+    "tools/codegen/**",
+    "stdlib/**",
+    "schemas/**",
+    "apis/**",
+    "kind-examples/**",
+    "docs/SCE_ACCEPTED_SUBSET.md",
+    "SCE_ERROR_CONTRACT.md",
+    "SCE_MESH.md",
+    "sce/include/**",
+    "backends/c/forge-runtime/include/**",
+    "backends/rust/runtime/**",
+    "backends/python/runtime/**",
+    "backends/rust/tests/src/harness.rs",
+    "backends/go/tests/harness/**",
+    "backends/go/tests/go.sum",
+    "backends/python/tests/conftest.py",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/VirtualDrive.kt",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CTestBase.kt",
+    "tests/fixtures/**",
+    "tests/forge/resources/**",
+    "tests/mesh/**",
+    "scripts/lib/**",
+    "scripts/regen_all_committed_trees.sh",
+    "scripts/regen_*.sh",
+    "resources/**",
+    "tests/w3c/conformance/**",
+    "integration_resources/**",
+    "tests/integration/**",
+    "examples/ai_loop/**",
+    "backends/rust/tests/**",
+]
 outputs = [
-    "backends/rust/tests/src/**",
-    "backends/rust/tests/tests/**",
+    "backends/rust/tests/src/generated/**",
+    "backends/rust/tests/src/integration/**",
+    "backends/rust/tests/tests/test_*.rs",
+]
+
+[actions.regen-kotlin-tests]
+run = 'scripts/regen_all_committed_trees.sh kotlin-tests'
+inputs = [
+    ".cargo/**",
+    "Cargo.toml",
+    "Cargo.lock",
+    "backends/rust/*/Cargo.toml",
+    "sce-build-wasm/Cargo.toml",
+    "sce-revision/Cargo.toml",
+    "sce-specs/Cargo.toml",
+    "sce-build/**",
+    "tools/codegen/**",
+    "stdlib/**",
+    "schemas/**",
+    "apis/**",
+    "kind-examples/**",
+    "docs/SCE_ACCEPTED_SUBSET.md",
+    "SCE_ERROR_CONTRACT.md",
+    "SCE_MESH.md",
+    "sce/include/**",
+    "backends/c/forge-runtime/include/**",
+    "backends/rust/runtime/**",
+    "backends/python/runtime/**",
+    "backends/rust/tests/src/harness.rs",
+    "backends/go/tests/harness/**",
+    "backends/go/tests/go.sum",
+    "backends/python/tests/conftest.py",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/VirtualDrive.kt",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CTestBase.kt",
+    "tests/fixtures/**",
+    "tests/forge/resources/**",
+    "tests/mesh/**",
+    "scripts/lib/**",
+    "scripts/regen_all_committed_trees.sh",
+    "scripts/regen_*.sh",
+    "resources/**",
+    "tests/w3c/conformance/**",
+    "integration_resources/**",
+    "tests/integration/**",
+    "examples/ai_loop/**",
+    "backends/kotlin/tests/fixtures/**",
+]
+outputs = [
+    "backends/kotlin/tests/src/main/kotlin/com/sce/generated/**",
+    "backends/kotlin/tests/src/main/kotlin/com/sce/integration/**",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/Test*.kt",
+]
+
+[actions.regen-kotlin-method-size]
+run = 'scripts/regen_all_committed_trees.sh kotlin-method-size'
+inputs = [
+    ".cargo/**",
+    "Cargo.toml",
+    "Cargo.lock",
+    "backends/rust/*/Cargo.toml",
+    "sce-build-wasm/Cargo.toml",
+    "sce-revision/Cargo.toml",
+    "sce-specs/Cargo.toml",
+    "sce-build/**",
+    "tools/codegen/**",
+    "stdlib/**",
+    "schemas/**",
+    "apis/**",
+    "kind-examples/**",
+    "docs/SCE_ACCEPTED_SUBSET.md",
+    "SCE_ERROR_CONTRACT.md",
+    "SCE_MESH.md",
+    "sce/include/**",
+    "backends/c/forge-runtime/include/**",
+    "backends/rust/runtime/**",
+    "backends/python/runtime/**",
+    "backends/rust/tests/src/harness.rs",
+    "backends/go/tests/harness/**",
+    "backends/go/tests/go.sum",
+    "backends/python/tests/conftest.py",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/VirtualDrive.kt",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CTestBase.kt",
+    "tests/fixtures/**",
+    "tests/forge/resources/**",
+    "tests/mesh/**",
+    "scripts/lib/**",
+    "scripts/regen_all_committed_trees.sh",
+    "scripts/regen_jvm_method_size_kotlin.sh",
+    "backends/kotlin/method-size/fixtures/**",
+]
+outputs = ["backends/kotlin/method-size/src/main/kotlin/com/sce/methodsize/**"]
+
+[actions.regen-go-w3c]
+run = 'scripts/regen_all_committed_trees.sh go-w3c'
+inputs = [
+    ".cargo/**",
+    "Cargo.toml",
+    "Cargo.lock",
+    "backends/rust/*/Cargo.toml",
+    "sce-build-wasm/Cargo.toml",
+    "sce-revision/Cargo.toml",
+    "sce-specs/Cargo.toml",
+    "sce-build/**",
+    "tools/codegen/**",
+    "stdlib/**",
+    "schemas/**",
+    "apis/**",
+    "kind-examples/**",
+    "docs/SCE_ACCEPTED_SUBSET.md",
+    "SCE_ERROR_CONTRACT.md",
+    "SCE_MESH.md",
+    "sce/include/**",
+    "backends/c/forge-runtime/include/**",
+    "backends/rust/runtime/**",
+    "backends/python/runtime/**",
+    "backends/rust/tests/src/harness.rs",
+    "backends/go/tests/harness/**",
+    "backends/go/tests/go.sum",
+    "backends/python/tests/conftest.py",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/VirtualDrive.kt",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CTestBase.kt",
+    "tests/fixtures/**",
+    "tests/forge/resources/**",
+    "tests/mesh/**",
+    "scripts/lib/**",
+    "scripts/regen_all_committed_trees.sh",
+    "resources/**",
+    "tests/w3c/conformance/**",
+]
+outputs = ["backends/go/tests/generated/**"]
+
+[actions.regen-go-integration]
+run = 'scripts/regen_all_committed_trees.sh go-integration'
+inputs = [
+    ".cargo/**",
+    "Cargo.toml",
+    "Cargo.lock",
+    "backends/rust/*/Cargo.toml",
+    "sce-build-wasm/Cargo.toml",
+    "sce-revision/Cargo.toml",
+    "sce-specs/Cargo.toml",
+    "sce-build/**",
+    "tools/codegen/**",
+    "stdlib/**",
+    "schemas/**",
+    "apis/**",
+    "kind-examples/**",
+    "docs/SCE_ACCEPTED_SUBSET.md",
+    "SCE_ERROR_CONTRACT.md",
+    "SCE_MESH.md",
+    "sce/include/**",
+    "backends/c/forge-runtime/include/**",
+    "backends/rust/runtime/**",
+    "backends/python/runtime/**",
+    "backends/rust/tests/src/harness.rs",
+    "backends/go/tests/harness/**",
+    "backends/go/tests/go.sum",
+    "backends/python/tests/conftest.py",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/VirtualDrive.kt",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CTestBase.kt",
+    "tests/fixtures/**",
+    "tests/forge/resources/**",
+    "tests/mesh/**",
+    "scripts/lib/**",
+    "scripts/regen_all_committed_trees.sh",
+    "scripts/regen_*.sh",
+    "integration_resources/**",
+    "tests/integration/**",
+    "examples/ai_loop/**",
+    "backends/go/tests/go.mod",
+]
+outputs = ["backends/go/tests/integration/**"]
+
+[actions.regen-python-w3c]
+run = 'scripts/regen_all_committed_trees.sh python-w3c'
+inputs = [
+    ".cargo/**",
+    "Cargo.toml",
+    "Cargo.lock",
+    "backends/rust/*/Cargo.toml",
+    "sce-build-wasm/Cargo.toml",
+    "sce-revision/Cargo.toml",
+    "sce-specs/Cargo.toml",
+    "sce-build/**",
+    "tools/codegen/**",
+    "stdlib/**",
+    "schemas/**",
+    "apis/**",
+    "kind-examples/**",
+    "docs/SCE_ACCEPTED_SUBSET.md",
+    "SCE_ERROR_CONTRACT.md",
+    "SCE_MESH.md",
+    "sce/include/**",
+    "backends/c/forge-runtime/include/**",
+    "backends/rust/runtime/**",
+    "backends/python/runtime/**",
+    "backends/rust/tests/src/harness.rs",
+    "backends/go/tests/harness/**",
+    "backends/go/tests/go.sum",
+    "backends/python/tests/conftest.py",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/VirtualDrive.kt",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CTestBase.kt",
+    "tests/fixtures/**",
+    "tests/forge/resources/**",
+    "tests/mesh/**",
+    "scripts/lib/**",
+    "scripts/regen_all_committed_trees.sh",
+    "resources/**",
+    "tests/w3c/conformance/**",
+]
+outputs = ["backends/python/tests/generated/**"]
+
+[actions.regen-python-integration]
+run = 'scripts/regen_all_committed_trees.sh python-integration'
+inputs = [
+    ".cargo/**",
+    "Cargo.toml",
+    "Cargo.lock",
+    "backends/rust/*/Cargo.toml",
+    "sce-build-wasm/Cargo.toml",
+    "sce-revision/Cargo.toml",
+    "sce-specs/Cargo.toml",
+    "sce-build/**",
+    "tools/codegen/**",
+    "stdlib/**",
+    "schemas/**",
+    "apis/**",
+    "kind-examples/**",
+    "docs/SCE_ACCEPTED_SUBSET.md",
+    "SCE_ERROR_CONTRACT.md",
+    "SCE_MESH.md",
+    "sce/include/**",
+    "backends/c/forge-runtime/include/**",
+    "backends/rust/runtime/**",
+    "backends/python/runtime/**",
+    "backends/rust/tests/src/harness.rs",
+    "backends/go/tests/harness/**",
+    "backends/go/tests/go.sum",
+    "backends/python/tests/conftest.py",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/VirtualDrive.kt",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CTestBase.kt",
+    "tests/fixtures/**",
+    "tests/forge/resources/**",
+    "tests/mesh/**",
+    "scripts/lib/**",
+    "scripts/regen_all_committed_trees.sh",
+    "scripts/regen_*.sh",
+    "integration_resources/**",
+    "tests/integration/**",
+    "examples/ai_loop/**",
+]
+outputs = ["backends/python/tests/integration/**"]
+
+[actions.regen-swift-tests]
+run = 'scripts/regen_all_committed_trees.sh swift-tests'
+inputs = [
+    ".cargo/**",
+    "Cargo.toml",
+    "Cargo.lock",
+    "backends/rust/*/Cargo.toml",
+    "sce-build-wasm/Cargo.toml",
+    "sce-revision/Cargo.toml",
+    "sce-specs/Cargo.toml",
+    "sce-build/**",
+    "tools/codegen/**",
+    "stdlib/**",
+    "schemas/**",
+    "apis/**",
+    "kind-examples/**",
+    "docs/SCE_ACCEPTED_SUBSET.md",
+    "SCE_ERROR_CONTRACT.md",
+    "SCE_MESH.md",
+    "sce/include/**",
+    "backends/c/forge-runtime/include/**",
+    "backends/rust/runtime/**",
+    "backends/python/runtime/**",
+    "backends/rust/tests/src/harness.rs",
+    "backends/go/tests/harness/**",
+    "backends/go/tests/go.sum",
+    "backends/python/tests/conftest.py",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/VirtualDrive.kt",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CTestBase.kt",
+    "tests/fixtures/**",
+    "tests/forge/resources/**",
+    "tests/mesh/**",
+    "scripts/lib/**",
+    "scripts/regen_all_committed_trees.sh",
+    "scripts/regen_swift_integration.sh",
+    "scripts/regen_swift_statecharts.sh",
+    "scripts/regen_static_datamodel_swift.sh",
+    "scripts/regen_swift_ecmascript.sh",
+    "integration_resources/**",
+    "resources/**",
+    "tests/forge/conformance/**",
+    "backends/rust/forge-conformance/fixtures/**",
+]
+outputs = [
+    "backends/swift/tests/Sources/StaticMachines/**",
+    "backends/swift/tests/Sources/StaticDatamodelMachines/**",
+    "backends/swift/tests/Sources/EcmaScriptMachines/**",
+    "backends/swift/tests/Sources/IntegrationMachines/**",
+    "backends/swift/tests/Tests/StaticDatamodelTests/NumericalConformanceTests.swift",
+]
+
+[actions.regen-go-round-trip]
+run = 'scripts/regen_all_committed_trees.sh go-round-trip'
+inputs = [
+    ".cargo/**",
+    "Cargo.toml",
+    "Cargo.lock",
+    "backends/rust/*/Cargo.toml",
+    "sce-build-wasm/Cargo.toml",
+    "sce-revision/Cargo.toml",
+    "sce-specs/Cargo.toml",
+    "sce-build/**",
+    "tools/codegen/**",
+    "stdlib/**",
+    "schemas/**",
+    "apis/**",
+    "kind-examples/**",
+    "docs/SCE_ACCEPTED_SUBSET.md",
+    "SCE_ERROR_CONTRACT.md",
+    "SCE_MESH.md",
+    "sce/include/**",
+    "backends/c/forge-runtime/include/**",
+    "backends/rust/runtime/**",
+    "backends/python/runtime/**",
+    "backends/rust/tests/src/harness.rs",
+    "backends/go/tests/harness/**",
+    "backends/go/tests/go.sum",
+    "backends/python/tests/conftest.py",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/VirtualDrive.kt",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CTestBase.kt",
+    "tests/fixtures/**",
+    "tests/forge/resources/**",
+    "tests/mesh/**",
+    "scripts/lib/**",
+    "scripts/regen_all_committed_trees.sh",
+    "backends/go/forge-runtime/go.mod",
+    "backends/go/forge-runtime/round_trip/generate.sh",
+]
+outputs = ["backends/go/forge-runtime/round_trip/generated/**"]
+
+[actions.regen-mesh-rust]
+run = 'scripts/regen_all_committed_trees.sh mesh-rust'
+inputs = [
+    ".cargo/**",
+    "Cargo.toml",
+    "Cargo.lock",
+    "backends/rust/*/Cargo.toml",
+    "sce-build-wasm/Cargo.toml",
+    "sce-revision/Cargo.toml",
+    "sce-specs/Cargo.toml",
+    "sce-build/**",
+    "tools/codegen/**",
+    "stdlib/**",
+    "schemas/**",
+    "apis/**",
+    "kind-examples/**",
+    "docs/SCE_ACCEPTED_SUBSET.md",
+    "SCE_ERROR_CONTRACT.md",
+    "SCE_MESH.md",
+    "sce/include/**",
+    "backends/c/forge-runtime/include/**",
+    "backends/rust/runtime/**",
+    "backends/python/runtime/**",
+    "backends/rust/tests/src/harness.rs",
+    "backends/go/tests/harness/**",
+    "backends/go/tests/go.sum",
+    "backends/python/tests/conftest.py",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/VirtualDrive.kt",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CTestBase.kt",
+    "tests/fixtures/**",
+    "tests/forge/resources/**",
+    "tests/mesh/**",
+    "scripts/lib/**",
+    "scripts/regen_all_committed_trees.sh",
+    "backends/rust/mesh/generate.sh",
+]
+outputs = [
     "backends/rust/mesh/src/generated/*",
     "backends/rust/mesh/src/generated.rs",
     "backends/rust/mesh/examples/generated/*",
-    "backends/kotlin/tests/src/**",
-    "backends/kotlin/method-size/src/main/kotlin/com/sce/methodsize/**",
+]
+
+[actions.regen-mesh-cpp]
+run = 'scripts/regen_all_committed_trees.sh mesh-cpp'
+inputs = [
+    ".cargo/**",
+    "Cargo.toml",
+    "Cargo.lock",
+    "backends/rust/*/Cargo.toml",
+    "sce-build-wasm/Cargo.toml",
+    "sce-revision/Cargo.toml",
+    "sce-specs/Cargo.toml",
+    "sce-build/**",
+    "tools/codegen/**",
+    "stdlib/**",
+    "schemas/**",
+    "apis/**",
+    "kind-examples/**",
+    "docs/SCE_ACCEPTED_SUBSET.md",
+    "SCE_ERROR_CONTRACT.md",
+    "SCE_MESH.md",
+    "sce/include/**",
+    "backends/c/forge-runtime/include/**",
+    "backends/rust/runtime/**",
+    "backends/python/runtime/**",
+    "backends/rust/tests/src/harness.rs",
+    "backends/go/tests/harness/**",
+    "backends/go/tests/go.sum",
+    "backends/python/tests/conftest.py",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/VirtualDrive.kt",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CTestBase.kt",
+    "tests/fixtures/**",
+    "tests/forge/resources/**",
+    "tests/mesh/**",
+    "scripts/lib/**",
+    "scripts/regen_all_committed_trees.sh",
+    "sce/src/mesh/generate_envelope.sh",
+]
+outputs = ["sce/src/mesh/generated/**"]
+
+[actions.regen-mesh-kotlin]
+run = 'scripts/regen_all_committed_trees.sh mesh-kotlin'
+inputs = [
+    ".cargo/**",
+    "Cargo.toml",
+    "Cargo.lock",
+    "backends/rust/*/Cargo.toml",
+    "sce-build-wasm/Cargo.toml",
+    "sce-revision/Cargo.toml",
+    "sce-specs/Cargo.toml",
+    "sce-build/**",
+    "tools/codegen/**",
+    "stdlib/**",
+    "schemas/**",
+    "apis/**",
+    "kind-examples/**",
+    "docs/SCE_ACCEPTED_SUBSET.md",
+    "SCE_ERROR_CONTRACT.md",
+    "SCE_MESH.md",
+    "sce/include/**",
+    "backends/c/forge-runtime/include/**",
+    "backends/rust/runtime/**",
+    "backends/python/runtime/**",
+    "backends/rust/tests/src/harness.rs",
+    "backends/go/tests/harness/**",
+    "backends/go/tests/go.sum",
+    "backends/python/tests/conftest.py",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/VirtualDrive.kt",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CTestBase.kt",
+    "tests/fixtures/**",
+    "tests/forge/resources/**",
+    "tests/mesh/**",
+    "scripts/lib/**",
+    "scripts/regen_all_committed_trees.sh",
+    "backends/kotlin/mesh/generate.sh",
+]
+outputs = [
     "backends/kotlin/mesh/src/commonMain/kotlin/generated/**",
     "backends/kotlin/mesh/src/jvmTest/kotlin/com/sce/generated/**",
-    "backends/swift/mesh/Sources/SceMesh/Generated/*",
-    "backends/swift/mesh-wss/Tests/SceMeshWssTests/Generated/*",
-    "backends/go/tests/**",
-    "backends/go/forge-runtime/round_trip/generated/**",
-    "backends/swift/tests/Sources/**",
-    "backends/swift/tests/Tests/StaticDatamodelTests/NumericalConformanceTests.swift",
-    "backends/python/tests/**",
-    "integration_resources/**",
-    "sce/src/mesh/generated/**",
-    "sce-specs/src/*/generated/**",
-    "tests/forge/expected/*",
-    # The embed manifest and the stamp of what it was emitted from. The stage
-    # needs clang++-19; the emitter refuses without it rather than skip.
+]
+
+[actions.regen-mesh-swift]
+run = 'scripts/regen_all_committed_trees.sh mesh-swift'
+inputs = [
+    ".cargo/**",
+    "Cargo.toml",
+    "Cargo.lock",
+    "backends/rust/*/Cargo.toml",
+    "sce-build-wasm/Cargo.toml",
+    "sce-revision/Cargo.toml",
+    "sce-specs/Cargo.toml",
+    "sce-build/**",
+    "tools/codegen/**",
+    "stdlib/**",
+    "schemas/**",
+    "apis/**",
+    "kind-examples/**",
+    "docs/SCE_ACCEPTED_SUBSET.md",
+    "SCE_ERROR_CONTRACT.md",
+    "SCE_MESH.md",
+    "sce/include/**",
+    "backends/c/forge-runtime/include/**",
+    "backends/rust/runtime/**",
+    "backends/python/runtime/**",
+    "backends/rust/tests/src/harness.rs",
+    "backends/go/tests/harness/**",
+    "backends/go/tests/go.sum",
+    "backends/python/tests/conftest.py",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/VirtualDrive.kt",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CTestBase.kt",
+    "tests/fixtures/**",
+    "tests/forge/resources/**",
+    "tests/mesh/**",
+    "scripts/lib/**",
+    "scripts/regen_all_committed_trees.sh",
+    "backends/swift/mesh/generate.sh",
+]
+outputs = ["backends/swift/mesh/Sources/SceMesh/Generated/*"]
+
+[actions.regen-mesh-swift-wss]
+run = 'scripts/regen_all_committed_trees.sh mesh-swift-wss'
+inputs = [
+    ".cargo/**",
+    "Cargo.toml",
+    "Cargo.lock",
+    "backends/rust/*/Cargo.toml",
+    "sce-build-wasm/Cargo.toml",
+    "sce-revision/Cargo.toml",
+    "sce-specs/Cargo.toml",
+    "sce-build/**",
+    "tools/codegen/**",
+    "stdlib/**",
+    "schemas/**",
+    "apis/**",
+    "kind-examples/**",
+    "docs/SCE_ACCEPTED_SUBSET.md",
+    "SCE_ERROR_CONTRACT.md",
+    "SCE_MESH.md",
+    "sce/include/**",
+    "backends/c/forge-runtime/include/**",
+    "backends/rust/runtime/**",
+    "backends/python/runtime/**",
+    "backends/rust/tests/src/harness.rs",
+    "backends/go/tests/harness/**",
+    "backends/go/tests/go.sum",
+    "backends/python/tests/conftest.py",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/VirtualDrive.kt",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CTestBase.kt",
+    "tests/fixtures/**",
+    "tests/forge/resources/**",
+    "tests/mesh/**",
+    "scripts/lib/**",
+    "scripts/regen_all_committed_trees.sh",
+    "backends/swift/mesh-wss/generate.sh",
+]
+outputs = ["backends/swift/mesh-wss/Tests/SceMeshWssTests/Generated/*"]
+
+[actions.regen-specs]
+run = 'scripts/regen_all_committed_trees.sh specs'
+inputs = [
+    ".cargo/**",
+    "Cargo.toml",
+    "Cargo.lock",
+    "backends/rust/*/Cargo.toml",
+    "sce-build-wasm/Cargo.toml",
+    "sce-revision/Cargo.toml",
+    "sce-specs/Cargo.toml",
+    "sce-build/**",
+    "tools/codegen/**",
+    "stdlib/**",
+    "schemas/**",
+    "apis/**",
+    "kind-examples/**",
+    "docs/SCE_ACCEPTED_SUBSET.md",
+    "SCE_ERROR_CONTRACT.md",
+    "SCE_MESH.md",
+    "sce/include/**",
+    "backends/c/forge-runtime/include/**",
+    "backends/rust/runtime/**",
+    "backends/python/runtime/**",
+    "backends/rust/tests/src/harness.rs",
+    "backends/go/tests/harness/**",
+    "backends/go/tests/go.sum",
+    "backends/python/tests/conftest.py",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/VirtualDrive.kt",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CTestBase.kt",
+    "tests/fixtures/**",
+    "tests/forge/resources/**",
+    "tests/mesh/**",
+    "scripts/lib/**",
+    "scripts/regen_all_committed_trees.sh",
+    "sce-specs/machines/**",
+]
+outputs = ["sce-specs/src/*/generated/**"]
+
+[actions.regen-forge-goldens]
+run = 'scripts/regen_all_committed_trees.sh forge-goldens'
+inputs = [
+    ".cargo/**",
+    "Cargo.toml",
+    "Cargo.lock",
+    "backends/rust/*/Cargo.toml",
+    "sce-build-wasm/Cargo.toml",
+    "sce-revision/Cargo.toml",
+    "sce-specs/Cargo.toml",
+    "sce-build/**",
+    "tools/codegen/**",
+    "stdlib/**",
+    "schemas/**",
+    "apis/**",
+    "kind-examples/**",
+    "docs/SCE_ACCEPTED_SUBSET.md",
+    "SCE_ERROR_CONTRACT.md",
+    "SCE_MESH.md",
+    "sce/include/**",
+    "backends/c/forge-runtime/include/**",
+    "backends/rust/runtime/**",
+    "backends/python/runtime/**",
+    "backends/rust/tests/src/harness.rs",
+    "backends/go/tests/harness/**",
+    "backends/go/tests/go.sum",
+    "backends/python/tests/conftest.py",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/VirtualDrive.kt",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CTestBase.kt",
+    "tests/fixtures/**",
+    "tests/forge/resources/**",
+    "tests/mesh/**",
+    "scripts/lib/**",
+    "scripts/regen_all_committed_trees.sh",
+    "tests/forge/conformance/**",
+    "backends/c/**",
+    "backends/cpp/forge-runtime/**",
+    "backends/go/forge-runtime/go.mod",
+    "backends/go/forge-runtime/*/*.go",
+    "backends/kotlin/forge-runtime/**",
+    "backends/python/forge-runtime/**",
+    "backends/rust/forge-runtime/**",
+    "backends/rust/lua/**",
+    "backends/rust/portable-bytes/**",
+]
+outputs = ["tests/forge/expected/*"]
+
+# No generator here: it packages the public headers and has clang++-19 read them, and the emitter
+# refuses without it rather than skip. The committed manifest is read too, to keep its bytes where
+# only its label fields would change.
+[actions.regen-embed-manifest]
+run = 'scripts/regen_all_committed_trees.sh embed-manifest'
+inputs = [
+    ".gitmodules",
+    "LICENSE*",
+    "cmake/**",
+    "sce/*.cmake",
+    "sce/include/**",
+    "sce/src/*.cpp",
+    "sce/src/actions/**",
+    "sce/src/backends/**",
+    "sce/src/common/**",
+    "sce/src/dispatchers/**",
+    "sce/src/events/**",
+    "sce/src/model/**",
+    "sce/src/parsing/**",
+    "sce/src/runtime/**",
+    "sce/src/scripting/**",
+    "backends/cpp/forge-runtime/include/**",
+    "third_party/**",
+    "tools/codegen/**",
+    "scripts/_embed_manifest_filter.py",
+    "scripts/embed_CMakeLists.txt",
+    "scripts/embed_manifest.py",
+    "scripts/emit_embed_manifest.sh",
+    "scripts/package_embed.sh",
+    "scripts/sce_repo.bzl",
+    "scripts/lib/**",
+    "scripts/regen_all_committed_trees.sh",
+    "embed/MANIFEST.json",
+]
+outputs = [
     "embed/MANIFEST.json",
     "embed/MANIFEST.inputs",
 ]

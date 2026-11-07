@@ -6,9 +6,16 @@
 # W3C SCXML G.7 `<sce:action>` fixture at
 # sce-build/tests/fixtures/event_schema/statechart_native_action.scxml.
 #
-# This regenerates the three backends that COMMIT a tree for this fixture:
-# Rust, Go and Kotlin (Python has its own script for the reason given there;
-# C++ and C11 generate at build time from their own CMake registrations).
+# Three backends COMMIT a tree for this fixture, each from a script of its own:
+# this one for Rust, `regen_native_action_go.sh` for Go and
+# `regen_native_action_kotlin.sh` for Kotlin (Python has its own script for the
+# reason given there; C++ and C11 generate at build time from their own CMake
+# registrations).
+#
+# One script wrote all three trees until 2026-11-07. It was split because the
+# regeneration runs as one bx action per language tree (bx.toml, the
+# `regen-*` actions): a script that writes three trees belongs to no one action,
+# and an action is refused when it writes outside the outputs it declares.
 #
 # Each committed SM declares a `<Machine>Actions` host interface and takes an
 # implementation of it where the machine is constructed, with NO script engine
@@ -37,7 +44,6 @@ cd "$REPO_ROOT"
 source "$REPO_ROOT/scripts/lib/sce_codegen.sh"
 CODEGEN="$(sce_codegen_require "$REPO_ROOT")"
 FIXTURE="sce-build/tests/fixtures/event_schema/statechart_native_action.scxml"
-INPUT_ROOT="sce-build/tests/fixtures/event_schema"
 GENERATED_DIR="backends/rust/tests/src/integration/native_action"
 
 TMP="$(mktemp -d)"
@@ -61,53 +67,4 @@ MODRS="$GENERATED_DIR/mod.rs"
 source "$REPO_ROOT/scripts/lib/sce_rustfmt.sh"
 sce_rustfmt_dir "$GENERATED_DIR" "$REPO_ROOT"
 
-# The Go half. Named for the document's own stem rather than for the axis,
-# unlike the Rust tree above: a Go package name comes from the emitted file, so
-# a directory named anything else puts two package names in one directory and
-# the module stops building.
-#
-# The `// From:` rewrite is the same one every `regen_*_go.sh` does — the
-# tracked artefact has to point at the canonical fixture rather than at the
-# temporary directory this run happened to use, or the tree stops reproducing
-# on another machine.
-GO_GENERATED_DIR="backends/go/tests/integration/statechart_native_action"
-GO_TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP" "$GO_TMP"' EXIT
-
-"$CODEGEN" generate "$FIXTURE" -l go -o "$GO_TMP/" --input-root "$INPUT_ROOT"
-
-mkdir -p "$GO_GENERATED_DIR"
-sce_generated_tree_clear "$GO_GENERATED_DIR"
-for src in "$GO_TMP"/*_sm.go; do
-    [[ -f "$src" ]] || continue
-    sed -i "s|// From: ${GO_TMP}/|// From: ${INPUT_ROOT}/|g" "$src"
-    cp "$src" "$GO_GENERATED_DIR/"
-done
-
-# The Kotlin half. Its own directory because a Kotlin package is a directory,
-# the same constraint the Go half states above.
-KT_GENERATED_DIR="${SCE_KOTLIN_GENERATED_ROOT:-backends/kotlin/tests/src/main/kotlin}/com/sce/integration/statechart_native_action"
-KT_PACKAGE_PREFIX="com.sce.integration"
-KT_TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP" "$GO_TMP" "$KT_TMP"' EXIT
-
-"$CODEGEN" generate "$FIXTURE" -l kotlin -o "$KT_TMP/" \
-    --input-root "$INPUT_ROOT" \
-    --kotlin-package-prefix "$KT_PACKAGE_PREFIX"
-
-mkdir -p "$KT_GENERATED_DIR"
-sce_generated_tree_clear "$KT_GENERATED_DIR"
-for src in "$KT_TMP"/*Sm.kt; do
-    [[ -f "$src" ]] || continue
-    sed -i "s|// Source: ${KT_TMP}/|// Source: ${INPUT_ROOT}/|g" "$src"
-    cp "$src" "$KT_GENERATED_DIR/"
-done
-
-# The Python half is NOT here, and that is deliberate:
-# `backends/python/tests/integration/*/*_sm.py` is gitignored, so there is no
-# committed artefact for this script to keep current. `scripts/gates/
-# w3c-python.sh` calls `scripts/regen_native_action_python.sh` instead — the
-# same split `regen_host_processor{,_python}.sh` already makes.
 echo "Regenerated: $GENERATED_DIR/ from $FIXTURE"
-echo "Regenerated: $GO_GENERATED_DIR/ from $FIXTURE"
-echo "Regenerated: $KT_GENERATED_DIR/ from $FIXTURE"

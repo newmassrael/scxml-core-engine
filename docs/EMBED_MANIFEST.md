@@ -40,10 +40,12 @@ versions.
 ## Regenerating
 
 Both files are committed generated output, regenerated with every other
-committed tree:
+committed tree (`bx --actions`, every step of
+`scripts/regen_all_committed_trees.sh` on the build machines) or by their step
+alone:
 
 ```bash
-bx --action regen        # scripts/regen_all_committed_trees.sh, on a build machine
+bx --action regen-embed-manifest   # the embed-manifest step, on a build machine
 git add embed/MANIFEST.json embed/MANIFEST.inputs
 ```
 

@@ -25,8 +25,11 @@
 //! * every file of the committed trees the regeneration sets aside is either
 //!   recognised as generated or carries a licence header, so a new kind of
 //!   generated file the rules miss is found here rather than left behind;
-//! * every one of those trees is an output the bx regen action declares, so a
-//!   removal made on a build machine comes back instead of refusing the run.
+//! * every step of the regeneration is the bx action `regen-<step>`, every
+//!   generated file of a step's trees is an output of that step's action, so a
+//!   removal made on a build machine comes back instead of refusing the run,
+//!   and no action reads or writes what another writes, so each runs, and can
+//!   be kept, on its own.
 //!
 //! The generated files planted here carry the header the generator renders
 //! (`render_header`) and the stub it writes (`stub_document`), so a rule of the
@@ -34,7 +37,7 @@
 
 mod common;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 use std::process::{Command, Output};
@@ -535,38 +538,120 @@ fn every_file_of_a_swept_tree_is_generated_or_written_by_hand() {
     );
 }
 
-/// The `outputs` of `[actions.regen]` in bx.toml.
-fn regen_action_outputs() -> Vec<String> {
-    let manifest = read(&common::repository::root(), "bx.toml");
-    let mut lines = manifest
-        .lines()
-        .skip_while(|l| l.trim() != "[actions.regen]");
+/// The steps of `regen_all_committed_trees.sh`, as the helper names them.
+fn regen_steps() -> Vec<String> {
+    let out = with_helper(&common::repository::root(), "sce_regen_steps\n");
     assert!(
-        lines.next().is_some(),
-        "bx.toml declares no [actions.regen]"
+        out.status.success(),
+        "sce_regen_steps failed:\n{}",
+        text(&out.stderr)
     );
-    let mut outputs = Vec::new();
-    let mut inside = false;
-    for line in lines {
-        let line = line.trim();
-        if line.starts_with('[') && !inside {
-            break;
+    let steps: Vec<String> = text(&out.stdout).lines().map(str::to_string).collect();
+    assert!(
+        steps.len() >= 10,
+        "only {} step(s) are named — the list was emptied, not the script",
+        steps.len()
+    );
+    steps
+}
+
+/// The trees step `step` sets aside, as the helper names them.
+fn step_trees(step: &str) -> Vec<String> {
+    let out = with_helper(
+        &common::repository::root(),
+        &format!("sce_generated_trees {step}\n"),
+    );
+    assert!(
+        out.status.success(),
+        "sce_generated_trees {step} failed:\n{}",
+        text(&out.stderr)
+    );
+    text(&out.stdout).lines().map(str::to_string).collect()
+}
+
+/// One `[actions.<name>]` table of bx.toml: its command and its patterns.
+#[derive(Debug, Default)]
+struct BxAction {
+    run: String,
+    inputs: Vec<String>,
+    outputs: Vec<String>,
+}
+
+/// The double-quoted strings of one line of bx.toml.
+fn quoted(line: &str) -> Vec<String> {
+    line.split('"')
+        .skip(1)
+        .step_by(2)
+        .map(str::to_string)
+        .collect()
+}
+
+fn push_patterns(action: &mut BxAction, key: &str, patterns: Vec<String>) {
+    if key == "inputs" {
+        action.inputs.extend(patterns);
+    } else {
+        action.outputs.extend(patterns);
+    }
+}
+
+/// Every `[actions.<name>]` table of bx.toml, by name.
+///
+/// Read in the shape bx.toml writes them: `run = '...'` on one line, and
+/// `inputs` and `outputs` each either on one line or as an array of one
+/// double-quoted pattern a line. Comment lines are skipped.
+fn bx_actions() -> BTreeMap<String, BxAction> {
+    let manifest = read(&common::repository::root(), "bx.toml");
+    let mut actions: BTreeMap<String, BxAction> = BTreeMap::new();
+    let mut current: Option<String> = None;
+    let mut open_list: Option<&'static str> = None;
+    for raw in manifest.lines() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
         }
-        if line.starts_with("outputs") {
-            inside = true;
-        }
-        if inside {
-            outputs.extend(line.split('"').skip(1).step_by(2).map(str::to_string));
+        if let Some(key) = open_list {
+            let name = current.as_ref().expect("an open list is inside an action");
+            let action = actions.get_mut(name).expect("the action was recorded");
+            push_patterns(action, key, quoted(line));
             if line.ends_with(']') {
-                break;
+                open_list = None;
             }
+            continue;
+        }
+        if line.starts_with('[') {
+            current = line
+                .strip_prefix("[actions.")
+                .and_then(|rest| rest.strip_suffix(']'))
+                .map(str::to_string);
+            if let Some(name) = &current {
+                actions.entry(name.clone()).or_default();
+            }
+            continue;
+        }
+        let Some(name) = current.as_ref() else {
+            continue;
+        };
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let (key, value) = (key.trim(), value.trim());
+        let action = actions.get_mut(name).expect("the action was recorded");
+        match key {
+            "run" => action.run = value.trim_matches(['\'', '"']).to_string(),
+            "inputs" | "outputs" => {
+                push_patterns(action, key, quoted(value));
+                if !value.ends_with(']') {
+                    open_list = Some(if key == "inputs" { "inputs" } else { "outputs" });
+                }
+            }
+            _ => {}
         }
     }
     assert!(
-        !outputs.is_empty(),
-        "[actions.regen] in bx.toml declares no outputs"
+        !actions.is_empty(),
+        "no [actions.<name>] table was read out of bx.toml"
     );
-    outputs
+    actions
 }
 
 /// Whether one path component matches one pattern component, where `*` is any
@@ -600,34 +685,198 @@ fn covers(pattern: &str, path: &str) -> bool {
     (1..=path.len()).any(|n| components_match(&pattern, &path[..n]))
 }
 
-/// Every committed file of every tree the regeneration sets aside is covered by
-/// an output of the bx regen action.
+fn is_wild(component: &str) -> bool {
+    component.contains(['*', '?'])
+}
+
+/// Whether some path could be covered by both patterns, as bx decides it
+/// (bx RFC 0003, section 6): component by component, two literals meet when
+/// they are the same, a literal and a wildcard component when the wildcard
+/// matches the literal, two wildcard components always, and `**` meets
+/// anything; a pattern that ends while every component so far met covers what
+/// is under it.
+fn may_overlap(a: &str, b: &str) -> bool {
+    for (x, y) in a.split('/').zip(b.split('/')) {
+        if x == "**" || y == "**" {
+            return true;
+        }
+        let meet = match (is_wild(x), is_wild(y)) {
+            (false, false) => x == y,
+            (true, false) => component_matches(x.as_bytes(), y.as_bytes()),
+            (false, true) => component_matches(y.as_bytes(), x.as_bytes()),
+            (true, true) => true,
+        };
+        if !meet {
+            return false;
+        }
+    }
+    true
+}
+
+/// The overlap rule read here is the one bx applies, on the examples its RFC
+/// gives and on the two shapes bx.toml leans on.
 ///
-/// The removal of such a file is a change bx carries back from a build machine
-/// like a write, and a change outside the declared outputs refuses the whole
-/// result. A tree added to `sce_generated_trees` without its output would turn
-/// the first stale file found there into a refused regeneration.
+/// Turns red if `may_overlap` stopped treating a pattern that ends as covering
+/// what is under it (the `sce-specs/src/*` case), or matched a wildcard against
+/// a literal it does not match (the `*/*.go` case).
 #[test]
-fn every_swept_tree_is_an_output_of_the_regen_action() {
-    let outputs = regen_action_outputs();
-    let trees = swept_trees();
-    let tree_refs: Vec<&str> = trees.iter().map(String::as_str).collect();
-    let tracked = common::repository::paths_git_tracks(&tree_refs);
-    assert!(
-        tracked.len() >= 1000,
-        "only {} committed file(s) were found in the swept trees — the scan is \
-         broken, not the tree",
-        tracked.len()
+fn the_overlap_rule_is_the_one_bx_applies() {
+    assert!(!may_overlap(
+        "crates/*/Cargo.toml",
+        "crates/tests/src/gen/**"
+    ));
+    assert!(may_overlap("gen/*.rs", "gen/*.go"));
+    assert!(may_overlap(
+        "sce-specs/src/*",
+        "sce-specs/src/*/generated/**"
+    ));
+    assert!(!may_overlap(
+        "backends/go/forge-runtime/*/*.go",
+        "backends/go/forge-runtime/round_trip/generated/**"
+    ));
+    assert!(!may_overlap(
+        "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CTestBase.kt",
+        "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/Test*.kt"
+    ));
+}
+
+/// Every step of the regeneration is the bx action `regen-<step>`, whose
+/// command is the script given that step, and bx.toml declares no other
+/// action.
+///
+/// The second half is what lets the bare `bx --actions`, which runs every
+/// declared action, stand for "regenerate everything". Turns red if a step is
+/// added to `sce_regen_steps` without its action (or the other way round), if
+/// an action's `run` names another step, or if an action that is no step is
+/// declared without the callers of `bx --actions` being given a list.
+#[test]
+fn every_step_is_the_bx_action_that_runs_it() {
+    let actions = bx_actions();
+    let steps = regen_steps();
+    let expected: BTreeSet<String> = steps.iter().map(|s| format!("regen-{s}")).collect();
+    let declared: BTreeSet<String> = actions.keys().cloned().collect();
+    assert_eq!(
+        declared, expected,
+        "the actions bx.toml declares are not the steps of \
+         scripts/regen_all_committed_trees.sh, one `regen-<step>` each"
     );
-    let uncovered: Vec<&String> = tracked
-        .iter()
-        .filter(|path| !outputs.iter().any(|o| covers(o, path)))
-        .collect();
+    for step in &steps {
+        let action = &actions[&format!("regen-{step}")];
+        assert_eq!(
+            action.run,
+            format!("scripts/regen_all_committed_trees.sh {step}"),
+            "[actions.regen-{step}] does not run the step it is named for"
+        );
+        assert!(
+            !action.inputs.is_empty() && !action.outputs.is_empty(),
+            "[actions.regen-{step}] declares no inputs or no outputs"
+        );
+    }
+}
+
+/// Every committed generated file of a step's trees is covered by an output of
+/// that step's bx action.
+///
+/// The step sets those files aside and settles them when it ends, so the
+/// removal of one it no longer writes is a change of that step alone, which bx
+/// carries back from a build machine like a write; a change outside the
+/// action's declared outputs refuses its whole result. Turns red if a tree is
+/// added to a step in `sce_generated_trees` without an output of its action,
+/// or if an output is narrowed past a generated file (`test_*.rs`,
+/// `Test*.kt`).
+#[test]
+fn every_generated_file_of_a_step_is_an_output_of_its_action() {
+    let root = common::repository::root();
+    let actions = bx_actions();
+    let mut checked = 0usize;
+    let mut uncovered = Vec::new();
+    for step in regen_steps() {
+        let Some(action) = actions.get(&format!("regen-{step}")) else {
+            panic!("bx.toml declares no [actions.regen-{step}]");
+        };
+        let trees = step_trees(&step);
+        if trees.is_empty() {
+            continue;
+        }
+        let tree_refs: Vec<&str> = trees.iter().map(String::as_str).collect();
+        let tracked: BTreeSet<String> = common::repository::paths_git_tracks(&tree_refs)
+            .into_iter()
+            .collect();
+        let listing = with_helper(
+            &root,
+            &format!("sce_generated_tree_files {}\n", tree_refs.join(" ")),
+        );
+        assert!(
+            listing.status.success(),
+            "sce_generated_tree_files failed for step {step}:\n{}",
+            text(&listing.stderr)
+        );
+        for file in text(&listing.stdout)
+            .lines()
+            .filter(|file| tracked.contains(*file))
+        {
+            checked += 1;
+            if !action.outputs.iter().any(|o| covers(o, file)) {
+                uncovered.push(format!("{file} (step {step})"));
+            }
+        }
+    }
+    assert!(
+        checked >= 1000,
+        "only {checked} committed generated file(s) were found in the steps' \
+         trees — the scan is broken, not the tree"
+    );
     assert!(
         uncovered.is_empty(),
-        "{} committed file(s) a regeneration may remove are outside every output \
-         of [actions.regen] in bx.toml, so removing one would refuse the action's \
-         whole result: {uncovered:#?}",
-        uncovered.len()
+        "{} committed generated file(s) a step may remove are outside every \
+         output of that step's action in bx.toml, so removing one would refuse \
+         the action's whole result:\n  {}",
+        uncovered.len(),
+        uncovered.join("\n  ")
+    );
+}
+
+/// No regen action reads or writes a path another regen action writes.
+///
+/// bx refuses two actions that write the same path, and runs an action that
+/// reads what another writes after it, in one chain: on one machine, with no
+/// result kept (bx RFC 0029, section 4.8). The steps are declared apart so
+/// that each is cached and spread on its own, so a meeting here is either a
+/// read-after-write that belongs in one step, or a pattern drawn wider than
+/// what it reads. Turns red if an input over a whole directory reaches into
+/// another step's outputs (`tests/forge/**` would reach the goldens), or if a
+/// language step's output is widened over the hand-written files the generator
+/// compiles in.
+#[test]
+fn no_regen_action_reads_or_writes_what_another_writes() {
+    let actions = bx_actions();
+    let mut meetings = Vec::new();
+    for (writer, w) in &actions {
+        for (other, o) in &actions {
+            if writer == other {
+                continue;
+            }
+            for out in &w.outputs {
+                for input in o.inputs.iter().filter(|i| may_overlap(i, out)) {
+                    meetings.push(format!(
+                        "{other} reads `{input}`, which can be `{out}`, written by {writer}"
+                    ));
+                }
+                if writer < other {
+                    for theirs in o.outputs.iter().filter(|t| may_overlap(t, out)) {
+                        meetings.push(format!(
+                            "{writer} writes `{out}` and {other} writes `{theirs}`, \
+                             which can be the same path"
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        meetings.is_empty(),
+        "{} meeting(s) between the regen actions of bx.toml:\n  {}",
+        meetings.len(),
+        meetings.join("\n  ")
     );
 }

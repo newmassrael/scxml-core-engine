@@ -1,8 +1,8 @@
 # The inputs embed/MANIFEST.json was emitted from: the git object id and path of
 # each file, a submodule as the commit it pins (scripts/embed_manifest.py).
 # Written by scripts/emit_embed_manifest.sh; regenerate both with
-# `bx --action regen`. A commit whose inputs differ from these is refused
-# (scripts/gates/embed-manifest-stamp.sh).
+# `bx --action regen-embed-manifest`. A commit whose inputs differ from these
+# is refused (scripts/gates/embed-manifest-stamp.sh).
 27ab25a53081ba59539774e8eaebb1c0448e2591 backends/cpp/forge-runtime/include/sce/forge/ProcedureServiceTypes.h
 0101c5df1630d85e405d969740b3a10998d87384 backends/cpp/forge-runtime/include/sce/forge/ProcedureStateMachine.h
 f0e49786d6f7121bd0be54a05656c05d733163e7 backends/cpp/forge-runtime/include/sce/forge/algorithm.h
@@ -205,7 +205,7 @@ e3b246e11860ac77fd5b4f1ec2613a41b56020f0 sce/include/scripting/json_builtins.lua
 3f577fed6b3bb9d88eecdbbbae4b73b51e71f917 sce/include/types.h
 3e9c75b158ea327d049a2d1538beb516a2409edf sce/sce_base_sources.cmake
 41da33bedb3e2a4ffb99d4bac9c79fc85b714f2a scripts/_embed_manifest_filter.py
-f590995d0e70ac2b725690a3e5e06d0522edb8a3 scripts/embed_manifest.py
+44a5e703978b2b7db1150b90fb80f17b465ca16a scripts/embed_manifest.py
 22be62e61e7f02e42b60640286b1eacd6385fed4 scripts/emit_embed_manifest.sh
 9c77ef39f7859be70b7ba543668bc0755d159d5e scripts/package_embed.sh
 6e52d0a0574d02ec0aaabe8610aff89b03da336b third_party/cpp-httplib

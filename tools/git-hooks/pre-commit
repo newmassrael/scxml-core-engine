@@ -195,7 +195,7 @@ log_step "Stage 4/4 — embed manifest stamp (scripts/embed_manifest.py check --
 STAMP_TOOL="$REPO_ROOT/scripts/embed_manifest.py"
 if [[ -f "$STAMP_TOOL" ]]; then
     if ! python3 "$STAMP_TOOL" check --staged; then
-        printf '\nERROR pre-commit: Stage 4 (embed manifest stamp) FAILED — commit aborted.\n  Regenerate with `bx --action regen` and stage embed/MANIFEST.json and embed/MANIFEST.inputs.\n  Bypass with SKIP_PRECOMMIT=1 for genuine emergencies.\n' >&2
+        printf '\nERROR pre-commit: Stage 4 (embed manifest stamp) FAILED — commit aborted.\n  Regenerate with `bx --action regen-embed-manifest` and stage embed/MANIFEST.json and embed/MANIFEST.inputs.\n  Bypass with SKIP_PRECOMMIT=1 for genuine emergencies.\n' >&2
         exit 1
     fi
 else

@@ -76,8 +76,8 @@ HEADER = """\
 # The inputs embed/MANIFEST.json was emitted from: the git object id and path of
 # each file, a submodule as the commit it pins (scripts/embed_manifest.py).
 # Written by scripts/emit_embed_manifest.sh; regenerate both with
-# `bx --action regen`. A commit whose inputs differ from these is refused
-# (scripts/gates/embed-manifest-stamp.sh).
+# `bx --action regen-embed-manifest`. A commit whose inputs differ from these
+# is refused (scripts/gates/embed-manifest-stamp.sh).
 """
 
 
@@ -238,7 +238,7 @@ def check(snapshot: Snapshot, where: str) -> int:
         print(f"  {path}", file=sys.stderr)
     print(
         "\nRegenerate on a build machine and commit both files with the change:\n"
-        "    bx --action regen\n"
+        "    bx --action regen-embed-manifest\n"
         "    git add embed/MANIFEST.json embed/MANIFEST.inputs",
         file=sys.stderr,
     )

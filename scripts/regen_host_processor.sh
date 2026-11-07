@@ -15,18 +15,24 @@
 # the machine twice off one binary — once with a handler registered, once
 # without — so the pair measures the registration rather than the build.
 #
-# Rust and Go, the two backends with a committed tree AND a host-processor
-# registry. C++ and C11 drive the same fixture from their own build-time
-# generation (`tests/CMakeLists.txt` and `backends/c/tests/CMakeLists.txt`),
-# so they need no tree here. Kotlin and Python have no registry yet, and the
-# generator refuses the declaration for them by name
-# (`reject_host_processors_in_unsupported_lang`) rather than emitting a
-# dispatch nothing can service. That refusal is what keeps a partial roster
-# honest instead of a coverage gap: a declaration cannot silently compile on
-# a backend that would drop it. Called directly from
-# regen_all_committed_trees.sh rather than through the
-# `generate-integration` fan-out, which has no per-stem flags — the same
-# reason regen_native_action.sh is called directly.
+# Rust here; Go, Kotlin and Python each from a script of their own
+# (`regen_host_processor_go.sh`, `regen_host_processor_kotlin.sh`,
+# `regen_host_processor_python.sh`). C++ and C11 drive the same fixture from
+# their own build-time generation (`tests/CMakeLists.txt` and
+# `backends/c/tests/CMakeLists.txt`), so they need no tree here. A backend
+# without a registry is refused the declaration by name
+# (`reject_host_processors_in_unsupported_lang`) rather than handed a dispatch
+# nothing can service. That refusal is what keeps a partial roster honest
+# instead of a coverage gap: a declaration cannot silently compile on a backend
+# that would drop it. Called directly from regen_all_committed_trees.sh rather
+# than through the `generate-integration` fan-out, which has no per-stem flags —
+# the same reason regen_native_action.sh is called directly.
+#
+# This script wrote the Go trees too until 2026-11-07. They moved to
+# `regen_host_processor_go.sh` because the regeneration runs as one bx action
+# per language tree (bx.toml, the `regen-*` actions): a script that writes two
+# trees belongs to no one action, and an action is refused when it writes
+# outside the outputs it declares.
 #
 # Usage (from repo root):
 #   scripts/regen_host_processor.sh
@@ -156,161 +162,9 @@ MODRS="$GENERATED_DIR/mod.rs"
 source "$REPO_ROOT/scripts/lib/sce_rustfmt.sh"
 sce_rustfmt_dir "$GENERATED_DIR" "$REPO_ROOT"
 
-# The Go half. Both fixtures now: the Go runtime carries a `<send>` registry
-# (§scxml-6.2.5) and an `<invoke>` one (§scxml-6.4.1), so neither document meets
-# a refusal here any more. The invoker tree lands in its own directory for the
-# reason stated below.
-#
-# The `// From:` rewrite is the same one every `regen_*_go.sh` does — the
-# tracked artefact has to point at the canonical fixture rather than at the
-# temporary directory this run happened to use, or the tree stops reproducing
-# on another machine.
-# Named for the document's own stem rather than for the axis, unlike the Rust
-# tree above: a Go package name comes from the emitted file, so a directory
-# named anything else puts two package names in one directory and the module
-# stops building.
-GO_GENERATED_DIR="backends/go/tests/integration/statechart_host_processor"
-GO_TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP" "$GO_TMP"' EXIT
-
-"$CODEGEN" generate "$FIXTURE" -l go -o "$GO_TMP/" --host-processor "$HOST_PROCESSOR"
-
-mkdir -p "$GO_GENERATED_DIR"
-sce_generated_tree_clear "$GO_GENERATED_DIR"
-for src in "$GO_TMP"/*_sm.go; do
-    [[ -f "$src" ]] || continue
-    sed -i "s|// From: ${GO_TMP}/|// From: $(dirname "$FIXTURE")/|g" "$src"
-done
-cp "$GO_TMP"/*_sm.go "$GO_GENERATED_DIR/"
-
-# The delayed document gets its own Go directory for the reason stated above:
-# a Go package name comes from the emitted file, so two stems in one directory
-# is two package names in one directory.
-GO_DELAYED_DIR="backends/go/tests/integration/statechart_delayed_host_send"
-GO_DELAYED_TMP="$(mktemp -d)"
-GO_INVOKER_DIR="backends/go/tests/integration/statechart_host_invoker"
-GO_INVOKER_TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP" "$GO_TMP" "$GO_DELAYED_TMP" "$GO_INVOKER_TMP"' EXIT
-
-# §scxml-6.4.1: the invoke half, in its own Go directory for the same
-# package-name reason.
-"$CODEGEN" generate "$INVOKER_FIXTURE" -l go -o "$GO_INVOKER_TMP/" --host-invoker "$HOST_INVOKER"
-
-mkdir -p "$GO_INVOKER_DIR"
-sce_generated_tree_clear "$GO_INVOKER_DIR"
-for src in "$GO_INVOKER_TMP"/*_sm.go; do
-    [[ -f "$src" ]] || continue
-    sed -i "s|// From: ${GO_INVOKER_TMP}/|// From: $(dirname "$INVOKER_FIXTURE")/|g" "$src"
-done
-cp "$GO_INVOKER_TMP"/*_sm.go "$GO_INVOKER_DIR/"
-
-"$CODEGEN" generate "$DELAYED_FIXTURE" -l go -o "$GO_DELAYED_TMP/" --host-processor "$HOST_PROCESSOR"
-
-mkdir -p "$GO_DELAYED_DIR"
-sce_generated_tree_clear "$GO_DELAYED_DIR"
-for src in "$GO_DELAYED_TMP"/*_sm.go; do
-    [[ -f "$src" ]] || continue
-    sed -i "s|// From: ${GO_DELAYED_TMP}/|// From: $(dirname "$DELAYED_FIXTURE")/|g" "$src"
-done
-cp "$GO_DELAYED_TMP"/*_sm.go "$GO_DELAYED_DIR/"
-
-# The typed-parameter document, which needs BOTH declarations: what a `<param>`
-# of a `<send>` and of an `<invoke>` the host serves puts on the wire, read from
-# the machine's own fields (SCE Accepted Subset §2.15). Its own Go directory for
-# the package-name reason above.
-GO_STATIC_PARAMS_DIR="backends/go/tests/integration/statechart_static_host_params"
-GO_STATIC_PARAMS_TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP" "$GO_TMP" "$GO_DELAYED_TMP" "$GO_INVOKER_TMP" "$GO_STATIC_PARAMS_TMP"' EXIT
-
-"$CODEGEN" generate "$STATIC_PARAMS_FIXTURE" -l go -o "$GO_STATIC_PARAMS_TMP/" \
-    --host-processor "$HOST_PROCESSOR" --host-invoker "$HOST_INVOKER"
-
-mkdir -p "$GO_STATIC_PARAMS_DIR"
-sce_generated_tree_clear "$GO_STATIC_PARAMS_DIR"
-for src in "$GO_STATIC_PARAMS_TMP"/*_sm.go; do
-    [[ -f "$src" ]] || continue
-    sed -i "s|// From: ${GO_STATIC_PARAMS_TMP}/|// From: $(dirname "$STATIC_PARAMS_FIXTURE")/|g" "$src"
-done
-cp "$GO_STATIC_PARAMS_TMP"/*_sm.go "$GO_STATIC_PARAMS_DIR/"
-
-# The Mesh request document, with no host declaration (the build names its type).
-# Its own Go directory for the package-name reason above.
-GO_STATIC_MESH_DIR="backends/go/tests/integration/statechart_static_mesh_request"
-GO_STATIC_MESH_TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP" "$GO_TMP" "$GO_DELAYED_TMP" "$GO_INVOKER_TMP" "$GO_STATIC_PARAMS_TMP" "$GO_STATIC_MESH_TMP"' EXIT
-
-"$CODEGEN" generate "$STATIC_MESH_REQUEST_FIXTURE" -l go -o "$GO_STATIC_MESH_TMP/"
-
-mkdir -p "$GO_STATIC_MESH_DIR"
-sce_generated_tree_clear "$GO_STATIC_MESH_DIR"
-for src in "$GO_STATIC_MESH_TMP"/*_sm.go; do
-    [[ -f "$src" ]] || continue
-    sed -i "s|// From: ${GO_STATIC_MESH_TMP}/|// From: $(dirname "$STATIC_MESH_REQUEST_FIXTURE")/|g" "$src"
-done
-cp "$GO_STATIC_MESH_TMP"/*_sm.go "$GO_STATIC_MESH_DIR/"
-
-# The saving documents: a host-run `<invoke>` and a delayed host-served `<send>` a
-# saved state carries (SCE Accepted Subset §2.15), each in a Go directory of its
-# own for the package-name reason above.
-GO_STATIC_INVOKE_DIR="backends/go/tests/integration/statechart_static_host_invoke"
-GO_STATIC_INVOKE_TMP="$(mktemp -d)"
-GO_STATIC_DELAYED_DIR="backends/go/tests/integration/statechart_static_delayed_host_send"
-GO_STATIC_DELAYED_TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP" "$GO_TMP" "$GO_DELAYED_TMP" "$GO_INVOKER_TMP" "$GO_STATIC_PARAMS_TMP" "$GO_STATIC_MESH_TMP" "$GO_STATIC_INVOKE_TMP" "$GO_STATIC_DELAYED_TMP"' EXIT
-
-"$CODEGEN" generate "$STATIC_INVOKE_FIXTURE" -l go -o "$GO_STATIC_INVOKE_TMP/" --host-invoker "$HOST_INVOKER"
-mkdir -p "$GO_STATIC_INVOKE_DIR"
-sce_generated_tree_clear "$GO_STATIC_INVOKE_DIR"
-for src in "$GO_STATIC_INVOKE_TMP"/*_sm.go; do
-    [[ -f "$src" ]] || continue
-    sed -i "s|// From: ${GO_STATIC_INVOKE_TMP}/|// From: $(dirname "$STATIC_INVOKE_FIXTURE")/|g" "$src"
-done
-cp "$GO_STATIC_INVOKE_TMP"/*_sm.go "$GO_STATIC_INVOKE_DIR/"
-
-"$CODEGEN" generate "$STATIC_DELAYED_SEND_FIXTURE" -l go -o "$GO_STATIC_DELAYED_TMP/" --host-processor "$HOST_PROCESSOR"
-mkdir -p "$GO_STATIC_DELAYED_DIR"
-sce_generated_tree_clear "$GO_STATIC_DELAYED_DIR"
-for src in "$GO_STATIC_DELAYED_TMP"/*_sm.go; do
-    [[ -f "$src" ]] || continue
-    sed -i "s|// From: ${GO_STATIC_DELAYED_TMP}/|// From: $(dirname "$STATIC_DELAYED_SEND_FIXTURE")/|g" "$src"
-done
-cp "$GO_STATIC_DELAYED_TMP"/*_sm.go "$GO_STATIC_DELAYED_DIR/"
-
-# The optional-result document (docs/adr/0055, step 10): a host-run `<invoke>`
-# whose `sce:result` record holds values that may be absent. Its own Go directory
-# for the package-name reason above.
-GO_OPTIONAL_RESULT_DIR="backends/go/tests/integration/statechart_host_invoker_optional"
-GO_OPTIONAL_RESULT_TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP" "$GO_TMP" "$GO_DELAYED_TMP" "$GO_INVOKER_TMP" "$GO_STATIC_PARAMS_TMP" "$GO_STATIC_MESH_TMP" "$GO_STATIC_INVOKE_TMP" "$GO_STATIC_DELAYED_TMP" "$GO_OPTIONAL_RESULT_TMP"' EXIT
-
-"$CODEGEN" generate "$OPTIONAL_RESULT_FIXTURE" -l go -o "$GO_OPTIONAL_RESULT_TMP/" --host-invoker "$HOST_INVOKER"
-mkdir -p "$GO_OPTIONAL_RESULT_DIR"
-sce_generated_tree_clear "$GO_OPTIONAL_RESULT_DIR"
-for src in "$GO_OPTIONAL_RESULT_TMP"/*_sm.go; do
-    [[ -f "$src" ]] || continue
-    sed -i "s|// From: ${GO_OPTIONAL_RESULT_TMP}/|// From: $(dirname "$OPTIONAL_RESULT_FIXTURE")/|g" "$src"
-done
-cp "$GO_OPTIONAL_RESULT_TMP"/*_sm.go "$GO_OPTIONAL_RESULT_DIR/"
-
 echo "Regenerated: $GENERATED_DIR/ from"
 echo "  $FIXTURE (--host-processor $HOST_PROCESSOR)"
 echo "  $INVOKER_FIXTURE (--host-invoker $HOST_INVOKER)"
 echo "  $DELAYED_FIXTURE (--host-processor $HOST_PROCESSOR)"
 echo "  $OPTIONAL_RESULT_FIXTURE (--host-invoker $HOST_INVOKER)"
 echo "  $INBOX_PROBE_FIXTURE (--host-invoker $HOST_INVOKER)"
-echo "Regenerated: $GO_GENERATED_DIR/ from"
-echo "  $FIXTURE (--host-processor $HOST_PROCESSOR)"
-echo "Regenerated: $GO_DELAYED_DIR/ from"
-echo "  $DELAYED_FIXTURE (--host-processor $HOST_PROCESSOR)"
-echo "Regenerated: $GO_INVOKER_DIR/ from"
-echo "  $INVOKER_FIXTURE (--host-invoker $HOST_INVOKER)"
-echo "Regenerated: $GO_STATIC_PARAMS_DIR/ from"
-echo "  $STATIC_PARAMS_FIXTURE (--host-processor $HOST_PROCESSOR --host-invoker $HOST_INVOKER)"
-echo "Regenerated: $GO_STATIC_MESH_DIR/ from"
-echo "  $STATIC_MESH_REQUEST_FIXTURE (no host declaration)"
-echo "Regenerated: $GO_STATIC_INVOKE_DIR/ from"
-echo "  $STATIC_INVOKE_FIXTURE (--host-invoker $HOST_INVOKER)"
-echo "Regenerated: $GO_STATIC_DELAYED_DIR/ from"
-echo "  $STATIC_DELAYED_SEND_FIXTURE (--host-processor $HOST_PROCESSOR)"
-echo "Regenerated: $GO_OPTIONAL_RESULT_DIR/ from"
-echo "  $OPTIONAL_RESULT_FIXTURE (--host-invoker $HOST_INVOKER)"

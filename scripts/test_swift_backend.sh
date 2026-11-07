@@ -14,7 +14,8 @@
 # backends/swift/tests/Sources are rewritten from the generator before they are
 # compiled, so what is tested is what the templates write today and not what was
 # last committed. Run on a build machine (`bx -- scripts/test_swift_backend.sh`), the
-# rewritten files stay there, and `bx --action regen` is what brings them back.
+# rewritten files stay there, and `bx --action regen-swift-tests` is what brings
+# them back (`regen-mesh-swift` for the Mesh core's standard documents).
 #
 # Usage (from repo root):
 #   scripts/test_swift_backend.sh [package ...]    # runtime, forge-runtime, host-features, tests,

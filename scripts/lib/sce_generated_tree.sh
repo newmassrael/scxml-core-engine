@@ -25,8 +25,8 @@
 #     regen script: a pattern names the files of the day, and a transition
 #     function, a sourcemap or a child the pattern did not name stayed behind.
 #   * A run that writes its trees in place -- `sce-codegen generate-w3c`, and
-#     `regen_all_committed_trees.sh` as a whole -- sets the generated files of
-#     its trees aside with `sce_generated_tree_stash` first and ends with
+#     each step of `regen_all_committed_trees.sh` -- sets the generated files
+#     of its trees aside with `sce_generated_tree_stash` first and ends with
 #     `sce_generated_tree_settle`. A file the run wrote again with the same
 #     bytes gets its old copy back, so its mtime still says when its bytes last
 #     changed (the reason the generator leaves an unchanged file alone); a file
@@ -126,11 +126,40 @@ sce_generated_tree_clear() {
     done
 }
 
-# The trees `regen_all_committed_trees.sh` regenerates whole, relative to the
-# repository root, one per line. Every generated file under them is set aside
-# before the first stage and has to be written again by one of the stages, so a
-# tree belongs here only when every file of it that is generated is written by
-# a stage of that script.
+# The steps of `regen_all_committed_trees.sh`, one per line, in the order a run
+# of every step takes them. A step owns its trees: no other step writes into
+# them or reads what it writes there, so a step can run on its own, on any
+# machine, and the steps can run at once. Each is a bx action of its own,
+# `[actions.regen-<step>]` in bx.toml, whose `run` is the script given that
+# step (`a_regeneration_removes_what_it_no_longer_writes` holds the two lists
+# to each other).
+sce_regen_steps() {
+    printf '%s\n' \
+        rust-tests \
+        kotlin-tests \
+        kotlin-method-size \
+        go-w3c \
+        go-integration \
+        python-w3c \
+        python-integration \
+        swift-tests \
+        go-round-trip \
+        mesh-rust \
+        mesh-cpp \
+        mesh-kotlin \
+        mesh-swift \
+        mesh-swift-wss \
+        specs \
+        forge-goldens \
+        embed-manifest
+}
+
+# The trees STEP regenerates whole, relative to the repository root, one per
+# line; with no STEP, the trees of every step. Every generated file under them
+# is set aside when the step starts and has to be written again by that step,
+# so a tree belongs to a step only when every file of it that is generated is
+# written by that step. A step that writes none whole (the forge goldens, the
+# embed manifest) has no tree here.
 #
 # `backends/python/tests/integration` is the tree that is NOT here, for that
 # reason: four of its directories are written by scripts the w3c-python gate
@@ -139,35 +168,83 @@ sce_generated_tree_clear() {
 # nothing committed is at stake; each of its regen scripts clears its own
 # directory before it copies.
 #
-# Every tree is a declared output of `[actions.regen]` in bx.toml, which is what
-# lets a removal made on a build machine come back to the tree that asked for it
-# (`a_regeneration_removes_what_it_no_longer_writes` holds the two together).
+# The settle is per step for the same reason the trees are: each step's trees
+# are declared outputs of that step's own bx action, which is what lets a
+# removal made on a build machine come back to the tree that asked for it. A
+# removal judged after another step had run would be a change the action that
+# made it does not declare (`a_regeneration_removes_what_it_no_longer_writes`
+# holds every step's trees to its action's outputs).
 sce_generated_trees() {
-    local tree
-    for tree in \
-        backends/rust/tests/src/generated \
-        backends/rust/tests/src/integration \
-        backends/rust/tests/tests \
-        backends/kotlin/tests/src/main/kotlin/com/sce/generated \
-        backends/kotlin/tests/src/main/kotlin/com/sce/integration \
-        backends/kotlin/tests/src/test/kotlin/com/sce/w3c \
-        backends/kotlin/method-size/src/main/kotlin/com/sce/methodsize \
-        backends/go/tests/generated \
-        backends/go/tests/integration \
-        backends/python/tests/generated \
-        backends/go/forge-runtime/round_trip/generated \
-        backends/swift/tests/Sources/StaticMachines \
-        backends/swift/tests/Sources/EcmaScriptMachines \
-        backends/rust/mesh/src/generated \
-        backends/rust/mesh/examples/generated \
-        backends/kotlin/mesh/src/commonMain/kotlin/generated \
-        backends/kotlin/mesh/src/jvmTest/kotlin/com/sce/generated \
-        backends/swift/mesh/Sources/SceMesh/Generated \
-        backends/swift/mesh-wss/Tests/SceMeshWssTests/Generated \
-        sce/src/mesh/generated \
-        sce-specs/src/*/generated; do
-        printf '%s\n' "$tree"
-    done
+    local step
+    if (( $# == 0 )); then
+        while IFS= read -r step; do
+            sce_generated_trees "$step" || return 1
+        done < <(sce_regen_steps)
+        return 0
+    fi
+    case "$1" in
+        rust-tests)
+            printf '%s\n' \
+                backends/rust/tests/src/generated \
+                backends/rust/tests/src/integration \
+                backends/rust/tests/tests
+            ;;
+        kotlin-tests)
+            printf '%s\n' \
+                backends/kotlin/tests/src/main/kotlin/com/sce/generated \
+                backends/kotlin/tests/src/main/kotlin/com/sce/integration \
+                backends/kotlin/tests/src/test/kotlin/com/sce/w3c
+            ;;
+        kotlin-method-size)
+            printf '%s\n' backends/kotlin/method-size/src/main/kotlin/com/sce/methodsize
+            ;;
+        go-w3c)
+            printf '%s\n' backends/go/tests/generated
+            ;;
+        go-integration)
+            printf '%s\n' backends/go/tests/integration
+            ;;
+        python-w3c)
+            printf '%s\n' backends/python/tests/generated
+            ;;
+        swift-tests)
+            printf '%s\n' \
+                backends/swift/tests/Sources/StaticMachines \
+                backends/swift/tests/Sources/EcmaScriptMachines
+            ;;
+        go-round-trip)
+            printf '%s\n' backends/go/forge-runtime/round_trip/generated
+            ;;
+        mesh-rust)
+            printf '%s\n' \
+                backends/rust/mesh/src/generated \
+                backends/rust/mesh/examples/generated
+            ;;
+        mesh-cpp)
+            printf '%s\n' sce/src/mesh/generated
+            ;;
+        mesh-kotlin)
+            printf '%s\n' \
+                backends/kotlin/mesh/src/commonMain/kotlin/generated \
+                backends/kotlin/mesh/src/jvmTest/kotlin/com/sce/generated
+            ;;
+        mesh-swift)
+            printf '%s\n' backends/swift/mesh/Sources/SceMesh/Generated
+            ;;
+        mesh-swift-wss)
+            printf '%s\n' backends/swift/mesh-wss/Tests/SceMeshWssTests/Generated
+            ;;
+        specs)
+            # A glob: one tree for each machine of the specs crate.
+            printf '%s\n' sce-specs/src/*/generated
+            ;;
+        python-integration | forge-goldens | embed-manifest)
+            ;;
+        *)
+            echo "sce_generated_trees: no step named '$1'" >&2
+            return 1
+            ;;
+    esac
 }
 
 # Where `sce_generated_tree_stash` set the files aside, and the trees it took
@@ -183,7 +260,7 @@ fi
 #
 # Outside, because a directory inside the tree would read as an untracked
 # change to a run that compares the tree with git, and a build machine running
-# the regen action refuses a change outside the action's declared outputs.
+# a regen action refuses a change outside the action's declared outputs.
 sce_generated_tree_stash() {
     local stash file parent made="" count=0
     if [[ -n "$SCE_GENERATED_TREE_STASH" ]]; then
