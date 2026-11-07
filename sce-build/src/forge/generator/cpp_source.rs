@@ -151,9 +151,10 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
     }
     // A group (docs/adr/0065 §6 R4b, R4c) is presented as the class of the
     // members of its one side, held optionally, or as a variant of a class for
-    // each of its arms; its members are integers, its gates flag inputs or
-    // one-bit flags of the codec's own. A group of a chain's memberships or of
-    // lists that share a count is not yet.
+    // each of its arms; its members are integers, byte strings or texts, its
+    // gates flag inputs or one-bit flags of the codec's own. A group of a
+    // chain's memberships or of lists that share a count, or one that holds a
+    // list, a body or an enum, is not yet.
     for group in plan.groups() {
         let label = group
             .gates
@@ -177,10 +178,12 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
                 .iter()
                 .find(|f| f.id == id)
                 .expect("a group's member is a field of the codec");
-            if !matches!(plan.value(member), Value::Scalar(t) if t.int_bit_width().is_some()) {
-                forms.push(format!(
-                    "`{id}`, a member of a group that is not an integer"
-                ));
+            match plan.value(member) {
+                Value::Scalar(t) if t.int_bit_width().is_some() => {}
+                Value::Bytes(_) | Value::Text(_) => {}
+                _ => forms.push(format!(
+                    "`{id}`, a member of a group that is not an integer, a byte string or a text"
+                )),
             }
         }
     }
@@ -407,7 +410,8 @@ fn held_codec<'i>(imports: &'i [ImportContext], alias: &str) -> (&'i str, &'i st
 ///   fields one group holds are, which cannot disagree;
 /// - how many bytes one byte string holds, as it is or plus or less a constant,
 ///   into a field it always fits (zero where a gate leaves the bytes out and the
-///   field is gated beside them) or into a flag of a carrier (which keeps the
+///   field is gated beside them, or what the group that holds the field holds on
+///   the side without the bytes) or into a flag of a carrier (which keeps the
 ///   bits the value presents where the bytes are absent);
 /// - how many entries one list holds, into a field or a flag likewise (zero
 ///   where a gate leaves the list out);
@@ -484,10 +488,12 @@ fn number_unlowered(element: &ElementId, number: &Number<'_>) -> Option<String> 
                 ..
             },
         ) => match (measure.gated, absent) {
-            (false, Absent::Never) | (true, Absent::Zero) => None,
+            // Where a gate leaves the content out, the field holds zero, or
+            // what the group that holds it holds on that side.
+            (false, Absent::Never) | (true, Absent::Zero | Absent::Group) => None,
             _ => Some(format!(
-                "`{element}`, a number of content a gate decides that a group or the value \
-                 states where it is absent"
+                "`{element}`, a number of content a gate decides that the value states where \
+                 it is absent"
             )),
         },
         (ElementId::Field(_), NumberInto::Field { .. }) => {
@@ -947,8 +953,9 @@ struct GroupPart<'p> {
     /// Its arms, in the plan's order.
     arms: Vec<ArmPart<'p>>,
     /// Every member of every arm once, in declaration order, each an integer
-    /// the encode binds to an optional local (`_e_<member>`) from the arm the
-    /// value holds where that arm holds it.
+    /// or a view of a byte string or a text the encode binds to an optional
+    /// local (`_e_<member>`) from the arm the value holds where that arm holds
+    /// it.
     members: Vec<Presented<'p>>,
     /// The place of its first member among the codec's fields, where the
     /// value presents it among its elements.
@@ -1037,6 +1044,13 @@ impl<'p> GroupPart<'p> {
     /// `std::optional`.
     fn optional(&self) -> bool {
         self.group.absent.is_some()
+    }
+
+    /// Whether an arm of it holds a byte string or a text, which it copies in,
+    /// so that it is made as a value holding bytes is: neither a constant
+    /// expression nor free of throwing, and moved where it is handed on.
+    fn holds_bytes(&self) -> bool {
+        self.members.iter().any(|m| m.bytes)
     }
 
     /// What the value holds it as, and presents it as.
@@ -1350,19 +1364,27 @@ impl<'p> GroupPart<'p> {
 
     /// The decode's making of the group from the members it read: for a
     /// group of one side, its arm where every member is there; for a sum, the
-    /// arm whose values the gates the decode read hold.
+    /// arm whose values the gates the decode read hold. A byte string or a
+    /// text is taken as its bound's view of what was read (`_b_<member>`); a
+    /// member the decode reads whatever the gate holds, such as a length the
+    /// side without its bytes states, as it was read.
     fn decoded(&self, model: &CodecModel, l: &LangCtx) -> String {
         let (holds, name) = (self.holds(), &self.name);
         let args = |arm: &ArmPart<'_>| {
             arm.members
                 .iter()
-                .map(|m| format!("*{}", m.name))
+                .map(|m| match (m.bytes, m.read_optionally()) {
+                    (true, _) => format!("*_b_{}", m.name),
+                    (false, true) => format!("*{}", m.name),
+                    (false, false) => m.name.clone(),
+                })
                 .collect::<Vec<_>>()
         };
         if let [arm] = self.arms.as_slice() {
             let there: Vec<String> = arm
                 .members
                 .iter()
+                .filter(|m| m.read_optionally())
                 .map(|m| format!("{}.has_value()", m.name))
                 .collect();
             return format!(
@@ -1433,19 +1455,27 @@ impl ArmPart<'_> {
              public:\n\
              \x20   {class}() = default;\n"
         );
+        // An arm that holds a byte string or a text copies it in, which may
+        // throw and is no constant expression in C++17, as for the value.
+        let (constexpr, noexcept) = if self.members.iter().any(|m| m.bytes) {
+            ("", "")
+        } else {
+            ("constexpr ", " noexcept")
+        };
         if !self.members.is_empty() {
             out.push_str(&format!(
                 "    /// The value of each field, in declaration order.\n\
-                 \x20   constexpr {class}({}) noexcept\n\
+                 \x20   {constexpr}{class}({}){noexcept}\n\
                  \x20       : {} {{}}\n",
                 params.join(", "),
                 inits.join(", ")
             ));
         }
         for m in &self.members {
+            let constexpr = if m.bytes { "" } else { "constexpr " };
             out.push_str(&format!(
                 "    /// The `{name}` field.\n\
-                 \x20   [[nodiscard]] constexpr {view} {name}() const noexcept {{ return {held}; }}\n",
+                 \x20   [[nodiscard]] {constexpr}{view} {name}() const noexcept {{ return {held}; }}\n",
                 name = m.name,
                 view = m.view,
                 held = member(&m.name)
@@ -1462,21 +1492,22 @@ impl ArmPart<'_> {
     }
 
     /// The trait that says whether a type presents each of its members, each
-    /// convertible to its type.
+    /// convertible to its type. The encode keeps the view of a byte string or
+    /// a text it reads off the arm past the read, so that read must present
+    /// what lives on: a reference, or a view (`::SCE::Forge::Detail::Lasting`).
     fn members_traits(&self) -> String {
-        let reads: Vec<String> = self
-            .members
-            .iter()
-            .map(|m| format!("decltype(source::{}(std::declval<const G&>()))", m.name))
-            .collect();
+        let read =
+            |m: &Presented<'_>| format!("decltype(source::{}(std::declval<const G&>()))", m.name);
+        let reads: Vec<String> = self.members.iter().map(read).collect();
         let converts: Vec<String> = self
             .members
             .iter()
-            .map(|m| {
-                format!(
-                    "std::is_convertible<decltype(source::{}(std::declval<const G&>())), {}>",
-                    m.name, m.view
-                )
+            .flat_map(|m| {
+                let converts = format!("std::is_convertible<{}, {}>", read(m), m.view);
+                let lasting = m
+                    .bytes
+                    .then(|| format!("::SCE::Forge::Detail::Lasting<{}>", read(m)));
+                std::iter::once(converts).chain(lasting)
             })
             .collect();
         let (class, trait_name) = (&self.class, &self.members_trait);
@@ -1508,6 +1539,13 @@ enum Part {
 }
 
 impl<'p> Presented<'p> {
+    /// Whether the decode reads it into a `std::optional` local: a field of its
+    /// own gate. A member of a group the decode reads whatever the gate holds,
+    /// such as a length the side without its bytes states, is read as it is.
+    fn read_optionally(&self) -> bool {
+        self.field.present_if.is_some()
+    }
+
     /// What it is presented as: its accessor's type, its constructor's
     /// parameter, and what a source's read of it converts to.
     fn presented(&self) -> String {
@@ -2222,12 +2260,22 @@ pub(super) fn render(
                     }
                 };
                 match (element_id, &number.into) {
-                    (ElementId::Field(_), NumberInto::Field { field, .. }) => {
+                    (ElementId::Field(_), NumberInto::Field { field, absent, .. }) => {
                         let ty = l.type_name(&field.sce_type);
+                        // Where the content is not, zero, or what the group
+                        // that holds the field holds on that side, bound from
+                        // the arm the value holds (zero where it holds none, as
+                        // the Rust encode reads it).
+                        let otherwise = match absent {
+                            Absent::Group => {
+                                format!("_e_{}.value_or({ty}{{0}})", l.codec_field_id(&field.id))
+                            }
+                            _ => format!("{ty}{{0}}"),
+                        };
                         let value = match &present {
                             None => format!("static_cast<{ty}>({size})"),
                             Some(there) => {
-                                format!("{there} ? static_cast<{ty}>({size}) : {ty}{{0}}")
+                                format!("{there} ? static_cast<{ty}>({size}) : {otherwise}")
                             }
                         };
                         before.push_str(&format!(
@@ -2699,10 +2747,13 @@ pub(super) fn render(
     // so a value holding a body is made as one holding bytes is.
     // A variant's arm is a codec's value, which may hold bytes, so a value
     // holding one is made as one holding bytes is.
+    // A group that holds a byte string or a text is made as a value holding
+    // bytes is.
     let holds_bytes = variant.is_some()
         || elements
             .iter()
-            .any(|e| e.bytes || e.body.is_some() || e.list.is_some());
+            .any(|e| e.bytes || e.body.is_some() || e.list.is_some())
+        || groups.iter().any(GroupPart::holds_bytes);
     let mut members = String::new();
     members.push_str(&format!("    {struct_name}() = default;\n"));
     if !names.is_empty() {
@@ -2730,9 +2781,14 @@ pub(super) fn render(
                         format!("{}({})", member(&e.name), e.name)
                     }
                 }
+                // A group that holds bytes is moved in, as a body is.
                 Part::Group(index) => {
                     let g = &groups[*index];
-                    format!("{}({})", member(&g.name), g.name)
+                    if g.holds_bytes() {
+                        format!("{}(std::move({}))", member(&g.name), g.name)
+                    } else {
+                        format!("{}({})", member(&g.name), g.name)
+                    }
                 }
             })
             .collect();
@@ -2765,9 +2821,10 @@ pub(super) fn render(
                 } else {
                     "as the arm the value holds"
                 };
+                let constexpr = if g.holds_bytes() { "" } else { "constexpr " };
                 members.push_str(&format!(
                     "    /// The fields `{label}` decides, {which}.\n\
-                     \x20   [[nodiscard]] constexpr const {holds}& {name}() const noexcept {{ return {held}; }}\n",
+                     \x20   [[nodiscard]] {constexpr}const {holds}& {name}() const noexcept {{ return {held}; }}\n",
                     label = g.label(),
                     holds = g.holds(),
                     name = g.name,
@@ -2960,9 +3017,17 @@ pub(super) fn render(
             ));
         }
     }
-    for e in elements.iter().filter(|e| e.bytes) {
+    // A byte string or a text a group holds is held to its bound likewise,
+    // where its gate leaves it in, before the group is made of it.
+    let bytes = elements.iter().map(|e| (e, e.optional)).chain(
+        groups
+            .iter()
+            .flat_map(|g| g.members.iter())
+            .map(|m| (m, m.read_optionally())),
+    );
+    for (e, optional) in bytes.filter(|(e, _)| e.bytes) {
         let (name, view) = (&e.name, &e.view);
-        if e.optional {
+        if optional {
             decoded.push_str(&format!(
                 "        std::optional<{view}> _b_{name};\n\
                  \x20       if ({name}) {{\n\
@@ -2999,10 +3064,12 @@ pub(super) fn render(
             Part::Element(index) => &elements[*index],
             Part::Group(index) => {
                 let g = &groups[*index];
-                decoded.push_str(&format!(
-                    "            /*{name}=*/_g_{name},\n",
-                    name = g.name
-                ));
+                let value = if g.holds_bytes() {
+                    format!("std::move(_g_{})", g.name)
+                } else {
+                    format!("_g_{}", g.name)
+                };
+                decoded.push_str(&format!("            /*{name}=*/{value},\n", name = g.name));
                 continue;
             }
         };

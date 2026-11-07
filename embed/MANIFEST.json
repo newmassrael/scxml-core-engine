@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.1 (1ubuntu1~24.04.2)",
-  "embed_version": "2a87959",
+  "embed_version": "d5fb6d2",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 548,
+  "symbol_count": 550,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -3095,6 +3095,18 @@
       "kind": "struct",
       "members": [],
       "name": "SCE::Forge::Detail::IsText<T>"
+    },
+    {
+      "header": "sce/forge/bounded.h",
+      "kind": "struct",
+      "members": [],
+      "name": "SCE::Forge::Detail::IsView<T>"
+    },
+    {
+      "header": "sce/forge/bounded.h",
+      "kind": "struct",
+      "members": [],
+      "name": "SCE::Forge::Detail::Lasting<T>"
     },
     {
       "header": "sce/forge/bounded.h",

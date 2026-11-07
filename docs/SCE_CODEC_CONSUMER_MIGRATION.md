@@ -1365,6 +1365,20 @@ fields are typed by an imported enum (2 more codecs of the resources, 120 in all
   cursor recorded nothing, so the refusal read as running out of bytes; a stream reader that waited for more bytes
   on such a frame now drops it.
 
+## A printed C++ codec holds a byte string on one side of a gate as the arm that holds it (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C++ tree is regenerated after it. It moves the codecs whose
+gated byte string is counted by a length always on the wire (2 more codecs of the resources, 122 in all:
+`codec_present_if_length_ref` and `codec_ext_encoding_info`).
+
+- The bytes and their length are `value.<gate>()`, a `std::variant` of the side that holds the bytes
+  (`...FlagsHasPayloadHasPayload{payload}`) and the side that states the length alone
+  (`...FlagsHasPayloadNotHasPayload{payload_size}`), where each was a public member. The flag and, on the side
+  with bytes, the length are derived; a caller that set them by hand drops that code.
+- A consumer type that presents such a group to `Wire::encode_source` presents the bytes of an arm as a reference
+  or a view (`Bytes<N>`, a `const Bounded<...>&`), not as a list that owns them returned by value, which the
+  source trait refuses (`::SCE::Forge::Detail::Lasting`).
+
 ## A payload schema states its keys in the order the document declares them (ADR 0087 §1.1)
 
 Landing: the commit that adds this section; every tree holding a `JSON_SCHEMA` constant or a GBNF table (the Rust,

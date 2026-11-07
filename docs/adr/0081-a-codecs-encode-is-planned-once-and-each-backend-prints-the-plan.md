@@ -518,6 +518,15 @@ old encode, the old encode and its templates are removed in the same landing.
    does not declare is now recorded on the cursor as `CodecError::UndeclaredEnumValue`, on the fixed and the
    streaming path alike, where before it was read as running out of bytes; the C and Rust runtimes already named
    it. The printed set is 120 codecs.
+
+   *The eighteenth C++ landing, 2026-11-07:* a byte string or a text on one side of a gate, and the length that
+   counts it (docs/adr/0065 §6 R4b). An arm that holds bytes holds its own copy and presents a view, so it is
+   made as a value holding bytes is, neither `constexpr` nor `noexcept`, and moved where it is handed on. The
+   length is derived from the bytes on the side that holds them, and is what the other side states where they are
+   not, zero where the value holds neither (`Absent::Group`, as the Rust encode reads it). The encode keeps the
+   view of what it reads off the arm until it writes it, so a source must present such a member as something that
+   lives on past the read, a reference or a view, which the runtime's `Detail::Lasting` asks of the read: the
+   lifetime the Rust source states by its borrow. The printed set is 122 codecs.
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences

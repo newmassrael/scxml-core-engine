@@ -266,6 +266,27 @@ struct IsBoundedWithin<Bounded<L, Max2, Min2>, Max, Min> : WithinBounds<Max, Min
 /// The type of the elements a list `T` holds, as iteration reads them.
 template <typename T> using ElementOf = std::decay_t<decltype(*std::declval<const T &>().begin())>;
 
+/// Whether a value of type `V` is a view of elements that belong to something
+/// else: a `Bounded` over a list that owns nothing, a `Span`, a string view.
+template <typename V> struct IsView : std::false_type {};
+
+template <typename L, std::size_t Max, std::size_t Min>
+struct IsView<Bounded<L, Max, Min>> : std::negation<MakesCopies<L>> {};
+
+template <typename T> struct IsView<Span<T>> : std::true_type {};
+
+template <typename C, typename T> struct IsView<std::basic_string_view<C, T>> : std::true_type {};
+
+/// Whether what a read returning `R` presents lives on after the read: a
+/// reference to an object, or a view returned by value. A list that owns its
+/// elements, returned by value, dies at the end of the expression that read
+/// it, and so does a view made of it; an encode that keeps a view of a read
+/// past that expression asks this of the read.
+template <typename R>
+struct Lasting : std::disjunction<std::is_lvalue_reference<R>,
+                                  std::conjunction<std::negation<std::is_reference<R>>, IsView<std::remove_cv_t<R>>>> {
+};
+
 }  // namespace Detail
 
 // A `Bounded` compares with what it holds, as a `std::vector` compares with
