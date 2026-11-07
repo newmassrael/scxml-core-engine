@@ -44,6 +44,19 @@
                 evt, EventMetadata(data=message, event_type="platform")
             )
 
+    def _declare_data(self, engine, var_id: str, value) -> None:
+        """W3C SCXML 5.3 — bind `<data id=var_id>` to `value`. The id is
+        the document's, so the engine can refuse it: an id naming a
+        system variable is a write no script may make (§scxml-5.10), and
+        the refusal is `error.execution`, as every other failed `<data>`
+        is, rather than an exception out of datamodel initialisation."""
+        try:
+            engine._script_engine.declare_variable(self._session_id, var_id, value)
+        except _ScriptError:
+            self._raise_error_execution(
+                engine, f"<data id='{var_id}'> could not be stored"
+            )
+
     def _exec(self, engine, lua_script: str) -> None:
         """W3C SCXML 5.5 — execute a `<script>` body. The text was
         rewritten from ECMAScript to Lua at codegen time
@@ -209,9 +222,7 @@
             except _ScriptError:
                 pass
         # W3C SCXML B.2 — final fallback to whitespace-normalised string.
-        engine._script_engine.declare_variable(
-            self._session_id, var_id, _ScriptValue.of(fallback)
-        )
+        self._declare_data(engine, var_id, _ScriptValue.of(fallback))
 
     def _log(self, engine, label: str, lua_expr: str) -> None:
         """W3C SCXML 4.7 `<log>` — evaluate `lua_expr` against the
@@ -859,9 +870,7 @@
             self._raise_error_execution(
                 engine, "<data id='{{ var.id }}'> expr failed to evaluate"
             )
-        engine._script_engine.declare_variable(
-            self._session_id, {{ var.id | py_string_literal }}, _init_val
-        )
+        self._declare_data(engine, {{ var.id | py_string_literal }}, _init_val)
 {% endif %}
 {% elif var.src %}
 {# W3C SCXML 5.3.1: `<data src="file:...">` content is inlined at
@@ -885,11 +894,7 @@
             {{ var.content | normalize_ws | py_string_literal }},
         )
 {% else %}
-        engine._script_engine.declare_variable(
-            self._session_id,
-            {{ var.id | py_string_literal }},
-            _ScriptValue.undefined(),
-        )
+        self._declare_data(engine, {{ var.id | py_string_literal }}, _ScriptValue.undefined())
 {% endif %}
 {% endfor %}
 {% if model.binding != 'late' %}
@@ -905,9 +910,7 @@
             self._raise_error_execution(
                 engine, "<data id='{{ var.id }}'> expr failed to evaluate"
             )
-        engine._script_engine.declare_variable(
-            self._session_id, {{ var.id | py_string_literal }}, _init_val
-        )
+        self._declare_data(engine, {{ var.id | py_string_literal }}, _init_val)
 {% elif var.src %}
 {% set _src_content_local = var.src | read_data_src(model.scxml_base_path) %}
         self._init_data_with_content(
@@ -924,11 +927,7 @@
             {{ var.content | normalize_ws | py_string_literal }},
         )
 {% else %}
-        engine._script_engine.declare_variable(
-            self._session_id,
-            {{ var.id | py_string_literal }},
-            _ScriptValue.undefined(),
-        )
+        self._declare_data(engine, {{ var.id | py_string_literal }}, _ScriptValue.undefined())
 {% endif %}
 {% endfor %}
 {% endfor %}
@@ -963,7 +962,15 @@
         # Rust child policy's `set_param_in_script_engine` ordering.
         if self._pre_init_vars:
             for _name, _val in self._pre_init_vars.items():
-                engine._script_engine.set_variable(self._session_id, _name, _val)
+                # The parent names the variable; a name the child's
+                # engine refuses (a system variable, §scxml-5.10) is
+                # `error.execution` in the child, not an exception.
+                try:
+                    engine._script_engine.set_variable(self._session_id, _name, _val)
+                except _ScriptError:
+                    self._raise_error_execution(
+                        engine, f"invoke <param name='{_name}'> could not be stored"
+                    )
 
     def init_state_datamodel(self, state, engine) -> None:
 {# W3C SCXML 5.3.3: under `binding="late"` a state's `<data>` is given its
@@ -988,9 +995,7 @@
                 self._raise_error_execution(
                     engine, "<data id='{{ var.id }}'> expr failed to evaluate"
                 )
-            engine._script_engine.declare_variable(
-                self._session_id, {{ var.id | py_string_literal }}, _init_val
-            )
+            self._declare_data(engine, {{ var.id | py_string_literal }}, _init_val)
 {% elif var.src %}
 {% set _src_content_st = var.src | read_data_src(model.scxml_base_path) %}
             self._init_data_with_content(
@@ -1007,11 +1012,7 @@
                 {{ var.content | normalize_ws | py_string_literal }},
             )
 {% else %}
-            engine._script_engine.declare_variable(
-                self._session_id,
-                {{ var.id | py_string_literal }},
-                _ScriptValue.undefined(),
-            )
+            self._declare_data(engine, {{ var.id | py_string_literal }}, _ScriptValue.undefined())
 {% endif %}
 {% endfor %}
             return

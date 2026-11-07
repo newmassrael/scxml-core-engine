@@ -2148,8 +2148,11 @@ GATES: dict[str, dict] = {
                    "inputs are the C backend, the C templates, the "
                    "generator, and the inbox probe it shares with the C++ "
                    "engine's inbox test (docs/adr/0084).",
+        # The shared Lua the machines embed, and the shared tables every Lua
+        # engine's readers ask (`system_variable_writes.json` among them).
         "extra": ["backends/c/**", "tools/codegen/templates/**",
                   "sce-build/src/**", "tests/integration/inbox_probe.scxml",
+                  "sce/include/scripting/*.lua", "tests/ecmascript/**",
                   # The registry the route registers every fixture from, the
                   # documents it generates, and the modules it registers and
                   # plans them through.
@@ -2180,8 +2183,10 @@ GATES: dict[str, dict] = {
         "runner_workflow": True,
         "narrows": "same catch-all as `w3c-cpp`, same reason. This arm reads "
                    "the Go backend, the Go templates and the generator.",
+        # The shared Lua is copied under backends/go; the shared tables its
+        # readers ask are not.
         "extra": ["backends/go/**", "tools/codegen/templates/**",
-                  "sce-build/src/**"],
+                  "sce-build/src/**", "tests/ecmascript/**"],
         "deps": ["codegen-build"],
         # 10s, timed on a warm tree on 2026-09-02 and no longer a normalised
         # figure. Six `--measure` runs read 9 10 9 10 10 10 — none of them
@@ -2215,7 +2220,10 @@ GATES: dict[str, dict] = {
                    "build fixtures its hand-written tests compile in.",
         "extra": ["backends/rust/**", "tools/codegen/templates/**",
                   "sce-build/src/**", "resources/**", "tests/w3c/**",
-                  "sce-build/tests/fixtures/**"],
+                  "sce-build/tests/fixtures/**",
+                  # The shared Lua the Lua crate loads, and the shared tables
+                  # its readers ask.
+                  "sce/include/scripting/*.lua", "tests/ecmascript/**"],
         "deps": ["codegen-build"],
         "ci_only": "unmeasured, and the lane it mirrors says why it cannot "
                    "be a push gate: `test-rust` carries a 65-minute timeout, "
@@ -2243,6 +2251,9 @@ GATES: dict[str, dict] = {
         # one of them (`script-read-coverage`).
         "extra": ["backends/kotlin/**", "tools/codegen/templates/**",
                   "sce-build/src/**",
+                  # The shared Lua the Lua engine copies in at build time, and
+                  # the shared tables its readers ask.
+                  "sce/include/scripting/*.lua", "tests/ecmascript/**",
                   "tests/ecmascript/kotlin_frontend_refusals.json",
                   "tests/w3c/conformance/fixtures.json",
                   "resources/150/test150.scxml"],
@@ -2276,8 +2287,11 @@ GATES: dict[str, dict] = {
         "narrows": "same catch-all as `w3c-cpp`, same reason. This arm reads "
                    "the Python backend, the Python templates and the "
                    "generator.",
+        # The shared Lua the engine loads, and the shared tables its readers
+        # ask.
         "extra": ["backends/python/**", "tools/codegen/templates/**",
-                  "sce-build/src/**"],
+                  "sce-build/src/**",
+                  "sce/include/scripting/*.lua", "tests/ecmascript/**"],
         "deps": ["codegen-build"],
         "ci_only": "72s. w3c-tests.yml is unfiltered, so CI runs this arm on "
                    "every push.",
