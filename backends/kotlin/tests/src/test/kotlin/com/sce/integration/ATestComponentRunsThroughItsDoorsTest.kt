@@ -5,11 +5,13 @@
 // slice 6), run end to end by the profile's runtime, `TestCaseRun`. The
 // machines are the statecharts sce-codegen writes from the fixtures under
 // `sce-build/tests/fixtures/test_profile/runtime/` into
-// `src/main/kotlin/com/sce/integration/<component>/`, and the records and
-// templates they name into `src/main/kotlin/com/sce/generated/` (regen:
+// `src/main/kotlin/com/sce/generated/<component>/`, the package a
+// configuration's unit names them by, and the records and templates they name
+// into `src/main/kotlin/com/sce/generated/` too (regen:
 // `scripts/regen_static_datamodel_kotlin.sh`), driven only through the doors of
 // §12.3; the configuration, the factory of machines and the system adapter are
-// written here.
+// written here, so that each component is held apart from the generated tables,
+// which `ATestSuiteRunsThroughItsRunnerTest.kt` runs.
 //
 // Each case is the twin of the Rust case of the same name in
 // backends/rust/tests/tests/a_test_component_runs_through_its_doors.rs
@@ -20,13 +22,13 @@
 
 package com.sce.integration
 
+import com.sce.generated.answerer.AnswererComponent
+import com.sce.generated.asker.AskerComponent
+import com.sce.generated.coordinator.CoordinatorComponent
+import com.sce.generated.idler.IdlerComponent
 import com.sce.generated.job_reply.JobReplyPayload
 import com.sce.generated.job_request.JobRequestPayload
-import com.sce.integration.answerer.AnswererComponent
-import com.sce.integration.asker.AskerComponent
-import com.sce.integration.coordinator.CoordinatorComponent
-import com.sce.integration.idler.IdlerComponent
-import com.sce.integration.keeper.KeeperComponent
+import com.sce.generated.keeper.KeeperComponent
 import com.sce.runtime.test.ComponentMachine
 import com.sce.runtime.test.Configuration
 import com.sce.runtime.test.Duration
