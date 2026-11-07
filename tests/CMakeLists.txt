@@ -253,6 +253,9 @@ add_executable(sce_scxml_tests
     # docs/SCE_TEST_PROFILE.md §12.2: the test profile's runtime, with
     # components written by hand, apart from any generated machine.
     test_runtime/TestCaseRunTest.cpp
+    # The length a template's length restriction holds a text to, in
+    # characters (docs/SCE_TEST_PROFILE.md §11.4).
+    test_runtime/TextLengthTest.cpp
     concurrency/TypeRegistryThreadSafetyTest.cpp
     common/EventDataHelperTest.cpp
     common/TestSummaryExitStatusTest.cpp
