@@ -187,6 +187,13 @@ on:
       # narrow row keeps.
       - 'backends/cpp/forge-runtime/include/sce/forge/broadcast_log.h'
       - 'backends/cpp/forge-runtime/include/sce/forge/broadcast_log_narrow.h'
+      # The ledgers' configurations and stores, which
+      # `every_ledger_binding_names_what_its_file_holds` reads: an edit of a
+      # binding alone starts the suite that holds it to its file.
+      - 'docs/spec/*/mnemosyne.toml'
+      - 'docs/spec/*/.atomic/workspace.atomic.json'
+      - 'docs/sce-ledger/*/mnemosyne.toml'
+      - 'docs/sce-ledger/*/.atomic/workspace.atomic.json'
   pull_request:
     branches: [ main ]
     paths:
@@ -320,6 +327,13 @@ on:
       # narrow row keeps.
       - 'backends/cpp/forge-runtime/include/sce/forge/broadcast_log.h'
       - 'backends/cpp/forge-runtime/include/sce/forge/broadcast_log_narrow.h'
+      # The ledgers' configurations and stores, which
+      # `every_ledger_binding_names_what_its_file_holds` reads: an edit of a
+      # binding alone starts the suite that holds it to its file.
+      - 'docs/spec/*/mnemosyne.toml'
+      - 'docs/spec/*/.atomic/workspace.atomic.json'
+      - 'docs/sce-ledger/*/mnemosyne.toml'
+      - 'docs/sce-ledger/*/.atomic/workspace.atomic.json'
 
 # This lane is not superseded by the push that follows it.
 #

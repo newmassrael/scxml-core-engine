@@ -1050,6 +1050,16 @@ GATES: dict[str, dict] = {
             # The Kotlin binding of the peer core's C ABI, which the peer
             # core's Kotlin replay and the world's Kotlin device are built on.
             "backends/kotlin/peer/**",
+            # The ledgers' configurations and stores, which
+            # `every_ledger_binding_names_what_its_file_holds` reads: an edit
+            # of a binding alone has to start the suite that holds it to its
+            # file. The bound files themselves span the source trees, and an
+            # edit of one that renames a bound symbol is read on the next run
+            # of this lane, not on its own push.
+            "docs/spec/*/mnemosyne.toml",
+            "docs/spec/*/.atomic/workspace.atomic.json",
+            "docs/sce-ledger/*/mnemosyne.toml",
+            "docs/sce-ledger/*/.atomic/workspace.atomic.json",
         ],
         # The crate whose test suite this gate runs. `include-str-coverage`
         # in the self-test reads it: every file the sources under this root
