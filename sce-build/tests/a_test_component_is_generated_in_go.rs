@@ -453,7 +453,12 @@ fn a_template_argument_is_handed_over_as_the_machine_holds_it() {
 fn a_component_that_uses_a_template_needs_the_module_path() {
     let (ok, diagnostics, _) = generate_with(&runtime_dir().join("asker.scxml"), false);
     assert!(!ok, "the asker generated with no module path");
-    assert!(diagnostics.contains("go_module_prefix"), "{diagnostics}");
+    // The refusal by name (`forge::generator::go_import_root`), and not the
+    // invariant an import line written with no path would break.
+    assert!(
+        diagnostics.contains("requires ForgeCompileOptions.go_module_prefix"),
+        "{diagnostics}"
+    );
     let (ok, diagnostics, _) = generate_with(&runtime_dir().join("keeper.scxml"), false);
     assert!(ok, "the keeper names no template:\n{diagnostics}");
 }
