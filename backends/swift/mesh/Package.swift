@@ -16,7 +16,10 @@ let package = Package(
     name: "SceMesh",
     platforms: [.macOS(.v15), .iOS(.v18)],
     products: [
-        .library(name: "SceMesh", targets: ["SceMesh"])
+        .library(name: "SceMesh", targets: ["SceMesh"]),
+        // A Zenoh router in memory, and the clients' side of what the Zenoh binding (§mesh-20) needs of one:
+        // what a real client's tests run against, apart from the core so no host links it in.
+        .library(name: "SceMeshZenohKit", targets: ["SceMeshZenohKit"]),
     ],
     dependencies: [
         .package(path: "../runtime"),
@@ -30,10 +33,15 @@ let package = Package(
                 .product(name: "SceForgeRuntime", package: "forge-runtime"),
             ]
         ),
+        .target(
+            name: "SceMeshZenohKit",
+            dependencies: ["SceMesh"]
+        ),
         .testTarget(
             name: "SceMeshTests",
             dependencies: [
                 "SceMesh",
+                "SceMeshZenohKit",
                 .product(name: "SceRuntime", package: "runtime"),
                 .product(name: "SceForgeRuntime", package: "forge-runtime"),
             ]
