@@ -912,7 +912,12 @@ pub struct {{ machine_name }}Policy{{ policy_generics_decl }} {
    writing these fields (`crate::forge::static_lowering`), and only the
    machine's own statements write them. #}
 {% for field in static_fields %}
+{% if field.module_parameter %}
+    /// docs/SCE_TEST_PROFILE.md §11.5: the module parameter `{{ field.id }}`, which
+    /// takes the suite's value before the machine starts.
+{% else %}
     /// W3C SCXML 5.2: the `{{ field.id }}` datamodel variable{% if field.published %}, published (`sce:direction="out"`){% endif %}.
+{% endif %}
     {{ field.name }}: {{ field.ty }},
 {% endfor %}
 {% if no_std %}
@@ -1091,7 +1096,15 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
    declaration order — an initial value reads the variables declared before
    it by these names. #}
 {% for field in static_fields %}
+{% if field.module_parameter %}
+        {# docs/SCE_TEST_PROFILE.md §11.5: a module parameter has no initial value
+           of the document's; the component fills it from the run's module
+           parameters before the machine starts, so it starts at its type's
+           default, which nothing reads. #}
+        let {{ field.name }}: {{ field.ty }} = Default::default();
+{% else %}
         let {{ field.name }}: {{ field.ty }} = {{ field.init }};
+{% endif %}
 {% endfor %}
         Self {
 {% if has_native_actions %}
@@ -1352,6 +1365,28 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
             .as_ref()
             .expect("a test component's context is bound before its machine starts")
     }
+{% if model.test_component.module_parameters %}
+
+    /// docs/SCE_TEST_PROFILE.md §11.5, §11.8: each module parameter takes the
+    /// value the suite gives it, read as a saved value of its declared type is
+    /// read back, before the machine starts. A value not given, not of the
+    /// type or past its bound is refused by name, and nothing is converted.
+    fn accept_module_parameters(
+        &mut self,
+        given: &::sce_rust_runtime::test::ModuleParameters,
+    ) -> Result<(), ::sce_rust_runtime::saved_state::StateRefusal> {
+{% for field in static_fields %}
+{% if field.module_parameter %}
+{% if field.bound is not none and field.saved_type == "bytes" %}
+        self.{{ field.name }} = ::sce_rust_runtime::saved_state::bounded_bytes(given.of("{{ field.id | escape_rust }}")?, "{{ field.id | escape_rust }}")?;
+{% else %}
+        self.{{ field.name }} = ::sce_rust_runtime::saved_state::SavedValue::from_saved(given.of("{{ field.id | escape_rust }}")?, "{{ field.id | escape_rust }}")?;
+{% endif %}
+{% endif %}
+{% endfor %}
+        Ok(())
+    }
+{% endif %}
 {% endif %}
 {% if ns_seed.any %}
 
@@ -2202,6 +2237,15 @@ impl ::sce_rust_runtime::test::ComponentMachine for {{ machine_name }}Component 
         let mut policy = {{ machine_name }}Policy::new_with_session_id(context.name())
             .expect("a test component's name is an XML Name, which names a session");
         policy.test_context = Some(context.clone());
+{% if model.test_component.module_parameters %}
+        // §11.5, §11.8: the module parameters take the suite's values before the
+        // machine starts. Without one, or with one not of its type, the run ends
+        // in error (P13), and the machine is not started on a value made up in
+        // its place.
+        if !context.read_module_parameters(|given| policy.accept_module_parameters(given)) {
+            return;
+        }
+{% endif %}
         let mut machine = Engine::new(policy);
         // P6: a send on a port is appended to the queue of the port it is
         // connected to, or handed to the system adapter where it is mapped. A

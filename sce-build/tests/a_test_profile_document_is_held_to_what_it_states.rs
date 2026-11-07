@@ -1212,14 +1212,13 @@ fn not_generated(kind: &str, language: Language, err: Located<ForgeError>) {
 /// docs/SCE_TEST_PROFILE.md §11.9: a backend refuses a document of the
 /// profile by name until its runtime lands there for the document's kind, the
 /// declaration kinds at the forge dispatch and the test component where a
-/// machine is written. C++ generates every kind: a template
-/// (`a_test_template_is_generated_in_cpp.rs`), a component
-/// (`a_test_component_is_generated_in_cpp.rs`) and the tables of a test
-/// (`a_test_suite_is_generated_in_cpp.rs`); Rust generates a template
-/// (`a_test_template_is_generated_in_rust.rs`) and a component
-/// (`a_test_component_is_generated_in_rust.rs`); each example generates where
-/// its kind is generated, but for the component's on Rust, whose module
-/// parameter waits for Rust's suite tables.
+/// machine is written. C++ and Rust generate every kind: a template
+/// (`a_test_template_is_generated_in_cpp.rs`,
+/// `a_test_template_is_generated_in_rust.rs`), a component
+/// (`a_test_component_is_generated_in_cpp.rs`,
+/// `a_test_component_is_generated_in_rust.rs`) and the tables of a test
+/// (`a_test_suite_is_generated_in_cpp.rs`, `a_test_suite_is_generated_in_rust.rs`);
+/// each example generates where its kind is generated.
 #[test]
 fn a_document_of_the_profile_is_refused_by_name_where_its_kind_is_not_generated() {
     for &kind in ForgeKind::TEST_PROFILE {
@@ -1256,13 +1255,13 @@ fn a_document_of_the_profile_is_refused_by_name_where_its_kind_is_not_generated(
             "test-suite",
         ] {
             let parsed = ForgeKind::from_attr(kind).expect("a kind");
-            // C++ generates every kind of the profile
+            // C++ and Rust generate every kind of the profile
             // (`a_test_template_is_generated_in_cpp.rs`,
-            // `a_test_suite_is_generated_in_cpp.rs`), and Rust a template
-            // (`a_test_template_is_generated_in_rust.rs`); a port type writes no
+            // `a_test_suite_is_generated_in_cpp.rs`,
+            // `a_test_template_is_generated_in_rust.rs`,
+            // `a_test_suite_is_generated_in_rust.rs`); a port type writes no
             // file.
-            let generated_here = language == Language::Cpp
-                || (language == Language::Rust && parsed == ForgeKind::TestTemplate);
+            let generated_here = matches!(language, Language::Rust | Language::Cpp);
             if generated_here {
                 assert_eq!(codegen_matrix::lookup(parsed, language), EmitOutcome::Emit);
                 let output =
@@ -1299,39 +1298,18 @@ fn a_document_of_the_profile_is_refused_by_name_where_its_kind_is_not_generated(
             &template_dir,
             language,
         );
-        // C++ generates a test component (`a_test_component_is_generated_in_cpp.rs`),
-        // the example's module parameter read from the suite's value
-        // (docs/SCE_TEST_PROFILE.md §12.6, slice 5).
-        if language == Language::Cpp {
+        // C++ and Rust generate a test component
+        // (`a_test_component_is_generated_in_cpp.rs`,
+        // `a_test_component_is_generated_in_rust.rs`), the example's module
+        // parameter read from the suite's value (docs/SCE_TEST_PROFILE.md
+        // §12.6, slices 5 and 6).
+        if matches!(language, Language::Rust | Language::Cpp) {
             assert_eq!(
                 codegen_matrix::lookup(ForgeKind::TestComponent, language),
                 EmitOutcome::Emit
             );
             if let Err(err) = generated {
-                panic!("the example component does not generate on C++: {err:?}");
-            }
-            continue;
-        }
-        // Rust generates a test component (`a_test_component_is_generated_in_rust.rs`)
-        // and not yet the suite's tables, so it refuses the example, which
-        // declares a module parameter, by that parameter (§12.6, slice 6).
-        if language == Language::Rust {
-            assert_eq!(
-                codegen_matrix::lookup(ForgeKind::TestComponent, language),
-                EmitOutcome::Emit
-            );
-            let Err(err) = generated else {
-                panic!("the example's module parameter has no value on Rust");
-            };
-            match err.error {
-                ForgeError::Generate(boxed) => match *boxed {
-                    GenerateError::UnsupportedFeature { detail, .. } => assert!(
-                        detail.contains("the module parameter 'limit' takes the value the suite"),
-                        "{detail}"
-                    ),
-                    other => panic!("test-component on Rust: {other:?}"),
-                },
-                other => panic!("test-component on Rust: {other:?}"),
+                panic!("the example component does not generate on {language:?}: {err:?}");
             }
             continue;
         }

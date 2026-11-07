@@ -364,12 +364,13 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
         // landed is [`TEST_COMPONENT_BACKENDS`], the one list both this answer
         // and [`awaits_runtime`] read.
         ForgeKind::TestComponent => lists(TEST_COMPONENT_BACKENDS, lang),
-        // docs/SCE_TEST_PROFILE.md §12.6, slice 5: the tables of a
+        // docs/SCE_TEST_PROFILE.md §12.6, slices 5 and 6: the tables of a
         // configuration, a test case and a suite, which the profile's runner
-        // reads, land one backend at a time, C++ first; a port type, read by the
-        // units of the components and configurations that name it, lands with
-        // them. Which have landed is [`TEST_SUITE_BACKENDS`], the one list both
-        // this answer and [`awaits_runtime`] read.
+        // reads, land one backend at a time, C++ first and Rust next; a port
+        // type, read by the units of the components and configurations that
+        // name it, lands with them. Which have landed is
+        // [`TEST_SUITE_BACKENDS`], the one list both this answer and
+        // [`awaits_runtime`] read.
         ForgeKind::TestPortType
         | ForgeKind::TestConfiguration
         | ForgeKind::TestCase
@@ -422,7 +423,7 @@ pub const TEST_TEMPLATE_BACKENDS: &[Language] = &[Language::Rust, Language::Cpp]
 /// ([`TEST_SUITE_BACKENDS`]) refuses a component that declares a module
 /// parameter by name, since the value is the suite's
 /// ([`crate::test_component::snapshot::lower`]); it reads one in the change
-/// that joins it to that list.
+/// that joins it to that list, as C++ and Rust do.
 pub const TEST_COMPONENT_BACKENDS: &[Language] = &[Language::Rust, Language::Cpp];
 
 /// The backends that run a test suite (docs/SCE_TEST_PROFILE.md §11.9,
@@ -440,7 +441,7 @@ pub const TEST_COMPONENT_BACKENDS: &[Language] = &[Language::Rust, Language::Cpp
 /// any suite runs. A backend not listed refuses each of the four by name
 /// (`generate/unsupported-feature`,
 /// [`crate::forge::test_profile::document_not_generated`]).
-pub const TEST_SUITE_BACKENDS: &[Language] = &[Language::Cpp];
+pub const TEST_SUITE_BACKENDS: &[Language] = &[Language::Rust, Language::Cpp];
 
 /// The backends whose broadcast-log template has landed (ADR 0062, "Order of
 /// landing"). A backend joins this list in the change that gives it the
@@ -1167,25 +1168,20 @@ mod tests {
         }
     }
 
-    /// docs/SCE_TEST_PROFILE.md §11.9, §12.6: C++ generates every kind of the
-    /// test profile, Rust a template and a component besides, and every other
-    /// pair of a backend and a kind of the profile awaits the profile's runtime
-    /// there, letting the document through the matrix to the dispatch that
-    /// refuses it by name.
+    /// docs/SCE_TEST_PROFILE.md §11.9, §12.6: Rust and C++ generate every kind
+    /// of the test profile, and every other pair of a backend and a kind of the
+    /// profile awaits the profile's runtime there, letting the document through
+    /// the matrix to the dispatch that refuses it by name.
     #[test]
-    fn cpp_emits_every_kind_of_the_profile_and_every_other_pair_awaits_it() {
+    fn rust_and_cpp_emit_every_kind_of_the_profile_and_every_other_pair_awaits_it() {
         assert_eq!(ForgeKind::TEST_PROFILE.len(), 6);
-        assert_eq!(TEST_TEMPLATE_BACKENDS, [Language::Rust, Language::Cpp]);
-        assert_eq!(TEST_COMPONENT_BACKENDS, [Language::Rust, Language::Cpp]);
+        let landed: &[Language] = &[Language::Rust, Language::Cpp];
+        assert_eq!(TEST_TEMPLATE_BACKENDS, landed);
+        assert_eq!(TEST_COMPONENT_BACKENDS, landed);
+        assert_eq!(TEST_SUITE_BACKENDS, landed);
         for &kind in ForgeKind::TEST_PROFILE {
             assert!(kind.is_test_profile(), "{kind:?}");
             assert_eq!(kind_class(kind), KindClass::Generic, "{kind:?}");
-            let landed: &[Language] =
-                if matches!(kind, ForgeKind::TestTemplate | ForgeKind::TestComponent) {
-                    &[Language::Rust, Language::Cpp]
-                } else {
-                    &[Language::Cpp]
-                };
             for &lang in Language::ALL {
                 let want = if landed.contains(&lang) {
                     EmitOutcome::Emit

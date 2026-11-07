@@ -504,21 +504,30 @@ mod tests {
         );
     }
 
-    /// §11.8, §12.6: a backend that generates a component and not the suite's
-    /// tables has no value for a module parameter, so it refuses a component
-    /// that declares one by name, and lowers one that declares none.
+    /// §11.8, §12.6: a backend that does not generate the suite's tables has no
+    /// value for a module parameter, so it refuses a component that declares
+    /// one by name, and lowers one that declares none; a backend that generates
+    /// them, Rust and C++ among them, lowers it.
     #[test]
     fn a_module_parameter_is_refused_where_the_suites_tables_are_not_generated() {
-        assert!(!crate::forge::codegen_matrix::TEST_SUITE_BACKENDS.contains(&Language::Rust));
-        assert!(lower(&component(), Language::Rust).is_ok());
+        let suites = crate::forge::codegen_matrix::TEST_SUITE_BACKENDS;
+        assert!(suites.contains(&Language::Rust) && suites.contains(&Language::Cpp));
         let mut model = component();
         if let Some(profile) = model.test_component.as_mut() {
             profile.module_parameters.push("limit".to_string());
         }
-        let refused = lower(&model, Language::Rust).expect_err("Rust generates no suite yet");
-        assert!(
-            format!("{refused:?}").contains("the module parameter 'limit' takes the value"),
-            "{refused:?}"
-        );
+        for &language in Language::ALL {
+            assert!(lower(&component(), language).is_ok(), "{language:?}");
+            let lowered = lower(&model, language);
+            if suites.contains(&language) {
+                assert!(lowered.is_ok(), "{language:?}: {lowered:?}");
+                continue;
+            }
+            let refused = lowered.expect_err("no suite of this backend gives the value");
+            assert!(
+                format!("{refused:?}").contains("the module parameter 'limit' takes the value"),
+                "{language:?}: {refused:?}"
+            );
+        }
     }
 }

@@ -852,9 +852,9 @@ pub const fn guide(kind: ForgeKind) -> KindGuide {
             notes: &[
                 "one <sce:message type direction> per message, type the alias of an imported \
                  event schema, each listed once",
-                "C++ writes no file for it: the units of the components and configurations \
-                 that read it hold what they need of it by name; every other backend refuses \
-                 it by name",
+                "C++ and Rust write no file for it: the units of the components and \
+                 configurations that read it hold what they need of it by name; every other \
+                 backend refuses it by name",
             ],
             example: Example::Document(include_str!("../../kind-examples/test-port-type.scxml")),
         },
@@ -894,9 +894,8 @@ pub const fn guide(kind: ForgeKind) -> KindGuide {
                  module parameter of the same id",
                 "C++ and Rust generate it: its statechart machine, each branch a transition on \
                  the round's snapshot, and beside it the component the profile's runtime \
-                 drives, which on C++ reads each module parameter from the run before the \
-                 machine starts; Rust refuses one that declares a module parameter, and every \
-                 other backend refuses it by name",
+                 drives, which reads each module parameter from the run before the machine \
+                 starts; every other backend refuses it by name",
             ],
             example: Example::Document(include_str!("../../kind-examples/test-component.scxml")),
         },
@@ -929,10 +928,10 @@ pub const fn guide(kind: ForgeKind) -> KindGuide {
                  created by the component's <invoke> of the same id",
                 "one <sce:system-port id type> per port of the test system interface; every \
                  port takes part in exactly one <sce:map> or <sce:connect>",
-                "C++ generates it: a header whose configuration() is the table the profile's \
-                 runtime reads, whose machine() makes each component's machine and whose \
-                 moduleParameters() lists what they read; every other backend refuses it by \
-                 name",
+                "C++ and Rust generate it: a unit whose configuration() is the table the \
+                 profile's runtime reads, whose machine() makes each component's machine and \
+                 whose moduleParameters() (Rust: module_parameters()) lists what they read; \
+                 every other backend refuses it by name",
             ],
             example: Example::Document(include_str!(
                 "../../kind-examples/test-configuration.scxml"
@@ -957,8 +956,8 @@ pub const fn guide(kind: ForgeKind) -> KindGuide {
             ],
             notes: &[
                 "the root's sce:configuration names an imported test configuration",
-                "C++ generates it: a header whose testCase() is the entry the suite's runner \
-                 reads; every other backend refuses it by name",
+                "C++ and Rust generate it: a unit whose testCase() (Rust: test_case()) is the \
+                 entry the suite's runner reads; every other backend refuses it by name",
             ],
             example: Example::Document(include_str!("../../kind-examples/test-case.scxml")),
         },
@@ -992,8 +991,9 @@ pub const fn guide(kind: ForgeKind) -> KindGuide {
                  imported feature model",
                 "one <sce:module-parameter id type value> per module parameter: a scalar, \
                  string[N] or bytes[N] type and a literal default",
-                "C++ generates it: a header whose suite() the runner SCE::Test::runSuite runs \
-                 in a world of the features; every other backend refuses it by name",
+                "C++ and Rust generate it: a unit whose suite() the runner \
+                 (SCE::Test::runSuite, sce_rust_runtime::test::run_suite) runs in a world of \
+                 the features; every other backend refuses it by name",
             ],
             example: Example::Document(include_str!("../../kind-examples/test-suite.scxml")),
         },

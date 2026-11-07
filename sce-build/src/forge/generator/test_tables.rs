@@ -292,16 +292,35 @@ pub(super) fn execute_rows<'i>(
 /// A selection (ADR 0057's grammar) as the expression that holds in the
 /// worlds it selects, in a language whose conjunction is `&&` and whose
 /// disjunction is `||`: `enabled` spells the test that a world enables the
-/// feature it is given, `all` is a conjunction and `any` a disjunction.
+/// feature it is given, `all` is a conjunction and `any` a disjunction, each
+/// join of two or more parts in parentheses.
 pub(super) fn selection_expr(expr: &PresenceExpr, enabled: &dyn Fn(&str) -> String) -> String {
+    spelled(expr, enabled, true)
+}
+
+/// [`selection_expr`] with the outermost join left bare: what a language that
+/// refuses parentheses around a whole closure body (Rust's `unused_parens`)
+/// writes as one. Every join inside it keeps its parentheses.
+pub(super) fn selection_body(expr: &PresenceExpr, enabled: &dyn Fn(&str) -> String) -> String {
+    spelled(expr, enabled, false)
+}
+
+/// `expr` spelled, its join in parentheses where `grouped` holds; every part
+/// of a join of two or more is grouped, and a join of one part is that part,
+/// spelled as the join would be.
+fn spelled(expr: &PresenceExpr, enabled: &dyn Fn(&str) -> String, grouped: bool) -> String {
     let joined = |parts: &[PresenceExpr], op: &str| {
+        if let [only] = parts {
+            return spelled(only, enabled, grouped);
+        }
         let parts: Vec<String> = parts
             .iter()
-            .map(|part| selection_expr(part, enabled))
+            .map(|part| spelled(part, enabled, true))
             .collect();
-        match parts.len() {
-            1 => parts.into_iter().next().unwrap_or_default(),
-            _ => format!("({})", parts.join(op)),
+        if grouped {
+            format!("({})", parts.join(op))
+        } else {
+            parts.join(op)
         }
     };
     match expr {
