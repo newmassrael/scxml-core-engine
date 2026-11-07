@@ -26166,6 +26166,144 @@ fn codec_enum_gated_compiles_on_every_backend() {
         .unwrap_or_else(|e| panic!("Kotlin:\n{e}"));
 }
 
+/// The C++ program for both enum fixtures, which the C++ backend prints from
+/// their encode plan (docs/adr/0081 §6): the same frames and answers as the
+/// Rust and C11 runs above, a closed set's refusal told apart from running out
+/// of bytes on the cursor, and a value made by default holding the first
+/// variant each document declares rather than its carrier's zero.
+fn enum_cpp_program() -> String {
+    r#"#include <cstdint>
+#include <cstdio>
+#include <optional>
+#include <vector>
+
+#include "codec_enum_fields.h"
+#include "codec_enum_gated.h"
+
+using Fields = ::SCE::Generated::CodecEnumFields::CodecEnumFields;
+using Gated = ::SCE::Generated::CodecEnumGated::CodecEnumGated;
+using Session = ::SCE::Generated::EnumSessionState::EnumSessionState;
+using Nrc = ::SCE::Generated::EnumUdsNrc::EnumUdsNrc;
+using Frame = std::vector<std::uint8_t>;
+
+namespace {
+int failures = 0;
+
+void expect(bool ok, const char* what) {
+    if (!ok) {
+        std::fprintf(stderr, "FAIL %s\n", what);
+        ++failures;
+    }
+}
+
+template <class C>
+std::optional<C> decode(const Frame& frame) {
+    ::SCE::Forge::SceCursor cursor(frame.data(), frame.size());
+    return C::decode(cursor);
+}
+
+// Whether the decode refuses `frame` as a closed set's undeclared value, on
+// the cursor, rather than as running out of bytes.
+template <class C>
+bool refuses_undeclared(const Frame& frame) {
+    ::SCE::Forge::SceCursor cursor(frame.data(), frame.size());
+    return !C::decode(cursor) &&
+           cursor.last_refusal() == ::SCE::Forge::CodecError::UndeclaredEnumValue;
+}
+}  // namespace
+
+int main() {
+    // Each carrier decodes to the variant it declares, and back.
+    const Frame declared = {64, 120, 7};
+    const auto fields = decode<Fields>(declared);
+    expect(fields.has_value(), "fields: a declared frame decodes");
+    if (fields) {
+        expect(fields->state() == Session::SafetySystem, "fields: state");
+        expect(fields->code() == Nrc::ResponsePending, "fields: code");
+        expect(fields->detail() == 7, "fields: detail");
+        expect(fields->encode_to_vec() == declared, "fields: round trip");
+    }
+
+    // 250 is outside the UDS table, and its set is open.
+    const Frame open_value = {1, 250, 0};
+    const auto open = decode<Fields>(open_value);
+    expect(open && ::SCE::Generated::EnumUdsNrc::to_underlying(open->code()) == 250,
+           "fields: an open set carries an undeclared value");
+    expect(open && open->encode_to_vec() == open_value, "fields: open round trip");
+
+    // 16 lies between two declared values of the closed set.
+    const Frame undeclared = {16, 120, 0};
+    expect(refuses_undeclared<Fields>(undeclared), "fields: a closed set refuses 16");
+
+    // Made by default, each enum holds the first variant its document declares.
+    const Fields fresh;
+    expect(fresh.state() == Session::DefaultSession, "fields: default state");
+    expect(fresh.code() == Nrc::GeneralReject, "fields: default code");
+    const Frame fresh_frame = {1, 16, 0};
+    expect(fresh.encode_to_vec() == fresh_frame, "fields: default encode");
+
+    // Made of values of the types, it writes their carriers.
+    const Fields made(Session::Programming, Nrc::ConditionsNotCorrect, 9);
+    const Frame made_frame = {2, 34, 9};
+    expect(made.encode_to_vec() == made_frame, "fields: made");
+
+    // The streaming path: the gated field is absent while its flag is clear.
+    const Frame absent = {0, 34};
+    const auto without = decode<Gated>(absent);
+    expect(without.has_value(), "gated: a frame without the field decodes");
+    if (without) {
+        expect(without->code() == Nrc::ConditionsNotCorrect, "gated: code");
+        expect(!without->state().has_value(), "gated: state absent");
+        expect(without->encode_to_vec() == absent, "gated: absent round trip");
+    }
+
+    const Frame present = {1, 34, 3};
+    const auto with = decode<Gated>(present);
+    expect(with && with->state() == std::optional<Session>(Session::ExtendedDiagnostic),
+           "gated: state present");
+    expect(with && with->encode_to_vec() == present, "gated: present round trip");
+
+    const Frame gated_undeclared = {1, 34, 16};
+    expect(refuses_undeclared<Gated>(gated_undeclared),
+           "gated: a closed set refuses on the streaming path too");
+
+    // A fresh value leaves the gated field absent, and its flag is derived
+    // from the value it is made of.
+    const Gated gated_fresh;
+    expect(gated_fresh.code() == Nrc::GeneralReject && !gated_fresh.state().has_value(),
+           "gated: default");
+    const Gated gated_made(0, Nrc::ServiceNotSupported, Session::SafetySystem);
+    const Frame gated_made_frame = {1, 17, 64};
+    expect(gated_made.encode_to_vec() == gated_made_frame, "gated: made");
+
+    return failures == 0 ? 0 : 1;
+}
+"#
+    .to_string()
+}
+
+/// What the C++ backend's printed enum codecs DO: run, not only compiled.
+#[test]
+fn enum_fields_convert_on_the_cpp_backend() {
+    let backend = NativeMarkerBackend {
+        tool: "g++",
+        language: sce_build::generator::Language::Cpp,
+        runtime_includes: &["../backends/cpp/forge-runtime/include"],
+        header_extensions: &["h", "hpp"],
+        standard: "c++17",
+        source_name: "enum_exec.cpp",
+        set: &[
+            "enum_session_state.scxml",
+            "enum_uds_nrc.scxml",
+            "codec_enum_fields.scxml",
+            "codec_enum_gated.scxml",
+        ],
+        program: enum_cpp_program,
+    };
+    run_marker_native(&resource_dir(), &backend)
+        .unwrap_or_else(|e| panic!("the C++ codec must convert its enum fields\n{e}"));
+}
+
 /// The bounds inside the range keep their comparisons, and only those: the
 /// emitted C names each surviving bound once and no extreme at all.
 #[test]

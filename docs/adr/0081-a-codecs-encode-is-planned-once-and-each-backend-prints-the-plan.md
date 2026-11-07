@@ -510,6 +510,14 @@ old encode, the old encode and its templates are removed in the same landing.
    that parent's list (the twelfth landing), so the chain entries move with every carrier of them. An input a
    gated list says is read as a `std::optional`, empty where the list is absent, and a parent on the template's
    encode holds such an input against its flag only where it is said. The printed set is 118 codecs.
+
+   *The seventeenth C++ landing, 2026-11-07:* a field typed by an imported enum. The value presents it as the
+   enum's type; the encode writes the enum's carrier, through the enum's own `to_underlying`; a value made by
+   default holds the first variant the enum's document declares, since a closed set need not declare its
+   carrier's zero. The decode already read the carrier into the type, and a closed set's refusal of a value it
+   does not declare is now recorded on the cursor as `CodecError::UndeclaredEnumValue`, on the fixed and the
+   streaming path alike, where before it was read as running out of bytes; the C and Rust runtimes already named
+   it. The printed set is 120 codecs.
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences

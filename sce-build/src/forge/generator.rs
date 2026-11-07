@@ -19272,10 +19272,15 @@ fn streaming_fixed_enum_conversion(
             String::new(),
             format!("{from}({carrier_read}) ?: return null"),
         ),
+        // Refused on the cursor, so that it is not read as running out of
+        // bytes.
         Language::Cpp => (
             format!(
                 "const auto _enum_v = {from}({carrier_read});\n{indent}\
-                 if (!_enum_v.has_value()) return std::nullopt;\n{indent}"
+                 if (!_enum_v.has_value()) {{\n{indent}\
+                 \x20   cursor.refuse(::SCE::Forge::CodecError::UndeclaredEnumValue);\n{indent}\
+                 \x20   return std::nullopt;\n{indent}\
+                 }}\n{indent}"
             ),
             "*_enum_v".to_string(),
         ),

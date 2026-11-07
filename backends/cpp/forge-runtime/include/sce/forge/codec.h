@@ -122,6 +122,13 @@ enum class CodecError : std::uint8_t {
     /// `LengthOutOfRange` is. Mirrors `SCE_FORGE_CODEC_TOO_MANY_ELEMENTS = 21`
     /// of C and the typed `CodecError::TooManyElements` of Rust.
     TooManyElements = 15,
+    /// On decode, a field of a closed enum (`sce:strict-variants`, the
+    /// default) whose carrier holds a value no variant declares: not a value
+    /// of the type, so the frame is refused rather than waited on. Recorded
+    /// on the cursor as `LengthOutOfRange` is. Mirrors
+    /// `SCE_FORGE_CODEC_UNDECLARED_ENUM_VALUE = 6` of C and the typed
+    /// `CodecError::UndeclaredEnumValue` of Rust.
+    UndeclaredEnumValue = 16,
 };
 
 /// Read-only cursor over a borrowed input buffer. Decode bodies use

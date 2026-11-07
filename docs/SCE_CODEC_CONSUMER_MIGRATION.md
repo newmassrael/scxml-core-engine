@@ -1350,6 +1350,21 @@ them).
 - The input a list a gate decides says (`codec_chain_flag_forward`'s `wide`) is read by `input_<name>(value)` as a
   `std::optional<std::uint8_t>`, empty where the list is absent, and the encode is no longer handed it.
 
+## A printed C++ codec holds an enum field as the enum's type, and refuses an undeclared value on the cursor (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C++ tree is regenerated after it. It moves the codecs whose
+fields are typed by an imported enum (2 more codecs of the resources, 120 in all: `codec_enum_fields` and
+`codec_enum_gated`).
+
+- An enum field is `value.<element>()`, of the enum's type (`std::optional` of it where a gate decides it), where
+  it was a public member. The value is made by its constructor, and the encode writes the enum's carrier.
+- A value made by default holds the first variant the enum's document declares, not the carrier's zero, which a
+  closed set may not declare.
+- Every C++ codec, printed or not: a closed enum's decode of a carrier value no variant declares returns
+  `std::nullopt` with `cursor.last_refusal()` holding `::SCE::Forge::CodecError::UndeclaredEnumValue`. Before, the
+  cursor recorded nothing, so the refusal read as running out of bytes; a stream reader that waited for more bytes
+  on such a frame now drops it.
+
 ## A payload schema states its keys in the order the document declares them (ADR 0087 §1.1)
 
 Landing: the commit that adds this section; every tree holding a `JSON_SCHEMA` constant or a GBNF table (the Rust,

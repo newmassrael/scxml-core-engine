@@ -7,8 +7,9 @@
     `decode_expr` reads that carrier and the enum's own conversion
     turns it into a value of the type; a closed set's conversion is
     partial, and a carrier value it does not declare is not a value of
-    that type, so the frame does not decode — which this backend
-    reports as the truncation sentinel, as it does for malformed text.
+    that type, so the frame does not decode, and the cursor records
+    `UndeclaredEnumValue` so that the refusal is not read as running
+    out of bytes.
     The statement carries its own indentation because the three call
     sites below share it. #}
 {% macro decode_field(field) %}
@@ -22,7 +23,10 @@
         {{ field.cpp_type }} {{ field.id }} = {{ field.enum_from_underlying }}({{ field.decode_expr }});
 {%- elif field.is_enum %}
         const auto _enum_{{ field.id }} = {{ field.enum_from_underlying }}({{ field.decode_expr }});
-        if (!_enum_{{ field.id }}.has_value()) return std::nullopt;
+        if (!_enum_{{ field.id }}.has_value()) {
+            cursor.refuse(::SCE::Forge::CodecError::UndeclaredEnumValue);
+            return std::nullopt;
+        }
         {{ field.cpp_type }} {{ field.id }} = *_enum_{{ field.id }};
 {%- else %}
         {{ field.cpp_type }} {{ field.id }} = {{ field.decode_expr }};

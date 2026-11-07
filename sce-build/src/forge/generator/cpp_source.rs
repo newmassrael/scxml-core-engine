@@ -76,9 +76,13 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
         let id = &element.field.id;
         match &element.value {
             Value::Scalar(t) if t.int_bit_width().is_some() => {}
-            Value::Scalar(_) => {
-                forms.push(format!("`{id}`, which is not an integer or a flag set"))
-            }
+            // A value of an imported enum is presented as the enum's type and
+            // written as its carrier; the decode reads the carrier into the
+            // type, refusing one a closed set does not declare.
+            Value::Scalar(SceType::Enum(_)) => {}
+            Value::Scalar(_) => forms.push(format!(
+                "`{id}`, which is not an integer, a flag set or an enum"
+            )),
             // A byte string is presented within its bound (docs/adr/0077 §3),
             // and a text likewise, in UTF-8 bytes; one the protocol states no
             // bound of is held to `kUnbounded` (§7).
@@ -2369,10 +2373,11 @@ pub(super) fn render(
 
     // The value a field is written as: the number the encode derived, the
     // carrier with its derived flags, the present value of an optional element
-    // (read only where it is tested present), or what the source presents.
+    // (read only where it is tested present), or what the source presents; a
+    // value of an enum, as the enum's carrier.
     let read = |f: &CodecField| {
         let name = l.codec_field_id(&f.id);
-        if derived_number(plan, &f.id) {
+        let value = if derived_number(plan, &f.id) {
             format!("_d_{name}")
         } else if folds.contains_key(f.id.as_str()) {
             format!("_c_{name}")
@@ -2380,7 +2385,8 @@ pub(super) fn render(
             format!("(*_e_{name})")
         } else {
             format!("source::{name}(src)")
-        }
+        };
+        l.codec_carrier_expr(&f.sce_type, &value)
     };
     // A text's UTF-8 bytes are `char`s, written as the bytes they are.
     let bytes_write = |f: &CodecField| {
@@ -2841,8 +2847,9 @@ pub(super) fn render(
     // A default-made value holds what its declared flag values give its
     // carrier (`<sce:flag value=..>`), which is what lets a variant's marked
     // default arm encode its own wire tag (RFC variant-default-uniformity);
-    // a byte string holds the fewest bytes its bound admits, and every other
-    // element holds its zero.
+    // a byte string holds the fewest bytes its bound admits, a value of an enum
+    // the first value its document declares, and every other element holds its
+    // zero.
     let mut private = String::new();
     if !names.is_empty() {
         private.push_str("\nprivate:\n");
@@ -2862,10 +2869,15 @@ pub(super) fn render(
                     continue;
                 }
             };
-            let init = if !e.optional && e.field.flags.iter().any(|fl| fl.value.is_some()) {
-                cpp_flag_default_init(e.field)
-            } else {
-                "{}".to_string()
+            let init = match &e.field.sce_type {
+                // A closed set does not hold its carrier's zero unless it
+                // declares it, so a value of an enum starts at the first value
+                // its document declares, which every enum has.
+                SceType::Enum(r) if !e.optional => format!("{{{}}}", l.enum_default_expr(&r.alias)),
+                _ if !e.optional && e.field.flags.iter().any(|fl| fl.value.is_some()) => {
+                    cpp_flag_default_init(e.field)
+                }
+                _ => "{}".to_string(),
             };
             private.push_str(&format!("    {} {}{init};\n", e.holds(), member(&e.name)));
         }

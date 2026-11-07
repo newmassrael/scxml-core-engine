@@ -42,6 +42,8 @@ const PRINTED: &[&str] = &[
     "codec_default_marker_arm_b",
     "codec_dma_aligned_basic",
     "codec_embed_basic",
+    "codec_enum_fields",
+    "codec_enum_gated",
     "codec_ext_attachment",
     "codec_ext_timestamp",
     "codec_fixed_after_lengthref",
