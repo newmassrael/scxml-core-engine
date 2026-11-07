@@ -1,0 +1,56 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "cpp", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="test-template")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+
+#pragma once
+#ifndef {{ guard }}
+#define {{ guard }}
+
+#include <cstdint>
+#include <optional>
+#include <string>
+#include <vector>
+{% for header in std_includes %}#include <{{ header }}>
+{% endfor %}{% if counts_characters %}
+#include "{{ text_length_header }}"
+{% endif %}
+{% for inc in type_includes %}
+{{ inc }}
+{% endfor %}
+
+namespace SCE::Generated::{{ namespace }} {
+
+/// The type the template `{{ template_name }}` matches: `{{ template_type }}`, as the
+/// unit of its type declares it.
+using Value = {{ value_type }};
+
+{# Every parameter is marked [[maybe_unused]]: a formal parameter a matcher does
+   not read is still one a reference binds, and a matcher that holds no value
+   to compare (`any-value`) reads no `value`. #}
+/// Whether `value` matches the template `{{ template_name }}` (ES 201 873-1 Annex B.1,
+/// docs/SCE_TEST_PROFILE.md §6.1).
+{% for p in parameters %}
+/// - `{{ p.name }}`: the formal parameter `{{ p.id }}`, of type `{{ p.sce_type }}`.
+{% endfor %}
+inline bool match([[maybe_unused]] const Value &value{% for p in parameters %}, [[maybe_unused]] const {{ p.ty }} &{{ p.name }}{% endfor %}) {
+    return {{ match_expr }};
+}
+{% if value_expr %}
+
+/// The value the specific template `{{ template_name }}` sends (docs/SCE_TEST_PROFILE.md
+/// §6.2): every field it names at its value, every field it omits absent. It matches the
+/// template by `match`, given the same parameters.
+inline Value value({% for p in parameters %}[[maybe_unused]] const {{ p.ty }} &{{ p.name }}{% if not loop.last %}, {% endif %}{% endfor %}) {
+    return {{ value_expr }};
+}
+{% endif %}
+
+}  // namespace SCE::Generated::{{ namespace }}
+
+#endif  // {{ guard }}

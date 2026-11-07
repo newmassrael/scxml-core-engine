@@ -254,8 +254,8 @@ impl ForgeKind {
 
     /// Whether a document of this kind belongs to the test profile
     /// (docs/adr/0091): every document of it names `sce-static` as its data
-    /// model, and no backend generates one until the profile's runtime
-    /// lands (docs/SCE_TEST_PROFILE.md §11.9).
+    /// model, and a backend generates one of its kind only once the profile's
+    /// runtime lands there for that kind (docs/SCE_TEST_PROFILE.md §11.9).
     pub const fn is_test_profile(&self) -> bool {
         matches!(
             self,
@@ -562,9 +562,12 @@ impl ForgeKind {
             // docs/adr/0092, section 7: a union's unit is a sum type of the
             // language's own, which names nothing of a runtime.
             Self::Union => RuntimeDep::None,
-            // docs/SCE_TEST_PROFILE.md §11.9: no backend generates a document
-            // of the test profile until its runtime lands, so none emits
-            // anything or depends on anything.
+            // docs/SCE_TEST_PROFILE.md §11.9, §12.2: a template's unit names
+            // nothing of the forge runtime; a length restriction on a text
+            // reads the test profile's own runtime (`sce/include/test/`), which
+            // ships with SCE's headers and is no forge tier. No backend
+            // generates the other kinds yet, so none emits anything or depends
+            // on anything.
             Self::TestTemplate
             | Self::TestPortType
             | Self::TestComponent
@@ -7046,8 +7049,9 @@ impl ForgeDocument {
             }
             // A union's unit is a sum type of the language's own.
             Self::Union(_) => RuntimeDep::None,
-            // No backend generates a document of the test profile yet
-            // (docs/SCE_TEST_PROFILE.md §11.9): nothing is emitted.
+            // A template's unit names nothing of the forge runtime
+            // (docs/SCE_TEST_PROFILE.md §12.2), and no backend generates the
+            // other documents of the test profile yet (§11.9).
             Self::TestTemplate(_)
             | Self::TestPortType(_)
             | Self::TestConfiguration(_)

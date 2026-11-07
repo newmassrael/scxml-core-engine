@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §6.2, §11.4: a specific template whose values
+     are in part its formal parameters: the job status a tester sends for a
+     given elapsed time, note and first code, a present optional field at a
+     literal and a number at the largest of its type. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="job_report_of"
+       sce:type="record:JobStatus">
+  <sce:import kind="event-schema" src="job_status.scxml" as="JobStatus"/>
+  <datamodel>
+    <data id="elapsed" sce:type="uint32" sce:direction="in"/>
+    <data id="note" sce:type="string[32]" sce:direction="in"/>
+    <data id="code" sce:type="uint8" sce:direction="in"/>
+  </datamodel>
+  <sce:record-match>
+    <sce:specific field="elapsed_ms" param="elapsed"/>
+    <sce:specific field="note" param="note"/>
+    <sce:list-match field="codes">
+      <sce:specific param="code"/>
+      <sce:specific value="255"/>
+    </sce:list-match>
+    <sce:omit field="tag"/>
+    <sce:specific field="retry" value="2"/>
+    <sce:specific field="count" value="4294967295"/>
+  </sce:record-match>
+</scxml>

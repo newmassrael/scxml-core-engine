@@ -2,8 +2,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
 //! What the documents of the test profile share (docs/adr/0091,
-//! docs/SCE_TEST_PROFILE.md §11): the refusal every backend gives one until
-//! the profile's runtime lands, the reading of a duration, and what a literal
+//! docs/SCE_TEST_PROFILE.md §11): the refusal a backend gives one until the
+//! profile's runtime lands there for its kind, the reading of a duration, and what a literal
 //! of a type and a matcher at a position of a type are.
 //!
 //! The parser asks the last two wherever a document states the type itself:
@@ -20,15 +20,16 @@ use crate::forge::model::{
 };
 use crate::forge::value_type::{TypeOf, ValueType};
 
-/// Why no backend generates a document of the test profile yet, as every
-/// refusal of one says it.
+/// Why a backend does not generate a document of the test profile yet, as
+/// every refusal of one says it.
 pub const NOT_GENERATED_YET: &str = "a document of the test profile is read and checked on \
-                                     every backend, and no backend generates one until the \
-                                     profile's runtime lands (docs/SCE_TEST_PROFILE.md §11.9)";
+                                     every backend, and a backend generates one of its kind \
+                                     only once the profile's runtime lands there for that kind \
+                                     (docs/SCE_TEST_PROFILE.md §11.9)";
 
-/// The refusal of a document of the test profile on every backend
-/// (`generate/unsupported-feature`): `kind` and `name` name it, `at` is its
-/// root.
+/// The refusal of a document of the test profile on a backend that does not
+/// generate its kind yet (`generate/unsupported-feature`): `kind` and `name`
+/// name it, `at` is its root.
 pub fn document_not_generated(
     kind: ForgeKind,
     name: &str,

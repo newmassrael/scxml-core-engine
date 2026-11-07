@@ -7457,6 +7457,21 @@ fn validate_and_enrich_imports(
                 (ctx.enum_to_number, ctx.enum_from_number) =
                     forge::generator::enum_number_symbols(&em.name, !em.strict_variants, *language);
             }
+            // A test template another references is called by the referencing
+            // template's unit: its `match` takes a value of its own type, and
+            // its `value` exists where it is specific through the templates it
+            // references in turn, which its own imports, written relative to
+            // it, decide (docs/SCE_TEST_PROFILE.md §6.2, §11.4).
+            if let forge::model::ForgeDocument::TestTemplate(tm) = &doc {
+                ctx.test_template = Some(forge::generator::TestTemplateImport {
+                    template_type: tm.template_type.clone(),
+                    specific: forge::test_template_check::is_specific(
+                        tm,
+                        &parsed.imports,
+                        source.path.parent().unwrap_or(base_dir),
+                    ),
+                });
+            }
             // An imported event-schema is the record type an algorithm's
             // `record:<alias>` names (SCE_FORGE.md §4.12). Its struct name
             // and its fields are captured here, where the schema is in hand,

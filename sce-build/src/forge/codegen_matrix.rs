@@ -352,11 +352,15 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
         // backend at a time. Which have landed is [`UNION_BACKENDS`], the one
         // list both this answer and [`awaits_runtime`] read.
         ForgeKind::Union => lists(UNION_BACKENDS, lang),
+        // docs/SCE_TEST_PROFILE.md §12.6, slice 3: a template's matcher and a
+        // specific template's value land one backend at a time, C++ first.
+        // Which have landed is [`TEST_TEMPLATE_BACKENDS`], the one list both
+        // this answer and [`awaits_runtime`] read.
+        ForgeKind::TestTemplate => lists(TEST_TEMPLATE_BACKENDS, lang),
         // docs/adr/0091, order of work step 3: the profile's native runtime
-        // lands in one backend first, so no backend has a template for a
-        // document of the profile yet.
-        ForgeKind::TestTemplate
-        | ForgeKind::TestPortType
+        // lands in one backend first, and no backend generates the other
+        // kinds of the profile yet.
+        ForgeKind::TestPortType
         | ForgeKind::TestComponent
         | ForgeKind::TestConfiguration
         | ForgeKind::TestCase
@@ -387,6 +391,17 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
 /// that payload are composed values, which a backend lowers where its composed
 /// lowering does ([`crate::forge::event_schema_check::ComposedLowering`]).
 pub const UNION_BACKENDS: &[Language] = &[Language::Rust, Language::Kotlin];
+
+/// The backends that generate a test template (docs/SCE_TEST_PROFILE.md
+/// §11.9, §12.6): a header that declares the template's `match` and, for a
+/// specific template, its `value`, over the record types the backend's event
+/// schema unit declares. A backend joins this list in the change that gives it
+/// the template (`tools/codegen/templates/forge/<language>/test_template.*.jinja2`)
+/// and the dispatch arm that renders it, and in no other change, for the reason
+/// [`BROADCAST_LOG_BACKENDS`] gives. A backend not listed refuses a template by
+/// name (`generate/unsupported-feature`,
+/// [`crate::forge::test_profile::document_not_generated`]).
+pub const TEST_TEMPLATE_BACKENDS: &[Language] = &[Language::Cpp];
 
 /// The backends whose broadcast-log template has landed (ADR 0062, "Order of
 /// landing"). A backend joins this list in the change that gives it the
@@ -1113,25 +1128,38 @@ mod tests {
         }
     }
 
-    /// docs/SCE_TEST_PROFILE.md §11.9: no backend generates a document of the
-    /// test profile yet, so every backend awaits each of its six kinds, lets
-    /// it through the matrix to the dispatch that refuses it by name, and none
-    /// is listed as emitting it.
+    /// docs/SCE_TEST_PROFILE.md §11.9, §12.6: C++ generates a test template,
+    /// and every other pair of a backend and a kind of the test profile awaits
+    /// the profile's runtime there, letting the document through the matrix to
+    /// the dispatch that refuses it by name.
     #[test]
-    fn every_backend_awaits_the_test_profile_and_none_emits_it() {
+    fn cpp_emits_the_test_template_and_every_other_pair_awaits_the_profile() {
         assert_eq!(ForgeKind::TEST_PROFILE.len(), 6);
         for &kind in ForgeKind::TEST_PROFILE {
             assert!(kind.is_test_profile(), "{kind:?}");
             assert_eq!(kind_class(kind), KindClass::Generic, "{kind:?}");
             for &lang in Language::ALL {
-                assert_eq!(
-                    lookup(kind, lang),
-                    EmitOutcome::RuntimeMissing,
-                    "{kind:?} on {lang:?}"
-                );
+                let want = if kind == ForgeKind::TestTemplate && lang == Language::Cpp {
+                    EmitOutcome::Emit
+                } else {
+                    EmitOutcome::RuntimeMissing
+                };
+                assert_eq!(lookup(kind, lang), want, "{kind:?} on {lang:?}");
                 assert!(check(kind, lang).is_ok(), "{kind:?} on {lang:?}");
             }
-            assert_eq!(emitting(kind).count(), 0, "{kind:?}");
+            let emitted: Vec<Language> = emitting(kind).collect();
+            if kind == ForgeKind::TestTemplate {
+                assert_eq!(emitted, [Language::Cpp]);
+            } else {
+                assert!(emitted.is_empty(), "{kind:?}: {emitted:?}");
+            }
+        }
+        for &lang in TEST_TEMPLATE_BACKENDS {
+            let times = TEST_TEMPLATE_BACKENDS
+                .iter()
+                .filter(|l| **l == lang)
+                .count();
+            assert_eq!(times, 1, "{lang:?}");
         }
     }
 

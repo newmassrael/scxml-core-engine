@@ -23,6 +23,7 @@ use crate::generator::{self, GeneratedOutput};
 use std::path::Path;
 
 mod cpp_source;
+mod cpp_test_template;
 mod length_guard;
 mod rust_source;
 mod rust_view;
@@ -705,6 +706,24 @@ pub struct ImportContext {
     /// for every other import.
     #[serde(skip)]
     pub enum_slots: Option<CalleeEnumSlots>,
+    /// For an imported `sce:kind="test-template"`: what a template that
+    /// references it reads of it (docs/SCE_TEST_PROFILE.md §11.4). `None` for
+    /// every other import.
+    #[serde(skip)]
+    pub test_template: Option<TestTemplateImport>,
+}
+
+/// A test template another references (`<sce:template-ref>`), as the
+/// referencing template's unit reads it: the type its unit's `match` takes, and
+/// whether the template is specific through every template it references in
+/// turn, so its unit declares a `value` (docs/SCE_TEST_PROFILE.md §6.2).
+#[derive(Debug, Clone)]
+pub struct TestTemplateImport {
+    /// The template's `sce:type`, read in its own document.
+    pub template_type: crate::forge::value_type::ValueType,
+    /// [`crate::forge::test_template_check::is_specific`] of the template,
+    /// asked where its own imports are read.
+    pub specific: bool,
 }
 
 /// The enums the slots of an imported algorithm hold, each named as the importing
@@ -1366,6 +1385,7 @@ fn resolve_single_import(
         record_type: None,
         record_composed: None,
         enum_slots: None,
+        test_template: None,
     }
 }
 
@@ -2016,10 +2036,15 @@ pub fn generate_cpp_with_imports_and_externs(
         ForgeDocument::Union(m) => {
             return Err(crate::forge::union_check::document_unlowered(m).into())
         }
-        // docs/SCE_TEST_PROFILE.md §11.9: no backend generates a document of
-        // the test profile until its runtime lands, so each is refused by name.
-        ForgeDocument::TestTemplate(_)
-        | ForgeDocument::TestPortType(_)
+        // docs/SCE_TEST_PROFILE.md §12.6, slice 3: a template's `match` and a
+        // specific template's `value` (`codegen_matrix::TEST_TEMPLATE_BACKENDS`).
+        ForgeDocument::TestTemplate(m) => {
+            cpp_test_template::render_test_template_cpp(&env, m, imports)?
+        }
+        // docs/SCE_TEST_PROFILE.md §11.9: no backend generates the other
+        // documents of the test profile until its runtime lands, so each is
+        // refused by name.
+        ForgeDocument::TestPortType(_)
         | ForgeDocument::TestConfiguration(_)
         | ForgeDocument::TestCase(_)
         | ForgeDocument::TestSuite(_) => {
@@ -44521,6 +44546,7 @@ mod tests {
             record_type: None,
             record_composed: None,
             enum_slots: None,
+            test_template: None,
         }
     }
 
@@ -45433,6 +45459,7 @@ mod tests {
                 record_type: None,
                 record_composed: None,
                 enum_slots: None,
+                test_template: None,
             },
             ImportContext {
                 alias: "c".to_string(),
@@ -45499,6 +45526,7 @@ mod tests {
                 record_type: None,
                 record_composed: None,
                 enum_slots: None,
+                test_template: None,
             },
         ];
         let (has, _all, _stateful) = build_template_imports(&imports);

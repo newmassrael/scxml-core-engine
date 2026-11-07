@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §6.2, §11.4: a specific template over a
+     voucher, its code a byte string written in hex. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="voucher_is"
+       sce:type="record:Voucher">
+  <sce:import kind="event-schema" src="voucher_payment.scxml" as="Voucher"/>
+  <sce:record-match>
+    <sce:specific field="voucher_code" value="00ff10A0"/>
+  </sce:record-match>
+</scxml>

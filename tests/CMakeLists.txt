@@ -557,6 +557,7 @@ add_executable(static_datamodel_generated_cpp_test
     integration/ASavedTreeHoldsEverySessionWhereItStoodTest.cpp
     integration/ASavedWaitingSendSurvivesARestoreTest.cpp
     integration/ASavedChildSessionIsResumedAfterARestoreTest.cpp
+    integration/ATestTemplateMatchesItsValuesTest.cpp
 )
 
 # The Forge runtime the generated machines include (sce/forge/*.h) arrives with
@@ -757,6 +758,24 @@ sce_add_algorithm(
     TARGET static_datamodel_generated_cpp_test
     SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/text_notice.scxml
 )
+# ATestTemplateMatchesItsValuesTest's: the test profile's templates
+# (docs/SCE_TEST_PROFILE.md §11.4), each a document of its own kind whose
+# header declares its `match` and, for a specific one, its `value`, generated
+# beside the records, the enum and the templates their headers include.
+foreach(_TEST_PROFILE_DOCUMENT job_status elapsed_at_most every_matcher job_report job_report_of
+                               report_within)
+    sce_add_algorithm(
+        TARGET static_datamodel_generated_cpp_test
+        SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/test_profile/${_TEST_PROFILE_DOCUMENT}.scxml
+    )
+endforeach()
+foreach(_TEST_PROFILE_DOCUMENT paint_color order_line quantity_two quantity_at_most order_line_exact
+                               order_line_bounded card_payment card_within voucher_payment voucher_is)
+    sce_add_algorithm(
+        TARGET static_datamodel_generated_cpp_test
+        SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/test_profile/imports/${_TEST_PROFILE_DOCUMENT}.scxml
+    )
+endforeach()
 
 # A host action's argument that overflows. The fixture sits beside the test
 # that reads it, as test_thermostat.scxml does: the host recorder is the C++

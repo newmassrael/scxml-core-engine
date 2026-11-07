@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §11.4: a template over the card a payment is
+     made by: its last digits of two or three characters, counted as
+     characters and not as bytes, and an amount of at least one and at most a
+     formal parameter. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="card_within"
+       sce:type="record:Card">
+  <sce:import kind="event-schema" src="card_payment.scxml" as="Card"/>
+  <datamodel>
+    <data id="most" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+  <sce:record-match>
+    <sce:any-value field="last4" length-min="2" length-max="3"/>
+    <sce:value-range field="amount">
+      <sce:lower value="1"/>
+      <sce:upper param="most"/>
+    </sce:value-range>
+  </sce:record-match>
+</scxml>

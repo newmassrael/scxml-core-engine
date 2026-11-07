@@ -5,8 +5,8 @@
 //! docs/SCE_TEST_PROFILE.md §11): what a document of each reads as, each
 //! refusal of what one document states alone and the code it is refused with,
 //! that a test component's profile is read in a test component and in no
-//! other statechart, and that every backend refuses to generate a document of
-//! the profile by name until its runtime lands.
+//! other statechart, and that a backend refuses to generate a document of the
+//! profile by name until its runtime lands there for the document's kind.
 //!
 //! The documents are under `sce-build/tests/fixtures/test_profile/`: one per
 //! accepted form, and one per refusal, each named for what it refuses. Of the
@@ -1196,7 +1196,10 @@ fn not_generated(kind: &str, language: Language, err: Located<ForgeError>) {
             GenerateError::UnsupportedFeature { detail, .. } => {
                 assert!(detail.starts_with(&format!("{kind} '")), "{detail}");
                 assert!(
-                    detail.contains("no backend generates one until the profile's runtime lands"),
+                    detail.contains(
+                        "a backend generates one of its kind only once the profile's runtime \
+                         lands there for that kind"
+                    ),
                     "{detail}"
                 );
             }
@@ -1206,11 +1209,13 @@ fn not_generated(kind: &str, language: Language, err: Located<ForgeError>) {
     }
 }
 
-/// docs/SCE_TEST_PROFILE.md §11.9: every backend refuses a document of the
-/// profile by name until its runtime lands, the declaration kinds at the forge
-/// dispatch and the test component where a machine is written.
+/// docs/SCE_TEST_PROFILE.md §11.9: a backend refuses a document of the
+/// profile by name until its runtime lands there for the document's kind, the
+/// declaration kinds at the forge dispatch and the test component where a
+/// machine is written. C++ generates a template
+/// (`a_test_template_is_generated_in_cpp.rs`), and nothing else yet.
 #[test]
-fn a_document_of_the_profile_is_refused_by_name_on_every_backend() {
+fn a_document_of_the_profile_is_refused_by_name_where_its_kind_is_not_generated() {
     for &kind in ForgeKind::TEST_PROFILE {
         assert!(kind.is_supported(), "{kind:?}");
         assert!(!kind.needs_instance(), "{kind:?}");
@@ -1232,6 +1237,10 @@ fn a_document_of_the_profile_is_refused_by_name_on_every_backend() {
             "test-suite",
         ] {
             let parsed = ForgeKind::from_attr(kind).expect("a kind");
+            if parsed == ForgeKind::TestTemplate && language == Language::Cpp {
+                assert_eq!(codegen_matrix::lookup(parsed, language), EmitOutcome::Emit);
+                continue;
+            }
             assert_eq!(
                 codegen_matrix::lookup(parsed, language),
                 EmitOutcome::RuntimeMissing,
