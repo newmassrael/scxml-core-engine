@@ -495,6 +495,10 @@ pub mod scheduler_storage;
 #[cfg(feature = "std")]
 pub mod scripting;
 // Documented by the module's own `//!`; see `payload_reading` above for why no `///` here.
+// `std` only, like the saved state its module parameters are read through.
+#[cfg(feature = "std")]
+pub mod test;
+// Documented by the module's own `//!`; see `payload_reading` above for why no `///` here.
 #[cfg(feature = "transition-observer")]
 pub mod transition_observer;
 
