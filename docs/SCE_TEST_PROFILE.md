@@ -818,6 +818,27 @@ binds the context, registers the test-port processor and the test-component invo
 `deliverSnapshot` delivers the snapshot event; `terminated` is the machine's having entered a top-level `<final>`.
 A component that uses a template whose type reaches a union is refused on C++ as the template is.
 
+Rust generates `test-component` (§12.6, slice 6). The unit is the statechart machine the Rust generator writes for any
+`sce-static` document, `<file>_sm.rs`, lowered through the same doors by the same lowering and spelled for the Rust
+runtime (`sce_rust_runtime::test`):
+
+- a branch's guard, the statement taking it, the statements of the profile and a `<log>` are calls on the component's
+  `ComponentContext`, which the machine's policy holds and reads through one accessor. A receive branch's match is
+  `receives` over its template's `matches`, the template's unit brought into scope as `super::<file>`, and a variable
+  bound to a formal parameter is handed over as the unit takes it, by value or lent;
+- a receive branch whose content reads the message copies it, field by field, into the payload struct the machine's
+  channel holds its record's event in, bound as the content's `_event.data`. The machine holds a text, a byte string
+  and an enum in types of its own, which the record's unit does not, so a message of a record with such a field that
+  the content reads is refused by name;
+- a send hands the test-port processor the specific template's value as `HostSendRequest::value`.
+
+Beside the machine the file declares `<Name>Component`, which implements `sce_rust_runtime::test::ComponentMachine`:
+`start` builds the machine around a policy the context is bound to, registers the test-port processor and the
+test-component invoker on clones of the context and starts the machine; `deliver_snapshot` delivers the snapshot event;
+`terminated` is the machine's having entered a top-level `<final>`. Rust refuses by name a component that declares a
+module parameter, whose value is the suite's, until it generates the suite's tables, and every component under
+`--no-std`, since the profile's runtime is `std` only.
+
 A module parameter (§11.5) is a variable of the machine declared with its type and no value of the document's: the
 static lowering, written once for every backend, lowers no initial value for it. Its value is the run's. Before
 `start` starts the machine it hands the machine the run's module parameters through the context
@@ -972,4 +993,6 @@ the equivalence law (order of work step 6).
 5. C++ generation of the configuration, case and suite tables, a runner, and the examples run end to end with the
    verdicts they expect. The refusal is lifted for the remaining kinds, and for a component's module parameter.
 6. The other backends, one at a time. Rust generates templates first, a template over a union among them; the
-   refusal of §11.9 is lifted for Rust for `test-template`.
+   refusal of §11.9 is lifted for Rust for `test-template`. Rust generates test components next, through the doors of
+   §12.3, and the refusal is lifted for Rust for `test-component`, but for a component that declares a module
+   parameter, whose value Rust's suite tables give.
