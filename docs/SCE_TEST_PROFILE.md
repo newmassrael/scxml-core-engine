@@ -794,7 +794,26 @@ every forge unit is, which declares:
 Every enum, record and union the unit names is named through the sibling module of the document that declares it
 (`super::<document>`), so an enum a record of another document holds is named by its one declaration. The walk over
 the matchers, which decides each matcher's tests, the optional rules, the bounds a range leaves out and the binding
-of a reference's parameters, is one for both backends (`forge::generator::test_template_walk`); a backend spells it.
+of a reference's parameters, is one for every backend (`forge::generator::test_template_walk`); a backend spells it.
+
+Kotlin generates `test-template` (§12.6, slice 6). The unit is a file `<Name>.kt` in the package
+`com.sce.generated.<document>`, named by the document's file as every forge unit is, which declares:
+
+- `Value`, a type alias of the template's type as the unit of an `event-schema` spells a field of that type (a
+  record is the schema's payload data class, a union the sealed interface its unit declares);
+- `fun matches(value: Value, <the formal parameters, in order>): Boolean`, which holds each mechanism of §6.1 by the
+  rules C++ holds it by. A value that may be absent is read through a `let` that binds it, and a byte string is
+  compared by its octets (`contentEquals`). A length restriction on a `string[N]` counts characters, through the
+  profile's runtime (`com.sce.runtime.test.textLength`), and on `bytes[N]` and `list<T>[B]` octets and elements. A
+  `union-match` holds where the union is an instance of the class of the case its `variant` names (`is`), and the
+  case's record matches the case's matcher;
+- for a specific template (§6.2) alone, `fun value(<the formal parameters>): Value`, the value it sends, which
+  matches it; a byte string a parameter gives is copied into it.
+
+Every enum, record, union and referenced template the unit names is named by the package of the document that
+declares it, so the unit imports no package. Rust and Kotlin join the tests the walk decides the same way
+(`test_template_walk::JoinSpelling`): a negation carried down to the tests, and a test the walk decides for every
+value left out of its join.
 
 C++ generates `test-component` (§12.6, slice 4). The unit is the statechart machine the C++ generator writes for any
 `sce-static` document, `<file>_sm.h` and its `<file>_sm.inl`, in the namespace `SCE::Generated::<name>`, lowered
@@ -1036,3 +1055,5 @@ the equivalence law (order of work step 6).
    component's module parameter. Kotlin's runtime library of §12.2 (`com.sce.runtime.test`) is the Rust one ported
    type for type and held to its cases, with `textLength` for a template's length restriction, since a Kotlin text
    counts UTF-16 units; and the Kotlin host send request carries a test-port send's value (`HostSendRequest.value`).
+   Kotlin generates templates, a template over a union among them, and the refusal of §11.9 is lifted for Kotlin
+   for `test-template`.

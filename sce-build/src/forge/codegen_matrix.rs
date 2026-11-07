@@ -354,7 +354,7 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
         ForgeKind::Union => lists(UNION_BACKENDS, lang),
         // docs/SCE_TEST_PROFILE.md §12.6, slices 3 and 6: a template's matcher
         // and a specific template's value land one backend at a time, C++
-        // first and Rust next.
+        // first, then Rust and Kotlin.
         // Which have landed is [`TEST_TEMPLATE_BACKENDS`], the one list both
         // this answer and [`awaits_runtime`] read.
         ForgeKind::TestTemplate => lists(TEST_TEMPLATE_BACKENDS, lang),
@@ -405,7 +405,7 @@ pub const UNION_BACKENDS: &[Language] = &[Language::Rust, Language::Kotlin];
 /// (`generate/unsupported-feature`,
 /// [`crate::forge::test_profile::document_not_generated`]). One that lowers no
 /// union ([`UNION_BACKENDS`]) refuses a template whose type reaches one.
-pub const TEST_TEMPLATE_BACKENDS: &[Language] = &[Language::Rust, Language::Cpp];
+pub const TEST_TEMPLATE_BACKENDS: &[Language] = &[Language::Rust, Language::Cpp, Language::Kotlin];
 
 /// The backends that generate a test component (docs/SCE_TEST_PROFILE.md
 /// §11.9, §12.6): the backend's statechart machine of the component, lowered
@@ -1169,19 +1169,28 @@ mod tests {
     }
 
     /// docs/SCE_TEST_PROFILE.md §11.9, §12.6: Rust and C++ generate every kind
-    /// of the test profile, and every other pair of a backend and a kind of the
-    /// profile awaits the profile's runtime there, letting the document through
-    /// the matrix to the dispatch that refuses it by name.
+    /// of the test profile, Kotlin a template, and every other pair of a
+    /// backend and a kind of the profile awaits the profile's runtime there,
+    /// letting the document through the matrix to the dispatch that refuses it
+    /// by name.
     #[test]
     fn rust_and_cpp_emit_every_kind_of_the_profile_and_every_other_pair_awaits_it() {
         assert_eq!(ForgeKind::TEST_PROFILE.len(), 6);
-        let landed: &[Language] = &[Language::Rust, Language::Cpp];
-        assert_eq!(TEST_TEMPLATE_BACKENDS, landed);
-        assert_eq!(TEST_COMPONENT_BACKENDS, landed);
-        assert_eq!(TEST_SUITE_BACKENDS, landed);
+        let every_kind: &[Language] = &[Language::Rust, Language::Cpp];
+        // A template lands before the other kinds, Kotlin's in
+        // [`Language::ALL`]'s order.
+        let template: &[Language] = &[Language::Rust, Language::Cpp, Language::Kotlin];
+        assert_eq!(TEST_TEMPLATE_BACKENDS, template);
+        assert_eq!(TEST_COMPONENT_BACKENDS, every_kind);
+        assert_eq!(TEST_SUITE_BACKENDS, every_kind);
         for &kind in ForgeKind::TEST_PROFILE {
             assert!(kind.is_test_profile(), "{kind:?}");
             assert_eq!(kind_class(kind), KindClass::Generic, "{kind:?}");
+            let landed = if kind == ForgeKind::TestTemplate {
+                template
+            } else {
+                every_kind
+            };
             for &lang in Language::ALL {
                 let want = if landed.contains(&lang) {
                     EmitOutcome::Emit
