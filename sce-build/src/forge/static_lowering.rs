@@ -1604,6 +1604,19 @@ pub trait StaticTarget {
     ) -> Option<Box<dyn crate::forge::composed_lowering::ComposedSpelling + 'a>> {
         None
     }
+    /// How this target spells a composed value a `<send>` carries as one of
+    /// its params (docs/adr/0086, section 5.3): the walks of
+    /// [`Self::composed_spelling`], each writer writing the value this target
+    /// holds a send's params in until it writes them as the event's JSON
+    /// ([`Self::wire_value`]). `None` for a target that sends no composed
+    /// value, which the one decision of what is lowered refuses by name before
+    /// the walk ([`crate::forge::event_schema_check::ComposedLowering::sends`]).
+    fn composed_send_spelling<'a>(
+        &self,
+        _machine: &'a str,
+    ) -> Option<Box<dyn crate::forge::composed_lowering::ComposedSpelling + 'a>> {
+        None
+    }
     /// The expression lowerer's target.
     fn expr_target(&self) -> ExprTarget;
     /// The declared name of variable `id`'s field.
@@ -3735,8 +3748,12 @@ impl StaticTarget for RustTarget {
     // One spelling of a record's type, whether a variable or a composed value
     // holds it.
     fn record_type(&self, machine: &str, alias: &str) -> String {
-        use crate::forge::composed_lowering::ComposedSpelling;
-        crate::forge::composed_lowering::RustComposed { machine }.record_type(alias)
+        use crate::forge::composed_lowering::{ComposedSpelling, RustCarrier, RustComposed};
+        RustComposed {
+            machine,
+            carrier: RustCarrier::Json,
+        }
+        .record_type(alias)
     }
     fn composed_spelling<'a>(
         &self,
@@ -3744,6 +3761,19 @@ impl StaticTarget for RustTarget {
     ) -> Option<Box<dyn crate::forge::composed_lowering::ComposedSpelling + 'a>> {
         Some(Box::new(crate::forge::composed_lowering::RustComposed {
             machine,
+            carrier: crate::forge::composed_lowering::RustCarrier::Json,
+        }))
+    }
+    // The walks of `composed_spelling`, each writer writing the runtime's
+    // `ScriptValue`, which every param of a `<send>` is held in
+    // (`wire_value`) until the runtime writes them as one JSON object.
+    fn composed_send_spelling<'a>(
+        &self,
+        machine: &'a str,
+    ) -> Option<Box<dyn crate::forge::composed_lowering::ComposedSpelling + 'a>> {
+        Some(Box::new(crate::forge::composed_lowering::RustComposed {
+            machine,
+            carrier: crate::forge::composed_lowering::RustCarrier::ScriptValue,
         }))
     }
     // Plain data by the record rule, so `Copy` — the derive set a plain
@@ -4145,10 +4175,13 @@ impl StaticTarget for RustTarget {
     // runtime's codes. The pointer fits the record's path: the judge held its
     // bound to the longest pointer of the schema.
     fn lift(&self, lift: &LiftStatement<'_>) -> Option<String> {
-        use crate::forge::composed_lowering::{ComposedSpelling, MachineEnum, RustComposed};
+        use crate::forge::composed_lowering::{
+            ComposedSpelling, MachineEnum, RustCarrier, RustComposed,
+        };
         const PAYLOAD: &str = "::sce_rust_runtime::event_payload";
         let spelling = RustComposed {
             machine: lift.machine,
+            carrier: RustCarrier::Json,
         };
         let machine_enum = |alias: &str| -> Option<MachineEnum> {
             let model = lift.enums.get(alias)?;
@@ -17399,6 +17432,9 @@ fn lower_wire_value(
             "{construct} `{written}` has no {lang} lowering: {why}"
         ))
     };
+    if let Some(wired) = composed_wire_value(param, &construct, ctx, renames, rewrites)? {
+        return Ok(Some((wired, false)));
+    }
     // Typed as it is lowered ([`Rewrites::as_lowered`]).
     let ty = crate::forge::expr::judge_into(
         &rewrites.as_lowered(written),
@@ -17527,6 +17563,71 @@ fn lower_wire_value(
         rewrites.note(written, param.spelling, &value.text);
     }
     Ok(Some((wired, value.can_fail)))
+}
+
+/// The value a `<param>` carries where it names a place that holds a composed
+/// value, a list, a record or a union, or an optional one (docs/adr/0086,
+/// section 5.2): a variable, a field of a record variable, or a part of the
+/// payload of the event the transition is on, forwarded. The value is written
+/// by walking its own type, as the writer of the target's send spells each
+/// constructor ([`StaticTarget::composed_send_spelling`]), into the value the
+/// target holds a send's params in; the receiver reads it back from the JSON
+/// that value is written as. `None` for a value that names no composed place,
+/// which [`lower_wire_value`] lowers as the scalar it is.
+///
+/// The judge held the place's type to the field's by fits (section 5.1) where
+/// the document was read, so the value crosses whole and nothing of it is
+/// checked when the send runs: the write cannot fail. A place read through an
+/// index, whose read can fail where the write cannot say so, and a target
+/// that sends no composed value are refused by name.
+fn composed_wire_value(
+    param: &crate::forge::static_datamodel::WireParam<'_>,
+    construct: &str,
+    ctx: &crate::forge::types::TypeCtx<'_>,
+    renames: &HashMap<&str, &str>,
+    rewrites: &Rewrites<'_>,
+) -> Result<Option<String>, GenerateError> {
+    use crate::forge::composed_lowering as composed;
+    let written = param.written;
+    let Some((path, place)) = crate::forge::expr::written_place(written)
+        .and_then(|path| ctx.value_of(&path).map(|place| (path, place)))
+        .filter(|(_, place)| place.is_composed())
+    else {
+        return Ok(None);
+    };
+    let target = rewrites.target;
+    let lang = target.name();
+    let refused = |why: String| {
+        GenerateError::unsupported(format!(
+            "{construct} `{}`: {why} (docs/adr/0086, section 7.3)",
+            written.trim()
+        ))
+    };
+    let (Some(names), Some(spelling)) = (
+        rewrites.composed.as_ref(),
+        target.composed_send_spelling(rewrites.machine),
+    ) else {
+        return Err(refused(format!(
+            "a composed value a <send> carries has no {lang} lowering yet"
+        )));
+    };
+    if path.contains(crate::forge::value_path::ELEMENT) {
+        return Err(refused(format!(
+            "a composed value read through an index has no {lang} lowering of a send yet"
+        )));
+    }
+    let held = place_text(&path, ctx, renames, target, &*spelling).map_err(&refused)?;
+    let within = composed::within_of(&place.scope, &names.records).map_err(&refused)?;
+    let wired = composed::writer(
+        &place.ty,
+        within.as_deref(),
+        &names.records,
+        &*spelling,
+        &composed::Held::place(held.clone()),
+    )
+    .map_err(&refused)?;
+    rewrites.note(written, param.spelling, &held);
+    Ok(Some(wired))
 }
 
 /// Lower the value of a `<param>` of a `<send>` or of a host-run `<invoke>`, in

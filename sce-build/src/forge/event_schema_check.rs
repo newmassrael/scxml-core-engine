@@ -238,6 +238,12 @@ pub struct ComposedLowering {
     /// amendment of 2026-11-07): the machine's own sum of the union's
     /// records, built at the declaration or starting absent.
     pub unions: bool,
+    /// Whether it lowers a `<send>` of the event of a schema that holds a
+    /// composition (section 5.2): each composed field given by a `<param>`
+    /// that names a place whose type fits the field's, written by walking the
+    /// place's type (section 5.3). A `<raise>` carries no data, so none of
+    /// those events is raised by any lowering.
+    pub sends: bool,
 }
 
 impl ComposedLowering {
@@ -247,6 +253,7 @@ impl ComposedLowering {
         reads: false,
         copies: false,
         unions: false,
+        sends: false,
     };
 
     /// What some generated backend lowers: the gate every route asks before a
@@ -258,12 +265,15 @@ impl ComposedLowering {
         reads: true,
         copies: true,
         unions: true,
+        sends: true,
     };
 
     /// What the backend `language` lowers: Rust reads a composed payload at
-    /// any depth, takes a list whole and holds a union variable, the backend
-    /// whose machine spells the walks over a composed value
-    /// ([`crate::forge::static_lowering::StaticTarget::composed_spelling`]);
+    /// any depth, takes a list whole, holds a union variable and sends a
+    /// composed value, the backend whose machine spells the walks over a
+    /// composed value
+    /// ([`crate::forge::static_lowering::StaticTarget::composed_spelling`],
+    /// [`crate::forge::static_lowering::StaticTarget::composed_send_spelling`]);
     /// every other backend lowers no composed value yet.
     pub fn of(language: crate::generator::Language) -> Self {
         let rust = matches!(language, crate::generator::Language::Rust);
@@ -272,6 +282,7 @@ impl ComposedLowering {
             reads: rust,
             copies: rust,
             unions: rust,
+            sends: rust,
         }
     }
 }
@@ -283,8 +294,9 @@ impl ComposedLowering {
 /// type names, at any depth, a record of a schema whose field is a list, a
 /// record or an optional over either, a read of `_event.data` on a transition
 /// taken on such a schema's event (unless `lowering` reads one,
-/// [`ComposedLowering::reads`]), a `<send>` or `<raise>` of that event, and a
-/// list taken whole into a list variable from a place.
+/// [`ComposedLowering::reads`]), a `<send>` of that event (unless `lowering`
+/// sends one, [`ComposedLowering::sends`]) and a `<raise>` of it, and a list
+/// taken whole into a list variable from a place.
 ///
 /// Each refusal names the construct and the lowering that asks and has none of
 /// it, as every backend's refusal of what it does not lower yet names the
@@ -351,6 +363,7 @@ fn first_unlowered_composed_use(
         reads: lowers_reads,
         copies: lowers_copies,
         unions: lowers_unions,
+        sends: lowers_sends,
     } = lowering;
     // Each refusal names the construct and the lowering that has none of it,
     // as every backend's refusal of what it does not lower yet does.
@@ -473,7 +486,14 @@ fn first_unlowered_composed_use(
     let mut copied = None;
     for action in blocks.iter().copied().flatten() {
         action.walk(&mut |a| {
-            let carries = matches!(a.action_type.as_str(), "send" | "raise");
+            // A `<send>` carries the event's data in its params, which a
+            // lowering that sends a composed value writes; a `<raise>` carries
+            // no data, so no lowering writes the composed value it lacks.
+            let carries = match a.action_type.as_str() {
+                "send" => !lowers_sends,
+                "raise" => true,
+                _ => false,
+            };
             if sent.is_none() && carries {
                 if let Some((schema, composed)) = composed_schema(a.event.as_str()) {
                     sent = Some((schema, composed, a));
@@ -2531,19 +2551,24 @@ mod tests {
             some_backend(|lowering| lowering.unions)
         );
         assert_eq!(
+            ComposedLowering::ANY_BACKEND.sends,
+            some_backend(|lowering| lowering.sends)
+        );
+        assert_eq!(
             ComposedLowering::ECMASCRIPT,
             ComposedLowering {
                 name: "ecmascript",
                 reads: false,
                 copies: false,
                 unions: false,
+                sends: false,
             }
         );
     }
 
-    /// Rust reads a composed payload and takes a list whole (docs/adr/0086,
-    /// section 6), and every other backend refuses each by its own name until
-    /// its step lowers it.
+    /// Rust reads a composed payload, takes a list whole and sends a composed
+    /// value (docs/adr/0086, sections 5 and 6), and every other backend refuses
+    /// each by its own name until its step lowers it.
     #[test]
     fn rust_alone_reads_a_composed_payload() {
         for language in crate::generator::Language::ALL {
@@ -2552,6 +2577,7 @@ mod tests {
             assert_eq!(lowering.reads, rust, "{language:?}");
             assert_eq!(lowering.copies, rust, "{language:?}");
             assert_eq!(lowering.unions, rust, "{language:?}");
+            assert_eq!(lowering.sends, rust, "{language:?}");
             assert_eq!(lowering.name, language.canonical_name());
         }
     }

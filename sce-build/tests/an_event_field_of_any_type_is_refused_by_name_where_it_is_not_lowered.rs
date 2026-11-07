@@ -19,7 +19,9 @@
 //! * A statechart holds an imported schema whole and takes its event on every
 //!   target. Each use that reads the schema one entry per field is refused by
 //!   name with `generate/unsupported-feature`, naming the field, the type and
-//!   the position: a `<send>` or `<raise>` of the event, a variable that names
+//!   the position: a `<raise>` of the event on every target and a `<send>` of
+//!   it where no `<send>` of one is lowered (Rust sends one, section 5.3,
+//!   `a_statechart_sends_a_composed_value_by_its_name`), a variable that names
 //!   a record holding a composition at any depth, and a host-run record. So is
 //!   an algorithm that names such a record. A read of `_event.data` on a
 //!   transition taken on the event is lowered by Rust, and refused by every
@@ -365,6 +367,17 @@ fn a_send_or_raise_of_the_event_of_a_composed_schema_is_refused_by_name() {
             "{out}"
         );
     }
+    // A `<raise>` carries no data, so the backend that sends a composed value
+    // refuses it too.
+    let out = refusal_of(
+        &["check", "-l", "rust"],
+        &reader(
+            "",
+            r#"<raise event="batch.sent"/>"#,
+            r#"<transition event="go" target="idle"/>"#,
+        ),
+    );
+    assert!(out.contains("a statechart's <raise> of its event"), "{out}");
 }
 
 #[test]

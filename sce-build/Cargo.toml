@@ -1805,6 +1805,13 @@ name = "a_rust_machine_reads_a_composed_payload_at_any_depth"
 path = "tests/a_rust_machine_reads_a_composed_payload_at_any_depth.rs"
 required-features = ["cli"]
 
+# A statechart sends a composed value by the name of the place that holds it
+# (docs/adr/0086, section 5.2). It runs `sce-codegen`, so it carries the `cli` gate.
+[[test]]
+name = "a_statechart_sends_a_composed_value_by_its_name"
+path = "tests/a_statechart_sends_a_composed_value_by_its_name.rs"
+required-features = ["cli"]
+
 # A lift reads a text into a record or keeps why not, on every backend
 # (docs/adr/0087, section 2). It runs `sce-codegen`, so it carries the `cli` gate.
 [[test]]

@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A statechart that sends a composed value by its name (docs/adr/0086, section
+  5.2): the first delivery of `batch.sent` is forwarded to the machine itself,
+  `items`, `grid`, `levels`, `maybe` and `spare` named as the parts of the payload
+  they are and `late` as the list variable it was taken into, and the delivery
+  that comes back is measured as static_composed_payload measures one. A value
+  sent by its name crosses whole, so every out variable read from the second
+  delivery is what the first held, and the second delivery fits its schema
+  (`refusals` stays 0).
+
+  The Rust backend lowers it; every other backend refuses the read and the send
+  by its own name until it lowers them (section 7.3). Rust compile+run gate:
+  scripts/regen_static_datamodel_rust.sh commits the generated machine, and
+  backends/rust/tests/tests/a_composed_value_is_sent_by_its_name.rs drives it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       initial="idle"
+       datamodel="sce-static"
+       name="static_composed_send">
+  <sce:import kind="event-schema" src="event_batch.scxml" as="Batch"/>
+  <sce:import kind="event-schema" src="event_batch_item.scxml" as="Item"/>
+  <sce:import kind="enum" src="enum_signal_level.scxml" as="SignalLevel"/>
+  <datamodel>
+    <data id="deliveries" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="item_count" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="tag_count" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="id_sum" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="cell_sum" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="level_count" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="first_maybe" sce:type="optional&lt;uint16&gt;" expr="null" sce:direction="out"/>
+    <data id="late_sum" sce:type="uint32" expr="0" sce:direction="out"/>
+    <data id="late" sce:type="list&lt;uint8&gt;[2]" sce:direction="out"/>
+    <data id="refusals" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="idle">
+    <!-- The first delivery: forwarded whole, each composed field by the name of
+         the place that holds it. -->
+    <transition event="batch.sent" cond="deliveries === 0" type="internal">
+      <assign location="deliveries" expr="1"/>
+      <assign location="late" expr="_event.data.late"/>
+      <send event="batch.sent" target="#_internal">
+        <param name="items" expr="_event.data.items"/>
+        <param name="grid" expr="_event.data.grid"/>
+        <param name="levels" expr="_event.data.levels"/>
+        <param name="maybe" expr="_event.data.maybe"/>
+        <param name="spare" expr="_event.data.spare"/>
+        <param name="note" expr="'echo'"/>
+        <param name="late" expr="late"/>
+      </send>
+    </transition>
+    <!-- The delivery that came back, measured. -->
+    <transition event="batch.sent" type="internal">
+      <assign location="deliveries" expr="deliveries + 1"/>
+      <assign location="item_count" expr="len(_event.data.items)"/>
+      <assign location="level_count" expr="len(_event.data.levels)"/>
+      <foreach array="_event.data.items" item="row" index="i">
+        <assign location="tag_count" expr="tag_count + len(row.tags)"/>
+        <assign location="id_sum" expr="id_sum + _event.data.items[i].id"/>
+      </foreach>
+      <foreach array="_event.data.grid" item="cells">
+        <foreach array="cells" item="n">
+          <assign location="cell_sum" expr="cell_sum + n"/>
+        </foreach>
+      </foreach>
+      <foreach array="_event.data.late" item="each">
+        <assign location="late_sum" expr="late_sum + each"/>
+      </foreach>
+      <if cond="len(_event.data.maybe) &gt; 0">
+        <assign location="first_maybe" expr="_event.data.maybe[0]"/>
+      </if>
+    </transition>
+    <!-- A delivery outside its type is refused whole, and error.execution says
+         so once. -->
+    <transition event="error.execution" type="internal">
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+  </state>
+</scxml>

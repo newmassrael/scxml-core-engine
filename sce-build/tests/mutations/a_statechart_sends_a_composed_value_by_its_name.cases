@@ -1,0 +1,57 @@
+# Mutation cases for "a statechart sends a composed value by its name"
+# (docs/adr/0086, sections 5.2 and 5.3).
+#
+# Run with:
+#   scripts/mutate sce-build/tests/mutations/a_statechart_sends_a_composed_value_by_its_name.cases
+#
+# A <param> that gives a composed field names the place that holds the value,
+# whose type is held to "fits" the field's; the backend that sends one is the
+# only one the gate lets through; the Rust writer walks the value's type into
+# the ScriptValue a send holds its params in. Each case takes one of those
+# away and has to turn the suite red on its own.
+
+mutation_tests -p sce-build --features cli --test a_statechart_sends_a_composed_value_by_its_name
+mutation_targets sce-build/src/forge/static_datamodel.rs sce-build/src/forge/event_schema_check.rs sce-build/src/forge/composed_lowering.rs
+
+# A composed value is sent whatever its type: a list of three goes into a
+# field of two.
+mutation_case "a sent value is not held to fits" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     r'''        crate::forge::value_type::fits(&place.ty, &field.ty, &names).map_err(|misfit| {''',
+     r'''        let _ = &names;
+        Ok::<(), crate::forge::value_type::Misfit>(()).map_err(|misfit| {''')
+PY
+
+# A value that names no place is taken for the place it is not.
+mutation_case "a value that names no place is sent" <<'PY'
+edit("sce-build/src/forge/static_datamodel.rs",
+     r'''        let Some(place) =
+            crate::forge::expr::written_place(written).and_then(|path| ctx.value_of(&path))
+        else {
+            return Err(self.rule_at(''',
+     r'''        let Some(place) =
+            crate::forge::expr::written_place(written).and_then(|path| ctx.value_of(&path))
+        else {
+            return Ok(true);
+            #[allow(unreachable_code)]
+            return Err(self.rule_at(''')
+PY
+
+# Every backend sends a composed value: one that lowers none meets it.
+mutation_case "every backend is let send a composed value" <<'PY'
+edit("sce-build/src/forge/event_schema_check.rs",
+     r'''                "send" => !lowers_sends,''',
+     r'''                "send" => false,''')
+PY
+
+# A list is written as the JSON text where a ScriptValue is held.
+mutation_case "a sent list is written as JSON text" <<'PY'
+edit("sce-build/src/forge/composed_lowering.rs",
+     r'''            RustCarrier::ScriptValue => format!(
+                "{RUST_SCRIPT_VALUE}::Array({}.iter().map(|h| {elem}).collect())",
+                held.text
+            ),''',
+     r'''            RustCarrier::ScriptValue => {
+                format!("{RUST_PAYLOAD}::list_json({}, |h| {elem})", held.borrowed())
+            }''')
+PY

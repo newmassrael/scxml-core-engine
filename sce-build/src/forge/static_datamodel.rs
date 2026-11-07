@@ -4047,6 +4047,116 @@ impl<'a> Judge<'a> {
         }
     }
 
+    /// A `<param>` of a `<send>` that gives a field of a composed type, a list,
+    /// a record or a union or an optional one, of the schema this document
+    /// imports for the event (docs/adr/0086, section 5.2): it names a place
+    /// that holds the value whole (a variable, a field of a record variable, or
+    /// a part of the payload of the event the transition is on, forwarded),
+    /// and is accepted when that place's type fits the field's (section 5.1),
+    /// so the send checks nothing of it when it runs. A value that does not
+    /// fit is refused naming the field, the schema that reads it and the first
+    /// place, by path, where it may not fit; a value that names no place is
+    /// judged as the expression it is, and refused when it is one.
+    ///
+    /// `false` for a param that gives no such field, which the rules of a
+    /// scalar take ([`Self::wire_param`], [`Self::received`]).
+    fn composed_param(
+        &self,
+        ctx: &TypeCtx<'_>,
+        action: &Action,
+        param: &WireParam<'_>,
+        state: &str,
+    ) -> Result<bool, Located<ForgeError>> {
+        use crate::forge::value_path::{scope_at, walk, Place, Step};
+        let written = param.written;
+        if action.event.is_empty()
+            || param.is_static_literal
+            || param.name.is_empty()
+            || written.trim().is_empty()
+        {
+            return Ok(false);
+        }
+        let base = &self.scope.type_scope;
+        // The field as the schema declares it, typed in the scope of the
+        // schema's own document.
+        let Some((schema, field)) = self
+            .lift_schemas
+            .iter()
+            .find(|(_, schema)| schema.event_name == action.event)
+            .and_then(|(alias, schema)| {
+                let root = Place::of(crate::forge::value_type::ValueType::Record {
+                    alias: alias.clone(),
+                });
+                walk(Some(base), &root, &[Step::Field(param.name)]).map(|field| (schema, field))
+            })
+            .filter(|(_, field)| field.is_composed())
+        else {
+            return Ok(false);
+        };
+        let (line, col) = match (param.source_location, param.spelling) {
+            (Some(at), _) => (at.line, at.col),
+            (None, Some(spelling)) => (Some(spelling.row()), Some(spelling.col())),
+            (None, None) => (None, None),
+        };
+        let construct = format!(
+            "<param name=\"{}\"> of <send event=\"{}\">",
+            param.name, action.event
+        );
+        let reader = format!(
+            "the schema `{}` this document declares `{}` by reads it as its field `{}`",
+            schema.name, action.event, param.name
+        );
+        // A list variable is no value an expression reads, so its name alone
+        // is the place; anything else is judged as the expression it is
+        // first, its names and indices as any expression's are.
+        if self.scope.list_read_as_value(written).is_none() {
+            self.expr(
+                ctx,
+                written,
+                param.spelling,
+                Expected::Hint(InferredType::Unknown),
+            )?;
+        }
+        let Some(place) =
+            crate::forge::expr::written_place(written).and_then(|path| ctx.value_of(&path))
+        else {
+            return Err(self.rule_at(
+                construct,
+                &format!(
+                    "{reader}, a `{}`: a <send> carries a composed value by the name of the \
+                     place that holds it whole (a variable, a field of a record variable, or a \
+                     part of the payload of the event the transition is on), and `{}` names no \
+                     such place",
+                    field.ty,
+                    written.trim()
+                ),
+                line,
+                col,
+                state,
+                written,
+            ));
+        };
+        let names = ScopedNames {
+            from: scope_at(base, &place.scope),
+            to: scope_at(base, &field.scope),
+        };
+        crate::forge::value_type::fits(&place.ty, &field.ty, &names).map_err(|misfit| {
+            self.rule_at(
+                construct,
+                &format!(
+                    "{reader}, and {}: a delivery of it may not fit that schema, so the send \
+                     is refused here rather than where it arrives",
+                    misfit.sentence(written.trim())
+                ),
+                line,
+                col,
+                state,
+                written,
+            )
+        })?;
+        Ok(true)
+    }
+
     /// A value a `<send>` carries under the name `param.name`, held to each field
     /// that reads it where the build knows the reader ([`Receivers`]): the field
     /// of the schema this document imports for the event, and the field of the
@@ -4573,6 +4683,9 @@ impl<'a> Judge<'a> {
                 let carrier = Carrier::of_send(action);
                 for param in &action.params {
                     let wire = WireParam::of_param(param);
+                    if self.composed_param(ctx, action, &wire, state)? {
+                        continue;
+                    }
                     self.wire_param(ctx, &wire, "<send>", carrier, state)?;
                     self.received(ctx, action, &wire, state)?;
                 }
@@ -4582,6 +4695,9 @@ impl<'a> Judge<'a> {
                 for name in action.namelist.split_whitespace() {
                     let namelist =
                         WireParam::of_namelist_name(name, action.spellings.get("namelist"), None);
+                    if self.composed_param(ctx, action, &namelist, state)? {
+                        continue;
+                    }
                     self.wire_param(ctx, &namelist, "<send>", carrier, state)?;
                     self.received(ctx, action, &namelist, state)?;
                 }

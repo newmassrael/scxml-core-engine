@@ -11,8 +11,9 @@
 //! * the reader that lifts it out of the event's data, one runtime call per
 //!   constructor, which refuses a value outside its type before it keeps any of
 //!   it and names the path to the place (section 4), [`reader`];
-//! * the writer that spells it as the JSON the wire carries (section 3.1),
-//!   [`writer`].
+//! * the writer that spells it as the JSON the wire carries (section 3.1), or
+//!   as the value a `<send>`'s params carry it in until they are written as
+//!   that JSON (section 5.3), [`writer`].
 //!
 //! The walks are here, once; a backend supplies only the spelling of each case
 //! ([`ComposedSpelling`]), so a composition of any depth is a composition of
@@ -1204,13 +1205,94 @@ pub fn field_writers(
 
 /// The Rust spellings of the walks, for the machine `machine` (section 7.1,
 /// the machine column): the runtime's `PayloadValue` reads each constructor,
-/// and its `list_json`, `optional_json` and `record_json` write them.
+/// and its writers write them into `carrier`.
 pub struct RustComposed<'a> {
     pub machine: &'a str,
+    pub carrier: RustCarrier,
+}
+
+/// What a Rust writer spells a composed value into: one walk of the value's
+/// type, written as the carrier the place that takes it holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RustCarrier {
+    /// The JSON text itself, by the runtime's `list_json`, `optional_json`,
+    /// `record_json` and `union_json`: what the inject seam hands a lift
+    /// (section 3.1).
+    Json,
+    /// The runtime's `ScriptValue`, a list as its `Array` and a record as its
+    /// `Object`, every scalar as a `<send>`'s scalar param is
+    /// (`StaticTarget::wire_value`): what a `<send>`'s params are held in until
+    /// the runtime writes them as one JSON object, a record's keys ascending by
+    /// their UTF-8 bytes at every depth (section 5.3; ARCHITECTURE.md, "JSON
+    /// Object Key Order").
+    ScriptValue,
 }
 
 /// The runtime module the Rust readers and writers are in.
 const RUST_PAYLOAD: &str = "::sce_rust_runtime::event_payload";
+
+/// The runtime's dynamic value, which a Rust `<send>` holds its params in.
+const RUST_SCRIPT_VALUE: &str = "::sce_rust_runtime::ScriptValue";
+
+/// `members`, each a key and the `ScriptValue` its value is, as one
+/// `ScriptValue::Object`: the runtime orders its keys when it writes it.
+fn rust_script_object(members: &[(String, String)]) -> String {
+    let members: Vec<String> = members
+        .iter()
+        .map(|(id, value)| format!("(\"{id}\".to_string(), {value})"))
+        .collect();
+    format!(
+        "{RUST_SCRIPT_VALUE}::Object(vec![{}].into_iter().collect())",
+        members.join(", ")
+    )
+}
+
+/// A union value held at `held`, of the machine's sum `ty`, as one
+/// `ScriptValue::Object`: the tag `tag`, its value the case's name, beside the
+/// fields of the case's record (docs/adr/0092, section 2.1), as the runtime's
+/// `union_json` writes the same value.
+fn rust_script_union(held: &Held, ty: &str, tag: &str, arms: &[UnionWriteArm]) -> String {
+    let tag = crate::filters::escape_rust(tag.to_string());
+    let arms: String = arms
+        .iter()
+        .map(|arm| {
+            let named = (
+                tag.clone(),
+                format!(
+                    "{RUST_SCRIPT_VALUE}::String(\"{}\".to_string())",
+                    crate::filters::escape_rust(arm.variant.clone())
+                ),
+            );
+            match &arm.fields {
+                Some(fields) => {
+                    let mut members = fields.clone();
+                    members.push(named);
+                    format!(
+                        "{ty}::{}(h) => {}, ",
+                        arm.case_ident,
+                        rust_script_object(&members)
+                    )
+                }
+                None => format!(
+                    "{ty}::{} => {}, ",
+                    arm.case_ident,
+                    rust_script_object(&[named])
+                ),
+            }
+        })
+        .collect();
+    format!("match {} {{ {arms}}}", held.borrowed())
+}
+
+/// The value `held` is, where it is a reference to the value: a copy of a
+/// number or a truth value read through it.
+fn rust_copied(held: &Held) -> String {
+    if held.by_reference {
+        format!("*{}", held.text)
+    } else {
+        held.text.clone()
+    }
+}
 
 /// The crate of the bounded storage a Rust machine holds a list, a text and a
 /// byte string in.
@@ -1380,49 +1462,106 @@ impl ComposedSpelling for RustComposed<'_> {
         "h"
     }
     fn write_scalar(&self, ty: &SceType, held: &Held) -> String {
-        match ty {
+        match (self.carrier, ty) {
             // A 64-bit integer crosses as the text of its digits.
-            SceType::Uint64 | SceType::Int64 => {
+            (RustCarrier::Json, SceType::Uint64 | SceType::Int64) => {
                 format!("{RUST_PAYLOAD}::quote(&{}.to_string())", held.text)
             }
             // A number other than a 64-bit integer, and a truth value, as
             // written.
-            _ => format!("{}.to_string()", held.text),
+            (RustCarrier::Json, _) => format!("{}.to_string()", held.text),
+            // As a scalar param is: a narrow integer widened to `i64` and a
+            // `float` to `f64`, both exactly.
+            (RustCarrier::ScriptValue, SceType::Uint64 | SceType::Int64) => {
+                format!("{RUST_SCRIPT_VALUE}::String({}.to_string())", held.text)
+            }
+            (RustCarrier::ScriptValue, SceType::Bool) => {
+                format!("{RUST_SCRIPT_VALUE}::Bool({})", rust_copied(held))
+            }
+            (RustCarrier::ScriptValue, SceType::Float32) => {
+                format!(
+                    "{RUST_SCRIPT_VALUE}::Double(f64::from({}))",
+                    rust_copied(held)
+                )
+            }
+            (RustCarrier::ScriptValue, SceType::Float64) => {
+                format!("{RUST_SCRIPT_VALUE}::Double({})", rust_copied(held))
+            }
+            (RustCarrier::ScriptValue, _) => {
+                format!("{RUST_SCRIPT_VALUE}::Int(i64::from({}))", rust_copied(held))
+            }
         }
     }
     // The machine's enum answers the name its document declares
     // (`StaticTarget::enum_def`'s `sce_name`).
     fn write_enum(&self, held: &Held) -> String {
-        format!("{RUST_PAYLOAD}::quote({}.sce_name())", held.text)
+        match self.carrier {
+            RustCarrier::Json => format!("{RUST_PAYLOAD}::quote({}.sce_name())", held.text),
+            RustCarrier::ScriptValue => format!(
+                "{RUST_SCRIPT_VALUE}::String({}.sce_name().to_string())",
+                held.text
+            ),
+        }
     }
     fn write_text(&self, held: &Held) -> String {
-        format!("{RUST_PAYLOAD}::quote({})", held.borrowed())
+        match self.carrier {
+            RustCarrier::Json => format!("{RUST_PAYLOAD}::quote({})", held.borrowed()),
+            RustCarrier::ScriptValue => {
+                format!("{RUST_SCRIPT_VALUE}::String({}.to_string())", held.text)
+            }
+        }
     }
     // JSON has no byte string: it crosses as its byte-exact Latin-1 text.
     fn write_bytes(&self, held: &Held) -> String {
-        format!(
-            "{RUST_PAYLOAD}::quote(&{RUST_PAYLOAD}::bytes_as_payload_text({}))",
-            held.borrowed()
-        )
+        match self.carrier {
+            RustCarrier::Json => format!(
+                "{RUST_PAYLOAD}::quote(&{RUST_PAYLOAD}::bytes_as_payload_text({}))",
+                held.borrowed()
+            ),
+            RustCarrier::ScriptValue => format!(
+                "{RUST_SCRIPT_VALUE}::String({RUST_PAYLOAD}::bytes_as_payload_text({}))",
+                held.borrowed()
+            ),
+        }
     }
     fn write_optional(&self, held: &Held, elem: &str) -> String {
-        format!(
-            "{RUST_PAYLOAD}::optional_json({}.as_ref(), |h| {elem})",
-            held.text
-        )
+        match self.carrier {
+            RustCarrier::Json => format!(
+                "{RUST_PAYLOAD}::optional_json({}.as_ref(), |h| {elem})",
+                held.text
+            ),
+            // `null` where the value is absent, as an absent scalar param is.
+            RustCarrier::ScriptValue => format!(
+                "{}.as_ref().map_or({RUST_SCRIPT_VALUE}::Null, |h| {elem})",
+                held.text
+            ),
+        }
     }
     fn write_list(&self, held: &Held, elem: &str) -> String {
-        format!("{RUST_PAYLOAD}::list_json({}, |h| {elem})", held.borrowed())
+        match self.carrier {
+            RustCarrier::Json => {
+                format!("{RUST_PAYLOAD}::list_json({}, |h| {elem})", held.borrowed())
+            }
+            RustCarrier::ScriptValue => format!(
+                "{RUST_SCRIPT_VALUE}::Array({}.iter().map(|h| {elem}).collect())",
+                held.text
+            ),
+        }
     }
     fn write_field(&self, held: &Held, field: &str) -> String {
         format!("{}.{field}", held.text)
     }
     fn write_record(&self, fields: &[(String, String)]) -> String {
-        let members: Vec<String> = fields
-            .iter()
-            .map(|(id, json)| format!("(\"{id}\", {json})"))
-            .collect();
-        format!("{RUST_PAYLOAD}::record_json(vec![{}])", members.join(", "))
+        match self.carrier {
+            RustCarrier::Json => {
+                let members: Vec<String> = fields
+                    .iter()
+                    .map(|(id, json)| format!("(\"{id}\", {json})"))
+                    .collect();
+                format!("{RUST_PAYLOAD}::record_json(vec![{}])", members.join(", "))
+            }
+            RustCarrier::ScriptValue => rust_script_object(fields),
+        }
     }
 
     fn copy_binding(&self) -> &'static str {
@@ -1615,6 +1754,9 @@ impl ComposedSpelling for RustComposed<'_> {
     // One object, the tag among the fields of the case (docs/adr/0092,
     // section 2.1), keys ascending as the runtime's `union_json` writes them.
     fn write_union(&self, held: &Held, ty: &str, tag: &str, arms: &[UnionWriteArm]) -> String {
+        if self.carrier == RustCarrier::ScriptValue {
+            return rust_script_union(held, ty, tag, arms);
+        }
         let tag = crate::filters::escape_rust(tag.to_string());
         let arms: String = arms
             .iter()
@@ -1868,7 +2010,10 @@ mod tests {
         .into()
     }
 
-    const RUST: RustComposed<'static> = RustComposed { machine: "M" };
+    const RUST: RustComposed<'static> = RustComposed {
+        machine: "M",
+        carrier: RustCarrier::Json,
+    };
 
     fn ty(text: &str) -> ValueType {
         crate::forge::value_type::WrittenType::read(text)

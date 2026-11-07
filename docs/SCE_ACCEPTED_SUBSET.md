@@ -5220,16 +5220,30 @@ a list reached through an index, a whole copy from one, and a byte string copied
 into a larger bound are refused by name on Rust, and so is every composed value
 of a machine built without an allocator (`--no-std`).
 
+A `<send>` of the event of a schema whose field is composed gives that field by
+a `<param>` naming the place that holds the value whole (docs/adr/0086, section
+5.2): a variable, a field of a record variable, or a part of the payload of the
+event the transition is on, forwarded (`<param name="items"
+expr="_event.data.items"/>`). `check` accepts it when the place's type fits the
+field's (section 5.1), so the send checks nothing of it when it runs; one that
+may not fit is `scxml/static-datamodel-rule`, naming the field, the schema that
+reads it and the first place, by path, where it may not, and a value that names
+no place is refused as the expression it is or by the same rule. The Rust
+backend writes the value by walking its type into the `ScriptValue` its send
+holds each param in, a list as an array and a record as an object, which the
+runtime writes as the event's JSON, keys ascending at every depth; a place read
+through an index is refused by name on Rust.
+
 What no backend lowers yet is refused by name where the machine is generated, in
 the one gate every route asks first (`check` with or without a backend,
 `generate`), as `generate/unsupported-feature`, naming the field, the type and
 the position: a variable whose type is a composition no variable lowers (a list
 of texts, an optional list), a variable that names a record holding a
-composition at any depth, and a `<send>` or `<raise>` of the event of a schema
-whose field is composed. A read of `_event.data` on a transition taken on such an
-event, and a list taken whole into a list variable, are refused by name by each
-backend that does not lower them, naming the backend, where that backend is
-generated. A host-run request or result and an algorithm that name such a
+composition at any depth, and a `<raise>` of the event of a schema whose field
+is composed, which carries no data. A read of `_event.data` on a transition
+taken on such an event, a `<send>` of it, and a list taken whole into a list
+variable, are refused by name by each backend that does not lower them, naming
+the backend, where that backend is generated. A host-run request or result and an algorithm that name such a
 record are refused where they are read. The paragraphs below name the attribute
 spelling where they were written with it; the bracket states the same bound.
 
