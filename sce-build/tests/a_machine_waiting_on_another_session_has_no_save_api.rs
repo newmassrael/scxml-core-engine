@@ -441,12 +441,23 @@ fn a_machine_with_a_history_is_generated_with_the_save_api() {
     }
 }
 
-/// What binds a root's session id where the machine is created, per backend:
-/// the Rust constructor a host gives the id to and the Kotlin constructor's
-/// call that binds the given id or draws one.
-const ROOT_SESSION_ID: [(&str, &str); 2] = [
-    ("rust", "pub fn new_with_session_id("),
-    ("kotlin", "bindRootSessionId(sessionId)"),
+/// What binds a root's session id where the machine is created, per backend,
+/// with the marker of the backend's save API: the Rust constructor a host
+/// gives the id to, the Kotlin constructor's call that binds the given id or
+/// draws one, and the Go policy's drawn id and the setter a host gives one by.
+/// Go's save API is held to the other backends' by nothing else in this file,
+/// so its marker stands here and not in [`SAVE_API`].
+const ROOT_SESSION_ID: [(&str, &str, &[&str]); 3] = [
+    ("rust", SAVE_API[0].1, &["pub fn new_with_session_id("]),
+    ("kotlin", SAVE_API[1].1, &["bindRootSessionId(sessionId)"]),
+    (
+        "go",
+        "SaveAt(engine *sce.Engine[",
+        &[
+            "SessionID: sce.DrawSessionID(),",
+            "Policy) SetSessionID(id string) error {",
+        ],
+    ),
 ];
 
 #[test]
@@ -457,17 +468,31 @@ fn a_machine_without_the_save_api_still_binds_its_root_session_id() {
     // only whether it saves, not whether it has an id.
     let extra =
         r##"<onentry><send event="go" target="#_scxml_child_session" delay="5s"/></onentry>"##;
-    let document = machine(extra);
-    for (language, marker) in ROOT_SESSION_ID {
-        let (ok, text) = generate_beside(language, &document, &[], &[]);
+    let waiting = machine(extra);
+    let saving = machine("");
+    for (language, save_api, markers) in ROOT_SESSION_ID {
+        // The control: a machine whose whole state is its own is written with
+        // the save API's marker, so its absence below is no misspelling.
+        let (ok, text) = generate_beside(language, &saving, &[], &[]);
+        assert!(
+            ok,
+            "{language}: the saving machine does not generate:\n{text}"
+        );
+        assert!(
+            text.contains(save_api),
+            "{language}: the control: a machine whose whole state is its own saves"
+        );
+        let (ok, text) = generate_beside(language, &waiting, &[], &[]);
         assert!(ok, "{language}: the machine does not generate:\n{text}");
         assert!(
-            !has_save_api(language, &text),
+            !text.contains(save_api),
             "{language}: the control: this machine waits on a session outside the tree"
         );
-        assert!(
-            text.contains(marker),
-            "{language}: a machine that does not save still binds its root's id ({marker})"
-        );
+        for &marker in markers {
+            assert!(
+                text.contains(marker),
+                "{language}: a machine that does not save still binds its root's id ({marker})"
+            );
+        }
     }
 }
