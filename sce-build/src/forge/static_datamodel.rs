@@ -566,6 +566,17 @@ fn logged_alike(ty: InferredType, enum_value: bool) -> bool {
     }
 }
 
+/// Whether a value of `ty` is a whole union, present or optional
+/// (docs/adr/0092): what no carrier of a statechart's values takes yet.
+pub(crate) fn holds_whole_union(ty: &crate::forge::value_type::ValueType) -> bool {
+    use crate::forge::value_type::ValueType;
+    match ty {
+        ValueType::Union { .. } => true,
+        ValueType::Optional { elem } => matches!(**elem, ValueType::Union { .. }),
+        _ => false,
+    }
+}
+
 /// The top-level `<data>` of a hybrid `<invoke>`'s `candidate` named `name`,
 /// when the candidate is a `sce-static` document this build read and declares
 /// one.
@@ -629,8 +640,9 @@ fn unseedable_variable(var: &Variable, whose: &str) -> String {
         .unwrap_or_default();
     format!(
         "{whose} `{}` is {declared}, and a value is handed only to a bool, a string, an \
-         integer or a real, or to an optional value of one of them: a list, a record, an \
-         enum, bytes and an optional value of an enum, bytes or a record are not seeded",
+         integer or a real, or to an optional value of one of them: a list, a record, a \
+         union, an enum, bytes and an optional value of an enum, bytes, a record or a \
+         union are not seeded",
         var.id
     )
 }
@@ -1358,6 +1370,31 @@ impl<'a> Judge<'a> {
             ));
         }
         let ty = judge_into(expr, ctx, expected).map_err(place)?;
+        // A whole union is typed `Unknown` too, so the slot cannot refuse it a
+        // value's place either (docs/adr/0092, section 6.1): it is read through
+        // its tag and the fields its tests prove, and taken whole only into a
+        // variable of its union, which no place of a value type is.
+        if let Expected::Slot(slot) = expected {
+            let union = self
+                .whole_place(ctx, expr)
+                .filter(|held| holds_whole_union(&held.ty));
+            if let Some(union) = union.filter(|_| slot != InferredType::Unknown) {
+                return Err(place(
+                    crate::forge::error::ExprError::UnsupportedConstruct {
+                        construct: format!(
+                            "`{}`, a value of `{}`, where a value of {} is expected (a union is \
+                             read through its tag and the fields its tests prove, and is taken \
+                             whole only into a variable of its union)",
+                            expr.trim(),
+                            union.ty,
+                            slot.describe()
+                        ),
+                        observed: Some(expr.trim().to_string()),
+                    }
+                    .at(None),
+                ));
+            }
+        }
         // An enum value is typed `Unknown`, so the slot cannot refuse it a
         // number's place: say here where it may stand and where it may not.
         let held = self.value_enum(ctx, expr).map_err(place)?;
@@ -3526,6 +3563,29 @@ impl<'a> Judge<'a> {
             spelling,
             Expected::Hint(InferredType::Unknown),
         )?;
+        // A whole union crosses only as a field of an event schema's union, by
+        // its name (docs/adr/0092, section 6.1 item 7), which no lowering
+        // spells yet: one carried here is refused by its type, for every
+        // backend, rather than as a value of no wire spelling.
+        if let Some(held) = self
+            .whole_place(ctx, written)
+            .filter(|place| holds_whole_union(&place.ty))
+        {
+            return Err(self.rule_at(
+                construct,
+                &format!(
+                    "`{}` holds `{}`, and a whole union crosses only as a field of an event \
+                     schema's union, which no backend lowers yet (docs/adr/0092, section 6.1 \
+                     item 7): {what} carries its tag or a field its tests prove instead",
+                    written.trim(),
+                    held.ty
+                ),
+                line,
+                col,
+                state,
+                written,
+            ));
+        }
         match self.wire_value_enum(ctx, written) {
             Ok(Some(_)) => return Ok(()),
             Ok(None) => {}

@@ -52,10 +52,22 @@ fn document(imports: &str, data: &str, entry: &str) -> String {
     } else {
         format!("<state id=\"idle\">\n    <onentry>\n{entry}\n    </onentry>\n  </state>")
     };
+    machine_document("union_vars", imports, data, &state)
+}
+
+/// A `sce-static` statechart named `name` that imports the shape union, its
+/// tag's enum and the record of each case, then `imports`, and declares
+/// `data` and the states `states`, the first of them its initial one.
+fn machine_document(name: &str, imports: &str, data: &str, states: &str) -> String {
+    let initial = states
+        .split("id=\"")
+        .nth(1)
+        .and_then(|rest| rest.split('"').next())
+        .unwrap_or("idle");
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       version="1.0" initial="idle" datamodel="sce-static" name="union_vars">
+       version="1.0" initial="{initial}" datamodel="sce-static" name="{name}">
   <sce:import kind="enum" src="shape_kind.scxml" as="Kind"/>
   <sce:import kind="union" src="union_shape.scxml" as="Shape"/>
   <sce:import kind="event-schema" src="shape_radius.scxml" as="Radius"/>
@@ -63,7 +75,7 @@ fn document(imports: &str, data: &str, entry: &str) -> String {
   <datamodel>
 {data}
   </datamodel>
-  {state}
+  {states}
 </scxml>
 "#
     )
@@ -72,7 +84,16 @@ fn document(imports: &str, data: &str, entry: &str) -> String {
 /// `document` written beside the union fixtures, in a scratch directory that
 /// lives as long as the answer.
 fn beside_fixtures(document: &str) -> (tempfile::TempDir, PathBuf) {
+    beside_fixtures_with(document, &[])
+}
+
+/// [`beside_fixtures`], with each of `siblings` (a file name and its text)
+/// written beside it.
+fn beside_fixtures_with(document: &str, siblings: &[(&str, &str)]) -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().expect("a scratch directory");
+    for (name, text) in siblings {
+        std::fs::write(dir.path().join(name), text).expect("write a sibling");
+    }
     for name in [
         "shape_kind.scxml",
         "shape_radius.scxml",
@@ -89,7 +110,12 @@ fn beside_fixtures(document: &str) -> (tempfile::TempDir, PathBuf) {
 /// `sce-codegen check -l <language>` of `document`: whether it passed, and
 /// what it printed.
 fn checked(language: &str, document: &str) -> (bool, String) {
-    let (_dir, path) = beside_fixtures(document);
+    checked_with(language, document, &[])
+}
+
+/// [`checked`], with each of `siblings` written beside the document.
+fn checked_with(language: &str, document: &str, siblings: &[(&str, &str)]) -> (bool, String) {
+    let (_dir, path) = beside_fixtures_with(document, siblings);
     let out = std::process::Command::new(env!("CARGO_BIN_EXE_sce-codegen"))
         .arg("--workspace-root")
         .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join(".."))
@@ -509,4 +535,193 @@ fn a_backend_that_holds_no_union_refuses_a_lift_into_one_by_name() {
             "kotlin lowering of its union",
         ],
     );
+}
+
+/// `check -l rust` of `document` refuses it, saying each of `parts`.
+fn rust_refuses(document: &str, parts: &[&str]) {
+    let (ok, text) = checked("rust", document);
+    assert!(!ok, "refused:\n{text}");
+    refused_with(&text, parts);
+}
+
+/// Pinned by `reject_composed_operands` (`sce-build/src/forge/expr.rs`) and
+/// `Judge::expr_held` (`sce-build/src/forge/static_datamodel.rs`): a whole
+/// union is compared by no statechart (docs/adr/0092, section 5 item 2) and
+/// stands in no place of a value type, which would take it as a value of no
+/// type; it is read through its tag and the fields its tests prove.
+#[test]
+fn a_whole_union_is_no_operand_and_no_value_of_another_type() {
+    let data = format!("{CIRCLE}\n{DOT}\n    <data id=\"count\" sce:type=\"uint32\" expr=\"0\"/>");
+    rust_refuses(
+        &statechart_with(
+            &data,
+            r#"      <if cond="shape === mark">
+        <assign location="count" expr="1"/>
+      </if>"#,
+        ),
+        &[
+            "expression/unsupported-construct",
+            "a value of `union:Shape`, as an operand",
+        ],
+    );
+    for entry in [
+        r#"      <assign location="count" expr="shape"/>"#,
+        r#"      <if cond="shape">
+        <assign location="count" expr="1"/>
+      </if>"#,
+    ] {
+        rust_refuses(
+            &statechart_with(&data, entry),
+            &[
+                "expression/unsupported-construct",
+                "`shape`, a value of `union:Shape`, where a value of",
+                "is taken whole only into a variable of its union",
+            ],
+        );
+    }
+}
+
+/// Pinned by `Judge::log_value` and `logged_alike`
+/// (`sce-build/src/forge/static_datamodel.rs`): a union has no text every
+/// backend writes, present or optional, so a `<log>` of one is refused naming
+/// its type.
+#[test]
+fn a_union_is_no_value_a_log_writes() {
+    for (data, logged, ty) in [
+        (CIRCLE, "shape", "union:Shape"),
+        (LAST, "last", "optional<union:Shape>"),
+    ] {
+        rust_refuses(
+            &statechart_with(data, &format!("      <log expr=\"{logged}\"/>")),
+            &[
+                "scxml/static-log-unloggable-value",
+                &format!("its value is of type `{ty}`"),
+            ],
+        );
+    }
+}
+
+/// Pinned by `holds_whole_union` and `Judge::wire_param`
+/// (`sce-build/src/forge/static_datamodel.rs`): a whole union crosses only as
+/// a field of an event schema's union (docs/adr/0092, section 6.1 item 7),
+/// which no backend lowers yet, so a `<param>`, a `namelist` name, a
+/// `<content expr>` and a `<donedata>` that carry one are refused by its type.
+#[test]
+fn a_whole_union_crosses_no_param_namelist_content_or_donedata() {
+    let data = format!("{CIRCLE}\n{LAST}");
+    let crosses_none = |held: &str, ty: &str| {
+        [
+            "scxml/static-datamodel-rule".to_string(),
+            format!("`{held}` holds `{ty}`"),
+            "a whole union crosses only as a field of an event schema's union".to_string(),
+        ]
+    };
+    for (entry, held, ty) in [
+        (
+            r#"      <send event="seen">
+        <param name="p" expr="shape"/>
+      </send>"#,
+            "shape",
+            "union:Shape",
+        ),
+        (
+            r#"      <send event="seen" namelist="last"/>"#,
+            "last",
+            "optional<union:Shape>",
+        ),
+        (
+            r#"      <send event="seen">
+        <content expr="shape"/>
+      </send>"#,
+            "shape",
+            "union:Shape",
+        ),
+    ] {
+        let parts = crosses_none(held, ty);
+        let parts: Vec<&str> = parts.iter().map(String::as_str).collect();
+        rust_refuses(&statechart_with(&data, entry), &parts);
+    }
+    let done = machine_document(
+        "union_vars",
+        "",
+        &data,
+        r#"<state id="idle">
+    <transition target="done"/>
+  </state>
+  <final id="done">
+    <donedata>
+      <param name="p" expr="shape"/>
+    </donedata>
+  </final>"#,
+    );
+    let parts = crosses_none("shape", "union:Shape");
+    let parts: Vec<&str> = parts.iter().map(String::as_str).collect();
+    rust_refuses(&done, &parts);
+}
+
+/// Pinned by `seed_slot` and `unseedable_variable`
+/// (`sce-build/src/forge/static_datamodel.rs`): a parent's `<param>` seeds no
+/// child's union variable, which is built where the child declares it, and the
+/// refusal names the variable's type.
+#[test]
+fn a_parent_seeds_no_childs_union_variable() {
+    let child = machine_document(
+        "union_child",
+        "",
+        r#"    <data id="shape" sce:type="union:Shape">
+      <sce:set name="kind" expr="Kind.dot"/>
+    </data>"#,
+        r#"<state id="waiting"/>"#,
+    );
+    let parent = machine_document(
+        "union_vars",
+        "",
+        r#"    <data id="count" sce:type="uint32" expr="1"/>"#,
+        r#"<state id="idle">
+    <invoke type="scxml" id="worker" src="union_child.scxml">
+      <param name="shape" expr="count"/>
+    </invoke>
+  </state>"#,
+    );
+    let (ok, text) = checked_with("rust", &parent, &[("union_child.scxml", &child)]);
+    assert!(
+        !ok,
+        "a child's union variable is seeded by no param:\n{text}"
+    );
+    refused_with(
+        &text,
+        &[
+            "scxml/static-datamodel-rule",
+            "the child's `shape` is union:Shape",
+            "a union, an enum",
+        ],
+    );
+}
+
+/// Pinned by `static_signature` (`sce-build/src/forge/native_action.rs`): a
+/// host method takes no union, present or optional (docs/adr/0092, section 7),
+/// so a `<sce:arg>` that names one is refused by its type and not as a value
+/// of no type.
+#[test]
+fn a_host_action_takes_no_union_argument() {
+    for (data, held, ty) in [
+        (CIRCLE, "shape", "union:Shape"),
+        (LAST, "last", "optional<union:Shape>"),
+    ] {
+        rust_refuses(
+            &statechart_with(
+                data,
+                &format!(
+                    r#"      <sce:action name="show" effect="notice">
+        <sce:arg name="what" expr="{held}"/>
+      </sce:action>"#
+                ),
+            ),
+            &[
+                "validation/native-action-argument",
+                &format!("argument '{held}' holds `{ty}`"),
+                "a host method takes no union",
+            ],
+        );
+    }
 }

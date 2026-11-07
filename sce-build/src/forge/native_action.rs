@@ -779,6 +779,23 @@ fn static_signature(
                 diag_label,
             ));
         }
+        // ... nor is a whole union, present or absent (docs/adr/0092, section
+        // 7): refused by its type, not as a value of no type.
+        if let Some(held) = crate::forge::expr::written_place(&arg.expr)
+            .and_then(|path| ctx.value_of(&path))
+            .filter(|place| crate::forge::static_datamodel::holds_whole_union(&place.ty))
+        {
+            return Err(one_argument_err(
+                action,
+                arg,
+                diag_label,
+                format!(
+                    "argument '{}' holds `{}`, and a host method takes no union, present or \
+                     absent (docs/adr/0092, section 7): pass its tag or a field its tests prove",
+                    arg.expr, held.ty
+                ),
+            ));
+        }
         let ty = static_argument_type(&ctx, arg).map_err(|refusal| match refusal {
             ArgumentRefusal::Expression(refusal) => crate::forge::error::Located::in_file(
                 crate::forge::expression_site::ExpressionSite::new(

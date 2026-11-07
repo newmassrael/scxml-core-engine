@@ -947,9 +947,9 @@ fn reject_composed_operands(
                 .map(str::to_string);
             return Err(ExprError::UnsupportedConstruct {
                 construct: format!(
-                    "`{}`, a value of `{}`, as an operand (a list or a record is read through \
-                     its fields, its elements and its length, and is taken whole only into a \
-                     variable whose type it fits or by a <foreach>)",
+                    "`{}`, a value of `{}`, as an operand (a list, a record or a union is read \
+                     through its fields, its elements, its length and its tag, and is taken \
+                     whole only into a variable whose type it fits or by a <foreach>)",
                     observed.as_deref().unwrap_or_default(),
                     place.ty
                 ),

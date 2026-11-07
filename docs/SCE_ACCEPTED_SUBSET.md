@@ -4669,7 +4669,15 @@ union puts a text into a variable of it whole (`union:Shape` or
 `optional<union:Shape>`; any other location is `validation/lift-location`), read as a
 delivery's field of the union is read, its tag first, from the text's root; and an
 `sce:answer` may name the union, whose answer schema is named by its tag enum's
-revision, which the statechart must import the enum to know. The Rust machine holds
+revision, which the statechart must import the enum to know. A whole union is no
+operand (`===` of two unions is `expression/unsupported-construct`, as of two records)
+and stands in no place of a value type (an `<assign>` to a number, a `cond`), which is
+`expression/unsupported-construct` too; a `<log>` of one is
+`scxml/static-log-unloggable-value`; a `<param>`, a `namelist` name, a `<content expr>`
+or a `<donedata>` that carries one is `scxml/static-datamodel-rule`, since a union
+crosses only as a field of an event schema's union, which no backend lowers yet; a
+parent's `<param>` seeds no child's union variable (`scxml/static-datamodel-rule`); and
+a host action takes no union argument (`validation/native-action-argument`). The Rust machine holds
 either in its own sum (or `Option` of it), lent to a host by reference; a saved state
 holds the value as one object, its tag beside its case's fields, and the saved shape
 names the union's document and each case's record. Every other backend refuses the
