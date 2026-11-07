@@ -74,20 +74,113 @@ class _LuaSession:
 
     Each `Engine` instance owns one session id; the script engine's
     session table maps that id to one of these. Sessions are created
-    by `create_session` and destroyed by `destroy_session`."""
+    by `create_session` and destroyed by `destroy_session`.
 
-    __slots__ = ("runtime", "declared_vars", "state_query")
+    Every global this engine writes or reads after the shared semantics
+    file is loaded goes through the four Lua functions held here, never
+    through lupa's `globals()[name]`. §scxml-5.10: the four system
+    variables are bound by the shared `_scxml_bind_system` alone, the
+    globals table refuses an ordinary write of any of them with a Lua
+    error, and `_event` / `_ioprocessors` are read-only proxies whose
+    fields live behind them. A call into Lua is a protected call, so the
+    refusal arrives as `lupa.LuaError` and is turned into the
+    `ScriptError` every caller of this engine already handles; a table
+    store from the Python side has no such guarantee."""
+
+    __slots__ = (
+        "runtime",
+        "declared_vars",
+        "state_query",
+        "_bind_system",
+        "_read_global",
+        "_write_global",
+        "_entries",
+    )
 
     def __init__(self) -> None:
-        # lupa.LuaRuntime is the entry point — defaults to PUC Lua 5.x
-        # when the runtime can load it (Lua 5.4 in this project,
-        # matching other backends per `[[lua_engine_default]]`).
+        # `lupa.LuaRuntime` is the newest PUC Lua the installed lupa
+        # bundles, and LuaJIT only when it bundles no PUC Lua at all: with
+        # lupa 2.8 that is Lua 5.5. The engine needs 5.2 or later, for two
+        # reasons: the frontend reads a keyword-named variable as
+        # `_ENV["name"]`, and the system-variable proxies answer `pairs` and
+        # `#` through `__pairs` / `__len`, which Lua 5.1 and LuaJIT do not
+        # consult on a table.
         # `unpack_returned_tuples=True` so multi-return Lua functions
         # (e.g., `string.find`) decompose naturally on the Python side.
         self.runtime = lupa.LuaRuntime(unpack_returned_tuples=True)
         self.declared_vars: set = set()
         self.state_query: Optional[StateQueryCallback] = None
+        # The shared semantics file defines `_scxml_bind_system` and fences
+        # the globals table, so it is loaded before the accessors that rely
+        # on both are made.
         _install_ecmascript_builtins(self.runtime)
+        (
+            self._bind_system,
+            self._read_global,
+            self._write_global,
+            self._entries,
+        ) = self.runtime.execute(_SESSION_ACCESSORS)
+
+    def bind_system(self, name: str, value: Any) -> None:
+        """§scxml-5.10: bind the system variable `name`, through the one
+        binding the shared semantics file allows."""
+        try:
+            self._bind_system(name, value)
+        except lupa.LuaError as exc:
+            raise _script_error_of(exc) from exc
+
+    def write_global(self, name: str, value: Any) -> None:
+        """Bind the global `name`, as a script assigning it would. A name
+        the document chooses may be a system variable's, and §scxml-5.10
+        has that write fail: the refusal is raised as a `ScriptError`."""
+        try:
+            self._write_global(name, value)
+        except lupa.LuaError as exc:
+            raise _script_error_of(exc) from exc
+
+    def read_global(self, name: str) -> Any:
+        """The global `name` as a script reading it sees it, the system
+        variables included."""
+        try:
+            return self._read_global(name)
+        except lupa.LuaError as exc:
+            raise _script_error_of(exc) from exc
+
+    def entries(self, table: Any) -> Any:
+        """A plain copy of `table`'s entries, enumerated with `pairs` so a
+        proxy answers with the fields behind it. lupa's own walk of a table
+        is raw and finds a proxy empty."""
+        try:
+            return self._entries(table)
+        except lupa.LuaError as exc:
+            raise _script_error_of(exc) from exc
+
+
+# The accessors a session reaches its globals through (`_LuaSession`). `pairs`
+# and the binder are captured when the session is made, so a document that
+# later declares a variable of either name changes neither. `_ENV` is the
+# globals table of the chunk, which is why these need Lua 5.2 or later.
+_SESSION_ACCESSORS = """
+local pairs = pairs
+local bind = _scxml_bind_system
+assert(bind, "ecma_semantics.lua did not define _scxml_bind_system")
+return bind,
+    function(name) return _ENV[name] end,
+    function(name, value) _ENV[name] = value end,
+    function(t)
+        local copy = {}
+        for k, v in pairs(t) do copy[k] = v end
+        return copy
+    end
+"""
+
+
+def _script_error_of(exc: Exception) -> ScriptError:
+    """The `ScriptError` a Lua failure is reported to this engine's callers
+    as: a syntax error, or anything raised while running."""
+    if isinstance(exc, lupa.LuaSyntaxError):
+        return ScriptSyntaxError(str(exc))
+    return ScriptRuntimeError(str(exc))
 
 
 # ── Undeclared-identifier detection (ECMAScript ReferenceError parity) ──
@@ -141,8 +234,10 @@ def _is_undeclared_name(name: str, session: "_LuaSession") -> bool:
         return False
     # Lua standard-library globals (`table`, `string`, `math`, …) and
     # SCE-installed builtins (`_scxml_truthy`, `_event`, `_ioprocessors`,
-    # …) are non-nil in the session's global table.
-    return session.runtime.globals()[name] is None
+    # …) are non-nil in the session's global table. The system variables are
+    # held outside it and answered by its metatable, so the read is the one
+    # a script makes.
+    return session.read_global(name) is None
 
 
 # ── ECMAScript builtins (§scxml-B-2 semantics over Lua 5.4) ─────
@@ -298,13 +393,15 @@ class LuaScriptEngine(IScriptEngine):
         session = self._require_session(session_id)
         if not script:
             return ScriptValue.null()
+        # A script that writes a system variable, or a field of `_event` or
+        # `_ioprocessors`, is refused by the shared semantics file with a Lua
+        # error (the rule `_LuaSession` states), which arrives here as any
+        # other.
         try:
             result = session.runtime.execute(script)
-        except lupa.LuaSyntaxError as exc:
-            raise ScriptSyntaxError(str(exc)) from exc
         except lupa.LuaError as exc:
-            raise ScriptRuntimeError(str(exc)) from exc
-        return _lua_to_script_value(result)
+            raise _script_error_of(exc) from exc
+        return _lua_to_script_value(session, result)
 
     def evaluate_expression(self, session_id: str, expression: str) -> ScriptValue:
         """W3C SCXML 5.3 — evaluate a single expression. Empty input
@@ -327,11 +424,9 @@ class LuaScriptEngine(IScriptEngine):
             )
         try:
             result = session.runtime.eval(expression)
-        except lupa.LuaSyntaxError as exc:
-            raise ScriptSyntaxError(str(exc)) from exc
         except lupa.LuaError as exc:
-            raise ScriptRuntimeError(str(exc)) from exc
-        return _lua_to_script_value(result)
+            raise _script_error_of(exc) from exc
+        return _lua_to_script_value(session, result)
 
     def validate_expression(self, session_id: str, expression: str) -> bool:
         session = self._require_session(session_id)
@@ -352,9 +447,9 @@ class LuaScriptEngine(IScriptEngine):
         self, session_id: str, name: str, initial_value: ScriptValue
     ) -> None:
         session = self._require_session(session_id)
-        session.runtime.globals()[name] = _script_value_to_lua(
-            session, initial_value
-        )
+        # The document names the variable, so the write may be refused
+        # (`_LuaSession.write_global`); a refused name is not declared.
+        session.write_global(name, _script_value_to_lua(session, initial_value))
         session.declared_vars.add(name)
 
     def set_variable(
@@ -366,15 +461,17 @@ class LuaScriptEngine(IScriptEngine):
         rules), and the side-effect of declaring the name happens here
         too. The W3C "undeclared identifier raises ReferenceError" case
         is handled on the read side (`evaluate_expression`) — see the
-        C++ `isUndeclaredSimpleVariable` short-circuit."""
+        C++ `isUndeclaredSimpleVariable` short-circuit.
+
+        §scxml-5.10: a system variable's name is the one location refused,
+        as a `ScriptError` (`_LuaSession.write_global`)."""
         session = self._require_session(session_id)
-        session.runtime.globals()[name] = _script_value_to_lua(session, value)
+        session.write_global(name, _script_value_to_lua(session, value))
         session.declared_vars.add(name)
 
     def get_variable(self, session_id: str, name: str) -> ScriptValue:
         session = self._require_session(session_id)
-        value = session.runtime.globals()[name]
-        return _lua_to_script_value(value)
+        return _lua_to_script_value(session, session.read_global(name))
 
     def set_variable_as_dom(
         self, session_id: str, name: str, xml_content: str
@@ -392,10 +489,9 @@ class LuaScriptEngine(IScriptEngine):
         # pushDOMObject` on `XMLDocument::isValid()` = false).
         session = self._require_session(session_id)
         dom = _parse_xml_to_dom(xml_content, session.runtime)
-        if dom is None:
-            session.runtime.globals()[name] = " ".join(xml_content.split())
-        else:
-            session.runtime.globals()[name] = dom
+        session.write_global(
+            name, " ".join(xml_content.split()) if dom is None else dom
+        )
         session.declared_vars.add(name)
 
     def has_variable(self, session_id: str, name: str) -> bool:
@@ -410,18 +506,21 @@ class LuaScriptEngine(IScriptEngine):
         session_name: str,
         io_processors: List[IoProcessorDescriptor],
     ) -> None:
-        """W3C SCXML 5.10 — `_sessionid` / `_name` / `_ioprocessors`."""
+        """W3C SCXML 5.10 — `_sessionid` / `_name` / `_ioprocessors`.
+
+        §scxml-5.10: each is bound by `_scxml_bind_system`, the one binding
+        the shared semantics file allows, which keeps them read-only to
+        every script. A binding that fails raises a `ScriptError`."""
         session = self._require_session(session_id)
-        globals_ = session.runtime.globals()
-        globals_["_sessionid"] = session_id
-        globals_["_name"] = session_name
+        session.bind_system("_sessionid", session_id)
+        session.bind_system("_name", session_name)
         # §scxml-C-1-1 / §scxml-C-2-3: one entry per processor the deployment
         # supports, each with a `location` field holding the address that
         # reaches this session through it. Names and locations are decided by
         # `sce_runtime.io_processors.build`, so this engine's view of
         # `_ioprocessors` matches every other backend's. The lupa `table_from`
-        # builder produces a real Lua table the generated expressions can
-        # dot-access.
+        # builder produces a real Lua table, which the binding hands the
+        # document as a read-only proxy, entries included.
         io_table = session.runtime.table_from(
             {
                 processor.name: session.runtime.table_from(
@@ -430,7 +529,7 @@ class LuaScriptEngine(IScriptEngine):
                 for processor in io_processors
             }
         )
-        globals_["_ioprocessors"] = io_table
+        session.bind_system("_ioprocessors", io_table)
 
     def set_current_event(
         self,
@@ -484,7 +583,11 @@ class LuaScriptEngine(IScriptEngine):
         ):
             if value:
                 event_table[field] = value
-        session.runtime.globals()["_event"] = event_table
+        # The table is filled while it is still this engine's own and only
+        # then bound, by `_scxml_bind_system`, which hands scripts a
+        # read-only proxy of it (`_LuaSession`). Nothing writes into `_event`
+        # after this line; the next event binds a new table.
+        session.bind_system("_event", event_table)
         return reading
 
     # ── Native bindings ────────────────────────────────────────────
@@ -504,11 +607,11 @@ class LuaScriptEngine(IScriptEngine):
         session = self._require_session(session_id)
         session.state_query = callback
         if callback is None:
-            session.runtime.globals()["In"] = None
+            session.write_global("In", None)
         else:
             def _in_predicate(state_id: str) -> bool:
                 return bool(callback(state_id))
-            session.runtime.globals()["In"] = _in_predicate
+            session.write_global("In", _in_predicate)
 
     # ── Engine info ────────────────────────────────────────────────
 
@@ -533,10 +636,10 @@ class LuaScriptEngine(IScriptEngine):
         session: _LuaSession, name: str, callback: NativeMethod
     ) -> None:
         def _bridge(*lua_args: Any) -> Any:
-            args = [_lua_to_script_value(arg) for arg in lua_args]
+            args = [_lua_to_script_value(session, arg) for arg in lua_args]
             result = callback(args)
             return _script_value_to_lua(session, result)
-        session.runtime.globals()[name] = _bridge
+        session.write_global(name, _bridge)
 
 
 # ── Event payload coercion ───────────────────────────────────────
@@ -950,7 +1053,7 @@ def _script_value_to_lua(session: _LuaSession, value: ScriptValue) -> Any:
     return None
 
 
-def _lua_to_script_value(value: Any) -> ScriptValue:
+def _lua_to_script_value(session: _LuaSession, value: Any) -> ScriptValue:
     """Convert whatever lupa hands back into a `ScriptValue`. Tables are
     detected via the lupa-specific type — keyed tables become OBJECT,
     array-shaped tables become ARRAY (best-effort heuristic mirrors how
@@ -965,6 +1068,12 @@ def _lua_to_script_value(value: Any) -> ScriptValue:
         return ScriptValue(kind=ScriptValueKind.DOUBLE, double_val=value)
     if isinstance(value, str):
         return ScriptValue(kind=ScriptValueKind.STRING, string_val=value)
+    # `_event` and `_ioprocessors` reach here as read-only proxies
+    # (`_LuaSession`), empty tables whose fields live behind their
+    # metatable. lupa walks a table raw, so a Lua table is first copied out
+    # through `pairs`, which the proxy answers.
+    if lupa.lua_type(value) == "table":
+        value = session.entries(value)
     # lupa exposes Lua tables as objects answering to `.keys()` /
     # iteration. Test if every key is an integer 1..N (array shape) or
     # arbitrary (object shape).
@@ -980,9 +1089,11 @@ def _lua_to_script_value(value: Any) -> ScriptValue:
     ):
         return ScriptValue(
             kind=ScriptValueKind.ARRAY,
-            array_val=[_lua_to_script_value(value[i]) for i in sorted(keys)],
+            array_val=[
+                _lua_to_script_value(session, value[i]) for i in sorted(keys)
+            ],
         )
     return ScriptValue(
         kind=ScriptValueKind.OBJECT,
-        object_val={str(k): _lua_to_script_value(value[k]) for k in keys},
+        object_val={str(k): _lua_to_script_value(session, value[k]) for k in keys},
     )
