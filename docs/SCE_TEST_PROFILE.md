@@ -788,6 +788,8 @@ backend):
   template's `match` on it, so the machine includes the unit of every template it uses;
 - `<sce:setverdict>`, `<sce:start-timer>` and `<sce:stop-timer>` are calls on the component's
   `SCE::Test::ComponentContext`, a duration in whole microseconds, a timer's own where the statement writes none;
+- a `<log>` is recorded in the test log through the same context, with `NOW` and the component, its label and its
+  value as the engine's log shows them (P8), and never in the engine's log;
 - a send names its template's record's event and hands the test-port processor the specific template's value,
   as a value (`HostSendRequest::value`) and never an encoding (ADR 0091, C2); a PTC's `<invoke>` is run by the
   test-component invoker.
@@ -866,6 +868,7 @@ requires.
 | the order of P3 | the engine's `selectTransitions` (§scxml-D), unchanged. When no branch matches, no transition is enabled and the engine discards the event: nothing is removed, as §7 requires. |
 | taking a branch, P4 step 1 | one statement the generator puts before the branch's executable content. A receive branch removes the head of its port's queue and holds it as the transition's `_event.data`, in the payload member of its record's event (`Transition::payload_event`). A timeout branch sets its timer to `IDLE`. Every branch's statement also tells the runtime that the component took a branch in this round. |
 | `<sce:setverdict>`, `<sce:start-timer>`, `<sce:stop-timer>` | actions of their block (§11.5) that call the component's runtime context |
+| a `<log>` (P8) | the same action of its block, which calls the runtime context instead of the engine's log, so the test log records it with `NOW` and the component |
 | a send (P6) | a host Event I/O Processor for the test-port URI, registered by the runtime (ADR 0084). The request names the port and carries the template's value, as the value the generated code holds and never an encoding (C++: `HostSendRequest::value`). The runtime appends the value to the queue of the connected port, or hands it to the system adapter when the port is mapped. |
 | a PTC (P9) | a host invoke processor for the test-component URI, registered by the runtime. The engine asks for the start when the macrostep that entered the state ends (§scxml-6.4), which is when P9 creates, connects, maps and starts the PTC. It asks for the cancel when the state is exited, which is P9's kill. The runtime never reports a completion to the engine: `done` is read from the snapshot (P2). So a PTC that has terminated is still running for the engine, and the engine delivers the cancel for it too, which P9's kill requires. |
 

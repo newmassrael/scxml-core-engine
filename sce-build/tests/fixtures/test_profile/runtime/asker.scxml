@@ -2,7 +2,8 @@
 <!-- docs/SCE_TEST_PROFILE.md §11.5, §12.3: a main test component that asks
      the system under test for job 7 and waits a second for a reply of
      success. The reply it takes passes only if it answers job 7, which the
-     component reads from the message; no reply that matches in time fails. -->
+     component reads from the message and logs; no reply that matches in time
+     fails. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        version="1.0" sce:kind="test-component" name="asker"
@@ -26,6 +27,7 @@
     <transition sce:receive="sut" sce:test-template="ReplyOk" target="checking">
       <sce:stop-timer timer="reply"/>
       <assign location="answered" expr="_event.data.job"/>
+      <log label="answered" expr="_event.data.job"/>
     </transition>
     <transition sce:timeout="reply" target="failed">
       <sce:setverdict value="fail" reason="'no matching reply in time'"/>

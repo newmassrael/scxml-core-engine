@@ -259,6 +259,27 @@ fn the_statements_the_send_and_the_ptc_go_through_the_runtime() {
         .contains("this->testContext_->startTimer(\"patience\", ::SCE::Test::Duration{10000});"));
 }
 
+/// P8, §12.3: a test component's `<log>` is recorded in the test log through
+/// its runtime context, its label and its value as the engine's log shows
+/// them, and never in the engine's log; a `<log>` that writes only a label is
+/// recorded too.
+#[test]
+fn a_log_is_recorded_in_the_test_log() {
+    let asker = text("asker");
+    assert!(
+        asker.contains(
+            "this->testContext_->log(::std::string(\"answered: \") + \
+             ::SCE::Forge::presentText(sceLogName(pendingJobReplyPayload_.job)));"
+        ),
+        "the log reads the message the branch took"
+    );
+    assert!(
+        !asker.contains("SCE_LOG_INFO(\"{}: {}\", \"answered\""),
+        "a test component's log is not the engine's"
+    );
+    assert!(text("answerer").contains("this->testContext_->log(::std::string(\"asked\"));"));
+}
+
 /// docs/adr/0092, section 7: a component whose template reaches a union is
 /// refused on C++, which generates no unit of that template, by the union's
 /// own refusal.

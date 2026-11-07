@@ -172,6 +172,12 @@ TEST(ATestComponent, ThatIsAnsweredWithAMatchingReplyPasses) {
         << "a message travels under its template's record's event";
     EXPECT_EQ(responder.requested, std::vector<std::uint32_t>{7}) << "the template's value, given `job`";
     EXPECT_TRUE(firstRecord(result, "mtc", LogKind::Receive).has_value());
+    // P8: the `<log>` of the branch's content is in the test log, with the
+    // instant and the component, its label and the job it read.
+    const auto logged = firstRecord(result, "mtc", LogKind::Log);
+    ASSERT_TRUE(logged.has_value()) << "the component's <log> is recorded in the test log";
+    EXPECT_EQ(result.log[*logged].detail, "answered: 7");
+    EXPECT_EQ(result.log[*logged].at, ANSWER_DELAY);
 }
 
 /// P2, P7, §7: a reply the template does not match enables no branch and is
@@ -221,6 +227,11 @@ TEST(ATestComponent, CreatesAPtcExchangesAMessageWithItAndReadsItsDone) {
     const auto passed = firstRecord(result, "mtc", LogKind::Verdict);
     ASSERT_TRUE(created && asked && answered && done && killed && passed);
     EXPECT_LT(*created, *asked) << "the PTC is created when the macrostep that entered its state ends";
+    // P8: a `<log>` that writes only a label is recorded, by the PTC.
+    const auto noted = firstRecord(result, "answerer", LogKind::Log);
+    ASSERT_TRUE(noted.has_value());
+    EXPECT_EQ(result.log[*noted].detail, "asked");
+    EXPECT_LT(*asked, *noted) << "the log runs in its place, after the send before it";
     EXPECT_EQ(result.log[*asked].detail, "peer job.request");
     EXPECT_EQ(result.log[*answered].detail, "peer job.reply");
     EXPECT_LT(*answered, *done);

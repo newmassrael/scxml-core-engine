@@ -84,7 +84,10 @@
 // docs/adr/0038: `SimulatedHost` and the refusal of a host that only simulates.
 #include "runtime/SimulatedHost.h"
 {% endif %}
-{% if static_fields %}
+{# A test component's `<log>` shows its value through `sceLogName` and the
+   forge runtime's `presentText` whether or not the machine holds a variable
+   (docs/SCE_TEST_PROFILE.md §4.8). #}
+{% if static_fields or model.test_component %}
 {# SCE Accepted Subset §2.15, docs/adr/0045: a record's and an enum's saved form is two
    functions beside the type (`static_type_defs`), which write and read a value as the
    one JSON value model every backend's saved state is made of. #}
@@ -364,7 +367,7 @@ enum class History : uint8_t {
     {% endfor %}
 };
 
-{% if static_fields %}
+{% if static_fields or model.test_component %}
 {# SCE Accepted Subset §2.15: the types a `sce-static` machine's variables
    are held in, declared in the machine's own unit. `sceLogName` is how a
    `<log>` shows a value: an enum declares one beside its type, which names the

@@ -2268,6 +2268,14 @@ pub trait StaticTarget {
     fn test_statement(&self, _statement: &TestStatement, _reason: Option<&str>) -> Option<String> {
         None
     }
+    /// docs/SCE_TEST_PROFILE.md §4.8 (P8), §12.3: a test component's `<log>`,
+    /// recorded in the test log, with the instant and the component, as a call
+    /// on the component's runtime context: `label` and `value`, the lowered
+    /// `expr` where it writes one, as the engine's log shows them. `None` for a
+    /// target whose test component has not landed.
+    fn test_log(&self, _label: &str, _value: Option<&str>) -> Option<String> {
+        None
+    }
     /// docs/SCE_TEST_PROFILE.md §4.6 (P6), §12.3: the value a `<send>` of a
     /// test component carries to the test-port processor, the specific
     /// template `message` names given `args`, its arguments as this target
@@ -5605,6 +5613,7 @@ pub fn lower(
         lifts: std::cell::Cell::new(false),
         text_templates,
         document: model.name.clone(),
+        test_component: model.test_component.is_some(),
     };
 
     let refused = |what: &str, text: &str, refusal: Refusal| {
@@ -7897,6 +7906,10 @@ struct Rewrites<'m> {
     /// machine every lane's render log line carries, whatever a backend names
     /// the machine's types by.
     document: String,
+    /// Whether the document is a test component, whose `<log>` is recorded in
+    /// the test log through its runtime context (docs/SCE_TEST_PROFILE.md
+    /// §4.8, P8) rather than in the engine's log.
+    test_component: bool,
 }
 
 impl Rewrites<'_> {
@@ -9435,6 +9448,20 @@ impl StaticTarget for CppTarget {
                 format!("{CPP_TEST_CONTEXT}->stopTimer({});", cpp_text(timer))
             }
         })
+    }
+    // The text the engine's `<log>` would show (`Self::log`): the label, then
+    // the value as `sceLogName` names it and the forge runtime writes it
+    // (`SCE::Forge::presentText`).
+    fn test_log(&self, label: &str, value: Option<&str>) -> Option<String> {
+        let label = filters::escape_cpp(label.to_string());
+        let text = match (label.is_empty(), value) {
+            (_, None) => format!("::std::string(\"{label}\")"),
+            (true, Some(value)) => format!("::SCE::Forge::presentText(sceLogName({value}))"),
+            (false, Some(value)) => format!(
+                "::std::string(\"{label}: \") + ::SCE::Forge::presentText(sceLogName({value}))"
+            ),
+        };
+        Some(format!("{CPP_TEST_CONTEXT}->log({text});"))
     }
     // The specific template's `value`, which the send hands its processor as the
     // request's value (`HostSendRequest::value`, `actions/send.jinja2`).
@@ -16397,6 +16424,37 @@ fn lower_action(
                 cond.text
             };
             action.cond_constant = None;
+        }
+        // docs/SCE_TEST_PROFILE.md §4.8 (P8), §12.3: a test component's `<log>`
+        // changes nothing of the module state and is recorded in the test log,
+        // with the instant and the component, through its runtime context; a
+        // `<log>` that writes only a label is recorded too. A value that fails
+        // records nothing and ends the block, as a `<log>` of any statechart does.
+        "log" if rewrites.test_component => {
+            let label = action.label.clone();
+            let unspelled = || {
+                GenerateError::unsupported(format!(
+                    "the <log> of a test component has no {lang} lowering yet \
+                     (docs/SCE_TEST_PROFILE.md §12.6)"
+                ))
+            };
+            if action.expr.trim().is_empty() {
+                action.native_code = target.test_log(&label, None).ok_or_else(unspelled)?;
+                action.native_fails = false;
+            } else {
+                reads_payload = reads(&action.expr);
+                let value = lower(&action.expr, InferredType::Unknown)?;
+                rewrites.note(&action.expr, action.spellings.get("expr"), &value.text);
+                if target.test_log(&label, Some(&value.text)).is_none() {
+                    return Err(unspelled());
+                }
+                (action.native_code, action.native_fails) = statement(
+                    &value,
+                    InferredType::Unknown,
+                    &|v| target.test_log(&label, Some(v)).unwrap_or_default(),
+                    "<log>".to_string(),
+                );
+            }
         }
         "log" if !action.expr.trim().is_empty() => {
             reads_payload = reads(&action.expr);
