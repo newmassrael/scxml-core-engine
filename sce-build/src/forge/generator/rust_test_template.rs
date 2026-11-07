@@ -20,12 +20,15 @@
 //!
 //! A value that may be absent is read by a `match` on it, its present value
 //! bound for the tests that read it; a union by `matches!` on its case, the
-//! case's record bound for the tests of its matcher (docs/adr/0092). A
-//! negation is carried down to the tests, so a complement is written as the
-//! comparisons that do not hold rather than as `!` before a join.
+//! case's record bound for the tests of its matcher (docs/adr/0092). The
+//! tests are joined as every backend whose connectives are C's joins them
+//! ([`JoinSpelling`]): a negation carried down to the tests, so a complement
+//! is written as the comparisons that do not hold rather than as `!` before a
+//! join.
 
 use super::test_template_walk::{
-    integer_literal, Held, Op, Position, TemplateFunction, TemplateSpelling, TemplateWalk, Use,
+    integer_literal, CaseTest, Held, JoinSpelling, Op, Position, Stands, TemplateFunction,
+    TemplateSpelling, TemplateWalk, Use,
 };
 use super::*;
 use crate::forge::schema_unit_type::{unit_type, C11Declarations, UnitNames};
@@ -232,224 +235,14 @@ impl RustAt {
     }
 }
 
-/// Where a joined expression stands, which decides whether it is put in
-/// parentheses: whole (the body of a function, an arm, a guard), or an
-/// operand of `&&` or of `||`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Stands {
-    Whole,
-    Conjunct,
-    Disjunct,
-}
-
-/// What `held` comes to for every value, negated where `negated`, where the
-/// walk's tree decides it without reading the value: `Some(true)` or
-/// `Some(false)`, and `None` where it reads one.
-fn truth<A>(held: &Held<'_, A>, negated: bool) -> Option<bool> {
-    match held {
-        Held::True => Some(!negated),
-        Held::Not(part) => truth(part, !negated),
-        Held::All(parts) => connective_truth(parts, negated, !negated),
-        Held::Any(parts) => connective_truth(parts, negated, negated),
-        Held::Present { then, .. } => optional_truth(then, negated, negated),
-        Held::AbsentOr { then, .. } => optional_truth(then, !negated, negated),
-        Held::Case {
-            record: Some((_, then)),
-            ..
-        } if truth(then, false) == Some(false) => Some(negated),
-        Held::Compare { .. }
-        | Held::Count { .. }
-        | Held::Call(_)
-        | Held::Absent(_)
-        | Held::Case { .. } => None,
-    }
-}
-
-/// [`truth`] of a join of `parts`, each negated where `negated`: a conjunction
-/// where `conjunction`, else a disjunction.
-fn connective_truth<A>(parts: &[Held<'_, A>], negated: bool, conjunction: bool) -> Option<bool> {
-    // The value that decides the join whichever the others are, and the one
-    // that leaves it to them.
-    let decides = !conjunction;
-    let mut open = false;
-    for part in parts {
-        match truth(part, negated) {
-            Some(held) if held == decides => return Some(decides),
-            Some(_) => {}
-            None => open = true,
-        }
-    }
-    (!open).then_some(!decides)
-}
-
-/// [`truth`] of an optional's test that holds `absent_holds` where the value is
-/// absent and its test `then`, negated where `negated`, where it is present.
-fn optional_truth<A>(then: &Held<'_, A>, absent_holds: bool, negated: bool) -> Option<bool> {
-    (truth(then, negated) == Some(absent_holds)).then_some(absent_holds)
-}
-
-/// The operator of `op`, or of the comparison that holds where it does not.
-fn operator(op: Op, negated: bool) -> &'static str {
-    match (op, negated) {
-        (Op::Eq, false) => "==",
-        (Op::Eq, true) => "!=",
-        (Op::Ge, false) => ">=",
-        (Op::Ge, true) => "<",
-        (Op::Le, false) => "<=",
-        (Op::Le, true) => ">",
-    }
-}
-
 /// The Rust spelling of a template's unit.
 struct RustSpelling;
 
-impl RustSpelling {
-    /// `held` as one Rust expression standing at `stands`, negated where
-    /// `negated`.
-    fn join(&self, held: &Held<'_, RustAt>, negated: bool, stands: Stands) -> String {
-        match held {
-            Held::True => (!negated).to_string(),
-            Held::Not(part) => self.join(part, !negated, stands),
-            Held::All(parts) => self.connective(parts, negated, !negated, stands),
-            Held::Any(parts) => self.connective(parts, negated, negated, stands),
-            Held::Compare { at, op, rhs } => Self::compare(at, *op, negated, rhs),
-            Held::Count { at, op, n } => Self::count(at, *op, negated, *n),
-            Held::Call(call) => {
-                if negated {
-                    format!("!{call}")
-                } else {
-                    call.clone()
-                }
-            }
-            Held::Absent(at) => {
-                let test = if negated { "is_some" } else { "is_none" };
-                format!("{}.{test}()", at.at.base)
-            }
-            Held::Present { at, inner, then } => {
-                self.optional(&at.at, &inner.at, then, negated, negated, stands)
-            }
-            Held::AbsentOr { at, inner, then } => {
-                self.optional(&at.at, &inner.at, then, !negated, negated, stands)
-            }
-            Held::Case {
-                at,
-                union,
-                variant,
-                record,
-            } => {
-                let case = format!(
-                    "{}::{}",
-                    rust_union_type(union),
-                    crate::forge::composed_lowering::rust_case_ident(variant)
-                );
-                let scrutinee = at.at.borrowed();
-                let test = match record {
-                    None => format!("matches!({scrutinee}, {case})"),
-                    Some((inner, then)) => match truth(then, false) {
-                        Some(true) => format!("matches!({scrutinee}, {case}(_))"),
-                        Some(false) => return negated.to_string(),
-                        None => format!(
-                            "matches!({scrutinee}, {case}({}) if {})",
-                            inner.at.base,
-                            self.join(then, false, Stands::Whole)
-                        ),
-                    },
-                };
-                if negated {
-                    format!("!{test}")
-                } else {
-                    test
-                }
-            }
-        }
-    }
-
-    /// The join of `parts`, each negated where `negated`, by `&&` where
-    /// `conjunction` and by `||` otherwise: a part that holds for every value
-    /// is left out, and one that decides the join is the join.
-    fn connective(
-        &self,
-        parts: &[Held<'_, RustAt>],
-        negated: bool,
-        conjunction: bool,
-        stands: Stands,
-    ) -> String {
-        let decides = !conjunction;
-        let mut open = Vec::new();
-        for part in parts {
-            match truth(part, negated) {
-                Some(held) if held == decides => return decides.to_string(),
-                Some(_) => {}
-                None => open.push(part),
-            }
-        }
-        match open.as_slice() {
-            [] => (!decides).to_string(),
-            [part] => self.join(part, negated, stands),
-            _ => {
-                let (operand, joiner) = if conjunction {
-                    (Stands::Conjunct, " && ")
-                } else {
-                    (Stands::Disjunct, " || ")
-                };
-                let joined = open
-                    .iter()
-                    .map(|part| self.join(part, negated, operand))
-                    .collect::<Vec<_>>()
-                    .join(joiner);
-                let nested = match stands {
-                    Stands::Whole => false,
-                    Stands::Conjunct => !conjunction,
-                    Stands::Disjunct => conjunction,
-                };
-                if nested {
-                    format!("({joined})")
-                } else {
-                    joined
-                }
-            }
-        }
-    }
-
-    /// The test of the optional at `at`: `absent_holds` where it holds no
-    /// value, and `then`, negated where `negated`, on the value it holds,
-    /// bound at `inner`. A `match` on the optional, in parentheses as an
-    /// operand, where both are read.
-    fn optional(
-        &self,
-        at: &RustAt,
-        inner: &RustAt,
-        then: &Held<'_, RustAt>,
-        absent_holds: bool,
-        negated: bool,
-        stands: Stands,
-    ) -> String {
-        match (truth(then, negated), absent_holds) {
-            (Some(true), true) => "true".to_string(),
-            (Some(false), false) => "false".to_string(),
-            (Some(true), false) => format!("{}.is_some()", at.base),
-            (Some(false), true) => format!("{}.is_none()", at.base),
-            (None, _) => {
-                let test = format!(
-                    "match {} {{ Some({}) => {}, None => {absent_holds} }}",
-                    at.borrowed(),
-                    inner.base,
-                    self.join(then, negated, Stands::Whole)
-                );
-                if stands == Stands::Whole {
-                    test
-                } else {
-                    format!("({test})")
-                }
-            }
-        }
-    }
-
-    /// The comparison of the value at `at` with `rhs`, or the one that holds
-    /// where it does not. A `bool` is compared with a literal by reading it, a
-    /// byte string as the octets it holds.
-    fn compare(at: &Position<'_, RustAt>, op: Op, negated: bool, rhs: &str) -> String {
-        let operator = operator(op, negated);
+impl JoinSpelling for RustSpelling {
+    /// A `bool` is compared with a literal by reading it, a byte string as the
+    /// octets it holds.
+    fn compare(&self, at: &Position<'_, RustAt>, op: Op, negated: bool, rhs: &str) -> String {
+        let operator = op.spelled(negated);
         match &at.ty {
             TypeOf::Scalar(SceType::Bool) if rhs == "true" || rhs == "false" => {
                 if (rhs == "true") == (operator == "==") {
@@ -463,12 +256,10 @@ impl RustSpelling {
         }
     }
 
-    /// The count of the value at `at` compared with `n`, or the comparison
-    /// that holds where it does not: the characters of a text, the octets of a
-    /// byte string, the elements of a list. A count compared with none or one
-    /// is whether the value is empty.
-    fn count(at: &Position<'_, RustAt>, op: Op, negated: bool, n: u32) -> String {
-        let operator = operator(op, negated);
+    /// A text counts its characters; a count compared with none or one is
+    /// whether the value is empty.
+    fn count(&self, at: &Position<'_, RustAt>, op: Op, negated: bool, n: u32) -> String {
+        let operator = op.spelled(negated);
         let base = &at.at.base;
         match (operator, n) {
             ("==" | "<=", 0) | ("<", 1) => return format!("{base}.is_empty()"),
@@ -480,6 +271,60 @@ impl RustSpelling {
             _ => format!("{base}.len()"),
         };
         format!("{counted} {operator} {n}")
+    }
+
+    fn absence(&self, at: &RustAt, negated: bool) -> String {
+        let test = if negated { "is_some" } else { "is_none" };
+        format!("{}.{test}()", at.base)
+    }
+
+    /// A `match` on the optional, in parentheses as an operand.
+    fn bound_optional(
+        &self,
+        at: &RustAt,
+        inner: &RustAt,
+        then: &Held<'_, RustAt>,
+        absent_holds: bool,
+        negated: bool,
+        stands: Stands,
+    ) -> String {
+        let test = format!(
+            "match {} {{ Some({}) => {}, None => {absent_holds} }}",
+            at.borrowed(),
+            inner.base,
+            self.join(then, negated, Stands::Whole)
+        );
+        if stands == Stands::Whole {
+            test
+        } else {
+            format!("({test})")
+        }
+    }
+
+    /// `matches!` on the case, its record bound and held by the guard where
+    /// the case's matcher reads it.
+    fn case_test(
+        &self,
+        at: &RustAt,
+        union: &ScopedUnion,
+        variant: &str,
+        record: CaseTest<'_, '_, RustAt>,
+    ) -> String {
+        let case = format!(
+            "{}::{}",
+            rust_union_type(union),
+            crate::forge::composed_lowering::rust_case_ident(variant)
+        );
+        let scrutinee = at.borrowed();
+        match record {
+            CaseTest::Empty => format!("matches!({scrutinee}, {case})"),
+            CaseTest::AnyRecord => format!("matches!({scrutinee}, {case}(_))"),
+            CaseTest::Holds { inner, then } => format!(
+                "matches!({scrutinee}, {case}({}) if {})",
+                inner.base,
+                self.join(then, false, Stands::Whole)
+            ),
+        }
     }
 }
 

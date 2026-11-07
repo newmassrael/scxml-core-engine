@@ -15,7 +15,10 @@
 //! walk decides ([`TemplateSpelling`]): a position, a literal, a parameter, a
 //! call of a referenced unit and the parts of a value, and it joins the tree
 //! ([`Held`]) into an expression of its language, so only the spelling differs
-//! between backends.
+//! between backends. A backend whose `&&`, `||` and `!` are C's and which
+//! writes the tree with what it decides for every value folded away
+//! ([`truth`]) spells only the leaves ([`JoinSpelling`]); the join is written
+//! here.
 //!
 //! Matching is on the values the event schema's unit declares, not on an
 //! encoding (ADR 0091 C2).
@@ -75,6 +78,17 @@ impl Op {
             Self::Eq => "==",
             Self::Ge => ">=",
             Self::Le => "<=",
+        }
+    }
+
+    /// The operator, or, where `negated`, the one of the comparison that holds
+    /// where it does not.
+    pub(super) fn spelled(self, negated: bool) -> &'static str {
+        match (self, negated) {
+            (op, false) => op.symbol(),
+            (Self::Eq, true) => "!=",
+            (Self::Ge, true) => "<",
+            (Self::Le, true) => ">",
         }
     }
 }
@@ -172,6 +186,82 @@ impl<A> Held<'_, A> {
     }
 }
 
+/// What `held` comes to for every value, negated where `negated`, where the
+/// walk's tree decides it without reading the value: `Some(true)` or
+/// `Some(false)`, and `None` where it reads one.
+pub(super) fn truth<A>(held: &Held<'_, A>, negated: bool) -> Option<bool> {
+    match held {
+        Held::True => Some(!negated),
+        Held::Not(part) => truth(part, !negated),
+        Held::All(parts) => connective_truth(parts, negated, !negated),
+        Held::Any(parts) => connective_truth(parts, negated, negated),
+        Held::Present { then, .. } => optional_truth(then, negated, negated),
+        Held::AbsentOr { then, .. } => optional_truth(then, !negated, negated),
+        Held::Case {
+            record: Some((_, then)),
+            ..
+        } if truth(then, false) == Some(false) => Some(negated),
+        Held::Compare { .. }
+        | Held::Count { .. }
+        | Held::Call(_)
+        | Held::Absent(_)
+        | Held::Case { .. } => None,
+    }
+}
+
+/// [`truth`] of a join of `parts`, each negated where `negated`: a conjunction
+/// where `conjunction`, else a disjunction.
+fn connective_truth<A>(parts: &[Held<'_, A>], negated: bool, conjunction: bool) -> Option<bool> {
+    // The value that decides the join whichever the others are, and the one
+    // that leaves it to them.
+    let decides = !conjunction;
+    let mut open = false;
+    for part in parts {
+        match truth(part, negated) {
+            Some(held) if held == decides => return Some(decides),
+            Some(_) => {}
+            None => open = true,
+        }
+    }
+    (!open).then_some(!decides)
+}
+
+/// [`truth`] of an optional's test that holds `absent_holds` where the value is
+/// absent and its test `then`, negated where `negated`, where it is present.
+fn optional_truth<A>(then: &Held<'_, A>, absent_holds: bool, negated: bool) -> Option<bool> {
+    (truth(then, negated) == Some(absent_holds)).then_some(absent_holds)
+}
+
+/// Where a joined expression stands, which decides whether it is put in
+/// parentheses: whole (the body of a function, an arm, a guard), or an
+/// operand of `&&` or of `||`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Stands {
+    Whole,
+    Conjunct,
+    Disjunct,
+}
+
+/// What the test of a union's case reads of the case's record
+/// ([`Held::Case`]), once the walk's tree has decided what it can.
+pub(super) enum CaseTest<'h, 's, A> {
+    /// The case holds no record.
+    Empty,
+    /// The case holds a record, which its matcher holds whatever it is.
+    AnyRecord,
+    /// The case's record, bound at `inner`, holds `then`.
+    Holds { inner: &'h A, then: &'h Held<'s, A> },
+}
+
+/// `test`, or the test that holds where it does not, where `negated`.
+fn negate(test: String, negated: bool) -> String {
+    if negated {
+        format!("!{test}")
+    } else {
+        test
+    }
+}
+
 /// How a backend spells what the walk decides. A position's spelling is the
 /// backend's own ([`Self::At`]); the walk keeps the type and the scope beside
 /// it ([`Position`]).
@@ -263,6 +353,158 @@ pub(super) trait TemplateSpelling {
         _record: Option<String>,
     ) -> Result<String, String> {
         Err(crate::forge::value_type::union_unlowered(&union.name))
+    }
+}
+
+/// How a backend whose `&&`, `||` and `!` are C's, `&&` binding tighter,
+/// writes the leaves of the tree; [`Self::join`] writes the tree, once for
+/// every such backend. A negation is carried down to the leaves, so a
+/// complement is written as the comparisons that do not hold rather than as
+/// `!` before a join; a part the tree decides for every value
+/// ([`truth`]) is left out of its join, or is the join where it decides it;
+/// and a join is put in parentheses only where it is an operand of the other
+/// connective.
+pub(super) trait JoinSpelling: TemplateSpelling {
+    /// The comparison of the value at `at` with `rhs`, or the one that holds
+    /// where it does not, where `negated`.
+    fn compare(&self, at: &Position<'_, Self::At>, op: Op, negated: bool, rhs: &str) -> String;
+    /// The count of the value at `at` compared with `n`, or the comparison
+    /// that holds where it does not: the characters of a text, the octets of a
+    /// byte string, the elements of a list.
+    fn count(&self, at: &Position<'_, Self::At>, op: Op, negated: bool, n: u32) -> String;
+    /// Whether the optional at `at` holds no value, or, where `negated`, holds
+    /// one.
+    fn absence(&self, at: &Self::At, negated: bool) -> String;
+    /// The test of the optional at `at` that holds `absent_holds` where it
+    /// holds no value and `then`, negated where `negated`, on the value it
+    /// holds, bound at `inner`, standing at `stands`. Asked only where both
+    /// are read.
+    fn bound_optional(
+        &self,
+        at: &Self::At,
+        inner: &Self::At,
+        then: &Held<'_, Self::At>,
+        absent_holds: bool,
+        negated: bool,
+        stands: Stands,
+    ) -> String;
+    /// Whether the union `union` at `at` is in the case `variant`, and what
+    /// its record holds there (`record`).
+    fn case_test(
+        &self,
+        at: &Self::At,
+        union: &ScopedUnion,
+        variant: &str,
+        record: CaseTest<'_, '_, Self::At>,
+    ) -> String;
+
+    /// `held` as one expression standing at `stands`, negated where
+    /// `negated`.
+    fn join(&self, held: &Held<'_, Self::At>, negated: bool, stands: Stands) -> String {
+        match held {
+            Held::True => (!negated).to_string(),
+            Held::Not(part) => self.join(part, !negated, stands),
+            Held::All(parts) => self.connective(parts, negated, !negated, stands),
+            Held::Any(parts) => self.connective(parts, negated, negated, stands),
+            Held::Compare { at, op, rhs } => self.compare(at, *op, negated, rhs),
+            Held::Count { at, op, n } => self.count(at, *op, negated, *n),
+            Held::Call(call) => negate(call.clone(), negated),
+            Held::Absent(at) => self.absence(&at.at, negated),
+            Held::Present { at, inner, then } => {
+                self.optional(&at.at, &inner.at, then, negated, negated, stands)
+            }
+            Held::AbsentOr { at, inner, then } => {
+                self.optional(&at.at, &inner.at, then, !negated, negated, stands)
+            }
+            Held::Case {
+                at,
+                union,
+                variant,
+                record,
+            } => {
+                let record = match record {
+                    None => CaseTest::Empty,
+                    Some((inner, then)) => match truth(then, false) {
+                        Some(true) => CaseTest::AnyRecord,
+                        Some(false) => return negated.to_string(),
+                        None => CaseTest::Holds {
+                            inner: &inner.at,
+                            then,
+                        },
+                    },
+                };
+                negate(self.case_test(&at.at, union, variant, record), negated)
+            }
+        }
+    }
+
+    /// The join of `parts`, each negated where `negated`, by `&&` where
+    /// `conjunction` and by `||` otherwise: a part that holds for every value
+    /// is left out, and one that decides the join is the join.
+    fn connective(
+        &self,
+        parts: &[Held<'_, Self::At>],
+        negated: bool,
+        conjunction: bool,
+        stands: Stands,
+    ) -> String {
+        let decides = !conjunction;
+        let mut open = Vec::new();
+        for part in parts {
+            match truth(part, negated) {
+                Some(held) if held == decides => return decides.to_string(),
+                Some(_) => {}
+                None => open.push(part),
+            }
+        }
+        match open.as_slice() {
+            [] => (!decides).to_string(),
+            [part] => self.join(part, negated, stands),
+            _ => {
+                let (operand, joiner) = if conjunction {
+                    (Stands::Conjunct, " && ")
+                } else {
+                    (Stands::Disjunct, " || ")
+                };
+                let joined = open
+                    .iter()
+                    .map(|part| self.join(part, negated, operand))
+                    .collect::<Vec<_>>()
+                    .join(joiner);
+                let nested = match stands {
+                    Stands::Whole => false,
+                    Stands::Conjunct => !conjunction,
+                    Stands::Disjunct => conjunction,
+                };
+                if nested {
+                    format!("({joined})")
+                } else {
+                    joined
+                }
+            }
+        }
+    }
+
+    /// The test of the optional at `at`: `absent_holds` where it holds no
+    /// value, and `then`, negated where `negated`, on the value it holds,
+    /// bound at `inner`. Where the tree decides `then` for every value, the
+    /// optional's absence or presence alone, or the constant it comes to.
+    fn optional(
+        &self,
+        at: &Self::At,
+        inner: &Self::At,
+        then: &Held<'_, Self::At>,
+        absent_holds: bool,
+        negated: bool,
+        stands: Stands,
+    ) -> String {
+        match (truth(then, negated), absent_holds) {
+            (Some(true), true) => "true".to_string(),
+            (Some(false), false) => "false".to_string(),
+            (Some(true), false) => self.absence(at, true),
+            (Some(false), true) => self.absence(at, false),
+            (None, _) => self.bound_optional(at, inner, then, absent_holds, negated, stands),
+        }
     }
 }
 
