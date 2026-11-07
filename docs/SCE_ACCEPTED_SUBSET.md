@@ -545,18 +545,18 @@ component, its machine driven by the profile's runtime through the doors of
 `docs/SCE_TEST_PROFILE.md` §12.3, each module parameter read from the run before the
 machine starts, and refuses, with `generate/unsupported-feature`, one that uses a template
 whose type reaches a union. Rust generates a test component too, through the same doors,
-and refuses with `generate/unsupported-feature` one that declares a module parameter, whose
-value is the suite's and Rust generates no suite yet, one whose receive branch's content
-reads a message of a record with a text, byte string or enum field, one that declares
-`<sce:action>`, and every one under `--no-std`, since the profile's runtime is `std` only.
+each module parameter read from the run before the machine starts, and refuses with
+`generate/unsupported-feature` one whose receive branch's content reads a message of a
+record with a text, byte string or enum field, one that declares `<sce:action>`, and every
+one under `--no-std`, since the profile's runtime is `std` only. A backend that generates a
+component and not a suite's tables refuses one that declares a module parameter by name.
 On both backends a variable of an enum bound to a template's parameter crosses into the
 enum unit's type, and one of an optional enum is refused by name. A module parameter whose type is not
 a scalar, `string[N]` or `bytes[N]` is refused by name (`generate/unsupported-feature`) on
-every backend. C++ generates the tables of a test configuration, a test case and a suite,
-and writes no file
-for a port type (§11.9, §12.6, slice 5); it refuses a suite whose guard is past the
-microseconds the runtime's clock counts to. Every other pair of a backend and a kind of
-the profile is refused by name.
+every backend. C++ and Rust generate the tables of a test configuration, a test case and
+a suite, and write no file for a port type (§11.9, §12.6, slices 5 and 6); each refuses a
+suite whose guard is past the microseconds the runtime's clock counts to. Every other pair
+of a backend and a kind of the profile is refused by name.
 
 A port type, a configuration, a test case and a suite are then held to the rules their
 imports decide (`docs/SCE_TEST_PROFILE.md` §11.3, §11.6 to §11.8), and a document a
