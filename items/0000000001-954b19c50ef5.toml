@@ -9,3 +9,9 @@ session = "50b0e8b6-c0e0-4abe-893f-bd3a87a37221"
 worktree = "/home/coin/scxml-core-engine/.claude/worktrees/agent-ac19d76a9ddb79bec"
 branch = "agent-ac19d76a9ddb79bec"
 at = 1794045189
+
+[land]
+candidate = "285c8f570df95751f538635f0a7beb28458c496f"
+base = "0b7793826c896622501f9001e92fbd57ad7b6b65"
+with = [1]
+at = 1794060521
