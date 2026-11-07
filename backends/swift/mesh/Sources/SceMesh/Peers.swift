@@ -20,11 +20,19 @@ public enum PeerLink: Equatable, Sendable {
     /// §mesh-18.1: the peer dials this machine.
     case wssAccept(keepaliveMs: UInt32?)
 
-    /// The §mesh-18.3 ping interval, or nil for the binding's 30 s.
+    /// SCE_MESH.md section 20: the peer is reached through the one Zenoh session this machine opens to its
+    /// router, by the peer's name. It carries no parameters: the key is derived from the two machine names (20.1) and
+    /// the router endpoints are the host's own client configuration, which the host gives `ZenohInbox` (or
+    /// `ZenohReconnectingInbox`) as a `ZenohClient`.
+    case zenohInbox
+
+    /// The §mesh-18.3 ping interval, or nil for the binding's 30 s. A Zenoh link has none: presence is the
+    /// router's, and the binding keeps no keepalive of its own (20.3).
     public var keepaliveMs: UInt32? {
         switch self {
         case let .wssDial(_, keepaliveMs): keepaliveMs
         case let .wssAccept(keepaliveMs): keepaliveMs
+        case .zenohInbox: nil
         }
     }
 }

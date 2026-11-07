@@ -3364,11 +3364,20 @@ impl HostCoreGap {
     /// core lacks is repaired by the backend whose core has it.
     fn refusal(&self) -> String {
         match self {
-            Self::CoreLacksTransport { backend, .. } => format!(
-                "which the {backend} host Mesh core does not carry (SCE_MESH.md §mesh-19). \
-                 Generate this machine with `--lang rust`, or bind the peer over a \
-                 transport that core carries."
-            ),
+            Self::CoreLacksTransport { transport, backend } => {
+                // The backends whose core carries the transport are read from the registry, so a
+                // core that gains the adapter is offered here without a second edit.
+                let carriers = super::transport::host_core_languages(transport)
+                    .iter()
+                    .map(|language| format!("`--lang {}`", language.canonical_name()))
+                    .collect::<Vec<_>>()
+                    .join(" or ");
+                format!(
+                    "which the {backend} host Mesh core does not carry (SCE_MESH.md §mesh-19). \
+                     Generate this machine with {carriers}, or bind the peer over a \
+                     transport that core carries."
+                )
+            }
             Self::ServerBlock { .. }
             | Self::DeviceListen { .. }
             | Self::PartitionRoutes
