@@ -548,10 +548,13 @@ whose type reaches a union. Rust generates a test component too, through the sam
 each module parameter read from the run before the machine starts, and refuses with
 `generate/unsupported-feature` one whose receive branch's content reads a message of a
 record with a text, byte string or enum field, one that declares `<sce:action>`, and every
-one under `--no-std`, since the profile's runtime is `std` only. A backend that generates a
-component and not a suite's tables refuses one that declares a module parameter by name.
-On both backends a variable of an enum bound to a template's parameter crosses into the
-enum unit's type, and one of an optional enum is refused by name. A module parameter whose type is not
+one under `--no-std`, since the profile's runtime is `std` only. Kotlin generates a test
+component too, through the same doors, copies a message of a record with a text, byte
+string or enum field that a branch's content reads, and refuses with
+`generate/unsupported-feature` one that declares `<sce:action>`. A backend that generates a
+component and not a suite's tables, Kotlin among them, refuses one that declares a module
+parameter by name. On every such backend a variable of an enum bound to a template's
+parameter crosses into the enum unit's type, and one of an optional enum is refused by name. A module parameter whose type is not
 a scalar, `string[N]` or `bytes[N]` is refused by name (`generate/unsupported-feature`) on
 every backend. C++ and Rust generate the tables of a test configuration, a test case and
 a suite, and write no file for a port type (§11.9, §12.6, slices 5 and 6); each refuses a
