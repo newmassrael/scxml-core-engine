@@ -137,6 +137,7 @@ const PRINTED: &[&str] = &[
     "codec_zenoh_undecl_subscriber",
     "codec_zenoh_undecl_token",
     "codec_zenoh_value_slice",
+    "codec_zenoh_value_zbuf",
     "codec_zenoh_wireexpr",
     "keyexpr_entry",
     "queue_conformance_event",

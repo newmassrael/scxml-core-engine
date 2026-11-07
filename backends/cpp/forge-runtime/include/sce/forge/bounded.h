@@ -25,6 +25,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string_view>
 #include <type_traits>
@@ -285,6 +286,49 @@ template <typename C, typename T> struct IsView<std::basic_string_view<C, T>> : 
 template <typename R>
 struct Lasting : std::disjunction<std::is_lvalue_reference<R>,
                                   std::conjunction<std::negation<std::is_reference<R>>, IsView<std::remove_cv_t<R>>>> {
+};
+
+/// What an encode keeps of a read returning `R` that it makes on some paths
+/// only and uses past them, such as a body or a list one arm of a group holds:
+/// the object a reference names, by its address, or what a read by value
+/// returns, held whole. It keeps nothing until `keep` is called, and presents
+/// what it keeps as a `const` object, as a `std::optional` does.
+template <typename R> class Kept {
+    using T = std::remove_cv_t<std::remove_reference_t<R>>;
+    static constexpr bool by_address = std::is_lvalue_reference<R>::value;
+
+public:
+    /// Keeps `read`, what a read returning `R` returned.
+    void keep(R read) noexcept(by_address || std::is_nothrow_move_constructible<T>::value) {
+        if constexpr (by_address) {
+            m_held = std::addressof(read);
+        } else {
+            m_held.emplace(std::move(read));
+        }
+    }
+
+    /// Whether it keeps a read.
+    [[nodiscard]] constexpr bool has_value() const noexcept {
+        return static_cast<bool>(m_held);
+    }
+
+    /// Whether it keeps a read.
+    constexpr explicit operator bool() const noexcept {
+        return has_value();
+    }
+
+    /// What it keeps; it keeps a read.
+    [[nodiscard]] constexpr const T &operator*() const noexcept {
+        return *m_held;
+    }
+
+    /// What it keeps; it keeps a read.
+    [[nodiscard]] constexpr const T *operator->() const noexcept {
+        return std::addressof(**this);
+    }
+
+private:
+    std::conditional_t<by_address, const T *, std::optional<T>> m_held{};
 };
 
 }  // namespace Detail

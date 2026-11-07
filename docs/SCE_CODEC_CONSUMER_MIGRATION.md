@@ -1379,6 +1379,20 @@ gated byte string is counted by a length always on the wire (2 more codecs of th
   or a view (`Bytes<N>`, a `const Bounded<...>&`), not as a list that owns them returned by value, which the
   source trait refuses (`::SCE::Forge::Detail::Lasting`).
 
+## A printed C++ codec holds a list or a body on one side of a gate as the arm that holds it (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C++ tree is regenerated after it. It moves the codec whose
+list of entries is one arm of a gate (1 more codec of the resources, 123 in all: `codec_zenoh_value_zbuf`).
+
+- The arm's list is `arm.<list>()`, a `List<Entry, N>` view of the entries the arm holds, and a body is
+  `arm.<body>()`, a `const Body&`; the arm's constructor takes the view or the body, and the count of the list is
+  derived where it was a public member.
+- A consumer type that presents such a group to `Wire::encode_source` presents the list of an arm as any list
+  within its bound whose entries are sources of the entry codec, and a body as any source of the body's codec,
+  as a reference or by value: the encode keeps what the read returns, by address or whole
+  (`::SCE::Forge::Detail::Kept`), until it writes it. A list or a body that more than one arm holds is not
+  printed yet.
+
 ## A payload schema states its keys in the order the document declares them (ADR 0087 §1.1)
 
 Landing: the commit that adds this section; every tree holding a `JSON_SCHEMA` constant or a GBNF table (the Rust,

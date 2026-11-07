@@ -87,58 +87,11 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
             // and a text likewise, in UTF-8 bytes; one the protocol states no
             // bound of is held to `kUnbounded` (§7).
             Value::Bytes(_) | Value::Text(_) => {}
-            // A body is encoded over a source of its codec, which a codec the
-            // printer prints has; it is written whole, every input it takes
-            // handed by what the parent binds to it. One a gate decides is
-            // presented as an optional value and written where it is present.
-            Value::Body { codec } => {
-                if !held_printed(imports, codec) {
-                    forms.push(format!(
-                        "`{id}`, a body of a codec the printer does not print"
-                    ));
-                }
-                if plan
-                    .handed
-                    .get(*codec)
-                    .is_some_and(|handed| handed.iter().any(|h| h.from.is_none()))
-                {
-                    forms.push(format!("`{id}`, a body handed an input nothing binds"));
-                }
-            }
-            // A list of entries is held to its bound, `kUnbounded` where the
-            // protocol states none (docs/adr/0077 §7), and walked entry by
-            // entry, each written by its codec's encode over the source the
-            // list holds it as. One a gate decides is presented as an optional
-            // value and walked where it is present. One whose entries say the
-            // inputs it hands them is held to its law (docs/adr/0065 §6 R8);
-            // one whose entries say an input in some of their values only is
-            // not yet.
-            Value::List { codec, law, .. } => {
-                if !held_printed(imports, codec) {
-                    forms.push(format!(
-                        "`{id}`, a list of entries of a codec the printer does not print"
-                    ));
-                }
-                let partly = law.inputs.iter().any(|input| {
-                    imports.iter().any(|import| {
-                        import.alias == *codec
-                            && import.codec_partly_says_inputs.contains(&input.input)
-                    })
-                });
-                if partly {
-                    forms.push(format!(
-                        "`{id}`, a list whose entries say an input in some of their values only"
-                    ));
-                }
-                if plan
-                    .handed
-                    .get(*codec)
-                    .is_some_and(|handed| handed.iter().any(|h| h.from.is_none()))
-                {
-                    forms.push(format!(
-                        "`{id}`, a list whose entries are handed an input nothing binds"
-                    ));
-                }
+            // A body or a list of entries ([`held_codec_forms`]); one a gate
+            // decides is presented as an optional value and written where it
+            // is present.
+            Value::Body { .. } | Value::List { .. } => {
+                forms.extend(held_codec_forms(plan, imports, id, &element.value));
             }
         }
         // A gated element is presented as an optional value; a number the
@@ -151,10 +104,12 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
     }
     // A group (docs/adr/0065 §6 R4b, R4c) is presented as the class of the
     // members of its one side, held optionally, or as a variant of a class for
-    // each of its arms; its members are integers, byte strings or texts, its
-    // gates flag inputs or one-bit flags of the codec's own. A group of a
-    // chain's memberships or of lists that share a count, or one that holds a
-    // list, a body or an enum, is not yet.
+    // each of its arms; its members are integers, byte strings, texts, bodies
+    // or lists, its gates flag inputs or one-bit flags of the codec's own. The
+    // encode keeps a body or a list as the arm that holds it presents it, so
+    // one more than one arm holds is not yet, nor one held to a law; nor is a
+    // group of a chain's memberships or of lists that share a count, or one
+    // that holds an enum.
     for group in plan.groups() {
         let label = group
             .gates
@@ -178,11 +133,29 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
                 .iter()
                 .find(|f| f.id == id)
                 .expect("a group's member is a field of the codec");
-            match plan.value(member) {
+            let value = plan.value(member);
+            match &value {
                 Value::Scalar(t) if t.int_bit_width().is_some() => {}
                 Value::Bytes(_) | Value::Text(_) => {}
-                _ => forms.push(format!(
-                    "`{id}`, a member of a group that is not an integer, a byte string or a text"
+                Value::Body { .. } | Value::List { .. } => {
+                    forms.extend(held_codec_forms(plan, imports, id, &value));
+                    if matches!(&value, Value::List { law, .. } if !law.is_none()) {
+                        forms.push(format!("`{id}`, a list a group holds held to a law"));
+                    }
+                    let holding = group
+                        .arms
+                        .iter()
+                        .filter(|arm| arm.fields.iter().any(|f| f == id))
+                        .count();
+                    if holding > 1 {
+                        forms.push(format!(
+                            "`{id}`, a body or a list more than one arm of a group holds"
+                        ));
+                    }
+                }
+                Value::Scalar(_) => forms.push(format!(
+                    "`{id}`, a member of a group that is not an integer, a byte string, a text, \
+                     a body or a list"
                 )),
             }
         }
@@ -385,6 +358,67 @@ fn held_printed(imports: &[ImportContext], alias: &str) -> bool {
     imports
         .iter()
         .any(|import| import.alias == alias && import.cpp_printed)
+}
+
+/// What of `id`, a body or a list of entries the value presents alone or a
+/// group of it holds, the printer does not print yet.
+///
+/// A body is encoded over a source of its codec, which a codec the printer
+/// prints has; it is written whole, every input it takes handed by what the
+/// parent binds to it. A list of entries is held to its bound, `kUnbounded`
+/// where the protocol states none (docs/adr/0077 §7), and walked entry by
+/// entry, each written by its codec's encode over the source the list holds it
+/// as. One whose entries say the inputs it hands them is held to its law
+/// (docs/adr/0065 §6 R8); one whose entries say an input in some of their
+/// values only is not yet.
+fn held_codec_forms(
+    plan: &EncodePlan<'_>,
+    imports: &[ImportContext],
+    id: &str,
+    value: &Value<'_>,
+) -> Vec<String> {
+    let mut forms = Vec::new();
+    let unbound = |codec: &str| {
+        plan.handed
+            .get(codec)
+            .is_some_and(|handed| handed.iter().any(|h| h.from.is_none()))
+    };
+    match value {
+        Value::Body { codec } => {
+            if !held_printed(imports, codec) {
+                forms.push(format!(
+                    "`{id}`, a body of a codec the printer does not print"
+                ));
+            }
+            if unbound(codec) {
+                forms.push(format!("`{id}`, a body handed an input nothing binds"));
+            }
+        }
+        Value::List { codec, law, .. } => {
+            if !held_printed(imports, codec) {
+                forms.push(format!(
+                    "`{id}`, a list of entries of a codec the printer does not print"
+                ));
+            }
+            let partly = law.inputs.iter().any(|input| {
+                imports.iter().any(|import| {
+                    import.alias == *codec && import.codec_partly_says_inputs.contains(&input.input)
+                })
+            });
+            if partly {
+                forms.push(format!(
+                    "`{id}`, a list whose entries say an input in some of their values only"
+                ));
+            }
+            if unbound(codec) {
+                forms.push(format!(
+                    "`{id}`, a list whose entries are handed an input nothing binds"
+                ));
+            }
+        }
+        Value::Scalar(_) | Value::Bytes(_) | Value::Text(_) => {}
+    }
+    forms
 }
 
 /// The C++ class of the codec a value holds as `alias`, and the namespace that
@@ -954,8 +988,8 @@ struct GroupPart<'p> {
     arms: Vec<ArmPart<'p>>,
     /// Every member of every arm once, in declaration order, each an integer
     /// or a view of a byte string or a text the encode binds to an optional
-    /// local (`_e_<member>`) from the arm the value holds where that arm holds
-    /// it.
+    /// local (`_e_<member>`), or a body or a list it keeps as read
+    /// (`_r_<member>`), from the arm the value holds where that arm holds it.
     members: Vec<Presented<'p>>,
     /// The place of its first member among the codec's fields, where the
     /// value presents it among its elements.
@@ -1046,11 +1080,12 @@ impl<'p> GroupPart<'p> {
         self.group.absent.is_some()
     }
 
-    /// Whether an arm of it holds a byte string or a text, which it copies in,
-    /// so that it is made as a value holding bytes is: neither a constant
-    /// expression nor free of throwing, and moved where it is handed on.
+    /// Whether an arm of it holds a byte string, a text, a body or a list,
+    /// which it copies or moves in, so that it is made as a value holding
+    /// bytes is: neither a constant expression nor free of throwing, and moved
+    /// where it is handed on.
     fn holds_bytes(&self) -> bool {
-        self.members.iter().any(|m| m.bytes)
+        self.members.iter().any(Presented::owns)
     }
 
     /// What the value holds it as, and presents it as.
@@ -1228,7 +1263,12 @@ impl<'p> GroupPart<'p> {
     fn traits(&self) -> String {
         let name = &self.name;
         let label = self.label();
-        let mut out = String::new();
+        // What a list among the members is, wherever an arm presents it.
+        let mut out: String = self
+            .members
+            .iter()
+            .filter_map(Presented::entries_trait)
+            .collect();
         for arm in &self.arms {
             out.push_str(&arm.members_traits());
         }
@@ -1299,35 +1339,63 @@ impl<'p> GroupPart<'p> {
                 held.clone()
             };
             for m in &arm.members {
-                parts.push(format!(
-                    "noexcept(::SCE::Forge::Detail::converts_to<{}>(source::{}(std::declval<const {presents}&>())))",
-                    m.view, m.name
-                ));
+                parts.push(m.member_nothrow(&format!(
+                    "source::{}(std::declval<const {presents}&>())",
+                    m.name
+                )));
             }
         }
         parts.join(" && ")
     }
 
-    /// The encode's binding of each member to its optional local from the
-    /// arm the value holds, where it holds one that holds the member.
+    /// The encode's binding of each member to its local from the arm the value
+    /// holds, where it holds one that holds the member: an optional value of
+    /// its type (`_e_<member>`), or, for a body or a list, the read kept as
+    /// the one arm that holds it returns it (`_r_<member>`, a
+    /// `::SCE::Forge::Detail::Kept`).
     fn bind_members(&self) -> String {
         let name = &self.name;
         let mut out = format!("        const auto& _r_{name} = source::{name}(src);\n");
+        let held = self.held_of(&format!("decltype(_r_{name})"));
         for m in &self.members {
-            out.push_str(&format!(
-                "        std::optional<{}> _e_{};\n",
-                m.view, m.name
-            ));
+            if m.kept_as_read() {
+                let index = self
+                    .arms
+                    .iter()
+                    .position(|arm| arm.members.iter().any(|a| a.name == m.name))
+                    .expect("a member of a group is a member of an arm");
+                let arm = if self.group.is_sum() {
+                    format!("std::variant_alternative_t<{index}, {held}>")
+                } else {
+                    held.clone()
+                };
+                out.push_str(&format!(
+                    "        ::SCE::Forge::Detail::Kept<decltype(source::{member}(std::declval<const {arm}&>()))> _r_{member};\n",
+                    member = m.name
+                ));
+            } else {
+                out.push_str(&format!(
+                    "        std::optional<{}> _e_{};\n",
+                    m.view, m.name
+                ));
+            }
         }
         let bind = |indent: &str, from: &str, members: &[Presented<'_>]| {
             members
                 .iter()
                 .map(|m| {
-                    format!(
-                        "{indent}_e_{member} = static_cast<{view}>(source::{member}({from}));\n",
-                        member = m.name,
-                        view = m.view
-                    )
+                    if m.kept_as_read() {
+                        format!(
+                            "{indent}_r_{member}.keep(source::{member}({from}));\n",
+                            member = m.name
+                        )
+                    } else {
+                        format!(
+                            "{indent}_e_{member} = static_cast<{view}>(source::{member}({from}));\n",
+                            member = m.name,
+                            view = m.view
+                        )
+                    }
                 })
                 .collect::<String>()
         };
@@ -1364,19 +1432,29 @@ impl<'p> GroupPart<'p> {
 
     /// The decode's making of the group from the members it read: for a
     /// group of one side, its arm where every member is there; for a sum, the
-    /// arm whose values the gates the decode read hold. A byte string or a
-    /// text is taken as its bound's view of what was read (`_b_<member>`); a
-    /// member the decode reads whatever the gate holds, such as a length the
-    /// side without its bytes states, as it was read.
+    /// arm whose values the gates the decode read hold. A byte string, a text
+    /// or a list is taken as its bound's view of what was read (`_b_<member>`),
+    /// and a body the decode read is moved in; a member the decode reads
+    /// whatever the gate holds, such as a length the side without its bytes
+    /// states, as it was read.
     fn decoded(&self, model: &CodecModel, l: &LangCtx) -> String {
         let (holds, name) = (self.holds(), &self.name);
         let args = |arm: &ArmPart<'_>| {
             arm.members
                 .iter()
-                .map(|m| match (m.bytes, m.read_optionally()) {
-                    (true, _) => format!("*_b_{}", m.name),
-                    (false, true) => format!("*{}", m.name),
-                    (false, false) => m.name.clone(),
+                .map(|m| {
+                    let read = if m.read_optionally() {
+                        format!("*{}", m.name)
+                    } else {
+                        m.name.clone()
+                    };
+                    if m.bytes || m.list.is_some() {
+                        format!("*_b_{}", m.name)
+                    } else if m.body.is_some() {
+                        format!("std::move({read})")
+                    } else {
+                        read
+                    }
                 })
                 .collect::<Vec<_>>()
         };
@@ -1444,10 +1522,17 @@ impl ArmPart<'_> {
             .iter()
             .map(|m| format!("{} {}", m.view, m.name))
             .collect();
+        // A body is moved in, as the value moves one in.
         let inits: Vec<String> = self
             .members
             .iter()
-            .map(|m| format!("{}({})", member(&m.name), m.name))
+            .map(|m| {
+                if m.body.is_some() {
+                    format!("{}(std::move({}))", member(&m.name), m.name)
+                } else {
+                    format!("{}({})", member(&m.name), m.name)
+                }
+            })
             .collect();
         let mut out = format!(
             "{doc}\
@@ -1455,9 +1540,10 @@ impl ArmPart<'_> {
              public:\n\
              \x20   {class}() = default;\n"
         );
-        // An arm that holds a byte string or a text copies it in, which may
-        // throw and is no constant expression in C++17, as for the value.
-        let (constexpr, noexcept) = if self.members.iter().any(|m| m.bytes) {
+        // An arm that holds a byte string, a text, a body or a list copies or
+        // moves it in, which may throw and is no constant expression in C++17,
+        // as for the value.
+        let (constexpr, noexcept) = if self.members.iter().any(Presented::owns) {
             ("", "")
         } else {
             ("constexpr ", " noexcept")
@@ -1471,13 +1557,19 @@ impl ArmPart<'_> {
                 inits.join(", ")
             ));
         }
+        // A body is presented by reference, as the value presents one; a list
+        // or a byte string, as its bound's view of what the arm holds.
         for m in &self.members {
-            let constexpr = if m.bytes { "" } else { "constexpr " };
+            let constexpr = if m.owns() { "" } else { "constexpr " };
+            let view = if m.body.is_some() {
+                format!("const {}&", m.view)
+            } else {
+                m.view.clone()
+            };
             out.push_str(&format!(
                 "    /// The `{name}` field.\n\
                  \x20   [[nodiscard]] {constexpr}{view} {name}() const noexcept {{ return {held}; }}\n",
                 name = m.name,
-                view = m.view,
                 held = member(&m.name)
             ));
         }
@@ -1492,9 +1584,7 @@ impl ArmPart<'_> {
     }
 
     /// The trait that says whether a type presents each of its members, each
-    /// convertible to its type. The encode keeps the view of a byte string or
-    /// a text it reads off the arm past the read, so that read must present
-    /// what lives on: a reference, or a view (`::SCE::Forge::Detail::Lasting`).
+    /// as [`Presented::member_requirements`] asks.
     fn members_traits(&self) -> String {
         let read =
             |m: &Presented<'_>| format!("decltype(source::{}(std::declval<const G&>()))", m.name);
@@ -1502,13 +1592,7 @@ impl ArmPart<'_> {
         let converts: Vec<String> = self
             .members
             .iter()
-            .flat_map(|m| {
-                let converts = format!("std::is_convertible<{}, {}>", read(m), m.view);
-                let lasting = m
-                    .bytes
-                    .then(|| format!("::SCE::Forge::Detail::Lasting<{}>", read(m)));
-                std::iter::once(converts).chain(lasting)
-            })
+            .flat_map(|m| m.member_requirements(&read(m)))
             .collect();
         let (class, trait_name) = (&self.class, &self.members_trait);
         if self.members.is_empty() {
@@ -1544,6 +1628,21 @@ impl<'p> Presented<'p> {
     /// such as a length the side without its bytes states, is read as it is.
     fn read_optionally(&self) -> bool {
         self.field.present_if.is_some()
+    }
+
+    /// Whether it is held as what owns what it holds (a byte string, a text, a
+    /// body or a list), copied or moved in, so that what holds it is made as a
+    /// value holding bytes is: neither a constant expression nor free of
+    /// throwing.
+    fn owns(&self) -> bool {
+        self.bytes || self.body.is_some() || self.list.is_some()
+    }
+
+    /// Whether the encode keeps it as the source presents it, where it is a
+    /// member of a group: a body or a list, which it reads through the codec
+    /// it holds rather than converts.
+    fn kept_as_read(&self) -> bool {
+        self.body.is_some() || self.list.is_some()
     }
 
     /// What it is presented as: its accessor's type, its constructor's
@@ -1704,6 +1803,26 @@ impl<'p> Presented<'p> {
     /// the entry codec, and for a list a gate decides the one that says it is
     /// a `std::optional` of such a list; `None` for an element that is no list.
     fn list_trait(&self) -> Option<String> {
+        let mut out = self.entries_trait()?;
+        if self.optional {
+            out.push_str(&format!(
+                "/// Whether `R` is what a source may present for `{name}`, a list a gate\n\
+                 /// decides: a `std::optional` of a list `is_{name}_list` accepts.\n\
+                 template <class R>\n\
+                 struct is_{name}_present_list : std::false_type {{}};\n\
+                 template <class L>\n\
+                 struct is_{name}_present_list<std::optional<L>> : is_{name}_list<L> {{}};\n\n",
+                name = self.name
+            ));
+        }
+        Some(out)
+    }
+
+    /// The trait, of the codec's namespace, that says whether a list a source
+    /// presents for this element where it is there (`is_<name>_list`) lies
+    /// within its bounds, holds sources of the entry codec and, for a list held
+    /// to a law, is held to it; `None` for an element that is no list.
+    fn entries_trait(&self) -> Option<String> {
         let (held, bounds) = self.list.as_ref()?;
         let name = &self.name;
         // A list held to a law is a `Lawful` of that law over such a list.
@@ -1730,17 +1849,6 @@ impl<'p> Presented<'p> {
                  struct is_{name}_list : std::false_type {{}};\n\
                  template <class L>\n\
                  struct is_{name}_list<::SCE::Forge::Lawful<L, {law}>> : {entries}<L> {{}};\n\n"
-            ));
-        }
-        if self.optional {
-            out.push_str(&format!(
-                "/// Whether `R` is what a source may present for `{name}`, a list a gate\n\
-                 /// decides: a `std::optional` of a list `is_{name}_list` accepts.\n\
-                 template <class R>\n\
-                 struct is_{name}_present_list : std::false_type {{}};\n\
-                 template <class L>\n\
-                 struct is_{name}_present_list<std::optional<L>> : is_{name}_list<L> {{}};\n\n",
-                name = self.name
             ));
         }
         Some(out)
@@ -1800,6 +1908,53 @@ impl<'p> Presented<'p> {
             (None, None) => format!(
                 "noexcept(::SCE::Forge::Detail::converts_to<{}>({read}))",
                 self.presented()
+            ),
+        }
+    }
+
+    /// What `read`, the type a read of it as a member of a group's arm
+    /// returns, must be: a source of the codec of a body, a list
+    /// `is_<name>_list` accepts, or what converts to its type. The encode keeps
+    /// the view of a byte string or a text past the read, so that read must
+    /// present what lives on (`::SCE::Forge::Detail::Lasting`); it keeps a body
+    /// or a list as read (`::SCE::Forge::Detail::Kept`).
+    fn member_requirements(&self, read: &str) -> Vec<String> {
+        match (&self.body, &self.list) {
+            (Some(held), _) => vec![format!(
+                "{}::is_source<std::decay_t<{read}>>",
+                held.namespace
+            )],
+            (None, Some(_)) => vec![format!("is_{}_list<std::decay_t<{read}>>", self.name)],
+            (None, None) => {
+                let mut all = vec![format!("std::is_convertible<{read}, {}>", self.view)];
+                if self.bytes {
+                    all.push(format!("::SCE::Forge::Detail::Lasting<{read}>"));
+                }
+                all
+            }
+        }
+    }
+
+    /// Whether the encode's read of it as a member of a group's arm, `read`,
+    /// and what it does with what the read returns throws nothing: keeping a
+    /// body or a list and reading it as sources of its codec, or converting
+    /// anything else to its type.
+    fn member_nothrow(&self, read: &str) -> String {
+        let kept = format!(
+            "noexcept(std::declval<::SCE::Forge::Detail::Kept<decltype({read})>&>().keep({read}))"
+        );
+        match (&self.body, &self.list) {
+            (Some(held), _) => format!(
+                "{kept} && {}::is_nothrow_source<std::decay_t<decltype({read})>>::value",
+                held.namespace
+            ),
+            (None, Some((held, _))) => format!(
+                "{kept} && {}::is_nothrow_source<::SCE::Forge::Detail::ElementOf<std::decay_t<decltype({read})>>>::value",
+                held.namespace
+            ),
+            (None, None) => format!(
+                "noexcept(::SCE::Forge::Detail::converts_to<{}>({read}))",
+                self.view
             ),
         }
     }
@@ -2991,12 +3146,17 @@ pub(super) fn render(
             decoded.push_str(&make("        ", name, &format!("const auto _b_{name}")));
         }
     }
-    for e in elements
-        .iter()
-        .filter(|e| e.list.is_some() && e.law.is_none())
-    {
+    // A list a group holds likewise, where its gate leaves it in, before the
+    // group is made of it.
+    let lists = elements.iter().map(|e| (e, e.optional)).chain(
+        groups
+            .iter()
+            .flat_map(|g| g.members.iter())
+            .map(|m| (m, m.read_optionally())),
+    );
+    for (e, optional) in lists.filter(|(e, _)| e.list.is_some() && e.law.is_none()) {
         let (name, view) = (&e.name, &e.view);
-        if e.optional {
+        if optional {
             decoded.push_str(&format!(
                 "        std::optional<{view}> _b_{name};\n\
                  \x20       if ({name}) {{\n\

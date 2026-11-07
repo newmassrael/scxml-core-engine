@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.1 (1ubuntu1~24.04.2)",
-  "embed_version": "d5fb6d2",
+  "embed_version": "d5876d9",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 550,
+  "symbol_count": 551,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -3017,6 +3017,12 @@
       "kind": "class",
       "members": [],
       "name": "SCE::Forge::Bounded<T>"
+    },
+    {
+      "header": "sce/forge/bounded.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Forge::Detail::Kept<T>"
     },
     {
       "header": "sce/forge/bounded.h",
