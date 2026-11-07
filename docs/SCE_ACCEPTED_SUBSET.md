@@ -5238,8 +5238,10 @@ declared once; the lift reads each field by one call of the runtime's
 path, at the first value outside its type; the inject seam writes the payload it
 builds as the JSON a lift reads back; and `len`, an index, a field of a record
 element and a `<foreach>` over a list the payload or an enclosing loop's item holds
-lower at any depth. A payload that holds a union, at any depth, is refused by name
-on Kotlin, which holds no union yet (docs/adr/0092, section 7).
+lower at any depth. A list a place holds is taken whole into a list variable whose
+type it fits as it is: no Kotlin type carries a bound, so the two places are one
+type. A payload that holds a union, at any depth, is refused by name on Kotlin,
+which holds no union yet (docs/adr/0092, section 7).
 
 A `<send>` of the event of a schema whose field is composed gives that field by
 a `<param>` naming the place that holds the value whole (docs/adr/0086, section

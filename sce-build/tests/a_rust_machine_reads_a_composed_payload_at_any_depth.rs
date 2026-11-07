@@ -377,16 +377,17 @@ fn a_list_is_taken_whole_into_a_variable_whose_type_it_fits() {
             "self.late = ::sce_rust_runtime::portable::BoundedList::widened_map(&ev.late, |v| *v);",
         ],
     );
-    // Another backend refuses the fixture by its own name.
+    // A backend that reads no composed payload refuses the fixture by its own
+    // name.
     let text =
         std::fs::read_to_string(fixtures().join("static_composed_payload.scxml")).expect("fixture");
     let (ok, out) = run(
-        &["check", "-l", "kotlin"],
+        &["check", "-l", "go"],
         "static_composed_payload.scxml",
         &text,
     );
-    assert!(!ok, "Kotlin reads no composed payload yet:\n{out}");
-    assert!(out.contains("has no kotlin lowering"), "{out}");
+    assert!(!ok, "Go reads no composed payload yet:\n{out}");
+    assert!(out.contains("has no go lowering"), "{out}");
 }
 
 /// What Rust does not lower yet stays refused by name on Rust too: the fixture's

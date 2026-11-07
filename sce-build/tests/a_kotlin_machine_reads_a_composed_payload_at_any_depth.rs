@@ -232,6 +232,33 @@ fn the_reads_lower_at_any_depth() {
     );
 }
 
+/// Pinned by `whole_list_copy` (`sce-build/src/forge/static_lowering.rs`),
+/// `copier` and `KotlinComposed::copy_whole`
+/// (`sce-build/src/forge/composed_lowering.rs`), and by `ComposedLowering::of`'s
+/// `copies`: a list a payload holds is taken whole into a list variable of a
+/// larger bound, one Kotlin type, so the copy is the list itself.
+#[test]
+fn a_list_is_taken_whole_into_a_variable_whose_type_it_fits() {
+    let text =
+        std::fs::read_to_string(fixtures().join("static_composed_payload.scxml")).expect("fixture");
+    let code = kotlin_machine("static_composed_payload.scxml", &text);
+    holds(
+        &code,
+        &[
+            "private var vLate: List<UByte>",
+            "vLate = pendingBatchSentPayload!!.late",
+        ],
+    );
+    let (ok, out) = run(
+        &["check", "-l", "kotlin"],
+        &fixtures(),
+        &SIBLINGS,
+        "static_composed_payload.scxml",
+        &text,
+    );
+    assert!(ok, "Kotlin lowers the fixture:\n{out}");
+}
+
 /// `sce-codegen <args> <file>` over `document` written as `name` in a
 /// directory that holds `siblings` of `from`, and whether it succeeded, with
 /// what it said.
