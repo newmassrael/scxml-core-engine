@@ -55,11 +55,18 @@ edit("tools/codegen/templates/actions/send.jinja2",
 PY
 
 # ── C++ AOT: a target naming no invocation does not end the block ──
+#
+# The block ends twice over: the `return` at run time, and `block_flow.ended`
+# at build time, which stops the list from emitting the elements after the
+# refusal at all (752a1d4350). Dropping the `return` alone left nothing after
+# it to run, so the case SURVIVED (measured 2026-11-07, 0/2 red). Both go, and
+# the `<assign>` after `#_nobody` is emitted and runs.
 
 mutation_case "the C++ AOT runs the rest of the block after a target naming no invocation" <<'PY'
 edit("tools/codegen/templates/actions/send.jinja2",
      """    Event::Error_communication, "<send target='{{ action.target | escape_cpp }}'> names no invocation of this session", std::nullopt, sendId));
-{{ block_end or 'return;' }}""",
+{{ block_end or 'return;' }}
+{% set block_flow.ended = true %}""",
      """    Event::Error_communication, "<send target='{{ action.target | escape_cpp }}'> names no invocation of this session", std::nullopt, sendId));""")
 PY
 
