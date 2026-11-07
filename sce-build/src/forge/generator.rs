@@ -6375,6 +6375,16 @@ fn go_payload_data_value(
     }
 }
 
+/// The struct the typed payload channel of the Go machine `machine` holds
+/// `event`'s payload in ([`build_go_event_payload`]): one name for the
+/// declaration and for every site that builds one.
+pub(crate) fn go_payload_struct(machine: &str, event: &str) -> String {
+    format!(
+        "{machine}{}Payload",
+        filters::to_event_variant(event.to_string())
+    )
+}
+
 /// Build the [`GoEventPayload`] for `model`. Same SSOT guard selection
 /// ([`select_native_typed_guards`]) as the Rust and C11 builders, so all
 /// three backends agree on which guards are native.
@@ -6469,7 +6479,7 @@ pub fn build_go_event_payload(
     for event in &guarded_events {
         let schema = &entry_schemas[event];
         let variant = filters::to_event_variant(event.clone());
-        let struct_name = format!("{machine}{variant}Payload");
+        let struct_name = go_payload_struct(&machine, event);
         let field = format!("pending{variant}Payload");
         // Internal payload struct: fields are verbatim schema ids (matching
         // the verbatim property emit of `expr.rs::emit_go`) and unexported —

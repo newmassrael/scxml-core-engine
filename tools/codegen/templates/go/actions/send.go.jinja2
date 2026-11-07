@@ -39,6 +39,13 @@
 			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
 			// every machine with a host-served send.
 			InvokeID: p.pendingEventInvokeid,
+{% if action.native_message %}
+			// docs/SCE_TEST_PROFILE.md §12.3: a test component's message is the
+			// value of its specific template, handed to the test-port processor
+			// as a value and never as an encoding (docs/adr/0091, C2). Every
+			// other send leaves it nil and carries EventData.
+			Value: {{ action.native_message }},
+{% endif %}
 		}
 {% set host_delay_ms = action.delay_ms if (action.delay_ms is defined and action.delay_ms is not none and action.delay_ms > 0) else 0 %}
 {% if action.delayexpr or host_delay_ms > 0 %}

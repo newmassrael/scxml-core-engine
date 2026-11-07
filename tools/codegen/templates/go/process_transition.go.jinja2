@@ -94,8 +94,13 @@ func (p *{{ machine_name }}Policy) FirstEnabledTransition(state {{ machine_name 
 	case {{ machine_name }}State{{ state_id | to_state_variant }}:
 {% for trans in state.transitions %}
 		if {{ event_match(trans) }} {
-{% if trans.cond %}
-{% if trans.native_guard and not trans.is_pure_in_predicate %}
+{# A guard lowered with no `cond` written is a branch of a test component's
+   match on the round's snapshot (docs/SCE_TEST_PROFILE.md §12.3). #}
+{% if trans.cond or trans.native_guard %}
+{% if trans.native_prelude %}
+			// docs/SCE_TEST_PROFILE.md §12.3: a branch of the test component,
+			// guarded by its cond and then its match on the round's snapshot.
+{% elif trans.native_guard and not trans.is_pure_in_predicate %}
 			// NL→IR Item C1 Path A: native typed `_event.data` guard — cond
 			// "{{ trans.cond }}" lowered to a tag-checked field comparison on
 			// the lifted `pending<Event>Payload` (no script engine).
@@ -112,7 +117,7 @@ func (p *{{ machine_name }}Policy) FirstEnabledTransition(state {{ machine_name 
 					Targets:         transitionTargetsOf{{ machine_name }}[state][{{ trans.transition_index }}],
 {% endif %}
 					TransitionIndex: {{ trans.transition_index }},
-					HasActions:      {{ 'true' if trans.actions else 'false' }},
+					HasActions:      {{ 'true' if trans.actions or trans.native_prelude else 'false' }},
 					IsInternal:      {{ 'true' if trans.type == 'internal' else 'false' }},
 				}, true
 			}
@@ -133,18 +138,31 @@ func (p *{{ machine_name }}Policy) ExecuteTransitionContent(source {{ machine_na
 	p.ensureScriptEngine()
 {% endif %}
 	switch source {
+{# A transition carries content when the document wrote some, and a branch of
+   a test component always does: the statement taking it, which runs before
+   what the document wrote (`native_prelude`, docs/SCE_TEST_PROFILE.md §4.4
+   (P4 step 1), §12.3). #}
 {% for state_id, state in model.states | dictsort %}
-{% if state.transitions | selectattr("actions") | list %}
+{% if state.transitions | selectattr("actions") | list or state.transitions | selectattr("native_prelude") | list %}
 	case {{ machine_name }}State{{ state_id | to_state_variant }}:
 		switch transitionIndex {
 {% for trans in state.transitions %}
-{% if trans.actions %}
+{% if trans.actions or trans.native_prelude %}
 		case {{ trans.transition_index }}: {{- annot.annotation_comment(trans, "go", "			") }}
 {% if trans.source_location %}
 {{ sce_map.source_marker(trans.source_location, "go", stmt_level=true, symbol_state=trans.symbol_state_path, symbol_artifact=trans.symbol_artifact) | trim }}
 {% endif %}
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
+{#  docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3: taking a branch of a test
+    component removes what it matched on the round's snapshot before its
+    content runs, and a message the content reads is its `_event.data`, held
+    in the payload field of its record's event from here on
+    (`Transition::native_prelude`). #}
+{% if trans.native_prelude %}
+				// docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
+				{{ trans.native_prelude }}
+{% endif %}
 {# SCE Accepted Subset §2.15: content that reads the event's typed payload
    cannot run for a delivery that did not carry one, and an error stops the
    block it arose in (W3C SCXML 4.9) — so the check guards the whole content,

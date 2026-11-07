@@ -8788,8 +8788,9 @@ fn cpp_test_template_namespace(unit: &str) -> String {
 /// The variant of the profile runtime's verdict a document's verdict is, one
 /// name on every backend that runs a test component: C++'s `SCE::Test::Verdict`
 /// (`sce/include/test/Verdict.h`) and Rust's `sce_rust_runtime::test::Verdict`
-/// (`backends/rust/runtime/src/test/verdict.rs`) declare the same variants, and
-/// Kotlin's the same names in upper case ([`kotlin_verdict`]).
+/// (`backends/rust/runtime/src/test/verdict.rs`) declare the same variants,
+/// Kotlin's the same names in upper case ([`kotlin_verdict`]), and Go's
+/// `testprofile.Verdict` the same names after the type's (`VerdictPass`).
 fn runtime_verdict(verdict: crate::test_component::Verdict) -> &'static str {
     match verdict {
         crate::test_component::Verdict::Pass => "Pass",
@@ -10185,6 +10186,10 @@ impl GoTarget<'_> {
                 // text is lifted into a record by one, and a text template is
                 // rendered by one (docs/adr/0087).
                 "sce_append" | "sce_clear" | "foreach" | "sce_lift" | "sce_render" => {}
+                // A test component's statements are calls on its runtime
+                // context (docs/SCE_TEST_PROFILE.md §12.3,
+                // [`StaticTarget::test_statement`]).
+                "sce_setverdict" | "sce_start_timer" | "sce_stop_timer" => {}
                 other => return Some(format!("<{other}>")),
             }
             for block in action.nested_blocks() {
@@ -10195,6 +10200,52 @@ impl GoTarget<'_> {
         }
         None
     }
+}
+
+/// How a guard or a statement of a test component's Go machine reaches the
+/// component's runtime context (docs/SCE_TEST_PROFILE.md §12.3): the policy's
+/// field, which the component the runtime drives sets before the machine starts
+/// (`go/state_machine.go.jinja2`). Named under the generator's own prefix, as
+/// every member the policy declares beside a variable's `v<PascalCase>` field is.
+const GO_TEST_CONTEXT: &str = "p.sceTestContext";
+
+/// The name a Go machine binds the profile's runtime package
+/// ([`crate::std_imports::GO_TEST_RUNTIME_PATH`]) to: under the generator's own
+/// prefix, as the forge runtime's `scealgorithm` is, so no local an author names
+/// can hide it. The template's import and every call the lowering writes read
+/// this one name.
+pub(crate) const GO_TEST_RUNTIME: &str = "scetestprofile";
+
+/// `text` as a Go string literal.
+fn go_text(text: &str) -> String {
+    format!("\"{}\"", filters::escape_go(text.to_string()))
+}
+
+/// The declaration `name` (`Value`, `Matches`, `Specific`) of the Go unit of the
+/// test template named `unit`, by the alias every Go unit imports a sibling
+/// package under ([`crate::forge::generator::go_package_alias`]), which the
+/// machine's import of the unit binds ([`StaticTarget::test_template_import`]).
+fn go_test_template(unit: &str, name: &str) -> String {
+    format!(
+        "{}.{name}",
+        crate::forge::generator::go_package_alias(&filters::to_snake_case(unit.to_string()))
+    )
+}
+
+/// `value`, a value of an enum unit's type, as the variant of the machine's own
+/// type `ty` that the enum document declares under the same name, read as a
+/// saved state's value of `ty` is read (`<ty>FromSaved`, [`StaticTarget::enum_def`]),
+/// which refuses a name no variant declares. `what` is the field the value is
+/// of, which the refusal names. The unit's value answers its declared name
+/// (`DeclaredName`, `forge/go/enum.go.jinja2`), so neither the enum unit's
+/// package nor a list of its variants is named here.
+fn go_enum_by_declared_name(ty: &str, what: &str, value: &str) -> String {
+    format!(
+        "func() {ty} {{ sceName, _ := {value}.DeclaredName().Get(); \
+         sceHeld, sceErr := {ty}FromSaved(sceName, {}); \
+         if sceErr != nil {{ panic(sceErr) }}; return sceHeld }}()",
+        go_text(what)
+    )
 }
 
 impl StaticTarget for GoTarget<'_> {
@@ -11390,6 +11441,174 @@ impl StaticTarget for GoTarget<'_> {
             &format!("sce.BytesAsPayloadText({value})"),
         ))
     }
+    // The policy holds the component's runtime context ([`GO_TEST_CONTEXT`]),
+    // which the component the runtime drives sets before the machine starts
+    // (`go/state_machine.go.jinja2`). A receive branch with a template asks the
+    // runtime for the snapshot's head as the template's type, under its
+    // record's event, and calls the template's `Matches` on it in place, in a
+    // function literal that names the type, which Go infers the runtime's type
+    // parameter from.
+    fn snapshot_match(&self, branch: &SnapshotBranch, args: &[String]) -> Option<String> {
+        Some(match branch {
+            SnapshotBranch::Receive {
+                port,
+                template: None,
+            } => format!("{GO_TEST_CONTEXT}.SnapshotPresent({})", go_text(port)),
+            SnapshotBranch::Receive {
+                port,
+                template: Some(template),
+            } => {
+                let bound: String = args.iter().map(|arg| format!(", {arg}")).collect();
+                format!(
+                    "{GO_TEST_RUNTIME}.Receives({GO_TEST_CONTEXT}, {}, {}, \
+                     func(sceMessage {}) bool {{ return {}(sceMessage{bound}) }})",
+                    go_text(port),
+                    go_text(&template.event),
+                    go_test_template(&template.unit, "Value"),
+                    go_test_template(&template.unit, "Matches")
+                )
+            }
+            SnapshotBranch::Timeout { timer } => {
+                format!("{GO_TEST_CONTEXT}.TimedOut({})", go_text(timer))
+            }
+            SnapshotBranch::Done { ptc } => {
+                format!("{GO_TEST_CONTEXT}.Done({})", go_text(ptc))
+            }
+        })
+    }
+    // A message a receive branch's content reads is copied, field by field,
+    // into the policy's field the machine's payload channel holds its record's
+    // event in, which the content reads `_event.data` through
+    // ([`Self::payload_accessor`]): the schema unit's struct and the machine's
+    // are two declarations of one record. The two hold a number, a `bool`, a
+    // text, a byte string and an optional one of them in the same Go types, so
+    // those are copied as they are; the byte string is shared, as the machine
+    // never writes into one and the run hands the message to this component
+    // alone. An enum is held in the machine's own type, which takes the variant
+    // of the same declared name as the enum unit's value, an optional one where
+    // it is present (docs/adr/0055), as the payload channel lifts a delivery's
+    // (`forge::generator::build_go_event_payload`). One statement, a block of
+    // its own, so its locals stand beside none of the content's.
+    fn take_branch(
+        &self,
+        machine: &str,
+        branch: &SnapshotBranch,
+        payload: Option<&EntrySchema>,
+    ) -> Option<String> {
+        Some(match (branch, payload) {
+            (
+                SnapshotBranch::Receive {
+                    port,
+                    template: Some(template),
+                },
+                Some(schema),
+            ) => {
+                let copies = schema
+                    .fields
+                    .iter()
+                    .map(|f| {
+                        let read = format!(
+                            "sceValue.{}",
+                            crate::forge::generator::event_schema_field_ident(&f.id, Language::Go)
+                        );
+                        let held = match f.sce_type.present_type() {
+                            SceType::Enum(reference) => {
+                                let ty = self.enum_type(machine, &reference.alias)?;
+                                match &f.sce_type {
+                                    EntryType::Optional { .. } => format!(
+                                        "func() optional.Of[{ty}] {{ if {GO_PRESENT}, sceIs := \
+                                         {read}.Get(); sceIs {{ return optional.Some({}) }}; \
+                                         return optional.None[{ty}]() }}()",
+                                        go_enum_by_declared_name(&ty, &f.id, GO_PRESENT)
+                                    ),
+                                    EntryType::Scalar(_) => {
+                                        go_enum_by_declared_name(&ty, &f.id, &read)
+                                    }
+                                }
+                            }
+                            _ => read,
+                        };
+                        Some((self.record_field(&f.id), held))
+                    })
+                    .collect::<Option<Vec<(String, String)>>>()?;
+                let record = self.record_value(
+                    &crate::forge::generator::go_payload_struct(machine, &template.event),
+                    &copies,
+                );
+                format!(
+                    "{{ sceValue, sceTaken := {GO_TEST_RUNTIME}.ValueAs[{}]({GO_TEST_CONTEXT}.\
+                     Receive({})); if !sceTaken {{ panic(\"a receive branch takes the message \
+                     its guard matched\") }}; {} = {record} }}",
+                    go_test_template(&template.unit, "Value"),
+                    go_text(port),
+                    self.payload_accessor(&template.event)
+                )
+            }
+            (SnapshotBranch::Receive { port, .. }, _) => {
+                format!("{GO_TEST_CONTEXT}.Receive({})", go_text(port))
+            }
+            (SnapshotBranch::Timeout { timer }, _) => {
+                format!("{GO_TEST_CONTEXT}.Timeout({})", go_text(timer))
+            }
+            (SnapshotBranch::Done { ptc }, _) => {
+                format!("{GO_TEST_CONTEXT}.DoneTaken({})", go_text(ptc))
+            }
+        })
+    }
+    // A duration is whole microseconds (§3.3), the runtime's `Duration`, an
+    // `int64`: one past it has no value there. A verdict with no reason is set
+    // with the empty one, as the other runtimes set it.
+    fn test_statement(&self, statement: &TestStatement, reason: Option<&str>) -> Option<String> {
+        Some(match statement {
+            TestStatement::Setverdict { verdict, .. } => format!(
+                "{GO_TEST_CONTEXT}.Setverdict({GO_TEST_RUNTIME}.Verdict{}, {})",
+                runtime_verdict(*verdict),
+                reason.unwrap_or("\"\"")
+            ),
+            TestStatement::StartTimer { timer, duration } => {
+                let micros =
+                    crate::forge::test_profile::duration_us(duration.as_deref()?.trim()).ok()?;
+                let micros = i64::try_from(micros).ok()?;
+                format!("{GO_TEST_CONTEXT}.StartTimer({}, {micros})", go_text(timer))
+            }
+            TestStatement::StopTimer { timer } => {
+                format!("{GO_TEST_CONTEXT}.StopTimer({})", go_text(timer))
+            }
+        })
+    }
+    // The label, a colon and the value as the engine's `<log>` formats it
+    // ([`Self::log`], `%v`): the text the other backends record, which an
+    // absent optional value shows as `null` (`optional.Of.String`). The label
+    // is an argument of `Sprintf` and never part of its format, as the engine's
+    // log keeps it.
+    fn test_log(&self, label: &str, value: Option<&str>, _ty: InferredType) -> Option<String> {
+        Some(match value {
+            None => format!("{GO_TEST_CONTEXT}.Log({})", go_text(label)),
+            Some(value) if label.is_empty() => {
+                format!("{GO_TEST_CONTEXT}.Log(fmt.Sprintf(\"%v\", {value}))")
+            }
+            Some(value) => format!(
+                "{GO_TEST_CONTEXT}.Log(fmt.Sprintf(\"%s: %v\", {}, {value}))",
+                go_text(label)
+            ),
+        })
+    }
+    // The specific template's `Specific`, which the send hands its processor as
+    // the request's value (`HostSendRequest.Value`, `go/actions/send.go.jinja2`).
+    fn test_message(&self, message: &TemplateRef, args: &[String]) -> Option<String> {
+        Some(format!(
+            "{}({})",
+            go_test_template(&message.unit, "Specific"),
+            args.join(", ")
+        ))
+    }
+    // The unit's package, imported as a stateless sibling's is, under the alias
+    // [`go_test_template`] names it by; kept only where the machine's text
+    // names it (`generator::render_go`), since Go refuses an import it does not
+    // use.
+    fn test_template_import(&self, unit: &str) -> Option<String> {
+        self.schema_import(unit)
+    }
 }
 
 /// Rewrite `model` — a clone the Go backend renders — so every expression of a
@@ -11397,19 +11616,23 @@ impl StaticTarget for GoTarget<'_> {
 ///
 /// `go_module_prefix` is the module path the generated packages live under
 /// (`--go-module-prefix`). A machine that calls an imported algorithm, or a
-/// document of another kind it calls (docs/adr/0047), imports its package by
-/// that path, and a Go import path has no valid bare form, so a
-/// document that calls one without a usable prefix is refused as any forge kind
+/// document of another kind it calls (docs/adr/0047), or a test component that
+/// uses a test template (docs/SCE_TEST_PROFILE.md §12.3), imports its package
+/// by that path, and a Go import path has no valid bare form, so a document
+/// that calls one without a usable prefix is refused as any forge kind
 /// importing another is.
 pub fn lower_go(
     model: &mut SCXMLModel,
     machine: &str,
     go_module_prefix: Option<&str>,
 ) -> Result<StaticLowering, GenerateError> {
-    // A callee and a text template a `<sce:render>` renders (docs/adr/0087) are
-    // each a package of their own, imported under the module the build names.
+    // A callee, a text template a `<sce:render>` renders (docs/adr/0087) and a
+    // test template a test component's branch matches with or its send sends
+    // (docs/SCE_TEST_PROFILE.md §12.3) are each a package of their own,
+    // imported under the module the build names.
     let calls_an_import = StaticScope::of(model).is_some_and(|scope| !scope.callees.is_empty())
-        || !rendered_templates(model).is_empty();
+        || !rendered_templates(model).is_empty()
+        || !test_template_units(model).is_empty();
     let import_root = if calls_an_import {
         Some(crate::forge::generator::go_import_root(go_module_prefix)?)
     } else {

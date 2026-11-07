@@ -50,7 +50,7 @@ use crate::generator::Language;
 
 /// The package of the test profile's Go runtime, which declares the length of
 /// a text in characters.
-const TEST_RUNTIME_PATH: &str = "github.com/newmassrael/sce-go-runtime/testprofile";
+const TEST_RUNTIME_PATH: &str = crate::std_imports::GO_TEST_RUNTIME_PATH;
 
 /// The function of the test profile's Go runtime that counts the characters of
 /// a text, which a length restriction on a `string[N]` counts: its code points,

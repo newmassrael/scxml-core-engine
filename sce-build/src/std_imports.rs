@@ -46,6 +46,13 @@ pub(crate) const GO_FORGE_RUNTIME_PATH: &str = "github.com/newmassrael/sce-forge
 /// names the package ([`go_imports_named_in`]).
 pub(crate) const GO_FORGE_OPTIONAL_PATH: &str = "github.com/newmassrael/sce-forge-runtime/optional";
 
+/// The import path of the test profile's Go runtime
+/// (`backends/go/runtime/testprofile/`, docs/SCE_TEST_PROFILE.md §12.2): what a
+/// template's unit counts a text's characters through and what a test
+/// component's machine reaches its run through. One path for both, so the two
+/// cannot import two copies of the runtime.
+pub(crate) const GO_TEST_RUNTIME_PATH: &str = "github.com/newmassrael/sce-go-runtime/testprofile";
+
 /// The C++ standard names generated expression code reaches for that are not
 /// already decided from the model, each with the header that declares it, in
 /// the order an include block lists them. `std::vector`, `std::array` and the
