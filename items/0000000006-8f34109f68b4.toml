@@ -1,0 +1,11 @@
+seq = 6
+id = "8f34109f68b4"
+
+[submit]
+commit = "892d4bab1c026de3acb1fbd6dc371e52d7858752"
+base = "0b7793826c896622501f9001e92fbd57ad7b6b65"
+machine = "coin-Legion-Pro-5-16IRX9"
+session = "a847ea6f-343a-4b5f-b93e-4b20b24837b2"
+worktree = "/home/coin/scxml-core-engine/.claude/worktrees/adr0091-rust-c"
+branch = "adr0091-rust-c"
+at = 1794062970
