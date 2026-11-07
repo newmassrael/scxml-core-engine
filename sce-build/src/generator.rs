@@ -3449,6 +3449,32 @@ fn answer_schemas_context(model: &SCXMLModel, lang: Language) -> minijinja::Valu
     minijinja::Value::from_serialize(&rows)
 }
 
+/// docs/SCE_TEST_PROFILE.md §12.3: the component the profile's runtime drives
+/// builds its machine itself when it starts, from its type alone
+/// (`MachineFactory`), and a machine that declares `<sce:action>`s
+/// (`declares_actions`) takes its host as `host`, a value the component is
+/// given by nothing. So such a component is refused by name rather than built
+/// around a host made up for it, on every backend whose machine takes its host
+/// so.
+fn refuse_a_test_component_host(
+    model: &SCXMLModel,
+    declares_actions: bool,
+    host: &str,
+) -> Result<(), GenerateError> {
+    if declares_actions && model.test_component.is_some() {
+        return Err(GenerateError::unsupported_at(
+            format!(
+                "test-component '{}' declares <sce:action>, whose host is {host} that the \
+                 component the profile's runtime builds has no value of \
+                 (docs/SCE_TEST_PROFILE.md §12.6)",
+                model.name
+            ),
+            model.source_location.clone(),
+        ));
+    }
+    Ok(())
+}
+
 fn render_rust(
     env: &mut Environment,
     model: &SCXMLModel,
@@ -3486,23 +3512,8 @@ fn render_rust(
     // baseline (the generic `Policy<A>` never appears).
     let native =
         crate::forge::native_action::render(&mut model_lowered, &machine_name, Language::Rust);
-    // docs/SCE_TEST_PROFILE.md §12.3: the component the profile's runtime
-    // drives builds its machine itself when it starts, and a machine that
-    // declares `<sce:action>`s is a policy over its host, a value the component
-    // is given by nothing: the runtime makes a component from its type alone
-    // (`MachineFactory`). So such a component is refused by name rather than
-    // built around a host made up for it.
-    if native.any && model.test_component.is_some() {
-        return Err(GenerateError::unsupported_at(
-            format!(
-                "test-component '{}' declares <sce:action>, whose host is a type parameter of \
-                 the Rust machine that the component the profile's runtime builds has no value \
-                 of (docs/SCE_TEST_PROFILE.md §12.6)",
-                model.name
-            ),
-            model.source_location.clone(),
-        ));
-    }
+    // A Rust machine that declares `<sce:action>`s is a policy over its host.
+    refuse_a_test_component_host(model, native.any, "a type parameter of the Rust machine")?;
     // `Engine<P: StatePolicy>` requires `P: 'static` (the runtime stores the
     // policy and erases lifetimes through it), so the host `Actions` type
     // parameter carries the same bound. A host impl is a plain owned type, so
@@ -4332,6 +4343,13 @@ fn render_kotlin(
         &native_machine_name,
         Language::Kotlin,
     );
+    // A Kotlin machine that declares `<sce:action>`s is constructed with its
+    // host (`kotlin/state_machine.kt.jinja2`).
+    refuse_a_test_component_host(
+        model,
+        native.any,
+        "a constructor parameter of the Kotlin machine",
+    )?;
     // SCE Accepted Subset §2.15: a `sce-static` machine's expressions are
     // lowered to native Kotlin on this clone, into the slots the templates
     // already render natively; its variables come back as field
@@ -4441,6 +4459,12 @@ fn render_kotlin(
         accepts_simulated_host => native.has_duty || model.any_child_states_duties(),
         native_actions_defs => &native.interface_def,
         native_actions_interface => &native.interface_name,
+        // docs/SCE_TEST_PROFILE.md §12.3: the doors a test component's machine
+        // reaches its runtime through, which the component the runtime drives
+        // registers and delivers the snapshot by.
+        test_port_processor => crate::test_component::TEST_PORT_PROCESSOR,
+        test_component_invoke_type => crate::test_component::TEST_COMPONENT_INVOKE_TYPE,
+        snapshot_event => crate::test_component::SNAPSHOT_EVENT,
     };
 
     let output = tmpl.render(ctx).map_err(render_error)?;

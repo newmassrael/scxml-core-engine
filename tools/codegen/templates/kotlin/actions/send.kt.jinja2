@@ -73,7 +73,15 @@
                 // SCE_MESH.md §mesh-10.7: the invokeid of the event being
                 // processed now, carried back out as a W3C child's send to its
                 // parent carries it (§scxml-6.4.1).
-                invokeId = currentEventMetadata.invokeId
+                invokeId = currentEventMetadata.invokeId{% if action.native_message %},{% endif %}
+
+{% if action.native_message %}
+                // docs/SCE_TEST_PROFILE.md §12.3: a test component's message is
+                // the value of its specific template, handed to the test-port
+                // processor as a value and never as an encoding (docs/adr/0091,
+                // C2). Every other send leaves it null and carries `eventData`.
+                value = {{ action.native_message }}
+{% endif %}
             )
 {% set host_delay_ms = action.delay_ms if (action.delay_ms is defined and action.delay_ms is not none and action.delay_ms > 0) else 0 %}
 {% if dyn_delay or host_delay_ms > 0 %}
