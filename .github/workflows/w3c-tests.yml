@@ -407,8 +407,9 @@ jobs:
       run: |
         git clone https://github.com/emscripten-core/emsdk.git
         cd emsdk
-        ./emsdk install latest
-        ./emsdk activate latest
+        # The release this lane was last green on; `latest` moved to 7.0.0.
+        ./emsdk install 6.0.13
+        ./emsdk activate 6.0.13
         cd ..
 
     - name: Run W3C SCXML Test Suite (WASM, under Node, both engines)

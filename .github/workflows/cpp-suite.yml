@@ -299,8 +299,9 @@ jobs:
       run: |
         git clone https://github.com/emscripten-core/emsdk.git
         cd emsdk
-        ./emsdk install latest
-        ./emsdk activate latest
+        # The release this lane was last green on; `latest` moved to 7.0.0.
+        ./emsdk install 6.0.13
+        ./emsdk activate 6.0.13
 
     - name: Cache CMake Build
       uses: actions/cache@v5
@@ -419,8 +420,9 @@ jobs:
       run: |
         git clone https://github.com/emscripten-core/emsdk.git
         cd emsdk
-        ./emsdk install latest
-        ./emsdk activate latest
+        # The release this lane was last green on; `latest` moved to 7.0.0.
+        ./emsdk install 6.0.13
+        ./emsdk activate 6.0.13
 
     - name: Run the C++ ctest suite under Node
       env:

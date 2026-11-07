@@ -16,6 +16,10 @@
 //! A pin makes the image a thing the repository changes, in a commit, with the
 //! failures of the move in front of the person making it. The label that moves under
 //! the repository is refused here, in every workflow, for every operating system.
+//!
+//! The same holds for a tool a workflow installs: `emsdk install latest` is a name the
+//! tool's releases move, so it is refused beside the image labels, and the release the
+//! lane was measured on is named in its place.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -91,6 +95,65 @@ fn no_workflow_runs_on_a_label_github_moves() {
         "a workflow names an image GitHub moves; name the version it was measured on \
          (`ubuntu-24.04`, not `ubuntu-latest`) so the move is a commit of ours:\n  {}",
         found.join("\n  ")
+    );
+}
+
+/// The tool installs a workflow may not make by the name `latest`: a name the tool's own releases move.
+/// `emsdk install latest` moved to Emscripten 7.0.0 on 2026-11-06, and the visualizer WASM build, green the
+/// run before on 6.0.13, stopped compiling for a reason no commit of ours had made.
+const MOVING_TOOL_INSTALLS: &[&str] = &["install latest", "activate latest"];
+
+/// The moving tool install a line of YAML makes, if it makes one outside a comment.
+fn moving_tool_install(line: &str) -> Option<&'static str> {
+    let code = match line.find(" #") {
+        Some(at) => &line[..at],
+        None => line,
+    };
+    if code.trim_start().starts_with('#') {
+        return None;
+    }
+    MOVING_TOOL_INSTALLS
+        .iter()
+        .copied()
+        .find(|install| code.contains(install))
+}
+
+#[test]
+fn no_workflow_installs_a_tool_by_a_name_its_releases_move() {
+    let mut found = Vec::new();
+    for (name, text) in workflows() {
+        for (idx, line) in text.lines().enumerate() {
+            if let Some(install) = moving_tool_install(line) {
+                found.push(format!("{name}:{}: `{install}`", idx + 1));
+            }
+        }
+    }
+    assert!(
+        found.is_empty(),
+        "a workflow installs a tool by `latest`; name the release it was measured on \
+         (`emsdk install 6.0.13`) so the move is a commit of ours:\n  {}",
+        found.join("\n  ")
+    );
+}
+
+#[test]
+fn the_tool_check_reads_an_install_and_leaves_prose_and_releases_alone() {
+    assert_eq!(
+        moving_tool_install("        ./emsdk install latest"),
+        Some("install latest")
+    );
+    assert_eq!(
+        moving_tool_install("        ./emsdk activate latest"),
+        Some("activate latest")
+    );
+    assert_eq!(moving_tool_install("        ./emsdk install 6.0.13"), None);
+    assert_eq!(
+        moving_tool_install("        ./emsdk install 6.0.13 # not install latest"),
+        None
+    );
+    assert_eq!(
+        moving_tool_install("        # `latest` moved to 7.0.0; install latest was the cause"),
+        None
     );
 }
 
