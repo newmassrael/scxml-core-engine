@@ -5849,6 +5849,26 @@
           "file": "sce/src/scripting/LuaEngine.cpp",
           "symbol": "LuaEngine::luaToScriptValue",
           "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/scripting/lua_engine.py",
+          "symbol": "bind_system",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/scripting/lua_engine.py",
+          "symbol": "write_global",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/scripting/lua_engine.py",
+          "symbol": "set_variable",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/python/runtime/sce_runtime/scripting/lua_engine.py",
+          "symbol": "setup_system_variables",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {

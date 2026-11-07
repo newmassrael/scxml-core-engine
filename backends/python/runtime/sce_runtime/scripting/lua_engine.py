@@ -92,8 +92,8 @@ class _LuaSession:
 
     Every global this engine writes or reads after the shared semantics
     file is loaded goes through the four Lua functions held here, never
-    through lupa's `globals()[name]`. §scxml-5.10: the four system
-    variables are bound by the shared `_scxml_bind_system` alone, the
+    through lupa's `globals()[name]`. The four system variables are
+    bound by the shared `_scxml_bind_system` alone (`bind_system`), the
     globals table refuses an ordinary write of any of them with a Lua
     error, and `_event` / `_ioprocessors` are read-only proxies whose
     fields live behind them. A call into Lua is a protected call, so the
@@ -131,8 +131,10 @@ class _LuaSession:
         ) = self.runtime.execute(_SESSION_ACCESSORS)
 
     def bind_system(self, name: str, value: Any) -> None:
-        """§scxml-5.10: bind the system variable `name`, through the one
-        binding the shared semantics file allows."""
+        """Bind the system variable `name`, through the one binding the
+        shared semantics file allows."""
+        # §scxml-5.10: `_scxml_bind_system` binds a read-only view, and is
+        # the only way a system variable is set; a script's write is refused.
         try:
             self._bind_system(name, value)
         except lupa.LuaError as exc:
@@ -140,8 +142,10 @@ class _LuaSession:
 
     def write_global(self, name: str, value: Any) -> None:
         """Bind the global `name`, as a script assigning it would. A name
-        the document chooses may be a system variable's, and §scxml-5.10
-        has that write fail: the refusal is raised as a `ScriptError`."""
+        the document chooses may be a system variable's, and that write
+        fails: the refusal is raised as a `ScriptError`."""
+        # §scxml-5.10: the globals table refuses a write of a system
+        # variable's name; the protected call returns that refusal here.
         try:
             self._write_global(name, value)
         except lupa.LuaError as exc:
@@ -472,9 +476,10 @@ class LuaScriptEngine(IScriptEngine):
         is handled on the read side (`evaluate_expression`) — see the
         C++ `isUndeclaredSimpleVariable` short-circuit.
 
-        §scxml-5.10: a system variable's name is the one location refused,
-        as a `ScriptError` (`_LuaSession.write_global`)."""
+        A system variable's name is the one location refused, as a
+        `ScriptError` (`_LuaSession.write_global`)."""
         session = self._require_session(session_id)
+        # §scxml-5.10: a system variable's name is refused by `write_global`.
         session.write_global(name, _script_value_to_lua(session, value))
         session.declared_vars.add(name)
 
@@ -517,10 +522,11 @@ class LuaScriptEngine(IScriptEngine):
     ) -> None:
         """W3C SCXML 5.10 — `_sessionid` / `_name` / `_ioprocessors`.
 
-        §scxml-5.10: each is bound by `_scxml_bind_system`, the one binding
-        the shared semantics file allows, which keeps them read-only to
-        every script. A binding that fails raises a `ScriptError`."""
+        Each is bound by `_scxml_bind_system`, the one binding the shared
+        semantics file allows, which keeps them read-only to every script.
+        A binding that fails raises a `ScriptError`."""
         session = self._require_session(session_id)
+        # §scxml-5.10: bound read-only, through `bind_system`.
         session.bind_system("_sessionid", session_id)
         session.bind_system("_name", session_name)
         # §scxml-C-1-1 / §scxml-C-2-3: one entry per processor the deployment
