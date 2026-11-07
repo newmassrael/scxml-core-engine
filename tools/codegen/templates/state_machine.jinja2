@@ -600,8 +600,17 @@ struct {{ model.name }}Policy {
        `sce:direction="out"` is read by the host through the accessor below;
        every other one is the machine's own. #}
 {% for field in static_fields %}
+{% if field.module_parameter %}
+    {# docs/SCE_TEST_PROFILE.md §11.5: a module parameter has no initial value of
+       the document's; the component fills it from the run's module parameters
+       before the machine starts, so it is declared with its type alone. #}
+    /// docs/SCE_TEST_PROFILE.md §11.5: the module parameter `{{ field.id }}`, which
+    /// takes the suite's value before the machine starts.
+    {{ field.ty }} {{ field.name }} {};
+{% else %}
     /// W3C SCXML 5.2: the `{{ field.id }}` datamodel variable{% if field.published %}, published (`sce:direction="out"`){% endif %}.
     {{ field.ty }} {{ field.name }} = {{ field.init }};
+{% endif %}
 {% endfor %}
 {% for field in static_published %}
 {% if field.reader %}

@@ -104,6 +104,13 @@ pub struct StaticField {
     /// slot for each, and the slot of an optional variable is the optional type
     /// itself, so a seed that is absent is a value not handed.
     pub seeded: bool,
+    /// A test component's module parameter (docs/SCE_TEST_PROFILE.md §11.5,
+    /// §11.8): its `<data>` has no `expr`, so no initial value is lowered and
+    /// [`Self::init`] is empty. Its slot is declared with its type alone, and
+    /// the component fills it from the run's module parameters before the
+    /// machine starts; a template that declares the field writes no
+    /// initializer for it.
+    pub module_parameter: bool,
 }
 
 /// What lowering a `sce-static` machine produced beyond the rewritten model.
@@ -5039,6 +5046,7 @@ fn union_variable_field(
         reader: None,
         holds_bytes: false,
         seeded: false,
+        module_parameter: false,
     })
 }
 
@@ -5632,6 +5640,15 @@ pub fn lower(
     // Taken before any expression is rewritten: the shape is the document's,
     // and the same for every backend.
     let saved_shape = saved_shape(model, &scope);
+    // docs/SCE_TEST_PROFILE.md §11.5, §11.8: the variables of a test component
+    // whose values are the suite's module parameters, which the component reads
+    // into them before its machine starts. Every other variable starts at its
+    // `expr`.
+    let module_parameters: BTreeSet<String> = model
+        .test_component
+        .as_ref()
+        .map(|profile| profile.module_parameters.iter().cloned().collect())
+        .unwrap_or_default();
     {
         let ctx = lowering_ctx(&scope, target, machine, &no_payload, &enums);
         let init_names: Vec<(String, String)> = variables
@@ -5648,6 +5665,26 @@ pub fn lower(
         for var in variables {
             let published = var.direction == Some(crate::forge::model::Direction::Out);
             let name = target.field_name(&var.id);
+            // A module parameter is of a scalar, `string[N]` or `bytes[N]` type,
+            // the types a suite declares one of (§11.8). It has no `expr`, so
+            // no initial value is lowered for it: its slot is declared with its
+            // type ([`StaticField::module_parameter`]) and the component fills it
+            // from the run's module parameters before the machine starts.
+            let module_parameter = module_parameters.contains(&var.id);
+            if module_parameter
+                && var
+                    .value_type
+                    .as_ref()
+                    .and_then(crate::forge::model::AlgorithmValueType::scalar)
+                    .is_none()
+            {
+                return Err(GenerateError::unsupported(format!(
+                    "<data id=\"{}\" sce:module-parameter=\"true\">: a module parameter is of \
+                     a scalar, string[N] or bytes[N] type, the types a suite declares one of \
+                     (docs/SCE_TEST_PROFILE.md §11.8)",
+                    var.id
+                )));
+            }
             // A record variable is built whole from its `<sce:set>`s, in
             // the schema's order — the rule the judge already held it to.
             if let Some(alias) = var.value_type.as_ref().and_then(|t| t.record_alias()) {
@@ -5698,6 +5735,7 @@ pub fn lower(
                     reader: None,
                     holds_bytes: holds_bytes(schema),
                     seeded: false,
+                    module_parameter: false,
                 });
                 continue;
             }
@@ -5796,6 +5834,7 @@ pub fn lower(
                     reader: None,
                     holds_bytes: holds,
                     seeded: false,
+                    module_parameter: false,
                 });
                 continue;
             }
@@ -5840,6 +5879,7 @@ pub fn lower(
                     reader: None,
                     holds_bytes: holds_bytes(&place.schema),
                     seeded: false,
+                    module_parameter: false,
                 });
                 continue;
             }
@@ -5904,6 +5944,7 @@ pub fn lower(
                     reader: None,
                     holds_bytes: false,
                     seeded: crate::forge::static_datamodel::seed_slot(var).is_some(),
+                    module_parameter: false,
                 });
                 continue;
             }
@@ -5929,9 +5970,15 @@ pub fn lower(
                         ty.as_attr()
                     ))
                 })?;
-                let init = initial_value(&var.expr, target, &ctx, &renames, InferredType::Unknown)
-                    .map_err(|r| refused("the initial value", &var.expr, r))?;
-                rewrites.note(&var.expr, var.expr_spelling.as_ref(), &init);
+                let init = if module_parameter {
+                    String::new()
+                } else {
+                    let init =
+                        initial_value(&var.expr, target, &ctx, &renames, InferredType::Unknown)
+                            .map_err(|r| refused("the initial value", &var.expr, r))?;
+                    rewrites.note(&var.expr, var.expr_spelling.as_ref(), &init);
+                    init
+                };
                 fields.push(StaticField {
                     id: var.id.clone(),
                     name,
@@ -5948,13 +5995,19 @@ pub fn lower(
                     reader: None,
                     holds_bytes: false,
                     seeded: false,
+                    module_parameter,
                 });
                 continue;
             }
-            let slot = InferredType::from_sce_type(ty);
-            let init = initial_value(&var.expr, target, &ctx, &renames, slot)
-                .map_err(|r| refused("the initial value", &var.expr, r))?;
-            rewrites.note(&var.expr, var.expr_spelling.as_ref(), &init);
+            let init = if module_parameter {
+                String::new()
+            } else {
+                let slot = InferredType::from_sce_type(ty);
+                let init = initial_value(&var.expr, target, &ctx, &renames, slot)
+                    .map_err(|r| refused("the initial value", &var.expr, r))?;
+                rewrites.note(&var.expr, var.expr_spelling.as_ref(), &init);
+                init
+            };
             // A string a target holds in a buffer of its bound is declared once
             // however many variables share the bound, and read through the buffer.
             let storage = match (ty, var.capacity()) {
@@ -5972,9 +6025,10 @@ pub fn lower(
                 declarations.string_storage(storage);
             }
             // A text held in a buffer of its bound starts at its literal, built as
-            // the target builds a literal it judges against the bound.
+            // the target builds a literal it judges against the bound. A module
+            // parameter has no literal to start at.
             let init = match (&storage, var.capacity()) {
-                (Some(storage), Some(capacity)) => starting_text(
+                (Some(storage), Some(capacity)) if !module_parameter => starting_text(
                     target,
                     ty,
                     capacity,
@@ -6005,7 +6059,10 @@ pub fn lower(
                 elem_ty: None,
                 reader: None,
                 holds_bytes: false,
-                seeded: crate::forge::static_datamodel::seed_slot(var).is_some(),
+                // A module parameter's value is the suite's, and never a parent's.
+                seeded: !module_parameter
+                    && crate::forge::static_datamodel::seed_slot(var).is_some(),
+                module_parameter,
             });
         }
     }
