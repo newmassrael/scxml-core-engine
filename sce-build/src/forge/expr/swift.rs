@@ -82,6 +82,20 @@ pub(super) fn zero_of(ty: InferredType) -> Option<&'static str> {
     })
 }
 
+/// The value a checked index read of an element of `ty` answers where the index
+/// is outside the list: a scalar's zero ([`zero_of`]), the absence of an element
+/// that may be absent, and the empty list for an element that is itself a list,
+/// as the elements of a list a composed payload holds are at any depth
+/// (docs/adr/0086, section 6.1). `None` for an element with no such value to
+/// name.
+fn element_fallback(ty: InferredType) -> Option<&'static str> {
+    zero_of(ty).or(match ty {
+        InferredType::Optional(_) => Some("nil"),
+        InferredType::List(_) => Some("[]"),
+        _ => None,
+    })
+}
+
 /// The precedence of an operator as the other emitters read it: ECMAScript's own
 /// order, each class apart. The Swift table is not this one, which
 /// [`swift_operand`] makes up for.
@@ -437,7 +451,7 @@ fn emit_node(expr: &TypedExpr) -> Result<String, Refusal> {
             left,
             right: Some(index),
         } => {
-            match zero_of(expr.ty) {
+            match element_fallback(expr.ty) {
                 Some(zero) => format!(
                     "Checked.at(sceFailure, {}, {}, fallback: {zero})",
                     emit(left, InferredType::Unknown)?,

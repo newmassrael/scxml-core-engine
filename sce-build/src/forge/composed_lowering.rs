@@ -53,6 +53,7 @@ mod go;
 mod kotlin;
 mod python;
 mod rust;
+mod swift;
 #[cfg(test)]
 mod test_support;
 
@@ -61,6 +62,7 @@ pub use go::{GoCarrier, GoComposed};
 pub use kotlin::{KotlinCarrier, KotlinComposed};
 pub use python::{PythonCarrier, PythonComposed};
 pub use rust::{RustCarrier, RustComposed};
+pub use swift::{SwiftCarrier, SwiftComposed};
 
 pub(crate) use cpp::cpp_raise_checks;
 pub(crate) use go::go_raise_checks;
@@ -70,6 +72,7 @@ pub(crate) use rust::{
     rust_bounded_list, rust_bytes_type, rust_case_ident, rust_case_read, rust_text_type,
     rust_union_member, rust_union_tag_method, RUST_EMPTY_LIST, RUST_PORTABLE,
 };
+pub(crate) use swift::swift_raise_checks;
 
 /// An enum as a machine holds it: the name the statechart holds it by, the
 /// type it is declared as, and each variant's declared name with the

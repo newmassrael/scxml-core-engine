@@ -5416,7 +5416,7 @@ by its own name each position it does not lower.
 
 - `c11` lowers none; refuses reads, copies, unions, sends
 
-- `swift` lowers none; refuses reads, copies, unions, sends
+- `swift` lowers reads, copies, sends; refuses unions
 
 - `ecmascript` lowers none; refuses reads, copies, unions, sends
 <!-- composed-lowering-rows: end -->
@@ -5452,6 +5452,11 @@ this list):
   and `test_a_composed_payload_is_read_at_any_depth.py` and
   `test_a_composed_value_is_sent_by_its_name.py` under
   `backends/python/tests/integration/static_datamodel/` drive them.
+
+- `swift`: `scripts/regen_static_datamodel_swift.sh` commits the generated
+  machines, and `AComposedPayloadIsReadAtAnyDepthTests.swift` and
+  `AComposedValueIsSentByItsNameTests.swift` under
+  `backends/swift/tests/Tests/StaticDatamodelTests/` drive them.
 <!-- composed-lowering-harnesses: end -->
 
 What no backend lowers yet is refused by name where the machine is generated, in

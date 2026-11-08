@@ -315,7 +315,7 @@ impl ComposedLowering {
 
             Language::C11 => none,
 
-            Language::Swift => none,
+            Language::Swift => walks,
         }
     }
 }

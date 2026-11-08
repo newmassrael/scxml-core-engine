@@ -6957,6 +6957,194 @@ pub(crate) fn swift_payload_pair(f: &EntryField) -> String {
     }
 }
 
+/// What the Swift typed channel holds and reads of one event's payload
+/// ([`build_swift_event_payload`]).
+struct SwiftPayloadParts {
+    /// The payload struct's members, one line each, each at its zero.
+    field_lines: String,
+    /// The inject seam's parameters, `<id>: <type>` each.
+    params: Vec<String>,
+    /// The lift's statements that read each member out of the decoded
+    /// `fields` into `payload`, one line each, throwing the first refusal.
+    reads: String,
+    /// The JSON of the defaults of the fields a later revision added, or
+    /// `None` for a schema that added none.
+    defaults: Option<String>,
+    /// The statements the inject seam runs before it raises, one line each;
+    /// empty where it needs none.
+    prelude: String,
+    /// The typed carrier the inject seam raises.
+    typed_payload: String,
+    /// The JSON text the inject seam writes as the event's `data`.
+    data: String,
+    /// Whether the inject seam throws: the refusal of a value a host hands it
+    /// past a bound its type declares (docs/adr/0086, section 5.4).
+    refuses: bool,
+}
+
+/// [`SwiftPayloadParts`] of a schema each field of which is one entry, the struct
+/// `struct_name`: each field read by the reader of its declared type and written as
+/// the pair of its type, in the schema's order.
+fn swift_entry_payload(
+    schema: &EntrySchema,
+    static_enums: &[crate::forge::static_lowering::StaticEnumType],
+    struct_name: &str,
+) -> SwiftPayloadParts {
+    let mut field_lines = String::new();
+    let mut reads = String::new();
+    let mut params = Vec::new();
+    let mut inits = Vec::new();
+    let mut pairs = Vec::new();
+    for f in &schema.fields {
+        let (ty, zero) = match f.sce_type.present_type() {
+            // The first case stands where the struct holds nothing yet.
+            SceType::Enum(r) => {
+                let ty = static_enum_of(static_enums, &r.alias).ty.clone();
+                let zero = format!("{ty}.allCases[0]");
+                (ty, zero)
+            }
+            present => (
+                swift_type(present).to_string(),
+                swift_zero_value(present).to_string(),
+            ),
+        };
+        // A field that may be absent is the optional type over its present
+        // value's, and holds nothing yet as absent (docs/adr/0055).
+        let (ty, zero) = match &f.sce_type {
+            EntryType::Optional { .. } => (format!("{ty}?"), "nil".to_string()),
+            EntryType::Scalar(_) => (ty, zero),
+        };
+        field_lines.push_str(&format!("    var {}: {ty} = {zero}\n", f.id));
+        reads.push_str(&format!(
+            "            payload.{} = {}\n",
+            f.id,
+            swift_payload_reader(f, static_enums)
+        ));
+        params.push(format!("{}: {ty}", f.id));
+        inits.push(format!("{0}: {0}", f.id));
+        pairs.push(swift_payload_pair(f));
+    }
+    SwiftPayloadParts {
+        field_lines,
+        params,
+        reads,
+        defaults: crate::forge::schema_revision::defaults_wire(schema),
+        prelude: String::new(),
+        typed_payload: format!("{struct_name}({})", inits.join(", ")),
+        data: format!("payloadJSON({})", pairs.join(", ")),
+        refuses: false,
+    }
+}
+
+/// [`SwiftPayloadParts`] of the payload of `event`, the struct `struct_name`, whose
+/// schema holds a composition (docs/adr/0086), by the walks over its type
+/// ([`crate::forge::composed_lowering`]): each member in the type the machine holds it
+/// in (section 7.1, the Swift row) and at its zero, each read by one runtime call per
+/// constructor, which refuses the delivery whole, naming the path, at the first value
+/// outside its type (section 4), and written as its JSON (section 3.1) from the
+/// payload the inject seam builds. A Swift struct has no constructor that could refuse
+/// a value, so the inject seam holds what a host hands it to every bound its type
+/// declares, at any depth, before it builds anything, and throws the refusal (section
+/// 5.4).
+///
+/// The static lowering declared every record and enum the payload names before the
+/// channel is built ([`crate::forge::static_lowering::lower_swift`]), so a walk that
+/// fails here is a routing defect.
+fn swift_composed_payload(
+    model: &crate::model::SCXMLModel,
+    machine_name: &str,
+    event: &str,
+    static_enums: &[crate::forge::static_lowering::StaticEnumType],
+    struct_name: &str,
+) -> SwiftPayloadParts {
+    use crate::forge::composed_lowering::{self as composed, ComposedSpelling, RecordEnv};
+    let unlowered = |why: &str| -> String {
+        format!(
+            "the payload of `{event}` reached the Swift typed channel unlowered ({why}): the \
+             static lowering declares what a composed payload names before the channel is built"
+        )
+    };
+    let schema = model
+        .imported_event_schemas
+        .get(event)
+        .unwrap_or_else(|| panic!("{}", unlowered("no schema")));
+    let alias = model
+        .imported_records
+        .iter()
+        .find(|(_, held)| held.name == schema.name)
+        .map(|(alias, _)| alias.as_str())
+        .unwrap_or_else(|| panic!("{}", unlowered("no record of its schema")));
+    let records = composed::StatechartRecords::of(model);
+    let enums: std::collections::BTreeMap<String, composed::MachineEnum> = static_enums
+        .iter()
+        .map(|e| (e.alias.clone(), e.machine_enum()))
+        .collect();
+    let spelling = composed::SwiftComposed {
+        machine: machine_name,
+        carrier: composed::SwiftCarrier::Json,
+    };
+    let walked = |result: Result<Vec<(String, String)>, String>| {
+        result.unwrap_or_else(|why| panic!("{}", unlowered(&why)))
+    };
+    let held = records
+        .record(None, alias)
+        .unwrap_or_else(|why| panic!("{}", unlowered(&why)));
+    let members = walked(composed::record_members(alias, &records, &enums, &spelling));
+    let readers = walked(composed::field_readers(held, &records, &enums, &spelling));
+    // The inject seam builds the payload once its checks have passed, and writes
+    // each field from the value the typed carrier holds. The local is named in the
+    // prefix the generator keeps for its own names, so it hides no parameter of the
+    // seam, each of which a field names.
+    const PAYLOAD_LOCAL: &str = "scePayload";
+    let writers = walked(composed::field_writers(
+        held,
+        &records,
+        &spelling,
+        &composed::Held::place(PAYLOAD_LOCAL),
+    ));
+    let checks = composed::swift_raise_checks(held, &records)
+        .unwrap_or_else(|why| panic!("{}", unlowered(&why)));
+    // Each member read into the payload by its own reader, a closure of the value
+    // the field's name holds.
+    let reads: String = readers
+        .iter()
+        .map(|(id, read)| {
+            format!(
+                "            payload.{id} = try ({read})(fields.field(\"{}\"))\n",
+                filters::escape_swift(id.clone())
+            )
+        })
+        .collect();
+    let mut prelude: String = checks
+        .iter()
+        .map(|check| format!("        {check}\n"))
+        .collect();
+    let inits: Vec<String> = members
+        .iter()
+        .map(|(id, _)| format!("{id}: {id}"))
+        .collect();
+    prelude.push_str(&format!(
+        "        let {PAYLOAD_LOCAL} = {struct_name}({})\n",
+        inits.join(", ")
+    ));
+    SwiftPayloadParts {
+        field_lines: members
+            .iter()
+            .map(|(id, ty)| format!("    var {id}: {ty} = {}\n", spelling.zero_of(ty)))
+            .collect(),
+        params: members
+            .iter()
+            .map(|(id, ty)| format!("{id}: {ty}"))
+            .collect(),
+        reads,
+        defaults: crate::forge::schema_revision::composed_defaults_wire(schema),
+        prelude,
+        typed_payload: PAYLOAD_LOCAL.to_string(),
+        data: spelling.write_record(&writers),
+        refuses: true,
+    }
+}
+
 /// Build the [`SwiftEventPayload`] for `model`: the channel carries the events whose
 /// typed payload a lowered expression reads (`payload_events`, from the static
 /// lowering), and is inactive when none does. An enum field is held in the machine's
@@ -6980,52 +7168,33 @@ pub fn build_swift_event_payload(
     let mut lift_cases = String::new();
     let mut populate_cases = String::new();
     let mut raise_seams = String::new();
-    // Each payload event's schema, read one entry per field: a statechart that
-    // reads the data of one that holds a composition is refused where it is
-    // parsed ([`crate::forge::event_schema_check::check_composed_uses`]).
+    // Each payload event's schema, read one entry per field, or by the walks over
+    // its type where it holds a composition (docs/adr/0086), which the static
+    // lowering reads a payload of only on a target that spells them.
     let entry_schemas = model.entry_event_schemas();
 
     for event in payload_events {
-        let schema = &entry_schemas[event];
         let pascal = filters::to_event_variant(event.clone());
         let case = filters::to_swift_variant(event.clone());
         let struct_name = format!("{machine}{pascal}Payload");
         let field = format!("pending{pascal}Payload");
-        let mut field_lines = String::new();
-        let mut reads = String::new();
-        let mut params = Vec::new();
-        let mut inits = Vec::new();
-        let mut pairs = Vec::new();
-        for f in &schema.fields {
-            let (ty, zero) = match f.sce_type.present_type() {
-                // The first case stands where the struct holds nothing yet.
-                SceType::Enum(r) => {
-                    let ty = static_enum_of(static_enums, &r.alias).ty.clone();
-                    let zero = format!("{ty}.allCases[0]");
-                    (ty, zero)
-                }
-                present => (
-                    swift_type(present).to_string(),
-                    swift_zero_value(present).to_string(),
-                ),
-            };
-            // A field that may be absent is the optional type over its present
-            // value's, and holds nothing yet as absent (docs/adr/0055).
-            let (ty, zero) = match &f.sce_type {
-                EntryType::Optional { .. } => (format!("{ty}?"), "nil".to_string()),
-                EntryType::Scalar(_) => (ty, zero),
-            };
-            field_lines.push_str(&format!("    var {}: {ty} = {zero}\n", f.id));
-            reads.push_str(&format!(
-                "            payload.{} = {}\n",
-                f.id,
-                swift_payload_reader(f, static_enums)
-            ));
-            params.push(format!("{}: {ty}", f.id));
-            inits.push(format!("{0}: {0}", f.id));
-            pairs.push(swift_payload_pair(f));
-        }
-        let decode = match crate::forge::schema_revision::defaults_wire(schema) {
+        // The struct's members, the lift's reads, the inject seam's parameters,
+        // what it runs before it raises and the carriers it raises, and the
+        // defaults of the fields a later revision added.
+        let SwiftPayloadParts {
+            field_lines,
+            params,
+            reads,
+            defaults,
+            prelude,
+            typed_payload,
+            data,
+            refuses,
+        } = match entry_schemas.get(event) {
+            Some(schema) => swift_entry_payload(schema, static_enums, &struct_name),
+            None => swift_composed_payload(model, &machine, event, static_enums, &struct_name),
+        };
+        let decode = match defaults {
             Some(defaults) => format!(
                 "try PayloadFields.decode(metadata.data, defaults: \"{}\")",
                 filters::escape_swift(defaults)
@@ -7059,27 +7228,39 @@ pub fn build_swift_event_payload(
         if crate::forge::typed_invoke::is_completion_binding(event) {
             continue;
         }
+        // A seam that holds a host's value to its bounds throws the refusal, and
+        // raises nothing where it refuses.
+        let (refusal_doc, throws) = if refuses {
+            (
+                "\x20   /// A value past a bound its type declares, at any depth, is refused before\n\
+                 \x20   /// anything is raised (docs/adr/0086, section 5.4): the seam throws the\n\
+                 \x20   /// `BoundExceeded` that names the path to the place, and raises nothing.\n",
+                " throws",
+            )
+        } else {
+            ("", "")
+        };
         raise_seams.push_str(&format!(
             "    /// Raises `{event}` with its payload, binding the event and the payload's\n\
              \x20   /// values in one call so the pairing of a name and a type cannot be\n\
              \x20   /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are\n\
              \x20   /// filled: the typed one a native expression reads, and `data`, which is what\n\
              \x20   /// every other reader of `_event.data` binds it from.\n\
-             \x20   public func raise{pascal}({params}) {{\n\
+             {refusal_doc}\
+             \x20   public func raise{pascal}({params}){throws} {{\n\
+             {prelude}\
              \x20       raiseExternalWithMeta(\n\
              \x20           EventWithMetadata(\n\
              \x20               {machine}Event.{case},\n\
              \x20               metadata: EventMetadata(\n\
-             \x20                   data: payloadJSON({pairs}),\n\
+             \x20                   data: {data},\n\
              \x20                   eventType: .externalEvent,\n\
-             \x20                   typedPayload: {struct_name}({inits})\n\
+             \x20                   typedPayload: {typed_payload}\n\
              \x20               )\n\
              \x20           )\n\
              \x20       )\n\
              \x20   }}\n\n",
             params = params.join(", "),
-            pairs = pairs.join(", "),
-            inits = inits.join(", "),
         ));
     }
     // `.none` first, so a delivery without a typed carrier matches no event.

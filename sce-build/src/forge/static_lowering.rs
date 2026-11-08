@@ -15786,6 +15786,13 @@ pub fn lower_c11(
 /// refused by name
 /// ([`StaticTarget::unsupported`]) until its spelling is written, rather than left
 /// as an undefined name in generated code.
+///
+/// Of a composed value (docs/adr/0086) it lowers what its row of the one table says
+/// ([`crate::forge::event_schema_check::ComposedLowering::of`]): a read of a payload
+/// that holds one at any depth, a list of one taken whole into a list variable, and a
+/// `<send>` that names the place of one, each by the walks over its type
+/// ([`crate::forge::composed_lowering::SwiftComposed`]). It holds no union, which
+/// is refused by name where the document is checked.
 pub struct SwiftTarget;
 
 impl SwiftTarget {
@@ -16260,8 +16267,8 @@ impl StaticTarget for SwiftTarget {
         }
         // A record's field is named as the author wrote it, so one Swift reserves cannot
         // be a field, and a field that may be absent is `T?` over an element Swift spells
-        // ([`swift_field_unwritten`]). A schema that holds a composition is read by
-        // no position of the machine, and is not among these.
+        // ([`swift_field_unwritten`]). A schema that holds a composition is spelled by
+        // the walks over its type (docs/adr/0086), and is checked below.
         let entry_records = model.entry_records();
         if let Some((alias, field, why)) = entry_records
             .iter()
@@ -16303,6 +16310,24 @@ impl StaticTarget for SwiftTarget {
         {
             return Some(format!(
                 "the field `{}` of the event schema `{}`, {why}",
+                field.id, schema.name
+            ));
+        }
+        // A record or a payload that holds a composed value (docs/adr/0086) is a struct
+        // of its schema's fields too ([`crate::forge::composed_lowering::SwiftComposed`]),
+        // each a member named as the author wrote it and a label of the initializer a
+        // value is built by, so a name Swift reserves cannot be one. A field that may be
+        // absent is `T?` over whatever its element is held in, a byte string included.
+        if let Some((schema, field)) = model
+            .imported_records
+            .values()
+            .chain(model.imported_event_schemas.values())
+            .filter(|schema| schema.entry_schema().is_err())
+            .flat_map(|schema| schema.fields.iter().map(move |field| (schema, field)))
+            .find(|(_, field)| crate::reader_names::is_reserved_word(Language::Swift, &field.id))
+        {
+            return Some(format!(
+                "the field `{}` of `{}`, which holds a composed value, a name Swift reserves",
                 field.id, schema.name
             ));
         }
@@ -16372,11 +16397,39 @@ impl StaticTarget for SwiftTarget {
     fn scalar_view(&self, _ty: &SceType) -> Option<String> {
         None
     }
+    // One spelling of a record's type, whether a variable or a composed value
+    // holds it.
     fn record_type(&self, machine: &str, alias: &str) -> String {
-        format!(
-            "{machine}{}Record",
-            filters::to_pascal_case(alias.to_string())
-        )
+        use crate::forge::composed_lowering::{ComposedSpelling, SwiftCarrier, SwiftComposed};
+        SwiftComposed {
+            machine,
+            carrier: SwiftCarrier::Json,
+        }
+        .record_type(alias)
+    }
+    // The runtime's `PayloadValue` reads each constructor of a composed payload,
+    // and its typed writers write the JSON the inject seam carries as the event's
+    // `data` (docs/adr/0086, section 7.1, the Swift row).
+    fn composed_spelling<'a>(
+        &self,
+        machine: &'a str,
+    ) -> Option<Box<dyn crate::forge::composed_lowering::ComposedSpelling + 'a>> {
+        Some(Box::new(crate::forge::composed_lowering::SwiftComposed {
+            machine,
+            carrier: crate::forge::composed_lowering::SwiftCarrier::Json,
+        }))
+    }
+    // The walks of `composed_spelling`, the JSON they write held as the
+    // `WireValue` every param of a `<send>` is held in (`wire_value`) until the
+    // runtime writes them as one JSON object (docs/adr/0086, section 5.3).
+    fn composed_send_spelling<'a>(
+        &self,
+        machine: &'a str,
+    ) -> Option<Box<dyn crate::forge::composed_lowering::ComposedSpelling + 'a>> {
+        Some(Box::new(crate::forge::composed_lowering::SwiftComposed {
+            machine,
+            carrier: crate::forge::composed_lowering::SwiftCarrier::Wire,
+        }))
     }
     // A struct of the schema's fields in the schema's order, named as the author
     // wrote them because an expression reads a field by that name
