@@ -510,6 +510,37 @@ private func queuedText(origin: String, sender: String) -> String {
         ])
 }
 
+@Test func aWaitingHostSendThatCarriesAValueRefusesTheSaveByName() throws {
+    // docs/SCE_TEST_PROFILE.md §12.3: a value is the generated code's own and has no text, so a save that finds
+    // a host send waiting with one refuses rather than restore the send without it; the same send with no value
+    // is saved.
+    let (engine, _, _) = makeEngine { _ in }
+    engine.scheduleHostSend(
+        delay: .milliseconds(5),
+        request: HostSendRequest(processorType: "x:host", eventName: "ping", sendID: "valued", value: HostSendValue(UInt8(3))),
+        sender: "root")
+    #expect(throws: StateRefusal("the delayed send 'valued' carries a value, which a saved state does not carry")) {
+        _ = try engine.savedPendingSends(wallNowMs: 1000, sessionID: "root")
+    }
+
+    let (plain, _, _) = makeEngine { _ in }
+    plain.scheduleHostSend(
+        delay: .milliseconds(5), request: HostSendRequest(processorType: "x:host", eventName: "ping", sendID: "bare"),
+        sender: "root")
+    #expect(try plain.savedPendingSends(wallNowMs: 1000, sessionID: "root").count == 1)
+}
+
+@Test func aHostSendValueEqualsOnlyAnEqualValueOfItsOwnType() {
+    // A request is compared with the value it carries: an equal value of the same type is the same request, and
+    // the same number in another type is not.
+    #expect(HostSendValue(UInt8(3)) == HostSendValue(UInt8(3)))
+    #expect(HostSendValue(UInt8(3)) != HostSendValue(UInt8(4)))
+    #expect(HostSendValue(UInt8(3)) != HostSendValue(UInt16(3)))
+    #expect(
+        HostSendRequest(processorType: "x:host", value: HostSendValue("a"))
+            != HostSendRequest(processorType: "x:host"))
+}
+
 @Test func aSessionsOwnSendThatStoredNoSenderIsArmedAsSentByTheRestoredSession() throws {
     // A format-1 text stored an empty `origin` for a send of a machine that held no session id: the send is the
     // restored session's own, and it is armed as that session's, as the save of it writes it.

@@ -2358,7 +2358,8 @@ extension Engine {
     /// process comes back.
     ///
     /// A send the format cannot carry refuses the save, by name: one routed to a child session or to an HTTP
-    /// target. Leaving it out would restore a machine that never delivers it and says nothing. The end of the time
+    /// target, and a host send that carries a value (`HostSendRequest.value`). Leaving it out would restore a
+    /// machine that never delivers it, or delivers it without its value, and says nothing. The end of the time
     /// a running host-run invocation was given is no send: it is saved with the invocation, as its `due`
     /// (`savedHostInvokes`), and left out here.
     ///
@@ -2406,6 +2407,12 @@ extension Engine {
         case .host:
             guard let request = route.host else {
                 throw StateRefusal("the delayed send '\(act.sendID)' is routed to a host processor and holds no request")
+            }
+            // A value is the generated code's own and has no text a saved state writes; a send that
+            // carries one has no delay in a document (docs/SCE_TEST_PROFILE.md, P6), so only a host
+            // that scheduled one itself meets this.
+            guard request.value == nil else {
+                throw StateRefusal("the delayed send '\(act.sendID)' carries a value, which a saved state does not carry")
             }
             return .host(
                 processorType: request.processorType, event: request.eventName, target: request.target,
@@ -2507,6 +2514,7 @@ extension Engine {
                     due: send.due, event: try resolved(name), name: "", data: data, sendID: try sendID(id),
                     sender: "", route: ScheduledRoute(kind: .internalQueue, eventName: name))
             case .host(let type, let event, let target, let content, let params, let id, let data, let invokeID):
+                // No value: a send that carries one is never saved.
                 let request = HostSendRequest(
                     processorType: type, eventName: event, target: target, content: content, params: params,
                     sendID: try sendID(id), eventData: data, invokeID: invokeID)

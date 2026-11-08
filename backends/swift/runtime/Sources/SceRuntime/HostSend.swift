@@ -40,6 +40,34 @@ public enum HostRegistrationError: Error, Equatable, Sendable {
     case reservedType(call: String, type: String)
 }
 
+/// A message a send carries as the value the generated code holds, and never as an encoding: what
+/// the test profile's test-port processor is handed by a send of a specific template, a record of
+/// the type the event schema's unit declares (docs/SCE_TEST_PROFILE.md §12.3; docs/adr/0091, C2).
+///
+/// The value is any value Swift compares and shares across threads, which every type a template's
+/// value is held in is: a payload struct, a number, a `Bool`, a `String`, a `[UInt8]`, an array or an
+/// optional of those, and a closed enum's unit. It is held by an existential, so the request that
+/// carries it stays `Equatable` and `Sendable`, and two of them are equal where they hold values of one
+/// type that are equal. A reader takes it back by its type (`value as? T`).
+public struct HostSendValue: Sendable, Equatable {
+    /// The value.
+    public let value: any Equatable & Sendable
+
+    public init(_ value: some Equatable & Sendable) {
+        self.value = value
+    }
+
+    public static func == (lhs: HostSendValue, rhs: HostSendValue) -> Bool {
+        holdsEqual(lhs.value, rhs.value)
+    }
+}
+
+/// Whether `other` is a value of `held`'s type equal to it: a value of another type is never equal.
+private func holdsEqual<T: Equatable>(_ held: T, _ other: any Equatable) -> Bool {
+    guard let other = other as? T else { return false }
+    return held == other
+}
+
 /// What a `<send>` addressed to a host-served processor said.
 ///
 /// Every field is what the document wrote, not an interpretation of it. `processorType` is
@@ -69,6 +97,16 @@ public struct HostSendRequest: Sendable, Equatable {
     /// a delayed one carries the invokeid current then, not when it fires.
     public var invokeID: String
 
+    /// The message as the value the generated code holds, for a processor whose messages are values
+    /// and never encodings: the test profile's test-port processor, whose send carries its specific
+    /// template's value (docs/SCE_TEST_PROFILE.md §12.3; docs/adr/0091, C2). Nil for every other
+    /// send, whose data is `eventData`, so a send site that names no value is unchanged.
+    ///
+    /// A saved state does not carry it: a test-port send has no delay (the test profile's P6), so none
+    /// is pending when a machine is saved, and a save that finds one waiting refuses by name rather
+    /// than restore a send without the value it was made with.
+    public var value: HostSendValue?
+
     public init(
         processorType: String,
         eventName: String = "",
@@ -77,7 +115,8 @@ public struct HostSendRequest: Sendable, Equatable {
         params: [String: [String]] = [:],
         sendID: String = "",
         eventData: String = "",
-        invokeID: String = ""
+        invokeID: String = "",
+        value: HostSendValue? = nil
     ) {
         self.processorType = processorType
         self.eventName = eventName
@@ -87,6 +126,7 @@ public struct HostSendRequest: Sendable, Equatable {
         self.sendID = sendID
         self.eventData = eventData
         self.invokeID = invokeID
+        self.value = value
     }
 }
 
