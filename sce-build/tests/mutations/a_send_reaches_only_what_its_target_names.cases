@@ -82,7 +82,7 @@ PY
 
 mutation_case "C11 sends an invoked child no payload" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     "{% if has_payload %}\n                    sce_copy_bounded_data(_send_fwd.data, _ed);\n",
+     "{% if has_payload %}\n                    /* A view of the payload, which the child copies. */\n                    _send_fwd.data = _ed;\n",
      "{% if has_payload %}\n")
 PY
 
