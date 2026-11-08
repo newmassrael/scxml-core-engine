@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  A CBOR map whose entries hold a bounded list of records (docs/adr/0085,
+  Landing order step 3a; SCE_FORGE.md section 4.6.1): an exact id and a bounded
+  text beside them, so the map borrows and has an owned mirror, as the Mesh
+  envelope does. `seen` is a required list of at most two records and
+  `context` a list of at most three that may be absent. Each record is a map of
+  every field of `cbor_causal_entry`, keyed by the field's id as text
+  (docs/adr/0086, section 9.2).
+
+  Rust generates it; every other backend refuses it by name
+  (`cbor_codec::lowers_record_list`). Kept here, apart from the shared
+  resources, so that adding it moves the source hash of no generated tree.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:encoding="cbor" sce:codec-format="2" name="codec_cbor_record_list" version="1.0">
+  <sce:import kind="event-schema" src="cbor_causal_entry.scxml" as="CausalEntry"/>
+  <datamodel>
+    <data id="raw" sce:type="bytes" sce:direction="in"/>
+    <data id="id" sce:type="bytes" sce:key="0" sce:length="16" sce:direction="out"/>
+    <data id="source" sce:type="string" sce:key="1" sce:max-size="64" sce:direction="out"/>
+    <data id="seen" sce:type="list&lt;record:CausalEntry&gt;[2]" sce:key="3" sce:direction="out"/>
+    <data id="context" sce:type="optional&lt;list&lt;record:CausalEntry&gt;[3]&gt;" sce:key="4" sce:direction="out"/>
+  </datamodel>
+</scxml>

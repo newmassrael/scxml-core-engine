@@ -174,7 +174,8 @@
        import. Only a character outside the alphabet is the schema's to refuse.
 
        What each position holds of the grammar is its reader's to say: a codec's
-       entry stays a scalar or an optional scalar (`read_entry_type`), and a
+       entry stays a scalar or an optional scalar (`read_entry_type`), or on a
+       CBOR codec a bounded list of records (`read_cbor_record_list`), and a
        composition no backend lowers in a position yet is refused there by name
        (`generate/unsupported-feature`), never by this declaration. -->
   <xs:simpleType name="valueTypeExpression">

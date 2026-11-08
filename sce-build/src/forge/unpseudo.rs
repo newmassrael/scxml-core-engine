@@ -40,12 +40,13 @@ use crate::comment_text;
 use crate::forge::model::{
     AlgorithmConst, AlgorithmConstType, AlgorithmModel, AlgorithmParam, AlgorithmSignature,
     AlgorithmStmt, AlgorithmValueType, BackpressurePolicy, BitSize, BoundedCollectionModel,
-    BufferPoolModel, BufferPoolVariant, CachePolicy, CallArg, CborEntry, CodecEncoding, CodecField,
-    CodecModel, CodecTestVector, CodecVariant, ContentLineEntry, ContentLineModel, CountRef,
-    DecodedField, DecodedFieldValue, DecodedValue, Endian, FlagDef, FlagInput, FoldBody,
-    PeekByteSpec, PresentIfPredicate, PresentIfScope, ProcedureAssign, ProcedureDoneParam,
-    ProcedureHelper, ProcedureModel, ProcedureSendAction, ProcedureState, ProcedureTransition,
-    TestVector, TestVectorValue, TlvEntryFlagBind, TlvEntryId, TlvTerminateStrategy, VariantArm,
+    BufferPoolModel, BufferPoolVariant, CachePolicy, CallArg, CborEntry, CborEntryType,
+    CodecEncoding, CodecField, CodecModel, CodecTestVector, CodecVariant, ContentLineEntry,
+    ContentLineModel, CountRef, DecodedField, DecodedFieldValue, DecodedValue, Endian, FlagDef,
+    FlagInput, FoldBody, PeekByteSpec, PresentIfPredicate, PresentIfScope, ProcedureAssign,
+    ProcedureDoneParam, ProcedureHelper, ProcedureModel, ProcedureSendAction, ProcedureState,
+    ProcedureTransition, TestVector, TestVectorValue, TlvEntryFlagBind, TlvEntryId,
+    TlvTerminateStrategy, VariantArm,
 };
 use crate::forge::model::{
     CapacitySource, CollectionOrdering, ConcurrencyMode, ConditionModel, Direction, EntryType,
@@ -2330,8 +2331,9 @@ fn parse_bit_size(w: &[&str], line: usize) -> Result<BitSize, ParseError> {
 }
 
 /// `codec <name> encoding cbor [encode-may-fail]`, then `entry <id>: <type> key <n>
-/// [length <n>] [max-size <n>]` lines, `<type>` being a bare type or
-/// `optional<T>` (docs/adr/0055, section 8).
+/// [length <n>] [max-size <n>]` lines, `<type>` being a bare type, a list of
+/// records (`list<record:R>[N]`), or `optional<T>` of one (docs/adr/0055,
+/// section 8).
 fn parse_cbor_codec(head: &Line<'_>, body: &[&Line<'_>]) -> Result<CodecModel, ParseError> {
     let w: Vec<&str> = head.text.split_whitespace().collect();
     let mut entries = Vec::new();
@@ -2352,7 +2354,7 @@ fn parse_cbor_codec(head: &Line<'_>, body: &[&Line<'_>]) -> Result<CodecModel, P
             .and_then(|v| v.strip_suffix(':'))
             .ok_or_else(|| fail("a cbor entry needs `<id>:`".to_string()))?;
         let type_word = lw.get(2).copied().unwrap_or("");
-        let sce_type = EntryType::from_attr(type_word)
+        let sce_type = CborEntryType::from_attr(type_word)
             .ok_or_else(|| fail(format!("`{type_word}` is not an sce:type")))?;
         if lw.get(3).copied() != Some("key") {
             return Err(fail(

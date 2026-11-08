@@ -1594,6 +1594,15 @@ pub enum CborValue {
         /// Whether it is 64 bits wide.
         wide: bool,
     },
+    /// A bounded list of records, written as a definite-length array of maps
+    /// (docs/adr/0085, Landing order step 3a). Its value holds no more records
+    /// than its bound; `min`, its lower count, is the fewest it may hold, and a
+    /// value of fewer is refused with [`RefusalKind::CborOutOfRange`] at the
+    /// entry where `min` is above 0.
+    RecordList {
+        /// The list's lower count.
+        min: u32,
+    },
 }
 
 /// The carrier of an enum a CBOR entry holds.
@@ -1622,13 +1631,16 @@ impl<'m> CborPlan<'m> {
             .map(|entry| CborItem {
                 entry,
                 required: entry.is_required(),
-                value: match entry.present_type() {
-                    SceType::Bool => CborValue::Bool,
-                    SceType::String => CborValue::Text,
-                    SceType::Bytes => CborValue::Bytes {
+                value: match entry.leaf_type() {
+                    None => CborValue::RecordList {
+                        min: entry.record_list().map_or(0, |list| list.min),
+                    },
+                    Some(SceType::Bool) => CborValue::Bool,
+                    Some(SceType::String) => CborValue::Text,
+                    Some(SceType::Bytes) => CborValue::Bytes {
                         exact: entry.length.is_some(),
                     },
-                    SceType::Enum(r) => CborValue::Enum {
+                    Some(SceType::Enum(r)) => CborValue::Enum {
                         carrier: match crate::forge::cbor_codec::enum_carrier(imports, &r.alias)
                             .expect("the import resolved the enum's carrier")
                         {
@@ -1639,7 +1651,7 @@ impl<'m> CborPlan<'m> {
                             _ => Carrier::Narrow,
                         },
                     },
-                    other => CborValue::Uint {
+                    Some(other) => CborValue::Uint {
                         wide: *other == SceType::Uint64,
                     },
                 },

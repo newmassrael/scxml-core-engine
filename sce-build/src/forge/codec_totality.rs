@@ -51,8 +51,9 @@ pub enum RefusalKind {
     PresentIfMismatch,
     /// Two things a value says of one number disagree.
     InconsistentSource,
-    /// A CBOR text or byte string past its `sce:max-size`, or an enum value no
-    /// unsigned integer carries.
+    /// A CBOR text or byte string past its `sce:max-size`, an enum value no
+    /// unsigned integer carries, or a list of fewer records than its lower
+    /// count.
     CborOutOfRange,
     /// A CBOR byte string of another length than its `sce:length`.
     CborWrongLength,
@@ -278,6 +279,12 @@ fn element_line(m: &CodecModel, element: &str) -> Option<u32> {
             m.content_line
                 .iter()
                 .flat_map(|c| c.entries.iter())
+                .find(|e| e.id == element)
+                .and_then(|e| e.line)
+        })
+        .or_else(|| {
+            m.cbor_entries
+                .iter()
                 .find(|e| e.id == element)
                 .and_then(|e| e.line)
         })
@@ -895,8 +902,21 @@ fn cbor(entries: &[CborEntry], imports: &mut dyn Imports, out: &mut Vec<Refusal>
         // docs/adr/0065 §6 R1, docs/adr/0077 §3), so neither is refused; one
         // with no bound has none to break.
         let refusal = match crate::forge::cbor_codec::kind(e) {
-            "enum" => match e.present_type() {
-                SceType::Enum(r) => match imports.enum_carrier(&r.alias) {
+            // A list of records is presented in the language's list of its
+            // bound, which holds no more than the bound, and each record in its
+            // bounded types (docs/adr/0086, section 7.4); what it does not hold
+            // is its lower count, so a value of fewer records is refused.
+            "record_list" => e.record_list().filter(|list| list.min > 0).map(|list| {
+                (
+                    RefusalKind::CborOutOfRange,
+                    format!(
+                        "a list of fewer records than its lower count {} has no encoding",
+                        list.min
+                    ),
+                )
+            }),
+            "enum" => match e.leaf_type() {
+                Some(SceType::Enum(r)) => match imports.enum_carrier(&r.alias) {
                     Some(SceType::Int8 | SceType::Int16 | SceType::Int32 | SceType::Int64) => {
                         Some((
                             RefusalKind::CborOutOfRange,

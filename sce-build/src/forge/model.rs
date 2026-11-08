@@ -3475,8 +3475,8 @@ pub struct CborEntry {
     pub line: Option<u32>,
     /// The map key, `0..=23` — a key whose CBOR head is one byte.
     pub key: u8,
-    /// An unsigned integer, `bool`, `string`, `bytes` or `enum:<alias>`, or `optional<T>` of one of them (docs/adr/0055, section 8): a bare type is an entry a decode of a map without this key refuses, and `optional<T>` one that may be absent.
-    pub sce_type: EntryType,
+    /// An unsigned integer, `bool`, `string`, `bytes` or `enum:<alias>`, a bounded list of records (`list<record:R>[N]`, docs/adr/0085 Landing order step 3a), or `optional<T>` of one of them (docs/adr/0055, section 8): a bare type is an entry a decode of a map without this key refuses, and `optional<T>` one that may be absent.
+    pub sce_type: CborEntryType,
     /// `sce:length`: the exact byte length of a `bytes` entry; any other
     /// length is refused on decode and on encode.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3494,9 +3494,10 @@ pub struct CborEntry {
 
 impl CborEntry {
     /// Whether a form that stores this entry has a length to size: a string or
-    /// a byte string of no exact length.
+    /// a byte string of no exact length. A list of records is held at its
+    /// bound, which its type states, so no deployment sizes it.
     pub fn takes_capacity(&self) -> bool {
-        matches!(self.present_type(), SceType::String | SceType::Bytes) && self.length.is_none()
+        matches!(self.leaf_type(), Some(SceType::String | SceType::Bytes)) && self.length.is_none()
     }
 
     /// How many bytes a form that stores this string or byte string holds: the
@@ -3504,7 +3505,7 @@ impl CborEntry {
     /// `None` for one with none of them, which no fixed container holds
     /// (docs/adr/0077 §7), and for an entry that is no string or byte string.
     pub fn storage_bytes(&self) -> Option<u32> {
-        if !matches!(self.present_type(), SceType::String | SceType::Bytes) {
+        if !matches!(self.leaf_type(), Some(SceType::String | SceType::Bytes)) {
             return None;
         }
         self.capacity.or(self.length).or(self.max_size)
@@ -3514,15 +3515,119 @@ impl CborEntry {
     /// is of a bare type (docs/adr/0055, section 8). An `optional<T>` entry may
     /// be absent, in every language.
     pub fn is_required(&self) -> bool {
-        self.sce_type.optional_elem().is_none()
+        !self.sce_type.is_optional()
     }
 
-    /// The type a present value of the entry is: the bare type itself, or the
-    /// element of an `optional<T>` one. What a reader that spells a bound or the
-    /// wire kind of the value asks; one that holds the value matches
+    /// The type a present value of a leaf entry is: the bare type itself, or
+    /// the element of an `optional<T>` one; `None` for a list of records
+    /// ([`Self::record_list`]). What a reader that spells a bound or the wire
+    /// kind of the value asks; one that holds the value matches
     /// [`Self::sce_type`] instead.
-    pub fn present_type(&self) -> &SceType {
-        self.sce_type.present_type()
+    pub fn leaf_type(&self) -> Option<&SceType> {
+        self.sce_type.leaf().map(EntryType::present_type)
+    }
+
+    /// The list of records the entry holds, or `None` for a leaf entry.
+    pub fn record_list(&self) -> Option<RecordList<'_>> {
+        self.sce_type.record_list()
+    }
+}
+
+/// The type of a CBOR codec's entry (SCE_FORGE.md §4.6.1): one value of a leaf type, or a bounded list of records (docs/adr/0085, Landing order step 3a). A list is read by the one type grammar (docs/adr/0086, section 1) and held as the type it reads, so its bound is part of it; a leaf keeps the type of an entry ([`EntryType`]).
+///
+/// Serialized untagged: a leaf entry keeps the shape it always had, and a list is spelled as every value type is (`{"list": {"record": "Entry"}, "max": 8}`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(untagged)]
+pub enum CborEntryType {
+    /// A scalar, a text, a byte string or a value of an enum, or an optional one.
+    Leaf(EntryType),
+    /// `list<record:R>[N]`, or `optional<…>` over one: a definite-length array of maps, each a record of the event schema `R` keyed by its fields' ids (docs/adr/0086, section 9.2).
+    RecordList(crate::forge::value_type::ValueType),
+}
+
+/// The list of records a CBOR codec's entry holds: the alias of the event
+/// schema each record is, its bounds, and the list's type outside any
+/// `optional<…>`, which its size is computed from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RecordList<'a> {
+    /// The alias the codec imports the record's event schema under.
+    pub record: &'a str,
+    /// The most records the list holds.
+    pub max: u32,
+    /// The fewest records the list holds, its lower count (docs/adr/0086,
+    /// section 15); 0 where it states none.
+    pub min: u32,
+    /// `list<record:R>[N]` itself.
+    pub list: &'a crate::forge::value_type::ValueType,
+}
+
+impl CborEntryType {
+    /// The leaf type, or `None` for a list of records.
+    pub fn leaf(&self) -> Option<&EntryType> {
+        match self {
+            Self::Leaf(t) => Some(t),
+            Self::RecordList(_) => None,
+        }
+    }
+
+    /// The list of records, or `None` for a leaf, and for a type the parser
+    /// does not read as an entry: a list of anything but a record.
+    pub fn record_list(&self) -> Option<RecordList<'_>> {
+        use crate::forge::value_type::ValueType;
+        let Self::RecordList(ty) = self else {
+            return None;
+        };
+        let list = match ty {
+            ValueType::Optional { elem } => &**elem,
+            other => other,
+        };
+        let ValueType::List { elem, max } = list else {
+            return None;
+        };
+        let ValueType::Record { alias } = &**elem else {
+            return None;
+        };
+        Some(RecordList {
+            record: alias,
+            max: max.max,
+            min: max.min,
+            list,
+        })
+    }
+
+    /// Whether a value of the entry may be absent: `optional<T>`.
+    pub fn is_optional(&self) -> bool {
+        match self {
+            Self::Leaf(t) => t.optional_elem().is_some(),
+            Self::RecordList(ty) => {
+                matches!(ty, crate::forge::value_type::ValueType::Optional { .. })
+            }
+        }
+    }
+
+    /// The `sce:type` spelling: a leaf as [`EntryType::as_attr`] writes it,
+    /// and a list as the one type grammar does (`list<record:Entry>[8]`).
+    pub fn as_attr(&self) -> String {
+        match self {
+            Self::Leaf(t) => t.as_attr(),
+            Self::RecordList(ty) => ty.to_string(),
+        }
+    }
+
+    /// Read the spelling [`Self::as_attr`] writes. `None` for anything else.
+    /// The plain inverse for text SCE wrote itself; a document's `sce:type` is
+    /// read by the parser, which adds the refusals a document needs.
+    pub fn from_attr(s: &str) -> Option<Self> {
+        if let Some(leaf) = EntryType::from_attr(s) {
+            return Some(Self::Leaf(leaf));
+        }
+        let ty = crate::forge::value_type::WrittenType::read(s)
+            .ok()?
+            .bounded()
+            .ok()?;
+        let entry = Self::RecordList(ty);
+        entry.record_list().map(|_| entry)
     }
 }
 
@@ -4163,9 +4268,10 @@ impl CodecModel {
     /// so no item of the generated tree names it at `Inline`, the default
     /// profile of the heap-free tier.
     pub(crate) fn inline_holds_with(&self, mut body_holds: impl FnMut(&str) -> bool) -> bool {
+        // A list of records is held at its bound, which its type states.
         let own = if self.encoding == CodecEncoding::Cbor {
             self.cbor_entries.iter().all(|e| {
-                !matches!(e.present_type(), SceType::String | SceType::Bytes)
+                !matches!(e.leaf_type(), Some(SceType::String | SceType::Bytes))
                     || e.storage_bytes().is_some()
             })
         } else if let Some(lines) = &self.content_line {

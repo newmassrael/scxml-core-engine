@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  One entry of a causal context (docs/adr/0085, section 3): the replica that
+  authored a change and the change's number among that replica's changes. The
+  record `codec_cbor_record_list.scxml` holds a bounded list of, as the Mesh
+  envelope's context will.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="cbor_causal_entry"
+       sce:event-name="cbor.causal_entry">
+  <datamodel>
+    <data id="author" sce:type="bytes[16]" sce:direction="in"/>
+    <data id="seq" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>

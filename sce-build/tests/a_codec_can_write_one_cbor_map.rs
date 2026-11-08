@@ -8,7 +8,7 @@
 //! that the page shows a CBOR codec and reads it back.
 
 use sce_build::forge::model::{
-    CborEntry, CodecEncoding, CodecModel, EntryType, ForgeDocument, SceType,
+    CborEntry, CborEntryType, CodecEncoding, CodecModel, EntryType, ForgeDocument, SceType,
 };
 use sce_build::forge::parser::parse_forge;
 use sce_build::forge::{pseudo, unpseudo};
@@ -89,19 +89,22 @@ fn every_entry_is_read_with_its_key_and_its_bounds() {
             entry("deadline").is_required()
         ),
         (
-            EntryType::Optional {
+            CborEntryType::Leaf(EntryType::Optional {
                 elem: SceType::Uint64
-            },
+            }),
             false
         )
     );
     assert_eq!(
         entry("urgent").sce_type,
-        EntryType::Optional {
+        CborEntryType::Leaf(EntryType::Optional {
             elem: SceType::Bool
-        }
+        })
     );
-    assert_eq!(entry("pattern").sce_type, EntryType::Scalar(SceType::Uint8));
+    assert_eq!(
+        entry("pattern").sce_type,
+        CborEntryType::Leaf(EntryType::Scalar(SceType::Uint8))
+    );
 }
 
 #[test]

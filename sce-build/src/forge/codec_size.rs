@@ -54,6 +54,11 @@ pub struct SizedCodec {
     /// is absent did not resolve (no such file, another kind, or a cycle of
     /// imports): a codec that needs it has no bound.
     pub imports: BTreeMap<String, SizedImport>,
+    /// The enums and records the document's aliases name, read as the one type
+    /// grammar's size calculus reads them (docs/adr/0086, section 2): what a
+    /// CBOR entry's list of records is sized by. A record no import resolves is
+    /// absent, and a codec whose list holds it has no bound.
+    pub scope: crate::forge::value_type::TypeScope,
 }
 
 /// What an import contributes to the size of the codec that names it.
@@ -133,18 +138,30 @@ impl fmt::Display for Unbounded {
 pub fn largest_encoded_bytes(codec: &SizedCodec) -> Result<u64, Unbounded> {
     match codec.model.encoding {
         CodecEncoding::Positional => positional_codec(codec),
-        CodecEncoding::Cbor => cbor_codec(&codec.model),
+        CodecEncoding::Cbor => cbor_codec(codec),
         CodecEncoding::ContentLine => content_line_codec(codec),
     }
 }
 
 /// A CBOR map: the arithmetic of the C11 renderer, once every string and byte
-/// string entry has a bound to take.
-fn cbor_codec(m: &CodecModel) -> Result<u64, Unbounded> {
+/// string entry has a bound to take and every list of records has a record the
+/// codec's imports resolve ([`SizedCodec::scope`]), sized by the one type
+/// grammar's calculus (docs/adr/0086, section 2.1).
+fn cbor_codec(codec: &SizedCodec) -> Result<u64, Unbounded> {
+    let m = &codec.model;
     for entry in &m.cbor_entries {
-        let shape = match entry.present_type() {
-            SceType::String => "string",
-            SceType::Bytes => "bytes",
+        if let Some(list) = entry.record_list() {
+            if crate::forge::cbor_codec::record_list_max_bytes(entry, &codec.scope).is_err() {
+                return Err(Unbounded::Unresolved {
+                    site: format!("entry '{}'", entry.id),
+                    alias: list.record.to_string(),
+                });
+            }
+            continue;
+        }
+        let shape = match entry.leaf_type() {
+            Some(SceType::String) => "string",
+            Some(SceType::Bytes) => "bytes",
             _ => continue,
         };
         if entry.length.or(entry.max_size).is_none() {
@@ -154,10 +171,12 @@ fn cbor_codec(m: &CodecModel) -> Result<u64, Unbounded> {
             });
         }
     }
-    Ok(
-        crate::forge::cbor_codec::max_encoded_bytes(m, crate::forge::model::Measured::Bound)
-            .expect("every string entry was found to have its bound above"),
+    Ok(crate::forge::cbor_codec::max_encoded_bytes(
+        m,
+        crate::forge::model::Measured::Bound,
+        &codec.scope,
     )
+    .expect("every string entry has its bound and every list its record, found above"))
 }
 
 /// A content-line component: the arithmetic of the C11 renderer, over the
@@ -554,6 +573,7 @@ mod tests {
                 .into_iter()
                 .map(|(alias, import)| (alias.to_string(), import))
                 .collect(),
+            scope: crate::forge::value_type::TypeScope::default(),
         }
     }
 
@@ -786,7 +806,8 @@ mod tests {
         assert_eq!(
             crate::forge::cbor_codec::max_encoded_bytes(
                 &codec.model,
-                crate::forge::model::Measured::Bound
+                crate::forge::model::Measured::Bound,
+                &codec.scope
             ),
             Some(368)
         );
@@ -810,6 +831,68 @@ mod tests {
             }
             other => panic!("expected Missing, got {other:?}"),
         }
+    }
+
+    /// A map of an exact id and a list of at most three records of `author`
+    /// (`bytes[16]`) and `seq` (`uint64`), the shape of a causal context.
+    fn record_list_codec(scope: crate::forge::value_type::TypeScope) -> SizedCodec {
+        let xml = codec_xml(
+            CBOR_ATTRS,
+            r#"  <sce:import kind="event-schema" src="entry.scxml" as="Entry"/>"#,
+            r#"    <data id="raw" sce:type="bytes" sce:direction="in"/>
+    <data id="id" sce:type="bytes" sce:key="0" sce:length="16" sce:direction="out"/>
+    <data id="context" sce:type="list&lt;record:Entry&gt;[3]" sce:key="4" sce:direction="out"/>"#,
+        );
+        SizedCodec {
+            scope,
+            ..sized(&xml, Vec::new())
+        }
+    }
+
+    fn entry_scope() -> crate::forge::value_type::TypeScope {
+        use crate::forge::value_type::{Bound, ScopedRecord, TypeScope, ValueType};
+        let mut scope = TypeScope::default();
+        scope.records.insert(
+            "Entry".to_string(),
+            ScopedRecord {
+                identity: "entry".to_string(),
+                name: "entry".to_string(),
+                fields: vec![
+                    (
+                        "author".to_string(),
+                        ValueType::Bytes { max: Bound::of(16) },
+                    ),
+                    ("seq".to_string(), ValueType::Scalar(SceType::Uint64)),
+                ],
+                scope: TypeScope::default(),
+            },
+        );
+        scope
+    }
+
+    #[test]
+    fn a_cbor_list_of_records_is_its_bound_times_its_largest_record() {
+        // The map head for 2 entries is 1 byte, then key + value per entry:
+        //   id      (key 0)  1 + (head(16) = 1 + 16)                  = 18
+        //   context (key 4)  1 + (head(3) = 1) + 3 * record           = 116
+        // where a record is head(2) + "author" (1 + 6) + bytes[16] (1 + 16)
+        // + "seq" (1 + 3) + uint64 (9) = 1 + 7 + 17 + 4 + 9 = 38, so the list
+        // is 1 + 3 * 38 = 115 and the entry 1 + 115 = 116.
+        // 1 + 18 + 116 = 135.
+        let codec = record_list_codec(entry_scope());
+        assert_eq!(largest_encoded_bytes(&codec), Ok(135));
+    }
+
+    #[test]
+    fn a_cbor_list_whose_record_does_not_resolve_has_no_bound() {
+        let codec = record_list_codec(crate::forge::value_type::TypeScope::default());
+        assert_eq!(
+            largest_encoded_bytes(&codec),
+            Err(Unbounded::Unresolved {
+                site: "entry 'context'".to_string(),
+                alias: "Entry".to_string(),
+            })
+        );
     }
 
     // --- The content-line component ---

@@ -83,6 +83,11 @@ pub(super) fn unlowered(
 /// has. An entry that is an enumeration is read as its carrier and converted by the enum's own
 /// `fromUnderlying`, which for an open enum is total ([`crate::forge::cbor_codec`]).
 pub(super) fn cbor_unlowered(m: &CodecModel) -> Option<String> {
+    // A list of records is written where `cbor_codec::lowers_record_list` says,
+    // which is not here yet.
+    if let Some(e) = crate::forge::cbor_codec::first_record_list(m) {
+        return Some(format!("the CBOR entry '{}', a list of records,", e.id));
+    }
     for e in &m.cbor_entries {
         if MEMBERS.contains(&e.id.as_str()) {
             return Some(format!(

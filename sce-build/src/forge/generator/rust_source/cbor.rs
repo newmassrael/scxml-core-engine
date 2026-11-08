@@ -13,7 +13,9 @@
 //! the map head counts the entries present, and the entries follow in
 //! ascending key order with the shortest heads (RFC 8949 §4.2.1). A string or
 //! byte string with a bound is presented within it (`Text`, `Bytes`;
-//! docs/adr/0077 §3), so only an enum whose carrier is signed can be refused,
+//! docs/adr/0077 §3), and a list of records is lent as the language's list of
+//! its bound (docs/adr/0086, section 7.4), so only an enum whose carrier is
+//! signed and a list of fewer records than its lower count can be refused,
 //! and a refusal found by writing into a
 //! sink that only counts leaves the caller's sink untouched.
 
@@ -38,9 +40,16 @@ pub(in super::super) struct Input<'a> {
 
 /// The type an accessor returns for the value of `e` when it is present: a
 /// string or byte string within its bounds where it has them (docs/adr/0077
-/// §3), so a source cannot present a value the encode would have to refuse.
+/// §3), so a source cannot present a value the encode would have to refuse. A
+/// list of records is lent: a reference to the list the value holds, whose
+/// type holds no more records than its bound.
 fn value_type(input: &Input<'_>, e: &CborEntry) -> String {
-    cbor_codec::rust_view_value_type(input.l, e, "'_")
+    let value = cbor_codec::rust_view_value_type(input.l, input.m, e, "'_");
+    if e.record_list().is_some() {
+        format!("&{value}")
+    } else {
+        value
+    }
 }
 
 fn accessor_type(input: &Input<'_>, item: &CborItem<'_>) -> String {
@@ -52,10 +61,23 @@ fn accessor_type(input: &Input<'_>, item: &CborItem<'_>) -> String {
     }
 }
 
+/// The expression that reads the entry `acc` of `item` out of a value that
+/// holds it as the accessor's type does but by value, as the type
+/// [`accessor_type`] gives: a list of records lent by reference, and any other
+/// entry read as it is held. The read the decoded map's own interface makes.
+fn held_read(item: &CborItem<'_>, acc: &str) -> String {
+    match (item.value, item.required) {
+        (CborValue::RecordList { .. }, true) => format!("&self.{acc}"),
+        (CborValue::RecordList { .. }, false) => format!("self.{acc}.as_ref()"),
+        _ => format!("self.{acc}"),
+    }
+}
+
 /// The expression that reads the entry `acc` of `item` out of the owned mirror as
 /// the type [`accessor_type`] gives: the `Bounded` a string or a byte string is held
-/// in lends it with its bounds, and any other entry is read as it is held. The read
-/// the mirror's `as_borrowed` reaches through the interface.
+/// in lends it with its bounds, a list of records is lent as the map lends it, and
+/// any other entry is read as it is held. The read the mirror's `as_borrowed`
+/// reaches through the interface.
 fn owned_read(item: &CborItem<'_>, acc: &str) -> String {
     let runtime = cbor_codec::RUST_RUNTIME_CODEC;
     let read = match item.value {
@@ -66,7 +88,7 @@ fn owned_read(item: &CborItem<'_>, acc: &str) -> String {
     match (read, item.required) {
         (Some(read), true) => format!("{read}(&self.{acc})"),
         (Some(read), false) => format!("self.{acc}.as_ref().map({read})"),
-        (None, _) => format!("self.{acc}"),
+        (None, _) => held_read(item, acc),
     }
 }
 
@@ -82,7 +104,11 @@ fn write_value(input: &Input<'_>, plan: &CborPlan<'_>, item: &CborItem<'_>) -> S
         CborValue::Text => format!("cbor::write_text(w, {held})?;"),
         CborValue::Bytes { .. } => format!("cbor::write_bytes(w, {held})?;"),
         CborValue::Enum { carrier } => {
-            let underlying = input.l.codec_carrier_expr(item.entry.present_type(), "v");
+            let present = item
+                .entry
+                .leaf_type()
+                .expect("an enum entry is a leaf entry");
+            let underlying = input.l.codec_carrier_expr(present, "v");
             match carrier {
                 // A signed carrier can hold a value no unsigned integer carries.
                 Carrier::Signed => format!(
@@ -96,6 +122,26 @@ fn write_value(input: &Input<'_>, plan: &CborPlan<'_>, item: &CborItem<'_>) -> S
         }
         CborValue::Uint { wide: true } => "cbor::write_uint(w, v)?;".to_string(),
         CborValue::Uint { wide: false } => "cbor::write_uint(w, u64::from(v))?;".to_string(),
+        // A definite-length array of the records, each the map its own struct
+        // writes (docs/adr/0086, section 9.2). The list holds no more than its
+        // bound by its type; a lower count is refused where the plan names it.
+        CborValue::RecordList { min } => {
+            // The length is bound first and compared bound, so no comparison of
+            // a `len()` call against a literal is written.
+            let mut write = "let len = v.as_slice().len();\n".to_string();
+            if min > 0 {
+                write.push_str(&format!(
+                    "if len < {min} {{\n    return Err({});\n}}\n",
+                    plan.totality
+                        .require(RefusalKind::CborOutOfRange, &item.entry.id)
+                ));
+            }
+            write.push_str(
+                "cbor::write_array_head(w, ::sce_forge_runtime::codec::widen_usize(len))?;\n\
+                 for record in v.as_slice() {\n    record.encode_cbor(w)?;\n}",
+            );
+            write
+        }
     }
 }
 
@@ -123,7 +169,8 @@ pub(in super::super) fn render(input: &Input<'_>) -> String {
             "    fn {acc}(&self) -> {ty} {{\n        (**self).{acc}()\n    }}\n"
         ));
         builder_items.push_str(&format!(
-            "    fn {acc}(&self) -> {ty} {{\n        self.{acc}\n    }}\n"
+            "    fn {acc}(&self) -> {ty} {{\n        {}\n    }}\n",
+            held_read(item, &acc)
         ));
     }
 
@@ -157,7 +204,7 @@ pub(in super::super) fn render(input: &Input<'_>) -> String {
         } else {
             body.push(format!("if let Some(v) = src.{acc}() {{"));
             body.push(format!("    cbor::write_uint(w, {})?;", e.key));
-            body.push(format!("    {write}"));
+            body.extend(write.lines().map(|line| format!("    {line}")));
             body.push("}".to_string());
         }
     }

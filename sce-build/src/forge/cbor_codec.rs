@@ -21,6 +21,9 @@ use crate::forge::generator::{
     LangCtx, ORIGIN_PARAM, OWNED_IN_ORIGIN_FN,
 };
 use crate::forge::model::{CborEntry, CodecModel, Measured, SceType};
+use crate::forge::value_type::{
+    cbor_max_len, ScopedRecord, SizeError, TypeEnv, TypeScope, ValueType,
+};
 
 // ⚠ An entry's `name` is the backend's field identifier
 // (`LangCtx::codec_field_id` — snake_case in Rust), the same spelling a
@@ -43,19 +46,53 @@ pub fn lowers(lang: Language) -> bool {
     }
 }
 
+/// Whether `lang` generates a CBOR codec's entry that holds a bounded list of
+/// records (docs/adr/0085, Landing order step 3a): the one answer the
+/// generator's refusal ([`refusal`]), the conformance schedule and a broadcast
+/// log over such a codec read. Rust, the reference, generates one; every other
+/// backend refuses the codec by name until its template writes the array.
+pub fn lowers_record_list(lang: Language) -> bool {
+    match lang {
+        Language::Rust => true,
+        Language::Kotlin
+        | Language::Cpp
+        | Language::Go
+        | Language::Python
+        | Language::C11
+        | Language::Swift => false,
+    }
+}
+
+/// The first entry of `m` that holds a list of records, if any.
+pub fn first_record_list(m: &CodecModel) -> Option<&CborEntry> {
+    m.cbor_entries.iter().find(|e| e.record_list().is_some())
+}
+
 /// Why `lang` does not generate the CBOR codec `m`, or `None` when it does —
 /// the one answer the generator's refusal and the conformance harness's
 /// schedule both read, so a fixture is run exactly where it generates.
 ///
 /// Beyond the language: C11 holds a text or byte string in a fixed array
 /// the size of its bound, so an entry with neither `sce:max-size` nor
-/// `sce:length` has no C11 storage — every other backend's string grows.
+/// `sce:length` has no C11 storage — every other backend's string grows. A
+/// list of records is generated where [`lowers_record_list`] says so.
 pub fn refusal(lang: Language, m: &CodecModel) -> Option<String> {
     if !lowers(lang) {
         return Some(format!(
             "codec '{}' is sce:encoding=\"cbor\", which has no {lang:?} generation yet",
             m.name
         ));
+    }
+    if !lowers_record_list(lang) {
+        if let Some(e) = first_record_list(m) {
+            return Some(format!(
+                "codec '{}': CBOR entry '{}' holds a list of records ({}), which has no \
+                 {lang:?} lowering yet",
+                m.name,
+                e.id,
+                e.sce_type.as_attr()
+            ));
+        }
     }
     if lang == Language::Swift {
         if let Some(what) = crate::forge::generator::swift_cbor_unlowered(m) {
@@ -67,7 +104,7 @@ pub fn refusal(lang: Language, m: &CodecModel) -> Option<String> {
     }
     if lang == Language::C11 {
         if let Some(e) = m.cbor_entries.iter().find(|e| {
-            matches!(e.present_type(), SceType::String | SceType::Bytes)
+            matches!(e.leaf_type(), Some(SceType::String | SceType::Bytes))
                 && e.storage_bytes().is_none()
         }) {
             return Some(format!(
@@ -109,16 +146,95 @@ pub fn render(
     }
 }
 
-/// What an entry is on the wire, as the templates branch on it.
-pub(crate) fn kind(entry: &CborEntry) -> &'static str {
-    match entry.present_type() {
-        SceType::Bool => "bool",
-        SceType::String => "text",
-        SceType::Bytes if entry.length.is_some() => "bytes_exact",
-        SceType::Bytes => "bytes",
-        SceType::Enum(_) => "enum",
-        _ => "uint",
+/// Why the records the lists of `m` hold are not written as a CBOR codec
+/// writes them, or `None` when they are, `scope` naming the records the
+/// codec's imports resolve. A record a list holds is a map of every field of
+/// its schema (docs/adr/0086, section 9.2), and a codec writes a field that is
+/// an unsigned integer, a `bool`, a text or a byte string, each bounded by its
+/// type ([`record_field`]). A record whose event schema no import resolves, one
+/// of no field, and one with a field of any other type are refused by name,
+/// the field named; the grammar takes them, and no codec lowers them here.
+pub(crate) fn record_list_unlowered(m: &CodecModel, scope: &TypeScope) -> Option<String> {
+    for e in &m.cbor_entries {
+        let Some(list) = e.record_list() else {
+            continue;
+        };
+        let Some(record) = scope.records.get(list.record) else {
+            return Some(format!(
+                "CBOR entry '{}' names `record:{}`, whose event schema no import resolves",
+                e.id, list.record
+            ));
+        };
+        if record.fields.is_empty() {
+            return Some(format!(
+                "CBOR entry '{}' holds records of `{}`, which declares no field",
+                e.id, record.name
+            ));
+        }
+        if let Some((id, ty)) = record
+            .fields
+            .iter()
+            .find(|(_, ty)| record_field(ty).is_none())
+        {
+            return Some(format!(
+                "CBOR entry '{}' holds records of `{}`, whose field `{id}` is `{ty}`: a record \
+                 a CBOR codec's list holds is a map of unsigned integers, bools, texts and \
+                 byte strings",
+                e.id, record.name
+            ));
+        }
     }
+    None
+}
+
+/// What a field of a record a CBOR list holds is on the wire, as the templates
+/// branch on it, with the bound of a text or a byte string: `uint`, `bool`,
+/// `text` or `bytes`. `None` for a type no codec writes there
+/// ([`record_list_unlowered`]).
+pub(crate) fn record_field(ty: &ValueType) -> Option<(&'static str, Option<u32>)> {
+    match ty {
+        ValueType::Scalar(SceType::Bool) => Some(("bool", None)),
+        ValueType::Scalar(t) if t.is_unsigned() => Some(("uint", None)),
+        ValueType::Text { max } => Some(("text", Some(max.max))),
+        ValueType::Bytes { max } => Some(("bytes", Some(max.max))),
+        ValueType::Scalar(_)
+        | ValueType::Optional { .. }
+        | ValueType::Record { .. }
+        | ValueType::Union { .. }
+        | ValueType::List { .. } => None,
+    }
+}
+
+/// The fields of `record` in the order a record's map writes them: by the
+/// bytes of each key's encoding (RFC 8949 §4.2.1). A key is a text, whose head
+/// grows with its length, so a shorter id comes first and ids of one length
+/// are in the order of their bytes.
+pub(crate) fn record_fields_by_key(record: &ScopedRecord) -> Vec<&(String, ValueType)> {
+    let mut fields: Vec<&(String, ValueType)> = record.fields.iter().collect();
+    fields.sort_by(|(a, _), (b, _)| (a.len(), a.as_bytes()).cmp(&(b.len(), b.as_bytes())));
+    fields
+}
+
+/// What an entry is on the wire, as the templates branch on it: a leaf by the
+/// kind of its value, and a list of records as `record_list`.
+pub(crate) fn kind(entry: &CborEntry) -> &'static str {
+    match entry.leaf_type() {
+        None => "record_list",
+        Some(SceType::Bool) => "bool",
+        Some(SceType::String) => "text",
+        Some(SceType::Bytes) if entry.length.is_some() => "bytes_exact",
+        Some(SceType::Bytes) => "bytes",
+        Some(SceType::Enum(_)) => "enum",
+        Some(_) => "uint",
+    }
+}
+
+/// The type a present value of the leaf entry `e` is, as a backend that lowers
+/// no list of records reads it: [`refusal`] refused a map that holds one before
+/// the backend renders, so every entry it sees is a leaf.
+fn leaf(e: &CborEntry) -> &SceType {
+    e.leaf_type()
+        .expect("a backend that lowers no list of records refuses one before it renders")
 }
 
 /// The largest number an integer type holds, as the bound its entry's read
@@ -149,7 +265,8 @@ fn int_max(ty: &SceType) -> Option<u64> {
 /// log's Rust slot holds its element at `Inline`.
 pub fn has_unbounded_text_or_bytes(m: &CodecModel) -> bool {
     m.cbor_entries.iter().any(|e| {
-        matches!(e.present_type(), SceType::String | SceType::Bytes) && e.storage_bytes().is_none()
+        matches!(e.leaf_type(), Some(SceType::String | SceType::Bytes))
+            && e.storage_bytes().is_none()
     })
 }
 
@@ -160,11 +277,12 @@ pub fn has_unbounded_text_or_bytes(m: &CodecModel) -> bool {
 /// such entry in the profile's container for its tag, so a map whose entry has
 /// no bound has one as every other map does, and `Inline` alone does not answer
 /// for that entry (docs/adr/0077 §7). A map of scalars borrows nothing and is its
-/// own owned form.
+/// own owned form; so does a list of records, which the map holds by value in
+/// the language's bounded types, so the mirror moves it whole.
 pub fn rust_owned_mirror(m: &CodecModel) -> bool {
     m.cbor_entries
         .iter()
-        .any(|e| matches!(e.present_type(), SceType::String | SceType::Bytes))
+        .any(|e| matches!(e.leaf_type(), Some(SceType::String | SceType::Bytes)))
 }
 
 /// The storage-profile parameter of the Rust owned mirror: the generic parameter
@@ -195,12 +313,21 @@ pub(crate) fn rust_bound_args(e: &CborEntry) -> Option<String> {
 }
 
 /// The Rust type of the present value of `e` borrowed for `lifetime`: a `Text`
-/// or `Bytes` of its bounds ([`rust_bound_args`]), and any other entry as the
-/// language names it. The one spelling the decoded map and its source interface
-/// share.
-pub(crate) fn rust_view_value_type(l: &LangCtx, e: &CborEntry, lifetime: &str) -> String {
-    let text = matches!(e.present_type(), SceType::String);
-    match (e.present_type(), rust_bound_args(e)) {
+/// or `Bytes` of its bounds ([`rust_bound_args`]), a list of records as the
+/// map holds it ([`rust_record_list_type`]), and any other entry as the
+/// language names it. The one spelling the decoded map and its source
+/// interface share.
+pub(crate) fn rust_view_value_type(
+    l: &LangCtx,
+    m: &CodecModel,
+    e: &CborEntry,
+    lifetime: &str,
+) -> String {
+    let Some(present) = e.leaf_type() else {
+        return rust_record_list_type(m, e);
+    };
+    let text = matches!(present, SceType::String);
+    match (present, rust_bound_args(e)) {
         (SceType::String | SceType::Bytes, Some(bounds)) => format!(
             "{RUST_RUNTIME_CODEC}::{}<{lifetime}, {bounds}>",
             if text { "Text" } else { "Bytes" }
@@ -209,18 +336,47 @@ pub(crate) fn rust_view_value_type(l: &LangCtx, e: &CborEntry, lifetime: &str) -
     }
 }
 
+/// The Rust type of a record the list entries of the map `m` hold of the
+/// event schema imported as `alias`: a struct of the codec's own module, one
+/// per record, named for the codec and the alias so no two codecs of one crate
+/// name one type and no name the codec declares is taken.
+pub(crate) fn rust_record_type(m: &CodecModel, alias: &str) -> String {
+    format!(
+        "{}{}",
+        crate::filters::to_pascal_case(m.name.clone()),
+        crate::filters::to_pascal_case(alias.to_string())
+    )
+}
+
+/// The Rust type the map `m` holds the list of records of `e` in: the
+/// language's list of its bound (`BoundedList<R, N>`, docs/adr/0086 section
+/// 7.4), whose every constructor refuses past the bound on every profile, so
+/// the list the map holds is within it and its encode refuses nothing for its
+/// count. Empty for a leaf entry, which no caller asks.
+pub(crate) fn rust_record_list_type(m: &CodecModel, e: &CborEntry) -> String {
+    e.record_list().map_or_else(String::new, |list| {
+        format!(
+            "{RUST_RUNTIME_CODEC}::BoundedList<{}, {}>",
+            rust_record_type(m, list.record),
+            list.max
+        )
+    })
+}
+
 /// The type the Rust owned mirror holds the present value of `e` as: a string in
 /// the profile's text container and a byte string in its byte container, each
 /// the profile's for the entry's tag, and any other entry as the view holds it.
 ///
 /// The container is held inside a `Bounded` of the entry's bounds, as a
 /// positional codec's is (docs/adr/0077 §3), so the mirror's source read lends
-/// it with its bounds and checks nothing.
+/// it with its bounds and checks nothing. A list of records owns what it holds,
+/// so the mirror holds it as the view does.
 pub(crate) fn rust_owned_value_type(l: &LangCtx, m: &CodecModel, e: &CborEntry) -> String {
-    let kind = match e.present_type() {
-        SceType::String => "Str",
-        SceType::Bytes => "Bytes",
-        other => return l.type_name(other).into_owned(),
+    let kind = match e.leaf_type() {
+        None => return rust_record_list_type(m, e),
+        Some(SceType::String) => "Str",
+        Some(SceType::Bytes) => "Bytes",
+        Some(other) => return l.type_name(other).into_owned(),
     };
     let tag = rust_storage_tag(&m.name, &e.id);
     let container =
@@ -241,9 +397,9 @@ pub(crate) fn rust_storage_fields(m: &CodecModel) -> Vec<serde_json::Value> {
     m.cbor_entries
         .iter()
         .filter_map(|e| {
-            let kind = match e.present_type() {
-                SceType::String => "Str",
-                SceType::Bytes => "Bytes",
+            let kind = match e.leaf_type() {
+                Some(SceType::String) => "Str",
+                Some(SceType::Bytes) => "Bytes",
                 _ => return None,
             };
             Some(rust_storage_field(&m.name, &e.id, kind, e.storage_bytes()))
@@ -258,9 +414,9 @@ pub(crate) fn rust_storage_fields(m: &CodecModel) -> Vec<serde_json::Value> {
 /// other entry moved as `try_into_owned_in` moves it. A fallible build is written
 /// with its `?`, so the expression is the field's value.
 fn rust_owned_origin_expr(m: &CodecModel, e: &CborEntry, field: &str) -> String {
-    let (constructor, held) = match e.present_type() {
-        SceType::String => ("str_from", "from_built_text"),
-        SceType::Bytes => ("bytes_from", "from_built"),
+    let (constructor, held) = match e.leaf_type() {
+        Some(SceType::String) => ("str_from", "from_built_text"),
+        Some(SceType::Bytes) => ("bytes_from", "from_built"),
         _ => return field.to_string(),
     };
     // The profile builds the container from the view's bytes, and the bounds
@@ -310,9 +466,9 @@ fn common_context(
             "value_type": value_type(e),
             "length": e.length,
             "max_size": e.max_size,
-            "max": int_max(e.present_type()),
+            "max": e.leaf_type().and_then(int_max),
         });
-        if let SceType::Enum(r) = e.present_type() {
+        if let Some(SceType::Enum(r)) = e.leaf_type() {
             let carrier = enum_carrier(imports, &r.alias).ok_or_else(|| {
                 ForgeError::from(GenerateError::unsupported_at(
                     format!(
@@ -323,7 +479,7 @@ fn common_context(
                 ))
             })?;
             entry["enum_from_underlying"] = l.enum_from_underlying(&r.alias).into();
-            entry["enum_to_underlying"] = l.codec_carrier_expr(e.present_type(), "v").into();
+            entry["enum_to_underlying"] = l.codec_carrier_expr(leaf(e), "v").into();
             entry["enum_is_open"] = l.enum_is_open(&r.alias).into();
             entry["carrier_type"] = l.type_name(&carrier).into_owned().into();
             // A signed carrier can hold a number no CBOR unsigned integer
@@ -374,16 +530,14 @@ fn render_kotlin(
     imports: &[ImportContext],
 ) -> Result<String, ForgeError> {
     let l = LangCtx::new(Language::Kotlin, imports);
-    let mut ctx = common_context(&l, m, imports, |e| {
-        l.type_name(e.present_type()).into_owned()
-    })?;
+    let mut ctx = common_context(&l, m, imports, |e| l.type_name(leaf(e)).into_owned())?;
     // A required entry starts at its type's own default — for an enum the
     // first declared variant — and is filled in by decode; an optional one
     // starts absent.
     if let Some(serde_json::Value::Array(entries)) = ctx.get_mut("entries") {
         for (entry, e) in entries.iter_mut().zip(&m.cbor_entries) {
             entry["default"] = if e.is_required() {
-                l.default_expr(e.present_type())
+                l.default_expr(leaf(e))
             } else {
                 "null".to_string()
             }
@@ -403,15 +557,13 @@ fn render_swift(
     // `[UInt8]`. A required entry starts at its type's zero, an enum at its first declared variant,
     // and is filled in by decode; an optional one starts absent, so `{Name}()` is the infallible
     // initializer every codec offers.
-    let mut ctx = common_context(&l, m, imports, |e| {
-        l.type_name(e.present_type()).into_owned()
-    })?;
+    let mut ctx = common_context(&l, m, imports, |e| l.type_name(leaf(e)).into_owned())?;
     if let Some(serde_json::Value::Array(entries)) = ctx.get_mut("entries") {
         for (entry, e) in entries.iter_mut().zip(&m.cbor_entries) {
             entry["default"] = if !e.is_required() {
                 "nil".to_string()
             } else {
-                match (kind(e), e.present_type()) {
+                match (kind(e), leaf(e)) {
                     ("bool", _) => "false".to_string(),
                     ("text", _) => "\"\"".to_string(),
                     ("bytes" | "bytes_exact", _) => "[]".to_string(),
@@ -422,9 +574,8 @@ fn render_swift(
             .into();
             // The common context spells the conversion of an enum's value as the variable `v`; the
             // Swift template names the value it writes `value`.
-            if let SceType::Enum(r) = e.present_type() {
-                entry["enum_to_underlying"] =
-                    l.codec_carrier_expr(e.present_type(), "value").into();
+            if let SceType::Enum(r) = leaf(e) {
+                entry["enum_to_underlying"] = l.codec_carrier_expr(leaf(e), "value").into();
                 // An open enum is a struct over its carrier that holds any number, whose
                 // `fromUnderlying` is total; a closed enum answers nil for a number no variant
                 // declares, which a decode refuses.
@@ -432,7 +583,7 @@ fn render_swift(
             }
             // A negative number is no CBOR unsigned integer, which encode refuses and does not wrap.
             entry["signed"] = matches!(
-                e.present_type(),
+                leaf(e),
                 SceType::Int8 | SceType::Int16 | SceType::Int32 | SceType::Int64
             )
             .into();
@@ -449,9 +600,7 @@ fn render_cpp(
     let l = LangCtx::new(Language::Cpp, imports);
     // Owned values, as every C++ codec holds them: a text string is a
     // `std::string` and a byte string a `std::vector<uint8_t>`.
-    let mut ctx = common_context(&l, m, imports, |e| {
-        l.type_name(e.present_type()).into_owned()
-    })?;
+    let mut ctx = common_context(&l, m, imports, |e| l.type_name(leaf(e)).into_owned())?;
     // A value-initialized member holds its type's zero, which is the right
     // start for every entry but an enum's: a closed set need not declare the
     // carrier's zero, so an enum starts at its first declared variant — the
@@ -466,7 +615,7 @@ fn render_cpp(
                 l.codec_optional_of(&value_type)
             }
             .into();
-            entry["init"] = match e.present_type() {
+            entry["init"] = match leaf(e) {
                 SceType::Enum(r) if e.is_required() => l.enum_default_expr(&r.alias),
                 _ => String::new(),
             }
@@ -485,9 +634,7 @@ fn render_go(
     // Owned values, as every Go codec holds them. An optional entry is the one
     // optional type (docs/adr/0055, section 5), so an absent byte string and a
     // present empty one stay two values; a required one is the value itself.
-    let mut ctx = common_context(&l, m, imports, |e| {
-        l.type_name(e.present_type()).into_owned()
-    })?;
+    let mut ctx = common_context(&l, m, imports, |e| l.type_name(leaf(e)).into_owned())?;
     if let Some(serde_json::Value::Array(entries)) = ctx.get_mut("entries") {
         for (entry, e) in entries.iter_mut().zip(&m.cbor_entries) {
             let value_type = entry["value_type"].as_str().unwrap_or_default().to_string();
@@ -505,7 +652,7 @@ fn render_go(
             // A required enum starts at its first declared variant, as the
             // other backends' do: a closed set need not declare the zero Go
             // would otherwise start it at.
-            entry["init"] = match e.present_type() {
+            entry["init"] = match leaf(e) {
                 SceType::Enum(r) if e.is_required() => l.enum_default_expr(&r.alias),
                 _ => String::new(),
             }
@@ -521,9 +668,7 @@ fn render_c(
     imports: &[ImportContext],
 ) -> Result<String, ForgeError> {
     let l = LangCtx::new(Language::C11, imports);
-    let mut ctx = common_context(&l, m, imports, |e| {
-        l.type_name(e.present_type()).into_owned()
-    })?;
+    let mut ctx = common_context(&l, m, imports, |e| l.type_name(leaf(e)).into_owned())?;
     crate::forge::generator::insert_c_codec_symbols(&mut ctx, &m.name);
     // A required text or byte string is a fixed array of its capacity beside
     // its length (the capacity is the deployment's or the bound, and present:
@@ -549,7 +694,7 @@ fn render_c(
                 .into();
             let optional = !e.is_required();
             let value = if optional {
-                let held = l.c11_codec_optional(e.present_type(), capacity);
+                let held = l.c11_codec_optional(leaf(e), capacity);
                 if !held.declaration.is_empty() && !declarations.contains(&held.declaration) {
                     declarations.push(held.declaration);
                 }
@@ -558,7 +703,7 @@ fn render_c(
             } else {
                 name.clone()
             };
-            let (data, len) = match (e.present_type(), optional) {
+            let (data, len) = match (leaf(e), optional) {
                 (SceType::String, true) => (format!("{value}.data"), None),
                 (SceType::Bytes, true) => (format!("{value}.data"), Some(format!("{value}.len"))),
                 (SceType::String | SceType::Bytes, false) => {
@@ -572,9 +717,9 @@ fn render_c(
             entry["present_ref"] = format!("{name}.present").into();
             // C11's encode reads the value in place rather than binding it,
             // so the conversion is spelled over the struct member.
-            if matches!(e.present_type(), SceType::Enum(_)) {
+            if matches!(leaf(e), SceType::Enum(_)) {
                 entry["enum_to_underlying"] = l
-                    .codec_carrier_expr(e.present_type(), &format!("self->{value}"))
+                    .codec_carrier_expr(leaf(e), &format!("self->{value}"))
                     .into();
             }
         }
@@ -582,8 +727,12 @@ fn render_c(
     ctx.insert("optional_declarations".into(), declarations.into());
     // What this node's encode writes at most: each string at what it holds,
     // the deployment's capacity where it gives one.
-    let max_encoded_bytes = max_encoded_bytes(m, Measured::Held)
-        .expect("C11 refuses a CBOR string it holds no number of before it renders");
+    let max_encoded_bytes = max_encoded_bytes(
+        m,
+        Measured::Held,
+        &crate::forge::generator::import_type_scope(imports),
+    )
+    .expect("C11 refuses a CBOR string it holds no number of before it renders");
     ctx.insert("max_encoded_bytes".into(), max_encoded_bytes.into());
     render_in_key_order(&l, env, ctx)
 }
@@ -593,11 +742,22 @@ fn render_c(
 /// bound, the largest frame of the language; held, a size C11 callers size an
 /// `encode_to_buf` buffer by.
 ///
+/// A list of records is measured by the size calculus of the one type grammar
+/// (docs/adr/0086, section 2.1), `C(list<record:R>[N])`, the record read in
+/// `env`: the array's head and its bound times the largest map of the record,
+/// which is what its encode writes at most, a held list being held at its bound.
+///
 /// `None` where a string or byte string has nothing to measure it at: no bound
-/// and, held, no capacity. The build-wide pass that judges a broadcast log's
-/// element ([`crate::forge::codec_size`]) refuses such an entry by name before it
-/// asks, and C11 refuses it before it renders.
-pub(crate) fn max_encoded_bytes(m: &CodecModel, measured: Measured) -> Option<u64> {
+/// and, held, no capacity; and where a list's record is not in `env` or holds
+/// itself. The build-wide pass that judges a broadcast log's element
+/// ([`crate::forge::codec_size`]) refuses such an entry by name before it asks,
+/// and C11 refuses it before it renders. A size past `u64::MAX` is held at
+/// `u64::MAX`, a bound and never a wrapped, smaller one.
+pub(crate) fn max_encoded_bytes(
+    m: &CodecModel,
+    measured: Measured,
+    env: &dyn TypeEnv,
+) -> Option<u64> {
     // The length of a head carrying `value`, in its shortest form.
     fn head(value: u64) -> u64 {
         match value {
@@ -611,20 +771,36 @@ pub(crate) fn max_encoded_bytes(m: &CodecModel, measured: Measured) -> Option<u6
     let mut total = head(m.cbor_entries.len() as u64);
     for e in &m.cbor_entries {
         let key = head(u64::from(e.key));
-        let value = match e.present_type() {
-            SceType::Bool => 1,
-            SceType::String | SceType::Bytes => {
+        let value = match e.leaf_type() {
+            None => record_list_max_bytes(e, env).ok()?,
+            Some(SceType::Bool) => 1,
+            Some(SceType::String | SceType::Bytes) => {
                 let n = u64::from(match measured {
                     Measured::Bound => e.length.or(e.max_size),
                     Measured::Held => e.storage_bytes(),
                 }?);
                 head(n) + n
             }
-            _ => 9,
+            Some(_) => 9,
         };
-        total += key + value;
+        total = total.saturating_add(key).saturating_add(value);
     }
     Some(total)
+}
+
+/// The most bytes the list of records of the entry `e` encodes to, its record
+/// read in `env` (docs/adr/0086, section 2.1): `u64::MAX` for a size past it,
+/// and the refusal of a record `env` does not hold or that holds itself.
+pub(crate) fn record_list_max_bytes(e: &CborEntry, env: &dyn TypeEnv) -> Result<u64, SizeError> {
+    let Some(list) = e.record_list() else {
+        return Err(SizeError::Unresolved {
+            alias: e.id.clone(),
+        });
+    };
+    match cbor_max_len(list.list, env) {
+        Err(SizeError::Overflow) => Ok(u64::MAX),
+        other => other,
+    }
 }
 
 fn render_python(
@@ -633,9 +809,7 @@ fn render_python(
     imports: &[ImportContext],
 ) -> Result<String, ForgeError> {
     let l = LangCtx::new(Language::Python, imports);
-    let mut ctx = common_context(&l, m, imports, |e| {
-        l.type_name(e.present_type()).into_owned()
-    })?;
+    let mut ctx = common_context(&l, m, imports, |e| l.type_name(leaf(e)).into_owned())?;
     // A required entry starts at its type's own default — an enum at its
     // first declared variant — and an optional one absent (`None`).
     if let Some(serde_json::Value::Array(entries)) = ctx.get_mut("entries") {
@@ -648,7 +822,7 @@ fn render_python(
             }
             .into();
             entry["default"] = if e.is_required() {
-                l.default_expr(e.present_type())
+                l.default_expr(leaf(e))
             } else {
                 "None".to_string()
             }
@@ -659,7 +833,7 @@ fn render_python(
         "has_closed_enum".into(),
         m.cbor_entries
             .iter()
-            .any(|e| matches!(e.present_type(), SceType::Enum(r) if !l.enum_is_open(&r.alias)))
+            .any(|e| matches!(leaf(e), SceType::Enum(r) if !l.enum_is_open(&r.alias)))
             .into(),
     );
     render_in_key_order(&l, env, ctx)
@@ -722,12 +896,25 @@ fn rust_context(
     imports: &[ImportContext],
 ) -> Result<serde_json::Map<String, serde_json::Value>, ForgeError> {
     // A string or byte string is a view of the input, so the struct borrows
-    // only when one of its entries does.
+    // only when one of its entries does. A list of records owns what it holds.
     let borrows = m
         .cbor_entries
         .iter()
-        .any(|e| matches!(e.present_type(), SceType::String | SceType::Bytes));
-    let mut ctx = common_context(l, m, imports, |e| rust_view_value_type(l, e, "'a"))?;
+        .any(|e| matches!(e.leaf_type(), Some(SceType::String | SceType::Bytes)));
+    let mut ctx = common_context(l, m, imports, |e| rust_view_value_type(l, m, e, "'a"))?;
+    // A record is declared in the codec's own module (`rust_record_contexts`),
+    // so the unit of its event schema is named nowhere and not brought into
+    // scope: only the imports a leaf entry names are.
+    let named: Vec<ImportContext> = imports
+        .iter()
+        .filter(|i| i.kind != "event-schema")
+        .cloned()
+        .collect();
+    l.insert_imports(&mut ctx, &named);
+    ctx.insert(
+        "cbor_records".into(),
+        rust_record_contexts(l, m, &crate::forge::generator::import_type_scope(imports))?.into(),
+    );
     // docs/adr/0065: whether the encode can refuse a value, which decides what
     // `encode` and `encode_to_vec` return.
     ctx.insert(
@@ -743,6 +930,14 @@ fn rust_context(
                 l.codec_optional_of(&value_type)
             }
             .into();
+            // A list of records is read as an array of at least its lower count
+            // and at most its bound, each record by the decode of its own
+            // struct.
+            if let Some(list) = e.record_list() {
+                entry["record_type"] = rust_record_type(m, list.record).into();
+                entry["list_max"] = list.max.into();
+                entry["list_min"] = list.min.into();
+            }
             // A string or byte string held within its bounds is made through
             // the type's one door once read, and the door's refusal is the
             // error the read gives for the same value (docs/adr/0077 §3).
@@ -830,4 +1025,75 @@ fn rust_context(
         }
     }
     Ok(ctx)
+}
+
+/// Each record the lists of `m` hold, once, in the order the entries first name
+/// them, as the Rust template declares it: a struct of the codec's own module
+/// ([`rust_record_type`]) whose every field is held in the language's bounded
+/// type (docs/adr/0086, section 7.4), so a record that exists is one of its
+/// type and its encode refuses nothing; its fields in the schema's order, and
+/// the same fields in the order its map writes them ([`record_fields_by_key`]).
+///
+/// A compile refuses a record `scope` does not resolve, and one with a field no
+/// codec writes, before any language renders ([`record_list_unlowered`]); the
+/// refusal here is that one, for a caller that renders the module directly.
+fn rust_record_contexts(
+    l: &LangCtx,
+    m: &CodecModel,
+    scope: &TypeScope,
+) -> Result<Vec<serde_json::Value>, ForgeError> {
+    if let Some(why) = record_list_unlowered(m, scope) {
+        return Err(ForgeError::from(GenerateError::unsupported_at(
+            format!("codec '{}': {why}", m.name),
+            m.source_location.clone(),
+        )));
+    }
+    let field = |(id, ty): &(String, ValueType)| -> serde_json::Value {
+        let value_type = match ty {
+            ValueType::Text { max } => format!("{RUST_RUNTIME_CODEC}::SceString<{}>", max.max),
+            ValueType::Bytes { max } => format!("{RUST_RUNTIME_CODEC}::SceBytes<{}>", max.max),
+            ValueType::Scalar(t) => l.type_name(t).into_owned(),
+            ValueType::Optional { .. }
+            | ValueType::Record { .. }
+            | ValueType::Union { .. }
+            | ValueType::List { .. } => String::new(),
+        };
+        let (kind, bound) =
+            record_field(ty).expect("record_list_unlowered refused a field no codec writes");
+        serde_json::json!({
+            "name": l.codec_field_id(id),
+            // The key is the field's id as text, written as a Rust string
+            // literal.
+            "key_literal": format!("{id:?}"),
+            "kind": kind,
+            "max": bound,
+            "value_type": value_type,
+        })
+    };
+    let mut seen: Vec<&str> = Vec::new();
+    let mut out = Vec::new();
+    for e in &m.cbor_entries {
+        let Some(list) = e.record_list() else {
+            continue;
+        };
+        if seen.contains(&list.record) {
+            continue;
+        }
+        seen.push(list.record);
+        let Some(record) = scope.records.get(list.record) else {
+            continue;
+        };
+        out.push(serde_json::json!({
+            "type_name": rust_record_type(m, list.record),
+            "alias": list.record,
+            "schema": record.name,
+            "field_count": record.fields.len(),
+            "fields": record.fields.iter().map(field).collect::<Vec<_>>(),
+            "fields_by_key": record_fields_by_key(record)
+                .into_iter()
+                .map(field)
+                .collect::<Vec<_>>(),
+        }));
+    }
+    Ok(out)
 }

@@ -3662,7 +3662,7 @@ fn c11_found_reading(name: &str, value: &str, params: &str, about: &str, body: &
 /// records its own aliases name. Each enum is read from its document
 /// ([`ImportContext::enum_type`]); an import whose document was not read
 /// carries none, and is left out: a type that names it has no size.
-fn import_type_scope(imports: &[ImportContext]) -> crate::forge::value_type::TypeScope {
+pub(crate) fn import_type_scope(imports: &[ImportContext]) -> crate::forge::value_type::TypeScope {
     let mut scope = crate::forge::value_type::TypeScope::default();
     for import in imports {
         if let Some(enumeration) = &import.enum_type {
@@ -11358,7 +11358,7 @@ fn render_codec(
             let borrows = m
                 .cbor_entries
                 .iter()
-                .any(|e| matches!(e.present_type(), SceType::String | SceType::Bytes));
+                .any(|e| matches!(e.leaf_type(), Some(SceType::String | SceType::Bytes)));
             text.push('\n');
             text.push_str(&rust_source::cbor::render(&rust_source::cbor::Input {
                 m,

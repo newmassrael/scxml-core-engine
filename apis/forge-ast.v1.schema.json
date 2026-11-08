@@ -1142,10 +1142,10 @@
         "sce_type": {
           "allOf": [
             {
-              "$ref": "#/definitions/EntryType"
+              "$ref": "#/definitions/CborEntryType"
             }
           ],
-          "description": "An unsigned integer, `bool`, `string`, `bytes` or `enum:<alias>`, or `optional<T>` of one of them (docs/adr/0055, section 8): a bare type is an entry a decode of a map without this key refuses, and `optional<T>` one that may be absent."
+          "description": "An unsigned integer, `bool`, `string`, `bytes` or `enum:<alias>`, a bounded list of records (`list<record:R>[N]`, docs/adr/0085 Landing order step 3a), or `optional<T>` of one of them (docs/adr/0055, section 8): a bare type is an entry a decode of a map without this key refuses, and `optional<T>` one that may be absent."
         }
       },
       "required": [
@@ -1154,6 +1154,27 @@
         "sce_type"
       ],
       "type": "object"
+    },
+    "CborEntryType": {
+      "anyOf": [
+        {
+          "allOf": [
+            {
+              "$ref": "#/definitions/EntryType"
+            }
+          ],
+          "description": "A scalar, a text, a byte string or a value of an enum, or an optional one."
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ValueType"
+            }
+          ],
+          "description": "`list<record:R>[N]`, or `optional<…>` over one: a definite-length array of maps, each a record of the event schema `R` keyed by its fields' ids (docs/adr/0086, section 9.2)."
+        }
+      ],
+      "description": "The type of a CBOR codec's entry (SCE_FORGE.md §4.6.1): one value of a leaf type, or a bounded list of records (docs/adr/0085, Landing order step 3a). A list is read by the one type grammar (docs/adr/0086, section 1) and held as the type it reads, so its bound is part of it; a leaf keeps the type of an entry ([`EntryType`]).\n\nSerialized untagged: a leaf entry keeps the shape it always had, and a list is spelled as every value type is (`{\"list\": {\"record\": \"Entry\"}, \"max\": 8}`)."
     },
     "CodecEncoding": {
       "description": "How a codec lays its fields on the wire (SCE_FORGE.md §4.6).",

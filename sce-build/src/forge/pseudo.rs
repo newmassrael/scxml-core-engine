@@ -3725,7 +3725,8 @@ fn render_codec(m: &CodecModel) -> Vec<Node> {
 /// `codec <name> encoding cbor [encode-may-fail]`, then one line per map entry:
 /// `entry <id>: <type> key <n> [length <n>] [max-size <n>]`, where `<type>` is
 /// the bare type of an entry that must be present and `optional<T>` that of one
-/// that may be absent (docs/adr/0055, section 8).
+/// that may be absent (docs/adr/0055, section 8). A list of records is spelled
+/// as the one type grammar writes it, its bound in it (`list<record:R>[8]`).
 fn render_cbor_codec(m: &CodecModel) -> Vec<Node> {
     let mut out = Out::new();
     let mut head = vec![

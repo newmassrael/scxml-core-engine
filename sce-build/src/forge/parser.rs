@@ -3753,6 +3753,36 @@ fn parse_cbor_entry(
             attr: "sce:type".into(),
         })
     })?;
+    // A bounded list of records (docs/adr/0085, Landing order step 3a) is read by
+    // the one type grammar, its bound written in its type; every other entry is
+    // one value of a leaf type, bounded by the codec's `sce:max-size` or
+    // `sce:length`.
+    if names_a_list(&type_text) {
+        let sce_type = read_cbor_record_list(node, doc, &id, &type_text)?;
+        refuse_required_attribute(node, doc, &element, &type_text)?;
+        if let Some(attr) = ["length", "max-size"]
+            .into_iter()
+            .find(|a| sce_attr(node, a).is_some())
+        {
+            return Err(refuse(ValidationError::AttributeRuleViolated {
+                element,
+                attr: format!("sce:{attr}"),
+                value: sce_attr(node, attr).unwrap_or_default(),
+                rule: "no size attribute on a list of records: its bound is written in its \
+                       type, as `list<record:R>[N]`"
+                    .into(),
+            }));
+        }
+        return Ok(CborEntry {
+            id,
+            line: Some(row_of(node)),
+            key,
+            sce_type,
+            length: None,
+            max_size: None,
+            capacity: None,
+        });
+    }
     // A bare type is an entry that must be present and `optional<T>` one that may
     // be absent (docs/adr/0055, section 8); `sce_type` is the type a present value
     // is, which every rule below is held to.
@@ -3768,9 +3798,7 @@ fn parse_cbor_entry(
             element,
             attr: "sce:type".into(),
             value: value_as_written(node, "sce:type", &type_text),
-            rule: "an unsigned integer, bool, string, bytes or enum:<alias>, or optional<T> \
-                   of one — the kinds a sce:encoding=\"cbor\" codec writes"
-                .into(),
+            rule: CBOR_ENTRY_KINDS.into(),
         }));
     }
     refuse_required_attribute(node, doc, &element, &type_text)?;
@@ -3821,11 +3849,69 @@ fn parse_cbor_entry(
         id,
         line: Some(row_of(node)),
         key,
-        sce_type: field_type,
+        sce_type: CborEntryType::Leaf(field_type),
         length,
         max_size,
         capacity: None,
     })
+}
+
+/// The kinds a CBOR codec's entry holds, as a refusal of any other states them.
+const CBOR_ENTRY_KINDS: &str = "an unsigned integer, bool, string, bytes or enum:<alias>, a \
+                                bounded list of records list<record:R>[N], or optional<T> of \
+                                one — the kinds a sce:encoding=\"cbor\" codec writes";
+
+/// Whether `type_text`, seen through `optional<…>`, is written as a list: the
+/// one entry of a CBOR codec read by the one type grammar.
+fn names_a_list(type_text: &str) -> bool {
+    let bare = AlgorithmValueType::optional_inner(type_text)
+        .unwrap_or(type_text)
+        .trim();
+    bare.strip_prefix("list")
+        .is_some_and(|rest| rest.trim_start().starts_with('<'))
+}
+
+/// The bounded list of records `text` spells as the type of the CBOR codec
+/// entry `id` (docs/adr/0085, Landing order step 3a): `list<record:R>[N]`, or
+/// `optional<…>` over one, `R` an event schema the document imports. It is
+/// read by the one type grammar (docs/adr/0086, section 1), every named bound
+/// at the number the build gives its name, so a list with no bound, a lower
+/// count past its bound and an alias no import declares are refused as they
+/// are in every other position. A list of anything but a record is refused
+/// with the kinds an entry holds.
+fn read_cbor_record_list(
+    node: &roxmltree::Node,
+    doc: &str,
+    id: &str,
+    text: &str,
+) -> Result<CborEntryType, Located<ForgeError>> {
+    let element = format!("entry '{id}'");
+    let written = read_written_type(
+        node,
+        doc,
+        &element,
+        "sce:type",
+        text,
+        OptionalElems::OrRecord,
+    )?
+    .resolve_limits(&mut crate::limits::resolve);
+    let ty = written
+        .bounded()
+        .map_err(|refusal| type_rule_refusal(node, doc, &element, "sce:type", text, &refusal))?;
+    let entry = CborEntryType::RecordList(ty);
+    if entry.record_list().is_none() {
+        return Err(located(
+            node,
+            doc,
+            ValidationError::AttributeRuleViolated {
+                element,
+                attr: "sce:type".into(),
+                value: type_as_written(node, "sce:type", text),
+                rule: CBOR_ENTRY_KINDS.into(),
+            },
+        ));
+    }
+    Ok(entry)
 }
 
 /// The refusal of `sce:required` on an entry of a codec in format 2

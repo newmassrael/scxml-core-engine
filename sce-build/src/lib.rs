@@ -4616,6 +4616,12 @@ pub struct BroadcastLogElementFacts {
     /// the fact is what keeps the verdict of a render that is handed its numbers
     /// by hand the same.
     pub cbor_entry_unbounded: bool,
+    /// The id of an entry of the CBOR map that holds a bounded list of records
+    /// (docs/adr/0085, Landing order step 3a), or `None` for a map with none: a
+    /// language whose codec template does not write the array
+    /// ([`forge::cbor_codec::lowers_record_list`]) generates no element type for
+    /// the log to name.
+    pub cbor_record_list_entry: Option<String>,
     /// Why the Swift codec emitter does not write the element's codec, as the sentence
     /// `generate` refuses that codec with (`codec 'x': a flag input has no Swift lowering
     /// yet`), or `None` for a codec it writes. Read from
@@ -4681,6 +4687,17 @@ impl BroadcastLogElementFacts {
                 return Some(format!(
                     "its decode takes the variant's tag from the caller, and the {language_name} \
                      log template does not yet store it with the entry"
+                ));
+            }
+        }
+        // A language whose codec template does not write a list of records
+        // refuses the element's codec by name, so the log has no type to name.
+        if let Some(entry) = &self.cbor_record_list_entry {
+            if !forge::cbor_codec::lowers_record_list(language) {
+                let language_name = forge::codegen_matrix::language_wire_name(language);
+                return Some(format!(
+                    "its CBOR entry '{entry}' holds a list of records, which the \
+                     {language_name} codec does not lower yet"
                 ));
             }
         }
@@ -4961,6 +4978,22 @@ pub fn compile_forge_from_parsed(
             .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
         forge::codec_totality::check(m, &import_ctx)
             .map_err(|e| Located::in_file(e, label.diagnostic_label))?;
+        // A record a CBOR entry's list holds is written as a map of its fields
+        // (docs/adr/0085, Landing order step 3a): a record whose schema did not
+        // resolve, or that holds a field no codec writes, is refused here, by
+        // name and alike for every language.
+        if let Some(why) = forge::cbor_codec::record_list_unlowered(
+            m,
+            &forge::generator::import_type_scope(&import_ctx),
+        ) {
+            return Err(Located::in_file(
+                forge::error::ForgeError::from(forge::error::GenerateError::unsupported_at(
+                    format!("codec '{}': {why}", m.name),
+                    m.source_location.clone(),
+                )),
+                label.diagnostic_label,
+            ));
+        }
         // A list a bound does not end is held to its walk moving
         // (docs/adr/0077 §7). Only such a list needs its imports read again.
         if m.fields.iter().any(|f| {
@@ -6995,6 +7028,8 @@ fn sized_codec(
     SizedCodec {
         model: cm.clone(),
         imports: resolved,
+        // The records a CBOR list holds, each in the scope of its own document.
+        scope: forge::import_source::type_scope(imports, base_dir),
     }
 }
 
@@ -8403,12 +8438,14 @@ fn broadcast_log_element_facts(
         cbor_text_or_bytes_entry: codec.encoding == forge::model::CodecEncoding::Cbor
             && codec.cbor_entries.iter().any(|entry| {
                 matches!(
-                    entry.present_type(),
-                    forge::model::SceType::String | forge::model::SceType::Bytes
+                    entry.leaf_type(),
+                    Some(forge::model::SceType::String | forge::model::SceType::Bytes)
                 )
             }),
         cbor_entry_unbounded: codec.encoding == forge::model::CodecEncoding::Cbor
             && forge::cbor_codec::has_unbounded_text_or_bytes(codec),
+        cbor_record_list_entry: forge::cbor_codec::first_record_list(codec)
+            .map(|entry| entry.id.clone()),
         // A log hands the codec what it asks its caller for, which it stores beside the bytes: a
         // flag input and a variant tag are not a reason to refuse the element, so what is left is
         // a codec the Swift emitter does not write.
