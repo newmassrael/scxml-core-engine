@@ -9,8 +9,10 @@
   the result the same day ("Owner's answers"). Amended after acceptance on 2026-11-04, at the owner's order: every
   place of a Rust machine holds its bound in its Rust type (section 7.4, answer G, landing step 4). Amended again
   on 2026-11-06, at the owner's order: a list states its lower count in its type, beside its bound, so "every
-  bound, written in the type" covers the fewest elements too (section 15, answer H, landing step 9).
-- Date: 2026-11-03; amended 2026-11-04 and 2026-11-06
+  bound, written in the type" covers the fewest elements too (section 15, answer H, landing step 9). An amendment
+  of section 8 is proposed on 2026-11-08 and awaits the owner: who owns an event's data in a C11 machine and its
+  runtime, and the inputs of the slot section 8.1 does not list (section 8.5).
+- Date: 2026-11-03; amended 2026-11-04 and 2026-11-06; amendment proposed 2026-11-08
 - Amends:
   - ADR 0087 section 1.1: the JSON Schema of a list that states a lower count carries `minItems`, and its GBNF
     grammar leaves the shorter lists out (section 15.9, 15.10); section 2.3: a fourteenth refusal code, `tooFew`
@@ -640,6 +642,93 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
    `test_ai_loop.c`) move with the landing.
 4. **What this replaces.** ADR 0085 section 5 asked for a static assertion against the knob. A slot sized by the
    build makes the assertion unnecessary: no slot can be smaller than what its machine receives.
+5. **Who owns an event's data, and for how long (Proposed 2026-11-08, awaiting the owner).** Landing step 5's
+   first slice computes `<SM>_DATA_LEN` (item 1, from the schemas whose event a transition takes or whose record a
+   host-run invocation completes with) and declares every buffer the machine owns at it, with `SCE_MAX_DATA_LEN`
+   kept as its floor for the inputs nothing sizes yet. The rest of step 5 needs two decisions item 2 and the
+   paragraph on script engines in item 1 leave open, and the slice found inputs item 1 does not list. Each is
+   stated below with its options, the recommendation and why.
+
+   **The rule every recommendation applies.** Every buffer of event data has exactly one owner, and the owner
+   knows its size. A function that reads data only during a call takes a borrowed view, a pointer and a length,
+   valid for that call and never kept. Storage that outlives a call belongs to the one holder that keeps it, and a
+   value that changes holder is moved (the old holder keeps nothing) or copied into storage the new holder owns,
+   never shared. This is the ownership and borrowing discipline of the textbook (Rust's affine moves and borrows,
+   C++'s `unique_ptr`), spelled in C as it already spells it in this runtime: a caller-allocated buffer with its
+   capacity, filled by a writer that refuses what does not fit (`snprintf`, `sce_host_response_push`); and a value
+   that crosses to another thread is handed over, never shared (Hoare's communicating processes, which the inbox
+   of ADR 0084 already is).
+
+   **(a) A machine whose data model is a script engine.** What holds event data in such a machine: its two event
+   queues (entries by value), its scheduled-send entries, the rows of a delayed host-served send, the buffers a
+   send writes its payload into, and `_event`, which the engine copies into its own string when the event is
+   dequeued. It has no saved state (a C11 machine with an engine has no save API) and no rows of host requests.
+   - a1. **An owned text per event, allocated through the engine's allocator** (`lua_getallocf`), moved and never
+     copied in place: an enqueue allocates the text and copies the data in; the queue entry owns it; the dequeue
+     moves it out, hands it to the engine, and frees it; a scheduled entry owns its text until it fires (moved into
+     a queue), is cancelled or the machine is destroyed (freed); a send to another session copies into storage
+     the receiver allocates. An allocation that fails refuses the act: a send raises `error.execution`, and a
+     host's enqueue answers false, as a full queue does.
+   - a2. A reference into the engine's registry (`luaL_ref`). Tried and retired (the scheduled entry's comment in
+     `state_machine.h.jinja2`): a reference means nothing outside the engine that issued it, so it cannot cross to
+     another session, and the queue would hold a handle whose release depends on an engine call at every exit path.
+   - a3. An arena per machine. No type bounds a script value, so its size is a number of the build again, which
+     answers B and E exclude.
+   - a4. The fixed slot of today. That is `SCE_MAX_DATA_LEN`, which item 1 retires.
+
+   Recommended: a1. It is the only option with no number of the build and no cut text; each move clears its
+   source, so a text is freed exactly once by construction rather than by every exit path remembering; and the
+   allocator is the one the engine already uses, which a host may replace when it creates the engine, so the
+   machine has one heap. With it, the record a host hands an event in, `<sm>_event_with_meta_t`, carries its data
+   as a borrowed view (`const char *data` and its length, valid for the call of `_raise_external`) on both kinds of
+   machine, and the queue entry becomes a private type that owns: a slot of `<SM>_DATA_LEN` on a machine without
+   an engine, an owned text on one with. A host that wrote into `meta.data` writes the view instead; the C11
+   tests that do so move with the landing. The inbox of a machine with an engine cannot call the engine's
+   allocator, since a post comes from another thread or an interrupt handler and the engine is not reentrant; a
+   post there hands over storage the poster allocated with the function that releases it (a move with its
+   deleter), called by the owner once the event is applied. A poster in an interrupt handler hands static storage
+   with a release that marks it free.
+
+   **(b) The runtime's records that hold data by the knob.** Each takes the rule above by the lifetime of its data:
+
+   | Record | Lifetime of its data | Recommended |
+   |---|---|---|
+   | `sce_forwarded_event_t` (`types.h`) | one synchronous call, parent to child | a view; the child copies into its own slot and keeps nothing for an event it has no schema for (item 1) |
+   | `sce_host_send_response_t` (`host_processor.h`) | written by the handler during the call, read by the machine after it returns | the list carries views into text storage the machine declares (`SCE_MAX_HOST_RESPONSES` texts of `<SM>_DATA_LEN`), filled only through `sce_host_response_push`, which already refuses what does not fit |
+   | `sce_host_invoke_response_t` (`done_data`, `refusal`) | the same | two caller-provided buffers with their capacities, set through two writers that refuse what does not fit |
+   | `sce_host_invoke_ending_t` (the ADR 0084 inbox) | posted from another context, applied later by the owner | the inbox input becomes the machine's own record (`<sm>_inbox_input_t` already is, and holds the ending by the runtime's type); its data slot is `<SM>_DATA_LEN`; the post takes a view and copies, and a post whose data does not fit is refused and counted, as a post into a full inbox is |
+   | `sce_mesh_call_t` (`host_processor.h`) | queued by the endpoint, taken by the machine | the take fills a record the machine provides, whose data is a buffer of `<SM>_DATA_LEN` with its capacity; a call whose data does not fit is refused at the endpoint and reported to the machine as the delivery that failed |
+   | `sce_copy_bounded_data` (`types.h`) | any copy into a slot | a copy into a destination of a stated capacity that answers whether it fit, in place of one that cuts |
+
+   The options against which these are recommended: every record declared by the generated machine (the handler
+   types are the runtime's and serve many machines, so a handler would need one function per machine); a view
+   everywhere (a view into the poster's frame dangles once the post returns, so the inbox needs a copy); and a
+   heap per record (a machine without an engine must not allocate). Each recommendation is the textbook's choice
+   for its lifetime: borrowed for a call, caller-allocated with a capacity for an out-parameter, copied into the
+   receiver's storage for a value that crosses a thread.
+
+   **(c) Inputs item 1 does not list**, which have to be settled before the floor goes (step 5's last slice):
+   - c1. **A delivery's text is not bounded by `J`.** JSON's insignificant whitespace and a key the schema does not
+     declare (stepped over by section 4.1, and sent by the scenario of section 14.2) make an accepted text longer
+     than `J`, and a delivery past a bound has to reach the lift to be refused whole with `error.execution`
+     (section 4.2), not be refused by the door. Recommended: the door lifts the delivery when it is enqueued and the
+     queue holds the canonical JSON the writer spells of the lifted value, which is at most `J` by section 2.3, or
+     for a delivery that does not fit its schema a mark and its reason, which raise `error.execution` in the
+     event's place in the queue, so the order of events is kept. The alternative, a door that refuses any text
+     longer than the slot, answers a valid delivery differently from every other lane.
+   - c2. **The reasons a machine raises itself.** An `error.execution` carries its reason in `_event.data`, a
+     sentence of the build or the runtime and, for a lift, a path. Recommended: each sentence is a literal the
+     build knows and a path is bounded by the schema's keys and the digits of its bounds, so the largest reason is
+     one more input of item 1, computed by the same calculus.
+   - c3. **What a child session sends to its parent.** A child's done data and its sends to `#_parent` are sized by
+     the child's own document, which is generated with the parent. Recommended: an input of the parent's slot,
+     from the child's own computation.
+   - c4. **Memory.** Every queue entry holds a slot, so a machine whose largest schema is large pays it per entry:
+     the standard host's HTTP result (`stdlib/host/http_fetch_result.scxml`, a body of 16384 bytes and headers of
+     4096) has `J` = 123074 bytes, about 7.9 MB for the two queues at `SCE_MAX_EVENTS` = 32. Recommended: keep the
+     queue value-typed and statically reservable, as item 1 decides, and let the C11 queue take the depth a
+     document declares (`sce:capacity`, which the Rust profile without `alloc` already reads), so a machine that
+     takes large events takes few of them at a time.
 
 ### 9. Signed values are deterministic CBOR
 
