@@ -767,7 +767,9 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
      4096) has `J` = 123074 bytes, about 7.9 MB for the two queues at `SCE_MAX_EVENTS` = 32. Recommended: keep the
      queue value-typed and statically reservable, as item 1 decides, and let the C11 queue take the depth a
      document declares (`sce:capacity`, which the Rust profile without `alloc` already reads), so a machine that
-     takes large events takes few of them at a time.
+     takes large events takes few of them at a time. *As landed:* each C11 machine declares
+     `<SM>_EVENT_QUEUE_DEPTH`, the root's `sce:capacity` or, where the document states none, the deployment's
+     `SCE_MAX_EVENTS`, and both queues, the inbox's drain and the saved queue read it.
 
    **(d) No buffer of an event's size lives on a stack** (added by the owner). A local of `<SM>_DATA_LEN` bytes
    overflows a microcontroller's stack once the slot holds a large schema: 123 KB for the HTTP result of c4, where
