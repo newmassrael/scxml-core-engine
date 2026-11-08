@@ -4,7 +4,9 @@
 #
 # Regenerate backends/python/tests/integration/static_datamodel/<machine>_sm.py
 # from sce-build/tests/fixtures/static_datamodel/<machine>.scxml, for every
-# machine the Python backend lowers.
+# machine the Python backend lowers; and the test profile's templates from
+# sce-build/tests/fixtures/test_profile/ with the documents they name, a module
+# each beside the machines.
 #
 # The Python run gate for datamodel="sce-static"
 # (docs/SCE_ACCEPTED_SUBSET.md §2.15), the twin of
@@ -172,6 +174,18 @@ done
 if [ "${#ENUMS[@]}" -gt 0 ]; then
     mapfile -t ENUMS < <(printf '%s\n' "${ENUMS[@]}" | sort -u)
 fi
+# The test profile's templates (docs/SCE_TEST_PROFILE.md §11.4, §11.9), each a document
+# of its own kind whose unit declares its `matches` and, for a specific one, its `value`,
+# generated as a module of its own beside the records and enums their units name through
+# their modules; test_a_test_template_matches_its_values.py matches them against values.
+# The Rust, Kotlin and Go trees generate the same templates
+# (scripts/regen_static_datamodel_rust.sh, scripts/regen_static_datamodel_kotlin.sh,
+# scripts/regen_static_datamodel_go.sh), Rust and Kotlin the two over a union besides,
+# which Python, lowering no union, refuses by name.
+TEST_PROFILE_DIR="sce-build/tests/fixtures/test_profile"
+TEST_PROFILE=(job_status elapsed_at_most every_matcher job_report job_report_of report_within)
+TEST_PROFILE_IMPORTS=(paint_color order_line quantity_two quantity_at_most order_line_exact order_line_bounded)
+TEST_PROFILE_IMPORTS+=(card_payment card_within voucher_payment voucher_is)
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -187,6 +201,12 @@ for i in "${!SCHEMAS[@]}"; do
 done
 for i in "${!ENUMS[@]}"; do
     "$CODEGEN" generate "${ENUMS[$i]}" -l python -o "$TMP/enum_$i/"
+done
+for document in "${TEST_PROFILE[@]}"; do
+    "$CODEGEN" generate "$TEST_PROFILE_DIR/$document.scxml" -l python -o "$TMP/profile_$document/"
+done
+for document in "${TEST_PROFILE_IMPORTS[@]}"; do
+    "$CODEGEN" generate "$TEST_PROFILE_DIR/imports/$document.scxml" -l python -o "$TMP/profile_$document/"
 done
 
 # What this directory holds that is not generated is its package marker and its
@@ -216,6 +236,13 @@ done
 
 for i in "${!ENUMS[@]}"; do
     for generated in "$TMP/enum_$i"/*.py; do
+        cp "$generated" "$GENERATED_DIR/"
+        MODULES+=("$(basename "$generated" .py)")
+    done
+done
+
+for document in "${TEST_PROFILE[@]}" "${TEST_PROFILE_IMPORTS[@]}"; do
+    for generated in "$TMP/profile_$document"/*.py; do
         cp "$generated" "$GENERATED_DIR/"
         MODULES+=("$(basename "$generated" .py)")
     done
