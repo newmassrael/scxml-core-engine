@@ -5676,6 +5676,14 @@ struct TransportRouter {
 {% endif %}
 
 {% if has_causal_binding %}
+{# §mesh-10.12: the C++ router's causal route is emitted here and nowhere
+   else. One CausalRoute per causal binding is a member of TransportRouter;
+   `startCausal`, `takeCausalVerdicts`, `causalCommitted`, `causalTick` and
+   `causalLinkBack` are the host's side the section describes, and every
+   envelope of the binding's peer reaches `takeCausal` from
+   `dispatchToSession` and `admitInbound` before any dedup window or engine,
+   on every transport this router serves. The `//` comments below ship into
+   the generated router, so they carry no section token. #}
     // ── The causal route (docs/adr/0085, sections 3, 3.2 and 3.3) ──────
     //
     // What a host does, as with the Rust core: it starts each causal

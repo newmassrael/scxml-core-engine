@@ -5832,6 +5832,9 @@ fn validate_dedup_window(cfg: &DeployConfig) -> Result<(), DeployError> {
 ///
 /// Walked in sorted order so the first reported conflict is stable.
 fn validate_delivery(cfg: &DeployConfig) -> Result<(), DeployError> {
+    // §mesh-10.12, the settings: one delivery rule per binding, a group only
+    // on a causal binding and a causal binding only with its group, and a
+    // view of declared instances that is the same wherever the group is named.
     use std::collections::BTreeMap;
     let conflict = |machine: &str, target: &str, reason: String| DeployError::DeliveryConflict {
         machine: machine.to_string(),

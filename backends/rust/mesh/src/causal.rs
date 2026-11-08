@@ -295,6 +295,9 @@ impl<M: Clone> CausalLayer<M> {
         &mut self,
         build: impl FnOnce(&Tag) -> Result<M, E>,
     ) -> Result<Verdict, OfferError<E>> {
+        // §mesh-10.12, offer and verdict: a log with no room for one more
+        // change not yet stable refuses it, and a refused change takes no
+        // number; an accepted one counts as delivered here once it is tagged.
         if self.log.len() >= self.room {
             return Ok(Verdict::Refused(Refusal::NoRoomForHistory));
         }
@@ -351,6 +354,9 @@ impl<M: Clone> CausalLayer<M> {
         self.admit_member(replica)?;
         self.note_known(replica, &tag.vector)?;
         let mut out = Vec::new();
+        // §mesh-10.12, the rule: a change at or below its author's column is
+        // dropped, the next one whose context is delivered is delivered with
+        // every held change that then follows, and any other is held.
         match causal_admit(&self.delivered, sender, &tag.vector).map_err(Rejected::Rule)? {
             CausalAdmission::Drop => {}
             CausalAdmission::Hold => {

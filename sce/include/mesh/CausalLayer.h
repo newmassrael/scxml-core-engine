@@ -4,7 +4,7 @@
 // SCE Mesh CausalLayer — one copy's side of a causal broadcast group.
 //
 // The causal route's delivery layer (docs/adr/0085, sections 3, 3.2, 3.3 and
-// 4.2; SCE_MESH.md, section 10.12), the C++ core's counterpart of the Rust
+// 4.2; SCE_MESH.md §mesh-10.12), the C++ core's counterpart of the Rust
 // reference (backends/rust/mesh/src/causal.rs), with the same behaviour.
 //
 // A change this copy makes is offered here and answered with a verdict:
@@ -411,6 +411,9 @@ public:
     /// change is refused and takes no number, and when `build` answers
     /// nothing, nothing is taken either.
     template <typename Build> CausalOffered offer(Build &&build) {
+        // §mesh-10.12, offer and verdict: a log with no room for one more
+        // change not yet stable refuses it, and a refused change takes no
+        // number; an accepted one counts as delivered here once it is tagged.
         if (log_.size() >= room_) {
             return CausalVerdict::refused(CausalRefusal::NoRoomForHistory);
         }
@@ -474,6 +477,9 @@ public:
         if (auto rejected = noteKnown(replica, tag.vector)) {
             return *rejected;
         }
+        // §mesh-10.12, the rule: a change at or below its author's column is
+        // dropped, the next one whose context is delivered is delivered with
+        // every held change that then follows, and any other is held.
         const auto admission = causalAdmit(delivered_, sender, tag.vector);
         if (!admission.ok()) {
             return CausalRejected::ruleFailed(admission.error());

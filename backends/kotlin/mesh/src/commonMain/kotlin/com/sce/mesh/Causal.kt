@@ -256,6 +256,9 @@ class CausalLayer<M : Any>(private val group: CausalGroup, start: CausalStart, p
      * is taken either.
      */
     fun offer(build: (CausalTag) -> M?): Offered {
+        // §mesh-10.12, offer and verdict: a log with no room for one more
+        // change not yet stable refuses it, and a refused change takes no
+        // number; an accepted one counts as delivered here once it is tagged.
         if (log.size >= room) return Offered.Answered(Verdict.Refused(Refusal.NO_ROOM_FOR_HISTORY))
         val own = ownSeq
         if (own == ULong.MAX_VALUE) return Offered.Answered(Verdict.Refused(Refusal.NUMBERS_EXHAUSTED))
@@ -299,6 +302,9 @@ class CausalLayer<M : Any>(private val group: CausalGroup, start: CausalStart, p
         if (author == replica) return CausalReceived.Messages(emptyList())
         if (!holdsMember(author)) return CausalReceived.Rejected(Rejection.NotInView(author))
         noteKnown(author, tag.vector)
+        // §mesh-10.12, the rule: a change at or below its author's column is
+        // dropped, the next one whose context is delivered is delivered with
+        // every held change that then follows, and any other is held.
         val admitted = when (val result = causalAdmit(delivered, sender, tag.vector)) {
             is AlgorithmResult.Failed -> return CausalReceived.Rejected(Rejection.Rule(result.error))
             is AlgorithmResult.Ok -> result.value

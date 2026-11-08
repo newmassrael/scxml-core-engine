@@ -214,6 +214,8 @@ impl Router {
             .config
             .causal
             .ok_or_else(|| RouterError::NotCausal(peer.to_string()))?;
+        // §mesh-10.12, what a host does: the peer's layer begins from the
+        // incarnation the host read from the copy's journal, or a new one.
         bound.causal = Some(Causal {
             layer: CausalLayer::new(group, start, room),
             announce_every_ms,
@@ -633,6 +635,9 @@ impl Router {
         bytes: Vec<u8>,
         now_ms: i64,
     ) -> Result<Vec<Effect>, RouterError> {
+        // §mesh-10.12: every envelope of a causal peer reaches its layer
+        // before the engine; a `causalVector` is a repair and a mark, and
+        // never reaches an engine.
         let raise = |signal| {
             Ok(alloc::vec![Effect::Raise {
                 peer: Some(peer.to_string()),

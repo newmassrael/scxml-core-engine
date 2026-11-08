@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
+// SCE-VERIFIES: mesh-10.12
+//
 // The causal route of the C++ router (docs/adr/0085, sections 3.2 and 9.2):
 // the routes the Rust router's tests hold (backends/rust/mesh/src/router.rs)
 // and its three-copy world, the envelopes carried as the CBOR the codec
