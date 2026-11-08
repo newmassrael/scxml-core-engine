@@ -869,6 +869,8 @@ forge unit is, and, since C has no namespace, each declaration carries the docum
   one entry where the type is one (a number, `bool`, a value of an enum, a text in the buffer of its bound
   `sce_static_string_<N>_t`, an optional one in `sce_optional_<elem>_t`), and a composition laid out statically
   where it is not (a record is the schema's `<Name>Payload_t`), so a template's value is the field's own type;
+- `const char *<name>_value_type(void)`, the name a message's value of that type is known by
+  (`sce_host_value_t.type`): the type `<name>_value_t` stands for, the same for every template of the type;
 - `bool <name>_matches(const <name>_value_t *value, <the formal parameters, in order>)`, which holds each mechanism
   of §6.1 by the rules C++ holds it by. A text is compared by its bytes (`strcmp`), a byte string inside a list by
   its length and its octets (`memcmp`), and a value that may be absent is tested by `present` and read by `value`
@@ -1029,6 +1031,58 @@ id it is given, or draws one, whether or not a saved state can hold its machine,
 no saved shape. Python refuses by name a component that declares `<sce:action>`, whose policy is constructed with a
 host the component is given nothing of, and one that uses a template whose type reaches a union, which Python does
 not lower (ADR 0092, section 7).
+
+C11 generates `test-component` (§12.6, slice 6). The unit is the statechart machine the C11 generator writes for any
+`sce-static` document, `<file>_sm.h` and `<file>_sm.c`, lowered through the same doors by the same lowering and
+spelled for the C11 runtime (`sce/test/test_case_run.h`, which the machine's header includes). Nothing of it is
+allocated:
+
+- a branch's guard, the statement taking it, the statements of the profile and a `<log>` are calls on the component's
+  `sce_test_component_context_t`, a handle the machine keeps by value (`test_context`) and passes to every call by
+  pointer. A branch's guard is its `cond` and then its match; a `cond` that can fail is the head of its `if` in C, the
+  statements that evaluate it and `if (<verdict>)`, and the match is then the `if` that verdict opens, so the snapshot
+  is asked only of a `cond` that held. A receive branch's match is `sce_test_receives`, given the name and the size of
+  the template's type (`<unit>_value_type()`, `sizeof(<unit>_value_t)`) and a function of the machine's own,
+  `<machine>_test_matches_<n>`, which the runtime calls with the snapshot's head and the machine as its closure and
+  which calls the template's `<unit>_matches` with the template's arguments as the machine holds them, since C has no
+  closure to bind them in. The machine includes the header of each template it uses. A variable bound to a formal
+  parameter is handed over as the unit takes it: a number, a `bool` and an optional value as the machine holds them, a
+  text as the buffer the machine holds it in, of the bound the parameter declares too; the machine holds a value of an
+  enum in the type the enum's unit declares, so it crosses as it is, and an optional value of an enum is refused by
+  name, as on the other backends;
+- the statement taking a receive branch removes the head of its port into a message of its own
+  (`sce_test_context_receive`), which stands in the block of the branch's content; a removal the run refused ended the
+  run with `error` (P13), and the content does not run. A receive branch whose content reads the message takes it as
+  its template's record by the record's name and copies it, field by field, into the member of the machine's payload
+  channel its record's event is held in, which the content reads as `_event.data`. The machine and the record's unit
+  hold a number, a `bool`, a value of an enum and an optional value of each, a text's among them, in the same C types,
+  which are assigned; the unit holds a text in the buffer of its bound and the channel as a pointer, so a text is
+  copied into the buffer the machine keeps for that field, whose size the build holds the bound to (`SCE_MAX_DATA_LEN`).
+  The unit holds a byte string of one entry as a pointer with no length, so a message of a record with one that the
+  content reads is refused by name;
+- a `<log>` records its label, a colon and its value as the engine's `<log>` writes it, into a buffer one byte longer
+  than a line of the test log holds, so a line the log cannot hold reaches the run long enough to be counted in
+  `log_lost` and is never cut on the way;
+- a send lends the test-port processor the specific template's value (`<unit>_value`), held in a local of the block
+  its request stands in, as `sce_host_send_request_t.value`, under the name of the record's type, which the run copies
+  before the processor returns.
+
+A message's value is known by the name of its C type (`sce_host_value_t.type`), which the run compares by its text, so
+the unit of a C11 template declares `<unit>_value_type()`, the name of the type its `<unit>_value_t` stands for: one
+name, the record's `<Name>Payload_t`, for every template of the record, whatever each template is called. Beside the
+machine the header declares `<machine>_component_t`, whose first member is the `sce_test_component_machine_t` the run
+drives, the machine beside it, and `<machine>_component_make`, which hands a run the component in storage the factory
+of machines owns, or nothing while a run still holds it; the run hands it back through `release`, which tears the
+machine down. `start` gives the construction of the machine the test-port processor and the test-component invoker it
+registered, sets the context on the machine the construction has cleared, and only then enters the initial
+configuration (`<machine>_init_enter`, the entry half of `_init`), so the first `<onentry>` already reaches the run;
+`deliver_snapshot` raises the snapshot event and runs the macrostep it starts (`_step`); `terminated` is the machine's
+having entered a top-level `<final>`. A C11 root draws its own session id, `<name>_session_<n>`, and takes none from
+its host (docs/SCE_ACCEPTED_SUBSET.md, "What C11 does otherwise"), so the component does not name its machine's
+session after the component, as the other backends' components do. C11 refuses by name a component that declares
+`<sce:action>`, whose machine is initialized with a table of acts the component is given nothing of; one that uses a
+template whose type reaches a union, which C11 does not lower (ADR 0092, section 7); and, until it generates a
+suite's tables, a component that declares a module parameter.
 
 A module parameter (§11.5) is a variable of the machine declared with its type and no value of the document's: the
 static lowering, written once for every backend, lowers no initial value for it. Its value is the run's. Before
@@ -1379,4 +1433,8 @@ the equivalence law (order of work step 6).
    carries a test-port send's value (`sce_host_send_request_t.value`). C11 generates templates, and the refusal of
    §11.9 is lifted for C11 for `test-template`; C11 lowers no union, so a template whose type reaches one stays
    refused there, as on C++, Go and Python, and so does one over a byte string of one entry, which its event schema
-   unit holds as a pointer with no length.
+   unit holds as a pointer with no length. C11 generates test components next, through the doors of §12.3, each in
+   storage its factory owns, and runs them through `sce_test_case_run_t`; the refusal is lifted for C11 for
+   `test-component`, but for a component that declares a module parameter, whose value C11's suite tables are to
+   give, for one that declares `<sce:action>`, for one whose template reaches a union, and for a receive branch
+   whose content reads a message of a record with a byte string of one entry.

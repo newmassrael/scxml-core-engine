@@ -565,9 +565,13 @@ template is generated under `--go-module-prefix`, the module path its template p
 are imported by. Python generates a test component too, through the same doors, each
 module parameter read from the run before the machine starts, copies such a message as
 Kotlin and Go do, and refuses with `generate/unsupported-feature` one that declares
-`<sce:action>` and one that uses a template whose type reaches a union. A backend that
-generates a component and not a suite's tables refuses one that declares a module
-parameter by name. On every such backend a variable of an enum bound to a template's
+`<sce:action>` and one that uses a template whose type reaches a union. C11 generates a
+test component too, through the same doors, a component in storage its factory owns,
+copies a number, a `bool`, a text, an enum and an optional value of each of such a message,
+and refuses with `generate/unsupported-feature` one whose branch reads a message with a
+byte string, one that declares `<sce:action>` and one that uses a template whose type
+reaches a union. A backend that generates a component and not a suite's tables, C11 among
+them, refuses one that declares a module parameter by name. On every such backend a variable of an enum bound to a template's
 parameter crosses into the enum unit's type, and one of an optional enum is refused by
 name. A module parameter whose type is not a scalar, `string[N]` or `bytes[N]` is refused
 by name (`generate/unsupported-feature`) on every backend. C++, Rust, Kotlin, Go and
