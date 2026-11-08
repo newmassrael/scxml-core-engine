@@ -1,6 +1,6 @@
 {
   "machine": "static_record_string",
-  "about": "A record with a string field bounded by the sce:max-size its schema declares, eight UTF-8 bytes: built whole from its <sce:set>s, written a field at a time from a literal, from a string variable and from a typed event payload. The bound counts UTF-8 bytes, not characters. A value past it fails as any assignment does: nothing is written, error.execution is raised (`errors` counts it) and the block ends, so the record is left as it was. Expected values are derived from the byte counts (e-acute 2, euro sign 3), not observed from a backend.",
+  "about": "A record with a string field bounded by the sce:max-size its schema declares, eight UTF-8 bytes: built whole from its <sce:set>s, written a field at a time from a literal, from a string variable and from a typed event payload. The bound counts UTF-8 bytes, not characters. A value past it fails as any assignment does: nothing is written, error.execution is raised (`errors` counts it) and the block ends, so the record is left as it was. A payload whose label is past the eight its schema declares is refused whole where it is read (docs/adr/0086, section 4.4), even on the route that writes it into `note`, a variable of sixteen bytes it would fit. Expected values are derived from the byte counts (e-acute 2, euro sign 3), not observed from a backend.",
   "steps": [
     { "note": "built whole from its <sce:set>s",
       "expect": { "state": "idle", "variables": { "last": { "sensor": 1, "label": "a" }, "note": "hello", "errors": 0 } } },
@@ -93,6 +93,13 @@
     { "note": "no record at index 0 to take whole: `last` is left as it was, number and text, and error.execution is raised",
       "event": "take", "expect": { "variables": { "last": { "sensor": 202, "label": "é€é" }, "errors": 8 } } },
     { "note": "nor a last one: len(labels) - 1 is an unsigned underflow",
-      "event": "takelast", "expect": { "variables": { "last": { "sensor": 202, "label": "é€é" }, "errors": 9 } } }
+      "event": "takelast", "expect": { "variables": { "last": { "sensor": 202, "label": "é€é" }, "errors": 9 } } },
+
+    { "note": "a sensor of 100 to 199 takes the label into note, a variable of sixteen bytes: eight fit both",
+      "event": "labelled.taken", "data": { "sensor": 100, "label": "abcdefgh" },
+      "expect": { "variables": { "note": "abcdefgh", "last": { "sensor": 202, "label": "é€é" }, "errors": 9 } } },
+    { "note": "nine bytes would fit note, and are past the eight the schema declares: the payload is refused whole where it is read, so note is left as it was and error.execution is raised once",
+      "event": "labelled.taken", "data": { "sensor": 150, "label": "123456789" },
+      "expect": { "variables": { "note": "abcdefgh", "last": { "sensor": 202, "label": "é€é" }, "labels": [], "errors": 10 } } }
   ]
 }
