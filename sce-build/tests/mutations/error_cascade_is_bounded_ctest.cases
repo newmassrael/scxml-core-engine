@@ -178,9 +178,11 @@ PY
 
 mutation_case "the c11 template queues the refused link anyway" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     """            sm->has_error_cascade_event = true;
+     """            event_text_free(sm, text, text_size);
+{% endif %}
             return;""",
-     """            sm->has_error_cascade_event = true;""")
+     """            event_text_free(sm, text, text_size);
+{% endif %}""")
 PY
 
 # ── C11: the membership test on the raise side ─────────────────────
