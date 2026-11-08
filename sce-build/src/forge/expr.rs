@@ -5552,7 +5552,7 @@ fn bytes_as_hex_list(bytes: &[u8]) -> String {
 /// instead of each re-deriving it from its operands. Constant folding and
 /// integer range analysis already stand aside for a non-numeric operand or a
 /// non-numeric result, so a `Str` sum is never read as a number.
-fn is_string_concatenation(op: BinOp, left: InferredType, right: InferredType) -> bool {
+pub(crate) fn is_string_concatenation(op: BinOp, left: InferredType, right: InferredType) -> bool {
     matches!(op, BinOp::Add)
         && (matches!(left, InferredType::Str) || matches!(right, InferredType::Str))
 }
@@ -7265,53 +7265,17 @@ fn concat_spine<'e>(expr: &'e TypedExpr, into: &mut Vec<&'e TypedExpr>) {
 }
 
 /// The most bytes the text of one operand of a concatenation can take, or `None`
-/// when the data model declares no size for it.
+/// when the operand is one a concatenation does not carry ([`concat_operand`])
+/// or the data model declares no size for it: the bound of its text, by the one
+/// analysis of text bounds ([`crate::forge::text_bound`]).
 fn concat_part_bound(part: &TypedExpr, ctx: &TypeCtx<'_>) -> Option<usize> {
     match concat_operand(part.ty) {
-        ConcatOperand::Text => string_bound(part, ctx),
-        ConcatOperand::Decimal => Some(integer_text_bound(part.ty)),
-        ConcatOperand::Refused(_) => None,
-    }
-}
-
-/// The most bytes a string-typed expression can hold: a literal's text, the
-/// capacity a variable declares, the larger branch of a conditional, the sum of
-/// a join. Nothing else has a size the data model declares.
-fn string_bound(expr: &TypedExpr, ctx: &TypeCtx<'_>) -> Option<usize> {
-    match &expr.kind {
-        // The UTF-8 bytes of the text the literal denotes, its escapes read.
-        ExprKind::StringLit { value } => Some(value.len()),
-        ExprKind::Ident(name) => ctx.string_capacities.get(name.as_str()).copied(),
-        ExprKind::Conditional {
-            consequent,
-            alternate,
-            ..
-        } => Some(string_bound(consequent, ctx)?.max(string_bound(alternate, ctx)?)),
-        ExprKind::Binary { op, left, right } if is_string_concatenation(*op, left.ty, right.ty) => {
-            let mut spine = Vec::new();
-            concat_spine(expr, &mut spine);
-            spine
-                .into_iter()
-                .map(|part| concat_part_bound(part, ctx))
-                .sum()
+        ConcatOperand::Text | ConcatOperand::Decimal => {
+            crate::forge::text_bound::text_bound(part, ctx)
+                .bounded()
+                .and_then(|bytes| usize::try_from(bytes).ok())
         }
-        _ => None,
-    }
-}
-
-/// The most bytes the decimal text of an integer of type `ty` can take: the
-/// digits of its largest magnitude and a minus sign for a signed one. A literal
-/// takes the width of an `int64`, the widest it can be written as.
-pub(crate) fn integer_text_bound(ty: InferredType) -> usize {
-    // `bits * log10(2)` rounded up, in integers: 8 -> 3, 16 -> 5, 32 -> 10, 64 -> 20.
-    let digits = |bits: usize| bits * 30103 / 100_000 + 1;
-    match ty {
-        InferredType::Int {
-            signed: false,
-            bits,
-        } => digits(usize::from(bits)),
-        InferredType::Int { signed: true, bits } => digits(usize::from(bits).saturating_sub(1)) + 1,
-        _ => 20,
+        ConcatOperand::Refused(_) => None,
     }
 }
 
