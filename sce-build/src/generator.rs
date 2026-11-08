@@ -5455,6 +5455,14 @@ fn render_python(env: &mut Environment, model: &SCXMLModel) -> Result<String, Ge
     // dispatch (engine-free) — same call every backend makes.
     let native =
         crate::forge::native_action::render(&mut model_lowered, &machine_name, Language::Python);
+    // A Python machine that declares `<sce:action>`s takes its host where its
+    // policy is constructed (`<Machine>Policy(actions)`,
+    // `python/state_machine.py.jinja2`).
+    refuse_a_test_component_host(
+        model,
+        native.any,
+        "a parameter of the Python policy's constructor",
+    )?;
     // SCE Accepted Subset §2.15: a `sce-static` document's every expression
     // lowered to Python — its variables as attributes of the policy — before
     // the payload channel is built, as every backend that lowers one does.
@@ -5519,6 +5527,15 @@ fn render_python(env: &mut Environment, model: &SCXMLModel) -> Result<String, Ge
         static_imports => &static_lowering.imports,
         static_format2_shape => format2_keys(&static_lowering),
         static_saved_shape => &static_lowering.saved_shape,
+        // docs/SCE_TEST_PROFILE.md §12.3: the doors a test component's machine
+        // reaches its runtime through, which the component the runtime drives
+        // registers and delivers the snapshot by, and the runtime's module,
+        // under the one name the lowering calls it by.
+        test_port_processor => crate::test_component::TEST_PORT_PROCESSOR,
+        test_component_invoke_type => crate::test_component::TEST_COMPONENT_INVOKE_TYPE,
+        snapshot_event => crate::test_component::SNAPSHOT_EVENT,
+        test_runtime => crate::forge::static_lowering::PYTHON_TEST_RUNTIME,
+        test_runtime_path => crate::std_imports::PYTHON_TEST_RUNTIME_PATH,
     };
     tmpl.render(ctx).map_err(render_error)
 }

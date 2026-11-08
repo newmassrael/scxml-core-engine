@@ -54,8 +54,14 @@ use crate::generator::Language;
 const TEXT_LENGTH: &str = "text_length";
 
 /// The import that brings [`TEXT_LENGTH`] into the unit, from the profile's
-/// runtime (`sce_runtime.testprofile`).
-const TEXT_LENGTH_IMPORT: &str = "from sce_runtime.testprofile import text_length";
+/// runtime ([`crate::std_imports::PYTHON_TEST_RUNTIME_PATH`]), the module a
+/// test component's machine reaches its run through.
+fn text_length_import() -> String {
+    format!(
+        "from {} import {TEXT_LENGTH}",
+        crate::std_imports::PYTHON_TEST_RUNTIME_PATH
+    )
+}
 
 /// The unit of the test template `m`, whose imports are `imports`.
 pub(super) fn render_test_template_python(
@@ -132,7 +138,7 @@ pub(super) fn render_test_template_python(
     ctx.insert("needs_optional".into(), needs_optional.into());
     ctx.insert(
         "text_length_import".into(),
-        serde_json::json!(uses_text_length.then_some(TEXT_LENGTH_IMPORT)),
+        serde_json::json!(uses_text_length.then(text_length_import)),
     );
     l.render(env, "test_template", ctx)
 }
