@@ -826,6 +826,55 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
    a host callback to contain what every public function that does not drive the machine can enter. Every
    containment it observes must be in the closure of the pairs, so an edge the code exercises cannot be dropped.
 
+6. **The inputs the floor still covers, and the floor's end (Accepted 2026-11-09, the owner's standing rule).**
+   After item 5 the floor `SCE_MAX_DATA_LEN` still sizes what no declaration does: a delivery's text that is
+   longer than `J` (c1), the reasons a machine raises itself (c2), the data of a literal or computed send, a
+   typed param, a donedata and a child's send to `#_parent` (c3), and, on a machine with a script engine, the
+   buffers item 5 (a) left at the slot. The owner's standing rule is the textbook structure, decided without
+   asking; each decision below is that structure, applied to one of those inputs, and the floor goes once all
+   five hold.
+
+   **(a) The door's own buffers.** The door lifts each delivery, when it is enqueued, into a door slot the
+   machine owns, a member of the machine's struct apart from the event being processed, so a send to the
+   machine itself during a macrostep writes into the door slot and can never overwrite the current event's
+   text. The queue holds what the lift makes of the delivery: the canonical JSON the writer spells of the
+   lifted value, or, for a delivery that does not fit its schema, a refusal mark with its reason, which raises
+   `error.execution` in the event's place in the queue (c1, as recommended there). A canonical rewrite is at
+   most `J` of its schema (section 2.3), so the queue's entries need no room for whitespace or for a key the
+   schema does not declare. That bound holds once every lift refuses before it stores at every depth (section
+   4.4), which another change makes hold on every lane; the door relies on it, and states that it does.
+
+   **(b) Reasons from one table.** Every reason text a machine can raise comes from one Rust table, the single
+   source (`sce-build/src/forge/c11_reasons.rs`), in place of the literals the templates and the lowerings
+   wrote at each raise site. A row has a name and a text, and a text may hold holes the generator fills with
+   the document's own text (an attribute's value, an element's name), never with a value of the run. The
+   templates emit a reason by the name of its row (`reason(row, ...)`), and so do the generator's own
+   lowerings; each instantiation is recorded, and the longest is an input of the slot, so no reason the
+   machine raises is longer than the slot that holds it. A reason the runtime composes from a sentence of its
+   own (a refusal of the payload reader) takes the sentence from a row of the same table, which a test holds
+   equal to the runtime's text.
+
+   **(c) Bounds for text expressions.** A text-valued expression carries a bound in type inference:
+   `InferredType::Str` gains its bound. The bound comes from a typed place (a variable or field of
+   `string[B]`), a literal's length, or a composition (a concatenation is the sum of its parts' bounds, a
+   choice the larger of its branches). The size calculus then computes the size of every literal send, typed
+   param, donedata and child send to `#_parent` (c3) as one more input of the slot. An expression whose bound
+   cannot be computed is refused by name on C11, never sized by a guess.
+
+   **(d) Growable buffers for script machines.** On a machine with a script engine, the remaining buffers of
+   event data grow in the engine's heap, through the machine's allocator, each with one owner: the scratch
+   roles, a host-run invocation's endings, a host's replies, an invocation's answers and the inbox's endings.
+   The inbox change brings the poster's storage and a release function, as the inbox's event inputs already
+   have (item 5 (a), *as landed*). The runtime's writers of replies and answers gain a growing variant behind
+   the same shape of API, so a handler writes the same calls whichever kind of machine it answers.
+
+   **(e) Retire the knob.** Once (a) to (d) hold, `SCE_MAX_DATA_LEN` is removed and a build that defines it
+   fails with `#error` (item 3), and every test and note that names it moves.
+
+   They land in the order (b), (c), (d), (a), (e). Each new behaviour comes with a test and a mutant, and the
+   containment check and the stack scanner of item 5 stay green; a new activity mark or containment pair is
+   added only where the code really has the activity, with the reason in the pair's own comment.
+
 ### 9. Signed values are deterministic CBOR
 
 1. **The rule.** From ADR 0085's one domain bump, `sce-trust/event/3`, the bytes a signature covers are the
