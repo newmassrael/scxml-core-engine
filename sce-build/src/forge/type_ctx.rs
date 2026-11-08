@@ -142,6 +142,12 @@ pub struct StaticCallee {
     pub reading: crate::forge::types::CallReading,
     pub params: Vec<SceType>,
     pub ret: Option<SceType>,
+    /// The bound its signature states on the text or byte string it returns
+    /// (an algorithm's `string[N]` or `bytes[N]` return, the present value's
+    /// for an optional one): the bound of the text a call of it answers
+    /// ([`crate::forge::types::FuncSig::ret_bound`]). `None` for every other
+    /// return.
+    pub ret_bound: Option<u32>,
     /// Why only a host may call it (a list or record slot), if so.
     pub host_only: Option<String>,
     /// It declares `may-fail` (SCE_FORGE.md §3.4.1); a statechart does not
@@ -516,7 +522,17 @@ fn insert_procedure_helpers<'a>(ctx: &mut TypeCtx<'a>, helpers: &'a [ProcedureHe
     for h in helpers {
         let params: Vec<InferredType> = h.args.iter().map(InferredType::from_sce_type).collect();
         let ret = InferredType::from_sce_type(&h.returns);
-        ctx.insert_func(h.name.as_str(), FuncSig::new(params, ret));
+        // A byte string the helper returns is held to its cap, the one it
+        // declares or the default a procedure's byte slot takes.
+        let ret_bound = matches!(h.returns, SceType::Bytes)
+            .then(|| u64::from(crate::forge::limits::resolve_bytes_max(h.returns_max_size)));
+        ctx.insert_func(
+            h.name.as_str(),
+            FuncSig {
+                ret_bound,
+                ..FuncSig::new(params, ret)
+            },
+        );
     }
 }
 
@@ -1079,6 +1095,7 @@ fn value_func_sig(callee: &StaticCallee) -> Option<FuncSig> {
     };
     Some(FuncSig {
         may_fail: callee.may_fail,
+        ret_bound: callee.ret_bound.map(u64::from),
         ..FuncSig::new(params, ret)
     })
 }
@@ -1662,6 +1679,7 @@ impl StaticScope {
                     callee.alias.as_str(),
                     FuncSig {
                         reading: callee.reading,
+                        ret_bound: callee.ret_bound.map(u64::from),
                         ..sig
                     },
                 );

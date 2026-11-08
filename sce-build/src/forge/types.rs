@@ -1227,6 +1227,13 @@ pub struct FuncSig {
     /// into, or copies the machine's records into before it is called. `None` for a
     /// call that is handed none, which is every call but those.
     pub storage: Option<String>,
+    /// The most bytes of the text or byte string the function returns, the
+    /// present value's for an optional one, where its signature states the
+    /// bound: an algorithm's `string[N]` or `bytes[N]` return, a helper's
+    /// `returns-max-size`. What [`crate::forge::text_bound`] bounds a call by
+    /// (docs/adr/0086, section 8.6 (c)); `None` for a return of no length and
+    /// for one whose bound nothing states, which leaves the call unbounded.
+    pub ret_bound: Option<u64>,
 }
 
 /// How the value of a call is read from what the called function answers, where
@@ -1264,6 +1271,7 @@ impl FuncSig {
             may_fail: false,
             reading: CallReading::Value,
             storage: None,
+            ret_bound: None,
         }
     }
 
