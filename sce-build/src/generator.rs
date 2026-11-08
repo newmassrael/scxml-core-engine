@@ -4141,7 +4141,7 @@ fn render_c11(
     let (sent, to_parent) = if model.datamodel == crate::model::Datamodel::SceStatic {
         (static_lowering.sent_data, static_lowering.parent_data)
     } else {
-        crate::forge::generator::c11_literal_sent_data(model, &document_scope(model))
+        crate::forge::generator::c11_literal_sent_data(model, &document_scope(model))?
     };
     data_slot.hold_sent(sent, to_parent);
     // The texts the reason a host-run invocation's unreadable deadline quotes,

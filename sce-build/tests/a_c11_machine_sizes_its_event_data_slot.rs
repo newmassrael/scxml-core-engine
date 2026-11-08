@@ -614,6 +614,74 @@ fn a_parents_slot_holds_what_each_child_hands_it() {
     );
 }
 
+/// docs/adr/0086, section 8.6 (c): a child with no script engine under a data
+/// model other than `sce-static` holds its done data, an inline `<content>`
+/// finished at build time, in a buffer of its own slot, and hands it to its
+/// parent on `done.invoke`. The done data is measured as the text it is
+/// finished as: under the Null data model 300 bytes of text are the JSON
+/// string of them, 302 bytes. The child's slot grows to hold it, the child
+/// publishes it for its parent, and the parent's slot holds what it publishes.
+/// A child whose data model is a script engine makes its parent run one too,
+/// so no machine with a slot is handed done data a script engine computed.
+#[test]
+fn a_childs_done_data_grows_the_slots_that_hold_it() {
+    let text = "a".repeat(300);
+    let doc = format!(
+        r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" initial="s" datamodel="null" name="probe">
+  <state id="s">
+    <invoke type="scxml" id="kid">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="k"
+               datamodel="null" name="kid">
+          <final id="k"><donedata><content>{text}</content></donedata></final>
+        </scxml>
+      </content>
+    </invoke>
+    <transition event="done.invoke.kid" target="f"/>
+  </state>
+  <final id="f"/>
+</scxml>
+"##
+    );
+    let (out, out_dir) = run_codegen(&doc, &[], &[]);
+    assert!(
+        out.status.success(),
+        "the machine generates for C11:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let parent = std::fs::read_to_string(out_dir.path().join("probe_sm.h")).expect("the parent");
+    let child_stem = parent
+        .lines()
+        .filter_map(|line| line.strip_prefix("#include \""))
+        .filter_map(|rest| rest.strip_suffix("_sm.h\""))
+        .find(|stem| *stem != "probe")
+        .unwrap_or_else(|| panic!("the parent includes its child's header:\n{parent}"))
+        .to_string();
+    let child = std::fs::read_to_string(out_dir.path().join(format!("{child_stem}_sm.h")))
+        .expect("the child's header, written by the run that writes its parent");
+    let slot = format!("{}_DATA_LEN", child_stem.to_uppercase());
+    assert!(
+        child.contains("measured by the bound of each value it\n   carries: 302 bytes."),
+        "the child's done data is an input of its own slot:\n{child}"
+    );
+    assert!(
+        child.contains(&format!("#define {slot}_DECLARED 303u")),
+        "the child's slot holds its 302 bytes of done data and a NUL:\n{child}"
+    );
+    assert!(
+        child.contains(&format!("#define {slot}_TO_PARENT 302u")),
+        "the child publishes the done data it hands its parent:\n{child}"
+    );
+    assert!(
+        parent.contains(&format!(
+            "#define PROBE_DATA_LEN PROBE_DATA_LEN_LARGER(PROBE_DATA_LEN_OWN, {slot}_TO_PARENT)"
+        )),
+        "the parent's slot holds what its child publishes:\n{parent}"
+    );
+}
+
 /// docs/adr/0086, section 8.5 (c): each queue of a C11 machine holds as many
 /// events as the document's `sce:capacity` declares, so a machine that takes
 /// large events reserves room for few of them; a document that declares none
