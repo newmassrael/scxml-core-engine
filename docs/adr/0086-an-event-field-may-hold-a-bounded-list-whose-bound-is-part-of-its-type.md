@@ -417,8 +417,17 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
      handler raises while answering it is a link in its chain, and one no transition matches is counted as an
      unhandled error, not as a discarded external event.
    - A generated machine whose document declares no `error.execution` has no event to put in the delivery's place:
-     the delivery is refused and nothing is taken. The Interpreter, which names events by text, takes the error and
-     finds no transition for it.
+     the delivery is refused and nothing is taken. It is not dropped unseen. An external delivery so refused is
+     counted as a **discarded external event**, and named the last one: the hook every lane already has for an
+     external event that moved nothing (`discarded_external_events` and `last_discarded_event` on Rust,
+     `DiscardedExternalEvents` and `LastDiscardedEvent` on Go, `discardedExternalEvents()` and `lastDiscardedEvent()`
+     on Kotlin, `discarded_external_events` and `last_discarded_event` on Python, `discardedExternalEvents` and
+     `lastDiscardedEvent` on Swift and C++, `_discarded_external_events` and `_last_discarded_event` on C11). The
+     unhandled-error count cannot serve: it names an `error.*` event, and such a document declares none. The
+     Interpreter, which names events by text, takes the error and finds no transition for it, which is its own
+     answer to the same question (`TransitionResult::success` false, `getStatistics().failedTransitions`). A
+     delivery refused off the internal queue is not counted, as an internal event no transition matches is not:
+     both ends of it are in the document.
    - Nothing is added to a queued entry and no saved state changes. Every door is at the dequeue, so a saved queue
      holds a delivery as it arrived, and the restored machine judges it when it takes it, with the same answer. The
      queue never holds a refused delivery's error: the internal queue's bound counts none for the lift any more
@@ -434,9 +443,14 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
      scenario that refuses a delivery keeps its expectation: each such delivery met only guards that read the payload
      or targetless content that reads it, where the two behaviours agree.
 
-   Open: an `ecmascript` document whose guard the generator lowers to a typed comparison (NL to IR Item C1) has the
-   same door on the generated lanes. The Interpreter runs such a document on its script engine with no door, and
-   still takes a transition that reads none of the payload for a delivery the generated lanes refuse.
+   The rule is the type's, not the data model's. An `ecmascript` document whose guard the generator lowers to a
+   typed comparison (NL to IR Item C1), or whose `<sce:action>` reads a payload through its arguments, has the same
+   door on the generated lanes, and the lowering for the Interpreter (`sce-codegen lower`) gives it the same door:
+   it installs the library and the record of each such event (`install_doors` in
+   `sce-build/src/forge/static_js.rs`, in a `<datamodel>` of its own when the document declares none) and changes
+   nothing else of the document. The Interpreter then refuses such a delivery whole as every generated machine does
+   (`AnEcmascriptDocumentRefusesADeliveryOutsideItsSchemaWhole`, on `event_schema/statechart_lifted.scxml`). A
+   document that reads no payload through a schema is lowered as it is.
 
 ### 5. Validation where a value is written
 
