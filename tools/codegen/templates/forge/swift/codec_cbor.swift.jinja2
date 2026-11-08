@@ -36,10 +36,47 @@ if value.count != {{ e.length }} { throw CodecError.cborWrongLength }
     unsigned integer, and `UInt64(...)` would trap on it. #}
 {% if e.carrier_signed %}if ({{ e.enum_to_underlying }}) < 0 { throw CodecError.cborOutOfRange }
 {{ indent }}{% endif %}Cbor.writeUint(UInt64({{ e.enum_to_underlying }}), to: &frame)
+{%- elif e.kind == "record_list" -%}
+{#- The language's array carries no bound, so a count past the list's bound, or short of its lower
+    count, is refused before anything of it is written. -#}
+if value.count > {{ e.list_max }}{% if e.list_min > 0 %} || value.count < {{ e.list_min }}{% endif %} { throw CodecError.cborOutOfRange }
+{{ indent }}Cbor.writeArrayHead(UInt64(value.count), to: &frame)
+{{ indent }}for record in value {
+{{ indent }}    try {{ struct_name }}.{{ e.record_encode_fn }}(record, to: &frame)
+{{ indent }}}
 {%- else -%}
 {#- A negative number is no CBOR unsigned integer, and `UInt64(value)` would trap on it. #}
 {% if e.signed %}if value < 0 { throw CodecError.cborOutOfRange }
 {{ indent }}{% endif %}Cbor.writeUint(UInt64(value), to: &frame)
+{%- endif -%}
+{%- endmacro %}
+{#- The read of one field of a record a list holds, as the expression bound to its `_held` local. #}
+{% macro decode_record_field(f) -%}
+{%- if f.kind == "bool" -%}
+try Cbor.readBool(&reader)
+{%- elif f.kind == "text" -%}
+try Cbor.readText(&reader, maxSize: {{ f.max }})
+{%- elif f.kind == "bytes" -%}
+try Cbor.readBytes(&reader, maxSize: {{ f.max }})
+{%- elif f.value_type == "UInt64" -%}
+try Cbor.readUint(&reader)
+{%- else -%}
+{{ f.value_type }}(truncatingIfNeeded: try Cbor.readUintUpto(&reader, {{ f.int_max }}))
+{%- endif -%}
+{%- endmacro %}
+{#- The write of one field of `record`, its key already written. The language's string and array
+    carry no bound, so a text or a byte string past its bound is refused, not written. #}
+{% macro encode_record_field(f) -%}
+{%- if f.kind == "bool" -%}
+Cbor.writeBool(record.{{ f.name }}, to: &frame)
+{%- elif f.kind == "text" -%}
+if record.{{ f.name }}.utf8.count > {{ f.max }} { throw CodecError.cborOutOfRange }
+        Cbor.writeText(record.{{ f.name }}, to: &frame)
+{%- elif f.kind == "bytes" -%}
+if record.{{ f.name }}.count > {{ f.max }} { throw CodecError.cborOutOfRange }
+        Cbor.writeBytes(record.{{ f.name }}, to: &frame)
+{%- else -%}
+Cbor.writeUint(UInt64(record.{{ f.name }}), to: &frame)
 {%- endif -%}
 {%- endmacro %}
 {{ sce_map.source_marker(source_location, "swift", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
@@ -97,6 +134,18 @@ public struct {{ struct_name }}: Equatable, Sendable {
                     throw CodecError.cborOutOfRange
                 }
                 {{ e.name }}_held = declared
+{% elif e.kind == "record_list" %}
+                // A definite-length array within the list's counts, each item one record's map.
+                let len = try Cbor.readArrayLen(&reader)
+                if len > {{ e.list_max }}{% if e.list_min > 0 %} || len < {{ e.list_min }}{% endif %} { throw CodecError.cborOutOfRange }
+                var list: {{ e.value_type }} = []
+                list.reserveCapacity(Int(len))
+                var item: UInt64 = 0
+                while item < len {
+                    item += 1
+                    list.append(try {{ struct_name }}.{{ e.record_decode_fn }}(&reader))
+                }
+                {{ e.name }}_held = list
 {% else %}
                 {{ e.name }}_held = {{ decode_value(e) }}
 {% endif %}
@@ -148,4 +197,47 @@ public struct {{ struct_name }}: Equatable, Sendable {
 {% endfor %}
         try sink.writeBytes(frame)
     }
+{% for r in cbor_records %}
+
+    /// Reads one record of the event schema `{{ r.schema }}` (`record:{{ r.alias }}`), as a list of this map
+    /// holds it (docs/adr/0085, Landing order step 3a), into the payload type the schema's own unit
+    /// declares: one CBOR map of every field, each under its id as text (docs/adr/0086, section 9.2). Its
+    /// keys in any order, a key the schema does not declare skipped whole; a key given twice is
+    /// `cborMalformed`, a field missing `cborRequiredKeyMissing`, a text or byte string past its bound
+    /// `cborOutOfRange`.
+    private static func {{ r.decode_fn }}(_ reader: inout SceCursor) throws(CodecError) -> {{ r.type_name }} {
+        let count = try Cbor.readMapLen(&reader)
+{% for f in r.fields %}
+        var {{ f.name }}_held: {{ f.value_type }}? = nil
+{% endfor %}
+        var index: UInt64 = 0
+        while index < count {
+            index += 1
+            switch try Cbor.readText(&reader, maxSize: nil) {
+{% for f in r.fields %}
+            case {{ f.key_literal }}:
+                // A key given twice is not one map entry.
+                if {{ f.name }}_held != nil { throw CodecError.cborMalformed }
+                {{ f.name }}_held = {{ decode_record_field(f) }}
+{% endfor %}
+            default:
+                try Cbor.skip(&reader)
+            }
+        }
+{% for f in r.fields %}
+        guard let {{ f.name }}_value = {{ f.name }}_held else { throw CodecError.cborRequiredKeyMissing }
+{% endfor %}
+        return {{ r.type_name }}({% for f in r.fields %}{{ f.name }}: {{ f.name }}_value{% if not loop.last %}, {% endif %}{% endfor %})
+    }
+
+    /// Appends one record of `{{ r.schema }}` to `frame` as one map of every field, the keys in the order
+    /// RFC 8949 §4.2.1 sorts their encodings: a shorter key first.
+    private static func {{ r.encode_fn }}(_ record: {{ r.type_name }}, to frame: inout [UInt8]) throws(CodecError) {
+        Cbor.writeMapHead({{ r.field_count }}, to: &frame)
+{% for f in r.fields_by_key %}
+        Cbor.writeText({{ f.key_literal }}, to: &frame)
+        {{ encode_record_field(f) }}
+{% endfor %}
+    }
+{% endfor %}
 }

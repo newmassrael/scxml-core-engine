@@ -1178,6 +1178,9 @@ declares; a lower count is, on every backend alike:
 
 - Kotlin: `List<<Schema>Payload>`, the functions private members of the codec's
   companion object.
+- Swift: `[<Schema>Payload]`, the functions private static members of the codec's
+  struct; a refused read throws as Rust's returns (`cborOutOfRange`,
+  `cborMalformed`, `cborRequiredKeyMissing`).
 
 Every other backend refuses such a codec by name until its template writes the
 array (`cbor_codec::lowers_record_list`), and a broadcast log over one is refused
