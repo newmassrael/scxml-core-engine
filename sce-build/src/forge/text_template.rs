@@ -159,9 +159,9 @@ pub fn max_len(
                     max,
                     trust: HoleTrust::Untrusted,
                 } => fence + u64::from(max.max),
-                HoleKind::Integer(ty) => crate::forge::expr::integer_text_bound(
+                HoleKind::Integer(ty) => crate::forge::text_bound::integer_text_bound(
                     crate::forge::types::InferredType::from_sce_type(ty),
-                ) as u64,
+                ),
                 HoleKind::Enum(reference) => longest_name(&reference.alias)?,
             },
         };
