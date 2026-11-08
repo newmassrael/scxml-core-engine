@@ -48,14 +48,37 @@ sce_gate_require_rust_target "$TARGET"
 command -v node >/dev/null 2>&1 \
     || sce_gate_cannot_run "node is not on PATH; the module is run under Node"
 
-command -v wasm-bindgen >/dev/null 2>&1 \
-    || sce_gate_cannot_run "wasm-bindgen is not on PATH (cargo install wasm-bindgen-cli --version <the one Cargo.lock holds> --locked)"
-
 locked="$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | sed -n 's/^version = "\(.*\)"$/\1/p')" || locked=""
 [[ -n "$locked" && "$locked" != *$'\n'* ]] \
     || sce_gate_fail "Cargo.lock holds no single wasm-bindgen version (read: '${locked}'), so the tool to match is not defined"
+
+# The tool at that version: the one on PATH when it is that version, else the
+# one bx installs on a build machine (`[platform.linux.tools.wasm-bindgen]`,
+# scripts/install_wasm_bindgen.sh) at the path derived from the version.
+if [[ "$(wasm-bindgen --version 2>/dev/null)" != "wasm-bindgen ${locked}" ]] \
+        && [[ -x "$HOME/.local/share/wasm-bindgen/${locked}/bin/wasm-bindgen" ]]; then
+    PATH="$HOME/.local/share/wasm-bindgen/${locked}/bin:$PATH"
+    export PATH
+fi
+command -v wasm-bindgen >/dev/null 2>&1 \
+    || sce_gate_cannot_run "wasm-bindgen is not on PATH (scripts/install_wasm_bindgen.sh installs the version Cargo.lock holds)"
 [[ "$(wasm-bindgen --version)" == "wasm-bindgen ${locked}" ]] \
-    || sce_gate_cannot_run "wasm-bindgen is '$(wasm-bindgen --version)' and Cargo.lock holds ${locked}; install the tool at that version"
+    || sce_gate_cannot_run "wasm-bindgen is '$(wasm-bindgen --version)' and Cargo.lock holds ${locked}; install the tool at that version (scripts/install_wasm_bindgen.sh)"
+
+# The browser: the pinned Chrome for Testing (scripts/install_chrome.sh), which
+# bx installs on a build machine and the hosted lane installs with the same
+# script. A CHROME_BIN the caller set is taken as given. Outside a landing a
+# machine without the pinned build may still replay in the Chrome on its PATH,
+# as a developer's does; a landing's verdict is the pinned browser's or none,
+# since a pass is kept from it under a key that names no other Chrome.
+chrome_rev="$(sed -n 's/^CHROME_REV="\([0-9.][0-9.]*\)"$/\1/p' scripts/install_chrome.sh)"
+pinned_chrome="$HOME/.local/share/chrome-for-testing/${chrome_rev}/chrome-linux64/chrome"
+if [[ -z "${CHROME_BIN:-}" && -n "$chrome_rev" && -x "$pinned_chrome" ]]; then
+    export CHROME_BIN="$pinned_chrome"
+fi
+if sce_gate_landing && [[ "${CHROME_BIN:-}" != "$pinned_chrome" ]]; then
+    sce_gate_cannot_run "the pinned Chrome for Testing ${chrome_rev:-?} is not at $pinned_chrome (scripts/install_chrome.sh). This run is a landing's, where only the pinned browser judges the module."
+fi
 
 # The lint half: the runtime and the replay crate, compiled for the target. A
 # cfg-gated branch exists for this target and no other, so the host's clippy
@@ -100,6 +123,6 @@ chrome_status=0
 node "$CHROME_RUNNER" "$web_glue" || chrome_status=$?
 case "$chrome_status" in
     0) ;;
-    3) sce_gate_cannot_run "no Chrome on PATH (install google-chrome, or name one in CHROME_BIN); the web target is Chrome" ;;
+    3) sce_gate_cannot_run "no Chrome on PATH and none named by CHROME_BIN (scripts/install_chrome.sh installs the pinned one); the web target is Chrome" ;;
     *) sce_gate_fail "the $TARGET module failed in Chrome, or the page could not report (each failing scenario and its panic, or the reason, are printed above)" ;;
 esac
