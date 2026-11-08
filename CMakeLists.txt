@@ -835,7 +835,7 @@ set(CODEGEN_INSTALL_DIR  "${CMAKE_CURRENT_SOURCE_DIR}/tools/codegen")
 get_filename_component(CODEGEN_BIN_DIR "${SCE_CODEGEN}" DIRECTORY)
 set(SCE_HTTPLIB_FIND_MODULES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/cpp-httplib/cmake")
 # The lowering staticlib sce_scripting links (cmake/SCEBuildLowering.cmake): where cargo put it
-# in this build; empty when sce_scripting does not link it (no scripting tier, or wasm).
+# in this build; empty when sce_scripting does not link it (no scripting tier).
 if(TARGET SCE::Lowering)
     get_target_property(LOWERING_LIB_PATH SCE::Lowering IMPORTED_LOCATION)
 else()

@@ -562,8 +562,35 @@ sce_gate_activate_emsdk() {
 # Returns the configure's status; the caller names what failed.
 SCE_WASM_BUILD_DIR="build_wasm"
 SCE_WASM_WEB_BUILD_DIR="build_wasm_web"
+
+# What a tree's configure needs beyond emsdk: the Rust toolchain that builds
+# sce-build's ECMAScript frontend for the emscripten target
+# (scripts/lib/wasm_rust.sh says which, and why the tree with threads needs a
+# pinned nightly). Both trees link that frontend, so both configures ask here.
+#
+# A lane that sets SCE_REQUIRE_TOOLS is claiming the check ran, and installs
+# what is missing; a developer's machine is told the one command instead, since
+# installing a toolchain is not a side effect of a configure. It lives in the
+# gate rather than in each workflow so that every lane, the pre-push gate and a
+# local `scripts/build_wasm.sh` get the same answer from one place.
+sce_gate_prepare_wasm_rust() {
+    local threads="$1"
+    # shellcheck disable=SC1091
+    source "$SCE_REPO_ROOT/scripts/lib/wasm_rust.sh"
+    sce_wasm_rust_present "$threads" && return 0
+    case "${SCE_REQUIRE_TOOLS:-}" in
+        "" | 0 | false)
+            echo "the emscripten trees build the ECMAScript frontend with Rust; install it with: source scripts/lib/wasm_rust.sh && sce_wasm_rust_install" >&2
+            return 1
+            ;;
+        *)
+            sce_wasm_rust_install
+            ;;
+    esac
+}
 sce_gate_configure_wasm_build_dir() {
     local dir="$1" threads="$2"
+    sce_gate_prepare_wasm_rust "$threads" || return 1
     local GENERATOR=()
     command -v ninja >/dev/null 2>&1 && GENERATOR=(-G Ninja)
     emcmake cmake -S . -B "$dir" -DCMAKE_BUILD_TYPE=Release \
