@@ -119,7 +119,9 @@ fn a_payload_field_is_read_absent_from_null_and_written_with_its_key() {
         &code,
         &[
             "try fields.optional(\"due\") { fields in try fields.signed64(\"due\") }",
-            "try fields.optional(\"title\") { fields in try fields.text(\"title\") }",
+            // A present text is held to its bound at the lift (docs/adr/0086,
+            // section 4.4).
+            "try fields.optional(\"title\") { fields in try fields.text(\"title\", bound: 16) }",
             ".raw(\"due\", json: optionalJSON(due) { WireValue.signed64($0).json })",
             ".raw(\"status\", json: optionalJSON(status) { WireValue.text($0.declaredName).json })",
         ],
