@@ -3600,6 +3600,34 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
 
     add_test(NAME mesh_causal_layer_verification COMMAND mesh_causal_layer_test)
 
+    # ── CausalRoute unit tests (docs/adr/0085, sections 3.2 and 9.2) ──
+    # The router's side of one causal binding, the routes the Rust
+    # router holds: write-ahead, a route used once started, repair on a
+    # link that comes back, the period, the view (row 18), an untagged
+    # envelope (row 4), and three copies on lossy, reordering links whose
+    # envelopes cross the wire as the codec's CBOR.
+    add_executable(mesh_causal_route_test
+        mesh/CausalRouteTest.cpp
+    )
+
+    target_include_directories(mesh_causal_route_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+    )
+
+    target_link_libraries(mesh_causal_route_test
+        PRIVATE
+            sce_mesh_common
+            GTest::gtest_main
+            pthread
+    )
+
+    target_compile_features(mesh_causal_route_test PRIVATE cxx_std_17)
+
+    apply_sce_test_policies(mesh_causal_route_test)
+
+    add_test(NAME mesh_causal_route_verification COMMAND mesh_causal_route_test)
+
     # ── OutboundBuffer unit tests (SCE_MESH.md §10.10 + §16.7 row 9) ─
     # Pure unit tests on the per-target readiness-gated admit layer.
     # Sibling DedupRouter / OrderingBuffer tests cover their inbound
