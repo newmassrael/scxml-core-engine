@@ -466,6 +466,7 @@ mod tests {
                 responders: Box::leak(Box::new([peer])),
                 deadline_ms: None,
                 reply_events: &[],
+                causal: None,
             },
         );
         Endpoint::new(router, transport, Counting::default())

@@ -29,6 +29,7 @@ use sce_rust_runtime::{
     MeshCall, StatePolicy,
 };
 
+use crate::causal::{Dot, Refusal, Start};
 use crate::outbound::{AfterFailure, Attempts};
 use crate::router::{Effect, Invoked, Router, RouterError};
 use crate::signal::Signal;
@@ -152,6 +153,20 @@ pub struct Endpoint<T, E> {
     admission: Option<Box<dyn Admission>>,
     /// What the host writes into an event as it leaves ([`Self::set_sealer`]).
     sealer: Option<Box<dyn Sealer>>,
+    /// The verdicts of the causal layers on the changes the machine sent, in
+    /// the order they were given ([`Self::take_verdicts`]).
+    verdicts: Vec<CausalVerdict>,
+}
+
+/// The verdict of a causal peer's layer on a change the machine sent to it
+/// (docs/adr/0085, section 3, "offer and verdict").
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CausalVerdict {
+    /// Tagged with `dot`. The host records it with its dot in the copy's
+    /// journal and then calls [`Endpoint::committed`], which releases it.
+    Accepted { peer: String, dot: Dot },
+    /// Refused: it took no number and no copy takes it in.
+    Refused { peer: String, refusal: Refusal },
 }
 
 /// What the host asks of an event that arrived before the machine is told of it. It sees the
@@ -193,7 +208,37 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
             forbidden: std::collections::BTreeMap::new(),
             admission: None,
             sealer: None,
+            verdicts: Vec::new(),
         }
+    }
+
+    /// Start the causal layer of the causal peer `peer` (see
+    /// [`Router::start_causal`]).
+    pub fn start_causal(
+        &mut self,
+        peer: &str,
+        start: Start,
+        room: usize,
+        announce_every_ms: i64,
+    ) -> Result<(), RouterError> {
+        self.router
+            .start_causal(peer, start, room, announce_every_ms)
+    }
+
+    /// The verdicts of the causal layers on what the machine sent, in order.
+    /// The host records each accepted change in the copy's journal, calls
+    /// [`Self::committed`] once the record is committed, and tells the copy of
+    /// each refusal.
+    pub fn take_verdicts(&mut self) -> Vec<CausalVerdict> {
+        core::mem::take(&mut self.verdicts)
+    }
+
+    /// The host committed the journal record of `dot`, a change sent to the
+    /// causal peer `peer`: it, and every accepted change before it, leaves.
+    pub fn committed(&mut self, peer: &str, dot: Dot) {
+        let now = self.environment.now_ms();
+        let effects = self.router.committed(peer, dot, now);
+        self.apply(effects);
     }
 
     /// Put `sealer` behind the machine: what the machine sends is shown to it, and leaves with
@@ -470,6 +515,18 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
                     data,
                     source,
                 }),
+                Effect::Accepted { peer, dot } => {
+                    self.verdicts.push(CausalVerdict::Accepted { peer, dot })
+                }
+                Effect::Refused { peer, refusal } => {
+                    self.verdicts.push(CausalVerdict::Refused { peer, refusal })
+                }
+                Effect::AnnounceDue { peer } => {
+                    let id = self.environment.envelope_id();
+                    let now = self.environment.now_ms();
+                    let announced = self.router.announce(&peer, id, now);
+                    self.apply(announced);
+                }
             }
         }
     }
@@ -666,6 +723,7 @@ mod tests {
             responders: Box::leak(Box::new([peer])),
             deadline_ms: None,
             reply_events: &[],
+            causal: None,
         }
     }
 

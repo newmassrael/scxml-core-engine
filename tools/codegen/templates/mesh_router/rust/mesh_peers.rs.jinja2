@@ -60,6 +60,15 @@ pub const MACHINE: Machine = Machine {
                 responders: &[{% for r in peer.responders %}"{{ r | escape_rust }}"{% if not loop.last %}, {% endif %}{% endfor %}],
                 deadline_ms: {% if peer.deadline_ms is not none %}Some({{ peer.deadline_ms }}){% else %}None{% endif %},
                 reply_events: &[{% for e in peer.reply_events %}"{{ e | escape_rust }}"{% if not loop.last %}, {% endif %}{% endfor %}],
+{%- if peer.causal %}
+                causal: Some(sce_rust_mesh::causal::CausalGroup {
+                    name: "{{ peer.causal.name | escape_rust }}",
+                    epoch: {{ peer.causal.epoch }},
+                    view: &[{% for v in peer.causal.view %}"{{ v | escape_rust }}"{% if not loop.last %}, {% endif %}{% endfor %}],
+                }),
+{%- else %}
+                causal: None,
+{%- endif %}
             },
 {%- if peer.link.kind == "wss_dial" %}
             link: PeerLink::WssDial {

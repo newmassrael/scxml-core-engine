@@ -19397,7 +19397,7 @@ mod tests {
                     backend: "kotlin".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:5fe95cdd48172816","code":"mesh/codegen-causal-delivery-unsupported","stage":"mesh-codegen","spec":"SCE Mesh §10.12","message":"machine 'list' binds `#people` with `delivery: causal`, which the kotlin Mesh core does not route yet (SCE_MESH.md §mesh-10.12). No backend's Mesh core routes it yet; bind the peer without `delivery: causal`.","actual":"#people"}"#,
+                r#"{"v":1,"id":"fnv1a:5fe95cdd48172816","code":"mesh/codegen-causal-delivery-unsupported","stage":"mesh-codegen","spec":"SCE Mesh §10.12","message":"machine 'list' binds `#people` with `delivery: causal`, which the kotlin Mesh core does not route yet (SCE_MESH.md §mesh-10.12). Generate this machine with `--lang rust`, or bind the peer without `delivery: causal`.","actual":"#people"}"#,
             ),
             (
                 "mesh/io",

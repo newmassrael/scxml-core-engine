@@ -1211,11 +1211,11 @@ pub fn generate_mesh(
 /// The backends whose Mesh core routes a causal binding (docs/adr/0085,
 /// section 3.2 and Landing order step 3). A backend joins the list in the
 /// landing that routes the binding through its core's causal layer and
-/// renders the group into its peer table: Rust first, the reference, whose
-/// layer (`backends/rust/mesh/src/causal.rs`) its router does not route to
-/// yet, then C++, Kotlin and Swift. Until then every backend refuses the
-/// binding rather than building it as a plain route.
-const CAUSAL_DELIVERY_LANGUAGES: &[Language] = &[];
+/// renders the group into its peer table: Rust, the reference, whose router
+/// routes it to `backends/rust/mesh/src/causal.rs`, then C++, Kotlin and
+/// Swift. Until then a backend refuses the binding rather than building it
+/// as a plain route.
+const CAUSAL_DELIVERY_LANGUAGES: &[Language] = &[Language::Rust];
 
 /// The repair the refusal's message offers: the `--lang` choices that build
 /// a causal binding, read from [`CAUSAL_DELIVERY_LANGUAGES`] so a core that
@@ -2233,8 +2233,31 @@ struct HostPeerContext {
     /// invokeid of the request being answered. Sorted, from the pattern the
     /// build already resolved for each send.
     reply_events: Vec<String>,
+    /// The causal group the peer is the route of, its view of epoch 0
+    /// (docs/adr/0085, sections 3.2 and 3.3), or `None` for the per-source
+    /// rules.
+    causal: Option<HostCausalContext>,
     /// How the link to the peer is opened — the core's `PeerLink`.
     link: HostLinkContext,
+}
+
+/// A causal binding's group as a host core's peer table spells it: the view
+/// the deploy gives is epoch 0, the only view until view changes land.
+#[derive(Debug, Clone, serde::Serialize)]
+struct HostCausalContext {
+    name: String,
+    view: Vec<String>,
+    epoch: u64,
+}
+
+impl From<crate::mesh::deploy::CausalGroupConfig> for HostCausalContext {
+    fn from(group: crate::mesh::deploy::CausalGroupConfig) -> Self {
+        Self {
+            name: group.name,
+            view: group.view,
+            epoch: 0,
+        }
+    }
 }
 
 /// deploy.yaml's `outbound_buffer:` section as a host core reads it.
@@ -2446,6 +2469,7 @@ fn generate_host_mesh(
                     events.dedup();
                     events
                 },
+                causal: policy.causal.map(HostCausalContext::from),
                 link,
             }
         })
