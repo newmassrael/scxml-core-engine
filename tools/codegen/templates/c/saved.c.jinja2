@@ -601,7 +601,7 @@ SCE_SM_FN static bool {{ _t }}_saved_events(const sce_saved_session_t *s, {{ _t 
         }
 {% endif %}
         if (sm != NULL) {
-            event_queue_push(&sm->external_queue, &queued);
+            event_queue_push(sm, &sm->external_queue, &queued);
         }
     }
     return true;
