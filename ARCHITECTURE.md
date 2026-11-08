@@ -473,6 +473,46 @@ Generated state machine policies come in two modes:
    - Policy has member variables: `sessionId_`, `jsEngineInitialized_`, `eventDataMap_`, etc.
    - Memory: Policy size + session data (~1-10KB)
 
+### Composed Values: One Walk, One Module per Backend
+
+A composed value of a `sce-static` statechart (docs/adr/0086: a list, a record, an optional value of
+either; docs/adr/0092: a union) is lowered by one walk of its type, one case per constructor, in
+`sce-build/src/forge/composed_lowering.rs`. A backend supplies only the spelling of each case
+(`ComposedSpelling`), and one table decides which positions each backend lowers
+(`ComposedLowering::of`, `sce-build/src/forge/event_schema_check.rs`). The structure is open for a new
+backend and closed for the others: **adding a backend's lowering (a lane) touches that lane's own files
+and nothing another lane edits.** A lane adds or changes:
+
+1. **Its own module**, `sce-build/src/forge/composed_lowering/<backend>.rs`: its `ComposedSpelling`
+   impl, the helpers only it calls, its row of ADR 0086 section 7.1 in the module's doc, and its unit
+   tests over the schemas every lane's tests share (`composed_lowering/test_support.rs`). The walks'
+   file gains only the `mod` line and the re-export of the names the generator calls; the lane's
+   `StaticTarget` returns its spelling from `composed_spelling` and `composed_send_spelling`, in that
+   backend's own `impl` in `static_lowering.rs`.
+2. **Its row in the table**, one line of `ComposedLowering::of`, the rows a blank line apart so two lanes
+   landed side by side touch no line in common. `each_backend_lowers_the_composed_positions_its_spelling_spells`
+   holds every row to what the backend's target spells, so a row cannot land without its spelling or a
+   spelling without its row.
+3. **Its row of the document**: its line of docs/SCE_ACCEPTED_SUBSET.md ("Which backend lowers a
+   composed value"), which `the_accepted_subset_states_what_each_backend_lowers_of_a_composed_value`
+   renders from the table, and its harness line beside it.
+4. **Its fixture harness**: the backend's own tests that compile and run `static_composed_payload` and
+   `static_composed_send`, with their regeneration script or build target. The fixtures say what they
+   hold and name no backend, so a lane moves neither their source hash nor any tree generated from them.
+5. **Its own pin test**: the pin of its row beside its spelling (`the_<backend>_row_...` in its module),
+   and `sce-build/tests/a_<backend>_machine_reads_a_composed_payload_at_any_depth.rs` with its `[[test]]`
+   entry in `sce-build/Cargo.toml`.
+
+No suite lists backends. One that asks which backends lower or refuse a position asks the table through
+`sce-build/tests/common/composed_lowering.rs`, and one that shows a backend refusing picks each one the
+table leaves and says on its output that it is skipped once none is left. A test asserts each backend's
+actual answer against its row, never the table against itself, so a row flipped without the lowering
+turns a suite red.
+
+What the lanes still share: each backend's typed channel (the lift, the inject seam and the send of a
+composed value) is a section of `sce-build/src/forge/generator.rs`, and each `StaticTarget` impl a
+section of `sce-build/src/forge/static_lowering.rs`. A lane edits only its own section of each.
+
 ---
 
 ## Feature Handling Strategy
