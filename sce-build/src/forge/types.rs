@@ -83,12 +83,13 @@ pub enum InferredType {
     /// typed `<foreach>`; no emitter lowers it as an operand.
     List(ListElem),
 
-    /// A `list<T>` local an algorithm is building — its own result buffer
-    /// (SCE_FORGE.md §4.12). Read like a list, by `len(…)` and `xs[i]`, but
-    /// held in the algorithm's own storage rather than a caller's view: C11
-    /// reads it through the result struct's `items`, Kotlin through the
-    /// buffer's typed readers. A record-element buffer is not one — its
-    /// elements are read by name only, so it is not registered as a value.
+    /// A `list<T>` local an algorithm is building — its output or a working
+    /// buffer (SCE_FORGE.md §4.12). Read like a list, by `len(…)`, `xs[i]` and
+    /// a `<sce:foreach>` that does not append to it, but held in the
+    /// algorithm's own storage rather than a caller's view: C11 reads it
+    /// through the struct's `items`, Kotlin through the buffer's typed
+    /// readers. A record-element buffer is one too, read by `len(…)` and a
+    /// `<sce:foreach>` item, and never by index, as a list of records is not.
     ListBuffer(ListElem),
 
     /// The `bytes` local an algorithm is building — its own output buffer

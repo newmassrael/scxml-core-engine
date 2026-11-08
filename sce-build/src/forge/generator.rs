@@ -38477,11 +38477,75 @@ fn collect_bc_foreach_member_types(
 }
 
 /// A buffer local of an algorithm body — `bytes` or `list<T>` — as the
-/// lowering reads it: its declared capacity and its type.
+/// lowering reads it: its declared capacity, its type, and whether it is the
+/// output the algorithm returns.
 #[derive(Debug, Clone)]
 struct AppendBufferDecl {
     cap: u32,
     ty: crate::forge::model::AlgorithmValueType,
+    /// The buffer the algorithm returns ([`AlgorithmModel::output_buffer`]):
+    /// on Rust and C11 the caller's destination, a parameter of its name
+    /// (docs/adr/0082). Every other buffer is a working one, held in the
+    /// body's own storage on every backend (SCE_FORGE.md §4.12, v2).
+    output: bool,
+}
+
+impl AppendBufferDecl {
+    /// Whether `lang` holds the buffer in the caller's destination rather
+    /// than in a local of the body: the output, on the two bounded backends.
+    fn is_destination(&self, lang: crate::generator::Language) -> bool {
+        use crate::generator::Language;
+        self.output && matches!(lang, Language::Rust | Language::C11)
+    }
+
+    /// Where `lang` holds the buffer, `appended` saying whether the body
+    /// appends to it anywhere.
+    fn storage(&self, lang: crate::generator::Language, appended: bool) -> BufferStorage {
+        if self.is_destination(lang) {
+            BufferStorage::Destination
+        } else {
+            BufferStorage::Working { appended }
+        }
+    }
+}
+
+/// Where a body holds a buffer local (SCE_FORGE.md §4.12).
+#[derive(Debug, Clone, Copy)]
+enum BufferStorage {
+    /// The caller's destination, a parameter of the buffer's name: the output
+    /// on Rust and C11 (docs/adr/0082).
+    Destination,
+    /// The body's own local: every buffer on the growable backends, and a
+    /// working buffer on Rust and C11. `appended` is whether the body appends
+    /// to it, which Rust's `mut` follows.
+    Working { appended: bool },
+}
+
+/// The import Kotlin's list buffers need, if any: `SceListBuf`, which holds a
+/// list of numbers or `bool` (the output and each working buffer alike); a
+/// list of records builds in the stdlib's `ArrayList`.
+fn kotlin_list_buffer_import(
+    buffers: &std::collections::HashMap<String, AppendBufferDecl>,
+) -> &'static str {
+    if buffers
+        .values()
+        .any(|b| matches!(b.ty.list_elem(), Some(AlgorithmValueType::Scalar(_))))
+    {
+        "import com.sce.forge.runtime.SceListBuf\n\n"
+    } else {
+        ""
+    }
+}
+
+/// Every buffer local of `m`'s body ([`collect_append_buffers`]), the output
+/// marked as such.
+fn algorithm_buffers(m: &AlgorithmModel) -> std::collections::HashMap<String, AppendBufferDecl> {
+    let mut buffers = std::collections::HashMap::new();
+    collect_append_buffers(&m.body, &mut buffers);
+    if let Some(decl) = m.output_buffer().and_then(|name| buffers.get_mut(name)) {
+        decl.output = true;
+    }
+    buffers
 }
 
 /// SCE byte-buffer-build (§4.12): collect every `<sce:var type="bytes">` or
@@ -38503,6 +38567,7 @@ fn collect_append_buffers(
                             AppendBufferDecl {
                                 cap: bound.max,
                                 ty: sce_type.clone(),
+                                output: false,
                             },
                         );
                     }
@@ -38653,18 +38718,66 @@ impl<'a> ListSpelling<'a> {
         )
     }
 
-    /// Declaration of an empty buffer local of capacity `cap`.
-    fn declare(&self, pad: &str, local: &str, cap: u32) -> String {
+    /// Declaration of an empty buffer local of capacity `cap`, held where
+    /// `storage` says.
+    fn declare(&self, pad: &str, local: &str, cap: u32, storage: BufferStorage) -> String {
         use crate::generator::Language;
         let t = &self.elem_name;
-        match self.lang {
+        match (self.lang, storage) {
             // The buffer is the caller's destination, a parameter of its name
             // (docs/adr/0082): it is emptied where the body declares it, and its
             // bound reserved, as the C++ and Go buffers reserve it: one
             // allocation on the heap tier where pushing would grow it by
             // doublings, none on the inline tier or into a kept destination.
-            Language::Rust => format!("{pad}{local}.clear();\n{pad}{local}.reserve({cap});\n"),
-            Language::C11 => format!("{pad}{}.len = 0u;\n", c11_destination(local)),
+            (Language::Rust, BufferStorage::Destination) => {
+                format!("{pad}{local}.clear();\n{pad}{local}.reserve({cap});\n")
+            }
+            (Language::C11, BufferStorage::Destination) => {
+                format!("{pad}{}.len = 0u;\n", c11_destination(local))
+            }
+            // A working buffer is the body's own: the destination's type, with its
+            // bound reserved as the destination's is. `mut` only where the body
+            // appends to it, as a scalar local's (workspace `warnings = "deny"`).
+            (Language::Rust, BufferStorage::Working { appended }) => format!(
+                "{pad}let {}{local} = {}::with_capacity({cap});\n",
+                if appended { "mut " } else { "" },
+                self.rust_working(cap)
+            ),
+            // The destination's fields, in the body's frame: the bound is the
+            // array's, and `len` counts what was appended, as it does in a
+            // destination. An anonymous struct, so the header declares no type
+            // a caller could name, and one a C++ program including it compiles.
+            (Language::C11, BufferStorage::Working { .. }) => format!(
+                "{pad}struct {{\n{pad}    {t} items[{cap}];\n{pad}    size_t len;\n{pad}}} {local};\n\
+                 {pad}{local}.len = 0u;\n"
+            ),
+            (
+                Language::Cpp
+                | Language::Go
+                | Language::Python
+                | Language::Kotlin
+                | Language::Swift,
+                _,
+            ) => self.declare_growable(pad, local, cap),
+        }
+    }
+
+    /// The Rust type of a working buffer of capacity `cap`, spelled as the call
+    /// that builds it: the destination's type, its arguments written out, since
+    /// a type alias infers no const argument from the binding.
+    fn rust_working(&self, cap: u32) -> String {
+        format!("SceOwnedList::<{}, {cap}>", self.elem_name)
+    }
+
+    /// Declaration of an empty buffer on a backend whose buffers grow, the
+    /// output and a working buffer alike.
+    fn declare_growable(&self, pad: &str, local: &str, cap: u32) -> String {
+        use crate::generator::Language;
+        let t = &self.elem_name;
+        match self.lang {
+            Language::Rust | Language::C11 => {
+                unreachable!("a bounded backend's buffer is declared by `declare`")
+            }
             Language::Cpp => {
                 format!("{pad}std::vector<{t}> {local};\n{pad}{local}.reserve({cap});\n")
             }
@@ -38742,16 +38855,6 @@ impl<'a> ListSpelling<'a> {
     /// arrays, which sit behind `ExperimentalUnsignedTypes`.
     fn kotlin_needs_unsigned_opt_in(&self) -> bool {
         self.elem.scalar().is_some_and(SceType::is_unsigned)
-    }
-
-    /// The Kotlin working buffer's import, if it has one — `SceListBuf` for
-    /// a scalar element; a record list builds in the stdlib's `ArrayList`.
-    fn kotlin_buffer_import(&self) -> &'static str {
-        if self.is_record() {
-            ""
-        } else {
-            "import com.sce.forge.runtime.SceListBuf\n\n"
-        }
     }
 
     fn kotlin_array_type(&self) -> &'static str {
@@ -39205,10 +39308,23 @@ fn lower_algorithm_stmt(
                             sce_type.as_attr()
                         ))
                     })?;
-                // A `list<T>` takes the list spelling; a `bytes` buffer keeps
-                // the byte containers below, byte-for-byte as before.
+                // A `list<T>` takes the list spelling, held in the caller's
+                // destination when it is the output on a bounded backend and in
+                // the body's own storage otherwise (§4.12, v2); a `bytes` buffer,
+                // which is only ever the output, keeps the byte containers below,
+                // byte-for-byte as before.
                 if let Some(elem) = sce_type.list_elem() {
-                    out.push_str(&ListSpelling::new(l, elem, imports)?.declare(pad, &local, cap));
+                    let storage = append_buffers
+                        .get(name.as_str())
+                        .map(|decl| decl.storage(lang, assigned.contains(name.as_str())))
+                        .ok_or_else(|| {
+                            GenerateError::InvalidConfig(format!(
+                                "algorithm buffer '{name}' was not collected as a buffer"
+                            ))
+                        })?;
+                    out.push_str(
+                        &ListSpelling::new(l, elem, imports)?.declare(pad, &local, cap, storage),
+                    );
                     return Ok(());
                 }
                 let line = match lang {
@@ -39818,15 +39934,14 @@ fn lower_algorithm_stmt(
             // struct's `ok` to false past the fixed `bytes[N]` and returns it),
             // while the heap backends (Cpp/Go/Python/Kotlin) grow on demand.
             //
-            // C11 returns AT the overflow rather than flagging and running on.
-            // The buffer is v1's single one and is the declared return, so the
-            // struct it hands back is the one the tail of the body would have
-            // produced anyway — `len` is pinned at the cap and no later append
-            // can write. What the early return removes is the work after the
-            // failure: without it an overflowing input keeps scanning to the
-            // end, re-testing a bound that can no longer pass. Rust already
-            // leaves at the first failure through `?`; this is that shape on
-            // the backend that has no `?`.
+            // C11 returns AT the overflow rather than flagging and running on,
+            // the output's and a working buffer's alike (v2): the function
+            // answers `false`, and what the caller may read of its destination
+            // after a failure is not specified. What the early return removes
+            // is the work after the failure: without it an overflowing input
+            // keeps scanning to the end, re-testing a bound that can no longer
+            // pass. Rust already leaves at the first failure through `?`; this
+            // is that shape on the backend that has no `?`.
             let target_key = target.trim();
             let target_site = ExpressionSite::new(target, target_spelling.as_ref());
             let rhs_site = ExpressionSite::new(rhs, expr_spelling.as_ref());
@@ -39851,16 +39966,13 @@ fn lower_algorithm_stmt(
                 }
             };
             let cap_n = buffer.cap;
-            // C11's buffer is the caller's destination, behind the pointer of its
-            // name (docs/adr/0082).
-            let local = match lang {
-                Language::C11 => c11_destination(&l.local_id(target_key)),
-                Language::Rust
-                | Language::Cpp
-                | Language::Kotlin
-                | Language::Go
-                | Language::Python
-                | Language::Swift => l.local_id(target_key),
+            // C11's output is the caller's destination, behind the pointer of its
+            // name (docs/adr/0082); a working buffer is a local of the body, as
+            // every buffer is on the other backends.
+            let local = if lang == Language::C11 && buffer.is_destination(lang) {
+                c11_destination(&l.local_id(target_key))
+            } else {
+                l.local_id(target_key)
             };
             // A `list<T>` takes one element, lowered into the element's slot:
             // `transpile_into` judges the value against the slot the way every
@@ -40416,12 +40528,21 @@ fn lower_algorithm_stmt(
                 // its schema declares, which the item was registered with
                 // (`AlgorithmTypes::collect`).
                 let source_ty = type_ctx.lookup_var(source);
+                // A list buffer the body builds is walked as a list parameter is
+                // (§4.12, v2): the parser has refused a loop that appends to the
+                // buffer it walks, so the elements it walks are the ones the
+                // buffer holds when the loop starts.
+                let walked_buffer = append_buffers
+                    .get(source.trim())
+                    .filter(|decl| decl.ty.list_elem().is_some());
                 // A Rust record that holds text is not `Copy`, so its loop
                 // borrows each element instead of copying it out.
                 let mut item_is_borrowed = false;
                 let item_name: Option<String> = match source_ty {
                     InferredType::Bytes => Some(l.type_name(&SceType::Uint8).into_owned()),
-                    InferredType::List(elem) if elem.is_record() => {
+                    InferredType::List(elem) | InferredType::ListBuffer(elem)
+                        if elem.is_record() =>
+                    {
                         let alias = records.get(item.as_str()).ok_or_else(|| {
                             GenerateError::InvalidConfig(format!(
                                 "foreach item '{item}' over the list of records '{source}' was \
@@ -40433,7 +40554,7 @@ fn lower_algorithm_stmt(
                         item_is_borrowed = record.holds_text();
                         Some(record.qualified_type.clone())
                     }
-                    InferredType::List(elem) => {
+                    InferredType::List(elem) | InferredType::ListBuffer(elem) => {
                         Some(l.type_name(&sce_type_of_list_elem(elem)).into_owned())
                     }
                     _ => None,
@@ -40443,7 +40564,12 @@ fn lower_algorithm_stmt(
                         .vars
                         .iter()
                         .filter(|(_, ty)| {
-                            matches!(**ty, InferredType::Bytes | InferredType::List(_))
+                            matches!(
+                                **ty,
+                                InferredType::Bytes
+                                    | InferredType::List(_)
+                                    | InferredType::ListBuffer(_)
+                            )
                         })
                         .map(|(name, _)| (*name).to_string())
                         .collect();
@@ -40464,41 +40590,74 @@ fn lower_algorithm_stmt(
                         .locate(Some(0..source.trim().len()))
                         .place(refusal));
                 };
-                let src_lowered = expr::transpile_typed(
-                    source,
-                    l.expr_target(),
-                    type_ctx,
-                    renames,
-                    InferredType::Unknown,
-                )
-                .map_err(|refusal| source_site.place(refusal))?;
+                // A buffer is the body's storage and no value an expression
+                // yields, so it is named as its append names it: C11's output
+                // behind the destination's pointer, every other buffer by its
+                // local.
+                let src_lowered = match walked_buffer {
+                    Some(decl) if lang == Language::C11 && decl.is_destination(lang) => {
+                        c11_destination(&l.local_id(source.trim()))
+                    }
+                    Some(_) => l.local_id(source.trim()),
+                    None => expr::transpile_typed(
+                        source,
+                        l.expr_target(),
+                        type_ctx,
+                        renames,
+                        InferredType::Unknown,
+                    )
+                    .map_err(|refusal| source_site.place(refusal))?,
+                };
                 let it = l.local_id(item);
+                // Kotlin reads a list buffer of numbers through the element's own
+                // reader of its 64-bit slots, as an index into it does; a list
+                // buffer of records is an `ArrayList`, walked as it is.
+                let kotlin_slot_reader = match (lang, walked_buffer, source_ty) {
+                    (Language::Kotlin, Some(_), InferredType::ListBuffer(elem))
+                        if !elem.is_record() =>
+                    {
+                        Some(expr::kotlin_buffer_reader(elem)?)
+                    }
+                    _ => None,
+                };
                 let header = match lang {
                     Language::Rust if item_is_borrowed => {
                         format!("{pad}for {it} in {src_lowered}.iter() {{\n")
                     }
                     Language::Rust => format!("{pad}for &{it} in {src_lowered}.iter() {{\n"),
                     Language::Cpp => format!("{pad}for ({item_name} {it} : {src_lowered}) {{\n"),
+                    // A buffer holds its elements in `items`, as its index reads
+                    // them; a view in `data`.
+                    Language::C11 if walked_buffer.is_some() => format!(
+                        "{pad}for (size_t __{it}_i = 0; __{it}_i < {src_lowered}.len; ++__{it}_i) {{\n{pad}    {item_name} {it} = {src_lowered}.items[__{it}_i];\n"
+                    ),
                     // The index is named for the item, so a nested foreach's
                     // does not shadow its enclosing one's (`-Wshadow`).
                     Language::C11 => format!(
                         "{pad}for (size_t __{it}_i = 0; __{it}_i < {src_lowered}.len; ++__{it}_i) {{\n{pad}    {item_name} {it} = {src_lowered}.data[__{it}_i];\n"
                     ),
-                    // Kotlin's `ByteArray` iteration yields signed `Byte`,
-                    // but RFC §synth-5-A v1 declares the foreach item as `uint8`
-                    // — the type ctx hands the body a `UByte`. Reinterpret
-                    // each iteration's `Byte` as `UByte` (bit-pattern
-                    // preserved) so subsequent `<sce:var type="uintN" init="b">`
-                    // widenings via `.toUShort()` zero-extend correctly. A list
-                    // parameter's primitive array already yields its element.
-                    Language::Kotlin if source_ty == InferredType::Bytes => {
-                        // The signed element is under the generator's own prefix, like
-                        // every local it adds, so an author's local cannot be it.
-                        format!(
-                            "{pad}for (sceRaw_{it} in {src_lowered}) {{\n{pad}    val {it}: UByte = sceRaw_{it}.toUByte()\n"
-                        )
-                    }
-                    Language::Kotlin => format!("{pad}for ({it} in {src_lowered}) {{\n"),
+                    Language::Kotlin => match kotlin_slot_reader {
+                        // The index is under the generator's own prefix, as every
+                        // local it adds is.
+                        Some(reader) => format!(
+                            "{pad}for (sceAt_{it} in 0 until {src_lowered}.size) {{\n{pad}    val {it} = {src_lowered}.{reader}(sceAt_{it})\n"
+                        ),
+                        // Kotlin's `ByteArray` iteration yields signed `Byte`,
+                        // but RFC §synth-5-A v1 declares the foreach item as `uint8`
+                        // — the type ctx hands the body a `UByte`. Reinterpret
+                        // each iteration's `Byte` as `UByte` (bit-pattern
+                        // preserved) so subsequent `<sce:var type="uintN" init="b">`
+                        // widenings via `.toUShort()` zero-extend correctly. A list
+                        // parameter's primitive array already yields its element.
+                        None if source_ty == InferredType::Bytes => {
+                            // The signed element is under the generator's own prefix, like
+                            // every local it adds, so an author's local cannot be it.
+                            format!(
+                                "{pad}for (sceRaw_{it} in {src_lowered}) {{\n{pad}    val {it}: UByte = sceRaw_{it}.toUByte()\n"
+                            )
+                        }
+                        None => format!("{pad}for ({it} in {src_lowered}) {{\n"),
+                    },
                     Language::Go => format!("{pad}for _, {it} := range {src_lowered} {{\n"),
                     Language::Python => format!("{pad}for {it} in {src_lowered}:\n"),
                     // The loop walks the array as it was handed over, an immutable
@@ -42381,6 +42540,10 @@ pub(crate) struct AlgorithmTypes<'a> {
     /// by `<sce:append>` and may read back by `len(xs)` and `xs[i]`, e.g. a
     /// breadth-first walk's queue (SCE_FORGE.md §4.12) — with its element.
     list_buffers: Vec<(String, SceType)>,
+    /// Every `list<record:…>` local — a buffer read back by `len(xs)` and a
+    /// `<sce:foreach>` item, never by index (SCE_FORGE.md §4.12, v2) — with
+    /// its element.
+    record_list_buffers: Vec<(String, AlgorithmValueType)>,
     /// Every `bytes` local — the one output buffer a byte-buffer-build body
     /// builds, read back by `len(out)` and `out[i]` (SCE_FORGE.md §4.12).
     bytes_buffers: Vec<String>,
@@ -42536,17 +42699,30 @@ impl<'a> AlgorithmTypes<'a> {
         // wherever the element schema is not threaded (measured 2026-09-21).
         let mut record_items: Vec<(&str, RecordShape)> = Vec::new();
         let mut list_buffers: Vec<(String, SceType)> = Vec::new();
+        let mut record_list_buffers: Vec<(String, AlgorithmValueType)> = Vec::new();
         let mut bytes_buffers: Vec<String> = Vec::new();
-        for binding in m.body_bindings() {
+        let bindings = m.body_bindings();
+        // The element of every list local, which a foreach over that buffer
+        // takes its item from as one over a list parameter does.
+        let buffer_elems: std::collections::HashMap<&str, &AlgorithmValueType> = bindings
+            .iter()
+            .filter_map(|binding| match *binding {
+                crate::forge::model::AlgorithmBinding::Local { name, sce_type } => {
+                    sce_type.list_elem().map(|elem| (name, elem))
+                }
+                crate::forge::model::AlgorithmBinding::ForeachItem { .. }
+                | crate::forge::model::AlgorithmBinding::RecordLocal { .. } => None,
+            })
+            .collect();
+        for binding in bindings {
             let ty = match binding {
-                // A `list<T>` local of a scalar element is a buffer: it is
-                // appended to and returned by name, and read back by
-                // `len(xs)` and `xs[i]` — typed below as a list buffer, never
-                // an operand as a whole. A list of records is read by name
-                // only (an item of a foreach over it), so it is left out of
-                // the expression type context and any other use is refused
-                // as an unknown name. A `bytes` local is a buffer too, held
-                // in the algorithm's own storage and not a `bytes` value.
+                // A `list<T>` local is a buffer: it is appended to and returned
+                // by name, and read back by `len(xs)` and a foreach over it —
+                // typed below as a list buffer, never an operand as a whole. A
+                // scalar element is read back by `xs[i]` too; a record element
+                // only through the item of a foreach (SCE_FORGE.md §4.12, v2).
+                // A `bytes` local is a buffer too, held in the algorithm's own
+                // storage and not a `bytes` value.
                 crate::forge::model::AlgorithmBinding::Local { name, sce_type } => {
                     match sce_type.scalar() {
                         Some(SceType::Bytes) => {
@@ -42555,8 +42731,14 @@ impl<'a> AlgorithmTypes<'a> {
                         }
                         Some(t) => t.clone(),
                         None => {
-                            if let Some(AlgorithmValueType::Scalar(elem)) = sce_type.list_elem() {
-                                list_buffers.push((name.to_string(), elem.clone()));
+                            match sce_type.list_elem() {
+                                Some(AlgorithmValueType::Scalar(elem)) => {
+                                    list_buffers.push((name.to_string(), elem.clone()));
+                                }
+                                Some(elem @ AlgorithmValueType::Record { .. }) => {
+                                    record_list_buffers.push((name.to_string(), elem.clone()));
+                                }
+                                _ => {}
                             }
                             // An optional local is read as an optional
                             // parameter is.
@@ -42591,14 +42773,15 @@ impl<'a> AlgorithmTypes<'a> {
                         record_items.push((name, shape));
                         continue;
                     }
-                    // An item over a `list<T>` parameter is an element; over
-                    // `bytes`, a byte.
+                    // An item over a `list<T>` parameter or list buffer is an
+                    // element; over `bytes`, a byte.
                     let elem = m
                         .signature
                         .params
                         .iter()
                         .find(|p| p.name == *source)
-                        .and_then(|p| p.sce_type.list_elem());
+                        .and_then(|p| p.sce_type.list_elem())
+                        .or_else(|| buffer_elems.get(source.trim()).copied());
                     match elem {
                         Some(AlgorithmValueType::Scalar(elem)) => elem.clone(),
                         Some(AlgorithmValueType::Record { alias }) => {
@@ -42762,6 +42945,7 @@ impl<'a> AlgorithmTypes<'a> {
             optional_enums,
             list_params,
             list_buffers,
+            record_list_buffers,
             bytes_buffers,
             record_items,
             records,
@@ -42912,6 +43096,14 @@ impl<'a> AlgorithmTypes<'a> {
             if let Some(list_elem) = crate::forge::types::ListElem::of(elem) {
                 type_ctx.insert_var(name.as_str(), InferredType::ListBuffer(list_elem));
                 type_ctx.insert_array_elem(name.as_str(), InferredType::from_sce_type(elem));
+            }
+        }
+        // A buffer of records is a list as a value (`len(xs)`, a foreach
+        // source) and has no operand element, as a list parameter of records
+        // has none.
+        for (name, elem) in &self.record_list_buffers {
+            if let Some(list_elem) = crate::forge::types::ListElem::of_list(elem) {
+                type_ctx.insert_var(name.as_str(), InferredType::ListBuffer(list_elem));
             }
         }
         for name in &self.bytes_buffers {
@@ -43299,31 +43491,33 @@ fn render_algorithm(
         })?),
         None => None,
     };
+    // SCE byte-buffer-build (§4.12): every buffer local with its capacity and
+    // type, the output marked — what the append lowering picks its operation
+    // by, C11 bounds each append by, and Rust and C11 hold the output in the
+    // caller's destination by. Empty for an algorithm that declares no buffer.
+    let append_buffers = algorithm_buffers(m);
     // Rust and C11 write a returned list or bytes into a destination their caller
-    // holds (docs/adr/0082), a parameter after the declared ones: the body's one
-    // buffer, which is the value it returns (§4.12, v1 scope), under the buffer's
-    // own name. A `may-fail` C11 algorithm also takes the caller's failure record,
-    // last. The bound is then the caller's storage and never a frame of this
+    // holds (docs/adr/0082), a parameter after the declared ones: the body's
+    // output buffer, which is the value it returns (§4.12, v2), under the
+    // buffer's own name. A working buffer stays in the body's own frame. A
+    // `may-fail` C11 algorithm also takes the caller's failure record, last. The
+    // output's bound is then the caller's storage and never a frame of this
     // function, so no bound is refused here.
     let mut destination_buffer: Option<String> = None;
     if let (Language::Rust | Language::C11, Some(returned)) = (lang, declared_return) {
         if returned.is_append_buffer() {
-            let mut buffers = std::collections::HashMap::new();
-            collect_append_buffers(&m.body, &mut buffers);
-            let mut buffers = buffers.into_iter();
-            let (name, buffer) = match (buffers.next(), buffers.next()) {
-                (Some(only), None) => only,
-                _ => {
-                    return Err(GenerateError::InvalidConfig(format!(
-                        "algorithm '{}' returns {} but does not build it in exactly one \
-                         buffer — the byte-buffer-build validator refuses this before codegen",
+            let (name, buffer) = append_buffers
+                .iter()
+                .find(|(_, decl)| decl.output)
+                .ok_or_else(|| {
+                    GenerateError::InvalidConfig(format!(
+                        "algorithm '{}' returns {} but builds no buffer to return — the \
+                         byte-buffer-build validator refuses this before codegen",
                         m.name,
                         returned.as_attr()
                     ))
-                    .into())
-                }
-            };
-            let local = l.local_id(&name);
+                })?;
+            let local = l.local_id(name);
             let parameter = match (lang == Language::C11, &return_list) {
                 (false, Some(list)) => {
                     format!("{local}: &mut {}", list.rust_destination(buffer.cap))
@@ -43341,7 +43535,7 @@ fn render_algorithm(
             } else {
                 parameter
             };
-            destination_buffer = Some(name);
+            destination_buffer = Some(name.clone());
             params_str = if params_str.is_empty() {
                 parameter
             } else {
@@ -43492,13 +43686,6 @@ fn render_algorithm(
         | Language::Swift => return_type,
     };
 
-    // SCE byte-buffer-build (§4.12): per-buffer capacity table (for the C11
-    // append bound) and the C11 result-struct type name. Empty / `None` for
-    // every algorithm that declares no `bytes` buffer, so non-bytes
-    // algorithms stay byte-identical.
-    let mut append_buffers: std::collections::HashMap<String, AppendBufferDecl> =
-        std::collections::HashMap::new();
-    collect_append_buffers(&m.body, &mut append_buffers);
     // SCE byte-buffer-build (§4.12): the C++ buffer/return lower to
     // `std::vector`, which needs `<vector>`. Gate the include so algorithms
     // without a buffer keep their previous header surface byte-equivalent.
@@ -43540,7 +43727,7 @@ fn render_algorithm(
                 Language::Rust => {
                     "use sce_portable_bytes::{SceOwnedList, CapacityExceeded};\n\n".to_string()
                 }
-                Language::Kotlin => list.kotlin_buffer_import().to_string(),
+                Language::Kotlin => kotlin_list_buffer_import(&append_buffers).to_string(),
                 // The destination the caller holds and the function writes
                 // (docs/adr/0082); the list is read from `items`/`len`.
                 Language::C11 => list.c11_destination_typedef(
@@ -43551,14 +43738,28 @@ fn render_algorithm(
                 Language::Swift => no_swift_emitter("render_algorithm"),
             }
         }
-        (Some(SceType::Bytes), Language::Rust) if may_fail => {
-            "use sce_portable_bytes::SceBytes;\n\n".to_string()
-        }
+        // A working list beside the byte output is the list destination's type
+        // in the body's frame (§4.12, v2), which the byte type alone does not
+        // name.
         (Some(SceType::Bytes), Language::Rust) => {
-            "use sce_portable_bytes::{SceBytes, CapacityExceeded};\n\n".to_string()
+            let mut names = vec!["SceBytes"];
+            if append_buffers.values().any(|b| b.ty.list_elem().is_some()) {
+                names.push("SceOwnedList");
+            }
+            // A `may-fail` algorithm names its error by path.
+            if !may_fail {
+                names.push("CapacityExceeded");
+            }
+            match names.as_slice() {
+                [one] => format!("use sce_portable_bytes::{one};\n\n"),
+                several => format!("use sce_portable_bytes::{{{}}};\n\n", several.join(", ")),
+            }
         }
         (Some(SceType::Bytes), Language::Kotlin) => {
-            "import com.sce.forge.runtime.SceByteBuf\n\n".to_string()
+            match kotlin_list_buffer_import(&append_buffers) {
+                "" => "import com.sce.forge.runtime.SceByteBuf\n\n".to_string(),
+                list => format!("import com.sce.forge.runtime.SceByteBuf\n{list}"),
+            }
         }
         // The destination the caller holds and the function writes (docs/adr/0082).
         (Some(SceType::Bytes), Language::C11) => {

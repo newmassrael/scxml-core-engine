@@ -1321,8 +1321,14 @@ fn reject_unnamed_record_elements(
             }
         }
     }
+    // A list buffer of records an algorithm builds holds its elements the same
+    // way (SCE_FORGE.md §4.12, v2): it is walked by a `<sce:foreach>`, never
+    // indexed.
     if let ExprKind::Index { object, .. } = &expr.kind {
-        if matches!(object.ty, InferredType::List(elem) if elem.is_record()) {
+        if matches!(
+            object.ty,
+            InferredType::List(elem) | InferredType::ListBuffer(elem) if elem.is_record()
+        ) {
             return Err(ExprError::UnsupportedConstruct {
                 construct: "an element of a list of records read by index (a record element \
                             is read through a <sce:foreach> item)"
@@ -8084,8 +8090,11 @@ fn cpp_unary(op: UnaryOp) -> &'static str {
 /// The `SceListBuf` reader that returns a list buffer's element as the type
 /// it was appended as. The buffer keeps every element in one 64-bit slot,
 /// so the reader is chosen by the element, not by an overload on the
-/// buffer.
-fn kotlin_buffer_reader(elem: crate::forge::types::ListElem) -> Result<&'static str, ExprError> {
+/// buffer. An index reads an element through it, and so does a loop over the
+/// buffer (`forge::generator`).
+pub(crate) fn kotlin_buffer_reader(
+    elem: crate::forge::types::ListElem,
+) -> Result<&'static str, ExprError> {
     Ok(match elem.element_type() {
         InferredType::Int { signed, bits } => match (signed, bits) {
             (true, 8) => "getByte",
@@ -8101,8 +8110,9 @@ fn kotlin_buffer_reader(elem: crate::forge::types::ListElem) -> Result<&'static 
         InferredType::Float { .. } => "getDouble",
         InferredType::Bool => "getBoolean",
         // A buffer holds a fixed-width number or `bool` in its 64-bit slot; a
-        // record element is never registered as a value
-        // (AlgorithmTypes::collect), and no other element is held by one.
+        // buffer of records is an `ArrayList` whose element is never read by
+        // index (refused where the index is judged), and no other element is
+        // held by one.
         _ => {
             return Err(ExprError::UnsupportedConstruct {
                 construct: format!("an index into a list of {}", elem.value()),

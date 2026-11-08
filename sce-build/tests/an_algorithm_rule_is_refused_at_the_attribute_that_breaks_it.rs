@@ -199,7 +199,8 @@ const HELPER_CAP: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 </scxml>
 "#;
 
-/// A second `bytes` buffer, where v1 takes one — refused at the second.
+/// A second `bytes` buffer — refused at the second: a byte buffer is built
+/// only to be returned, and a working buffer is a `list<T>` (v2).
 const EXTRA_BUFFER: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_extra_buffer" version="1.0">
   <sce:signature>
@@ -677,10 +678,13 @@ const RECORD_CALL_OTHER_SCHEMA: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 </scxml>
 "#;
 
-/// A foreach over the list buffer the body is building — refused at its
-/// source: the buffer is read back by `len` and an index, never iterated,
-/// since an append inside the loop would move the end it walks to
-/// (SCE_FORGE.md §4.12).
+/// A foreach over the list buffer the body is building that appends to it —
+/// refused at its source: a buffer is walked only by a loop that does not
+/// append to it, since an append inside the loop would move the end it walks
+/// to (SCE_FORGE.md §4.12, byte-buffer-build v2).
+///
+/// ⚠ Until v2 every foreach over a buffer was refused, at codegen, as a source
+/// that is not iterable; the case then held that code.
 const BUFFER_FOREACH: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_buffer_foreach" version="1.0">
   <sce:signature>
@@ -695,6 +699,28 @@ const BUFFER_FOREACH: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
       <sce:append target="out" expr="x"/>
     </sce:foreach>
     <sce:return expr="out"/>
+  </sce:body>
+</scxml>
+"#;
+
+/// A return of a working list where another return gives back the output —
+/// refused at the second return's value: the body returns one buffer, by name,
+/// which Rust and C11 write into the caller's destination (SCE_FORGE.md §4.12,
+/// byte-buffer-build v2).
+const RETURN_OTHER_BUFFER: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" sce:kind="algorithm" name="probe_return_other_buffer" version="1.0">
+  <sce:signature>
+    <sce:param name="n" type="int64"/>
+    <sce:return type="list&lt;int64&gt;" returns-max-size="4"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="out" type="list&lt;int64&gt;" capacity="4"/>
+    <sce:var name="spare" type="list&lt;int64&gt;" capacity="4"/>
+    <sce:if cond="n &gt; 0">
+      <sce:return expr="out"/>
+    </sce:if>
+    <sce:return
+        expr="spare"/>
   </sce:body>
 </scxml>
 "#;
@@ -1087,10 +1113,18 @@ const CASES: &[Case] = &[
     Case {
         file: "probe_buffer_foreach.scxml",
         document: BUFFER_FOREACH,
-        code: "algorithm/foreach-source-not-iterable",
+        code: "validation/incompatible-attributes",
         line: 11,
         col: 22,
-        actual: Some("out"),
+        actual: None,
+    },
+    Case {
+        file: "probe_return_other_buffer.scxml",
+        document: RETURN_OTHER_BUFFER,
+        code: "validation/incompatible-attributes",
+        line: 14,
+        col: 15,
+        actual: None,
     },
     Case {
         file: "probe_record_as_operand.scxml",

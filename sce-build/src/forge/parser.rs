@@ -9995,10 +9995,11 @@ fn parse_algorithm(
     }
 
     // SCE byte-buffer-build (SCE_FORGE.md §4.12): the buffer rules that
-    // relate a buffer to the rest of the document (a single buffer, which is
-    // the returned output, with capacity == returns-max-size). The rules one
-    // element breaks alone were judged as it was read. Runs once at parse
-    // time so the diagnostic is backend-independent.
+    // relate a buffer to the rest of the document (one output, which is the
+    // returned value, with capacity == returns-max-size, and any number of
+    // working lists beside it). The rules one element breaks alone were
+    // judged as it was read. Runs once at parse time so the diagnostic is
+    // backend-independent.
     validate_byte_buffer_build(&signature, &body, label.diagnostic_label)?;
 
     let test_vectors = parse_test_vectors(root, &signature, label.diagnostic_label)?;
@@ -11214,9 +11215,14 @@ fn collect_append_buffers<'a>(stmts: &'a [AlgorithmStmt], buffers: &mut Vec<Appe
 }
 
 /// SCE byte-buffer-build (SCE_FORGE.md §4.12): the buffer rules that relate
-/// a `bytes` or `list<T>` local to the rest of the document. v1 accepts a
-/// single buffer that is the algorithm's returned output, declared with the
-/// return's own type and `capacity == returns-max-size`. What a `<sce:var>`
+/// a `bytes` or `list<T>` local to the rest of the document. v2 accepts one
+/// output buffer, which is the algorithm's returned value
+/// ([`output_buffer_of`]), declared with the return's own type and
+/// `capacity == returns-max-size`, and beside it any number of working
+/// `list<T>` buffers, each held to its own capacity. A body that returns no
+/// buffer declares none: on Rust and C11 a working buffer's overflow leaves
+/// through the channel the returned buffer's does. Every return names the
+/// output, and a loop over a buffer does not append to it. What a `<sce:var>`
 /// or the signature's `<sce:return>` breaks on its own is refused when that
 /// element is read.
 ///
@@ -11235,32 +11241,22 @@ fn validate_byte_buffer_build(
 ) -> Result<(), Located<ForgeError>> {
     let mut buffers = Vec::new();
     collect_append_buffers(body, &mut buffers);
-    let Some(buffer) = buffers.first() else {
+    if buffers.is_empty() {
         return Ok(());
+    }
+    let place = |at: WrittenAt<'_>, refusal: ValidationError| {
+        Located::in_file(at.place_reporting(refusal.into()), doc_name)
     };
+    // The output, or, for a signature that returns no buffer, the first
+    // buffer declared: it is refused below as a buffer the signature does not
+    // return, which a working buffer beside no output would be as well.
+    let buffer = output_buffer_of(sig, body)
+        .and_then(|name| buffers.iter().find(|b| b.name == name))
+        .unwrap_or(&buffers[0]);
     // The buffer's type as its shape, its bound left out: the bound is judged on
     // its own below, so every message names the buffer as it always has.
     let shape = buffer.ty.without_outer_bound();
     let buffer_attr = shape.as_attr();
-    let place = |at: WrittenAt<'_>, refusal: ValidationError| {
-        Located::in_file(at.place_reporting(refusal.into()), doc_name)
-    };
-
-    // v1 supports a single buffer — the returned output buffer. The second
-    // one declared is the refused one.
-    if let Some(extra) = buffers.get(1) {
-        return Err(place(
-            WrittenAt::attribute(extra.name_spelling),
-            ValidationError::IncompatibleAttributes {
-                element: "<sce:body>".into(),
-                detail: format!(
-                    "{} {buffer_attr} buffers declared; byte-buffer-build v1 supports exactly one \
-                     (the returned output buffer) — SCE_FORGE.md §4.12",
-                    buffers.len()
-                ),
-            },
-        ));
-    }
 
     // The buffer is the algorithm's output — the signature must return
     // exactly the buffer's type: a `list<int64>` buffer is not a `list<int32>`
@@ -11277,8 +11273,9 @@ fn validate_byte_buffer_build(
                 element: "<sce:body>".into(),
                 detail: format!(
                     "{buffer_attr} buffer '{}' is declared but the signature does not return \
-                     `{buffer_attr}`; byte-buffer-build v1 requires the buffer to be the returned \
-                     value — SCE_FORGE.md §4.12",
+                     `{buffer_attr}`; byte-buffer-build v2 requires a body that builds a buffer \
+                     to return one, and the returned buffer to be of the returned type — \
+                     SCE_FORGE.md §4.12",
                     buffer.name
                 ),
             },
@@ -11309,6 +11306,126 @@ fn validate_byte_buffer_build(
         ));
     }
 
+    // Every other buffer is a working one, which only a list is: a byte
+    // string is built to be returned, and a second one has nothing to be.
+    if let Some(extra) = buffers
+        .iter()
+        .find(|b| b.name != buffer.name && b.ty.list_elem().is_none())
+    {
+        let extra_attr = extra.ty.without_outer_bound().as_attr();
+        return Err(place(
+            WrittenAt::attribute(extra.name_spelling),
+            ValidationError::IncompatibleAttributes {
+                element: "<sce:body>".into(),
+                detail: format!(
+                    "{extra_attr} buffer '{}' beside the output buffer '{}'; byte-buffer-build v2 \
+                     builds a {extra_attr} buffer only as the returned value, and a working \
+                     buffer is a list<T> — SCE_FORGE.md §4.12",
+                    extra.name, buffer.name
+                ),
+            },
+        ));
+    }
+
+    let names: Vec<&str> = buffers.iter().map(|b| b.name).collect();
+    judge_buffer_uses(body, buffer.name, &names, &[], doc_name)
+}
+
+/// SCE byte-buffer-build v2 (SCE_FORGE.md §4.12): the rules that relate a
+/// buffer to the statements that read it, at any depth of `stmts`.
+///
+/// - A `<sce:return>` that names a buffer names `output`: Rust and C11 write
+///   the output into the caller's destination, so a body that returned one
+///   buffer here and another there would have two destinations.
+/// - A `<sce:foreach>` over a buffer does not append to it, at any depth of
+///   its body: the loop walks the elements the buffer holds when it starts,
+///   and an append inside it would move the end it walks to. `iterating` is
+///   every enclosing loop over a buffer, with the `in` it is written at.
+fn judge_buffer_uses(
+    stmts: &[AlgorithmStmt],
+    output: &str,
+    buffers: &[&str],
+    iterating: &[(&str, Option<&AttributeSpelling>)],
+    doc_name: &str,
+) -> Result<(), Located<ForgeError>> {
+    let place = |at: WrittenAt<'_>, refusal: ValidationError| {
+        Located::in_file(at.place_reporting(refusal.into()), doc_name)
+    };
+    for s in stmts {
+        match s {
+            AlgorithmStmt::Return {
+                expr: Some(expr),
+                expr_spelling,
+            } => {
+                let name = expr.trim();
+                if name != output && buffers.contains(&name) {
+                    return Err(place(
+                        WrittenAt::attribute(expr_spelling.as_ref()),
+                        ValidationError::IncompatibleAttributes {
+                            element: "<sce:return>".into(),
+                            detail: format!(
+                                "returns the buffer '{name}', but the body's output buffer is \
+                                 '{output}'; byte-buffer-build v2 returns one buffer, by name, \
+                                 from every return — SCE_FORGE.md §4.12"
+                            ),
+                        },
+                    ));
+                }
+            }
+            AlgorithmStmt::Append { target, .. } => {
+                let target = target.trim();
+                if let Some((walked, at)) = iterating.iter().find(|(walked, _)| *walked == target) {
+                    return Err(place(
+                        WrittenAt::attribute(*at),
+                        ValidationError::IncompatibleAttributes {
+                            element: format!("<sce:foreach in=\"{walked}\">"),
+                            detail: format!(
+                                "the loop appends to '{walked}', the buffer it walks; an append \
+                                 would move the end the loop walks to, so byte-buffer-build v2 \
+                                 walks a buffer only in a loop that does not append to it — \
+                                 SCE_FORGE.md §4.12"
+                            ),
+                        },
+                    ));
+                }
+            }
+            AlgorithmStmt::Foreach {
+                source,
+                source_spelling,
+                body,
+                ..
+            } => {
+                let source = source.trim();
+                if buffers.contains(&source) {
+                    let mut inner = iterating.to_vec();
+                    inner.push((source, source_spelling.as_ref()));
+                    judge_buffer_uses(body, output, buffers, &inner, doc_name)?;
+                } else {
+                    judge_buffer_uses(body, output, buffers, iterating, doc_name)?;
+                }
+            }
+            AlgorithmStmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                judge_buffer_uses(then_body, output, buffers, iterating, doc_name)?;
+                if let Some(eb) = else_body {
+                    judge_buffer_uses(eb, output, buffers, iterating, doc_name)?;
+                }
+            }
+            AlgorithmStmt::While { body, .. } => {
+                judge_buffer_uses(body, output, buffers, iterating, doc_name)?;
+            }
+            AlgorithmStmt::Var { .. }
+            | AlgorithmStmt::RecordVar { .. }
+            | AlgorithmStmt::RecordFromCall { .. }
+            | AlgorithmStmt::Assign { .. }
+            | AlgorithmStmt::Return { expr: None, .. }
+            | AlgorithmStmt::Call { .. }
+            | AlgorithmStmt::Require { .. } => {}
+        }
+    }
     Ok(())
 }
 

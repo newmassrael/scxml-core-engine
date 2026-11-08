@@ -5639,6 +5639,83 @@ impl AlgorithmModel {
         collect_algorithm_bindings(&self.body, &mut out);
         out
     }
+
+    /// The buffer local the algorithm returns, its output
+    /// ([`output_buffer_of`]).
+    pub fn output_buffer(&self) -> Option<&str> {
+        output_buffer_of(&self.signature, &self.body)
+    }
+}
+
+/// SCE byte-buffer-build (SCE_FORGE.md §4.12): the buffer local an algorithm
+/// whose signature returns `bytes` or a `list<T>` returns, its output; every
+/// other buffer local of the body is a working buffer of its own. It is the
+/// buffer the first `<sce:return>` that names a buffer names, or, where no
+/// return names one, the first buffer the body declares, which the rules that
+/// relate the output to the signature then judge. `None` for an algorithm that
+/// returns no buffer.
+///
+/// ⚠ One answer for the parser, which judges the output against the
+/// signature, and every backend, which writes it into the caller's destination
+/// on Rust and C11: two selections could pick two buffers.
+pub fn output_buffer_of<'a>(
+    signature: &AlgorithmSignature,
+    body: &'a [AlgorithmStmt],
+) -> Option<&'a str> {
+    if !signature
+        .return_type
+        .as_ref()
+        .is_some_and(AlgorithmValueType::is_append_buffer)
+    {
+        return None;
+    }
+    let mut buffers = Vec::new();
+    let mut returned = Vec::new();
+    collect_buffers_and_returns(body, &mut buffers, &mut returned);
+    returned
+        .into_iter()
+        .find(|name| buffers.contains(name))
+        .or_else(|| buffers.first().copied())
+}
+
+/// Every buffer local `stmts` declares and every name a `<sce:return>` of it
+/// returns, each in document order, nested bodies included.
+fn collect_buffers_and_returns<'a>(
+    stmts: &'a [AlgorithmStmt],
+    buffers: &mut Vec<&'a str>,
+    returned: &mut Vec<&'a str>,
+) {
+    for s in stmts {
+        match s {
+            AlgorithmStmt::Var { name, sce_type, .. } if sce_type.is_append_buffer() => {
+                buffers.push(name);
+            }
+            AlgorithmStmt::Return {
+                expr: Some(expr), ..
+            } => returned.push(expr.trim()),
+            AlgorithmStmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                collect_buffers_and_returns(then_body, buffers, returned);
+                if let Some(eb) = else_body {
+                    collect_buffers_and_returns(eb, buffers, returned);
+                }
+            }
+            AlgorithmStmt::While { body, .. } | AlgorithmStmt::Foreach { body, .. } => {
+                collect_buffers_and_returns(body, buffers, returned);
+            }
+            AlgorithmStmt::Var { .. }
+            | AlgorithmStmt::RecordVar { .. }
+            | AlgorithmStmt::RecordFromCall { .. }
+            | AlgorithmStmt::Assign { .. }
+            | AlgorithmStmt::Append { .. }
+            | AlgorithmStmt::Return { expr: None, .. }
+            | AlgorithmStmt::Call { .. }
+            | AlgorithmStmt::Require { .. } => {}
+        }
+    }
 }
 
 /// RFC §synth-5-B test-vector value literal. v1 covers the scalar types an
