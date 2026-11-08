@@ -519,7 +519,15 @@ fn a_round_whose_answer_never_comes_leaves_the_next_round_to_tell_what_it_took_i
             6,
             "past the batches taken in, and not past the one asked for"
         );
-        assert_eq!(state.untold(), 2, "the two writes taken in and not told");
+        // The two writes taken in are held by the trust and not told: a round tells its machine
+        // what it may when it ends (docs/adr/0085, section 3.1), so one that does not end leaves
+        // nothing to hand over, and what the machine was told did not move.
+        assert_eq!(state.untold(), 0, "nothing is told before a round ends");
+        assert!(
+            broken.bob.delivered().is_empty(),
+            "the two writes taken in wait in the trust: {:?}",
+            broken.bob.delivered()
+        );
         let read_back = CourierState::from_text(&state.to_text());
         assert_eq!(read_back.as_ref(), Some(&state), "{}", state.to_text());
 
