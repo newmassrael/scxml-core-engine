@@ -8113,8 +8113,10 @@ fn kotlin_payload_present_reader(f: &EntryField, l: &LangCtx) -> String {
         SceType::Float32 => "float32",
         SceType::Float64 => "float64",
         SceType::Bool => "boolean",
-        SceType::String => "string",
-        SceType::Bytes => "bytes",
+        // A text and a byte string are held to their bound at the lift, the top
+        // level included (docs/adr/0086, section 4.4).
+        SceType::String => return format!("fields.string(\"{id}\", {})", lift_text_bound(f)),
+        SceType::Bytes => return format!("fields.bytes(\"{id}\", {})", lift_bytes_bound(f)),
         SceType::Enum(_) => unreachable!("an enum field is lifted above"),
     };
     format!("fields.{reader}(\"{id}\")")
