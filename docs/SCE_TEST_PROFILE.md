@@ -1119,6 +1119,48 @@ the type whether or not the machine saves) and only then writes them all; a valu
 its bound ends the run with `error`, and the initial configuration is not entered. A text or a byte string the
 machine holds in no buffer of a bound has no place a value is read into, and is refused by name.
 
+Swift generates `test-component` (§12.6, slice 6). The unit is the statechart machine the Swift generator writes for
+any `sce-static` document, `<file>_sm.swift`, lowered through the same doors by the same lowering and spelled for the
+Swift runtime (`SceTestProfile`, which the machine imports and names every declaration of by its module, so no
+declaration of the machine's own module can hide one):
+
+- a branch's guard, the statement taking it, the statements of the profile and a `<log>` are calls on the component's
+  `ComponentContext`, read through one accessor of the policy (`sceTestContext`), which stops the program where the
+  component bound none. A branch's guard is its `cond` and then its match, joined by `&&`. A receive branch's match is
+  `SceTestProfile.receives`, given the template's `Value` and a closure written inside the call's parentheses that
+  calls its template's `matches`, so the guard stands as one expression in its `if`. Every unit is a file of the
+  machine's module, so a template's `Value`, `matches` and `value` are named through the enum its unit declares and
+  the machine imports nothing for them. A variable bound to a formal parameter is handed over as the machine holds
+  it; a variable of an enum crosses into the variant of the same declared name of the enum unit's type, and an
+  optional value of an enum is refused by name, as on the other backends. A verdict is the runtime's case, written as
+  an implicit member (`.pass`);
+- the statement taking a branch stands in a block of its own before the branch's content, so what it declares stands
+  beside nothing of the content's. A receive branch whose content reads the message takes it as its template's
+  `Value` and copies it, field by field, into the payload property the machine's channel holds its record's event in
+  (`pending<Event>Payload`), which the content reads as `_event.data`; the record's unit holds it in `<Stem>Payload`,
+  named by the schema's file, and the machine in a struct of its own. The two hold a number, a `Bool`, a text, a byte
+  string and an optional value of one in the same Swift types, each a value, which are copied as they are, and an
+  enum in enums of their own, so an enum field takes the variant of the machine's enum that its declared name names
+  (`init?(declaredName:)`), an optional one where it is present. Swift so generates the message of a record with a
+  text, a byte string or an enum field that Rust refuses, as Kotlin, Go and Python do. Both enums are written from
+  one enum document, and the guard has held the message to the template's type, so a name one enum declares and the
+  other does not, or a message of another type, stops the program and is not read;
+- a `<log>` records its label, a colon and its value as the engine's `<log>` shows it (`String(describing:)`), an
+  absent optional value as `null` and a present one as its value, as the other backends record them;
+- a send hands the test-port processor the specific template's value (`value`) as `HostSendRequest.value`, a
+  `HostSendValue`.
+
+Beside the policy the file declares `<Name>Component`, a `ComponentMachine` of the runtime: `start` builds the
+policy, gives it the session id the component's name gives (`setSessionID`), binds the context on it, builds the
+engine on it, registers the test-port processor and the test-component invoker on the engine and starts it
+(`initialize`); `deliverSnapshot` processes the snapshot event (`processEvent`), which runs the macrostep it starts;
+`terminated` is the engine's having entered a top-level `<final>` (`isInFinalState`). Every Swift policy draws a
+session id and declares `setSessionID`, whether or not a saved state can hold its machine, so the component's
+session id needs no saved shape. Swift refuses by name a component that declares `<sce:action>`, whose policy is
+initialized with a host the component is given nothing of; one that uses a template whose type reaches a union,
+which Swift does not lower (ADR 0092, section 7); and, until it generates a suite's tables, a component that declares
+a module parameter.
+
 A module parameter (§11.5) is a variable of the machine declared with its type and no value of the document's: the
 static lowering, written once for every backend, lowers no initial value for it. Its value is the run's. Before
 `start` starts the machine it hands the machine the run's module parameters through the context
@@ -1515,4 +1557,7 @@ the equivalence law (order of work step 6).
    not carry: a save that finds one waiting refuses by name. Swift generates templates, and the refusal of §11.9 is
    lifted for Swift for `test-template`; Swift lowers no union, so a template whose type reaches one stays refused
    there, as on C++, Go, Python and C11, and so does one that holds a record or an enum whose own Swift unit is not
-   written.
+   written. Swift generates test components next, through the doors of §12.3, and runs them through
+   `SceTestProfile.TestCaseRun`; the refusal is lifted for Swift for `test-component`, but for a component that
+   declares a module parameter, whose value Swift's suite tables are to give, for one that declares `<sce:action>`,
+   and for one whose template reaches a union.

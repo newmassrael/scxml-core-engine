@@ -576,8 +576,12 @@ each module parameter read from the run between the machine's construction and t
 into its initial configuration, copies a number, a `bool`, a text, an enum and an optional
 value of each of such a message, and refuses with `generate/unsupported-feature` one whose
 branch reads a message with a byte string, one that declares `<sce:action>` and one that
-uses a template whose type reaches a union. A backend that generates a component and not a
-suite's tables refuses one that declares a module parameter by name. On every such backend a variable of an enum bound to a template's
+uses a template whose type reaches a union. Swift generates a test component too, through
+the same doors, so every backend generates one; it copies such a message as Kotlin, Go and
+Python do, and refuses with `generate/unsupported-feature` one that declares
+`<sce:action>` and one that uses a template whose type reaches a union. A backend that
+generates a component and not a suite's tables, Swift among them, refuses one that
+declares a module parameter by name. On every such backend a variable of an enum bound to a template's
 parameter crosses into the enum unit's type, and one of an optional enum is refused by
 name. A module parameter whose type is not a scalar, `string[N]` or `bytes[N]` is refused
 by name (`generate/unsupported-feature`) on every backend. C++, Rust, Kotlin, Go, Python
