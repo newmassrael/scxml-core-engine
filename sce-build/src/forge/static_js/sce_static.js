@@ -636,24 +636,21 @@
     return readValue(value, type, name, pointer);
   }
 
-  /* The door (docs/adr/0086, section 4.4). A generated machine lifts the payload
-     of an event it reads when it takes the event, before it selects a transition,
-     and refuses a delivery outside its type whole: error.execution is raised once,
-     and no guard or content that reads the payload runs for it. door() is handed,
-     for each event whose payload the document reads, the record its schema
-     declares ({record: {...}} with the defaults of the fields a later revision
-     added), and installs dequeued() as __sceDequeued, which the Interpreter calls
-     with _event each time it binds one, before it selects a transition. dequeued()
-     reads every field of the record as field() reads one, and answers the
-     sentence of the first refusal, which the Interpreter raises as
-     error.execution, or the empty text. admitted() answers whether the event
-     being processed was let in: every guard and content of the document that
-     reads the payload holds back on it, so a field past its bound refuses the
-     delivery even on a route that reads no such field. */
+  /* The door (docs/adr/0086, sections 4.2 and 4.4). A generated machine lifts the
+     payload of an event it reads when it takes the event, before it selects a
+     transition, and refuses a delivery outside its type whole: no transition is
+     selected for it, and an error.execution that carries the refusal is taken in
+     its place. door() is handed, for each event whose payload the document reads,
+     the record its schema declares ({record: {...}} with the defaults of the
+     fields a later revision added), and installs dequeued() as __sceDequeued,
+     which the Interpreter calls with _event each time it binds one, before it
+     selects a transition. dequeued() reads every field of the record as field()
+     reads one, and answers the sentence of the first refusal, on which the
+     Interpreter takes error.execution in the event's place, or the empty text.
+     A field past its bound so refuses the delivery even on a route that reads no
+     such field. */
   var doors = {};
-  var refusedNow = false;
   function dequeued(event) {
-    refusedNow = false;
     if (event === undefined || event === null || !Object.prototype.hasOwnProperty.call(doors, event.name)) {
       return '';
     }
@@ -665,7 +662,6 @@
       });
       return '';
     } catch (refusal) {
-      refusedNow = true;
       var why = refusal !== null && typeof refusal === 'object' && refusal.message !== undefined ? refusal.message : refusal;
       return '`' + String(event.name) + '` payload: ' + String(why);
     }
@@ -989,9 +985,6 @@
     door: function (name, record) {
       doors[name] = record;
       globalThis.__sceDequeued = dequeued;
-    },
-    admitted: function () {
-      return !refusedNow;
     },
     lift: lift,
     parseText: parseText,

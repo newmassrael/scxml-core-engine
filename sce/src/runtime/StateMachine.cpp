@@ -58,29 +58,26 @@ namespace {
 // document that installs none.
 constexpr const char *kDoorRead = "(typeof __sceDequeued === 'function') ? String(__sceDequeued(_event)) : ''";
 
-// The door of a document lowered from `sce-static` (docs/adr/0086, section 4.4),
-// asked as the event just taken is bound and before any transition is selected
-// for it. A generated machine lifts the payload of an event it reads at that
-// moment and refuses a delivery outside its type whole: the lowering's library
-// installs `__sceDequeued`, which reads the record of the event's schema whole and
-// answers the sentence of a refusal, and every guard and content of the document
-// that reads the payload holds back on a refused event (`SceStatic.admitted`).
-// The refusal is raised here, once, as `error.execution`, as the generated
-// machines raise it. Any other ECMAScript document installs no reader and is read
-// as it always was; a document under another data model is not asked.
-void readAtTheDoor(IScriptEngine &engine, const std::string &sessionId, const SCXMLModel *model, IEventRaiser *raiser) {
-    if (model == nullptr || raiser == nullptr || model->getDatamodel() != "ecmascript") {
-        return;
+// The door of a document lowered from `sce-static` (docs/adr/0086, sections 4.2
+// and 4.4), asked as the event just taken is bound and before any transition is
+// selected for it. A generated machine lifts the payload of an event it reads at
+// that moment and refuses a delivery outside its type whole: the lowering's
+// library installs `__sceDequeued`, which reads the record of the event's schema
+// whole and answers the sentence of a refusal. That sentence is answered here,
+// and the engine takes the `error.execution` that carries it in the delivery's
+// place, as the generated machines do; the empty text admits the event. Any
+// other ECMAScript document installs no reader and is read as it always was; a
+// document under another data model is not asked.
+std::string readAtTheDoor(IScriptEngine &engine, const std::string &sessionId, const SCXMLModel *model) {
+    if (model == nullptr || model->getDatamodel() != "ecmascript") {
+        return {};
     }
     const ScriptResult read = engine.evaluateExpression(sessionId, ScriptSource::ecmascript(kDoorRead)).get();
     if (!read.isSuccess()) {
         SCE_LOG_ERROR("StateMachine: the payload door could not be asked: {}", read.getErrorMessage());
-        return;
+        return {};
     }
-    const std::string refusal = read.getValue<std::string>();
-    if (!refusal.empty()) {
-        raiser->raiseEvent("error.execution", refusal);
-    }
+    return read.getValue<std::string>();
 }
 
 }  // namespace
@@ -1066,6 +1063,56 @@ StateMachine::TransitionResult StateMachine::processTakenEvent(const EventMetada
     // it stays bound until the loop takes the next one.
     bindCurrentEvent(event);
 
+    // Selection and the microstep it selects, for the event bound as `_event`.
+    const auto selectAndTake = [this](const std::string &eventName) {
+        const std::vector<Transition> enabled = selectTransitions(eventName);
+        if (enabled.empty()) {
+            SCE_LOG_DEBUG("StateMachine: No transition enabled by event '{}'", eventName);
+            stats_.failedTransitions++;
+            TransitionResult result;
+            result.success = false;
+            result.fromState = getCurrentState();
+            result.eventName = eventName;
+            result.errorMessage = "No valid transitions found";
+            return result;
+        }
+
+        // What a caller is told about the event: the first transition it
+        // selected, from its source to its first target as written.
+        const Transition &first = enabled.front();
+        std::string firstTarget = first.source;
+        if (!first.targets.empty()) {
+            firstTarget =
+                first.targets.front().isHistory() ? first.targets.front().history() : first.targets.front().state();
+        }
+        TransitionResult result(true, first.source, firstTarget, eventName);
+
+        takeMicrostep(enabled, eventName);
+        return result;
+    };
+
+    // The door (docs/adr/0086, section 4.2): a delivery whose data does not fit
+    // its type is refused whole, before any transition is selected for it. The
+    // `error.execution` that carries the refusal is bound and answered in its
+    // place, as the engine's own error: no `<finalize>` or autoforward runs for
+    // it, and an error raised while it is answered is a link in its chain.
+    const std::string refusal = readAtTheDoor(scriptEngine_, sessionId_, model_.get());
+    if (!refusal.empty()) {
+        EventMetadata replacement("error.execution", refusal, "platform");
+        // Its data read as the raiser reads the data of every event it queues.
+        replacement.typedData = EventDataHelper::jsonStringToScriptValue(refusal);
+        bindCurrentEvent(replacement);
+        if (!eventRaiser_) {
+            return selectAndTake(replacement.name);
+        }
+        TransitionResult answered;
+        eventRaiser_->dispatchTaken(replacement.name, [&selectAndTake, &replacement, &answered] {
+            answered = selectAndTake(replacement.name);
+            return answered.success;
+        });
+        return answered;
+    }
+
     // §scxml-D-mainEventLoop: an external event's preliminary step — the
     // `<finalize>` of the invoke it came from, then the autoforward copy —
     // runs before transitions are selected for it.
@@ -1076,30 +1123,7 @@ StateMachine::TransitionResult StateMachine::processTakenEvent(const EventMetada
         autoforward(event);
     }
 
-    const std::vector<Transition> enabled = selectTransitions(event.name);
-    if (enabled.empty()) {
-        SCE_LOG_DEBUG("StateMachine: No transition enabled by event '{}'", event.name);
-        stats_.failedTransitions++;
-        TransitionResult result;
-        result.success = false;
-        result.fromState = getCurrentState();
-        result.eventName = event.name;
-        result.errorMessage = "No valid transitions found";
-        return result;
-    }
-
-    // What a caller is told about the event: the first transition it
-    // selected, from its source to its first target as written.
-    const Transition &first = enabled.front();
-    std::string firstTarget = first.source;
-    if (!first.targets.empty()) {
-        firstTarget =
-            first.targets.front().isHistory() ? first.targets.front().history() : first.targets.front().state();
-    }
-    TransitionResult result(true, first.source, firstTarget, event.name);
-
-    takeMicrostep(enabled, event.name);
-    return result;
+    return selectAndTake(event.name);
 }
 
 void StateMachine::bindCurrentEvent(const EventMetadata &event) {
@@ -1114,7 +1138,6 @@ void StateMachine::bindCurrentEvent(const EventMetadata &event) {
         ++undecodablePayloads_;
         lastUndecodablePayloadEvent_ = event.name;
     }
-    readAtTheDoor(scriptEngine_, sessionId_, model_.get(), eventRaiser_.get());
 }
 
 void StateMachine::applyFinalize(const std::string &senderSessionId, const std::string &eventName) {

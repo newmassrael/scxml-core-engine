@@ -327,12 +327,12 @@ fn a_payload_text_and_byte_string_are_read_held_to_their_bound() {
 }
 
 /// The Interpreter reads a delivery whole at its door, as every generated machine
-/// lifts it when it takes the event (docs/adr/0086, section 4.4): the library is
-/// installed with the record of each event whose payload the document reads, every
-/// guard that reads the payload is held to the event having been let in, and the
-/// content of a transition that reads it stands inside an `<if>` of the same, so a
-/// refused delivery runs none of it while the transition is taken as it is on the
-/// generated engines. `static_payload_bytes` reads `framed.taken`, a `uint8` and a
+/// lifts it when it takes the event (docs/adr/0086, sections 4.2 and 4.4): the
+/// library is installed with the record of each event whose payload the document
+/// reads, and the engine takes an `error.execution` in a refused delivery's place
+/// before any transition is selected. No guard or content is rewritten for the
+/// door: a refused delivery reaches none of them, so each stands as the lowering
+/// wrote it. `static_payload_bytes` reads `framed.taken`, a `uint8` and a
 /// `bytes[8]`.
 #[test]
 fn a_delivery_is_read_whole_at_the_interpreters_door() {
@@ -362,25 +362,10 @@ fn a_delivery_is_read_whole_at_the_interpreters_door() {
         !transitions.is_empty(),
         "the document takes framed.taken:\n{out}"
     );
-    for transition in &transitions {
-        let guard = transition.attribute("cond");
-        if let Some(guard) = guard {
-            assert!(
-                guard.starts_with("SceStatic.admitted() && (") && guard.ends_with(')'),
-                "a guard that reads the payload is held to the door: {guard}"
-            );
-        } else {
-            // The one transition with no guard writes the record field by field.
-            let first = transition
-                .children()
-                .find(|n| n.is_element())
-                .expect("the content");
-            assert!(
-                scxml(&first, "if") && first.attribute("cond") == Some("SceStatic.admitted()"),
-                "content that reads the payload stands inside the door's <if>:\n{out}"
-            );
-        }
-    }
+    assert!(
+        !out.contains("SceStatic.admitted"),
+        "no guard or content is held to the door:\n{out}"
+    );
     // A document whose payload no expression reads has no door to install.
     let counter = lowered_fixture("static_counter");
     assert!(
