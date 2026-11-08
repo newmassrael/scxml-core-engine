@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.1 (1ubuntu1~24.04.2)",
-  "embed_version": "f69461f",
+  "embed_version": "c2aef13",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 556,
+  "symbol_count": 560,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -547,6 +547,30 @@
       "kind": "class",
       "members": [],
       "name": "SCE::MonotonicClock"
+    },
+    {
+      "header": "common/ScriptValueJson.h",
+      "kind": "function",
+      "name": "SCE::ScriptValueJson::append",
+      "signature": "void SCE::ScriptValueJson::append(std::string &, const ScriptValue &)"
+    },
+    {
+      "header": "common/ScriptValueJson.h",
+      "kind": "function",
+      "name": "SCE::ScriptValueJson::appendObject",
+      "signature": "void SCE::ScriptValueJson::appendObject(std::string &, const std::map<std::string, std::string> &)"
+    },
+    {
+      "header": "common/ScriptValueJson.h",
+      "kind": "function",
+      "name": "SCE::ScriptValueJson::object",
+      "signature": "std::string SCE::ScriptValueJson::object(const std::map<std::string, std::string> &)"
+    },
+    {
+      "header": "common/ScriptValueJson.h",
+      "kind": "function",
+      "name": "SCE::ScriptValueJson::text",
+      "signature": "std::string SCE::ScriptValueJson::text(const ScriptValue &)"
     },
     {
       "header": "common/SendHelper.h",
