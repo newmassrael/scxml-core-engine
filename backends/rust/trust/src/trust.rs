@@ -879,7 +879,7 @@ impl Trust {
             }
         };
         for (node, chain) in &state.ops {
-            let next = told_of(&state, *node) + 1;
+            let next = delivered_through(&state, *node) + 1;
             if chain.frozen().is_some_and(|from| next >= from) {
                 continue;
             }
@@ -891,7 +891,8 @@ impl Trust {
                             continue;
                         }
                         let to = told_ceiling(&state, *other).map_or(*seq, |top| top.min(*seq));
-                        let from = first_not_held(&state, *other, told_of(&state, *other) + 1);
+                        let from =
+                            first_not_held(&state, *other, delivered_through(&state, *other) + 1);
                         want(*other, from, to);
                     }
                 }
@@ -1527,7 +1528,7 @@ fn contiguous(state: &State, node: u64) -> u64 {
 }
 
 /// What this host's machine has been told of `node`: the highest number, 0 for nothing.
-fn told_of(state: &State, node: u64) -> u64 {
+fn delivered_through(state: &State, node: u64) -> u64 {
     state.delivered.get(&node).copied().unwrap_or(0)
 }
 
@@ -1555,7 +1556,7 @@ fn told_ceiling(state: &State, node: u64) -> Option<u64> {
 /// of the device up to `seq`, or, when no machine will ever be told the device up to `seq`
 /// ([`told_ceiling`]), every operation of it any machine will be told.
 fn dependency_met(state: &State, node: u64, seq: u64) -> bool {
-    let told = told_of(state, node);
+    let told = delivered_through(state, node);
     told >= seq || told_ceiling(state, node).is_some_and(|top| top < seq && told >= top)
 }
 
@@ -1590,7 +1591,7 @@ enum Next {
 /// context names was told; passed over when it cannot be opened here and never will
 /// ([`never_opened`]); nothing, and it waits, otherwise. Never one past it.
 fn next_deliverable(state: &State, node: u64) -> Option<Next> {
-    let next = told_of(state, node) + 1;
+    let next = delivered_through(state, node) + 1;
     let Some(held) = state.ops.get(&node).and_then(|chain| chain.at(next)) else {
         let epoch = state.unopened.get(&node)?.get(&next)?;
         return never_opened(state, *epoch).then_some(Next::Pass);
