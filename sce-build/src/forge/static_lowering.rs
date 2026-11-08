@@ -15057,9 +15057,10 @@ impl StaticTarget for CTarget {
     }
     // The tag says which event's payload the channel holds now, so a guard that
     // reads this event's fields holds only for a delivery that carried them
-    // (`_PAYLOAD_NONE` for one that did not, or whose payload could not be
-    // read). The channel's constants are spelled from the machine's name
-    // without the suite prefix.
+    // (`_PAYLOAD_NONE` for an event of another name the descriptor matches; a
+    // delivery whose payload could not be read is refused whole at the door
+    // and selects nothing, docs/adr/0086, section 4.2). The channel's
+    // constants are spelled from the machine's name without the suite prefix.
     fn payload_guard(&self, _machine: &str, event: &str, lowered: &str) -> String {
         format!(
             "sm->pending_payload.tag == {}_PAYLOAD_{} && ({lowered})",

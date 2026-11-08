@@ -66,9 +66,11 @@ PY
 
 mutation_case "the cpp direct processEvent path stops recording" <<'PY'
 edit("sce/include/static/StaticExecutionEngine.h",
-     """        recordEventOutcome(event, outcome);
+     """            recordEventOutcome(event, outcome);
+        }
         const bool stateChanged = outcome.configurationChanged;""",
-     """        const bool stateChanged = outcome.configurationChanged;""")
+     """        }
+        const bool stateChanged = outcome.configurationChanged;""")
 PY
 
 # ── C++: naming the event ──────────────────────────────────────────
@@ -98,13 +100,15 @@ mutation_case "the c11 machine counts the events it did handle" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
      """        if (select_transitions(sm, evt.event, enabled, &count)) {
             microstep(sm, enabled, count);
-        } else {""",
+        }
+{% if event_payload_active %}""",
      """        if (select_transitions(sm, evt.event, enabled, &count)) {
             microstep(sm, enabled, count);
             sm->discarded_external_events++;
             sm->last_discarded_event = evt.event;
             sm->has_discarded_event = true;
-        } else {""")
+        }
+{% if event_payload_active %}""")
 PY
 
 # ── C11: naming an event that was never discarded ──────────────────
