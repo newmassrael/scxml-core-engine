@@ -854,9 +854,39 @@
    reads its request's event data (the pairs as JSON) from that table, so the
    one evaluation that renders the text also supplies the typed value. #}
 {% macro lua_record_pair(record_as) %}{% if record_as %}"table.insert(_sce_invoke_pairs, {\"{{ record_as | escape_lua | escape_c }}\", v})\n"{% endif %}{% endmacro %}
-{% macro lua_eval_to_wire_string(expr, out_buf, out_cap, out_ok, record_as=none) %}
+{# docs/adr/0086, section 8.6 (d): the copy of the wire text `_wire_str`,
+   `_wire_len` bytes, into where the caller asked. With `role`, a role of the
+   scratch (a row of the pairs, the invocation's content), grown in the engine's
+   heap to hold the text whole: `out_buf` is then a `const char *` the caller
+   declared, which views the text once it is there, and `held` a `bool` the
+   caller declared true, set false when the heap could not hold it, which is
+   refused whole and counted (`refuse_event_data`), so the caller raises no
+   reason of its own for it. Without `role`, `out_buf` is a fixed buffer of
+   `out_cap` bytes. #}
+{% macro lua_wire_text_copy(out_buf, out_cap, out_ok, role, held) %}
+{% if role %}
+            if (SCE_SCRATCH_RESERVE({{ role }}, _wire_len + 1u)) {
+                memcpy(SCE_SCRATCH_BUF({{ role }}), _wire_str, _wire_len);
+                SCE_SCRATCH_BUF({{ role }})[_wire_len] = '\0';
+                {{ out_buf }} = SCE_SCRATCH_BUF({{ role }});
+                {{ out_ok }} = true;
+            } else {
+                {{ held }} = false;
+                refuse_event_data(sm, NULL);
+            }
+{% else %}
+            if (_wire_len >= (size_t)({{ out_cap }})) {
+                _wire_len = (size_t)({{ out_cap }}) - 1u;
+            }
+            memcpy({{ out_buf }}, _wire_str, _wire_len);
+            {{ out_buf }}[_wire_len] = '\0';
+            {{ out_ok }} = true;
+{% endif %}
+{% endmacro %}
+{% macro lua_wire_text_clear(out_buf, role) %}{% if role %}    {{ out_buf }} = "";{% else %}    {{ out_buf }}[0] = '\0';{% endif %}{% endmacro %}
+{% macro lua_eval_to_wire_string(expr, out_buf, out_cap, out_ok, record_as=none, role=none, held=none) %}
     {{ out_ok }} = false;
-    {{ out_buf }}[0] = '\0';
+{{ lua_wire_text_clear(out_buf, role) }}
     if (luaL_dostring(sm->L,
 {{ lua_wire_string_fn() }}
 {% if record_as %}
@@ -869,12 +899,7 @@
         size_t _wire_len = 0u;
         const char *_wire_str = lua_tolstring(sm->L, -1, &_wire_len);
         if (_wire_str != NULL) {
-            if (_wire_len >= (size_t)({{ out_cap }})) {
-                _wire_len = (size_t)({{ out_cap }}) - 1u;
-            }
-            memcpy({{ out_buf }}, _wire_str, _wire_len);
-            {{ out_buf }}[_wire_len] = '\0';
-            {{ out_ok }} = true;
+{{ lua_wire_text_copy(out_buf, out_cap, out_ok, role, held) }}
         }
     }
     lua_pop(sm->L, 1);
@@ -889,8 +914,17 @@
    and the spelling alone cannot tell `2` from `'2'`. The value is read into a
    neutral scalar and judged by the runtime header, so the rule is written
    once for every C11 machine. `out_refusal` is NULL when the value fits, else
-   the sentence the caller raises. #}
-{% macro lua_eval_to_request_field(expr, field_type, out_buf, out_cap, out_refusal, record_as=none) %}
+   the sentence the caller raises.
+
+   docs/adr/0086, section 8.6 (d): the text is written into the scratch's role
+   `role` (a row of the pairs), grown in the engine's heap first to the most
+   bytes the field's spelling of the value can take
+   (`sce_request_field_wire_size`), so the spelling is never cut by the
+   buffer; `out_buf` is a `const char *` the caller declared, which views it.
+   `held` is a `bool` the caller declared true, set false when the heap could
+   not grow the row: the value is then refused whole and counted
+   (`refuse_event_data`), and `out_refusal` is NULL. #}
+{% macro lua_eval_to_request_field(expr, field_type, out_buf, role, held, out_refusal, record_as=none) %}
     {{ out_refusal }} = SCE_REQUEST_REFUSE_UNEVALUATED;
 {% if record_as %}
     if (luaL_dostring(sm->L,
@@ -927,7 +961,15 @@
             _scalar.kind = SCE_SCRIPT_SCALAR_OTHER;
             break;
         }
-        {{ out_refusal }} = sce_request_field_wire(&_scalar, {{ field_type }}, {{ out_buf }}, {{ out_cap }});
+        if (SCE_SCRATCH_RESERVE({{ role }}, sce_request_field_wire_size(&_scalar))) {
+            {{ out_refusal }} = sce_request_field_wire(&_scalar, {{ field_type }}, SCE_SCRATCH_BUF({{ role }}),
+                                                       SCE_SCRATCH_CAP({{ role }}));
+            {{ out_buf }} = SCE_SCRATCH_BUF({{ role }});
+        } else {
+            {{ out_refusal }} = NULL;
+            {{ held }} = false;
+            refuse_event_data(sm, NULL);
+        }
     }
     lua_pop(sm->L, 1);
 {% endmacro %}
@@ -953,9 +995,9 @@
    (`_scxml_declared` for the document's own declarations, `_G` for what
    the running machine has bound since, its system variables included). A miss leaves `out_ok` false and the
    caller discards the message, per §scxml-6.2.3. #}
-{% macro lua_namelist_var_to_wire_string(var_name, out_buf, out_cap, out_ok, record_as=none) %}
+{% macro lua_namelist_var_to_wire_string(var_name, out_buf, out_cap, out_ok, record_as=none, role=none, held=none) %}
     {{ out_ok }} = false;
-    {{ out_buf }}[0] = '\0';
+{{ lua_wire_text_clear(out_buf, role) }}
     if (luaL_dostring(sm->L,
         "if not _scxml_declared['{{ var_name | escape_c }}'] and "
           "_G['{{ var_name | escape_c }}'] == nil then "
@@ -979,12 +1021,7 @@
         size_t _wire_len = 0u;
         const char *_wire_str = lua_tolstring(sm->L, -1, &_wire_len);
         if (_wire_str != NULL) {
-            if (_wire_len >= (size_t)({{ out_cap }})) {
-                _wire_len = (size_t)({{ out_cap }}) - 1u;
-            }
-            memcpy({{ out_buf }}, _wire_str, _wire_len);
-            {{ out_buf }}[_wire_len] = '\0';
-            {{ out_ok }} = true;
+{{ lua_wire_text_copy(out_buf, out_cap, out_ok, role, held) }}
         }
     }
     lua_pop(sm->L, 1);
@@ -1091,10 +1128,13 @@
    `<final><donedata>` entry emit in
    `state_machine.c.jinja2::execute_entry_actions`), serialises it to
    JSON via `_sce_donedata_to_wire`, and copies the resulting string into
-   `out`, at most `cap - 1` bytes and then ended. A compound final asks it
-   for its own done.state event's `data[]`, and a machine's
-   `_done_data_wire` for the `done.invoke` its parent raises when the
-   machine holds its done data in its engine.
+   `out`, at most `cap - 1` bytes and then ended (nothing for a `cap` of 0),
+   answering in `whole_var` the bytes of the whole text, so a caller tells a
+   text that did not fit from one that did and is never handed a cut one as
+   whole. A machine's `_done_data_wire` asks it for the `done.invoke` its
+   parent raises when the machine holds its done data in its engine; a
+   compound final writes its own done.state event's data whole into the
+   scratch instead (`lua_donedata_wire_scratch` below).
 
    The parent's `process_event_queues` external dequeue sees a non-empty
    `evt.data` and PARSES it on its own `sm->L`, producing a typed lua
@@ -1115,7 +1155,7 @@
    Only a machine that carries an engine has an `L` to ask; one that has
    none holds its done data in its own buffer, which its `_done_data_wire`
    reads instead, so a parent asks every child the same way. #}
-{% macro lua_donedata_wire_into(L_var, out_var, cap_expr) %}
+{% macro lua_donedata_wire_into(L_var, out_var, cap_expr, whole_var) %}
     {
         (void)luaL_dostring({{ L_var }},
             "_sce_donedata_literal = _sce_donedata_to_wire(_sce_donedata)");
@@ -1123,13 +1163,42 @@
         if (lua_isstring({{ L_var }}, -1)) {
             const char *_lit = lua_tostring({{ L_var }}, -1);
             size_t _lit_n = strlen(_lit);
-            if (_lit_n >= ({{ cap_expr }})) {
-                _lit_n = ({{ cap_expr }}) - 1u;
+            {{ whole_var }} = _lit_n;
+            if (({{ cap_expr }}) > 0u) {
+                if (_lit_n >= ({{ cap_expr }})) {
+                    _lit_n = ({{ cap_expr }}) - 1u;
+                }
+                memcpy({{ out_var }}, _lit, _lit_n);
+                ({{ out_var }})[_lit_n] = '\0';
             }
-            memcpy({{ out_var }}, _lit, _lit_n);
-            ({{ out_var }})[_lit_n] = '\0';
         }
         lua_pop({{ L_var }}, 1);
         (void)luaL_dostring({{ L_var }}, "_sce_donedata_literal = nil");
+    }
+{% endmacro %}
+
+{# docs/adr/0086, section 8.6 (d): the same done data, written whole into the
+   scratch's role `role`, grown in the engine's heap to hold it, for a compound
+   final's done.state event. `held_var` is true once the text is there, and
+   false when the heap could not hold it: then nothing was written, and the
+   caller refuses the event whole. No done data is the empty text. #}
+{% macro lua_donedata_wire_scratch(role, held_var) %}
+    {
+        (void)luaL_dostring(sm->L,
+            "_sce_donedata_literal = _sce_donedata_to_wire(_sce_donedata)");
+        lua_getglobal(sm->L, "_sce_donedata_literal");
+        size_t _lit_n = 0u;
+        const char *_lit = lua_isstring(sm->L, -1) ? lua_tolstring(sm->L, -1, &_lit_n) : NULL;
+        if (_lit == NULL) {
+            _lit = "";
+            _lit_n = 0u;
+        }
+        {{ held_var }} = SCE_SCRATCH_RESERVE({{ role }}, _lit_n + 1u);
+        if ({{ held_var }}) {
+            memcpy(SCE_SCRATCH_BUF({{ role }}), _lit, _lit_n);
+            SCE_SCRATCH_BUF({{ role }})[_lit_n] = '\0';
+        }
+        lua_pop(sm->L, 1);
+        (void)luaL_dostring(sm->L, "_sce_donedata_literal = nil");
     }
 {% endmacro %}

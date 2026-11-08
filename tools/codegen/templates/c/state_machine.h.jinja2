@@ -428,6 +428,10 @@ const sce_answer_schema_t *{{ csym_prefix }}{{ model.name }}_answer_schemas(void
    every value the script engine computes, which no type bounds{% endif %}. */
 #define {{ data_slot.name }}_DECLARED {{ data_slot.declared }}u
 #define {{ data_slot.name }}_TO_PARENT {{ data_slot.to_parent }}u
+/* The bytes, its NUL included, of the longest reason the machine raises: what
+   the scratch's `message` holds before a reason is written into it, so no
+   reason is ever cut (docs/adr/0086, sections 8.6 (b) and (d)). */
+#define {{ data_slot.name }}_REASONS {{ data_slot.reasons + 1 }}u
 {# docs/adr/0086, section 8.6 (c): each child whose header is included above
    publishes what it hands its parent, and the slot holds the largest of them. #}
 {% set slot_children = namespace(names=[]) %}
@@ -666,8 +670,20 @@ typedef struct {{ csym_prefix }}{{ model.name }}_event_queue {
    interference graph, and holds roles that are never live at once, each under
    its own name; two roles that may be live at once are in different unions.
    The pairs role holds one row per pair of the widest element of the document
-   that hands a host its pairs, {{ data_slot.pairs }}. */
+   that hands a host its pairs, {{ data_slot.pairs }}.{% if data_slot.grown %}
+   docs/adr/0086, section 8.6 (d): this machine's data model is a script
+   engine, whose values no type bounds, so each role its engine's values are
+   written into is a buffer of its own, outside every union, that grows in the
+   engine's heap through its allocator to the text it is asked to hold, is
+   reused from one write to the next and is freed once before the engine is
+   closed. The generated code reaches each through `SCE_SCRATCH_BUF`,
+   `SCE_SCRATCH_CAP` and `SCE_SCRATCH_RESERVE` (the source). Only the typed
+   roles, which the slot bounds, are unions.{% endif %} */
 typedef struct {{ csym_prefix }}{{ model.name }}_scratch {
+{% for role in data_slot.grown %}
+    /* {{ role.about }} */
+    sce_grown_text_t {{ role.name }}{% if role.rows == 'pairs' %}[{{ data_slot.pairs }}]{% elif role.rows == 'responses' %}[SCE_MAX_HOST_RESPONSES]{% endif %};
+{% endfor %}
 {% for colour in data_slot.scratch %}
     union {
 {% for role in colour.roles %}
@@ -1145,6 +1161,13 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
     uint32_t refused_event_data;
     {{ csym_prefix }}{{ model.name }}_event_t last_refused_event_data;
     bool has_refused_event_data;
+{% if model.needs_script_engine %}
+    /* True while a refusal raises its error.execution, whose text takes the
+       engine's heap too: a heap that refuses that text as well brings the
+       raise back to the refusal, which then counts it and raises nothing, so a
+       heap that gives nothing ends the chain at its first link. */
+    bool refusing_event_data;
+{% endif %}
     /* W3C SCXML B.2.8.1: deliveries whose payload announced structure and that
        the datamodel could not read as one, and the most recent of them.
        `has_undecodable_payload` is separate for the same reason as above. */
@@ -2411,8 +2434,12 @@ const char *{{ csym_prefix }}{{ model.name }}_done_data(const {{ csym_prefix }}{
    `out` (at most `cap - 1` bytes, then ended), or the empty string while it has
    none. Answered from wherever the machine holds it: the buffer `_done_data`
    reads when it holds one, its script engine's state otherwise. A parent asks a
-   child it invoked this, whatever the child's data model. `cap` is at least 1. */
-void {{ csym_prefix }}{{ model.name }}_done_data_wire(const {{ csym_prefix }}{{ model.name }}_t *sm, char *out, size_t cap);
+   child it invoked this, whatever the child's data model.
+   docs/adr/0086, section 8.6 (d): answers the bytes of the whole text, its NUL
+   not counted, as `snprintf` does, so a caller whose `cap` is not more than
+   that holds a cut text and refuses it rather than hand it on. A `cap` of 0
+   writes nothing, and `out` may then be NULL: the call that measures. */
+size_t {{ csym_prefix }}{{ model.name }}_done_data_wire(const {{ csym_prefix }}{{ model.name }}_t *sm, char *out, size_t cap);
 {% endif %}
 {% for field in static_published %}
 

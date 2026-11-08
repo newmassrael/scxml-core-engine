@@ -573,11 +573,11 @@ SCE_SM_FN static bool {{ _t }}_saved_events(const sce_saved_session_t *s, {{ _t 
         /* docs/adr/0086, section 8.5 (d): the data is read into the machine's
            scratch, which a restore has to itself, and the queue copies it; a
            restore that only judges reads it into nothing, held to the slot. */
-        if (!sce_saved_text_into(event.data, field, sm != NULL ? sm->scratch.payload : NULL,
-                                 sizeof(sm->scratch.payload), err)) {
+        if (!sce_saved_text_into(event.data, field, sm != NULL ? SCE_SCRATCH_BUF(payload) : NULL,
+                                 SCE_SCRATCH_CAP(payload), err)) {
             return false;
         }
-        queued.data = sm != NULL ? sm->scratch.payload : NULL;
+        queued.data = sm != NULL ? SCE_SCRATCH_BUF(payload) : NULL;
         (void)snprintf(field, sizeof(field), "%s.sendid", what);
         if (!sce_saved_text_into(event.send_id, field, queued.send_id, sizeof(queued.send_id), err)) {
             return false;

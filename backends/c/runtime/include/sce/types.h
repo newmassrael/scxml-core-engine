@@ -397,6 +397,49 @@ SCE_C_UNUSED static inline void sce_text_alloc_free(sce_alloc_fn alloc, void *co
     *size = 0u;
 }
 
+/* A buffer a machine writes an event's data into before it hands the data on,
+   grown in a heap to the text it is asked to hold (docs/adr/0086, section 8.6
+   (d)): `data` is `cap` bytes the allocator gave, NULL with `cap` 0 before the
+   first growth. Its one holder owns it, reuses it from one write to the next
+   and frees it once with `sce_grown_text_release`; what it holds means nothing
+   once the call it was lent to returns. */
+typedef struct {
+    char *data;
+    size_t cap;
+} sce_grown_text_t;
+
+/* Make `buf` hold at least `need` bytes, growing it through `alloc` when it
+   holds fewer. True when it holds them; false, with `buf` left as it was, when
+   there is no allocator or it gives nothing: the text is then refused whole,
+   never cut, and the caller makes the refusal visible. What `buf` held is
+   kept up to the smaller size, which no writer relies on. */
+SCE_C_UNUSED static inline bool sce_grown_text_reserve(sce_alloc_fn alloc, void *context, sce_grown_text_t *buf,
+                                                       size_t need) {
+    if (need <= buf->cap) {
+        return true;
+    }
+    if (alloc == NULL) {
+        return false;
+    }
+    char *grown = (char *)alloc(context, buf->data, buf->data != NULL ? buf->cap : 0u, need);
+    if (grown == NULL) {
+        return false;
+    }
+    buf->data = grown;
+    buf->cap = need;
+    return true;
+}
+
+/* Free what `buf` holds through the allocator that gave it, and clear it, so a
+   buffer released twice frees nothing the second time. */
+SCE_C_UNUSED static inline void sce_grown_text_release(sce_alloc_fn alloc, void *context, sce_grown_text_t *buf) {
+    if (buf->data != NULL && alloc != NULL) {
+        (void)alloc(context, buf->data, buf->cap, 0u);
+    }
+    buf->data = NULL;
+    buf->cap = 0u;
+}
+
 /* §scxml-5.10.1 `_event.type` ("internal" / "external" / "platform"). */
 SCE_C_UNUSED static inline void sce_copy_bounded_event_type(char *dst, const char *src) {
     sce_copy_bounded_n(dst, src, (size_t)SCE_MAX_EVENT_TYPE_LEN);

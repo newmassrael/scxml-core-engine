@@ -57,9 +57,10 @@
 {% endif %}
 {{ indent }}{{ failed_flag }} = true;
 {% else %}
-{{ indent }}char *const {{ prefix }}_value_{{ loop.index0 }} = sm->scratch.pairs[{{ row_base + loop.index0 }}];
+{{ indent }}const char *{{ prefix }}_value_{{ loop.index0 }} = "";
 {{ indent }}bool {{ prefix }}_ok_{{ loop.index0 }} = false;
-{{ se.lua_eval_to_wire_string(param.expr or param.location, prefix ~ '_value_' ~ loop.index0, 'sizeof(sm->scratch.pairs[' ~ (row_base + loop.index0) ~ '])', prefix ~ '_ok_' ~ loop.index0, record_as) }}
+{{ indent }}bool {{ prefix }}_held_{{ loop.index0 }} = true;
+{{ se.lua_eval_to_wire_string(param.expr or param.location, prefix ~ '_value_' ~ loop.index0, none, prefix ~ '_ok_' ~ loop.index0, record_as, 'pairs[' ~ (row_base + loop.index0) ~ ']', prefix ~ '_held_' ~ loop.index0) }}
 {{ indent }}if ({{ prefix }}_ok_{{ loop.index0 }}) {
 {{ indent }}    {{ arr }}[{{ count }}].name = "{{ param.name | escape_c }}";
 {{ indent }}    {{ arr }}[{{ count }}].value = {{ prefix }}_value_{{ loop.index0 }};
@@ -68,11 +69,17 @@
 {{ indent }}    /* W3C SCXML 5.7.1: report the failure and omit the name
 {{ indent }}       and value — the act still happens, without a field the
 {{ indent }}       document could not produce. Same rule the cpp arm's
-{{ indent }}       `param_eval_failed` applies. */
+{{ indent }}       `param_eval_failed` applies. A text the scratch could not
+{{ indent }}       hold was refused whole and reported already
+{{ indent }}       (docs/adr/0086, section 8.6 (d)). */
 {% if 'error.execution' in model.events %}
-{{ indent }}    {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-{{ indent }}        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-{{ indent }}        {{ reason("param_expr_failed" if param.expr else "param_location_unreadable", element, param.name) }});
+{{ indent }}    if ({{ prefix }}_held_{{ loop.index0 }}) {
+{{ indent }}        {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+{{ indent }}            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+{{ indent }}            {{ reason("param_expr_failed" if param.expr else "param_location_unreadable", element, param.name) }});
+{{ indent }}    }
+{% else %}
+{{ indent }}    (void){{ prefix }}_held_{{ loop.index0 }};
 {% endif %}
 {% if failed_flag %}
 {{ indent }}    {{ failed_flag }} = true;
