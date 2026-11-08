@@ -278,4 +278,49 @@ private final class Host {
         #expect(try ecu.takeEvents().isEmpty)
         #expect(ecu.endpoint.takeHostErrors() == [.unknownPeer("stranger")])
     }
+
+    /// docs/adr/0085, section 3: a send to a causal peer is answered with a verdict the host takes, and
+    /// leaves only once the host reports its journal record committed; a link that comes back carries
+    /// this copy's vector at once. Red if `apply` drops a verdict (none is taken), or drops
+    /// `announceDue` (no vector leaves on the link's return).
+    @Test func aCausalSendIsAVerdictAndLeavesOnceCommitted() throws {
+        let transport = Recorder()
+        let environment = Fixed()
+        let router = Router(machine: "list", dedupWindow: 8, gapTimeoutMs: 50)
+        router.addPeer(
+            "people",
+            config: PeerConfig(
+                transport: "wss",
+                buffer: nil,
+                retry: nil,
+                stampSequence: false,
+                delivery: Delivery(dedup: false, ordered: false),
+                responders: ["people"],
+                deadlineMs: nil,
+                replyEvents: [],
+                causal: CausalGroup(name: "people", epoch: 0, view: ["phone/list", "laptop/list"])
+            ))
+        let endpoint = Endpoint(router: router, transport: transport, environment: environment)
+        try endpoint.startCausal("people", start: .newIncarnation(causalReplica(1)), room: 1, announceEveryMs: 100)
+
+        let dot = Dot(replica: causalReplica(1), seq: 1)
+        endpoint.send(sendRequest("#people", "edit", #"{"n":1}"#))
+        #expect(transport.sent.isEmpty, "nothing leaves before the journal commit")
+        #expect(endpoint.takeVerdicts() == [CausalPeerVerdict(peer: "people", verdict: .accepted(dot))])
+        endpoint.committed(peer: "people", dot: dot)
+        #expect(transport.sent.count == 1)
+
+        // The log's room is one change, which no peer has acknowledged yet: the next send is refused.
+        endpoint.send(sendRequest("#people", "edit", #"{"n":2}"#))
+        #expect(
+            endpoint.takeVerdicts()
+                == [CausalPeerVerdict(peer: "people", verdict: .refused(.noRoomForHistory))])
+        #expect(transport.sent.count == 1)
+
+        endpoint.peerReady("people")
+        #expect(transport.sent.count == 2)
+        let vector = try decodeEnvelope(try #require(transport.sent.last).bytes)
+        #expect(vector.pattern == .causalVector)
+        #expect(endpoint.takeHostErrors().isEmpty)
+    }
 }
