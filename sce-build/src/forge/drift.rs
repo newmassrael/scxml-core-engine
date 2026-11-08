@@ -54,7 +54,7 @@
 use crate::generator_witness::{hash_btreemap, hex_encode, sha256_bytes};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 /// Sentinel header banner. First line of every emitted file regardless of
 /// backend; consumers detect SCE-generated provenance by matching this
@@ -409,6 +409,334 @@ pub fn compute_source_hash(
     deploy_yaml: Option<&Path>,
 ) -> Result<[u8; 32], DriftHashError> {
     Ok(SourceSet::collect(input_root, deploy_yaml)?.digest())
+}
+
+/// Where an input closure's references are looked for, beside the documents
+/// themselves, and the file a run adds to every closure it takes.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ClosureOptions<'a> {
+    /// The `-I` search path `<xi:include>` and `<sce:use>` fragments are
+    /// found on, as the generation is given it.
+    pub include_dirs: &'a [PathBuf],
+    /// The `--input-root` a candidate or a `src` child is looked for under
+    /// first, and the directory a staged copy stands for ([`InputClosure`]).
+    pub input_root: Option<&'a Path>,
+    /// The `deploy.yaml` the run is given. Every document of the run is
+    /// generated under it, so it is in every closure the run takes.
+    pub deploy_yaml: Option<&'a Path>,
+}
+
+/// The one `source:` a file generated from every document of a directory
+/// names: the set form (ADR 0094 section 4).
+pub const SET_FORM_SEED: &str = "./";
+
+/// The input closure behind a `source-hash` (ADR 0094): the documents a file
+/// is generated from (its seeds), every file their generation reads,
+/// transitively ([`crate::import_closure::reads`]), `deploy.yaml` when the run
+/// is given one, and the limits when the build moves any ([`fold_limits`]).
+///
+/// Each member is an entry `(key, sha256 of its raw bytes)`, folded by the
+/// fold the directory set uses ([`SourceSet::digest`]). A standard document
+/// is keyed by its library name. A file is keyed by its path relative to the
+/// anchor, the deepest directory that holds every seed (for one seed, its
+/// own directory), with `..` where it lies outside. So the digest is a
+/// function of the files' bytes and of where they lie relative to each
+/// other, and not of where the checkout sits or of the working directory.
+///
+/// A **staged copy** hashes as the document it stands for. A build that
+/// copies one document into a directory of its own and names the original's
+/// directory as `--input-root` (the integration regeneration scripts do)
+/// takes the input root as the anchor, and keys what lies beside the copy
+/// from the copy's directory; a copy is a seed outside the input root that
+/// the input root holds a document of the same name for. Every key is then
+/// the key a generation of the original gives it.
+///
+/// The bytes are read coherently, as the directory walk reads them: each
+/// file is witnessed before it is read and checked again once the closure
+/// is complete, and a closure that moved while it was read is read again,
+/// then refused ([`DriftHashError::RootNotQuiescent`]).
+#[derive(Clone, Debug)]
+pub struct InputClosure {
+    /// The seeds' keys, sorted: the `source:` lines of the header.
+    seeds: Vec<String>,
+    entries: BTreeMap<PathBuf, [u8; 32]>,
+    /// Every file on disk whose bytes fed the digest, for a depfile.
+    paths: Vec<PathBuf>,
+}
+
+impl InputClosure {
+    /// The closure of `seeds`, the documents a file is generated from. A seed
+    /// that cannot be read is refused, never left out: a closure without the
+    /// document it describes would be a digest of something else.
+    pub fn of(seeds: &[&Path], options: ClosureOptions<'_>) -> Result<Self, DriftHashError> {
+        let walk = crate::import_closure::WalkOptions {
+            include_dirs: options.include_dirs,
+            input_root: options.input_root,
+        };
+        let owned: Vec<PathBuf> = seeds.iter().map(|seed| seed.to_path_buf()).collect();
+        for _ in 0..MAX_SNAPSHOT_ATTEMPTS {
+            let mut reader = ClosureReader::new(Anchor::of(seeds, options.input_root));
+            let mut keys: Vec<String> = Vec::with_capacity(seeds.len());
+            for seed in seeds {
+                let key = reader.read(seed).map_err(|source| DriftHashError::Io {
+                    path: seed.to_path_buf(),
+                    source,
+                })?;
+                keys.push(key.to_string_lossy().into_owned());
+            }
+            for member in crate::import_closure::reads(&owned, walk) {
+                // A member that cannot be read contributes nothing: the
+                // generation that reads it reports why in its own words.
+                let _ = reader.read(&member);
+            }
+            reader.read_deploy(options.deploy_yaml)?;
+            keys.sort();
+            keys.dedup();
+            if let Some(closure) = reader.finish(keys) {
+                return Ok(closure);
+            }
+        }
+        Err(DriftHashError::RootNotQuiescent {
+            root: owned.first().cloned().unwrap_or_default(),
+            attempts: MAX_SNAPSHOT_ATTEMPTS,
+        })
+    }
+
+    /// The set form: the closure of every document under `root`, keyed from
+    /// `root`, for a file generated from all of them (an index of the units
+    /// a run generated, a harness over a fixture directory). It is the
+    /// directory set ([`SourceSet::collect`]) and whatever its documents
+    /// reach outside it, or read that is not a document: a set the walk of a
+    /// directory alone left unsound.
+    pub fn of_directory(root: &Path, options: ClosureOptions<'_>) -> Result<Self, DriftHashError> {
+        let walk = crate::import_closure::WalkOptions {
+            include_dirs: options.include_dirs,
+            input_root: options.input_root,
+        };
+        for _ in 0..MAX_SNAPSHOT_ATTEMPTS {
+            let set = SourceSet::collect(root, options.deploy_yaml)?;
+            let documents: Vec<PathBuf> = set
+                .contributing_paths()
+                .into_iter()
+                .filter(|path| set.deploy_yaml.as_deref() != Some(path.as_path()))
+                .collect();
+            let mut reader = ClosureReader::new(Anchor {
+                dir: canonical_key(root),
+                staged: None,
+            });
+            reader.entries = set.entries.clone();
+            reader.seen = set.members.clone();
+            reader.paths = set.contributing_paths();
+            for member in crate::import_closure::reads(&documents, walk) {
+                let _ = reader.read(&member);
+            }
+            if let Some(closure) = reader.finish(vec![SET_FORM_SEED.to_string()]) {
+                return Ok(closure);
+            }
+        }
+        Err(DriftHashError::RootNotQuiescent {
+            root: root.to_path_buf(),
+            attempts: MAX_SNAPSHOT_ATTEMPTS,
+        })
+    }
+
+    /// The `source-hash` value: the fold of the entries in key order.
+    pub fn digest(&self) -> [u8; 32] {
+        hash_btreemap(&self.entries)
+    }
+
+    /// The seeds' keys, sorted, as the header's `source:` lines state them.
+    pub fn seeds(&self) -> &[String] {
+        &self.seeds
+    }
+
+    /// Whether a document contributed, and not only `deploy.yaml` or the
+    /// limits. A set form over a directory that holds no document has
+    /// nothing to describe, and is refused by its caller.
+    pub fn holds_a_document(&self) -> bool {
+        self.entries.keys().any(|key| is_a_document(key.as_path()))
+    }
+
+    /// Every file on disk whose bytes fed [`digest`](Self::digest), for a
+    /// depfile to declare. A standard document is in the generator, which a
+    /// build system watches for it.
+    pub fn contributing_paths(&self) -> Vec<PathBuf> {
+        self.paths.clone()
+    }
+}
+
+/// The directory an [`InputClosure`]'s keys are taken from.
+struct Anchor {
+    /// Canonical.
+    dir: PathBuf,
+    /// The directory of a staged copy, canonical: what lies in it is keyed
+    /// from it, as it would be from the original's directory.
+    staged: Option<PathBuf>,
+}
+
+impl Anchor {
+    fn of(seeds: &[&Path], input_root: Option<&Path>) -> Self {
+        let dirs: Vec<PathBuf> = seeds
+            .iter()
+            .filter(|seed| !crate::forge::stdlib::names_standard(seed))
+            .map(|seed| real_parent(*seed))
+            .collect();
+        if let ([seed], [dir], Some(root)) = (seeds, dirs.as_slice(), input_root) {
+            let root = canonical_key(root);
+            let stands_for_one = !dir.starts_with(&root)
+                && seed
+                    .file_name()
+                    .is_some_and(|name| crate::confine::exists(&root.join(name)));
+            if stands_for_one {
+                return Self {
+                    dir: root,
+                    staged: Some(dir.clone()),
+                };
+            }
+        }
+        Self {
+            dir: deepest_common(&dirs),
+            staged: None,
+        }
+    }
+
+    /// The key of the file whose canonical path is `real`.
+    fn key(&self, real: &Path) -> PathBuf {
+        if let Some(rel) = self
+            .staged
+            .as_deref()
+            .and_then(|local| real.strip_prefix(local).ok())
+        {
+            return rel.to_path_buf();
+        }
+        relative(&self.dir, real)
+    }
+}
+
+/// The canonical directory of the document `path` names.
+fn real_parent(path: &Path) -> PathBuf {
+    let real = crate::confine::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    real.parent().map(Path::to_path_buf).unwrap_or_default()
+}
+
+/// The deepest directory every one of `dirs` is at or under.
+fn deepest_common(dirs: &[PathBuf]) -> PathBuf {
+    let mut common: Option<PathBuf> = None;
+    for dir in dirs {
+        common = Some(match common {
+            None => dir.clone(),
+            Some(so_far) => so_far
+                .components()
+                .zip(dir.components())
+                .take_while(|(a, b)| a == b)
+                .map(|(a, _)| a.as_os_str())
+                .collect(),
+        });
+    }
+    common.unwrap_or_default()
+}
+
+/// `path` relative to `base`, both canonical: the components past the ones
+/// they share, behind one `..` for each component of `base` past them.
+fn relative(base: &Path, path: &Path) -> PathBuf {
+    let base: Vec<Component> = base.components().collect();
+    let parts: Vec<Component> = path.components().collect();
+    let shared = base.iter().zip(&parts).take_while(|(a, b)| a == b).count();
+    let mut out = PathBuf::new();
+    for _ in shared..base.len() {
+        out.push("..");
+    }
+    for part in &parts[shared..] {
+        out.push(part.as_os_str());
+    }
+    out
+}
+
+/// One coherent read of a closure's members.
+struct ClosureReader {
+    anchor: Anchor,
+    entries: BTreeMap<PathBuf, [u8; 32]>,
+    paths: Vec<PathBuf>,
+    /// The canonical path of every file already read.
+    seen: BTreeSet<PathBuf>,
+    witnesses: Vec<ReadWitness>,
+}
+
+impl ClosureReader {
+    fn new(anchor: Anchor) -> Self {
+        Self {
+            anchor,
+            entries: BTreeMap::new(),
+            paths: Vec::new(),
+            seen: BTreeSet::new(),
+            witnesses: Vec::new(),
+        }
+    }
+
+    /// Read the file `path` names into the closure, once, and give its key.
+    /// Through [`crate::confine`], so a document a run holds in memory is
+    /// read as the run that writes it would read it.
+    fn read(&mut self, path: &Path) -> std::io::Result<PathBuf> {
+        if crate::forge::stdlib::names_standard(path) {
+            let content = crate::forge::stdlib::lookup(path)
+                .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::NotFound))?;
+            let key = PathBuf::from(crate::forge::stdlib::identity(path));
+            self.entries
+                .entry(key.clone())
+                .or_insert_with(|| sha256_bytes(content.as_bytes()));
+            return Ok(key);
+        }
+        let real = crate::confine::canonicalize(path)?;
+        let key = self.anchor.key(&real);
+        if self.seen.contains(&real) {
+            return Ok(key);
+        }
+        // Witnessed before the read, for the reason the directory walk
+        // witnesses first. A document held in memory has no file to stat,
+        // and nothing writes it while the run reads it.
+        let before = ReadWitness::observe(path);
+        let bytes = crate::confine::read(path)?;
+        self.entries.insert(key.clone(), sha256_bytes(&bytes));
+        self.witnesses.extend(before);
+        self.seen.insert(real.clone());
+        self.paths.push(real);
+        Ok(key)
+    }
+
+    /// `deploy.yaml`, under its canonical key, as the directory set takes it.
+    fn read_deploy(&mut self, deploy: Option<&Path>) -> Result<(), DriftHashError> {
+        let Some(deploy) = deploy else {
+            return Ok(());
+        };
+        let before = ReadWitness::observe(deploy);
+        let bytes = fs::read(deploy).map_err(|source| DriftHashError::Io {
+            path: deploy.to_path_buf(),
+            source,
+        })?;
+        self.entries
+            .insert(PathBuf::from("deploy.yaml"), sha256_bytes(&bytes));
+        self.witnesses.extend(before);
+        self.paths.push(deploy.to_path_buf());
+        Ok(())
+    }
+
+    /// The closure, when nothing it read moved while it was read; `None`
+    /// when something did, for the caller to read it again.
+    fn finish(mut self, seeds: Vec<String>) -> Option<InputClosure> {
+        let settled = self
+            .witnesses
+            .iter()
+            .all(|w| ReadWitness::observe(&w.path).as_ref() == Some(w));
+        if !settled {
+            return None;
+        }
+        fold_limits(&mut self.entries);
+        Some(InputClosure {
+            seeds,
+            entries: self.entries,
+            paths: self.paths,
+        })
+    }
 }
 
 /// Renders the §synth-6.2.6 header: the banner, then `source-hash`.
@@ -1645,6 +1973,256 @@ mod tests {
                 root
             ),
             "only NotFound is transient; a permission fault must surface"
+        );
+    }
+
+    // ── input closures (ADR 0094) ─────────────────────────────────────
+
+    const SCXML_OPEN: &str = "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\" \
+                              xmlns:sce=\"http://sce.dev/ext\" version=\"1.0\"";
+
+    /// A statechart whose body is `body`.
+    fn chart(body: &str) -> String {
+        format!("{SCXML_OPEN} initial=\"s\">\n{body}<state id=\"s\"/>\n</scxml>\n")
+    }
+
+    /// An `<sce:import>` of `src`.
+    fn import(src: &str) -> String {
+        format!("<sce:import kind=\"algorithm\" src=\"{src}\" as=\"A\"/>\n")
+    }
+
+    /// An algorithm-shaped document whose text carries `mark`, so two marks
+    /// are two contents.
+    fn algorithm(mark: &str, body: &str) -> String {
+        format!("{SCXML_OPEN} sce:kind=\"algorithm\" name=\"{mark}\">\n{body}</scxml>\n")
+    }
+
+    fn closure_of(seed: &Path) -> InputClosure {
+        InputClosure::of(&[seed], ClosureOptions::default())
+            .unwrap_or_else(|e| panic!("the closure of {} is read: {e}", seed.display()))
+    }
+
+    /// ADR 0094 test 1, at the library: a file's closure moves with the
+    /// documents it reads and not with a sibling. Today's rule, the
+    /// directory set, moves both.
+    #[test]
+    fn a_closure_moves_with_what_it_reads_and_not_with_a_sibling() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        let a = write_file(root, "a.scxml", algorithm("a", "").as_bytes());
+        let b = write_file(root, "b.scxml", chart("").as_bytes());
+        let c = write_file(root, "c.scxml", chart(&import("a.scxml")).as_bytes());
+        let (b_before, c_before) = (closure_of(&b).digest(), closure_of(&c).digest());
+        let dir_before = compute_source_hash(root, None).unwrap();
+
+        fs::write(&a, algorithm("a_edited", "")).unwrap();
+
+        assert_eq!(
+            closure_of(&b).digest(),
+            b_before,
+            "b reads nothing of a, so an edit to a moves no hash of b"
+        );
+        assert_ne!(closure_of(&c).digest(), c_before, "c imports a");
+        assert_ne!(
+            compute_source_hash(root, None).unwrap(),
+            dir_before,
+            "the directory set moves for every file of the directory: the defect"
+        );
+        assert_eq!(closure_of(&b).seeds(), ["b.scxml"]);
+    }
+
+    /// ADR 0094 test 2: the closure follows an import's own imports.
+    #[test]
+    fn a_transitive_import_moves_the_importers_closure() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        let leaf = write_file(root, "a2.scxml", algorithm("a2", "").as_bytes());
+        write_file(
+            root,
+            "a.scxml",
+            algorithm("a", &import("a2.scxml")).as_bytes(),
+        );
+        let c = write_file(root, "c.scxml", chart(&import("a.scxml")).as_bytes());
+        let before = closure_of(&c).digest();
+
+        fs::write(&leaf, algorithm("a2_edited", "")).unwrap();
+
+        assert_ne!(closure_of(&c).digest(), before);
+    }
+
+    /// ADR 0094 test 4: an import outside the document's directory and a
+    /// fragment that is not `.scxml` are inputs, which the directory set
+    /// never read.
+    #[test]
+    fn an_outside_import_and_a_fragment_that_is_not_scxml_move_the_closure() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        let outside = write_file(root, "other/x.scxml", algorithm("x", "").as_bytes());
+        let fragment = write_file(
+            root,
+            "doc/frag.xml",
+            b"<state xmlns=\"http://www.w3.org/2005/07/scxml\" id=\"included\"/>\n",
+        );
+        let body = format!(
+            "{}<xi:include xmlns:xi=\"http://www.w3.org/2001/XInclude\" href=\"frag.xml\"/>\n",
+            import("../other/x.scxml")
+        );
+        let main = write_file(root, "doc/main.scxml", chart(&body).as_bytes());
+        let dir_before = compute_source_hash(&root.join("doc"), None).unwrap();
+        let before = closure_of(&main).digest();
+
+        fs::write(&outside, algorithm("x_edited", "")).unwrap();
+        let after_import = closure_of(&main).digest();
+        assert_ne!(after_import, before, "the import outside the directory");
+        assert_eq!(
+            compute_source_hash(&root.join("doc"), None).unwrap(),
+            dir_before,
+            "which the directory set does not read: the defect"
+        );
+
+        fs::write(
+            &fragment,
+            b"<state xmlns=\"http://www.w3.org/2005/07/scxml\" id=\"edited\"/>\n",
+        )
+        .unwrap();
+        assert_ne!(
+            closure_of(&main).digest(),
+            after_import,
+            "the fragment that is not .scxml"
+        );
+    }
+
+    /// ADR 0094 test 5: a copy staged outside the input root hashes as the
+    /// document it was copied from, with the child the input root holds.
+    #[test]
+    fn a_staged_copy_hashes_as_the_document_it_was_copied_from() {
+        let tracked = TempDir::new().unwrap();
+        let stage = TempDir::new().unwrap();
+        let doc_text = chart("<state id=\"run\"><invoke src=\"child.scxml\"/></state>\n");
+        let original = write_file(tracked.path(), "doc.scxml", doc_text.as_bytes());
+        write_file(tracked.path(), "child.scxml", chart("").as_bytes());
+        let copy = write_file(stage.path(), "doc.scxml", doc_text.as_bytes());
+
+        let from_original = closure_of(&original);
+        let from_copy = InputClosure::of(
+            &[copy.as_path()],
+            ClosureOptions {
+                input_root: Some(tracked.path()),
+                ..ClosureOptions::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(from_copy.digest(), from_original.digest());
+        assert_eq!(from_copy.seeds(), from_original.seeds());
+        assert_eq!(from_copy.seeds(), ["doc.scxml"]);
+    }
+
+    /// ADR 0094 test 6: a tree copied elsewhere whole has the same closures.
+    #[test]
+    fn the_closure_does_not_depend_on_where_the_tree_sits() {
+        let digests: Vec<[u8; 32]> = (0..2)
+            .map(|_| {
+                let dir = TempDir::new().unwrap();
+                let root = dir.path();
+                write_file(root, "shared/a.scxml", algorithm("a", "").as_bytes());
+                write_file(root, "doc/b.scxml", algorithm("b", "").as_bytes());
+                let body = format!("{}{}", import("../shared/a.scxml"), import("b.scxml"));
+                let main = write_file(root, "doc/main.scxml", chart(&body).as_bytes());
+                closure_of(&main).digest()
+            })
+            .collect();
+        assert_eq!(digests[0], digests[1]);
+    }
+
+    /// ADR 0094 test 12: `deploy.yaml` is in every closure of a run given one.
+    #[test]
+    fn deploy_yaml_is_in_every_closure_of_a_run_given_one() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        let doc = write_file(root, "a.scxml", chart("").as_bytes());
+        let deploy = write_file(root, "deploy.yaml", b"machines: {}");
+        let with = InputClosure::of(
+            &[doc.as_path()],
+            ClosureOptions {
+                deploy_yaml: Some(&deploy),
+                ..ClosureOptions::default()
+            },
+        )
+        .unwrap();
+        assert_ne!(with.digest(), closure_of(&doc).digest());
+        assert!(with.contributing_paths().contains(&deploy));
+    }
+
+    /// A file generated from several documents names each, from the deepest
+    /// directory that holds them all.
+    #[test]
+    fn several_seeds_are_keyed_from_the_directory_that_holds_them() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        let left = write_file(root, "left/a.scxml", chart("").as_bytes());
+        let right = write_file(root, "right/b.scxml", chart("").as_bytes());
+        let both = InputClosure::of(
+            &[right.as_path(), left.as_path()],
+            ClosureOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(both.seeds(), ["left/a.scxml", "right/b.scxml"]);
+    }
+
+    /// A standard document is keyed by its library name, wherever it is read.
+    #[test]
+    fn a_standard_seed_is_keyed_by_its_library_name() {
+        let seed = Path::new("sce:std/time/days_in_month.scxml");
+        let closure = closure_of(seed);
+        assert_eq!(closure.seeds(), ["sce:std/time/days_in_month.scxml"]);
+        assert!(closure.holds_a_document());
+        assert!(
+            closure.contributing_paths().is_empty(),
+            "a standard document is in the generator, not on disk"
+        );
+    }
+
+    /// A seed that cannot be read is refused, never left out.
+    #[test]
+    fn a_seed_that_cannot_be_read_is_refused() {
+        let dir = TempDir::new().unwrap();
+        let missing = dir.path().join("absent.scxml");
+        assert!(matches!(
+            InputClosure::of(&[missing.as_path()], ClosureOptions::default()),
+            Err(DriftHashError::Io { .. })
+        ));
+    }
+
+    /// The set form holds every document under its directory and what they
+    /// reach outside it.
+    #[test]
+    fn the_set_form_covers_its_directory_and_what_its_documents_reach() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        let outside = write_file(root, "other/x.scxml", algorithm("x", "").as_bytes());
+        let inside = write_file(root, "set/b.scxml", chart("").as_bytes());
+        write_file(
+            root,
+            "set/a.scxml",
+            chart(&import("../other/x.scxml")).as_bytes(),
+        );
+        let set = root.join("set");
+        let first = InputClosure::of_directory(&set, ClosureOptions::default()).unwrap();
+        assert_eq!(first.seeds(), [SET_FORM_SEED]);
+
+        fs::write(&outside, algorithm("x_edited", "")).unwrap();
+        let second = InputClosure::of_directory(&set, ClosureOptions::default()).unwrap();
+        assert_ne!(second.digest(), first.digest(), "what a document reaches");
+
+        fs::write(&inside, chart("<state id=\"t\"/>\n")).unwrap();
+        let third = InputClosure::of_directory(&set, ClosureOptions::default()).unwrap();
+        assert_ne!(third.digest(), second.digest(), "any document of the set");
+
+        let empty = TempDir::new().unwrap();
+        assert!(
+            !InputClosure::of_directory(empty.path(), ClosureOptions::default())
+                .unwrap()
+                .holds_a_document()
         );
     }
 }
