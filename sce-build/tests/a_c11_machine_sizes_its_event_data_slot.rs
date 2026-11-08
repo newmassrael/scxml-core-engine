@@ -445,6 +445,7 @@ const SCRIPTED: &str = r##"<?xml version="1.0"?>
       <send event="c" target="#_internal"><content expr="v + 1"/></send>
       <send event="d" delay="1s"><param name="q" expr="v + 2"/></send>
       <send event="h" type="x-sce-host"><param name="p" expr="'x' + v"/></send>
+      <send event="w" type="x-sce-host" delay="1s"><param name="p" expr="'y' + v"/></send>
     </onentry>
     <invoke type="x-app-host" id="job" namelist="v"><param name="r" expr="v + 3"/></invoke>
     <transition event="go" target="t"/>
@@ -568,6 +569,13 @@ fn a_script_machine_holds_each_event_text_it_owns_and_frees_them_before_its_engi
     assert!(
         scheduled.contains("    char *data;\n") && !scheduled.contains("char data["),
         "a scheduled entry owns a text and holds no slot for it:\n{scheduled}"
+    );
+    assert!(
+        scheduled.contains("    char *host_content;\n")
+            && scheduled.contains("    char *host_event_data;\n")
+            && scheduled.contains("    char *host_param_values[1];\n")
+            && !scheduled.contains("_DATA_LEN]"),
+        "a delayed host-served send owns its texts and holds no slot for them:\n{scheduled}"
     );
     let input = record(&header, "probe_inbox_input");
     assert_eq!(

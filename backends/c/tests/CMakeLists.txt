@@ -1804,6 +1804,7 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
     sce_generate_static_integration_c_test(a_script_machine_owns_each_event_text
         "${SCE_C_INTEGRATION_GENERATED_DIR}"
         SCXML_FILE "${CMAKE_CURRENT_SOURCE_DIR}/integration_resources/a_script_machine_owns_each_event_text/a_script_machine_owns_each_event_text.scxml"
+        HOST_PROCESSOR x-sce-host
     )
     add_executable(sce_c_integration_a_script_machine_owns_each_event_text
         integration/test_a_script_machine_owns_each_event_text.c
