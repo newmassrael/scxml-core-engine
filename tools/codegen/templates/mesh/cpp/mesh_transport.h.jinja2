@@ -573,7 +573,7 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
    mesh-rpc has the row-5 shutdown emit; any router with §9.6
    shm scxml-invoke inbound or outbound peers has the shm
    drainWith decode-fail emit. #}
-{% set raises_communication_error = has_ordered_binding or has_zenoh_liveliness or machine_outbound_buffer or someip_liveness_service_id_self_hex or someip_machine_liveness_service_id_self_hex or ("someip" in transport_types) or ("zenoh_keyexpr" in transport_types) or ("custom_tcp" in transport_types) or ("dds" in transport_types) or has_mesh_rpc.v or scxml_remote_inbound_peers or scxml_remote_outbound_peers %}
+{% set raises_communication_error = has_ordered_binding or has_zenoh_liveliness or machine_outbound_buffer or someip_liveness_service_id_self_hex or someip_machine_liveness_service_id_self_hex or ("someip" in transport_types) or ("zenoh_keyexpr" in transport_types) or ("custom_tcp" in transport_types) or ("dds" in transport_types) or has_mesh_rpc.v or scxml_remote_inbound_peers or scxml_remote_outbound_peers or has_causal_binding %}
 
 {# CorrelationKey/Hash are needed by SOME/IP client correlation AND/OR
    server pending-request storage. Emit once if either usage is present. #}
@@ -868,6 +868,14 @@ static constexpr std::size_t SHM_RING_CAPACITY_{{ target.target_snake | upper }}
 using {{ target.target_pascal }}ShmChannel = SCE::Mesh::ShmChannel<
     SHM_ARENA_BYTES_{{ target.target_snake | upper }},
     SHM_RING_CAPACITY_{{ target.target_snake | upper }}>;
+{% if target.causal %}
+// docs/adr/0085, section 3.2: the channel the peer's router creates for its
+// own causal binding back to this machine. This router opens it and drains it
+// through the binding's causal route (`pumpCausalShm`), so the peer's changes
+// and vectors reach the route before the engine. The deploy holds the two
+// bindings to one arena and ring size.
+static constexpr const char* CAUSAL_SHM_FROM_{{ target.target_snake | upper }} = "/sce_{{ target.target_stem }}_{{ machine_snake }}";
+{% endif %}
 {% endfor %}
 
 {% endif %}
@@ -937,6 +945,12 @@ static constexpr vsomeip::method_t SOMEIP_GETTER_{{ target.target_snake | upper 
 static constexpr vsomeip::method_t SOMEIP_SETTER_{{ target.target_snake | upper }}_{{ ep.event_const }} = {{ ep.setter_id }};
 {% endif %}
 {% endfor %}
+{% if target.causal_vector_method %}
+// docs/adr/0085, section 3.2: the method the binding's service interface
+// declares for a causal route's vector (the reserved event name
+// `mesh.causal_vector`), which carries no event of the document.
+static constexpr vsomeip::method_t SOMEIP_CAUSAL_VECTOR_METHOD_{{ target.target_snake | upper }} = {{ target.causal_vector_method }};
+{% endif %}
 {# Machine-lifetime subscriptions (SCE_MESH.md §13): same constant shape as
    the event_group arm above, resolved from the same vsomeip.json. The list
    excludes any event the loop above already emitted, so no name is defined
@@ -1218,6 +1232,15 @@ inline void send_to_{{ target.target_snake }}(
     vsomeip::instance_t instance = SOMEIP_INSTANCE_{{ target.target_snake | upper }}
 {% endif %}
 ) {
+{% if target.causal_vector_method %}
+    // docs/adr/0085, section 3.2: a causal route's vector rides the method
+    // its service interface declares for it, as a one-way request. Every
+    // other envelope of the binding, a change re-sent by a repair among
+    // them, rides the method of its own event below.
+    if (env.pattern == SCE::Mesh::PatternKind::CausalVector) {
+{{ someip_send_request(target, "SOMEIP_CAUSAL_VECTOR_METHOD_" + (target.target_snake | upper)) }}
+    }
+{% endif %}
 {% set has_any_event_ids = namespace(v=false) %}
 {% for ep in target.event_patterns if ep.field_kind %}
 {% set has_any_event_ids.v = true %}
@@ -2034,6 +2057,12 @@ struct TransportRouter {
         "{{ machine_name }}", "{{ target.state.kind }}",
         SCE::Mesh::CausalGroup{"{{ target.causal.name }}", {{ target.causal.epoch }}u, { {% for member in target.causal.view %}"{{ member }}"{% if not loop.last %}, {% endif %}{% endfor %} }}};
     std::mutex causal_{{ target.target_snake }}_mutex_;
+{% if target.state.kind == "shm" %}
+    // The peer's channel to this machine, opened when the peer has created
+    // it and drained by `pumpCausalShm`.
+    {{ target.target_pascal }}ShmChannel causal_{{ target.target_snake }}_inbound_{
+        CAUSAL_SHM_FROM_{{ target.target_snake | upper }}, {{ target.target_pascal }}ShmChannel::Mode::Open};
+{% endif %}
 {% endfor %}
     // The verdicts on the changes the machine sent, in order, each with its
     // binding, until the host takes them (`takeCausalVerdicts`).
@@ -4949,11 +4978,22 @@ struct TransportRouter {
             if (auto it = linked_.find("{{ target.target }}"); it != linked_.end()) {
                 return it->second(env);
             }
+{% if target.causal %}
+            // docs/adr/0085, section 3.2: the peer of a causal binding reads
+            // through its own router, whose route judges each envelope by its
+            // tag. The engine's external queue has no route in front of it,
+            // so an unlinked causal target is not written to: the host links
+            // the peer's router first (`linkTo`).
+            SCE_LOG_ERROR("Mesh causal binding '{{ target.target }}': the peer reads through its router, "
+                          "which is not linked (linkTo)");
+            return false;
+{% else %}
             // W3C SCXML 3.12: enqueue to external queue only. Macrostep
             // timing is scheduler/application responsibility — the transport
             // layer does not drive target engine execution.
             using TargetPolicy = std::decay_t<decltype({{ target.target_snake }}_.getPolicy())>;
             return SCE::Mesh::dispatchEnvelope<TargetPolicy>(env, {{ target.target_snake }}_);
+{% endif %}
 {% elif target.state.kind == "shm" %}
             return send_to_{{ target.target_snake }}({{ target.target_snake }}_, env);
 {% elif target.state.kind == "someip" %}
@@ -5445,7 +5485,7 @@ struct TransportRouter {
     }
 
 {% endif %}
-{% if "someip" in transport_types or "zenoh_keyexpr" in transport_types or "local" in transport_types or "custom_tcp" in transport_types or has_mesh_rpc.v or has_server or scxml_remote_inbound_peers or scxml_remote_outbound_peers or "dds" in transport_types %}
+{% if "someip" in transport_types or "zenoh_keyexpr" in transport_types or "local" in transport_types or "custom_tcp" in transport_types or has_mesh_rpc.v or has_server or scxml_remote_inbound_peers or scxml_remote_outbound_peers or "dds" in transport_types or has_causal_binding %}
     /// Dispatch an incoming envelope to a specific session via MeshDispatch.
     ///
     /// Called on transport callback threads (vsomeip application threads,
@@ -5701,6 +5741,36 @@ struct TransportRouter {
         return false;
     }
 
+{% set ns_causal_shm = namespace(v=false) %}
+{% for t in targets if t.causal and t.state.kind == "shm" %}
+{% set ns_causal_shm.v = true %}
+{% endfor %}
+{% if ns_causal_shm.v %}
+    /// Drain the channels the peers of this machine's causal shm bindings
+    /// write to it, each envelope through `dispatchToSession`, which gives it
+    /// to the binding's route. A shm peer's engine never reads the channel
+    /// itself: the route has to judge each change before the engine sees it.
+    /// The peer creates its channel; one it has not created yet is opened at
+    /// a later pump. The host calls this from the thread that drives the
+    /// machine, as it drains every other shm channel. Returns how many
+    /// envelopes were drained.
+    std::size_t pumpCausalShm() {
+        std::size_t total = 0;
+{% for t in targets if t.causal and t.state.kind == "shm" %}
+        if (!causal_{{ t.target_snake }}_inbound_.valid()) {
+            causal_{{ t.target_snake }}_inbound_ = {{ t.target_pascal }}ShmChannel(
+                CAUSAL_SHM_FROM_{{ t.target_snake | upper }}, {{ t.target_pascal }}ShmChannel::Mode::Open);
+        }
+        if (causal_{{ t.target_snake }}_inbound_.valid()) {
+            total += causal_{{ t.target_snake }}_inbound_.drainWith(
+                [this](const SCE::Mesh::MeshEnvelope& env) { (void)this->dispatchToSession(env, 0); },
+                [this]() {{ raise_envelope_corrupt_lambda("shm") }});
+        }
+{% endfor %}
+        return total;
+    }
+
+{% endif %}
     /// Offer a send to the causal binding `target` to its `route`. The
     /// verdict, accepted or refused, is queued for the host and the send is
     /// answered; a send before `startCausal`, or one whose envelope cannot be
@@ -7082,7 +7152,11 @@ struct TransportRouter {
 
         switch (env.pattern) {
         case PK::FireForget:
-        case PK::FieldWrite: {
+        case PK::FieldWrite:
+        // docs/adr/0085, section 3.2: a causal route's vector is one more
+        // put on the binding's own key, as its changes are, so the peer's
+        // put-subscriber hands it to the peer's route like any change.
+        case PK::CausalVector: {
             zenoh_session_->put(key, zenoh::Bytes(std::move(encoded)));
             return true;
         }

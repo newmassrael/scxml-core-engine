@@ -10129,7 +10129,6 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/codegen-pool-with-rpc-client-unsupported` | Mesh Codegen |
 | `mesh/codegen-host-core-unsupported` | Mesh Codegen |
 | `mesh/codegen-causal-delivery-unsupported` | Mesh Codegen |
-| `mesh/codegen-causal-transport-unsupported` | Mesh Codegen |
 
 ### Diagnostic-only
 
