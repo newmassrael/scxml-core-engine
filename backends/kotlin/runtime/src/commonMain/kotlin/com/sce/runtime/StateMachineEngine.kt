@@ -3046,6 +3046,11 @@ abstract class StateMachineEngine<S : State, E : Event>(
                             val taken = bindTypedPayload(queued)
                             if (taken != null) {
                                 processMicrostep(taken.event, taken.metadata, inPlace = taken !== queued)
+                            } else {
+                                // Counted as a discarded external event, as the
+                                // sync loop counts it (docs/adr/0086, section 4.2).
+                                discardedExternalEventCount++
+                                lastDiscarded = queued.event
                             }
                         }
                         true
@@ -4957,7 +4962,14 @@ abstract class StateMachineEngine<S : State, E : Event>(
         // taken in its place is the engine's own error, so no `<finalize>` or
         // autoforward runs for it, and it is answered as one off the internal
         // queue is.
-        val taken = bindTypedPayload(queued) ?: return
+        val taken = bindTypedPayload(queued) ?: run {
+            // Nothing is taken in its place, and it is not dropped unseen: it is
+            // counted as a discarded external event, the hook every lane shares
+            // for an external event that moved nothing (docs/adr/0086, section 4.2).
+            discardedExternalEventCount++
+            lastDiscarded = queued.event
+            return
+        }
         if (taken !== queued) {
             answerInternal(taken.event)
             return

@@ -1683,6 +1683,10 @@ func (e *Engine[S, E]) endTurn(opened bool) {
 //
 // Counts external-queue events only. An internal <raise> that matches nothing
 // is discarded too, but both ends of that are inside the document.
+//
+// It counts, too, an external delivery its door refused in a document that
+// declares no error.execution: nothing is taken in its place, so this is where
+// the host sees it (docs/adr/0086, section 4.2).
 func (e *Engine[S, E]) DiscardedExternalEvents() uint32 {
 	return e.discardedExternalEvents
 }
@@ -2410,6 +2414,12 @@ func (e *Engine[S, E]) processNextExternalEvent() bool {
 	eventWithMeta, verdict := e.liftTypedPayload(eventWithMeta)
 	switch verdict {
 	case refusedWhole:
+		// Nothing is taken in its place, and it is not dropped unseen: it is
+		// counted as a discarded external event, the hook every lane shares for
+		// an external event that moved nothing (docs/adr/0086, section 4.2).
+		e.discardedExternalEvents++
+		e.lastDiscardedEvent = eventWithMeta.Event
+		e.hasDiscarded = true
 		return true
 	case inPlace:
 		e.takeInternalEvent(eventWithMeta)
