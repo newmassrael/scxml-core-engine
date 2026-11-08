@@ -49,17 +49,19 @@ pub fn lowers(lang: Language) -> bool {
 /// Whether `lang` generates a CBOR codec's entry that holds a bounded list of
 /// records (docs/adr/0085, Landing order step 3a): the one answer the
 /// generator's refusal ([`refusal`]), the conformance schedule and a broadcast
-/// log over such a codec read. Rust, the reference, generates one; every other
-/// backend refuses the codec by name until its template writes the array.
+/// log over such a codec read. Rust, the reference, generates one, and so does
+/// every backend whose template writes the array; the rest refuse the codec by
+/// name. One arm per backend, so a backend's landing flips its own line.
+#[allow(clippy::match_like_matches_macro)]
 pub fn lowers_record_list(lang: Language) -> bool {
     match lang {
         Language::Rust => true,
-        Language::Kotlin
-        | Language::Cpp
-        | Language::Go
-        | Language::Python
-        | Language::C11
-        | Language::Swift => false,
+        Language::Kotlin => true,
+        Language::Cpp => false,
+        Language::Go => false,
+        Language::Python => false,
+        Language::C11 => false,
+        Language::Swift => false,
     }
 }
 
@@ -636,21 +638,55 @@ fn render_kotlin(
     imports: &[ImportContext],
 ) -> Result<String, ForgeError> {
     let l = LangCtx::new(Language::Kotlin, imports);
-    let mut ctx = common_context(&l, m, imports, |e| l.type_name(leaf(e)).into_owned())?;
+    // A list of records is a `List` of the schema's payload, which carries no
+    // bound: the encode refuses a count past it.
+    let mut ctx = common_context(&l, m, imports, |e| match e.leaf_type() {
+        Some(present) => l.type_name(present).into_owned(),
+        None => format!("List<{}>", record_type_of(&l, imports, e)),
+    })?;
+    // Each field of a record as the schema's Kotlin unit holds it: a text in a
+    // `String`, a byte string in a `ByteArray`.
+    insert_cbor_records(&l, m, imports, &mut ctx, &|ty| {
+        scalar_record_field_type(&l, ty)
+    })?;
     // A required entry starts at its type's own default — for an enum the
-    // first declared variant — and is filled in by decode; an optional one
-    // starts absent.
+    // first declared variant, for a list of records the empty list — and is
+    // filled in by decode; an optional one starts absent.
     if let Some(serde_json::Value::Array(entries)) = ctx.get_mut("entries") {
         for (entry, e) in entries.iter_mut().zip(&m.cbor_entries) {
-            entry["default"] = if e.is_required() {
-                l.default_expr(leaf(e))
-            } else {
-                "null".to_string()
+            entry["default"] = match (e.is_required(), e.leaf_type()) {
+                (false, _) => "null".to_string(),
+                (true, Some(present)) => l.default_expr(present),
+                (true, None) => "emptyList()".to_string(),
             }
             .into();
         }
     }
     render_in_key_order(&l, env, ctx)
+}
+
+/// The type of a record the list entry `e` holds, as `l`'s language names it
+/// ([`record_payload_type`]); empty for a leaf entry, which no caller asks.
+fn record_type_of(l: &LangCtx, imports: &[ImportContext], e: &CborEntry) -> String {
+    e.record_list()
+        .map(|list| record_payload_type(l.language(), imports, list.record))
+        .unwrap_or_default()
+}
+
+/// The type a record's field is held in where the schema's unit holds each
+/// field as the language names its type ([`LangCtx::type_name`]): a text, a
+/// byte string and a number alike. Empty for a type no record field is, which
+/// a compile refused before any backend renders.
+fn scalar_record_field_type(l: &LangCtx, ty: &ValueType) -> String {
+    match ty {
+        ValueType::Scalar(t) => l.type_name(t).into_owned(),
+        ValueType::Text { .. } => l.type_name(&SceType::String).into_owned(),
+        ValueType::Bytes { .. } => l.type_name(&SceType::Bytes).into_owned(),
+        ValueType::Optional { .. }
+        | ValueType::Record { .. }
+        | ValueType::Union { .. }
+        | ValueType::List { .. } => String::new(),
+    }
 }
 
 fn render_swift(
