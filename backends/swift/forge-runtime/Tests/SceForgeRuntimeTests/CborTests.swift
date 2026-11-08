@@ -129,6 +129,20 @@ private func written(_ body: (inout [UInt8]) -> Void) -> [UInt8] {
     #expect(throws: CodecError.cborMalformed) { _ = try Cbor.readMapLen(&array) }
 }
 
+@Test func anArrayHeadIsWrittenShortestAndReadAsItsCountAndNoOtherItemIs() throws {
+    #expect(written { Cbor.writeArrayHead(2, to: &$0) } == [0x82])
+    #expect(written { Cbor.writeArrayHead(24, to: &$0) } == [0x98, 0x18])
+    var three = SceCursor([0x83])
+    #expect(try Cbor.readArrayLen(&three) == 3)
+    var wide = SceCursor([0x98, 0x18])
+    #expect(try Cbor.readArrayLen(&wide) == 24)
+    // An indefinite-length array, and a map where an array stands.
+    var indefinite = SceCursor([0x9F])
+    #expect(throws: CodecError.cborMalformed) { _ = try Cbor.readArrayLen(&indefinite) }
+    var map = SceCursor([0xA1])
+    #expect(throws: CodecError.cborMalformed) { _ = try Cbor.readArrayLen(&map) }
+}
+
 @Test func aSkipTakesAnItemAndEverythingNestedInIt() throws {
     // A byte string, a text, an array of two, a map of one pair, a tag over an integer, a float's head
     // and a simple value, then a marker the skips must stop before.
