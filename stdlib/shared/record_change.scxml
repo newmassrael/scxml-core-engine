@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/shared/record_change.scxml — one change to a shared record list (record_list,
+  docs/adr/0085, section 1), as one message: `record_list.change`. A change is one unit
+  of the list (docs/adr/0046), and it is one event, so no copy can receive or hold half
+  of one.
+
+  `by` is the node of the change's author, and `wallTime` and `counter` the change's
+  stamp, which is the dot of every write in it. `ops` holds its operations (record_op) in
+  the fixed order of docs/adr/0046, section 3: every write-over, in the order the source
+  held the values it writes over, then every write, in the order of the commands. A
+  change holds at least one operation, since a change that names nothing is no change
+  and is never sent, and at most `shared_parts`, the most operations a copy builds one
+  change of. The list holds nothing of a change's delivery: the layer below it tags and
+  delivers the change (docs/adr/0085, section 3).
+
+  The largest change is a number the build knows (docs/adr/0085, section 5): the unit
+  this schema generates names it, and a build that moves `shared_parts` or `merge_text`
+  moves it.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="record_change"
+       sce:event-name="record_list.change">
+  <sce:import kind="event-schema" src="sce:std/shared/record_op.scxml" as="Op"/>
+  <datamodel>
+    <data id="by" sce:type="uint64" sce:direction="in"/>
+    <data id="wallTime" sce:type="int64" sce:direction="in"/>
+    <data id="counter" sce:type="uint32" sce:direction="in"/>
+    <data id="ops" sce:type="list&lt;record:Op&gt;[1..shared_parts=64]" sce:direction="in"/>
+  </datamodel>
+</scxml>
