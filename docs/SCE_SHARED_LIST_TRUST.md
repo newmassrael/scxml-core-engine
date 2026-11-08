@@ -161,9 +161,36 @@ person's machine is told the role they have now (`Trust::role_events`).
 
 What a device sends is an **operation** of its chain: the event as it travels, the number it has
 among the device's operations (`seq`), the id of the one it follows (`prev`), the entry of the
-log it was made under (`mh`, and that entry's hash `mhh`), and the device's signature of all of
-it (`message::operation_bytes`). Nothing in it is a time the device claims: what decides whether
-it holds is the entry it names and the number it has.
+log it was made under (`mh`, and that entry's hash `mhh`), its causal context (`cx`, below), and
+the device's signature of all of it (`message::operation_bytes`, domain `sce-trust/operation/2`).
+Nothing in it is a time the device claims: what decides whether it holds is the entry it names and
+the number it has.
+
+**The causal context** (docs/adr/0085, section 3.1) is, for each other device whose operations the
+author's machine had been told when the author signed, that device's node and the highest number
+told, lowest node first (`Link::context`; on the wire a list of pairs of decimal texts). The
+author's own column is not in it, since the operation's number orders it after the ones before it
+in its chain. It is signed, so a relay cannot change the order a host tells its machine
+operations in. A context that names its own author, or a device the log had not granted by the
+entry the operation names, is refused. The first domain, `sce-trust/operation/1`, signed the same
+link without a context; a signature of it verifies under none of the second.
+
+**What a machine is told, and when** is causal delivery (Birman, Schiper and Stephenson, ACM TOCS
+9(3), 1991), the layer the list's effect rests on. A host keeps what its machine was told of each
+device, the delivered vector (`Trust::delivered`), and tells it an operation only when it is the
+device's next (one past the highest told) and every entry of its context was told
+(`Trust::deliver`), in an order that is a linear extension of the contexts, whatever order the
+operations were taken in. One below the next was told already and is not told again; one past it,
+or whose context names what the machine was not told, is held and never skipped, and
+`Trust::lacking` names the ranges of devices' chains a held operation waits on, which a round asks
+the relay for (`docs/SCE_SHARED_LIST_RELAY.md` section 6). What lies at or past where a device's
+chain is frozen, or past the last operation the administrators accepted of a device that may write
+no more, is told to no machine, so a context entry that names it is met once the machine was told
+the device up to there. An operation sealed under an epoch before the first one the host holds the
+key of (a member that joined later is given no history of those) is passed over and never told, so
+what its device wrote after it is not held for it. The machine's own column moves when its
+person signs, since the machine made what is signed. A machine that lost what it was told is
+told everything again (`Trust::forget_delivered`, which a resync calls).
 
 **What an event is signed as** is written from the fields it carries and not from the text of
 its data: the domain `sce-trust/event/2`, the list's name, the event's name, then each field as
@@ -190,8 +217,8 @@ two meanings, and there is no path that takes the first.
 A host admits an operation when the entry it names is the one the host holds, its author was a
 writer under that entry, the number is not past the end the log set for the device, the signature
 is true under the key of that entry, and it stands consistently among the device's operations the
-host holds, **whatever order they came in** (the machine's merge is commutative, so the host holds
-nothing back to wait for a predecessor):
+host holds, **whatever order they came in** (admitting holds nothing back to wait for a
+predecessor; telling the machine does, above):
 
 - two different operations at one number, or one that names a predecessor other than the one
   held, are the device signing two histories. The host says so, holds both as proof, tells its
@@ -372,8 +399,11 @@ where it shows.
 ## 5. What a host keeps across a restart
 
 `Trust::to_text` is one text for the host's store (the key-value feature): the checkpoints it
-made or took in, and every operation it holds (the writes it relays and the notes of who wrote
-over what, as they travel, with their signatures and numbers). It holds no key.
+made or took in, every operation it holds (the writes it relays and the notes of who wrote
+over what, as they travel, with their signatures and numbers), and what its machine was told of
+each device (the delivered vector), so that a host restored from it tells its machine nothing twice;
+a text written before it held the vector restores with none, and the next round tells the machine
+every operation held again, which the list takes in once each. It holds no key.
 `restore_from_text` verifies each row against today's log and keeps only what is still true,
 so that what a host knew to be withheld is still known after a restart. The log itself is kept as its entries (`Trust::entries`, each
 `Entry::to_json`), and a host reads it back by appending them in order, which checks the chain again.
