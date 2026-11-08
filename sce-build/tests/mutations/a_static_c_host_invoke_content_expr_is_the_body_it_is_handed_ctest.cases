@@ -40,6 +40,6 @@ PY
 
 mutation_case "an invoke whose body failed starts all the same" <<'PY'
 edit("tools/codegen/templates/c/invoke_methods.jinja2",
-     "\"<invoke> content expr failed to evaluate\");\n{% endif %}\n                    continue;\n",
-     "\"<invoke> content expr failed to evaluate\");\n{% endif %}\n")
+     "{{ reason(\"invoke_content_expr_failed\") }});\n{% endif %}\n                    continue;\n",
+     "{{ reason(\"invoke_content_expr_failed\") }});\n{% endif %}\n")
 PY

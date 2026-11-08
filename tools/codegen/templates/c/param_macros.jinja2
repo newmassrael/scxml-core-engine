@@ -53,7 +53,7 @@
 {% if 'error.execution' in model.events %}
 {{ indent }}{{ csym_prefix }}{{ model.name }}_raise_platform_error(
 {{ indent }}    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-{{ indent }}    "{{ element }} <param name='{{ param.name | escape_c }}'> names no location");
+{{ indent }}    {{ reason("param_names_no_location", element, param.name) }});
 {% endif %}
 {{ indent }}{{ failed_flag }} = true;
 {% else %}
@@ -72,7 +72,7 @@
 {% if 'error.execution' in model.events %}
 {{ indent }}    {{ csym_prefix }}{{ model.name }}_raise_platform_error(
 {{ indent }}        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-{{ indent }}        "{{ element }} <param name='{{ param.name | escape_c }}'> {% if param.expr %}expr failed to evaluate{% else %}location could not be read{% endif %}");
+{{ indent }}        {{ reason("param_expr_failed" if param.expr else "param_location_unreadable", element, param.name) }});
 {% endif %}
 {% if failed_flag %}
 {{ indent }}    {{ failed_flag }} = true;

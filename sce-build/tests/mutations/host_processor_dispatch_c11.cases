@@ -63,7 +63,7 @@ edit("tools/codegen/templates/c/state_machine.c.jinja2",
 {% if 'error.execution' in model.events %}
         {{ csym_prefix }}{{ model.name }}_raise_platform_error(
             sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-            "<send> names a processor the host declared but never registered");
+            {{ reason("send_processor_unregistered") }});
 {% endif %}
         return;
     }""",
@@ -137,8 +137,7 @@ edit("tools/codegen/templates/c/state_machine.c.jinja2",
      """    if (_replies.overflowed) {
         {{ csym_prefix }}{{ model.name }}_raise_platform_error(
             sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-            "<send> to a host-served processor reported more events than this "
-            "build reserved room for (SCE_MAX_HOST_RESPONSES)");
+            {{ reason("send_replies_past_room") }});
     }""",
      "")
 PY
