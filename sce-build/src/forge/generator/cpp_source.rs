@@ -116,26 +116,11 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
             .collect::<Vec<_>>()
             .join(" || ");
         // A chain's memberships make arms that each hold the chain as a `Chain`
-        // of the kinds the arm says (R6b); a bare entry's, whose arm holds the
-        // entry's place (R6a), is not yet, nor is a chain a gate of its own
-        // leaves out where an arm holds none of the kinds.
-        if let Some(chain) = group.chain() {
-            let field = m
-                .fields
-                .iter()
-                .find(|f| f.id == chain)
-                .expect("a group's chain is a field of the codec");
-            if group.member_is_bare() {
-                forms.push(format!("`{label}`, a group of a bare entry's membership"));
-            } else if group
-                .arms
-                .iter()
-                .any(|arm| super::rust_source::chain_optional_in(group, field, arm))
-            {
-                forms.push(format!(
-                    "`{label}`, a group of the memberships of a chain a gate leaves out"
-                ));
-            }
+        // of the kinds the arm says (R6b), optionally where a gate of its own
+        // may leave it out; a bare entry's, whose arm holds the entry's place
+        // (R6a), is not yet.
+        if group.chain().is_some() && group.member_is_bare() {
+            forms.push(format!("`{label}`, a group of a bare entry's membership"));
         }
         for id in group.fields() {
             let member = m
@@ -265,13 +250,22 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
                         field.id
                     )),
                     // Written where its gate holds, which the printer tests on
-                    // the carriers as the encode writes them and on the inputs
-                    // it is handed.
+                    // the carriers as the encode writes them, on the inputs it
+                    // is handed, and on the arm the value holds of a group whose
+                    // gate is a chain's membership.
                     Guard::Gate => {
                         let testable = field.present_if.as_ref().is_some_and(|gate| {
-                            plan.clauses(gate)
-                                .iter()
-                                .all(|c| matches!(c, Clause::Flag { .. } | Clause::Input { .. }))
+                            plan.clauses(gate).iter().all(|c| {
+                                matches!(
+                                    c,
+                                    Clause::Flag { .. }
+                                        | Clause::Input { .. }
+                                        | Clause::Member {
+                                            held: Some((_, Some(_))),
+                                            ..
+                                        }
+                                )
+                            })
                         });
                         if !testable {
                             forms.push(format!("`{}`, gated on a chain's membership", field.id));
@@ -975,6 +969,24 @@ struct ChainKinds {
     least: u64,
     /// The namespace of the chain's entry codec.
     namespace: String,
+    /// The view of the chain itself, which the decode makes of what it read.
+    view: String,
+    /// Whether the arm may hold no chain: the chain is gated itself, and the
+    /// arm holds no kind of entry, which an absent chain holds none of either.
+    /// It is then viewed and held as a `std::optional` of the chain.
+    optional: bool,
+}
+
+impl ChainKinds {
+    /// The trait that says whether a type is what a source may present for
+    /// the chain in the arm: the chain, or an optional of it.
+    fn presented_trait(&self) -> String {
+        if self.optional {
+            format!("{}_present", self.trait_name)
+        } else {
+            self.trait_name.clone()
+        }
+    }
 }
 
 /// The two lists of one count an arm of a group holds as one member
@@ -1218,17 +1230,30 @@ impl<'p> GroupPart<'p> {
                 .chain(lacked_keys.iter().map(|k| format!("_not_0x{k:x}")))
                 .collect();
             let mut p = presented(id);
-            p.view = format!(
+            let view = format!(
                 "::SCE::Forge::Chain<::SCE::Forge::Span<const {class}>, {}, {}, {bounds}>",
                 kinds(&holds),
                 kinds(&lacks)
             );
-            p.held = format!(
+            let held = format!(
                 "::SCE::Forge::Chain<std::vector<{class}>, {}, {}, {bounds}>",
                 kinds(&holds),
                 kinds(&lacks)
             );
+            // An arm that holds no kind of a chain gated itself holds the
+            // chain optionally (docs/adr/0065 §6 R6b).
+            let optional = super::rust_source::chain_optional_in(group, field, arm);
+            (p.view, p.held) = if optional {
+                (
+                    format!("std::optional<{view}>"),
+                    format!("std::optional<{held}>"),
+                )
+            } else {
+                (view.clone(), held)
+            };
             p.chain = Some(ChainKinds {
+                view,
+                optional,
                 trait_name: format!("is_{}_chain{suffix}", p.name),
                 holds,
                 lacks,
@@ -1617,6 +1642,19 @@ impl<'p> GroupPart<'p> {
                 least = chain.least,
                 ns = chain.namespace
             ));
+            if chain.optional {
+                out.push_str(&format!(
+                    "/// Whether `R` is what a source may present for `{member}` where the arm may\n\
+                     /// hold no chain: a `std::optional` of a type `{trait_name}` accepts.\n\
+                     template <class R>\n\
+                     struct {present} : std::false_type {{}};\n\
+                     template <class C>\n\
+                     struct {present}<std::optional<C>> : {trait_name}<C> {{}};\n\n",
+                    member = m.name,
+                    trait_name = chain.trait_name,
+                    present = chain.presented_trait()
+                ));
+            }
         }
         for arm in &self.arms {
             out.push_str(&arm.members_traits());
@@ -1853,11 +1891,22 @@ impl<'p> GroupPart<'p> {
                             first = lists.first,
                             second = lists.second
                         )
-                    } else if m.chain.is_some() {
-                        format!(
-                            "{indent}_r_{member}.keep(source::{member}({from}).inner());\n",
-                            member = m.name
-                        )
+                    } else if let Some(chain) = &m.chain {
+                        // A chain the arm may hold none of is kept where it is
+                        // there; the read it is bound to lives through the keep.
+                        if chain.optional {
+                            format!(
+                                "{indent}if (const auto& _c_{member} = source::{member}({from})) {{\n\
+                                 {indent}    _r_{member}.keep(_c_{member}->inner());\n\
+                                 {indent}}}\n",
+                                member = m.name
+                            )
+                        } else {
+                            format!(
+                                "{indent}_r_{member}.keep(source::{member}({from}).inner());\n",
+                                member = m.name
+                            )
+                        }
                     } else if m.kept_as_read() {
                         format!(
                             "{indent}_r_{member}.keep(source::{member}({from}));\n",
@@ -1933,19 +1982,41 @@ impl<'p> GroupPart<'p> {
                         second = lists.second
                     )
                 })
-                .chain(arm.members.iter().filter(|m| m.chain.is_some()).map(|m| {
-                    // The chain the decode read, which holds the kinds the gates
-                    // it chose the arm by test: the arm's chain, as its type says.
-                    format!(
-                        "{indent}const auto _ch_{name} = {view}::make(_b_{name}->inner());\n\
-                         {indent}if (!_ch_{name}) {{\n\
-                         {indent}    cursor.refuse(::SCE::Forge::CodecError::PresentIfMismatch);\n\
-                         {indent}    return std::nullopt;\n\
-                         {indent}}}\n",
-                        name = m.name,
-                        view = m.view
-                    )
-                }))
+                .chain(
+                    arm.members
+                        .iter()
+                        .filter_map(|m| m.chain.as_ref().map(|chain| (m, chain)))
+                        .map(|(m, chain)| {
+                            // The chain the decode read, which holds the kinds the
+                            // gates it chose the arm by test: the arm's chain, as
+                            // its type says; where the arm may hold none, the
+                            // chain where the decode read one.
+                            if chain.optional {
+                                format!(
+                                    "{indent}std::optional<{view}> _ch_{name};\n\
+                                     {indent}if (_b_{name}) {{\n\
+                                     {indent}    _ch_{name} = {view}::make(_b_{name}->inner());\n\
+                                     {indent}    if (!_ch_{name}) {{\n\
+                                     {indent}        cursor.refuse(::SCE::Forge::CodecError::PresentIfMismatch);\n\
+                                     {indent}        return std::nullopt;\n\
+                                     {indent}    }}\n\
+                                     {indent}}}\n",
+                                    name = m.name,
+                                    view = chain.view
+                                )
+                            } else {
+                                format!(
+                                    "{indent}const auto _ch_{name} = {view}::make(_b_{name}->inner());\n\
+                                     {indent}if (!_ch_{name}) {{\n\
+                                     {indent}    cursor.refuse(::SCE::Forge::CodecError::PresentIfMismatch);\n\
+                                     {indent}    return std::nullopt;\n\
+                                     {indent}}}\n",
+                                    name = m.name,
+                                    view = chain.view
+                                )
+                            }
+                        }),
+                )
                 .collect::<String>()
         };
         // A member read optionally is there where its value is, and two lists
@@ -1962,8 +2033,12 @@ impl<'p> GroupPart<'p> {
                     if m.aligned.is_some() {
                         return format!("*_al_{}", m.name);
                     }
-                    if m.chain.is_some() {
-                        return format!("*_ch_{}", m.name);
+                    if let Some(chain) = &m.chain {
+                        return if chain.optional {
+                            format!("_ch_{}", m.name)
+                        } else {
+                            format!("*_ch_{}", m.name)
+                        };
                     }
                     let read = if m.read_optionally() {
                         format!("*{}", m.name)
@@ -2485,7 +2560,7 @@ impl<'p> Presented<'p> {
             return vec![format!("is_{}_aligned<std::decay_t<{read}>>", self.name)];
         }
         if let Some(chain) = &self.chain {
-            return vec![format!("{}<std::decay_t<{read}>>", chain.trait_name)];
+            return vec![format!("{}<std::decay_t<{read}>>", chain.presented_trait())];
         }
         match (&self.body, &self.list) {
             (Some(held), _) => vec![format!(
@@ -2513,9 +2588,15 @@ impl<'p> Presented<'p> {
         );
         // A chain an arm holds is kept as the list it holds, its entries read
         // as sources of its entry codec.
+        // An optional one, where it is there.
         if let Some(chain) = &self.chain {
+            let inner = if chain.optional {
+                format!("({read})->inner()")
+            } else {
+                format!("{read}.inner()")
+            };
             return format!(
-                "noexcept(std::declval<::SCE::Forge::Detail::Kept<::SCE::Forge::Detail::InnerRead<decltype({read})>>&>().keep({read}.inner())) && {}::is_nothrow_source<::SCE::Forge::Detail::ElementOf<std::decay_t<decltype({read})>>>::value",
+                "noexcept(std::declval<::SCE::Forge::Detail::Kept<::SCE::Forge::Detail::InnerRead<decltype({read})>>&>().keep({inner})) && {}::is_nothrow_source<::SCE::Forge::Detail::ElementOf<typename ::SCE::Forge::Detail::ChainOf<std::decay_t<decltype({read})>>::type>>::value",
                 chain.namespace
             );
         }
@@ -3319,8 +3400,19 @@ pub(super) fn render(
                     negate,
                 } => bit(read(carrier), 1u64 << at, *negate),
                 Clause::Input { name, negate } => bit(input_name(name), 1, *negate),
+                // A membership a group's gate is: what the arm the value holds
+                // says of it (docs/adr/0065 §6 R6b).
+                Clause::Member {
+                    held: Some((group, Some(gate))),
+                    negate,
+                    ..
+                } => {
+                    let g = &groups[*group];
+                    let value = g.gate_value(&g.group.gates[*gate], &format!("_r_{}", g.name));
+                    format!("({value} {} 0)", if *negate { "==" } else { "!=" })
+                }
                 Clause::Member { .. } => {
-                    unreachable!("`unlowered` refuses a gate on a chain's membership")
+                    unreachable!("`unlowered` refuses a membership no group's gate is")
                 }
             })
             .collect::<Vec<_>>()

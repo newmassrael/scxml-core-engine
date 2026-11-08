@@ -597,6 +597,14 @@ old encode, the old encode and its templates are removed in the same landing.
    writes it as any chain; the decode picks the arm by the kinds the chain it read holds. A chain whose arm
    holds an entry of some kind has no value made by default, so a value made by default holds the arm where
    no gate holds. The printed set is 136 codecs.
+
+   *The twenty-seventh C++ landing, 2026-11-08:* such a group whose chain is gated itself (R6b). The arm
+   where the chain holds none of the kinds holds it as a `std::optional` of its `Chain`, as the Rust arm holds
+   an `Option`: an absent chain holds no entry of any kind either. The encode keeps the list where the arm
+   holds the chain, and derives the chain's presence flag from that; a field gated on a membership, such as
+   a count or a length the encode derives, is written where the arm the value holds says the chain has the
+   kind, as the Rust printer tests it. The decode reads an absent chain as holding no kind. The printed set
+   is 137 codecs.
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences

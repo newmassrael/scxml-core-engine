@@ -15,6 +15,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <optional>
 #include <type_traits>
 #include <vector>
 
@@ -125,6 +126,26 @@ void a_held_chain_reads_as_the_list_it_holds() {
     CHECK(fewest.size() == 1 && fewest[0].id == 0, "the default holds the fewest entries, value-made");
 }
 
+// An arm whose kinds an absent chain also has holds the chain optionally, and
+// keeps the list it holds alike, present or not.
+static_assert(
+    std::is_same<::SCE::Forge::Detail::InnerRead<const std::optional<HeldSevenNotNine> &>, const Owned &>::value,
+    "an optional chain read by reference is kept as its list by reference");
+static_assert(std::is_same<::SCE::Forge::Detail::InnerRead<std::optional<SevenNotNine>>, Viewed>::value,
+              "one read by value is kept as a copy of its list");
+static_assert(std::is_same<::SCE::Forge::Detail::InnerRead<const HeldSevenNotNine &>,
+                           ::SCE::Forge::Detail::InnerRead<const std::optional<HeldSevenNotNine> &>>::value,
+              "the arms that hold it optionally and plainly keep one list");
+
+void an_absent_chain_holds_no_entry_of_any_kind() {
+    const std::optional<Owned> absent{};
+    const std::optional<Owned> present{Owned{{1, 0x10}, {7, 0x11}}};
+    CHECK(!::SCE::Forge::Detail::first_of_kind<Seven>(absent).has_value(), "an absent chain holds no 7");
+    CHECK(::SCE::Forge::Detail::first_of_kind<Seven>(present) == std::optional<std::size_t>{1},
+          "a present one holds its 7 where it stands");
+    CHECK(!::SCE::Forge::Detail::first_of_kind<Nine>(present).has_value(), "and no 9 it does not hold");
+}
+
 using HeldPlaced = Placed<Owned, Seven, 3>;
 using ViewedPlaced = Placed<Viewed, Seven, 3>;
 
@@ -164,6 +185,7 @@ void make_places_the_named_entry_among_the_others() {
 int main() {
     make_admits_exactly_the_chains_of_the_arm();
     a_held_chain_reads_as_the_list_it_holds();
+    an_absent_chain_holds_no_entry_of_any_kind();
     make_places_the_named_entry_among_the_others();
     if (failures != 0) {
         std::fprintf(stderr, "%d check(s) failed\n", failures);
