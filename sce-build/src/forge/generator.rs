@@ -6508,6 +6508,9 @@ pub struct C11DataSlot {
     /// namelist names of any `<send>` or `<invoke>` of the document, at least
     /// one.
     pub pairs: usize,
+    /// The machine's scratch, one union per colour of its roles' interference
+    /// graph (docs/adr/0086, section 8.5 (e); [`crate::forge::c11_scratch`]).
+    pub scratch: Vec<crate::forge::c11_scratch::ScratchColour>,
 }
 
 /// The slot of `_event.data` of the C11 machine `model` (docs/adr/0086,
@@ -6573,6 +6576,7 @@ pub fn c11_data_slot(
         inputs,
         declared: largest.map_or(1, |len| len.saturating_add(1)),
         pairs: c11_scratch_pairs(model),
+        scratch: crate::forge::c11_scratch::layout(),
     })
 }
 
