@@ -1,8 +1,8 @@
 # ADR 0094 — A generated file's source hash covers the documents it is generated from and what they read, and no other document
 
-- Status: Proposed (2026-11-08). Written at the owner's order of that day, after the measurement in "Context". Nothing
-  of it has landed; "Landing order" lists the steps, each with the tests that hold it. "Open questions for the owner"
-  lists what must be answered before acceptance, each with a recommendation the sections are written to.
+- Status: Accepted (2026-11-08). Written at the owner's order of that day, after the measurement in "Context". The
+  owner accepted it the same day and took the recommendation of each of the six questions in "Open questions for the
+  owner" ("Owner's answers"). "Landing order" lists the steps, each with the tests that hold it.
 - Date: 2026-11-08
 - Amends, once accepted:
   - SCE Protocol-Synthesis RFC §synth-6.2.6 (`docs/spec/synth/rfc-sce-protocol-synthesis.md`): what the
@@ -527,6 +527,15 @@ Each has a recommendation; the sections are written to it.
    where it is.
 
 ## Owner's answers
+
+The owner accepted the ADR on 2026-11-08 and took each recommendation:
+
+1. **The `source:` line**: added, so `verify` recomputes each file's own closure (section 3).
+2. **A child document a run writes itself**: seeded by the authored document it was written from.
+3. **`deploy.yaml`**: in the closure of every file of a run given one (section 1).
+4. **The acceptance record**: unchanged in this ADR, held to the closure by test 3.
+5. **`orchestrate`**: every file covers the whole named set until the joint compile records per-output reads.
+6. **Registries**: left to the content judge, as a template is.
 
 ## References
 
