@@ -50,6 +50,16 @@ import Testing
                 == #"{"errorName":"communication","reason":"DEDUP_WINDOW_OVERFLOW","source":"ecu","window_size":256}"#)
     }
 
+    /// Row 18: its `source`, then the epoch the envelope was tagged with and the replica that tagged it,
+    /// and no transport.
+    @Test func aViewMismatchNamesItsSourceEpochAndReplica() {
+        #expect(
+            Signal.causalViewMismatch(source: "list", epoch: 1, replica: "01010101-0101-0101-0101-010101010101")
+                .eventData(binding: wssToHmi)
+                == #"{"errorName":"communication","reason":"CAUSAL_VIEW_MISMATCH","source":"list","epoch":1,"replica":"01010101-0101-0101-0101-010101010101"}"#
+        )
+    }
+
     @Test func aGapEndedByATickHasNoBindingToName() {
         #expect(
             Signal.orderingGap(source: "ecu", lostLo: 4, lostHi: 6).eventData(binding: nil)

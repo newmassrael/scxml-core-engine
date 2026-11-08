@@ -124,6 +124,19 @@ public protocol Sealer: AnyObject {
     func seal(target: String, event: String, data: String) -> Sealed
 }
 
+/// The verdict of a causal peer's layer on a change the machine sent to it (docs/adr/0085, section 3,
+/// "offer and verdict"). An accepted change is recorded with its dot in the copy's journal, and then
+/// `Endpoint.committed` releases it; a refused one took no number and no copy takes it in.
+public struct CausalPeerVerdict: Equatable, Sendable {
+    public var peer: String
+    public var verdict: CausalVerdict
+
+    public init(peer: String, verdict: CausalVerdict) {
+        self.peer = peer
+        self.verdict = verdict
+    }
+}
+
 /// One machine's Mesh endpoint on a host.
 public final class Endpoint {
     private struct Retry {
@@ -143,10 +156,35 @@ public final class Endpoint {
     private var admission: (any EventAdmission)?
     private var sealer: (any Sealer)?
 
+    /// The verdicts of the causal layers on the changes the machine sent, in the order they were given
+    /// (`takeVerdicts`).
+    private var verdicts: [CausalPeerVerdict] = []
+
     public init(router: Router, transport: any Transport, environment: any Environment) {
         self.router = router
         self.transport = transport
         self.environment = environment
+    }
+
+    /// Start the causal layer of the causal peer `peer` (see `Router.startCausal`).
+    public func startCausal(
+        _ peer: String, start: CausalStart, room: Int, announceEveryMs: Int64
+    ) throws(RouterError) {
+        try router.startCausal(peer, start: start, room: room, announceEveryMs: announceEveryMs)
+    }
+
+    /// The verdicts of the causal layers on what the machine sent, in order. The host records each
+    /// accepted change in the copy's journal, calls `committed` once the record is committed, and tells
+    /// the copy of each refusal.
+    public func takeVerdicts() -> [CausalPeerVerdict] {
+        defer { verdicts.removeAll() }
+        return verdicts
+    }
+
+    /// The host committed the journal record of `dot`, a change sent to the causal peer `peer`: it, and
+    /// every accepted change before it, leaves.
+    public func committed(peer: String, dot: Dot) {
+        apply(router.committed(peer, dot: dot, nowMs: environment.nowMs()))
     }
 
     /// The events the link `peer` may not deliver to the machine: what arrives on it under one of
@@ -315,6 +353,13 @@ public final class Endpoint {
                 toEngine.append(.endInvoke(invokeID: invokeID, token: token, failed: false, data: data, source: source))
             case let .fail(invokeID, token, data, source):
                 toEngine.append(.endInvoke(invokeID: invokeID, token: token, failed: true, data: data, source: source))
+            case let .accepted(peer, dot):
+                verdicts.append(CausalPeerVerdict(peer: peer, verdict: .accepted(dot)))
+            case let .refused(peer, refusal):
+                verdicts.append(CausalPeerVerdict(peer: peer, verdict: .refused(refusal)))
+            case let .announceDue(peer):
+                let id = environment.envelopeID()
+                apply(router.announce(peer, id: id, nowMs: environment.nowMs()))
             }
         }
     }
