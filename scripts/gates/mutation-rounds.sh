@@ -412,11 +412,23 @@ fi
 # `cpp-suite` learned the same thing on a build machine without the mesh
 # transport SDKs, where it reported FAILED for what was never its tree's
 # fault.
+#
+# A landing is the other party that prepares the tree rather than refusing, for
+# the reason the lane does: it is a judgment nobody iterates on, and a refusal
+# there would send back as not measured every item that reaches a ctest
+# casefile, on every build machine whose checkout was never configured. It runs
+# the lane's own recipe, so the tree judged there is the tree judged here.
 if [[ ! -f build/CMakeCache.txt ]]; then
     needs_ctest=()
     for casefile in ${SELECTED[@]+"${SELECTED[@]}"}; do
         [[ "${RUNNER_OF[$casefile]}" == "ctest" ]] && needs_ctest+=("$casefile")
     done
+    if (( ${#needs_ctest[@]} > 0 )) && sce_gate_landing; then
+        sce_gate_step "configuring build/ for ${#needs_ctest[@]} ctest casefile(s), as the lane does (scripts/prepare_ctest_tree.sh)"
+        bash scripts/prepare_ctest_tree.sh \
+            || sce_gate_fail "scripts/prepare_ctest_tree.sh could not configure build/ for the ctest casefiles: ${needs_ctest[*]}"
+        needs_ctest=()
+    fi
     if (( ${#needs_ctest[@]} > 0 )); then
         sce_gate_cannot_run "no configured CMake tree at build/, and ${#needs_ctest[@]} selected casefile(s) declare a ctest selector: ${needs_ctest[*]}
 Prepare one with scripts/prepare_ctest_tree.sh — the same script the lane

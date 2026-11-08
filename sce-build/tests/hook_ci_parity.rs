@@ -483,57 +483,16 @@ const CI_ONLY: &[(&str, &str)] = &[
     // ⚠⚠ It was red on the committed tree and nobody saw it, because
     // `cargo test` stops at the first failing TARGET and two earlier ones
     // were failing. Found 2026-09-18 only after those were repaired.
-    (
-        "gradlew :sce-kotlin-runtime:jvmJar",
-        "provisions the Kotlin statechart runtime classpath for the smoke \
-         tests. Like the forge runtime jar, it is a prerequisite rather \
-         than a verification. CI builds it and refuses missing prerequisites \
-         through SCE_REQUIRE_TOOLS; local contributors may skip with a warning.",
-    ),
-    (
-        "gradlew :sce-kotlin-world:installDist",
-        "provisions the runner rather than verifying the tree: it builds the \
-         step server the world simulation hosts a generated Kotlin copy of the \
-         to-do list with, a JVM program the world tests start once per Kotlin \
-         actor. Like the runtime jars it is a prerequisite and not a \
-         verification; CI builds it and, with SCE_REQUIRE_TOOLS, fails the \
-         tests that find it missing, and a workstation that has not built it \
-         skips those tests with a warning.",
-    ),
-    (
-        "gradlew :sce-kotlin-mls-replay:installDist",
-        "provisions the runner rather than verifying the tree: it builds the \
-         JVM program the Kotlin lane of the group key agreement's C ABI \
-         replays the recorded scenario with. Like the step server above it is \
-         a prerequisite and not a verification; CI builds it and, with \
-         SCE_REQUIRE_TOOLS, fails the test that finds it missing, and a \
-         workstation that has not built it skips that lane with a warning.",
-    ),
-    (
-        "gradlew :sce-kotlin-peer-replay:installDist",
-        "provisions the runner rather than verifying the tree: it builds the \
-         JVM program the Kotlin lane of the peer core's C ABI replays the \
-         recorded scenario of two devices and a relay with. A prerequisite \
-         like the group key's replay above; CI builds it and, with \
-         SCE_REQUIRE_TOOLS, fails the test that finds it missing, and a \
-         workstation that has not built it skips that lane with a warning.",
-    ),
-    (
-        "gradlew :sce-forge-runtime-kotlin:jvmJar",
-        "provisions the runner rather than verifying the tree: it builds the \
-         jar every Kotlin forge gate puts on `kotlinc -cp`, and a runner \
-         starts without one. Unlike the `jvmTest` task above it leaves the \
-         tree clean (measured — its output is the gitignored `build/libs`), \
-         so the objection is not a side effect but that a jar is an input, \
-         and a cold Gradle distribution download is unbounded network work a \
-         push-time hook must not do. A workstation that has built the Kotlin \
-         lane once already carries it. The residue, stated rather than \
-         hidden: on a tree that does NOT, the Kotlin gates skip-with-warn at \
-         push time, because the hook does not set `SCE_REQUIRE_TOOLS` — the \
-         documented local-developer policy, with CI as the judge. CI is \
-         where the jar is built and where the skip is a failure; that gap is \
-         exactly what let seven Kotlin gates never run in this lane.",
-    ),
+    //
+    // The two Kotlin runtime jars (`:sce-forge-runtime-kotlin:jvmJar`,
+    // `:sce-kotlin-runtime:jvmJar`) and the three JVM programs the suites
+    // start (`:sce-kotlin-world`, `:sce-kotlin-mls-replay` and
+    // `:sce-kotlin-peer-replay`, each `installDist`) used to sit here as
+    // prerequisites CI built and a push did not, so a machine that had never
+    // built them skipped their cases and passed. `workspace-tests` builds them
+    // itself since 2026-11-08, when an update to main began to be judged on
+    // the build machines with every gate it reaches: a pass that depends on
+    // what a machine built before is not a verdict about the tree.
     // `gradlew :sce-kotlin-tests:test` used to sit here for the same
     // reason as the forge-runtime task above. The reason was mechanical,
     // not structural: the task regenerated the committed tree while the
