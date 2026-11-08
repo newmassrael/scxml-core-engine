@@ -6700,7 +6700,10 @@ pub fn c11_data_slot(
         deadline_quotes: Vec::new(),
         declared: 1,
         pairs: c11_scratch_pairs(model),
-        scratch: crate::forge::c11_scratch::layout(!model.host_processor_types.is_empty()),
+        scratch: crate::forge::c11_scratch::layout(crate::forge::c11_scratch::Holder {
+            host_sends: !model.host_processor_types.is_empty(),
+            script_engine: model.needs_script_engine,
+        }),
     };
     slot.hold_reasons(0);
     Ok(slot)

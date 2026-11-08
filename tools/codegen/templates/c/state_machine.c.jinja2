@@ -991,13 +991,23 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
     /* sce-scratch-activity: host_reply */
     sce_host_send_response_list_t _replies;
     memset(&_replies, 0, sizeof(_replies));
+{% if model.needs_script_engine %}
+    /* docs/adr/0086, section 8.6 (d): each reply's data grows in the engine's
+       heap, through its allocator, at the size of the text; the list owns the
+       texts until they are raised below, and a reply whose text the heap
+       cannot give is refused there and raised below. */
+    if (sm->L != NULL) {
+        _replies.alloc = lua_getallocf(sm->L, &_replies.alloc_context);
+    }
+{% else %}
     /* docs/adr/0086, section 8.5 (b): the replies' data is copied into the
        machine's own scratch, one slot per reply, and a reply whose data does
        not fit is refused there and raised below. */
     _replies.texts = &sm->scratch.replies[0][0];
     _replies.text_cap = sizeof(sm->scratch.replies[0]);
+{% endif %}
     _entry->handler(_entry->user_data, request, &_replies);
-    for (int _r = 0; _r < _replies.refused; _r++) {
+    for (int _r = 0; _r < _replies.refused + _replies.unallocated; _r++) {
         refuse_event_data(sm, NULL);
     }
     for (int _i = 0; _i < _replies.count; _i++) {
@@ -1024,6 +1034,11 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
         _reply_evt.origin = _replies.entries[_i].origin;
         {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_reply_evt);
     }
+{% if model.needs_script_engine %}
+    /* Each reply was copied by the queue that took it, so the list's texts are
+       freed here, each once. */
+    sce_host_response_list_release(&_replies);
+{% endif %}
 {% if 'error.execution' in model.events %}
     if (_replies.overflowed) {
         {{ csym_prefix }}{{ model.name }}_raise_platform_error(
@@ -6635,13 +6650,23 @@ SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_perform_host_invoke({{ c
 {% endif %}
     memset(&out, 0, sizeof(out));
     /* sce-scratch-activity: host_answer */
+{% if model.needs_script_engine %}
+    /* docs/adr/0086, section 8.6 (d): the host's answer grows in the engine's
+       heap, through its allocator, at the size of its text; the response owns
+       it until it is raised here, and one the heap cannot give is refused there
+       and raised here. */
+    if (sm->L != NULL) {
+        out.alloc = lua_getallocf(sm->L, &out.alloc_context);
+    }
+{% else %}
     /* docs/adr/0086, section 8.5 (b): the host's answer is copied into the
        machine's own scratch, and one that does not fit is refused there and
        raised here. */
     out.text = sm->scratch.answer;
     out.text_cap = sizeof(sm->scratch.answer);
+{% endif %}
     entry->handler(entry->user_data, start, &out);
-    if (out.oversized) {
+    if (out.oversized || out.unallocated) {
         refuse_event_data(sm, NULL);
     }
     if (out.has_refusal) {
@@ -6658,12 +6683,20 @@ SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_perform_host_invoke({{ c
             sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
             out.refusal != NULL ? out.refusal : "");
 {% endif %}
+{% if model.needs_script_engine %}
+        sce_host_invoke_response_release(&out);
+{% endif %}
         return true;
     }
     if (out.has_done_data) {
         (void){{ csym_prefix }}{{ model.name }}_complete_host_invoke(sm, start->processor_type, start->invoke_id,
                                                                      start->token, out.done_data);
     }
+{% if model.needs_script_engine %}
+    /* The answer was copied by the queue that took it, so its text is freed
+       here, once. */
+    sce_host_invoke_response_release(&out);
+{% endif %}
     return true;
 }
 

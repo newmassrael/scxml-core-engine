@@ -821,11 +821,15 @@ fn the_http_host_machines_scratch_is_one_union_per_colour_not_one_member_per_rol
     let unions = record.matches("    union {").count();
     // The replies of a host-served send are held by a machine that serves one,
     // which the HTTP host machine, whose work is a host-run invocation, is not.
-    let host_sends = record.contains("char replies[");
-    let layout = sce_build::forge::c11_scratch::layout(host_sends);
+    // The machine is a `sce-static` one, with no script engine.
+    let holder = sce_build::forge::c11_scratch::Holder {
+        host_sends: record.contains("char replies["),
+        script_engine: false,
+    };
+    let layout = sce_build::forge::c11_scratch::layout(holder);
     let roles: Vec<&sce_build::forge::c11_scratch::Role> = sce_build::forge::c11_scratch::ROLES
         .iter()
-        .filter(|role| sce_build::forge::c11_scratch::held(role, host_sends))
+        .filter(|role| sce_build::forge::c11_scratch::held(role, holder))
         .collect();
     assert_eq!(unions, layout.len(), "one union per colour:\n{record}");
     assert!(
@@ -1050,6 +1054,71 @@ fn a_script_machine_holds_each_event_text_it_owns_and_frees_them_before_its_engi
     assert!(
         freed < closed,
         "every text is freed before the engine whose allocator gave it is closed"
+    );
+}
+
+/// docs/adr/0086, section 8.6 (d): a machine whose data model is a script
+/// engine grows a host's replies and a host-run invocation's answer in its
+/// engine's heap, through the runtime's writers, and frees them once raised:
+/// its scratch holds neither role, its calls hand the handler the engine's
+/// allocator, and each answer is released after it is raised. A typed machine
+/// keeps both in its scratch.
+#[test]
+fn a_script_machine_grows_host_replies_and_answers_in_its_heap() {
+    let hosts = [
+        "--host-processor",
+        "x-sce-host",
+        "--host-invoker",
+        "x-app-host",
+    ];
+    let (header, source) = generated(SCRIPTED, &[], &hosts);
+    let scratch = record(&header, "probe_scratch");
+    assert!(
+        !scratch.contains("char replies[") && !scratch.contains("char answer["),
+        "a script machine's scratch holds no reply or answer:\n{scratch}"
+    );
+    assert!(
+        source.contains("_replies.alloc = lua_getallocf(sm->L, &_replies.alloc_context);")
+            && source.contains("out.alloc = lua_getallocf(sm->L, &out.alloc_context);"),
+        "the replies and the answer grow through the engine's allocator:\n{source}"
+    );
+    assert!(
+        !source.contains("sm->scratch.replies") && !source.contains("sm->scratch.answer"),
+        "no reply or answer is written into the scratch:\n{source}"
+    );
+    assert_eq!(
+        source
+            .matches("sce_host_invoke_response_release(&out);")
+            .count(),
+        2,
+        "the answer is released after a refusal and after a completion:\n{source}"
+    );
+    assert!(
+        source.contains("sce_host_response_list_release(&_replies);"),
+        "the replies are released once raised:\n{source}"
+    );
+    let (typed, _) = generated(
+        &typed_machine(),
+        &[
+            (
+                "answer",
+                schema(
+                    "answer",
+                    "answer.record",
+                    &[("id", "uint32"), ("note", "string[16]")],
+                ),
+            ),
+            (
+                "label",
+                schema("label", "job.done", &[("label", "string[8]")]),
+            ),
+        ],
+        &hosts,
+    );
+    let typed_scratch = record(&typed, "probe_scratch");
+    assert!(
+        typed_scratch.contains("char replies[") && typed_scratch.contains("char answer["),
+        "a typed machine keeps both in its scratch:\n{typed_scratch}"
     );
 }
 
