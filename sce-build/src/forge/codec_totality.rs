@@ -37,6 +37,7 @@ use crate::forge::model::{
     BitSize, CborEntry, CodecEncoding, CodecField, CodecModel, ContentLineEntry, ContentLineModel,
     FlagBind, LengthBound, SceType,
 };
+use crate::forge::value_type::ValueType;
 
 /// What an encode refuses a value with: the `CodecError` it returns, or a codec
 /// it holds refusing first.
@@ -185,6 +186,9 @@ pub trait Imports: InputImports {
     fn codec_may_fail(&mut self, alias: &str) -> bool;
     /// The carrier type of the enum imported as `alias`.
     fn enum_carrier(&mut self, alias: &str) -> Option<SceType>;
+    /// The fields of the record of the event schema imported as `alias`, as the
+    /// one type grammar reads them, or `None` where no such import resolved.
+    fn record_fields(&mut self, alias: &str) -> Option<Vec<(String, ValueType)>>;
 }
 
 /// The imports a codec's generation resolved: each codec import says whether
@@ -218,6 +222,14 @@ impl Imports for Resolved<'_> {
 
     fn enum_carrier(&mut self, alias: &str) -> Option<SceType> {
         crate::forge::cbor_codec::enum_carrier(self.0, alias)
+    }
+
+    fn record_fields(&mut self, alias: &str) -> Option<Vec<(String, ValueType)>> {
+        self.0
+            .iter()
+            .find(|i| i.kind == "event-schema" && i.alias == alias)
+            .and_then(|i| i.record_type.as_ref())
+            .map(|record| record.fields.clone())
     }
 }
 
@@ -903,17 +915,33 @@ fn cbor(entries: &[CborEntry], imports: &mut dyn Imports, out: &mut Vec<Refusal>
         // with no bound has none to break.
         let refusal = match crate::forge::cbor_codec::kind(e) {
             // A list of records is presented in the language's list of its
-            // bound, which holds no more than the bound, and each record in its
-            // bounded types (docs/adr/0086, section 7.4); what it does not hold
-            // is its lower count, so a value of fewer records is refused.
-            "record_list" => e.record_list().filter(|list| list.min > 0).map(|list| {
-                (
-                    RefusalKind::CborOutOfRange,
-                    format!(
-                        "a list of fewer records than its lower count {} has no encoding",
-                        list.min
-                    ),
-                )
+            // bound, which holds no more than the bound (docs/adr/0086, section
+            // 7.4), each record in the payload type of its event schema's unit,
+            // which holds a text in the bounded text and a byte string in the
+            // language's own vector. What neither holds is the list's lower
+            // count and a byte string's bound, so a value of fewer records, or
+            // with a byte string past its bound, is refused.
+            "record_list" => e.record_list().and_then(|list| {
+                if list.min > 0 {
+                    return Some((
+                        RefusalKind::CborOutOfRange,
+                        format!(
+                            "a list of fewer records than its lower count {} has no encoding",
+                            list.min
+                        ),
+                    ));
+                }
+                let fields = imports.record_fields(list.record)?;
+                let unbounded = crate::forge::cbor_codec::record_unbounded_bytes(&fields);
+                unbounded.first().map(|(id, max)| {
+                    (
+                        RefusalKind::CborOutOfRange,
+                        format!(
+                            "a record whose byte string `{id}` is past its bound {max} has no \
+                             encoding"
+                        ),
+                    )
+                })
             }),
             "enum" => match e.leaf_type() {
                 Some(SceType::Enum(r)) => match imports.enum_carrier(&r.alias) {
@@ -1023,6 +1051,9 @@ mod tests {
             false
         }
         fn enum_carrier(&mut self, _alias: &str) -> Option<SceType> {
+            None
+        }
+        fn record_fields(&mut self, _alias: &str) -> Option<Vec<(String, ValueType)>> {
             None
         }
     }
@@ -1238,6 +1269,9 @@ mod tests {
                 alias == "inner"
             }
             fn enum_carrier(&mut self, _alias: &str) -> Option<SceType> {
+                None
+            }
+            fn record_fields(&mut self, _alias: &str) -> Option<Vec<(String, ValueType)>> {
                 None
             }
         }

@@ -44,7 +44,7 @@ pub(in super::super) struct Input<'a> {
 /// list of records is lent: a reference to the list the value holds, whose
 /// type holds no more records than its bound.
 fn value_type(input: &Input<'_>, e: &CborEntry) -> String {
-    let value = cbor_codec::rust_view_value_type(input.l, input.m, e, "'_");
+    let value = cbor_codec::rust_view_value_type(input.l, input.imports, e, "'_");
     if e.record_list().is_some() {
         format!("&{value}")
     } else {
@@ -122,10 +122,17 @@ fn write_value(input: &Input<'_>, plan: &CborPlan<'_>, item: &CborItem<'_>) -> S
         }
         CborValue::Uint { wide: true } => "cbor::write_uint(w, v)?;".to_string(),
         CborValue::Uint { wide: false } => "cbor::write_uint(w, u64::from(v))?;".to_string(),
-        // A definite-length array of the records, each the map its own struct
-        // writes (docs/adr/0086, section 9.2). The list holds no more than its
-        // bound by its type; a lower count is refused where the plan names it.
+        // A definite-length array of the records, each the map the codec's own
+        // write of the record writes (docs/adr/0086, section 9.2). The list
+        // holds no more than its bound by its type; a lower count, and a byte
+        // string of a record past its bound, are refused where the plan names
+        // them, before anything of the list is written.
         CborValue::RecordList { min } => {
+            let alias = item
+                .entry
+                .record_list()
+                .map(|list| list.record)
+                .expect("a list entry holds a list of records");
             // The length is bound first and compared bound, so no comparison of
             // a `len()` call against a literal is written.
             let mut write = "let len = v.as_slice().len();\n".to_string();
@@ -136,10 +143,35 @@ fn write_value(input: &Input<'_>, plan: &CborPlan<'_>, item: &CborItem<'_>) -> S
                         .require(RefusalKind::CborOutOfRange, &item.entry.id)
                 ));
             }
-            write.push_str(
-                "cbor::write_array_head(w, ::sce_forge_runtime::codec::widen_usize(len))?;\n\
-                 for record in v.as_slice() {\n    record.encode_cbor(w)?;\n}",
+            // The record's unit holds a byte string in the language's own
+            // vector, which carries no bound.
+            let unbounded = import_type_scope(input.imports)
+                .records
+                .get(alias)
+                .map(|record| cbor_codec::record_unbounded_bytes(&record.fields))
+                .unwrap_or_default();
+            if !unbounded.is_empty() {
+                let refusal = plan
+                    .totality
+                    .require(RefusalKind::CborOutOfRange, &item.entry.id);
+                write.push_str("for record in v.as_slice() {\n");
+                for (id, max) in &unbounded {
+                    let field = event_schema_field_ident(id, crate::generator::Language::Rust);
+                    write.push_str(&format!(
+                        "    if record.{field}.len() > {max} {{\n        return Err({refusal});\n    }}\n"
+                    ));
+                }
+                write.push_str("}\n");
+            }
+            let (_, encode) = cbor_codec::record_codec_fns(
+                crate::generator::Language::Rust,
+                &input.m.name,
+                alias,
             );
+            write.push_str(&format!(
+                "cbor::write_array_head(w, ::sce_forge_runtime::codec::widen_usize(len))?;\n\
+                 for record in v.as_slice() {{\n    {encode}(w, record)?;\n}}"
+            ));
             write
         }
     }

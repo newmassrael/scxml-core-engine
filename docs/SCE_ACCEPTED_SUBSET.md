@@ -4599,9 +4599,13 @@ A record such a list holds is a map of every field of its schema keyed by the fi
 id (docs/adr/0086, section 9.2), and its fields are unsigned integers, `bool`s,
 texts and byte strings: a record with a field of any other type, a record of no
 field, and a record whose schema no import resolves are refused before any language
-renders as `generate/unsupported-feature`, naming the entry and the field. A lower
-count is a refusal of the encode (a value of fewer records), held to
-`sce:encode-may-fail` as every other refusal is. Rust generates such a codec; every
+renders as `generate/unsupported-feature`, naming the entry and the field. A record
+is the payload type of its schema's own unit, which the codec names and does not
+declare again. A lower count is a refusal of the encode (a value of fewer records),
+and so is a byte string of a record, which the schema's Rust unit holds without its
+bound; each is held to `sce:encode-may-fail` as every other refusal is. C11 refuses
+a record with a byte string by name as `generate/unsupported-feature`, its unit
+holding the byte string as a borrowed pointer. Rust generates such a codec; every
 other backend refuses it by name as `generate/unsupported-feature` ("holds a list of
 records (...), which has no <language> lowering yet"), and a broadcast log over one
 is refused on those backends by name.

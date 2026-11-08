@@ -29,7 +29,7 @@ cbor::read_bytes_exact(&mut c, {{ e.length }})?
                         }
                         let mut list: {{ e.value_type }} = ::sce_forge_runtime::codec::BoundedList::new();
                         for _ in 0..len {
-                            list.push({{ e.record_type }}::decode_cbor(&mut c)?)?;
+                            list.push({{ e.record_decode_fn }}(&mut c)?)?;
                         }
                         list
                     }
@@ -40,33 +40,35 @@ cbor::read_uint_upto(&mut c, u64::from({{ e.value_type }}::MAX))? as {{ e.value_
 {%- endif -%}
 {%- endmacro %}
 {#- The read of one field of a record a list holds, from the cursor `c` the
-    record's decode is handed. Each is held in the language's bounded type, so
-    a text or a byte string is read within its bound and copied in. #}
+    record's read is handed, into the type the record's unit holds it in: a
+    text in the bounded text, read within its bound and copied in, and a byte
+    string, read within its bound, in the language's own vector. #}
 {% macro decode_record_field(f) -%}
 {%- if f.kind == "bool" -%}
 cbor::read_bool(c)?
 {%- elif f.kind == "text" -%}
 ::sce_forge_runtime::codec::SceString::<{{ f.max }}>::from_text(cbor::read_text(c, Some({{ f.max }}))?)?
 {%- elif f.kind == "bytes" -%}
-::sce_forge_runtime::codec::SceBytes::<{{ f.max }}>::from_slice(cbor::read_bytes(c, Some({{ f.max }}))?)?
+cbor::read_bytes(c, Some({{ f.max }}))?.to_vec()
 {%- elif f.value_type == "u64" -%}
 cbor::read_uint(c)?
 {%- else -%}
 cbor::read_uint_upto(c, u64::from({{ f.value_type }}::MAX))? as {{ f.value_type }}
 {%- endif -%}
 {%- endmacro %}
-{#- The write of one field of a record, after its key. #}
+{#- The write of one field of `record`, after its key. A byte string past its
+    bound was refused before the list was written. #}
 {% macro encode_record_field(f) -%}
 {%- if f.kind == "bool" -%}
-cbor::write_bool(w, self.{{ f.name }})?;
+cbor::write_bool(w, record.{{ f.name }})?;
 {%- elif f.kind == "text" -%}
-cbor::write_text(w, self.{{ f.name }}.as_str())?;
+cbor::write_text(w, record.{{ f.name }}.as_str())?;
 {%- elif f.kind == "bytes" -%}
-cbor::write_bytes(w, self.{{ f.name }}.as_slice())?;
+cbor::write_bytes(w, &record.{{ f.name }})?;
 {%- elif f.value_type == "u64" -%}
-cbor::write_uint(w, self.{{ f.name }})?;
+cbor::write_uint(w, record.{{ f.name }})?;
 {%- else -%}
-cbor::write_uint(w, u64::from(self.{{ f.name }}))?;
+cbor::write_uint(w, u64::from(record.{{ f.name }}))?;
 {%- endif -%}
 {%- endmacro %}
 {#- The value of one entry as the map holds it: a string or byte string held
@@ -104,60 +106,48 @@ use sce_forge_runtime::codec::VecSink;
 {% endif %}
 {% for r in cbor_records %}
 
-/// A record of the event schema `{{ r.schema }}` (`record:{{ r.alias }}`), as a
-/// list of this map holds it (docs/adr/0085, Landing order step 3a): one CBOR
-/// map of every field, each under its id as text (docs/adr/0086, section 9.2).
-/// Every field is held in the language's bounded type, so a record that exists
-/// is one of its type and is written whole.
-#[allow(dead_code)]
-#[derive(Default, Debug, Clone, PartialEq)]
-pub struct {{ r.type_name }} {
+/// Read one record of the event schema `{{ r.schema }}` (`record:{{ r.alias }}`)
+/// from `c`, as a list of this map holds it (docs/adr/0085, Landing order step
+/// 3a), into the payload type the schema's own unit declares: one CBOR map of
+/// every field, each under its id as text (docs/adr/0086, section 9.2). Its keys
+/// in any order, a key the schema does not declare skipped whole, a key given
+/// twice and a field missing refused, and a text or byte string past its bound
+/// refused.
+fn {{ r.decode_fn }}(c: &mut SceCursor<'_>) -> Result<{{ r.type_name }}, CodecError> {
+    let count = cbor::read_map_len(c)?;
 {% for f in r.fields %}
-    pub {{ f.name }}: {{ f.value_type }},
+    let mut held_{{ f.name }}: Option<{{ f.value_type }}> = None;
 {% endfor %}
+    for _ in 0..count {
+        match cbor::read_text(c, None)? {
+{% for f in r.fields %}
+            {{ f.key_literal }} => {
+                // A key given twice is not one map entry.
+                if held_{{ f.name }}.is_some() {
+                    return Err(CodecError::CborMalformed);
+                }
+                held_{{ f.name }} = Some({{ decode_record_field(f) }});
+            }
+{% endfor %}
+            _ => cbor::skip(c)?,
+        }
+    }
+    Ok({{ r.type_name }} {
+{% for f in r.fields %}
+        {{ f.name }}: held_{{ f.name }}.ok_or(CodecError::CborRequiredKeyMissing)?,
+{% endfor %}
+    })
 }
 
-#[allow(dead_code)]
-impl {{ r.type_name }} {
-    /// Read one record's map from `c`: its keys in any order, a key the schema
-    /// does not declare skipped whole, a key given twice and a field missing
-    /// refused, and a text or byte string past its bound refused.
-    pub fn decode_cbor(c: &mut SceCursor<'_>) -> Result<Self, CodecError> {
-        let count = cbor::read_map_len(c)?;
-{% for f in r.fields %}
-        let mut {{ f.name }}: Option<{{ f.value_type }}> = None;
-{% endfor %}
-        for _ in 0..count {
-            match cbor::read_text(c, None)? {
-{% for f in r.fields %}
-                {{ f.key_literal }} => {
-                    // A key given twice is not one map entry.
-                    if {{ f.name }}.is_some() {
-                        return Err(CodecError::CborMalformed);
-                    }
-                    {{ f.name }} = Some({{ decode_record_field(f) }});
-                }
-{% endfor %}
-                _ => cbor::skip(c)?,
-            }
-        }
-        Ok(Self {
-{% for f in r.fields %}
-            {{ f.name }}: {{ f.name }}.ok_or(CodecError::CborRequiredKeyMissing)?,
-{% endfor %}
-        })
-    }
-
-    /// Write the record as one map of every field, the keys in the order
-    /// RFC 8949 §4.2.1 sorts their encodings: a shorter key first.
-    pub fn encode_cbor<S: SceSink + ?Sized>(&self, w: &mut S) -> Result<(), S::Error> {
-        cbor::write_map_head(w, {{ r.field_count }})?;
+/// Write one record of `{{ r.schema }}` as one map of every field, the keys in
+/// the order RFC 8949 §4.2.1 sorts their encodings: a shorter key first.
+fn {{ r.encode_fn }}<S: SceSink + ?Sized>(w: &mut S, record: &{{ r.type_name }}) -> Result<(), S::Error> {
+    cbor::write_map_head(w, {{ r.field_count }})?;
 {% for f in r.fields_by_key %}
-        cbor::write_text(w, {{ f.key_literal }})?;
-        {{ encode_record_field(f) }}
+    cbor::write_text(w, {{ f.key_literal }})?;
+    {{ encode_record_field(f) }}
 {% endfor %}
-        Ok(())
-    }
+    Ok(())
 }
 {% endfor %}
 

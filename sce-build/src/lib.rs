@@ -4982,10 +4982,12 @@ pub fn compile_forge_from_parsed(
         // (docs/adr/0085, Landing order step 3a): a record whose schema did not
         // resolve, or that holds a field no codec writes, is refused here, by
         // name and alike for every language.
-        if let Some(why) = forge::cbor_codec::record_list_unlowered(
-            m,
-            &forge::generator::import_type_scope(&import_ctx),
-        ) {
+        // A language whose unit of the schema holds a field in a type a list
+        // cannot own refuses that record by name too.
+        let record_scope = forge::generator::import_type_scope(&import_ctx);
+        if let Some(why) = forge::cbor_codec::record_list_unlowered(m, &record_scope)
+            .or_else(|| forge::cbor_codec::record_list_unlowered_on(language, m, &record_scope))
+        {
             return Err(Located::in_file(
                 forge::error::ForgeError::from(forge::error::GenerateError::unsupported_at(
                     format!("codec '{}': {why}", m.name),
@@ -6912,6 +6914,16 @@ impl forge::codec_totality::Imports for UnresolvedImports<'_> {
             forge::model::ForgeDocument::Enum(em) => Some(em.underlying_type),
             _ => None,
         }
+    }
+
+    fn record_fields(
+        &mut self,
+        alias: &str,
+    ) -> Option<Vec<(String, forge::value_type::ValueType)>> {
+        forge::import_source::type_scope(self.imports, self.base_dir)
+            .records
+            .get(alias)
+            .map(|record| record.fields.clone())
     }
 }
 

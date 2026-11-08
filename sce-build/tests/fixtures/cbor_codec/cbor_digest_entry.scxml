@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  A record with a bounded byte string, which the Rust unit of an event schema
+  holds in the language's own vector, a type with no bound: a CBOR codec's list
+  of it can be handed a byte string past its bound, so its encode refuses one,
+  and C11, whose unit holds a byte string as a borrowed pointer, does not hold
+  it in a list at all. `a_cbor_codec_entry_holds_a_bounded_list_of_records.rs`
+  holds a codec whose list holds it to both.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="cbor_digest_entry"
+       sce:event-name="cbor.digest_entry">
+  <datamodel>
+    <data id="digest" sce:type="bytes[4]" sce:direction="in"/>
+    <data id="seq" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>
