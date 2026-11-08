@@ -1,0 +1,29 @@
+# Mutation cases for "a call of an imported algorithm is bounded by the text
+# or byte string its signature returns".
+#
+# Run with:
+#   scripts/mutate sce-build/tests/mutations/a_call_is_bounded_by_what_its_algorithm_returns.cases
+#
+# docs/adr/0086, section 8.6 (c): a `sce-static` statechart reads the bound
+# an imported algorithm states on its `string[N]` or `bytes[N]` return, the
+# present value's for an optional one, and the text bound of a call of it is
+# that number. A list's bound counts elements and bounds no text. The unit
+# tests of `forge::static_imports` ask each return for its bound. Each case
+# breaks one rule: an optional return bounds nothing, and a list's element
+# count is taken for a text's bytes.
+
+mutation_tests -p sce-build --lib forge::static_imports
+mutation_targets sce-build/src/forge/static_imports.rs
+mutation_oracles sce-build/src/forge/static_imports.rs
+
+mutation_case "an optional return bounds no present text" <<'PY'
+edit("sce-build/src/forge/static_imports.rs",
+     "        AlgorithmValueType::Optional { elem } => elem.as_ref(),\n",
+     "        AlgorithmValueType::Optional { .. } => return None,\n")
+PY
+
+mutation_case "a list's element count is taken for a text's bytes" <<'PY'
+edit("sce-build/src/forge/static_imports.rs",
+     "    if !matches!(\n        present,\n        AlgorithmValueType::Text { .. } | AlgorithmValueType::Bytes { .. }\n    ) {\n",
+     "    if matches!(present, AlgorithmValueType::Scalar(_)) {\n")
+PY
