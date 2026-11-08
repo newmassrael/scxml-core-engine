@@ -238,9 +238,10 @@ def replies_in_time() -> Step:
     return on_snapshot
 
 
-def tester() -> Steps:
+def echo_asker() -> Steps:
     """An MTC that creates the echo, sends to it, and waits for the answer within
-    a second: a receive branch passes, a timeout branch fails."""
+    a second: a receive branch passes, a timeout branch fails. Not named with a
+    `test` prefix, which pytest would collect as a test."""
 
     def on_start(context: ComponentContext, self: _Scripted) -> None:
         context.create("echo")
@@ -366,7 +367,7 @@ class TestTestCaseRunTest:
                 assert context.receive("q").event == "ping"
                 context.send("q", message("pong"))
 
-        machines = _Machines().with_("Tester", tester()).with_("Echo", (idle(), echo))
+        machines = _Machines().with_("Tester", echo_asker()).with_("Echo", (idle(), echo))
         result = run_case(mtc_and_echo(), machines, _TraceAdapter())
         assert result.verdict is Verdict.PASS, result.log
         assert result.ended_at == 0
@@ -375,7 +376,7 @@ class TestTestCaseRunTest:
     def test_an_unanswered_request_fails_when_its_timer_expires(self) -> None:
         """P7, §3.3: with nothing to receive, time advances to the timer's
         instant."""
-        machines = _Machines().with_("Tester", tester()).with_("Echo", (idle(), idle()))
+        machines = _Machines().with_("Tester", echo_asker()).with_("Echo", (idle(), idle()))
         result = run_case(mtc_and_echo(), machines, _TraceAdapter())
         assert result.verdict is Verdict.FAIL, result.log
         assert result.ended_at == SECOND
