@@ -5681,15 +5681,21 @@ pub(crate) fn c11_lifted_text(event: &str, id: &str) -> String {
 /// carries: the bounded locals that quote its text fields, and the `snprintf`
 /// format and arguments that assemble the object. `receiver` is a pointer to
 /// the record (`payload`, `result`); the locals `return false` when a field
-/// cannot be spelled, so they belong in a function that answers `bool`.
+/// cannot be spelled, so they belong in a function that answers `bool`. Each
+/// local is declared at `data_len`, the machine's slot of `_event.data`
+/// ([`c11_data_len`]), which the whole record is written into.
 pub(crate) struct C11RecordWire {
     pub locals: String,
     pub format: String,
     pub args: String,
 }
 
-pub(crate) fn c11_record_wire(fields: &[EntryField], receiver: &str) -> C11RecordWire {
-    c11_record_wire_of(fields, receiver, &[])
+pub(crate) fn c11_record_wire(
+    fields: &[EntryField],
+    receiver: &str,
+    data_len: &str,
+) -> C11RecordWire {
+    c11_record_wire_of(fields, receiver, &[], data_len)
 }
 
 /// [`c11_record_wire`] over fields that may hold an enum the machine declares
@@ -5700,6 +5706,7 @@ fn c11_record_wire_of(
     fields: &[EntryField],
     receiver: &str,
     static_enums: &[crate::forge::static_lowering::StaticEnumType],
+    data_len: &str,
 ) -> C11RecordWire {
     let mut locals = String::new();
     let mut format = String::new();
@@ -5759,7 +5766,7 @@ if (_name_{id} == NULL) {{\n            return false;\n        }}\n    }}\n"
                 }
             };
             locals.push_str(&format!(
-                "    char _wire_{id}[SCE_MAX_DATA_LEN];\n    \
+                "    char _wire_{id}[{data_len}];\n    \
 if (!sce_forge_wire_json({field}.present ? {present} : sce_forge_wire_null(), _wire_{id},\n                             \
 sizeof(_wire_{id}))) {{\n        return false;\n    }}\n"
             ));
@@ -5770,7 +5777,7 @@ sizeof(_wire_{id}))) {{\n        return false;\n    }}\n"
         match f.sce_type.present_type() {
             SceType::Bytes => {
                 locals.push_str(&format!(
-                    "    char _wire_{id}[SCE_MAX_DATA_LEN];\n    \
+                    "    char _wire_{id}[{data_len}];\n    \
 if ({receiver}->{id}_len > sizeof({receiver}->{id}) ||\n        \
 !sce_payload_quote_bytes({receiver}->{id}, {receiver}->{id}_len, _wire_{id}, sizeof(_wire_{id}))) {{\n        \
 return false;\n    }}\n"
@@ -5780,7 +5787,7 @@ return false;\n    }}\n"
             }
             SceType::String => {
                 locals.push_str(&format!(
-                    "    char _wire_{id}[SCE_MAX_DATA_LEN];\n    \
+                    "    char _wire_{id}[{data_len}];\n    \
 if (!sce_payload_quote({receiver}->{id}, _wire_{id}, sizeof(_wire_{id}))) {{\n        \
 return false;\n    }}\n"
                 ));
@@ -6096,6 +6103,10 @@ pub fn build_c11_event_payload(
     // types do not, and every reference to them here agrees on that.
     let sm = format!("{csym_prefix}{name}");
     let sm_upper = format!("{}{name_upper}", csym_prefix.to_uppercase());
+    // docs/adr/0086, section 8.1: a lifted text, the record the inject seam
+    // writes and the reason a refused lift raises each take the machine's slot
+    // of `_event.data`, which the data they come from or go into is held in.
+    let data_len = c11_data_len(csym_prefix, name);
 
     // Same SSOT selection as the Rust builder; lower each guard to a C
     // tag-check + field comparison. The set of events owning a lowered
@@ -6245,7 +6256,7 @@ return false;\n    }}\n"
             locals: wire_locals,
             format: wire_parts,
             args: wire_args,
-        } = c11_record_wire_of(&schema.fields, "payload", static_enums);
+        } = c11_record_wire_of(&schema.fields, "payload", static_enums, &data_len);
         // A field a later revision of the schema added is read out of the
         // schema's defaults where the delivery lacks it
         // (`crate::forge::schema_revision`); a schema with none reads the
@@ -6375,7 +6386,7 @@ static {sm}_door_t {sm}_lift_payload({sm}_t *sm, {sm}_event_with_meta_t *evt);\n
 producer, and every other producer fills `data`, so an event that arrived\n   \
 without a payload has its fields read out of that instead. */\n\
 static {sm}_door_t {sm}_lift_payload({sm}_t *sm, {sm}_event_with_meta_t *evt) {{\n    \
-char _message[SCE_MAX_DATA_LEN];\n    _message[0] = '\\0';\n    \
+char _message[{data_len}];\n    _message[0] = '\\0';\n    \
 if (sm->pending_payload.tag != {name_upper}_PAYLOAD_NONE) {{\n        \
 return {sm_upper}_DOOR_ADMITTED;\n    }}\n    \
 switch (evt->event) {{\n{lift_arms}    default:\n        return {sm_upper}_DOOR_ADMITTED;\n    }}\n\
@@ -6392,6 +6403,126 @@ switch (evt->event) {{\n{lift_arms}    default:\n        return {sm_upper}_DOOR_
         lift_def,
         lift_decl,
     }
+}
+
+/// The name a C11 machine's header gives the bytes of its slot of
+/// `_event.data` (docs/adr/0086, section 8.1), `<SM>_DATA_LEN`: what every
+/// place of the machine that holds an event's data, and every buffer it writes
+/// such data into, is declared at. `csym_prefix` is the suite prefix the
+/// machine's symbols carry, empty for none.
+pub(crate) fn c11_data_len(csym_prefix: &str, name: &str) -> String {
+    format!(
+        "{}{}_DATA_LEN",
+        csym_prefix.to_uppercase(),
+        name.to_uppercase()
+    )
+}
+
+/// Why an event of an imported schema reaches a C11 machine's slot
+/// ([`C11DataInput`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum C11DataArrival {
+    /// A transition's event descriptor matches the schema's event
+    /// ([`crate::event_descriptor::attribute_matches`]).
+    Transition,
+    /// A host-run invocation names the schema as its result, whose record its
+    /// `done.invoke.<id>` carries.
+    HostResult,
+}
+
+/// One input of a C11 machine's slot of `_event.data` that the build sizes
+/// (docs/adr/0086, section 8.1): an event a schema the statechart imports
+/// declares, which the machine can receive, and the largest data it carries,
+/// the schema's `DATA_MAX_LEN` (section 2.2).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct C11DataInput {
+    /// The event the schema declares.
+    pub event: String,
+    /// The schema's document name.
+    pub schema: String,
+    /// How the event reaches the machine.
+    pub arrival: C11DataArrival,
+    /// `J` of the payload as a record of the schema's fields, in bytes.
+    pub data_max_len: u64,
+}
+
+/// A C11 machine's slot of `_event.data` (docs/adr/0086, section 8.1): the
+/// name its header declares the size at ([`c11_data_len`]), each input the
+/// build sizes, and the bytes the largest of them takes with its NUL.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct C11DataSlot {
+    pub name: String,
+    pub inputs: Vec<C11DataInput>,
+    /// One more than the largest `data_max_len` of [`Self::inputs`], for the
+    /// NUL a slot holds a text with; 1 for a machine with none, whose slot
+    /// holds the empty text.
+    pub declared: u64,
+}
+
+/// The slot of `_event.data` of the C11 machine `model` (docs/adr/0086,
+/// section 8.1), its symbols prefixed by `csym_prefix`: every schema the
+/// statechart imports whose event a transition takes or whose record a
+/// host-run invocation completes with is an input, at its `DATA_MAX_LEN`, in
+/// the order of the aliases the schemas are imported by. A schema whose
+/// largest payload has no size is refused, in the words the schema's own
+/// unit refuses it in.
+pub fn c11_data_slot(
+    model: &crate::model::SCXMLModel,
+    csym_prefix: &str,
+) -> Result<C11DataSlot, GenerateError> {
+    let scope = crate::forge::value_path::statechart_scope(model);
+    let host_results: std::collections::BTreeSet<&str> = model
+        .states
+        .values()
+        .flat_map(|state| state.invokes.iter())
+        .filter_map(|invoke| match invoke {
+            crate::model::Invoke::Unsupported(info) if info.host_served => {
+                Some(info.result_schema.as_str())
+            }
+            _ => None,
+        })
+        .collect();
+    let mut inputs = Vec::new();
+    for (alias, schema) in &model.imported_records {
+        let taken = model.states.values().any(|state| {
+            state.transitions.iter().any(|transition| {
+                crate::event_descriptor::attribute_matches(&transition.event, &schema.event_name)
+            })
+        });
+        let arrival = if taken {
+            C11DataArrival::Transition
+        } else if host_results.contains(alias.as_str()) {
+            C11DataArrival::HostResult
+        } else {
+            continue;
+        };
+        let data_max_len = crate::forge::value_type::json_max_len(
+            &crate::forge::value_type::ValueType::Record {
+                alias: alias.clone(),
+            },
+            &scope,
+        )
+        .map_err(|refusal| {
+            GenerateError::unsupported(format!(
+                "{}: the largest payload of the event has no size the build can compute: \
+                 {refusal}",
+                schema.name
+            ))
+        })?;
+        inputs.push(C11DataInput {
+            event: schema.event_name.clone(),
+            schema: schema.name.clone(),
+            arrival,
+            data_max_len,
+        });
+    }
+    let largest = inputs.iter().map(|input| input.data_max_len).max();
+    Ok(C11DataSlot {
+        name: c11_data_len(csym_prefix, &model.name),
+        inputs,
+        declared: largest.map_or(1, |len| len.saturating_add(1)),
+    })
 }
 
 /// EventSchema MCU native lowering — Go-codegen

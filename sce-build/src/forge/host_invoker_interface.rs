@@ -1455,7 +1455,10 @@ pub struct C11HostInvokerInterface {
 }
 
 /// The C11 host interface for `model`'s typed host-run invokes. `sm` is the
-/// machine's symbol stem (`<prefix><name>`).
+/// machine's symbol stem (`<prefix><name>`), and `data_len` the name of its
+/// slot of `_event.data` ([`crate::forge::generator::c11_data_len`]), which a
+/// result's record is written into before it completes the invocation
+/// (docs/adr/0086, section 8.1).
 ///
 /// C has no closure, so the invoker is a table of function pointers with the
 /// `user_data` handed back to each, as the runtime's own registry is, and the
@@ -1465,7 +1468,11 @@ pub struct C11HostInvokerInterface {
 /// Refused, as `generate/unsupported-feature`, when a result holds an optional
 /// text or byte string that declares no `sce:max-size`: the struct that holds it
 /// is over the buffer of its bound, and a field with none has no buffer.
-pub fn render_c11(model: &SCXMLModel, sm: &str) -> Result<C11HostInvokerInterface, GenerateError> {
+pub fn render_c11(
+    model: &SCXMLModel,
+    sm: &str,
+    data_len: &str,
+) -> Result<C11HostInvokerInterface, GenerateError> {
     let mut decls = String::new();
     let mut defs = String::new();
     let mut header_includes: Vec<String> = Vec::new();
@@ -1542,7 +1549,7 @@ typedef struct {sm}_{snake}_{what_snake}_s {{\n{fields}}} {name};\n\n",
                     locals,
                     format,
                     args,
-                } = crate::forge::generator::c11_record_wire(&schema.fields, "result");
+                } = crate::forge::generator::c11_record_wire(&schema.fields, "result", data_len);
                 defs.push_str(&format!(
                     "/* The JSON `done.invoke.{id}` carries `result` as, into `out` of `cap` bytes;\n   \
 false when it does not fit. */\n\
@@ -1637,12 +1644,12 @@ invoker->cancel_{snake}(invoker->user_data, event->token);\n            return;\
                 decls.push_str(&format!(
                     "/* Complete `<invoke id=\"{id}\">`'s start `token` with its record —\n   \
 `_complete_host_invoke` with the record's JSON, so a stale or unknown token is\n   \
-refused the same way (false), as is a record too long for SCE_MAX_DATA_LEN. */\n\
+refused the same way (false), as is a record too long for {data_len}. */\n\
 bool {sm}_complete_{snake}({sm}_t *sm, uint64_t token, const {sm}_{snake}_result_t *result);\n\n"
                 ));
                 defs.push_str(&format!(
                     "bool {sm}_complete_{snake}({sm}_t *sm, uint64_t token, const {sm}_{snake}_result_t *result) {{\n    \
-char data[SCE_MAX_DATA_LEN];\n    \
+char data[{data_len}];\n    \
 if (!{sm}_{snake}_result_wire(result, data, sizeof(data))) {{\n        return false;\n    }}\n    \
 return {sm}_complete_host_invoke(sm, \"{invoke_type}\", \"{id}\", token, data);\n}}\n\n"
                 ));
