@@ -6,3 +6,9 @@ commit = "fc5b4460cf9532825017ea006169fed00a40a780"
 base = "8e4ac36f94ca6c4dc7b1883230c8bd2ea6e13ab4"
 machine = "mf977c53d872e"
 at = 1794114351
+
+[return]
+reason = "conflict"
+detail = "backends/go/tests/integration/static_datamodel/elapsed_at_most/elapsed_at_most.go backends/go/tests/integration/static_datamodel/every_matcher/every_matcher.go backends/go/tests/integration/static_datamodel/job_report/job_report.go backends/go/tests/integration/static_datamodel/job_report_of/job_report_of.go backends/go/tests/integration/static_datamodel/job_status/job_status.go backends/go/tests/integration/static_datamodel/report_within/report_within.go backends/kotlin/tests/src/main/kotlin/com/sce/generated/elapsed_at_most/ElapsedAtMost.kt backends/kotlin/tests/src/main/kotlin/com/sce/generated/every_matcher/EveryMatcher.kt backends/kotlin/tests/src/main/kotlin/com/sce/generated/job_report/JobReport.kt backends/kotlin/tests/src/main/kotlin/com/sce/generated/job_report_of/JobReportOf.kt backends/kotlin/tests/src/main/kotlin/com/sce/generated/job_status/JobStatus.kt backends/kotlin/tests/src/main/kotlin/com/sce/generated/report_within/ReportWithin.kt backends/kotlin/tests/src/main/kotlin/com/sce/generated/shape_is_circle/ShapeIsCircle.kt backends/rust/tests/src/integration/static_datamodel/elapsed_at_most.rs backends/rust/tests/src/integration/static_datamodel/every_matcher.rs backends/rust/tests/src/integration/static_datamodel/job_report.rs backends/rust/tests/src/integration/static_datamodel/job_report_of.rs backends/rust/tests/src/integration/static_datamodel/job_status.rs backends/rust/tests/src/integration/static_datamodel/report_within.rs backends/rust/tests/src/integration/static_datamodel/shape_is_circle.rs"
+report = "mf977c53d872e:0000000030-5a86651dfd15/attempt-3.log"
+at = 1794126611
