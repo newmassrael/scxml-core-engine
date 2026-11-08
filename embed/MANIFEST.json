@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.1 (1ubuntu1~24.04.2)",
-  "embed_version": "50e1e94",
+  "embed_version": "9a037f1",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 558,
+  "symbol_count": 571,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -3371,7 +3371,7 @@
       "header": "sce/forge/cbor.h",
       "kind": "function",
       "name": "SCE::Forge::Cbor::write_bytes",
-      "signature": "std::optional<CodecError> SCE::Forge::Cbor::write_bytes(SceSink &, const std::vector<std::uint8_t> &) noexcept"
+      "signature": "std::optional<CodecError> SCE::Forge::Cbor::write_bytes(SceSink &, Span<const std::uint8_t>) noexcept"
     },
     {
       "header": "sce/forge/cbor.h",
@@ -3389,7 +3389,7 @@
       "header": "sce/forge/cbor.h",
       "kind": "function",
       "name": "SCE::Forge::Cbor::write_text",
-      "signature": "std::optional<CodecError> SCE::Forge::Cbor::write_text(SceSink &, const std::string &) noexcept"
+      "signature": "std::optional<CodecError> SCE::Forge::Cbor::write_text(SceSink &, std::string_view) noexcept"
     },
     {
       "header": "sce/forge/cbor.h",
@@ -3724,6 +3724,86 @@
       "kind": "function",
       "name": "SCE::Forge::lookup<T>",
       "signature": "std::optional<V> SCE::Forge::lookup<T>(const K (&)[N], const V (&)[N], K) noexcept"
+    },
+    {
+      "header": "sce/forge/membership.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Forge::Chain<T>"
+    },
+    {
+      "header": "sce/forge/membership.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Forge::Placed<T>"
+    },
+    {
+      "header": "sce/forge/membership.h",
+      "kind": "function",
+      "name": "SCE::Forge::Detail::first_of_kind<T>",
+      "signature": "std::optional<std::size_t> SCE::Forge::Detail::first_of_kind<T>(const L &)"
+    },
+    {
+      "header": "sce/forge/membership.h",
+      "kind": "function",
+      "name": "SCE::Forge::Detail::first_of_kind<T>",
+      "signature": "std::optional<std::size_t> SCE::Forge::Detail::first_of_kind<T>(const std::optional<L> &)"
+    },
+    {
+      "header": "sce/forge/membership.h",
+      "kind": "function",
+      "name": "SCE::Forge::operator!=<T>",
+      "signature": "bool SCE::Forge::operator!=<T>(const Chain<L, H, A, Max, Min> &, const Chain<L2, H, A, Max2, Min2> &)"
+    },
+    {
+      "header": "sce/forge/membership.h",
+      "kind": "function",
+      "name": "SCE::Forge::operator!=<T>",
+      "signature": "bool SCE::Forge::operator!=<T>(const Placed<L, K, Max> &, const Placed<L2, K, Max2> &)"
+    },
+    {
+      "header": "sce/forge/membership.h",
+      "kind": "function",
+      "name": "SCE::Forge::operator==<T>",
+      "signature": "bool SCE::Forge::operator==<T>(const Chain<L, H, A, Max, Min> &, const Chain<L2, H, A, Max2, Min2> &)"
+    },
+    {
+      "header": "sce/forge/membership.h",
+      "kind": "function",
+      "name": "SCE::Forge::operator==<T>",
+      "signature": "bool SCE::Forge::operator==<T>(const Placed<L, K, Max> &, const Placed<L2, K, Max2> &)"
+    },
+    {
+      "header": "sce/forge/membership.h",
+      "kind": "struct",
+      "members": [
+        "using type = C"
+      ],
+      "name": "SCE::Forge::Detail::ChainOf<T>"
+    },
+    {
+      "header": "sce/forge/membership.h",
+      "kind": "struct",
+      "members": [],
+      "name": "SCE::Forge::Detail::IsNoKinds<T>"
+    },
+    {
+      "header": "sce/forge/membership.h",
+      "kind": "struct",
+      "members": [],
+      "name": "SCE::Forge::Kinds<T>"
+    },
+    {
+      "header": "sce/forge/membership.h",
+      "kind": "typedef",
+      "name": "SCE::Forge::Detail::InnerRead",
+      "type": "std::conditional_t<std::is_lvalue_reference<R>::value, const typename ChainOf<std::decay_t<R>>::type::list_type &, typename ChainOf<std::decay_t<R>>::type::list_type>"
+    },
+    {
+      "header": "sce/forge/membership.h",
+      "kind": "typedef",
+      "name": "SCE::Forge::Detail::type",
+      "type": "C"
     },
     {
       "header": "sce/forge/observer.h",

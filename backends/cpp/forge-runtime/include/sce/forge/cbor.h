@@ -23,11 +23,13 @@
 #pragma once
 
 #include "sce/forge/codec.h"
+#include "sce/forge/span.h"
 
 #include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace SCE::Forge::Cbor {
@@ -88,17 +90,18 @@ inline constexpr std::uint32_t kMaxSkipDepth = 16;
     return w.write_u8(static_cast<std::uint8_t>((kMajorSimple << 5) | (value ? 21 : 20)));
 }
 
-/// Write a text string.
-[[nodiscard]] inline std::optional<CodecError> write_text(SceSink &w, const std::string &value) noexcept {
+/// Write a text string, viewed where it lives: a `std::string` and a printed
+/// codec's `Text` alike.
+[[nodiscard]] inline std::optional<CodecError> write_text(SceSink &w, std::string_view value) noexcept {
     if (auto e = write_head(w, kMajorText, value.size())) {
         return e;
     }
     return w.write_bytes(reinterpret_cast<const std::uint8_t *>(value.data()), value.size());
 }
 
-/// Write a byte string.
-[[nodiscard]] inline std::optional<CodecError> write_bytes(SceSink &w,
-                                                           const std::vector<std::uint8_t> &value) noexcept {
+/// Write a byte string, viewed where it lives: a `std::vector` and a printed
+/// codec's `Bytes` alike.
+[[nodiscard]] inline std::optional<CodecError> write_bytes(SceSink &w, Span<const std::uint8_t> value) noexcept {
     if (auto e = write_head(w, kMajorBytes, value.size())) {
         return e;
     }

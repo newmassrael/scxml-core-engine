@@ -19,6 +19,8 @@ use crate::forge::encode_plan::{
     HandedFrom, Measured, Narrow, Number, NumberInto, Offset, Presence, Value, Write,
 };
 
+pub(super) mod cbor;
+
 /// The first form of `plan` the C++ printer does not print yet, or `None`
 /// where it prints the codec whole. `imports` are the codec's own, which say
 /// whether a codec it holds is printed too.
@@ -33,7 +35,7 @@ pub(super) fn unlowered(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Opti
 pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Vec<String> {
     let plan = match plan {
         CodecPlan::Positional(plan) => plan,
-        CodecPlan::Cbor(_) => return vec!["a CBOR codec".to_string()],
+        CodecPlan::Cbor(plan) => return cbor::unlowered_forms(plan),
         CodecPlan::ContentLine(_) => return vec!["a content-line codec".to_string()],
     };
     let m = plan.model;
@@ -766,6 +768,42 @@ fn entry_identifier(
             l.codec_field_id(field)
         ),
     }
+}
+
+/// The readers of a printed codec's `source` namespace, one for each of
+/// `names`: a customization point object that reads the element by name, the
+/// member function where the type has one, otherwise a function the type's own
+/// namespace declares, found by argument-dependent lookup (docs/adr/0081 step
+/// 4, the C++ interface).
+fn source_readers(names: &[&str]) -> String {
+    names
+        .iter()
+        .map(|name| {
+            format!(
+                "namespace detail_{name} {{\n\
+                 void {name}() = delete;\n\
+                 template <class S>\n\
+                 constexpr auto read(const S& s, ::SCE::Forge::PreferMember) noexcept(noexcept(s.{name}())) -> decltype(s.{name}()) {{\n\
+                 \x20   return s.{name}();\n\
+                 }}\n\
+                 template <class S>\n\
+                 constexpr auto read(const S& s, ::SCE::Forge::PreferFree) noexcept(noexcept({name}(s))) -> decltype({name}(s)) {{\n\
+                 \x20   return {name}(s);\n\
+                 }}\n\
+                 struct Read {{\n\
+                 \x20   template <class S>\n\
+                 \x20   constexpr auto operator()(const S& s) const\n\
+                 \x20       noexcept(noexcept(read(s, ::SCE::Forge::PreferMember{{}})))\n\
+                 \x20       -> decltype(read(s, ::SCE::Forge::PreferMember{{}})) {{\n\
+                 \x20       return read(s, ::SCE::Forge::PreferMember{{}});\n\
+                 \x20   }}\n\
+                 }};\n\
+                 }}  // namespace detail_{name}\n\
+                 /// The `{name}` element of a source.\n\
+                 inline constexpr detail_{name}::Read {name}{{}};\n"
+            )
+        })
+        .collect()
 }
 
 /// The member of the key of the kind `key` of a bare entry of the chain
@@ -2865,31 +2903,7 @@ pub(super) fn render(
             }
         }
     }
-    for name in &reader_names {
-        before.push_str(&format!(
-            "namespace detail_{name} {{\n\
-             void {name}() = delete;\n\
-             template <class S>\n\
-             constexpr auto read(const S& s, ::SCE::Forge::PreferMember) noexcept(noexcept(s.{name}())) -> decltype(s.{name}()) {{\n\
-             \x20   return s.{name}();\n\
-             }}\n\
-             template <class S>\n\
-             constexpr auto read(const S& s, ::SCE::Forge::PreferFree) noexcept(noexcept({name}(s))) -> decltype({name}(s)) {{\n\
-             \x20   return {name}(s);\n\
-             }}\n\
-             struct Read {{\n\
-             \x20   template <class S>\n\
-             \x20   constexpr auto operator()(const S& s) const\n\
-             \x20       noexcept(noexcept(read(s, ::SCE::Forge::PreferMember{{}})))\n\
-             \x20       -> decltype(read(s, ::SCE::Forge::PreferMember{{}})) {{\n\
-             \x20       return read(s, ::SCE::Forge::PreferMember{{}});\n\
-             \x20   }}\n\
-             }};\n\
-             }}  // namespace detail_{name}\n\
-             /// The `{name}` element of a source.\n\
-             inline constexpr detail_{name}::Read {name}{{}};\n"
-        ));
-    }
+    before.push_str(&source_readers(&reader_names));
     before.push_str("}  // namespace source\n\n");
 
     let names: Vec<&str> = readers.clone();

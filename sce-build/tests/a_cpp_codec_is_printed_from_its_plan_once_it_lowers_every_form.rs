@@ -21,6 +21,7 @@ use sce_build::{cpp_codec_printed_file, cpp_codec_unlowered_file, ForgeCompileOp
 const PRINTED: &[&str] = &[
     "broadcast_log_conformance_event",
     "broadcast_log_conformance_record",
+    "codec_cbor_map",
     "codec_chain_depth_entry",
     "codec_chain_depth_gated",
     "codec_chain_depth_plain",

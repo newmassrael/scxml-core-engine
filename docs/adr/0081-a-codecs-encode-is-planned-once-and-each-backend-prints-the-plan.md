@@ -613,6 +613,15 @@ old encode, the old encode and its templates are removed in the same landing.
    walks the chain as slots, writing the named entry where the value holds its place and each other in
    order, the flag its entries end on set on each but the last; the decode takes the first entry of the
    kind, which the gate found, out of the chain it read as the place. The printed set is 138 codecs.
+
+   *The twenty-ninth C++ landing, 2026-11-08:* a CBOR map, printed from its own plan (`cpp_source::cbor`).
+   Every entry is presented, as the Rust interface presents it: one accessor each, an optional for one the map
+   may lack, a text or a byte string as its bound's `Text` or `Bytes`, so the encode over any source refuses
+   nothing and writes the map head and each entry present in ascending key order, as the Rust printer does.
+   The runtime's CBOR writers take views. An enum of a signed carrier, whose negative number the encode
+   refuses, is not printed yet. The engine's mesh envelope (`sce:std/mesh/envelope.scxml`) is such a map: the
+   engine's adapter makes it by its constructor, each bounded entry by its `make`, which is where an entry
+   past its bound is refused, and reads it by its accessors. The printed set is 139 codecs.
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences

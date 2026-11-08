@@ -78,6 +78,7 @@
 #include <limits>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -91,6 +92,11 @@
 
 namespace SCE::Generated::{{ namespace }} {
 
+{% if cpp_source %}
+{#- docs/adr/0081 step 4: printed from the map's plan, its entries read
+    through accessors and encoded over any source of it. #}
+{{ cpp_source }}
+{%- else %}
 /// One CBOR map (SCE_FORGE.md §4.6.1). Decode takes the keys in any order and
 /// skips one this codec does not declare; encode writes the entries present in
 /// ascending key order, every head in its shortest form. A required entry
@@ -181,6 +187,7 @@ private:
         return out;
     }
 };
+{% endif %}
 
 }  // namespace SCE::Generated::{{ namespace }}
 
