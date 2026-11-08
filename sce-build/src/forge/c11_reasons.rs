@@ -574,6 +574,15 @@ pub const REASONS: &[Reason] = &[
         row: "invoke_child_ungiven",
         text: "<invoke> could not give the child '{0}'",
     },
+    // A host-run invocation's deadline the machine cannot read, raised by the
+    // one start path every invocation shares: the quotes are the invocation's
+    // type and id, the document's texts, and the deadline's text, at the bound
+    // of the expression it was written as (section 8.6 (c)).
+    Reason {
+        row: "invoke_deadline_unreadable",
+        text: "<invoke type='{v}' id='{v}'>: _sce_deadline_ms='{v}' is not a whole number of \
+               milliseconds",
+    },
     // `<donedata>`.
     Reason {
         row: "donedata_failed",
@@ -1048,6 +1057,31 @@ mod tests {
             seal(),
             "`e` payload: 'f' () is not a variant of Mode".len() as u64 + 7
         );
+    }
+
+    /// docs/adr/0086, section 8.6 (c): the reason a host-run invocation's
+    /// unreadable deadline is raised with quotes three texts, the type, the id
+    /// and the deadline's own, each at the bound the build knows of it, and is
+    /// measured at its row's text plus their sum.
+    #[test]
+    fn the_unreadable_deadline_is_measured_at_the_bounds_of_its_three_texts() {
+        let _scope = scope();
+        let reason = row("invoke_deadline_unreadable").expect("the row");
+        assert_eq!(reason.quotes(), 3);
+        let format = reason
+            .format(
+                &[],
+                &[Quote::Within(10), Quote::Within(3), Quote::Within(20)],
+            )
+            .expect("three quotes");
+        assert_eq!(
+            format,
+            "\"<invoke type='%.10s' id='%.3s'>: _sce_deadline_ms='%.20s' is not a whole number \
+             of milliseconds\""
+        );
+        let text =
+            "<invoke type='' id=''>: _sce_deadline_ms='' is not a whole number of milliseconds";
+        assert_eq!(seal(), text.len() as u64 + 10 + 3 + 20);
     }
 
     /// A quoting row is no plain literal, and a site that hands it a number
