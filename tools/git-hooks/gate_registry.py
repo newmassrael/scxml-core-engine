@@ -1993,9 +1993,12 @@ GATES: dict[str, dict] = {
         "summary": "codegen + visualizer + DOOM WASM builds",
         "cache": False,
         "no_cache_reason": "skip-capable: the emscripten half runs only where "
-                           "emsdk is found (on PATH or under the home), which "
-                           "bx.toml does not require, so a pass without it judged "
-                           "one artifact of three",
+                           "emsdk is found (on PATH or under the home), so a "
+                           "pass without it judged one artifact of three. "
+                           "bx.toml installs the pinned SDK for this gate's "
+                           "units (`[platform.linux.tools.emsdk]`), and the "
+                           "skip stays in the script, so a kept pass could "
+                           "still be a skip",
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
@@ -2071,7 +2074,10 @@ GATES: dict[str, dict] = {
                    "every path it does not name, so the catch-all reading "
                    "above holds. What the deny list changes is per-change "
                    "delegation, and `ci_owed` is where that is read.",
-        "extra": ["sce/**", "tests/**", "cmake/**", "CMakeLists.txt",
+        # The transport SDKs' pin comes first: the build machines install them
+        # with that script (`[platform.linux.tools.mesh-transports]`).
+        "extra": ["scripts/install_mesh_transports.sh",
+                  "sce/**", "tests/**", "cmake/**", "CMakeLists.txt",
                   "examples/**", "resources/**", "tools/codegen/templates/**",
                   "sce-build/src/**",
                   # The union documents every algorithm lane is held to, which
@@ -2678,8 +2684,10 @@ GATES: dict[str, dict] = {
         # the runner and its Node host (tests/w3c/), the mock the runner
         # links, the CMake that configures the tree and registers the
         # fixtures (the root list carries the WASM link settings), the
-        # generator and its templates, and the documents.
-        "extra": ["sce/**", "tests/w3c/**", "tests/mocks/**",
+        # generator and its templates, and the documents. And the emsdk pin
+        # the build machines install it with (`scripts/install_emsdk.sh`).
+        "extra": ["scripts/install_emsdk.sh",
+                  "sce/**", "tests/w3c/**", "tests/mocks/**",
                   "tests/CMakeLists.txt", "CMakeLists.txt", "cmake/**",
                   "tools/codegen/templates/**", "sce-build/src/**",
                   "resources/**"],
@@ -2698,9 +2706,11 @@ GATES: dict[str, dict] = {
                    "the threaded and the host-driven engine",
         "cache": False,
         "no_cache_reason": "skip-capable: it exits 0 on a machine without "
-                           "emsdk, which bx.toml requires by no name, and the "
-                           "Node it runs on is the one that emsdk ships, at no "
-                           "version a declaration pins",
+                           "emsdk. bx.toml installs the pinned SDK, and with "
+                           "it the Node it ships, for this gate's units "
+                           "(`[platform.linux.tools.emsdk]`), and the skip "
+                           "stays in the script, so a kept pass could still "
+                           "be a skip",
         "inputs": None,
         "commits": [],
         "peak_gb": 5.3,
@@ -2724,7 +2734,9 @@ GATES: dict[str, dict] = {
                    "that registers them (the root list carries the WASM "
                    "settings and says what the tree does not declare), the "
                    "generator and its templates, and the documents.",
-        "extra": ["sce/**", "tests/**", "cmake/**", "CMakeLists.txt",
+        # The emsdk pin the build machines install for it comes first.
+        "extra": ["scripts/install_emsdk.sh",
+                  "sce/**", "tests/**", "cmake/**", "CMakeLists.txt",
                   "resources/**", "integration_resources/**",
                   "tools/codegen/templates/**", "sce-build/src/**"],
         "deps": ["codegen-build"],
@@ -2740,9 +2752,11 @@ GATES: dict[str, dict] = {
         "summary": "C++ ctest suite built with emscripten, every case under Node",
         "cache": False,
         "no_cache_reason": "skip-capable: it exits 0 on a machine without "
-                           "emsdk, which bx.toml requires by no name, and the "
-                           "Node it runs on is the one that emsdk ships, at no "
-                           "version a declaration pins",
+                           "emsdk. bx.toml installs the pinned SDK, and with "
+                           "it the Node it ships, for this gate's units "
+                           "(`[platform.linux.tools.emsdk]`), and the skip "
+                           "stays in the script, so a kept pass could still "
+                           "be a skip",
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
@@ -5017,6 +5031,38 @@ def self_test(repo_root: Path) -> int:
             failures.append(
                 f"platform: {slug} is off the fleet with no `platform_reason` "
                 f"saying what that runner has that the fleet does not")
+
+    # the-fleet-and-the-lanes-install-one-emsdk. The build machines install
+    # the release `scripts/install_emsdk.sh` pins, and the hosted lanes name
+    # one in their own `emsdk install` steps. A landing judged on one release
+    # and audited on another would compare two compilers, so every step names
+    # the script's.
+    cases += 1
+    emsdk_script = repo_root / "scripts" / "install_emsdk.sh"
+    pin = None
+    if emsdk_script.is_file():
+        found = re.search(r'^EMSDK_REV="([0-9.]+)"$',
+                          emsdk_script.read_text(encoding="utf-8"), re.M)
+        pin = found.group(1) if found else None
+    if pin is None:
+        failures.append(
+            "emsdk: no EMSDK_REV line in scripts/install_emsdk.sh, the pin "
+            "bx.toml's emsdk tool reads")
+    else:
+        named = 0
+        for workflow in sorted((repo_root / ".github" / "workflows").glob("*.yml")):
+            text = workflow.read_text(encoding="utf-8", errors="replace")
+            for step in re.finditer(r"emsdk (?:install|activate) (\S+)", text):
+                named += 1
+                if step.group(1) != pin:
+                    failures.append(
+                        f"emsdk: {workflow.name} names emsdk {step.group(1)} "
+                        f"and the build machines install {pin} "
+                        f"(scripts/install_emsdk.sh)")
+        if named == 0:
+            failures.append(
+                "emsdk: no workflow names an `emsdk install` release, so this "
+                "case read nothing")
 
     # A gate that enumerates the tree must be triggered by everything it
     # enumerates. The two statements about a gate — when it runs and what

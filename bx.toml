@@ -546,6 +546,12 @@ needed_by = ["wasm32-scenarios"]
 # precondition to check (`sce_gate_python_requires_lupa` in scripts/gates/lib.sh), against the
 # floor pyproject.toml pins. `python3-venv` is the package Debian and Ubuntu put `venv` in.
 #
+# `python3-dev` is for `w3c-python-bindings`, which builds the bindings with `python3-config` and
+# skips, passing, where it is absent: an update to main is judged here with every gate it reaches,
+# `ci_only` included (2026-11-08), and a skip would count as a pass. `libpython3-dev` among the
+# platform's packages holds the headers and not that command, which Debian and Ubuntu put in
+# `python3-dev`. It is listed with this tool because `needed_by` below already reaches that gate.
+#
 # `needed_by` names the three gates that run Python against the runtime: `w3c-python` (and with
 # it `w3c-python-bindings`, whose name contains it), `authoring-core` and `targets`, whose
 # statecharts run through the generated Python. ` targets` keeps its leading space so that
@@ -561,7 +567,7 @@ check = "Python 3."
 prefix_link = "~/.local/share/sce-python/{version}"
 install = "SCE_PYTHON_ROOT={prefix} bash scripts/install_sce_python.sh"
 install_inputs = ["scripts/install_sce_python.sh", "backends/python/runtime/pyproject.toml"]
-packages = ["python3-venv"]
+packages = ["python3-venv", "python3-dev"]
 needed_by = ["w3c-python", "authoring-core", " targets", "workspace-tests"]
 
 # THE GO RELEASE THE GO MODULES DECLARE. Every backends/go/*/go.mod says `go 1.23.0`, and the build
