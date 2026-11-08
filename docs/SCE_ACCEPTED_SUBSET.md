@@ -553,19 +553,22 @@ one under `--no-std`, since the profile's runtime is `std` only. Kotlin generate
 component too, through the same doors, each module parameter read from the run before the
 machine starts, copies a message of a record with a text, byte string or enum field that a
 branch's content reads, and refuses with `generate/unsupported-feature` one that declares
-`<sce:action>`. Go generates a test component too, through the same doors, copies such a
-message as Kotlin does, and refuses with `generate/unsupported-feature` one that declares
-`<sce:action>` and one that uses a template whose type reaches a union, as C++ does; a
-component that uses a template is generated under `--go-module-prefix`, the module path
-its template packages are imported by. A backend that generates a component and not a
-suite's tables, Go among them, refuses one that declares a module parameter by name. On every such backend a variable of an enum bound
-to a template's parameter crosses into the enum unit's type, and one of an optional enum is
-refused by name. A module parameter whose type is not a scalar, `string[N]` or `bytes[N]` is
-refused by name (`generate/unsupported-feature`) on every backend. C++, Rust and Kotlin
-generate the tables of a test configuration, a test case and a suite, and write no file for
-a port type (§11.9, §12.6, slices 5 and 6); each refuses a suite whose guard is past the
-microseconds the runtime's clock counts to. Every other pair of a backend and a kind of the
-profile is refused by name.
+`<sce:action>`. Go generates a test component too, through the same doors, each module
+parameter read from the run before the machine is built, copies such a message as Kotlin
+does, and refuses with `generate/unsupported-feature` one that declares `<sce:action>` and
+one that uses a template whose type reaches a union, as C++ does; a component that uses a
+template is generated under `--go-module-prefix`, the module path its template packages
+are imported by. A backend that generates a component and not a suite's tables refuses
+one that declares a module parameter by name. On every such backend a variable of an enum
+bound to a template's parameter crosses into the enum unit's type, and one of an optional
+enum is refused by name. A module parameter whose type is not a scalar, `string[N]` or
+`bytes[N]` is refused by name (`generate/unsupported-feature`) on every backend. C++, Rust,
+Kotlin and Go generate the tables of a test configuration, a test case and a suite, and
+write no file for a port type (§11.9, §12.6, slices 5 and 6); each refuses a suite whose
+guard is past the microseconds the runtime's clock counts to. Go's tables import what they
+read below `--go-module-prefix`, a component's machine from the directory of its name, and
+are refused by name without one. Every other pair of a backend and a kind of the profile
+is refused by name.
 
 A port type, a configuration, a test case and a suite are then held to the rules their
 imports decide (`docs/SCE_TEST_PROFILE.md` §11.3, §11.6 to §11.8), and a document a

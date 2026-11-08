@@ -943,8 +943,7 @@ the engine on it, registers the test-port processor and the test-component invok
 entered a top-level `<final>`. Every `sce-static` policy declares `SetSessionID` and draws an id when none is given,
 whether or not a saved state can hold its machine, so the component's session id needs no saved shape. Go refuses by
 name a component that declares `<sce:action>`, whose policy is constructed with a host the component is given
-nothing of; one that uses a template whose type reaches a union, which Go does not lower (ADR 0092, section 7); and,
-until it generates a suite's tables, a component that declares a module parameter.
+nothing of, and one that uses a template whose type reaches a union, which Go does not lower (ADR 0092, section 7).
 
 A module parameter (§11.5) is a variable of the machine declared with its type and no value of the document's: the
 static lowering, written once for every backend, lowers no initial value for it. Its value is the run's. Before
@@ -974,8 +973,18 @@ it constructs the machine with the context and before it registers a door on it 
 parameter from the run's values by the reader a restore reads a variable of its type by (`SavedValues`, a text and a
 byte string held to their bounds). A refused read ends the run with `error` and leaves the machine unstarted.
 
+Go reads a module parameter the same way: the policy's field is declared at its type's zero, or for an enum at the
+variant its document declares first, a constant that carries the name of the machine's enum type, neither of which
+anything reads; both starts are one walk with Kotlin's (`forge::generator::go_module_parameter_starts`). An enum's
+type declares its saved form (`<Type>FromSaved`) with the type, whether or not the machine saves. Then `Start`, after
+it sets the context on the policy and before it builds the engine, calls `ComponentContext.ReadModuleParameters` with
+the policy's `sceAcceptModuleParameters`, which reads every module parameter from the run's values by the reader a
+restore reads a variable of its type by (`sce.SavedRead<Type>`, a text and a byte string held to their bounds,
+`<Type>FromSaved` for an enum) before it writes any. A refused read ends the run with `error` and leaves the machine
+unbuilt.
+
 A backend that generates a component and not the suite's tables refuses a component that declares a module parameter
-by name (`test_component::snapshot::lower`), since its value is the suite's; C++, Rust and Kotlin generate both.
+by name (`test_component::snapshot::lower`), since its value is the suite's; C++, Rust, Kotlin and Go generate both.
 
 C++ generates `test-configuration`, `test-case` and `test-suite`, and writes no file for `test-port-type` (§12.6,
 slice 5; `codegen_matrix::TEST_SUITE_BACKENDS`): the units of the components and configurations that read a port
@@ -1034,9 +1043,36 @@ another run chose. A component a configuration runs is generated with no prefix:
   microseconds and its selection as a lambda over the world's features, whose body stands bare as Rust's closure's
   does.
 
+The runner `com.sce.runtime.test.runSuite` runs the test cases a world selects (§12.4).
+
+Go generates `test-configuration`, `test-case` and `test-suite`, and writes no file for `test-port-type` (§12.6,
+slice 6). Each table is a file `<file>.go` in the package `<file>`, named by the document's file as every forge unit
+is, over the profile's runtime, which it imports by its package's own name (`testprofile`). A Go unit names another
+package only by an import path, which has no bare form, so each table imports what it reads as a sibling package
+below the module path the run is given (`--go-module-prefix`), under the alias `sce_<document>` every Go unit imports
+a sibling by, and is refused by name without one: a test case its configuration's unit, a suite its test cases', and
+a configuration each component's machine. A component's machine is in the package its statechart declares,
+`<module path>/<snake of the machine's name>`, the directory a forge unit of that name is placed in
+(`forge::generator::forge_unit_dir`); so a configuration and the components it runs are generated under one module
+path, each component's machine placed in that directory, as every Go importer and the units it imports are; a
+package two rows name is imported once:
+
+- a configuration declares `Configuration()`, the `testprofile.Configuration` the runtime reads, every field written
+  and an empty table as empty; `Machine(componentType)`, a `testprofile.MachineFactory` that makes the
+  `<Name>Component` of each type and nil for another; and `ModuleParameters()`, the ids its components read;
+- a test case declares `Name` and `TestCase()`, the `testprofile.TestCase` of its name, its configuration's tables,
+  its configuration's `Machine` as the factory of machines, and the module parameters they read;
+- a suite declares `Suite()`, the `testprofile.Suite` of its module parameters at their defaults, each the saved
+  value of its declared type written by the writer of that type (`sce.SavedWrite<Type>` of an untyped constant, which
+  writes a 64-bit integer as its text and a byte string as its Latin-1 text; an enum's variant by the name its
+  document declares, written as a text is), which imports the SCE runtime as `sce` where a module parameter is
+  declared, and of its `<sce:execute>` entries in run order, each with its test case, its guard
+  (`testprofile.GuardOf` of its microseconds, or `testprofile.NoGuard`) and its selection as a function literal over
+  the world's features, whose returned expression stands bare as Rust's closure's body does.
+
 Which rows each table holds, in which order, and what is refused is decided once for every backend
-(`forge::generator::test_tables`); a backend spells them. The runner `com.sce.runtime.test.runSuite` runs the test
-cases a world selects (§12.4). Every kind stays refused on the other backends until their slices land.
+(`forge::generator::test_tables`); a backend spells them. The runner `testprofile.RunSuite` runs the test cases a
+world selects (§12.4). Every kind stays refused on the other backends until their slices land.
 
 ### 11.10 The rules under feature derivation
 
@@ -1184,5 +1220,8 @@ the equivalence law (order of work step 6).
    value (`HostSendRequest.Value`). Go generates templates, and the refusal of §11.9 is lifted for Go for
    `test-template`; Go lowers no union, so a template whose type reaches one stays refused there, as on C++. Go
    generates test components next, through the doors of §12.3, and runs them through `testprofile.TestCaseRun`; the
-   refusal is lifted for Go for `test-component`, but for a component that declares a module parameter, whose value
-   Go's suite tables give, for one that declares `<sce:action>`, and for one whose template reaches a union.
+   refusal is lifted for Go for `test-component`, but for a component that declares `<sce:action>` and for one
+   whose template reaches a union. Go then generates the configuration, case and suite tables over the same rows,
+   each importing what it reads below the run's module path, and runs the examples end to end through
+   `testprofile.RunSuite`; the refusal is lifted for Go for the remaining kinds, and for a component's module
+   parameter.
