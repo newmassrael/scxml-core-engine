@@ -1,0 +1,51 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "python", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+# SCE Forge: Auto-generated from Extended SCXML (sce:kind="test-template")
+# Runtime: {{ runtime_dep }}
+# Do not edit — regenerate from the source SCXML file.
+{# The imports are read off the unit's text by the renderer: `Optional` where a
+   type may hold no value, the profile's runtime where a text's characters are
+   counted, and the module of each document whose enum, record or template the
+   unit names, under the alias every Python unit imports a sibling by. #}
+{% if needs_optional %}
+
+from typing import Optional
+{% endif %}
+{% if text_length_import %}
+
+{{ text_length_import }}
+{% endif %}
+{% if python_imports %}
+
+{% for imp in python_imports %}
+{{ imp }}
+{% endfor %}
+{% endif %}
+
+#: The type the template `{{ template_name }}` matches: `{{ template_type }}`, as the unit of its type
+#: declares it.
+Value = {{ value_type }}
+
+
+def matches(value: Value{% for p in parameters %}, {{ p.name }}: {{ p.ty }}{% endfor %}) -> bool:
+    """Whether ``value`` matches the template ``{{ template_name }}`` (ES 201 873-1 Annex B.1,
+    docs/SCE_TEST_PROFILE.md §6.1).
+{% for p in parameters %}
+
+    ``{{ p.name }}`` is the formal parameter ``{{ p.id }}``, of type ``{{ p.sce_type }}``.
+{% endfor %}
+    """
+    return {{ match_expr }}
+{% if value_expr %}
+
+
+def value({% for p in parameters %}{{ p.name }}: {{ p.ty }}{% if not loop.last %}, {% endif %}{% endfor %}) -> Value:
+    """The value the specific template ``{{ template_name }}`` sends (docs/SCE_TEST_PROFILE.md
+    §6.2): every field it names at its value, every field it omits absent. It matches the
+    template by ``matches``, given the same parameters."""
+    return {{ value_expr }}
+{% endif %}
