@@ -323,7 +323,7 @@ fn a_read_of_the_data_of_a_composed_schema_is_refused_by_name() {
     // gate every backend passes lets the read through, and each backend that
     // does not lower it refuses it by its own name where it is generated.
     for document in [guarded, nested] {
-        for language in ["cpp", "go", "python", "c11"] {
+        for language in ["cpp", "python", "c11"] {
             let out = refusal_of(&["check", "-l", language], &document);
             assert!(out.contains("the field `items`"), "{language}: {out}");
             assert!(

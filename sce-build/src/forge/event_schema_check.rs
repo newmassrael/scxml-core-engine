@@ -272,15 +272,15 @@ impl ComposedLowering {
 
     /// What the backend `language` lowers: Rust reads a composed payload at
     /// any depth, takes a list whole, holds a union variable and sends a
-    /// composed value; Kotlin does each of those but hold a union, and so
-    /// reads no payload that holds one. Each is a backend whose
+    /// composed value; Kotlin and Go do each of those but hold a union, and so
+    /// read no payload that holds one. Each is a backend whose
     /// machine spells the walks over a composed value
     /// ([`crate::forge::static_lowering::StaticTarget::composed_spelling`],
     /// [`crate::forge::static_lowering::StaticTarget::composed_send_spelling`]);
     /// every other backend lowers no composed value yet.
     pub fn of(language: crate::generator::Language) -> Self {
         use crate::generator::Language;
-        let walks = matches!(language, Language::Rust | Language::Kotlin);
+        let walks = matches!(language, Language::Rust | Language::Kotlin | Language::Go);
         Self {
             name: language.canonical_name(),
             reads: walks,
@@ -2629,8 +2629,8 @@ mod tests {
     }
 
     /// Rust reads a composed payload, takes a list whole and sends a composed
-    /// value (docs/adr/0086, sections 5 and 6), Kotlin does each of those but
-    /// hold a union, and every other backend refuses each by its own name
+    /// value (docs/adr/0086, sections 5 and 6), Kotlin and Go do each of those
+    /// but hold a union, and every other backend refuses each by its own name
     /// until its step lowers it.
     #[test]
     fn each_backend_lowers_the_composed_positions_its_step_landed() {
@@ -2639,10 +2639,11 @@ mod tests {
             let lowering = ComposedLowering::of(*language);
             let rust = *language == Language::Rust;
             let kotlin = *language == Language::Kotlin;
-            assert_eq!(lowering.reads, rust || kotlin, "{language:?}");
-            assert_eq!(lowering.copies, rust || kotlin, "{language:?}");
+            let go = *language == Language::Go;
+            assert_eq!(lowering.reads, rust || kotlin || go, "{language:?}");
+            assert_eq!(lowering.copies, rust || kotlin || go, "{language:?}");
             assert_eq!(lowering.unions, rust, "{language:?}");
-            assert_eq!(lowering.sends, rust || kotlin, "{language:?}");
+            assert_eq!(lowering.sends, rust || kotlin || go, "{language:?}");
             assert_eq!(lowering.name, language.canonical_name());
         }
     }

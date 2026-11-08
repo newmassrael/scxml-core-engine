@@ -4553,6 +4553,16 @@ impl StaticTarget for RustTarget {
                 scalar => spelling.read_scalar(scalar, "v"),
             })
         };
+        // The type a present value of `ty` is held in, which the reader of an
+        // optional one is handed with it.
+        let present_type = |ty: &SceType, max: Option<u32>| -> Option<String> {
+            Some(match ty {
+                SceType::String => spelling.text_type(max?),
+                SceType::Bytes => spelling.bytes_type(max?),
+                SceType::Enum(reference) => machine_enum(&reference.alias)?.ty,
+                scalar => spelling.scalar_type(scalar),
+            })
+        };
         let path_bound = lift.path_bound()?;
         let schema = filters::escape_rust(lift.alias.to_string());
         // The call that reads the text: a record field by field through
@@ -4565,9 +4575,11 @@ impl StaticTarget for RustTarget {
                 for field in &entries.fields {
                     let reader = match &field.sce_type {
                         EntryType::Scalar(ty) => read(ty, field.max_size)?,
-                        EntryType::Optional { elem } => {
-                            spelling.read_optional("v", &read(elem, field.max_size)?)
-                        }
+                        EntryType::Optional { elem } => spelling.read_optional(
+                            "v",
+                            &read(elem, field.max_size)?,
+                            &present_type(elem, field.max_size)?,
+                        ),
                     };
                     members.push((
                         self.record_field(&field.id),
@@ -6784,12 +6796,14 @@ pub fn lower(
     // guard keeps the script engine instead, and this one has none.
     // [`crate::forge::event_schema_check::schema_is_native_payload_eligible`] is
     // the one rule for what the channel holds without it.
+    let mut reads_a_composed_payload = false;
     for event in &payload_events {
         let Some(schema) = schemas.get(event) else {
             // A payload whose schema holds a composition rides the typed channel
             // too, held in the types the walks spell (docs/adr/0086).
             if composed_payloads.contains_key(event) {
                 declare_composed_payload(&mut declarations, model, event)?;
+                reads_a_composed_payload = true;
             }
             continue;
         };
@@ -6884,6 +6898,13 @@ pub fn lower(
     // An enum's definition names the optional type where the target answers a number
     // it declares as one, whether or not the machine holds an optional value.
     if target.enum_def_names_optional() && !declarations.enums.is_empty() {
+        imports.extend(target.optional_import());
+    }
+    // A composed payload's struct, its reader and its writer name the optional
+    // type wherever its schema holds a value that may be absent, at any depth
+    // (docs/adr/0086), whether or not the machine holds one of its own; the
+    // import is kept only where the machine's text names it.
+    if reads_a_composed_payload {
         imports.extend(target.optional_import());
     }
     let payload_events_by_alias: std::collections::BTreeMap<String, String> = records
@@ -10809,11 +10830,40 @@ impl StaticTarget for GoTarget<'_> {
     fn scalar_view(&self, _ty: &SceType) -> Option<String> {
         None
     }
+    // One spelling of a record's type, whether a variable or a composed value
+    // holds it.
     fn record_type(&self, machine: &str, alias: &str) -> String {
-        format!(
-            "{machine}{}Record",
-            filters::to_pascal_case(alias.to_string())
-        )
+        use crate::forge::composed_lowering::{ComposedSpelling, GoCarrier, GoComposed};
+        GoComposed {
+            machine,
+            carrier: GoCarrier::Json,
+        }
+        .record_type(alias)
+    }
+    // The runtime's `PayloadValue` reads each constructor of a composed
+    // payload, and its writers write the JSON the inject seam carries as the
+    // event's `Data` (docs/adr/0086, section 7.1, the Go row).
+    fn composed_spelling<'a>(
+        &self,
+        machine: &'a str,
+    ) -> Option<Box<dyn crate::forge::composed_lowering::ComposedSpelling + 'a>> {
+        Some(Box::new(crate::forge::composed_lowering::GoComposed {
+            machine,
+            carrier: crate::forge::composed_lowering::GoCarrier::Json,
+        }))
+    }
+    // The walks of `composed_spelling`, each writer writing the value every
+    // param of a `<send>` is held in (`wire_value`) until the runtime's
+    // `ScriptValueToJSON` writes them as one JSON object (docs/adr/0086,
+    // section 5.3).
+    fn composed_send_spelling<'a>(
+        &self,
+        machine: &'a str,
+    ) -> Option<Box<dyn crate::forge::composed_lowering::ComposedSpelling + 'a>> {
+        Some(Box::new(crate::forge::composed_lowering::GoComposed {
+            machine,
+            carrier: crate::forge::composed_lowering::GoCarrier::Wire,
+        }))
     }
     // A struct of the schema's fields in the schema's order, spelled as the
     // typed payload's are, because an expression reads a field by the name the

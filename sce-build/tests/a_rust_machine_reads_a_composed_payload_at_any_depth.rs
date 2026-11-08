@@ -262,11 +262,11 @@ fn run(args: &[&str], name: &str, document: &str) -> (bool, String) {
 fn rust_takes_the_read_and_another_backend_refuses_it_by_name() {
     let (ok, out) = run(&["check", "-l", "rust"], "batch_reader.scxml", READER);
     assert!(ok, "Rust reads a composed payload:\n{out}");
-    let (ok, out) = run(&["check", "-l", "go"], "batch_reader.scxml", READER);
-    assert!(!ok, "Go does not read a composed payload yet:\n{out}");
+    let (ok, out) = run(&["check", "-l", "cpp"], "batch_reader.scxml", READER);
+    assert!(!ok, "C++ does not read a composed payload yet:\n{out}");
     assert!(out.contains("generate/unsupported-feature"), "{out}");
     assert!(
-        out.contains("a statechart's read of `_event.data` has no go lowering of its list"),
+        out.contains("a statechart's read of `_event.data` has no cpp lowering of its list"),
         "{out}"
     );
 }
@@ -382,12 +382,12 @@ fn a_list_is_taken_whole_into_a_variable_whose_type_it_fits() {
     let text =
         std::fs::read_to_string(fixtures().join("static_composed_payload.scxml")).expect("fixture");
     let (ok, out) = run(
-        &["check", "-l", "go"],
+        &["check", "-l", "cpp"],
         "static_composed_payload.scxml",
         &text,
     );
-    assert!(!ok, "Go reads no composed payload yet:\n{out}");
-    assert!(out.contains("has no go lowering"), "{out}");
+    assert!(!ok, "C++ reads no composed payload yet:\n{out}");
+    assert!(out.contains("has no cpp lowering"), "{out}");
 }
 
 /// What Rust does not lower yet stays refused by name on Rust too: the fixture's

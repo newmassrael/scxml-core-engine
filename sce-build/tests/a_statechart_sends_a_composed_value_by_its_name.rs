@@ -257,7 +257,7 @@ fn a_backend_that_sends_none_refuses_the_send_by_name() {
         r#"<data id="kept" sce:type="list&lt;uint8&gt;[2]"/>"#,
         r#"<param name="late" expr="kept"/>"#,
     );
-    for language in ["cpp", "go", "python", "c11"] {
+    for language in ["cpp", "python", "c11"] {
         let (ok, out) = run(&["check", "-l", language], &document);
         assert!(!ok, "{language} sends no composed value yet:\n{out}");
         assert!(

@@ -6386,6 +6386,201 @@ pub(crate) fn go_payload_struct(machine: &str, event: &str) -> String {
     )
 }
 
+/// What the Go typed channel holds and reads of one event's payload
+/// ([`build_go_event_payload`]).
+struct GoPayloadParts {
+    /// The payload struct's members, one line each.
+    field_lines: String,
+    /// The inject seam's parameters, each after a `, `.
+    params: String,
+    /// The lift's statements that read each member out of the decoded
+    /// `fields` into `payload`, returning the first refusal.
+    field_reads: String,
+    /// The JSON of the defaults of the fields a later revision added, or
+    /// `None` for a schema that added none.
+    defaults: Option<String>,
+    /// The statements the inject seam runs before it sends, each a line of
+    /// its own; empty where it needs none.
+    prelude: String,
+    /// The typed carrier the inject seam sends.
+    typed_payload: String,
+    /// The JSON text the inject seam writes as the event's `Data`.
+    data: String,
+    /// Whether the inject seam answers an `error`: the refusal of a value a
+    /// host hands it past a bound its type declares (docs/adr/0086, section
+    /// 5.4).
+    refuses: bool,
+}
+
+/// [`GoPayloadParts`] of a schema each field of which is one entry, the struct
+/// `struct_name`: each field read by the reader of its declared type.
+fn go_entry_payload(
+    schema: &EntrySchema,
+    l: &LangCtx,
+    static_enums: &[crate::forge::static_lowering::StaticEnumType],
+    struct_name: &str,
+) -> GoPayloadParts {
+    // Internal payload struct: fields are verbatim schema ids (matching
+    // the verbatim property emit of `expr.rs::emit_go`) and unexported —
+    // the policy reads them in the native guard within the same package,
+    // and consumers never name a field directly (they pass the values to
+    // the `<Machine>Raise<Event>` seam below).
+    let mut field_lines = String::new();
+    let mut params = String::new();
+    let mut struct_lits = String::new();
+    // What the lift reads back out of `Data`, and what the inject seam
+    // writes into it beside the typed carrier: the same fields, named once.
+    let mut field_reads = String::new();
+    let mut data_items = String::new();
+    for f in &schema.fields {
+        // An optional field is held in the one optional type over its
+        // present value's (docs/adr/0055).
+        let present = l.type_name(f.sce_type.present_type()).into_owned();
+        let ty = match &f.sce_type {
+            EntryType::Scalar(_) => present,
+            EntryType::Optional { .. } => l
+                .optional_of(&present)
+                .expect("Go spells an optional value"),
+        };
+        field_lines.push_str(&format!("\t{} {ty}\n", f.id));
+        params.push_str(&format!(", {} {ty}", f.id));
+        struct_lits.push_str(&format!("{}: {}, ", f.id, f.id));
+        field_reads.push_str(&format!(
+            "\t\tif payload.{}, err = {}; err != nil {{\n\t\t\treturn err\n\t\t}}\n",
+            f.id,
+            go_payload_reader(f, "fields", static_enums)
+        ));
+        // In schema order, as every other engine writes the same payload.
+        data_items.push_str(&format!(
+            "sce.Pair(\"{}\", {}), ",
+            f.id,
+            go_payload_data_value(f, static_enums)
+        ));
+    }
+    GoPayloadParts {
+        field_lines,
+        params,
+        field_reads,
+        defaults: crate::forge::schema_revision::defaults_wire(schema),
+        prelude: String::new(),
+        typed_payload: format!("{struct_name}{{{struct_lits}}}"),
+        data: format!("sce.PayloadJSON({})", data_items.trim_end_matches(", ")),
+        refuses: false,
+    }
+}
+
+/// [`GoPayloadParts`] of the payload of `event`, the struct `struct_name`, whose
+/// schema holds a composition (docs/adr/0086), by the walks over its type
+/// ([`crate::forge::composed_lowering`]): each member in the type the machine
+/// holds it in (section 7.1, the Go row), each read by one runtime call per
+/// constructor, which refuses the delivery whole, naming the path, at the first
+/// value outside its type (section 4), and written as its JSON (section 3.1)
+/// from the payload the inject seam builds. A Go struct has no constructor that
+/// could refuse a value, so the inject seam holds what a host hands it to every
+/// bound its type declares, at any depth, before it builds anything, and
+/// answers the refusal (section 5.4).
+///
+/// The static lowering declared every record and enum the payload names before
+/// the channel is built ([`crate::forge::static_lowering::lower_go`]), so a walk
+/// that fails here is a routing defect.
+fn go_composed_payload(
+    model: &crate::model::SCXMLModel,
+    machine_name: &str,
+    event: &str,
+    static_enums: &[crate::forge::static_lowering::StaticEnumType],
+    struct_name: &str,
+) -> GoPayloadParts {
+    use crate::forge::composed_lowering::{self as composed, ComposedSpelling, RecordEnv};
+    let unlowered = |why: &str| -> String {
+        format!(
+            "the payload of `{event}` reached the Go typed channel unlowered ({why}): the static \
+             lowering declares what a composed payload names before the channel is built"
+        )
+    };
+    let schema = model
+        .imported_event_schemas
+        .get(event)
+        .unwrap_or_else(|| panic!("{}", unlowered("no schema")));
+    let alias = model
+        .imported_records
+        .iter()
+        .find(|(_, held)| held.name == schema.name)
+        .map(|(alias, _)| alias.as_str())
+        .unwrap_or_else(|| panic!("{}", unlowered("no record of its schema")));
+    let records = composed::StatechartRecords::of(model);
+    let enums: std::collections::BTreeMap<String, composed::MachineEnum> = static_enums
+        .iter()
+        .map(|e| (e.alias.clone(), e.machine_enum()))
+        .collect();
+    let spelling = composed::GoComposed {
+        machine: machine_name,
+        carrier: composed::GoCarrier::Json,
+    };
+    let walked = |result: Result<Vec<(String, String)>, String>| {
+        result.unwrap_or_else(|why| panic!("{}", unlowered(&why)))
+    };
+    let held = records
+        .record(None, alias)
+        .unwrap_or_else(|why| panic!("{}", unlowered(&why)));
+    let members = walked(composed::record_members(alias, &records, &enums, &spelling));
+    let readers = walked(composed::field_readers(held, &records, &enums, &spelling));
+    // The inject seam builds the payload once its checks have passed, and
+    // writes each field from the value the typed carrier holds. The local is
+    // named in the prefix the generator keeps for its own names, so it shadows
+    // no parameter of the seam, each of which a field names.
+    const PAYLOAD_LOCAL: &str = "scePayload";
+    let writers = walked(composed::field_writers(
+        held,
+        &records,
+        &spelling,
+        &composed::Held::place(PAYLOAD_LOCAL),
+    ));
+    let checks = composed::go_raise_checks(held, &records, &enums, &spelling)
+        .unwrap_or_else(|why| panic!("{}", unlowered(&why)));
+    // Each member read into the payload by its own reader, which reads the
+    // value the field's name holds, bound as the reader's binding.
+    let binding = spelling.read_binding();
+    let field_reads: String = readers
+        .iter()
+        .map(|(id, read)| {
+            format!(
+                "\t\t{{\n\t\t\t{binding}, err := fields.Field(\"{}\")\n\t\t\tif err != nil \
+                 {{\n\t\t\t\treturn err\n\t\t\t}}\n\t\t\tif payload.{id}, err = {read}; err != \
+                 nil {{\n\t\t\t\treturn err\n\t\t\t}}\n\t\t}}\n",
+                filters::escape_go(id.clone())
+            )
+        })
+        .collect();
+    let mut prelude: String = checks
+        .iter()
+        .map(|check| format!("\tif err := {check}; err != nil {{\n\t\treturn err\n\t}}\n"))
+        .collect();
+    let fields: Vec<String> = members
+        .iter()
+        .map(|(id, _)| format!("{id}: {id}"))
+        .collect();
+    prelude.push_str(&format!(
+        "\t{PAYLOAD_LOCAL} := {struct_name}{{{}}}\n",
+        fields.join(", ")
+    ));
+    GoPayloadParts {
+        field_lines: members
+            .iter()
+            .map(|(id, ty)| format!("\t{id} {ty}\n"))
+            .collect(),
+        params: members
+            .iter()
+            .map(|(id, ty)| format!(", {id} {ty}"))
+            .collect(),
+        field_reads,
+        defaults: crate::forge::schema_revision::composed_defaults_wire(schema),
+        prelude,
+        typed_payload: PAYLOAD_LOCAL.to_string(),
+        data: format!("string({})", spelling.write_record(&writers)),
+        refuses: true,
+    }
+}
+
 /// Build the [`GoEventPayload`] for `model`. Same SSOT guard selection
 /// ([`select_native_typed_guards`]) as the Rust and C11 builders, so all
 /// three backends agree on which guards are native.
@@ -6478,52 +6673,33 @@ pub fn build_go_event_payload(
     let clear = format!("\tp.pendingPayloadTag = {tag_none}\n");
 
     for event in &guarded_events {
-        let schema = &entry_schemas[event];
         let variant = filters::to_event_variant(event.clone());
         let struct_name = go_payload_struct(&machine, event);
         let field = format!("pending{variant}Payload");
-        // Internal payload struct: fields are verbatim schema ids (matching
-        // the verbatim property emit of `expr.rs::emit_go`) and unexported —
-        // the policy reads them in the native guard within the same package,
-        // and consumers never name a field directly (they pass the values to
-        // the `<Machine>Raise<Event>` seam below).
-        let mut field_lines = String::new();
-        let mut params = String::new();
-        let mut struct_lits = String::new();
-        // What the lift reads back out of `Data`, and what the inject seam
-        // writes into it beside the typed carrier: the same fields, named once.
-        let mut field_reads = String::new();
-        let mut data_items = String::new();
-        for f in &schema.fields {
-            // An optional field is held in the one optional type over its
-            // present value's (docs/adr/0055).
-            let present = l.type_name(f.sce_type.present_type()).into_owned();
-            let ty = match &f.sce_type {
-                EntryType::Scalar(_) => present,
-                EntryType::Optional { .. } => l
-                    .optional_of(&present)
-                    .expect("Go spells an optional value"),
-            };
-            field_lines.push_str(&format!("\t{} {ty}\n", f.id));
-            params.push_str(&format!(", {} {ty}", f.id));
-            struct_lits.push_str(&format!("{}: {}, ", f.id, f.id));
-            field_reads.push_str(&format!(
-                "\t\tif payload.{}, err = {}; err != nil {{\n\t\t\treturn err\n\t\t}}\n",
-                f.id,
-                go_payload_reader(f, "fields", static_enums)
-            ));
-            // In schema order, as every other engine writes the same payload.
-            data_items.push_str(&format!(
-                "sce.Pair(\"{}\", {}), ",
-                f.id,
-                go_payload_data_value(f, static_enums)
-            ));
-        }
+        // The struct's members, the lift's reads, the inject seam's parameters,
+        // what it runs before it sends and the carriers it sends, and the
+        // defaults of the fields a later revision added: a schema of entries
+        // field by field, and one that holds a composition by the walks over
+        // its type (docs/adr/0086), which the static lowering reads a payload
+        // of only on a target that spells them.
+        let GoPayloadParts {
+            field_lines,
+            params,
+            field_reads,
+            defaults,
+            prelude,
+            typed_payload,
+            data,
+            refuses,
+        } = match entry_schemas.get(event) {
+            Some(schema) => go_entry_payload(schema, &l, static_enums, &struct_name),
+            None => go_composed_payload(model, &machine, event, static_enums, &struct_name),
+        };
         // A field a later revision of the schema added is read out of the
         // schema's defaults where the delivery lacks it
         // (`crate::forge::schema_revision`); a schema with none reads the
         // delivery alone, as it always has.
-        let lift_call = match crate::forge::schema_revision::defaults_wire(schema) {
+        let lift_call = match defaults {
             Some(defaults) => format!(
                 "sce.LiftPayloadWithDefaults(meta.Data, \"{}\")",
                 filters::escape_go(defaults)
@@ -6568,27 +6744,40 @@ type {struct_name} struct {{\n{field_lines}}}\n\n"
         // `Engine` is a foreign type (the Go equivalent of Rust's orphan
         // rule), and so one named by its machine (`raise_fn` above). The
         // values are packed into the type-erased `TypedPayload` carrier; the
-        // populate seam asserts them back into the typed policy field.
-        let data_pairs = data_items.trim_end_matches(", ");
+        // populate seam asserts them back into the typed policy field. A seam
+        // that holds a host's value to its bounds answers the refusal, and
+        // raises nothing where it refuses.
+        let (refusal_doc, result, answered) = if refuses {
+            (
+                "\n// A value past a bound its type declares, at any depth, is refused before\n\
+// anything is sent (docs/adr/0086, section 5.4): the seam answers the refusal,\n\
+// naming the path to the place, and raises nothing.",
+                " error",
+                "\treturn nil\n",
+            )
+        } else {
+            ("", "", "")
+        };
         raise_fns.push_str(&format!(
             "// {raise_fn} is the NL\u{2192}IR Item C1 Path A per-event typed `_event.data`\n\
 // inject seam for `{event}` — binds the event name and the payload field\n\
 // values in one call so the name\u{2194}type pairing cannot be constructed\n\
 // inconsistently. Twin of the Rust `{machine}Inject` extension-trait method\n\
-// and the C11 `raise_<event>_typed` entry.\n\
-func {raise_fn}(e *sce.Engine[{machine}State, {machine}Event]{params}) {{\n\
+// and the C11 `raise_<event>_typed` entry.{refusal_doc}\n\
+func {raise_fn}(e *sce.Engine[{machine}State, {machine}Event]{params}){result} {{\n\
+{prelude}\
 \te.RaiseExternalWithMeta(sce.EventWithMetadata[{machine}Event]{{\n\
 \t\tEvent:    {machine}Event{variant},\n\
 \t\tMetadata: sce.EventMetadata{{\n\
 \t\t\tEventType:    sce.EventTypeExternal,\n\
-\t\t\tTypedPayload: {struct_name}{{{struct_lits}}},\n\
+\t\t\tTypedPayload: {typed_payload},\n\
 \t\t\t// Both carriers are filled: the typed one a native guard reads,\n\
 \t\t\t// and `Data`, which is what the script engine binds `_event.data`\n\
 \t\t\t// from. Filling only the first left an `<assign expr=\"_event.data.x\">`\n\
 \t\t\t// on this event reading nothing, on every backend alike.\n\
-\t\t\tData: sce.PayloadJSON({data_pairs}),\n\
+\t\t\tData: {data},\n\
 \t\t}},\n\
-\t}})\n}}\n\n"
+\t}})\n{answered}}}\n\n"
         ));
     }
     populate.push_str("\t}\n");
