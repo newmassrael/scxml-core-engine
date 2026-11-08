@@ -5205,14 +5205,16 @@ model holds a payload's byte string as the text its wire spells, one character t
 and reads it through the library's `field` as it reads every field of a payload, which
 refuses a value that is no text or holds a character past U+00FF.
 
-The bound is held where the bytes are written, as a string's is, and not where they are
-read, with one structural exception the shared scenario does not state: an engine whose
-payload buffer is the bound itself (C11's byte string, and Rust without an allocator)
-refuses a payload longer than its field's `sce:max-size` whole at the lift, even on a route
-that writes none of it, where the others read it and only compare it. C11's text is not
-one of them: it is lifted into a buffer of the size the data arrived in, so a text past its
-bound is an assignment that fails inside the transition, as it is in the other engines
-(`scenarios/record_list_parent.json` states the refusal that follows). Measured 2026-10-07 by the scenario,
+The bound a payload's schema declares is held where the payload is read, as every bound
+of its type is (docs/adr/0086, section 4.4): a byte string or a text past it refuses the
+delivery whole on every engine, before any transition runs and on a route that writes
+none of it (`scenarios/static_payload_bytes.json` measures a frame, and
+`scenarios/static_record_string.json` takes a label into a wider variable). Each
+generated lift reads the field by the reader a byte string or a text inside a
+composition is read by, with the field's bound; the Interpreter reads it through the
+library's `field` with the bound in its type (`{bytes: 8}`, `{string: 8}`) wherever an
+expression reads it. A payload within the field's bound is then held to the bound of
+the place it is written to, as any value is. Measured 2026-10-07 by the scenario,
 the C++ payload lift had read the bytes of the UTF-8 text as the bytes of the field and
 written them into a JSON string as they were, and C11 had read a character written as
 itself byte by byte. Both now read the Latin-1 text (C++ through `SCE::Latin1Bytes`, which
