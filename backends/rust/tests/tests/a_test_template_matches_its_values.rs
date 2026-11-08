@@ -15,8 +15,8 @@ use sce_portable_bytes::{BoundedList, SceString};
 use sce_rust_tests::integration::static_datamodel::{
     card_payment, card_within, elapsed_at_most, every_matcher, job_report, job_report_of,
     job_status, order_customer, order_line, order_line_bounded, order_line_exact, order_payment,
-    order_placed, order_placed_match, paint_color, report_within, shape_is_circle, shape_radius,
-    shape_rect, union_shape, voucher_is,
+    order_placed, order_placed_match, paint_color, report_within, shape_is_circle,
+    shape_radius_minimal, shape_rect_minimal, union_shape_minimal, voucher_is,
 };
 
 type JobStatus = job_status::JobStatusPayload;
@@ -25,7 +25,7 @@ type Card = card_payment::CardPaymentPayload;
 type Color = paint_color::PaintColor;
 type Order = order_placed::OrderPlacedPayload;
 type Payment = order_payment::OrderPayment;
-type Shape = union_shape::UnionShape;
+type Shape = union_shape_minimal::UnionShapeMinimal;
 
 /// U+00E9, one character of two UTF-8 bytes.
 const E_ACUTE: &str = "\u{e9}";
@@ -296,10 +296,10 @@ fn a_byte_string_literal_is_its_octets() {
 /// no other, whatever the case holds.
 #[test]
 fn a_union_matches_in_the_case_its_matcher_names() {
-    let circle = Shape::Circle(shape_radius::ShapeRadiusPayload { radius: 3 });
+    let circle = Shape::Circle(shape_radius_minimal::ShapeRadiusMinimalPayload { radius: 3 });
     assert!(shape_is_circle::matches(&circle));
     assert!(!shape_is_circle::matches(&Shape::Dot));
-    let rect = Shape::Rect(shape_rect::ShapeRectPayload {
+    let rect = Shape::Rect(shape_rect_minimal::ShapeRectMinimalPayload {
         width: 1,
         height: 2,
     });

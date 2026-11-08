@@ -4,9 +4,9 @@
      holds at any depth. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       version="1.0" sce:kind="event-schema" name="event_shapes"
+       version="1.0" sce:kind="event-schema" name="event_shapes_minimal"
        sce:event-name="shapes.sent">
-  <sce:import kind="union" src="union_shape.scxml" as="Shape"/>
+  <sce:import kind="union" src="union_shape_minimal.scxml" as="Shape"/>
   <datamodel>
     <data id="one" sce:type="union:Shape" sce:direction="in"/>
     <data id="many" sce:type="list&lt;union:Shape&gt;[1..3]" sce:direction="in"/>

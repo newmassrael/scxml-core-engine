@@ -4,13 +4,13 @@
 //! Kotlin lowers a union (docs/adr/0092, section 7, the Kotlin row), held to
 //! the documents under `sce-build/tests/fixtures/union/`:
 //!
-//! * `union_shape.scxml` generates a sealed interface named for the document,
+//! * `union_shape_minimal.scxml` generates a sealed interface named for the document,
 //!   `val kind` on it, one case nested in it per variant of the tag's enum in
 //!   the enum's order (not the document's), a `data class` holding the case's
 //!   record or a `data object` for an empty case, and one `proven<Case>()` per
 //!   case that holds a record; beside it `REVISION` (the tag enum's),
 //!   `DATA_MAX_LEN`, `SCHEMA_ID` and `JSON_SCHEMA` (section 3.1, item 4).
-//! * `event_shapes.scxml`, whose fields hold the union alone, in a list and
+//! * `event_shapes_minimal.scxml`, whose fields hold the union alone, in a list and
 //!   optionally, generates a payload class that names the sealed interface at
 //!   each depth and imports the union's unit.
 //! * The units, with the enum and the records they name, compile together under
@@ -57,17 +57,17 @@ fn position(text: &str, needle: &str) -> usize {
 }
 
 const KIND: &str = "com.sce.generated.shape_kind.ShapeKind";
-const SHAPE: &str = "com.sce.generated.union_shape.UnionShape";
-const RADIUS: &str = "com.sce.generated.shape_radius.ShapeRadiusPayload";
-const RECT: &str = "com.sce.generated.shape_rect.ShapeRectPayload";
+const SHAPE: &str = "com.sce.generated.union_shape_minimal.UnionShapeMinimal";
+const RADIUS: &str = "com.sce.generated.shape_radius_minimal.ShapeRadiusMinimalPayload";
+const RECT: &str = "com.sce.generated.shape_rect_minimal.ShapeRectMinimalPayload";
 
 #[test]
 fn a_union_is_a_sealed_interface_with_one_case_per_variant_in_the_enums_order() {
-    let (file, text) = unit("union_shape.scxml");
-    assert_eq!(file, "UnionShape.kt");
+    let (file, text) = unit("union_shape_minimal.scxml");
+    assert_eq!(file, "UnionShapeMinimal.kt");
     for fragment in [
-        "package com.sce.generated.union_shape\n".to_string(),
-        "sealed interface UnionShape {".to_string(),
+        "package com.sce.generated.union_shape_minimal\n".to_string(),
+        "sealed interface UnionShapeMinimal {".to_string(),
         format!("    val kind: {KIND}\n"),
         format!("    data object Dot : {SHAPE} {{"),
         format!("    data class Circle(val value: {RADIUS}) : {SHAPE} {{"),
@@ -99,11 +99,11 @@ fn a_union_is_a_sealed_interface_with_one_case_per_variant_in_the_enums_order() 
 /// largest case, `{"kind":"rect","width":65535,"height":65535}`.
 #[test]
 fn a_union_unit_names_its_revision_its_largest_text_and_its_schema() {
-    let (_, text) = unit("union_shape.scxml");
+    let (_, text) = unit("union_shape_minimal.scxml");
     for fragment in [
         "const val REVISION: UInt = 1u\n",
         "const val DATA_MAX_LEN: ULong = 44uL\n",
-        "const val SCHEMA_ID: String = \"urn:sce:schema:union_shape:1\"\n",
+        "const val SCHEMA_ID: String = \"urn:sce:schema:union_shape_minimal:1\"\n",
         "const val JSON_SCHEMA: String = \"",
     ] {
         position(&text, fragment);
@@ -114,14 +114,14 @@ fn a_union_unit_names_its_revision_its_largest_text_and_its_schema() {
 
 #[test]
 fn a_payload_names_the_sealed_interface_at_every_depth() {
-    let (file, text) = unit("event_shapes.scxml");
-    assert_eq!(file, "EventShapes.kt");
+    let (file, text) = unit("event_shapes_minimal.scxml");
+    assert_eq!(file, "EventShapesMinimal.kt");
     for fragment in [
-        "import com.sce.generated.union_shape.*\n",
-        "data class EventShapesPayload(",
-        "val one: UnionShape,",
-        "val many: List<UnionShape>,",
-        "val maybe: UnionShape?)",
+        "import com.sce.generated.union_shape_minimal.*\n",
+        "data class EventShapesMinimalPayload(",
+        "val one: UnionShapeMinimal,",
+        "val many: List<UnionShapeMinimal>,",
+        "val maybe: UnionShapeMinimal?)",
         "const val MANY_MAX_COUNT: UInt = 3u\n",
         "const val JSON_SCHEMA: String = \"",
     ] {
@@ -134,27 +134,30 @@ fn a_payload_names_the_sealed_interface_at_every_depth() {
 /// a `when` with no `else` that the compiler holds to every case.
 const PROBE: &str = r#"package probe
 
-import com.sce.generated.event_shapes.EventShapesPayload
+import com.sce.generated.event_shapes_minimal.EventShapesMinimalPayload
 import com.sce.generated.shape_kind.ShapeKind
-import com.sce.generated.shape_radius.ShapeRadiusPayload
-import com.sce.generated.shape_rect.ShapeRectPayload
-import com.sce.generated.union_shape.UnionShape
+import com.sce.generated.shape_radius_minimal.ShapeRadiusMinimalPayload
+import com.sce.generated.shape_rect_minimal.ShapeRectMinimalPayload
+import com.sce.generated.union_shape_minimal.UnionShapeMinimal
 
-fun named(shape: UnionShape): String =
+fun named(shape: UnionShapeMinimal): String =
     when (shape) {
-        UnionShape.Dot -> "dot"
-        is UnionShape.Circle -> "circle of ${shape.value.radius}"
-        is UnionShape.Rect -> "rect of ${shape.value.width} by ${shape.value.height}"
+        UnionShapeMinimal.Dot -> "dot"
+        is UnionShapeMinimal.Circle -> "circle of ${shape.value.radius}"
+        is UnionShapeMinimal.Rect -> "rect of ${shape.value.width} by ${shape.value.height}"
     }
 
-fun radiusOf(shape: UnionShape): UShort = shape.provenCircle().radius
+fun radiusOf(shape: UnionShapeMinimal): UShort = shape.provenCircle().radius
 
-fun tagOf(shape: UnionShape): ShapeKind = shape.kind
+fun tagOf(shape: UnionShapeMinimal): ShapeKind = shape.kind
 
-fun sent(): EventShapesPayload =
-    EventShapesPayload(
-        one = UnionShape.Circle(ShapeRadiusPayload(2u)),
-        many = listOf(UnionShape.Rect(ShapeRectPayload(3u, 4u)), UnionShape.Dot),
+fun sent(): EventShapesMinimalPayload =
+    EventShapesMinimalPayload(
+        one = UnionShapeMinimal.Circle(ShapeRadiusMinimalPayload(2u)),
+        many = listOf(
+            UnionShapeMinimal.Rect(ShapeRectMinimalPayload(3u, 4u)),
+            UnionShapeMinimal.Dot,
+        ),
         maybe = null,
     )
 "#;
@@ -170,10 +173,10 @@ fn the_kotlin_of_a_union_and_the_payload_that_holds_it_compiles_under_werror() {
     let mut sources = Vec::new();
     for name in [
         "shape_kind.scxml",
-        "shape_radius.scxml",
-        "shape_rect.scxml",
-        "union_shape.scxml",
-        "event_shapes.scxml",
+        "shape_radius_minimal.scxml",
+        "shape_rect_minimal.scxml",
+        "union_shape_minimal.scxml",
+        "event_shapes_minimal.scxml",
     ] {
         let (file, text) = unit(name);
         let path = dir.path().join(file);
@@ -198,12 +201,12 @@ fn the_kotlin_of_a_union_and_the_payload_that_holds_it_compiles_under_werror() {
 }
 
 /// The refusal Kotlin gives the union `union` written beside `documents`, each
-/// `(file, text)`, and the record of `shape_radius.scxml`; its detail.
+/// `(file, text)`, and the record of `shape_radius_minimal.scxml`; its detail.
 fn refused(union: &str, documents: &[(&str, &str)]) -> String {
     let dir = tempfile::tempdir().expect("a scratch directory");
     std::fs::copy(
-        fixtures().join("shape_radius.scxml"),
-        dir.path().join("shape_radius.scxml"),
+        fixtures().join("shape_radius_minimal.scxml"),
+        dir.path().join("shape_radius_minimal.scxml"),
     )
     .expect("copy the record");
     for (file, text) in documents {
@@ -232,14 +235,14 @@ fn refused(union: &str, documents: &[(&str, &str)]) -> String {
 }
 
 /// A union document `probe_union` whose tag is a value of the enum in
-/// `enum_file`, which imports `shape_radius.scxml` as `Radius` and the further
-/// imports `imports`, and whose cases are `cases`.
+/// `enum_file`, which imports `shape_radius_minimal.scxml` as `Radius` and the
+/// further imports `imports`, and whose cases are `cases`.
 fn union_document(enum_file: &str, imports: &str, cases: &str) -> String {
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" sce:kind="union" name="probe_union">
   <sce:import kind="enum" src="{enum_file}" as="Kind"/>
-  <sce:import kind="event-schema" src="shape_radius.scxml" as="Radius"/>
+  <sce:import kind="event-schema" src="shape_radius_minimal.scxml" as="Radius"/>
 {imports}  <datamodel>
     <data id="kind" sce:type="enum:Kind">
 {cases}    </data>

@@ -5,7 +5,7 @@
        xmlns:sce="http://sce.dev/ext"
        version="1.0" sce:kind="union" name="union_shape_tag_collision">
   <sce:import kind="enum" src="shape_kind.scxml" as="ShapeKind"/>
-  <sce:import kind="event-schema" src="shape_radius.scxml" as="Radius"/>
+  <sce:import kind="event-schema" src="shape_radius_minimal.scxml" as="Radius"/>
   <sce:import kind="event-schema" src="shape_kinded.scxml" as="Kinded"/>
   <datamodel>
     <data id="kind" sce:type="enum:ShapeKind">

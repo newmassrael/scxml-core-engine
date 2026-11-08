@@ -342,12 +342,12 @@ fn a_schema_with_an_open_enum_has_no_grammar_and_says_why() {
 /// computes, and its GBNF grammar, one alternative per case, the tag first.
 #[test]
 fn payload_schema_prints_a_union_documents_one_of_and_grammar() {
-    let document = repo_root().join("sce-build/tests/fixtures/union/union_shape.scxml");
+    let document = repo_root().join("sce-build/tests/fixtures/union/union_shape_minimal.scxml");
     let json_schema = printed(&[], &document, &[]);
     assert!(
         json_schema.starts_with(
             "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\
-             \"$id\":\"urn:sce:schema:union_shape:1\",\"x-sce-source-hash\":\""
+             \"$id\":\"urn:sce:schema:union_shape_minimal:1\",\"x-sce-source-hash\":\""
         ),
         "{json_schema}"
     );
@@ -381,12 +381,12 @@ fn payload_schema_prints_a_union_documents_one_of_and_grammar() {
 /// section 3.1, item 4), on Kotlin and Rust, the backends that lower a union.
 #[test]
 fn a_union_unit_declares_the_json_schema_payload_schema_prints() {
-    let document = repo_root().join("sce-build/tests/fixtures/union/union_shape.scxml");
+    let document = repo_root().join("sce-build/tests/fixtures/union/union_shape_minimal.scxml");
     let json_schema = printed(&[], &document, &[]);
     let unit = generated(&document, "kotlin");
     assert_eq!(
         literal_after(&unit, "const val SCHEMA_ID: String = \""),
-        "urn:sce:schema:union_shape:1"
+        "urn:sce:schema:union_shape_minimal:1"
     );
     assert_eq!(
         literal_after(&unit, "const val JSON_SCHEMA: String = \""),
@@ -396,7 +396,7 @@ fn a_union_unit_declares_the_json_schema_payload_schema_prints() {
     let unit = generated(&document, "rust");
     assert_eq!(
         literal_after(&unit, "pub const SCHEMA_ID: &str = \""),
-        "urn:sce:schema:union_shape:1"
+        "urn:sce:schema:union_shape_minimal:1"
     );
     assert_eq!(
         literal_after(&unit, "pub const JSON_SCHEMA: &str = \""),

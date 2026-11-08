@@ -20,9 +20,9 @@ import com.sce.generated.order_line.OrderLinePayload
 import com.sce.generated.order_payment.OrderPayment
 import com.sce.generated.order_placed.OrderPlacedPayload
 import com.sce.generated.paint_color.PaintColor
-import com.sce.generated.shape_radius.ShapeRadiusPayload
-import com.sce.generated.shape_rect.ShapeRectPayload
-import com.sce.generated.union_shape.UnionShape
+import com.sce.generated.shape_radius_minimal.ShapeRadiusMinimalPayload
+import com.sce.generated.shape_rect_minimal.ShapeRectMinimalPayload
+import com.sce.generated.union_shape_minimal.UnionShapeMinimal
 import com.sce.generated.voucher_payment.VoucherPaymentPayload
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
@@ -242,9 +242,9 @@ class ATestTemplateMatchesItsValuesTest {
     /** union-match (§11.4): a union matches in the case its matcher names, and in no other, whatever the case holds. */
     @Test
     fun aUnionMatchesInTheCaseItsMatcherNames() {
-        assertTrue(shapeIsCircle(UnionShape.Circle(ShapeRadiusPayload(radius = 3u))))
-        assertFalse(shapeIsCircle(UnionShape.Dot))
-        assertFalse(shapeIsCircle(UnionShape.Rect(ShapeRectPayload(width = 1u, height = 2u))))
+        assertTrue(shapeIsCircle(UnionShapeMinimal.Circle(ShapeRadiusMinimalPayload(radius = 3u))))
+        assertFalse(shapeIsCircle(UnionShapeMinimal.Dot))
+        assertFalse(shapeIsCircle(UnionShapeMinimal.Rect(ShapeRectMinimalPayload(width = 1u, height = 2u))))
     }
 
     /**

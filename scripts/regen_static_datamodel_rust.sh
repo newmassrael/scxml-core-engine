@@ -155,7 +155,7 @@ TEST_PROFILE_IMPORTS=(paint_color order_line quantity_two quantity_at_most order
 TEST_PROFILE_IMPORTS+=(card_payment card_within voucher_payment voucher_is)
 TEST_PROFILE_IMPORTS+=(payment_kind order_customer order_payment order_placed order_placed_match)
 # ... and the union shape_is_circle matches, with its tag's enum and its cases' records.
-UNIONS=(shape_kind shape_radius shape_rect union_shape)
+UNIONS=(shape_kind shape_radius_minimal shape_rect_minimal union_shape_minimal)
 # The test components tests/a_test_component_runs_through_its_doors.rs runs through the
 # profile's runtime (docs/SCE_TEST_PROFILE.md §12.3), each its statechart machine and the
 # component beside it, generated beside the records and the templates their machines

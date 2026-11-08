@@ -40,8 +40,8 @@ const LABEL: DocumentLabel<'static> = DocumentLabel {
 
 /// The imports every inline document below names its tag and records by.
 const IMPORTS: &str = r#"  <sce:import kind="enum" src="shape_kind.scxml" as="ShapeKind"/>
-  <sce:import kind="event-schema" src="shape_radius.scxml" as="Radius"/>
-  <sce:import kind="event-schema" src="shape_rect.scxml" as="Rect"/>"#;
+  <sce:import kind="event-schema" src="shape_radius_minimal.scxml" as="Radius"/>
+  <sce:import kind="event-schema" src="shape_rect_minimal.scxml" as="Rect"/>"#;
 
 /// `IMPORTS`, then a datamodel of `datamodel`. The datamodel's first line is
 /// line 8 of the document.
@@ -96,7 +96,8 @@ fn compiled(name: &str, language: Language) -> Located<ForgeError> {
 
 #[test]
 fn a_union_reads_as_its_tag_and_its_cases_in_document_order() {
-    let text = std::fs::read_to_string(fixture("union_shape.scxml")).expect("the fixture reads");
+    let text =
+        std::fs::read_to_string(fixture("union_shape_minimal.scxml")).expect("the fixture reads");
     let parsed = parse(&text);
     let ForgeDocument::Union(union) = &parsed.document else {
         panic!("a union document, got {:?}", parsed.document.kind());
@@ -383,7 +384,7 @@ fn a_valid_union_is_refused_by_name_on_every_backend_that_does_not_lower_one() {
             EmitOutcome::RuntimeMissing,
             "{language:?}"
         );
-        let err = compiled("union_shape.scxml", language);
+        let err = compiled("union_shape_minimal.scxml", language);
         assert!(
             matches!(
                 err.error.to_diagnostics()[0].code,
@@ -395,7 +396,7 @@ fn a_valid_union_is_refused_by_name_on_every_backend_that_does_not_lower_one() {
             ForgeError::Generate(boxed) => match *boxed {
                 GenerateError::UnsupportedFeature { detail, .. } => {
                     assert!(
-                        detail.contains("union 'union_shape'"),
+                        detail.contains("union 'union_shape_minimal'"),
                         "{language:?}: {detail}"
                     );
                     assert!(

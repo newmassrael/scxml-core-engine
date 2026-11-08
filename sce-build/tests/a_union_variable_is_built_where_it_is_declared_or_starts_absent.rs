@@ -69,9 +69,9 @@ fn machine_document(name: &str, imports: &str, data: &str, states: &str) -> Stri
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="{initial}" datamodel="sce-static" name="{name}">
   <sce:import kind="enum" src="shape_kind.scxml" as="Kind"/>
-  <sce:import kind="union" src="union_shape.scxml" as="Shape"/>
-  <sce:import kind="event-schema" src="shape_radius.scxml" as="Radius"/>
-  <sce:import kind="event-schema" src="shape_rect.scxml" as="Rect"/>{imports}
+  <sce:import kind="union" src="union_shape_minimal.scxml" as="Shape"/>
+  <sce:import kind="event-schema" src="shape_radius_minimal.scxml" as="Radius"/>
+  <sce:import kind="event-schema" src="shape_rect_minimal.scxml" as="Rect"/>{imports}
   <datamodel>
 {data}
   </datamodel>
@@ -96,9 +96,9 @@ fn beside_fixtures_with(document: &str, siblings: &[(&str, &str)]) -> (tempfile:
     }
     for name in [
         "shape_kind.scxml",
-        "shape_radius.scxml",
-        "shape_rect.scxml",
-        "union_shape.scxml",
+        "shape_radius_minimal.scxml",
+        "shape_rect_minimal.scxml",
+        "union_shape_minimal.scxml",
     ] {
         std::fs::copy(fixtures().join(name), dir.path().join(name)).expect("copy a fixture");
     }
@@ -140,7 +140,7 @@ fn rust_machine(document: &str) -> String {
 /// `union` in place of the fixture's.
 fn rust_machine_with_union(document: &str, union: &str) -> String {
     let (dir, path) = beside_fixtures(document);
-    std::fs::write(dir.path().join("union_shape.scxml"), union).expect("write the union");
+    std::fs::write(dir.path().join("union_shape_minimal.scxml"), union).expect("write the union");
     generate_rust(dir, &path)
 }
 
@@ -177,7 +177,7 @@ const DOT: &str = r#"    <data id="mark" sce:type="union:Shape">
     </data>"#;
 const LAST: &str = r#"    <data id="last" sce:type="optional&lt;union:Shape&gt;" expr="null"/>"#;
 
-const UNION: &str = "UnionVarsUnionShapeUnion";
+const UNION: &str = "UnionVarsUnionShapeMinimalUnion";
 
 /// Pinned by `union_variable_field` and `RustComposed::union_value`
 /// (`sce-build/src/forge/static_lowering.rs`,
@@ -236,7 +236,7 @@ fn a_saved_state_holds_a_union_variable_as_its_tag_beside_its_case() {
     let held = rust_machine(&document);
     let moved = rust_machine_with_union(
         &document,
-        &std::fs::read_to_string(fixtures().join("union_shape.scxml"))
+        &std::fs::read_to_string(fixtures().join("union_shape_minimal.scxml"))
             .expect("the union fixture")
             .replace(
                 r#"<sce:case variant="rect" record="Rect"/>"#,

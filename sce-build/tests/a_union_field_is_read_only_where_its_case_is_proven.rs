@@ -28,7 +28,7 @@ fn union_fixtures() -> PathBuf {
 
 /// The records the cases hold, copied from the union fixtures: `radius`, and
 /// `width` and `height`.
-const RECORDS: [&str; 2] = ["shape_radius.scxml", "shape_rect.scxml"];
+const RECORDS: [&str; 2] = ["shape_radius_minimal.scxml", "shape_rect_minimal.scxml"];
 
 /// The tag's enum: a dot, a circle, a disc and a rect.
 const KIND: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -51,8 +51,8 @@ const SHAPE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" sce:kind="union" name="probe_shape">
   <sce:import kind="enum" src="probe_kind.scxml" as="ShapeKind"/>
-  <sce:import kind="event-schema" src="shape_radius.scxml" as="Radius"/>
-  <sce:import kind="event-schema" src="shape_rect.scxml" as="Rect"/>
+  <sce:import kind="event-schema" src="shape_radius_minimal.scxml" as="Radius"/>
+  <sce:import kind="event-schema" src="shape_rect_minimal.scxml" as="Rect"/>
   <datamodel>
     <data id="kind" sce:type="enum:ShapeKind">
       <sce:case variant="dot"/>

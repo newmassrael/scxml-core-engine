@@ -5,7 +5,7 @@
        xmlns:sce="http://sce.dev/ext"
        version="1.0" sce:kind="test-template" name="shape_is_circle"
        sce:type="union:Shape">
-  <sce:import kind="union" src="../union/union_shape.scxml" as="Shape"/>
+  <sce:import kind="union" src="../union/union_shape_minimal.scxml" as="Shape"/>
   <sce:union-match variant="circle">
     <sce:record-match>
       <sce:any-value field="radius"/>

@@ -888,7 +888,7 @@ mod tests {
     /// The shape union of the fixtures: a dot of no field, a circle of a
     /// radius and a rect of a width and a height, its tag under `kind`.
     fn union_shape() -> PayloadSchema {
-        of_union_document(&union_fixture("union_shape.scxml")).expect("a grammar")
+        of_union_document(&union_fixture("union_shape_minimal.scxml")).expect("a grammar")
     }
 
     /// Every `oneOf` of `schema`, at any depth.
@@ -916,7 +916,7 @@ mod tests {
     #[test]
     fn a_union_document_states_one_object_per_case_its_tag_first() {
         let schema = union_shape();
-        assert_eq!(schema.id, "urn:sce:schema:union_shape:1");
+        assert_eq!(schema.id, "urn:sce:schema:union_shape_minimal:1");
         // The cases in the tag enum's order (dot, circle, rect), not the
         // document's (rect, dot, circle); the root is the `oneOf`, no record.
         assert_eq!(
@@ -924,7 +924,7 @@ mod tests {
             format!(
                 concat!(
                     r#"{{"$schema":"https://json-schema.org/draft/2020-12/schema","#,
-                    r#""$id":"urn:sce:schema:union_shape:1","x-sce-source-hash":"{}","#,
+                    r#""$id":"urn:sce:schema:union_shape_minimal:1","x-sce-source-hash":"{}","#,
                     r#""description":"x-sce-max-bytes bounds a text in UTF-8 bytes; "#,
                     r#"maxLength counts characters","oneOf":["#,
                     r#"{{"type":"object","properties":{{"kind":{{"const":"dot"}}}},"#,
@@ -964,10 +964,10 @@ mod tests {
         let read = parse(&schema.json_schema).expect("a payload schema is JSON");
         assert_eq!(schema.json_schema, ascii(&write(&read)));
         assert!(schema.json_schema.is_ascii() && schema.gbnf.is_ascii());
-        keywords_in_order(&read, "union_shape");
+        keywords_in_order(&read, "union_shape_minimal");
         // A run that writes no headed file states no source hash, and the
         // grammar carries none.
-        let path = union_fixture("union_shape.scxml");
+        let path = union_fixture("union_shape_minimal.scxml");
         let content = std::fs::read_to_string(&path).unwrap();
         let label = path.to_string_lossy().into_owned();
         let parsed = crate::forge::parser::parse_forge_with_imports(
@@ -1014,7 +1014,7 @@ mod tests {
     /// literal of its own, and writes the case's fields inline.
     #[test]
     fn every_case_requires_its_tag_and_holds_it_as_a_string_const() {
-        let event = of_document(&union_fixture("event_shapes.scxml"))
+        let event = of_document(&union_fixture("event_shapes_minimal.scxml"))
             .expect("an event schema")
             .expect("a grammar");
         let mut seen = 0usize;
@@ -1088,7 +1088,7 @@ mod tests {
         }
         // Held in a field, a list of at least one and an optional, by a
         // definition the three share.
-        let event = of_document(&union_fixture("event_shapes.scxml"))
+        let event = of_document(&union_fixture("event_shapes_minimal.scxml"))
             .expect("an event schema")
             .expect("a grammar");
         let grammar = gbnf::Grammar::read(&event.gbnf);

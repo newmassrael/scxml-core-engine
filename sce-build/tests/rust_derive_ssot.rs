@@ -216,11 +216,12 @@ fn union_sum_emits_ssot_trio() {
     let out = scratch("union_sum");
     run_generate(
         &out,
-        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/union/union_shape.scxml"),
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/union/union_shape_minimal.scxml"),
     );
     let src = read_emitted_rs(&out);
     assert!(
-        src.contains("#[derive(Debug, Clone, PartialEq)]\npub enum UnionShape {"),
+        src.contains("#[derive(Debug, Clone, PartialEq)]\npub enum UnionShapeMinimal {"),
         "a union's enum must derive Debug, Clone, PartialEq; got:\n{src}"
     );
 }

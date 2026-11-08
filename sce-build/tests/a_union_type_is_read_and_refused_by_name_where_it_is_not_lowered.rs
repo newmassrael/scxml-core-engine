@@ -41,7 +41,7 @@ fn schema_with(ty: &str, extra: &str) -> String {
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" sce:kind="event-schema" name="probe" sce:event-name="probe.sent" sce:revision="2">
-  <sce:import kind="union" src="union_shape.scxml" as="Shape"/>
+  <sce:import kind="union" src="union_shape_minimal.scxml" as="Shape"/>
   <datamodel>
     <data id="first" sce:type="uint8" sce:direction="in"/>
     <data id="f" sce:type="{ty}" {extra} sce:direction="in"/>
@@ -64,7 +64,7 @@ fn refusal(document: &str) -> (ValidationError, DiagnosticCode) {
 
 #[test]
 fn an_event_field_holds_a_union_at_any_depth() {
-    let path = fixtures().join("event_shapes.scxml");
+    let path = fixtures().join("event_shapes_minimal.scxml");
     let text = std::fs::read_to_string(&path).expect("the fixture reads");
     let label = path.to_string_lossy().into_owned();
     let parsed = parse_forge_with_imports(&text, DocumentLabel::for_input_path(&label))
@@ -106,7 +106,7 @@ fn an_event_field_holds_a_union_at_any_depth() {
 
 #[test]
 fn the_scope_of_a_document_holds_a_union_in_its_tag_enums_order_and_sizes_it() {
-    let path = fixtures().join("event_shapes.scxml");
+    let path = fixtures().join("event_shapes_minimal.scxml");
     let text = std::fs::read_to_string(&path).expect("the fixture reads");
     let label = path.to_string_lossy().into_owned();
     let parsed = parse_forge_with_imports(&text, DocumentLabel::for_input_path(&label))
@@ -204,7 +204,7 @@ fn compiled(language: Language) -> Located<ForgeError> {
         ..Default::default()
     };
     match sce_build::compile_forge_file(
-        &fixtures().join("event_shapes.scxml"),
+        &fixtures().join("event_shapes_minimal.scxml"),
         language,
         &[],
         &options,
@@ -252,7 +252,7 @@ fn reader(imports: &str) -> String {
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="idle" datamodel="sce-static" name="shapes_reader">
   <sce:import kind="enum" src="shape_kind.scxml" as="Kind"/>
-  <sce:import kind="event-schema" src="event_shapes.scxml" as="Shapes"/>
+  <sce:import kind="event-schema" src="event_shapes_minimal.scxml" as="Shapes"/>
 {imports}  <datamodel>
     <data id="seen" sce:type="uint32" expr="0"/>
   </datamodel>
@@ -274,10 +274,10 @@ fn checked_on_rust(document: &str) -> (bool, String) {
     let dir = tempfile::tempdir().expect("a scratch directory");
     for name in [
         "shape_kind.scxml",
-        "shape_radius.scxml",
-        "shape_rect.scxml",
-        "union_shape.scxml",
-        "event_shapes.scxml",
+        "shape_radius_minimal.scxml",
+        "shape_rect_minimal.scxml",
+        "union_shape_minimal.scxml",
+        "event_shapes_minimal.scxml",
     ] {
         std::fs::copy(fixtures().join(name), dir.path().join(name)).expect("copy a fixture");
     }
@@ -312,8 +312,8 @@ fn a_rust_machine_reads_a_union_whose_case_records_it_imports() {
         assert!(text.contains(part), "expected `{part}` in:\n{text}");
     }
     let (ok, text) = checked_on_rust(&reader(
-        "  <sce:import kind=\"event-schema\" src=\"shape_radius.scxml\" as=\"Radius\"/>\n  \
-         <sce:import kind=\"event-schema\" src=\"shape_rect.scxml\" as=\"Rect\"/>\n",
+        "  <sce:import kind=\"event-schema\" src=\"shape_radius_minimal.scxml\" as=\"Radius\"/>\n  \
+         <sce:import kind=\"event-schema\" src=\"shape_rect_minimal.scxml\" as=\"Rect\"/>\n",
     ));
     assert!(ok, "the machine reads the union:\n{text}");
 }

@@ -3100,10 +3100,11 @@ mod tests {
     #[test]
     fn a_union_document_is_read_for_the_revision_rule_from_its_imports() {
         let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/union");
-        let text = std::fs::read_to_string(dir.join("union_shape.scxml")).expect("the fixture");
+        let text =
+            std::fs::read_to_string(dir.join("union_shape_minimal.scxml")).expect("the fixture");
         let parsed = crate::forge::parser::parse_forge_with_imports(
             &text,
-            crate::DocumentLabel::symmetric("union_shape"),
+            crate::DocumentLabel::symmetric("union_shape_minimal"),
         )
         .expect("the union parses")
         .expect("a forge document");
@@ -3118,9 +3119,9 @@ mod tests {
         assert_eq!(
             held,
             [
-                ("circle", Some("shape_radius")),
+                ("circle", Some("shape_radius_minimal")),
                 ("dot", None),
-                ("rect", Some("shape_rect")),
+                ("rect", Some("shape_rect_minimal")),
             ]
         );
         assert_eq!(union_divergence(&read, &read), None);

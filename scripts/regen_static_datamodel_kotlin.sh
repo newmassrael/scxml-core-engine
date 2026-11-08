@@ -291,7 +291,7 @@ TEST_PROFILE_IMPORTS=(paint_color order_line quantity_two quantity_at_most order
 TEST_PROFILE_IMPORTS+=(card_payment card_within voucher_payment voucher_is)
 TEST_PROFILE_IMPORTS+=(payment_kind order_customer order_payment order_placed order_placed_match)
 # ... and the union shape_is_circle matches, with its tag's enum and its cases' records.
-UNIONS=(shape_kind shape_radius shape_rect union_shape)
+UNIONS=(shape_kind shape_radius_minimal shape_rect_minimal union_shape_minimal)
 for document in "${TEST_PROFILE[@]}"; do
     "$CODEGEN" generate "$TEST_PROFILE_DIR/$document.scxml" -l kotlin -o "$TMP/profile_$document/"
     install_generated "$TMP/profile_$document"
