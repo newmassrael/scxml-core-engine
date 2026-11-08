@@ -39,6 +39,22 @@ extern "C" {
 #define SCE_REQUEST_REFUSE_NOT_FINITE "is not a finite number"
 #define SCE_REQUEST_REFUSE_NOT_BYTES "is not a byte string"
 #define SCE_REQUEST_REFUSE_PAST_CAP "is longer than its schema's sce:max-size"
+/* A `<param>` whose expression the script engine could not evaluate. */
+#define SCE_REQUEST_REFUSE_UNEVALUATED "could not be evaluated"
+
+/* The most bytes a sentence `sce_request_field_wire` refuses a field with holds, its NUL not
+   counted: one of the payload reader's or one of the four above (docs/adr/0086, section 8.6 (b)).
+   A generated machine quotes the sentence in the reason it raises and sizes its slot of
+   `_event.data` by this number (`REQUEST_REFUSAL` in `sce-build/src/forge/c11_reasons.rs`). */
+#define SCE_REQUEST_REFUSAL_MAX_LEN SCE_PAYLOAD_REFUSAL_MAX_LEN
+SCE_STATIC_ASSERT(sizeof(SCE_REQUEST_REFUSE_NOT_FINITE) - 1u <= (size_t)SCE_REQUEST_REFUSAL_MAX_LEN,
+                  "a request refusal is past its bound");
+SCE_STATIC_ASSERT(sizeof(SCE_REQUEST_REFUSE_NOT_BYTES) - 1u <= (size_t)SCE_REQUEST_REFUSAL_MAX_LEN,
+                  "a request refusal is past its bound");
+SCE_STATIC_ASSERT(sizeof(SCE_REQUEST_REFUSE_PAST_CAP) - 1u <= (size_t)SCE_REQUEST_REFUSAL_MAX_LEN,
+                  "a request refusal is past its bound");
+SCE_STATIC_ASSERT(sizeof(SCE_REQUEST_REFUSE_UNEVALUATED) - 1u <= (size_t)SCE_REQUEST_REFUSAL_MAX_LEN,
+                  "a request refusal is past its bound");
 
 /** The type one field of a typed request declares. */
 typedef enum sce_request_field_kind_e {

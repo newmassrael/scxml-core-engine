@@ -783,10 +783,19 @@ static inline bool sce_host_invoke_answer_done(sce_host_invoke_response_t *out, 
     return true;
 }
 
+/** The most bytes the reason a host refuses a start with holds, its NUL not
+    counted (docs/adr/0086, section 8.6 (b)). The machine raises the reason
+    whole as its `error.execution`'s data, so the reason is a text the build
+    sizes the machine's slot of `_event.data` by
+    (`HOST_INVOKE_REFUSAL` in `sce-build/src/forge/c11_reasons.rs`), which the
+    machine asserts against this number. A longer reason is refused whole. */
+#define SCE_HOST_INVOKE_REFUSAL_MAX_LEN 255u
+
 /**
  * Answer a start with the reason it could not start (NULL for none), copied
- * whole into the machine's storage. A reason that does not fit refuses the
- * start with no reason, sets `oversized`, and answers false.
+ * whole into the machine's storage. A reason longer than
+ * SCE_HOST_INVOKE_REFUSAL_MAX_LEN, or one that does not fit, refuses the start
+ * with no reason, sets `oversized`, and answers false.
  */
 static inline bool sce_host_invoke_answer_refusal(sce_host_invoke_response_t *out, const char *reason) {
     if (out == NULL) {
@@ -795,7 +804,8 @@ static inline bool sce_host_invoke_answer_refusal(sce_host_invoke_response_t *ou
     out->has_refusal = true;
     out->has_done_data = false;
     out->done_data = NULL;
-    if (out->text == NULL || !sce_copy_text_whole(out->text, out->text_cap, reason)) {
+    if (out->text == NULL || (reason != NULL && strlen(reason) > (size_t)SCE_HOST_INVOKE_REFUSAL_MAX_LEN) ||
+        !sce_copy_text_whole(out->text, out->text_cap, reason)) {
         out->oversized = true;
         out->refusal = "";
         return false;
