@@ -17,7 +17,7 @@
 use std::path::{Path, PathBuf};
 
 use sce_build::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
-use sce_build::forge::error::{ForgeError, GenerateError, Located};
+use sce_build::forge::error::{ForgeError, Located};
 use sce_build::forge::import_source::ImportSource;
 use sce_build::forge::parser::parse_forge_with_imports;
 use sce_build::forge::test_profile_assembly;
@@ -312,44 +312,36 @@ fn each_refusal_is_placed_on_the_row_that_holds_it() {
     }
 }
 
-/// The rules run where a document of the profile is compiled, before the
-/// refusal a backend gives one until the profile's runtime lands there: the
-/// accepted suite reaches that refusal on Swift, the last backend without any
-/// kind of the profile, which generates no suite, and a suite that breaks a rule
-/// is refused by the rule on Rust, which generates one.
+/// The rules run where a document of the profile is compiled, before anything
+/// is generated: the accepted suite generates on Swift, the last backend to
+/// generate a suite, and a suite that breaks a rule is refused by the rule on
+/// Rust and on Swift alike, not by what either would generate.
 #[test]
 fn the_rules_run_where_a_document_of_the_profile_is_compiled() {
-    assert!(!sce_build::forge::codegen_matrix::TEST_SUITE_BACKENDS.contains(&Language::Swift));
-    match sce_build::compile_forge_file(
+    assert!(sce_build::forge::codegen_matrix::TEST_SUITE_BACKENDS.contains(&Language::Swift));
+    if let Err(err) = sce_build::compile_forge_file(
         &dir().join("ping_suite.scxml"),
         Language::Swift,
         &[],
         &options(),
     ) {
-        Ok(_) => panic!("a test suite generated on Swift"),
-        Err(err) => match err.error {
-            ForgeError::Generate(boxed) => {
-                assert!(
-                    matches!(*boxed, GenerateError::UnsupportedFeature { .. }),
-                    "{boxed:?}"
-                );
-            }
-            other => panic!("the accepted suite is refused by a rule: {other:?}"),
-        },
+        panic!("the accepted suite does not generate on Swift: {err:?}");
     }
-    let Err(err) = sce_build::compile_forge_file(
-        &dir().join("refused_suite_module_parameter_type.scxml"),
-        Language::Rust,
-        &[],
-        &options(),
-    ) else {
-        panic!("a module parameter of another type is refused at the compile");
-    };
-    assert_eq!(
-        record(&err).0,
-        DiagnosticCode::TestProfileModuleParameter.as_str(),
-        "{err:?}"
-    );
+    for language in [Language::Rust, Language::Swift] {
+        let Err(err) = sce_build::compile_forge_file(
+            &dir().join("refused_suite_module_parameter_type.scxml"),
+            language,
+            &[],
+            &options(),
+        ) else {
+            panic!("a module parameter of another type is refused at the compile on {language:?}");
+        };
+        assert_eq!(
+            record(&err).0,
+            DiagnosticCode::TestProfileModuleParameter.as_str(),
+            "{language:?}: {err:?}"
+        );
+    }
 }
 
 /// A test component is a statechart: the import that names one reads it with

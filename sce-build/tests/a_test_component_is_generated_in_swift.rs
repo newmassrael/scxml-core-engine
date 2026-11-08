@@ -16,11 +16,12 @@
 //! declares and imports nothing for it. Swift holds a number, a text, a byte
 //! string and an optional one of them in the same types as the record's unit,
 //! and an enum in the machine's own enum, which a received message crosses
-//! into by the variant's declared name, as on Kotlin, Go and Python. What
-//! Swift refuses is held here too: a component that declares a module
-//! parameter, whose value is the suite's and Swift generates no suite's
-//! tables yet; one that declares `<sce:action>`; and one whose template
-//! reaches a union, which Swift does not lower.
+//! into by the variant's declared name, as on Kotlin, Go and Python. A module
+//! parameter starts at its type's zero, or its enum's first variant, and is
+//! read from the run as a saved value of its type is read back, after the
+//! component binds its context and before it builds the engine. What Swift
+//! refuses is held here too: a component that declares `<sce:action>`, and
+//! one whose template reaches a union, which Swift does not lower.
 //!
 //! What the generated components do when they run is held by
 //! `backends/swift/tests/Tests/StaticDatamodelTests/ATestComponentRunsThroughItsDoorsTests.swift`,
@@ -50,15 +51,16 @@ fn profile_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/test_profile")
 }
 
-/// Every component of the runtime's end-to-end test that Swift generates,
-/// each with the name its machine is spelled by. `param_asker` declares a
-/// module parameter, which Swift refuses until it generates a suite's tables.
-const COMPONENTS: [(&str, &str); 5] = [
+/// Every component of the runtime's end-to-end tests, each with the name its
+/// machine is spelled by: `param_asker`, which declares a module parameter, is
+/// run by the suite's (`ATestSuiteRunsThroughItsRunnerTests.swift`).
+const COMPONENTS: [(&str, &str); 6] = [
     ("asker", "Asker"),
     ("coordinator", "Coordinator"),
     ("answerer", "Answerer"),
     ("ptc_keeper", "PtcKeeper"),
     ("idler", "Idler"),
+    ("param_asker", "ParamAsker"),
 ];
 
 fn generate(path: &Path) -> Result<Vec<(String, String)>, Located<ForgeError>> {
@@ -762,19 +764,153 @@ fn an_optional_enum_argument_is_refused_by_name() {
     );
 }
 
-/// §11.5, §11.8, §12.6: a module parameter's value is the suite's, and Swift
-/// does not generate a suite's tables yet, so its component has no read of the
-/// value and refuses one that declares a module parameter by name rather than
-/// make a value up.
+/// §11.5, §11.8, §12.3: a module parameter is declared with its type and no
+/// value of the document's, and starts at its type's zero, which nothing
+/// reads; the component reads the run's value into it, as a saved value of its
+/// type is read back, after it binds the context on the policy and before it
+/// builds the engine, and builds none when the read is refused. Every value is
+/// read before any is written. The twin of the Go, C11 and Rust tests of the
+/// same name.
 #[test]
-fn a_component_that_declares_a_module_parameter_is_refused_on_swift() {
-    assert!(!sce_build::forge::codegen_matrix::TEST_SUITE_BACKENDS.contains(&Language::Swift));
-    let detail = refused(&runtime_dir().join("param_asker.scxml"), "param_asker");
+fn a_module_parameter_is_read_from_the_run_before_the_machine_starts() {
+    assert!(sce_build::forge::codegen_matrix::TEST_SUITE_BACKENDS.contains(&Language::Swift));
+    let code = text("param_asker");
     for needle in [
-        "test-component 'param_asker': the module parameter 'job' takes the value the suite",
-        "which Swift reads into a component once it generates the tables of a suite",
+        "    /// docs/SCE_TEST_PROFILE.md §11.5: the module parameter `job`, which takes the \
+         suite's value\n    /// before the machine is built.\n    var vJob: UInt32 = 0\n",
+        "    fileprivate func sceAcceptModuleParameters(_ given: SceTestProfile.ModuleParameters) \
+         throws {\n",
+        "        let value0 = try SavedValues.uint32(try given.of(\"job\"), \"job\")\n",
+        "        vJob = value0\n    }\n",
+        "        guard context.readModuleParameters({ given in \
+         try policy.sceAcceptModuleParameters(given) }) else {\n            return\n        }\n",
     ] {
-        assert!(detail.contains(needle), "`{needle}`:\n{detail}");
+        assert!(
+            code.contains(needle),
+            "param_asker holds `{needle}`:\n{code}"
+        );
+    }
+    // A restore of a machine that saves reads its variables by the same names,
+    // so the order is read inside the method alone.
+    let accept = &code[at(&code, "fileprivate func sceAcceptModuleParameters(")..];
+    let read_back = at(accept, "let value0 = try SavedValues.uint32(");
+    let written = at(accept, "vJob = value0");
+    assert!(
+        read_back < written,
+        "the value is read before it is written"
+    );
+    let component = &code[at(&code, "\npublic final class ParamAskerComponent: ")..];
+    let bound = at(component, "policy.sceTestContextBound = context");
+    let read = at(component, "guard context.readModuleParameters(");
+    let built = at(component, "let machine = Engine(policy: policy)");
+    let started = at(component, "\n        machine.initialize()\n");
+    assert!(
+        bound < read && read < built && built < started,
+        "the parameters are read after the context is bound and before the engine is built"
+    );
+    assert!(
+        component[read..built].contains("return"),
+        "a refused read leaves the engine unbuilt"
+    );
+    // The variable that is no module parameter starts at its `expr`.
+    assert!(
+        code.contains(
+            "    /// W3C SCXML 5.2: the `answered` datamodel variable.\n    var vAnswered: UInt32 = 0\n"
+        ),
+        "{code}"
+    );
+    assert!(
+        !text("asker").contains("sceAcceptModuleParameters"),
+        "a component with no module parameter reads none"
+    );
+}
+
+/// §11.8: a byte string module parameter is read back held to its bound, as a
+/// restored byte string is, and a text too; each starts at the empty value,
+/// which the type that holds a value of any length holds.
+#[test]
+fn a_bounded_module_parameter_is_read_back_held_to_its_bound() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let component = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="keyed"
+       datamodel="sce-static" initial="checking">
+  <sce:test-timer id="pause" duration="1ms"/>
+  <datamodel>
+    <data id="key" sce:type="bytes[2]" sce:module-parameter="true"/>
+    <data id="label" sce:type="string[8]" sce:module-parameter="true"/>
+  </datamodel>
+  <state id="checking">
+    <onentry>
+      <sce:start-timer timer="pause"/>
+    </onentry>
+    <transition sce:timeout="pause" target="done">
+      <sce:setverdict value="pass"/>
+    </transition>
+  </state>
+  <final id="done"/>
+</scxml>
+"#;
+    let path = dir.path().join("keyed.scxml");
+    std::fs::write(&path, component).expect("the component is written");
+    let code = text_at(&path);
+    for needle in [
+        "    var vKey: [UInt8] = []\n",
+        "    var vLabel: String = \"\"\n",
+        "        let value0 = try SavedValues.bytes(try given.of(\"key\"), \"key\", capacity: 2)\n",
+        "        let value1 = try SavedValues.string(try given.of(\"label\"), \"label\", \
+         capacity: 8)\n",
+        "        vKey = value0\n        vLabel = value1\n",
+    ] {
+        assert!(code.contains(needle), "keyed holds `{needle}`:\n{code}");
+    }
+}
+
+/// §11.8: a module parameter of an enum is read through the enum's saved
+/// form, by the conformance its machine type declares beside it whether or
+/// not a saved state of the machine can be written. Zero may name no variant
+/// of the enum, so the variable starts at the variant its document declares
+/// first, which nothing reads before the run's value replaces it.
+#[test]
+fn an_enum_module_parameter_is_read_through_the_enums_saved_form() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let component = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="color_picker"
+       datamodel="sce-static" initial="picking">
+  <sce:import kind="enum" src="{imports}/paint_color.scxml" as="Color"/>
+  <sce:test-timer id="pause" duration="1ms"/>
+  <datamodel>
+    <data id="tint" sce:type="enum:Color" sce:module-parameter="true"/>
+  </datamodel>
+  <state id="picking">
+    <onentry>
+      <sce:start-timer timer="pause"/>
+    </onentry>
+    <transition sce:timeout="pause" target="done">
+      <sce:setverdict value="pass"/>
+    </transition>
+  </state>
+  <final id="done"/>
+</scxml>
+"#,
+        imports = imports_dir().display()
+    );
+    let path = dir.path().join("color_picker.scxml");
+    std::fs::write(&path, component).expect("the component is written");
+    let code = text_at(&path);
+    for needle in [
+        "extension ColorPickerColorEnum: SavedEnumeration {",
+        "    var vTint: ColorPickerColorEnum = ColorPickerColorEnum.red\n",
+        "        let value0 = try SavedValues.enumeration(try given.of(\"tint\"), \"tint\", \
+         as: ColorPickerColorEnum.self)\n",
+        "        vTint = value0\n",
+    ] {
+        assert!(
+            code.contains(needle),
+            "color_picker holds `{needle}`:\n{code}"
+        );
     }
 }
 

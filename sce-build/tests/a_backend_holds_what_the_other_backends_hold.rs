@@ -301,14 +301,6 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
     (Language::Python, "forge kind `union`", Why::NotYet(UNION_NOT_YET)),
     (Language::C11, "forge kind `union`", Why::NotYet(UNION_NOT_YET)),
     (Language::Swift, "forge kind `union`", Why::NotYet(UNION_NOT_YET)),
-    // The tables of a test and the port type they read (docs/SCE_TEST_PROFILE.md
-    // §12.6, `codegen_matrix::TEST_SUITE_BACKENDS`): the profile's runner, which
-    // lands in one backend at a time, C++ first, then Rust, Kotlin, Go, Python
-    // and C11.
-    (Language::Swift, "forge kind `test-port-type`", Why::NotYet(TEST_SUITE_NOT_YET)),
-    (Language::Swift, "forge kind `test-configuration`", Why::NotYet(TEST_SUITE_NOT_YET)),
-    (Language::Swift, "forge kind `test-case`", Why::NotYet(TEST_SUITE_NOT_YET)),
-    (Language::Swift, "forge kind `test-suite`", Why::NotYet(TEST_SUITE_NOT_YET)),
     // The CLI routes (cli_language.rs, `LanguageRoute::exclusion_reason`).
     (
         Language::C11,
@@ -479,13 +471,6 @@ const UNION_NOT_YET: &str =
     "no union template and union field spelling for this backend yet: its dispatch refuses a \
      union document by name (`union_check::document_unlowered`) and its schema unit a union \
      field (`schema_unit_type::unit_type`); Rust and Kotlin lower both";
-
-/// The tables of a test are generated one backend at a time (docs/SCE_TEST_PROFILE.md §12.1,
-/// §12.6).
-const TEST_SUITE_NOT_YET: &str =
-    "the test profile's runner lands in C++ first and in the other backends one at a time: \
-     until it lands here the dispatch refuses a port type, a configuration, a test case and a \
-     suite by name (`test_profile::document_not_generated`)";
 
 /// Swift writes a statechart in part, so what reads a whole one does not exist for it.
 const SWIFT_NO_EMITTER: &str =
