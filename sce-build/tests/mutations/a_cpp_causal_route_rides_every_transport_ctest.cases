@@ -1,0 +1,69 @@
+# Mutation cases for "the C++ causal route rides every transport the router
+# serves" (docs/adr/0085, section 3.2: the route is a layer of the Mesh core
+# above the transport).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_cpp_causal_route_rides_every_transport_ctest.cases`.
+#
+# Held by `test_mesh_causal_injection.cpp`, compiled once per transport against
+# the router generated from `tests/mesh/deploy_causal_<transport>.yaml`. The
+# transports whose SDK the build machine lacks register no test, and their
+# share of each case is then not run: the round reports the selector's count.
+# The codegen half (what each transport's router holds) is
+# `a_cpp_causal_router_holds_each_transports_wiring.cases`.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^mesh_causal_(custom_tcp|local|shm|zenoh|dds|someip)_verification$'
+mutation_targets tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2 sce/include/mesh/CausalRoute.h
+mutation_oracles tests/mesh/test_mesh_causal_injection.cpp
+
+# ── The peer's envelopes reach the route first ──────────────────────
+#
+# Every transport's inbound handler ends in `dispatchToSession`. Without the
+# route in front of it, the motor's change past a gap is delivered at once.
+
+mutation_case "dispatchToSession does not give the peer's envelope to its route" <<'PY'
+edit("tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2",
+     """        // arrived on.
+        if (takeCausal(env, session_idx)) {""",
+     """        // arrived on.
+        if (false && takeCausal(env, session_idx)) {""")
+PY
+
+# ── A send is offered, and leaves only once committed ───────────────
+#
+# Observable where the test reads what the router writes (shm and local); on
+# the others the transport is not open, and the early write is lost unseen.
+
+mutation_case "the send callback writes the change before the route offers it" <<'PY'
+edit("tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2",
+     """                    return offerCausal("{{ t.target }}", causal_{{ t.target_snake }}_,""",
+     """                    (void)route_send(target, env);
+                    return offerCausal("{{ t.target }}", causal_{{ t.target_snake }}_,""")
+PY
+
+# ── shm: the peer's channel is drained through the router ───────────
+
+mutation_case "pumpCausalShm drains the peer's channel into the engine directly" <<'PY'
+edit("tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2",
+     """[this](const SCE::Mesh::MeshEnvelope& env) { (void)this->dispatchToSession(env, 0); },""",
+     """[this](const SCE::Mesh::MeshEnvelope& env) { using SceP = std::decay_t<decltype(sessions_[0]->getPolicy())>; (void)SCE::Mesh::dispatchEnvelope<SceP>(env, *sessions_[0]); },""")
+PY
+
+# ── Row 18 ──────────────────────────────────────────────────────────
+
+mutation_case "settleCausal drops the row an envelope of another view raises" <<'PY'
+edit("tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2",
+     """            raiseCommunicationError(std::move(*receipt.raise));""",
+     """            (void)receipt.raise;""")
+PY
+
+# ── A vector never reaches the engine ───────────────────────────────
+
+mutation_case "the answer to a vector is handed to the engine instead of the peer" <<'PY'
+edit("sce/include/mesh/CausalRoute.h",
+     """            receipt.send = std::move(envelopes);""",
+     """            receipt.deliver = std::move(envelopes);""")
+PY
