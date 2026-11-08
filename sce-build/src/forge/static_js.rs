@@ -277,6 +277,43 @@ pub struct JsTarget {
     /// whole data an expression reads a part of it through
     /// ([`Self::reading_composed_payloads`]).
     payloads: BTreeMap<String, String>,
+    /// How the document names an element of the SCXML namespace, which every
+    /// element this target writes is named by ([`ScxmlElements`]).
+    elements: ScxmlElements,
+}
+
+/// How a document names an element of the SCXML namespace: under the prefix
+/// its root element binds to the namespace, or with no prefix where the
+/// namespace is the default one. Every element the lowering writes into the
+/// document (a `<data>`, an `<assign>`, a `<script>`) takes its name from here,
+/// so it stands in the SCXML namespace whatever prefix the author chose, and an
+/// engine reads it as the executable content it is.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct ScxmlElements {
+    /// The prefix, `None` where the namespace is the default one.
+    prefix: Option<String>,
+}
+
+impl ScxmlElements {
+    /// How `document` names an element of the SCXML namespace, read from the
+    /// namespaces its root element declares.
+    fn of(document: &roxmltree::Document<'_>) -> Self {
+        let root = document.root_element();
+        let prefix = if root.default_namespace() == Some(SCXML_NAMESPACE) {
+            None
+        } else {
+            root.lookup_prefix(SCXML_NAMESPACE).map(str::to_string)
+        };
+        Self { prefix }
+    }
+
+    /// The name the element `local` of the SCXML namespace is written by.
+    fn name(&self, local: &str) -> String {
+        match &self.prefix {
+            Some(prefix) => format!("{prefix}:{local}"),
+            None => local.to_string(),
+        }
+    }
 }
 
 impl JsTarget {
@@ -284,7 +321,15 @@ impl JsTarget {
         Self {
             algorithms,
             payloads: BTreeMap::new(),
+            elements: ScxmlElements::default(),
         }
+    }
+
+    /// This target, writing each element it writes by the name `elements`
+    /// gives it.
+    fn writing_elements(mut self, elements: ScxmlElements) -> Self {
+        self.elements = elements;
+        self
     }
 
     /// This target, reading the data of each event of `model` whose schema
@@ -365,10 +410,17 @@ impl JsTarget {
     /// The `<assign>` of `location` to the expression `expr`, as the element.
     fn assign_element(&self, location: &str, expr: &str) -> String {
         format!(
-            "<assign location=\"{}\" expr=\"{}\"/>",
+            "<{} location=\"{}\" expr=\"{}\"/>",
+            self.elements.name("assign"),
             xml_attribute_value(location),
             xml_attribute_value(expr)
         )
+    }
+
+    /// The `<script>` that runs `code`, as the element.
+    fn script_element(&self, code: &str) -> String {
+        let script = self.elements.name("script");
+        format!("<{script}>{}</{script}>", xml_attribute_value(code))
     }
 }
 
@@ -854,7 +906,8 @@ impl StaticTarget for JsTarget {
     // declares it: the list is empty, and a record is built from its fields.
     fn data_element(&self, id: &str, init: &str) -> Option<String> {
         Some(format!(
-            "<data id=\"{}\" expr=\"{}\"/>",
+            "<{} id=\"{}\" expr=\"{}\"/>",
+            self.elements.name("data"),
             xml_attribute_value(id),
             xml_attribute_value(init)
         ))
@@ -942,7 +995,7 @@ impl StaticTarget for JsTarget {
             fields = fields.join(", "),
             depth = lift.depth,
         );
-        Some(format!("<script>{}</script>", xml_attribute_value(&script)))
+        Some(self.script_element(&script))
     }
     fn raise_execution_error(&self, _machine: &str, _message: &str) -> String {
         String::new()
@@ -1410,24 +1463,31 @@ fn start_tag_end(text: &str, start: usize) -> Option<usize> {
 /// An event is read where `lowered`, the model the walk lowered, has a
 /// transition on it whose condition or content reads `_event.data`, which is
 /// where a generated machine lifts its payload; a machine that only takes the
-/// event reads nothing of it and refuses nothing. A transition with no content
-/// has no block to end; one inside an inline child is the child's, lowered with
-/// it ([`child_edits`]).
+/// event reads nothing of it and refuses nothing. The event of a transition is
+/// the one the walk reads its `_event.data` as ([`crate::model::Transition::payload_event`]):
+/// the event it names, or, for a receive branch of a test component, the event
+/// of the record its template is of, which the transition does not name. So
+/// each `<transition>` of the text is read as the transition the model holds in
+/// its place: the one at the same index among the transitions of the state
+/// whose `id` its parent carries. A transition with no content has no block to
+/// end, a `<transition>` of an `<initial>` or a `<history>` is taken on no
+/// event, and one inside an inline child is the child's, lowered with it
+/// ([`child_edits`]).
 fn leading_read_edits(
     text: &str,
     lowered: &SCXMLModel,
     target: &JsTarget,
 ) -> Result<Vec<Edit>, GenerateError> {
     let received = lowered.received_events();
-    let read: std::collections::BTreeSet<String> = lowered
+    let read: std::collections::BTreeSet<&str> = lowered
         .states
         .values()
         .flat_map(|state| &state.transitions)
         .filter(|t| {
             t.content_reads_payload || crate::forge::expr::references_event_data_lexically(&t.cond)
         })
-        .map(|t| t.payload_event(&received).to_string())
-        .filter(|event| target.payloads.contains_key(event))
+        .map(|t| t.payload_event(&received))
+        .filter(|event| target.payloads.contains_key(*event))
         .collect();
     if read.is_empty() {
         return Ok(Vec::new());
@@ -1447,30 +1507,45 @@ fn leading_read_edits(
             .filter(|ancestor| is_scxml_element(ancestor, "scxml"))
             .count()
             > 1;
-        let Some(payload) = node
-            .attribute("event")
-            .map(str::trim)
-            .filter(|event| read.contains(*event))
-            .and_then(|event| target.payloads.get(event))
-        else {
+        let Some(parent) = node.parent_element().filter(|parent| {
+            !in_a_child
+                && (is_scxml_element(parent, "state") || is_scxml_element(parent, "parallel"))
+        }) else {
             continue;
         };
-        if in_a_child || !node.children().any(|child| child.is_element()) {
+        let index = parent
+            .children()
+            .filter(|child| is_scxml_element(child, "transition"))
+            .position(|child| child == node);
+        let held = parent
+            .attribute("id")
+            .and_then(|id| lowered.states.get(id))
+            .zip(index)
+            .and_then(|(state, index)| state.transitions.get(index));
+        let Some(transition) = held else {
+            return Err(GenerateError::unsupported(format!(
+                "a <transition> of the <{}> `{}` is none the model holds in its place, so it \
+                 has no event whose data could be read before its content",
+                parent.tag_name().name(),
+                parent.attribute("id").unwrap_or_default()
+            )));
+        };
+        let event = transition.payload_event(&received);
+        let Some(payload) = target.payloads.get(event).filter(|_| read.contains(event)) else {
+            continue;
+        };
+        if !node.children().any(|child| child.is_element()) {
             continue;
         }
         let at = start_tag_end(text, node.range().start).ok_or_else(|| {
             GenerateError::unsupported(format!(
-                "the <transition event=\"{}\"> has a start tag that does not close, so there is \
-                 no place to read its data before its content",
-                node.attribute("event").unwrap_or_default()
+                "the <transition> taken on `{event}` has a start tag that does not close, so \
+                 there is no place to read its data before its content"
             ))
         })?;
         edits.push(Edit {
             range: at..at,
-            text: format!(
-                "<script>{}</script>",
-                xml_attribute_value(&format!("{payload};"))
-            ),
+            text: target.script_element(&format!("{payload};")),
         });
     }
     Ok(edits)
@@ -1517,7 +1592,8 @@ fn document_edits(
         edits.push(Edit {
             range: at..at,
             text: format!(
-                "<data id=\"{RUNTIME_DATA_ID}\" expr=\"{}\"/>\n    ",
+                "<{} id=\"{RUNTIME_DATA_ID}\" expr=\"{}\"/>\n    ",
+                ScxmlElements::of(&document).name("data"),
                 xml_attribute_value(&runtime_expression(algorithms))
             ),
         });
@@ -1561,7 +1637,16 @@ fn lower_parsed(
     }
     let LoweredCallees { called, installed } =
         lowered_algorithms(model, base_dir).map_err(refuse)?;
-    let target = JsTarget::new(called).reading_composed_payloads(model);
+    let elements = roxmltree::Document::parse(text)
+        .map(|document| ScxmlElements::of(&document))
+        .map_err(|e| {
+            refuse(GenerateError::unsupported(format!(
+                "the document cannot be read again to be rewritten: {e}"
+            )))
+        })?;
+    let target = JsTarget::new(called)
+        .writing_elements(elements)
+        .reading_composed_payloads(model);
     let mut lowered = model.clone();
     let machine = crate::filters::to_pascal_case(model.name.clone());
     let lowering = lower(&mut lowered, &machine, &target).map_err(refuse)?;
@@ -2747,6 +2832,97 @@ mod tests {
         let at = start_tag_end(text, start).expect("the tag closes");
         assert_eq!(&text[at..], "<assign/></transition></s>");
         assert_eq!(start_tag_end("<transition cond=\"a > b", 0), None);
+    }
+
+    /// An element the lowering writes is named as the document names the SCXML
+    /// namespace: under the prefix its root binds to it, with none where it is
+    /// the default namespace, whatever else the root binds.
+    #[test]
+    fn an_element_the_lowering_writes_is_in_the_scxml_namespace() {
+        let elements =
+            |text: &str| ScxmlElements::of(&roxmltree::Document::parse(text).expect("well-formed"));
+        let prefixed = elements(r#"<s:scxml xmlns:s="http://www.w3.org/2005/07/scxml"/>"#);
+        assert_eq!(prefixed.name("script"), "s:script");
+        let default = elements(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:s="http://www.w3.org/2005/07/scxml"/>"#,
+        );
+        assert_eq!(default.name("script"), "script");
+        let other_default =
+            elements(r#"<w:scxml xmlns="urn:other" xmlns:w="http://www.w3.org/2005/07/scxml"/>"#);
+        assert_eq!(other_default.name("data"), "w:data");
+        let target = JsTarget::new(BTreeMap::new()).writing_elements(prefixed);
+        assert_eq!(
+            target.script_element("a < b;"),
+            "<s:script>a &lt; b;</s:script>"
+        );
+        assert_eq!(
+            target.assign_element("n", "1"),
+            r#"<s:assign location="n" expr="1"/>"#
+        );
+        assert_eq!(
+            target.data_element("n", "[]").as_deref(),
+            Some(r#"<s:data id="n" expr="[]"/>"#)
+        );
+    }
+
+    /// A receive branch of a test component reads as `_event.data` the message
+    /// its template names, an event the transition does not name
+    /// (`Transition::payload_event`), and opens its content with the read of
+    /// that message's whole data, as a transition that names the event does.
+    /// The model is the composed fixture's with its transition on `batch.sent`
+    /// made such a branch, and the text names another event there.
+    #[test]
+    fn a_receive_branch_opens_with_the_read_of_the_message_its_template_names() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/static_datamodel/static_composed_payload.scxml"
+        );
+        let mut model = crate::parser::SCXMLParser::new()
+            .parse_file(path)
+            .expect("the fixture parses");
+        let written = model
+            .authored_positions
+            .as_ref()
+            .expect("the parse keeps the text")
+            .expanded
+            .clone();
+        let named = "<transition event=\"batch.sent\" type=\"internal\">";
+        let branch_tag = "<transition event=\"peer.reply\" type=\"internal\">";
+        assert_eq!(written.matches(named).count(), 1, "{written}");
+        let text = written.replace(named, branch_tag);
+        let target = JsTarget::new(BTreeMap::new()).reading_composed_payloads(&model);
+        let read = target
+            .payloads
+            .get("batch.sent")
+            .cloned()
+            .expect("batch.sent is read whole");
+        model
+            .received_records
+            .insert("BatchOf".to_string(), "Batch".to_string());
+        let branch = &mut model
+            .states
+            .get_mut("idle")
+            .expect("the state idle")
+            .transitions[0];
+        assert_eq!(branch.event, "batch.sent");
+        branch.event = "peer.reply".to_string();
+        branch.test_branch = Some(crate::test_component::TestBranch {
+            receive: Some("peer".to_string()),
+            template: crate::test_component::TemplateUse {
+                template: Some("BatchOf".to_string()),
+                args: Vec::new(),
+            },
+            ..Default::default()
+        });
+        branch.content_reads_payload = true;
+        let edits = leading_read_edits(&text, &model, &target).expect("the reads are placed");
+        assert_eq!(edits.len(), 1, "{edits:?}");
+        assert!(
+            text[..edits[0].range.start].ends_with(branch_tag),
+            "the read opens the branch's content"
+        );
+        assert_eq!(edits[0].range.start, edits[0].range.end);
+        assert_eq!(edits[0].text, target.script_element(&format!("{read};")));
     }
 
     /// The data of an event whose schema holds no composed value is the

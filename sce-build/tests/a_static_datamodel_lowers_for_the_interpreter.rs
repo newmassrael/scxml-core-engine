@@ -1284,6 +1284,98 @@ fn a_transition_on_a_composed_payload_reads_it_whole_before_its_content() {
     assert_eq!(names.get(..2), Some(&["script", "assign"][..]), "{out}");
 }
 
+/// `text`, an SCXML document in the default namespace, written with the prefix
+/// `s` for the SCXML namespace instead: every element but the `sce:` ones takes
+/// the prefix, in comments too, which no reader reads.
+fn with_scxml_prefix(text: &str) -> String {
+    let text = text.replacen(
+        "xmlns=\"http://www.w3.org/2005/07/scxml\"",
+        "xmlns:s=\"http://www.w3.org/2005/07/scxml\"",
+        1,
+    );
+    let mut out = String::with_capacity(text.len() + 512);
+    let mut rest = text.as_str();
+    while let Some(at) = rest.find('<') {
+        out.push_str(&rest[..at]);
+        let (open, name) = match rest[at..].strip_prefix("</") {
+            Some(name) => ("</", name),
+            None => ("<", &rest[at + 1..]),
+        };
+        out.push_str(open);
+        if name.starts_with(|c: char| c.is_ascii_lowercase()) && !name.starts_with("sce:") {
+            out.push_str("s:");
+        }
+        rest = name;
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Every fixture of the directory by its file name, with `root` among them in
+/// place of the file of its name: the set a document that imports its siblings
+/// is lowered from.
+fn beside_the_fixtures(root: (&str, String)) -> std::collections::BTreeMap<String, String> {
+    let mut documents: std::collections::BTreeMap<String, String> = std::fs::read_dir(fixtures())
+        .expect("the fixture directory")
+        .map(|entry| entry.expect("an entry").path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "scxml"))
+        .map(|path| {
+            (
+                path.file_name().unwrap().to_string_lossy().into_owned(),
+                std::fs::read_to_string(&path).expect("a fixture"),
+            )
+        })
+        .collect();
+    documents.insert(root.0.to_string(), root.1);
+    documents
+}
+
+/// Every element the lowering writes into a document whose SCXML namespace has
+/// a prefix stands in that namespace, under the document's own prefix: the
+/// `<data>` that installs the library and the `<data>` of a list, the `<script>`
+/// that opens a transition on a composed payload, and the `<script>` a lift
+/// becomes. An element written with no prefix would stand in no namespace, and
+/// an engine would read it as no executable content at all.
+#[test]
+fn an_element_the_lowering_writes_takes_the_documents_scxml_prefix() {
+    const SCXML: &str = "http://www.w3.org/2005/07/scxml";
+    for machine in ["static_composed_payload", "static_lift"] {
+        let source = std::fs::read_to_string(fixtures().join(format!("{machine}.scxml")))
+            .expect("a fixture");
+        // Under its own name, in place of the fixture as written.
+        let root = format!("{machine}.scxml");
+        let documents = beside_the_fixtures((root.as_str(), with_scxml_prefix(&source)));
+        let lowered = lower_documents(&root, &documents)
+            .unwrap_or_else(|e| panic!("{machine}, prefixed, does not lower: {e:?}"));
+        let out = &lowered[0].text;
+        let document = roxmltree::Document::parse(out).expect("well-formed");
+        let unbound: Vec<String> = document
+            .descendants()
+            .filter(|n| n.is_element() && n.tag_name().namespace().is_none())
+            .map(|n| n.tag_name().name().to_string())
+            .collect();
+        assert!(
+            unbound.is_empty(),
+            "{machine}: elements in no namespace {unbound:?}: {out}"
+        );
+        let scripts = document
+            .descendants()
+            .filter(|n| {
+                n.is_element()
+                    && n.tag_name().name() == "script"
+                    && n.tag_name().namespace() == Some(SCXML)
+            })
+            .count();
+        assert!(scripts > 0, "{machine}: no <s:script> was written: {out}");
+        let library = document
+            .descendants()
+            .find(|n| n.attribute("id") == Some("SceStaticInstalled"))
+            .expect("the library is installed");
+        assert_eq!(library.tag_name().namespace(), Some(SCXML), "{machine}");
+        assert!(out.contains("<s:script>"), "{machine}: {out}");
+    }
+}
+
 /// What a `<send>` carries where a `<param>` names a composed value: the value
 /// as it crosses (docs/adr/0086, section 5.3), a list mapped element by element
 /// only where an element changes, here a record whose 64-bit integers cross as
