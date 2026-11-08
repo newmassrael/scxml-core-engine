@@ -277,7 +277,7 @@ section_namespace = "mesh"
 [verifies_catalog]
 path = "docs/sce-ledger/mesh/.atomic/verifies-catalog.json"
 severity = "reject"
-sha256 = "8c22c4ce198804edf96607e4339824731f8ea09db6c39ac31d91c1f062f3cabd"
+sha256 = "ed19e067c2a5baf4c75fed5f44b945efdda3a8bad21bb672690f816812acae01"
 
 # Path B symbol-binding resolver (Mnemosyne R382). lang_for_file maps C++
 # extensions (.h/.cpp/.cc/...) to the `cpp` key; the in-process

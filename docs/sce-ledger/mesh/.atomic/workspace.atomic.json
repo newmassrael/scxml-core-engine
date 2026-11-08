@@ -134,6 +134,117 @@
       ],
       "coverage_expectation": "out_of_scope_here"
     },
+    "mesh-10.12": {
+      "title": "Causal delivery",
+      "parent_doc": "mesh",
+      "parent_section": "mesh-10",
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "backends/rust/mesh/src/causal.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/mesh/src/router.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Causal.kt",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Router.kt",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Causal.swift",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/swift/mesh/Sources/SceMesh/Router.swift",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/codegen.rs",
+          "symbol": "peer_policy",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validate_delivery",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/mesh/CausalLayer.h",
+          "symbol": "offer",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/mesh/CausalLayer.h",
+          "symbol": "receive",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/mesh/CausalRoute.h",
+          "symbol": "offer",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/mesh/CausalRoute.h",
+          "symbol": "receive",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/mesh/CausalRules.h",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/mesh/CausalEntry.h",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/mesh/MeshEnvelope.h",
+          "symbol": "causal_epoch",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2",
+          "kind": "implements"
+        },
+        {
+          "file": "tests/mesh/CausalLayerTest.cpp",
+          "kind": "verifies"
+        },
+        {
+          "file": "tests/mesh/CausalRouteTest.cpp",
+          "kind": "verifies"
+        },
+        {
+          "file": "tests/mesh/test_mesh_causal_injection.cpp",
+          "kind": "verifies"
+        },
+        {
+          "file": "sce-build/tests/mesh_causal_cpp_codegen.rs",
+          "kind": "verifies"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/commonTest/kotlin/com/sce/mesh/CausalLayerTest.kt",
+          "kind": "verifies"
+        },
+        {
+          "file": "backends/kotlin/mesh/src/commonTest/kotlin/com/sce/mesh/CausalRouteTest.kt",
+          "kind": "verifies"
+        },
+        {
+          "file": "backends/swift/mesh/Tests/SceMeshTests/CausalTests.swift",
+          "kind": "verifies"
+        },
+        {
+          "file": "backends/swift/mesh/Tests/SceMeshTests/CausalRouterTests.swift",
+          "kind": "verifies"
+        }
+      ]
+    },
     "mesh-10.2": {
       "title": "Backpressure and Flow Control",
       "parent_doc": "mesh",

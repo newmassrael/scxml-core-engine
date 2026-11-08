@@ -11,7 +11,7 @@
 // the stable cut. An entry also names one change, its dot.
 //
 // The envelope carries a vector under key 20 (`causal_vector`), the sender's
-// own entry first (SCE_MESH.md, section 10.12). MeshEnvelope holds this type, and
+// own entry first (SCE_MESH.md §mesh-10.12). MeshEnvelope holds this type, and
 // MeshEnvelopeCodec.cpp and CausalRules.cpp convert it to and from the record
 // the standard documents generate, as MeshEnvelope stands for the generated
 // envelope: no public header names a generated type.

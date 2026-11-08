@@ -18,6 +18,18 @@
       ]
     },
     {
+      "file": "backends/kotlin/mesh/src/commonTest/kotlin/com/sce/mesh/CausalLayerTest.kt",
+      "section_ids": [
+        "mesh-10.12"
+      ]
+    },
+    {
+      "file": "backends/kotlin/mesh/src/commonTest/kotlin/com/sce/mesh/CausalRouteTest.kt",
+      "section_ids": [
+        "mesh-10.12"
+      ]
+    },
+    {
       "file": "backends/kotlin/mesh/src/jvmTest/kotlin/com/sce/mesh/CrossLanguageLoopbackTest.kt",
       "section_ids": [
         "mesh-18",
@@ -85,6 +97,24 @@
       ]
     },
     {
+      "file": "backends/swift/mesh/Tests/SceMeshTests/CausalRouterTests.swift",
+      "section_ids": [
+        "mesh-10.12"
+      ]
+    },
+    {
+      "file": "backends/swift/mesh/Tests/SceMeshTests/CausalTests.swift",
+      "section_ids": [
+        "mesh-10.12"
+      ]
+    },
+    {
+      "file": "sce-build/tests/mesh_causal_cpp_codegen.rs",
+      "section_ids": [
+        "mesh-10.12"
+      ]
+    },
+    {
       "file": "sce-build/tests/mesh_error_format_json.rs",
       "section_ids": [
         "mesh-18",
@@ -126,6 +156,18 @@
       "file": "tests/mesh/AuthClassifierTest.cpp",
       "section_ids": [
         "mesh-16.7"
+      ]
+    },
+    {
+      "file": "tests/mesh/CausalLayerTest.cpp",
+      "section_ids": [
+        "mesh-10.12"
+      ]
+    },
+    {
+      "file": "tests/mesh/CausalRouteTest.cpp",
+      "section_ids": [
+        "mesh-10.12"
       ]
     },
     {
@@ -210,6 +252,12 @@
       "file": "tests/mesh/RetryingDispatcherTest.cpp",
       "section_ids": [
         "mesh-16.7"
+      ]
+    },
+    {
+      "file": "tests/mesh/test_mesh_causal_injection.cpp",
+      "section_ids": [
+        "mesh-10.12"
       ]
     },
     {

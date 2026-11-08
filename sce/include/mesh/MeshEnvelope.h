@@ -94,7 +94,7 @@ struct MeshEnvelope {
     /// every other wire. CBOR integer key 18.
     std::optional<std::string> child_session_id;
 
-    /// A causal route's tag (SCE_MESH.md, section 10.12; docs/adr/0085,
+    /// A causal route's tag (SCE_MESH.md §mesh-10.12; docs/adr/0085,
     /// section 3.2): the view's epoch (CBOR key 19) and a vector of at most 64
     /// entries (key 20), the sender's own entry first. On a change that
     /// entry is its dot and the rest its causal context; on a

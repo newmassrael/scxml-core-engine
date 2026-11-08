@@ -223,6 +223,8 @@ public final class Router {
         guard let group = bound.config.causal else {
             throw .notCausal(peer)
         }
+        // §mesh-10.12, what a host does: the peer's layer begins from the incarnation the host read
+        // from the copy's journal, or a new one.
         bound.causal = Causal(
             layer: CausalLayer(group: group, start: start, room: room), announceEveryMs: announceEveryMs)
     }
@@ -553,6 +555,8 @@ public final class Router {
     /// or by a replica the view does not hold, is raised as §mesh-16.7 row 18, `CAUSAL_VIEW_MISMATCH`,
     /// and is not delivered (docs/adr/0085, section 3.2).
     private func receiveCausal(_ peer: String, _ bound: BoundPeer, _ bytes: [UInt8], nowMs: Int64) -> Routed {
+        // §mesh-10.12: every envelope of a causal peer reaches its layer before the engine; a
+        // `causalVector` is a repair and a mark, and never reaches an engine.
         var cursor = SceCursor(bytes)
         guard let envelope = try? Envelope.decode(&cursor) else {
             return .done([.raise(peer: peer, signal: .envelopeCorrupt(source: nil, codec: "cbor"))])

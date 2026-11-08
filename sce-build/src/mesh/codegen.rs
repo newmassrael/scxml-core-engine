@@ -1374,6 +1374,8 @@ struct PeerPolicy {
 }
 
 fn peer_policy(t: &ResolvedTarget, desc: &transport::TransportDescriptor) -> PeerPolicy {
+    // §mesh-10.12: a causal route's vectors drop a duplicate exactly and
+    // order causally, so its dedup window and sequence buffer are off.
     let per_source = t.causal.is_none();
     PeerPolicy {
         causal: t.causal.clone(),

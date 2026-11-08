@@ -4,7 +4,7 @@
 // SCE Mesh CausalRoute — the C++ router's side of one causal binding.
 //
 // A binding a deploy marks `delivery: causal` is the route of a causal
-// broadcast group (docs/adr/0085, section 3.2; SCE_MESH.md, section 10.12).
+// broadcast group (docs/adr/0085, section 3.2; SCE_MESH.md §mesh-10.12).
 // This class is what the generated TransportRouter holds for it, in place of
 // the duplicate window and the sequence buffer it replaces: the binding's
 // CausalLayer, over the envelopes themselves, and the envelope work around it
@@ -119,6 +119,8 @@ public:
         if (!layer_) {
             return std::nullopt;
         }
+        // §mesh-10.12, offer and verdict: the change is tagged on the
+        // envelope itself, keys 19 and 20, and released only by `committed`.
         return layer_->offer([&env](const CausalTag &tag) -> std::optional<MeshEnvelope> {
             MeshEnvelope stamped = env;
             if (!stampCausalTag(stamped, tag) || encodeEnvelope(stamped).empty()) {
@@ -181,6 +183,9 @@ public:
             receipt.fault = CausalRouteFault{};
             return receipt;
         }
+        // §mesh-10.12: a change goes through the layer's rule, and a
+        // `causalVector` is recorded as its sender's mark and answered with
+        // every change of the log it lacks; it never reaches the engine.
         CausalTaken<MeshEnvelope> taken =
             env.pattern == PatternKind::CausalVector ? layer_->receiveSummary(tag) : layer_->receive(tag, env);
         if (auto *rejected = std::get_if<CausalRejected>(&taken)) {

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// The causal route's delivery layer (docs/adr/0085, sections 3, 3.2, 3.3 and 4.2; SCE_MESH.md section
-// 10.12): one copy's side of a causal broadcast group. The Swift twin of
+// The causal route's delivery layer (docs/adr/0085, sections 3, 3.2, 3.3 and 4.2; SCE_MESH.md
+// §mesh-10.12): one copy's side of a causal broadcast group. The Swift twin of
 // backends/rust/mesh/src/causal.rs, the reference.
 //
 // A change this copy makes is offered here and answered with a verdict: `CausalVerdict.accepted` with
@@ -282,6 +282,9 @@ public final class CausalLayer<Message> {
     /// refused and takes no number. When `build` answers nil, nothing is taken either, and the offer
     /// answers nil.
     public func offer(_ build: (CausalTag) -> Message?) throws(AlgorithmError) -> CausalVerdict? {
+        // §mesh-10.12, offer and verdict: a log with no room for one more change not yet stable
+        // refuses it, and a refused change takes no number; an accepted one counts as delivered here
+        // once it is tagged.
         if log.count >= room {
             return .refused(.noRoomForHistory)
         }
@@ -333,6 +336,9 @@ public final class CausalLayer<Message> {
         try admitMember(author)
         try noteKnown(author, tag.vector)
         var out: [Message] = []
+        // §mesh-10.12, the rule: a change at or below its author's column is dropped, the next one
+        // whose context is delivered is delivered with every held change that then follows, and any
+        // other is held.
         switch try admission(sender, tag.vector) {
         case .drop:
             break
