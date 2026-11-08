@@ -8,7 +8,7 @@
 # sce-build/tests/fixtures/test_profile/ with the documents they name, a package
 # each beside the machines; and the test components of
 # sce-build/tests/fixtures/test_profile/runtime/, a package each, with the
-# records and templates they name.
+# records and templates they name and the tables of the suite that runs them.
 #
 # The Go compile+run gate for datamodel="sce-static"
 # (docs/SCE_ACCEPTED_SUBSET.md §2.15), the twin of
@@ -204,12 +204,21 @@ TEST_PROFILE_IMPORTS+=(card_payment card_within voucher_payment voucher_is)
 # component beside it, generated into a package of its own as a fixture's machine is,
 # beside the records and the templates its machine imports by their packages, which are
 # generated as the templates above are. The port types are read where the components are
-# and write no file; param_asker, which declares a module parameter, waits for Go's suite
-# tables (docs/SCE_TEST_PROFILE.md §12.6). The Rust and Kotlin trees generate the same
-# components (scripts/regen_static_datamodel_rust.sh, scripts/regen_static_datamodel_kotlin.sh).
+# and write no file; param_asker reads the module parameter the suite below gives it. The
+# Rust and Kotlin trees generate the same components (scripts/regen_static_datamodel_rust.sh,
+# scripts/regen_static_datamodel_kotlin.sh).
 TEST_PROFILE_RUNTIME_DIR="$TEST_PROFILE_DIR/runtime"
 TEST_PROFILE_RUNTIME=(job_request job_reply request_of any_request reply_ok reply_of)
-TEST_COMPONENTS=(asker coordinator answerer keeper idler)
+TEST_COMPONENTS=(asker coordinator answerer keeper idler param_asker)
+# The tables of the suite a_test_suite_runs_through_its_runner_test.go runs through the
+# profile's runner (docs/SCE_TEST_PROFILE.md §11.6 to §11.8, §12.2), each a package of its
+# own: each configuration's unit imports the package of each component's machine, which is
+# the directory named by the component's document below the module path, as each component
+# above is placed; each test case's imports its configuration's, and the suite's its test
+# cases'. The feature model writes no file. The Rust and Kotlin trees generate the same
+# tables (scripts/regen_static_datamodel_rust.sh, scripts/regen_static_datamodel_kotlin.sh).
+TEST_TABLES=(asking_configuration serving_configuration keeping_configuration)
+TEST_TABLES+=(answers_the_job answers_before_the_guard serves_a_ptc keeps_a_ptc runtime_suite)
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -249,6 +258,9 @@ for document in "${TEST_PROFILE_RUNTIME[@]}"; do
 done
 for component in "${TEST_COMPONENTS[@]}"; do
     "$CODEGEN" generate "$TEST_PROFILE_RUNTIME_DIR/$component.scxml" -l go -o "$TMP/component_$component/" --go-module-prefix "$GO_MODULE_PREFIX"
+done
+for document in "${TEST_TABLES[@]}"; do
+    "$CODEGEN" generate "$TEST_PROFILE_RUNTIME_DIR/$document.scxml" -l go -o "$TMP/table_$document/" --go-module-prefix "$GO_MODULE_PREFIX"
 done
 
 mkdir -p "$GENERATED_DIR"
@@ -301,8 +313,17 @@ for document in "${TEST_PROFILE_RUNTIME[@]}"; do
         PACKAGES+=("$package")
     done
 done
+for document in "${TEST_TABLES[@]}"; do
+    for generated in "$TMP/table_$document"/*.go; do
+        package="$(basename "$generated" .go)"
+        mkdir -p "$GENERATED_DIR/$package"
+        cp "$generated" "$GENERATED_DIR/$package/"
+        PACKAGES+=("$package")
+    done
+done
 # A component's machine is copied as a fixture's is: its `_sm.go` alone, into the package
-# named by its document, which the test's factory of machines imports.
+# named by its document, which the test's factory of machines and each configuration's
+# table above import (`<module path>/<snake of the machine's name>`).
 for component in "${TEST_COMPONENTS[@]}"; do
     mkdir -p "$GENERATED_DIR/$component"
     cp "$TMP/component_$component"/*_sm.go "$GENERATED_DIR/$component/"
