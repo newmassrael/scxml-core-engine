@@ -91,11 +91,14 @@ let package = Package(
                 .product(name: "SceRuntime", package: "runtime"),
             ]
         ),
+        // The test profile's runtime is the module a test template's unit counts a text's
+        // characters through (docs/SCE_TEST_PROFILE.md §11.9).
         .target(
             name: "StaticDatamodelMachines",
             dependencies: [
                 .product(name: "SceRuntime", package: "runtime"),
                 .product(name: "SceForgeRuntime", package: "forge-runtime"),
+                .product(name: "SceTestProfile", package: "runtime"),
             ]
         ),
         .testTarget(

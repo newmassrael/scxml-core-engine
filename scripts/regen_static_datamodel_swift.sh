@@ -5,7 +5,9 @@
 # Regenerate backends/swift/tests/Sources/StaticDatamodelMachines/ from
 # sce-build/tests/fixtures/static_datamodel/<machine>.scxml, for every machine
 # the Swift backend lowers, every algorithm those machines call, and every event
-# schema the Swift backend lowers.
+# schema the Swift backend lowers; and the test profile's templates from
+# sce-build/tests/fixtures/test_profile/ with the documents they name, a file each
+# beside the machines.
 #
 # The Swift compile+run gate for datamodel="sce-static"
 # (docs/SCE_ACCEPTED_SUBSET.md §2.15), the twin of
@@ -277,6 +279,18 @@ for document in "${QUEUE_DOCUMENTS[@]}"; do
         exit 1
     fi
 done
+# The test profile's templates (docs/SCE_TEST_PROFILE.md §11.4, §11.9), each a document of its own
+# kind whose unit declares its `matches` and, for a specific one, its `value`, members of an enum
+# named by the document, generated as a file of the same target beside the records and enums their
+# units name; ATestTemplateMatchesItsValuesTests.swift matches them against values. The Rust,
+# Kotlin, Go, Python and C11 trees generate the same templates (scripts/regen_static_datamodel_rust.sh
+# and its siblings), Rust and Kotlin the two over a union besides, which Swift, lowering no union,
+# refuses by name. They are not swept by the directory reads above: the fixture directory of the
+# profile holds documents refused on purpose, so the documents generated are the ones named here.
+TEST_PROFILE_DIR="sce-build/tests/fixtures/test_profile"
+TEST_PROFILE=(job_status elapsed_at_most every_matcher job_report job_report_of report_within)
+TEST_PROFILE_IMPORTS=(paint_color order_line quantity_two quantity_at_most order_line_exact order_line_bounded)
+TEST_PROFILE_IMPORTS+=(card_payment card_within voucher_payment voucher_is)
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -311,6 +325,12 @@ for document in "${QUEUE_DOCUMENTS[@]}"; do
     QUEUE_ARGUMENTS+=(--forge "$document")
 done
 "$CODEGEN" orchestrate "${QUEUE_ARGUMENTS[@]}" --language swift --output-dir "$TMP/queue/" > /dev/null
+for document in "${TEST_PROFILE[@]}"; do
+    "$CODEGEN" generate "$TEST_PROFILE_DIR/$document.scxml" -l swift -o "$TMP/profile_$document/"
+done
+for document in "${TEST_PROFILE_IMPORTS[@]}"; do
+    "$CODEGEN" generate "$TEST_PROFILE_DIR/imports/$document.scxml" -l swift -o "$TMP/profile_$document/"
+done
 
 mkdir -p "$GENERATED_DIR"
 # Every file below is generated and the tests beside them are not: clearing by
@@ -399,6 +419,20 @@ for generated in "$TMP/queue"/*.swift; do
     UNIT_FROM[$unit]="$QUEUE_DIR"
     QUEUE_UNITS+=("$unit")
 done
+# The same defect again for a template or a document it names: a unit of the name of one above.
+TEST_PROFILE_UNITS=()
+for document in "${TEST_PROFILE[@]}" "${TEST_PROFILE_IMPORTS[@]}"; do
+    for generated in "$TMP/profile_$document"/*.swift; do
+        unit="$(basename "$generated" .swift)"
+        if [ -n "${UNIT_FROM[$unit]:-}" ]; then
+            echo "error: ${UNIT_FROM[$unit]} and the test profile fixture $document are both written as $unit; one of them needs another name" >&2
+            exit 1
+        fi
+        cp "$generated" "$GENERATED_DIR/"
+        UNIT_FROM[$unit]="$TEST_PROFILE_DIR/$document"
+        TEST_PROFILE_UNITS+=("$unit")
+    done
+done
 
 # The numerical conformance harness (tests/forge/conformance): the oracle's cases for the
 # units above, held to what each computes. The harness lists the fixtures this backend's
@@ -410,7 +444,7 @@ HARNESS_DIR="backends/swift/tests/Tests/StaticDatamodelTests"
     --manifest "$CORPUS_MANIFEST" \
     --output-dir "$HARNESS_DIR" > /dev/null
 
-echo "Regenerated: ${MACHINES[*]}, the algorithms ${UNITS[*]:-none}, the event schemas ${SCHEMA_UNITS[*]:-none} and the broadcast logs ${BROADCAST_LOG_UNITS[*]:-none} and the bounded collections ${BOUNDED_COLLECTION_UNITS[*]:-none} and the queues ${QUEUE_UNITS[*]:-none} under $GENERATED_DIR/"
+echo "Regenerated: ${MACHINES[*]}, the algorithms ${UNITS[*]:-none}, the event schemas ${SCHEMA_UNITS[*]:-none} and the broadcast logs ${BROADCAST_LOG_UNITS[*]:-none} and the bounded collections ${BOUNDED_COLLECTION_UNITS[*]:-none} and the queues ${QUEUE_UNITS[*]:-none} and the test profile's units ${TEST_PROFILE_UNITS[*]:-none} under $GENERATED_DIR/"
 if [ "${#REFUSED[@]}" -gt 0 ]; then
     echo "Not lowered yet (${#REFUSED[@]}), refused by name:"
     printf '  %s\n' "${REFUSED[@]}"

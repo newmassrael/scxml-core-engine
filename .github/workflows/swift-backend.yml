@@ -53,6 +53,9 @@ on:
       - 'sce-build/tests/the_emitted_transition_function_equals_the_producer.rs'
       - 'sce-build/tests/common/**'
       - 'sce-build/tests/fixtures/static_datamodel/**'
+      # The test profile's templates and the documents they name, which
+      # `scripts/regen_static_datamodel_swift.sh` generates into the machines' target.
+      - 'sce-build/tests/fixtures/test_profile/**'
       - 'sce-build/tests/fixtures/swift_statecharts/**'
       - 'sce-build/tests/fixtures/swift_ecmascript/**'
       - 'resources/**'
