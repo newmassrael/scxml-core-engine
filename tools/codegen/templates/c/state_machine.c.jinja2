@@ -7185,9 +7185,13 @@ SCE_SM_FN static void apply_inbox_input({{ csym_prefix }}{{ model.name }}_t *sm,
         break;
     }
 {% if inbox_endings %}
-    case {{ csym_prefix | upper }}{{ model.name | upper }}_INBOX_HOST_INVOKE_ENDING:
-        apply_host_invoke_ending(sm, &input->as.ending);
+    case {{ csym_prefix | upper }}{{ model.name | upper }}_INBOX_HOST_INVOKE_ENDING: {
+        /* The record with its data a view of the text the input holds. */
+        sce_host_invoke_ending_t ending = input->as.ending.record;
+        ending.data = input->as.ending.data;
+        apply_host_invoke_ending(sm, &ending);
         break;
+    }
 {% endif %}
     default:
         /* Not a kind this machine declares: a host wrote a value outside the
@@ -7246,13 +7250,25 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_build_inboxes({{ csym_prefix }}
 SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_inbox_write_ending(void *slot, const void *context) {
     {{ csym_prefix }}{{ model.name }}_inbox_input_t *input = ({{ csym_prefix }}{{ model.name }}_inbox_input_t *)slot;
     memset(input, 0, sizeof(*input));
+    const sce_host_invoke_ending_t *ending = (const sce_host_invoke_ending_t *)context;
     input->kind = {{ csym_prefix | upper }}{{ model.name | upper }}_INBOX_HOST_INVOKE_ENDING;
-    input->as.ending = *(const sce_host_invoke_ending_t *)context;
+    input->as.ending.record = *ending;
+    input->as.ending.record.data = NULL;
+    /* `_inbox_post_ending` held the data to the slot before it posted. */
+    (void)sce_copy_text_whole(input->as.ending.data, sizeof(input->as.ending.data), ending->data);
 }
 
 SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_inbox_post_ending({{ csym_prefix }}{{ model.name }}_t *sm,
                                                                    const sce_host_invoke_ending_t *ending) {
     if (sm == NULL || ending == NULL) {
+        return false;
+    }
+    /* docs/adr/0086, section 8.5 (b): data this machine's slot cannot hold is
+       refused before it is posted, and counted as every refused post is; the
+       poster is told by the false it is answered. */
+    if (ending->data != NULL &&
+        strlen(ending->data) >= sizeof(((const {{ csym_prefix }}{{ model.name }}_inbox_input_t *)0)->as.ending.data)) {
+        sce_inbox_count_refusal(&sm->inbox);
         return false;
     }
     /* docs/adr/0086, section 8.5 (d): an input holds the slot, so it is written
@@ -7296,9 +7312,13 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_inbox_post({{ csym_prefix }}{{ 
        inbox, ahead of whatever its parent sends it later, and one naming a
        session the tree does not hold is refused. */
     if (input->kind == {{ csym_prefix | upper }}{{ model.name | upper }}_INBOX_HOST_INVOKE_ENDING &&
-        input->as.ending.session_id[0] != '\0' && strcmp(input->as.ending.session_id, sm->session_id) != 0) {
+        input->as.ending.record.session_id[0] != '\0' &&
+        strcmp(input->as.ending.record.session_id, sm->session_id) != 0) {
         bool taken = false;
-        if (!{{ csym_prefix }}{{ model.name }}_inbox_route_ending(sm, &input->as.ending, &taken)) {
+        /* The record with its data a view of the text the input holds. */
+        sce_host_invoke_ending_t ending = input->as.ending.record;
+        ending.data = input->as.ending.data;
+        if (!{{ csym_prefix }}{{ model.name }}_inbox_route_ending(sm, &ending, &taken)) {
             sce_inbox_count_refusal(&sm->inbox);
             return false;
         }

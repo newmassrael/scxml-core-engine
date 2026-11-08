@@ -121,10 +121,10 @@ static void ping_by_name(inbox_probe_inbox_input_t *input, const char *label) {
 static void ending(inbox_probe_inbox_input_t *input, uint64_t token, bool done, const char *label) {
     memset(input, 0, sizeof(*input));
     input->kind = INBOX_PROBE_INBOX_HOST_INVOKE_ENDING;
-    (void)snprintf(input->as.ending.processor_type, sizeof(input->as.ending.processor_type), "%s", TYPE);
-    (void)snprintf(input->as.ending.invoke_id, sizeof(input->as.ending.invoke_id), "%s", JOB);
-    input->as.ending.token = token;
-    input->as.ending.done = done;
+    (void)snprintf(input->as.ending.record.processor_type, sizeof(input->as.ending.record.processor_type), "%s", TYPE);
+    (void)snprintf(input->as.ending.record.invoke_id, sizeof(input->as.ending.record.invoke_id), "%s", JOB);
+    input->as.ending.record.token = token;
+    input->as.ending.record.done = done;
     (void)snprintf(input->as.ending.data, sizeof(input->as.ending.data), "\"%s\"", label);
 }
 
@@ -692,11 +692,12 @@ static bool post_clock_ending(const ordering_host_t *host, const char *session) 
     pthread_t poster;
     memset(&input, 0, sizeof(input));
     input.kind = STATIC_INVOKE_ENDING_ORDER_INBOX_HOST_INVOKE_ENDING;
-    (void)snprintf(input.as.ending.session_id, sizeof(input.as.ending.session_id), "%s", session);
-    (void)snprintf(input.as.ending.processor_type, sizeof(input.as.ending.processor_type), "%s", ORDER_CLOCK_TYPE);
-    (void)snprintf(input.as.ending.invoke_id, sizeof(input.as.ending.invoke_id), "%s", ORDER_CLOCK_ID);
-    input.as.ending.token = host->token;
-    input.as.ending.done = true;
+    (void)snprintf(input.as.ending.record.session_id, sizeof(input.as.ending.record.session_id), "%s", session);
+    (void)snprintf(input.as.ending.record.processor_type, sizeof(input.as.ending.record.processor_type), "%s",
+                   ORDER_CLOCK_TYPE);
+    (void)snprintf(input.as.ending.record.invoke_id, sizeof(input.as.ending.record.invoke_id), "%s", ORDER_CLOCK_ID);
+    input.as.ending.record.token = host->token;
+    input.as.ending.record.done = true;
     (void)snprintf(input.as.ending.data, sizeof(input.as.ending.data), "%s", ORDER_CLOCK_NOW);
     post.sm = host->sm;
     post.input = &input;
