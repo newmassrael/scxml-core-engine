@@ -30,6 +30,7 @@ mod go_test_template;
 mod kotlin_test_tables;
 mod kotlin_test_template;
 mod length_guard;
+mod python_test_tables;
 mod python_test_template;
 mod rust_source;
 mod rust_test_tables;
@@ -31043,18 +31044,21 @@ pub fn generate_python_with_imports(
         ForgeDocument::TestTemplate(m) => {
             python_test_template::render_test_template_python(&env, m, imports, options)?
         }
-        // docs/SCE_TEST_PROFILE.md §11.9: the other kinds of the test profile
-        // are refused by name until their runtime lands here.
-        ForgeDocument::TestPortType(_)
-        | ForgeDocument::TestConfiguration(_)
-        | ForgeDocument::TestCase(_)
-        | ForgeDocument::TestSuite(_) => {
-            return Err(crate::forge::test_profile::document_not_generated(
-                doc.kind(),
-                doc.name(),
-                crate::forge::provenance::forge_doc_source_location(doc).cloned(),
-            )
-            .into())
+        // docs/SCE_TEST_PROFILE.md §12.6, slice 6
+        // (`codegen_matrix::TEST_SUITE_BACKENDS`): a port type writes no file,
+        // since the units of the components and of the configuration that read
+        // it hold what they need of it by name; a configuration, a test case and
+        // a suite are tables the profile's runtime reads, each importing the
+        // modules it reads as siblings.
+        ForgeDocument::TestPortType(_) => return Ok(GeneratedOutput::default()),
+        ForgeDocument::TestConfiguration(m) => {
+            python_test_tables::render_test_configuration_python(&env, m, imports)?
+        }
+        ForgeDocument::TestCase(m) => {
+            python_test_tables::render_test_case_python(&env, m, imports, options)?
+        }
+        ForgeDocument::TestSuite(m) => {
+            python_test_tables::render_test_suite_python(&env, m, imports, options)?
         }
     };
     let code = import_the_algorithm_runtime(code);
@@ -34107,7 +34111,8 @@ fn kotlin_default(ty: &SceType) -> &'static str {
 /// names a variant of the machine's enum type; nothing reads either. Every
 /// other variable starts at its `expr` and has no entry. One walk for every
 /// backend whose template declares the slot with a value
-/// ([`kotlin_module_parameter_starts`], [`go_module_parameter_starts`]).
+/// ([`kotlin_module_parameter_starts`], [`go_module_parameter_starts`],
+/// [`python_module_parameter_starts`]).
 ///
 /// Refused by name where a module parameter is of no type the lowering
 /// declares, which a lowering that held it to a scalar type cannot reach.
@@ -34168,6 +34173,17 @@ pub(crate) fn go_module_parameter_starts(
 ) -> Result<std::collections::BTreeMap<String, String>, GenerateError> {
     module_parameter_starts(lowering, "Go", go_zero_value, |_, first| {
         first.ident.clone()
+    })
+}
+
+/// [`module_parameter_starts`] of the Python machine `lowering`: a scalar at
+/// [`python_default`], an enum at its first variant, a member of the machine's
+/// `IntEnum` named through the class.
+pub(crate) fn python_module_parameter_starts(
+    lowering: &crate::forge::static_lowering::StaticLowering,
+) -> Result<std::collections::BTreeMap<String, String>, GenerateError> {
+    module_parameter_starts(lowering, "Python", python_default, |declared, first| {
+        format!("{}.{}", declared.ty, first.ident)
     })
 }
 

@@ -4,6 +4,7 @@
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
 {%- import '_actions.py.jinja2' as actions %}
 {%- import '_macros/python_entry_target.jinja2' as et %}
+{%- import '_macros/python_saved_value.jinja2' as saved_value %}
 
 {# SCE Protocol-Synthesis RFC §synth-5-O: SCE-MAP marker anchoring the
    generated Python source to the `<scxml>` root element's position. #}
@@ -493,11 +494,39 @@ class {{ machine_name }}Policy(StatePolicy[{{ machine_name }}State, {{ machine_n
         # SCE Accepted Subset §2.15: each variable of the document, at its
         # declared initial value, in declaration order — an initial value reads
         # the variables declared before it, by the name each is given here.
+{# docs/SCE_TEST_PROFILE.md §11.5: a module parameter has no initial value of
+   its document's; the component reads the run's value into it before the
+   machine starts, so it starts at a value nothing reads
+   (`module_parameter_starts`: its type's zero, or an enum's first variant). #}
 {% for field in static_fields %}
+{% if field.module_parameter %}
+        {{ field.name }}: {{ field.ty }} = {{ module_parameter_starts[field.id] }}
+{% else %}
         {{ field.name }}: {{ field.ty }} = {{ field.init }}
+{% endif %}
 {% endfor %}
 {% for field in static_fields %}
         self.{{ field.name }} = {{ field.name }}
+{% endfor %}
+{% endif %}
+{% if model.test_component and model.test_component.module_parameters %}
+{% set parameter_fields = static_fields | selectattr('module_parameter') | list %}
+
+    def _sce_accept_module_parameters(self, given: {{ test_runtime }}.ModuleParameters) -> None:
+        """Give each module parameter the value the suite gives it
+        (docs/SCE_TEST_PROFILE.md §11.5, §11.8), read as a saved value of its
+        declared type is read back. Called by the component the profile's
+        runtime drives ({{ machine_name }}Component) before the machine starts.
+
+        Raises the runtime's `StateRefusal` naming the module parameter whose
+        value is not given, not of its type or past its bound, and then writes
+        no variable: every value is read before any is written.
+        """
+{% for field in parameter_fields %}
+        read_{{ loop.index }} = {{ saved_value.read(field, 'given.of(' ~ (field.id | py_string_literal) ~ ')') }}
+{% endfor %}
+{% for field in parameter_fields %}
+        self.{{ field.name }} = read_{{ loop.index }}
 {% endfor %}
 {% endif %}
 {# Looked up rather than spelled as a ternary chain: a chain's last arm is a
@@ -912,6 +941,11 @@ class {{ machine_name }}Component:
     The machine is built when the component starts, by `create_engine`, on a
     policy the context is set on before the machine starts, and there is none
     before.
+{% if model.test_component.module_parameters %}
+    Its module parameters are read into the policy from the run's values
+    between the two (docs/SCE_TEST_PROFILE.md §11.5, §11.8), so the machine
+    starts on the suite's values or does not start.
+{% endif %}
     """
 
     # Not a class of tests, whatever the document's name makes of this one's.
@@ -934,6 +968,14 @@ class {{ machine_name }}Component:
         # generated one creates.
         engine = create_engine(session_id=context.name)
         engine.policy._sce_test_context = context
+{% if model.test_component.module_parameters %}
+        # §11.5, §11.8: the module parameters take the suite's values before the
+        # machine starts. Without one, or with one not of its type, the run ends
+        # in error (P13), and the machine is not started on a value made up in
+        # its place: the component stays one that has not started.
+        if not context.read_module_parameters(engine.policy._sce_accept_module_parameters):
+            return
+{% endif %}
 
         # P6: a send on a port is appended to the queue of the port it is
         # connected to, or handed to the system adapter where it is mapped. A
