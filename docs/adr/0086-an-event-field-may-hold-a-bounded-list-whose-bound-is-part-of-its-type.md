@@ -958,6 +958,44 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
    and not raised again (`refusing_event_data`), so a heap that gives nothing ends the chain at one
    link.
 
+   *As landed (the inputs the floor held on a machine with no script engine, 2026-11-09).* Three
+   inputs of such a machine's slot had no declaration after (b) to (d). Each now takes its bound
+   from one, by the textbook rule: a bound comes from a declaration, and an input with none is
+   refused by name at generation, never cut.
+   - *A host's data by name.* Every machine has the doors a host hands an event by name through
+     (`_raise_external_forwarded`, the inbox's input by name, a host-served send's replies, a Mesh
+     raise), and an event the document declares by a schema is held at that schema's `J` (item 1).
+     For an event no schema declares, nothing in the document bounds the data, so the host ABI
+     declares the bound: `SCE_UNTYPED_EVENT_DATA_MAX_LEN` (255 bytes) in `sce/types.h`, a constant
+     and not a setting. A machine with no script engine takes it as an input of its slot
+     (`C11DataSlot::untyped`) and asserts it against the header it compiles with, as it asserts
+     the bounds its reasons quote (`c11_reasons::UNTYPED_EVENT_DATA`, `hold_bound`). Data past the
+     slot is refused whole at the door, counted and named, as it was; a C test hands a machine
+     data of the bound, which it keeps, and data past its slot, which it refuses.
+   - *A host's reply.* A host-run invocation that declares `sce:result` is held at the result's
+     `J` (item 1). One that declares none ends with data no schema declares, which the host hands
+     as it hands an event by name, so the same ABI bound is its declaration; so is the data of its
+     failure, and of a host-served send's reply. A refusal of every machine that takes such an
+     ending was weighed and not taken: `statechart_static_host_invoke.scxml`, which seven lanes
+     run, `static_host_invoke_overflow.scxml`, `static_param_repeat.scxml` and the `sce-static`
+     documents of `a_static_datamodel_holds_every_variable_to_a_type.rs` run untyped host-run
+     invocations and take their `done.invoke` or `error.invoke`, and a result type there changes
+     the host's generated interface on every lane.
+   - *A child's done data.* A child whose data model is a script engine is a cause of its parent's
+     engine under every data model (`ChildInvokeNeedsScriptEngine`, which `is_typed_under_static`
+     does not admit), so a machine with a slot is never handed done data a script engine computed:
+     the parent grows it in its heap (d). What the floor did hold was the done data of a machine
+     with no engine under a data model other than `sce-static`, an inline `<content>` finished at
+     build time, which the machine holds in its `done_data` buffer and no measure counted.
+     `c11_literal_sent_data` now measures every `<donedata>` of such a machine
+     (`c11_done_data_bound`: a value its data model fixes at build time at the JSON every engine
+     writes it in, a pair at its name with its value) into its slot and, for a top-level final,
+     into `<SM>_DATA_LEN_TO_PARENT`, which its parent's slot holds. Done data a machine with no
+     engine cannot bound is refused by name; one with an engine grows it.
+
+   What the floor still holds on a machine with no script engine is the text of a delivery longer
+   than its schema's `J` (c1), which the door's own buffers of (a) take.
+
    **(e) Retire the knob.** Once (a) to (d) hold, `SCE_MAX_DATA_LEN` is removed and a build that defines it
    fails with `#error` (item 3), and every test and note that names it moves.
 
