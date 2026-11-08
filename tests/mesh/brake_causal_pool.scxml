@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Mesh causal route over a SOME/IP pool (docs/adr/0085, sections 3.2
+     and 3.3): the brake's change names the motor's pool instance in the
+     `<param>` its binding's `instance_from:` reads. Consumed with
+     deploy_causal_someip_pool.yaml by test_mesh_causal_injection.cpp. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="brake_causal_pool" initial="idle">
+    <state id="idle">
+        <transition event="brake.press" target="braking"/>
+    </state>
+    <state id="braking">
+        <onentry>
+            <send target="#motor" event="brake.activate">
+                <param name="unit" expr="2"/>
+            </send>
+        </onentry>
+        <transition event="brake.release" target="idle"/>
+    </state>
+</scxml>

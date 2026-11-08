@@ -33,7 +33,17 @@
 //      transport (red if `pumpCausalShm` drains into the engine directly, or
 //      an unlinked causal local target is written into its engine).
 
+// The brake's router. On a SOME/IP pool (SCE_CAUSAL_SOMEIP_POOL) the sender
+// is `brake_causal_pool`, whose send carries the `<param>` the pool reads.
+#if defined(SCE_CAUSAL_SOMEIP_POOL)
+#include "brake_causal_pool_transport.h"
+#define SCE_CAUSAL_NAMESPACE brake_causal_pool
+#define SCE_CAUSAL_SEND_DATA R"({"unit":2})"
+#else
 #include "brake_transport.h"
+#define SCE_CAUSAL_NAMESPACE brake
+#define SCE_CAUSAL_SEND_DATA ""
+#endif
 
 #include "MeshTestUtils.h"
 #include "mesh/CausalRoute.h"
@@ -53,7 +63,7 @@
 
 namespace {
 
-using namespace SCE::Generated::brake;
+using namespace SCE::Generated::SCE_CAUSAL_NAMESPACE;
 using namespace SCE::Test::Mesh;
 
 SCE::Mesh::CausalGroup pair() {
@@ -151,9 +161,29 @@ int run_test() {
     MESH_TEST_REQUIRE(!router.startCausal("#nobody", SCE::Mesh::CausalStart::newIncarnation(replica(1)), 64, 100),
                       "a target that is not a causal binding does not start");
 
+#if defined(SCE_CAUSAL_SOMEIP_POOL)
+    // ── 0. A pool's vector goes to each member's instance ───────────
+    // docs/adr/0085, sections 3.2 and 3.3: the view's motor serves pool
+    // instance 2, so the route's vector goes there, while a change goes to
+    // the instance its `<param>` names. A vector carries no such `<param>`:
+    // sent the binding's one way, it would reach no instance at all. Red if
+    // `sendCausalToPeers` sends it the binding's one way.
+    MESH_TEST_REQUIRE(CAUSAL_POOL_INSTANCES_MOTOR.size() == 1 && CAUSAL_POOL_INSTANCES_MOTOR[0] == 2,
+                      "the deploy places the view's motor on pool instance 2");
+    {
+        SCE::Mesh::CausalRoute probe("brake_causal_pool", "someip", pair());
+        probe.start(SCE::Mesh::CausalStart::newIncarnation(replica(3)), 64, 100);
+        const auto vector = probe.announce(SCE::uuid::v7(), 0);
+        MESH_TEST_REQUIRE(vector.has_value(), "a route writes its vector");
+        MESH_TEST_REQUIRE(router.sendCausalToPeers("#motor", *vector) == 1,
+                          "the vector is sent to the one member's instance");
+    }
+#endif
+
     // ── 1. A send is offered, and leaves only once committed ─────────
     MESH_TEST_REQUIRE(static_cast<bool>(sender.mesh_send_cb_), "the router installs its send callback");
-    MESH_TEST_REQUIRE(sender.mesh_send_cb_("#motor", "brake.activate", "", "", ""), "the send is answered");
+    MESH_TEST_REQUIRE(sender.mesh_send_cb_("#motor", "brake.activate", SCE_CAUSAL_SEND_DATA, "", ""),
+                      "the send is answered");
     auto verdicts = router.takeCausalVerdicts();
     MESH_TEST_REQUIRE(verdicts.size() == 1, "one verdict per send");
     MESH_TEST_REQUIRE(verdicts[0].first == "#motor", "the verdict names its binding");

@@ -15,7 +15,7 @@
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
-mutation_ctest --test-dir build -R '^mesh_causal_(custom_tcp|local|shm|zenoh|dds|someip)_verification$'
+mutation_ctest --test-dir build -R '^mesh_causal_(custom_tcp|local|shm|zenoh|dds|someip|someip_pool)_verification$'
 mutation_targets tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2 sce/include/mesh/CausalRoute.h
 mutation_oracles tests/mesh/test_mesh_causal_injection.cpp
 
@@ -66,4 +66,15 @@ mutation_case "the answer to a vector is handed to the engine instead of the pee
 edit("sce/include/mesh/CausalRoute.h",
      """            receipt.send = std::move(envelopes);""",
      """            receipt.deliver = std::move(envelopes);""")
+PY
+
+# ── A SOME/IP pool's vector goes to each member's instance ──────────
+#
+# Sent the binding's one way, a vector meets the `<param>` lookup a change
+# satisfies and it cannot, and reaches no instance at all.
+
+mutation_case "sendCausalToPeers sends a pool binding's vector the binding's one way" <<'PY'
+edit("tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2",
+     """{% for t in targets if t.causal and t.pool_plan and t.pool_plan.kind == "typed_instance" and t.pool_plan.causal_members %}""",
+     """{% for t in [] %}""")
 PY
