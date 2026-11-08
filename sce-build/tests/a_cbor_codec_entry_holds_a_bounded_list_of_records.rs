@@ -326,6 +326,34 @@ fn the_kotlin_map_holds_each_list_in_a_list_of_the_schemas_payload() {
 }
 
 #[test]
+fn the_swift_map_holds_each_list_in_an_array_of_the_schemas_payload() {
+    holds(
+        Language::Swift,
+        &generated_fixture(Language::Swift),
+        &[
+            "public var seen: [CborCausalEntryPayload] = []",
+            "public var context: [CborCausalEntryPayload]? = nil",
+            // A read past the bound is refused before any record is read.
+            "if len > 2 { throw CodecError.cborOutOfRange }",
+            "if len > 3 { throw CodecError.cborOutOfRange }",
+            "list.append(try CodecCborRecordList.decodeRecordCausalEntry(&reader))",
+            "author_held = try Cbor.readText(&reader, maxSize: 16)",
+            // The array carries no bound, so the encode refuses past it.
+            "if value.count > 2 { throw CodecError.cborOutOfRange }",
+            "Cbor.writeArrayHead(UInt64(value.count), to: &frame)",
+            "try CodecCborRecordList.encodeRecordCausalEntry(record, to: &frame)",
+            "if record.author.utf8.count > 16 { throw CodecError.cborOutOfRange }",
+            "Cbor.writeMapHead(2, to: &frame)",
+        ],
+        "private static func encodeRecordCausalEntry(",
+        [
+            "Cbor.writeText(\"seq\", to: &frame)",
+            "Cbor.writeText(\"author\", to: &frame)",
+        ],
+    );
+}
+
+#[test]
 fn a_record_with_a_field_no_codec_writes_is_refused_by_name() {
     let text = document(
         "",

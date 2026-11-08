@@ -61,7 +61,7 @@ pub fn lowers_record_list(lang: Language) -> bool {
         Language::Go => false,
         Language::Python => false,
         Language::C11 => false,
-        Language::Swift => false,
+        Language::Swift => true,
     }
 }
 
@@ -698,26 +698,35 @@ fn render_swift(
     // Owned values, as every Swift codec holds them: a text string is a `String` and a byte string a
     // `[UInt8]`. A required entry starts at its type's zero, an enum at its first declared variant,
     // and is filled in by decode; an optional one starts absent, so `{Name}()` is the infallible
-    // initializer every codec offers.
-    let mut ctx = common_context(&l, m, imports, |e| l.type_name(leaf(e)).into_owned())?;
+    // initializer every codec offers. A list of records is an array of the schema's payload, which
+    // carries no bound: the encode refuses a count past it, and a required one starts empty.
+    let mut ctx = common_context(&l, m, imports, |e| match e.leaf_type() {
+        Some(present) => l.type_name(present).into_owned(),
+        None => format!("[{}]", record_type_of(&l, imports, e)),
+    })?;
+    // Each field of a record as the schema's Swift unit holds it: a text in a `String`, a byte
+    // string in a `[UInt8]`.
+    insert_cbor_records(&l, m, imports, &mut ctx, &|ty| {
+        scalar_record_field_type(&l, ty)
+    })?;
     if let Some(serde_json::Value::Array(entries)) = ctx.get_mut("entries") {
         for (entry, e) in entries.iter_mut().zip(&m.cbor_entries) {
             entry["default"] = if !e.is_required() {
                 "nil".to_string()
             } else {
-                match (kind(e), leaf(e)) {
+                match (kind(e), e.leaf_type()) {
                     ("bool", _) => "false".to_string(),
                     ("text", _) => "\"\"".to_string(),
-                    ("bytes" | "bytes_exact", _) => "[]".to_string(),
-                    ("enum", SceType::Enum(r)) => l.enum_default_expr(&r.alias),
+                    ("bytes" | "bytes_exact" | "record_list", _) => "[]".to_string(),
+                    ("enum", Some(SceType::Enum(r))) => l.enum_default_expr(&r.alias),
                     _ => "0".to_string(),
                 }
             }
             .into();
             // The common context spells the conversion of an enum's value as the variable `v`; the
             // Swift template names the value it writes `value`.
-            if let SceType::Enum(r) = leaf(e) {
-                entry["enum_to_underlying"] = l.codec_carrier_expr(leaf(e), "value").into();
+            if let Some(present @ SceType::Enum(r)) = e.leaf_type() {
+                entry["enum_to_underlying"] = l.codec_carrier_expr(present, "value").into();
                 // An open enum is a struct over its carrier that holds any number, whose
                 // `fromUnderlying` is total; a closed enum answers nil for a number no variant
                 // declares, which a decode refuses.
@@ -725,8 +734,8 @@ fn render_swift(
             }
             // A negative number is no CBOR unsigned integer, which encode refuses and does not wrap.
             entry["signed"] = matches!(
-                leaf(e),
-                SceType::Int8 | SceType::Int16 | SceType::Int32 | SceType::Int64
+                e.leaf_type(),
+                Some(SceType::Int8 | SceType::Int16 | SceType::Int32 | SceType::Int64)
             )
             .into();
         }
