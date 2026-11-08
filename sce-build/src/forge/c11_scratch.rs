@@ -76,6 +76,12 @@ pub enum Activity {
     Failure,
     /// The delivery of a BasicHTTP reply.
     Reply,
+    /// A host-served send's handler call and the replies it reported, until
+    /// each is raised.
+    HostReply,
+    /// A host-run invocation's start call and the answer it gave, until the
+    /// completion or the refusal is raised.
+    HostAnswer,
     /// A child session's done data raised as `done.invoke`.
     ChildDone,
     /// A script engine's done data raised as `done.state`.
@@ -96,18 +102,27 @@ pub const NESTS: &[(Activity, Activity)] = &[
     // delivers, and hands a child an event; the child's done data is listed
     // too, though the child only queues what it is handed.
     (Activity::Send, Activity::HostCallback),
+    (Activity::Send, Activity::HostReply),
     (Activity::Send, Activity::Drain),
+    // A host-served send's handler, and the raise of each reply it reported.
+    (Activity::HostReply, Activity::HostCallback),
+    (Activity::HostReply, Activity::Drain),
     (Activity::Send, Activity::Reply),
     (Activity::Send, Activity::ChildDone),
     // A start raises a reason it formats, calls a host's handler, and raises
     // a completion the host gave at once.
     (Activity::InvokeStart, Activity::Reason),
     (Activity::InvokeStart, Activity::HostCallback),
+    (Activity::InvokeStart, Activity::HostAnswer),
     (Activity::InvokeStart, Activity::Drain),
     (Activity::Restart, Activity::Reason),
     (Activity::Restart, Activity::HostCallback),
+    (Activity::Restart, Activity::HostAnswer),
     (Activity::Restart, Activity::Drain),
     (Activity::Restart, Activity::Failure),
+    // A start's handler, and the completion or refusal it answered.
+    (Activity::HostAnswer, Activity::HostCallback),
+    (Activity::HostAnswer, Activity::Drain),
     // What a host may call from inside a handler.
     (Activity::HostCallback, Activity::Seam),
     (Activity::HostCallback, Activity::Result),
@@ -122,12 +137,25 @@ pub const NESTS: &[(Activity, Activity)] = &[
     (Activity::Lift, Activity::Reason),
 ];
 
-/// How many slots a role holds: one, or one per pair of the widest element
-/// that hands a host its pairs.
+/// How many slots a role holds: one, one per pair of the widest element that
+/// hands a host its pairs, or one per reply a host-served send may report
+/// (`SCE_MAX_HOST_RESPONSES`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Rows {
     One,
     Pairs,
+    Responses,
+}
+
+impl Rows {
+    /// The name the machine's header spells the rows by: none for one slot.
+    pub fn spelling(self) -> &'static str {
+        match self {
+            Rows::One => "",
+            Rows::Pairs => "pairs",
+            Rows::Responses => "responses",
+        }
+    }
 }
 
 /// A role of a C11 machine's scratch: its member's name, how many slots it
@@ -211,7 +239,28 @@ pub const ROLES: &[Role] = &[
         about: "The data of a reply a BasicHTTP response carries.",
         activities: &[Activity::Reply],
     },
+    Role {
+        name: "answer",
+        rows: Rows::One,
+        about: "The completion or the refusal a host answered a host-run invocation's start \
+                with.",
+        activities: &[Activity::HostAnswer],
+    },
+    Role {
+        name: "replies",
+        rows: Rows::Responses,
+        about: "The data of each reply a host-served send's handler reported, one row per \
+                reply; held by a machine that serves such a send.",
+        activities: &[Activity::HostReply],
+    },
 ];
+
+/// Whether a machine holds the role `role`: every role but `replies`, which a
+/// machine holds when it serves a host-served send, `host_sends`, whose header
+/// then names the bound of its rows.
+pub fn held(role: &Role, host_sends: bool) -> bool {
+    role.rows != Rows::Responses || host_sends
+}
 
 /// Whether `inner` can run while `outer` is in progress: `outer` contains it,
 /// directly or through activities it contains ([`NESTS`]).
@@ -268,8 +317,8 @@ pub fn colours() -> Vec<usize> {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ScratchRole {
     pub name: &'static str,
-    /// One row per pair ([`Rows::Pairs`]).
-    pub pairs: bool,
+    /// Its rows ([`Rows::spelling`]).
+    pub rows: &'static str,
     pub about: &'static str,
 }
 
@@ -279,18 +328,24 @@ pub struct ScratchColour {
     pub roles: Vec<ScratchRole>,
 }
 
-/// The machine's scratch as its header declares it: one union per colour, in
-/// the order of the colours.
-pub fn layout() -> Vec<ScratchColour> {
-    let colours = colours();
+/// The scratch of a machine that holds the roles [`held`] answers for
+/// `host_sends`, as its header declares it: one union per colour of those
+/// roles, in the order of the colours.
+pub fn layout(host_sends: bool) -> Vec<ScratchColour> {
+    let roles: Vec<Role> = ROLES
+        .iter()
+        .copied()
+        .filter(|role| held(role, host_sends))
+        .collect();
+    let colours = colours_of(&roles);
     let count = colours.iter().copied().max().map_or(0, |top| top + 1);
     let mut layout: Vec<ScratchColour> = (0..count)
         .map(|_| ScratchColour { roles: Vec::new() })
         .collect();
-    for (role, colour) in ROLES.iter().zip(colours) {
+    for (role, colour) in roles.iter().zip(colours) {
         layout[colour].roles.push(ScratchRole {
             name: role.name,
-            pairs: role.rows == Rows::Pairs,
+            rows: role.rows.spelling(),
             about: role.about,
         });
     }
@@ -360,13 +415,21 @@ mod tests {
         assert!(unsound);
     }
 
-    /// The layout holds every role once, in fewer colours than roles.
+    /// The layout holds every role a machine holds once, in fewer colours than
+    /// roles; one that serves no host-served send holds no replies.
     #[test]
     fn the_layout_holds_every_role_once_in_fewer_colours_than_roles() {
-        let layout = layout();
-        let held: usize = layout.iter().map(|colour| colour.roles.len()).sum();
-        assert_eq!(held, ROLES.len());
-        assert!(layout.len() < ROLES.len());
-        assert!(layout.iter().all(|colour| !colour.roles.is_empty()));
+        for host_sends in [true, false] {
+            let layout = layout(host_sends);
+            let names: Vec<&str> = layout
+                .iter()
+                .flat_map(|colour| colour.roles.iter().map(|role| role.name))
+                .collect();
+            let expected = ROLES.iter().filter(|role| held(role, host_sends)).count();
+            assert_eq!(names.len(), expected);
+            assert!(layout.len() < expected);
+            assert!(layout.iter().all(|colour| !colour.roles.is_empty()));
+            assert_eq!(names.contains(&"replies"), host_sends);
+        }
     }
 }
