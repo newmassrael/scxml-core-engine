@@ -5,7 +5,8 @@
  * SCE Forge — the CBOR (RFC 8949) items a `sce:encoding="cbor"` codec reads
  * and writes (SCE_FORGE.md §4.6.1): one definite-length map whose keys are
  * small unsigned integers and whose values are unsigned integers, booleans,
- * text strings and byte strings.
+ * text strings and byte strings, or a definite-length array of maps, each a
+ * record keyed by its fields' ids as text (docs/adr/0086, section 9.2).
  *
  * Mirrors `backends/rust/forge-runtime/src/cbor.rs`, rule for rule. A
  * generated codec calls these; it spells no CBOR of its own.
@@ -40,6 +41,7 @@ enum {
     SCE_FORGE_CBOR_MAJOR_UNSIGNED = 0,
     SCE_FORGE_CBOR_MAJOR_BYTES = 2,
     SCE_FORGE_CBOR_MAJOR_TEXT = 3,
+    SCE_FORGE_CBOR_MAJOR_ARRAY = 4,
     SCE_FORGE_CBOR_MAJOR_MAP = 5,
     SCE_FORGE_CBOR_MAJOR_SIMPLE = 7,
     /* The deepest an unknown entry's value may nest before a skip refuses
@@ -104,6 +106,12 @@ static inline sce_forge_codec_status_t sce_forge_cbor_write_bytes(sce_forge_writ
         return s;
     }
     return sce_forge_writer_write_bytes(w, data, len);
+}
+
+/* Write the head of a definite-length array of `items` items: a list of
+ * records an entry holds (docs/adr/0086, section 9.2). */
+static inline sce_forge_codec_status_t sce_forge_cbor_write_array_head(sce_forge_writer_t *w, uint64_t items) {
+    return sce_forge_cbor_write_head(w, SCE_FORGE_CBOR_MAJOR_ARRAY, items);
 }
 
 /* Write the head of a definite-length map of `entries` entries. */
@@ -299,6 +307,36 @@ static inline sce_forge_codec_status_t sce_forge_cbor_read_bytes_exact(sce_forge
         return SCE_FORGE_CODEC_CBOR_WRONG_LENGTH;
     }
     return sce_forge_cbor_read_payload(c, n, dst);
+}
+
+/* Read the head of a definite-length array: how many items follow. An
+ * indefinite length is refused, as a map's is. */
+static inline sce_forge_codec_status_t sce_forge_cbor_read_array_len(sce_forge_cursor_t *c, uint64_t *out) {
+    return sce_forge_cbor_expect(c, SCE_FORGE_CBOR_MAJOR_ARRAY, out);
+}
+
+/* Read a text string where it lies in the input, `*text` its first byte and
+ * `*len` its length, copying nothing: the key of a record's field, which a
+ * decode compares and does not hold. A text that is not UTF-8 is refused. */
+static inline sce_forge_codec_status_t sce_forge_cbor_read_text_in_place(sce_forge_cursor_t *c, const char **text,
+                                                                         size_t *len) {
+    uint64_t n = 0;
+    const uint8_t *p;
+    sce_forge_codec_status_t s = sce_forge_cbor_expect(c, SCE_FORGE_CBOR_MAJOR_TEXT, &n);
+    if (s != SCE_FORGE_CODEC_OK) {
+        return s;
+    }
+    if (n > (uint64_t)sce_forge_cursor_remaining(c)) {
+        return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+    }
+    p = sce_forge_cursor_peek(c, (size_t)n);
+    if (!sce_forge_is_valid_utf8(p, (size_t)n)) {
+        return SCE_FORGE_CODEC_INVALID_UTF8;
+    }
+    (void)sce_forge_cursor_advance(c, (size_t)n);
+    *text = (const char *)p;
+    *len = (size_t)n;
+    return SCE_FORGE_CODEC_OK;
 }
 
 /* Read the head of a definite-length map: how many entries follow. */
