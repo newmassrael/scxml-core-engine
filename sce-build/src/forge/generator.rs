@@ -9036,7 +9036,7 @@ pub(crate) fn cpp_codec_unlowered(m: &CodecModel, imports: &[ImportContext]) -> 
 /// the C++ printer does not lower, which keeps the template's struct whole.
 pub(crate) fn cpp_cbor_printed(m: &CodecModel, imports: &[ImportContext]) -> Option<String> {
     let plan = crate::forge::encode_plan::CborPlan::of(m, imports);
-    if !cpp_source::cbor::unlowered_forms(&plan).is_empty() {
+    if !cpp_source::cbor::unlowered_forms(&plan, imports).is_empty() {
         return None;
     }
     let l = LangCtx::new(crate::generator::Language::Cpp, imports);

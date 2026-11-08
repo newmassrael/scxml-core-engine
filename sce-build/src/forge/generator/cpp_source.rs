@@ -36,7 +36,7 @@ pub(super) fn unlowered(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Opti
 pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -> Vec<String> {
     let plan = match plan {
         CodecPlan::Positional(plan) => plan,
-        CodecPlan::Cbor(plan) => return cbor::unlowered_forms(plan),
+        CodecPlan::Cbor(plan) => return cbor::unlowered_forms(plan, imports),
         // Every form of a content-line plan is printed (`content_line`).
         CodecPlan::ContentLine(_) => return Vec::new(),
     };

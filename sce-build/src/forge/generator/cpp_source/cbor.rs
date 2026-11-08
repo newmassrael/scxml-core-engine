@@ -10,47 +10,271 @@
 //! accessor for each, the value itself for a required entry and a
 //! `std::optional` for one that may be absent, read through the `source`
 //! customization points and checked by `is_source`. A text or a byte string is
-//! presented within its bound (`Text`, `Bytes`; docs/adr/0077 §3), so the
-//! encode over any source refuses nothing but where an enum's carrier is
-//! signed, which is not printed yet. The encoding rule is the one the Rust
+//! presented within its bound (`Text`, `Bytes`; docs/adr/0077 §3), and a list
+//! of records within its count as a view of the payload type its event
+//! schema's own unit declares (`List`; docs/adr/0085, Landing order step 3a),
+//! so the encode over any source refuses nothing but where an enum's carrier
+//! is signed, which is not printed yet. The encoding rule is the one the Rust
 //! printer writes (`rust_source::cbor`): the map head, then each entry present
-//! in ascending key order, every head in its shortest form (RFC 8949 §4.2.1).
+//! in ascending key order, every head in its shortest form (RFC 8949 §4.2.1),
+//! a list of records as a definite-length array of one map per record, each
+//! field under its id as text (docs/adr/0086, section 9.2).
 
 use super::super::*;
 use super::source_readers;
+use crate::forge::cbor_codec;
 use crate::forge::encode_plan::{CborItem, CborPlan, CborValue};
 use crate::forge::model::CborEntry;
+use crate::forge::value_type::ValueType;
+use crate::generator::Language;
 
-/// Every form of the CBOR codec `plan` the C++ printer does not print yet: a
-/// list of records, which the C++ backend lowers nowhere yet
-/// (`cbor_codec::lowers_record_list`), and an encode that can refuse, which an
-/// enum of a signed carrier or a list's lower count makes.
-pub(in super::super) fn unlowered_forms(plan: &CborPlan<'_>) -> Vec<String> {
+/// Every form of the CBOR codec `plan` the C++ printer does not print yet: an
+/// encode that can refuse, which an enum of a signed carrier or a list's lower
+/// count makes, and a list of records with a text or a byte string field,
+/// which the schema's C++ unit holds in a `std::string` or a `std::vector`
+/// with no bound, so no view of the records holds them within theirs.
+/// `imports` are the codec's own, which declare its records.
+pub(in super::super) fn unlowered_forms(
+    plan: &CborPlan<'_>,
+    imports: &[ImportContext],
+) -> Vec<String> {
     let mut forms = Vec::new();
-    if plan
-        .entries
-        .iter()
-        .any(|item| matches!(item.value, CborValue::RecordList { .. }))
-    {
-        forms.push("a list of records".to_string());
-    }
     if !plan.totality.is_total() {
         forms.push("an encode that can refuse".to_string());
+    }
+    let scope = crate::forge::generator::import_type_scope(imports);
+    let unbounded = plan.entries.iter().any(|item| {
+        item.entry
+            .record_list()
+            .and_then(|list| scope.records.get(list.record))
+            .is_some_and(|record| {
+                record
+                    .fields
+                    .iter()
+                    .any(|(_, ty)| matches!(ty, ValueType::Text { .. } | ValueType::Bytes { .. }))
+            })
+    });
+    if unbounded {
+        forms.push("a list of records with a text or a byte string field".to_string());
     }
     forms
 }
 
-/// The type a present value of the leaf entry `e` is. Every entry the printer
-/// sees is a leaf: a map that holds a list of records is not printed
-/// (`unlowered_forms`).
+/// The type a present value of the leaf entry `e` is, asked of an entry that
+/// is no list of records.
 fn leaf(e: &CborEntry) -> &SceType {
     e.leaf_type()
-        .expect("a printed map holds no list of records")
+        .expect("a leaf entry has a leaf type; a list of records is asked apart")
 }
 
-/// The statement for a list of records, which no printed map holds.
-fn no_record_list() -> ! {
-    unreachable!("a printed map holds no list of records (`unlowered_forms`)")
+/// A field of a record a printed list holds: a boolean or an unsigned integer,
+/// the only fields a record of a printed map has (`unlowered_forms`).
+struct RecordField {
+    /// The field's id, the text its key is.
+    key: String,
+    /// The member of the payload type that holds it.
+    name: String,
+    /// The member's type.
+    ty: String,
+    /// What it is on the wire.
+    kind: RecordFieldKind,
+}
+
+#[derive(Clone, Copy)]
+enum RecordFieldKind {
+    Bool,
+    /// An unsigned integer; `wide` where it is 64 bits, which a CBOR integer
+    /// holds as it is.
+    Uint {
+        wide: bool,
+    },
+}
+
+/// A record the lists of a printed map hold, read and written by functions of
+/// the codec's own (`cbor_codec::record_codec_fns`) into the payload type its
+/// event schema's own unit declares (`cbor_codec::record_payload_type`).
+struct Record {
+    /// The schema's name.
+    schema: String,
+    /// The alias the codec imports the schema under.
+    alias: String,
+    payload: String,
+    decode_fn: String,
+    encode_fn: String,
+    /// Its fields in the schema's order.
+    fields: Vec<RecordField>,
+    /// The same fields in the order its map writes them: by the bytes of each
+    /// key's encoding (`cbor_codec::record_fields_by_key`).
+    by_key: Vec<RecordField>,
+}
+
+/// Each record the lists of `plan` hold, once, in the order the entries first
+/// name them.
+fn records(plan: &CborPlan<'_>, l: &LangCtx, imports: &[ImportContext]) -> Vec<Record> {
+    let scope = crate::forge::generator::import_type_scope(imports);
+    let field = |(id, ty): &(String, ValueType)| -> RecordField {
+        let ValueType::Scalar(t) = ty else {
+            unreachable!("a record of a printed map holds no text or byte string")
+        };
+        let kind = match cbor_codec::record_field(ty) {
+            Some(("bool", _)) => RecordFieldKind::Bool,
+            Some(("uint", _)) => RecordFieldKind::Uint {
+                wide: *t == SceType::Uint64,
+            },
+            _ => unreachable!("a record of a printed map holds a boolean or an unsigned integer"),
+        };
+        RecordField {
+            key: id.clone(),
+            name: crate::forge::generator::event_schema_field_ident(id, Language::Cpp),
+            ty: l.type_name(t).into_owned(),
+            kind,
+        }
+    };
+    let mut out: Vec<Record> = Vec::new();
+    for item in &plan.entries {
+        let Some(list) = item.entry.record_list() else {
+            continue;
+        };
+        if out.iter().any(|r| r.alias == list.record) {
+            continue;
+        }
+        let record = scope
+            .records
+            .get(list.record)
+            .expect("the import resolved the record (`cbor_codec::record_list_unlowered`)");
+        let (decode_fn, encode_fn) =
+            cbor_codec::record_codec_fns(Language::Cpp, &plan.model.name, list.record);
+        out.push(Record {
+            schema: record.name.clone(),
+            alias: list.record.to_string(),
+            payload: cbor_codec::record_payload_type(Language::Cpp, imports, list.record),
+            decode_fn,
+            encode_fn,
+            fields: record.fields.iter().map(field).collect(),
+            by_key: cbor_codec::record_fields_by_key(record)
+                .into_iter()
+                .map(field)
+                .collect(),
+        });
+    }
+    out
+}
+
+/// The `Records` struct of a printed map: for each record its lists hold, the
+/// write of one record as one map of every field and the read of one back.
+fn records_struct(records: &[Record], struct_name: &str) -> String {
+    let mut out = format!(
+        "/// The records the lists of `{struct_name}` hold, each in the payload type its\n\
+         /// event schema's own unit declares and written as one CBOR map of every\n\
+         /// field, each under its id as text (docs/adr/0086, section 9.2).\n\
+         struct Records {{\n"
+    );
+    for (place, r) in records.iter().enumerate() {
+        if place > 0 {
+            out.push('\n');
+        }
+        let mut write = String::new();
+        for f in &r.by_key {
+            let value = match f.kind {
+                RecordFieldKind::Bool => format!("cbor::write_bool(w, record.{})", f.name),
+                RecordFieldKind::Uint { .. } => format!(
+                    "cbor::write_uint(w, static_cast<std::uint64_t>(record.{}))",
+                    f.name
+                ),
+            };
+            write.push_str(&format!(
+                "        if (auto _e = cbor::write_text(w, {key:?}); _e) return _e;\n\
+                 \x20       if (auto _e = {value}; _e) return _e;\n",
+                key = f.key
+            ));
+        }
+        let mut held = String::new();
+        let mut reads = String::new();
+        let mut present = String::new();
+        let mut made = String::new();
+        for (index, f) in r.fields.iter().enumerate() {
+            held.push_str(&format!(
+                "        std::optional<{}> held_{};\n",
+                f.ty, f.name
+            ));
+            let read = match f.kind {
+                RecordFieldKind::Bool => format!(
+                    "                held_{name} = cbor::read_bool(c);\n\
+                     \x20               if (!held_{name}) return std::nullopt;\n",
+                    name = f.name
+                ),
+                RecordFieldKind::Uint { wide: true } => format!(
+                    "                held_{name} = cbor::read_uint(c);\n\
+                     \x20               if (!held_{name}) return std::nullopt;\n",
+                    name = f.name
+                ),
+                RecordFieldKind::Uint { wide: false } => format!(
+                    "                const auto raw = cbor::read_uint_upto(c, static_cast<std::uint64_t>(std::numeric_limits<{ty}>::max()));\n\
+                     \x20               if (!raw) return std::nullopt;\n\
+                     \x20               held_{name} = static_cast<{ty}>(*raw);\n",
+                    name = f.name,
+                    ty = f.ty
+                ),
+            };
+            reads.push_str(&format!(
+                "            {open}if (*key == {key:?}) {{\n\
+                 \x20               // A key given twice is not one map entry.\n\
+                 \x20               if (held_{name}.has_value()) return std::nullopt;\n\
+                 {read}",
+                open = if index == 0 { "" } else { "} else " },
+                key = f.key,
+                name = f.name
+            ));
+            present.push_str(&format!(
+                "        if (!held_{}.has_value()) return std::nullopt;\n",
+                f.name
+            ));
+            made.push_str(&format!(
+                "        record.{name} = *held_{name};\n",
+                name = f.name
+            ));
+        }
+        out.push_str(&format!(
+            "    /// Write one record of `{schema}` (`record:{alias}`) as one map of every\n\
+             \x20   /// field, the keys in the order RFC 8949 §4.2.1 sorts their encodings: a\n\
+             \x20   /// shorter key first.\n\
+             \x20   [[nodiscard]] static std::optional<::SCE::Forge::CodecError> {encode}(::SCE::Forge::SceSink& w, const {payload}& record) noexcept {{\n\
+             \x20       namespace cbor = ::SCE::Forge::Cbor;\n\
+             \x20       if (auto _e = cbor::write_map_head(w, {count}); _e) return _e;\n\
+             {write}\
+             \x20       return std::nullopt;\n\
+             \x20   }}\n\n\
+             \x20   /// Read one record of `{schema}` from `c`: its keys in any order, a key the\n\
+             \x20   /// schema does not declare skipped whole; a key given twice or a field\n\
+             \x20   /// missing is `std::nullopt`.\n\
+             \x20   static std::optional<{payload}> {decode}(::SCE::Forge::SceCursor& c) {{\n\
+             \x20       namespace cbor = ::SCE::Forge::Cbor;\n\
+             \x20       const auto count = cbor::read_map_len(c);\n\
+             \x20       if (!count) return std::nullopt;\n\
+             {held}\
+             \x20       for (std::uint64_t i = 0; i < *count; ++i) {{\n\
+             \x20           const auto key = cbor::read_text(c, std::nullopt);\n\
+             \x20           if (!key) return std::nullopt;\n\
+             {reads}\
+             \x20           }} else if (!cbor::skip(c)) {{\n\
+             \x20               return std::nullopt;\n\
+             \x20           }}\n\
+             \x20       }}\n\
+             {present}\
+             \x20       {payload} record;\n\
+             {made}\
+             \x20       return record;\n\
+             \x20   }}\n",
+            schema = r.schema,
+            alias = r.alias,
+            encode = r.encode_fn,
+            decode = r.decode_fn,
+            payload = r.payload,
+            count = r.fields.len(),
+        ));
+    }
+    out.push_str("};\n\n");
+    out
 }
 
 /// One entry as the printed value presents and holds it.
@@ -58,11 +282,11 @@ struct Entry<'p> {
     item: &'p CborItem<'p>,
     /// Its accessor's name.
     name: String,
-    /// What the value presents it as where it is there: a text or a byte
-    /// string as its bound's view, anything else as its type.
+    /// What the value presents it as where it is there: a text, a byte string
+    /// or a list of records as its bound's view, anything else as its type.
     view: String,
-    /// What the value holds it as where it is there: a text or a byte string
-    /// in its bound's owning list.
+    /// What the value holds it as where it is there: a text, a byte string or
+    /// a list of records in its bound's owning list.
     held: String,
     /// What the decode reads it as before it is held to its bound.
     read: String,
@@ -70,6 +294,9 @@ struct Entry<'p> {
     /// default does not hold its type's zero: an enum starts at its first
     /// declared variant.
     init: String,
+    /// For a list of records, the read and the write of one record, as
+    /// `Records` declares them: `(decode, encode)`.
+    record_fns: Option<(String, String)>,
 }
 
 impl Entry<'_> {
@@ -77,9 +304,13 @@ impl Entry<'_> {
         self.item.required
     }
 
-    /// Whether it is a text or a byte string, presented as its bound's view.
+    /// Whether it is a text, a byte string or a list of records, presented as
+    /// its bound's view.
     fn bounded(&self) -> bool {
-        matches!(self.item.value, CborValue::Text | CborValue::Bytes { .. })
+        matches!(
+            self.item.value,
+            CborValue::Text | CborValue::Bytes { .. } | CborValue::RecordList { .. }
+        )
     }
 
     /// What a source presents it as: its view, or an optional of it.
@@ -109,8 +340,42 @@ fn bound_args(e: &CborEntry, exact: bool) -> String {
     }
 }
 
-fn entry<'p>(l: &LangCtx, item: &'p CborItem<'p>) -> Entry<'p> {
+/// The bound a list of records is held to, as `Max` or `Max, Min`.
+fn list_bound_args(max: u32, min: u32) -> String {
+    if min > 0 {
+        format!("{max}, {min}")
+    } else {
+        max.to_string()
+    }
+}
+
+fn entry<'p>(
+    l: &LangCtx,
+    imports: &[ImportContext],
+    codec: &str,
+    item: &'p CborItem<'p>,
+) -> Entry<'p> {
     let e = item.entry;
+    if let Some(list) = e.record_list() {
+        // A view of the schema's payload within the list's count, held in the
+        // owning list of the same bound (docs/adr/0065 §6 R2, docs/adr/0081
+        // step 4), as a positional codec holds a list of entries.
+        let payload = cbor_codec::record_payload_type(Language::Cpp, imports, list.record);
+        let bound = list_bound_args(list.max, list.min);
+        return Entry {
+            item,
+            name: l.codec_field_id(&e.id),
+            view: format!("::SCE::Forge::List<{payload}, {bound}>"),
+            held: format!("::SCE::Forge::Bounded<std::vector<{payload}>, {bound}>"),
+            read: format!("std::vector<{payload}>"),
+            init: String::new(),
+            record_fns: Some(cbor_codec::record_codec_fns(
+                Language::Cpp,
+                codec,
+                list.record,
+            )),
+        };
+    }
     let ty = l.type_name(leaf(e)).into_owned();
     let (view, held) = match item.value {
         CborValue::Text => {
@@ -140,7 +405,16 @@ fn entry<'p>(l: &LangCtx, item: &'p CborItem<'p>) -> Entry<'p> {
         held,
         read: ty,
         init,
+        record_fns: None,
     }
+}
+
+/// The read and the write of one record of the list `entry` holds.
+fn record_fns<'e>(entry: &'e Entry<'_>) -> &'e (String, String) {
+    entry
+        .record_fns
+        .as_ref()
+        .expect("a list of records names the functions of its record")
 }
 
 /// The statement that writes `v`, the value of `entry`, after its key.
@@ -163,7 +437,16 @@ fn write_value(l: &LangCtx, entry: &Entry<'_>) -> String {
             "if (auto _e = cbor::write_uint(w, static_cast<std::uint64_t>(v)); _e) return _e;"
                 .to_string()
         }
-        CborValue::RecordList { .. } => no_record_list(),
+        // A definite-length array of the records, each the map `Records`
+        // writes (docs/adr/0086, section 9.2). The view holds the list within
+        // its count, so nothing is checked.
+        CborValue::RecordList { .. } => format!(
+            "if (auto _e = cbor::write_array_head(w, static_cast<std::uint64_t>(v.size())); _e) return _e;\n\
+             \x20           for (const auto& _record : v) {{\n\
+             \x20               if (auto _e = Records::{}(w, _record); _e) return _e;\n\
+             \x20           }}",
+            record_fns(entry).1
+        ),
     }
 }
 
@@ -213,7 +496,31 @@ fn read_value(l: &LangCtx, imports: &[ImportContext], entry: &Entry<'_>) -> Stri
              \x20               std::optional<{ty}> v = static_cast<{ty}>(*raw);",
             ty = entry.read
         ),
-        CborValue::RecordList { .. } => no_record_list(),
+        // A definite-length array within the list's count, refused before any
+        // record is read where it is past it, each item one record's map.
+        CborValue::RecordList { min } => {
+            let list = e
+                .record_list()
+                .expect("a list of records entry holds a list of records");
+            let short = if min > 0 {
+                format!(" || *_len < {min}")
+            } else {
+                String::new()
+            };
+            format!(
+                "const auto _len = cbor::read_array_len(c);\n\
+                 \x20               if (!_len || *_len > {max}{short}) return std::nullopt;\n\
+                 \x20               std::optional<{read}> v{{std::in_place}};\n\
+                 \x20               for (std::uint64_t _n = 0; _n < *_len; ++_n) {{\n\
+                 \x20                   auto _record = Records::{decode}(c);\n\
+                 \x20                   if (!_record) return std::nullopt;\n\
+                 \x20                   v->push_back(std::move(*_record));\n\
+                 \x20               }}",
+                max = list.max,
+                read = entry.read,
+                decode = record_fns(entry).0
+            )
+        }
     };
     format!(
         "                {read}\n\
@@ -232,7 +539,11 @@ pub(in super::super) fn render(
     imports: &[ImportContext],
     struct_name: &str,
 ) -> String {
-    let entries: Vec<Entry<'_>> = plan.entries.iter().map(|item| entry(l, item)).collect();
+    let entries: Vec<Entry<'_>> = plan
+        .entries
+        .iter()
+        .map(|item| entry(l, imports, &plan.model.name, item))
+        .collect();
     let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
     let mut out = String::new();
 
@@ -332,6 +643,12 @@ pub(in super::super) fn render(
             key = e.item.entry.key,
             write = write_value(l, e)
         ));
+    }
+    // The records the lists hold, read and written before the encode and the
+    // value that read and write them.
+    let held_records = records(plan, l, imports);
+    if !held_records.is_empty() {
+        out.push_str(&records_struct(&held_records, struct_name));
     }
     out.push_str(&format!(
         "/// The encode of `{struct_name}` over any source of it: the map head counting\n\

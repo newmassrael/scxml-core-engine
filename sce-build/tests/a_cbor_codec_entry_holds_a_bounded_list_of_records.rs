@@ -297,6 +297,121 @@ fn holds(lang: Language, code: &str, expected: &[&str], encode_at: &str, keys: [
 }
 
 #[test]
+fn the_cpp_map_holds_each_list_in_a_vector_of_the_schemas_payload() {
+    holds(
+        Language::Cpp,
+        &generated_fixture(Language::Cpp),
+        &[
+            "#include \"cbor_causal_entry.h\"",
+            "std::vector<SCE::Generated::CborCausalEntry::CborCausalEntryPayload> seen{};",
+            // A read past the bound is refused before any record is read.
+            "if (!len || *len > 2) return std::nullopt;",
+            "if (!len || *len > 3) return std::nullopt;",
+            "auto record = decode_record_causal_entry(c);",
+            "held_author = cbor::read_text(c, 16);",
+            // The vector carries no bound, so the encode refuses past it.
+            "if (v.size() > 2) return ::SCE::Forge::CodecError::CborOutOfRange;",
+            "if (auto e = cbor::write_array_head(w, v.size())) return e;",
+            "if (auto e = encode_record_causal_entry(w, record)) return e;",
+            "if (record.author.size() > 16) return ::SCE::Forge::CodecError::CborOutOfRange;",
+            "if (auto e = cbor::write_map_head(w, 2)) return e;",
+        ],
+        "encode_record_causal_entry(\n",
+        [
+            "cbor::write_text(w, \"seq\")",
+            "cbor::write_text(w, \"author\")",
+        ],
+    );
+}
+
+#[test]
+fn the_cpp_map_keeps_the_template_struct_where_a_record_holds_a_text() {
+    // `cbor_causal_entry`'s `author` is a `string[16]`, which the schema's C++
+    // unit holds in a `std::string` with no bound: no view of the records holds
+    // it within its bound, so the map is not printed from its plan. Red if the
+    // printer takes such a list as one it lowers.
+    let unlowered = sce_build::cpp_codec_unlowered_file(
+        &fixtures().join(format!("{CODEC}.scxml")),
+        &[],
+        &options(),
+    )
+    .unwrap_or_else(|e| panic!("{CODEC}: {e:?}"))
+    .expect("the fixture is a codec");
+    assert_eq!(
+        unlowered,
+        vec!["a list of records with a text or a byte string field".to_string()],
+        "{CODEC}"
+    );
+}
+
+/// The repository's standard Mesh documents, whose envelope holds a causal
+/// route's vector as a list of `causal_entry` records (docs/adr/0085, section
+/// 3.2), each record three unsigned integers.
+fn stdlib_mesh() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../stdlib/mesh")
+}
+
+#[test]
+fn the_cpp_envelope_is_printed_with_its_vector_as_a_view_of_the_schemas_payload() {
+    let path = stdlib_mesh().join("envelope.scxml");
+    let unlowered = sce_build::cpp_codec_unlowered_file(&path, &[], &options())
+        .unwrap_or_else(|e| panic!("envelope: {e:?}"))
+        .expect("the envelope is a codec");
+    // Red if the printer does not lower a list of records of unsigned integers.
+    assert!(unlowered.is_empty(), "{unlowered:?}");
+
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read envelope: {e}"));
+    let code = compile_forge_with_imports(
+        &text,
+        label("envelope"),
+        Language::Cpp,
+        &stdlib_mesh(),
+        &options(),
+    )
+    .map(|output| {
+        output
+            .files
+            .into_iter()
+            .map(|(_, code)| code)
+            .collect::<Vec<_>>()
+            .join("\n")
+    })
+    .unwrap_or_else(|e| panic!("envelope: {}", e.error));
+    let view = "::SCE::Forge::List<SCE::Generated::CausalEntry::CausalEntryPayload, 64>";
+    let accessor = format!("std::optional<{view}> causal_vector() const noexcept");
+    let made = format!("_b_causal_vector = {view}::make(*causal_vector);");
+    holds(
+        Language::Cpp,
+        &code,
+        &[
+            // The value presents the list as a view within its count, held in
+            // the owning list of the same bound.
+            accessor.as_str(),
+            "std::optional<::SCE::Forge::Bounded<std::vector<SCE::Generated::CausalEntry::CausalEntryPayload>, 64>> causal_vector_{};",
+            // A read past the bound is refused before any record is read, and
+            // the records read are held to the bound by the view's `make`.
+            "if (!_len || *_len > 64) return std::nullopt;",
+            "auto _record = Records::decode_record_causal_entry(c);",
+            made.as_str(),
+            "held_seq = cbor::read_uint(c);",
+            // The write is the array head and each record's map; the view
+            // holds the count, so nothing is checked.
+            "if (auto _e = cbor::write_array_head(w, static_cast<std::uint64_t>(v.size())); _e) return _e;",
+            "if (auto _e = Records::encode_record_causal_entry(w, _record); _e) return _e;",
+            "if (auto _e = cbor::write_map_head(w, 3); _e) return _e;",
+        ],
+        "encode_record_causal_entry(::SCE::Forge::SceSink& w",
+        [
+            "cbor::write_text(w, \"lo\")",
+            "cbor::write_text(w, \"seq\")",
+        ],
+    );
+    // The template's struct, whose encode refuses a count past the bound, is
+    // not printed beside it.
+    assert!(!code.contains("CborOutOfRange"), "{code}");
+}
+
+#[test]
 fn the_kotlin_map_holds_each_list_in_a_list_of_the_schemas_payload() {
     holds(
         Language::Kotlin,
