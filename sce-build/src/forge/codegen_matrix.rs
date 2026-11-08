@@ -366,9 +366,9 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
         ForgeKind::TestComponent => lists(TEST_COMPONENT_BACKENDS, lang),
         // docs/SCE_TEST_PROFILE.md §12.6, slices 5 and 6: the tables of a
         // configuration, a test case and a suite, which the profile's runner
-        // reads, land one backend at a time, C++ first, then Rust and Kotlin;
-        // a port type, read by the units of the components and configurations
-        // that name it, lands with them. Which have landed is
+        // reads, land one backend at a time, C++ first, then Rust, Kotlin and
+        // Go; a port type, read by the units of the components and
+        // configurations that name it, lands with them. Which have landed is
         // [`TEST_SUITE_BACKENDS`], the one list both this answer and
         // [`awaits_runtime`] read.
         ForgeKind::TestPortType
@@ -428,8 +428,7 @@ pub const TEST_TEMPLATE_BACKENDS: &[Language] = &[
 /// ([`TEST_SUITE_BACKENDS`]) refuses a component that declares a module
 /// parameter by name, since the value is the suite's
 /// ([`crate::test_component::snapshot::lower`]); it reads one in the change
-/// that joins it to that list, as C++, Rust and Kotlin do. Go generates a
-/// component and refuses one that declares a module parameter.
+/// that joins it to that list, as C++, Rust, Kotlin and Go do.
 pub const TEST_COMPONENT_BACKENDS: &[Language] = &[
     Language::Rust,
     Language::Cpp,
@@ -452,7 +451,12 @@ pub const TEST_COMPONENT_BACKENDS: &[Language] = &[
 /// any suite runs. A backend not listed refuses each of the four by name
 /// (`generate/unsupported-feature`,
 /// [`crate::forge::test_profile::document_not_generated`]).
-pub const TEST_SUITE_BACKENDS: &[Language] = &[Language::Rust, Language::Cpp, Language::Kotlin];
+pub const TEST_SUITE_BACKENDS: &[Language] = &[
+    Language::Rust,
+    Language::Cpp,
+    Language::Kotlin,
+    Language::Go,
+];
 
 /// The backends whose broadcast-log template has landed (ADR 0062, "Order of
 /// landing"). A backend joins this list in the change that gives it the
@@ -1179,35 +1183,27 @@ mod tests {
         }
     }
 
-    /// docs/SCE_TEST_PROFILE.md §11.9, §12.6: Rust, C++ and Kotlin generate
-    /// every kind of the test profile, Go a template and a component, and
-    /// every other pair of a backend and a kind of the profile awaits the
-    /// profile's runtime there, letting the document through the matrix to the
-    /// dispatch that refuses it by name.
+    /// docs/SCE_TEST_PROFILE.md §11.9, §12.6: Rust, C++, Kotlin and Go
+    /// generate every kind of the test profile, and every other pair of a
+    /// backend and a kind of the profile awaits the profile's runtime there,
+    /// letting the document through the matrix to the dispatch that refuses it
+    /// by name.
     #[test]
-    fn rust_cpp_and_kotlin_emit_every_kind_go_a_template_and_a_component_and_the_rest_await_it() {
+    fn rust_cpp_kotlin_and_go_emit_every_kind_of_the_profile_and_every_other_pair_awaits_it() {
         assert_eq!(ForgeKind::TEST_PROFILE.len(), 6);
         // In [`Language::ALL`]'s order.
-        let every_kind: &[Language] = &[Language::Rust, Language::Cpp, Language::Kotlin];
-        // A template and a component land before the other kinds, Go's in
-        // [`Language::ALL`]'s order.
-        let template_and_component: &[Language] = &[
+        let landed: &[Language] = &[
             Language::Rust,
             Language::Cpp,
             Language::Kotlin,
             Language::Go,
         ];
-        assert_eq!(TEST_TEMPLATE_BACKENDS, template_and_component);
-        assert_eq!(TEST_COMPONENT_BACKENDS, template_and_component);
-        assert_eq!(TEST_SUITE_BACKENDS, every_kind);
+        assert_eq!(TEST_TEMPLATE_BACKENDS, landed);
+        assert_eq!(TEST_COMPONENT_BACKENDS, landed);
+        assert_eq!(TEST_SUITE_BACKENDS, landed);
         for &kind in ForgeKind::TEST_PROFILE {
             assert!(kind.is_test_profile(), "{kind:?}");
             assert_eq!(kind_class(kind), KindClass::Generic, "{kind:?}");
-            let landed = if matches!(kind, ForgeKind::TestTemplate | ForgeKind::TestComponent) {
-                template_and_component
-            } else {
-                every_kind
-            };
             for &lang in Language::ALL {
                 let want = if landed.contains(&lang) {
                     EmitOutcome::Emit

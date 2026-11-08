@@ -323,30 +323,16 @@ var {{ machine_name }}SavedEnumKeys = [...]string{}
 {% endif %}
 
 {% endif %}
-{% if static_saved_shape %}
 {# The Go type a saved state's `sce:type` spelling is held in, for the places a
    present value is named (`optional.None[T]`). A record's or an enum's own type
    is its backend type already. #}
 {% set GO_SAVED_TYPE = {'uint8': 'uint8', 'uint16': 'uint16', 'uint32': 'uint32', 'uint64': 'uint64', 'int8': 'int8', 'int16': 'int16', 'int32': 'int32', 'int64': 'int64', 'float32': 'float32', 'float64': 'float64', 'bool': 'bool', 'string': 'string', 'bytes': '[]byte'} %}
-{# A record's or an enum's saved form is its own type's (`ToSaved` /
-   `<Type>FromSaved`, emitted with the type by the static lowering). #}
-{% macro saved_write(field) -%}
-{# An enum's and a record's saved form is its own type's, so an optional one of
-   either is written through it where it is present. #}
-{%- if field.saved_kind == "optional" and (field.saved_elem == "enum" or field.saved_elem == "record") -%}
-optional.Wire(p.{{ field.name }}, func(v {{ field.saved_type }}) any { return v.ToSaved() })
-{%- elif field.saved_kind == "optional" -%}
-optional.Wire(p.{{ field.name }}, sce.SavedWrite{{ field.saved_type | to_pascal_case }})
-{%- elif field.saved_kind == "record" or field.saved_kind == "enum" -%}
-p.{{ field.name }}.ToSaved()
-{%- elif field.saved_kind == "list" -%}
-sce.SavedWriteList(p.{{ field.name }}, sce.SavedWrite{{ field.saved_type | to_pascal_case }})
-{%- elif field.saved_kind == "record_list" -%}
-sce.SavedWriteList(p.{{ field.name }}, func(r {{ field.saved_type }}) any { return r.ToSaved() })
-{%- else -%}
-sce.SavedWrite{{ field.saved_type | to_pascal_case }}(p.{{ field.name }})
-{%- endif -%}
-{%- endmacro %}
+{# The value the saved value `raw` holds for the variable `field`, read as the
+   field's own type, and the refusal of one that is not of it: what a restore
+   reads each variable by (below), and what a test component reads each module
+   parameter by from the run's values (docs/SCE_TEST_PROFILE.md §11.8), whether
+   or not the machine saves. A record's or an enum's saved form is its own
+   type's (`<Type>FromSaved`, emitted with the type by the static lowering). #}
 {% macro saved_read(field, raw) -%}
 {%- if field.saved_kind == "optional" and (field.saved_elem == "enum" or field.saved_elem == "record") -%}
 sce.SavedReadOptional({{ raw }}, "{{ field.id | escape_go }}", {{ field.saved_type }}FromSaved, optional.None[{{ field.saved_type }}], optional.Some[{{ field.saved_type }}])
@@ -368,6 +354,26 @@ sce.SavedReadBytes({{ raw }}, "{{ field.id | escape_go }}", {{ field.bound if fi
 sce.SavedReadBoundedString({{ raw }}, "{{ field.id | escape_go }}", {{ field.bound }})
 {%- else -%}
 sce.SavedRead{{ field.saved_type | to_pascal_case }}({{ raw }}, "{{ field.id | escape_go }}")
+{%- endif -%}
+{%- endmacro %}
+{% if static_saved_shape %}
+{# A record's or an enum's saved form is its own type's (`ToSaved` /
+   `<Type>FromSaved`, emitted with the type by the static lowering). #}
+{% macro saved_write(field) -%}
+{# An enum's and a record's saved form is its own type's, so an optional one of
+   either is written through it where it is present. #}
+{%- if field.saved_kind == "optional" and (field.saved_elem == "enum" or field.saved_elem == "record") -%}
+optional.Wire(p.{{ field.name }}, func(v {{ field.saved_type }}) any { return v.ToSaved() })
+{%- elif field.saved_kind == "optional" -%}
+optional.Wire(p.{{ field.name }}, sce.SavedWrite{{ field.saved_type | to_pascal_case }})
+{%- elif field.saved_kind == "record" or field.saved_kind == "enum" -%}
+p.{{ field.name }}.ToSaved()
+{%- elif field.saved_kind == "list" -%}
+sce.SavedWriteList(p.{{ field.name }}, sce.SavedWrite{{ field.saved_type | to_pascal_case }})
+{%- elif field.saved_kind == "record_list" -%}
+sce.SavedWriteList(p.{{ field.name }}, func(r {{ field.saved_type }}) any { return r.ToSaved() })
+{%- else -%}
+sce.SavedWrite{{ field.saved_type | to_pascal_case }}(p.{{ field.name }})
 {%- endif -%}
 {%- endmacro %}
 // ── SCE Accepted Subset §2.15: saving this machine, restoring it ──────────
@@ -921,7 +927,12 @@ type {{ machine_name }}Policy struct {
    write them. A variable declared `sce:direction="out"` is read by the host
    through the accessor below; every other one is the machine's own. #}
 {% for field in static_fields %}
+{% if field.module_parameter %}
+	// docs/SCE_TEST_PROFILE.md §11.5: the module parameter `{{ field.id }}`, which takes the
+	// suite's value before the machine starts{% if field.published %}, published (`sce:direction="out"`){% endif %}.
+{% else %}
 	// W3C SCXML 5.2: the `{{ field.id }}` datamodel variable{% if field.published %}, published (`sce:direction="out"`){% endif %}.
+{% endif %}
 	{{ field.name }} {{ field.ty }}
 {% endfor %}
 {% endif %}
@@ -1033,8 +1044,16 @@ func New{{ machine_name }}Policy() {{ machine_name }}Policy {
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
 {% endif %}
+{# docs/SCE_TEST_PROFILE.md §11.5: a module parameter has no initial value of
+   its document's; the component reads the run's value into it before the
+   machine starts, so it starts at a value nothing reads
+   (`module_parameter_starts`: its type's zero, or an enum's first variant). #}
 {% for field in static_fields %}
+{% if field.module_parameter %}
+		{{ field.name }}: {{ module_parameter_starts[field.id] }},
+{% else %}
 		{{ field.name }}: {{ field.init }},
+{% endif %}
 {% endfor %}
 {% if model.has_parallel_states or model.uses_in_predicate %}
 		activeStates: make([]{{ machine_name }}State, 0),
@@ -1062,6 +1081,34 @@ func (p *{{ machine_name }}Policy) SetSessionID(id string) error {
 		return sce.Refuse(reason)
 	}
 	p.SessionID = id
+	return nil
+}
+{% endif %}
+{% if model.test_component and model.test_component.module_parameters %}
+{% set parameter_fields = static_fields | selectattr('module_parameter') | list %}
+
+// sceAcceptModuleParameters gives each module parameter the value the suite
+// gives it (docs/SCE_TEST_PROFILE.md §11.5, §11.8), read as a saved value of
+// its declared type is read back. Called by the component the profile's runtime
+// drives ({{ machine_name }}Component) before the machine is built.
+//
+// It answers the *sce.StateRefusal naming the module parameter whose value is
+// not given, not of its type or past its bound, and then writes no variable:
+// every value is read before any is written.
+func (p *{{ machine_name }}Policy) sceAcceptModuleParameters(given *{{ test_runtime }}.ModuleParameters) error {
+{% for field in parameter_fields %}
+	raw{{ loop.index }}, err := given.Of("{{ field.id | escape_go }}")
+	if err != nil {
+		return err
+	}
+	read{{ loop.index }}, err := {{ saved_read(field, 'raw' ~ loop.index) }}
+	if err != nil {
+		return err
+	}
+{% endfor %}
+{% for field in parameter_fields %}
+	p.{{ field.name }} = read{{ loop.index }}
+{% endfor %}
 	return nil
 }
 {% endif %}
@@ -1109,6 +1156,15 @@ func (c *{{ machine_name }}Component) Start(context *{{ test_runtime }}.Componen
 		panic("a test component's name is an XML Name, which names a session: " + err.Error())
 	}
 	policy.sceTestContext = context
+{% if model.test_component.module_parameters %}
+	// §11.5, §11.8: the module parameters take the suite's values before the
+	// machine is built. Without one, or with one not of its type, the run ends
+	// in error (P13), and the machine is not started on a value made up in its
+	// place: the component stays one that has not started.
+	if !context.ReadModuleParameters(policy.sceAcceptModuleParameters) {
+		return
+	}
+{% endif %}
 	machine := sce.NewEngine[{{ machine_name }}State, {{ machine_name }}Event](&policy)
 	// P6: a send on a port is appended to the queue of the port it is connected
 	// to, or handed to the system adapter where it is mapped. A test-port send

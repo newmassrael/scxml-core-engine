@@ -1,0 +1,40 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "go", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="test-case")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+
+package {{ package }}
+{# `go_imports` is the package of the configuration's unit, a sibling below the
+   run's module path under the alias every Go unit imports a sibling by; the
+   profile's runtime is named by its own package name. `std_imports` are read
+   off the text by the render door, which lists none for this text. #}
+
+import (
+{% for p in std_imports %}
+	"{{ p }}"
+{% endfor %}
+	"{{ runtime_path }}"
+{% for imp in go_imports %}
+	{{ imp }}
+{% endfor %}
+)
+
+// Name is the test case's name in the suite and in the test log (docs/SCE_TEST_PROFILE.md §11.7).
+const Name string = {{ name_literal }}
+
+// TestCase is the test case `{{ case_name }}` (docs/SCE_TEST_PROFILE.md §11.7) as the runner
+// reads it: its name, its configuration and the machines of its components, and the module
+// parameters those components read.
+func TestCase() {{ runtime }}.TestCase {
+	return {{ runtime }}.TestCase{
+		Name:             Name,
+		Configuration:    {{ configuration }}(),
+		Machines:         {{ machine }},
+		ModuleParameters: {{ module_parameters }}(),
+	}
+}

@@ -25,6 +25,7 @@ use std::path::Path;
 mod cpp_source;
 mod cpp_test_tables;
 mod cpp_test_template;
+mod go_test_tables;
 mod go_test_template;
 mod kotlin_test_tables;
 mod kotlin_test_template;
@@ -30139,18 +30140,21 @@ pub fn generate_go_with_imports(
         ForgeDocument::TestTemplate(m) => {
             go_test_template::render_test_template_go(&env, m, imports, options)?
         }
-        // docs/SCE_TEST_PROFILE.md §11.9: the other kinds of the test profile
-        // are refused by name until their runtime lands here.
-        ForgeDocument::TestPortType(_)
-        | ForgeDocument::TestConfiguration(_)
-        | ForgeDocument::TestCase(_)
-        | ForgeDocument::TestSuite(_) => {
-            return Err(crate::forge::test_profile::document_not_generated(
-                doc.kind(),
-                doc.name(),
-                crate::forge::provenance::forge_doc_source_location(doc).cloned(),
-            )
-            .into())
+        // docs/SCE_TEST_PROFILE.md §12.6, slice 6
+        // (`codegen_matrix::TEST_SUITE_BACKENDS`): a port type writes no file,
+        // since the units of the components and of the configuration that read
+        // it hold what they need of it by name; a configuration, a test case and
+        // a suite are tables the profile's runtime reads, each naming the
+        // packages it reads below `options`' module path.
+        ForgeDocument::TestPortType(_) => return Ok(GeneratedOutput::default()),
+        ForgeDocument::TestConfiguration(m) => {
+            go_test_tables::render_test_configuration_go(&env, m, imports, options)?
+        }
+        ForgeDocument::TestCase(m) => {
+            go_test_tables::render_test_case_go(&env, m, imports, options)?
+        }
+        ForgeDocument::TestSuite(m) => {
+            go_test_tables::render_test_suite_go(&env, m, imports, options)?
         }
     };
 
@@ -33459,27 +33463,36 @@ fn kotlin_default(ty: &SceType) -> &'static str {
 }
 
 /// docs/SCE_TEST_PROFILE.md §11.5: the value each module parameter of the
-/// Kotlin machine `lowering` lowered starts at, by its id. A module parameter
-/// has no initial value of its document's: the component reads the suite's
-/// value into it before the machine starts, so it starts at its type's zero
-/// ([`kotlin_default`]), or for an enum, whose machine type has no zero, at the
-/// variant its document declares first; nothing reads either. Every other
-/// variable starts at its `expr` and has no entry.
+/// machine `lowering` lowered for `language` starts at, by its id. A module
+/// parameter has no initial value of its document's: the component reads the
+/// suite's value into it before the machine starts, so it starts at its type's
+/// zero (`zero`), or for an enum, whose machine type has no zero of the
+/// language's, at the variant its document declares first, as `variant`
+/// names a variant of the machine's enum type; nothing reads either. Every
+/// other variable starts at its `expr` and has no entry. One walk for every
+/// backend whose template declares the slot with a value
+/// ([`kotlin_module_parameter_starts`], [`go_module_parameter_starts`]).
 ///
 /// Refused by name where a module parameter is of no type the lowering
 /// declares, which a lowering that held it to a scalar type cannot reach.
-pub(crate) fn kotlin_module_parameter_starts(
+fn module_parameter_starts(
     lowering: &crate::forge::static_lowering::StaticLowering,
+    language: &str,
+    zero: impl Fn(&SceType) -> &'static str,
+    variant: impl Fn(
+        &crate::forge::static_lowering::StaticEnumType,
+        &crate::forge::static_lowering::StaticEnumVariant,
+    ) -> String,
 ) -> Result<std::collections::BTreeMap<String, String>, GenerateError> {
     let start = |field: &crate::forge::static_lowering::StaticField| -> Option<String> {
         if field.saved_kind == "enum" {
             let declared = lowering.enums.iter().find(|e| e.ty == field.ty)?;
             let first = declared.variants.first()?;
-            return Some(format!("{}.{}", declared.ty, first.ident));
+            return Some(variant(declared, first));
         }
         match SceType::from_attr(&field.saved_type)? {
             SceType::Enum(_) => None,
-            scalar => Some(kotlin_default(&scalar).to_string()),
+            scalar => Some(zero(&scalar).to_string()),
         }
     };
     lowering
@@ -33490,13 +33503,61 @@ pub(crate) fn kotlin_module_parameter_starts(
             let value = start(field).ok_or_else(|| {
                 GenerateError::unsupported(format!(
                     "<data id=\"{}\" sce:module-parameter=\"true\">: a module parameter of {} \
-                     has no Kotlin value to start at",
+                     has no {language} value to start at",
                     field.id, field.ty
                 ))
             })?;
             Ok((field.id.clone(), value))
         })
         .collect()
+}
+
+/// [`module_parameter_starts`] of the Kotlin machine `lowering`: a scalar at
+/// [`kotlin_default`], an enum at its first variant, a member of the machine's
+/// enum class.
+pub(crate) fn kotlin_module_parameter_starts(
+    lowering: &crate::forge::static_lowering::StaticLowering,
+) -> Result<std::collections::BTreeMap<String, String>, GenerateError> {
+    module_parameter_starts(lowering, "Kotlin", kotlin_default, |declared, first| {
+        format!("{}.{}", declared.ty, first.ident)
+    })
+}
+
+/// [`module_parameter_starts`] of the Go machine `lowering`: a scalar at
+/// [`go_zero_value`], an enum at its first variant, a package-level constant
+/// that already carries the name of the machine's enum type
+/// ([`crate::forge::enum_naming::variant_ref`]).
+pub(crate) fn go_module_parameter_starts(
+    lowering: &crate::forge::static_lowering::StaticLowering,
+) -> Result<std::collections::BTreeMap<String, String>, GenerateError> {
+    module_parameter_starts(lowering, "Go", go_zero_value, |_, first| {
+        first.ident.clone()
+    })
+}
+
+/// The zero value of a Go type ([`go_type`]), as a value a field of that type
+/// is declared at: what a Go variable holds when it is declared with no value.
+fn go_zero_value(ty: &SceType) -> &'static str {
+    match ty {
+        SceType::Uint8
+        | SceType::Uint16
+        | SceType::Uint32
+        | SceType::Uint64
+        | SceType::Int8
+        | SceType::Int16
+        | SceType::Int32
+        | SceType::Int64
+        | SceType::Float32
+        | SceType::Float64 => "0",
+        SceType::Bool => "false",
+        SceType::String => "\"\"",
+        SceType::Bytes => "nil",
+        // Enum kind: see `kotlin_default`.
+        SceType::Enum(_) => unreachable!(
+            "go_zero_value called on SceType::Enum — an enum's machine type starts at \
+             its first variant"
+        ),
+    }
 }
 
 /// Default zero-value for Rust types.

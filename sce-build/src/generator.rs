@@ -5568,6 +5568,10 @@ fn render_go(
         &machine_name,
         go_module_prefix,
     )?;
+    // docs/SCE_TEST_PROFILE.md §11.5: what each module parameter of a test
+    // component starts at before the component reads the suite's value into it.
+    let module_parameter_starts =
+        crate::forge::generator::go_module_parameter_starts(&static_lowering)?;
     let payload_events: std::collections::BTreeSet<String> = native
         .payload_events
         .iter()
@@ -5629,6 +5633,7 @@ fn render_go(
             static_imports => static_imports,
             static_format2_shape => format2_keys(&static_lowering),
             static_saved_shape => &static_lowering.saved_shape,
+            module_parameter_starts => &module_parameter_starts,
             // docs/SCE_TEST_PROFILE.md §12.3: the doors a test component's
             // machine reaches its runtime through, which the component the
             // runtime drives registers and delivers the snapshot by, and the

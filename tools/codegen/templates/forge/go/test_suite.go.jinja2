@@ -1,0 +1,58 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "go", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="test-suite")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+
+package {{ package }}
+{# `go_imports` are the packages of the test cases' units, each a sibling below
+   the run's module path under the alias every Go unit imports a sibling by; the
+   feature model writes no unit, so none is imported. The SCE runtime, whose
+   writers a default is written by, is imported where a module parameter is
+   declared, as Go refuses an import the text never names. `std_imports` are
+   read off the text by the render door, which lists none for this text. #}
+
+import (
+{% for p in std_imports %}
+	"{{ p }}"
+{% endfor %}
+{% if parameters %}
+	{{ saved_values }} "github.com/newmassrael/sce-go-runtime"
+{% endif %}
+	"{{ runtime_path }}"
+{% for imp in go_imports %}
+	{{ imp }}
+{% endfor %}
+)
+
+// Suite is the test suite `{{ suite_name }}` (docs/SCE_TEST_PROFILE.md §11.8) as the runner reads
+// it ({{ runtime }}.RunSuite): each module parameter at its default, held as the saved value of its
+// declared type, and each `<sce:execute>` in run order, with its test case, its guard and the
+// selection that runs it in a world of the suite's features.
+func Suite() {{ runtime }}.Suite {
+	moduleParameters := &{{ runtime }}.ModuleParameters{}
+{% for parameter in parameters %}
+	moduleParameters.Set({{ parameter.id }}, {{ parameter.value }})
+{% endfor %}
+	return {{ runtime }}.Suite{
+		Name:             {{ name_literal }},
+		ModuleParameters: moduleParameters,
+{% if executes %}
+		Executes: []{{ runtime }}.Execute{
+{% for execute in executes %}
+			{
+				TestCase:  {{ execute.test_case }},
+				Guard:     {{ execute.guard }},
+				Selection: {{ execute.selection }},
+			},
+{% endfor %}
+		},
+{% else %}
+		Executes: []{{ runtime }}.Execute{},
+{% endif %}
+	}
+}
