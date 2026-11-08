@@ -847,7 +847,7 @@ bool SCXMLInvokeHandler::cancelInvoke(const std::string &invokeid) {
     // unnoticed while the raiser delivered queued events from a local copy of
     // its queue and without their origin session, so neither the purge nor
     // the filter below could reach one.
-    const StateMachine *child = session.smContext ? session.smContext->get() : nullptr;
+    StateMachine *child = session.smContext ? session.smContext->get() : nullptr;
     const bool stillRunning = child != nullptr && child->isRunning();
 
     if (stillRunning) {
@@ -878,6 +878,16 @@ bool SCXMLInvokeHandler::cancelInvoke(const std::string &invokeid) {
         }
         SCE_LOG_DEBUG("SCXMLInvokeHandler: Added cancelled child session to filter list: {} (cache size: {})",
                       session.sessionId, cacheSize);
+
+        // §scxml-6.4: a cancelled session ends the way any run ends, by exiting
+        // every active state and running its <onexit> content (W3C SCXML Test
+        // 250). That content is evaluated in the session's datamodel, so the
+        // run is stopped here, while the datamodel still exists: the session
+        // is destroyed below, and the stop that ~StateMachineContext would
+        // make later finds no datamodel and evaluates every expression as
+        // empty. What the content sends to the parent is caught by the filter
+        // registered above, and what it schedules is cancelled below.
+        child->stop();
     }
 
     // Cancel pending events in child's EventDispatcher

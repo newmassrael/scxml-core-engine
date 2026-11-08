@@ -459,7 +459,7 @@ sce_main_build_dir() {
 # registration that stops matching leaves the suite green on a fraction of
 # itself.
 #
-# A case the runner did not run (a manual fixture, or a BasicHTTP one under
+# A case the runner did not run (a manual fixture with no verifier, or a BasicHTTP one under
 # ThreadSanitizer) is marked `<skipped/>` and counted in the header's
 # `skipped`, apart from both the passes and the failures: the floor is on the
 # cases the report holds, since it guards the registration, and the cases
