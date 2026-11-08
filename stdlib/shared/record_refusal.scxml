@@ -16,12 +16,16 @@
   - `noRoomForHistory`: the copy holds as many tombstones as the room lets it (`history`),
     which a settle frees;
   - `noRoomForDigest`: the copy holds as many digest nodes as the room lets it (`digest`);
-  - `textTooLong`: an edit's text is past what a person writes (record_edit, the bound
-    `shared_typed_text`);
   - `changeTooLarge`: the change stages more commands, or is more operations, than the
     copy is built to hold (`shared_staged`, `shared_parts`);
   - `registerNamedTwice`: two commands of the change write or clear one register;
   - `clockExhausted`: the copy's clock cannot stamp another change in its millisecond.
+
+  The number 5 is no variant's. It was `textTooLong`, an edit's text past what a person
+  writes, until that bound moved to the type of record_edit's text: an edit past it is
+  refused whole where it is read and never reaches the list (docs/adr/0086, section 4.4;
+  docs/adr/0046, section 6). The numbers of the others are the ones they had, so nothing
+  a saved state or a peer holds is renumbered, and 5 is not given again.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" sce:kind="enum" name="record_refusal" sce:underlying-type="uint8">
@@ -31,7 +35,6 @@
       <sce:variant name="noRoomForValue" value="2"/>
       <sce:variant name="noRoomForHistory" value="3"/>
       <sce:variant name="noRoomForDigest" value="4"/>
-      <sce:variant name="textTooLong" value="5"/>
       <sce:variant name="changeTooLarge" value="6"/>
       <sce:variant name="registerNamedTwice" value="7"/>
       <sce:variant name="clockExhausted" value="8"/>
