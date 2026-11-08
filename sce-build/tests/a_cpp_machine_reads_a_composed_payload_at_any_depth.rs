@@ -512,9 +512,9 @@ const SHAPES_READER: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="idle" datamodel="sce-static" name="shapes_reader">
   <sce:import kind="enum" src="shape_kind.scxml" as="Kind"/>
-  <sce:import kind="event-schema" src="event_shapes.scxml" as="Shapes"/>
-  <sce:import kind="event-schema" src="shape_radius.scxml" as="Radius"/>
-  <sce:import kind="event-schema" src="shape_rect.scxml" as="Rect"/>
+  <sce:import kind="event-schema" src="event_shapes_minimal.scxml" as="Shapes"/>
+  <sce:import kind="event-schema" src="shape_radius_minimal.scxml" as="Radius"/>
+  <sce:import kind="event-schema" src="shape_rect_minimal.scxml" as="Rect"/>
   <datamodel>
     <data id="seen" sce:type="uint32" expr="0"/>
   </datamodel>
@@ -531,10 +531,10 @@ const SHAPES_READER: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 /// The union fixtures a reader of `shapes.sent` imports.
 const SHAPES: [&str; 5] = [
     "shape_kind.scxml",
-    "shape_radius.scxml",
-    "shape_rect.scxml",
-    "union_shape.scxml",
-    "event_shapes.scxml",
+    "shape_radius_minimal.scxml",
+    "shape_rect_minimal.scxml",
+    "union_shape_minimal.scxml",
+    "event_shapes_minimal.scxml",
 ];
 
 /// Pinned by the union arm of the gate's read (`first_unlowered_composed_use`,
