@@ -264,6 +264,38 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # docs/adr/0086, section 8.6 (c): the data of an event a host hands by name,
+    # which the document declares no schema for, is bounded by the host ABI
+    # (SCE_UNTYPED_EVENT_DATA_MAX_LEN): a machine with no script engine keeps that
+    # much, and refuses whole, counted and named, data past its slot. A document
+    # of this channel alone, beside the C test: no other channel holds an event's
+    # data in storage the build sizes. The driver reads the slot's size from the
+    # generated header, so it holds whatever floor the build gives the slot.
+    sce_generate_static_integration_c_test(untyped_data_by_name
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_CURRENT_SOURCE_DIR}/integration_resources/untyped_data_by_name/untyped_data_by_name.scxml"
+    )
+    add_executable(sce_c_integration_untyped_data_by_name
+        integration/test_untyped_data_by_name.c
+        ${INTEGRATION_C_TEST_untyped_data_by_name_SOURCES}
+    )
+    sce_c_link_runtime(sce_c_integration_untyped_data_by_name)
+    target_include_directories(sce_c_integration_untyped_data_by_name PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_untyped_data_by_name PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_untyped_data_by_name
+        COMMAND sce_c_integration_untyped_data_by_name
+    )
+    set_tests_properties(c11_integration_untyped_data_by_name PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # W3C SCXML 5.10 + 3.12.1: `_event.name` is the name an event arrived under,
     # and a transition on `request` takes `request.new` whether or not the
     # document writes it. The IRP corpus never reads a name the document does not

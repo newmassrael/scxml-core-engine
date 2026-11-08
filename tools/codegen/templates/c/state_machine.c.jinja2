@@ -8407,13 +8407,14 @@ SCE_STATIC_ASSERT(sizeof("{{ test_component_invoke_type | escape_c }}") <= (size
                   "SCE_MAX_ID_LEN too small for the type of the test-component invoker");
 {% endif %}
 {% endif %}
-{# docs/adr/0086, section 8.6 (b): last, after every reason the source emits.
-   A reason that quotes a sentence of the runtime is sized by the bound the
-   runtime publishes, and the machine checks that bound against the header it
-   compiles with. #}
+{# docs/adr/0086, sections 8.6 (b) and (c): last, after every reason the source
+   emits. A reason that quotes a sentence of the runtime is sized by the bound
+   the runtime publishes, and so is a slot that holds the data a host hands an
+   event no schema declares; the machine checks each such bound against the
+   header it compiles with. #}
 {% set bounds_checked = reason_bounds_checked() %}
 {% if bounds_checked %}
 
-/* ── docs/adr/0086, section 8.6 (b): the runtime's bounds the reasons quote ── */
+/* ── docs/adr/0086, section 8.6: the runtime's bounds the slot is sized by ── */
 {{ bounds_checked }}
 {%- endif %}
