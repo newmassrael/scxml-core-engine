@@ -973,6 +973,8 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_basic_http({{ cs
    Marked as possibly unused: a machine that carries the registry only for
    the factory of its children's Mesh routers (SCE_MESH.md, Child Sessions in
    Mesh) has no host-served send of its own to call it. */
+SCE_SM_FN static void refuse_event_data({{ csym_prefix }}{{ model.name }}_t *sm,
+                                        const {{ csym_prefix }}{{ model.name }}_event_t *event);
 SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_host_send({{ csym_prefix }}{{ model.name }}_t *sm,
                                   const sce_host_send_request_t *request) {
     const sce_host_processor_entry_t *_entry =
@@ -987,7 +989,15 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
     }
     sce_host_send_response_list_t _replies;
     memset(&_replies, 0, sizeof(_replies));
+    /* docs/adr/0086, section 8.5 (b): the replies' data is copied into the
+       machine's own scratch, one slot per reply, and a reply whose data does
+       not fit is refused there and raised below. */
+    _replies.texts = &sm->scratch.replies[0][0];
+    _replies.text_cap = sizeof(sm->scratch.replies[0]);
     _entry->handler(_entry->user_data, request, &_replies);
+    for (int _r = 0; _r < _replies.refused; _r++) {
+        refuse_event_data(sm, NULL);
+    }
     for (int _i = 0; _i < _replies.count; _i++) {
         const char *_name = _replies.entries[_i].event_name;
         {{ csym_prefix }}{{ model.name }}_event_with_meta_t _reply_evt;
@@ -6302,7 +6312,15 @@ SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_perform_host_invoke({{ c
     }
 {% endif %}
     memset(&out, 0, sizeof(out));
+    /* docs/adr/0086, section 8.5 (b): the host's answer is copied into the
+       machine's own scratch, and one that does not fit is refused there and
+       raised here. */
+    out.text = sm->scratch.answer;
+    out.text_cap = sizeof(sm->scratch.answer);
     entry->handler(entry->user_data, start, &out);
+    if (out.oversized) {
+        refuse_event_data(sm, NULL);
+    }
     if (out.has_refusal) {
         /* W3C SCXML 6.4.1: the host could not start it, so it never started —
            taken back out of the running set with its deadline dropped, and the
@@ -6313,9 +6331,9 @@ SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_perform_host_invoke({{ c
         drop_host_invoke_deadline(sm, start->token);
 {% endif %}
 {% if 'error.execution' in model.events %}
-        out.refusal[sizeof(out.refusal) - 1u] = '\0';
         {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, out.refusal);
+            sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+            out.refusal != NULL ? out.refusal : "");
 {% endif %}
         return true;
     }

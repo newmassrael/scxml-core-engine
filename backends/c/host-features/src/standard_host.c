@@ -1295,18 +1295,16 @@ void sce_hf_invoker(void *user_data, const sce_host_invoke_event_t *event, sce_h
         return;
     }
     if (outcome.kind == SCE_HF_DONE) {
-        if (strlen(outcome.data) >= (size_t)SCE_MAX_DATA_LEN) {
-            /* The machine's data slot cannot carry this result: the host declines to start what it could not
-               answer. A build that serves the operation sets SCE_MAX_DATA_LEN to at least SCE_HF_MIN_DATA_LEN. */
-            out->has_refusal = true;
-            (void)snprintf(out->refusal, sizeof(out->refusal), "{\"reason\":\"data_slot\"}");
+        if (out->text == NULL || strlen(outcome.data) >= out->text_cap) {
+            /* The machine's slot of `_event.data` cannot carry this result: the host declines to start what it
+               could not answer. A machine that serves the operation holds the result schema, whose largest
+               record sizes its slot (docs/adr/0086, section 8.1). */
+            (void)sce_host_invoke_answer_refusal(out, "{\"reason\":\"data_slot\"}");
         } else {
-            out->has_done_data = true;
-            (void)snprintf(out->done_data, sizeof(out->done_data), "%s", outcome.data);
+            (void)sce_host_invoke_answer_done(out, outcome.data);
         }
     } else if (outcome.kind == SCE_HF_REFUSE) {
-        out->has_refusal = true;
-        (void)snprintf(out->refusal, sizeof(out->refusal), "%s", outcome.data);
+        (void)sce_host_invoke_answer_refusal(out, outcome.data);
     }
     sce_hf_outcome_free(&outcome);
 }
