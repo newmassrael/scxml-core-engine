@@ -78,7 +78,7 @@ TEST(AComposedPayloadIsReadAtAnyDepthTest, AFullDeliveryIsReadAtEveryDepth) {
     EXPECT_EQ(machine.id_sum(), 6u);
     // A list of lists, walked at both depths and read by two indices.
     EXPECT_EQ(machine.cell_sum(), 10u);
-    EXPECT_EQ(machine.cell(), 3u);
+    EXPECT_EQ(machine.cell(), std::uint8_t{3});
     // Depth 3: the length of the first item's `tags`.
     EXPECT_EQ(machine.first_tags(), 4u);
     // An element that may be absent, present.
