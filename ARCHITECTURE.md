@@ -1802,7 +1802,8 @@ sce-forge-runtime/    Non-MCU Forge kinds: codec / filter / interpolation / look
 
 **Build & Test**:
 - Codegen: `cargo build --bin sce-codegen --features cli -p sce-build && ./target/debug/sce-codegen generate-w3c -l python`
-- Install runtime: `pip install -e backends/python/runtime/` (single hard dep: `lupa>=2.0`)
+- Install runtime: `pip install -e backends/python/runtime/` (single hard dep: `lupa>=2.0`, for the `lupa.lua54` module the runtime imports; a distribution's `python3-lupa` 1.x has no such module and does not satisfy it)
+- Test environment: `scripts/install_sce_python.sh` builds a venv at `~/.local/share/sce-python/<revision>/` with the runtime's dependencies read from its `pyproject.toml` plus pytest and the packages the suites import; the `w3c-python`, `authoring-core` and `targets` gates run on it where it exists and on `python3` otherwise. The build machines get it as the `[platform.linux.tools.sce-python]` tool of `bx.toml`
 - Run W3C suite: `pytest backends/python/tests/generated/` — 202/202, ~1.5 s wall clock
 - CI: `.github/workflows/w3c-tests.yml::test-python` (family-member AOT lane, sibling to `test-rust` / `test-kotlin` / `test-go`); the pybind channel rides `test-python-bindings`
 
