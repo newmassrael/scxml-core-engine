@@ -4189,6 +4189,38 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     add_test(NAME mesh_session_f_wire_roundtrip
              COMMAND mesh_session_f_wire_roundtrip_test)
 
+    # ── SCE_MESH §9.6 WorkerSessionHost unit tests ────────────────
+    # Drives the worker's `WorkerSessionHost::onWire14` directly with a
+    # recording publisher, reusing the generated headers above: no router
+    # is constructed, so no shm segment is opened. Pins that a wire-14
+    # whose `<parent_machine>:<invoke_id>` is no XML Nmtoken brings no
+    # child session up and is answered as a failed bring-up (§9.3,
+    # wire-20 then wire-18).
+    add_executable(mesh_worker_session_host_test
+        mesh/WorkerSessionHostTest.cpp
+        ${MESH_SESSION_F_WIRED_HEADERS}
+    )
+
+    target_include_directories(mesh_worker_session_host_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+            ${MESH_SESSION_F_WIRED_OUTPUT_DIR}
+    )
+
+    target_link_libraries(mesh_worker_session_host_test
+        PRIVATE
+            sce_runtime
+            sce_mesh_common
+            GTest::gtest_main
+            pthread
+    )
+
+    target_compile_features(mesh_worker_session_host_test PRIVATE cxx_std_17)
+
+    apply_sce_test_policies(mesh_worker_session_host_test)
+
+    add_test(NAME mesh_worker_session_host_verification COMMAND mesh_worker_session_host_test)
+
     # ── SCE_MESH §9.6.6 rule 3 cross-partition synth override ─────
     # Closes §16.9 F exit criterion #4: "Inline <content> synthesized
     # child executes on a different partition." Unlike the §9.6.2

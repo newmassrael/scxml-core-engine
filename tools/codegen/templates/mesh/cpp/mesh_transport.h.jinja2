@@ -49,7 +49,18 @@
    deploy.yaml rejects a machine name hosted by two devices, so the machine
    name already resolves to one device and naming it again would duplicate
    the topology inside every id. The suffix is the SCXML invoke id the parent
-   already keys `activeInvokes_` on, not a session-local counter. #}
+   already keys `activeInvokes_` on, not a session-local counter.
+
+   The id is held to the rule for a session id where it is assembled: an
+   XML Nmtoken (`SessionId::refusalOf`, saved/SessionId.h). Both halves come
+   off the wire, and the parent writes the id as the `sender` of every event
+   the child sends it (docs/adr/0090), which a saved state that holds such an
+   event must restore. A wire-14 whose two halves make no Nmtoken brings no
+   session up, and the parent is told as it is told of a child that failed to
+   initialize (SCE_MESH.md §9.3): wire-20 carrying the refusal, then
+   wire-18. The parent's dispatch (MeshDispatch.h) drops a wire-15 or
+   wire-16 whose `child_session_id` is no Nmtoken, for a worker that did
+   not hold to this. #}
 
 {# SCE Mesh — unified transport routing (per-target transport dispatch).
 
@@ -638,6 +649,8 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 #include "{{ sm_header_stem }}_sm.h"
 #include "mesh/ChildSessionAdapter.h"
 #include "mesh/IChildSession.h"
+// The child session id is checked against the session-id rule where it is assembled.
+#include "saved/SessionId.h"
 // W3C SCXML B.1: WorkerSessionHost::onWire14 forwards the build-configured
 // script engine to each spawned child adapter before initialize() —
 // generated Policy::getScriptEngine() throws when unset.
@@ -1655,6 +1668,17 @@ struct TransportRouter {
             const std::string invoke_id_str = *env.subject;
             const std::array<uint8_t, 16> invoke_uuid = *env.invoke_id;
             std::string session_id = env.source + ":" + invoke_id_str;
+            // A session id is an XML Nmtoken, and both halves of this one come
+            // off the wire. The parent names the child's events with it as their
+            // sender (docs/adr/0090), so an id that is no Nmtoken would put in
+            // the parent's state an event no saved-state reader restores. No
+            // session is brought up under it; the parent is told as it is told
+            // of a child that failed to initialize, with the refusal as the
+            // reason.
+            if (const auto refusal = ::SCE::Saved::SessionId::refusalOf(session_id)) {
+                reportFailedBringUp(invoke_uuid, invoke_id_str, session_id, *refusal, send_ctp);
+                return;
+            }
             // SCE_MESH.md §9.6.3: the child session's endpoint, written here
             // once from what this worker alone knows (its device, its machine,
             // the session id above) and carried in `reply_to` on every
@@ -1728,26 +1752,10 @@ struct TransportRouter {
             }
             sessions_.emplace(invoke_id_str, std::move(adapter));
             } catch (const std::exception& __sce_child_init_ex) {
-                // §9.3 pins BOTH events at the parent: `error.execution` with
-                // reason INVOKE_CHILD_INIT_FAILED, and `done.invoke.<id>`
-                // "(child never reached a stable state)". They travel as
-                // wire-20 then wire-18, in that order, so the author's error
-                // handler observes the failure before the invoke completes.
-                //
-                // Sending the completion is not cosmetic: `onInvokeDone` is
-                // what raises `done.invoke.<id>`, and the invoking state's
-                // onexit is what erases `activeInvokes_`. Reporting only the
-                // error would leave the parent parked in the invoking state
-                // with a session that no longer exists.
-                //
                 // The ids come from the wire-14 envelope, not from `adapter` —
                 // the throw may have come from its own constructor, and the
                 // parent correlates on the ids it already holds either way.
-                (void)send_ctp(::SCE::Mesh::makeInvokeChildInitFailedEnvelope(
-                    host_machine_name_, invoke_uuid, invoke_id_str, session_id,
-                    __sce_child_init_ex.what()));
-                (void)send_ctp(::SCE::Mesh::makeInvokeDoneEnvelope(
-                    host_machine_name_, invoke_uuid, invoke_id_str, session_id, ""));
+                reportFailedBringUp(invoke_uuid, invoke_id_str, session_id, __sce_child_init_ex.what(), send_ctp);
                 // The half-built session is deliberately not registered: a
                 // child that never initialized cannot be ticked or cancelled.
             }
@@ -1795,6 +1803,30 @@ struct TransportRouter {
         std::size_t activeCount() const { return sessions_.size(); }
 
     private:
+        /// SCE_MESH.md §9.3 "Child fails during initialization", told to the
+        /// parent of the invoke a wire-14 started: the one report for a child
+        /// that threw while it was brought up and for a session id that is no
+        /// XML Nmtoken, so a parent reads the two alike. `detail` is why.
+        ///
+        /// §9.3 pins BOTH events at the parent: `error.execution` with reason
+        /// INVOKE_CHILD_INIT_FAILED, and `done.invoke.<id>` "(child never
+        /// reached a stable state)". They travel as wire-20 then wire-18, in
+        /// that order, so the author's error handler observes the failure
+        /// before the invoke completes.
+        ///
+        /// Sending the completion is not cosmetic: `onInvokeDone` is what
+        /// raises `done.invoke.<id>`, and the invoking state's onexit is what
+        /// erases `activeInvokes_`. Reporting only the error would leave the
+        /// parent parked in the invoking state with a session that never ran.
+        void reportFailedBringUp(const std::array<uint8_t, 16>& invoke_uuid, const std::string& invoke_id_str,
+                                 const std::string& session_id, const std::string& detail,
+                                 const ::SCE::Mesh::ChildToParentPublisher& send_ctp) const {
+            (void)send_ctp(::SCE::Mesh::makeInvokeChildInitFailedEnvelope(
+                host_machine_name_, invoke_uuid, invoke_id_str, session_id, detail));
+            (void)send_ctp(::SCE::Mesh::makeInvokeDoneEnvelope(
+                host_machine_name_, invoke_uuid, invoke_id_str, session_id, ""));
+        }
+
         void emitWire18(::SCE::Mesh::IChildSession& s,
                         ::SCE::Mesh::ChildToParentPublisher& send_ctp) {
             // Envelope shape lives in ChildSessionAdapter.h so the §9.3
