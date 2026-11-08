@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: a0d514a5bb9842543c3a83f1c232fcee900a165f2a3ed19fb29e42d249c8aa22
+// source-hash: ea764ab5524bc7a7e7d4553640b3fb26547d13f0d2053c0f5e7214161efbc6d0
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -172,7 +172,7 @@ public struct StaticModelHarnessTransition: Hashable, Sendable {
 
     /// The digest of the source set this machine was generated from: the
     /// `source-hash` of the file's own header, as a value.
-    public static let sourceHash = "a0d514a5bb9842543c3a83f1c232fcee900a165f2a3ed19fb29e42d249c8aa22"
+    public static let sourceHash = "ea764ab5524bc7a7e7d4553640b3fb26547d13f0d2053c0f5e7214161efbc6d0"
 
     /// Every transition of the machine. Each id is written with its type, so a
     /// state or an event the document calls `none` is never read as `nil`.
