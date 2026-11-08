@@ -288,6 +288,44 @@ fn a_record_is_built_whole_and_written_a_field_at_a_time() {
     );
 }
 
+/// A payload's text and byte-string fields are read through the library's
+/// `field` with the bound their schema declares, so a delivery past it is
+/// refused wherever an expression reads the field, the top level included, and
+/// not only where the value is written somewhere narrower (docs/adr/0086,
+/// section 4.4). `static_record_string`'s `label` is `string[8]` and
+/// `static_payload_bytes`'s `frame` is `bytes[8]`.
+#[test]
+fn a_payload_text_and_byte_string_are_read_held_to_their_bound() {
+    for (machine, read) in [
+        (
+            "static_record_string",
+            "SceStatic.field(_event.data, 'label', {string: 8})",
+        ),
+        (
+            "static_payload_bytes",
+            "SceStatic.field(_event.data, 'frame', {bytes: 8})",
+        ),
+    ] {
+        let out = lowered_fixture(machine);
+        let document = roxmltree::Document::parse(&out).expect("well-formed");
+        let reads: Vec<&str> = document
+            .descendants()
+            .filter(|n| n.is_element())
+            .flat_map(|n| [n.attribute("expr"), n.attribute("cond")])
+            .flatten()
+            .collect();
+        assert!(
+            reads.iter().any(|value| value.contains(read)),
+            "{machine}: every read of the field holds its bound, `{read}`: {reads:?}"
+        );
+        let unbounded = read.split(", {").next().unwrap_or(read).to_string() + ", '";
+        assert!(
+            !reads.iter().any(|value| value.contains(&unbounded)),
+            "{machine}: no read of the field is held to no bound: {reads:?}"
+        );
+    }
+}
+
 /// An algorithm the document imports travels in it: installed by the library's
 /// `<data>` under `SceStatic.algorithms`, and called by that name from the
 /// guard that calls it — the function a generated machine would have linked.
