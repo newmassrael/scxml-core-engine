@@ -3046,8 +3046,9 @@ completion, `done.invoke.<id>` — bound by the invoke, not by an event name,
 so it does not conflict with the rule that refuses an event schema on
 `done.invoke.*`. A guard reading a result field lowers natively like any
 schema'd event's, and a completion whose data is not the record is refused
-as any typed payload the data does not fit is: `error.execution`, and the
-guard does not fire. Such a completion has no typed inject seam (`raise_…`):
+as any typed payload the data does not fit is: refused whole, with no
+transition selected for it, and `error.execution` taken in its place
+(docs/adr/0086, section 4.2). Such a completion has no typed inject seam (`raise_…`):
 the engine accepts a host-run completion only through its completion call,
 which checks that the start is still running. The generic `done.invoke`
 stays untyped — several invokes share it.

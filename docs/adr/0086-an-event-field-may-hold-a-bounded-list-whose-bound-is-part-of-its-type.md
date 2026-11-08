@@ -360,14 +360,12 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
    test is refused whole for a nested text, a nested byte string, the top-level text and the top-level count.
 
    The Interpreter reads a delivery whole at its door too. The lowering installs, beside the library, the record of
-   each event whose payload the document reads (`SceStatic.door`), and the Interpreter, when it binds `_event` and
-   before it selects a transition (`StateMachine::bindCurrentEvent`), asks the library's reader of it, which reads
-   every field as `SceStatic.field` reads one and raises `error.execution` once for a delivery outside its type. Every
-   guard that reads the payload is then held to the event having been let in (`SceStatic.admitted() && (…)`), and the
-   content of a transition that reads it stands inside `<if cond="SceStatic.admitted()">`, as a generated lane holds a
-   guard to the payload its lift bound and opens such content with the same check: the transition is taken as it is
-   on every engine, and none of its content runs. A field past its bound refuses the delivery even on a route that
-   reads none of it (`scenarios/static_payload_bytes.json`, a sensor of 40 to 49).
+   each event whose payload the document reads (`SceStatic.door`), and the Interpreter, when it takes an event and
+   before it selects a transition (`StateMachine::processTakenEvent`), asks the library's reader of it, which reads
+   every field as `SceStatic.field` reads one and answers the sentence of the first refusal. A delivery so refused is
+   replaced by the `error.execution` that carries the sentence, as on every lane (amended the same day, below). A
+   field past its bound refuses the delivery even on a route that reads none of it
+   (`scenarios/static_payload_bytes.json`, a sensor of 40 to 49).
 
    The shared record list (ADR 0046) follows: an edit whose text is past `shared_typed_text` is refused where it is
    read, as every delivery outside its type is, and the list's own check of the text (`typed`, of the same bound),
@@ -379,6 +377,66 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
    fits now, and the Rust payload struct of a schema of entries still holds the text in the engine's own text type,
    where the algorithm's record holds `SceString<N>`, so the copy would be a conversion that can fail in its type. It
    is lifted when that struct holds the field's bounded text, as a composed payload's struct does (section 7.4).
+
+5. **Amended 2026-11-09: a refused delivery is replaced at the door, on every lane.** Item 2 says a delivery the
+   door refuses is refused whole: its transition does not run, and `error.execution` stands in its place. No lane did
+   that until this amendment. Each lifted the payload where it took the event, raised `error.execution` into the
+   internal queue when the lift refused, and then selected transitions for the refused event with no payload bound:
+   a guard that reads the payload was false, content that reads it was skipped, and a transition that reads none of
+   it was taken, its target entered. The generator recorded the reason beside every lift: a script engine given the
+   same guard on the same data raises `error.execution` and treats the guard as false (measured 2026-09-22), and a
+   native lowering that answered otherwise would make the optimisation observable. The Interpreter's door, installed
+   earlier the same day, kept that behaviour by rewriting each guard that reads the payload into
+   `SceStatic.admitted() && (…)` and each such content into `<if cond="SceStatic.admitted()">`.
+
+   That measurement is superseded. It compared the typed lift with a reader that holds no type, so the one answer it
+   could match was the untyped one. An event schema is a contract at the boundary: an event that fails its type is
+   not that event, and validating at the boundary means it is never delivered. Taking its transition anyway let a
+   delivery the document cannot read move the machine (a transition that reads none of the payload, or a target
+   whose content was skipped), which is what item 2 forbids. The owner's standing rule decides it: the rule of this
+   ADR, not the old measurement, is what every lane implements.
+
+   On every lane the door is where the event is taken off its queue, and the replacement happens there:
+
+   | Lane | The door | What it answers |
+   |---|---|---|
+   | Rust | `Engine::bind_lifted_payload`, asked by `bind_queued` | `Admission::{Admitted, Replaced, Refused}` |
+   | Go | `Engine.liftTypedPayload` | the event taken and `admitted`, `inPlace` or `refusedWhole` |
+   | Kotlin | `StateMachineEngine.bindTypedPayload` | the event taken, or `null` |
+   | Python | `Engine._admit`, over the policy's `lift_event_payload` (the lift moved out of `set_current_event`) | the event taken and whether it is the replacement, or `None` |
+   | C++ | `StaticExecutionEngine::bindTypedPayload` | `Admission::{Admitted, InPlace, Refused}` |
+   | C11 | `<sm>_lift_payload`, which rewrites the dequeued event in place | `<SM>_DOOR_ADMITTED`, `_IN_PLACE` or `_REFUSED` |
+   | Swift | `Engine.liftPayload` | the event taken and whether it is the replacement, or `nil` |
+   | Interpreter | `StateMachine::processTakenEvent`, asking `__sceDequeued` | the refusal's sentence, or the empty text |
+
+   - The replacement is the platform error `error.execution` whose data is the refusal's sentence (`` `<event>`
+     payload: <reason> ``), bound as `_event` with no typed payload. No transition is selected for the refused
+     delivery.
+   - It takes the refused delivery's position: it is answered at once, in that delivery's turn. Taken off the
+     external queue, it is the engine's own error all the same: no `<finalize>` or autoforward runs for it, an error a
+     handler raises while answering it is a link in its chain, and one no transition matches is counted as an
+     unhandled error, not as a discarded external event.
+   - A generated machine whose document declares no `error.execution` has no event to put in the delivery's place:
+     the delivery is refused and nothing is taken. The Interpreter, which names events by text, takes the error and
+     finds no transition for it.
+   - Nothing is added to a queued entry and no saved state changes. Every door is at the dequeue, so a saved queue
+     holds a delivery as it arrived, and the restored machine judges it when it takes it, with the same answer. The
+     queue never holds a refused delivery's error: the internal queue's bound counts none for the lift any more
+     (`sce-build/src/internal_queue_bound.rs`).
+   - The Interpreter's `SceStatic.admitted()` and the rewriting that held guards and content to it (`door_edits`) are
+     removed: no refused delivery reaches a guard. On the generated lanes the check a guard or content makes that the
+     payload bound is its own event's (the tag, `!= null`, `is not None`, `matches!`) stays, for a reason that is not
+     the door's: an event of another name that the transition's descriptor also matches (`a` matching `a.b`) carries
+     no payload of the transition's event, and a Rust `no_std` build lifts no wire.
+   - `scenarios/sync_client.json`, run 9, is the case the old behaviour got wrong: a `sync.page` whose `more` is a
+     number is not taken, so the last-page transition, which reads nothing of the payload and was taken before, does
+     not run, the listing goes on, and the `error.execution` is counted in its place. Every other step of every
+     scenario that refuses a delivery keeps its expectation: each such delivery met only guards that read the payload
+     or targetless content that reads it, where the two behaviours agree.
+
+   Open: an `ecmascript` document whose guard the generator lowers to a typed comparison (NL to IR Item C1) has the
+   same door on the generated lanes. The Interpreter runs such a document on its script engine with no door, and
+   still takes a transition that reads none of the payload for a delivery the generated lanes refuse.
 
 ### 5. Validation where a value is written
 
