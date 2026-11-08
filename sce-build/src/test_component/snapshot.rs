@@ -507,11 +507,16 @@ mod tests {
     /// §11.8, §12.6: a backend that does not generate the suite's tables has no
     /// value for a module parameter, so it refuses a component that declares
     /// one by name, and lowers one that declares none; a backend that generates
-    /// them, Rust, C++ and Kotlin among them, lowers it.
+    /// them, Rust, C++, Kotlin and Go among them, lowers it.
     #[test]
     fn a_module_parameter_is_refused_where_the_suites_tables_are_not_generated() {
         let suites = crate::forge::codegen_matrix::TEST_SUITE_BACKENDS;
-        for language in [Language::Rust, Language::Cpp, Language::Kotlin] {
+        for language in [
+            Language::Rust,
+            Language::Cpp,
+            Language::Kotlin,
+            Language::Go,
+        ] {
             assert!(suites.contains(&language), "{language:?}");
         }
         let mut model = component();

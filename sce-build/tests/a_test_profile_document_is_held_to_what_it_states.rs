@@ -1212,19 +1212,22 @@ fn not_generated(kind: &str, language: Language, err: Located<ForgeError>) {
 /// docs/SCE_TEST_PROFILE.md §11.9: a backend refuses a document of the
 /// profile by name until its runtime lands there for the document's kind, the
 /// declaration kinds at the forge dispatch and the test component where a
-/// machine is written. C++, Rust and Kotlin generate every kind: a template
-/// (`a_test_template_is_generated_in_cpp.rs`,
+/// machine is written. C++, Rust, Kotlin and Go generate every kind: a
+/// template (`a_test_template_is_generated_in_cpp.rs`,
 /// `a_test_template_is_generated_in_rust.rs`,
-/// `a_test_template_is_generated_in_kotlin.rs`), a component
+/// `a_test_template_is_generated_in_kotlin.rs`,
+/// `a_test_template_is_generated_in_go.rs`), a component
 /// (`a_test_component_is_generated_in_cpp.rs`,
 /// `a_test_component_is_generated_in_rust.rs`,
-/// `a_test_component_is_generated_in_kotlin.rs`) and the tables of a test
+/// `a_test_component_is_generated_in_kotlin.rs`,
+/// `a_test_component_is_generated_in_go.rs`) and the tables of a test
 /// (`a_test_suite_is_generated_in_cpp.rs`, `a_test_suite_is_generated_in_rust.rs`,
-/// `a_test_suite_is_generated_in_kotlin.rs`), and Go a template
-/// (`a_test_template_is_generated_in_go.rs`) and a component
-/// (`a_test_component_is_generated_in_go.rs`); each example generates where its
-/// kind is generated, but for the component's on Go, whose module parameter
-/// waits for Go's suite tables.
+/// `a_test_suite_is_generated_in_kotlin.rs`, `a_test_suite_is_generated_in_go.rs`);
+/// each example generates where its kind is generated. A Go machine imports
+/// the package of each template it uses under the run's module path, which
+/// the statechart entry read here is given by no option, so on Go the example
+/// component is refused for the path and generates where the path is given
+/// (`a_test_suite_is_generated_in_go.rs`).
 #[test]
 fn a_document_of_the_profile_is_refused_by_name_where_its_kind_is_not_generated() {
     for &kind in ForgeKind::TEST_PROFILE {
@@ -1261,18 +1264,20 @@ fn a_document_of_the_profile_is_refused_by_name_where_its_kind_is_not_generated(
             "test-suite",
         ] {
             let parsed = ForgeKind::from_attr(kind).expect("a kind");
-            // C++, Rust and Kotlin generate every kind of the profile
+            // C++, Rust, Kotlin and Go generate every kind of the profile
             // (`a_test_template_is_generated_in_cpp.rs`,
             // `a_test_suite_is_generated_in_cpp.rs`,
             // `a_test_template_is_generated_in_rust.rs`,
             // `a_test_suite_is_generated_in_rust.rs`,
             // `a_test_template_is_generated_in_kotlin.rs`,
-            // `a_test_suite_is_generated_in_kotlin.rs`), and Go a template
-            // (`a_test_template_is_generated_in_go.rs`); a port type writes no
+            // `a_test_suite_is_generated_in_kotlin.rs`,
+            // `a_test_template_is_generated_in_go.rs`,
+            // `a_test_suite_is_generated_in_go.rs`); a port type writes no
             // file.
-            let generated_here =
-                matches!(language, Language::Rust | Language::Cpp | Language::Kotlin)
-                    || (language == Language::Go && parsed == ForgeKind::TestTemplate);
+            let generated_here = matches!(
+                language,
+                Language::Rust | Language::Cpp | Language::Kotlin | Language::Go
+            );
             if generated_here {
                 assert_eq!(codegen_matrix::lookup(parsed, language), EmitOutcome::Emit);
                 let output =
@@ -1326,26 +1331,25 @@ fn a_document_of_the_profile_is_refused_by_name_where_its_kind_is_not_generated(
             continue;
         }
         // Go generates a test component (`a_test_component_is_generated_in_go.rs`)
-        // and not yet the suite's tables, so it refuses the example, which
-        // declares a module parameter, by that parameter (§12.6, slice 6).
+        // and reads its module parameter from the suite's value; the example's
+        // machine imports its template's package, whose path the module path
+        // places, so this entry, which is given none, refuses it for the path
+        // and not for the module parameter (`a_test_suite_is_generated_in_go.rs`
+        // generates it with one).
         if language == Language::Go {
             assert_eq!(
                 codegen_matrix::lookup(ForgeKind::TestComponent, language),
                 EmitOutcome::Emit
             );
             let Err(err) = generated else {
-                panic!("the example's module parameter has no value on Go");
+                panic!("the example's template has no package path on Go");
             };
-            match err.error {
-                ForgeError::Generate(boxed) => match *boxed {
-                    GenerateError::UnsupportedFeature { detail, .. } => assert!(
-                        detail.contains("the module parameter 'limit' takes the value the suite"),
-                        "{detail}"
-                    ),
-                    other => panic!("test-component on Go: {other:?}"),
-                },
-                other => panic!("test-component on Go: {other:?}"),
-            }
+            let refusal = format!("{err:?}");
+            assert!(
+                refusal.contains("requires ForgeCompileOptions.go_module_prefix"),
+                "{refusal}"
+            );
+            assert!(!refusal.contains("module parameter"), "{refusal}");
             continue;
         }
         match generated {

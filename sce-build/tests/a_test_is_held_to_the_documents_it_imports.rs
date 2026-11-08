@@ -314,19 +314,19 @@ fn each_refusal_is_placed_on_the_row_that_holds_it() {
 
 /// The rules run where a document of the profile is compiled, before the
 /// refusal a backend gives one until the profile's runtime lands there: the
-/// accepted suite reaches that refusal on Go, which generates no suite, and a
-/// suite that breaks a rule is refused by the rule on Rust, which generates
-/// one.
+/// accepted suite reaches that refusal on Python, which generates no suite,
+/// and a suite that breaks a rule is refused by the rule on Rust, which
+/// generates one.
 #[test]
 fn the_rules_run_where_a_document_of_the_profile_is_compiled() {
-    assert!(!sce_build::forge::codegen_matrix::TEST_SUITE_BACKENDS.contains(&Language::Go));
+    assert!(!sce_build::forge::codegen_matrix::TEST_SUITE_BACKENDS.contains(&Language::Python));
     match sce_build::compile_forge_file(
         &dir().join("ping_suite.scxml"),
-        Language::Go,
+        Language::Python,
         &[],
         &options(),
     ) {
-        Ok(_) => panic!("a test suite generated on Go"),
+        Ok(_) => panic!("a test suite generated on Python"),
         Err(err) => match err.error {
             ForgeError::Generate(boxed) => {
                 assert!(

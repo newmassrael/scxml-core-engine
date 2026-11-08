@@ -1254,6 +1254,13 @@ path = "tests/a_test_component_is_generated_in_go.rs"
 required-features = ["cli"]
 
 [[test]]
+# Spawns `sce-codegen generate -l go --go-module-prefix` for the components a
+# configuration's table names, beside the tables it compiles in process.
+name = "a_test_suite_is_generated_in_go"
+path = "tests/a_test_suite_is_generated_in_go.rs"
+required-features = ["cli"]
+
+[[test]]
 # Spawns `sce-codegen` for every backend and reads what it wrote.
 name = "a_childs_ids_come_from_the_tree"
 path = "tests/a_childs_ids_come_from_the_tree.rs"
