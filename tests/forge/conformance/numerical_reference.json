@@ -10077,6 +10077,22 @@
         { "args": [2000, 8], "expected": 31, "note": "fuzz" }
       ]
     },
+    "causal_cut": {
+      "fixture": "causal_cut",
+      "signature": "(members: u32, known: list<record:Known>) -> list<record:Entry>",
+      "formula": "the pointwise minimum, over the distinct members known names, of the entry each member's vector gives an author, a member that names none at 0, each author once in the order known first names it and left out at 0; nothing while fewer than members distinct members are known (docs/adr/0085, section 3; the standard document sce:std/mesh/causal_cut.scxml, built in a working list of the members beside the cut it returns, SCE_FORGE.md §4.12)",
+      "cases": [
+        { "args": [2, [{ "holderHi": 0, "holderLo": 1, "hi": 10, "lo": 1, "seq": 3 }, { "holderHi": 0, "holderLo": 1, "hi": 10, "lo": 2, "seq": 1 }, { "holderHi": 0, "holderLo": 2, "hi": 10, "lo": 1, "seq": 2 }]], "expected": [{ "hi": 10, "lo": 1, "seq": 2 }], "note": "the document's example: b is at 0 in the second member and is left out" },
+        { "args": [3, [{ "holderHi": 0, "holderLo": 1, "hi": 10, "lo": 1, "seq": 3 }, { "holderHi": 0, "holderLo": 1, "hi": 10, "lo": 2, "seq": 1 }, { "holderHi": 0, "holderLo": 2, "hi": 10, "lo": 1, "seq": 2 }]], "expected": [], "note": "a third member not heard from holds every column at 0" },
+        { "args": [2, [{ "holderHi": 0, "holderLo": 1, "hi": 10, "lo": 1, "seq": 3 }, { "holderHi": 0, "holderLo": 2, "hi": 10, "lo": 1, "seq": 5 }]], "expected": [{ "hi": 10, "lo": 1, "seq": 3 }], "note": "the minimum, not the maximum" },
+        { "args": [0, []], "expected": [], "note": "nothing known, nothing stable" },
+        { "args": [1, [{ "holderHi": 0, "holderLo": 1, "hi": 10, "lo": 1, "seq": 4 }, { "holderHi": 0, "holderLo": 1, "hi": 10, "lo": 2, "seq": 2 }]], "expected": [{ "hi": 10, "lo": 1, "seq": 4 }, { "hi": 10, "lo": 2, "seq": 2 }], "note": "a view of one member: its own vector is the cut" },
+        { "args": [2, [{ "holderHi": 0, "holderLo": 2, "hi": 10, "lo": 2, "seq": 7 }, { "holderHi": 0, "holderLo": 1, "hi": 10, "lo": 1, "seq": 1 }, { "holderHi": 0, "holderLo": 1, "hi": 10, "lo": 2, "seq": 9 }, { "holderHi": 0, "holderLo": 2, "hi": 10, "lo": 1, "seq": 3 }]], "expected": [{ "hi": 10, "lo": 2, "seq": 7 }, { "hi": 10, "lo": 1, "seq": 1 }], "note": "authors in the order known first names them" },
+        { "args": [2, [{ "holderHi": 0, "holderLo": 1, "hi": 10, "lo": 1, "seq": 5 }, { "holderHi": 0, "holderLo": 2, "hi": 10, "lo": 1, "seq": 4 }, { "holderHi": 0, "holderLo": 3, "hi": 10, "lo": 1, "seq": 6 }]], "expected": [{ "hi": 10, "lo": 1, "seq": 4 }], "note": "every member known counts, past members" },
+        { "args": [1, [{ "holderHi": 0, "holderLo": 1, "hi": 10, "lo": 1, "seq": 2 }, { "holderHi": 0, "holderLo": 2, "hi": 10, "lo": 2, "seq": 5 }]], "expected": [], "note": "each author is at 0 in the other member" },
+        { "args": [1, [{ "holderHi": 18446744073709551615, "holderLo": 18446744073709551615, "hi": 18446744073709551615, "lo": 18446744073709551615, "seq": 18446744073709551615 }]], "expected": [{ "hi": 18446744073709551615, "lo": 18446744073709551615, "seq": 18446744073709551615 }], "note": "every field at the top of uint64" }
+      ]
+    },
     "dedup_admit": {
       "fixture": "dedup_admit",
       "signature": "(window: list<record:Id>, id: record:Id, capacity: u32) -> list<record:Id> may-fail",
@@ -45002,6 +45018,30 @@
       "fields": [
         { "name": "hi", "value": 283686952306183, "sce_type": "uint64" },
         { "name": "lo", "value": 579005069656919567, "sce_type": "uint64" }
+      ]
+    },
+    "causal_known": {
+      "fixture": "CausalKnown",
+      "signature": "struct CausalKnownPayload { uint64 holderHi; uint64 holderLo; uint64 hi; uint64 lo; uint64 seq; }",
+      "description": "One entry of the latest delivered vector a copy knows of a member of its view: the member's replica, and the entry that member's vector gives an author, the element type of the list the standard document sce:std/mesh/causal_cut takes (SCE_FORGE.md §4.12). A SHAPE claim like every event-schema fixture: names, order, and that a value reads back.",
+      "event_name": "mesh.causal_known",
+      "fields": [
+        { "name": "holderHi", "value": 283686952306183, "sce_type": "uint64" },
+        { "name": "holderLo", "value": 579005069656919567, "sce_type": "uint64" },
+        { "name": "hi", "value": 1, "sce_type": "uint64" },
+        { "name": "lo", "value": 2, "sce_type": "uint64" },
+        { "name": "seq", "value": 3, "sce_type": "uint64" }
+      ]
+    },
+    "causal_entry": {
+      "fixture": "CausalEntry",
+      "signature": "struct CausalEntryPayload { uint64 hi; uint64 lo; uint64 seq; }",
+      "description": "One entry of a causal vector: an author replica and the highest change of it, the element type of the cut the standard document sce:std/mesh/causal_cut returns (SCE_FORGE.md §4.12). A SHAPE claim like every event-schema fixture: names, order, and that a value reads back.",
+      "event_name": "mesh.causal_entry",
+      "fields": [
+        { "name": "hi", "value": 283686952306183, "sce_type": "uint64" },
+        { "name": "lo", "value": 579005069656919567, "sce_type": "uint64" },
+        { "name": "seq", "value": 3, "sce_type": "uint64" }
       ]
     },
     "ordering_slot": {
