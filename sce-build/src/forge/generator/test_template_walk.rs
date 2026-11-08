@@ -15,10 +15,10 @@
 //! walk decides ([`TemplateSpelling`]): a position, a literal, a parameter, a
 //! call of a referenced unit and the parts of a value, and it joins the tree
 //! ([`Held`]) into an expression of its language, so only the spelling differs
-//! between backends. A backend whose `&&`, `||` and `!` are C's and which
-//! writes the tree with what it decides for every value folded away
-//! ([`truth`]) spells only the leaves ([`JoinSpelling`]); the join is written
-//! here.
+//! between backends. A backend whose connectives bind as C's do, spelled C's
+//! way or Python's ([`Connectives`]), and which writes the tree with what it
+//! decides for every value folded away ([`truth`]) spells only the leaves
+//! ([`JoinSpelling`]); the join is written here.
 //!
 //! Matching is on the values the event schema's unit declares, not on an
 //! encoding (ADR 0091 C2).
@@ -275,15 +275,64 @@ pub(super) enum CaseTest<'h, 's, A> {
     Holds { inner: &'h A, then: &'h Held<'s, A> },
 }
 
-/// `test`, or the test that holds where it does not, where `negated`: `!`
-/// before it, which binds it whole only where it is a call, a name or a
-/// postfix expression.
-pub(super) fn negate(test: String, negated: bool) -> String {
-    if negated {
-        format!("!{test}")
-    } else {
-        test
+/// The words a backend joins the tests of a matcher by, and the constants it
+/// writes a test the walk decides for every value as: C's (`&&`, `||`, `!`,
+/// `true`, `false`), which C++, Rust, Kotlin and Go share, or Python's (`and`,
+/// `or`, `not`, `True`, `False`). In both a conjunction binds tighter than a
+/// disjunction, and a negation, which the join puts only before a call, a name
+/// or a postfix expression, binds that operand whole, so one join writes both
+/// ([`JoinSpelling::join`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct Connectives {
+    and: &'static str,
+    or: &'static str,
+    not: &'static str,
+    held: &'static str,
+    not_held: &'static str,
+}
+
+impl Connectives {
+    /// C's, and C++'s, Rust's, Kotlin's and Go's.
+    pub(super) const C: Self = Self {
+        and: " && ",
+        or: " || ",
+        not: "!",
+        held: "true",
+        not_held: "false",
+    };
+
+    /// The constant of a test that holds for every value where `held`, and for
+    /// none otherwise.
+    pub(super) fn truth(self, held: bool) -> String {
+        if held { self.held } else { self.not_held }.to_string()
     }
+
+    /// `test`, or the test that holds where it does not, where `negated`: the
+    /// negation before it, which binds it whole only where it is a call, a name
+    /// or a postfix expression.
+    pub(super) fn negate(self, test: String, negated: bool) -> String {
+        if negated {
+            format!("{}{test}", self.not)
+        } else {
+            test
+        }
+    }
+
+    /// The word between two operands of a conjunction where `conjunction`, else
+    /// of a disjunction, with the spaces around it.
+    pub(super) fn joiner(self, conjunction: bool) -> &'static str {
+        if conjunction {
+            self.and
+        } else {
+            self.or
+        }
+    }
+}
+
+/// `test`, or the test that holds where it does not, where `negated`, in C's
+/// spelling ([`Connectives::C`]): `!` before it.
+pub(super) fn negate(test: String, negated: bool) -> String {
+    Connectives::C.negate(test, negated)
 }
 
 /// How a backend spells what the walk decides. A position's spelling is the
@@ -381,15 +430,22 @@ pub(super) trait TemplateSpelling {
     }
 }
 
-/// How a backend whose `&&`, `||` and `!` are C's, `&&` binding tighter,
-/// writes the leaves of the tree; [`Self::join`] writes the tree, once for
-/// every such backend. A negation is carried down to the leaves, so a
-/// complement is written as the comparisons that do not hold rather than as
-/// `!` before a join; a part the tree decides for every value
-/// ([`truth`]) is left out of its join, or is the join where it decides it;
-/// and a join is put in parentheses only where it is an operand of the other
-/// connective.
+/// How a backend whose connectives bind as C's do, a conjunction tighter than
+/// a disjunction ([`Connectives`]), writes the leaves of the tree;
+/// [`Self::join`] writes the tree, once for every such backend. A negation is
+/// carried down to the leaves, so a complement is written as the comparisons
+/// that do not hold rather than as a negation before a join; a part the tree
+/// decides for every value ([`truth`]) is left out of its join, or is the join
+/// where it decides it; and a join is put in parentheses only where it is an
+/// operand of the other connective.
 pub(super) trait JoinSpelling: TemplateSpelling {
+    /// The words the backend joins the tests by and the constants it writes a
+    /// decided test as: C's, but for a backend whose language spells them
+    /// otherwise.
+    fn connectives(&self) -> Connectives {
+        Connectives::C
+    }
+
     /// The comparison of the value at `at` with `rhs`, or the one that holds
     /// where it does not, where `negated`.
     fn compare(&self, at: &Position<'_, Self::At>, op: Op, negated: bool, rhs: &str) -> String;
@@ -429,14 +485,15 @@ pub(super) trait JoinSpelling: TemplateSpelling {
     /// `held` as one expression standing at `stands`, negated where
     /// `negated`.
     fn join(&self, held: &Held<'_, Self::At>, negated: bool, stands: Stands) -> String {
+        let connectives = self.connectives();
         match held {
-            Held::True => (!negated).to_string(),
+            Held::True => connectives.truth(!negated),
             Held::Not(part) => self.join(part, !negated, stands),
             Held::All(parts) => self.connective(parts, negated, !negated, stands),
             Held::Any(parts) => self.connective(parts, negated, negated, stands),
             Held::Compare { at, op, rhs } => self.compare(at, *op, negated, rhs),
             Held::Count { at, op, n } => self.count(at, *op, negated, *n),
-            Held::Call(call) => negate(call.clone(), negated),
+            Held::Call(call) => connectives.negate(call.clone(), negated),
             Held::Absent(at) => self.absence(&at.at, negated),
             Held::Present { at, inner, then } => {
                 self.optional(&at.at, &inner.at, then, negated, negated, stands)
@@ -454,7 +511,7 @@ pub(super) trait JoinSpelling: TemplateSpelling {
                     None => CaseTest::Empty,
                     Some((inner, then)) => match truth(then, false) {
                         Some(true) => CaseTest::AnyRecord,
-                        Some(false) => return negated.to_string(),
+                        Some(false) => return connectives.truth(negated),
                         None => CaseTest::Holds {
                             inner: &inner.at,
                             then,
@@ -466,9 +523,9 @@ pub(super) trait JoinSpelling: TemplateSpelling {
         }
     }
 
-    /// The join of `parts`, each negated where `negated`, by `&&` where
-    /// `conjunction` and by `||` otherwise: a part that holds for every value
-    /// is left out, and one that decides the join is the join.
+    /// The join of `parts`, each negated where `negated`, by a conjunction
+    /// where `conjunction` and by a disjunction otherwise: a part that holds
+    /// for every value is left out, and one that decides the join is the join.
     fn connective(
         &self,
         parts: &[Held<'_, Self::At>],
@@ -476,29 +533,30 @@ pub(super) trait JoinSpelling: TemplateSpelling {
         conjunction: bool,
         stands: Stands,
     ) -> String {
+        let connectives = self.connectives();
         let decides = !conjunction;
         let mut open = Vec::new();
         for part in parts {
             match truth(part, negated) {
-                Some(held) if held == decides => return decides.to_string(),
+                Some(held) if held == decides => return connectives.truth(decides),
                 Some(_) => {}
                 None => open.push(part),
             }
         }
         match open.as_slice() {
-            [] => (!decides).to_string(),
+            [] => connectives.truth(!decides),
             [part] => self.join(part, negated, stands),
             _ => {
-                let (operand, joiner) = if conjunction {
-                    (Stands::Conjunct, " && ")
+                let operand = if conjunction {
+                    Stands::Conjunct
                 } else {
-                    (Stands::Disjunct, " || ")
+                    Stands::Disjunct
                 };
                 let joined = open
                     .iter()
                     .map(|part| self.join(part, negated, operand))
                     .collect::<Vec<_>>()
-                    .join(joiner);
+                    .join(connectives.joiner(conjunction));
                 let nested = match stands {
                     Stands::Whole => false,
                     Stands::Conjunct => !conjunction,
@@ -527,8 +585,8 @@ pub(super) trait JoinSpelling: TemplateSpelling {
         stands: Stands,
     ) -> String {
         match (truth(then, negated), absent_holds) {
-            (Some(true), true) => "true".to_string(),
-            (Some(false), false) => "false".to_string(),
+            (Some(true), true) => self.connectives().truth(true),
+            (Some(false), false) => self.connectives().truth(false),
             (Some(true), false) => self.absence(at, true),
             (Some(false), true) => self.absence(at, false),
             (None, _) => self.bound_optional(at, inner, then, absent_holds, negated, stands),
