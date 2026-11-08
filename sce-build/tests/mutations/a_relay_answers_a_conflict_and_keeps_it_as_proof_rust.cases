@@ -46,8 +46,8 @@ PY
 
 mutation_case "A courier does not take in what the relay held with a conflict" <<'PY'
 edit("backends/rust/relay/src/client.rs",
-     "            take(\n                &self.trust,\n                &mut self.state.parked,\n                &record,",
-     "            let _ = (\n                &self.trust,\n                &mut self.state.parked,\n                &record,")
+     "            take(&self.trust, &mut self.state.parked, &record, &mut read);",
+     "            let _ = (&self.trust, &mut self.state.parked, &record, &mut read);")
 PY
 
 mutation_case "A device told its own operation conflicts goes on with its round" <<'PY'
