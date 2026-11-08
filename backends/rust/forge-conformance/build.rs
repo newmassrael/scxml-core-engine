@@ -314,6 +314,24 @@ fn main() {
         &options,
     );
 
+    // Step 7c: a CBOR map whose entries hold a bounded list of records
+    // (docs/adr/0085, Landing order step 3a). The codec and the event schema of its
+    // record are `sce-build`'s fixtures, which no generated tree hashes. The codec
+    // declares the record's struct in its own module, so the codec alone is
+    // generated and included, and `forge_cbor_record_list.rs` holds it to its bytes
+    // and its refusals.
+    let record_list_fixtures = Path::new(&manifest_dir)
+        .join("../../../sce-build/tests/fixtures/cbor_codec")
+        .canonicalize()
+        .expect("canonicalize sce-build/tests/fixtures/cbor_codec");
+    println!("cargo:rerun-if-changed={}", record_list_fixtures.display());
+    generate_stripped_fixtures(
+        &["codec_cbor_record_list"],
+        &record_list_fixtures,
+        &out_dir,
+        &options,
+    );
+
     // Step 8: broadcast-log kind (ADR 0062). The generator's output for a log is a
     // module that names the runtime's log over the element codec's struct and
     // stores the element's wire bytes; until it is compiled, nothing shows that
