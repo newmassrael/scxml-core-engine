@@ -50,7 +50,16 @@ public enum {{ document_pascal }}MeshPeers {
                     delivery: Delivery(dedup: {{ peer.dedup }}, ordered: {{ peer.ordered }}),
                     responders: [{% for r in peer.responders %}"{{ r | escape_swift }}"{% if not loop.last %}, {% endif %}{% endfor %}],
                     deadlineMs: {% if peer.deadline_ms is not none %}{{ peer.deadline_ms }}{% else %}nil{% endif %},
-                    replyEvents: [{% for e in peer.reply_events %}"{{ e | escape_swift }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+                    replyEvents: [{% for e in peer.reply_events %}"{{ e | escape_swift }}"{% if not loop.last %}, {% endif %}{% endfor %}],
+{%- if peer.causal %}
+                    causal: CausalGroup(
+                        name: "{{ peer.causal.name | escape_swift }}",
+                        epoch: {{ peer.causal.epoch }},
+                        view: [{% for v in peer.causal.view %}"{{ v | escape_swift }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+                    )
+{%- else %}
+                    causal: nil
+{%- endif %}
                 ),
 {%- if peer.link.kind == "wss_dial" %}
                 link: .wssDial(
