@@ -354,6 +354,42 @@ fn the_swift_map_holds_each_list_in_an_array_of_the_schemas_payload() {
 }
 
 #[test]
+fn the_c11_map_holds_each_list_in_a_fixed_array_of_the_schemas_payload() {
+    let c = generated_fixture(Language::C11);
+    holds(
+        Language::C11,
+        &c,
+        &[
+            "#include \"cbor_causal_entry.h\"",
+            "uint32_t len;",
+            "CborCausalEntryPayload_t items[2];",
+            "CborCausalEntryPayload_t items[3];",
+            // A read past the bound is refused before any record is read.
+            "if (raw > 2U) {",
+            "if (raw > 3U) {",
+            "s = codec_cbor_record_list_decode_record_causal_entry(&c, &v->seen.items[item]);",
+            "s = sce_forge_cbor_read_text(c, 16U, 16U, out->author.data, &text_len);",
+            // The length is a number the array does not bound, so the encode
+            // refuses one past it.
+            "if (self->seen.len > 2U) {",
+            "s = sce_forge_cbor_write_array_head(w, (uint64_t)self->seen.len);",
+            "s = codec_cbor_record_list_encode_record_causal_entry(&self->seen.items[item], w);",
+            "if (record->author.data[16] != '\\0') {",
+        ],
+        "static inline sce_forge_codec_status_t codec_cbor_record_list_encode_record_causal_entry(",
+        [
+            "sce_forge_cbor_write_text(w, \"seq\", 3U)",
+            "sce_forge_cbor_write_text(w, \"author\", 6U)",
+        ],
+    );
+    // The most the map writes counts each list at its bound, by C(T): the map
+    // head 1, `id` 1 + 17, `source` 1 + 2 + 64, `seen` 1 + 1 + 2 * 38 and
+    // `context` 1 + 1 + 3 * 38, a record being its head 1, "author" 7 and its
+    // text 17, "seq" 4 and its number 9: 1 + 18 + 67 + 78 + 116 = 280.
+    assert!(c.contains("_MAX_BYTES 280U"), "{c}");
+}
+
+#[test]
 fn a_record_with_a_field_no_codec_writes_is_refused_by_name() {
     let text = document(
         "",

@@ -31,6 +31,20 @@
                 return SCE_FORGE_CODEC_UNDECLARED_ENUM_VALUE;
             }
 {% endif %}
+{% elif e.kind == "record_list" %}
+            /* A definite-length array within the list's counts, each item one
+             * record's map, held in the list's fixed array. */
+            s = sce_forge_cbor_read_array_len(&c, &raw);
+            if (s != SCE_FORGE_CODEC_OK) {
+                return s;
+            }
+            if (raw > {{ e.list_max }}U{% if e.list_min > 0 %} || raw < {{ e.list_min }}U{% endif %}) {
+                return SCE_FORGE_CODEC_CBOR_OUT_OF_RANGE;
+            }
+            v->{{ e.name }}.len = (uint32_t)raw;
+            for (item = 0; s == SCE_FORGE_CODEC_OK && item < v->{{ e.name }}.len; ++item) {
+                s = {{ e.record_decode_fn }}(&c, &v->{{ e.name }}.items[item]);
+            }
 {% elif e.value_type == "uint64_t" %}
             s = sce_forge_cbor_read_uint(&c, &v->{{ e.value_ref }});
 {% else %}
@@ -84,6 +98,17 @@
 {{ i }}}
 {% endif %}
 {{ i }}s = sce_forge_cbor_write_uint(w, (uint64_t){{ e.enum_to_underlying }});
+{% elif e.kind == "record_list" %}
+{#- The list's length is a number its fixed array does not bound, so one past
+    the list's bound, or short of its lower count, is refused before anything
+    of the list is written. #}
+{{ i }}if (self->{{ e.name }}.len > {{ e.list_max }}U{% if e.list_min > 0 %} || self->{{ e.name }}.len < {{ e.list_min }}U{% endif %}) {
+{{ i }}    return SCE_FORGE_CODEC_CBOR_OUT_OF_RANGE;
+{{ i }}}
+{{ i }}s = sce_forge_cbor_write_array_head(w, (uint64_t)self->{{ e.name }}.len);
+{{ i }}for (item = 0; s == SCE_FORGE_CODEC_OK && item < self->{{ e.name }}.len; ++item) {
+{{ i }}    s = {{ e.record_encode_fn }}(&self->{{ e.name }}.items[item], w);
+{{ i }}}
 {% else %}
 {{ i }}s = sce_forge_cbor_write_uint(w, (uint64_t)self->{{ e.value_ref }});
 {% endif %}
@@ -143,7 +168,7 @@ extern "C" {
 typedef struct {
 {% for e in entries %}
     /* Map key {{ e.key }}{% if e.required %}, required{% endif %}. */
-{% if not e.required %}
+{% if not e.required or e.kind == "record_list" %}
     {{ e.field_type }} {{ e.name }};
 {% elif e.kind == "text" %}
     char {{ e.name }}[{{ e.capacity }}];
@@ -161,6 +186,105 @@ typedef struct {
 {% endif %}
 {% endfor %}
 } {{ c_struct_typedef }};
+{% for r in cbor_records %}
+
+/* Read one record of the event schema `{{ r.schema }}` (`record:{{ r.alias }}`)
+ * from `c` into `*out`, as a list of this map holds it (docs/adr/0085, Landing
+ * order step 3a), the payload type the schema's own unit declares: one CBOR map
+ * of every field, each under its id as text (docs/adr/0086, section 9.2). Its
+ * keys in any order, a key the schema does not declare skipped whole; a key
+ * given twice is SCE_FORGE_CODEC_CBOR_MALFORMED, a field missing
+ * SCE_FORGE_CODEC_CBOR_REQUIRED_KEY_MISSING, and a text past its bound, or one
+ * that carries the byte its terminator is, SCE_FORGE_CODEC_CBOR_OUT_OF_RANGE. */
+static inline sce_forge_codec_status_t {{ r.decode_fn }}(sce_forge_cursor_t *c, {{ r.type_name }} *out) {
+    uint64_t count = 0;
+    uint64_t i;
+    uint64_t raw = 0;
+    size_t text_len = 0;
+{% for f in r.fields %}
+    bool seen_{{ f.name }} = false;
+{% endfor %}
+    sce_forge_codec_status_t s = sce_forge_cbor_read_map_len(c, &count);
+    (void)raw;
+    (void)text_len;
+    if (s != SCE_FORGE_CODEC_OK) {
+        return s;
+    }
+    memset(out, 0, sizeof *out);
+    for (i = 0; i < count; ++i) {
+        const char *key = NULL;
+        size_t key_len = 0;
+        s = sce_forge_cbor_read_text_in_place(c, &key, &key_len);
+        if (s != SCE_FORGE_CODEC_OK) {
+            return s;
+        }
+{% for f in r.fields %}
+        {{ "} else " if not loop.first else "" }}if (key_len == {{ f.key_len }}U && memcmp(key, {{ f.key_literal }}, {{ f.key_len }}U) == 0) {
+            /* A key given twice is not one map entry. */
+            if (seen_{{ f.name }}) {
+                return SCE_FORGE_CODEC_CBOR_MALFORMED;
+            }
+            seen_{{ f.name }} = true;
+{% if f.kind == "bool" %}
+            s = sce_forge_cbor_read_bool(c, &out->{{ f.name }});
+{% elif f.kind == "text" %}
+            s = sce_forge_cbor_read_text(c, {{ f.max }}U, {{ f.max }}U, out->{{ f.name }}.data, &text_len);
+            if (s == SCE_FORGE_CODEC_OK && strlen(out->{{ f.name }}.data) != text_len) {
+                s = SCE_FORGE_CODEC_CBOR_OUT_OF_RANGE;
+            }
+{% elif f.value_type == "uint64_t" %}
+            s = sce_forge_cbor_read_uint(c, &out->{{ f.name }});
+{% else %}
+            s = sce_forge_cbor_read_uint_upto(c, {{ f.int_max }}U, &raw);
+            out->{{ f.name }} = ({{ f.value_type }})raw;
+{% endif %}
+{% endfor %}
+        } else {
+            s = sce_forge_cbor_skip(c);
+        }
+        if (s != SCE_FORGE_CODEC_OK) {
+            return s;
+        }
+    }
+{% for f in r.fields %}
+    if (!seen_{{ f.name }}) {
+        return SCE_FORGE_CODEC_CBOR_REQUIRED_KEY_MISSING;
+    }
+{% endfor %}
+    return SCE_FORGE_CODEC_OK;
+}
+
+/* Write one record of `{{ r.schema }}` as one map of every field, the keys in
+ * the order RFC 8949 §4.2.1 sorts their encodings: a shorter key first. A text
+ * whose buffer holds no terminator at its bound is past the bound, refused with
+ * SCE_FORGE_CODEC_CBOR_OUT_OF_RANGE rather than written. */
+static inline sce_forge_codec_status_t {{ r.encode_fn }}(const {{ r.type_name }} *record, sce_forge_writer_t *w) {
+    sce_forge_codec_status_t s = sce_forge_cbor_write_map_head(w, {{ r.field_count }}U);
+    if (s != SCE_FORGE_CODEC_OK) {
+        return s;
+    }
+{% for f in r.fields_by_key %}
+    s = sce_forge_cbor_write_text(w, {{ f.key_literal }}, {{ f.key_len }}U);
+    if (s != SCE_FORGE_CODEC_OK) {
+        return s;
+    }
+{% if f.kind == "bool" %}
+    s = sce_forge_cbor_write_bool(w, record->{{ f.name }});
+{% elif f.kind == "text" %}
+    if (record->{{ f.name }}.data[{{ f.max }}] != '\0') {
+        return SCE_FORGE_CODEC_CBOR_OUT_OF_RANGE;
+    }
+    s = sce_forge_cbor_write_text(w, record->{{ f.name }}.data, strlen(record->{{ f.name }}.data));
+{% else %}
+    s = sce_forge_cbor_write_uint(w, (uint64_t)record->{{ f.name }});
+{% endif %}
+    if (s != SCE_FORGE_CODEC_OK) {
+        return s;
+    }
+{% endfor %}
+    return SCE_FORGE_CODEC_OK;
+}
+{% endfor %}
 
 /* Decode one map from `cursor` into `*out`. On SCE_FORGE_CODEC_OK the cursor
  * has advanced past it; on any other status the cursor is where it was and
@@ -174,6 +298,10 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
     uint64_t i;
     uint64_t raw = 0;
     size_t text_len = 0;
+{% if cbor_records %}
+    /* The index of a record of a list being read. */
+    uint32_t item = 0;
+{% endif %}
     /* A string past what this node holds: read on, and answered last
      * (docs/adr/0077 §7). */
     bool over = false;
@@ -233,6 +361,10 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
 static inline sce_forge_codec_status_t {{ c_encode_func }}(const {{ c_struct_typedef }} *self, sce_forge_writer_t *w) {
     uint64_t count = {{ required_count }}U;
     sce_forge_codec_status_t s;
+{% if cbor_records %}
+    /* The index of a record of a list being written. */
+    uint32_t item;
+{% endif %}
 {% for e in entries if not e.required %}
     if (self->{{ e.present_ref }}) {
         count++;
