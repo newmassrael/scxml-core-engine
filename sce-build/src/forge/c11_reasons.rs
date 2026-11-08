@@ -145,12 +145,13 @@ pub const HOST_INVOKE_REFUSED: Reason = Reason {
 };
 
 /// A bound the C11 runtime publishes for the sentences it answers a machine
-/// with: the macro its header defines (`name`), the most bytes a sentence
+/// with, or for the data a host may hand one ([`UNTYPED_EVENT_DATA`]): the
+/// macro its header defines (`name`), the most bytes a sentence or the data
 /// holds, and the name a template quotes it by (`key`). The build sizes a
-/// reason that quotes such a sentence by `max_len`, and the machine asserts
-/// that the header it compiles with publishes no more
-/// ([`template_bounds_checked`]), so a header that grew a longer sentence
-/// fails the machine's build rather than overflowing its slot.
+/// reason that quotes such a sentence, or the slot that holds such data, by
+/// `max_len`, and the machine asserts that the header it compiles with
+/// publishes no more ([`template_bounds_checked`]), so a header that grew a
+/// longer sentence fails the machine's build rather than overflowing its slot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Published {
     pub key: &'static str,
@@ -185,6 +186,19 @@ pub const HOST_INVOKE_REFUSAL: Published = Published {
 
 /// Every bound the C11 runtime publishes for a sentence a reason quotes.
 pub const PUBLISHED: &[Published] = &[PAYLOAD_REFUSAL, REQUEST_REFUSAL, HOST_INVOKE_REFUSAL];
+
+/// The most bytes of the data an event may carry into a machine with no script
+/// engine when the machine's document declares no schema for the event
+/// (`sce/types.h`; docs/adr/0086, section 8.6 (c)): an event a host hands it by
+/// name, and the end of a host-run invocation that declares no result. No
+/// reason quotes it, so it is not among [`PUBLISHED`]; the machine's slot is
+/// sized by it, and the machine checks it as it checks a bound its reasons
+/// quote ([`hold_bound`]).
+pub const UNTYPED_EVENT_DATA: Published = Published {
+    key: "untyped_event_data",
+    name: "SCE_UNTYPED_EVENT_DATA_MAX_LEN",
+    max_len: 255,
+};
 
 /// The published bound a template quotes by `key`.
 pub fn published(key: &str) -> Result<Published, ReasonError> {
@@ -804,10 +818,20 @@ fn rely(row: &'static str, bound: Published) -> Result<(), ReasonError> {
     })
 }
 
+/// Take `bound`, a bound of the runtime the slot of the machine being
+/// generated is sized by, as one the machine checks against the header it
+/// compiles with ([`template_bounds_checked`]), as a reason that quotes it
+/// would. Refused once the machine checked its bounds, as such a quote is
+/// ([`ReasonError::Unchecked`]).
+pub fn hold_bound(bound: Published) -> Result<(), ReasonError> {
+    rely(bound.key, bound)
+}
+
 /// The bounds of the runtime the reasons of the machine being generated
-/// quote, each once, in a fixed order; the book is closed to another one, so
-/// a reason that quotes a bound after the check is refused
-/// ([`ReasonError::Unchecked`]). None outside a scope.
+/// quote, and those its slot is sized by ([`hold_bound`]), each once, in a
+/// fixed order; the book is closed to another one, so a reason that quotes a
+/// bound after the check is refused ([`ReasonError::Unchecked`]). None
+/// outside a scope.
 pub fn bounds_checked() -> Vec<Published> {
     BOOK.with(|book| match book.borrow_mut().as_mut() {
         Some(book) => {
@@ -822,9 +846,9 @@ pub fn bounds_checked() -> Vec<Published> {
 
 /// The template function `reason_bounds_checked()`, called once at the end of
 /// a machine's source, after every reason it emits: one static assertion per
-/// bound of the runtime the machine's reasons quote, that the header the
-/// machine compiles with publishes no more than the bound its slot was sized
-/// by. Empty when its reasons quote none.
+/// bound of the runtime the machine's reasons quote or its slot is sized by,
+/// that the header the machine compiles with publishes no more than the bound
+/// its slot was sized by. Empty when it relies on none.
 pub fn template_bounds_checked() -> String {
     bounds_checked()
         .iter()
@@ -1137,6 +1161,27 @@ mod tests {
         );
     }
 
+    /// docs/adr/0086, section 8.6 (c): a bound of the runtime the slot is
+    /// sized by, which no reason quotes, is checked once as a quoted one is,
+    /// and held after the check is refused.
+    #[test]
+    fn an_untyped_data_bound_is_checked_as_a_quoted_one_is() {
+        let _scope = scope();
+        hold_bound(UNTYPED_EVENT_DATA).expect("held before the check");
+        hold_bound(UNTYPED_EVENT_DATA).expect("held twice, checked once");
+        let checks = template_bounds_checked();
+        assert_eq!(checks.matches("SCE_STATIC_ASSERT").count(), 1, "{checks}");
+        assert!(checks.contains("(size_t)(SCE_UNTYPED_EVENT_DATA_MAX_LEN) <= (size_t)255u"));
+        assert_eq!(
+            hold_bound(UNTYPED_EVENT_DATA),
+            Err(ReasonError::Unchecked("untyped_event_data"))
+        );
+        assert!(
+            published(UNTYPED_EVENT_DATA.key).is_err(),
+            "no reason quotes the data a host hands"
+        );
+    }
+
     /// The value of `#define <name> <value>` in `header`, a further macro's
     /// name resolved through the same header, the `u` suffix dropped.
     fn defined(header: &str, name: &str) -> u64 {
@@ -1186,6 +1231,11 @@ mod tests {
         const REQUEST: &str =
             include_str!("../../../backends/c/runtime/include/sce/request_field.h");
         const HOST: &str = include_str!("../../../backends/c/runtime/include/sce/host_processor.h");
+        const TYPES: &str = include_str!("../../../backends/c/runtime/include/sce/types.h");
+        assert_eq!(
+            defined(TYPES, UNTYPED_EVENT_DATA.name),
+            UNTYPED_EVENT_DATA.max_len
+        );
         assert_eq!(
             defined(PAYLOAD, PAYLOAD_REFUSAL.name),
             PAYLOAD_REFUSAL.max_len
