@@ -33,6 +33,7 @@ compile_error!(
 
 extern crate alloc;
 
+pub mod causal;
 #[cfg(feature = "conformance")]
 pub mod conformance;
 pub mod endpoint;
