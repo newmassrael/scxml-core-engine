@@ -78,6 +78,65 @@ sce_gate_cannot_run() {
     exit 3
 }
 
+# ── A landing counts no skip as a pass ─────────────────────────────
+#
+# main moves only through the bx landing queue, which judges a candidate by the
+# gates it reaches and lands it only when every one exits 0. A gate that skips
+# and exits 0 for want of a tool would be counted there as a pass that measured
+# nothing. So the runner exports SCE_GATE_LANDING for a landing's run
+# (`scripts/gate --landing`, which every unit of a landing's plan carries), and
+# every skip site in this file asks `sce_gate_landing` first and ends with 3,
+# could not run, which bx reports as not measured: the integrator judges the
+# item again and then sends it back, and never lands it. Outside a landing a
+# skip stays a skip, so a developer without the tool can still push.
+
+# True when this run is a landing's.
+sce_gate_landing() {
+    case "${SCE_GATE_LANDING:-}" in
+        "" | 0 | false) return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
+# Skip the rest of the gate for the reason given: exit 0 with the reason said,
+# or, in a landing, exit 3. The one way a gate skips a check it was asked for.
+sce_gate_skip() {
+    sce_gate_landing \
+        && sce_gate_cannot_run "$1 This run is a landing's, where a skip is not a pass."
+    printf 'SKIP gate[%s]: %s\n' "$SCE_GATE_SLUG" "$1" >&2
+    exit 0
+}
+
+# Run a test suite whose cases skip on a missing tool unless SCE_REQUIRE_TOOLS
+# is set (`sce_build::toolchain::tools_are_required`, `require_all_or_warn`),
+# and fail the gate if it fails: `sce_gate_run_suite <label> <command...>`.
+#
+# In a landing the suite runs under SCE_REQUIRE_TOOLS, so a case that would
+# skip fails instead, with a message that names the variable. A failure whose
+# output names it is a tool this machine lacks, so the gate ends 3, could not
+# run, rather than 1, which would blame the tree for the machine; any other
+# failure is the tree's. The output is shown in full as it runs and kept only
+# to be read here.
+sce_gate_run_suite() {
+    local label="$1" log status=0
+    shift
+    if ! sce_gate_landing; then
+        "$@" || sce_gate_fail "$label"
+        return 0
+    fi
+    log="$(mktemp)"
+    sce_gate_on_exit "rm -f '$log'"
+    SCE_REQUIRE_TOOLS=1 "$@" > >(tee "$log") 2>&1 || status=$?
+    # The process substitution ends after the command; wait for it so the log
+    # is whole before it is read.
+    wait
+    (( status == 0 )) && return 0
+    if grep -q "SCE_REQUIRE_TOOLS" "$log"; then
+        sce_gate_cannot_run "$label: a case found a tool or a built program missing on this machine (its message names SCE_REQUIRE_TOOLS, above). This run is a landing's, where a skip is not a pass."
+    fi
+    sce_gate_fail "$label"
+}
+
 # How many parallel jobs a build inside a gate may ask this machine for.
 #
 # The rule and the measurement that produced it live in
@@ -769,6 +828,10 @@ sce_gate_requires_tool() {
     if command -v "$bin" >/dev/null 2>&1; then
         return 0
     fi
+    # A landing counts no skip as a pass, and a missing tool is the machine's
+    # fault, not the tree's: 3, which bx reports as not measured.
+    sce_gate_landing \
+        && sce_gate_cannot_run "${bin} is not on PATH (install ${package}). This run is a landing's, where a skip is not a pass."
     case "${SCE_REQUIRE_TOOLS:-}" in
         "" | 0 | false)
             echo "SKIP: ${bin} not on PATH (install ${package}, or set SCE_REQUIRE_TOOLS=1 to make this a failure)" >&2
