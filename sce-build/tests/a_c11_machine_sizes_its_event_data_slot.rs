@@ -246,6 +246,126 @@ fn a_c11_queue_takes_the_depth_its_document_declares() {
     );
 }
 
+/// docs/adr/0086, section 8.5 (c): a queue's depth is counted in 16 bits, so a
+/// document that declares more than 255 events puts each one at its own index,
+/// the ones past 255 included, and the ring's head and tail wrap at the depth
+/// and never at 256. Compiled and run; skipped when no C compiler is present.
+#[test]
+fn a_c11_queue_deeper_than_255_holds_each_event_at_its_own_index() {
+    let Some(cc) = sce_build::toolchain::locate_any(&["gcc", "clang"]) else {
+        sce_build::toolchain::skipped(
+            "a_c11_queue_deeper_than_255_holds_each_event_at_its_own_index: gcc/clang not on PATH",
+        );
+        return;
+    };
+    let dir = tempdir().expect("tempdir");
+    let path = dir.path().join("probe.scxml");
+    std::fs::write(
+        &path,
+        r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="waiting" datamodel="ecmascript" name="probe" sce:capacity="300">
+  <state id="waiting">
+    <transition event="poke"/>
+  </state>
+</scxml>
+"#,
+    )
+    .expect("write the machine");
+    let generated = Command::new(sce_codegen_bin())
+        .arg("--workspace-root")
+        .arg(repo_root())
+        .arg("generate")
+        .arg(&path)
+        .args(["-l", "c11", "-o"])
+        .arg(dir.path())
+        .output()
+        .expect("invoke sce-codegen");
+    assert!(
+        generated.status.success(),
+        "the machine generates for C11:\n{}",
+        String::from_utf8_lossy(&generated.stderr)
+    );
+    let driver = dir.path().join("driver.c");
+    std::fs::write(
+        &driver,
+        r#"#include "probe_sm.h"
+#include <stdio.h>
+#include <string.h>
+_Static_assert(PROBE_EVENT_QUEUE_DEPTH == 300u, "the depth is the one the document declares");
+static probe_t sm;
+static int fail(const char *what) {
+    (void)fprintf(stderr, "FAIL: %s\n", what);
+    return 1;
+}
+int main(void) {
+    char want[SCE_MAX_ID_LEN];
+    probe_init(&sm);
+    probe_run(&sm);
+    /* One event more than the queue holds: the last is dropped. */
+    for (unsigned i = 0u; i <= 300u; ++i) {
+        probe_event_with_meta_t meta;
+        memset(&meta, 0, sizeof(meta));
+        meta.event = PROBE_EVENT_POKE;
+        (void)snprintf(meta.send_id, sizeof(meta.send_id), "%u", i);
+        probe_raise_external(&sm, &meta);
+    }
+    if (sm.external_queue.count != 300u) {
+        return fail("the queue does not hold the 300 events its document declares");
+    }
+    if (sm.external_queue.tail != 0u) {
+        return fail("the tail did not wrap at the depth");
+    }
+    for (unsigned i = 0u; i < 300u; ++i) {
+        (void)snprintf(want, sizeof(want), "%u", i);
+        if (strcmp(sm.external_queue.buf[i].send_id, want) != 0) {
+            (void)fprintf(stderr, "FAIL: index %u holds the event sent as `%s`\n", i,
+                          sm.external_queue.buf[i].send_id);
+            return 1;
+        }
+    }
+    probe_run(&sm);
+    if (sm.external_queue.count != 0u || sm.external_queue.head != 0u) {
+        return fail("the run did not take every event, its head wrapping at the depth");
+    }
+    return 0;
+}
+"#,
+    )
+    .expect("write the driver");
+    let bin = dir.path().join("driver");
+    let built = Command::new(&cc)
+        .args([
+            "-std=c11",
+            "-O0",
+            "-Wall",
+            "-Wextra",
+            "-Wpedantic",
+            "-Werror",
+        ])
+        .arg("-I")
+        .arg(repo_root().join("backends/c/runtime/include"))
+        .arg("-I")
+        .arg(dir.path())
+        .arg(dir.path().join("probe_sm.c"))
+        .arg(&driver)
+        .arg("-o")
+        .arg(&bin)
+        .output()
+        .expect("run the C compiler");
+    assert!(
+        built.status.success(),
+        "the machine and its driver compile:\n{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+    let ran = Command::new(&bin).output().expect("run the driver");
+    assert!(
+        ran.status.success(),
+        "a queue deeper than 255 holds each event at its own index:\n{}",
+        String::from_utf8_lossy(&ran.stderr)
+    );
+}
+
 // ── docs/adr/0086, section 8.5 (d): no buffer of the slot's size on a stack ──
 
 /// `c` with every comment and every string and character literal blanked to
