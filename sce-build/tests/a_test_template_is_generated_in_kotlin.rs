@@ -311,8 +311,8 @@ fn a_union_is_matched_by_the_class_of_its_case() {
     holds_each(
         &circle,
         &[
-            "typealias Value = com.sce.generated.union_shape.UnionShape\n",
-            "    value is com.sce.generated.union_shape.UnionShape.Circle\n",
+            "typealias Value = com.sce.generated.union_shape_minimal.UnionShapeMinimal\n",
+            "    value is com.sce.generated.union_shape_minimal.UnionShapeMinimal.Circle\n",
         ],
     );
     let placed = unit_of(&imports_dir(), "order_placed_match", "OrderPlacedMatch.kt");
