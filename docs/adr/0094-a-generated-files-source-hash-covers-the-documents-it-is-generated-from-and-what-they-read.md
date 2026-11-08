@@ -139,8 +139,8 @@ the trace must name.
 
 **A generated file's `source-hash` is the digest of the input closure of the documents it is generated from: those
 documents and every file their generation reads, transitively, with `deploy.yaml` when the run is given one and the
-limits when any is moved, each keyed by its spelling relative to the files that reach it and hashed by its raw
-bytes, folded in key order. The header names those documents on `source:` lines, so `verify` recomputes the closure
+limits when any is moved, each keyed by its path relative to the directory that holds those documents and hashed by
+its raw bytes, folded in key order. The header names those documents on `source:` lines, so `verify` recomputes the closure
 from the file alone, without generating. No file's header covers a document outside its closure. A file generated
 from every document of a directory names the directory, and its closure is the union of theirs. `--assert-unchanged`
 stays the judge of content.**
@@ -179,21 +179,25 @@ Each member is an entry `(key, sha256 of its raw bytes)`, pre-expansion, as toda
 
 - The **anchor** is the deepest directory that holds every seed; for one seed, its own directory.
 - A **seed** is keyed by its path relative to the anchor: for one seed, its file name.
-- A **member** reached from member `m` by a reference written `r` is keyed by `r` resolved lexically against the
-  directory of `m`'s key (`.` and `..` folded, a leading `..` kept): the spelling the documents themselves give it,
-  not the place a search path found it.
+- A **member** is keyed by its canonical path relative to the anchor, with a leading `..` for each step it lies
+  outside it.
 - A **standard document** is keyed by its library name (`sce:std/...`), as today.
 - `deploy.yaml` and `limits` keep their canonical keys.
 
-The entries are folded by `hash_btreemap`, unchanged. A closure's digest is therefore a function of the documents'
-texts and bytes, the seeds' file names and their layout relative to each other, and nothing else: not where the
-checkout sits, not the working directory, not where a build staged a copy, not `--input-root`.
+The entries are folded by `hash_btreemap`, unchanged. A closure's digest is therefore a function of the files' bytes
+and of where they lie relative to each other, and nothing else: not where the checkout sits, not the working
+directory, not where a build staged a copy.
 
 A **staged copy** hashes as the document it was copied from. The integration regeneration scripts stage a fixture
-into a temporary directory and pass `--input-root` so that the header matches the tracked location; under this rule
-the copy's key is its file name, which is the original's, and a candidate found under the input root is keyed by the
-spelling that names it, which is the same from either place. `--input-root` keeps its other role, where candidates
-are looked for, and stops bearing on the hash.
+into a temporary directory and pass `--input-root` so that the header matches the tracked location. A seed that lies
+outside the input root, where the input root holds a document of the same name, is such a copy: the input root is
+then the anchor, what lies beside the copy is keyed from the copy's directory, and every key is the one a generation
+of the original gives. Otherwise `--input-root` bears only on where candidates and `src` children are looked for.
+
+Amended in landing step 1 (2026-11-08): the accepted text keyed a member by the reference that reached it, resolved
+lexically. The loader records an `<xi:include>` or `<sce:use>` fragment by its canonical path, not by the `href` that
+named it, so that rule would have needed the two expanders to report spellings. The rule above keeps the properties
+the section names (tests 5 and 6 hold them) with the paths the loader already gives.
 
 The coherent read of today's walk carries over: every member is witnessed before its bytes are taken and re-checked
 after the closure is complete, and a closure whose members moved while it was read is read again, then refused
@@ -337,8 +341,8 @@ The section's first two paragraphs become:
 > generation of any member reads: its `<xi:include>` targets, its `<sce:use>` fragments, its `<sce:import>` targets,
 > the documents its `<invoke>`s start by `src` or name in `sce:candidates`, and the standard documents it imports or
 > starts; with `deploy.yaml` when the run is given one, and the limits the build runs under when any is moved. Each
-> member is keyed by its spelling relative to the files that reach it and hashed by its raw bytes, and the entries
-> are folded in key order. A file names each document it is generated from on a `source:` line; a file generated
+> member is keyed by its path relative to the deepest directory that holds the documents and hashed by its raw
+> bytes, and the entries are folded in key order. A file names each document it is generated from on a `source:` line; a file generated
 > from every document of a directory names it as `./`, and its closure is the union of theirs.
 >
 > The header states facts about the file's own inputs and none that can change while the file does not: no other
@@ -494,8 +498,8 @@ documents, so a root covers nothing), and `committed_generated_files_carry_the_c
   (test 3).
 - **Members keyed by content alone.** A rename of an imported document that changes the name its importer's code
   uses would not move the importer's header.
-- **Members keyed by where they were found.** It makes the digest depend on the checkout's location or on a staging
-  directory, which is what `--input-root` was added to patch.
+- **Members keyed by their absolute path.** It makes the digest depend on the checkout's location or on a staging
+  directory, which is what `--input-root` was added to patch; section 2 keys them relative to the anchor instead.
 - **A closure over the expanded text or the parsed model.** Raw bytes are what an author edits and what every other
   pin here (the acceptance record, the old source set) takes; a pin over a model would rest on the model's
   serialisation being total over behaviour, which nothing checks.
