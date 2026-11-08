@@ -88,10 +88,12 @@ PY
 
 mutation_case "the c11 dequeue drops the unmatched case again" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     """            sm->discarded_external_events++;
+     """               ends inside the document. */
+            sm->discarded_external_events++;
             sm->last_discarded_event = evt.event;
             sm->has_discarded_event = true;""",
-     """            (void)0;""")
+     """               ends inside the document. */
+            (void)0;""")
 PY
 
 # ── C11: counting the handled case ─────────────────────────────────

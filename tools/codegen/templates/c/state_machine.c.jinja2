@@ -4783,10 +4783,15 @@ SCE_SM_FN static bool process_next_external_event({{ csym_prefix }}{{ model.name
            taken in its place: the engine's own error, so no `<finalize>` or
            autoforward runs for it, and it is answered as one off the internal
            queue is. In a document that declares none, nothing is taken in its
-           place. */
+           place, and the delivery is not dropped unseen: it is counted as a
+           discarded external event, the hook every lane shares for an external
+           event that moved nothing. */
         sm->pending_payload = evt.payload;
         const {{ csym_prefix }}{{ model.name }}_door_t _door = {{ csym_prefix }}{{ model.name }}_lift_payload(sm, &evt);
         if (_door == {{ csym_prefix | upper }}{{ model.name | upper }}_DOOR_REFUSED) {
+            sm->discarded_external_events++;
+            sm->last_discarded_event = evt.event;
+            sm->has_discarded_event = true;
             return true;
         }
         const bool _in_place = _door == {{ csym_prefix | upper }}{{ model.name | upper }}_DOOR_IN_PLACE;

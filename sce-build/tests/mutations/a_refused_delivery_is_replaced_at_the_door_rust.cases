@@ -13,14 +13,19 @@
 # each:
 #
 #   the refused delivery is taken after all, and nothing says so;
-#   nothing is taken in the refused delivery's place.
+#   nothing is taken in the refused delivery's place;
+#   a refused delivery with nothing in its place is dropped unseen.
+#
+# The last is held by `statechart_minimal`, which declares no `error.execution`: its
+# refused delivery is counted as a discarded external event, the hook every lane
+# shares (`event_schema_native`).
 #
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
-mutation_tests -p sce-rust-tests --test static_scenarios
+mutation_tests -p sce-rust-tests --test static_scenarios --test event_schema_native
 mutation_targets backends/rust/runtime/src/engine.rs
-mutation_oracles backends/rust/tests/tests/static_scenarios.rs sce-build/tests/fixtures/static_datamodel/scenarios/sync_client.json
+mutation_oracles backends/rust/tests/tests/static_scenarios.rs sce-build/tests/fixtures/static_datamodel/scenarios/sync_client.json backends/rust/tests/tests/event_schema_native.rs
 
 mutation_case "the refused delivery is taken after all" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
@@ -32,4 +37,10 @@ mutation_case "nothing is taken in the refused delivery's place" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
      "        match P::get_event_from_name(\"error.execution\") {\n            Some(error) => Admission::Replaced {",
      "        match None::<P::Event> {\n            Some(error) => Admission::Replaced {")
+PY
+
+mutation_case "a refused delivery with nothing in its place is dropped unseen" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     "            self.record_discarded(delivered);\n",
+     "            let _ = delivered;\n")
 PY

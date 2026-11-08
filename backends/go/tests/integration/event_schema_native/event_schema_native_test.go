@@ -63,3 +63,29 @@ func TestTypedPayloadGuardMissesOnNonzero(t *testing.T) {
 			"(elapsed_ms == 5 must leave the machine in waiting)", got)
 	}
 }
+
+// A delivery the door refuses in a document that declares no error.execution
+// has nothing taken in its place, and is not dropped unseen: it is counted as a
+// discarded external event and named the last one, the hook every lane shares
+// (docs/adr/0086, section 4.2). statechart_minimal declares no error.execution.
+func TestARefusedDeliveryWithNothingInItsPlaceIsCountedAsDiscarded(t *testing.T) {
+	policy := NewStatechartMinimalPolicy()
+	policy.SessionID = sce.GenerateSessionID()
+	engine := sce.NewEngine[StatechartMinimalState, StatechartMinimalEvent](&policy)
+	engine.Initialize()
+
+	engine.RaiseExternalByName("job.completed", `{"elapsed_ms": "nought"}`)
+	engine.Step()
+
+	if got := engine.GetCurrentState(); got != StatechartMinimalStateWaiting {
+		t.Fatalf("state = %v, want Waiting: a refused delivery selects nothing", got)
+	}
+	if got := engine.DiscardedExternalEvents(); got != 1 {
+		t.Fatalf("DiscardedExternalEvents() = %d, want 1: a refused delivery with "+
+			"nothing in its place was dropped unseen", got)
+	}
+	if got, ok := engine.LastDiscardedEvent(); !ok || got != StatechartMinimalEventJobCompleted {
+		t.Fatalf("LastDiscardedEvent() = %v, %v, want JobCompleted: the count names "+
+			"the delivery it refused", got, ok)
+	}
+}

@@ -25,8 +25,8 @@ use sce_rust_tests::integration::event_schema_native::{
     StatechartBytesInject, StatechartBytesPolicy, StatechartBytesSignalReceivedPayload,
     StatechartBytesState, StatechartLiftedEvent, StatechartLiftedInject,
     StatechartLiftedJobCompletedPayload, StatechartLiftedPolicy, StatechartLiftedState,
-    StatechartMinimalInject, StatechartMinimalJobCompletedPayload, StatechartMinimalPolicy,
-    StatechartMinimalState,
+    StatechartMinimalEvent, StatechartMinimalInject, StatechartMinimalJobCompletedPayload,
+    StatechartMinimalPolicy, StatechartMinimalState,
 };
 
 #[test]
@@ -48,6 +48,36 @@ fn typed_payload_guard_fires_natively() {
         engine.get_current_state(),
         StatechartMinimalState::Done,
         "elapsed_ms == 0 must fire the native typed guard to `done`"
+    );
+}
+
+/// A delivery the door refuses in a document that declares no
+/// `error.execution` has nothing taken in its place, and is not dropped unseen:
+/// it is counted as a discarded external event and named the last one, the hook
+/// every lane shares (docs/adr/0086, section 4.2). `statechart_minimal`
+/// declares no `error.execution`.
+#[test]
+fn a_refused_delivery_with_nothing_in_its_place_is_counted_as_discarded() {
+    let mut engine = sce_rust_runtime::Engine::new(StatechartMinimalPolicy::new());
+    engine.initialize();
+
+    engine.raise_external_by_name("job.completed", r#"{"elapsed_ms": "nought"}"#);
+    engine.step();
+
+    assert_eq!(
+        engine.get_current_state(),
+        StatechartMinimalState::Waiting,
+        "a refused delivery selects nothing"
+    );
+    assert_eq!(
+        engine.discarded_external_events(),
+        1,
+        "a refused delivery with nothing in its place was dropped unseen"
+    );
+    assert_eq!(
+        engine.last_discarded_event(),
+        Some(StatechartMinimalEvent::JobCompleted),
+        "the count names the delivery it refused"
     );
 }
 
