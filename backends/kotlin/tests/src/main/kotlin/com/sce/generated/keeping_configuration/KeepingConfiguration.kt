@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 021fdf0d0c3ee151c664e2ecf6a7e5a797d68aaf3d399831e8dfd49b9e10bec9
+// source-hash: 011d804f887126b888ea6ba5b4213d56e0f5c8740555a154c83e9b8d0105c4b6
 // SCE-MAP: keeping_configuration.scxml:6 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="test-configuration")
@@ -14,7 +14,7 @@ package com.sce.generated.keeping_configuration
  * each type declares, each `<sce:connect>` and each `<sce:map>`.
  */
 fun configuration(): com.sce.runtime.test.Configuration = com.sce.runtime.test.Configuration(
-    mtcType = "keeper",
+    mtcType = "ptc_keeper",
     ptcTypes = mapOf(
         "idler" to "idler",
     ),
@@ -22,7 +22,7 @@ fun configuration(): com.sce.runtime.test.Configuration = com.sce.runtime.test.C
         "idler" to listOf("peer"),
     ),
     timersOfType = mapOf(
-        "keeper" to listOf("patience", "linger"),
+        "ptc_keeper" to listOf("patience", "linger"),
     ),
     connections = emptyList(),
     mappings = listOf(
@@ -37,7 +37,7 @@ fun configuration(): com.sce.runtime.test.Configuration = com.sce.runtime.test.C
  * where it is created.
  */
 fun machine(componentType: String): com.sce.runtime.test.ComponentMachine? = when (componentType) {
-    "keeper" -> com.sce.generated.keeper.KeeperComponent()
+    "ptc_keeper" -> com.sce.generated.ptc_keeper.PtcKeeperComponent()
     "idler" -> com.sce.generated.idler.IdlerComponent()
     else -> null
 }
