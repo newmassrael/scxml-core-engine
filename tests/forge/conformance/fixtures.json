@@ -1474,6 +1474,21 @@
       }
     },
     {
+      "name": "causal_cut",
+      "document": "sce:std/mesh/causal_cut.scxml",
+      "kind": "algorithm",
+      "ref_section": "pure_functions",
+      "function": "causal_cut",
+      "args": [
+        "u32",
+        { "list_of": { "record": "causal_known" } }
+      ],
+      "output": {
+        "list_of": { "record": "causal_entry" },
+        "compare": "equality"
+      }
+    },
+    {
       "name": "changes_apply",
       "document": "sce:std/sync/changes_apply.scxml",
       "kind": "algorithm",
@@ -3735,6 +3750,32 @@
       "fields": [
         { "name": "hi", "value": 283686952306183, "sce_type": "uint64" },
         { "name": "lo", "value": 579005069656919567, "sce_type": "uint64" }
+      ]
+    },
+    {
+      "name": "causal_known",
+      "document": "sce:std/mesh/causal_known.scxml",
+      "kind": "event-schema",
+      "ref_section": "event_schemas",
+      "event_name": "mesh.causal_known",
+      "fields": [
+        { "name": "holderHi", "value": 283686952306183, "sce_type": "uint64" },
+        { "name": "holderLo", "value": 579005069656919567, "sce_type": "uint64" },
+        { "name": "hi", "value": 1, "sce_type": "uint64" },
+        { "name": "lo", "value": 2, "sce_type": "uint64" },
+        { "name": "seq", "value": 3, "sce_type": "uint64" }
+      ]
+    },
+    {
+      "name": "causal_entry",
+      "document": "sce:std/mesh/causal_entry.scxml",
+      "kind": "event-schema",
+      "ref_section": "event_schemas",
+      "event_name": "mesh.causal_entry",
+      "fields": [
+        { "name": "hi", "value": 283686952306183, "sce_type": "uint64" },
+        { "name": "lo", "value": 579005069656919567, "sce_type": "uint64" },
+        { "name": "seq", "value": 3, "sce_type": "uint64" }
       ]
     },
     {
