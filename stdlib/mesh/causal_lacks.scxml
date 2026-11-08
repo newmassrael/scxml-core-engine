@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/mesh/causal_lacks.scxml — whether a version vector lacks the change
+  `dot` names (docs/adr/0085, sections 3.2 and 4.2): true when dot.seq is
+  past the vector's entry for its author, 0 for an author it does not name.
+
+  A copy answers a peer's `causalVector` with every change of its log the
+  peer's vector lacks (repair), and keeps a change in its log while the
+  stable cut lacks it (retention): a change the cut covers is delivered at
+  every member of the view and is dropped.
+
+  vector {a:2}, dot a:3 → true · dot a:2 → false · dot b:1 → true.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="causal_lacks" version="1.0">
+  <sce:import kind="event-schema" src="causal_entry.scxml" as="Entry"/>
+  <sce:signature>
+    <sce:param name="vector" type="list&lt;record:Entry&gt;"/>
+    <sce:param name="dot" type="record:Entry"/>
+    <sce:return type="bool"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="seen" type="uint64" init="0"/>
+    <sce:foreach item="entry" in="vector">
+      <sce:if cond="entry.hi === dot.hi &amp;&amp; entry.lo === dot.lo">
+        <sce:assign target="seen" expr="entry.seq"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="dot.seq &gt; seen"/>
+  </sce:body>
+</scxml>

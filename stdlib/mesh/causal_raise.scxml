@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/mesh/causal_raise.scxml — a version vector raised by another, the
+  merge of a causal route (docs/adr/0085, section 3): every entry of
+  `vector` at the larger of its number and the number `other` gives its
+  author, in the order `vector` has them, then every entry of `other` whose
+  author `vector` does not name, in the order `other` has them.
+
+  A copy raises its delivered vector by the dot of a change it delivers (a
+  vector of one entry), and the latest vector it knows of a member by the
+  context of that member's change or by the member's `causalVector` (its
+  mark). A vector names each author once; the result does too when both
+  inputs do. The result holds at most 64 entries, the bound of a view and of
+  the envelope's causal vector.
+
+  vector {a:2, b:1}, other {b:3, c:1} → {a:2, b:3, c:1} ·
+  other {a:1} → {a:2, b:1}.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="causal_raise" version="1.0">
+  <sce:import kind="event-schema" src="causal_entry.scxml" as="Entry"/>
+  <sce:signature>
+    <sce:param name="vector" type="list&lt;record:Entry&gt;"/>
+    <sce:param name="other" type="list&lt;record:Entry&gt;"/>
+    <sce:return type="list&lt;record:Entry&gt;[64]"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="out" type="list&lt;record:Entry&gt;[64]"/>
+    <sce:var name="top" type="uint64" init="0"/>
+    <sce:foreach item="mine" in="vector">
+      <sce:assign target="top" expr="mine.seq"/>
+      <sce:foreach item="theirs" in="other">
+        <sce:if cond="theirs.hi === mine.hi &amp;&amp; theirs.lo === mine.lo &amp;&amp; theirs.seq &gt; top">
+          <sce:assign target="top" expr="theirs.seq"/>
+        </sce:if>
+      </sce:foreach>
+      <sce:var name="raised" type="record:Entry">
+        <sce:set name="hi" expr="mine.hi"/>
+        <sce:set name="lo" expr="mine.lo"/>
+        <sce:set name="seq" expr="top"/>
+      </sce:var>
+      <sce:append target="out" expr="raised"/>
+    </sce:foreach>
+    <sce:var name="named" type="bool" init="false"/>
+    <sce:foreach item="added" in="other">
+      <sce:assign target="named" expr="false"/>
+      <sce:foreach item="known" in="vector">
+        <sce:if cond="known.hi === added.hi &amp;&amp; known.lo === added.lo">
+          <sce:assign target="named" expr="true"/>
+        </sce:if>
+      </sce:foreach>
+      <sce:if cond="!named">
+        <sce:append target="out" expr="added"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>

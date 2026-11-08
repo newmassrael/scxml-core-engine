@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/mesh/causal_admission.scxml — what causal_admit decides for a change
+  that arrives on a causal route (docs/adr/0085, section 3): `drop` a change
+  the copy delivered already, `deliver` the next change of its author whose
+  context the copy has delivered, and `hold` any other until it is
+  deliverable. Never on the wire.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="enum" name="causal_admission" sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="drop" value="0"/>
+      <sce:variant name="deliver" value="1"/>
+      <sce:variant name="hold" value="2"/>
+    </data>
+  </datamodel>
+</scxml>

@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/mesh/causal_admit.scxml — the delivery rule of a causal route
+  (docs/adr/0085, section 3), for a copy whose delivered vector is
+  `delivered` and a change tagged with its dot `dot` (author and number) and
+  its context `context`:
+
+  - `drop` when dot.seq <= D[author]: it is delivered already;
+  - `deliver` when dot.seq = D[author] + 1 and C[b] <= D[b] for every author
+    b of the context other than the change's own: it is the author's next
+    change and everything it depends on is delivered;
+  - `hold` otherwise, until it is deliverable. A gap is repaired by asking a
+    peer for what the vector lacks (causal_lacks), never skipped.
+
+  An author the vector does not name has delivered 0. The context may name
+  the change's own author (the sender's own entry, which is the dot itself);
+  that entry is not a dependency. A delivered entry at the uint64 maximum has
+  no successor and fails `overflow`.
+
+  delivered {a:2, b:1}, dot a:3, context {b:1} → deliver · dot a:2 → drop ·
+  dot a:4 → hold · dot a:3, context {b:2} → hold.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="causal_admit" version="1.0">
+  <sce:import kind="event-schema" src="causal_entry.scxml" as="Entry"/>
+  <sce:import kind="enum" src="causal_admission.scxml" as="Admission"/>
+  <sce:signature>
+    <sce:param name="delivered" type="list&lt;record:Entry&gt;"/>
+    <sce:param name="dot" type="record:Entry"/>
+    <sce:param name="context" type="list&lt;record:Entry&gt;"/>
+    <sce:return type="enum:Admission" may-fail="true"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="seen" type="uint64" init="0"/>
+    <sce:foreach item="mine" in="delivered">
+      <sce:if cond="mine.hi === dot.hi &amp;&amp; mine.lo === dot.lo">
+        <sce:assign target="seen" expr="mine.seq"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:var name="covered" type="bool" init="true"/>
+    <sce:var name="have" type="uint64" init="0"/>
+    <sce:foreach item="needed" in="context">
+      <sce:assign target="have" expr="0"/>
+      <sce:foreach item="held" in="delivered">
+        <sce:if cond="held.hi === needed.hi &amp;&amp; held.lo === needed.lo">
+          <sce:assign target="have" expr="held.seq"/>
+        </sce:if>
+      </sce:foreach>
+      <sce:if cond="(needed.hi !== dot.hi || needed.lo !== dot.lo) &amp;&amp; needed.seq &gt; have">
+        <sce:assign target="covered" expr="false"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:var name="result" type="enum:Admission" init="Admission.hold"/>
+    <sce:if cond="dot.seq &lt;= seen">
+      <sce:assign target="result" expr="Admission.drop"/>
+    </sce:if>
+    <sce:if cond="dot.seq === seen + 1 &amp;&amp; covered">
+      <sce:assign target="result" expr="Admission.deliver"/>
+    </sce:if>
+    <sce:return expr="result"/>
+  </sce:body>
+</scxml>

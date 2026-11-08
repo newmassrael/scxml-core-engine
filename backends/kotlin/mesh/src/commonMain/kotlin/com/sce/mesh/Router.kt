@@ -381,10 +381,17 @@ class Router(val machine: String, dedupWindow: UInt, gapTimeoutMs: Long) {
     /** What the receive half released, as effects, in release order, followed by the rows it observed. */
     private fun effectsOf(outcome: Outcome, peer: String?): List<Effect> =
         outcome.released.mapNotNull { envelope ->
-            // A reply's responder was checked on arrival.
-            when (val wireId = replyTo(envelope)) {
-                null -> deliver(envelope, peer)
-                else -> answer(envelope, wireId, peer)
+            when {
+                // A causal route's control message never reaches an engine
+                // (docs/adr/0085, section 3.2). This core carries no causal
+                // route yet (the build refuses `delivery: causal` for Kotlin),
+                // so one that arrives is dropped.
+                envelope.pattern == PatternKind.CAUSAL_VECTOR -> null
+                // A reply's responder was checked on arrival.
+                else -> when (val wireId = replyTo(envelope)) {
+                    null -> deliver(envelope, peer)
+                    else -> answer(envelope, wireId, peer)
+                }
             }
         } + outcome.signals.map { Effect.Raise(peer, it) }
 

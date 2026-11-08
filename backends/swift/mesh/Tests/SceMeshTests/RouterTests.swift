@@ -223,6 +223,19 @@ func sendRequest(_ target: String, _ event: String, _ data: String, sendID: Stri
         }
     }
 
+    @Test func aCausalRoutesControlMessageNeverReachesTheEngine() throws {
+        // docs/adr/0085, section 3.2: this core carries no causal route, and a `causalVector` that
+        // reaches it is dropped, not delivered as an event.
+        let hmi = Router(machine: "hmi", dedupWindow: 8, gapTimeoutMs: 50)
+        hmi.addPeer("ecu", config: unordered)
+        var envelope = Envelope()
+        envelope.id = envelopeID(1)
+        envelope.source = "ecu"
+        envelope.pattern = .causalVector
+        envelope.datacontenttype = PayloadCodec.none
+        #expect(try done(hmi.receive(peer: "ecu", bytes: encodeEnvelope(envelope), nowMs: 0)).isEmpty)
+    }
+
     @Test func aRaisedRowCarriesTheBindingItWasObservedOn() throws {
         let ecu = Router(machine: "ecu", dedupWindow: 8, gapTimeoutMs: 50)
         ecu.addPeer("hmi", config: ordered)
