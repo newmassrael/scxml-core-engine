@@ -6331,8 +6331,10 @@ fn go_payload_present_reader(
             format!("sce.PayloadFloat[{}]({obj}, \"{id}\")", go_type(present))
         }
         SceType::Bool => format!("sce.PayloadBool({obj}, \"{id}\")"),
-        SceType::String => format!("sce.PayloadString({obj}, \"{id}\")"),
-        SceType::Bytes => format!("sce.PayloadBytes({obj}, \"{id}\")"),
+        // A text and a byte string are held to their bound at the lift, the top
+        // level included (docs/adr/0086, section 4.4).
+        SceType::String => format!("sce.PayloadText({obj}, \"{id}\", {})", lift_text_bound(f)),
+        SceType::Bytes => format!("sce.PayloadBytes({obj}, \"{id}\", {})", lift_bytes_bound(f)),
         // An enum is the machine's own, lifted from the variant's declared
         // name; a name the enum does not declare is a payload that does not
         // fit its schema, refused as a number out of range is, with the code
