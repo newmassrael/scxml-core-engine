@@ -400,6 +400,7 @@
         "mesh/deploy-child-undeclared",
         "mesh/deploy-invalid-ordering-timings",
         "mesh/deploy-invalid-dedup-window",
+        "mesh/deploy-delivery-conflict",
         "mesh/deploy-invalid-custom-tcp-socket",
         "mesh/deploy-invalid-dds-qos",
         "mesh/deploy-invalid-liveliness",
