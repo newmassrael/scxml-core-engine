@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/shared/record_op.scxml — one operation of a change to a shared record list
+  (record_list, docs/adr/0085, section 1): the record type of the entries of a change's
+  `ops` (record_change). It travels in no message of its own (the event it names is never
+  sent); a change carries its operations in their order, and a copy takes each in.
+
+  `kind` says what it is: 0 a write, which gives the register `id`, `field` the number
+  `value` and the text `text`; 1 a write-over, which takes out of that register the value
+  of the write whose dot is `wallTime`, `counter`, `nodeId`, the dot the change's source
+  held when it wrote over it. A write's own dot is its change's stamp (docs/adr/0046,
+  section 1), which the change carries once (record_change): a write's `wallTime`,
+  `counter` and `nodeId` are not read, and a sender writes 0 there, so no second copy of
+  the dot can disagree with the first. A write-over's `value` and `text` are not read
+  either, and are 0 and empty.
+
+  `text` is bounded as a value's text is, `merge_text`, so a write's text is carried whole.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="record_op"
+       sce:event-name="record_list.op">
+  <datamodel>
+    <data id="kind" sce:type="uint8" sce:direction="in"/>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="field" sce:type="uint16" sce:direction="in"/>
+    <data id="value" sce:type="int64" sce:direction="in"/>
+    <data id="text" sce:type="string[merge_text=96]" sce:direction="in"/>
+    <data id="wallTime" sce:type="int64" sce:direction="in"/>
+    <data id="counter" sce:type="uint32" sce:direction="in"/>
+    <data id="nodeId" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>

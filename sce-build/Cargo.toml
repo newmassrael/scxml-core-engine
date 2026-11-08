@@ -1251,6 +1251,13 @@ name = "a_schema_unit_names_its_event_revision_and_bounds"
 path = "tests/a_schema_unit_names_its_event_revision_and_bounds.rs"
 required-features = ["cli"]
 
+# A change to the shared list is one event whose largest size every backend names. It runs
+# `sce-codegen`, so it carries the `cli` gate.
+[[test]]
+name = "a_change_of_the_shared_list_is_one_event_of_a_known_size"
+path = "tests/a_change_of_the_shared_list_is_one_event_of_a_known_size.rs"
+required-features = ["cli"]
+
 [[test]]
 name = "a_payload_holds_an_enum_field"
 path = "tests/a_payload_holds_an_enum_field.rs"
