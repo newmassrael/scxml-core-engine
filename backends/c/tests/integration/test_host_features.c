@@ -765,12 +765,11 @@ typedef struct {
         M##_event_with_meta_t meta;                                                                                    \
         memset(&meta, 0, sizeof(meta));                                                                                \
         meta.event = event;                                                                                            \
-        if (data != NULL) {                                                                                            \
-            if (strlen(data) >= sizeof(meta.data)) {                                                                   \
-                return false;                                                                                          \
-            }                                                                                                          \
-            memcpy(meta.data, data, strlen(data) + 1u);                                                                \
+        /* A view of the data; the machine's queue copies it, and data past the slot is refused here. */               \
+        if (data != NULL && strlen(data) >= sizeof(((M##_queued_event_t *)0)->data)) {                                 \
+            return false;                                                                                              \
         }                                                                                                              \
+        meta.data = data;                                                                                              \
         M##_raise_external((M##_t *)sm, &meta);                                                                        \
         return true;                                                                                                   \
     }                                                                                                                  \
@@ -1043,12 +1042,11 @@ static bool harness_raise(void *sm, const char *name, const char *data) {
     static_model_harness_event_with_meta_t meta;
     memset(&meta, 0, sizeof(meta));
     meta.event = event;
-    if (data != NULL) {
-        if (strlen(data) >= sizeof(meta.data)) {
-            return false;
-        }
-        memcpy(meta.data, data, strlen(data) + 1u);
+    /* A view of the data; the machine's queue copies it, and data past the slot is refused here. */
+    if (data != NULL && strlen(data) >= sizeof(((static_model_harness_queued_event_t *)0)->data)) {
+        return false;
     }
+    meta.data = data;
     static_model_harness_raise_external((static_model_harness_t *)sm, &meta);
     return true;
 }

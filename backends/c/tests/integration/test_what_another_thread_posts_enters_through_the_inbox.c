@@ -624,7 +624,8 @@ static int a_post_made_before_the_hosts_own_raise_is_taken_before_it(void) {
     }
     memset(&raised, 0, sizeof(raised));
     (void)inbox_probe_resolve_event_by_name("ping", &raised.event);
-    (void)snprintf(raised.data, sizeof(raised.data), "%s", "\"raised\"");
+    /* A view of the data, which the machine's queue copies. */
+    raised.data = "\"raised\"";
     inbox_probe_raise_external(&sm, &raised);
     inbox_probe_step(&sm);
     bad |= expect_taken("the host's raise was taken ahead of a post that arrived before it", &sm,

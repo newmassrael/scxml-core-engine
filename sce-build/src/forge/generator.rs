@@ -5729,24 +5729,40 @@ pub(crate) fn c11_lifted_text(event: &str, id: &str) -> String {
 }
 
 /// The C11 spelling of a typed record as the JSON its event or completion
-/// carries: the bounded locals that quote its text fields, and the `snprintf`
-/// format and arguments that assemble the object. `receiver` is a pointer to
-/// the record (`payload`, `result`); the locals `return false` when a field
-/// cannot be spelled, so they belong in a function that answers `bool`. Each
-/// local is declared at `data_len`, the machine's slot of `_event.data`
-/// ([`c11_data_len`]), which the whole record is written into.
+/// carries: the statements of a function that writes the object into its
+/// parameters `out` of `cap` bytes, each part written where it stands, behind a
+/// cursor, with no buffer of their own, since a buffer of the object's size on
+/// a stack overflows a microcontroller's (docs/adr/0086, section 8.5 (d)).
+/// `receiver` is a pointer to the record (`payload`, `result`); the statements
+/// `return false` when a field cannot be spelled or the object does not fit,
+/// so they belong in a function that answers `bool`, and they end before its
+/// `return true`.
 pub(crate) struct C11RecordWire {
-    pub locals: String,
-    pub format: String,
-    pub args: String,
+    pub body: String,
 }
 
-pub(crate) fn c11_record_wire(
-    fields: &[EntryField],
-    receiver: &str,
-    data_len: &str,
-) -> C11RecordWire {
-    c11_record_wire_of(fields, receiver, &[], data_len)
+pub(crate) fn c11_record_wire(fields: &[EntryField], receiver: &str) -> C11RecordWire {
+    c11_record_wire_of(fields, receiver, &[])
+}
+
+/// The statement that writes the `snprintf` format `format`, with `args`, at
+/// the cursor of a [`C11RecordWire`] body, and moves the cursor past it; the
+/// function returns false when it does not fit.
+fn c11_wire_put(format: &str, args: &str) -> String {
+    format!(
+        "    _put = snprintf(out + _used, cap - _used, \"{format}\"{args});\n    \
+if (_put < 0 || (size_t)_put >= cap - _used) {{\n        return false;\n    }}\n    \
+_used += (size_t)_put;\n"
+    )
+}
+
+/// The statement that runs `call`, a writer at the cursor of a
+/// [`C11RecordWire`] body that answers whether it wrote, and moves the cursor
+/// past what it wrote; the function returns false when it did not.
+fn c11_wire_wrote(call: &str) -> String {
+    format!(
+        "    if (!({call})) {{\n        return false;\n    }}\n    _used += strlen(out + _used);\n"
+    )
 }
 
 /// [`c11_record_wire`] over fields that may hold an enum the machine declares
@@ -5757,19 +5773,18 @@ fn c11_record_wire_of(
     fields: &[EntryField],
     receiver: &str,
     static_enums: &[crate::forge::static_lowering::StaticEnumType],
-    data_len: &str,
 ) -> C11RecordWire {
-    let mut locals = String::new();
-    let mut format = String::new();
-    let mut args = String::new();
+    let mut body = String::from("    size_t _used = 0u;\n    int _put;\n");
+    // What goes before the next key: the object's opening brace, and a comma
+    // between each two members after it.
+    let mut before = "{";
     for f in fields {
         let id = &f.id;
         // ⚠ A `bytes` field rides as its byte-exact Latin-1 text and a
-        // `string` is quoted and escaped, both into a bounded local — this
-        // backend has no allocator.
-        if !format.is_empty() {
-            format.push(',');
-        }
+        // `string` is quoted and escaped, both written in place — this backend
+        // has no allocator.
+        let key = format!("{before}\\\"{id}\\\":");
+        before = ",";
         // An optional field (docs/adr/0055, section 4) is written with its key
         // always, `null` where it is absent, through the wire writer of a
         // `sce-static` machine, the one kind of machine whose payload holds one.
@@ -5807,7 +5822,7 @@ fn c11_record_wire_of(
                             )
                         })
                         .collect();
-                    locals.push_str(&format!(
+                    body.push_str(&format!(
                         "    const char *_name_{id} = NULL;\n    \
 if ({field}.present) {{\n        \
 switch ({field}.value) {{ {arms}default: break; }}\n        \
@@ -5816,80 +5831,85 @@ if (_name_{id} == NULL) {{\n            return false;\n        }}\n    }}\n"
                     format!("sce_forge_wire_string(_name_{id})")
                 }
             };
-            locals.push_str(&format!(
-                "    char _wire_{id}[{data_len}];\n    \
-if (!sce_forge_wire_json({field}.present ? {present} : sce_forge_wire_null(), _wire_{id},\n                             \
-sizeof(_wire_{id}))) {{\n        return false;\n    }}\n"
-            ));
-            format.push_str(&format!("\\\"{id}\\\":%s"));
-            args.push_str(&format!(", _wire_{id}"));
+            body.push_str(&c11_wire_put(&key, ""));
+            body.push_str(&c11_wire_wrote(&format!(
+                "sce_forge_wire_json({field}.present ? {present} : sce_forge_wire_null(), out + _used, \
+                 cap - _used)"
+            )));
             continue;
         }
         match f.sce_type.present_type() {
             SceType::Bytes => {
-                locals.push_str(&format!(
-                    "    char _wire_{id}[{data_len}];\n    \
-if ({receiver}->{id}_len > sizeof({receiver}->{id}) ||\n        \
-!sce_payload_quote_bytes({receiver}->{id}, {receiver}->{id}_len, _wire_{id}, sizeof(_wire_{id}))) {{\n        \
-return false;\n    }}\n"
-                ));
-                format.push_str(&format!("\\\"{id}\\\":%s"));
-                args.push_str(&format!(", _wire_{id}"));
+                body.push_str(&c11_wire_put(&key, ""));
+                body.push_str(&c11_wire_wrote(&format!(
+                    "{receiver}->{id}_len <= sizeof({receiver}->{id}) && \
+                     sce_payload_quote_bytes({receiver}->{id}, {receiver}->{id}_len, out + _used, \
+                     cap - _used)"
+                )));
             }
             SceType::String => {
-                locals.push_str(&format!(
-                    "    char _wire_{id}[{data_len}];\n    \
-if (!sce_payload_quote({receiver}->{id}, _wire_{id}, sizeof(_wire_{id}))) {{\n        \
-return false;\n    }}\n"
-                ));
-                format.push_str(&format!("\\\"{id}\\\":%s"));
-                args.push_str(&format!(", _wire_{id}"));
+                body.push_str(&c11_wire_put(&key, ""));
+                body.push_str(&c11_wire_wrote(&format!(
+                    "sce_payload_quote({receiver}->{id}, out + _used, cap - _used)"
+                )));
             }
             SceType::Bool => {
-                format.push_str(&format!("\\\"{id}\\\":%s"));
-                args.push_str(&format!(", {receiver}->{id} ? \"true\" : \"false\""));
+                body.push_str(&c11_wire_put(
+                    &format!("{key}%s"),
+                    &format!(", {receiver}->{id} ? \"true\" : \"false\""),
+                ));
             }
             // A 64-bit real is written as ECMAScript spells it on every engine
-            // (ARCHITECTURE.md, "JSON Number Text"), into a bounded local like a
-            // text field; JSON has no spelling for a value that is not finite,
-            // so the writer refuses it. `sce_number_text` is in the runtime's own
+            // (ARCHITECTURE.md, "JSON Number Text"), in place like a text
+            // field; JSON has no spelling for a value that is not finite, so the
+            // writer refuses it. `sce_number_text` is in the runtime's own
             // include directory, which a machine with no `sce-static` datamodel
-            // has and a forge header would not be.
+            // has and a forge header would not be. It answers the length it
+            // wrote, 0 for none.
             SceType::Float64 => {
-                locals.push_str(&format!(
-                    "    char _wire_{id}[32];\n    \
-if (!isfinite({receiver}->{id}) ||\n        \
-sce_number_text({receiver}->{id}, _wire_{id}, sizeof(_wire_{id})) == 0u) {{\n        \
-return false;\n    }}\n"
+                body.push_str(&format!(
+                    "    if (!isfinite({receiver}->{id})) {{\n        return false;\n    }}\n"
                 ));
-                format.push_str(&format!("\\\"{id}\\\":%s"));
-                args.push_str(&format!(", _wire_{id}"));
+                body.push_str(&c11_wire_put(&key, ""));
+                body.push_str(&c11_wire_wrote(&format!(
+                    "sce_number_text({receiver}->{id}, out + _used, cap - _used) != 0u"
+                )));
             }
             // A 32-bit real is written as its platform spells it: the contract
             // fixes only the 64-bit form.
             SceType::Float32 => {
-                locals.push_str(&format!(
+                body.push_str(&format!(
                     "    if (!isfinite((double){receiver}->{id})) {{ return false; }}\n"
                 ));
-                format.push_str(&format!("\\\"{id}\\\":%.17g"));
-                args.push_str(&format!(", (double){receiver}->{id}"));
+                body.push_str(&c11_wire_put(
+                    &format!("{key}%.17g"),
+                    &format!(", (double){receiver}->{id}"),
+                ));
             }
             // A 64-bit integer crosses as the text of its digits.
             SceType::Uint64 => {
-                format.push_str(&format!("\\\"{id}\\\":\\\"%llu\\\""));
-                args.push_str(&format!(", (unsigned long long){receiver}->{id}"));
+                body.push_str(&c11_wire_put(
+                    &format!("{key}\\\"%llu\\\""),
+                    &format!(", (unsigned long long){receiver}->{id}"),
+                ));
             }
             SceType::Uint8 | SceType::Uint16 | SceType::Uint32 => {
-                format.push_str(&format!("\\\"{id}\\\":%lu"));
-                args.push_str(&format!(", (unsigned long){receiver}->{id}"));
+                body.push_str(&c11_wire_put(
+                    &format!("{key}%lu"),
+                    &format!(", (unsigned long){receiver}->{id}"),
+                ));
             }
             SceType::Int64 => {
-                format.push_str(&format!("\\\"{id}\\\":\\\"%lld\\\""));
-                args.push_str(&format!(", (long long){receiver}->{id}"));
+                body.push_str(&c11_wire_put(
+                    &format!("{key}\\\"%lld\\\""),
+                    &format!(", (long long){receiver}->{id}"),
+                ));
             }
             SceType::Int8 | SceType::Int16 | SceType::Int32 => {
-                format.push_str(&format!("\\\"{id}\\\":%ld"));
-                args.push_str(&format!(", (long){receiver}->{id}"));
+                body.push_str(&c11_wire_put(
+                    &format!("{key}%ld"),
+                    &format!(", (long){receiver}->{id}"),
+                ));
             }
             SceType::Enum(r) => {
                 let e = static_enum_of(static_enums, &r.alias);
@@ -5904,21 +5924,19 @@ return false;\n    }}\n"
                         )
                     })
                     .collect();
-                locals.push_str(&format!(
+                body.push_str(&format!(
                     "    const char *_name_{id} = NULL;\n    \
 switch ({receiver}->{id}) {{ {arms}default: break; }}\n    \
 if (_name_{id} == NULL) {{\n        return false;\n    }}\n"
                 ));
-                format.push_str(&format!("\\\"{id}\\\":%s"));
-                args.push_str(&format!(", _name_{id}"));
+                body.push_str(&c11_wire_put(&format!("{key}%s"), &format!(", _name_{id}")));
             }
         }
     }
-    C11RecordWire {
-        locals,
-        format,
-        args,
-    }
+    // The closing brace, and the opening one too for a record of no fields.
+    let close = if fields.is_empty() { "{}" } else { "}" };
+    body.push_str(&c11_wire_put(close, ""));
+    C11RecordWire { body }
 }
 
 /// The C type the present value of `f`, an optional field of the element `elem`
@@ -6303,11 +6321,8 @@ return false;\n    }}\n"
             }
             field_lines.push_str(&c11_payload_field_decl(&l, f));
         }
-        let C11RecordWire {
-            locals: wire_locals,
-            format: wire_parts,
-            args: wire_args,
-        } = c11_record_wire_of(&schema.fields, "payload", static_enums, &data_len);
+        let C11RecordWire { body: wire_body } =
+            c11_record_wire_of(&schema.fields, "payload", static_enums);
         // A field a later revision of the schema added is read out of the
         // schema's defaults where the delivery lacks it
         // (`crate::forge::schema_revision`); a schema with none reads the
@@ -6333,7 +6348,7 @@ return false;\n    }}\n    (void)sm;\n{field_reads}    return true;\n}}\n\n"
         lift_arms.push_str(&format!(
             "    case {event_const}: {{\n        \
 {struct_name} _payload;\n        memset(&_payload, 0, sizeof(_payload));\n        \
-if (!{sm}_lift_{member}(sm, evt->data, &_payload, _message, sizeof(_message))) {{\n            \
+if (!{sm}_lift_{member}(sm, evt->data, &_payload, _message, sizeof(sm->scratch.message))) {{\n            \
 break;\n        }}\n        \
 sm->pending_payload.tag = {tag_const};\n        \
 sm->pending_payload.as.{member} = _payload;\n        return {sm_upper}_DOOR_ADMITTED;\n    }}\n"
@@ -6375,16 +6390,23 @@ does not fit; true hands the event to the bounded external queue. String\n   \
 fields are owned through that JSON and lifted when dequeued. */\n\
 bool {fn_name}({sm}_t *sm, const {struct_name} *payload);\n\n"
         ));
+        // docs/adr/0086, section 8.5 (d): the payload is written as JSON into
+        // the machine's scratch, in place, and the event is a view of it.
+        let wire_fn = format!("{sm}_wire_{member}");
         entry_defs.push_str(&format!(
-            "SCE_SM_FN bool {fn_name}({sm}_t *sm, const {struct_name} *payload) {{\n    \
+            "/* The JSON `{event}` carries `payload` as, into `out` of `cap` bytes; false when\n   \
+it does not fit. */\n\
+SCE_SM_FN static bool {wire_fn}(const {struct_name} *payload, char *out, size_t cap) {{\n\
+{wire_body}    return true;\n}}\n\n\
+SCE_SM_FN bool {fn_name}({sm}_t *sm, const {struct_name} *payload) {{\n    \
 const {struct_name} _zero = {{0}};\n    \
 if (payload == NULL) {{ payload = &_zero; }}\n    \
 {sm}_event_with_meta_t evt = {{0}};\n    \
 evt.event = {event_const};\n    \
 /* The wire must hold the complete payload before either carrier can be\n       \
-queued. A truncated value must never disagree with the native guard. */\n{wire_locals}    \
-const int _wire_len = snprintf(evt.data, sizeof(evt.data), \"{{{wire_parts}}}\"{wire_args});\n    \
-if (_wire_len < 0 || (size_t)_wire_len >= sizeof(evt.data)) {{ return false; }}\n\
+queued. A truncated value must never disagree with the native guard. */\n    \
+if (!{wire_fn}(payload, sm->scratch.seam, sizeof(sm->scratch.seam))) {{ return false; }}\n    \
+evt.data = sm->scratch.seam;\n\
 {owned_payload}    {sm}_raise_external(sm, &evt);\n    return true;\n}}\n\n"
         ));
     }
@@ -6409,11 +6431,15 @@ typedef struct {name}_payload {{\n    {tag_type} tag;\n    union {{\n{union_line
     // answers in its place. A document that declares no `error.execution`
     // transition has nothing to take in its place (§scxml-3.12.2): the
     // delivery is refused all the same, and the message buffer goes unread.
+    // The event is a view (docs/adr/0086, section 8.5 (d)), so the rewritten
+    // one's data is the machine's `message` scratch the refusal was written
+    // in: the pop loop reads it into the engine's current event before any
+    // other activity writes the scratch, and nothing reads it after.
     let report = if raises_error {
         format!(
             "    memset(evt, 0, sizeof(*evt));\n    \
 evt->event = {sm_upper}_EVENT_ERROR_EXECUTION;\n    \
-sce_copy_bounded_data(evt->data, _message);\n    \
+evt->data = _message;\n    \
 sce_copy_bounded_n(evt->type, \"platform\", (size_t)SCE_MAX_EVENT_TYPE_LEN);\n    \
 return {sm_upper}_DOOR_IN_PLACE;\n"
         )
@@ -6437,7 +6463,7 @@ static {sm}_door_t {sm}_lift_payload({sm}_t *sm, {sm}_event_with_meta_t *evt);\n
 producer, and every other producer fills `data`, so an event that arrived\n   \
 without a payload has its fields read out of that instead. */\n\
 static {sm}_door_t {sm}_lift_payload({sm}_t *sm, {sm}_event_with_meta_t *evt) {{\n    \
-char _message[{data_len}];\n    _message[0] = '\\0';\n    \
+char *const _message = sm->scratch.message;\n    _message[0] = '\\0';\n    \
 if (sm->pending_payload.tag != {name_upper}_PAYLOAD_NONE) {{\n        \
 return {sm_upper}_DOOR_ADMITTED;\n    }}\n    \
 switch (evt->event) {{\n{lift_arms}    default:\n        return {sm_upper}_DOOR_ADMITTED;\n    }}\n\
@@ -6509,6 +6535,11 @@ pub struct C11DataSlot {
     /// NUL a slot holds a text with; 1 for a machine with none, whose slot
     /// holds the empty text.
     pub declared: u64,
+    /// The rows of slots the machine's scratch holds for the pairs one element
+    /// hands a host (docs/adr/0086, section 8.5 (d)): the most `<param>`s and
+    /// namelist names of any `<send>` or `<invoke>` of the document, at least
+    /// one.
+    pub pairs: usize,
 }
 
 /// The slot of `_event.data` of the C11 machine `model` (docs/adr/0086,
@@ -6573,7 +6604,30 @@ pub fn c11_data_slot(
         name: c11_data_len(csym_prefix, &model.name),
         inputs,
         declared: largest.map_or(1, |len| len.saturating_add(1)),
+        pairs: c11_scratch_pairs(model),
     })
+}
+
+/// The most pairs one element of `model` hands a host, each `<param>` and each
+/// namelist name a pair, of every `<send>` and every `<invoke>` the build does
+/// not lower to a child machine; at least one, so the scratch's rows are never
+/// an array of none (docs/adr/0086, section 8.5 (d)).
+fn c11_scratch_pairs(model: &crate::model::SCXMLModel) -> usize {
+    let sends = model
+        .sends()
+        .into_iter()
+        .map(|(_, send)| send.params.len() + send.namelist.split_whitespace().count());
+    let invokes = model
+        .states
+        .values()
+        .flat_map(|state| state.invokes.iter())
+        .filter_map(|invoke| match invoke {
+            crate::model::Invoke::Unsupported(info) => {
+                Some(info.base.params.len() + info.namelist.split_whitespace().count())
+            }
+            _ => None,
+        });
+    sends.chain(invokes).max().unwrap_or(0).max(1)
 }
 
 /// EventSchema MCU native lowering — Go-codegen
