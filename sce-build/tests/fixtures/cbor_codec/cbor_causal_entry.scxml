@@ -3,9 +3,12 @@
 <!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
 <!--
   One entry of a causal context (docs/adr/0085, section 3): the replica that
-  authored a change and the change's number among that replica's changes. The
-  record `codec_cbor_record_list.scxml` holds a bounded list of, as the Mesh
-  envelope's context will.
+  authored a change, by name, and the change's number among that replica's
+  changes. `codec_cbor_record_list.scxml` holds a bounded list of it, in the
+  payload type this schema's own unit declares, as the Mesh envelope's context
+  will. The author is a bounded text so the list's records carry a field whose
+  length its bound holds; `seq` is declared after it and written before it,
+  its key being the shorter (RFC 8949 section 4.2.1).
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -14,7 +17,7 @@
        name="cbor_causal_entry"
        sce:event-name="cbor.causal_entry">
   <datamodel>
-    <data id="author" sce:type="bytes[16]" sce:direction="in"/>
+    <data id="author" sce:type="string[16]" sce:direction="in"/>
     <data id="seq" sce:type="uint64" sce:direction="in"/>
   </datamodel>
 </scxml>
