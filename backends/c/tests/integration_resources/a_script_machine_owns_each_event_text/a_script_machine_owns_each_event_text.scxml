@@ -12,6 +12,11 @@
   `later` long after `soon`; `drop` cancels `later`; `echo` sends `inner` with
   data to the internal queue. An event refused for its data raises
   error.execution, recorded as `refused;`.
+
+  `post` schedules a send the host serves (the type `x-sce-host`, declared
+  where the C test's build generates this document) with one pair, so its
+  entry owns the request's event data and the pair's value until it comes due;
+  `unpost` cancels it.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        version="1.0" datamodel="ecmascript" initial="waiting"
@@ -30,6 +35,12 @@
     </transition>
     <transition event="drop">
       <cancel sendid="later"/>
+    </transition>
+    <transition event="post">
+      <send type="x-sce-host" event="watch.post" id="post" delay="1s"><param name="body" expr="'carried'"/></send>
+    </transition>
+    <transition event="unpost">
+      <cancel sendid="post"/>
     </transition>
     <transition event="echo">
       <send event="inner" target="#_internal"><param name="text" expr="'inner'"/></send>

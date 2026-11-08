@@ -189,8 +189,150 @@ static int an_event_the_allocator_cannot_hold_is_refused_and_raised(void) {
     return bad;
 }
 
+/* What the host's handler for `x-sce-host` was handed: how many acts, and the
+   event data and the one pair of the last, copied while the call ran. */
+typedef struct {
+    int calls;
+    char event_data[64];
+    char pair_name[16];
+    char pair_value[16];
+} host_seen_t;
+
+static void post_handler(void *user_data, const sce_host_send_request_t *request, sce_host_send_response_list_t *out) {
+    host_seen_t *seen = (host_seen_t *)user_data;
+    (void)out;
+    seen->calls++;
+    (void)snprintf(seen->event_data, sizeof(seen->event_data), "%s",
+                   request->event_data != NULL ? request->event_data : "(null)");
+    if (request->param_count == 1 && request->params != NULL) {
+        (void)snprintf(seen->pair_name, sizeof(seen->pair_name), "%s", request->params[0].name);
+        (void)snprintf(seen->pair_value, sizeof(seen->pair_value), "%s", request->params[0].value);
+    }
+}
+
+/* Start the machine on host-owned time with `post_handler` serving
+   `x-sce-host`. */
+static void boot_with_host(sm_t *sm, host_seen_t *seen) {
+    sce_host_processor_registry_t wiring;
+    memset(&wiring, 0, sizeof(wiring));
+    memset(seen, 0, sizeof(*seen));
+    (void)sce_host_registry_register(&wiring, "x-sce-host", post_handler, seen);
+    a_script_machine_owns_each_event_text_init_with_clock_and_host_processors(sm, sce_clock_manual(0u), &wiring);
+}
+
+/* A delayed send the host serves owns the request's event data and each pair's
+   value, texts the engine computed, from the send until it comes due, and the
+   host is handed them whole when it does; the texts are freed once the act is
+   performed. */
+static int a_delayed_host_send_owns_its_texts_until_it_is_performed(void) {
+    sm_t sm;
+    host_seen_t seen;
+    int bad = 0;
+    boot_with_host(&sm, &seen);
+    hand(&sm, "post", NULL);
+    a_script_machine_owns_each_event_text_step(&sm);
+    bad |= expect_owned("the waiting host send holds its event data and its pair's value", &sm, 2u);
+    a_script_machine_owns_each_event_text_advance_time_ms(&sm, 1000u);
+    if (seen.calls != 1) {
+        (void)fprintf(stderr, "FAIL: the host was asked to perform the due send %d times, want 1\n", seen.calls);
+        bad = 1;
+    }
+    if (strcmp(seen.event_data, "{\"body\":\"carried\"}") != 0 || strcmp(seen.pair_name, "body") != 0 ||
+        strcmp(seen.pair_value, "carried") != 0) {
+        (void)fprintf(stderr, "FAIL: the host was handed event data `%s` and the pair `%s`=`%s`\n", seen.event_data,
+                      seen.pair_name, seen.pair_value);
+        bad = 1;
+    }
+    bad |= expect_owned("the performed send's texts were freed", &sm, 0u);
+    a_script_machine_owns_each_event_text_destroy(&sm);
+    return bad;
+}
+
+/* A <cancel> frees a waiting host send's texts, and destroy frees those of one
+   still waiting. */
+static int a_cancelled_or_destroyed_host_send_frees_its_texts(void) {
+    sm_t sm;
+    host_seen_t seen;
+    int bad = 0;
+    boot_with_host(&sm, &seen);
+    hand(&sm, "post", NULL);
+    a_script_machine_owns_each_event_text_step(&sm);
+    hand(&sm, "unpost", NULL);
+    a_script_machine_owns_each_event_text_step(&sm);
+    bad |= expect_owned("the cancelled host send's texts were freed", &sm, 0u);
+    a_script_machine_owns_each_event_text_advance_time_ms(&sm, 2000u);
+    if (seen.calls != 0) {
+        (void)fprintf(stderr, "FAIL: the host performed a cancelled send\n");
+        bad = 1;
+    }
+    hand(&sm, "post", NULL);
+    a_script_machine_owns_each_event_text_step(&sm);
+    bad |= expect_owned("a second host send waits with its two texts", &sm, 2u);
+    a_script_machine_owns_each_event_text_destroy(&sm);
+    bad |= expect_owned("destroy freed the waiting host send's texts", &sm, 0u);
+    return bad;
+}
+
+/* Fails the next allocation of exactly `size` bytes the wrapped allocator is
+   asked for, the size of one text the machine copies, so the engine's own
+   allocations, which carry a header, pass. */
+typedef struct {
+    lua_Alloc inner;
+    void *inner_context;
+    size_t fail_size;
+    uint32_t failed;
+} sized_failing_alloc_t;
+
+static void *sized_failing_alloc(void *context, void *ptr, size_t osize, size_t nsize) {
+    sized_failing_alloc_t *self = (sized_failing_alloc_t *)context;
+    if (ptr == NULL && self->fail_size != 0u && nsize == self->fail_size) {
+        self->fail_size = 0u;
+        self->failed++;
+        return NULL;
+    }
+    return self->inner(self->inner_context, ptr, osize, nsize);
+}
+
+/* A delayed host send whose texts the allocator cannot give is refused whole:
+   counted, raised as error.execution, nothing held and nothing performed. */
+static int a_host_send_the_allocator_cannot_hold_is_refused_whole(void) {
+    sm_t sm;
+    host_seen_t seen;
+    sized_failing_alloc_t wrap;
+    int bad = 0;
+    boot_with_host(&sm, &seen);
+    memset(&wrap, 0, sizeof(wrap));
+    wrap.inner = lua_getallocf(sm.L, &wrap.inner_context);
+    lua_setallocf(sm.L, sized_failing_alloc, &wrap);
+    wrap.fail_size = sizeof("{\"body\":\"carried\"}");
+    hand(&sm, "post", NULL);
+    a_script_machine_owns_each_event_text_step(&sm);
+    wrap.fail_size = 0u;
+    if (wrap.failed != 1u) {
+        (void)fprintf(stderr, "FAIL: the send made no allocation of its event data's size\n");
+        bad = 1;
+    }
+    if (a_script_machine_owns_each_event_text_refused_event_data(&sm) != 1u) {
+        (void)fprintf(stderr, "FAIL: the refused host send was counted %u times, want 1\n",
+                      (unsigned)a_script_machine_owns_each_event_text_refused_event_data(&sm));
+        bad = 1;
+    }
+    bad |= expect_taken("the refusal was raised as error.execution", &sm, "refused;");
+    bad |= expect_owned("nothing is held for the refused host send", &sm, 0u);
+    a_script_machine_owns_each_event_text_advance_time_ms(&sm, 2000u);
+    if (seen.calls != 0) {
+        (void)fprintf(stderr, "FAIL: the host performed a send that was refused\n");
+        bad = 1;
+    }
+    a_script_machine_owns_each_event_text_destroy(&sm);
+    return bad;
+}
+
 int main(void) {
     int bad = 0;
+    bad |= a_delayed_host_send_owns_its_texts_until_it_is_performed();
+    bad |= a_cancelled_or_destroyed_host_send_frees_its_texts();
+    bad |= a_host_send_the_allocator_cannot_hold_is_refused_whole();
     bad |= a_dequeued_event_frees_its_text();
     bad |= an_internal_event_frees_its_text_once_read();
     bad |= a_cancelled_entry_frees_its_text_and_a_due_one_moves_it();
