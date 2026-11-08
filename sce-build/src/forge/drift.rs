@@ -62,8 +62,12 @@ use std::path::{Component, Path, PathBuf};
 /// per the spec's own spelling.
 pub const HEADER_BANNER: &str = "SCE-GENERATED \u{2014} DO NOT EDIT";
 
-/// The one key the header states, as `source-hash: <hex>`.
+/// The key of the digest, as `source-hash: <hex>`.
 const SOURCE_HASH_KEY: &str = "source-hash";
+
+/// The key of each document the digest is a closure of, as `source: <key>`,
+/// one line per seed (ADR 0094 section 3).
+const SEED_KEY: &str = "source";
 
 /// Keys an earlier header shape wrote and this module no longer does — see
 /// the module documentation. Recognised only so that replacing a header
@@ -77,14 +81,26 @@ const RETIRED_HEADER_KEYS: [&str; 2] = ["template-hash", "generated-at"];
 /// header gets it without changing shape.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DriftHeader {
-    /// Digest of the file's source set — see [`SourceSet`].
+    /// Digest of the file's input closure — see [`InputClosure`].
     pub source_hash: [u8; 32],
+    /// The documents the file is generated from, as their closure keys them
+    /// ([`InputClosure::seeds`]), sorted: the `source:` lines, which let
+    /// `sce-codegen verify` recompute the closure from the file alone.
+    pub seeds: Vec<String>,
 }
 
 impl DriftHeader {
     /// Hex-encoded `source-hash` value (64 lowercase hex chars).
     pub fn source_hex(&self) -> String {
         hex_encode(&self.source_hash)
+    }
+
+    /// The header of a file generated from the seeds of `closure`.
+    pub fn of(closure: &InputClosure) -> Self {
+        Self {
+            source_hash: closure.digest(),
+            seeds: closure.seeds().to_vec(),
+        }
     }
 }
 
@@ -739,18 +755,23 @@ impl ClosureReader {
     }
 }
 
-/// Renders the §synth-6.2.6 header: the banner, then `source-hash`.
+/// Renders the §synth-6.2.6 header: the banner, then `source-hash`, then one
+/// `source:` line per seed in the order the header holds them (sorted).
 /// `comment_prefix` is `//` for Rust/Cpp/C11/Kotlin/Go and `#` for Python.
 /// Caller prepends the result at the very top of each emitted file.
 ///
 /// The output ends in `\n` so subsequent template content starts on a
 /// fresh line.
 pub fn render_header(header: &DriftHeader, comment_prefix: &str) -> String {
-    format!(
+    let mut rendered = format!(
         "{cp} {HEADER_BANNER}\n{cp} {SOURCE_HASH_KEY}: {sh}\n",
         cp = comment_prefix,
         sh = header.source_hex(),
-    )
+    );
+    for seed in &header.seeds {
+        rendered.push_str(&format!("{comment_prefix} {SEED_KEY}: {seed}\n"));
+    }
+    rendered
 }
 
 /// Picks the comment prefix (`//` or `#`) by file extension. Drives
@@ -811,18 +832,21 @@ fn split_first_line(text: &str) -> Option<(&str, &str)> {
     })
 }
 
-/// Is `line` one of the header's key lines — `source-hash`, or a key an
-/// older shape wrote — under either comment prefix?
+/// Is `line` one of the header's key lines — `source-hash`, `source`, or a
+/// key an older shape wrote — under either comment prefix?
 fn is_header_key_line(line: &str) -> bool {
     let Some(body) = comment_body(line) else {
         return false;
     };
-    std::iter::once(SOURCE_HASH_KEY)
+    [SOURCE_HASH_KEY, SEED_KEY]
+        .into_iter()
         .chain(RETIRED_HEADER_KEYS)
-        .any(|key| {
-            body.strip_prefix(key)
-                .is_some_and(|after| after.starts_with(": "))
-        })
+        .any(|key| key_value(body, key).is_some())
+}
+
+/// The value of a `key: value` comment body, or `None` for another key.
+fn key_value<'a>(body: &'a str, key: &str) -> Option<&'a str> {
+    body.strip_prefix(key)?.strip_prefix(": ")
 }
 
 /// The text of a `// ` or `# ` comment line, or `None` for any other line.
@@ -838,31 +862,46 @@ fn comment_body(line: &str) -> Option<&str> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EmbeddedHeader {
     pub source_hash_hex: String,
+    /// The `source:` lines, in the order written; empty for a header of a
+    /// shape before ADR 0094, which `sce-codegen verify` refuses.
+    pub seeds: Vec<String>,
 }
 
 /// Parses the §synth-6.2.6 header out of a generated file's content, or
 /// `None` when the banner or the `source-hash` line is missing. Accepts
-/// either `//` or `#` comment prefix, and either header shape.
+/// either `//` or `#` comment prefix, and every header shape.
+///
+/// Reads every key line under the banner, however many there are: a file
+/// generated from a set of documents has one `source:` line per document.
 pub fn parse_embedded_header(content: &str) -> Option<EmbeddedHeader> {
-    // The header leads the file; the window keeps a file that has none
-    // cheap to reject.
-    let mut saw_banner = false;
-    for line in content.lines().take(12) {
-        let body = comment_body(line)?;
-        if body.starts_with(HEADER_BANNER) {
-            saw_banner = true;
-            continue;
-        }
-        if let Some(rest) = body
-            .strip_prefix(SOURCE_HASH_KEY)
-            .and_then(|after| after.strip_prefix(": "))
-        {
-            return saw_banner.then(|| EmbeddedHeader {
-                source_hash_hex: rest.trim().to_string(),
-            });
+    let mut lines = content.lines();
+    // The banner leads the file, behind nothing but comment lines.
+    loop {
+        if comment_body(lines.next()?)?.starts_with(HEADER_BANNER) {
+            break;
         }
     }
-    None
+    let mut source_hash_hex = None;
+    let mut seeds = Vec::new();
+    for line in lines {
+        let Some(body) = comment_body(line) else {
+            break;
+        };
+        if let Some(value) = key_value(body, SOURCE_HASH_KEY) {
+            source_hash_hex = Some(value.trim().to_string());
+        } else if let Some(value) = key_value(body, SEED_KEY) {
+            seeds.push(value.trim().to_string());
+        } else if !RETIRED_HEADER_KEYS
+            .iter()
+            .any(|key| key_value(body, key).is_some())
+        {
+            break;
+        }
+    }
+    Some(EmbeddedHeader {
+        source_hash_hex: source_hash_hex?,
+        seeds,
+    })
 }
 
 /// A generated output tree, as a check made during generation reads it.
@@ -1665,17 +1704,24 @@ mod tests {
         );
     }
 
+    /// A header of the digest `[byte; 32]` over `seeds`.
+    fn header_of(byte: u8, seeds: &[&str]) -> DriftHeader {
+        DriftHeader {
+            source_hash: [byte; 32],
+            seeds: seeds.iter().map(|seed| seed.to_string()).collect(),
+        }
+    }
+
     #[test]
-    fn render_header_emits_the_banner_and_the_source_hash() {
-        let header = DriftHeader {
-            source_hash: [0xaa; 32],
-        };
+    fn render_header_emits_the_banner_the_source_hash_and_the_seeds() {
+        let header = header_of(0xaa, &["a.scxml"]);
         let h = render_header(&header, "//");
         let lines: Vec<&str> = h.lines().collect();
-        assert_eq!(lines.len(), 2, "{h}");
+        assert_eq!(lines.len(), 3, "{h}");
         assert!(lines[0].contains("SCE-GENERATED"));
         assert!(lines[0].contains("DO NOT EDIT"));
         assert_eq!(lines[1], format!("// source-hash: {}", "aa".repeat(32)));
+        assert_eq!(lines[2], "// source: a.scxml");
         // Header must end with newline so following template content
         // starts on a clean line.
         assert!(h.ends_with('\n'));
@@ -1683,37 +1729,68 @@ mod tests {
 
     #[test]
     fn render_header_uses_hash_prefix_for_python() {
-        let header = DriftHeader {
-            source_hash: [0; 32],
-        };
+        let header = header_of(0, &["a.scxml"]);
         let h = render_header(&header, "#");
         let first = h.lines().next().unwrap();
         assert!(first.starts_with("# SCE-GENERATED"));
         assert!(h.contains("# source-hash: "));
+        assert!(h.contains("# source: a.scxml\n"));
     }
 
     #[test]
     fn parse_embedded_header_round_trip() {
-        let header = DriftHeader {
-            source_hash: [0x12; 32],
-        };
+        let header = header_of(0x12, &["a.scxml"]);
         let rendered = render_header(&header, "//");
         // Add some body content after the header so parse only consumes
         // the relevant lines.
         let file_content = format!("{rendered}\npub mod whatever {{}}\n");
         let parsed = parse_embedded_header(&file_content).expect("header parseable");
         assert_eq!(parsed.source_hash_hex, header.source_hex());
+        assert_eq!(parsed.seeds, header.seeds);
     }
 
     #[test]
     fn parse_embedded_header_round_trip_python() {
-        let header = DriftHeader {
-            source_hash: [0xab; 32],
-        };
+        let header = header_of(0xab, &["a.scxml"]);
         let rendered = render_header(&header, "#");
         let file_content = format!("{rendered}def main():\n    pass\n");
         let parsed = parse_embedded_header(&file_content).expect("python header parseable");
         assert_eq!(parsed.source_hash_hex, header.source_hex());
+        assert_eq!(parsed.seeds, header.seeds);
+    }
+
+    /// ADR 0094 test 15: a file generated from a set of documents names each,
+    /// and the parser reads them all, past any window a header of two lines
+    /// fitted in. A header replaced in place leaves the body as it was.
+    #[test]
+    fn the_header_round_trips_its_seeds() {
+        let seeds: Vec<String> = (0..20).map(|n| format!("set/doc_{n:02}.scxml")).collect();
+        let named: Vec<&str> = seeds.iter().map(String::as_str).collect();
+        let header = header_of(0x42, &named);
+        let body = "pub fn body() {}\n";
+        let headed = prepend_or_replace_header(body, &header, "//");
+        let parsed = parse_embedded_header(&headed).expect("a long header parses");
+        assert_eq!(parsed.seeds, seeds);
+        assert_eq!(parsed.source_hash_hex, header.source_hex());
+
+        let fewer = header_of(0x43, &["one.scxml"]);
+        assert_eq!(
+            prepend_or_replace_header(&headed, &fewer, "//"),
+            format!("{}{body}", render_header(&fewer, "//")),
+            "every seed line of the old header goes with it"
+        );
+    }
+
+    /// A header of the shape before ADR 0094 parses with no seeds, which is
+    /// how `verify` tells it apart.
+    #[test]
+    fn a_header_without_seeds_parses_with_none() {
+        let two_lines = format!(
+            "// {HEADER_BANNER}\n// source-hash: {}\nbody\n",
+            "ab".repeat(32)
+        );
+        let parsed = parse_embedded_header(&two_lines).expect("parses");
+        assert!(parsed.seeds.is_empty());
     }
 
     #[test]
@@ -1736,9 +1813,7 @@ mod tests {
 
     #[test]
     fn prepend_header_idempotent_on_double_run() {
-        let header = DriftHeader {
-            source_hash: [0x33; 32],
-        };
+        let header = header_of(0x33, &["a.scxml"]);
         let body = "pub fn foo() {}\n";
         let once = prepend_or_replace_header(body, &header, "//");
         let twice = prepend_or_replace_header(&once, &header, "//");
@@ -1747,12 +1822,8 @@ mod tests {
 
     #[test]
     fn prepend_header_replaces_when_the_source_hash_changes() {
-        let h1 = DriftHeader {
-            source_hash: [0x11; 32],
-        };
-        let h2 = DriftHeader {
-            source_hash: [0x55; 32],
-        };
+        let h1 = header_of(0x11, &["a.scxml"]);
+        let h2 = header_of(0x55, &["a.scxml"]);
         let body = "pub fn bar() {}\n";
         let first = prepend_or_replace_header(body, &h1, "//");
         let updated = prepend_or_replace_header(&first, &h2, "//");
@@ -1767,9 +1838,7 @@ mod tests {
     /// would leave two stale key lines at the top of the body.
     #[test]
     fn prepend_header_replaces_a_header_of_the_older_shape() {
-        let header = DriftHeader {
-            source_hash: [0x77; 32],
-        };
+        let header = header_of(0x77, &["a.scxml"]);
         for prefix in ["//", "#"] {
             let body = format!("{prefix} GENERATED -- DO NOT EDIT (sce-codegen)\nbody line\n");
             let legacy = format!(

@@ -111,6 +111,7 @@ fn env_bin() -> &'static str {
 fn header_for_fixture(fix: &VerifyFixture) -> DriftHeader {
     DriftHeader {
         source_hash: compute_source_hash(&fix.input_root, None).unwrap(),
+        seeds: Vec::new(),
     }
 }
 
@@ -191,6 +192,7 @@ fn helper_emits_python_header_with_hash_prefix() {
     };
     let header = DriftHeader {
         source_hash: [0xaa; 32],
+        seeds: vec!["foo.scxml".to_string()],
     };
     sce_build::apply_drift_headers_to_output(&mut output, &header);
 
@@ -224,6 +226,7 @@ fn helper_is_idempotent_across_two_invocations() {
     };
     let header = DriftHeader {
         source_hash: [0x11; 32],
+        seeds: vec!["foo.scxml".to_string()],
     };
     sce_build::apply_drift_headers_to_output(&mut output, &header);
     let once = output.files[0].1.clone();
@@ -266,6 +269,7 @@ fn verify_passes_when_input_set_is_empty_scxml_directory() {
 
     let header = DriftHeader {
         source_hash: compute_source_hash(&input_root, None).unwrap(),
+        seeds: Vec::new(),
     };
     let mut output = GeneratedOutput {
         files: vec![("foo_sm.rs".into(), "pub struct Foo;\n".into())],
@@ -350,9 +354,11 @@ fn input_root_override_pins_hash_to_canonical_location() {
 
     let canonical_header = DriftHeader {
         source_hash: compute_source_hash(&canonical, None).unwrap(),
+        seeds: Vec::new(),
     };
     let stage_header = DriftHeader {
         source_hash: compute_source_hash(&stage, None).unwrap(),
+        seeds: Vec::new(),
     };
     assert_ne!(
         canonical_header.source_hex(),
