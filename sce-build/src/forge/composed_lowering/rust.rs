@@ -4,6 +4,15 @@
 //! The Rust spelling of the walks over a composed value ([`super`]), for a
 //! machine (docs/adr/0086, section 7.1, the Rust machine row), and the Rust
 //! spelling of the reads of a union that a schema unit and a machine share.
+//!
+//! | `list<T>[N]` | `string[N]` / `bytes[N]` | `optional<T>` | record |
+//! |---|---|---|---|
+//! | `BoundedList<T, N>` | `SceString<N>` / `SceBytes<N>` | `Option<T>` | the machine's record |
+//!
+//! A list, a text and a byte string carry their bound in their type (section
+//! 7.4), so a value is copied into a place of a larger bound by widening it at
+//! each depth where the two bounds differ, the fit proven before ([`copier`],
+//! section 5.1) and asserted again by the widening's own const parameters.
 
 use super::*;
 

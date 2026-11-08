@@ -27,25 +27,21 @@
 //! ([`RecordEnv`]), so one record is one type of the machine whichever document
 //! names it.
 //!
-//! | Backend | `list<T>[N]` | `string[N]` / `bytes[N]` | `optional<T>` | record |
-//! |---|---|---|---|---|
-//! | Rust (machine) | `BoundedList<T, N>` | `SceString<N>` / `SceBytes<N>` | `Option<T>` | the machine's record |
-//! | Kotlin | `List<T>` | `String` / `ByteArray` | `T?` | the machine's data class |
-//! | Go | `[]T` | `string` / `[]byte` | `optional.Of[T]` | the machine's struct |
-//! | Python | `list[T]` | `str` / `bytes` | `Optional[T]` | the machine's record class |
-//! | C++ | `std::vector<T>` | `std::string` / `std::vector<uint8_t>` | `std::optional<T>` | the machine's struct |
+//! A backend whose types carry a bound (section 7.4) copies a value into a
+//! place of a larger bound by widening it at each depth where the two bounds
+//! differ, the fit proven before ([`copier`], section 5.1); a backend whose
+//! types carry none holds two places whose types differ only in their bounds
+//! in one type, and copies a value that fits as it is.
 //!
-//! On Rust a list, a text and a byte string carry their bound in their type
-//! (section 7.4), so a value is copied into a place of a larger bound by
-//! widening it at each depth where the two bounds differ, the fit proven before
-//! ([`copier`], section 5.1) and asserted again by the widening's own const
-//! parameters. Kotlin's, Go's, Python's and C++'s types carry no bound
-//! (section 7.4, last paragraph), so two places whose types differ only in
-//! their bounds are one type, and a value that fits is copied as it is: on Go
-//! the list a place holds into a slice of its own, since the variable it is
-//! copied into is appended to in place, on Python into a copy that shares no
-//! list with it, for the same reason, and on C++ by the assignment, which
-//! copies a list by value at every depth.
+//! Each backend's spelling is a module of its own beside this file
+//! (`composed_lowering/<backend>.rs`), which states that backend's row of
+//! section 7.1, the type it holds each constructor in, and how it copies a
+//! value; its unit tests sit with it, over the schemas this file's tests
+//! share (`composed_lowering/test_support.rs`). Nothing in this file names a
+//! backend beyond the lines that declare each module and re-export what the
+//! generator names of it; what each backend lowers is decided once, by its row of
+//! [`crate::forge::event_schema_check::ComposedLowering::of`]
+//! (ARCHITECTURE.md, "Composed Values: One Walk, One Module per Backend").
 
 use std::collections::BTreeMap;
 
