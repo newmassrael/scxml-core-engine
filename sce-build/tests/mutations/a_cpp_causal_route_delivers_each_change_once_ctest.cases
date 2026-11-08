@@ -1,0 +1,113 @@
+# Mutation cases for "the C++ core's causal route delivers each change once
+# in causal order" (docs/adr/0085, sections 3, 3.2 and 9.2).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_cpp_causal_route_delivers_each_change_once_ctest.cases`.
+#
+# The rule itself is the standard Mesh algorithms, generated for C++ and
+# called through CausalRules.cpp; its mutants are in
+# `a_cpp_causal_rule_is_the_generated_one_ctest.cases`. What this file takes
+# away is what the C++ layer and route add around the rule: the state the
+# rule is applied to, and the envelope work around it. Each case is one of
+# the changes section 9.2 names, and each is held by the test whose comment
+# names it (tests/mesh/CausalLayerTest.cpp, tests/mesh/CausalRouteTest.cpp):
+#
+#   write-ahead: the layer releases a change when it tags it;
+#   deliver: the delivered vector is not raised by a delivered change;
+#   the verdict: the number is taken before the refusal;
+#   the view: the epoch check is removed;
+#   the mark: no vector is recorded as its member's latest;
+#   retention: the log is pruned at the copy's own vector, not the cut;
+#   repair: a vector is answered with nothing it lacks;
+#   the period: a route that announced is never owed a vector again.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^mesh_causal_(layer|route)_verification$'
+mutation_targets sce/include/mesh/CausalLayer.h sce/include/mesh/CausalRoute.h
+mutation_oracles tests/mesh/CausalLayerTest.cpp tests/mesh/CausalRouteTest.cpp
+
+# ── Write-ahead ─────────────────────────────────────────────────────
+#
+# A change logged as released leaves with the first repair asked of it,
+# before the host commits its journal record, and the commit then releases
+# nothing.
+
+mutation_case "the layer releases a change when it tags it" <<'PY'
+edit("sce/include/mesh/CausalLayer.h",
+     """        log_.push_back(Logged{dot, std::move(*message), false});""",
+     """        log_.push_back(Logged{dot, std::move(*message), true});""")
+PY
+
+# ── Deliver ─────────────────────────────────────────────────────────
+
+mutation_case "the delivered vector is not raised by a delivered change" <<'PY'
+edit("sce/include/mesh/CausalLayer.h",
+     """        delivered_ = raised.value();
+        log_.push_back(Logged{dot, message, true});""",
+     """        log_.push_back(Logged{dot, message, true});""")
+PY
+
+# ── The verdict ─────────────────────────────────────────────────────
+#
+# The refused change takes a number, so the copy's next accepted change
+# leaves a gap every peer holds it behind.
+
+mutation_case "the number is taken before the refusal" <<'PY'
+edit("sce/include/mesh/CausalLayer.h",
+     """        if (log_.size() >= room_) {
+            return CausalVerdict::refused(CausalRefusal::NoRoomForHistory);""",
+     """        if (log_.size() >= room_) {
+            delivered_ = causalRaise(delivered_, std::vector<CausalEntry>{replica_.entry(ownSeq() + 1)}).value();
+            return CausalVerdict::refused(CausalRefusal::NoRoomForHistory);""")
+PY
+
+# ── The view ────────────────────────────────────────────────────────
+
+mutation_case "the epoch check is removed" <<'PY'
+edit("sce/include/mesh/CausalLayer.h",
+     """        if (tag.epoch != group_.epoch) {""",
+     """        if (false && tag.epoch != group_.epoch) {""")
+PY
+
+# ── The mark ────────────────────────────────────────────────────────
+#
+# A member that never wrote then never moves the stable cut, and the log
+# keeps every change.
+
+mutation_case "no vector is recorded as its member's latest" <<'PY'
+edit("sce/include/mesh/CausalLayer.h",
+     """        known_[replica] = raised.value();""",
+     """        (void)raised;""")
+PY
+
+# ── Retention ───────────────────────────────────────────────────────
+#
+# A change this copy has delivered is dropped while a member still lacks
+# it, so that member's repair is never answered.
+
+mutation_case "the log is pruned at the copy's own vector, not the cut" <<'PY'
+edit("sce/include/mesh/CausalLayer.h",
+     """[&covered](const Logged &logged) { return !causalLacks(covered, logged.dot); }""",
+     """[this, &covered](const Logged &logged) { (void)covered; return !causalLacks(delivered_, logged.dot); }""")
+PY
+
+# ── Repair ──────────────────────────────────────────────────────────
+
+mutation_case "a vector is answered with nothing it lacks" <<'PY'
+edit("sce/include/mesh/CausalLayer.h",
+     """            if (logged.released && causalLacks(tag.vector, logged.dot)) {""",
+     """            if (false && logged.released && causalLacks(tag.vector, logged.dot)) {""")
+PY
+
+# ── The period ──────────────────────────────────────────────────────
+#
+# A causal route has no gap timeout, so a change lost on a link that never
+# drops is repaired only by the vectors of the period.
+
+mutation_case "a route that announced is never owed a vector again" <<'PY'
+edit("sce/include/mesh/CausalRoute.h",
+     """        return !announced_ms_ || now_ms - *announced_ms_ >= announce_every_ms_;""",
+     """        return !announced_ms_;""")
+PY
