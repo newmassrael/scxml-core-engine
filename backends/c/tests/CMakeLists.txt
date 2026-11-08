@@ -4361,6 +4361,60 @@ set_tests_properties(c11_integration_a_test_template_matches_its_values PROPERTI
     LABELS "integration;c11;aot"
 )
 
+# ─── test components: docs/SCE_TEST_PROFILE.md §12.3, §12.6 ────────
+#
+# The components of the runtime's end-to-end test, each the machine of its
+# `test-component` document and the component the profile's runtime drives,
+# generated beside the units of the records and templates they name, and run
+# through `sce_test_case_run_t` against configurations and a system adapter
+# written by hand (integration/test_a_test_component_runs_through_its_doors.c,
+# the twin of the C++ ATestComponentRunsThroughItsDoorsTest). `param_asker` is
+# not among them: C11 refuses a component that declares a module parameter
+# until it generates a suite's tables. A component's machine runs on the
+# logical clock of its run, so the program links no platform clock, no script
+# engine and no HTTP client: a generation that came to require one fails the
+# configure.
+set(_TC_FIXTURE_DIR "${_TP_FIXTURE_DIR}/runtime")
+set(_TC_HEADERS "")
+set(_TC_SOURCES "")
+foreach(_TC_DOCUMENT job_request job_reply request_of reply_ok reply_of any_request
+                     asker coordinator answerer ptc_keeper idler)
+    sce_c_integration_generation(_TC_${_TC_DOCUMENT} "${_TC_FIXTURE_DIR}/${_TC_DOCUMENT}.scxml"
+        INPUT_ROOT "${_TC_FIXTURE_DIR}")
+    list(APPEND _TC_HEADERS ${_TC_${_TC_DOCUMENT}_HEADERS})
+    list(APPEND _TC_SOURCES ${_TC_${_TC_DOCUMENT}_SOURCES})
+endforeach()
+
+add_executable(sce_c_integration_a_test_component_runs_through_its_doors
+    integration/test_a_test_component_runs_through_its_doors.c
+    ${_TC_SOURCES}
+    ${_TC_HEADERS}
+)
+target_include_directories(sce_c_integration_a_test_component_runs_through_its_doors PRIVATE
+    "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
+    "${CMAKE_SOURCE_DIR}/backends/c/runtime/include"
+)
+sce_c_link_runtime(sce_c_integration_a_test_component_runs_through_its_doors EXCLUDES lua dom http clock)
+# The saved value readers the runtime's module parameters are read through.
+target_link_libraries(sce_c_integration_a_test_component_runs_through_its_doors PRIVATE m)
+target_compile_options(sce_c_integration_a_test_component_runs_through_its_doors PRIVATE
+    -Wall -Wextra -Werror -Wpedantic
+    -Wconversion -Wsign-conversion -Wshadow -Wcast-align
+)
+set_target_properties(sce_c_integration_a_test_component_runs_through_its_doors PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_integration_a_test_component_runs_through_its_doors
+    COMMAND sce_c_integration_a_test_component_runs_through_its_doors
+)
+set_tests_properties(c11_integration_a_test_component_runs_through_its_doors PROPERTIES
+    TIMEOUT 30
+    LABELS "integration;c11;aot"
+)
+
 # ─── EventSchema native lowering fixture (NL→IR C1 Path A, RFC §10.4 step 5) ─
 #
 # Proves the C11 backend's native typed `_event.data` lowering at runtime
