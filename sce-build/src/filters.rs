@@ -728,7 +728,7 @@ pub fn inline_content_reading(
 /// A JSON value as the text every engine writes it in: members in ascending
 /// key order (`tests/json_text/object_key_order.json`), strings escaped by
 /// [`escape_json_string`] and numbers spelled by [`json_number_text`].
-fn json_wire_text(value: &serde_json::Value) -> String {
+pub(crate) fn json_wire_text(value: &serde_json::Value) -> String {
     use serde_json::Value as J;
     match value {
         J::Null => "null".to_string(),
