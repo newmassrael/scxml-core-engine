@@ -1,0 +1,63 @@
+# Mutation cases for "the generated C++ router holds, per transport, what a
+# causal binding needs" (docs/adr/0085, section 3.2).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_cpp_causal_router_holds_each_transports_wiring.cases`.
+#
+# Held by `sce-build/tests/mesh_causal_cpp_codegen.rs`, which generates the
+# brake's router for a causal `#motor` binding over each transport and reads
+# what that transport needs for the vector, the re-sent originals and the
+# peer's envelopes to reach the route. It covers what the hermetic runtime
+# round (`a_cpp_causal_route_rides_every_transport_ctest.cases`) cannot see: a
+# transport that is not open loses an envelope unseen.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --test mesh_causal_cpp_codegen
+mutation_targets tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2 sce-build/src/mesh/topology.rs
+mutation_oracles sce-build/tests/mesh_causal_cpp_codegen.rs
+
+# ── zenoh_keyexpr: the vector is one more put on the binding's key ───
+
+mutation_case "send_zenoh refuses the vector" <<'PY'
+edit("tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2",
+     """        case PK::CausalVector: {""",
+     """        {""")
+PY
+
+# ── someip: the vector rides the method its interface declares ──────
+
+mutation_case "the SOME/IP send has no arm for the vector" <<'PY'
+edit("tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2",
+     """{% if target.causal_vector_method %}
+    // docs/adr/0085, section 3.2: a causal route's vector rides the method""",
+     """{% if false %}
+    // docs/adr/0085, section 3.2: a causal route's vector rides the method""")
+PY
+
+mutation_case "a causal SOME/IP binding without its vector's method is built" <<'PY'
+edit("sce-build/src/mesh/topology.rs",
+     """    if pt.causal.is_some() {
+        match per_binding.by_event.get(CAUSAL_VECTOR_EVENT) {""",
+     """    if false {
+        match per_binding.by_event.get(CAUSAL_VECTOR_EVENT) {""")
+PY
+
+# ── local: only through the peer's router ───────────────────────────
+
+mutation_case "an unlinked causal local target is written into its engine" <<'PY'
+edit("tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2",
+     """{% if target.causal %}
+            // docs/adr/0085, section 3.2: the peer of a causal binding reads""",
+     """{% if false %}
+            // docs/adr/0085, section 3.2: the peer of a causal binding reads""")
+PY
+
+# ── shm: the peer's channel is opened and drained ───────────────────
+
+mutation_case "the router never opens the shm peer's channel" <<'PY'
+edit("tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2",
+     """{% if ns_causal_shm.v %}""",
+     """{% if false %}""")
+PY
