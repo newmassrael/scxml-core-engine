@@ -6482,9 +6482,13 @@ pub struct C11DataInput {
 pub struct C11DataSlot {
     pub name: String,
     pub inputs: Vec<C11DataInput>,
-    /// One more than the largest `data_max_len` of [`Self::inputs`], for the
-    /// NUL a slot holds a text with; 1 for a machine with none, whose slot
-    /// holds the empty text.
+    /// The longest reason the machine raises with an error, in bytes
+    /// (docs/adr/0086, section 8.6 (b)): known once the machine's source is
+    /// emitted, and folded in by [`Self::hold_reasons`]; zero before.
+    pub reasons: u64,
+    /// One more than the largest of [`Self::inputs`]' `data_max_len` and
+    /// [`Self::reasons`], for the NUL a slot holds a text with; 1 for a
+    /// machine with neither, whose slot holds the empty text.
     pub declared: u64,
     /// The rows of slots the machine's scratch holds for the pairs one element
     /// hands a host (docs/adr/0086, section 8.5 (d)): the most `<param>`s and
@@ -6494,6 +6498,24 @@ pub struct C11DataSlot {
     /// The machine's scratch, one union per colour of its roles' interference
     /// graph (docs/adr/0086, section 8.5 (e); [`crate::forge::c11_scratch`]).
     pub scratch: Vec<crate::forge::c11_scratch::ScratchColour>,
+}
+
+impl C11DataSlot {
+    /// Take the longest reason the machine raises, `reasons` bytes, as an
+    /// input of the slot (docs/adr/0086, section 8.6 (b)), from the book of
+    /// its reasons once its source is emitted
+    /// ([`crate::forge::c11_reasons::seal`]).
+    pub fn hold_reasons(&mut self, reasons: u64) {
+        self.reasons = reasons;
+        let largest = self
+            .inputs
+            .iter()
+            .map(|input| input.data_max_len)
+            .chain(std::iter::once(reasons))
+            .max()
+            .unwrap_or(0);
+        self.declared = largest.saturating_add(1);
+    }
 }
 
 /// The slot of `_event.data` of the C11 machine `model` (docs/adr/0086,
@@ -6553,14 +6575,16 @@ pub fn c11_data_slot(
             data_max_len,
         });
     }
-    let largest = inputs.iter().map(|input| input.data_max_len).max();
-    Ok(C11DataSlot {
+    let mut slot = C11DataSlot {
         name: c11_data_len(csym_prefix, &model.name),
         inputs,
-        declared: largest.map_or(1, |len| len.saturating_add(1)),
+        reasons: 0,
+        declared: 1,
         pairs: c11_scratch_pairs(model),
         scratch: crate::forge::c11_scratch::layout(!model.host_processor_types.is_empty()),
-    })
+    };
+    slot.hold_reasons(0);
+    Ok(slot)
 }
 
 /// The most pairs one element of `model` hands a host, each `<param>` and each

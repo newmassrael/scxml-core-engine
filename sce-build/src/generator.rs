@@ -3984,6 +3984,11 @@ fn render_c11(
     reject_barrier_timeout_without_handler(model)?;
     reject_liveliness_without_handler(model)?;
     let base_path = model.scxml_base_path.clone();
+    // docs/adr/0086, section 8.6 (b): the book of every reason this machine
+    // raises, opened before the lowerings and the templates emit one and
+    // sealed once the source is rendered, when its longest reason becomes an
+    // input of the slot the header declares.
+    let _reasons = crate::forge::c11_reasons::scope();
 
     // EventSchema MCU native lowering — the C11 typed `_event.data`
     // payload channel: a tagged
@@ -4107,7 +4112,7 @@ fn render_c11(
     // docs/adr/0086, section 8.1: the bytes the machine's slot of `_event.data`
     // takes, computed from the schemas of the events it receives, which every
     // place of the machine that holds an event's data is declared at.
-    let data_slot = crate::forge::generator::c11_data_slot(model, &csym_prefix)?;
+    let mut data_slot = crate::forge::generator::c11_data_slot(model, &csym_prefix)?;
     // SCE Accepted Subset §2.12: the typed host-run invoke interface and what
     // the start site holds each request field to; all empty without one.
     let host_invoker = crate::forge::host_invoker_interface::render_c11(
@@ -4141,6 +4146,51 @@ fn render_c11(
     model_lowered.into_artifact_coordinates();
     let model_val = minijinja::Value::from_serialize(&model_lowered);
     let license_val = minijinja::Value::from_serialize(license_config());
+
+    // The source is rendered first: it emits every reason the machine raises,
+    // and the header declares the slot that holds the longest of them
+    // (docs/adr/0086, section 8.6 (b)).
+    let source_ctx = minijinja::context! {
+        model => &model_val,
+        base_path => &base_path,
+        license_config => &license_val,
+        runtime_requires => &runtime_requires,
+        max_enabled => microstep_bounds.enabled,
+        event_payload_type => &payload.type_name,
+        event_payload_active => payload.active,
+        event_payload_entry_defs => &payload.entry_defs,
+        event_payload_lift_decl => &payload.lift_decl,
+        event_payload_lift_def => &payload.lift_def,
+        has_native_actions => native.any,
+        has_native_duties => native.has_duty,
+        native_actions_interface => &native.interface_name,
+        native_action_ops => &native.operation_names,
+        csym_prefix => &csym_prefix,
+        data_slot => &data_slot,
+        host_invoker_defs => &host_invoker.defs,
+        // docs/adr/0055: the wire writer a result's optional field is written
+        // with, included whatever the data model.
+        host_invoker_source_includes => &host_invoker.source_includes,
+        host_invoke_request_checks => &host_invoke_request_checks,
+        answer_schemas => answer_schemas_context(model, Language::C11),
+        static_done_data => static_done_data,
+        ends_with_done_data => ends_with_done_data,
+        static_datamodel => model.datamodel == crate::model::Datamodel::SceStatic,
+        static_fields => minijinja::Value::from_serialize(&static_lowering.fields),
+        static_published => minijinja::Value::from_serialize(&static_published),
+        static_imports => &static_lowering.imports,
+        static_adapter_defs => static_lowering.adapter_defs.join("\n\n"),
+        static_saved_shape => &static_saved_shape,
+        module_parameter_starts => &module_parameter_starts,
+        // docs/SCE_TEST_PROFILE.md §12.3: the doors a test component's machine
+        // reaches its runtime through, which the component the runtime drives
+        // registers and delivers the snapshot by.
+        test_port_processor => crate::test_component::TEST_PORT_PROCESSOR,
+        test_component_invoke_type => crate::test_component::TEST_COMPONENT_INVOKE_TYPE,
+        snapshot_event => crate::test_component::SNAPSHOT_EVENT,
+    };
+    let source_code = source_tmpl.render(source_ctx).map_err(render_error)?;
+    data_slot.hold_reasons(crate::forge::c11_reasons::seal());
 
     let header_ctx = minijinja::context! {
         model => &model_val,
@@ -4199,48 +4249,7 @@ fn render_c11(
             .cloned()
             .unwrap_or_default(),
     };
-    let source_ctx = minijinja::context! {
-        model => &model_val,
-        base_path => &base_path,
-        license_config => &license_val,
-        runtime_requires => &runtime_requires,
-        max_enabled => microstep_bounds.enabled,
-        event_payload_type => &payload.type_name,
-        event_payload_active => payload.active,
-        event_payload_entry_defs => &payload.entry_defs,
-        event_payload_lift_decl => &payload.lift_decl,
-        event_payload_lift_def => &payload.lift_def,
-        has_native_actions => native.any,
-        has_native_duties => native.has_duty,
-        native_actions_interface => &native.interface_name,
-        native_action_ops => &native.operation_names,
-        csym_prefix => &csym_prefix,
-        data_slot => &data_slot,
-        host_invoker_defs => &host_invoker.defs,
-        // docs/adr/0055: the wire writer a result's optional field is written
-        // with, included whatever the data model.
-        host_invoker_source_includes => &host_invoker.source_includes,
-        host_invoke_request_checks => &host_invoke_request_checks,
-        answer_schemas => answer_schemas_context(model, Language::C11),
-        static_done_data => static_done_data,
-        ends_with_done_data => ends_with_done_data,
-        static_datamodel => model.datamodel == crate::model::Datamodel::SceStatic,
-        static_fields => minijinja::Value::from_serialize(&static_lowering.fields),
-        static_published => minijinja::Value::from_serialize(&static_published),
-        static_imports => &static_lowering.imports,
-        static_adapter_defs => static_lowering.adapter_defs.join("\n\n"),
-        static_saved_shape => &static_saved_shape,
-        module_parameter_starts => &module_parameter_starts,
-        // docs/SCE_TEST_PROFILE.md §12.3: the doors a test component's machine
-        // reaches its runtime through, which the component the runtime drives
-        // registers and delivers the snapshot by.
-        test_port_processor => crate::test_component::TEST_PORT_PROCESSOR,
-        test_component_invoke_type => crate::test_component::TEST_COMPONENT_INVOKE_TYPE,
-        snapshot_event => crate::test_component::SNAPSHOT_EVENT,
-    };
-
     let header_code = header_tmpl.render(header_ctx).map_err(render_error)?;
-    let source_code = source_tmpl.render(source_ctx).map_err(render_error)?;
 
     Ok(GeneratedOutput {
         files: vec![

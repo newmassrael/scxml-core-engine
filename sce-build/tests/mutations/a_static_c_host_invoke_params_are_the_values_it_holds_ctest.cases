@@ -59,8 +59,8 @@ PY
 
 mutation_case "a value that failed is left out without a word" <<'PY'
 edit("tools/codegen/templates/c/invoke_methods.jinja2",
-     "{% if 'error.execution' in model.events %}\n                    {{ csym_prefix }}{{ model.name }}_raise_platform_error(\n                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,\n                        \"<invoke> <param name='{{ param.name | escape_c }}'> failed to evaluate\");",
-     "{% if false %}\n                    {{ csym_prefix }}{{ model.name }}_raise_platform_error(\n                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,\n                        \"<invoke> <param name='{{ param.name | escape_c }}'> failed to evaluate\");")
+     "{% if 'error.execution' in model.events %}\n                    {{ csym_prefix }}{{ model.name }}_raise_platform_error(\n                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,\n                        {{ reason(\"param_failed\", \"<invoke>\", param.name) }});",
+     "{% if false %}\n                    {{ csym_prefix }}{{ model.name }}_raise_platform_error(\n                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,\n                        {{ reason(\"param_failed\", \"<invoke>\", param.name) }});")
 PY
 
 # ── The text is the value, in full ─────────────────────────────────

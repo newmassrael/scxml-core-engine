@@ -45,7 +45,7 @@ PY
 
 mutation_case "a content value that failed is replaced by the empty string without a word" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     "                        {{ csym_prefix }}{{ machine }}_raise_platform_error(\n                            sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,\n                            \"<send> <content expr> failed to evaluate\");\n                        sce_value = sce_forge_wire_string(\"\");",
+     "                        {{ csym_prefix }}{{ machine }}_raise_platform_error(\n                            sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,\n                            {{ reason(\"send_content_expr_failed\") }});\n                        sce_value = sce_forge_wire_string(\"\");",
      "                        sce_value = sce_forge_wire_string(\"\");")
 PY
 

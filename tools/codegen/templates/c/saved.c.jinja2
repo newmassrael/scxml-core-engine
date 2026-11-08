@@ -767,7 +767,7 @@ SCE_SM_FN static bool {{ _t }}_saved_sends(const sce_saved_session_t *s, {{ _t }
 {% endif %}
         if (sm != NULL) {
             slot = scheduled_reserve(sm, sce_saved_ready_at(wall_now_ms, now_ms, send.due),
-                                     "the scheduled-send queue is full, so this <send delay> was dropped");
+                                     {{ reason("scheduled_queue_full_send") }});
             if (slot == NULL) {
                 return sce_saved_refuse(err, "%s could not be armed: the scheduled-send queue is full", what);
             }
