@@ -126,15 +126,15 @@ fn a_template_that_keeps_every_rule_of_its_imports_is_accepted() {
 
 /// The compile asks the same rules: the accepted template reaches the
 /// generation, which a backend that generates no template
-/// (`codegen_matrix::TEST_TEMPLATE_BACKENDS`) refuses by name, and a refused
-/// one is refused with its own code before it.
+/// (`codegen_matrix::TEST_TEMPLATE_BACKENDS`) refuses by name, C11 here, and a
+/// refused one is refused with its own code before it.
 #[test]
 fn the_compile_holds_a_template_to_its_imports_before_it_refuses_to_generate_one() {
-    let refusing = Language::ALL
-        .iter()
-        .copied()
-        .find(|language| !TEST_TEMPLATE_BACKENDS.contains(language))
-        .expect("a backend that generates no template");
+    let refusing = Language::C11;
+    assert!(
+        !TEST_TEMPLATE_BACKENDS.contains(&refusing),
+        "C11 generates a template: name a backend that still refuses one"
+    );
     match sce_build::compile_forge_file(
         &imports_dir().join("order_placed_match.scxml"),
         refusing,
@@ -424,7 +424,8 @@ fn line_of(text: &str, token: &str) -> u32 {
 /// parameter's, holds its record is refused by name before any backend
 /// generates it (`validation/attribute-rule-violated`, on the `sce:type` that
 /// reaches it), on every backend that generates a template
-/// (`codegen_matrix::TEST_TEMPLATE_BACKENDS`: Rust, C++, Kotlin and Go). The
+/// (`codegen_matrix::TEST_TEMPLATE_BACKENDS`: Rust, C++, Kotlin, Go and
+/// Python). The
 /// documents are a test's alone, written into a directory of their own.
 #[test]
 fn a_record_of_a_schema_with_no_field_is_refused_on_every_backend_that_generates_templates() {
@@ -450,7 +451,8 @@ fn a_record_of_a_schema_with_no_field_is_refused_on_every_backend_that_generates
             Language::Rust,
             Language::Cpp,
             Language::Kotlin,
-            Language::Go
+            Language::Go,
+            Language::Python
         ]
     );
     for (name, text, ty, line) in cases {
