@@ -2249,6 +2249,15 @@ pub trait StaticTarget {
     fn snapshot_match(&self, _branch: &SnapshotBranch, _args: &[String]) -> Option<String> {
         None
     }
+    /// docs/SCE_TEST_PROFILE.md §4.2 (P2), §12.3: the guard of a branch whose
+    /// lowered `cond` is `cond` and whose match on the round's snapshot is
+    /// `matched` ([`Self::snapshot_match`]): the `cond` first, so a `cond` that
+    /// is false never asks the snapshot. C's `&&` by default, the conjunction
+    /// of every target whose guards are spelled as C's are; a target whose
+    /// conjunction is spelled otherwise answers its own.
+    fn cond_then_match(&self, cond: &str, matched: &str) -> String {
+        format!("({cond}) && ({matched})")
+    }
     /// docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3: the statement taking
     /// `branch` runs before its content, which removes what the branch matched
     /// and tells the component's runtime that it took a branch. `payload` is
@@ -2394,10 +2403,11 @@ fn kotlin_log_label(label: &str) -> String {
     }
 }
 
-/// The constant of the profile runtime's `Verdict` a document's verdict is:
-/// Kotlin's enum declares the variants of [`runtime_verdict`] under the same
-/// names in upper case (`com.sce.runtime.test.Verdict`).
-fn kotlin_verdict(verdict: crate::test_component::Verdict) -> String {
+/// The constant of the profile runtime's `Verdict` a document's verdict is, on
+/// a backend whose enum declares the variants of [`runtime_verdict`] under the
+/// same names in upper case: Kotlin's `com.sce.runtime.test.Verdict` and
+/// Python's `sce_runtime.testprofile.Verdict`.
+fn upper_case_verdict(verdict: crate::test_component::Verdict) -> String {
     runtime_verdict(verdict).to_ascii_uppercase()
 }
 
@@ -3513,7 +3523,7 @@ impl StaticTarget for KotlinTarget {
         Some(match statement {
             TestStatement::Setverdict { verdict, .. } => format!(
                 "{KOTLIN_TEST_CONTEXT}.setverdict({KOTLIN_TEST_RUNTIME}.Verdict.{}, {})",
-                kotlin_verdict(*verdict),
+                upper_case_verdict(*verdict),
                 reason.unwrap_or("\"\"")
             ),
             TestStatement::StartTimer { timer, duration } => {
@@ -8810,8 +8820,9 @@ fn cpp_test_template_namespace(unit: &str) -> String {
 /// name on every backend that runs a test component: C++'s `SCE::Test::Verdict`
 /// (`sce/include/test/Verdict.h`) and Rust's `sce_rust_runtime::test::Verdict`
 /// (`backends/rust/runtime/src/test/verdict.rs`) declare the same variants,
-/// Kotlin's the same names in upper case ([`kotlin_verdict`]), and Go's
-/// `testprofile.Verdict` the same names after the type's (`VerdictPass`).
+/// Kotlin's and Python's the same names in upper case ([`upper_case_verdict`]),
+/// and Go's `testprofile.Verdict` the same names after the type's
+/// (`VerdictPass`).
 fn runtime_verdict(verdict: crate::test_component::Verdict) -> &'static str {
     match verdict {
         crate::test_component::Verdict::Pass => "Pass",
@@ -11742,6 +11753,10 @@ impl PythonTarget {
                 // A host action whose arguments are typed expressions of the
                 // machine's variables, called on the machine's `Protocol`.
                 "native_action" => {}
+                // A test component's statements are calls on its runtime
+                // context (docs/SCE_TEST_PROFILE.md §12.3,
+                // [`StaticTarget::test_statement`]).
+                "sce_setverdict" | "sce_start_timer" | "sce_stop_timer" => {}
                 other => return Some(format!("<{other}>")),
             }
             for block in action.nested_blocks() {
@@ -11771,6 +11786,47 @@ impl PythonTarget {
 /// as (`crate::forge::generator::python_local_spelling`), and a variable is an
 /// attribute of the policy.
 pub(crate) const PYTHON_PRESENT: &str = "sce_present";
+
+/// How a guard or a statement of a test component's Python machine reaches the
+/// component's runtime context (docs/SCE_TEST_PROFILE.md §12.3): the policy's
+/// attribute, which the component the runtime drives sets before the machine
+/// starts (`python/state_machine.py.jinja2`). Under a leading underscore, as
+/// every member the policy keeps for itself beside a variable's `v_<name>`
+/// attribute is.
+const PYTHON_TEST_CONTEXT: &str = "self._sce_test_context";
+
+/// The name a Python machine imports the profile's runtime package
+/// ([`crate::std_imports::PYTHON_TEST_RUNTIME_PATH`]) under: with a leading
+/// underscore, as the module's other imports of the runtime are
+/// (`_HostSendRequest`, `_LuaScriptEngine`), so it can never be the alias
+/// `sce_<document>` a template's unit is imported under
+/// ([`crate::forge::generator::python_module_alias`]). The template's import
+/// and every call the lowering writes read this one name.
+pub(crate) const PYTHON_TEST_RUNTIME: &str = "_sce_testprofile";
+
+/// The name a test component's Python machine holds a message under: the
+/// parameter of the function a receive branch's guard hands the runtime, and
+/// the local the statement taking the branch holds the removed message in.
+/// Under a leading underscore, so no alias `sce_<document>` a template's unit
+/// is imported under is hidden by it in the method that names both.
+const PYTHON_TEST_MESSAGE: &str = "_sce_message";
+
+/// `text` as a Python string literal.
+fn python_text(text: &str) -> String {
+    filters::py_string_literal(text.to_string())
+}
+
+/// The declaration `name` (`Value`, `matches`, `value`) of the Python unit of
+/// the test template named `unit`, by the alias every Python unit imports a
+/// sibling module under ([`crate::forge::generator::python_module_alias`]),
+/// which the machine's import of the unit binds
+/// ([`StaticTarget::test_template_import`]).
+fn python_test_template(unit: &str, name: &str) -> String {
+    format!(
+        "{}.{name}",
+        crate::forge::generator::python_module_alias(&filters::to_snake_case(unit.to_string()))
+    )
+}
 
 impl StaticTarget for PythonTarget {
     // The start site holds the id it generates in the `str` local
@@ -12696,6 +12752,194 @@ impl StaticTarget for PythonTarget {
     // A Python `bytes` read as the Latin-1 text the other engines spell.
     fn wire_bytes(&self, value: &str) -> Option<String> {
         Some(self.wire_value(InferredType::Str, &format!("({value}).decode(\"latin-1\")")))
+    }
+    // The policy holds the component's runtime context ([`PYTHON_TEST_CONTEXT`]),
+    // which the component the runtime drives sets before the machine starts
+    // (`python/state_machine.py.jinja2`). A receive branch with a template asks
+    // the runtime whether the snapshot's head is of the template's type under
+    // its record's event, and calls the template's `matches` on it in a
+    // `lambda`, so the guard stands as one expression in the `if` it is joined
+    // into.
+    fn snapshot_match(&self, branch: &SnapshotBranch, args: &[String]) -> Option<String> {
+        Some(match branch {
+            SnapshotBranch::Receive {
+                port,
+                template: None,
+            } => format!(
+                "{PYTHON_TEST_CONTEXT}.snapshot_present({})",
+                python_text(port)
+            ),
+            SnapshotBranch::Receive {
+                port,
+                template: Some(template),
+            } => {
+                let bound: String = args.iter().map(|arg| format!(", {arg}")).collect();
+                format!(
+                    "{PYTHON_TEST_RUNTIME}.receives({PYTHON_TEST_CONTEXT}, {}, {}, {}, \
+                     lambda {PYTHON_TEST_MESSAGE}: {}({PYTHON_TEST_MESSAGE}{bound}))",
+                    python_text(port),
+                    python_text(&template.event),
+                    python_test_template(&template.unit, "Value"),
+                    python_test_template(&template.unit, "matches")
+                )
+            }
+            SnapshotBranch::Timeout { timer } => {
+                format!("{PYTHON_TEST_CONTEXT}.timed_out({})", python_text(timer))
+            }
+            SnapshotBranch::Done { ptc } => {
+                format!("{PYTHON_TEST_CONTEXT}.done({})", python_text(ptc))
+            }
+        })
+    }
+    // Python's conjunction is `and`, whose precedence below a comparison's is
+    // C's `&&`'s, so the parentheses are the ones C writes.
+    fn cond_then_match(&self, cond: &str, matched: &str) -> String {
+        format!("({cond}) and ({matched})")
+    }
+    // A message a receive branch's content reads is copied, field by field,
+    // into the attribute the machine's payload channel holds its record's event
+    // in, which the content reads `_event.data` through
+    // ([`Self::payload_accessor`]): the schema unit's dataclass and the
+    // machine's are two declarations of one record. The two hold a number, a
+    // `bool`, a text, a byte string and an optional one of them in the same
+    // Python types, so those are copied as they are; a `bytes` cannot be
+    // written into, so it is shared. An enum is held in the machine's own
+    // `IntEnum`, which takes the variant of the same declared name as the enum
+    // unit's value, read as a saved value of the machine's type is
+    // (`from_saved`, [`StaticTarget::enum_def`]), which refuses a name no
+    // variant declares, an optional one where it is present (docs/adr/0055),
+    // as the payload channel lifts a delivery's
+    // (`forge::generator::build_python_event_payload`). The guard matched the
+    // message the statement removes, so a value of another type there is a
+    // defect of the runtime, which is raised and not read.
+    fn take_branch(
+        &self,
+        machine: &str,
+        branch: &SnapshotBranch,
+        payload: Option<&EntrySchema>,
+    ) -> Option<String> {
+        Some(match (branch, payload) {
+            (
+                SnapshotBranch::Receive {
+                    port,
+                    template: Some(template),
+                },
+                Some(schema),
+            ) => {
+                let value = format!("{PYTHON_TEST_MESSAGE}.value");
+                let copies = schema
+                    .fields
+                    .iter()
+                    .map(|f| {
+                        let read = format!(
+                            "{value}.{}",
+                            crate::forge::generator::event_schema_field_ident(
+                                &f.id,
+                                Language::Python
+                            )
+                        );
+                        let held = match f.sce_type.present_type() {
+                            SceType::Enum(reference) => {
+                                let ty = self.enum_type(machine, &reference.alias)?;
+                                let crossed = |present: &str| {
+                                    format!(
+                                        "{ty}.from_saved({present}.declared_name(), {})",
+                                        python_text(&f.id)
+                                    )
+                                };
+                                match &f.sce_type {
+                                    EntryType::Optional { .. } => {
+                                        Self::present_or(&read, "None", &crossed(PYTHON_PRESENT))
+                                    }
+                                    EntryType::Scalar(_) => crossed(read.as_str()),
+                                }
+                            }
+                            _ => read,
+                        };
+                        Some((self.record_field(&f.id), held))
+                    })
+                    .collect::<Option<Vec<(String, String)>>>()?;
+                let record = self.record_value(
+                    &crate::forge::generator::python_payload_class(machine, &template.event),
+                    &copies,
+                );
+                format!(
+                    "{PYTHON_TEST_MESSAGE} = {PYTHON_TEST_CONTEXT}.receive({})\n\
+                     if not isinstance({value}, {}):\n    \
+                     raise RuntimeError(\"a receive branch takes the message its guard matched\")\n\
+                     {} = {record}",
+                    python_text(port),
+                    python_test_template(&template.unit, "Value"),
+                    self.payload_accessor(&template.event)
+                )
+            }
+            (SnapshotBranch::Receive { port, .. }, _) => {
+                format!("{PYTHON_TEST_CONTEXT}.receive({})", python_text(port))
+            }
+            (SnapshotBranch::Timeout { timer }, _) => {
+                format!("{PYTHON_TEST_CONTEXT}.timeout({})", python_text(timer))
+            }
+            (SnapshotBranch::Done { ptc }, _) => {
+                format!("{PYTHON_TEST_CONTEXT}.done_taken({})", python_text(ptc))
+            }
+        })
+    }
+    // A duration is whole microseconds (§3.3), the runtime's `Duration`. A
+    // Python `int` has no bound, and the duration is held to the 64-bit count
+    // every other runtime's clock holds, so one past it is refused on Python as
+    // it is there. A verdict with no reason is set with the empty one, as the
+    // other runtimes set it.
+    fn test_statement(&self, statement: &TestStatement, reason: Option<&str>) -> Option<String> {
+        Some(match statement {
+            TestStatement::Setverdict { verdict, .. } => format!(
+                "{PYTHON_TEST_CONTEXT}.setverdict({PYTHON_TEST_RUNTIME}.Verdict.{}, {})",
+                upper_case_verdict(*verdict),
+                reason.unwrap_or("\"\"")
+            ),
+            TestStatement::StartTimer { timer, duration } => {
+                let micros =
+                    crate::forge::test_profile::duration_us(duration.as_deref()?.trim()).ok()?;
+                let micros = i64::try_from(micros).ok()?;
+                format!(
+                    "{PYTHON_TEST_CONTEXT}.start_timer({}, {micros})",
+                    python_text(timer)
+                )
+            }
+            TestStatement::StopTimer { timer } => {
+                format!("{PYTHON_TEST_CONTEXT}.stop_timer({})", python_text(timer))
+            }
+        })
+    }
+    // The label, a colon and the value as the engine's `<log>` shows it
+    // ([`Self::log`], `_sce_log_name`): an enum by the name its document
+    // declares, an absent optional value as `null`, and every other value as
+    // Python's `str` writes it, which the engine's log prints.
+    fn test_log(&self, label: &str, value: Option<&str>, _ty: InferredType) -> Option<String> {
+        Some(match value {
+            None => format!("{PYTHON_TEST_CONTEXT}.log({})", python_text(label)),
+            Some(value) if label.is_empty() => {
+                format!("{PYTHON_TEST_CONTEXT}.log(str(_sce_log_name({value})))")
+            }
+            Some(value) => format!(
+                "{PYTHON_TEST_CONTEXT}.log({} + str(_sce_log_name({value})))",
+                python_text(&format!("{label}: "))
+            ),
+        })
+    }
+    // The specific template's `value`, which the send hands its processor as
+    // the request's value (`HostSendRequest.value`,
+    // `python/actions/send.py.jinja2`).
+    fn test_message(&self, message: &TemplateRef, args: &[String]) -> Option<String> {
+        Some(format!(
+            "{}({})",
+            python_test_template(&message.unit, "value"),
+            args.join(", ")
+        ))
+    }
+    // The unit's module, imported as a stateless sibling's is, under the alias
+    // [`python_test_template`] names it by.
+    fn test_template_import(&self, unit: &str) -> Option<String> {
+        self.schema_import(unit)
     }
 }
 
@@ -16770,7 +17014,7 @@ fn lower_snapshot_branch(
     transition.native_guard = if transition.native_guard.is_empty() {
         matched
     } else {
-        format!("({}) && ({matched})", transition.native_guard)
+        target.cond_then_match(&transition.native_guard, &matched)
     };
     // The guard is the lowered one from here on, whatever arm a template reads
     // a pure `In()` condition through.

@@ -29,19 +29,22 @@
    through `_event_name_matches` against the literal descriptor so wire-
    format names (`done.invoke._invoke_0`, `error.communication`) still
    match correctly. Mirrors Go's `matching_enum_values` /
-   `needs_string_matching` split. #}
+   `needs_string_matching` split. A guard lowered with no `cond` written is
+   a branch of a test component's match on the round's snapshot
+   (docs/SCE_TEST_PROFILE.md §12.3), so a guard is joined wherever either
+   is there. #}
 {% for state_id, state in model.states | dictsort %}
 {% if state.transitions %}
         if state == {{ machine_name }}State.{{ state_id | to_python_const }}:
 {% for transition in state.transitions %}
 {% if not transition.event %}
-            if event == {{ machine_name }}Event.NULL{% if transition.cond %} and {% if transition.native_guard %}({{ transition.native_guard }}){% else %}self._guard(engine, {{ transition.cond | to_lua_guard | py_string_literal }}){% endif %}{% endif %}:
+            if event == {{ machine_name }}Event.NULL{% if transition.cond or transition.native_guard %} and {% if transition.native_guard %}({{ transition.native_guard }}){% else %}self._guard(engine, {{ transition.cond | to_lua_guard | py_string_literal }}){% endif %}{% endif %}:
 {% elif transition.needs_string_matching %}
-            if event != {{ machine_name }}Event.NULL and self._event_name_matches({{ transition.event | py_string_literal }}, str(event)){% if transition.cond %} and {% if transition.native_guard %}({{ transition.native_guard }}){% else %}self._guard(engine, {{ transition.cond | to_lua_guard | py_string_literal }}){% endif %}{% endif %}:
+            if event != {{ machine_name }}Event.NULL and self._event_name_matches({{ transition.event | py_string_literal }}, str(event)){% if transition.cond or transition.native_guard %} and {% if transition.native_guard %}({{ transition.native_guard }}){% else %}self._guard(engine, {{ transition.cond | to_lua_guard | py_string_literal }}){% endif %}{% endif %}:
 {% elif transition.matching_enum_values | length == 1 %}
-            if event == {{ machine_name }}Event.{{ transition.matching_enum_values[0] | to_python_const }}{% if transition.cond %} and {% if transition.native_guard %}({{ transition.native_guard }}){% else %}self._guard(engine, {{ transition.cond | to_lua_guard | py_string_literal }}){% endif %}{% endif %}:
+            if event == {{ machine_name }}Event.{{ transition.matching_enum_values[0] | to_python_const }}{% if transition.cond or transition.native_guard %} and {% if transition.native_guard %}({{ transition.native_guard }}){% else %}self._guard(engine, {{ transition.cond | to_lua_guard | py_string_literal }}){% endif %}{% endif %}:
 {% elif transition.matching_enum_values %}
-            if ({% for ev in transition.matching_enum_values %}event == {{ machine_name }}Event.{{ ev | to_python_const }}{{ " or " if not loop.last }}{% endfor %}){% if transition.cond %} and {% if transition.native_guard %}({{ transition.native_guard }}){% else %}self._guard(engine, {{ transition.cond | to_lua_guard | py_string_literal }}){% endif %}{% endif %}:
+            if ({% for ev in transition.matching_enum_values %}event == {{ machine_name }}Event.{{ ev | to_python_const }}{{ " or " if not loop.last }}{% endfor %}){% if transition.cond or transition.native_guard %} and {% if transition.native_guard %}({{ transition.native_guard }}){% else %}self._guard(engine, {{ transition.cond | to_lua_guard | py_string_literal }}){% endif %}{% endif %}:
 {% else %}
             # W3C SCXML 3.13: descriptor "{{ transition.event }}" matches no declared event
             if False:
@@ -67,14 +70,36 @@
    siblings without crashing the engine. One try-wrap per transition
    so each transition is its own block (matches the spec's "executable
    content block" granularity). #}
+{# A transition carries content when the document wrote some, and a branch of
+   a test component always does: the statement taking it, which runs before
+   what the document wrote (`native_prelude`, docs/SCE_TEST_PROFILE.md §4.4
+   (P4 step 1), §12.3). #}
 {% for state_id, state in model.states | dictsort %}
-{% set transitions_with_action_here = state.transitions | selectattr('actions') | list %}
+{% set content_ns = namespace(transitions=[]) %}
+{% for transition in state.transitions %}
+{% if transition.actions or transition.native_prelude %}
+{% set content_ns.transitions = content_ns.transitions + [transition] %}
+{% endif %}
+{% endfor %}
+{% set transitions_with_action_here = content_ns.transitions %}
 {% if transitions_with_action_here %}
         if state == {{ machine_name }}State.{{ state_id | to_python_const }}:
 {% for transition in transitions_with_action_here %}
             if transition_index == {{ transition.transition_index }}:{{ annot.annotation_comment(transition, "python", "                ") }}
 {% if transition.source_location %}
                 {{ sce_map.source_marker(transition.source_location, "python", stmt_level=true, symbol_state=transition.symbol_state_path, symbol_artifact=transition.symbol_artifact) | trim }}
+{% endif %}
+{# docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3: taking a branch of a test
+   component removes what it matched on the round's snapshot before its
+   content runs, and a message the content reads is its `_event.data`, held in
+   the payload attribute of its record's event from here on
+   (`Transition::native_prelude`). The lines stand outside the block's
+   `try`: what they raise is a defect of the run, never `error.execution`. #}
+{% if transition.native_prelude %}
+                # docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1).
+{% for line in transition.native_prelude.split('\n') %}
+                {{ line }}
+{% endfor %}
 {% endif %}
 {# SCE Accepted Subset §2.15: content that reads the event's typed payload
    cannot run for a delivery that did not carry one, and an error stops the
@@ -86,6 +111,9 @@
                 if self._pending_{{ transition.event | to_snake_case }}_payload is None:
                     return
 {% endif %}
+{# A branch whose document writes no content has the statement above alone, and
+   no block to run. #}
+{% if transition.actions %}
                 try:
 {# `block_flow`: an element that ends the block unconditionally sets it, and
    nothing after that element is emitted (`emit`, _actions.py.jinja2). #}
@@ -98,6 +126,7 @@
 {% endwith %}
                 except _ActionAbort:
                     pass
+{% endif %}
                 return
 {% endfor %}
 {% endif %}

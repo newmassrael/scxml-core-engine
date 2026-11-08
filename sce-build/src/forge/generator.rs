@@ -8285,6 +8285,17 @@ fn python_composed_payload(
     }
 }
 
+/// The dataclass the typed payload channel of the Python machine `machine`
+/// holds `event`'s payload in ([`build_python_event_payload`]): one name for
+/// the declaration and for every site that builds one, a test component's
+/// receive branch among them (`StaticTarget::take_branch`).
+pub(crate) fn python_payload_class(machine: &str, event: &str) -> String {
+    format!(
+        "{machine}{}Payload",
+        filters::to_event_variant(event.to_string())
+    )
+}
+
 /// Build the [`PythonEventPayload`] for `model`. Same SSOT guard selection
 /// ([`select_native_typed_guards`]) as the Rust / Go / C11 / C++ / Kotlin
 /// builders.
@@ -8377,9 +8388,8 @@ pub fn build_python_event_payload(
 
     let mut first = true;
     for event in &guarded_events {
-        let variant = filters::to_event_variant(event.clone());
         let snake = filters::to_snake_case(event.clone());
-        let class_name = format!("{machine}{variant}Payload");
+        let class_name = python_payload_class(&machine, event);
         let event_const = filters::to_python_const(event.clone());
 
         // The class's fields, the type the lift reads each by, the inject

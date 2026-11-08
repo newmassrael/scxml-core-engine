@@ -31,6 +31,13 @@
    carried back out as a W3C child's send to its parent carries it
    (§scxml-6.4.1). #}
 {{ indent }}    invoke_id=engine.current_event_invoke_id,
+{% if action.native_message %}
+{# docs/SCE_TEST_PROFILE.md §12.3: a test component's message is the value of
+   its specific template, handed to the test-port processor as a value and
+   never as an encoding (docs/adr/0091, C2). Every other send leaves it `None`
+   and carries `event_data`. #}
+{{ indent }}    value={{ action.native_message }},
+{% endif %}
 {{ indent }})
 {% if has_delay %}
 {# W3C SCXML 6.2.4: a `delay` is a property of the SEND, not of the processor
