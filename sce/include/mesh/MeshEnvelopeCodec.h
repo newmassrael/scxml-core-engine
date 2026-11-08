@@ -41,6 +41,8 @@ inline constexpr int kEnvelopeKeyRoutingId = 15;
 inline constexpr int kEnvelopeKeyParallelId = 16;      // SCE_MESH.md §mesh-16.5 wire-21 region routing
 inline constexpr int kEnvelopeKeyRegionId = 17;        // SCE_MESH.md §mesh-16.5 wire-21 region routing
 inline constexpr int kEnvelopeKeyChildSessionId = 18;  // SCE_MESH.md §mesh-9.6.2 wire-15 child session URI
+inline constexpr int kEnvelopeKeyCausalEpoch = 19;     // causal route: the view's epoch
+inline constexpr int kEnvelopeKeyCausalVector = 20;    // causal route: the sender's entry, then its vector
 
 /// Single source for the SCE mesh envelope payload size ceiling.
 ///

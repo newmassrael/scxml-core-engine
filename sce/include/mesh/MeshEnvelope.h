@@ -12,6 +12,7 @@
 
 #pragma once
 
+#include "mesh/CausalEntry.h"
 #include "mesh/PatternKind.h"
 #include "mesh/PayloadCodec.h"
 #include "mesh/QosHints.h"
@@ -93,6 +94,16 @@ struct MeshEnvelope {
     /// every other wire. CBOR integer key 18.
     std::optional<std::string> child_session_id;
 
+    /// A causal route's tag (SCE_MESH.md, section 10.12; docs/adr/0085,
+    /// section 3.2): the view's epoch (CBOR key 19) and a vector of at most 64
+    /// entries (key 20), the sender's own entry first. On a change that
+    /// entry is its dot and the rest its causal context; on a
+    /// `CausalVector` the vector is the sender's delivered vector. Present
+    /// together, on a causal route only; a receiver that finds one without
+    /// the other cannot place the envelope and does not deliver it.
+    std::optional<std::uint64_t> causal_epoch;
+    std::optional<std::vector<CausalEntry>> causal_vector;
+
     bool operator==(const MeshEnvelope &other) const noexcept {
         return id == other.id && source == other.source && type == other.type && pattern == other.pattern &&
                datacontenttype == other.datacontenttype && data == other.data && subject == other.subject &&
@@ -100,7 +111,8 @@ struct MeshEnvelope {
                rpc_status == other.rpc_status && rpc_error_message == other.rpc_error_message &&
                deadline_unix_ms == other.deadline_unix_ms && qos == other.qos && sequence_no == other.sequence_no &&
                routing_id == other.routing_id && parallel_id == other.parallel_id && region_id == other.region_id &&
-               child_session_id == other.child_session_id;
+               child_session_id == other.child_session_id && causal_epoch == other.causal_epoch &&
+               causal_vector == other.causal_vector;
     }
 };
 
