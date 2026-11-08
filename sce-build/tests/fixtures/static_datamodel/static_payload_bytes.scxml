@@ -15,13 +15,15 @@
       200 or more  the payload whole, into the record and the list at once
       100 or more  into `held`, a variable of four bytes, and measured
       50 or more   measured only
+      40 or more   a miss counted, and nothing of the frame read
       otherwise    the record field by field
 
   A value past its bound is skipped and raises error.execution, and ends the block it
   stands in (§scxml-4.9), so what the block would have written after it is not: the
   size of a frame that did not fit `held` is not taken. A frame past the eight bytes
   the schema declares is refused whole where the payload is read (docs/adr/0086,
-  section 4.4), on every route, the one that only measures it included.
+  section 4.4), on every route, the one that only measures it and the one that
+  reads none of it included.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="idle" datamodel="sce-static" name="static_payload_bytes">
@@ -59,6 +61,12 @@
          size is left as it was and error.execution is raised once. -->
     <transition event="framed.taken" cond="_event.data.sensor &gt;= 50" type="internal">
       <assign location="size" expr="len(_event.data.frame)"/>
+    </transition>
+    <!-- A sensor of 40 to 49 counts a miss and reads nothing of the frame at all:
+         a frame past its bound is refused whole all the same, where the payload is
+         read and before any transition is selected, so no miss is counted. -->
+    <transition event="framed.taken" cond="_event.data.sensor &gt;= 40" type="internal">
+      <assign location="misses" expr="misses + 1"/>
     </transition>
     <transition event="framed.taken" type="internal">
       <assign location="last.frame" expr="_event.data.frame"/>

@@ -209,6 +209,13 @@ fn without_block_comments(source: &str) -> String {
 /// `SceStatic.algorithms.<symbol>`: they are written in the same attribute, so
 /// the function a guard calls exists before the first guard is evaluated.
 pub(crate) fn runtime_expression(algorithms: &[LoweredAlgorithm]) -> String {
+    installation_expression(algorithms, &[])
+}
+
+/// [`runtime_expression`] with the door of each event in `doors` installed
+/// after the algorithms: `SceStatic.door(<event>, <record>)`, which the
+/// Interpreter asks when it binds `_event` (docs/adr/0086, section 4.4).
+fn installation_expression(algorithms: &[LoweredAlgorithm], doors: &[DoorRecord]) -> String {
     let library = without_block_comments(RUNTIME_SOURCE)
         .lines()
         .map(str::trim)
@@ -224,9 +231,203 @@ pub(crate) fn runtime_expression(algorithms: &[LoweredAlgorithm]) -> String {
             )
         })
         .collect();
+    let doors: String = doors
+        .iter()
+        .map(|door| {
+            format!(
+                " {RUNTIME_GLOBAL}.door({}, {});",
+                serde_json::Value::String(door.event.clone()),
+                door.record
+            )
+        })
+        .collect();
     format!(
-        "(function () {{ globalThis.{RUNTIME_GLOBAL} = {library};{installed} return true; }})()"
+        "(function () {{ globalThis.{RUNTIME_GLOBAL} = {library};{installed}{doors} return true; }})()"
     )
+}
+
+/// The door of one event whose payload the document reads (docs/adr/0086,
+/// section 4.4): the event, and the record its schema declares as the library's
+/// `field` takes a type, `{record: {...}}` with the defaults of the fields a
+/// later revision added beside it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DoorRecord {
+    event: String,
+    record: String,
+}
+
+/// Whether the event being processed was let in by its door (the library's
+/// `admitted`), which every guard and content that reads the payload of an event
+/// with a door holds back on.
+const ADMITTED: &str = "SceStatic.admitted()";
+
+/// The door of each event of `payload_events`, the events whose payload an
+/// expression of `model` reads, whose schema is one of entries: what a generated
+/// machine lifts when it takes the event. A composed payload is not read by this
+/// lowering (`ComposedLowering::ECMASCRIPT`), so it has no door here.
+fn door_records(
+    model: &SCXMLModel,
+    payload_events: &std::collections::BTreeSet<String>,
+) -> Result<Vec<DoorRecord>, GenerateError> {
+    let schemas = model.entry_event_schemas();
+    let enums = model.held_enums();
+    let mut doors = Vec::new();
+    for event in payload_events {
+        let Some(schema) = schemas.get(event) else {
+            continue;
+        };
+        let mut fields = Vec::with_capacity(schema.fields.len());
+        for field in &schema.fields {
+            let present = field.sce_type.present_type();
+            let variants: Vec<&str> = match present {
+                SceType::Enum(reference) => enums
+                    .get(&reference.alias)
+                    .ok_or_else(|| {
+                        GenerateError::unsupported(format!(
+                            "the payload of `{event}` names the enum `{}`, which the statechart \
+                             holds no document of",
+                            reference.alias
+                        ))
+                    })?
+                    .variants
+                    .iter()
+                    .map(|v| v.name.as_str())
+                    .collect(),
+                _ => Vec::new(),
+            };
+            let kind = bounded_field_kind(present, field.max_size, &variants).ok_or_else(|| {
+                GenerateError::unsupported(format!(
+                    "the payload field `{}` of `{event}` is of a type the library has no reader for",
+                    field.id
+                ))
+            })?;
+            let declared = match &field.sce_type {
+                EntryType::Scalar(_) => kind,
+                EntryType::Optional { .. } => format!("{{optional: {kind}}}"),
+            };
+            fields.push(format!("'{}': {declared}", field.id));
+        }
+        let defaults = crate::forge::schema_revision::defaults_wire(schema)
+            .map(|json| format!(", defaults: {json}"))
+            .unwrap_or_default();
+        doors.push(DoorRecord {
+            event: event.clone(),
+            record: format!("{{record: {{{}}}{defaults}}}", fields.join(", ")),
+        });
+    }
+    Ok(doors)
+}
+
+/// The edits that hold every guard and content of `model` that reads the payload
+/// of an event with a door to the event having been let in ([`ADMITTED`]), as a
+/// generated machine holds them to the payload its lift bound
+/// ([`crate::forge::static_lowering::StaticTarget::payload_guard`],
+/// [`crate::model::Transition::content_reads_payload`]):
+/// a guard that reads the payload is `SceStatic.admitted() && (guard)`, so it is
+/// false for a refused delivery and raises nothing more, and content that reads
+/// it stands inside `<if cond="SceStatic.admitted()">`, so the transition is
+/// taken as it is on every engine and its content runs none of it. A guard's
+/// edit is the lowered guard's own, prefixed, so the two never claim one place.
+fn door_edits(
+    text: &str,
+    model: &SCXMLModel,
+    doors: &[DoorRecord],
+    edits: &mut Vec<Edit>,
+) -> Result<(), GenerateError> {
+    if doors.is_empty() {
+        return Ok(());
+    }
+    let document = roxmltree::Document::parse(text).map_err(|e| {
+        GenerateError::unsupported(format!(
+            "the document cannot be read again to be rewritten: {e}"
+        ))
+    })?;
+    let received = model.received_events();
+    let prefix = xml_attribute_value(&format!("{ADMITTED} && ("));
+    let suffix = xml_attribute_value(")");
+    for state in model.states.values() {
+        for (index, transition) in state.transitions.iter().enumerate() {
+            let trigger = transition.payload_event(&received);
+            if !doors.iter().any(|door| door.event == trigger) {
+                continue;
+            }
+            let guard_reads = !transition.cond.trim().is_empty()
+                && !transition.is_cpp_condition
+                && !transition.is_kt_condition
+                && crate::forge::expr::references_event_data_lexically(&transition.cond);
+            if guard_reads {
+                let range = transition
+                    .cond_spelling
+                    .as_ref()
+                    .and_then(|spelling| spelling.value())
+                    .map(|written| written.range())
+                    .ok_or_else(|| {
+                        GenerateError::unsupported(format!(
+                            "the guard of a <transition event=\"{}\"> in state `{}` has no place \
+                             in the document to be held to its payload's door at",
+                            transition.event, state.id
+                        ))
+                    })?;
+                match edits.iter_mut().find(|edit| edit.range == range) {
+                    Some(edit) => edit.text = format!("{prefix}{}{suffix}", edit.text),
+                    None => edits.push(Edit {
+                        text: format!("{prefix}{}{suffix}", &text[range.clone()]),
+                        range,
+                    }),
+                }
+            }
+            if transition.content_reads_payload {
+                let element = transition_element(&document, &state.id, index, &transition.event)?;
+                if let (Some(first), Some(last)) = (element.first_child(), element.last_child()) {
+                    let open = first.range().start;
+                    let close = last.range().end;
+                    edits.push(Edit {
+                        range: open..open,
+                        text: format!("<if cond=\"{}\">", xml_attribute_value(ADMITTED)),
+                    });
+                    edits.push(Edit {
+                        range: close..close,
+                        text: "</if>".to_string(),
+                    });
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The `<transition>` element written `index`th in the `<state>` or `<parallel>`
+/// whose id is `state`, which the model holds as the transition on `event`: the
+/// parser keeps a state's transitions in the order the document writes them.
+fn transition_element<'a, 'input>(
+    document: &'a roxmltree::Document<'input>,
+    state: &str,
+    index: usize,
+    event: &str,
+) -> Result<roxmltree::Node<'a, 'input>, GenerateError> {
+    document
+        .descendants()
+        .find(|n| {
+            (is_scxml_element(n, "state") || is_scxml_element(n, "parallel"))
+                && n.attribute("id") == Some(state)
+        })
+        .and_then(|s| {
+            s.children()
+                .filter(|n| is_scxml_element(n, "transition"))
+                .nth(index)
+        })
+        .filter(|t| {
+            t.attribute("event")
+                .unwrap_or_default()
+                .split_whitespace()
+                .eq(event.split_whitespace())
+        })
+        .ok_or_else(|| {
+            GenerateError::unsupported(format!(
+                "the <transition event=\"{event}\"> of state `{state}` is not where the document \
+                 writes it, so its content cannot be held to its payload's door"
+            ))
+        })
 }
 
 /// An algorithm the document calls, as the function it becomes
@@ -878,8 +1079,10 @@ impl StaticTarget for JsTarget {
     fn payload_accessor(&self, _event: &str) -> String {
         PAYLOAD_ACCESSOR.to_string()
     }
-    // A delivery that carried no payload makes the read throw, so the guard
-    // is false and says so: there is no channel to check before it.
+    // The document is rewritten where the author wrote it, so the guard a
+    // payload's door holds back is written there too, by `door_edits`, which
+    // prefixes the lowered guard with `SceStatic.admitted()` once every site is
+    // known (docs/adr/0086, section 4.4).
     fn payload_guard(&self, _machine: &str, _event: &str, lowered: &str) -> String {
         lowered.to_string()
     }
@@ -1289,6 +1492,7 @@ fn document_edits(
     text: &str,
     needs_library: bool,
     algorithms: &[LoweredAlgorithm],
+    doors: &[DoorRecord],
 ) -> Result<Vec<Edit>, GenerateError> {
     let document = roxmltree::Document::parse(text).map_err(|e| {
         GenerateError::unsupported(format!(
@@ -1324,7 +1528,7 @@ fn document_edits(
             range: at..at,
             text: format!(
                 "<data id=\"{RUNTIME_DATA_ID}\" expr=\"{}\"/>\n    ",
-                xml_attribute_value(&runtime_expression(algorithms))
+                xml_attribute_value(&installation_expression(algorithms, doors))
             ),
         });
     }
@@ -1373,14 +1577,17 @@ fn lower_parsed(
     let lowering = lower(&mut lowered, &machine, &target).map_err(refuse)?;
     let mut edits = site_edits(&lowering.sites).map_err(refuse)?;
     edits.extend(element_edits(text, &lowering.elements).map_err(refuse)?);
+    let doors = door_records(&lowered, &lowering.payload_events).map_err(refuse)?;
+    door_edits(text, &lowered, &doors, &mut edits).map_err(refuse)?;
     let library_call = format!("{RUNTIME_GLOBAL}.");
-    let needs_library = lowering
-        .sites
-        .iter()
-        .map(|site| site.text.as_str())
-        .chain(lowering.elements.iter().map(|e| e.text.as_str()))
-        .any(|text| text.contains(&library_call));
-    edits.extend(document_edits(text, needs_library, &installed).map_err(refuse)?);
+    let needs_library = !doors.is_empty()
+        || lowering
+            .sites
+            .iter()
+            .map(|site| site.text.as_str())
+            .chain(lowering.elements.iter().map(|e| e.text.as_str()))
+            .any(|text| text.contains(&library_call));
+    edits.extend(document_edits(text, needs_library, &installed, &doors).map_err(refuse)?);
     edits.extend(child_edits(model, label, base_dir)?);
     edits.extend(src_edits(model).map_err(refuse)?);
     apply(text, edits).map_err(refuse)
