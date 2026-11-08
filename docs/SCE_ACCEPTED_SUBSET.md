@@ -4605,10 +4605,13 @@ declare again. A lower count is a refusal of the encode (a value of fewer record
 and so is a byte string of a record, which the schema's Rust unit holds without its
 bound; each is held to `sce:encode-may-fail` as every other refusal is. C11 refuses
 a record with a byte string by name as `generate/unsupported-feature`, its unit
-holding the byte string as a borrowed pointer. Rust generates such a codec; every
-other backend refuses it by name as `generate/unsupported-feature` ("holds a list of
-records (...), which has no <language> lowering yet"), and a broadcast log over one
-is refused on those backends by name.
+holding the byte string as a borrowed pointer. The backends
+`cbor_codec::lowers_record_list` names generate such a codec, one whose list type
+carries no bound refusing on encode a list past its bound and a text or byte string
+of a record past its bound as `CborOutOfRange`; every other backend refuses it by
+name as `generate/unsupported-feature` ("holds a list of records (...), which has no
+<language> lowering yet"), and a broadcast log over one is refused on those
+backends by name.
 
 **An algorithm's optional value** (docs/adr/0055, steps 8 and 9). An algorithm's
 `<sce:param>`, `<sce:return>` and `<sce:var>` take `optional<T>` over a number, a

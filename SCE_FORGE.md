@@ -1167,6 +1167,18 @@ Rust generates the list: each in `BoundedList<<schema>::<Schema>Payload, N>`
 list past its bound cannot be made and the encode refuses nothing for its count.
 The source interface lends the list by reference, and the owned mirror holds it as
 the view does.
+
+A backend whose language's list, string and byte array carry no bound generates
+the list in its own list of the schema's payload, read and written by functions
+private to the codec, and its encode refuses a count past the bound or below the
+lower count, and a text or byte string of a record past its bound, with
+`CborOutOfRange`, as it refuses a text entry past its `sce:max-size`. The
+reference's types hold those upper bounds, so they are no refusal the codec
+declares; a lower count is, on every backend alike:
+
+- Kotlin: `List<<Schema>Payload>`, the functions private members of the codec's
+  companion object.
+
 Every other backend refuses such a codec by name until its template writes the
 array (`cbor_codec::lowers_record_list`), and a broadcast log over one is refused
 on those backends with it.
@@ -1275,8 +1287,9 @@ positional C11 decode; `<name>_encode` and `<name>_encode_to_buf` beside
 skip walking a fixed stack rather than recursing.
 
 Every backend generates a CBOR codec. What still refuses one, by name
-(`generate/unsupported-feature`), is a list of records on every backend but
-Rust (above), and a document C11 cannot hold: a text or
+(`generate/unsupported-feature`), is a list of records on a backend
+`cbor_codec::lowers_record_list` does not name (above), and a document C11
+cannot hold: a text or
 byte string entry with neither `sce:max-size` nor `sce:length`, which has no
 fixed array to live in — every other backend's string grows. The generator's
 refusal and the conformance harness's schedule read one answer

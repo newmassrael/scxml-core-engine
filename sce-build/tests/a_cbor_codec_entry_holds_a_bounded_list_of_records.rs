@@ -264,6 +264,67 @@ fn a_record_writes_its_keys_in_the_order_their_encodings_sort() {
     assert!(write.contains("cbor::write_map_head(w, 2)?;"), "{write}");
 }
 
+/// What `lang` generates for the fixture, or the panic that names why not.
+fn generated_fixture(lang: Language) -> String {
+    generated(&fixture_text(), CODEC, lang).unwrap_or_else(|why| panic!("{lang:?}: {why}"))
+}
+
+/// Each of `expected` is in `code`, and the record's write, the text after
+/// `encode_at`, writes `keys[0]` (`seq`, three bytes) before `keys[1]`
+/// (`author`, six): the order of their keys' encodings (RFC 8949 section
+/// 4.2.1), whatever the order the schema declares them in.
+fn holds(lang: Language, code: &str, expected: &[&str], encode_at: &str, keys: [&str; 2]) {
+    for expected in expected {
+        assert!(
+            code.contains(expected),
+            "{lang:?}: missing `{expected}`:\n{code}"
+        );
+    }
+    let write = code
+        .split(encode_at)
+        .nth(1)
+        .unwrap_or_else(|| panic!("{lang:?}: no `{encode_at}`:\n{code}"));
+    let seq = write
+        .find(keys[0])
+        .unwrap_or_else(|| panic!("{lang:?}: the record writes no `seq`:\n{write}"));
+    let author = write
+        .find(keys[1])
+        .unwrap_or_else(|| panic!("{lang:?}: the record writes no `author`:\n{write}"));
+    assert!(
+        seq < author,
+        "{lang:?}: `seq` is written after `author`:\n{write}"
+    );
+}
+
+#[test]
+fn the_kotlin_map_holds_each_list_in_a_list_of_the_schemas_payload() {
+    holds(
+        Language::Kotlin,
+        &generated_fixture(Language::Kotlin),
+        &[
+            "import com.sce.generated.cbor_causal_entry.*",
+            "var seen: List<CborCausalEntryPayload> = emptyList(),",
+            "var context: List<CborCausalEntryPayload>? = null,",
+            // A read past the bound is refused before any record is read.
+            "if (len > 2UL) return null",
+            "if (len > 3UL) return null",
+            "list.add(decodeRecordCausalEntry(c) ?: return null)",
+            "held_author = Cbor.readText(c, 16) ?: return null",
+            // The list carries no bound, so the encode refuses past it.
+            "if (v.size > 2) return CodecError.CborOutOfRange",
+            "Cbor.writeArrayHead(w, v.size.toULong())?.let { return it }",
+            "encodeRecordCausalEntry(w, record)?.let { return it }",
+            "if (record.author.encodeToByteArray().size > 16) return CodecError.CborOutOfRange",
+            "Cbor.writeMapHead(w, 2UL)?.let { return it }",
+        ],
+        "private fun encodeRecordCausalEntry(",
+        [
+            "Cbor.writeText(w, \"seq\")",
+            "Cbor.writeText(w, \"author\")",
+        ],
+    );
+}
+
 #[test]
 fn a_record_with_a_field_no_codec_writes_is_refused_by_name() {
     let text = document(
