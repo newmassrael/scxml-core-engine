@@ -129,8 +129,10 @@
 {# W3C SCXML 3.13: content that reads the event's typed payload cannot run for a
    delivery that did not carry one, and an error stops the block it arose in
    (W3C SCXML 4.9) — so the check guards the whole content, once, before any of it
-   runs. It raises nothing: the engine already said `error.execution` where it failed
-   to read the delivery, and one unreadable delivery is one error. #}
+   runs. A delivery of this event whose data does not fit is refused whole at the
+   door and never reaches it (docs/adr/0086, section 4.2); the tag differs here only
+   for an event of another name the transition's descriptor also matches, which
+   carries no payload of this event. It raises nothing: no delivery was refused. #}
 {% if trans.content_reads_payload %}
                     if pendingPayloadTag != .{{ trans.event | to_event_variant }} {
                         break sceBlock
