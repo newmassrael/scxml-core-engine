@@ -1591,6 +1591,15 @@ pub trait StaticTarget {
     fn payload_bytes_read(&self, _accessor: &str, _field: &str) -> Option<String> {
         None
     }
+    /// How a target whose payload is untyped data, read where an expression
+    /// reads a field of it, reads the text or byte-string field `field` of the
+    /// payload `accessor`: held to the bound its type declares, the top level
+    /// included (docs/adr/0086, section 4.4). `None` for a target whose
+    /// generated lift held the field to its bound before any expression reads
+    /// it, and for a field with no bound to hold.
+    fn payload_bounded_read(&self, _accessor: &str, _field: &EntryField) -> Option<String> {
+        None
+    }
     /// How a target whose payload is untyped data reads a field a later
     /// revision of its schema added: the field `field` of the payload
     /// `accessor`, held to its type (to `variants` for an enum field) as any
@@ -17469,7 +17478,9 @@ fn payload_record_value(
 /// that holds the value to the variants the enum declares. A target that holds
 /// the payload in a struct of its own reads the field off it and asks for none.
 /// A byte-string field is read here too, by a target that holds it as a buffer and
-/// its length ([`StaticTarget::payload_bytes_read`]), and so is a field of any type
+/// its length ([`StaticTarget::payload_bytes_read`]); a text or byte-string field
+/// by a target that holds it to its bound where it is read
+/// ([`StaticTarget::payload_bounded_read`]); and so is a field of any type
 /// a later revision of the schema added, by a target whose untyped payload has to
 /// be told the default a delivery that lacks the field takes
 /// ([`StaticTarget::payload_revised_read`]).
@@ -17520,7 +17531,13 @@ fn payload_enum_reads(
                 (None, SceType::Enum(_)) => {
                     target.payload_enum_read(accessor, &field.id, &variants)?
                 }
-                (None, SceType::Bytes) => target.payload_bytes_read(accessor, &field.id)?,
+                // A text or byte string read where an expression reads it is
+                // held to its bound there (docs/adr/0086, section 4.4); a byte
+                // string a target holds as a buffer is read as its own read.
+                (None, SceType::String) => target.payload_bounded_read(accessor, field)?,
+                (None, SceType::Bytes) => target
+                    .payload_bounded_read(accessor, field)
+                    .or_else(|| target.payload_bytes_read(accessor, &field.id))?,
                 (None, _) => return None,
             };
             Some((path, read))
