@@ -1,0 +1,50 @@
+# Mutation cases for the input closure a generated file's `source-hash`
+# digests (docs/adr/0094) — the documents the file is generated from and what
+# their generation reads, and no other document.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_source_hash_covers_its_own_documents.cases`.
+#
+# Each case puts back one way the closure was, or could be, wrong: the walk
+# that stops at a document's own references, the walk that forgets a child a
+# statechart starts by `src`, the key that depends on where the tree sits, and
+# the staged copy that hashes as a copy. A case that SURVIVES means the closure
+# can drift from what a generation reads with no test saying so.
+
+mutation_tests -p sce-build --features cli --lib
+mutation_targets sce-build/src/import_closure.rs sce-build/src/forge/drift.rs
+# The unit tests that red each case live in drift.rs (the closure tests) and
+# import_closure.rs (`reads_follow_every_reference_and_leave_out_what_names_nothing`).
+mutation_oracles sce-build/src/forge/drift.rs sce-build/src/import_closure.rs
+
+# ── the walk follows a reached document's own references ───────────
+
+mutation_case "the closure walk stops at the seed's own references" <<'PY'
+edit("sce-build/src/import_closure.rs",
+     "            if let Some(next) = read_of(&base, options.input_root, &reference) {\n                pending.push_back(next);\n            }",
+     "            if let Some(next) = read_of(&base, options.input_root, &reference) {\n                if seeds.contains(&document) {\n                    pending.push_back(next);\n                }\n            }")
+PY
+
+# ── a child a statechart starts by `src` is read ───────────────────
+
+mutation_case "the closure walk drops a child started by src" <<'PY'
+edit("sce-build/src/import_closure.rs",
+     "            crate::parser::locate_child_document(&roots, Some(base), reference.read.as_deref()?)?",
+     "            let _ = (&roots, &reference.read);\n            return None;")
+PY
+
+# ── a key does not depend on where the tree sits ───────────────────
+
+mutation_case "a member is keyed by its absolute path" <<'PY'
+edit("sce-build/src/forge/drift.rs",
+     "        relative(&self.dir, real)\n",
+     "        let _ = relative(&self.dir, real);\n        real.to_path_buf()\n")
+PY
+
+# ── a staged copy hashes as the document it stands for ─────────────
+
+mutation_case "a staged copy is keyed from its own directory" <<'PY'
+edit("sce-build/src/forge/drift.rs",
+     "            if stands_for_one {",
+     "            if stands_for_one && false {")
+PY
