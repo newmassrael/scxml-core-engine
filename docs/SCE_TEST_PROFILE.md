@@ -862,6 +862,32 @@ Python joins the tests by the join Rust, Kotlin and Go share, in Python's words 
 `False`, `test_template_walk::Connectives`), whose precedence is C's. Python lowers no union, so a template whose
 type reaches a union at any depth is refused on Python as on C++ and Go (ADR 0092, section 7).
 
+C11 generates `test-template` (§12.6, slice 6). The unit is a header `<name>.h`, named by the document's file as every
+forge unit is, and, since C has no namespace, each declaration carries the document's name:
+
+- `<name>_value_t`, a typedef of the template's type as the unit of an `event-schema` holds a field of that type:
+  one entry where the type is one (a number, `bool`, a value of an enum, a text in the buffer of its bound
+  `sce_static_string_<N>_t`, an optional one in `sce_optional_<elem>_t`), and a composition laid out statically
+  where it is not (a record is the schema's `<Name>Payload_t`), so a template's value is the field's own type;
+- `bool <name>_matches(const <name>_value_t *value, <the formal parameters, in order>)`, which holds each mechanism
+  of §6.1 by the rules C++ holds it by. A text is compared by its bytes (`strcmp`), a byte string inside a list by
+  its length and its octets (`memcmp`), and a value that may be absent is tested by `present` and read by `value`
+  behind that test; an optional value, a list and a record a parameter gives are compared part by part, since C
+  compares no two structs. A length restriction on a `string[N]` counts characters, through the profile's runtime
+  (`sce_test_text_length`, `sce/test/text_length.h`), and on `bytes[N]` and `list<T>[B]` octets and elements
+  (`len`);
+- for a specific template (§6.2) alone, `<name>_value_t <name>_value(<the formal parameters>)`, the value it sends,
+  which matches it: the initializer of its variable, each record by its fields' designators and a text through the
+  fill function of its buffer, so no type is named inside it.
+
+Every record, enum and referenced template the unit names is reached through the header of the document that
+declares it, which the unit includes, and a referenced template's functions are named by its document. C11 joins
+the tests as Rust, Kotlin, Go and Python do. C11 lowers no union, so a template whose type reaches a union at any
+depth is refused on C11 as on C++ (ADR 0092, section 7). It refuses by name too a template that compares, counts or
+builds a byte string of one entry, which the C11 unit of an event schema holds as a pointer with no length, and a
+reference, inside a list, to a template of an optional type, whose value the list holds in its composition's own
+optional type and not in the one the referenced template takes.
+
 C++ generates `test-component` (§12.6, slice 4). The unit is the statechart machine the C++ generator writes for any
 `sce-static` document, `<file>_sm.h` and its `<file>_sm.inl`, in the namespace `SCE::Generated::<name>`, lowered
 through the doors of §12.3 before it is rendered (`test_component::snapshot::lower`, written once for every
@@ -1218,7 +1244,7 @@ one at a time. Each lifts the refusal of §11.9 for itself when its runtime land
 
 | Part | Where | Why there |
 |---|---|---|
-| Round scheduler, `NOW`, port queues and snapshots, timer bindings, verdicts, entity table, guard | a runtime library per backend (C++: `sce/include/test/`, Rust: `sce_rust_runtime::test`, Kotlin: `com.sce.runtime.test`, Go: the package `testprofile` of `sce-go-runtime`, Python: `sce_runtime.testprofile`) | it is the same for every suite, so it is written once and tested on its own (Zero Duplication) |
+| Round scheduler, `NOW`, port queues and snapshots, timer bindings, verdicts, entity table, guard | a runtime library per backend (C++: `sce/include/test/`, Rust: `sce_rust_runtime::test`, Kotlin: `com.sce.runtime.test`, Go: the package `testprofile` of `sce-go-runtime`, Python: `sce_runtime.testprofile`, C11: the headers `sce/test/` of `backends/c/runtime`) | it is the same for every suite, so it is written once and tested on its own (Zero Duplication) |
 | A component's machine | generated from the `test-component`, by the backend's statechart generator | it is a statechart (§7) |
 | A template's matcher and a specific template's value | generated from the `test-template`, over the record types the statechart generator already writes for an `event-schema` | matching is on values, not on encoded bytes, so no codec takes part (C2) |
 | Which port is connected or mapped to which, and the MTC and PTC of each component | generated tables from the `test-configuration` and `test-case` | they are data |
@@ -1239,7 +1265,7 @@ requires.
 | taking a branch, P4 step 1 | one statement the generator puts before the branch's executable content. A receive branch removes the head of its port's queue and holds it as the transition's `_event.data`, in the payload member of its record's event (`Transition::payload_event`). A timeout branch sets its timer to `IDLE`. Every branch's statement also tells the runtime that the component took a branch in this round. |
 | `<sce:setverdict>`, `<sce:start-timer>`, `<sce:stop-timer>` | actions of their block (§11.5) that call the component's runtime context |
 | a `<log>` (P8) | the same action of its block, which calls the runtime context instead of the engine's log, so the test log records it with `NOW` and the component |
-| a send (P6) | a host Event I/O Processor for the test-port URI, registered by the runtime (ADR 0084). The request names the port and carries the template's value, as the value the generated code holds and never an encoding (C++ and Rust: `HostSendRequest::value`, Kotlin and Python: `HostSendRequest.value`, Go: `HostSendRequest.Value`). The runtime appends the value to the queue of the connected port, or hands it to the system adapter when the port is mapped. |
+| a send (P6) | a host Event I/O Processor for the test-port URI, registered by the runtime (ADR 0084). The request names the port and carries the template's value, as the value the generated code holds and never an encoding (C++ and Rust: `HostSendRequest::value`, Kotlin and Python: `HostSendRequest.value`, Go: `HostSendRequest.Value`, C11: `sce_host_send_request_t.value`, a view of the value's bytes beside the name of its C type). The runtime appends the value to the queue of the connected port, or hands it to the system adapter when the port is mapped. |
 | a PTC (P9) | a host invoke processor for the test-component URI, registered by the runtime. The engine asks for the start when the macrostep that entered the state ends (§scxml-6.4), which is when P9 creates, connects, maps and starts the PTC. It asks for the cancel when the state is exited, which is P9's kill. The runtime never reports a completion to the engine: `done` is read from the snapshot (P2). So a PTC that has terminated is still running for the engine, and the engine delivers the cancel for it too, which P9's kill requires. |
 
 A module parameter (§11.5) takes no door of the engine. It is a variable of the machine, and the component writes
@@ -1274,7 +1300,8 @@ ends it with `error` (P13). The lane's clock does the same (§10), so the two ru
 
 A suite is run by a library function, with no `main` of its own (C++: `SCE::Test::runSuite`, Rust:
 `sce_rust_runtime::test::run_suite`, Kotlin: `com.sce.runtime.test.runSuite`, Go: `testprofile.RunSuite`, Python:
-`sce_runtime.testprofile.run_suite`): given the suite's
+`sce_runtime.testprofile.run_suite`, C11: `sce_test_run_suite`, which hands each result to the caller's function as
+it ends rather than returning a list, in one run the caller places): given the suite's
 tables, a world of its features and a factory of system adapters, it runs the test cases the world selects, one at
 a time on the calling thread, in the suite's order (P11), each a fresh run from `NOW = 0` against a fresh adapter,
 and returns each one's result. The caller may give a module parameter another value than the suite's default; a
@@ -1336,4 +1363,20 @@ the equivalence law (order of work step 6).
    that declares `<sce:action>` and for one whose template reaches a union. Python then generates the configuration,
    case and suite tables over the same rows, each importing what it reads as a sibling module, and runs the examples
    end to end through `sce_runtime.testprofile.run_suite`; the refusal is lifted for Python for the remaining kinds,
-   and for a component's module parameter.
+   and for a component's module parameter. C11's runtime library of §12.2 is the headers `sce/test/` of
+   `backends/c/runtime`, the Rust one ported function for function and held to its cases, allocating nothing: a run
+   is one struct the caller places, each of its tables bounded at compile time and overridable with `-D` (the
+   components present at once, `SCE_TEST_MAX_COMPONENTS` 8; a component's ports and timers, `SCE_TEST_MAX_PORTS` and
+   `SCE_TEST_MAX_TIMERS` 8 each; the messages waiting in all its queues, one pool of
+   `SCE_TEST_MAX_QUEUED_MESSAGES` 16, each value of at most `SCE_TEST_MAX_VALUE_SIZE` 256 bytes; the lines of its log,
+   `SCE_TEST_MAX_LOG_RECORDS` 64 of `SCE_TEST_MAX_LOG_DETAIL` 160 bytes; a suite's module parameters,
+   `SCE_TEST_MAX_MODULE_PARAMETERS` 8). A run that would pass one of them ends with `error` (P13), the bound named in
+   its log; a log line that does not fit is counted in the result's `log_lost`, never cut, and ends the run with
+   `error` too. A machine and a system adapter are structs whose first member points to their table of functions,
+   and a component's context is a handle the machine keeps: a call through the handle of a removed component ends
+   the run with `error`, and so does a kill of a component whose machine is running. It has `sce_test_text_length`
+   for a template's length restriction, since a C text is held as UTF-8 bytes, and the C11 host send request
+   carries a test-port send's value (`sce_host_send_request_t.value`). C11 generates templates, and the refusal of
+   §11.9 is lifted for C11 for `test-template`; C11 lowers no union, so a template whose type reaches one stays
+   refused there, as on C++, Go and Python, and so does one over a byte string of one entry, which its event schema
+   unit holds as a pointer with no length.

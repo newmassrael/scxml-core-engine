@@ -541,7 +541,11 @@ generation refuses one by name (`generate/unsupported-feature`). C++ generates a
 depth by the union's own refusal (`generate/unsupported-feature`). Rust and Kotlin
 generate a template too, one whose type reaches a union among them, a `union-match`
 holding where the union is in the case its `variant` names. Go and Python generate a
-template too, and refuse one whose type reaches a union as C++ does. C++ generates a test
+template too, and refuse one whose type reaches a union as C++ does. C11 generates a
+template too, refuses one whose type reaches a union as C++ does, and refuses with
+`generate/unsupported-feature` one that compares, counts or builds a byte string of one
+entry, which its event schema unit holds as a pointer with no length, and one that
+references, inside a list, a template of an optional type. C++ generates a test
 component, its machine driven by the profile's runtime through the doors of
 `docs/SCE_TEST_PROFILE.md` §12.3, each module parameter read from the run before the
 machine starts, and refuses, with `generate/unsupported-feature`, one that uses a template
