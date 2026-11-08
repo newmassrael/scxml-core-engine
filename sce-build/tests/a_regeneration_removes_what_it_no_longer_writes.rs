@@ -81,6 +81,7 @@ fn generated(prefix: &str, body: &str) -> String {
     let header = render_header(
         &DriftHeader {
             source_hash: [0; 32],
+            seeds: vec!["generated.scxml".to_string()],
         },
         prefix,
     );

@@ -674,6 +674,7 @@ impl DriftContext {
         Self {
             header: drift::DriftHeader {
                 source_hash: sources.digest(),
+                seeds: Vec::new(),
             },
             sources: sources.contributing_paths(),
         }
@@ -14833,6 +14834,7 @@ fn cmd_verify(out_dir: &str, input_root: &str, deploy: Option<&str>, error_forma
     let expected = DriftHeader {
         source_hash: compute_source_hash(input_path, deploy_path)
             .unwrap_or_else(|e| cli_exit(drift_hash_failure(input_path, e))),
+        seeds: Vec::new(),
     };
 
     let files = collect_generated_files(out_path);
