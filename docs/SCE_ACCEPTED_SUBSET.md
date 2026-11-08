@@ -5301,6 +5301,28 @@ whose type it fits as a copy that shares no list with the place, since the varia
 is written into in place. A payload that holds a union, at any depth, is refused by
 name on Python, which holds no union yet (docs/adr/0092, section 7).
 
+The C++ backend reads a composed payload as the Rust and Kotlin backends do
+(docs/adr/0086, section 7.1, the C++ row): its payload struct holds each field in
+`std::vector<T>`, `std::string`, `std::vector<uint8_t>`, `std::optional<T>` and
+the machine's struct, each record it names declared once as plain data a host
+builds by position in the schema's order; the lift reads each field by one lambda
+per constructor over the runtime's `EventPayloadValue` (`readList`,
+`readListWithin`, `readOptional`, `readRecord`, `readText`, ...) and refuses the
+delivery whole, naming the path, at the first value outside its type; and `len`,
+an index, a field of a record element and a `<foreach>` over a list the payload or
+an enclosing loop's item holds lower at any depth. A C++ struct has no constructor
+that could refuse a value, so the inject seam, `raise<Event>`, holds what a host
+hands it to every bound its type declares, at any depth, before it builds anything
+(docs/adr/0086, section 5.4), by the runtime's `EventPayloadBounds`: it answers the
+refusal as a `std::string` naming the path (`'items/0/tags' holds 5 elements, past
+the 4 its type declares`) and raises nothing, and answers an empty one where it
+raised the event, whose payload it writes as the JSON a lift reads back. A list a
+place holds is taken whole into a list variable whose type it fits by the
+assignment, which copies the vector by value at every depth: no C++ type carries a
+bound yet, so the two places are one type, and the variable shares nothing with the
+place. A payload that holds a union, at any depth, is refused by name on C++, which
+holds no union yet (docs/adr/0092, section 7).
+
 A `<send>` of the event of a schema whose field is composed gives that field by
 a `<param>` naming the place that holds the value whole (docs/adr/0086, section
 5.2): a variable, a field of a record variable, or a part of the payload of the
@@ -5326,7 +5348,11 @@ too. The Python backend writes it as the plain value its send's `ScriptValue` is
 made of, a list as a `list`, a record as a `dict` and an absent value as `None`,
 each scalar as a scalar param crosses, which the runtime writes as the event's JSON,
 keys ascending at every depth; a place read through an index is refused by name on
-Python too.
+Python too. The C++ backend writes it into the `ScriptValue` its send holds each
+param in, a list as a `ScriptArray`, a record as a `ScriptObject` and an absent
+value as `ScriptNull`, each scalar as a scalar param crosses, which
+`EventDataHelper::buildEventDataJson` writes as the event's JSON, keys ascending at
+every depth; a place read through an index is refused by name on C++ too.
 
 What no backend lowers yet is refused by name where the machine is generated, in
 the one gate every route asks first (`check` with or without a backend,
