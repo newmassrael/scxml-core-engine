@@ -70,6 +70,7 @@
    it chose), `stem` names its machine and `slot` is its struct. #}
 {% macro lift_child_done_data(child, stem, slot, evt, csym_prefix) %}
 {% if child.child_ends_with_done_data %}
+                /* sce-scratch-activity: child_done */
                 /* §scxml-6.4: the done data of the final the child ended at,
                    written into this machine's scratch and handed on as a view
                    the queue copies (docs/adr/0086, section 8.5 (d)). */
@@ -362,6 +363,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
         if (p->state == (int){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | to_c11_upper_ident }}
             && p->invoke_idx == {{ loop.index0 + (state.invokes | scxml | length) + (state.invokes | hybrid | length) }}) {
 {% if invoke_info.host_served %}
+            /* sce-scratch-activity: invoke_start */
             /* W3C SCXML 6.4.1: the host declared this `type`, so START the
                invocation rather than refusing it. The id handed over is the
                DOCUMENT's, not the per-instance one the pending queue carries:
@@ -595,6 +597,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
 {{ se.lua_eval_to_request_field(param.expr or param.location, request_checks[param.name], '_host_inv_typed_' ~ loop.index0, 'sizeof(sm->scratch.pairs[' ~ host_row ~ '])', '_host_inv_refusal_' ~ loop.index0, param.name if (record_pairs and not param.envelope_metadata) else none) }}
             if (_host_inv_refusal_{{ loop.index0 }} != NULL) {
 {% if 'error.execution' in model.events %}
+                /* sce-scratch-activity: reason */
                 char *const _host_inv_message = sm->scratch.message;
                 snprintf(_host_inv_message, sizeof(sm->scratch.message),
                          "<invoke> <param name='{{ param.name | escape_c }}'> cannot be its request field: '{{ param.name | escape_c }}' %s",
