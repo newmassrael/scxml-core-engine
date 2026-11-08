@@ -354,7 +354,7 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
         ForgeKind::Union => lists(UNION_BACKENDS, lang),
         // docs/SCE_TEST_PROFILE.md §12.6, slices 3 and 6: a template's matcher
         // and a specific template's value land one backend at a time, C++
-        // first, then Rust, Kotlin, Go, Python and C11.
+        // first, then Rust, Kotlin, Go, Python, C11 and Swift.
         // Which have landed is [`TEST_TEMPLATE_BACKENDS`], the one list both
         // this answer and [`awaits_runtime`] read.
         ForgeKind::TestTemplate => lists(TEST_TEMPLATE_BACKENDS, lang),
@@ -412,6 +412,7 @@ pub const TEST_TEMPLATE_BACKENDS: &[Language] = &[
     Language::Go,
     Language::Python,
     Language::C11,
+    Language::Swift,
 ];
 
 /// The backends that generate a test component (docs/SCE_TEST_PROFILE.md
@@ -1190,12 +1191,13 @@ mod tests {
     }
 
     /// docs/SCE_TEST_PROFILE.md §11.9, §12.6: Rust, C++, Kotlin, Go, Python
-    /// and C11 generate every kind of the test profile, and every other pair
-    /// of a backend and a kind of the profile, Swift's, awaits the profile's
-    /// runtime there, letting the document through the matrix to the dispatch
-    /// that refuses it by name.
+    /// and C11 generate every kind of the test profile and Swift a template,
+    /// so every backend generates a template; every other pair of a backend
+    /// and a kind of the profile, Swift's, awaits the profile's runtime there,
+    /// letting the document through the matrix to the dispatch that refuses it
+    /// by name.
     #[test]
-    fn rust_cpp_kotlin_go_python_and_c11_emit_every_kind_of_the_test_profile() {
+    fn rust_cpp_kotlin_go_python_and_c11_emit_every_kind_swift_a_template() {
         assert_eq!(ForgeKind::TEST_PROFILE.len(), 6);
         // In [`Language::ALL`]'s order.
         let every_kind: &[Language] = &[
@@ -1206,13 +1208,18 @@ mod tests {
             Language::Python,
             Language::C11,
         ];
-        assert_eq!(TEST_TEMPLATE_BACKENDS, every_kind);
+        // A template lands before the other kinds, on every backend.
+        assert_eq!(TEST_TEMPLATE_BACKENDS, Language::ALL);
         assert_eq!(TEST_COMPONENT_BACKENDS, every_kind);
         assert_eq!(TEST_SUITE_BACKENDS, every_kind);
         for &kind in ForgeKind::TEST_PROFILE {
             assert!(kind.is_test_profile(), "{kind:?}");
             assert_eq!(kind_class(kind), KindClass::Generic, "{kind:?}");
-            let landed = every_kind;
+            let landed = if kind == ForgeKind::TestTemplate {
+                Language::ALL
+            } else {
+                every_kind
+            };
             for &lang in Language::ALL {
                 let want = if landed.contains(&lang) {
                     EmitOutcome::Emit

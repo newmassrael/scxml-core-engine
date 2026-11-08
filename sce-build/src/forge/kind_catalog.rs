@@ -822,11 +822,11 @@ pub const fn guide(kind: ForgeKind) -> KindGuide {
                  names it with param, and a reference binds it with args",
                 "a template a send names is specific: values only, no matching symbol \
                  (docs/SCE_TEST_PROFILE.md §6.2)",
-                "C++, Rust, Kotlin, Go, Python and C11 generate it: a unit that declares match \
-                 (Rust, Kotlin and Python: matches, Go: Matches, C11: <name>_matches) and, for \
-                 a specific template, value (Go: Specific, C11: <name>_value), Rust and Kotlin \
-                 also over a union, which C++, Go, Python and C11 refuse; every other backend \
-                 refuses it by name",
+                "every backend generates it: a unit that declares match (Rust, Kotlin, Python \
+                 and Swift: matches, Go: Matches, C11: <name>_matches) and, for a specific \
+                 template, value (Go: Specific, C11: <name>_value), Swift's two as members of \
+                 an enum named by the document; Rust and Kotlin also over a union, which C++, \
+                 Go, Python, C11 and Swift refuse by name",
             ],
             example: Example::Document(include_str!("../../kind-examples/test-template.scxml")),
         },

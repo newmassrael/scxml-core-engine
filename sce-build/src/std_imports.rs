@@ -60,6 +60,13 @@ pub(crate) const GO_TEST_RUNTIME_PATH: &str = "github.com/newmassrael/sce-go-run
 /// [`GO_TEST_RUNTIME_PATH`] is.
 pub(crate) const PYTHON_TEST_RUNTIME_PATH: &str = "sce_runtime.testprofile";
 
+/// The module of the test profile's Swift runtime, the library `SceTestProfile`
+/// of the runtime package (`backends/swift/runtime/Sources/SceTestProfile/`,
+/// docs/SCE_TEST_PROFILE.md §12.2): what a template's unit counts a text's
+/// characters through and what a test component's machine reaches its run
+/// through. One name for both, as Go's [`GO_TEST_RUNTIME_PATH`] is.
+pub(crate) const SWIFT_TEST_RUNTIME_MODULE: &str = "SceTestProfile";
+
 /// The C++ standard names generated expression code reaches for that are not
 /// already decided from the model, each with the header that declares it, in
 /// the order an include block lists them. `std::vector`, `std::array` and the

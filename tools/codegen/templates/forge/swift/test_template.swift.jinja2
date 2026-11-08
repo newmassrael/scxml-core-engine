@@ -1,0 +1,43 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "swift", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="test-template")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+{# The profile's runtime is imported where a length restriction counts a text's
+   characters through it, and nowhere else: every enum, record and referenced
+   template is a file of the same module, named as it is declared. #}
+{% if test_runtime_import %}
+
+import {{ test_runtime_import }}
+{% endif %}
+
+/// The test template `{{ template_name }}` (docs/SCE_TEST_PROFILE.md §11.4): a caseless enum of
+/// the module, as an algorithm's unit is, so the `Value`, `matches` and `value` of two templates
+/// never share a name, and a template another one references is called through its enum.
+public enum {{ struct_name }} {
+    /// The type the template matches: `{{ template_type }}`, as the unit of its type declares it.
+    public typealias Value = {{ value_type }}
+
+    /// Whether `value` matches the template (ES 201 873-1 Annex B.1,
+    /// docs/SCE_TEST_PROFILE.md §6.1).
+{% for p in parameters %}
+    ///
+    /// `{{ p.name }}` is the formal parameter `{{ p.id }}`, of type `{{ p.sce_type }}`.
+{% endfor %}
+    public static func matches(_ value: Value{% for p in parameters %}, _ {{ p.name }}: {{ p.ty }}{% endfor %}) -> Bool {
+        return {{ match_expr }}
+    }
+{% if value_expr %}
+
+    /// The value the specific template sends (docs/SCE_TEST_PROFILE.md §6.2): every field it
+    /// names at its value, every field it omits absent. It matches the template by `matches`,
+    /// given the same parameters.
+    public static func value({% for p in parameters %}_ {{ p.name }}: {{ p.ty }}{% if not loop.last %}, {% endif %}{% endfor %}) -> Value {
+        return {{ value_expr }}
+    }
+{% endif %}
+}

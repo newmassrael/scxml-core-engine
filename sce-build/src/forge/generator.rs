@@ -39,6 +39,7 @@ mod rust_test_tables;
 mod rust_test_template;
 mod rust_view;
 mod swift_codec;
+mod swift_test_template;
 mod test_tables;
 mod test_template_walk;
 
@@ -31401,6 +31402,8 @@ pub fn generate_swift(
 /// other kind is `codegen/generic-kind-backend-emit-missing`. A broadcast log is
 /// written in part as well ([`render_broadcast_log_swift`]): for the elements
 /// whose codec the Swift codec writes, and refused by the construct for the rest.
+/// A test template is written whole (`codegen_matrix::TEST_TEMPLATE_BACKENDS`,
+/// [`swift_test_template`]), as on every other backend that lowers no union.
 pub fn generate_swift_with_imports(
     doc: &ForgeDocument,
     template_dir: &Path,
@@ -31497,10 +31500,15 @@ pub fn generate_swift_with_imports(
         ForgeDocument::Union(m) => {
             return Err(crate::forge::union_check::document_unlowered(m).into())
         }
-        // docs/SCE_TEST_PROFILE.md §11.9: no backend generates a document of
-        // the test profile until its runtime lands, so each is refused by name.
-        ForgeDocument::TestTemplate(_)
-        | ForgeDocument::TestPortType(_)
+        // docs/SCE_TEST_PROFILE.md §11.9, §12.6, slice 6: a template's `matches`
+        // and a specific template's `value` (`codegen_matrix::TEST_TEMPLATE_BACKENDS`).
+        // What it names that Swift does not write, a union and a record or an enum
+        // whose unit is not written among them, is refused by name where the unit
+        // is spelled ([`swift_test_template`]).
+        ForgeDocument::TestTemplate(_) => None,
+        // docs/SCE_TEST_PROFILE.md §11.9: the other kinds of the test profile
+        // are refused by name until their runtime lands here.
+        ForgeDocument::TestPortType(_)
         | ForgeDocument::TestConfiguration(_)
         | ForgeDocument::TestCase(_)
         | ForgeDocument::TestSuite(_) => {
@@ -31553,6 +31561,9 @@ pub fn generate_swift_with_imports(
         ForgeDocument::BoundedCollection(m) => render_bounded_collection_swift(&env, m, options)?,
         ForgeDocument::Queue(m) => render_queue_swift(&env, m, options)?,
         ForgeDocument::TextTemplate(m) => render_text_template(&env, m, imports, Language::Swift)?,
+        ForgeDocument::TestTemplate(m) => {
+            swift_test_template::render_test_template_swift(&env, m, imports)?
+        }
         _ => unreachable!("every other kind returned above"),
     };
     Ok(GeneratedOutput {
@@ -32052,21 +32063,35 @@ fn swift_lookup_refusal(m: &LookupModel, construct: &str) -> String {
 /// ([`swift_open_enum_declaration`]); what a record, an algorithm or a machine does with
 /// one is [`swift_enum_unlowered`]'s.
 pub(crate) fn swift_enum_unit_unlowered(m: &EnumModel) -> Option<String> {
+    swift_enum_variants_unlowered(
+        &m.name,
+        m.variants.iter().map(|v| v.name.as_str()),
+        m.strict_variants,
+    )
+}
+
+/// [`swift_enum_unit_unlowered`] of the enum document `name`, whose variants are
+/// `variants` in declaration order and which is closed where `strict`: the one answer
+/// for the enum a document is read as and the one a type's scope holds
+/// ([`crate::forge::value_type::ScopedEnum`]).
+fn swift_enum_variants_unlowered<'a>(
+    name: &str,
+    variants: impl IntoIterator<Item = &'a str>,
+    strict: bool,
+) -> Option<String> {
     use crate::generator::Language;
     // The names the struct of an open enum already has: a variant spelled as one would
     // declare it twice.
     const OPEN_MEMBERS: [&str; 4] = ["rawValue", "declaredName", "toUnderlying", "fromUnderlying"];
-    m.variants.iter().find_map(|v| {
-        let ident = crate::forge::enum_naming::variant_ident(Language::Swift, &m.name, &v.name);
+    variants.into_iter().find_map(|variant| {
+        let ident = crate::forge::enum_naming::variant_ident(Language::Swift, name, variant);
         if crate::reader_names::is_reserved_word(Language::Swift, &ident) {
             Some(format!(
-                "a variant `{}` named for a word Swift reserves",
-                v.name
+                "a variant `{variant}` named for a word Swift reserves"
             ))
-        } else if !m.strict_variants && OPEN_MEMBERS.contains(&ident.as_str()) {
+        } else if !strict && OPEN_MEMBERS.contains(&ident.as_str()) {
             Some(format!(
-                "a variant `{}` named for a member of the type an open enum is",
-                v.name
+                "a variant `{variant}` named for a member of the type an open enum is"
             ))
         } else {
             None
@@ -32081,10 +32106,36 @@ pub(crate) fn swift_enum_unit_unlowered(m: &EnumModel) -> Option<String> {
 /// [`swift_enum_unit_unlowered`] refuses. A noun phrase, which a document that imports the
 /// enum names it by as well (`an enum with …`): a type no consumer can hold.
 pub(crate) fn swift_enum_unlowered(m: &EnumModel) -> Option<String> {
-    if !m.strict_variants {
+    swift_held_enum_unlowered(
+        &m.name,
+        m.variants.iter().map(|v| v.name.as_str()),
+        m.strict_variants,
+    )
+}
+
+/// [`swift_enum_unlowered`] of the enum a type's scope holds, as a size reads it: what a
+/// test template's value of the enum, or of a record that holds one, is refused for.
+pub(crate) fn swift_scoped_enum_unlowered(
+    declared: &crate::forge::value_type::ScopedEnum,
+) -> Option<String> {
+    swift_held_enum_unlowered(
+        &declared.name,
+        declared.variants.iter().map(|v| v.name.as_str()),
+        declared.strict,
+    )
+}
+
+/// [`swift_enum_unlowered`] of the enum document `name`, whose variants are `variants`
+/// and which is closed where `strict`.
+fn swift_held_enum_unlowered<'a>(
+    name: &str,
+    variants: impl IntoIterator<Item = &'a str>,
+    strict: bool,
+) -> Option<String> {
+    if !strict {
         return Some("an open set of variants (`sce:strict-variants=\"false\"`)".to_string());
     }
-    swift_enum_unit_unlowered(m)
+    swift_enum_variants_unlowered(name, variants, strict)
 }
 
 /// The refusal of the enum `m` for the Swift construct `construct` it holds
@@ -32139,35 +32190,53 @@ fn swift_event_schema_unlowered(m: &EventSchemaModel, imports: &[ImportContext])
             |import| import.swift_unlowered.clone(),
         )
     };
-    // A field that is a list, a record or an optional over either is spelled by
-    // its constructors ([`crate::forge::schema_unit_type`]): its name is a member
-    // of the struct, and each enum it holds, at any depth, is held in the unit of
-    // that enum.
-    for f in m.fields.iter().filter(|f| f.sce_type.entry().is_err()) {
-        if crate::reader_names::is_reserved_word(crate::generator::Language::Swift, &f.id) {
-            return Some(format!("the field `{}`, a name Swift reserves,", f.id));
-        }
-        if let Some(why) = f
-            .sce_type
-            .enum_aliases()
-            .into_iter()
-            .find_map(enum_unlowered)
-        {
-            return Some(format!("the field `{}` of an enum with {why}", f.id));
-        }
-    }
-    let entries: Vec<EntryField> = m
+    let fields: Vec<(&str, &crate::forge::value_type::ValueType)> = m
         .fields
         .iter()
-        .filter_map(|f| f.entry_field().ok())
+        .map(|f| (f.id.as_str(), &f.sce_type))
         .collect();
-    swift_schema_fields_unlowered(entries.iter().map(|f| {
-        let enum_unlowered = match f.sce_type.present_type() {
-            SceType::Enum(reference) => enum_unlowered(&reference.alias),
-            _ => None,
-        };
-        (f.id.as_str(), &f.sce_type, enum_unlowered)
-    }))
+    swift_record_fields_unlowered(&fields, &enum_unlowered)
+}
+
+/// What of the fields `(id, type)` of a record the Swift unit of its event schema does
+/// not write, described for a refusal: the one answer for that unit
+/// ([`swift_event_schema_unlowered`]) and for a test template that holds a record of it
+/// (`swift_test_template`), so a template is never written against a payload type the
+/// schema's own generation refuses. `enum_unlowered` says what of the enum an alias of
+/// the record's own document names is not written (`None` when all of it is).
+///
+/// A field that is a list, a record or an optional over either is spelled by its
+/// constructors ([`crate::forge::schema_unit_type`]): its name is a member of the
+/// struct, and each enum it holds, at any depth, is held in the unit of that enum. A
+/// field of one entry is held to [`swift_schema_fields_unlowered`].
+pub(crate) fn swift_record_fields_unlowered(
+    fields: &[(&str, &crate::forge::value_type::ValueType)],
+    enum_unlowered: &dyn Fn(&str) -> Option<String>,
+) -> Option<String> {
+    for (id, ty) in fields.iter().filter(|(_, ty)| ty.entry().is_err()) {
+        if crate::reader_names::is_reserved_word(crate::generator::Language::Swift, id) {
+            return Some(format!("the field `{id}`, a name Swift reserves,"));
+        }
+        if let Some(why) = ty.enum_aliases().into_iter().find_map(enum_unlowered) {
+            return Some(format!("the field `{id}` of an enum with {why}"));
+        }
+    }
+    let entries: Vec<(&str, EntryType, Option<String>)> = fields
+        .iter()
+        .filter_map(|(id, ty)| {
+            let (entry, _) = ty.entry().ok()?;
+            let held = match entry.present_type() {
+                SceType::Enum(reference) => enum_unlowered(&reference.alias),
+                _ => None,
+            };
+            Some((*id, entry, held))
+        })
+        .collect();
+    swift_schema_fields_unlowered(
+        entries
+            .iter()
+            .map(|(id, entry, held)| (*id, entry, held.clone())),
+    )
 }
 
 /// What of the fields `(id, type, enum)` of an event schema the Swift backend does not

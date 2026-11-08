@@ -17,12 +17,13 @@
 
 use std::path::{Path, PathBuf};
 
-use sce_build::forge::codegen_matrix::TEST_TEMPLATE_BACKENDS;
+use sce_build::forge::codegen_matrix::{TEST_TEMPLATE_BACKENDS, UNION_BACKENDS};
 use sce_build::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
 use sce_build::forge::error::{ForgeError, GenerateError, Located};
 use sce_build::forge::model::{ForgeDocument, ForgeImport, ParsedForge, TestTemplateModel};
 use sce_build::forge::parser::parse_forge_with_imports;
 use sce_build::forge::test_template_check;
+use sce_build::forge::union_check::NOT_LOWERED_YET;
 use sce_build::generator::Language;
 use sce_build::{DocumentLabel, ForgeCompileOptions};
 
@@ -125,16 +126,23 @@ fn a_template_that_keeps_every_rule_of_its_imports_is_accepted() {
 }
 
 /// The compile asks the same rules: the accepted template reaches the
-/// generation, which a backend that generates no template
-/// (`codegen_matrix::TEST_TEMPLATE_BACKENDS`) refuses by name, Swift here, the
-/// last backend without the kind, and a refused one is refused with its own code
-/// before it.
+/// generation, and a refused one is refused with its own code before it. Every
+/// backend generates a template (`codegen_matrix::TEST_TEMPLATE_BACKENDS`), so
+/// the generation that refuses the accepted one is a backend's that lowers no
+/// union (`codegen_matrix::UNION_BACKENDS`), Swift here, refusing the union the
+/// template reaches by name, which only the generation does.
 #[test]
 fn the_compile_holds_a_template_to_its_imports_before_it_refuses_to_generate_one() {
+    assert!(
+        Language::ALL
+            .iter()
+            .all(|language| TEST_TEMPLATE_BACKENDS.contains(language)),
+        "a backend generates no template: the test's refusal is no longer the only one"
+    );
     let refusing = Language::Swift;
     assert!(
-        !TEST_TEMPLATE_BACKENDS.contains(&refusing),
-        "Swift generates a template: name a backend that still refuses one"
+        !UNION_BACKENDS.contains(&refusing),
+        "Swift lowers a union: name a backend that still refuses one"
     );
     match sce_build::compile_forge_file(
         &imports_dir().join("order_placed_match.scxml"),
@@ -146,7 +154,11 @@ fn the_compile_holds_a_template_to_its_imports_before_it_refuses_to_generate_one
         Err(err) => match err.error {
             ForgeError::Generate(boxed) => match *boxed {
                 GenerateError::UnsupportedFeature { detail, .. } => {
-                    assert!(detail.starts_with("test-template '"), "{detail}");
+                    assert!(
+                        detail.starts_with("test-template 'order_placed_match': `union:Payment`: "),
+                        "{detail}"
+                    );
+                    assert!(detail.contains(NOT_LOWERED_YET), "{detail}");
                 }
                 other => panic!("the generation's refusal, got {other:?}"),
             },
@@ -425,9 +437,9 @@ fn line_of(text: &str, token: &str) -> u32 {
 /// parameter's, holds its record is refused by name before any backend
 /// generates it (`validation/attribute-rule-violated`, on the `sce:type` that
 /// reaches it), on every backend that generates a template
-/// (`codegen_matrix::TEST_TEMPLATE_BACKENDS`: Rust, C++, Kotlin, Go, Python and
-/// C11). The documents are a test's alone, written into a directory of their
-/// own.
+/// (`codegen_matrix::TEST_TEMPLATE_BACKENDS`: Rust, C++, Kotlin, Go, Python,
+/// C11 and Swift). The documents are a test's alone, written into a directory
+/// of their own.
 #[test]
 fn a_record_of_a_schema_with_no_field_is_refused_on_every_backend_that_generates_templates() {
     let dir = tempfile::tempdir().expect("a directory for the documents");
@@ -454,7 +466,8 @@ fn a_record_of_a_schema_with_no_field_is_refused_on_every_backend_that_generates
             Language::Kotlin,
             Language::Go,
             Language::Python,
-            Language::C11
+            Language::C11,
+            Language::Swift
         ]
     );
     for (name, text, ty, line) in cases {
