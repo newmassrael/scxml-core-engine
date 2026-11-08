@@ -140,8 +140,8 @@ the trace must name.
 **A generated file's `source-hash` is the digest of the input closure of the documents it is generated from: those
 documents and every file their generation reads, transitively, with `deploy.yaml` when the run is given one and the
 limits when any is moved, each keyed by its path relative to the directory that holds those documents and hashed by
-its raw bytes, folded in key order. The header names those documents on `source:` lines, so `verify` recomputes the closure
-from the file alone, without generating. No file's header covers a document outside its closure. A file generated
+its raw bytes, folded in key order. The header names those documents on `source:` lines, so `verify` recomputes the
+closure from the file alone, without generating. No file's header covers a document outside its closure. A file generated
 from every document of a directory names the directory, and its closure is the union of theirs. `--assert-unchanged`
 stays the judge of content.**
 
@@ -229,8 +229,10 @@ recognises, so `source` joins the keys it recognises; `RETIRED_HEADER_KEYS` is u
   parent's; so its header equals its parent's, hash and `source:`.
 - **A standard statechart a parent starts in-line**: the parent's document, whose closure holds it by rule 5.
 - **A child generated from its own file** (`generate --as-child`, a `src` child or a candidate, a child of
-  `--with-imports`): the child's document. A child document a run writes itself (a Mesh §9.6.6 remote child's
-  `.scxml`, a hybrid invoke's stub) is generated from the document it was written from; open question 2.
+  `--with-imports`): the child's document. A child document a run writes itself (the `__sce_synth_invoke__`
+  document of an in-line child, which a Mesh §9.6.6 partition's run and the integration scripts generate from) is
+  generated from the document it was written from, which it records (owner's answer 2, below). A hybrid invoke's
+  stub is no such child: its text is fixed and names nothing it was cut from, so it is its own seed.
 - **`generate --with-imports`**: each unit its own document.
 - **The Rust per-test `mod.rs`** of `generate-w3c`, which names the test's machine and its children: the test's
   document.
@@ -342,8 +344,9 @@ The section's first two paragraphs become:
 > the documents its `<invoke>`s start by `src` or name in `sce:candidates`, and the standard documents it imports or
 > starts; with `deploy.yaml` when the run is given one, and the limits the build runs under when any is moved. Each
 > member is keyed by its path relative to the deepest directory that holds the documents and hashed by its raw
-> bytes, and the entries are folded in key order. A file names each document it is generated from on a `source:` line; a file generated
-> from every document of a directory names it as `./`, and its closure is the union of theirs.
+> bytes, and the entries are folded in key order. A file names each document it is generated from on a `source:`
+> line; a file generated from every document of a directory names it as `./`, and its closure is the union of
+> theirs.
 >
 > The header states facts about the file's own inputs and none that can change while the file does not: no other
 > document, no timestamp, no template or generator hash (both retired 2026-09). A run names its `generator` on its
@@ -458,9 +461,18 @@ Where the landing stands (2026-11-08): steps 1 and 2 and the documents of step 2
 13, 15 and 16 (16 for the Rust `static_datamodel` tree and the trees `verify` already held); test 10 is the existing
 `a_hand_edit_fails_the_run_is_named_and_survives_it`. Not yet written: test 9, test 14 through `generate-w3c` (the
 set form is held at the library by `the_set_form_covers_its_directory_and_what_its_documents_reach`), the sibling
-cases of test 11 and test 17. Owner's answer 2 is not implemented: a child document a run writes is still seeded by
-its own bytes, which is sound but gives `verify` no document under a root to find; seeding it by the authored
-document needs the written child to record it. The regeneration of every committed tree is the main session's.
+cases of test 11 and test 17. The regeneration of every committed tree is the main session's.
+
+Owner's answer 2 is implemented: a child document a run writes carries `<?sce-origin document="..."?>` on its first
+line (`drift::record_origin`), naming the document the run's closure is of, and the closure of that child is the
+closure of the document it names, found under `--input-root` or beside it (`drift::recorded_origin`, `origin_seed`),
+so its files carry that document's header and `verify` finds it. A processing instruction is the carrier because XML
+gives it that role (XML 1.0 section 2.6): it travels with every copy of the document, which a sidecar or a record kept
+by the staging step would not; it changes no element or attribute the schema or an SCXML processor reads, so the
+document's content is the child's text unchanged; and a reader is handed it by target and pseudo-attribute, which a
+comment, free text an XML processor may drop, does not give. It shares the first line, so every row of the child is
+the row it was. A recorded origin found in neither place leaves the child its own seed: sound, since its bytes are a
+function of its origin's, but nothing under a root names it for `verify`.
 
 ## Consequences
 
