@@ -69,6 +69,45 @@ static void every_head_is_written_in_its_shortest_form(void) {
     }
 }
 
+static void an_array_head_and_a_key_in_place_are_read_and_written(void) {
+    uint8_t buf[8];
+    static const uint8_t want[] = {0x82, 0x98, 0x18};
+    static const uint8_t three[] = {0x83};
+    static const uint8_t wide[] = {0x98, 0x18};
+    static const uint8_t indefinite[] = {0x9f};
+    static const uint8_t map[] = {0xa1};
+    static const uint8_t key[] = {0x63, 's', 'e', 'q', 0x01};
+    static const uint8_t not_utf8[] = {0x61, 0xff};
+    uint64_t v = 0;
+    const char *text = NULL;
+    size_t len = 0;
+    sce_forge_writer_t w = sce_forge_writer_init_buf(buf, sizeof buf);
+    sce_forge_cursor_t c;
+    CHECK(sce_forge_cbor_write_array_head(&w, 2) == SCE_FORGE_CODEC_OK, "array head");
+    CHECK(sce_forge_cbor_write_array_head(&w, 24) == SCE_FORGE_CODEC_OK, "array head of 24");
+    CHECK(written_is(buf, sce_forge_writer_position(&w), want, sizeof want), "array heads, shortest");
+    c = sce_forge_cursor_init(three, sizeof three);
+    CHECK(sce_forge_cbor_read_array_len(&c, &v) == SCE_FORGE_CODEC_OK && v == 3, "an array of three");
+    c = sce_forge_cursor_init(wide, sizeof wide);
+    CHECK(sce_forge_cbor_read_array_len(&c, &v) == SCE_FORGE_CODEC_OK && v == 24, "an array of 24");
+    /* An indefinite-length array, and a map where an array stands. */
+    c = sce_forge_cursor_init(indefinite, sizeof indefinite);
+    CHECK(sce_forge_cbor_read_array_len(&c, &v) == SCE_FORGE_CODEC_CBOR_MALFORMED, "indefinite-length array");
+    c = sce_forge_cursor_init(map, sizeof map);
+    CHECK(sce_forge_cbor_read_array_len(&c, &v) == SCE_FORGE_CODEC_CBOR_MALFORMED, "a map is no array");
+    /* A key is read where it lies, and the cursor lands after it. */
+    c = sce_forge_cursor_init(key, sizeof key);
+    CHECK(sce_forge_cbor_read_text_in_place(&c, &text, &len) == SCE_FORGE_CODEC_OK && len == 3U &&
+              memcmp(text, "seq", 3U) == 0,
+          "a key in place");
+    CHECK(sce_forge_cbor_read_uint(&c, &v) == SCE_FORGE_CODEC_OK && v == 1, "the read lands after the key");
+    c = sce_forge_cursor_init(not_utf8, sizeof not_utf8);
+    CHECK(sce_forge_cbor_read_text_in_place(&c, &text, &len) == SCE_FORGE_CODEC_INVALID_UTF8,
+          "a key that is not UTF-8");
+    c = sce_forge_cursor_init(key, 2U);
+    CHECK(sce_forge_cbor_read_text_in_place(&c, &text, &len) == SCE_FORGE_CODEC_NEED_MORE_BYTES, "a short key");
+}
+
 static void a_head_is_read_in_any_valid_length(void) {
     /* 1 written in its 2-byte form still reads as 1. */
     static const uint8_t two[] = {0x18, 0x01};
@@ -160,6 +199,7 @@ static void an_unknown_value_is_skipped_whole_and_a_deep_one_refused(void) {
 int main(void) {
     every_head_is_written_in_its_shortest_form();
     a_head_is_read_in_any_valid_length();
+    an_array_head_and_a_key_in_place_are_read_and_written();
     what_the_codec_cannot_read_is_refused();
     an_unknown_value_is_skipped_whole_and_a_deep_one_refused();
     if (failures != 0) {
