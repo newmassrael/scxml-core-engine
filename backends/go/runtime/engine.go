@@ -738,27 +738,53 @@ func (e *Engine[S, E]) GetActiveStates() []S {
 	return active
 }
 
-// liftTypedPayload binds the dequeued event's typed `_event.data` view and
-// reports a refusal as error.execution (NL→IR Item C1 Path A).
+// admission is what a door made of a delivery just taken off a queue
+// (docs/adr/0086, section 4.2).
+type admission int
+
+const (
+	// admitted: its data fits its type, or the document reads none of it.
+	admitted admission = iota
+	// inPlace: it is refused whole, and the error.execution that carries the
+	// refusal is bound and taken in its place.
+	inPlace
+	// refusedWhole: it is refused whole, and the document declares no
+	// error.execution to take in its place.
+	refusedWhole
+)
+
+// liftTypedPayload is the door of the event just taken off a queue
+// (docs/adr/0086, section 4.2): it binds the event as `_event` with its typed
+// `_event.data` view (NL→IR Item C1 Path A), and answers the event the loop
+// offers to the configuration with what the door made of it.
 //
-// The raise lives here rather than in each generated policy so that every
-// machine answers a payload it cannot read the same way, and so the answer is
-// the script engine's: §scxml-3.13 gives error.execution for a guard that
-// cannot be evaluated and treats it as false, which is exactly what a policy
-// with no lifted payload does — its tag stays `none` and the typed guards fail.
-func (e *Engine[S, E]) liftTypedPayload(event E, meta *EventMetadata) {
-	err := e.policy.LiftTypedPayload(event, meta)
+// A delivery whose data does not fit its type is refused whole: it is never
+// offered to the configuration, and the error.execution that carries the
+// refusal is bound and taken in its place, where a guard that cannot be
+// evaluated is only false (§scxml-3.13). The verdict lives here rather than in
+// each generated policy so that every machine answers a payload it cannot read
+// the same way. The error.execution it takes in a delivery's place has no door
+// of its own, so asking again for it admits it as it is.
+func (e *Engine[S, E]) liftTypedPayload(eventWithMeta EventWithMetadata[E]) (EventWithMetadata[E], admission) {
+	e.policy.PopulateEventMetadata(&eventWithMeta.Metadata)
+	err := e.policy.LiftTypedPayload(eventWithMeta.Event, &eventWithMeta.Metadata)
 	if err == nil {
-		return
+		return eventWithMeta, admitted
 	}
 	errorEvent, ok := e.policy.GetEventFromName("error.execution")
 	if !ok {
 		// §scxml-3.12.2 leaves a document that declares no error.execution
-		// transition nothing to answer with; the guard still does not fire.
-		return
+		// transition nothing to answer with: the delivery is refused all the
+		// same, and nothing is taken in its place.
+		e.policy.ClearEventMetadata()
+		return eventWithMeta, refusedWhole
 	}
-	e.Raise(NewPlatformError(errorEvent, fmt.Sprintf(
-		"`%s` payload: %s", e.policy.GetEventName(event), err.Error())))
+	replacement := NewPlatformError(errorEvent, fmt.Sprintf(
+		"`%s` payload: %s", e.policy.GetEventName(eventWithMeta.Event), err.Error()))
+	// The replacement carries no typed payload, so binding it clears the view
+	// the refused delivery left half read.
+	e.policy.PopulateEventMetadata(&replacement.Metadata)
+	return replacement, inPlace
 }
 
 // isInFinalState reports whether this session has ended — that is, whether the
@@ -2281,10 +2307,17 @@ func (e *Engine[S, E]) refuseMacrostep(stoppedIn S) {
 
 // takeInternalEvent binds one event taken off the internal queue as _event,
 // selects, and takes the microstep it selects (§scxml-D-mainEventLoop).
+//
+// It also answers the error.execution a door took in a refused external
+// delivery's place, which is the engine's own error as any on this queue is.
 func (e *Engine[S, E]) takeInternalEvent(eventWithMeta EventWithMetadata[E]) {
-	// §scxml-5.10: Populate policy metadata from event
-	e.policy.PopulateEventMetadata(&eventWithMeta.Metadata)
-	e.liftTypedPayload(eventWithMeta.Event, &eventWithMeta.Metadata)
+	// §scxml-5.10: the door binds it as `_event`, or the error.execution taken
+	// in its place; a delivery refused with nothing to take in its place took
+	// no microstep and moved nothing (docs/adr/0086, section 4.2).
+	eventWithMeta, verdict := e.liftTypedPayload(eventWithMeta)
+	if verdict == refusedWhole {
+		return
+	}
 	// §scxml-3.12.2: the processor raises error.* into this queue and the
 	// clause says they "are ignored if no transition is found that matches
 	// them". Ignoring them is the clause; staying silent about it is not.
@@ -2368,6 +2401,20 @@ func (e *Engine[S, E]) processNextExternalEvent() bool {
 	// is where the budget that drains them comes back.
 	e.macrostepTruncated = false
 	e.macrostepMicrostepsTaken = 0
+	// The door comes first (docs/adr/0086, section 4.2): a delivery whose
+	// data does not fit its type is refused whole. The error.execution taken
+	// in its place is the engine's own error, so no <finalize> or autoforward
+	// runs for it, and it is answered as one off the internal queue is.
+	//
+	// §scxml-5.10: the door binds `_event` here, before the preliminary step.
+	eventWithMeta, verdict := e.liftTypedPayload(eventWithMeta)
+	switch verdict {
+	case refusedWhole:
+		return true
+	case inPlace:
+		e.takeInternalEvent(eventWithMeta)
+		return true
+	}
 	{
 		// §scxml-6.5: Execute finalize before parent's own transition matching
 		if e.policy.HasFinalize() {
@@ -2402,9 +2449,6 @@ func (e *Engine[S, E]) processNextExternalEvent() bool {
 			}
 			e.policy.ForwardToAutoforwardChildren(name, eventWithMeta.Metadata, e)
 		}
-		// §scxml-5.10: Populate policy metadata from event
-		e.policy.PopulateEventMetadata(&eventWithMeta.Metadata)
-		e.liftTypedPayload(eventWithMeta.Event, &eventWithMeta.Metadata)
 		// §scxml-3.1.2: "If no transition matches in any state, the event is
 		// discarded." Discarding it is the rule; being unable to say so is not
 		// part of the rule. The host that put this event on the queue is the
