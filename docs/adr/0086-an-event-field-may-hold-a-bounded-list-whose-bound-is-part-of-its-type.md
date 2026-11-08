@@ -910,12 +910,33 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
    name `InferredType::Str`). The textbook keeps a value's abstraction beside its type, as an interval
    analysis keeps a number's range beside its width.
 
+   *As landed (calls).* A call takes the bound its callee's signature states on what it returns
+   (`FuncSig::ret_bound`): an imported algorithm's `string[N]` or `bytes[N]` return, the present value's for
+   an optional one, and a procedure helper's byte string at its `returns-max-size`. A byte string an
+   expression computes is bounded by the same reading of places and calls (`byte_string_bound_of`), which
+   measures a computed `bytes` param of a send. A call whose callee states no bound stays `Unbounded`, the
+   call named in the reason.
+
    **(d) Growable buffers for script machines.** On a machine with a script engine, the remaining buffers of
    event data grow in the engine's heap, through the machine's allocator, each with one owner: the scratch
    roles, a host-run invocation's endings, a host's replies, an invocation's answers and the inbox's endings.
    The inbox change brings the poster's storage and a release function, as the inbox's event inputs already
    have (item 5 (a), *as landed*). The runtime's writers of replies and answers gain a growing variant behind
    the same shape of API, so a handler writes the same calls whichever kind of machine it answers.
+
+   *As landed (the first part of (d)).* `sce/types.h` declares `sce_alloc_fn`, an allocator of the shape of
+   `lua_Alloc`, with `sce_text_alloc_copy` and `sce_text_alloc_free`. A reply list
+   (`sce_host_send_response_list_t`) and an invocation's answer (`sce_host_invoke_response_t`) given an
+   allocator copy each text whole into storage of its own size there, owned until
+   `sce_host_response_list_release` or `sce_host_invoke_response_release` frees it once; a text the heap
+   cannot give is counted as `unallocated`, apart from one past fixed storage, and raised as
+   `error.execution` with the row `event_data_unallocated`. A script machine hands the writers its engine's
+   allocator and releases each answer once it is raised, and its scratch holds no `answer` and no `replies`
+   role (`c11_scratch::GROWN_ON_A_SCRIPT_ENGINE`). Its inbox's ending carries the poster's storage with an
+   `sce_inbox_release_fn`, as an event does, and `_inbox_post_ending` takes the release; an ending routed to
+   a session below is released once that session took its copy. A unit test asks the writers under the C
+   tests' counting allocator (`backends/c/tests/unit/counting_alloc.h`) that every text is freed exactly
+   once. The other scratch roles still hold the slot on a script machine.
 
    **(e) Retire the knob.** Once (a) to (d) hold, `SCE_MAX_DATA_LEN` is removed and a build that defines it
    fails with `#error` (item 3), and every test and note that names it moves.
