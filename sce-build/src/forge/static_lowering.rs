@@ -30,6 +30,7 @@ use crate::forge::expr::{
 use crate::forge::model::{EntryField, EntrySchema, EntryType, EnumModel, SceType};
 use crate::forge::narrowing::{Chain, Facts, Writes};
 use crate::forge::static_datamodel::{indexed_element, is_null_literal, proving};
+use crate::forge::text_bound::{TextBound, Unbounded};
 use crate::forge::type_ctx::{
     CalleeKind, StateArg, StateCallRefusal, StateContext, StateRewrite, StaticCallee, StaticEnum,
     StaticScope, StaticSlot,
@@ -173,6 +174,19 @@ pub struct StaticLowering {
     /// through a helper of the machine's own file declares the helper for,
     /// whether or not the machine holds a variable.
     pub logs_a_value: bool,
+    /// The most bytes of the JSON the data of any `<send>` the walk lowered,
+    /// whatever it targets, or of any `<donedata>` is written as
+    /// (docs/adr/0086, section 8.6 (c)): an input of a C11 machine's slot of
+    /// `_event.data`, which every buffer a send writes its data into is sized
+    /// at. Zero for a machine that writes none.
+    pub sent_data: u64,
+    /// The share of [`Self::sent_data`] the machine hands its parent: its sends
+    /// to `#_parent`, or to a target an expression computes, and its done data.
+    pub parent_data: u64,
+    /// The most bytes of the text of the `_sce_deadline_ms` of a host-run
+    /// invocation, which the reason a deadline the machine cannot read quotes;
+    /// `None` for a machine none of whose invocations carries one.
+    pub deadline_text: Option<u64>,
 }
 
 /// One element of the document, as the walk lowered it: which element, by an
@@ -1512,6 +1526,15 @@ pub trait StaticTarget {
     /// `content`. A target that does not is refused where the element is walked,
     /// by name, rather than left to emit an event with no data.
     fn lowers_scalar_content(&self) -> bool {
+        false
+    }
+    /// Whether the machine holds the data its sends and its done data write,
+    /// and the deadline text a reason quotes, in storage the build sizes
+    /// (docs/adr/0086, section 8.6 (c)): the walk then refuses by name a value
+    /// whose bound it cannot compute ([`TextBound::Unbounded`]), rather than
+    /// leave the storage sized by a guess. Every target measures what it walks
+    /// ([`StaticLowering::sent_data`]); one whose storage grows refuses nothing.
+    fn sizes_sent_data(&self) -> bool {
         false
     }
     /// Whether a hybrid `<invoke>` is lowered: its `srcexpr` to the string it
@@ -6167,6 +6190,9 @@ pub fn lower(
         text_templates,
         document: model.name.clone(),
         test_component: model.test_component.is_some(),
+        sent_data: std::cell::Cell::new(0),
+        parent_data: std::cell::Cell::new(0),
+        deadline_text: std::cell::Cell::new(None),
     };
 
     let refused = |what: &str, text: &str, refusal: Refusal| {
@@ -6648,8 +6674,21 @@ pub fn lower(
                 crate::model::Invoke::Unsupported(info) => {
                     info.fold_namelist_into_params();
                     lower_host_request_strings(info, &plain_ctx, &plain_renames, &rewrites)?;
+                    let element = format!("<invoke id=\"{}\">", info.base.invoke_id);
+                    let host_served = info.host_served;
                     for param in &mut info.base.params {
                         lower_wire_param(param, &plain_ctx, &plain_renames, &rewrites)?;
+                        // docs/adr/0086, section 8.6 (c): the reason a deadline
+                        // the machine cannot read quotes its text.
+                        if host_served
+                            && param.name
+                                == crate::host_processor_analyzer::HOST_INVOKE_DEADLINE_PARAM
+                        {
+                            rewrites.hold_deadline_text(
+                                &format!("{element} <param name=\"{}\">", param.name),
+                                param_text_bound(param, &plain_ctx, &rewrites),
+                            )?;
+                        }
                     }
                 }
                 crate::model::Invoke::Scxml(info) => {
@@ -6693,7 +6732,7 @@ pub fn lower(
                     }
                 }
             }
-            lower_done_params(&mut done.params, &plain_ctx, &plain_renames, &rewrites)?;
+            let pairs = lower_done_params(&mut done.params, &plain_ctx, &plain_renames, &rewrites)?;
             if record.is_some() && !content_value {
                 rewrites.sites.borrow_mut().truncate(noted);
             }
@@ -6701,15 +6740,17 @@ pub fn lower(
             // entered, and the expression is cleared once it is lowered so no
             // template evaluates it a second time: the machine has no engine to
             // do it with.
+            let mut content_json = None;
             if let (true, Some(record)) = (content_value, &record) {
                 let view = crate::forge::static_datamodel::WireParam::of_content(
                     record,
                     done.content_spelling.as_ref(),
                 );
                 let lowered = lower_wire_value(&view, &plain_ctx, &plain_renames, &rewrites)?;
-                if let Some((value, fails)) = lowered {
-                    done.native_content_value = value;
-                    done.native_content_value_fails = fails;
+                if let Some(value) = lowered {
+                    done.native_content_value = value.text;
+                    done.native_content_value_fails = value.fails;
+                    content_json = Some(value.json);
                 }
                 done.content = crate::model::DoneDataContent::None;
             }
@@ -6728,6 +6769,13 @@ pub fn lower(
                     &done.native_content,
                 );
             }
+            // docs/adr/0086, section 8.6 (c): the done data is the data of the
+            // done event the machine raises, and of the one its parent takes.
+            rewrites.hold_sent_data(
+                &format!("<donedata> of <final id=\"{}\">", state.id),
+                sent_data_bound(content_json, &done.native_content, &pairs),
+                true,
+            )?;
         }
         for transition in &mut state.transitions {
             // The event whose payload `_event.data` is: the one the transition
@@ -7159,6 +7207,9 @@ pub fn lower(
         enums: declarations.enums,
         unions: declarations.unions,
         saved_shape,
+        sent_data: rewrites.sent_data.get(),
+        parent_data: rewrites.parent_data.get(),
+        deadline_text: rewrites.deadline_text.get(),
         sites: rewrites.sites.into_inner(),
         elements: rewrites.elements.into_inner(),
         logs_a_value: rewrites.logs_a_value.get(),
@@ -8556,6 +8607,16 @@ struct Rewrites<'m> {
     /// the test log through its runtime context (docs/SCE_TEST_PROFILE.md
     /// §4.8, P8) rather than in the engine's log.
     test_component: bool,
+    /// The most bytes of the data any `<send>` the walk lowered or any
+    /// `<donedata>` writes ([`StaticLowering::sent_data`]). Written through a
+    /// shared reference for the reason [`Self::sites`] is.
+    sent_data: std::cell::Cell<u64>,
+    /// The share of [`Self::sent_data`] the machine hands its parent
+    /// ([`StaticLowering::parent_data`]).
+    parent_data: std::cell::Cell<u64>,
+    /// The most bytes of the text of a host-run invocation's deadline
+    /// ([`StaticLowering::deadline_text`]).
+    deadline_text: std::cell::Cell<Option<u64>>,
 }
 
 impl Rewrites<'_> {
@@ -8564,6 +8625,59 @@ impl Rewrites<'_> {
         let ordinal = self.next_if_ordinal.get();
         self.next_if_ordinal.set(ordinal + 1);
         ordinal
+    }
+
+    /// Take `data`, the most bytes of the JSON a `<send>` or a `<donedata>`
+    /// (`element`) writes, into the machine's measure, and into the share it
+    /// hands its parent where `to_parent` (docs/adr/0086, section 8.6 (c)).
+    fn hold_sent_data(
+        &self,
+        element: &str,
+        data: TextBound,
+        to_parent: bool,
+    ) -> Result<(), GenerateError> {
+        let Some(bytes) = self.measured(element, data)? else {
+            return Ok(());
+        };
+        self.sent_data.set(self.sent_data.get().max(bytes));
+        if to_parent {
+            self.parent_data.set(self.parent_data.get().max(bytes));
+        }
+        Ok(())
+    }
+
+    /// Take `text`, the most bytes of the text of the deadline of a host-run
+    /// invocation (`element`), into the machine's measure: the reason a
+    /// deadline the machine cannot read quotes it (docs/adr/0086, section 8.6
+    /// (c)).
+    fn hold_deadline_text(&self, element: &str, text: TextBound) -> Result<(), GenerateError> {
+        let Some(bytes) = self.measured(element, text)? else {
+            return Ok(());
+        };
+        let held = self.deadline_text.get();
+        self.deadline_text
+            .set(Some(held.map_or(bytes, |longest| longest.max(bytes))));
+        Ok(())
+    }
+
+    /// The bound of `measure`, a measure of what `element` writes; where it has
+    /// none, a refusal by name on a target that sizes what the machine holds
+    /// ([`StaticTarget::sizes_sent_data`]), and nothing to hold on one that
+    /// does not.
+    fn measured(&self, element: &str, measure: TextBound) -> Result<Option<u64>, GenerateError> {
+        match measure {
+            TextBound::Bounded(bytes) => Ok(Some(bytes)),
+            TextBound::Unbounded(why) if self.target.sizes_sent_data() => {
+                Err(GenerateError::unsupported(format!(
+                    "{element}: {}; a {} machine holds what it writes in storage the build \
+                     sizes, so every value it writes needs a bound the build knows \
+                     (docs/adr/0086, section 8.6 (c))",
+                    why.why,
+                    self.target.name()
+                )))
+            }
+            TextBound::Unbounded(_) => Ok(None),
+        }
     }
 
     /// Opens the walk of a transition whose event's payload `schema` is
@@ -15252,6 +15366,12 @@ impl StaticTarget for CTarget {
     fn lowers_scalar_content(&self) -> bool {
         true
     }
+    // A machine holds every event's data in its slot of `_event.data`, which the
+    // build sizes (docs/adr/0086, section 8.1), and writes a send's payload into
+    // its scratch of that size.
+    fn sizes_sent_data(&self) -> bool {
+        true
+    }
     // The host invoke hands the host the `src` it computes (`_host_inv.src`),
     // held by a variable or written out; one that joins text is refused for the
     // reason a delay is.
@@ -19128,8 +19248,14 @@ fn lower_action(
             }
             action.fold_namelist_into_params();
             let noted = rewrites.sites.borrow().len();
+            // Each pair's name with the most bytes of the JSON its value is
+            // written as (docs/adr/0086, section 8.6 (c)).
+            let mut pairs = Vec::with_capacity(action.params.len());
             for param in &mut action.params {
-                lower_wire_param(param, ctx, renames, rewrites)?;
+                pairs.push((
+                    param.name.clone(),
+                    lower_wire_param(param, ctx, renames, rewrites)?,
+                ));
                 // A value read from the payload runs only for a delivery that
                 // carried one, as the rest of the transition's content does.
                 reads_payload |=
@@ -19145,6 +19271,7 @@ fn lower_action(
             // The value is read once, as a param's is, and the attribute is
             // cleared once it is lowered so no template evaluates it a second
             // time: the machine has no engine to do it with.
+            let mut content_json = None;
             if content_value {
                 reads_payload |= reads(&content);
                 let view = crate::forge::static_datamodel::WireParam::of_content(
@@ -19152,9 +19279,10 @@ fn lower_action(
                     action.contentexpr_spelling.as_ref(),
                 );
                 let lowered = lower_wire_value(&view, ctx, renames, rewrites)?;
-                if let Some((value, fails)) = lowered {
-                    action.native_content_value = value;
-                    action.native_content_value_fails = fails;
+                if let Some(value) = lowered {
+                    action.native_content_value = value.text;
+                    action.native_content_value_fails = value.fails;
+                    content_json = Some(value.json);
                 }
                 action.contentexpr.clear();
             }
@@ -19251,6 +19379,18 @@ fn lower_action(
                     &action.native_content,
                 );
             }
+            // docs/adr/0086, section 8.6 (c): the data the send writes is an
+            // input of the slot of a machine whose storage the build sizes, and
+            // of its parent's where the send may reach the parent.
+            let data = sent_data_bound(content_json, &action.native_content, &pairs);
+            let to_parent =
+                action.target.trim() == "#_parent" || !action.targetexpr.trim().is_empty();
+            let element = if action.event.is_empty() {
+                "<send>".to_string()
+            } else {
+                format!("<send event=\"{}\">", action.event)
+            };
+            rewrites.hold_sent_data(&element, data, to_parent)?;
         }
         // docs/SCE_TEST_PROFILE.md §11.5, §12.3: a statement of a test
         // component is a call on the component's runtime context, in its place
@@ -20016,11 +20156,181 @@ fn lower_element_fields(
     Ok(reads_payload)
 }
 
+/// A `<param>`'s value lowered to cross as data ([`lower_wire_value`]): the
+/// typed value the backend's wire helpers take, whether its evaluation can
+/// fail, and the most bytes of the JSON it is written as (docs/adr/0086,
+/// section 8.6 (c)), measured by the same reading of the value that lowers it.
+struct WireValue {
+    text: String,
+    fails: bool,
+    json: TextBound,
+}
+
+/// The most bytes of the JSON the data of a `<send>` or of a `<donedata>` is
+/// written as (docs/adr/0086, section 8.6 (c)): the one value its `<content
+/// expr>` names (`content`), the inline `<content>` finished at build time
+/// (`inline`), or the object of its pairs, each its name with the bound of the
+/// JSON of its value; nothing for one that carries none. A part with no bound
+/// leaves the whole with none, the part named in the reason.
+fn sent_data_bound(
+    content: Option<TextBound>,
+    inline: &str,
+    pairs: &[(String, TextBound)],
+) -> TextBound {
+    let named = |part: String, bound: TextBound| match bound {
+        TextBound::Unbounded(why) => TextBound::Unbounded(Unbounded {
+            span: None,
+            why: format!("{part}: {}", why.why),
+        }),
+        bounded => bounded,
+    };
+    if let Some(value) = content {
+        return named("<content expr>".to_string(), value);
+    }
+    if !inline.is_empty() {
+        return TextBound::Bounded(inline.len() as u64);
+    }
+    if pairs.is_empty() {
+        return TextBound::Bounded(0);
+    }
+    crate::forge::text_bound::params_json_bound(pairs.iter().map(|(name, bound)| {
+        (
+            name.as_str(),
+            named(format!("the pair '{name}'"), bound.clone()),
+        )
+    }))
+}
+
+/// The most bytes of the text a `<param>` is handed to a host as: a static
+/// literal's own text, and the text bound of an expression
+/// ([`crate::forge::text_bound`]), read as the walk lowers it; nothing for a
+/// param with no expression, which is left out with an error.
+fn param_text_bound(
+    param: &crate::model::Param,
+    ctx: &crate::forge::types::TypeCtx<'_>,
+    rewrites: &Rewrites<'_>,
+) -> TextBound {
+    if param.is_static_literal {
+        return TextBound::Bounded(param.static_value.len() as u64);
+    }
+    let written = crate::forge::static_datamodel::WireParam::of_param(param).written;
+    if written.trim().is_empty() {
+        return TextBound::Bounded(0);
+    }
+    let lowered = rewrites.as_lowered(written);
+    match crate::forge::text_bound::text_bound_of(&lowered, ctx) {
+        Ok(TextBound::Unbounded(why)) => TextBound::Unbounded(Unbounded {
+            span: None,
+            why: why.describe(lowered.trim()),
+        }),
+        Ok(bound) => bound,
+        Err(refusal) => unbounded_value(&lowered, refusal.error),
+    }
+}
+
+/// `written` has no bound the build knows, and `why`, as a refusal states it.
+fn unbounded_value(written: &str, why: impl std::fmt::Display) -> TextBound {
+    TextBound::Unbounded(Unbounded {
+        span: None,
+        why: format!("`{}` {why}", written.trim()),
+    })
+}
+
+/// The most bytes of the JSON a value a place of the type `ty` holds is
+/// written as: its `J` (docs/adr/0086, section 2.1), whatever the type holds,
+/// a record, a list, an optional value, an enum or a scalar.
+fn place_json(
+    ty: &crate::forge::value_type::ValueType,
+    rewrites: &Rewrites<'_>,
+    written: &str,
+) -> TextBound {
+    match crate::forge::value_type::json_max_len(ty, &rewrites.type_scope) {
+        Ok(bytes) => TextBound::Bounded(bytes),
+        Err(why) => unbounded_value(
+            written,
+            format!("holds a value with no largest JSON: {why}"),
+        ),
+    }
+}
+
+/// The most bytes of the JSON a value of the enum `alias` is written as: the
+/// quoted name of its longest variant, as the writer escapes it.
+fn enum_json(alias: &str, ctx: &crate::forge::types::TypeCtx<'_>, written: &str) -> TextBound {
+    match ctx.lookup_enum(alias) {
+        Some(scope) => TextBound::Bounded(
+            scope
+                .variants
+                .iter()
+                .map(|name| crate::forge::text_bound::json_literal_len(name.as_str()))
+                .max()
+                .unwrap_or(2),
+        ),
+        None => unbounded_value(
+            written,
+            format!("is a value of the enum `{alias}`, which this scope does not declare"),
+        ),
+    }
+}
+
+/// The most bytes of the JSON a value an expression computes is written as,
+/// crossing as `slot` ([`InferredType::wire_param_slot`]): a text at the
+/// escapes of its bound ([`crate::forge::text_bound`]), a number or a boolean
+/// at its type's `J`. `lowered` is the expression as the walk lowers it.
+fn scalar_json(
+    slot: InferredType,
+    lowered: &str,
+    ctx: &crate::forge::types::TypeCtx<'_>,
+    scope: &crate::forge::value_type::TypeScope,
+) -> TextBound {
+    if slot == InferredType::Str {
+        return match crate::forge::text_bound::text_bound_of(lowered, ctx) {
+            Ok(TextBound::Bounded(bytes)) => crate::forge::value_type::json_string_max_len(bytes)
+                .map_or_else(|why| unbounded_value(lowered, why), TextBound::Bounded),
+            Ok(TextBound::Unbounded(why)) => TextBound::Unbounded(Unbounded {
+                span: None,
+                why: why.describe(lowered.trim()),
+            }),
+            Err(refusal) => unbounded_value(lowered, refusal.error),
+        };
+    }
+    match slot.to_sce_type() {
+        Some(SceType::String | SceType::Bytes) | None => unbounded_value(
+            lowered,
+            format!(
+                "is {} an expression computes, whose JSON no place's type bounds",
+                slot.describe()
+            ),
+        ),
+        Some(scalar) => {
+            match crate::forge::value_type::json_max_len(
+                &crate::forge::value_type::ValueType::Scalar(scalar),
+                scope,
+            ) {
+                Ok(bytes) => TextBound::Bounded(bytes),
+                Err(why) => unbounded_value(lowered, why),
+            }
+        }
+    }
+}
+
+/// The most bytes of the JSON a `<param>` [`lower_wire_value`] has nothing to
+/// lower of is written as: a static literal as the JSON string it is, and a
+/// param with no expression as nothing, since its pair is left out with an
+/// error.
+fn literal_json(is_static_literal: bool, static_value: &str) -> TextBound {
+    TextBound::Bounded(if is_static_literal {
+        crate::forge::text_bound::json_literal_len(static_value)
+    } else {
+        0
+    })
+}
+
 /// Lower the value of a `<param>` that crosses as data (SCE Accepted Subset
 /// §2.15): the expression, read from the machine's fields, as the typed value
-/// the backend's wire helpers take ([`StaticTarget::wire_value`]), and whether
-/// it can fail. `None` for one with nothing to lower: a static literal, which
-/// is folded at build time and left as it is, and a param with no expression.
+/// the backend's wire helpers take ([`StaticTarget::wire_value`]), whether it
+/// can fail, and the most bytes of the JSON it is written as ([`WireValue`]).
+/// `None` for one with nothing to lower: a static literal, which is folded at
+/// build time and left as it is, and a param with no expression.
 ///
 /// Validation already judged the expression against the same scope and held
 /// its type to [`InferredType::wire_param_slot`], or took it for an enum value
@@ -20032,7 +20342,7 @@ fn lower_wire_value(
     ctx: &crate::forge::types::TypeCtx<'_>,
     renames: &HashMap<&str, &str>,
     rewrites: &Rewrites<'_>,
-) -> Result<Option<(String, bool)>, GenerateError> {
+) -> Result<Option<WireValue>, GenerateError> {
     let written = param.written;
     if param.is_static_literal || written.trim().is_empty() {
         return Ok(None);
@@ -20049,12 +20359,24 @@ fn lower_wire_value(
             "{construct} `{written}` has no {lang} lowering: {why}"
         ))
     };
+    // A value a place holds is measured by the type the place declares,
+    // whatever it holds (docs/adr/0086, section 8.6 (c)); one an expression
+    // computes, by the branch below that reads it.
+    let place_measure = crate::forge::expr::written_place(written)
+        .and_then(|path| ctx.value_of(&path))
+        .map(|place| place_json(&place.ty, rewrites, written));
     if let Some(wired) = composed_wire_value(param, &construct, ctx, renames, rewrites)? {
-        return Ok(Some((wired, false)));
+        return Ok(Some(WireValue {
+            text: wired,
+            fails: false,
+            json: place_measure
+                .unwrap_or_else(|| unbounded_value(written, "names no place a type bounds")),
+        }));
     }
     // Typed as it is lowered ([`Rewrites::as_lowered`]).
+    let lowered = rewrites.as_lowered(written);
     let ty = crate::forge::expr::judge_into(
-        &rewrites.as_lowered(written),
+        &lowered,
         ctx,
         crate::forge::expr::Expected::Hint(InferredType::Unknown),
     )
@@ -20128,7 +20450,17 @@ fn lower_wire_value(
         } else {
             rewrites.note(written, param.spelling, &value.text);
         }
-        return Ok(Some((wired, value.can_fail)));
+        return Ok(Some(WireValue {
+            text: wired,
+            fails: value.can_fail,
+            json: place_measure.unwrap_or_else(|| {
+                unbounded_value(
+                    written,
+                    "is an optional value an expression computes, whose JSON no place's type \
+                     bounds",
+                )
+            }),
+        }));
     }
     if let Some(alias) = crate::forge::static_enum::value_enum(written, ctx, &reading)
         .map_err(|r| refused(r.error.to_string()))?
@@ -20140,10 +20472,11 @@ fn lower_wire_value(
             refused("a value of an enum has no wire spelling here yet".to_string())
         })?;
         rewrites.note(written, param.spelling, &value.text);
-        return Ok(Some((
-            target.wire_value(InferredType::Str, &name),
-            value.can_fail,
-        )));
+        return Ok(Some(WireValue {
+            text: target.wire_value(InferredType::Str, &name),
+            fails: value.can_fail,
+            json: place_measure.unwrap_or_else(|| enum_json(&alias, ctx, written)),
+        }));
     }
     let slot = ty
         .wire_param_slot()
@@ -20179,7 +20512,12 @@ fn lower_wire_value(
     } else {
         rewrites.note(written, param.spelling, &value.text);
     }
-    Ok(Some((wired, value.can_fail)))
+    Ok(Some(WireValue {
+        text: wired,
+        fails: value.can_fail,
+        json: place_measure
+            .unwrap_or_else(|| scalar_json(slot, &lowered, ctx, &rewrites.type_scope)),
+    }))
 }
 
 /// The value a `<param>` carries where it names a place that holds a composed
@@ -20258,19 +20596,23 @@ fn composed_wire_value(
 }
 
 /// Lower the value of a `<param>` of a `<send>` or of a host-run `<invoke>`, in
-/// place: `Param::native_value`, and whether it can fail.
+/// place: `Param::native_value`, and whether it can fail. Answers the most
+/// bytes of the JSON the value is written as ([`WireValue::json`]).
 fn lower_wire_param(
     param: &mut crate::model::Param,
     ctx: &crate::forge::types::TypeCtx<'_>,
     renames: &HashMap<&str, &str>,
     rewrites: &Rewrites<'_>,
-) -> Result<(), GenerateError> {
+) -> Result<TextBound, GenerateError> {
     let view = crate::forge::static_datamodel::WireParam::of_param(param);
-    if let Some((value, fails)) = lower_wire_value(&view, ctx, renames, rewrites)? {
-        param.native_value = value;
-        param.native_fails = fails;
-    }
-    Ok(())
+    Ok(match lower_wire_value(&view, ctx, renames, rewrites)? {
+        Some(value) => {
+            param.native_value = value.text;
+            param.native_fails = value.fails;
+            value.json
+        }
+        None => literal_json(param.is_static_literal, &param.static_value),
+    })
 }
 
 /// Lower the `srcexpr` and the `<content expr>` of an `<invoke>` a host runs, in
@@ -20400,21 +20742,30 @@ fn lower_mesh_request(
 
 /// Lower the value of each `<param>` of a `<final>`'s `<donedata>`, in place:
 /// `DoneDataParam::native_value`, and whether it can fail. The value is read
-/// when the `<final>` is entered, where no event's payload is in scope.
+/// when the `<final>` is entered, where no event's payload is in scope. Answers
+/// each param's name with the most bytes of the JSON its value is written as
+/// ([`WireValue::json`]); a param with no expression is left out with an error,
+/// and writes nothing.
 fn lower_done_params(
     params: &mut [crate::model::DoneDataParam],
     ctx: &crate::forge::types::TypeCtx<'_>,
     renames: &HashMap<&str, &str>,
     rewrites: &Rewrites<'_>,
-) -> Result<(), GenerateError> {
+) -> Result<Vec<(String, TextBound)>, GenerateError> {
+    let mut measured = Vec::with_capacity(params.len());
     for param in params {
         let view = crate::forge::static_datamodel::WireParam::of_done_param(param);
-        if let Some((value, fails)) = lower_wire_value(&view, ctx, renames, rewrites)? {
-            param.native_value = value;
-            param.native_fails = fails;
-        }
+        let json = match lower_wire_value(&view, ctx, renames, rewrites)? {
+            Some(value) => {
+                param.native_value = value.text;
+                param.native_fails = value.fails;
+                value.json
+            }
+            None => TextBound::Bounded(0),
+        };
+        measured.push((param.name.clone(), json));
     }
-    Ok(())
+    Ok(measured)
 }
 
 /// Lower what an `<invoke type="scxml">` hands its child (§scxml-6.4.1): each
