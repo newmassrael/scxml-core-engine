@@ -2288,10 +2288,13 @@ GATES: dict[str, dict] = {
                    "the Python backend, the Python templates and the "
                    "generator.",
         # The shared Lua the engine loads, and the shared tables its readers
-        # ask.
+        # ask. The installer of the repository's Python environment, whose
+        # revision names the interpreter the suite runs on wherever that
+        # environment was built (`sce_gate_python` in scripts/gates/lib.sh).
         "extra": ["backends/python/**", "tools/codegen/templates/**",
                   "sce-build/src/**",
-                  "sce/include/scripting/*.lua", "tests/ecmascript/**"],
+                  "sce/include/scripting/*.lua", "tests/ecmascript/**",
+                  "scripts/install_sce_python.sh"],
         "deps": ["codegen-build"],
         "ci_only": "72s. w3c-tests.yml is unfiltered, so CI runs this arm on "
                    "every push.",

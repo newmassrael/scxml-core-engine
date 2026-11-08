@@ -24,8 +24,11 @@
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-python3 -c 'import yaml, jsonschema' \
-    || sce_gate_fail "authoring core needs PyYAML and jsonschema"
+# On the repository's Python environment where there is one (`sce_gate_python`): the run-driven
+# cases run a statechart under the interpreter that runs the suite (`sys.executable`), through the
+# AOT runtime and its Lua binding, which a distribution's python3-lupa 1.x cannot serve.
+sce_gate_python
+sce_gate_python_requires "authoring core" yaml jsonschema
 
-( cd tools/authoring && PYTHONPATH=. python3 -m unittest discover -s tests -t . ) \
+( cd tools/authoring && PYTHONPATH=. "$SCE_GATE_PYTHON" -m unittest discover -s tests -t . ) \
     || sce_gate_fail "authoring core regression (domain leak, or a refusal that no longer fires)"

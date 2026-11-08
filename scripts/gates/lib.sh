@@ -797,3 +797,76 @@ sce_gate_require_swift() {
         || sce_gate_fail "swift would build the packages with $(swift --version 2>&1 | head -1), and they are verified on $tag (the \`[platform.linux.tools.swift]\` pin of bx.toml). Install Swift $version under ~/.local/share/swift/$version/ with scripts/install_swift_toolchain.sh — another release is a different compiler."
     sce_gate_step "Swift $tag (pinned by bx.toml)"
 }
+
+# ── The Python the Python suites run in ──
+#
+# The AOT runtime imports `lupa.lua54`, which lupa ships from 2.0 on, and a
+# distribution's python3-lupa is older: the build machines carried Ubuntu's
+# 1.14.1 (measured 2026-11-08). Under the system python3 every test that imports
+# the runtime failed at collection, after a precondition that asked only for
+# `import lupa` had passed, so the red blamed the code for a property of the
+# machine.
+#
+# So the suites run on the repository's own environment where there is one:
+# `scripts/install_sce_python.sh` builds it at
+# ~/.local/share/sce-python/<revision>/, and the build machines get it as the
+# `[platform.linux.tools.sce-python]` tool of bx.toml (`bx-provision <alias>
+# --apply`), whose `needed_by` keeps a machine without it from taking these
+# gates. Where it is absent (a developer's machine, a hosted runner that
+# installed its packages with pip) the suites run on `python3`, and the
+# preconditions below decide whether that Python can answer.
+#
+# Sets SCE_GATE_PYTHON. The revision is read from the install script, the one
+# place it is written, as `genmc-queue` reads GENMC_REV from its installer.
+sce_gate_python() {
+    local rev tool
+    rev="$(sed -n 's/^SCE_PYTHON_REV="\([0-9][0-9]*\)"$/\1/p' "$SCE_REPO_ROOT/scripts/install_sce_python.sh")"
+    [ -n "$rev" ] \
+        || sce_gate_fail "no SCE_PYTHON_REV line in scripts/install_sce_python.sh — the gates find the repository's Python environment by that revision"
+    tool="$HOME/.local/share/sce-python/$rev/bin/python"
+    if [ -x "$tool" ]; then
+        SCE_GATE_PYTHON="$tool"
+    else
+        SCE_GATE_PYTHON=python3
+    fi
+    sce_gate_step "the Python suites run on $SCE_GATE_PYTHON ($("$SCE_GATE_PYTHON" --version 2>&1))"
+}
+
+# What to do about a SCE_GATE_PYTHON that cannot answer, said once for every
+# precondition below. The repository's environment is bx's to keep on a build
+# machine and is read-only there, so installing into it is not the remedy.
+sce_gate_python_remedy() {
+    if [ "$SCE_GATE_PYTHON" = python3 ]; then
+        printf '%s' "Build the repository's Python environment with scripts/install_sce_python.sh (a build machine gets it as the sce-python tool of bx.toml: bx-provision <alias> --apply), or install the packages for python3 with pip."
+    else
+        printf '%s' "That is the repository's Python environment, built before what it should hold changed: raise SCE_PYTHON_REV in scripts/install_sce_python.sh and build it again (bx-provision <alias> --apply on a build machine, scripts/install_sce_python.sh anywhere else)."
+    fi
+}
+
+# The modules `$2`... importable by SCE_GATE_PYTHON, or the gate fails naming
+# them; `$1` is what needs them.
+sce_gate_python_requires() {
+    local who="$1" modules
+    shift
+    modules="$(IFS=,; printf '%s' "$*")"
+    modules="${modules//,/, }"
+    "$SCE_GATE_PYTHON" -c "import $modules" 2>/dev/null \
+        || sce_gate_fail "$who needs the Python modules $modules, and $SCE_GATE_PYTHON cannot import them. $(sce_gate_python_remedy)"
+}
+
+# The runtime's Lua binding, at the floor `backends/python/runtime/pyproject.toml`
+# pins and with the Lua 5.4 module the runtime imports. The floor is read, not
+# restated, so the precondition moves with the pin, and an environment built
+# before the floor was raised fails here by name rather than in the tests. `$1`
+# is what needs it.
+sce_gate_python_requires_lupa() {
+    local who="$1" floor have
+    floor="$(sed -n 's/^[[:space:]]*"lupa>=\([0-9][0-9.]*\)".*/\1/p' "$SCE_REPO_ROOT/backends/python/runtime/pyproject.toml" | head -n 1)"
+    [ -n "$floor" ] \
+        || sce_gate_fail "backends/python/runtime/pyproject.toml declares no \"lupa>=<version>\" dependency — the precondition takes lupa's floor from the runtime's own declaration"
+    have="$("$SCE_GATE_PYTHON" -c 'import importlib.metadata, lupa.lua54; print(importlib.metadata.version("lupa"))' 2>/dev/null)" \
+        || sce_gate_fail "$who runs the Python runtime, which needs lupa>=$floor with its Lua 5.4 module (lupa.lua54), and $SCE_GATE_PYTHON cannot import it: a distribution's python3-lupa 1.x has no lupa.lua54. $(sce_gate_python_remedy)"
+    "$SCE_GATE_PYTHON" -c 'import re, sys; key = lambda v: [int(p) for p in re.findall(r"[0-9]+", v)]; sys.exit(0 if key(sys.argv[1]) >= key(sys.argv[2]) else 1)' "$have" "$floor" \
+        || sce_gate_fail "$who runs the Python runtime, which needs lupa>=$floor (backends/python/runtime/pyproject.toml), and $SCE_GATE_PYTHON has lupa $have. $(sce_gate_python_remedy)"
+    sce_gate_step "lupa $have (floor $floor, from backends/python/runtime/pyproject.toml)"
+}

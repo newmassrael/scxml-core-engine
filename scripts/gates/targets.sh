@@ -19,13 +19,16 @@
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-python3 -c 'import yaml, jsonschema' \
-    || sce_gate_fail "targets needs PyYAML and jsonschema"
+# The suite runs on the repository's Python environment where there is one (`sce_gate_python`):
+# `verify` runs a statechart under the interpreter that runs the suite (`sys.executable`), so the
+# runtime's Lua binding has to be that interpreter's.
+sce_gate_python
+sce_gate_python_requires "targets" yaml jsonschema
 
 # `verify` judges a statechart through the Python the generator writes, which runs on `lupa`; the
-# statechart cases would otherwise fail on the import, far from the missing library.
-python3 -c 'import lupa' \
-    || sce_gate_fail "targets needs lupa (pip install lupa): verify runs a statechart through the Python runtime"
+# statechart cases would otherwise fail on the import, far from the missing library. The runtime
+# imports `lupa.lua54` (lupa 2.0 and later), which a distribution's python3-lupa 1.x does not have.
+sce_gate_python_requires_lupa "targets (verify runs a statechart through the Python runtime)"
 
 codegen="${SCE_CODEGEN:-target/debug/sce-codegen}"
 [ -x "$codegen" ] \
@@ -34,5 +37,5 @@ codegen="${SCE_CODEGEN:-target/debug/sce-codegen}"
 command -v g++ >/dev/null 2>&1 || command -v c++ >/dev/null 2>&1 \
     || sce_gate_fail "targets needs a C++ compiler to build the library it judges"
 
-( cd tools/targets && PYTHONPATH=.:../authoring python3 -m unittest discover -s tests -t . ) \
+( cd tools/targets && PYTHONPATH=.:../authoring "$SCE_GATE_PYTHON" -m unittest discover -s tests -t . ) \
     || sce_gate_fail "targets regression (a platform in the interface, or a library that judges unlike verify)"

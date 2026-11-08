@@ -26,8 +26,15 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # change that asked for the check. Python itself is a hard dependency of the
 # runner (`scripts/gate` shells out to python3 for the registry), so only the
 # suite's own packages are worth reporting on.
-python3 -c "import lupa, pytest" 2>/dev/null \
-    || sce_gate_fail "the Python AOT suite needs lupa and pytest (python3 -m pip install lupa pytest)"
+#
+# The suite runs on the repository's Python environment where there is one
+# (`sce_gate_python`). `import lupa` is not the question: the runtime imports
+# `lupa.lua54`, which lupa ships from 2.0 on, and a precondition that asked only
+# for `lupa` passed on a build machine whose python3-lupa 1.14.1 has none, after
+# which every test that imports the runtime failed at collection (2026-11-08).
+sce_gate_python
+sce_gate_python_requires_lupa "the Python AOT suite"
+sce_gate_python_requires "the Python AOT suite" pytest
 
 sce_gate_requires_free_http_port
 
@@ -164,7 +171,7 @@ status=0
 # answers the C++ `IOProcessorHelper` gives (docs/adr/0090, test 6), over no
 # document.
 PYTHONPATH="$SCE_REPO_ROOT/backends/python/runtime${PYTHONPATH:+:$PYTHONPATH}" \
-    python3 -m pytest backends/python/tests/generated/ backends/python/tests/integration/ \
+    "$SCE_GATE_PYTHON" -m pytest backends/python/tests/generated/ backends/python/tests/integration/ \
         backends/python/tests/ecmascript/ backends/python/tests/configuration_entry/ \
         backends/python/tests/microstep/ backends/python/tests/json_text/ \
         backends/python/tests/durations/ backends/python/tests/mesh/ \
@@ -207,7 +214,7 @@ sce_gate_on_exit "rm -rf '$SUITE'"
     || sce_gate_fail "emitting a standalone Python suite"
 
 suite_status=0
-( cd "$SUITE/backends/python/tests" && env -u PYTHONPATH python3 -m pytest . --no-header -v ) \
+( cd "$SUITE/backends/python/tests" && env -u PYTHONPATH "$SCE_GATE_PYTHON" -m pytest . --no-header -v ) \
     >"$LOG/pytest-suite.log" 2>&1 || suite_status=$?
 if (( suite_status != 0 )); then
     cat "$LOG/pytest-suite.log" >&2
