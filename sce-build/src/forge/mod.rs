@@ -10,6 +10,7 @@ pub mod ast_export;
 pub mod bit_layout;
 pub mod bound_spelling;
 pub mod buffer_pool_fsm;
+pub mod c11_reasons;
 pub mod c11_scratch;
 pub mod cbor_codec;
 pub mod codec_failure;

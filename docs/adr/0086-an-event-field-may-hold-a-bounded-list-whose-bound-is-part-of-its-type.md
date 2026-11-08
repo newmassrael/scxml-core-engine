@@ -854,6 +854,18 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
    own (a refusal of the payload reader) takes the sentence from a row of the same table, which a test holds
    equal to the runtime's text.
 
+   *As landed (the first part of (b)).* `REASONS` holds every reason a C11 template writes at a raise site, the
+   sentence a `sce-static` lowering writes for a failure of its own (row `lowering`, which carries that
+   cross-backend sentence whole) and a native action's missing payload. The book is the thread's for one
+   machine's generation (`c11_reasons::scope`), as the deployment's limits are, because the lowerings reach a
+   reason through `'static` targets shared by every document. The machine's source is rendered before its
+   header, `seal` answers the longest reason, and `<SM>_DATA_LEN_DECLARED` is one more than the largest of the
+   schemas' `DATA_MAX_LEN` and that length; a reason emitted after `seal` refuses the render. A sentence a
+   lowering builds eagerly is measured even where the C11 spelling drops it, which over-approximates and never
+   under-sizes. The reasons composed with a value of the run (a lift's refusal, a request field's refusal, a
+   deadline the host cannot read) and a host's own refusal text are still held by the floor: what they quote is
+   bounded by (c) and (a).
+
    **(c) Bounds for text expressions.** A text-valued expression carries a bound in type inference:
    `InferredType::Str` gains its bound. The bound comes from a typed place (a variable or field of
    `string[B]`), a literal's length, or a composition (a concatenation is the sum of its parts' bounds, a

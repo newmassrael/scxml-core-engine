@@ -66,8 +66,8 @@ PY
 # names — the orphan's send waits instead of failing.
 mutation_case "C11 schedules a #_parent send from a session nothing invoked" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     "                            if (sm->parent_sm == NULL) {\n                                {{ P }}_raise_platform_error_with_send_id(\n                                    sm, {{ PU }}_EVENT_ERROR_COMMUNICATION,\n                                    \"<send> targetexpr names #_parent, and nothing invoked this session\",",
-     "                            if (false) {\n                                {{ P }}_raise_platform_error_with_send_id(\n                                    sm, {{ PU }}_EVENT_ERROR_COMMUNICATION,\n                                    \"<send> targetexpr names #_parent, and nothing invoked this session\",")
+     "                            if (sm->parent_sm == NULL) {\n                                {{ P }}_raise_platform_error_with_send_id(\n                                    sm, {{ PU }}_EVENT_ERROR_COMMUNICATION,\n                                    {{ reason(\"send_targetexpr_parent_absent\") }},",
+     "                            if (false) {\n                                {{ P }}_raise_platform_error_with_send_id(\n                                    sm, {{ PU }}_EVENT_ERROR_COMMUNICATION,\n                                    {{ reason(\"send_targetexpr_parent_absent\") }},")
 PY
 
 # ── C11: an invocation target is reported unreachable ──────────────

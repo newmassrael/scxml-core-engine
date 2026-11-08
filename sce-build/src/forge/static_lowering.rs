@@ -15103,11 +15103,15 @@ impl StaticTarget for CTarget {
     }
     // `machine` is the symbol every name of the machine starts with, prefix
     // included, which the generator hands the walk for it.
+    // docs/adr/0086, section 8.6 (b): the sentence reaches the machine through
+    // the table of its reasons, which measures it for the slot.
     fn raise_execution_error(&self, machine: &str, message: &str) -> String {
         format!(
-            "{machine}_raise_platform_error(sm, {}_EVENT_ERROR_EXECUTION, \"{}\");",
+            "{machine}_raise_platform_error(sm, {}_EVENT_ERROR_EXECUTION, {});",
             machine.to_uppercase(),
-            filters::escape_c(message.to_string())
+            crate::forge::c11_reasons::LOWERING
+                .literal(&[message])
+                .expect("a lowering emits its reasons before the machine's slot is computed")
         )
     }
     // The runtime's checked helpers record a failure in `sce_failure_` and
