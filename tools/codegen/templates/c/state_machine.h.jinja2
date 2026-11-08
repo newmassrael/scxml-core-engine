@@ -422,10 +422,17 @@ const sce_answer_schema_t *{{ csym_prefix }}{{ model.name }}_answer_schemas(void
    to #_parent and its done data, is published below for the parent's slot:
    {{ data_slot.to_parent }} bytes; and the slot holds what each child it invokes
    publishes.
-   An input no declaration sizes yet is held to SCE_MAX_DATA_LEN, which the slot
-   is never smaller than: the data a host hands an event by name, a host's reply
-   and the data a child's script engine computes{% if model.needs_script_engine %}, and
-   every value the script engine computes, which no type bounds{% endif %}. */
+{% if data_slot.untyped %}
+   The data of an event no schema of the document declares, which a host hands
+   the machine by name, as a host-served send's reply or as the end of a
+   host-run invocation that declares no result, is bounded by what the host ABI
+   declares for it, SCE_UNTYPED_EVENT_DATA_MAX_LEN, which the source checks; it
+   is an input too: {{ data_slot.untyped }} bytes.
+{% endif %}
+   SCE_MAX_DATA_LEN, which the slot is never smaller than, still holds what no
+   declaration sizes yet: the text of a delivery longer than its schema's
+   largest payload{% if model.needs_script_engine %}, and each buffer of event data
+   this machine, whose data model is a script engine, does not grow in its heap{% endif %}. */
 #define {{ data_slot.name }}_DECLARED {{ data_slot.declared }}u
 #define {{ data_slot.name }}_TO_PARENT {{ data_slot.to_parent }}u
 /* The bytes, its NUL included, of the longest reason the machine raises: what

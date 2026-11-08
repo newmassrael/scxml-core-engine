@@ -6592,14 +6592,23 @@ pub struct C11DataSlot {
     /// `#_parent` and its done data, which its header publishes for a parent's
     /// slot to hold (`<SM>_DATA_LEN_TO_PARENT`, docs/adr/0086, section 8.6 (c)).
     pub to_parent: u64,
+    /// The most bytes of the data an event carries into the machine when its
+    /// document declares no schema for the event, which the host ABI bounds
+    /// (`SCE_UNTYPED_EVENT_DATA_MAX_LEN`, docs/adr/0086, section 8.6 (c)): an
+    /// event a host hands it by name, a host-served send's reply, the end of
+    /// a host-run invocation that declares no result. An input of a machine
+    /// with no script engine, which holds every event's data in its slot;
+    /// zero for one with an engine, which grows each in its heap.
+    pub untyped: u64,
     /// The bounds the reason a host-run invocation's unreadable deadline quotes
     /// its three texts at: the invocation's type, its id and the deadline's
     /// text (docs/adr/0086, section 8.6 (c)); empty for a machine whose
     /// invocations carry no deadline.
     pub deadline_quotes: Vec<u64>,
     /// One more than the largest of [`Self::inputs`]' `data_max_len`,
-    /// [`Self::reasons`] and [`Self::sent`], for the NUL a slot holds a text
-    /// with; 1 for a machine with none, whose slot holds the empty text.
+    /// [`Self::reasons`], [`Self::sent`] and [`Self::untyped`], for the NUL a
+    /// slot holds a text with; 1 for a machine with none, whose slot holds the
+    /// empty text.
     pub declared: u64,
     /// The rows of slots the machine's scratch holds for the pairs one element
     /// hands a host (docs/adr/0086, section 8.5 (d)): the most `<param>`s and
@@ -6643,6 +6652,7 @@ impl C11DataSlot {
             .iter()
             .map(|input| input.data_max_len)
             .chain([self.reasons, self.sent])
+            .chain([self.untyped])
             .max()
             .unwrap_or(0);
         self.declared = largest.saturating_add(1);
@@ -6710,12 +6720,22 @@ pub fn c11_data_slot(
         host_sends: !model.host_processor_types.is_empty(),
         script_engine: model.needs_script_engine,
     };
+    // docs/adr/0086, section 8.6 (c): every machine has the doors a host hands
+    // an event by name through, and a machine with no script engine holds what
+    // they carry in its slot. What no schema of the document declares is
+    // bounded by the host ABI, a declaration the machine checks.
+    let untyped = if model.needs_script_engine {
+        0
+    } else {
+        crate::forge::c11_reasons::UNTYPED_EVENT_DATA.max_len
+    };
     let mut slot = C11DataSlot {
         name: c11_data_len(csym_prefix, &model.name),
         inputs,
         reasons: 0,
         sent: 0,
         to_parent: 0,
+        untyped,
         deadline_quotes: Vec::new(),
         declared: 1,
         pairs: c11_scratch_pairs(model),

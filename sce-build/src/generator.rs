@@ -4127,6 +4127,13 @@ fn render_c11(
     // takes, computed from the schemas of the events it receives, which every
     // place of the machine that holds an event's data is declared at.
     let mut data_slot = crate::forge::generator::c11_data_slot(model, &csym_prefix)?;
+    // docs/adr/0086, section 8.6 (c): a slot that holds the data a host hands
+    // an event no schema declares is sized by the bound the host ABI declares
+    // for it, which the machine checks against the header it compiles with.
+    if data_slot.untyped > 0 {
+        crate::forge::c11_reasons::hold_bound(crate::forge::c11_reasons::UNTYPED_EVENT_DATA)
+            .map_err(|e| GenerateError::TemplateRender(e.to_string()))?;
+    }
     // docs/adr/0086, section 8.6 (c): the data the machine's sends and its done
     // data write is an input of the slot, and the share it hands its parent is
     // what its header publishes for a parent's slot; a `sce-static` machine's is

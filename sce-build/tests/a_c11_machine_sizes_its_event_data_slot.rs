@@ -311,32 +311,112 @@ fn longest_reason(header: &str) -> u64 {
         .unwrap_or_else(|_| panic!("`{bytes}` is a number of bytes:\n{header}"))
 }
 
+/// docs/adr/0086, section 8.6 (c): a host may hand any machine an event by
+/// name, and the data of one its document declares no schema for is bounded
+/// by the host ABI, `SCE_UNTYPED_EVENT_DATA_MAX_LEN`, 255 bytes. A machine with
+/// no script engine holds that data in its slot and checks the bound against
+/// the header it compiles with; a machine whose reasons are all shorter has a
+/// slot of 255 bytes and a NUL. One with a script engine grows such data in
+/// its heap, and relies on no such bound.
 #[test]
-fn a_machine_that_receives_no_schema_declares_a_slot_of_its_longest_reason() {
+fn a_static_machine_holds_the_untyped_data_the_host_abi_declares() {
     let doc = machine(
         &[],
         r#"    <transition event="poke"><assign location="seen" expr="1"/></transition>"#,
     );
-    let header = header(&doc, &[], None);
+    let (header, source) = generated(&doc, &[], &[]);
     let reasons = longest_reason(&header);
     assert!(
-        header.contains(&format!("#define PROBE_DATA_LEN_DECLARED {}u", reasons + 1)),
-        "with no schema the slot holds the longest reason and a NUL:\n{header}"
+        reasons < 255,
+        "every reason this machine raises is shorter than the untyped bound, not \
+         {reasons} bytes:\n{header}"
+    );
+    assert!(
+        header.contains("#define PROBE_DATA_LEN_DECLARED 256u"),
+        "with no schema the slot holds the 255 bytes of untyped data and a NUL:\n{header}"
+    );
+    assert!(
+        header.contains("SCE_UNTYPED_EVENT_DATA_MAX_LEN, which the source checks; it\n   is an input too: 255 bytes."),
+        "the header names the untyped data as an input:\n{header}"
     );
     assert!(
         header.contains("(docs/adr/0086, section 2.2); it receives none."),
         "the header says it receives no schema's event:\n{header}"
     );
+    assert!(
+        source.contains(
+            "SCE_STATIC_ASSERT((size_t)(SCE_UNTYPED_EVENT_DATA_MAX_LEN) <= (size_t)255u,"
+        ),
+        "the machine checks the bound its slot was sized by:\n{source}"
+    );
+    let hosts = [
+        "--host-processor",
+        "x-sce-host",
+        "--host-invoker",
+        "x-app-host",
+    ];
+    let (scripted_header, scripted_source) = generated(SCRIPTED, &[], &hosts);
+    for (file, text) in [("header", &scripted_header), ("source", &scripted_source)] {
+        assert!(
+            !text.contains("SCE_UNTYPED_EVENT_DATA_MAX_LEN"),
+            "a script machine's {file} relies on no untyped bound:\n{text}"
+        );
+    }
+}
+
+/// docs/adr/0086, section 8.6 (c): the end of a host-run invocation that
+/// declares no result carries data no schema of the document declares, which
+/// the host ABI bounds as it bounds an event a host hands by name. A machine
+/// with no script engine holds it in its slot, checks the bound, and refuses
+/// whole, at its completion door, data past the slot; an invocation that
+/// declares its result is held at its schema's largest payload instead
+/// (`a_host_run_result_is_an_input_of_the_slot_though_no_transition_names_its_event`).
+#[test]
+fn an_untyped_host_run_ending_is_held_to_the_bound_the_host_abi_declares() {
+    let doc = machine(
+        &[],
+        r#"    <invoke type="x-app-host" id="ask"/>
+    <transition event="done.invoke.ask"><assign location="seen" expr="1"/></transition>
+    <transition event="error.invoke.ask"><assign location="seen" expr="2"/></transition>"#,
+    );
+    let (header, source) = generated(&doc, &[], &["--host-invoker", "x-app-host"]);
+    assert!(
+        header.contains("as the end of a\n   host-run invocation that declares no result"),
+        "the header names an untyped ending as held to the host ABI's bound:\n{header}"
+    );
+    assert!(
+        !header.contains("which a host-run invocation completes with"),
+        "an invocation that declares no result is no schema's input:\n{header}"
+    );
+    assert!(
+        source.contains(
+            "SCE_STATIC_ASSERT((size_t)(SCE_UNTYPED_EVENT_DATA_MAX_LEN) <= (size_t)255u,"
+        ),
+        "the machine checks the bound its slot was sized by:\n{source}"
+    );
+    assert!(
+        source.contains("if (data != NULL && strlen(data) >= sizeof(sm->current_external.data)) {\n        refuse_event_data(sm, NULL);\n        return false;\n    }"),
+        "an ending whose data is past the slot is refused whole at the door:\n{source}"
+    );
+    let longest = longest_reason(&header);
+    assert!(
+        header.contains(&format!(
+            "#define PROBE_DATA_LEN_DECLARED {}u",
+            longest.max(255) + 1
+        )),
+        "the slot holds the untyped data, and the host's refusal, with a NUL:\n{header}"
+    );
 }
 
 /// docs/adr/0086, section 8.6 (b): every reason a C11 machine raises comes
 /// from one table, each filled with the document's own text, and the longest
-/// is an input of the slot. A list named by 100 bytes makes the reason of an
+/// is an input of the slot. A list named by 200 bytes makes the reason of an
 /// append to it when it is full the longest the machine raises, past every
-/// reason of the table such a machine raises that holds no hole.
+/// reason of the table such a machine raises that holds no hole, and past the
+/// 255 bytes of untyped data the slot holds besides (section 8.6 (c)).
 #[test]
 fn the_longest_reason_a_machine_raises_is_an_input_of_its_slot() {
-    let list = format!("v{}", "x".repeat(99));
+    let list = format!("v{}", "x".repeat(199));
     let doc = format!(
         r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
