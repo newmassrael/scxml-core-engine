@@ -305,9 +305,19 @@ TEST_F(EventSystemTest, W3C_EventModificationErrorHandling) {
     EXPECT_TRUE(assignResult.find("error:") == 0 || assignResult.find("Cannot") != std::string::npos)
         << "Direct assignment to _event should fail (W3C SCXML requires immutable object), got: " << assignResult;
 
-    // Test that delete operations on _event properties fail
-    auto deleteResult = engine_->executeScript(sessionId_, "delete _event.name; _event.hasOwnProperty('name')").get();
+    // Test that delete operations on _event properties fail. The engine refuses a
+    // deletion with error.execution, which the script sees as a thrown error
+    // (§scxml-5.10), so the attempt is caught in the script and the property is read
+    // afterwards.
+    auto deleteResult =
+        engine_->executeScript(sessionId_, "try { delete _event.name; 'deleted'; } catch(e) { 'error: ' + e.message; }")
+            .get();
     ASSERT_TRUE(deleteResult.isSuccess()) << "Failed to execute delete operation test";
-    EXPECT_TRUE(deleteResult.getValue<bool>())
+    std::string deletion = deleteResult.getValue<std::string>();
+    EXPECT_EQ(deletion.find("error:"), 0u)
+        << "Deleting _event.name should fail (W3C SCXML requires immutable properties), got: " << deletion;
+    auto stillThere = engine_->evaluateExpression(sessionId_, "_event.hasOwnProperty('name')").get();
+    ASSERT_TRUE(stillThere.isSuccess()) << "Failed to read _event after the delete attempt";
+    EXPECT_TRUE(stillThere.getValue<bool>())
         << "_event.name property should still exist after delete attempt (W3C SCXML requires immutable properties)";
 }
