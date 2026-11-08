@@ -380,8 +380,9 @@ fn a_component_whose_template_reaches_a_union_is_refused_on_cpp() {
 /// name, until the profile's runtime lands there; Rust's is held by
 /// `a_test_component_is_generated_in_rust.rs`, Kotlin's by
 /// `a_test_component_is_generated_in_kotlin.rs`, Go's by
-/// `a_test_component_is_generated_in_go.rs` and Python's by
-/// `a_test_component_is_generated_in_python.rs`.
+/// `a_test_component_is_generated_in_go.rs`, Python's by
+/// `a_test_component_is_generated_in_python.rs` and C11's by
+/// `a_test_component_is_generated_in_c11.rs`.
 #[test]
 fn every_other_backend_refuses_a_test_component_by_name() {
     let path = runtime_dir().join("asker.scxml");
