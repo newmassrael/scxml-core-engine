@@ -442,6 +442,20 @@ fn field_kind(ty: &SceType, variants: &[&str]) -> Option<String> {
     })
 }
 
+/// [`field_kind`] of a field of an event schema whose present value is of `ty`
+/// and whose bound, for a text or a byte string, is `max`: the text and the byte
+/// string written with their bound (`{string: 8}`, `{bytes: 4}`), which the
+/// library holds wherever the field is read, the top level of a payload included
+/// (docs/adr/0086, section 4.4). A text or byte string with no bound, which no
+/// event schema declares, is named by its type alone.
+fn bounded_field_kind(ty: &SceType, max: Option<u32>, variants: &[&str]) -> Option<String> {
+    Some(match (ty, max) {
+        (SceType::String, Some(bound)) => format!("{{string: {bound}}}"),
+        (SceType::Bytes, Some(bound)) => format!("{{bytes: {bound}}}"),
+        (ty, _) => field_kind(ty, variants)?,
+    })
+}
+
 /// The name the function handed to the library's `mapPresent` binds a present
 /// value to. What the function spells reads only that name and the library,
 /// so no variable of the document it would shadow is read there.
@@ -543,9 +557,23 @@ impl StaticTarget for JsTarget {
     ) -> Option<String> {
         // An optional field is read by `payload_optional_read`, its default
         // included (docs/adr/0055), so the field here holds a present value.
-        let kind = field_kind(field.sce_type.present_type(), variants)?;
+        let kind = bounded_field_kind(field.sce_type.present_type(), field.max_size, variants)?;
         Some(format!(
             "{RUNTIME_GLOBAL}.field({accessor}, '{}', {kind}, {default})",
+            field.id
+        ))
+    }
+    // The payload is read where an expression reads a field of it, so a text or
+    // a byte string is held to its bound there, by the library's `field` with the
+    // type written with its bound (docs/adr/0086, section 4.4).
+    fn payload_bounded_read(&self, accessor: &str, field: &EntryField) -> Option<String> {
+        let ty = field.sce_type.scalar()?;
+        if !matches!(ty, SceType::String | SceType::Bytes) {
+            return None;
+        }
+        let kind = bounded_field_kind(ty, Some(field.max_size?), &[])?;
+        Some(format!(
+            "{RUNTIME_GLOBAL}.field({accessor}, '{}', {kind})",
             field.id
         ))
     }
@@ -562,7 +590,7 @@ impl StaticTarget for JsTarget {
         field: &EntryField,
         variants: &[&str],
     ) -> Option<String> {
-        let kind = field_kind(field.sce_type.optional_elem()?, variants)?;
+        let kind = bounded_field_kind(field.sce_type.optional_elem()?, field.max_size, variants)?;
         let default = field
             .since
             .and_then(|_| crate::forge::schema_revision::default_wire(field))
@@ -2980,6 +3008,24 @@ mod tests {
                 .as_deref(),
             Some("SceStatic.field(_event.data, 'title', {optional: 'string'})")
         );
+        // A present text is held to the bound its type declares wherever it is
+        // read (docs/adr/0086, section 4.4), and so is a byte string.
+        let mut bounded = field("title", SceType::String);
+        bounded.max_size = Some(16);
+        assert_eq!(
+            target
+                .payload_optional_read("_event.data", &bounded, &[])
+                .as_deref(),
+            Some("SceStatic.field(_event.data, 'title', {optional: {string: 16}})")
+        );
+        let mut blob = field("blob", SceType::Bytes);
+        blob.max_size = Some(4);
+        assert_eq!(
+            target
+                .payload_optional_read("_event.data", &blob, &[])
+                .as_deref(),
+            Some("SceStatic.field(_event.data, 'blob', {optional: {bytes: 4}})")
+        );
         let status = SceType::from_attr("enum:Status").expect("an enum type");
         assert_eq!(
             target
@@ -3010,6 +3056,56 @@ mod tests {
         assert_eq!(
             target.payload_optional_read("_event.data", &plain, &[]),
             None
+        );
+    }
+
+    /// A payload's text and byte-string fields are read through the library's
+    /// `field` with the bound their type declares, so a value past it is refused
+    /// wherever an expression reads it, the top level of a payload included
+    /// (docs/adr/0086, section 4.4); a number has no bound to hold, and is read
+    /// as the expression lowering reads it.
+    #[test]
+    fn a_payload_text_or_byte_string_is_read_held_to_its_bound() {
+        let target = JsTarget::new(BTreeMap::new());
+        let field = |id: &str, ty: SceType, max_size: Option<u32>| EntryField {
+            id: id.to_string(),
+            sce_type: crate::forge::model::EntryType::Scalar(ty),
+            direction: crate::forge::model::Direction::In,
+            expr: None,
+            expr_spelling: None,
+            expr_splices: None,
+            quantity: None,
+            max_size,
+            limit: None,
+            default_covers: Vec::new(),
+            retain: None,
+            initial: None,
+            initial_spelling: None,
+            since: None,
+            optional_since: None,
+            default: None,
+            default_spelling: None,
+        };
+        assert_eq!(
+            target
+                .payload_bounded_read("_event.data", &field("label", SceType::String, Some(8)))
+                .as_deref(),
+            Some("SceStatic.field(_event.data, 'label', {string: 8})")
+        );
+        assert_eq!(
+            target
+                .payload_bounded_read("_event.data", &field("frame", SceType::Bytes, Some(8)))
+                .as_deref(),
+            Some("SceStatic.field(_event.data, 'frame', {bytes: 8})")
+        );
+        assert_eq!(
+            target.payload_bounded_read("_event.data", &field("sensor", SceType::Uint8, None)),
+            None
+        );
+        assert_eq!(
+            target.payload_bounded_read("_event.data", &field("label", SceType::String, None)),
+            None,
+            "a text with no bound has none to hold"
         );
     }
 }
