@@ -1,0 +1,119 @@
+# Mutation cases for "an algorithm builds any number of working lists beside the
+# buffer it returns, each held to its own bound, and walks them" (SCE_FORGE.md
+# §4.12, byte-buffer-build v2).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/an_algorithm_builds_working_lists_beside_its_output.cases`.
+#
+# The parser judges the buffers against the signature and the statements that
+# read them, for every backend alike; the generator holds the output in the
+# caller's destination on Rust and C11 and every working list in the body's own
+# storage, and walks a buffer as it walks a list parameter. The judges are
+# `every_standard_algorithm_generates_on_every_algorithm_backend` (every standard
+# algorithm, `sce:std/mesh/causal_cut` among them, on every backend the matrix
+# names), `an_algorithm_builds_working_lists_beside_its_output` (three buffers of
+# three bounds, on every such backend), `a_swift_algorithm_builds_a_list` (the
+# causal cut on Swift) and `an_algorithm_rule_is_refused_at_the_attribute_that_breaks_it`
+# (a loop that appends to the buffer it walks, a return of a working list). The
+# mutants take one decision away each:
+#
+#   a second buffer is refused, as v1 refused it;
+#   a loop that appends to the buffer it walks is let through;
+#   a return of a working list is let through;
+#   every buffer is the caller's destination on Rust and C11;
+#   a loop over a list buffer of numbers is refused as not iterable;
+#   C11 walks a buffer through a view's `data`;
+#   a list buffer of records is no name an expression reads;
+#   the item of a loop over a buffer is typed as a byte;
+#   Kotlin walks a list buffer of numbers as if it were iterable;
+#   a Rust working list is given another bound than its own;
+#   a C11 working list is given another bound than its own.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --features cli --test every_standard_algorithm_generates_on_every_algorithm_backend --test an_algorithm_builds_working_lists_beside_its_output --test a_swift_algorithm_builds_a_list --test an_algorithm_rule_is_refused_at_the_attribute_that_breaks_it
+mutation_targets sce-build/src/forge/parser.rs sce-build/src/forge/generator.rs
+mutation_oracles sce-build/tests/every_standard_algorithm_generates_on_every_algorithm_backend.rs sce-build/tests/an_algorithm_builds_working_lists_beside_its_output.rs sce-build/tests/a_swift_algorithm_builds_a_list.rs sce-build/tests/an_algorithm_rule_is_refused_at_the_attribute_that_breaks_it.rs
+
+# v1's rule: any buffer beside the output is refused. The causal cut is then
+# refused on every backend, as it was before v2.
+mutation_case "a second buffer is refused, as v1 refused it" <<'PY'
+edit("sce-build/src/forge/parser.rs",
+     "        .find(|b| b.name != buffer.name && b.ty.list_elem().is_none())\n",
+     "        .find(|b| b.name != buffer.name)\n")
+PY
+
+# A loop that appends to the buffer it walks moves the end it walks to.
+mutation_case "a loop that appends to the buffer it walks is let through" <<'PY'
+edit("sce-build/src/forge/parser.rs",
+     ".find(|(walked, _)| *walked == target)",
+     ".find(|(walked, _)| *walked == target && false)")
+PY
+
+# Rust and C11 write the output into the caller's destination: a body that
+# returned another buffer would have two.
+mutation_case "a return of a working list is let through" <<'PY'
+edit("sce-build/src/forge/parser.rs",
+     "                if name != output && buffers.contains(&name) {\n",
+     "                if name == \"\" && buffers.contains(&name) {\n")
+PY
+
+# A working list is held in the destination: Rust empties a parameter the
+# function does not have, and the list is declared nowhere.
+mutation_case "every buffer is the caller's destination on Rust and C11" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     "        self.output && matches!(lang, Language::Rust | Language::C11)\n",
+     "        matches!(lang, Language::Rust | Language::C11)\n")
+PY
+
+# A list buffer of numbers is no foreach source, as it was before v2.
+mutation_case "a loop over a list buffer of numbers is refused as not iterable" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     "                    InferredType::List(elem) | InferredType::ListBuffer(elem) => {\n",
+     "                    InferredType::List(elem) => {\n")
+PY
+
+# A buffer holds its elements in `items`; a view in `data`.
+mutation_case "C11 walks a buffer through a view's data" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     "                    Language::C11 if walked_buffer.is_some() => format!(\n",
+     "                    Language::C11 if false && walked_buffer.is_some() => format!(\n")
+PY
+
+# `len(holders)` of the causal cut reads an unknown name.
+mutation_case "a list buffer of records is no name an expression reads" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     "        for (name, elem) in &self.record_list_buffers {\n",
+     "        for (name, elem) in self.record_list_buffers.iter().take(0) {\n")
+PY
+
+# An item over a buffer falls through to the byte a `bytes` parameter's item is,
+# and a record item is registered as none.
+mutation_case "the item of a loop over a buffer is typed as a byte" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     ".or_else(|| buffer_elems.get(source.trim()).copied());",
+     ".or_else(|| buffer_elems.get(\"\").copied());")
+PY
+
+# A `SceListBuf` has no iterator: the loop reads each slot through the element's
+# reader.
+mutation_case "Kotlin walks a list buffer of numbers as if it were iterable" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     "                    (Language::Kotlin, Some(_), InferredType::ListBuffer(elem))\n",
+     "                    (Language::Swift, Some(_), InferredType::ListBuffer(elem))\n")
+PY
+
+# The working list's type carries its bound: one past it is another list.
+mutation_case "a Rust working list is given another bound than its own" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     "                self.rust_working(cap)\n",
+     "                self.rust_working(cap + 1)\n")
+PY
+
+# The working list's array is its bound.
+mutation_case "a C11 working list is given another bound than its own" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     "{t} items[{cap}];",
+     "{t} items[64];")
+PY
