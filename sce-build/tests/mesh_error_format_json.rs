@@ -529,10 +529,11 @@ topology:
 
 #[test]
 fn a_backend_whose_core_has_no_causal_route_refuses_a_causal_binding_by_name() {
-    // docs/adr/0085, section 3.2: until its core lands the causal route, a
+    // docs/adr/0085, section 3.2: until its core routes the causal binding, a
     // language refuses `delivery: causal` at build time rather than building
-    // the binding as a plain route.
-    for language in ["kotlin", "swift", "cpp"] {
+    // the binding as a plain route. Rust holds the layer and its router does
+    // not route to it yet, so it refuses too.
+    for language in ["rust", "kotlin", "swift", "cpp"] {
         let dir = ScratchDir::new(&format!("mesh-causal-refused-{language}"));
         let scxml = dir.write("client.scxml", CLIENT_SCXML);
         dir.write("server.scxml", SERVER_SCXML);
@@ -553,7 +554,7 @@ fn a_backend_whose_core_has_no_causal_route_refuses_a_causal_binding_by_name() {
         let message = rec["message"].as_str().expect("message");
         assert!(
             message.contains(&format!("the {language} Mesh core"))
-                && message.contains("`--lang rust`"),
+                && message.contains("bind the peer without `delivery: causal`"),
             "{language} record: {rec}"
         );
     }

@@ -655,7 +655,7 @@ static dds_qos_t* make_motor_qos() {
 
 ### Mesh-core delivery settings
 
-A few per-binding settings are not the transport's but the Mesh core's, which realises them above any transport: `codec:`, `ordering:` (§10.6) and `receipt:` (§10.11). They sit on the binding beside `transport:`, not under `qos:`, and they are deployment choices for the same reason transport QoS is. `receipt:` chooses between the receipt a transport reports, with a loss across a restore reported as `error.communication` (the default), and durable receipt, where nothing the receiver was sent is lost across a crash; deadline-bound and loss-tolerant traffic keeps the first, traffic with no recovery of its own takes the second (ADR 0045; not parsed yet, §10.11 "Status"). `delivery: causal` makes a binding a causal broadcast group that names its group and initial view under `group:`: each envelope carries its author's dot and causal context, the receiver delivers every change once and only after every change it depends on, gaps are repaired by exchanging vectors and never skipped, `ordering:` is refused beside it and the dedup window is not applied to it (§10.12; ADR 0085 sections 3.2 and 3.3). The Rust core carries it; C++, Kotlin and Swift refuse it at build time, by name, until their cores land it.
+A few per-binding settings are not the transport's but the Mesh core's, which realises them above any transport: `codec:`, `ordering:` (§10.6) and `receipt:` (§10.11). They sit on the binding beside `transport:`, not under `qos:`, and they are deployment choices for the same reason transport QoS is. `receipt:` chooses between the receipt a transport reports, with a loss across a restore reported as `error.communication` (the default), and durable receipt, where nothing the receiver was sent is lost across a crash; deadline-bound and loss-tolerant traffic keeps the first, traffic with no recovery of its own takes the second (ADR 0045; not parsed yet, §10.11 "Status"). `delivery: causal` makes a binding a causal broadcast group that names its group and initial view under `group:`: each envelope carries its author's dot and causal context, the receiver delivers every change once and only after every change it depends on, gaps are repaired by exchanging vectors and never skipped, `ordering:` is refused beside it and the dedup window is not applied to it (§10.12; ADR 0085 sections 3.2 and 3.3). The Rust core holds the delivery layer; until a backend's router routes the binding through its core's layer, that backend refuses the setting at build time, by name, and today every backend does.
 
 ### Build-Time Validation
 
@@ -2272,7 +2272,7 @@ Both exist because the domains this specification serves need both: deadline-bou
 
 ### 10.12 Causal delivery
 
-**Status: the Rust core carries it** (`backends/rust/mesh/src/causal.rs`; ADR 0085, Landing order step 3b). C++, Kotlin and Swift refuse `delivery: causal` at build time, by name (`mesh/codegen-causal-delivery-unsupported`), until their cores land it (steps 3c to 3e); no build ignores the setting. Decided by ADR 0085, sections 3, 3.2, 3.3 and 4.2, which this section states as the Mesh core realises it.
+**Status: the settings, the rule's standard algorithms, the envelope's keys and the Rust core's delivery layer (`backends/rust/mesh/src/causal.rs`) are built; the Rust router does not route a causal binding to that layer yet** (ADR 0085, Landing order step 3b). Until a backend's router does, the backend refuses `delivery: causal` at build time, by name (`mesh/codegen-causal-delivery-unsupported`), and today every backend does: Rust lifts its refusal with its router's routing, and C++, Kotlin and Swift with their cores (steps 3c to 3e). No build ignores the setting. Decided by ADR 0085, sections 3, 3.2, 3.3 and 4.2, which this section states as the Mesh core realises it.
 
 **What it is.** A binding with `delivery: causal` is a causal broadcast group: every member sends its changes to the route and reads the route, and every member delivers each change exactly once, and only after every change its sender had delivered when it sent it (Birman and Joseph, 1987; Birman, Schiper and Stephenson, 1991). This is the delivery an operation-based replicated object assumes of the layer below it, so a document built on one is given whole, causally ready changes, once each.
 
@@ -3119,7 +3119,8 @@ topology:
                                          # key like `ordering:`, not a `qos:` one. NOT parsed
                                          # yet (ADR 0045 step 6).
             delivery: causal             # optional; §10.12. A causal broadcast group; refused
-                                         # beside `ordering:`. Built on the Rust core only.
+                                         # beside `ordering:`, and by every backend whose
+                                         # router does not route it yet (§10.12 "Status").
             group:                       # required with `delivery: causal`, refused without
               name: <group name>
               view: [<device>/<machine>, ...]  # the initial view, epoch 0; 1 to 64 instances
