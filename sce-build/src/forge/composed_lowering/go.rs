@@ -597,6 +597,25 @@ mod tests {
         carrier: GoCarrier::Json,
     };
 
+    /// The Go row of the one table of what each backend lowers of a composed
+    /// value: a payload read at any depth, a list taken whole and a composed
+    /// value sent (docs/adr/0086, sections 5 and 6), and no union held yet
+    /// (docs/adr/0092, section 7).
+    #[test]
+    fn the_go_row_lowers_every_composed_position_but_a_union() {
+        use crate::forge::event_schema_check::ComposedLowering;
+        assert_eq!(
+            ComposedLowering::of(crate::generator::Language::Go),
+            ComposedLowering {
+                name: "go",
+                reads: true,
+                copies: true,
+                unions: false,
+                sends: true,
+            }
+        );
+    }
+
     /// The Go row of section 7.1: no type carries a bound, a value that may be
     /// absent is the forge runtime's `optional.Of`, a record is the machine's
     /// struct with a constructor a host builds one by, at any depth; no check

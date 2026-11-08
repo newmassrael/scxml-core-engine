@@ -786,6 +786,25 @@ mod tests {
         carrier: RustCarrier::Json,
     };
 
+    /// The Rust row of the one table of what each backend lowers of a
+    /// composed value: a payload read at any depth, a list taken whole, a
+    /// composed value sent (docs/adr/0086, sections 5 and 6), and a union
+    /// held (docs/adr/0092, section 7).
+    #[test]
+    fn the_rust_row_lowers_every_composed_position_and_holds_a_union() {
+        use crate::forge::event_schema_check::ComposedLowering;
+        assert_eq!(
+            ComposedLowering::of(crate::generator::Language::Rust),
+            ComposedLowering {
+                name: "rust",
+                reads: true,
+                copies: true,
+                unions: true,
+                sends: true,
+            }
+        );
+    }
+
     #[test]
     fn the_machine_holds_each_constructor_in_its_own_type_at_any_depth() {
         let held = held();
