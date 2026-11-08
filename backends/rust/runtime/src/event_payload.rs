@@ -12,12 +12,11 @@
 //!
 //! Until this module the two never met, so the same guard answered differently
 //! depending on where its event came from, and a typed payload could not cross
-//! an invoke boundary at all. What the lift refuses is what the SCRIPT ENGINE
-//! already refuses for the same guard, measured on the same document: no data,
-//! a missing field, or a value of another type each give `error.execution` and
-//! a guard that does not fire. A native lowering that answered differently
-//! would make the optimisation observable, which is the one thing it may not
-//! be.
+//! an invoke boundary at all. No data, a missing field, or a value of another
+//! type is a delivery outside its type, which the engine refuses whole where it
+//! takes the event: no transition is selected for it, and an
+//! `error.execution` that carries the refusal is taken in its place
+//! (docs/adr/0086, section 4.2).
 //!
 //! # One value at one path
 //!

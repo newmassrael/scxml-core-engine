@@ -126,12 +126,13 @@
 //!   (not proven, above).
 //! - `refuse_unserved_http_send`: a BasicHTTP send in a build without
 //!   `http-send`, `error.execution` (counted with the send).
-//! - `bind_lifted_payload`: at every dequeue, `error.execution` for a typed
-//!   payload its data cannot be lifted to. At an internal dequeue it replaces
-//!   the event it was raised for; at the external dequeue that starts a
-//!   macrostep it is counted once, for a document that imports event schemas.
 //! - `perform_host_invoke`, `start_host_invoke`, `start_restored_host_invokes`:
 //!   a host-run `<invoke>` (not proven, above).
+//!
+//! The door of a typed payload (`bind_lifted_payload`) raises nothing: a delivery
+//! whose data does not fit its type is refused whole where it is dequeued, and
+//! the `error.execution` that says why is answered in its place, never queued
+//! (docs/adr/0086, section 4.2).
 //!
 //! `Engine::raise` is public: a host that calls it puts events on the
 //! internal queue that no document accounts for, and is outside this bound.
@@ -403,7 +404,6 @@ impl<'m> Analysis<'m> {
         }
         per_microstep = per_microstep.saturating_add(self.done_events());
         per_microstep = per_microstep.saturating_add(self.selection_errors());
-        per_microstep = per_microstep.saturating_add(self.payload_lift());
 
         if per_microstep == 0 {
             return Ok(InternalQueueBound::Proven {
@@ -766,17 +766,6 @@ impl<'m> Analysis<'m> {
         }
         self.may_raise_error = true;
         fallible.saturating_mul(MicrostepBounds::of(self.model).enabled)
-    }
-
-    /// The error the engine raises when the event that starts a macrostep
-    /// carries data its typed payload cannot be lifted from (std only).
-    fn payload_lift(&mut self) -> usize {
-        if self.raises_execution && !self.model.imported_event_schemas.is_empty() {
-            self.may_raise_error = true;
-            1
-        } else {
-            0
-        }
     }
 
     /// No transition takes an event the internal queue can hold, so a dequeued
@@ -1690,9 +1679,11 @@ mod tests {
     }
 
     /// The event that starts a macrostep can carry data its typed payload
-    /// cannot be read from, which the engine reports with an error.
+    /// cannot be read from. The door refuses it whole and answers the
+    /// `error.execution` that says why in its place, so nothing reaches the
+    /// internal queue (docs/adr/0086, section 4.2).
     #[test]
-    fn a_typed_payload_that_cannot_be_lifted_counts() {
+    fn a_typed_payload_that_cannot_be_lifted_raises_nothing_into_the_queue() {
         let mut doc = Doc::new().names("error.execution").state("a", None);
         doc.model.imported_event_schemas.insert(
             "Ping".to_string(),
@@ -1706,7 +1697,13 @@ mod tests {
                 source_location: None,
             },
         );
-        assert_eq!(doc.bound(), chain(1, 0));
+        assert_eq!(
+            doc.bound(),
+            InternalQueueBound::Proven {
+                bound: 0,
+                case: ProvenCase::NothingRaises
+            }
+        );
     }
 
     #[test]

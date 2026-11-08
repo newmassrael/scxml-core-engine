@@ -1,0 +1,35 @@
+# Mutation cases for "a delivery the door refuses is refused whole, and the
+# error.execution that carries the refusal is taken in its place" under the Rust
+# engine (docs/adr/0086, section 4.2, amended 2026-11-09).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_refused_delivery_is_replaced_at_the_door_rust.cases`.
+#
+# The door is where the engine takes the event off its queue (`Engine::bind_queued`,
+# asking `bind_lifted_payload`). `sync_client`'s run 9 sends a `sync.page` whose `more` is
+# a number: the last-page transition reads nothing of the payload, so only a door that
+# keeps the delivery from selection keeps the machine in `listing`, and only one that
+# takes the error in its place counts the refusal. The mutants take one decision away
+# each:
+#
+#   the refused delivery is taken after all, and nothing says so;
+#   nothing is taken in the refused delivery's place.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-tests --test static_scenarios
+mutation_targets backends/rust/runtime/src/engine.rs
+mutation_oracles backends/rust/tests/tests/static_scenarios.rs sce-build/tests/fixtures/static_datamodel/scenarios/sync_client.json
+
+mutation_case "the refused delivery is taken after all" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     "                Admission::Replaced { error, refusal } => {\n                    return Some(self.bind_in_place(error, &refusal));\n                }\n",
+     "                Admission::Replaced { .. } => {}\n")
+PY
+
+mutation_case "nothing is taken in the refused delivery's place" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     "        match P::get_event_from_name(\"error.execution\") {\n            Some(error) => Admission::Replaced {",
+     "        match None::<P::Event> {\n            Some(error) => Admission::Replaced {")
+PY

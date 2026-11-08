@@ -131,11 +131,18 @@ edit("sce-build/src/internal_queue_bound.rs",
      r'''        fallible.saturating_mul(1)''')
 PY
 
-# The error of a typed payload that cannot be lifted is not counted.
-mutation_case "a payload that cannot be lifted is not counted" <<'PY'
+# A typed payload that cannot be lifted raises nothing into the queue: the door
+# answers its error in the refused delivery's place (docs/adr/0086, section 4.2),
+# so counting one for it is a depth the document cannot reach.
+mutation_case "a payload that cannot be lifted is counted again" <<'PY'
 edit("sce-build/src/internal_queue_bound.rs",
-     r'''        if self.raises_execution && !self.model.imported_event_schemas.is_empty() {''',
-     r'''        if self.raises_execution && self.model.imported_event_schemas.is_empty() && false {''')
+     r'''        per_microstep = per_microstep.saturating_add(self.selection_errors());
+''',
+     r'''        per_microstep = per_microstep.saturating_add(self.selection_errors());
+        per_microstep = per_microstep.saturating_add(usize::from(
+            self.raises_execution && !self.model.imported_event_schemas.is_empty(),
+        ));
+''')
 PY
 
 # ── The classes of document not proven ──────────────────────────────

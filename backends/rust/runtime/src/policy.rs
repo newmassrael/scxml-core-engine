@@ -799,9 +799,9 @@ pub trait StatePolicy: Sized + 'static {
     /// it — including one on the far side of an invoke boundary.
     ///
     /// `Err` says the data cannot be read as this event's schema. The engine
-    /// raises `error.execution` and the guard does not fire, which is what W3C
-    /// SCXML 3.13 gives for a guard that cannot be evaluated, and what the
-    /// script engine gives for the same guard on the same data.
+    /// refuses the delivery whole (docs/adr/0086, section 4.2): no transition
+    /// is selected for it, and an `error.execution` carrying the refusal is
+    /// taken in its place.
     ///
     /// ⚠ `std` only, because [`EventMetadata::data`](crate::EventMetadata) is:
     /// a `no_std` build has no wire to lift from and no script engine to
