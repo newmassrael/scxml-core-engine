@@ -3346,8 +3346,11 @@ pub fn emitted_beside_templates(model: &SCXMLModel, language: Language) -> Strin
             // A record the render refuses (an optional text with no bound) is
             // refused again where the machine is generated, so nothing is
             // reserved for an interface that is never emitted.
-            if let Ok(host) = crate::forge::host_invoker_interface::render_c11(&model, &model.name)
-            {
+            if let Ok(host) = crate::forge::host_invoker_interface::render_c11(
+                &model,
+                &model.name,
+                &crate::forge::generator::c11_data_len("", &model.name),
+            ) {
                 out.push_str(&host.decls);
                 out.push_str(&host.defs);
             }
@@ -4101,11 +4104,16 @@ fn render_c11(
     // its script engine's state otherwise, so a parent asks every child the
     // same way (`SCXMLModel::ends_with_done_data`).
     let ends_with_done_data = model_lowered.ends_with_done_data();
+    // docs/adr/0086, section 8.1: the bytes the machine's slot of `_event.data`
+    // takes, computed from the schemas of the events it receives, which every
+    // place of the machine that holds an event's data is declared at.
+    let data_slot = crate::forge::generator::c11_data_slot(model, &csym_prefix)?;
     // SCE Accepted Subset §2.12: the typed host-run invoke interface and what
     // the start site holds each request field to; all empty without one.
     let host_invoker = crate::forge::host_invoker_interface::render_c11(
         model,
         &format!("{csym_prefix}{}", model.name),
+        &data_slot.name,
     )?;
     let host_invoke_request_checks =
         crate::forge::host_invoker_interface::c11_request_checks(model);
@@ -4151,6 +4159,7 @@ fn render_c11(
         native_actions_interface => &native.interface_name,
         native_action_ops => &native.operation_names,
         csym_prefix => &csym_prefix,
+        data_slot => &data_slot,
         host_invocation_peak => crate::host_processor_analyzer::host_invocation_peak(model),
         host_invoker_decls => &host_invoker.decls,
         // docs/adr/0055: what a result's optional field is held in, included
@@ -4206,6 +4215,7 @@ fn render_c11(
         native_actions_interface => &native.interface_name,
         native_action_ops => &native.operation_names,
         csym_prefix => &csym_prefix,
+        data_slot => &data_slot,
         host_invoker_defs => &host_invoker.defs,
         // docs/adr/0055: the wire writer a result's optional field is written
         // with, included whatever the data model.
