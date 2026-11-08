@@ -277,6 +277,14 @@ def test_a_top_level_text_and_byte_string_are_held_to_their_bound_when_read() ->
     assert lift(data, (("t", Text(4)),)) == ["éé"]
     with pytest.raises(TypedPayloadError, match="^'n' is null, and its type is not optional$"):
         lift(data, (("n", WideOf(-(1 << 63), (1 << 63) - 1)),))
+    # A top-level text that may be absent, as a lift of a schema of entries names
+    # it: absent at null, and a present one held to its bound (docs/adr/0086,
+    # section 4.4).
+    assert lift(data, (("n", OptionalOf(Text(4))),)) == [None]
+    with pytest.raises(TypedPayloadError, match="^'note' is 5 bytes, past the 4 its type declares$"):
+        lift(data, (("note", OptionalOf(Text(4))),))
+    with pytest.raises(TypedPayloadError, match="^'blob' is 5 bytes, past the 4 its type declares$"):
+        lift(data, (("blob", OptionalOf(Bytes(4))),))
 
 
 def test_a_list_past_its_bound_is_refused_before_an_element_is_read() -> None:
