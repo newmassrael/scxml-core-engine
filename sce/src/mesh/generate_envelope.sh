@@ -2,18 +2,24 @@
 # SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
-# Regenerate the Mesh envelope codec the C++ runtime is built on
-# (sce/src/mesh/generated/): the standard document sce:std/mesh/envelope.scxml,
-# the three enums it imports and the record its causal vector holds, generated
-# for C++. MeshEnvelopeCodec.cpp
-# converts the runtime's MeshEnvelope to and from this codec's value, so the
-# envelope's CBOR is written and read by the same generated code every other
-# backend runs (SCE_FORGE.md §4.6.1).
+# Regenerate the standard Mesh documents the C++ runtime is built on
+# (sce/src/mesh/generated/), generated for C++:
+#
+# * the envelope codec, sce:std/mesh/envelope.scxml, the three enums it imports
+#   and the record its causal vector holds. MeshEnvelopeCodec.cpp converts the
+#   runtime's MeshEnvelope to and from this codec's value, so the envelope's
+#   CBOR is written and read by the same generated code every other backend
+#   runs (SCE_FORGE.md §4.6.1);
+# * the causal route's rule (docs/adr/0085, sections 3 and 3.2): causal_admit,
+#   causal_raise, causal_lacks and causal_cut, with the enum, the records and
+#   the identity they import. CausalRules.cpp calls them, so the C++ core
+#   applies the one rule every core generates rather than a copy of it.
 #
 # The tree is committed rather than generated at build time so a C++
 # consumer of the runtime needs no Rust toolchain; the drift test
 # (sce-build/tests/b9_drift_detection.rs) holds it to the standard library.
-# Run after editing stdlib/mesh/*.scxml or the cpp codec / enum templates:
+# Run after editing stdlib/mesh/*.scxml or the cpp codec, enum, event-schema
+# or algorithm templates:
 #
 #   sce/src/mesh/generate_envelope.sh
 
@@ -43,6 +49,13 @@ DOCUMENTS=(
     pattern_kind
     payload_codec
     rpc_status
+    causal_admission
+    causal_admit
+    causal_cut
+    causal_known
+    causal_lacks
+    causal_raise
+    envelope_id
 )
 
 for document in "${DOCUMENTS[@]}"; do
