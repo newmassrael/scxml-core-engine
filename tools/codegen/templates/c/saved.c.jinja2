@@ -541,9 +541,9 @@ SCE_SM_FN static bool {{ _t }}_saved_events(const sce_saved_session_t *s, {{ _t 
     const size_t held = sce_jv_count(s->external);
     /* sce-scratch-activity: restore */
     (void)sm;
-    if (held > (size_t)SCE_MAX_EVENTS) {
+    if (held > (size_t){{ _t | upper }}_EVENT_QUEUE_DEPTH) {
         return sce_saved_refuse(err, "'external' holds %lu events, past the %lu this build queues", (unsigned long)held,
-                                (unsigned long)SCE_MAX_EVENTS);
+                                (unsigned long){{ _t | upper }}_EVENT_QUEUE_DEPTH);
     }
     (void)sce_jv_iter(s->external, &it);
     for (size_t at = 0u; sce_jiter_element(&it, &item); ++at) {
@@ -1662,7 +1662,7 @@ bool {{ _t }}_save_members(const {{ _t }}_t *sm, int64_t wall_now_ms, sce_jw_t *
 {% endif %}
             sce_jw_element(w);
             sce_saved_write_event(w, &event);
-            at = (uint16_t)((at + 1u) % (uint16_t)SCE_MAX_EVENTS);
+            at = (uint16_t)((at + 1u) % (uint16_t){{ _t | upper }}_EVENT_QUEUE_DEPTH);
         }
     }
     sce_jw_end_array(w);
