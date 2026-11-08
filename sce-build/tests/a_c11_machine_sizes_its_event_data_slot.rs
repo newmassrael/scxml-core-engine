@@ -1028,10 +1028,20 @@ fn a_script_machine_holds_each_event_text_it_owns_and_frees_them_before_its_engi
         "a delayed host-served send owns its texts and holds no slot for them:\n{scheduled}"
     );
     let input = record(&header, "probe_inbox_input");
+    // docs/adr/0086, section 8.6 (d): a host-run invocation's ending too.
     assert_eq!(
         input.matches("sce_inbox_release_fn release;").count(),
-        2,
-        "an event and an event by name each hand over the poster's storage:\n{input}"
+        3,
+        "an event, an event by name and an ending each hand over the poster's storage:\n{input}"
+    );
+    assert!(
+        !input.contains("_DATA_LEN]"),
+        "no input of the inbox holds a slot:\n{input}"
+    );
+    assert!(
+        header.contains("bool probe_inbox_post_ending(probe_t *sm,")
+            && header.contains("sce_inbox_release_fn release, void *release_context);"),
+        "a post of an ending hands over its data with the function that releases it:\n{header}"
     );
     assert!(
         !header.contains("bool probe_save("),
