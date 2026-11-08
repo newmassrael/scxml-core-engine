@@ -166,7 +166,6 @@ fn a_configuration_is_its_table_its_machines_and_what_they_read() {
         "        mappings=[],\n".to_string(),
         "        timers_of_type={},\n".to_string(),
         "        return sce_answerer_sm.AnswererComponent()\n".to_string(),
-        "    return []\n".to_string(),
         imported("coordinator_sm"),
         imported("answerer_sm"),
     ] {
@@ -175,6 +174,10 @@ fn a_configuration_is_its_table_its_machines_and_what_they_read() {
             "serving_configuration holds `{needle}`:\n{serving}"
         );
     }
+    assert!(
+        serving.ends_with("    return []"),
+        "serving_configuration reads no module parameter:\n{serving}"
+    );
     assert!(
         at(&serving, "    if component_type == \"coordinator\":")
             < at(&serving, "    if component_type == \"answerer\":"),
