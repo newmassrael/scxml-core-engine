@@ -227,6 +227,16 @@ pub(crate) fn unreachable_brace_statements(source: &str, syntax: Syntax) -> Vec<
             let mut rest = line;
             while let Some(after) = rest.strip_prefix('}') {
                 rest = after.trim_start();
+                // A `}` met while an initializer is open inside a statement of
+                // this list closes that initializer, not the list. clang-format
+                // writes `= {"…",` and `"…"};` on two lines, and once the
+                // literals are blanked the second line opens with the `}`: read
+                // as a list's end it closed the enclosing block early, and the
+                // next function was reported as unreachable (C11, 2026-11-08).
+                if stack.last().is_some_and(|frame| depth > frame.depth) {
+                    depth -= 1;
+                    continue;
+                }
                 if stack.len() == 1 {
                     continue;
                 }
@@ -518,6 +528,30 @@ return
 }
 "#;
         assert_eq!(lines(go, Syntax::Go), vec![9, 18], "{go}");
+    }
+
+    /// C: an initializer opened in the middle of a line and closed at the
+    /// start of the next — the shape clang-format gives a long
+    /// `= {"…", "…"};` — closes the initializer, not the block around it, so
+    /// the function after it is reached. The control: a statement after the
+    /// block's own `return` is still found.
+    #[test]
+    fn an_initializer_closed_on_the_next_line_is_not_a_list_end() {
+        let c = r#"static bool init(int n) {
+    {
+        static const char *const entry[2] = {"http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor",
+                                             "basichttp"};
+        use(entry);
+    }
+    return true;
+}
+
+static void next(void) {
+    return;
+    after();
+}
+"#;
+        assert_eq!(lines(c, Syntax::CFamily), vec![12], "{c}");
     }
 
     /// Rust: a `break` out of a labelled block ends the list it stands in, and
