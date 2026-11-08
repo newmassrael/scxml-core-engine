@@ -67,8 +67,8 @@ PY
 
 mutation_case "the event's data is the text of the value, not its JSON" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     "                    if (!sce_forge_wire_json(sce_value, {{ json_buf }}, sizeof({{ json_buf }}))) {",
-     "                    if (!sce_forge_wire_text(sce_value, {{ json_buf }}, sizeof({{ json_buf }}))) {")
+     "                    if (!sce_forge_wire_json(sce_value, {{ json_buf }}, sizeof(sm->scratch.payload))) {",
+     "                    if (!sce_forge_wire_text(sce_value, {{ json_buf }}, sizeof(sm->scratch.payload))) {")
 PY
 
 # A string is quoted as JSON where it is the event's whole data as it is where it is
