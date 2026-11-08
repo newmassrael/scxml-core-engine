@@ -1,0 +1,14 @@
+seq = 7
+id = "7a00f1a03aca"
+
+[submit]
+commit = "60cc132999d3d2d67eb9e9a6f9eee95a0dff1e7f"
+base = "0b7793826c896622501f9001e92fbd57ad7b6b65"
+machine = "mf977c53d872e"
+at = 1794065459
+
+[return]
+reason = "conflict"
+detail = "sce-build/src/forge/static_lowering.rs sce-build/tests/a_test_component_is_generated_in_rust.rs tools/codegen/templates/rust/state_machine.rs.jinja2"
+report = "mf977c53d872e:0000000007-7a00f1a03aca/attempt-6.log"
+at = 1794088821

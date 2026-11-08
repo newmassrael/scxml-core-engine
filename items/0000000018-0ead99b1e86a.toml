@@ -1,0 +1,14 @@
+seq = 18
+id = "0ead99b1e86a"
+
+[submit]
+commit = "b0976ea0f0db70da4daa4d861baa8530fafbe922"
+base = "fa2d1cef2f54fc68011cd70048d72a43d56815d1"
+machine = "mf977c53d872e"
+at = 1794091745
+
+[land]
+candidate = "e0a0e8963bb3bc7860b69e841320f4976bb51f7b"
+base = "60fc94e9b77a309fe5ee49f288b5a36c63cb4faa"
+with = [18]
+at = 1794095194

@@ -1,0 +1,14 @@
+seq = 26
+id = "53aefde87985"
+
+[submit]
+commit = "b2e2442db17582a8134267f26a1cffc4c37e274b"
+base = "8e4ac36f94ca6c4dc7b1883230c8bd2ea6e13ab4"
+machine = "mf977c53d872e"
+at = 1794108225
+
+[return]
+reason = "violated"
+detail = ""
+report = "mf977c53d872e:0000000026-53aefde87985/attempt-2.log"
+at = 1794112439

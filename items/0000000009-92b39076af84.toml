@@ -1,0 +1,12 @@
+seq = 9
+id = "92b39076af84"
+
+[submit]
+commit = "c6cd2fe052a555dfa6fe03682dfc3740f261df7e"
+base = "0b7793826c896622501f9001e92fbd57ad7b6b65"
+machine = "mf977c53d872e"
+at = 1794072324
+
+[cancel]
+by = "mf977c53d872e"
+at = 1794088858

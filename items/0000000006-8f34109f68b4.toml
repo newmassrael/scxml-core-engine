@@ -1,0 +1,14 @@
+seq = 6
+id = "8f34109f68b4"
+
+[submit]
+commit = "892d4bab1c026de3acb1fbd6dc371e52d7858752"
+base = "0b7793826c896622501f9001e92fbd57ad7b6b65"
+machine = "mf977c53d872e"
+at = 1794062970
+
+[land]
+candidate = "fa2d1cef2f54fc68011cd70048d72a43d56815d1"
+base = "db223b782f160c5128c9b7a7b966539d3a66f120"
+with = [6]
+at = 1794088687
