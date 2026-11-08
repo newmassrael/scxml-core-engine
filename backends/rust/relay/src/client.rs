@@ -182,7 +182,9 @@ impl From<LinkError> for CourierError {
 pub struct Round {
     /// The events for the machine to be told, in order: the roster when the log moved, then what
     /// an earlier round took in and did not hand over because it did not end ([`CourierState`]),
-    /// then each operation the host did not hold.
+    /// then each operation the machine may be told now by the rule of causal delivery
+    /// ([`Trust::deliver`]): every one the machine was not told whose context it was told, in an
+    /// order that is a linear extension of the contexts, and every one of them for a resync.
     pub events: Vec<(String, String)>,
     /// How many operations and checkpoints the relay was given that it lacked.
     pub pushed: usize,
@@ -713,7 +715,8 @@ fn own_frozen(trust: &Trust) -> Option<u64> {
 /// What a machine is making.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Mode {
-    /// A round, which tells the machine every operation it reads when `redeliver`.
+    /// A round, which tells the machine the roster again when `redeliver` (a resync, whose machine
+    /// lost what it was told).
     Round { redeliver: bool },
     /// A publication, which tells the machine nothing.
     Publish,
@@ -727,6 +730,8 @@ enum Phase {
     Push(Push),
     /// Reading what the relay holds after the cursor.
     Pull(Pull),
+    /// Asking the relay for what a held operation waits on.
+    Fetch(Fetch),
     /// Giving the relay one publication, and reading that it took it.
     Publish(Request),
     /// Everything was asked: the round is to be summed up.
@@ -861,9 +866,15 @@ enum AfterPush {
     Publish(Request),
 }
 
+/// The operations a held one waits on, asked for one range at a time after the feed is read
+/// ([`RoundMachine::drive_fetch`]): the ranges asked in this round.
+#[derive(Default)]
+struct Fetch {
+    asked: BTreeSet<(u64, u64, u64)>,
+}
+
 /// What the relay holds after the cursor, read a batch at a time.
 struct Pull {
-    redeliver: bool,
     /// Whether this is the reading from the start that an amendment of the log asks for.
     second: bool,
     batch: Option<Batch>,
@@ -900,6 +911,9 @@ impl RoundMachine {
                 state.cursor = 0;
                 state.untold.clear();
                 state.unread.clear();
+                // The machine lost what it was told: the round ends by telling it every operation
+                // the host holds, in causal order.
+                trust.forget_delivered();
             }
             RoundKind::Reread => {
                 state.cursor = 0;
@@ -975,6 +989,7 @@ impl RoundMachine {
                 Phase::Log(log) => self.drive_log(log),
                 Phase::Push(push) => self.drive_push(push),
                 Phase::Pull(pull) => self.drive_pull(pull),
+                Phase::Fetch(fetch) => self.drive_fetch(fetch),
                 Phase::Publish(request) => {
                     self.asked = Some(request.clone());
                     Phase::Publish(request)
@@ -1010,6 +1025,7 @@ impl RoundMachine {
             Phase::Log(log) => self.answer_log(log, response),
             Phase::Push(push) => self.answer_push(push, response),
             Phase::Pull(pull) => self.answer_pull(pull, response),
+            Phase::Fetch(fetch) => self.answer_fetch(fetch, response),
             Phase::Publish(_) => match Publication::check(response) {
                 Ok(()) => Phase::Finish,
                 Err(error) => self.fail(error),
@@ -1054,6 +1070,10 @@ impl RoundMachine {
     fn finish(&mut self) -> Phase {
         let mut round = std::mem::take(&mut self.round);
         if let Mode::Round { redeliver } = self.mode {
+            // What the machine may be told now, by the rule of causal delivery, after what an
+            // earlier round left to hand over: every operation the round took in or repaired that
+            // follows only what the machine was told.
+            round.events.extend(self.trust.deliver());
             round.evicted.extend(self.trust.take_evicted());
             round.restored.extend(self.trust.take_restored());
             // The device's own chain froze in this round, lower than it was or where it was not.
@@ -1441,15 +1461,8 @@ impl RoundMachine {
                 event: event.clone(),
                 data: data.clone(),
             };
-            take(
-                &self.trust,
-                &mut self.state.parked,
-                &record,
-                false,
-                &mut read,
-            );
+            take(&self.trust, &mut self.state.parked, &record, &mut read);
         }
-        self.round.events.append(&mut read.events);
         self.round.refused.append(&mut read.refused);
         self.round.pushed += 1;
         let own = self.trust.person().is_some_and(|(own, _)| own == node);
@@ -1522,10 +1535,9 @@ impl RoundMachine {
                 other => self.fail(CourierError::Unexpected(format!("{other:?}"))),
             },
             // Each operation read back is taken in as from anyone, and told to the machine when the
-            // host did not hold it: it is the device's own, and a machine whose state came back with
-            // the trust's holds it no more than the trust did. A resync's reading of the feed, from
-            // the start, tells the machine every operation, these included, so a resync tells none
-            // of them here.
+            // round ends if the machine was not told it: it is the device's own, and a machine
+            // whose state came back with the trust's holds no more of it than the trust's delivered
+            // vector says ([`Trust::deliver`]).
             //
             // A step of the walk goes on from the number after the highest it read, while it brings
             // an operation the host did not hold; one that brings none ends the walk.
@@ -1537,7 +1549,6 @@ impl RoundMachine {
                 ..
             } => match response {
                 Response::Operations { operations } => {
-                    let resync = matches!(self.mode, Mode::Round { redeliver: true });
                     let mut read = Round::default();
                     let mut brought = false;
                     let mut highest: Option<u64> = None;
@@ -1547,13 +1558,9 @@ impl RoundMachine {
                             &self.trust,
                             &mut self.state.parked,
                             &Record::Operation { event, data },
-                            false,
                             &mut read,
                         );
                         brought |= matches!(taken, Taken::New);
-                    }
-                    if !resync {
-                        self.round.events.append(&mut read.events);
                     }
                     self.round.refused.append(&mut read.refused);
                     let walk = if !walking {
@@ -1736,7 +1743,6 @@ impl RoundMachine {
     fn after_push(&mut self, readable: bool, then: AfterPush) -> Phase {
         match then {
             AfterPush::Pull if readable => Phase::Pull(Pull {
-                redeliver: matches!(self.mode, Mode::Round { redeliver: true }),
                 second: false,
                 batch: None,
             }),
@@ -1749,18 +1755,13 @@ impl RoundMachine {
     /// entry of the log the host lacks stops the round after one more try at the log, and the
     /// cursor stays before it.
     fn drive_pull(&mut self, pull: Pull) -> Phase {
-        let Pull {
-            redeliver,
-            second,
-            batch,
-        } = pull;
+        let Pull { second, batch } = pull;
         let Some(mut batch) = batch else {
             self.ask(Request::Feed {
                 cursor: self.state.cursor,
                 limit: FEED_BATCH,
             });
             return Phase::Pull(Pull {
-                redeliver,
                 second,
                 batch: None,
             });
@@ -1770,7 +1771,6 @@ impl RoundMachine {
                 &self.trust,
                 &mut self.state.parked,
                 &batch.records[batch.index],
-                redeliver,
                 &mut self.round,
             );
             match taken {
@@ -1785,7 +1785,6 @@ impl RoundMachine {
                         stage: LogStage::Ask,
                         then: AfterLog::Retake {
                             pull: Pull {
-                                redeliver,
                                 second,
                                 batch: Some(batch),
                             },
@@ -1803,7 +1802,6 @@ impl RoundMachine {
         self.state.cursor = batch.next;
         if batch.more {
             Phase::Pull(Pull {
-                redeliver,
                 second,
                 batch: None,
             })
@@ -1813,16 +1811,13 @@ impl RoundMachine {
     }
 
     fn answer_pull(&mut self, pull: Pull, response: Response) -> Phase {
-        let Pull {
-            redeliver, second, ..
-        } = pull;
+        let Pull { second, .. } = pull;
         match expected(response) {
             Ok(Response::Feed {
                 records,
                 next,
                 more,
             }) => Phase::Pull(Pull {
-                redeliver,
                 second,
                 batch: Some(Batch {
                     records,
@@ -1845,19 +1840,60 @@ impl RoundMachine {
     /// again from the start (the operations it already holds are not told to the machine twice).
     fn after_pull(&mut self, second: bool) -> Phase {
         if second {
-            return Phase::Finish;
+            return Phase::Fetch(Fetch::default());
         }
         let amends = amendments(&self.trust);
         if amends > self.state.amendments_seen {
             self.state.amendments_seen = amends;
             self.state.cursor = 0;
             Phase::Pull(Pull {
-                redeliver: false,
                 second: true,
                 batch: None,
             })
         } else {
-            Phase::Finish
+            Phase::Fetch(Fetch::default())
+        }
+    }
+
+    /// Ask the relay for the next range of operations a held one waits on ([`Trust::lacking`]):
+    /// the gap before a device's next operation, or what a context names that the host does not
+    /// hold. A range is asked once in a round; one the relay does not fill is asked again by the
+    /// next round, and what waits on it stays held, never skipped (docs/adr/0085, section 3).
+    fn drive_fetch(&mut self, mut fetch: Fetch) -> Phase {
+        let next = self
+            .trust
+            .lacking()
+            .into_iter()
+            .find(|range| !fetch.asked.contains(range));
+        let Some(range) = next else {
+            return Phase::Finish;
+        };
+        fetch.asked.insert(range);
+        let (node, from, to) = range;
+        self.ask(Request::Operations { node, from, to });
+        Phase::Fetch(fetch)
+    }
+
+    /// The operations asked for, each taken in as from anyone. A relay that refuses the range is
+    /// noted, and the round goes on: what waits on it stays held.
+    fn answer_fetch(&mut self, fetch: Fetch, response: Response) -> Phase {
+        match response {
+            Response::Operations { operations } => {
+                for (event, data) in operations {
+                    take(
+                        &self.trust,
+                        &mut self.state.parked,
+                        &Record::Operation { event, data },
+                        &mut self.round,
+                    );
+                }
+                Phase::Fetch(fetch)
+            }
+            Response::Refused { reason, .. } => {
+                self.round.refused.push(reason);
+                Phase::Fetch(fetch)
+            }
+            other => self.fail(CourierError::Unexpected(format!("{other:?}"))),
         }
     }
 }
@@ -1883,17 +1919,13 @@ fn amendments(trust: &Trust) -> usize {
         .count()
 }
 
-/// Try again the operations that were held back for want of a key, and tell the machine those that
-/// open now.
+/// Try again the operations that were held back for want of a key: those that open now are held,
+/// and told to the machine when the round ends ([`Trust::deliver`]).
 fn retry_parked(trust: &Trust, parked: &mut Vec<(String, String)>, round: &mut Round) {
     let waiting = std::mem::take(parked);
     for (event, data) in waiting {
         match trust.take_operation(&event, &data) {
-            Ok(taken) => {
-                if taken.applied {
-                    round.events.push((event, taken.told));
-                }
-            }
+            Ok(_) => {}
             Err(TakeError::NoKey(_)) => parked.push((event, data)),
             Err(TakeError::NotReached(_)) => parked.push((event, data)),
             Err(TakeError::Refused(reason)) => round.refused.push(reason),
@@ -2041,12 +2073,14 @@ enum Taken {
     Behind,
 }
 
-/// Take one record the relay gave in, as from anyone, and say whether the host was behind it.
+/// Take one record the relay gave in, as from anyone, and say whether the host was behind it. An
+/// operation taken in is held by the trust and told to the machine when the round ends, by the
+/// rule of causal delivery ([`Trust::deliver`]), not as it is read: what the relay gives in
+/// another order, or withholds, is never told before what it follows.
 fn take(
     trust: &Trust,
     parked: &mut Vec<(String, String)>,
     record: &Record,
-    redeliver: bool,
     round: &mut Round,
 ) -> Taken {
     match record {
@@ -2070,10 +2104,6 @@ fn take(
         },
         Record::Operation { event, data } => match trust.take_operation(event, data) {
             Ok(taken) => {
-                // What is held as proof of a conflict is not told to the machine.
-                if (taken.new || redeliver) && taken.applied {
-                    round.events.push((event.clone(), taken.told));
-                }
                 if taken.new {
                     Taken::New
                 } else {
@@ -2084,7 +2114,10 @@ fn take(
             Err(TakeError::NoKey(_)) => {
                 // The key may come (the group's commit reaches this host) or never (an epoch
                 // before it joined): park the operation, retry it each round, and go on.
-                if parked.len() < MAX_PARKED {
+                // A range asked for again ([`RoundMachine::drive_fetch`]) may bring one parked
+                // already, which is parked once.
+                if parked.len() < MAX_PARKED && !parked.iter().any(|(e, d)| e == event && d == data)
+                {
                     parked.push((event.clone(), data.clone()));
                 }
                 Taken::Done
