@@ -622,6 +622,27 @@ NOTHING_TO_VERIFY = "no-gate-applies"
 # a workflow, and gives its reason.
 BX_PLATFORM_HEADER = re.compile(r"^\[platform\.([A-Za-z0-9_-]+)\]\s*$")
 
+# ── Gates that run in an image: `container` ───────────────────────────
+#
+# A gate whose verdict is one compiler's names, in `container`, the tracked
+# Containerfile of the image it runs in. The runner then never runs it on the
+# machine it is on: it builds that image (tagged by the file's digest) and runs
+# `scripts/gate <slug>` inside it, with the checkout mounted at its own path,
+# so the gate and everything it depends on (`deps`, the generator build among
+# them) run there and nowhere else. Hosted CI, a build machine and a
+# workstation therefore judge it with the same compiler, and the file is the
+# one place that compiler is named. `container_placement` says which gates of a
+# run go into an image and which run where the runner is; the dependencies only
+# a gate in an image needs go in with it.
+#
+# A build machine runs containers only under its run account's rootless Docker
+# (the registry's `containers = "rootless"`), so such a gate names
+# `unit_requires = {"needs": ["docker"]}` and bx gives its unit only to a
+# machine that has one. `a-gate-in-an-image-says-so-everywhere` in the
+# self-test holds the three together: the file exists, an edit of it selects
+# the gate, and the unit asks for docker.
+CONTAINER_NEED = "docker"
+
 GATES: dict[str, dict] = {
     # Prerequisite, not a gate: several gates execute target/debug/sce-codegen.
     # Triggered by its own sources, and forced on by its dependents.
@@ -2257,29 +2278,26 @@ GATES: dict[str, dict] = {
         "deps": ["codegen-build"],
         "ci_only": "minutes long, estimated rather than measured: a cold "
                    "configure, every generation rule and about 2,600 "
-                   "compiles. cpp-interface-standard.yml runs it in a pinned "
-                   "GCC 15 container, because the newest libstdc++ is the one "
-                   "that drops a transitive include first and a push host's "
-                   "compiler is whatever that host carries.",
+                   "compiles, in a GCC 15 image the runner builds first. "
+                   "cpp-interface-standard.yml runs it, and an update to main "
+                   "runs it on a build machine with a rootless Docker.",
         "cost_s": 300,
         "summary": "C++ interface compiled alone at C++17 and C++20 (ADR 0059)",
-        # Off the fleet, so a landing leaves it to the hosted lane (see "Where
-        # a gate can run"). The verdict is GCC 15's: its libstdc++ is the one
-        # that drops a transitive include first, and the lane runs a Debian
-        # image with GCC 15.3.0 for that reason. A build machine's Ubuntu GCC
-        # is older, would pass what GCC 15 refuses, and could refuse with a
-        # warning GCC 15 does not give, so a landing judged there would be
-        # neither the lane's verdict nor a weaker one of it.
-        "platform": "gcc-15.3.0-container",
-        "platform_reason": "the verdict is GCC 15's, compiled in the lane's "
-                           "gcc:15.3.0 Debian image; a build machine carries "
-                           "an older Ubuntu GCC, whose -Werror verdict is "
-                           "another compiler's",
+        # The verdict is GCC 15's: its libstdc++ is the one that drops a
+        # transitive include first. So the gate runs in one image wherever it
+        # runs, the hosted lane, a build machine or a workstation alike: the
+        # runner builds `container` (gcc:15.3.0 and what the configure needs)
+        # and runs `scripts/gate cpp-interface-standard` inside it, generator
+        # build included (see "Gates that run in an image"). A machine's own
+        # GCC never judges it. A build machine takes the unit only where its
+        # run account has a rootless Docker (`unit_requires`).
+        "container": "tools/interface-standard/Containerfile",
+        "unit_requires": {"needs": ["docker"]},
         "cache": False,
-        "no_cache_reason": "a host compiler: it compiles every header alone with "
-                           "-Werror under whatever GCC and libstdc++ the machine "
-                           "carries, and its lane pins a GCC 15 container because "
-                           "that verdict moves with the compiler",
+        "no_cache_reason": "the image is built from a tag (gcc:15.3.0) and the "
+                           "Debian archive, and neither is fixed by the tree: "
+                           "a rebuilt image can carry another compiler patch "
+                           "or package, and the verdict moves with them",
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
@@ -3693,6 +3711,32 @@ def drop_hosted_only(selected, platforms, table=None) -> set[str]:
     return {slug for slug in selected
             if table[slug].get("platform") is None
             or table[slug]["platform"] in platforms}
+
+
+def container_placement(order, table=None) -> list[tuple[str, str, str]]:
+    """Where each gate of a run in `order` runs: `(where, slug, containerfile)`.
+
+    `where` is "host" (the machine the runner is on) or "container" (the
+    image `containerfile` builds, where the runner runs the gate with its
+    dependencies). A dependency that only gates in an image need is left out:
+    it runs inside, with them. One that a gate on the host also needs stays,
+    since that gate executes its output here. The order of `order` is kept.
+    """
+    table = GATES if table is None else table
+    in_image = [s for s in order if table[s].get("container")]
+    inside: set[str] = set()
+    for slug in in_image:
+        inside |= transitive_deps(slug, table)
+    host = {s for s in order if s not in in_image and s not in inside}
+    for slug in list(host):
+        host |= transitive_deps(slug, table) & set(order)
+    placed = []
+    for slug in order:
+        if slug in in_image:
+            placed.append(("container", slug, table[slug]["container"]))
+        elif slug in host:
+            placed.append(("host", slug, ""))
+    return placed
 
 
 def hosted_only(repo_root: Path, selected) -> list[str]:
@@ -5295,6 +5339,60 @@ def self_test(repo_root: Path) -> int:
             failures.append(
                 f"platform: {slug} is off the fleet with no `platform_reason` "
                 f"saying what that runner has that the fleet does not")
+
+    # a-gate-in-an-image-runs-there-with-what-only-it-needs. On a fixture: a
+    # dependency only the gate in an image needs goes in with it, and one a
+    # gate on the host also needs stays on the host.
+    cases += 1
+    image_fixture = {
+        "build": {},
+        "on-host": {"deps": ["build"]},
+        "boxed": {"deps": ["build"], "container": "x/Containerfile"},
+    }
+    alone = container_placement(["build", "boxed"], table=image_fixture)
+    if alone != [("container", "boxed", "x/Containerfile")]:
+        failures.append(
+            f"placement-fixture: a gate in an image and its own dependency were "
+            f"placed as {alone}; the dependency runs inside, with it")
+    mixed = container_placement(["build", "on-host", "boxed"],
+                                table=image_fixture)
+    if mixed != [("host", "build", ""), ("host", "on-host", ""),
+                 ("container", "boxed", "x/Containerfile")]:
+        failures.append(
+            f"placement-fixture: with a gate on the host that needs the same "
+            f"dependency, the run was placed as {mixed}")
+
+    # a-gate-in-an-image-says-so-everywhere. Its Containerfile is a tracked
+    # file, an edit of it selects the gate, and its unit asks bx for docker,
+    # which a build machine has only under a rootless daemon.
+    cases += 1
+    image_gates = 0
+    image_triggers = gate_triggers(repo_root)
+    for slug, spec in sorted(GATES.items()):
+        containerfile = spec.get("container")
+        if containerfile is None:
+            continue
+        image_gates += 1
+        if not isinstance(containerfile, str) \
+                or not (repo_root / containerfile).is_file():
+            failures.append(
+                f"container: {slug} runs in the image {containerfile!r} "
+                f"builds, and there is no such file")
+            continue
+        pats = [glob_to_regex(g) for g in image_triggers[slug]]
+        if not any(p.match(containerfile) for p in pats):
+            failures.append(
+                f"container: {slug} runs in the image {containerfile} builds, "
+                f"and no trigger of its own selects an edit of that file")
+        if CONTAINER_NEED not in (spec.get("unit_requires") or {}).get("needs", []):
+            failures.append(
+                f"container: {slug} runs in an image and its unit does not ask "
+                f"bx for {CONTAINER_NEED!r}, so it could go to a machine that "
+                f"cannot start one")
+    if image_gates == 0:
+        failures.append(
+            "container: no gate runs in an image, so this case read nothing; "
+            "cpp-interface-standard does")
 
     # the-fleet-and-the-lanes-install-one-emsdk. The build machines install
     # the release `scripts/install_emsdk.sh` pins, and the hosted lanes name
@@ -7184,6 +7282,10 @@ def main() -> int:
                          "that verify the selection: the change's gates "
                          "(--changed / --changed-from), every gate (--all) or "
                          "the named gates and their dependencies (--named)")
+    ap.add_argument("--placement", nargs="+", metavar="SLUG",
+                    help="for gates in run order, print where each runs, one "
+                         "'host <slug>' or 'container <slug> <containerfile>' "
+                         "a line, leaving out what runs inside an image")
     ap.add_argument("--landing", action="store_true",
                     help="select as the judgment of an update to main: every "
                          "reached gate the fleet can run, ci_only included "
@@ -7249,6 +7351,16 @@ def main() -> int:
             cost = GATES[slug].get("cost_s")
             cost_s = f"{cost:>7.1f}s" if cost is not None else "      ?"
             print(f"{cost_s}  {slug:<26} {GATES[slug].get('summary', '')}")
+        return 0
+
+    if args.placement:
+        unknown = sorted(set(args.placement) - set(GATES))
+        if unknown:
+            print("gate_registry: unknown slug(s): " + ", ".join(unknown),
+                  file=sys.stderr)
+            return 2
+        for where, slug, containerfile in container_placement(args.placement):
+            print(f"{where} {slug} {containerfile}".rstrip())
         return 0
 
     if args.plan:
