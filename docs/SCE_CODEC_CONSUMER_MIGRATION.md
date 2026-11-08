@@ -1505,6 +1505,18 @@ fields the kinds of entry a gated chain holds decide (1 more codec of the resour
 - A count or a length gated on a membership (`payload_len`, `slice_count`) is derived from what the arm
   holds and written where the arm the value holds says the chain has the kind.
 
+## A printed C++ codec holds a bare entry as its place among the others (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C++ tree is regenerated after it. It moves the codec whose
+fields a bare marker entry of its chain decides (1 more codec of the resources, 138 in all:
+`codec_chain_has_marker`).
+
+- The arm where the marker's gate holds holds the chain as a `SCE::Forge::Placed` of the other entries and
+  the marker's place among them, made by `make(rest, place)`; a value made by default is the marker alone.
+  Drop the marker entry from the list the value held: the encode writes it where the place says, as
+  `<Codec><Chain>Has0x<id>Key::named()`, with its continuation flag as the walk sets it.
+- The arm where the gate does not hold holds the chain as in the section above, of no entry of the kind.
+
 ## A payload schema states its keys in the order the document declares them (ADR 0087 §1.1)
 
 Landing: the commit that adds this section; every tree holding a `JSON_SCHEMA` constant or a GBNF table (the Rust,
