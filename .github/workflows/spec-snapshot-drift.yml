@@ -36,6 +36,17 @@ on:
       - 'tests/mesh/**'
       - 'tests/w3c/dist/**'
       - 'sce-build/tests/mesh_*.rs'
+      # The rest of the generator's TEST_TREES, so a marker in any file it
+      # reads reaches the guard.
+      - 'backends/kotlin/mesh/src/commonTest/kotlin/com/sce/mesh/*.kt'
+      - 'backends/kotlin/mesh/src/jvmTest/kotlin/com/sce/mesh/*.kt'
+      - 'backends/swift/mesh/Tests/SceMeshTests/*.swift'
+      - 'backends/swift/mesh-wss/Tests/SceMeshWssTests/*.swift'
+      - 'backends/rust/tests/tests/a_child_session_is_given_its_mesh_router_by_its_parent.rs'
+      - 'backends/python/tests/integration/static_datamodel/test_a_child_session_is_given_its_mesh_router_by_its_parent.py'
+      - 'backends/go/tests/integration/static_datamodel/a_child_session_is_given_its_mesh_router_by_its_parent_test.go'
+      - 'backends/kotlin/tests/src/test/kotlin/com/sce/integration/AChildSessionIsGivenItsMeshRouterByItsParentTest.kt'
+      - 'backends/c/tests/integration/test_static_child_mesh.c'
       - 'docs/sce-ledger/mesh/.atomic/verifies-catalog.json'
       - '.github/workflows/spec-snapshot-drift.yml'
   pull_request:
@@ -50,6 +61,17 @@ on:
       - 'tests/mesh/**'
       - 'tests/w3c/dist/**'
       - 'sce-build/tests/mesh_*.rs'
+      # The rest of the generator's TEST_TREES, so a marker in any file it
+      # reads reaches the guard.
+      - 'backends/kotlin/mesh/src/commonTest/kotlin/com/sce/mesh/*.kt'
+      - 'backends/kotlin/mesh/src/jvmTest/kotlin/com/sce/mesh/*.kt'
+      - 'backends/swift/mesh/Tests/SceMeshTests/*.swift'
+      - 'backends/swift/mesh-wss/Tests/SceMeshWssTests/*.swift'
+      - 'backends/rust/tests/tests/a_child_session_is_given_its_mesh_router_by_its_parent.rs'
+      - 'backends/python/tests/integration/static_datamodel/test_a_child_session_is_given_its_mesh_router_by_its_parent.py'
+      - 'backends/go/tests/integration/static_datamodel/a_child_session_is_given_its_mesh_router_by_its_parent_test.go'
+      - 'backends/kotlin/tests/src/test/kotlin/com/sce/integration/AChildSessionIsGivenItsMeshRouterByItsParentTest.kt'
+      - 'backends/c/tests/integration/test_static_child_mesh.c'
       - 'docs/sce-ledger/mesh/.atomic/verifies-catalog.json'
       - '.github/workflows/spec-snapshot-drift.yml'
   schedule:
