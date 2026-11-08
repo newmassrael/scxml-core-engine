@@ -280,10 +280,9 @@ public protocol StatePolicy: AnyObject {
     /// the far side of an invoke boundary.
     ///
     /// A throw says the data cannot be read as this event's schema. The engine then
-    /// raises `error.execution` and the guard does not fire, which is what §scxml-3.13
-    /// gives for a guard that cannot be evaluated, and what the script engine gives
-    /// for the same guard on the same data. A policy with no typed payloads does not
-    /// throw.
+    /// refuses the delivery whole (docs/adr/0086, section 4.2): no transition is
+    /// selected for it, and an `error.execution` that carries the refusal is taken in
+    /// its place. A policy with no typed payloads does not throw.
     func liftTypedPayload(event: Event, metadata: EventMetadata) throws
 
     /// Clears pending event metadata after transition processing.

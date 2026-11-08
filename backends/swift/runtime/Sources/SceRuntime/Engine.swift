@@ -687,29 +687,44 @@ public final class Engine<Policy: StatePolicy> {
         return active
     }
 
-    /// Binds the dequeued event's typed `_event.data` view and reports a refusal as
-    /// `error.execution` (NL-to-IR Item C1 Path A).
+    /// The door of an event just taken off a queue (docs/adr/0086, section 4.2):
+    /// binds it as `_event` with its typed `_event.data` view (NL-to-IR Item C1 Path
+    /// A), and answers the event the loop offers to the configuration: the event
+    /// itself, the `error.execution` that carries the refusal of a delivery whose data
+    /// does not fit its type, taken in its place (`inPlace`), or `nil` when such a
+    /// delivery is refused in a document that declares no `error.execution`.
     ///
-    /// The raise lives here and not in each generated policy so that every machine
-    /// answers a payload it cannot read the same way, and so the answer is the script
-    /// engine's: §scxml-3.13 gives `error.execution` for a guard that cannot be
-    /// evaluated and treats it as false, which is exactly what a policy with no lifted
-    /// payload does: its tag stays `none` and the typed guards fail.
-    private func liftPayload(of event: Event, metadata: EventMetadata) {
+    /// A refused delivery is never offered to the configuration. The verdict lives
+    /// here and not in each generated policy so that every machine answers a payload
+    /// it cannot read the same way.
+    private func liftPayload(
+        _ eventWithMeta: EventWithMetadata<Event>,
+        fromExternalQueue: Bool
+    ) -> (taken: EventWithMetadata<Event>, inPlace: Bool)? {
+        currentEventInvokeID = eventWithMeta.metadata.invokeID
+        // §scxml-5.10: Populate policy metadata from event
+        policy.populateEventMetadata(typedAtDequeue(eventWithMeta, fromExternalQueue: fromExternalQueue))
         do {
-            try policy.liftTypedPayload(event: event, metadata: metadata)
+            try policy.liftTypedPayload(event: eventWithMeta.event, metadata: eventWithMeta.metadata)
+            return (eventWithMeta, false)
         } catch {
             guard let errorEvent = policy.getEventFromName("error.execution") else {
                 // §scxml-3.12.2 leaves a document that declares no error.execution
-                // transition nothing to answer with; the guard still does not fire.
-                return
+                // transition nothing to answer with: the delivery is refused all the
+                // same, and nothing is taken in its place.
+                policy.clearEventMetadata()
+                currentEventInvokeID = ""
+                return nil
             }
-            raise(
-                .platformError(
-                    errorEvent,
-                    message: "`\(policy.getEventName(event))` payload: \(error)"
-                )
+            let replacement = EventWithMetadata<Event>.platformError(
+                errorEvent,
+                message: "`\(policy.getEventName(eventWithMeta.event))` payload: \(error)"
             )
+            // The replacement carries no typed payload, so binding it clears the view
+            // the refused delivery left half read. It is the engine's own error.
+            currentEventInvokeID = ""
+            policy.populateEventMetadata(typedAtDequeue(replacement, fromExternalQueue: false))
+            return (replacement, true)
         }
     }
 
@@ -2000,10 +2015,19 @@ public final class Engine<Policy: StatePolicy> {
     /// Binds one event taken off the internal queue as `_event`, selects, and takes the
     /// microstep it selects (§scxml-D-mainEventLoop).
     private func takeInternalEvent(_ eventWithMeta: EventWithMetadata<Event>) {
-        // §scxml-5.10: Populate policy metadata from event
-        currentEventInvokeID = eventWithMeta.metadata.invokeID
-        policy.populateEventMetadata(typedAtDequeue(eventWithMeta, fromExternalQueue: false))
-        liftPayload(of: eventWithMeta.event, metadata: eventWithMeta.metadata)
+        // The door binds it, or the error.execution taken in its place; a delivery
+        // refused with nothing to take in its place took no microstep and moved nothing
+        // (docs/adr/0086, section 4.2).
+        guard let admitted = liftPayload(eventWithMeta, fromExternalQueue: false) else {
+            return
+        }
+        answer(admitted.taken)
+    }
+
+    /// Selects for an event bound as `_event` that came off the internal queue or that
+    /// a door took in a refused delivery's place, takes the microstep it selects, and
+    /// counts what became of it (§scxml-D-mainEventLoop).
+    private func answer(_ eventWithMeta: EventWithMetadata<Event>) {
         // §scxml-3.12.2: the processor raises error.* into this queue and the clause
         // says they "are ignored if no transition is found that matches them". Ignoring
         // them is the clause; staying silent about it is not. `discardedExternalEvents`
@@ -2082,9 +2106,27 @@ public final class Engine<Policy: StatePolicy> {
         macrostepTruncated = false
         macrostepMicrostepsTaken = 0
 
+        // The door comes first (docs/adr/0086, section 4.2): a delivery whose data does
+        // not fit its type is refused whole. The error.execution taken in its place is
+        // the engine's own error, so no <finalize> or autoforward runs for it, and it is
+        // answered as one off the internal queue is.
+        guard let admitted = liftPayload(eventWithMeta, fromExternalQueue: true) else {
+            return true
+        }
+        if admitted.inPlace {
+            answer(admitted.taken)
+            return true
+        }
+
         // §scxml-6.5: Execute finalize before parent's own transition matching
         if policy.hasFinalize {
             policy.executeFinalizeForChildEvent(&eventWithMeta, engine: self)
+            // A `<finalize>` binds the child's event its own way, which clears the
+            // typed view the door bound: the event is bound again as the door bound
+            // it. Its data was admitted there, so it reads again.
+            currentEventInvokeID = eventWithMeta.metadata.invokeID
+            policy.populateEventMetadata(typedAtDequeue(eventWithMeta, fromExternalQueue: true))
+            _ = try? policy.liftTypedPayload(event: eventWithMeta.event, metadata: eventWithMeta.metadata)
         }
         // W3C SCXML Appendix D mainEventLoop: autoforward belongs to the same
         // preliminary step as <finalize> above: both run against the event this drain
@@ -2112,10 +2154,6 @@ public final class Engine<Policy: StatePolicy> {
             }
             policy.forwardToAutoforwardChildren(eventName: name, metadata: eventWithMeta.metadata, engine: self)
         }
-        // §scxml-5.10: Populate policy metadata from event
-        currentEventInvokeID = eventWithMeta.metadata.invokeID
-        policy.populateEventMetadata(typedAtDequeue(eventWithMeta, fromExternalQueue: true))
-        liftPayload(of: eventWithMeta.event, metadata: eventWithMeta.metadata)
         // §scxml-3.1.2: "If no transition matches in any state, the event is
         // discarded." Discarding it is the rule; being unable to say so is not part of
         // the rule. The host that put this event on the queue is the one party that
