@@ -9,6 +9,11 @@ import PackageDescription
 // shares state across threads) needs macOS 15 and iOS 18 on Apple platforms; on
 // Linux it ships with the toolchain.
 //
+// `SceTestProfile` is the runtime of the test profile (docs/SCE_TEST_PROFILE.md §12.2): the round
+// scheduler, the ports, timers and verdicts a test case's components run on, and the runner of a suite.
+// A library of its own over `SceRuntime`, as the other runtimes keep it a module of their own, so a
+// machine that is no test component does not link it.
+//
 // `SceLua` is the optional script-engine tier, kept apart from `SceRuntime` the way the C runtime
 // keeps its scripting tier: a machine whose document needs no engine does not link Lua. `CLua`
 // compiles the Lua 5.4 sources of `third_party/lua` (reached through the `lua` link under
@@ -19,11 +24,14 @@ let package = Package(
     platforms: [.macOS(.v15), .iOS(.v18)],
     products: [
         .library(name: "SceRuntime", targets: ["SceRuntime"]),
+        .library(name: "SceTestProfile", targets: ["SceTestProfile"]),
         .library(name: "SceLua", targets: ["SceLua"]),
     ],
     targets: [
         .target(name: "SceRuntime"),
         .testTarget(name: "SceRuntimeTests", dependencies: ["SceRuntime"]),
+        .target(name: "SceTestProfile", dependencies: ["SceRuntime"]),
+        .testTarget(name: "SceTestProfileTests", dependencies: ["SceTestProfile", "SceRuntime"]),
         .target(
             name: "CLua",
             cSettings: [
