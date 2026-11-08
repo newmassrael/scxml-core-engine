@@ -16,15 +16,20 @@
 #   the engine takes the refused delivery after all;
 #   the engine answers the refusal by raising it and goes on with the delivery;
 #   the library lets a refused delivery in;
-#   the library's reader reads no field of the record.
+#   the library's reader reads no field of the record;
+#   a document under another data model is given no door.
+#
+# The last is held by `event_schema/statechart_lifted.scxml`, an `ecmascript`
+# document whose guard reads `job.completed` through its schema: the door holds
+# wherever an event's type is known.
 #
 # The library is embedded in the generator, so the regeneration is the build the ctest
 # names. Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_ctest --test-dir build -R '^static_datamodel_lowered$'
-mutation_targets sce/src/runtime/StateMachine.cpp sce-build/src/forge/static_js/sce_static.js
-mutation_oracles tests/integration/AStaticDatamodelRunsLoweredUnderTheInterpreterTest.cpp sce-build/tests/fixtures/static_datamodel/static_payload_bytes.scxml sce-build/tests/fixtures/static_datamodel/scenarios/static_payload_bytes.json sce-build/tests/fixtures/static_datamodel/sync_client.scxml sce-build/tests/fixtures/static_datamodel/scenarios/sync_client.json
+mutation_targets sce/src/runtime/StateMachine.cpp sce-build/src/forge/static_js/sce_static.js sce-build/src/forge/static_js.rs
+mutation_oracles tests/integration/AStaticDatamodelRunsLoweredUnderTheInterpreterTest.cpp sce-build/tests/fixtures/static_datamodel/static_payload_bytes.scxml sce-build/tests/fixtures/static_datamodel/scenarios/static_payload_bytes.json sce-build/tests/fixtures/static_datamodel/sync_client.scxml sce-build/tests/fixtures/static_datamodel/scenarios/sync_client.json sce-build/tests/fixtures/event_schema/statechart_lifted.scxml
 
 mutation_case "the engine never asks the door" <<'PY'
 edit("sce/src/runtime/StateMachine.cpp",
@@ -54,4 +59,10 @@ mutation_case "the library's reader reads no field of the record" <<'PY'
 edit("sce-build/src/forge/static_js/sce_static.js",
      "    var door = doors[event.name];",
      "    return '';")
+PY
+
+mutation_case "a document under another data model is given no door" <<'PY'
+edit("sce-build/src/forge/static_js.rs",
+     "        return install_doors(text, model).map_err(refuse);",
+     "        return Ok(text.to_string());")
 PY
