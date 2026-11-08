@@ -1715,6 +1715,207 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, ALiftOfAnIntegerTheDa
     engine_->destroySession(session);
 }
 
+// The library's `payload` reads the whole data of an event whose schema holds a composed
+// value (docs/adr/0086, section 6): every field as `field` reads it, a field a later
+// revision added as its default where the delivery lacks it, or the refusal of the first
+// place that is not one, with its code, pointer and bound. An integer past 2^53 - 1, which
+// a part walked into the data model would lose, is refused at its pointer as a lift
+// refuses it (`outOfRange`), and never handed on.
+TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheLibraryReadsAComposedPayloadWholeOrRefusesItWhole) {
+    const char *bin = std::getenv("SCE_CODEGEN_BIN");
+    ASSERT_NE(bin, nullptr) << "SCE_CODEGEN_BIN must be set by CMake add_test ENVIRONMENT";
+    const Ran ran =
+        capture(std::string("\"") + bin + "\" lower-algorithm sce:std/time/second_of_day.scxml 2>/dev/null");
+    ASSERT_EQ(0, ran.status);
+    const auto line = nlohmann::json::parse(ran.output, nullptr, false);
+    ASSERT_TRUE(line.is_object()) << ran.output.substr(0, 200);
+
+    const std::string session = "composed_payload_whole";
+    ASSERT_TRUE(engine_->createSession(session, ""));
+    const auto installed = engine_->executeScript(session, line.at("install").get<std::string>()).get();
+    ASSERT_TRUE(installed.isSuccess()) << installed.getErrorMessage();
+
+    const std::string type = "{record: {'xs': {list: 'uint8', max: 2}, 'n': 'int64', 'late': {list: 'uint8', max: "
+                             "2}}, defaults: {\"late\": []}}";
+
+    struct Case {
+        const char *data;
+        const char *read;     // nullptr: refused
+        const char *code;     // the refusal's code
+        const char *pointer;  // the refusal's pointer
+        int bound;            // the refusal's bound, -1 for none
+    };
+
+    const Case cases[] = {
+        {R"({"xs":[1,2],"n":"5"})", R"({"xs":[1,2],"n":5,"late":[]})", nullptr, nullptr, -1},
+        {R"({"late":[3],"n":"5","xs":[]})", R"({"xs":[],"n":5,"late":[3]})", nullptr, nullptr, -1},
+        {R"({"xs":[1,2,3],"n":"5"})", nullptr, "tooMany", "/xs", 2},
+        {R"({"xs":[],"n":"5","late":[1,2,3]})", nullptr, "tooMany", "/late", 2},
+        {R"({"n":"5"})", nullptr, "missing", "/xs", -1},
+        {R"({"xs":[1],"n":"9007199254740993"})", nullptr, "outOfRange", "/n", -1},
+    };
+    for (const Case &c : cases) {
+        const std::string program = std::string("(function () { try { return JSON.stringify({read: "
+                                                "SceStatic.payload(SceStatic.parseText(") +
+                                    nlohmann::json(c.data).dump() + "), " + type +
+                                    ")}); } catch (e) { return JSON.stringify({refusal: e.sceRefusal === undefined ? "
+                                    "null : e.sceRefusal, message: String(e.message)}); } })()";
+        const auto answered = engine_->evaluateExpression(session, program).get();
+        ASSERT_TRUE(answered.isSuccess()) << c.data << ": " << answered.getErrorMessage();
+        const auto got = nlohmann::json::parse(answered.getValue<std::string>(), nullptr, false);
+        ASSERT_TRUE(got.is_object()) << c.data << ": " << answered.getValue<std::string>();
+        if (c.read != nullptr) {
+            ASSERT_TRUE(got.contains("read")) << c.data << ": " << got.dump();
+            // Compared as JSON: the order of the members is no part of the answer.
+            EXPECT_EQ(got.at("read"), nlohmann::json::parse(c.read)) << c.data;
+            continue;
+        }
+        ASSERT_TRUE(got.contains("refusal") && got.at("refusal").is_object()) << c.data << ": " << got.dump();
+        const auto &refusal = got.at("refusal");
+        EXPECT_EQ(refusal.at("code"), c.code) << c.data << ": " << got.dump();
+        EXPECT_EQ(refusal.at("pointer"), c.pointer) << c.data << ": " << got.dump();
+        if (c.bound < 0) {
+            EXPECT_TRUE(refusal.at("bound").is_null()) << c.data << ": " << got.dump();
+        } else {
+            EXPECT_EQ(refusal.at("bound"), c.bound) << c.data << ": " << got.dump();
+        }
+    }
+    engine_->destroySession(session);
+}
+
+namespace {
+
+/// One item of `batch.sent` as JSON (`event_batch_item.scxml`): `tags` holds that many
+/// texts, and `amount` is the largest integer the Interpreter's data model holds exactly.
+std::string composedItem(int id, int tags) {
+    std::string listed;
+    for (int n = 0; n < tags; ++n) {
+        listed += (n > 0 ? "," : "") + std::string("\"tag") + std::to_string(n) + "\"";
+    }
+    return "{\"id\":" + std::to_string(id) +
+           ",\"amount\":\"9007199254740991\",\"label\":\"abcdefgh\",\"level\":\"high\",\"due\":null,"
+           "\"blob\":\"wxyz\",\"tags\":[" +
+           listed + "]}";
+}
+
+/// A delivery of `batch.sent` (`event_batch.scxml`) whose every list is full, the second
+/// item's `tags` holding `secondTags` texts.
+std::string composedBatch(int secondTags) {
+    return "{\"items\":[" + composedItem(1, 4) + "," + composedItem(2, secondTags) + "," + composedItem(3, 4) +
+           "],\"grid\":[[1,2],[3,4]],\"levels\":[\"low\",\"critical\"],\"maybe\":[7,null],\"spare\":[1,2],"
+           "\"note\":\"abcd\",\"late\":[5,6]}";
+}
+
+/// `text` with its first `from` written `to`.
+std::string withFirst(std::string text, const std::string &from, const std::string &to) {
+    const auto at = text.find(from);
+    EXPECT_NE(at, std::string::npos) << "`" << from << "` is not in " << text;
+    if (at != std::string::npos) {
+        text.replace(at, from.size(), to);
+    }
+    return text;
+}
+
+}  // namespace
+
+// The Interpreter reads a composed payload at any depth (docs/adr/0086, section 6), as the
+// generated machines do (AComposedPayloadIsReadAtAnyDepthTest and its siblings): the
+// lowered `static_composed_payload` measures a list of the payload, walks it with an index
+// and each item's `tags`, reads a field of an element through its index, walks a list of
+// lists, reads `grid[1][0]`, an element that may be absent and the length of the first
+// item's `tags`, and takes `late` whole into a list of a larger bound.
+TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, AComposedPayloadIsReadAtAnyDepth) {
+    const Lowered lowered = lower(kFixtures / "static_composed_payload.scxml");
+    ASSERT_TRUE(lowered.ok) << lowered.refusal.dump();
+    const auto machine = std::make_shared<StateMachine>(*engine_);
+    const auto raiser = wire(*machine);
+    ASSERT_TRUE(machine->loadSCXMLFromString(lowered.document)) << "the Interpreter does not load the document";
+    ASSERT_TRUE(machine->start());
+    machine->processEvent("batch.sent", composedBatch(4));
+    ASSERT_TRUE(settles(raiser, [&] { return variable(*machine, "item_count") == 3; }))
+        << "the length of `items` was not read: refusals " << variable(*machine, "refusals").dump();
+    EXPECT_EQ(variable(*machine, "refusals"), 0) << "a delivery of its type is no error";
+    // Depth 2: a loop over each item's list, and a field of an element read through its index.
+    EXPECT_EQ(variable(*machine, "tag_count"), 12);
+    EXPECT_EQ(variable(*machine, "word_count"), 12);
+    EXPECT_EQ(variable(*machine, "id_sum"), 6);
+    // A list of lists, walked at both depths and read by two indices.
+    EXPECT_EQ(variable(*machine, "cell_sum"), 10);
+    EXPECT_EQ(variable(*machine, "cell"), 3);
+    // Depth 3: the length of the first item's `tags`.
+    EXPECT_EQ(variable(*machine, "first_tags"), 4);
+    // An element that may be absent, present.
+    EXPECT_EQ(variable(*machine, "first_maybe"), 7);
+    // A list taken whole into a list of a larger bound.
+    EXPECT_EQ(variable(*machine, "late"), nlohmann::json::array({5, 6}));
+}
+
+// A delivery outside its type is refused whole by the Interpreter too (docs/adr/0086,
+// sections 4.2 and 5.4): a list one past its bound at depth two, a text past its bound at
+// depth three and at the top level, a list a later revision added one past its bound, and
+// an integer past what the data model holds. Each is refused by the first expression that
+// reads the data, which is the transition's first: none of the content runs, nothing of the
+// delivery is kept, and error.execution reaches the document once for each.
+TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, AComposedPayloadOutsideItsTypeIsRefusedWhole) {
+    const Lowered lowered = lower(kFixtures / "static_composed_payload.scxml");
+    ASSERT_TRUE(lowered.ok) << lowered.refusal.dump();
+    const auto machine = std::make_shared<StateMachine>(*engine_);
+    const auto raiser = wire(*machine);
+    ASSERT_TRUE(machine->loadSCXMLFromString(lowered.document)) << "the Interpreter does not load the document";
+    ASSERT_TRUE(machine->start());
+    const std::string full = composedBatch(4);
+    const std::vector<std::pair<std::string, std::string>> deliveries = {
+        {"`items/1/tags` holds five texts, past its four", composedBatch(5)},
+        {"`items/0/tags/0` is nine bytes, past its eight", withFirst(full, "\"tag0\"", "\"ninebytes\"")},
+        {"`note` is five bytes, past its four", withFirst(full, "\"note\":\"abcd\"", "\"note\":\"abcde\"")},
+        {"`late` holds three, past its two", withFirst(full, "\"late\":[5,6]", "\"late\":[5,6,7]")},
+        {"`items/0/amount` is past 2^53 - 1",
+         withFirst(full, "\"amount\":\"9007199254740991\"", "\"amount\":\"9007199254740993\"")},
+    };
+    int refused = 0;
+    for (const auto &[why, data] : deliveries) {
+        SCOPED_TRACE(why);
+        machine->processEvent("batch.sent", data);
+        ++refused;
+        EXPECT_TRUE(settles(raiser, [&] { return variable(*machine, "refusals") == refused; }))
+            << "refusals is " << variable(*machine, "refusals").dump() << ", not " << refused;
+        EXPECT_EQ(variable(*machine, "item_count"), 0) << "none of the content ran";
+        EXPECT_EQ(variable(*machine, "late"), nlohmann::json::array()) << "nothing of the delivery was kept";
+    }
+}
+
+// The Interpreter sends a composed value by its name (docs/adr/0086, section 5.2), as the
+// generated machines do (AComposedValueIsSentByItsNameTest and its siblings): the lowered
+// `static_composed_send` forwards its first delivery to itself, four lists and an optional
+// list named as the parts of the payload they are and `late` as the list variable it took
+// the payload's into, and the delivery that comes back is read whole and fits its schema.
+TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, AComposedValueIsSentByItsName) {
+    const Lowered lowered = lower(kFixtures / "static_composed_send.scxml");
+    ASSERT_TRUE(lowered.ok) << lowered.refusal.dump();
+    const auto machine = std::make_shared<StateMachine>(*engine_);
+    const auto raiser = wire(*machine);
+    ASSERT_TRUE(machine->loadSCXMLFromString(lowered.document)) << "the Interpreter does not load the document";
+    ASSERT_TRUE(machine->start());
+    machine->processEvent("batch.sent", composedBatch(3));
+    ASSERT_TRUE(settles(raiser, [&] { return variable(*machine, "deliveries") == 2; }))
+        << "the forwarded delivery did not come back: deliveries " << variable(*machine, "deliveries").dump()
+        << ", refusals " << variable(*machine, "refusals").dump();
+    EXPECT_EQ(variable(*machine, "refusals"), 0) << "the delivery the machine sent itself fits its schema";
+    // Depth 1: the lengths of a list of records and a list of enum values.
+    EXPECT_EQ(variable(*machine, "item_count"), 3);
+    EXPECT_EQ(variable(*machine, "level_count"), 2);
+    // Depth 2: each item's list, and a field of an element read by its index.
+    EXPECT_EQ(variable(*machine, "tag_count"), 11);
+    EXPECT_EQ(variable(*machine, "id_sum"), 6);
+    // A list of lists, walked at both depths.
+    EXPECT_EQ(variable(*machine, "cell_sum"), 10);
+    // An element that may be absent, present.
+    EXPECT_EQ(variable(*machine, "first_maybe"), 7);
+    // The list variable, sent by its name.
+    EXPECT_EQ(variable(*machine, "late_sum"), 11);
+    EXPECT_EQ(variable(*machine, "late"), nlohmann::json::array({5, 6}));
+}
+
 // SCE_MESH.md, Errors: a send to a peer from a machine whose host registered no Mesh
 // router is a configuration fault of the host and raises error.execution, as it does
 // on every other backend. It is not an event the sender takes from itself:

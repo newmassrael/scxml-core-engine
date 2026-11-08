@@ -1135,3 +1135,119 @@ fn an_algorithm_looping_over_a_bounded_collection_is_refused_by_name() {
         );
     }
 }
+
+/// The value of the attribute `name` of each SCXML element `element` of
+/// `document` whose attribute `key` is `value` (any, where `key` is empty), in
+/// document order, as a reader decodes it.
+fn attributes_of(
+    document: &roxmltree::Document<'_>,
+    element: &str,
+    (key, value): (&str, &str),
+    name: &str,
+) -> Vec<String> {
+    document
+        .descendants()
+        .filter(|n| {
+            n.is_element()
+                && n.tag_name().name() == element
+                && n.tag_name().namespace() == Some("http://www.w3.org/2005/07/scxml")
+                && (key.is_empty() || n.attribute(key) == Some(value))
+        })
+        .filter_map(|n| n.attribute(name).map(str::to_string))
+        .collect()
+}
+
+/// The read of the whole data of `batch.sent` in `document`, a lowered
+/// statechart that takes the payload's `late` whole into its variable `late`:
+/// that `<assign>` is the read and the field after it, since a list the
+/// Interpreter holds is copied as it is.
+fn batch_payload_read(document: &roxmltree::Document<'_>) -> String {
+    let late = attributes_of(document, "assign", ("location", "late"), "expr");
+    assert_eq!(late.len(), 1, "one <assign> takes `late` whole: {late:?}");
+    late[0]
+        .strip_suffix(".late")
+        .unwrap_or_else(|| panic!("`late` is the read of the data and its field: {}", late[0]))
+        .to_string()
+}
+
+/// The data of an event whose schema holds a composed value is read whole, by
+/// the library's `payload` handed the descriptor of the schema's record with
+/// every bound at every depth in it, and its defaults (docs/adr/0086, sections
+/// 4 and 6). Every read of a part of it is that value and the fields, elements
+/// and lengths after it: the `<foreach>` that walks a list of the data, the one
+/// that walks a list an enclosing loop's item holds, the length, and the list
+/// taken whole. No field of it is read on its own through `field`, which would
+/// refuse that field alone and leave the rest of the delivery unread.
+#[test]
+fn a_composed_payload_is_read_whole_and_at_any_depth_through_the_library() {
+    let out = lowered_fixture("static_composed_payload");
+    let document = roxmltree::Document::parse(&out).expect("well-formed");
+    let read = batch_payload_read(&document);
+    assert!(
+        read.starts_with(
+            "SceStatic.payload(_event.data, {record: {'items': {list: {record: {'id': 'uint32', \
+             'amount': 'int64', 'label': {string: 8}, 'level': ['low', 'high'"
+        ),
+        "{read}"
+    );
+    for part in [
+        "'due': {optional: 'int64'}, 'blob': {bytes: 4}, 'tags': {list: {string: 8}, max: 4}}}, \
+         max: 3}",
+        "'grid': {list: {list: 'uint8', max: 2}, max: 2}",
+        "'maybe': {list: {optional: 'uint16'}, max: 2}",
+        "'spare': {optional: {list: 'uint8', max: 2}}",
+        "'note': {string: 4}",
+    ] {
+        assert!(read.contains(part), "the read holds `{part}`: {read}");
+    }
+    assert!(
+        read.ends_with("'late': {list: 'uint8', max: 2}}, defaults: {\"late\":[]}})"),
+        "a list the second revision added reads empty where a delivery lacks it: {read}"
+    );
+    assert_eq!(
+        attributes_of(&document, "foreach", ("", ""), "array"),
+        [
+            format!("{read}.items"),
+            "row.tags".to_string(),
+            format!("{read}.grid"),
+            "cells".to_string()
+        ],
+        "{out}"
+    );
+    let measured = attributes_of(&document, "assign", ("location", "item_count"), "expr");
+    assert!(
+        measured.len() == 1 && measured[0].contains(&format!("{read}.items.length")),
+        "the length of a list of the data: {measured:?}"
+    );
+    assert!(
+        !out.contains("SceStatic.field(_event.data"),
+        "no field of a composed payload is read on its own: {out}"
+    );
+}
+
+/// What a `<send>` carries where a `<param>` names a composed value: the value
+/// as it crosses (docs/adr/0086, section 5.3), a list mapped element by element
+/// only where an element changes, here a record whose 64-bit integers cross as
+/// the text of their digits, a value that may be absent kept `null`; a list a
+/// variable holds is named as it is, and a literal is left as written.
+#[test]
+fn a_composed_value_is_sent_by_its_name_as_the_value_its_param_carries() {
+    const ITEM_CROSSES: &str = ".items.map(function (sceElement) { return ({'id': sceElement.id, \
+         'amount': String(sceElement.amount), 'label': sceElement.label, 'level': \
+         sceElement.level, 'due': SceStatic.mapPresent(sceElement.due, function (sceElement) { \
+         return String(sceElement); }), 'blob': sceElement.blob, 'tags': sceElement.tags}); })";
+    let out = lowered_fixture("static_composed_send");
+    let document = roxmltree::Document::parse(&out).expect("well-formed");
+    let read = batch_payload_read(&document);
+    let param = |name: &str| {
+        let carried = attributes_of(&document, "param", ("name", name), "expr");
+        assert_eq!(carried.len(), 1, "one <param name=\"{name}\">: {carried:?}");
+        carried[0].clone()
+    };
+    assert_eq!(param("items"), format!("{read}{ITEM_CROSSES}"));
+    for field in ["grid", "levels", "maybe", "spare"] {
+        assert_eq!(param(field), format!("{read}.{field}"), "{field}");
+    }
+    assert_eq!(param("late"), "late");
+    assert_eq!(param("note"), "'echo'");
+}

@@ -18436,6 +18436,10 @@ fn lower_action(
                 // 6.1).
                 None => walked_place(&list, ctx, renames, rewrites)?,
             };
+            // Where the list is written, for a target that runs the document's
+            // own `<foreach>` (the Interpreter): the list as the walk reads it,
+            // which for one a place holds is the place's own spelling.
+            rewrites.note(&action.array, action.spellings.get("array"), &walked.name);
             let item = action.item.trim().to_string();
             let item = item.as_str();
             let index = action.index.trim().to_string();
@@ -19715,7 +19719,13 @@ fn composed_wire_value(
         )
         .map_err(refused)?,
     );
-    rewrites.note(written, param.spelling, &held);
+    // A target that leaves the expression in the document (the Interpreter)
+    // writes the value as it crosses, as a scalar param's is.
+    if target.lowers_host_action_arguments() {
+        rewrites.note(written, param.spelling, &wired);
+    } else {
+        rewrites.note(written, param.spelling, &held);
+    }
     Ok(Some(wired))
 }
 

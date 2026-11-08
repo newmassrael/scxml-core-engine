@@ -5418,7 +5418,7 @@ by its own name each position it does not lower.
 
 - `swift` lowers reads, copies, sends; refuses unions
 
-- `ecmascript` lowers none; refuses reads, copies, unions, sends
+- `ecmascript` lowers reads, copies, sends; refuses unions
 <!-- composed-lowering-rows: end -->
 
 The fixtures `static_composed_payload` and `static_composed_send`
@@ -5457,6 +5457,13 @@ this list):
   machines, and `AComposedPayloadIsReadAtAnyDepthTests.swift` and
   `AComposedValueIsSentByItsNameTests.swift` under
   `backends/swift/tests/Tests/StaticDatamodelTests/` drive them.
+
+- `ecmascript`: `sce-codegen lower` lowers the documents where the test runs,
+  and `AComposedPayloadIsReadAtAnyDepth`,
+  `AComposedPayloadOutsideItsTypeIsRefusedWhole` and
+  `AComposedValueIsSentByItsName` in
+  `tests/integration/AStaticDatamodelRunsLoweredUnderTheInterpreterTest.cpp`
+  run them on the Interpreter.
 <!-- composed-lowering-harnesses: end -->
 
 What no backend lowers yet is refused by name where the machine is generated, in

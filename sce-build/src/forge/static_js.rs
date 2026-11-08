@@ -36,7 +36,9 @@
 //! [`crate::forge::static_js_algorithm`] does not spell (a `<sce:foreach>` over
 //! a bounded-collection import), an `<invoke type="scxml">` whose `src` names a
 //! Mesh peer rather than a document, a model's generation
-//! (`sce-host-model-generate`, docs/adr/0087, section 7.1), and the executable
+//! (`sce-host-model-generate`, docs/adr/0087, section 7.1), a union
+//! (docs/adr/0092, the row of this lowering in
+//! [`crate::forge::event_schema_check::ComposedLowering::ECMASCRIPT`]), and the executable
 //! content the walk does not lower are refused with
 //! `generate/unsupported-feature` naming the construct, never passed through:
 //! an expression left as the author wrote it would be run by the script engine
@@ -124,12 +126,27 @@
 //! once when the event is dequeued and raises `error.execution` once for a
 //! malformed delivery, and the Interpreter raises one for each expression that
 //! reads a field.
+//!
+//! # A composed payload
+//!
+//! The data of an event whose schema holds a list, a record or an optional
+//! value of either (docs/adr/0086) is read whole, by the library's `payload`
+//! handed the descriptor of the schema's record, every bound at every depth in
+//! it ([`JsTarget::reading_composed_payloads`], spelled by
+//! [`crate::forge::composed_lowering::JsComposed`]), and a read at any depth is
+//! that value and the fields, elements and lengths after it. A `<foreach>` over
+//! a list the data or an enclosing loop's item holds walks that list, a list
+//! taken whole into a list variable is the value itself, which nothing changes
+//! in place, and a `<send>` carries a composed value by its name as the value
+//! its `<param>` writes, a 64-bit integer as the text of its digits. A delivery
+//! outside its type is refused by the first expression that reads any of it.
 
 use std::collections::BTreeMap;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use crate::attribute_spelling::AttributeSpelling;
+use crate::forge::composed_lowering::JsComposed;
 use crate::forge::error::{ForgeError, GenerateError, Located};
 use crate::forge::expr::ExprTarget;
 use crate::forge::import_source::ImportSource;
@@ -254,11 +271,93 @@ pub struct JsTarget {
     /// Each imported algorithm's document name, and the symbol it is installed
     /// under.
     algorithms: BTreeMap<String, String>,
+    /// Each event whose schema holds a composed value, and the read of its
+    /// whole data an expression reads a part of it through
+    /// ([`Self::reading_composed_payloads`]).
+    payloads: BTreeMap<String, String>,
 }
 
 impl JsTarget {
     fn new(algorithms: BTreeMap<String, String>) -> Self {
-        Self { algorithms }
+        Self {
+            algorithms,
+            payloads: BTreeMap::new(),
+        }
+    }
+
+    /// This target, reading the data of each event of `model` whose schema
+    /// holds a composed value (docs/adr/0086, section 6) through the library's
+    /// `payload`, handed the descriptor of the schema's record that the walk of
+    /// its type spells ([`JsComposed`]): every field read at once, each bound
+    /// held at every depth, so a delivery outside its type is refused whole by
+    /// the first expression that reads any of it, and none of its content that
+    /// reads the data runs (docs/adr/0086, section 4.2). A read is then that
+    /// value and the fields, elements and lengths after it, as a generated
+    /// machine reads the payload it lifted.
+    ///
+    /// The Interpreter's script engine reads an event's data in the expression
+    /// that names it, so the data is read where each expression reads it, and a
+    /// transition's content that runs before its first read of the data runs
+    /// for a delivery the read then refuses, where a generated machine lifts
+    /// the payload once, when the event is dequeued (docs/SCE_ACCEPTED_SUBSET.md
+    /// §2.15).
+    ///
+    /// An event whose read the walk cannot spell (its record no import of the
+    /// statechart's) is left out, so its data is `_event.data` as the engine
+    /// holds it, and the walk refuses a read of it by name where it declares
+    /// what the payload holds, as it refuses one on every backend.
+    fn reading_composed_payloads(mut self, model: &SCXMLModel) -> Self {
+        use crate::forge::composed_lowering as composed;
+        let entries = model.entry_event_schemas();
+        let records = composed::StatechartRecords::of(model);
+        // An enum is held by the names its variants declare, which is what its
+        // reader reads.
+        let enums: BTreeMap<String, composed::MachineEnum> = model
+            .held_enums()
+            .iter()
+            .filter_map(|(alias, held)| {
+                Some((
+                    alias.clone(),
+                    composed::MachineEnum {
+                        alias: alias.clone(),
+                        ty: self.enum_type("", alias)?,
+                        variants: held
+                            .variants
+                            .iter()
+                            .map(|v| (v.name.clone(), v.name.clone()))
+                            .collect(),
+                    },
+                ))
+            })
+            .collect();
+        for (event, schema) in &model.imported_event_schemas {
+            if entries.contains_key(event) {
+                continue;
+            }
+            let Some(alias) = model
+                .imported_records
+                .iter()
+                .find(|(_, held)| held.name == schema.name)
+                .map(|(alias, _)| alias.clone())
+            else {
+                continue;
+            };
+            let read = composed::reader(
+                &crate::forge::value_type::ValueType::Record { alias },
+                None,
+                &records,
+                &enums,
+                &JsComposed,
+                PAYLOAD_ACCESSOR,
+            );
+            if let Ok(descriptor) = read {
+                self.payloads.insert(
+                    event.clone(),
+                    format!("{RUNTIME_GLOBAL}.payload({PAYLOAD_ACCESSOR}, {descriptor})"),
+                );
+            }
+        }
+        self
     }
 
     /// The `<assign>` of `location` to the expression `expr`, as the element.
@@ -272,8 +371,9 @@ impl JsTarget {
 }
 
 /// The type the library's `field` holds an enum field to: the array of the
-/// names its variants declare.
-fn variant_list(variants: &[&str]) -> String {
+/// names its variants declare. An enum a composed value holds at any depth is
+/// read by the same array ([`JsComposed`]).
+pub(crate) fn variant_list(variants: &[&str]) -> String {
     let names: Vec<String> = variants.iter().map(|name| format!("'{name}'")).collect();
     format!("[{}]", names.join(", "))
 }
@@ -593,6 +693,22 @@ impl StaticTarget for JsTarget {
         }
         None
     }
+    // A composed value is read by the descriptor of its type, copied as it is
+    // and written for a `<send>` as the value its `<param>` carries
+    // (docs/adr/0086, [`JsComposed`]): one spelling serves both, since the
+    // Interpreter has no typed seam a host writes a value into.
+    fn composed_spelling<'a>(
+        &self,
+        _machine: &'a str,
+    ) -> Option<Box<dyn crate::forge::composed_lowering::ComposedSpelling + 'a>> {
+        Some(Box::new(JsComposed))
+    }
+    fn composed_send_spelling<'a>(
+        &self,
+        _machine: &'a str,
+    ) -> Option<Box<dyn crate::forge::composed_lowering::ComposedSpelling + 'a>> {
+        Some(Box::new(JsComposed))
+    }
     fn expr_target(&self) -> ExprTarget {
         ExprTarget::Js
     }
@@ -847,8 +963,15 @@ impl StaticTarget for JsTarget {
     fn condition_failed_flag(&self, _if_ordinal: u32) -> String {
         String::new()
     }
-    fn payload_accessor(&self, _event: &str) -> String {
-        PAYLOAD_ACCESSOR.to_string()
+    // The engine's own `_event.data`, a field of which the expression lowering
+    // reads through the library's `field`; the data of an event whose schema
+    // holds a composed value is read whole instead, and a part of it is read
+    // from that value ([`JsTarget::reading_composed_payloads`]).
+    fn payload_accessor(&self, event: &str) -> String {
+        self.payloads
+            .get(event)
+            .cloned()
+            .unwrap_or_else(|| PAYLOAD_ACCESSOR.to_string())
     }
     // A delivery that carried no payload makes the read throw, so the guard
     // is false and says so: there is no channel to check before it.
@@ -1318,9 +1441,9 @@ fn lower_parsed(
     if model.datamodel != Datamodel::SceStatic {
         return Ok(text.to_string());
     }
-    // A composed value no lowering holds yet is refused by name, by the one
-    // place that decides it, before this lowering reads the model, as every
-    // other backend's is (docs/adr/0086, section 7.3).
+    // A composed value this lowering does not hold yet is refused by name, by
+    // the one place that decides it, before this lowering reads the model, as
+    // every other backend's is (docs/adr/0086, section 7.3).
     crate::forge::event_schema_check::check_composed_uses(
         model,
         label,
@@ -1339,7 +1462,7 @@ fn lower_parsed(
     }
     let LoweredCallees { called, installed } =
         lowered_algorithms(model, base_dir).map_err(refuse)?;
-    let target = JsTarget::new(called);
+    let target = JsTarget::new(called).reading_composed_payloads(model);
     let mut lowered = model.clone();
     let machine = crate::filters::to_pascal_case(model.name.clone());
     let lowering = lower(&mut lowered, &machine, &target).map_err(refuse)?;
@@ -1959,6 +2082,9 @@ mod tests {
             "at: function",
             "round: function",
             "field: field",
+            // The whole data of an event whose schema holds a composed value
+            // (`JsTarget::reading_composed_payloads`).
+            "payload: payload",
             "out: function",
             "extend: function",
             "candidate: function",
@@ -2481,6 +2607,53 @@ mod tests {
             "{out}"
         );
         assert_eq!(exprs_of(&out, "param", "name", "title"), ["title"], "{out}");
+    }
+
+    /// The Interpreter's row of the one table of what is lowered of a composed
+    /// value says what its target spells, no more and no less, as each
+    /// backend's row is held to its static target
+    /// (`each_backend_lowers_the_composed_positions_its_spelling_spells`): it
+    /// reads a composed payload and takes a list whole exactly where the target
+    /// spells the walks for a read, sends one exactly where it spells them for a
+    /// send (docs/adr/0086, sections 5 and 6), and holds a union exactly where
+    /// that spelling names a read of a union's tag (docs/adr/0092, section 7).
+    /// A row flipped without the spelling, or a spelling landed without the
+    /// row, is a lowering the gate hands what it cannot write, or refuses what
+    /// it writes.
+    #[test]
+    fn the_interpreter_row_lowers_the_composed_positions_its_target_spells() {
+        use crate::forge::event_schema_check::ComposedLowering;
+        let lowering = ComposedLowering::ECMASCRIPT;
+        let target = JsTarget::new(BTreeMap::new());
+        let read = target.composed_spelling("M");
+        let sent = target.composed_send_spelling("M");
+        let holds_unions = read
+            .as_ref()
+            .is_some_and(|spelling| spelling.union_tag_read("kind").is_some());
+        assert_eq!(lowering.reads, read.is_some());
+        assert_eq!(lowering.copies, read.is_some());
+        assert_eq!(lowering.sends, sent.is_some());
+        assert_eq!(lowering.unions, holds_unions);
+        assert_eq!(lowering.name, target.name());
+    }
+
+    /// The data of an event whose schema holds no composed value is the
+    /// engine's own `_event.data`, a field of which the library's `field`
+    /// reads; that of one whose schema holds one is read whole, by the read the
+    /// target was built with.
+    #[test]
+    fn only_a_composed_payload_is_read_whole() {
+        let mut target = JsTarget::new(BTreeMap::new());
+        assert_eq!(target.payload_accessor("tick"), PAYLOAD_ACCESSOR);
+        target.payloads.insert(
+            "batch.sent".to_string(),
+            "SceStatic.payload(_event.data, {record: {}})".to_string(),
+        );
+        assert_eq!(
+            target.payload_accessor("batch.sent"),
+            "SceStatic.payload(_event.data, {record: {}})"
+        );
+        assert_eq!(target.payload_accessor("tick"), PAYLOAD_ACCESSOR);
     }
 
     /// An optional payload field is read through the library's `field` with its

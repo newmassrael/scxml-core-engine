@@ -49,6 +49,7 @@ use crate::forge::model::{EventSchemaModel, SceType};
 use crate::forge::value_type::{ScopedCase, ScopedUnion, TypeScope, ValueType};
 
 mod cpp;
+mod ecmascript;
 mod go;
 mod kotlin;
 mod python;
@@ -58,6 +59,7 @@ mod swift;
 mod test_support;
 
 pub use cpp::{CppCarrier, CppComposed};
+pub use ecmascript::JsComposed;
 pub use go::{GoCarrier, GoComposed};
 pub use kotlin::{KotlinCarrier, KotlinComposed};
 pub use python::{PythonCarrier, PythonComposed};

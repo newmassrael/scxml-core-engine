@@ -249,13 +249,18 @@ pub struct ComposedLowering {
 }
 
 impl ComposedLowering {
-    /// The Interpreter's ecmascript lowering, which lowers no composed value yet.
+    /// The Interpreter's ecmascript lowering, the row of a lowering that is no
+    /// generated backend and so has no line of [`Self::of`]: it reads a composed
+    /// payload at any depth, takes a list whole and sends a composed value, as
+    /// its target spells the walks
+    /// ([`crate::forge::composed_lowering::JsComposed`]), and holds no union yet.
+    /// Pinned beside that spelling (`composed_lowering/ecmascript.rs`).
     pub const ECMASCRIPT: Self = Self {
         name: "ecmascript",
-        reads: false,
-        copies: false,
+        reads: true,
+        copies: true,
         unions: false,
-        sends: false,
+        sends: true,
     };
 
     /// What some generated backend lowers: the gate every route asks before a
@@ -2644,16 +2649,6 @@ mod tests {
         assert_eq!(
             ComposedLowering::ANY_BACKEND.sends,
             some_backend(|lowering| lowering.sends)
-        );
-        assert_eq!(
-            ComposedLowering::ECMASCRIPT,
-            ComposedLowering {
-                name: "ecmascript",
-                reads: false,
-                copies: false,
-                unions: false,
-                sends: false,
-            }
         );
     }
 

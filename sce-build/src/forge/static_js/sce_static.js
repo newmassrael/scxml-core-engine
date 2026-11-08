@@ -636,6 +636,25 @@
     return readValue(value, type, name, pointer);
   }
 
+  /* The data of an event whose schema holds a composed value (docs/adr/0086,
+     section 6), read whole as type, the record of its schema, describes: each
+     field as field() reads it, and a field a later revision added as its
+     default where the delivery lacks it. So a delivery outside its type is
+     refused whole, at the first place that is not one, by any expression that
+     reads any part of it, before anything of it is kept. The parts are walked
+     into the data model, as a foreach binds an element of a list to its item,
+     and the data model holds no integer past 2^53 - 1: one is refused at its
+     pointer (held()), as a lift refuses it, rather than lost on the way. */
+  function payload(data, type) {
+    var read = {};
+    Object.keys(type.record).forEach(function (id) {
+      var revised = type.defaults !== undefined && Object.prototype.hasOwnProperty.call(type.defaults, id);
+      read[id] = revised ? field(data, id, type.record[id], type.defaults[id]) : field(data, id, type.record[id]);
+    });
+    held(read, '');
+    return read;
+  }
+
   /* What a type descriptor describes. A scalar is named by its type, an enum by
      the array of its names, and a composed type by an object with one key that
      names its constructor: {optional: T}, {list: T, max: B}, with min: M beside
@@ -951,6 +970,7 @@
     U32: integer(false, 32),
     U64: integer(false, 64),
     field: field,
+    payload: payload,
     lift: lift,
     parseText: parseText,
     otherwise: function (value, fallback) {
