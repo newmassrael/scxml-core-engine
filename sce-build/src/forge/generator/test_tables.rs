@@ -20,6 +20,7 @@
 //! (`crate::forge::test_profile_assembly`); what is refused here is only what
 //! a well-formed set of documents cannot reach, by name.
 
+use super::test_template_walk::Connectives;
 use super::*;
 use crate::forge::value_type::ValueType;
 use crate::presence_condition::PresenceExpr;
@@ -295,28 +296,46 @@ pub(super) fn execute_rows<'i>(
 /// feature it is given, `all` is a conjunction and `any` a disjunction, each
 /// join of two or more parts in parentheses.
 pub(super) fn selection_expr(expr: &PresenceExpr, enabled: &dyn Fn(&str) -> String) -> String {
-    spelled(expr, enabled, true)
+    spelled(expr, enabled, Connectives::C, true)
 }
 
 /// [`selection_expr`] with the outermost join left bare: what a language that
 /// refuses parentheses around a whole closure body (Rust's `unused_parens`)
 /// writes as one. Every join inside it keeps its parentheses.
 pub(super) fn selection_body(expr: &PresenceExpr, enabled: &dyn Fn(&str) -> String) -> String {
-    spelled(expr, enabled, false)
+    selection_body_in(expr, enabled, Connectives::C)
 }
 
-/// `expr` spelled, its join in parentheses where `grouped` holds; every part
-/// of a join of two or more is grouped, and a join of one part is that part,
-/// spelled as the join would be.
-fn spelled(expr: &PresenceExpr, enabled: &dyn Fn(&str) -> String, grouped: bool) -> String {
-    let joined = |parts: &[PresenceExpr], op: &str| {
+/// [`selection_body`] in the words `words` joins by: Python's `and` and `or`
+/// ([`Connectives::PYTHON`]), in which a conjunction binds tighter than a
+/// disjunction as it does in C's, so the same parentheses keep each join
+/// apart.
+pub(super) fn selection_body_in(
+    expr: &PresenceExpr,
+    enabled: &dyn Fn(&str) -> String,
+    words: Connectives,
+) -> String {
+    spelled(expr, enabled, words, false)
+}
+
+/// `expr` spelled in `words`, its join in parentheses where `grouped` holds;
+/// every part of a join of two or more is grouped, and a join of one part is
+/// that part, spelled as the join would be.
+fn spelled(
+    expr: &PresenceExpr,
+    enabled: &dyn Fn(&str) -> String,
+    words: Connectives,
+    grouped: bool,
+) -> String {
+    let joined = |parts: &[PresenceExpr], conjunction: bool| {
         if let [only] = parts {
-            return spelled(only, enabled, grouped);
+            return spelled(only, enabled, words, grouped);
         }
         let parts: Vec<String> = parts
             .iter()
-            .map(|part| spelled(part, enabled, true))
+            .map(|part| spelled(part, enabled, words, true))
             .collect();
+        let op = words.joiner(conjunction);
         if grouped {
             format!("({})", parts.join(op))
         } else {
@@ -325,7 +344,7 @@ fn spelled(expr: &PresenceExpr, enabled: &dyn Fn(&str) -> String, grouped: bool)
     };
     match expr {
         PresenceExpr::Feature { name, .. } => enabled(name),
-        PresenceExpr::All(parts) => joined(parts, " && "),
-        PresenceExpr::Any(parts) => joined(parts, " || "),
+        PresenceExpr::All(parts) => joined(parts, true),
+        PresenceExpr::Any(parts) => joined(parts, false),
     }
 }

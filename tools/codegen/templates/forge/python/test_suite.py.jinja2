@@ -1,0 +1,53 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "python", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+# SCE Forge: Auto-generated from Extended SCXML (sce:kind="test-suite")
+# Runtime: {{ runtime_dep }}
+# Do not edit — regenerate from the source SCXML file.
+{# `python_imports` are the modules of the test cases' units, beside this one,
+   under the alias every Python unit imports a sibling by; the feature model
+   writes no unit, so none is imported. The runtime's writers of a saved value,
+   which a default is written by, are imported where a module parameter is
+   declared. #}
+
+{% if parameters %}
+import {{ saved_values_path }} as {{ saved_values }}
+{% endif %}
+import {{ runtime_path }} as {{ runtime }}
+{% if python_imports %}
+
+{% for imp in python_imports %}
+{{ imp }}
+{% endfor %}
+{% endif %}
+
+
+def suite() -> {{ runtime }}.Suite:
+    """The test suite ``{{ suite_name }}`` (docs/SCE_TEST_PROFILE.md §11.8) as the runner reads it
+    (``{{ runtime_path }}.run_suite``): each module parameter at its default, held as the saved
+    value of its declared type, and each ``<sce:execute>`` in run order, with its test case,
+    its guard and the selection that runs it in a world of the suite's features."""
+    module_parameters = {{ runtime }}.ModuleParameters()
+{% for parameter in parameters %}
+    module_parameters.set({{ parameter.id }}, {{ parameter.value }})
+{% endfor %}
+    return {{ runtime }}.Suite(
+        name={{ name_literal }},
+        module_parameters=module_parameters,
+{% if executes %}
+        executes=[
+{% for execute in executes %}
+            {{ runtime }}.Execute(
+                test_case={{ execute.test_case }},
+                guard={{ execute.guard }},
+                selection={{ execute.selection }},
+            ),
+{% endfor %}
+        ],
+{% else %}
+        executes=[],
+{% endif %}
+    )

@@ -5479,6 +5479,10 @@ fn render_python(env: &mut Environment, model: &SCXMLModel) -> Result<String, Ge
     // the payload channel is built, as every backend that lowers one does.
     let static_lowering =
         crate::forge::static_lowering::lower_python(&mut model_lowered, &machine_name)?;
+    // docs/SCE_TEST_PROFILE.md §11.5: what each module parameter of a test
+    // component starts at before the component reads the suite's value into it.
+    let module_parameter_starts =
+        crate::forge::generator::python_module_parameter_starts(&static_lowering)?;
     let payload_events: std::collections::BTreeSet<String> = native
         .payload_events
         .iter()
@@ -5542,6 +5546,7 @@ fn render_python(env: &mut Environment, model: &SCXMLModel) -> Result<String, Ge
         // the module declares wherever one does, a machine with no variable
         // among them.
         static_logs_a_value => static_lowering.logs_a_value,
+        module_parameter_starts => &module_parameter_starts,
         // docs/SCE_TEST_PROFILE.md §12.3: the doors a test component's machine
         // reaches its runtime through, which the component the runtime drives
         // registers and delivers the snapshot by, and the runtime's module,
