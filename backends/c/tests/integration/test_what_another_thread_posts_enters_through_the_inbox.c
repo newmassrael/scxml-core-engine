@@ -111,9 +111,9 @@ static void ping(inbox_probe_inbox_input_t *input, const char *label) {
 static void ping_by_name(inbox_probe_inbox_input_t *input, const char *label) {
     memset(input, 0, sizeof(*input));
     input->kind = INBOX_PROBE_INBOX_EXTERNAL_EVENT_BY_NAME;
-    (void)snprintf(input->as.by_name.name, sizeof(input->as.by_name.name), "%s", "ping");
+    (void)snprintf(input->as.by_name.event.name, sizeof(input->as.by_name.event.name), "%s", "ping");
     (void)snprintf(input->as.by_name.data, sizeof(input->as.by_name.data), "\"%s\"", label);
-    (void)snprintf(input->as.by_name.type, sizeof(input->as.by_name.type), "%s", "external");
+    (void)snprintf(input->as.by_name.event.type, sizeof(input->as.by_name.event.type), "%s", "external");
 }
 
 /* An ending of start `token` of `job`: a completion when `done`, a failure

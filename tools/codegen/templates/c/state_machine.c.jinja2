@@ -1853,7 +1853,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                             memset(&_send_fwd, 0, sizeof(_send_fwd));
                             sce_copy_bounded_id(_send_fwd.name, {{ event_name_c }});
 {% if has_payload %}
-                            sce_copy_bounded_data(_send_fwd.data, _ed);
+                            _send_fwd.data = _ed;
 {% endif %}
 {% if meta_send_id %}
                             sce_copy_bounded_id(_send_fwd.send_id, {{ meta_send_id }});
@@ -2002,7 +2002,8 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                     memset(&_send_fwd, 0, sizeof(_send_fwd));
                     sce_copy_bounded_id(_send_fwd.name, {{ event_name_c }});
 {% if has_payload %}
-                    sce_copy_bounded_data(_send_fwd.data, _ed);
+                    /* A view of the payload, which the child copies. */
+                    _send_fwd.data = _ed;
 {% endif %}
 {% if meta_send_id %}
                     sce_copy_bounded_id(_send_fwd.send_id, {{ meta_send_id }});
@@ -4540,7 +4541,8 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_forward_to_autoforward_c
        reused across every autoforward child on this event. */
     sce_forwarded_event_t fwd;
     memset(&fwd, 0, sizeof(fwd));
-    sce_copy_bounded_data(fwd.data, evt->data);
+    /* A view of the event this machine holds, which each child copies. */
+    fwd.data = evt->data;
     /* docs/adr/0090, section 2: autoforward copies the origin of the event it
        forwards unchanged, and with it the session that sent it. */
     fwd.origin = evt->origin;
@@ -5396,7 +5398,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
             memset(&_ready_fwd, 0, sizeof(_ready_fwd));
             sce_copy_bounded_id(_ready_fwd.name, ready->route_event);
 {% if model.needs_script_engine or model.has_delayed_send_payload %}
-            sce_copy_bounded_data(_ready_fwd.data, ready->data);
+            _ready_fwd.data = ready->data;
 {% endif %}
             sce_copy_bounded_id(_ready_fwd.send_id, ready->send_id);
             /* docs/adr/0090, section 2: a waiting send is always this
@@ -7175,9 +7177,13 @@ SCE_SM_FN static void apply_inbox_input({{ csym_prefix }}{{ model.name }}_t *sm,
         {{ csym_prefix }}{{ model.name }}_raise_external(sm, &view);
         break;
     }
-    case {{ csym_prefix | upper }}{{ model.name | upper }}_INBOX_EXTERNAL_EVENT_BY_NAME:
-        {{ csym_prefix }}{{ model.name }}_raise_external_forwarded(sm, &input->as.by_name);
+    case {{ csym_prefix | upper }}{{ model.name | upper }}_INBOX_EXTERNAL_EVENT_BY_NAME: {
+        /* The record with its data a view of the text the input holds. */
+        sce_forwarded_event_t forwarded = input->as.by_name.event;
+        forwarded.data = input->as.by_name.data;
+        {{ csym_prefix }}{{ model.name }}_raise_external_forwarded(sm, &forwarded);
         break;
+    }
 {% if inbox_endings %}
     case {{ csym_prefix | upper }}{{ model.name | upper }}_INBOX_HOST_INVOKE_ENDING:
         apply_host_invoke_ending(sm, &input->as.ending);
