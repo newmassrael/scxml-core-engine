@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.1 (1ubuntu1~24.04.2)",
-  "embed_version": "4328765",
+  "embed_version": "c20d288",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 554,
+  "symbol_count": 564,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -3700,6 +3700,66 @@
       "kind": "function",
       "name": "SCE::Forge::lookup<T>",
       "signature": "std::optional<V> SCE::Forge::lookup<T>(const K (&)[N], const V (&)[N], K) noexcept"
+    },
+    {
+      "header": "sce/forge/membership.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Forge::Chain<T>"
+    },
+    {
+      "header": "sce/forge/membership.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Forge::Placed<T>"
+    },
+    {
+      "header": "sce/forge/membership.h",
+      "kind": "function",
+      "name": "SCE::Forge::Detail::first_of_kind<T>",
+      "signature": "std::optional<std::size_t> SCE::Forge::Detail::first_of_kind<T>(const L &)"
+    },
+    {
+      "header": "sce/forge/membership.h",
+      "kind": "function",
+      "name": "SCE::Forge::operator!=<T>",
+      "signature": "bool SCE::Forge::operator!=<T>(const Chain<L, H, A, Max, Min> &, const Chain<L2, H, A, Max2, Min2> &)"
+    },
+    {
+      "header": "sce/forge/membership.h",
+      "kind": "function",
+      "name": "SCE::Forge::operator!=<T>",
+      "signature": "bool SCE::Forge::operator!=<T>(const Placed<L, K, Max> &, const Placed<L2, K, Max2> &)"
+    },
+    {
+      "header": "sce/forge/membership.h",
+      "kind": "function",
+      "name": "SCE::Forge::operator==<T>",
+      "signature": "bool SCE::Forge::operator==<T>(const Chain<L, H, A, Max, Min> &, const Chain<L2, H, A, Max2, Min2> &)"
+    },
+    {
+      "header": "sce/forge/membership.h",
+      "kind": "function",
+      "name": "SCE::Forge::operator==<T>",
+      "signature": "bool SCE::Forge::operator==<T>(const Placed<L, K, Max> &, const Placed<L2, K, Max2> &)"
+    },
+    {
+      "header": "sce/forge/membership.h",
+      "kind": "struct",
+      "members": [],
+      "name": "SCE::Forge::Detail::IsNoKinds<T>"
+    },
+    {
+      "header": "sce/forge/membership.h",
+      "kind": "struct",
+      "members": [],
+      "name": "SCE::Forge::Kinds<T>"
+    },
+    {
+      "header": "sce/forge/membership.h",
+      "kind": "typedef",
+      "name": "SCE::Forge::Detail::InnerRead",
+      "type": "std::conditional_t<std::is_lvalue_reference<R>::value, const typename std::decay_t<R>::list_type &, typename std::decay_t<R>::list_type>"
     },
     {
       "header": "sce/forge/observer.h",
