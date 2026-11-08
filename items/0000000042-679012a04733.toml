@@ -6,3 +6,9 @@ commit = "d39703d1266e91f7621b61fe79787b859a7ee6ff"
 base = "81a907ec322eee7a6e252e68ed3d5021c48ae2ad"
 machine = "mf977c53d872e"
 at = 1794128478
+
+[return]
+reason = "conflict"
+detail = "tools/codegen/templates/python/state_machine.py.jinja2"
+report = "mf977c53d872e:0000000042-679012a04733/attempt-2.log"
+at = 1794151964
