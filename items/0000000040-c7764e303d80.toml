@@ -6,3 +6,9 @@ commit = "08e406c3415bd0c41b7a7d6af972a6475c0d60be"
 base = "a83ee8684c1745953a799fa10228a85bb15db9c6"
 machine = "mf977c53d872e"
 at = 1794125586
+
+[return]
+reason = "conflict"
+detail = "embed/MANIFEST.json"
+report = "mf977c53d872e:0000000040-c7764e303d80/attempt-2.log"
+at = 1794149763
