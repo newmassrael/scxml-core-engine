@@ -1172,6 +1172,7 @@ references against a real document and drift silently.
 | `link/concurrent-count-exceeds-scheduler-slots` | `mesh-deploy` | no | SCE Protocol-Synthesis RFC §5.N |
 | `link/per-link-budget-exceeds-tick-period` | `mesh-deploy` | no | SCE Protocol-Synthesis RFC §5.N |
 | `mesh/codegen-causal-delivery-unsupported` | `mesh-codegen` | no | SCE Mesh §10.12 |
+| `mesh/codegen-causal-transport-unsupported` | `mesh-codegen` | no | SCE Mesh §10.12 |
 | `mesh/codegen-event-name-collision` | `mesh-codegen` | no |  |
 | `mesh/codegen-host-core-unsupported` | `mesh-codegen` | no | SCE Mesh §19 |
 | `mesh/codegen-pool-with-rpc-client-unsupported` | `mesh-codegen` | no |  |
