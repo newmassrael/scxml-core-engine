@@ -576,41 +576,25 @@ typedef struct {{ csym_prefix }}{{ model.name }}_event_queue {
 
 /* ── docs/adr/0086, section 8.5 (d): the buffers of an event's size ───── */
 /* Every buffer the machine writes an event's data into before it hands the
-   data on is one of these, the machine's own storage and never a stack's: a
-   local of the slot's size overflows a microcontroller's stack. One member per
-   role, so two roles live at once never share storage; no role is live twice at
-   once, since no function that writes into one calls itself on the same
-   machine. Each is lent as a view for the call it is handed to, and its content
-   means nothing once that call returns. */
+   data on is a role of this record, the machine's own storage and never a
+   stack's: a local of the slot's size overflows a microcontroller's stack. Each
+   is lent as a view for the call it is handed to, and its content means nothing
+   once that call returns.
+   docs/adr/0086, section 8.5 (e): the roles share storage by liveness, as a
+   compiler allocates registers. Each union below is one colour of the roles'
+   interference graph, and holds roles that are never live at once, each under
+   its own name; two roles that may be live at once are in different unions.
+   The pairs role holds one row per pair of the widest element of the document
+   that hands a host its pairs, {{ data_slot.pairs }}. */
 typedef struct {{ csym_prefix }}{{ model.name }}_scratch {
-    /* A `<send>`'s payload, as JSON, from its evaluation until it is sent; and
-       the data a restore reads into a queued event, which runs alone. */
-    char payload[{{ data_slot.name }}];
-    /* A `<send>`'s `<content expr>` as the text a host's request carries, or
-       the body of a BasicHTTP request. */
-    char content[{{ data_slot.name }}];
-    /* The text of each pair a host-served `<send>` or a host-run `<invoke>`
-       hands over, one row per pair, the namelist's first: the widest such
-       element of the document holds {{ data_slot.pairs }}. */
-    char pairs[{{ data_slot.pairs }}][{{ data_slot.name }}];
-    /* A host-run invocation's request event data, and its `<content expr>`
-       under a script engine. */
-    char request[{{ data_slot.name }}];
-    char invoke_content[{{ data_slot.name }}];
-    /* A reason the machine raises as the data of an internal error event. */
-    char message[{{ data_slot.name }}];
-    /* The reason a host-run invocation failed, raised as its `error.invoke`'s
-       data on the external queue, whose drain of the inbox may raise another
-       reason while this one waits: a role apart from `message`. */
-    char failure[{{ data_slot.name }}];
-    /* The data a typed raise seam writes a host's payload as. */
-    char seam[{{ data_slot.name }}];
-    /* The data a typed host-run result completes its invocation with. */
-    char result[{{ data_slot.name }}];
-    /* The done data a child session or the script engine hands a done event. */
-    char done[{{ data_slot.name }}];
-    /* The data of a reply a BasicHTTP response carries. */
-    char reply[{{ data_slot.name }}];
+{% for colour in data_slot.scratch %}
+    union {
+{% for role in colour.roles %}
+        /* {{ role.about }} */
+        char {{ role.name }}{% if role.pairs %}[{{ data_slot.pairs }}]{% endif %}[{{ data_slot.name }}];
+{% endfor %}
+    };
+{% endfor %}
 } {{ csym_prefix }}{{ model.name }}_scratch_t;
 
 {% if model.needs_event_scheduler %}
