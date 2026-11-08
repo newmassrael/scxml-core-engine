@@ -7,11 +7,15 @@
 //! the tag with a variant literal and one naming each field of that case, and
 //! an `optional<union:U>` one starts absent. The Rust machine holds either in
 //! its own sum of the union's records, and a saved state writes the sum as one
-//! object, its tag beside its case's fields; every other backend refuses the
-//! variable by its own name.
+//! object, its tag beside its case's fields; every backend whose row of the
+//! one table of what is lowered holds no union (`ComposedLowering::of`)
+//! refuses the variable by its own name.
+
+mod common;
 
 use std::path::{Path, PathBuf};
 
+use common::composed_lowering::{checked_backends, refusing_or_skip};
 use sce_build::{compile_scxml_lang_typed, find_template_dir_for};
 
 fn fixtures() -> PathBuf {
@@ -345,21 +349,27 @@ fn an_optional_union_variable_starts_absent() {
 }
 
 /// Pinned by `ComposedLowering::of` (`sce-build/src/forge/event_schema_check.rs`):
-/// a backend that does not hold a union variable refuses it by its own name.
+/// each backend whose row holds a union holds the variable, and each other
+/// backend, asked of the table, refuses it by its own name.
 #[test]
 fn a_backend_that_holds_no_union_variable_refuses_it_by_name() {
-    let (ok, text) = checked("rust", &statechart(CIRCLE));
-    assert!(ok, "Rust holds a union variable:\n{text}");
-    let (ok, text) = checked("kotlin", &statechart(CIRCLE));
-    assert!(!ok, "Kotlin holds no union variable yet:\n{text}");
-    refused_with(
-        &text,
-        &[
-            "generate/unsupported-feature",
-            "<data id=\\\"shape\\\">: `union:Shape` in a statechart's variable",
-            "kotlin lowering of its union",
-        ],
-    );
+    for (language, row) in checked_backends() {
+        let (ok, text) = checked(language, &statechart(CIRCLE));
+        if row.unions {
+            assert!(ok, "{language} holds a union variable:\n{text}");
+            continue;
+        }
+        assert!(!ok, "{language} holds no union variable yet:\n{text}");
+        let named = format!("{language} lowering of its union");
+        refused_with(
+            &text,
+            &[
+                "generate/unsupported-feature",
+                "<data id=\\\"shape\\\">: `union:Shape` in a statechart's variable",
+                named.as_str(),
+            ],
+        );
+    }
 }
 
 /// Pinned by `Judge::union_assign` (`sce-build/src/forge/static_datamodel.rs`):
@@ -519,22 +529,28 @@ fn a_lift_into_a_union_replaces_only_a_variable_of_that_union() {
 /// variable, before it is asked for the lift.
 #[test]
 fn a_backend_that_holds_no_union_refuses_a_lift_into_one_by_name() {
-    let (ok, text) = checked(
-        "kotlin",
-        &lifting(
-            LAST,
-            r#"      <sce:lift text="said" schema="Shape" location="last" refusal="why"/>"#,
-        ),
-    );
-    assert!(!ok, "Kotlin lifts into no union yet:\n{text}");
-    refused_with(
-        &text,
-        &[
-            "generate/unsupported-feature",
-            "<data id=\\\"last\\\">: `union:Shape` in a statechart's variable",
-            "kotlin lowering of its union",
-        ],
-    );
+    for language in refusing_or_skip(
+        |row| row.unions,
+        "a_backend_that_holds_no_union_refuses_a_lift_into_one_by_name",
+    ) {
+        let (ok, text) = checked(
+            language,
+            &lifting(
+                LAST,
+                r#"      <sce:lift text="said" schema="Shape" location="last" refusal="why"/>"#,
+            ),
+        );
+        assert!(!ok, "{language} lifts into no union yet:\n{text}");
+        let named = format!("{language} lowering of its union");
+        refused_with(
+            &text,
+            &[
+                "generate/unsupported-feature",
+                "<data id=\\\"last\\\">: `union:Shape` in a statechart's variable",
+                named.as_str(),
+            ],
+        );
+    }
 }
 
 /// `check -l rust` of `document` refuses it, saying each of `parts`.

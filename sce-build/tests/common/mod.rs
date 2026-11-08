@@ -25,6 +25,7 @@
 use std::process::{Command, Output};
 
 pub mod cmake_text;
+pub mod composed_lowering;
 pub mod corpus;
 pub mod cpp_engine;
 pub mod executable;

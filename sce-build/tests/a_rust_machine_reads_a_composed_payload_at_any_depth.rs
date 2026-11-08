@@ -22,9 +22,12 @@
 //! * What Rust does not lower yet stays refused by name on Rust too: a
 //!   statechart's variable of a record that holds a list (`static_list_payload`).
 
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use common::composed_lowering::refusing_or_skip;
 use sce_build::{compile_scxml_lang_typed, find_template_dir_for};
 use tempfile::tempdir;
 
@@ -256,19 +259,29 @@ fn run(args: &[&str], name: &str, document: &str) -> (bool, String) {
 }
 
 /// Pinned by `ComposedLowering::of` (`sce-build/src/forge/event_schema_check.rs`):
-/// Rust takes the read, and a backend that does not lower it refuses it by its
-/// own name.
+/// Rust takes the read, and each backend whose row does not read a composed
+/// payload, asked of the table, refuses it by its own name.
 #[test]
 fn rust_takes_the_read_and_another_backend_refuses_it_by_name() {
     let (ok, out) = run(&["check", "-l", "rust"], "batch_reader.scxml", READER);
     assert!(ok, "Rust reads a composed payload:\n{out}");
-    let (ok, out) = run(&["check", "-l", "c11"], "batch_reader.scxml", READER);
-    assert!(!ok, "C11 does not read a composed payload yet:\n{out}");
-    assert!(out.contains("generate/unsupported-feature"), "{out}");
-    assert!(
-        out.contains("a statechart's read of `_event.data` has no c11 lowering of its list"),
-        "{out}"
-    );
+    for language in refusing_or_skip(
+        |row| row.reads,
+        "rust_takes_the_read_and_another_backend_refuses_it_by_name",
+    ) {
+        let (ok, out) = run(&["check", "-l", language], "batch_reader.scxml", READER);
+        assert!(
+            !ok,
+            "{language} does not read a composed payload yet:\n{out}"
+        );
+        assert!(out.contains("generate/unsupported-feature"), "{out}");
+        assert!(
+            out.contains(&format!(
+                "a statechart's read of `_event.data` has no {language} lowering of its list"
+            )),
+            "{out}"
+        );
+    }
 }
 
 /// Pinned by the call of `composed_uses_unlowered` in `render_rust`
@@ -377,17 +390,25 @@ fn a_list_is_taken_whole_into_a_variable_whose_type_it_fits() {
             "self.late = ::sce_rust_runtime::portable::BoundedList::widened_map(&ev.late, |v| *v);",
         ],
     );
-    // A backend that reads no composed payload refuses the fixture by its own
-    // name.
+    // Each backend whose row reads no composed payload refuses the fixture by
+    // its own name.
     let text =
         std::fs::read_to_string(fixtures().join("static_composed_payload.scxml")).expect("fixture");
-    let (ok, out) = run(
-        &["check", "-l", "c11"],
-        "static_composed_payload.scxml",
-        &text,
-    );
-    assert!(!ok, "C11 reads no composed payload yet:\n{out}");
-    assert!(out.contains("has no c11 lowering"), "{out}");
+    for language in refusing_or_skip(
+        |row| row.reads,
+        "a_list_is_taken_whole_into_a_variable_whose_type_it_fits",
+    ) {
+        let (ok, out) = run(
+            &["check", "-l", language],
+            "static_composed_payload.scxml",
+            &text,
+        );
+        assert!(!ok, "{language} reads no composed payload yet:\n{out}");
+        assert!(
+            out.contains(&format!("has no {language} lowering")),
+            "{out}"
+        );
+    }
 }
 
 /// What Rust does not lower yet stays refused by name on Rust too: the fixture's
