@@ -105,8 +105,9 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
     // each of its arms; its members are integers, byte strings, texts, bodies
     // or lists, its gates flag inputs or one-bit flags of the codec's own. The
     // encode keeps a body or a list as the arms that hold it present it, all
-    // as one type; one held to a law is not yet, nor is a group of a chain's
-    // memberships or of lists that share a count, or one that holds an enum.
+    // as one type, and two lists of one count as one `Aligned` of the two (R5);
+    // one held to a law is not yet, nor is a group of a chain's memberships, or
+    // one that holds an enum.
     for group in plan.groups() {
         let label = group
             .gates
@@ -114,9 +115,6 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
             .map(ToString::to_string)
             .collect::<Vec<_>>()
             .join(" || ");
-        if group.aligned.is_some() {
-            forms.push(format!("`{label}`, a group of lists that share one count"));
-        }
         if group
             .gates
             .iter()
@@ -927,6 +925,20 @@ struct Presented<'p> {
     /// the law it holds them to (docs/adr/0065 §6 R8): it is then viewed and
     /// held as a `::SCE::Forge::Lawful` of that law.
     law: Option<String>,
+    /// Where it is two lists of one count an arm of a group holds as one
+    /// member (docs/adr/0065 §6 R5), the two lists: it is then viewed and held
+    /// as a `::SCE::Forge::Aligned` of them.
+    aligned: Option<AlignedLists>,
+}
+
+/// The two lists of one count an arm of a group holds as one member
+/// (docs/adr/0065 §6 R5): each list's member of the group, and the namespace
+/// of each list's entry codec.
+struct AlignedLists {
+    first: String,
+    second: String,
+    first_namespace: String,
+    second_namespace: String,
 }
 
 /// The variant of a printed codec: the type the value holds the arm in (the
@@ -1102,11 +1114,49 @@ impl<'p> GroupPart<'p> {
             .expect("a group holds a member");
         let name = super::rust_source::group_accessor(group);
         let class = super::rust_source::group_type(struct_name, group);
+        // Two lists of one count are one member of an arm that holds both
+        // (docs/adr/0065 §6 R5), where the first is, held as an `Aligned` of
+        // the two as each list is held.
+        let aligned = |first: &str, second: &str| {
+            let (one, two) = (presented(first), presented(second));
+            let namespace = |p: &Presented<'_>| {
+                p.list
+                    .as_ref()
+                    .map(|(held, _)| held.namespace.clone())
+                    .expect("two lists of one count are lists")
+            };
+            Presented {
+                field: one.field,
+                name: super::rust_source::aligned_name(&one.name, &two.name),
+                view: format!("::SCE::Forge::Aligned<{}, {}>", one.view, two.view),
+                held: format!("::SCE::Forge::Aligned<{}, {}>", one.held, two.held),
+                bytes: false,
+                text: false,
+                optional: one.optional,
+                body: None,
+                list: None,
+                law: None,
+                aligned: Some(AlignedLists {
+                    first_namespace: namespace(&one),
+                    second_namespace: namespace(&two),
+                    first: one.name,
+                    second: two.name,
+                }),
+            }
+        };
         let arms = group
             .arms
             .iter()
             .map(|arm| {
-                let members = arm.fields.iter().map(|id| presented(id)).collect();
+                let members = arm
+                    .fields
+                    .iter()
+                    .filter(|id| !group.is_second_in(arm, id))
+                    .map(|id| match group.second_of(arm, id) {
+                        Some(second) => aligned(id, second),
+                        None => presented(id),
+                    })
+                    .collect();
                 if group.is_sum() {
                     let arm_name = super::rust_source::group_arm_name(group, arm);
                     ArmPart {
@@ -1136,6 +1186,60 @@ impl<'p> GroupPart<'p> {
             members,
             at,
         }
+    }
+
+    /// The type of the arm `index` of what `held`, the group as a source
+    /// presents it or the value holds it where it is there, holds.
+    fn arm_type(&self, held: &str, index: usize) -> String {
+        if self.group.is_sum() {
+            format!("std::variant_alternative_t<{index}, {held}>")
+        } else {
+            held.to_string()
+        }
+    }
+
+    /// Each member of an arm that is two lists of one count, with the arm's
+    /// index, in the arms' order.
+    fn aligned(&self) -> impl Iterator<Item = (usize, &Presented<'p>, &AlignedLists)> {
+        self.arms.iter().enumerate().flat_map(|(index, arm)| {
+            arm.members
+                .iter()
+                .filter_map(move |m| m.aligned.as_ref().map(|lists| (index, m, lists)))
+        })
+    }
+
+    /// What the encode's read of `member`, a body, a list or two lists of one
+    /// count, returns, which it keeps (`_r_<member>`) as one type in every arm
+    /// that holds it: its read off the first arm that holds it as a member of
+    /// its own, or else, for a list an arm holds with the list it shares its
+    /// count with, that list as the two the encode kept present it.
+    fn kept_read(&self, held: &str, member: &str) -> String {
+        if let Some(index) = self
+            .arms
+            .iter()
+            .position(|arm| arm.members.iter().any(|a| a.name == member))
+        {
+            return format!(
+                "decltype(source::{member}(std::declval<const {}&>()))",
+                self.arm_type(held, index)
+            );
+        }
+        let (index, pair, side) = self
+            .aligned()
+            .find_map(|(index, m, lists)| {
+                if lists.first == member {
+                    Some((index, &m.name, "first"))
+                } else if lists.second == member {
+                    Some((index, &m.name, "second"))
+                } else {
+                    None
+                }
+            })
+            .expect("a member of a group is a member of an arm");
+        format!(
+            "decltype(std::declval<const std::decay_t<decltype(source::{pair}(std::declval<const {}&>()))>&>().{side}())",
+            self.arm_type(held, index)
+        )
     }
 
     /// Whether a value may hold no arm of it, so that it holds it as a
@@ -1333,6 +1437,27 @@ impl<'p> GroupPart<'p> {
             .iter()
             .filter_map(Presented::entries_trait)
             .collect();
+        // What two lists of one count are, wherever an arm presents them.
+        let mut pairs: Vec<&str> = Vec::new();
+        for (_, m, lists) in self.aligned() {
+            if pairs.contains(&m.name.as_str()) {
+                continue;
+            }
+            pairs.push(m.name.as_str());
+            out.push_str(&format!(
+                "/// Whether `R` is what a source may present for `{pair}`, two lists of one\n\
+                 /// count (docs/adr/0065 §6 R5): an `Aligned` of a list `is_{first}_list`\n\
+                 /// accepts and one `is_{second}_list` accepts.\n\
+                 template <class R>\n\
+                 struct is_{pair}_aligned : std::false_type {{}};\n\
+                 template <class A, class B>\n\
+                 struct is_{pair}_aligned<::SCE::Forge::Aligned<A, B>>\n\
+                 \x20   : std::conjunction<is_{first}_list<A>, is_{second}_list<B>> {{}};\n\n",
+                pair = m.name,
+                first = lists.first,
+                second = lists.second
+            ));
+        }
         for arm in &self.arms {
             out.push_str(&arm.members_traits());
         }
@@ -1361,17 +1486,60 @@ impl<'p> GroupPart<'p> {
         // A body or a list the encode keeps is kept as one type, so every arm
         // that holds it presents it as the type the first one does, as the Rust
         // group holds it as one type parameter in every arm.
-        for m in self.members.iter().filter(|m| m.kept_as_read()) {
+        // Two lists of one count that more than one arm holds likewise.
+        let kept_names = self
+            .members
+            .iter()
+            .filter(|m| m.kept_as_read())
+            .map(|m| m.name.as_str())
+            .chain(pairs.iter().copied());
+        let mut kept_alike: Vec<String> = Vec::new();
+        for name in kept_names {
             let holding: Vec<usize> = self
                 .arms
                 .iter()
                 .enumerate()
-                .filter(|(_, arm)| arm.members.iter().any(|a| a.name == m.name))
+                .filter(|(_, arm)| arm.members.iter().any(|a| a.name == name))
                 .map(|(i, _)| i)
                 .collect();
+            // A list one arm holds as a member of its own and another holds
+            // with the list it shares its count with is kept as one type too:
+            // the type the first arm presents it as, which the list the other
+            // arm's two present converts to.
+            if let Some(first) = holding.first() {
+                for (index, pair, lists) in self.aligned() {
+                    let side = if lists.first == name {
+                        "first"
+                    } else if lists.second == name {
+                        "second"
+                    } else {
+                        continue;
+                    };
+                    let alike = format!("is_{name}_kept_alike_in_{}", pair.name);
+                    let plain = format!("decltype(source::{name}(std::declval<const A&>()))");
+                    let held = format!(
+                        "decltype(std::declval<const std::decay_t<decltype(source::{}(std::declval<const B&>()))>&>().{side}())",
+                        pair.name
+                    );
+                    if !kept_alike.contains(&alike) {
+                        kept_alike.push(alike.clone());
+                        out.push_str(&format!(
+                            "/// Whether `A` presents `{name}` as the type the two lists of one count\n\
+                             /// `B` presents hold it as, which converts to what `A` presents.\n\
+                             template <class A, class B, class = void>\n\
+                             struct {alike} : std::false_type {{}};\n\
+                             template <class A, class B>\n\
+                             struct {alike}<A, B, std::void_t<{plain}, {held}>>\n\
+                             \x20   : std::conjunction<std::is_same<std::decay_t<{plain}>, std::decay_t<{held}>>,\n\
+                             \x20                      std::is_convertible<{held}, {plain}>> {{}};\n\n"
+                        ));
+                    }
+                    accepts.push(format!("{alike}<G{first}, G{index}>"));
+                }
+            }
             if let [first, rest @ ..] = holding.as_slice() {
                 if !rest.is_empty() {
-                    let member = &m.name;
+                    let member = name;
                     let read = |ty: &str| {
                         format!("decltype(source::{member}(std::declval<const {ty}&>()))")
                     };
@@ -1389,7 +1557,7 @@ impl<'p> GroupPart<'p> {
                     ));
                 }
                 for i in rest {
-                    accepts.push(format!("is_{}_read_alike<G{first}, G{i}>", m.name));
+                    accepts.push(format!("is_{name}_read_alike<G{first}, G{i}>"));
                 }
             }
         }
@@ -1438,10 +1606,18 @@ impl<'p> GroupPart<'p> {
                 held.clone()
             };
             for m in &arm.members {
-                parts.push(m.member_nothrow(&format!(
-                    "source::{}(std::declval<const {presents}&>())",
-                    m.name
-                )));
+                let read = format!("source::{}(std::declval<const {presents}&>())", m.name);
+                parts.push(m.member_nothrow(&read));
+                // Each of two lists of one count is kept off what the encode
+                // kept of the two, as the list it is in every arm.
+                if let Some(lists) = &m.aligned {
+                    for (list, side) in [(&lists.first, "first"), (&lists.second, "second")] {
+                        parts.push(format!(
+                            "noexcept(std::declval<::SCE::Forge::Detail::Kept<{}>&>().keep(std::declval<const std::decay_t<decltype({read})>&>().{side}()))",
+                            self.kept_read(&held, list)
+                        ));
+                    }
+                }
             }
         }
         parts.join(" && ")
@@ -1458,19 +1634,10 @@ impl<'p> GroupPart<'p> {
         let held = self.held_of(&format!("decltype(_r_{name})"));
         for m in &self.members {
             if m.kept_as_read() {
-                let index = self
-                    .arms
-                    .iter()
-                    .position(|arm| arm.members.iter().any(|a| a.name == m.name))
-                    .expect("a member of a group is a member of an arm");
-                let arm = if self.group.is_sum() {
-                    format!("std::variant_alternative_t<{index}, {held}>")
-                } else {
-                    held.clone()
-                };
                 out.push_str(&format!(
-                    "        ::SCE::Forge::Detail::Kept<decltype(source::{member}(std::declval<const {arm}&>()))> _r_{member};\n",
-                    member = m.name
+                    "        ::SCE::Forge::Detail::Kept<{}> _r_{};\n",
+                    self.kept_read(&held, &m.name),
+                    m.name
                 ));
             } else {
                 out.push_str(&format!(
@@ -1479,11 +1646,33 @@ impl<'p> GroupPart<'p> {
                 ));
             }
         }
+        // Two lists of one count are kept as the arm presents them, and each
+        // list read off what is kept, which lives as long as the encode.
+        let mut pairs: Vec<&str> = Vec::new();
+        for (_, m, _) in self.aligned() {
+            if !pairs.contains(&m.name.as_str()) {
+                pairs.push(m.name.as_str());
+                out.push_str(&format!(
+                    "        ::SCE::Forge::Detail::Kept<{}> _r_{};\n",
+                    self.kept_read(&held, &m.name),
+                    m.name
+                ));
+            }
+        }
         let bind = |indent: &str, from: &str, members: &[Presented<'_>]| {
             members
                 .iter()
                 .map(|m| {
-                    if m.kept_as_read() {
+                    if let Some(lists) = &m.aligned {
+                        format!(
+                            "{indent}_r_{pair}.keep(source::{pair}({from}));\n\
+                             {indent}_r_{first}.keep(_r_{pair}->first());\n\
+                             {indent}_r_{second}.keep(_r_{pair}->second());\n",
+                            pair = m.name,
+                            first = lists.first,
+                            second = lists.second
+                        )
+                    } else if m.kept_as_read() {
                         format!(
                             "{indent}_r_{member}.keep(source::{member}({from}));\n",
                             member = m.name
@@ -1538,10 +1727,42 @@ impl<'p> GroupPart<'p> {
     /// states, as it was read.
     fn decoded(&self, model: &CodecModel, l: &LangCtx) -> String {
         let (holds, name) = (self.holds(), &self.name);
+        // Two lists of one count are made of the two lists the decode read by
+        // the one count, which are then of one count: a frame that read them
+        // apart would have held more entries in one of them than the count.
+        let pairs_made = |arm: &ArmPart<'_>, indent: &str| {
+            arm.members
+                .iter()
+                .filter_map(|m| m.aligned.as_ref().map(|lists| (m, lists)))
+                .map(|(m, lists)| {
+                    format!(
+                        "{indent}const auto _al_{pair} = {view}::make(*_b_{first}, *_b_{second});\n\
+                         {indent}if (!_al_{pair}) {{\n\
+                         {indent}    cursor.refuse(::SCE::Forge::CodecError::TooManyElements);\n\
+                         {indent}    return std::nullopt;\n\
+                         {indent}}}\n",
+                        pair = m.name,
+                        view = m.view,
+                        first = lists.first,
+                        second = lists.second
+                    )
+                })
+                .collect::<String>()
+        };
+        // A member read optionally is there where its value is, and two lists
+        // of one count where both are.
+        let read_optionally = |list: &str| {
+            self.members
+                .iter()
+                .any(|m| m.name == list && m.read_optionally())
+        };
         let args = |arm: &ArmPart<'_>| {
             arm.members
                 .iter()
                 .map(|m| {
+                    if m.aligned.is_some() {
+                        return format!("*_al_{}", m.name);
+                    }
                     let read = if m.read_optionally() {
                         format!("*{}", m.name)
                     } else {
@@ -1561,15 +1782,21 @@ impl<'p> GroupPart<'p> {
             let there: Vec<String> = arm
                 .members
                 .iter()
-                .filter(|m| m.read_optionally())
-                .map(|m| format!("{}.has_value()", m.name))
+                .flat_map(|m| match &m.aligned {
+                    Some(lists) => vec![lists.first.as_str(), lists.second.as_str()],
+                    None => vec![m.name.as_str()],
+                })
+                .filter(|list| read_optionally(list))
+                .map(|list| format!("{list}.has_value()"))
                 .collect();
             return format!(
                 "        {holds} _g_{name};\n\
                  \x20       if ({there}) {{\n\
+                 {pairs}\
                  \x20           _g_{name}.emplace({args});\n\
                  \x20       }}\n",
                 there = there.join(" && "),
+                pairs = pairs_made(arm, "            "),
                 args = args(arm).join(", ")
             );
         }
@@ -1585,8 +1812,10 @@ impl<'p> GroupPart<'p> {
             };
             out.push_str(&format!(
                 "        {keyword} ({}) {{\n\
+                 {}\
                  \x20           {made};\n",
-                self.decode_test(arm.arm, model, l)
+                self.decode_test(arm.arm, model, l),
+                pairs_made(arm, "            ")
             ));
         }
         out.push_str("        }\n");
@@ -1734,14 +1963,15 @@ impl<'p> Presented<'p> {
     /// value holding bytes is: neither a constant expression nor free of
     /// throwing.
     fn owns(&self) -> bool {
-        self.bytes || self.body.is_some() || self.list.is_some()
+        self.bytes || self.body.is_some() || self.list.is_some() || self.aligned.is_some()
     }
 
     /// Whether the encode keeps it as the source presents it, where it is a
     /// member of a group: a body or a list, which it reads through the codec
-    /// it holds rather than converts.
+    /// it holds rather than converts, or two lists of one count, whose lists
+    /// it reads off what it keeps.
     fn kept_as_read(&self) -> bool {
-        self.body.is_some() || self.list.is_some()
+        self.body.is_some() || self.list.is_some() || self.aligned.is_some()
     }
 
     /// What it is presented as: its accessor's type, its constructor's
@@ -1825,6 +2055,7 @@ impl<'p> Presented<'p> {
                     }),
                     list: None,
                     law: None,
+                    aligned: None,
                 }
             }
             Value::List { codec, bound, .. } => {
@@ -1856,6 +2087,7 @@ impl<'p> Presented<'p> {
                         bounds,
                     )),
                     law,
+                    aligned: None,
                 }
             }
             Value::Bytes(bound) | Value::Text(bound) => {
@@ -1877,6 +2109,7 @@ impl<'p> Presented<'p> {
                     body: None,
                     list: None,
                     law: None,
+                    aligned: None,
                 }
             }
             _ => {
@@ -1892,6 +2125,7 @@ impl<'p> Presented<'p> {
                     body: None,
                     list: None,
                     law: None,
+                    aligned: None,
                 }
             }
         }
@@ -2018,6 +2252,9 @@ impl<'p> Presented<'p> {
     /// present what lives on (`::SCE::Forge::Detail::Lasting`); it keeps a body
     /// or a list as read (`::SCE::Forge::Detail::Kept`).
     fn member_requirements(&self, read: &str) -> Vec<String> {
+        if self.aligned.is_some() {
+            return vec![format!("is_{}_aligned<std::decay_t<{read}>>", self.name)];
+        }
         match (&self.body, &self.list) {
             (Some(held), _) => vec![format!(
                 "{}::is_source<std::decay_t<{read}>>",
@@ -2042,6 +2279,15 @@ impl<'p> Presented<'p> {
         let kept = format!(
             "noexcept(std::declval<::SCE::Forge::Detail::Kept<decltype({read})>&>().keep({read}))"
         );
+        // Two lists of one count: each list's entries are read as sources of
+        // its entry codec.
+        if let Some(lists) = &self.aligned {
+            let held = format!("const std::decay_t<decltype({read})>&");
+            return format!(
+                "{kept} && {}::is_nothrow_source<::SCE::Forge::Detail::ElementOf<std::decay_t<decltype(std::declval<{held}>().first())>>>::value && {}::is_nothrow_source<::SCE::Forge::Detail::ElementOf<std::decay_t<decltype(std::declval<{held}>().second())>>>::value",
+                lists.first_namespace, lists.second_namespace
+            );
+        }
         match (&self.body, &self.list) {
             (Some(held), _) => format!(
                 "{kept} && {}::is_nothrow_source<std::decay_t<decltype({read})>>::value",
@@ -2121,10 +2367,12 @@ pub(super) fn render(
     if variant.is_some() {
         readers.push("body");
     }
-    // What a source presents for a group presents each of its members by name.
+    // What a source presents for a group presents each of its members by name,
+    // and an arm that holds two lists of one count presents the two by one.
     let mut reader_names: Vec<&str> = readers.clone();
     for g in &groups {
-        for m in &g.members {
+        let pairs = g.aligned().map(|(_, m, _)| m);
+        for m in g.members.iter().chain(pairs) {
             if !reader_names.contains(&m.name.as_str()) {
                 reader_names.push(m.name.as_str());
             }

@@ -137,6 +137,49 @@ void a_default_holds_the_fewest_elements_the_bounds_admit() {
     CHECK(fewest.size() == 2 && fewest[0] == 0 && fewest[1] == 0, "an owning list holds the fewest, value-made");
 }
 
+// Two lists of one count convert as each list does, which keeps each count:
+// owning lists are viewed without a copy, and views are held by an explicit
+// copy. Two bare lists are no `Aligned`; the only door is `make`.
+using ::SCE::Forge::Aligned;
+using OwnedPair = Aligned<Owned, Owned>;
+using ViewedPair = Aligned<Bytes<8>, Bytes<8>>;
+static_assert(std::is_convertible<OwnedPair, ViewedPair>::value, "two owned lists are viewed implicitly");
+static_assert(!std::is_convertible<ViewedPair, OwnedPair>::value, "two views are not copied implicitly");
+static_assert(std::is_constructible<OwnedPair, ViewedPair>::value, "two views are copied explicitly");
+static_assert(!std::is_constructible<Aligned<Bytes<4>, Bytes<4>>, ViewedPair>::value,
+              "two lists within looser bounds do not convert");
+static_assert(!std::is_constructible<ViewedPair, Bytes<8>, Bytes<8>>::value, "two bare lists are checked by make");
+
+void make_admits_exactly_two_lists_of_one_count() {
+    const std::vector<std::uint8_t> three{1, 2, 3};
+    const std::vector<std::uint8_t> also_three{4, 5, 6};
+    const std::vector<std::uint8_t> two{4, 5};
+    const auto first = Bytes<8>::make(three);
+    const auto second = Bytes<8>::make(also_three);
+    const auto shorter = Bytes<8>::make(two);
+    CHECK(first && second && shorter, "each list lies within its bound");
+    if (!first || !second || !shorter) {
+        return;
+    }
+    CHECK(!ViewedPair::make(*first, *shorter).has_value(), "two lists of different counts are not one count");
+    const auto pair = ViewedPair::make(*first, *second);
+    CHECK(pair.has_value(), "two lists of one count are");
+    if (!pair) {
+        return;
+    }
+    CHECK(pair->size() == 3 && !pair->empty(), "it holds the count of each");
+    CHECK(pair->first() == three && pair->second() == also_three, "it reads each list as it was made");
+
+    const OwnedPair owned(*pair);
+    CHECK(owned == *pair && owned.first().data() != three.data(), "an explicit copy holds the same lists");
+    const ViewedPair again = owned;
+    CHECK(again == owned && again.first().data() == owned.first().data(), "a view of it views them");
+    CHECK(owned != *ViewedPair::make(*second, *first), "two pairs of different lists differ");
+
+    const ViewedPair empty{};
+    CHECK(empty.empty() && empty.first().empty() && empty.second().empty(), "the default holds two empty lists");
+}
+
 }  // namespace
 
 int main() {
@@ -144,6 +187,7 @@ int main() {
     a_held_list_reads_as_the_list_it_holds();
     make_admits_a_text_only_of_well_formed_utf8();
     a_default_holds_the_fewest_elements_the_bounds_admit();
+    make_admits_exactly_two_lists_of_one_count();
     if (failures != 0) {
         std::fprintf(stderr, "%d check(s) failed\n", failures);
         return 1;

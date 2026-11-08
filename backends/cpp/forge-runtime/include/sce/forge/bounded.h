@@ -254,6 +254,96 @@ template <std::size_t Max, std::size_t Min = 0> using Text = Bounded<std::string
 /// its own copy, a `Bounded<std::vector<T>, Max, Min>`.
 template <typename T, std::size_t Max, std::size_t Min = 0> using List = Bounded<Span<const T>, Max, Min>;
 
+/// Two lists of one count (docs/adr/0065 §6 R5): a codec that writes one number
+/// for two lists holds both as this, so the number cannot disagree with either.
+///
+/// It is checked once, by `make`, and has no mutable access, so the two stay of
+/// one count once it is made, as a `Bounded` stays within its bounds. Two lists
+/// convert to two others as each list does, which keeps each count, so they
+/// convert unchecked: to views without a copy, and to owning lists by an
+/// explicit copy. This mirrors the Rust runtime's `Aligned`.
+template <typename A, typename B> class Aligned {
+public:
+    /// Two lists made by default: the lists a count is shared by have no
+    /// fewest entries, so both start empty.
+    template <
+        typename A2 = A, typename B2 = B,
+        std::enable_if_t<std::is_default_constructible<A2>::value && std::is_default_constructible<B2>::value, int> = 0>
+    constexpr Aligned() noexcept(std::is_nothrow_default_constructible<A>::value &&
+                                 std::is_nothrow_default_constructible<B>::value)
+        : first_(), second_() {}
+
+    /// `first` and `second` as two lists of one count, or nothing where their
+    /// counts differ.
+    [[nodiscard]] static constexpr std::optional<Aligned>
+    make(A first, B second) noexcept(std::is_nothrow_move_constructible<A>::value &&
+                                     std::is_nothrow_move_constructible<B>::value) {
+        if (static_cast<std::size_t>(first.size()) != static_cast<std::size_t>(second.size())) {
+            return std::nullopt;
+        }
+        return Aligned(Checked{}, std::move(first), std::move(second));
+    }
+
+    /// The two lists two others of one count hold, viewed or held as they are.
+    template <typename A2, typename B2,
+              std::enable_if_t<std::is_convertible<const A2 &, A>::value && std::is_convertible<const B2 &, B>::value,
+                               int> = 0>
+    constexpr Aligned(const Aligned<A2, B2> &other) noexcept(std::is_nothrow_constructible<A, const A2 &>::value &&
+                                                             std::is_nothrow_constructible<B, const B2 &>::value)
+        : first_(other.first()), second_(other.second()) {}
+
+    /// A copy of the two lists two others of one count hold, made in lists that
+    /// own their entries: explicit, since it copies.
+    template <
+        typename A2, typename B2,
+        std::enable_if_t<std::is_constructible<A, const A2 &>::value && std::is_constructible<B, const B2 &>::value &&
+                             !(std::is_convertible<const A2 &, A>::value && std::is_convertible<const B2 &, B>::value),
+                         int> = 0>
+    constexpr explicit Aligned(const Aligned<A2, B2> &other) : first_(other.first()), second_(other.second()) {}
+
+    /// The first list.
+    [[nodiscard]] constexpr const A &first() const noexcept {
+        return first_;
+    }
+
+    /// The second list.
+    [[nodiscard]] constexpr const B &second() const noexcept {
+        return second_;
+    }
+
+    /// How many entries each list holds.
+    [[nodiscard]] constexpr std::size_t size() const noexcept {
+        return static_cast<std::size_t>(first_.size());
+    }
+
+    /// Whether both lists are empty.
+    [[nodiscard]] constexpr bool empty() const noexcept {
+        return size() == 0;
+    }
+
+private:
+    struct Checked {};
+
+    constexpr Aligned(Checked, A first, B second) noexcept(std::is_nothrow_move_constructible<A>::value &&
+                                                           std::is_nothrow_move_constructible<B>::value)
+        : first_(std::move(first)), second_(std::move(second)) {}
+
+    A first_;
+    B second_;
+};
+
+/// Whether `a` and `b` hold equal first lists and equal second lists.
+template <typename A, typename B, typename A2, typename B2>
+constexpr bool operator==(const Aligned<A, B> &a, const Aligned<A2, B2> &b) {
+    return a.first() == b.first() && a.second() == b.second();
+}
+
+/// Whether `a` and `b` differ.
+template <typename A, typename B, typename A2, typename B2>
+constexpr bool operator!=(const Aligned<A, B> &a, const Aligned<A2, B2> &b) {
+    return !(a == b);
+}
+
 namespace Detail {
 
 /// Whether `T` is a `Bounded` whose bounds lie within `Max` and `Min`: a list a

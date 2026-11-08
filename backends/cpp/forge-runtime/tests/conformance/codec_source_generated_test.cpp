@@ -42,6 +42,7 @@
 #include "codec_present_if_length_ref.h"
 #include "codec_repeat_basic.h"
 #include "codec_repeat_present_if_basic.h"
+#include "codec_repeat_unconditional_count.h"
 #include "codec_simple_frame.h"
 #include "codec_variant_peek_basic.h"
 #include "codec_zenoh_decl_subscriber.h"
@@ -1609,6 +1610,56 @@ void a_flag_of_a_disjunction_is_derived_from_the_arm_the_value_holds() {
     CHECK(decoded.has_value() && decoded->encode_to_vec() == b_frame, "and encodes back to it");
 }
 
+namespace OneCount = ::SCE::Generated::CodecRepeatUnconditionalCount;
+using OneCountValue = OneCount::CodecRepeatUnconditionalCount;
+using OneCountH = OneCount::CodecRepeatUnconditionalCountOptionsHH;
+using OneCountNotH = OneCount::CodecRepeatUnconditionalCountOptionsHNotH;
+using OneCountElem = ::SCE::Generated::CodecRepeatElem::CodecRepeatElem;
+using OneCountList = ::SCE::Forge::List<OneCountElem, 64>;
+using OneCountPair = ::SCE::Forge::Aligned<OneCountList, OneCountList>;
+
+void two_lists_of_one_count_are_held_as_one_and_counted_once() {
+    const std::vector<OneCountElem> links{OneCountElem{0x0001}, OneCountElem{0x0002}};
+    const std::vector<OneCountElem> weights{OneCountElem{0x0003}, OneCountElem{0x0004}};
+    const std::vector<OneCountElem> one{OneCountElem{0x0005}};
+    const auto links_list = OneCountList::make(links);
+    const auto weights_list = OneCountList::make(weights);
+    const auto one_list = OneCountList::make(one);
+    CHECK(links_list && weights_list && one_list, "each list lies within its bound");
+    if (!links_list || !weights_list || !one_list) {
+        return;
+    }
+    // The two are made only of two lists of one count, so the one count the
+    // encode writes is the count of both.
+    CHECK(!OneCountPair::make(*links_list, *one_list).has_value(), "two lists of different counts are no pair");
+    const auto pair = OneCountPair::make(*links_list, *weights_list);
+    CHECK(pair.has_value(), "two lists of one count are");
+    if (!pair) {
+        return;
+    }
+
+    // With the second list: the flag set, the one count, then each list.
+    const OneCountValue both{0xF0, OneCountH{*pair}};
+    const std::vector<std::uint8_t> both_frame{0xF1, 0x02, 0x00, 0x01, 0x00, 0x02, 0x00, 0x03, 0x00, 0x04};
+    CHECK(both.encode_to_vec() == both_frame, "the arm of both sets H and writes the count once, then both lists");
+
+    // Without it: the flag clear, the count of the first, then the first.
+    const OneCountValue first{0xF1, OneCountNotH{*links_list}};
+    const std::vector<std::uint8_t> first_frame{0xF0, 0x02, 0x00, 0x01, 0x00, 0x02};
+    CHECK(first.encode_to_vec() == first_frame, "the arm of the first alone clears H and counts it");
+
+    CHECK(std::holds_alternative<OneCountNotH>(OneCountValue{}.options_h()),
+          "a value made by default holds the arm present while no gate holds");
+    CHECK(OneCountValue{}.encode_to_vec() == (std::vector<std::uint8_t>{0x00, 0x00}), "and counts no entry");
+
+    ::SCE::Forge::SceCursor cursor(both_frame.data(), both_frame.size());
+    const auto decoded = OneCountValue::decode(cursor);
+    const auto *held = decoded ? std::get_if<OneCountH>(&decoded->options_h()) : nullptr;
+    CHECK(held != nullptr && held->links_weights().size() == 2 && held->links_weights().second()[1].seq() == 0x0004,
+          "a frame with H holds both lists read by the one count");
+    CHECK(decoded.has_value() && decoded->encode_to_vec() == both_frame, "and encodes back to it");
+}
+
 void encode_source_reports_the_sinks_failure() {
     std::uint8_t buffer[3] = {};
     ::SCE::Forge::SpanSink sink(buffer, sizeof buffer);
@@ -1647,6 +1698,7 @@ int main() {
     a_chain_holds_entries_that_say_an_input_in_some_arms_to_its_law();
     a_flag_of_a_disjunction_is_derived_from_the_arm_the_value_holds();
     a_tag_the_arms_own_header_holds_is_written_by_the_arm();
+    two_lists_of_one_count_are_held_as_one_and_counted_once();
     encode_source_reports_the_sinks_failure();
     if (failures != 0) {
         std::fprintf(stderr, "codec_source_generated_test: %d failure(s)\n", failures);

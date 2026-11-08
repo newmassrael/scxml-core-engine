@@ -578,6 +578,14 @@ old encode, the old encode and its templates are removed in the same landing.
    that read and set the value in its unit, and they read and write the raw value where the printed value
    holds it, its private member, as the flag accessors do. The C++ value of such a codec had been compiled
    nowhere, so its round trip is judged beside the other non-fixture codecs. The printed set is 134 codecs.
+
+   *The twenty-fifth C++ landing, 2026-11-08:* a group of two lists that share one count (docs/adr/0065 §6
+   R5). The arm that holds both holds them as one member, a `SCE::Forge::Aligned` of the two, which the
+   runtime makes only of two lists of one count, as the Rust runtime's `Aligned` is; the arm that holds the
+   first alone holds it as a list. The encode keeps the two as the arm presents them and reads each list off
+   what it kept, so the count it derives from the first is the count of both; a source presents the first
+   list as one type wherever an arm holds it. The decode makes the two of the lists it read by the one
+   count. The printed set is 135 codecs.
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences

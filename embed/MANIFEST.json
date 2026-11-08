@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.1 (1ubuntu1~24.04.2)",
-  "embed_version": "d5876d9",
+  "embed_version": "4328765",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 551,
+  "symbol_count": 554,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -3016,6 +3016,12 @@
       "header": "sce/forge/bounded.h",
       "kind": "class",
       "members": [],
+      "name": "SCE::Forge::Aligned<T>"
+    },
+    {
+      "header": "sce/forge/bounded.h",
+      "kind": "class",
+      "members": [],
       "name": "SCE::Forge::Bounded<T>"
     },
     {
@@ -3040,6 +3046,12 @@
       "header": "sce/forge/bounded.h",
       "kind": "function",
       "name": "SCE::Forge::operator!=<T>",
+      "signature": "bool SCE::Forge::operator!=<T>(const Aligned<A, B> &, const Aligned<A2, B2> &)"
+    },
+    {
+      "header": "sce/forge/bounded.h",
+      "kind": "function",
+      "name": "SCE::Forge::operator!=<T>",
       "signature": "bool SCE::Forge::operator!=<T>(const Bounded<L, Max, Min> &, const Bounded<L2, Max2, Min2> &)"
     },
     {
@@ -3053,6 +3065,12 @@
       "kind": "function",
       "name": "SCE::Forge::operator!=<T>",
       "signature": "bool SCE::Forge::operator!=<T>(const R &, const Bounded<L, Max, Min> &)"
+    },
+    {
+      "header": "sce/forge/bounded.h",
+      "kind": "function",
+      "name": "SCE::Forge::operator==<T>",
+      "signature": "bool SCE::Forge::operator==<T>(const Aligned<A, B> &, const Aligned<A2, B2> &)"
     },
     {
       "header": "sce/forge/bounded.h",

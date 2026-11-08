@@ -81,6 +81,7 @@ const PRINTED: &[&str] = &[
     "codec_repeat_flag_carrier",
     "codec_repeat_flag_gated",
     "codec_repeat_present_if_basic",
+    "codec_repeat_unconditional_count",
     "codec_scout_zid_body",
     "codec_simple_frame",
     "codec_subbyte",

@@ -1458,6 +1458,25 @@ field declares `sce:quantity` (1 more codec of the resources, 134 in all: `codec
 - The unit getter converts with `static_cast<double>` where it used a C-style cast; the value it returns is the
   same.
 
+## A printed C++ codec holds two lists of one count as one `Aligned` (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C++ tree is regenerated after it. It moves the codec whose
+two lists share one count and one of them a gate decides (1 more codec of the resources, 135 in all:
+`codec_repeat_unconditional_count`).
+
+- The value is the class with the group of the gate behind its accessor, a `std::variant` of a class per arm,
+  where it held the count and each list as public members. The arm that holds both lists holds them as one
+  member named after the two (`links_weights()`), a `SCE::Forge::Aligned` of two lists, made by
+  `Aligned<...>::make(first, second)`, which is empty where their counts differ; the arm that holds the first
+  alone holds it as a list.
+- The count and the flag `H` are derived from the arm the value holds and the lists it holds: drop the code that
+  set them. The carrier's other bits stay what the value presents.
+- The encode no longer refuses the value: a value cannot hold two lists of different counts, so `encode`
+  reports only what the sink refuses, and `encode_to_vec` returns the bytes where it returned a `std::optional`
+  of them.
+- `SCE::Forge::Aligned` (`sce/forge/bounded.h`) presents `first()`, `second()` and `size()`; two of them
+  convert as their lists do and compare equal where both lists do.
+
 ## A payload schema states its keys in the order the document declares them (ADR 0087 §1.1)
 
 Landing: the commit that adds this section; every tree holding a `JSON_SCHEMA` constant or a GBNF table (the Rust,
