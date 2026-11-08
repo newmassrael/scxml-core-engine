@@ -1215,18 +1215,28 @@ pub fn generate_mesh(
     let Some(emit) = mesh_backend(language) else {
         return Err(CodegenError::UnsupportedLanguage(format!("{:?}", language)));
     };
-    refuse_causal_delivery_without_core(inputs.targets, inputs.deploy_machine_name, language)?;
     emit(inputs)
 }
 
-/// The backends whose Mesh core routes a causal binding (docs/adr/0085,
-/// section 3.2 and Landing order step 3). A backend joins the list in the
-/// landing that routes the binding through its core's causal layer and
-/// renders the group into its peer table: Rust, the reference, whose router
-/// routes it to `backends/rust/mesh/src/causal.rs`; C++, whose generated
-/// router routes it to `sce/include/mesh/CausalRoute.h` on every transport it
-/// carries; Kotlin, whose router routes it to `Causal.kt`; and Swift, whose
-/// router routes it to `Causal.swift`.
+type MeshBackend = fn(MeshCodegenInputs<'_>) -> Result<GeneratedOutput, CodegenError>;
+
+/// The mesh emitter each backend carries, or `None` for a backend with no
+/// mesh arm. This is the implementation half of the backend roster; the
+/// route half is `generator::mesh_templates_exist_for` (a generated
+/// router) and `host_peer_table_template` (a host one), which read the
+/// embedded tree. They are held to one answer per language by
+/// `mesh_backend_matches_the_template_tree`, so a template directory
+/// landing without an emitter here (or the reverse) is a red rather than
+/// a document the generator accepts and this function then rejects.
+///
+/// Every emitter here routes a `delivery: causal` binding through its
+/// core's causal layer and renders the binding's group into its peer table
+/// (docs/adr/0085, section 3.2): Rust, the reference, to
+/// `backends/rust/mesh/src/causal.rs`; C++ to `sce/include/mesh/CausalRoute.h`
+/// on every transport its router carries; Kotlin to `Causal.kt`; Swift to
+/// `Causal.swift`. A backend joins this roster carrying that route, since a
+/// causal binding built as a plain route would deliver duplicates, out of
+/// causal order and past gaps while the deployment reads as causal.
 ///
 /// The C++ route is a layer of the Mesh core above the transport: it sends
 /// its own control message (pattern 23) and answers a repair with the
@@ -1240,65 +1250,6 @@ pub fn generate_mesh(
 /// [`super::topology::CAUSAL_VECTOR_EVENT`]; `local` writes only through the
 /// peer's linked router; and `shm` peers drain each other's channel through
 /// the router (`pumpCausalShm`).
-const CAUSAL_DELIVERY_LANGUAGES: &[Language] = &[
-    Language::Rust,
-    Language::Cpp,
-    Language::Kotlin,
-    Language::Swift,
-];
-
-/// The repair the refusal's message offers: the `--lang` choices that build
-/// a causal binding, read from [`CAUSAL_DELIVERY_LANGUAGES`] so a core that
-/// lands is offered without a second edit, or, while none does, the binding
-/// without the setting.
-pub(crate) fn causal_delivery_repair() -> String {
-    let carriers: Vec<String> = CAUSAL_DELIVERY_LANGUAGES
-        .iter()
-        .map(|language| format!("`--lang {}`", language.canonical_name()))
-        .collect();
-    if carriers.is_empty() {
-        "No backend's Mesh core routes it yet; bind the peer without `delivery: causal`."
-            .to_string()
-    } else {
-        format!(
-            "Generate this machine with {}, or bind the peer without `delivery: causal`.",
-            carriers.join(" or ")
-        )
-    }
-}
-
-/// A backend whose core does not carry the causal route refuses a causal
-/// binding by name (docs/adr/0085, section 3.2). Building it as a plain route would deliver
-/// duplicates, out of causal order and past gaps, while the deployment reads
-/// as causal.
-fn refuse_causal_delivery_without_core(
-    targets: &[ResolvedTarget],
-    machine: &str,
-    language: Language,
-) -> Result<(), CodegenError> {
-    if CAUSAL_DELIVERY_LANGUAGES.contains(&language) {
-        return Ok(());
-    }
-    match targets.iter().find(|t| t.causal.is_some()) {
-        Some(t) => Err(CodegenError::CausalDeliveryUnsupported {
-            machine: machine.to_string(),
-            target: t.target.as_str().to_string(),
-            backend: language.canonical_name().to_string(),
-        }),
-        None => Ok(()),
-    }
-}
-
-type MeshBackend = fn(MeshCodegenInputs<'_>) -> Result<GeneratedOutput, CodegenError>;
-
-/// The mesh emitter each backend carries, or `None` for a backend with no
-/// mesh arm. This is the implementation half of the backend roster; the
-/// route half is `generator::mesh_templates_exist_for` (a generated
-/// router) and `host_peer_table_template` (a host one), which read the
-/// embedded tree. They are held to one answer per language by
-/// `mesh_backend_matches_the_template_tree`, so a template directory
-/// landing without an emitter here (or the reverse) is a red rather than
-/// a document the generator accepts and this function then rejects.
 fn mesh_backend(language: Language) -> Option<MeshBackend> {
     match language {
         Language::Cpp => Some(generate_cpp_mesh),
@@ -2467,10 +2418,6 @@ fn generate_host_mesh(
         .map(|t| {
             let desc = transport::lookup(t.state.transport_name()).expect("transport validated");
             let policy = peer_policy(t, desc);
-            debug_assert!(
-                policy.causal.is_none() || CAUSAL_DELIVERY_LANGUAGES.contains(&language),
-                "refuse_causal_delivery_without_core refuses a causal binding before this emitter"
-            );
             let link = match &t.state {
                 TransportState::Wss {
                     url: Some(url),

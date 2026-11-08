@@ -3581,11 +3581,6 @@ pub enum DiagnosticCode {
     MeshCodegenPoolWithRpcClientUnsupported,
     #[serde(rename = "mesh/codegen-host-core-unsupported")]
     MeshCodegenHostCoreUnsupported,
-    /// A binding with `delivery: causal` on a backend whose Mesh core does
-    /// not carry the causal route yet (docs/adr/0085, section 3.2). Refused
-    /// by name.
-    #[serde(rename = "mesh/codegen-causal-delivery-unsupported")]
-    MeshCodegenCausalDeliveryUnsupported,
     // Mesh I/O
     #[serde(rename = "mesh/io")]
     MeshIo,
@@ -4465,7 +4460,6 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshCodegenEventNameCollision,
         MeshCodegenPoolWithRpcClientUnsupported,
         MeshCodegenHostCoreUnsupported,
-        MeshCodegenCausalDeliveryUnsupported,
         // Mesh Io
         MeshIo,
         // Forge generated-source drift detection (SCE Protocol-Synthesis RFC §synth-6.2.6)
@@ -5119,7 +5113,6 @@ impl DiagnosticCode {
 
             // ── Host Mesh Router (SCE_MESH.md §19) ───────────────
             MeshCodegenHostCoreUnsupported => Some("SCE Mesh §19"),
-            MeshCodegenCausalDeliveryUnsupported => Some("SCE Mesh §10.12"),
 
             // ── Mesh sequence ordering (SCE_MESH.md §10.6) ──────
             MeshTopologyOrderingCannotBeGuaranteed => Some("SCE Mesh §10.6"),
@@ -6094,7 +6087,6 @@ impl DiagnosticCode {
             | MeshCodegenEventNameCollision
             | MeshCodegenPoolWithRpcClientUnsupported
             | MeshCodegenHostCoreUnsupported
-            | MeshCodegenCausalDeliveryUnsupported
             | MeshIo
             | ForgeSourceHashMismatch
             | ForgeSourceHashInputUncovered
@@ -6754,7 +6746,6 @@ impl DiagnosticCode {
                 "mesh/codegen-pool-with-rpc-client-unsupported"
             }
             MeshCodegenHostCoreUnsupported => "mesh/codegen-host-core-unsupported",
-            MeshCodegenCausalDeliveryUnsupported => "mesh/codegen-causal-delivery-unsupported",
             MeshIo => "mesh/io",
             ForgeSourceHashMismatch => "forge/source-hash-mismatch",
             ForgeSourceHashInputUncovered => "forge/source-hash-input-uncovered",
@@ -19390,16 +19381,6 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:b7033381df436a0b","code":"mesh/codegen-host-core-unsupported","stage":"mesh-codegen","spec":"SCE Mesh §19","message":"machine 'calendar' declares a `server:` block on transport 'zenoh_keyexpr', which the host Mesh cores do not carry (SCE_MESH.md §mesh-19). Generate this machine with `--lang cpp`, or remove it from deploy.yaml.","actual":"calendar"}"#,
             ),
             (
-                "mesh/codegen-causal-delivery-unsupported",
-                CodegenError::CausalDeliveryUnsupported {
-                    machine: "list".into(),
-                    target: "#people".into(),
-                    backend: "kotlin".into(),
-                }
-                .into(),
-                r#"{"v":1,"id":"fnv1a:5fe95cdd48172816","code":"mesh/codegen-causal-delivery-unsupported","stage":"mesh-codegen","spec":"SCE Mesh §10.12","message":"machine 'list' binds `#people` with `delivery: causal`, which the kotlin Mesh core does not route yet (SCE_MESH.md §mesh-10.12). Generate this machine with `--lang rust` or `--lang cpp`, or bind the peer without `delivery: causal`.","actual":"#people"}"#,
-            ),
-            (
                 "mesh/io",
                 MeshError::Io {
                     path: std::path::PathBuf::from("/tmp/mesh.log"),
@@ -21033,7 +21014,6 @@ mod tests {
             | MeshCodegenEventNameCollision
             | MeshCodegenPoolWithRpcClientUnsupported
             | MeshCodegenHostCoreUnsupported
-            | MeshCodegenCausalDeliveryUnsupported
             | MeshIo
             // ── §synth-6.2.6 generated-source drift (B9). Repair is the
             //    deterministic `sce-codegen <regen-command>` — no
@@ -21881,7 +21861,6 @@ mod tests {
                 | MeshCodegenTemplateRender | MeshCodegenEventNameCollision
                 | MeshCodegenPoolWithRpcClientUnsupported
                 | MeshCodegenHostCoreUnsupported
-                | MeshCodegenCausalDeliveryUnsupported
                 | MeshIo
                 // B9 §synth-6.2.6 generated-source drift detection
                 | ForgeSourceHashMismatch
@@ -22972,7 +22951,6 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | MeshCodegenEventNameCollision
             | MeshCodegenPoolWithRpcClientUnsupported
             | MeshCodegenHostCoreUnsupported
-            | MeshCodegenCausalDeliveryUnsupported
             | MeshIo
             | ForgeSourceHashMismatch
             | ForgeSourceHashInputUncovered
