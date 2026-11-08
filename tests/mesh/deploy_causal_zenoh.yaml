@@ -1,0 +1,20 @@
+# docs/adr/0085, section 3.2: the brake's `#motor` binding is the route of a
+# causal group over zenoh_keyexpr. Consumed by test_mesh_causal_injection.cpp,
+# which drives the generated router without opening a session.
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      zenoh_keyexpr:
+        mode: peer
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: zenoh_keyexpr
+            key: "sce/brake/motor/causal"
+            delivery: causal
+            group: { name: pair, view: [ecu1/brake, ecu1/motor] }
+      motor:
+        source: motor.scxml
