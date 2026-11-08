@@ -171,6 +171,57 @@ TEST(JsonText, TheCoreWritesObjectMembersInTheOneOrder) {
     }
 }
 
+// A composed value a `<param>` carries (docs/adr/0086, section 5.2) has one text: the
+// JSON the event carries it as. A BasicHTTP form and a host's text params take a
+// param's text from `ScriptResultUtils::valueText` (a machine with no script engine)
+// or `resultToString` with no engine, and either used to answer the marker
+// "[conversion_error]" for an array or an object; each is held here to the event JSON,
+// at every depth, and to the object order of the table.
+TEST(JsonText, AComposedParamsTextIsTheJsonTheEventCarries) {
+    const auto record = [](int64_t id, std::vector<::ScriptValue> tags, double ratio) {
+        auto object = std::make_shared<::ScriptObject>();
+        object->properties["tags"] = ::ScriptValue{std::make_shared<::ScriptArray>(std::move(tags))};
+        object->properties["ratio"] = ::ScriptValue{ratio};
+        object->properties["id"] = ::ScriptValue{id};
+        object->properties["due"] = ::ScriptValue{::ScriptNull{}};
+        return ::ScriptValue{object};
+    };
+    const ::ScriptValue items{std::make_shared<::ScriptArray>(std::vector<::ScriptValue>{
+        record(1, {::ScriptValue{std::string("a")}, ::ScriptValue{std::string("b\"c")}}, 1.5), record(2, {}, 0.1)})};
+    const std::string json = R"([{"due":null,"id":1,"ratio":1.5,"tags":["a","b\"c"]},)"
+                             R"({"due":null,"id":2,"ratio":0.1,"tags":[]}])";
+
+    EXPECT_EQ(SCE::ScriptResultUtils::valueText(items), json) << "the text form of a list of records";
+    EXPECT_EQ(SCE::ScriptResultUtils::resultToString(SCE::ScriptResult::createSuccess(items)), json)
+        << "the text form with no engine to stringify it";
+    EXPECT_EQ(SCE::EventDataHelper::scriptValueToJsonString(items), json) << "the value as JSON";
+    // The send template fills both maps from one value: the text and the typed one.
+    const std::map<std::string, std::vector<std::string>> texts{{"items", {SCE::ScriptResultUtils::valueText(items)}}};
+    const std::map<std::string, std::vector<::ScriptValue>> typed{{"items", {items}}};
+    EXPECT_EQ(SCE::EventDataHelper::buildEventDataJson(texts, typed), "{\"items\":" + json + "}");
+
+    // An object is written in the one order of its keys, whichever order it holds them in.
+    std::ifstream file(SCE_JSON_KEY_ORDER_TABLE);
+    const auto table = nlohmann::json::parse(file);
+    size_t written = 0;
+    for (const auto &row : table.at("cases")) {
+        auto object = std::make_shared<::ScriptObject>();
+        size_t pairs = 0;
+        for (const auto &pair : row.at("params")) {
+            object->properties[pair.at(0).get<std::string>()] = held(pair.at(1));
+            ++pairs;
+        }
+        if (object->properties.size() < pairs) {
+            // A name that repeats is a `<send>`'s list of params, which an object does not hold.
+            continue;
+        }
+        EXPECT_EQ(SCE::ScriptResultUtils::valueText(::ScriptValue{object}), row.at("data").get<std::string>())
+            << row.at("name").get<std::string>();
+        ++written;
+    }
+    EXPECT_GE(written, 10u) << "the table lost the cases an object is written for";
+}
+
 namespace {
 
 // `value` spelled through the typed payload writers, one call per constructor, as a

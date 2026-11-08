@@ -6,6 +6,7 @@
 #include "ScriptResult.h"
 #include "ScriptSource.h"
 #include "common/JsonText.h"
+#include "common/ScriptValueJson.h"
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -37,7 +38,7 @@ bool resultToBool(const ScriptResult &result);
  * A string is itself, a number is its ECMAScript `String(value)`
  * (ARCHITECTURE.md, "JSON Number Text"), a truth value is `true` or `false`, and
  * `undefined` and `null` are the empty string (§scxml-C-1). An array or an object
- * has no text without an engine to stringify it, and returns nothing.
+ * is no scalar and returns nothing here; `valueText` writes it as its JSON text.
  *
  * Header-only on purpose. Generated code under `datamodel="sce-static"` carries
  * no script engine and its component links no SCE library: it is compiled with
@@ -74,13 +75,15 @@ inline std::optional<std::string> scalarText(const ScriptValue &value) {
 /**
  * @brief The text of a value a native expression computed, with no script engine
  *
- * `resultToString(ScriptResult::createSuccess(value))` for a scalar, without the
- * library (see `scalarText`). A value that is not a scalar has no engine to be
- * stringified by here and reads as the marker `resultToString` gives it.
+ * `resultToString(ScriptResult::createSuccess(value))`, without the library: a scalar
+ * as `scalarText` writes it, and an array or an object as its JSON text, the
+ * one `ScriptValueJson` writes and the event JSON a `<send>`
+ * carries is made of, so a composed `<param>` (docs/adr/0086, section 5.2) carries
+ * the same value in a BasicHTTP form or a host's text params as in `_event.data`.
  */
 inline std::string valueText(const ScriptValue &value) {
     const auto text = scalarText(value);
-    return text ? *text : std::string("[conversion_error]");
+    return text ? *text : ScriptValueJson::text(value);
 }
 
 /**

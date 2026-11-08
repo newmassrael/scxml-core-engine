@@ -198,7 +198,7 @@ class ScriptValue:
         the receiver to RUN it — which made `_event.data` mean one thing
         on a Lua backend and another on a JavaScript one, and made any
         payload executable at the far end. Ports the C++
-        `scriptValueToJson` in `sce/src/common/EventDataHelper.cpp`.
+        `ScriptValueJson::append` in `sce/include/common/ScriptValueJson.h`.
 
         Object keys are sorted so equal content produces equal bytes,
         matching the C++ `std::map` original and the Rust/Go ports.

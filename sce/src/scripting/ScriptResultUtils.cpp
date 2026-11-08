@@ -45,7 +45,10 @@ std::string resultToString(const ScriptResult &result, IScriptEngine *engine, co
         }
         return "[object]";
     }
-    return "[conversion_error]";
+    // With no engine to stringify it, an array or an object is its JSON text, as
+    // `valueText` writes it: a host-run request's text params and a form carry the
+    // value, not a marker in its place.
+    return ScriptValueJson::text(value);
 }
 
 std::vector<std::string> resultToStringArray(const ScriptResult &result, IScriptEngine *engine,

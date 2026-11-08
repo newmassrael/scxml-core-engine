@@ -26,8 +26,8 @@ use std::collections::BTreeMap;
 
 /// A value that leaves the ECMAScript data model, as JSON.
 ///
-/// 1:1 port of the C++ `scriptValueToJson` static in
-/// `sce/src/common/EventDataHelper.cpp`. The clause cited in the body names
+/// 1:1 port of the C++ `ScriptValueJson::append` in
+/// `sce/include/common/ScriptValueJson.h`. The clause cited in the body names
 /// JSON as the serialization for data that leaves the data model — it is what
 /// the BasicHTTP Event I/O Processor sends — and an event payload leaves it by
 /// definition: the receiver may be a different session, a different process,

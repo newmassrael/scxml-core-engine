@@ -108,8 +108,8 @@ func ToWireString(value interface{}) string {
 // one thing on a Lua backend and another on a JavaScript one, and made a
 // payload executable at the receiving end. JSON is read by a parser.
 //
-// 1:1 port of the C++ `scriptValueToJson` static in
-// `sce/src/common/EventDataHelper.cpp`. Object keys are sorted: Go map
+// 1:1 port of the C++ `ScriptValueJson::append` in
+// `sce/include/common/ScriptValueJson.h`. Object keys are sorted: Go map
 // iteration order is deliberately randomised, and the wire form has to be
 // byte-identical for equal content.
 func ScriptValueToJSON(value interface{}) string {
