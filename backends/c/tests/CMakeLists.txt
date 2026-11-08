@@ -4676,6 +4676,41 @@ set_tests_properties(c11_unit_json_text PROPERTIES
     LABELS "unit;c11"
 )
 
+# ─── Test profile runtime unit tests ────────────────────────────────
+#
+# The runtime of the test profile (docs/SCE_TEST_PROFILE.md §12.2, sce/test/):
+# the round scheduler, NOW, port queues and snapshots, timers, verdicts, the
+# entities, the guard and the suite runner, held to the cases of the Rust
+# runtime by name with components written by hand, and every bound a run is
+# held to refused by name. Header-only and allocation-free, so the tests need
+# nothing a configuration can leave out; `m` for the saved value readers a
+# module parameter is read through.
+add_executable(sce_c_test_case_run_unit_test unit/test_case_run_test.c)
+target_link_libraries(sce_c_test_case_run_unit_test PRIVATE sce_c_runtime m)
+set_target_properties(sce_c_test_case_run_unit_test PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_unit_test_case_run COMMAND sce_c_test_case_run_unit_test)
+set_tests_properties(c11_unit_test_case_run PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;c11"
+)
+# The TTCN-3 length of a text, counted in code points over UTF-8.
+add_executable(sce_c_text_length_unit_test unit/text_length_test.c)
+target_link_libraries(sce_c_text_length_unit_test PRIVATE sce_c_runtime)
+set_target_properties(sce_c_text_length_unit_test PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_unit_text_length COMMAND sce_c_text_length_unit_test)
+set_tests_properties(c11_unit_text_length PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;c11"
+)
+
 # ─── Forge concat unit test ─────────────────────────────────────────
 #
 # The join a `sce-static` machine writes into a buffer the generator sizes from
