@@ -3,6 +3,15 @@
 
 //! The Python spelling of the walks over a composed value ([`super`])
 //! (docs/adr/0086, section 7.1, the Python row).
+//!
+//! | `list<T>[N]` | `string[N]` / `bytes[N]` | `optional<T>` | record |
+//! |---|---|---|---|
+//! | `list[T]` | `str` / `bytes` | `Optional[T]` | the machine's record class |
+//!
+//! No Python type carries a bound (section 7.4, last paragraph), so two places
+//! whose types differ only in their bounds are one type, and a value that fits
+//! is copied as it is, into a copy that shares no list with the place it was
+//! taken from, since the variable it is copied into is written into in place.
 
 use super::*;
 

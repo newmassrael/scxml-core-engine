@@ -3,6 +3,14 @@
 
 //! The Kotlin spelling of the walks over a composed value ([`super`])
 //! (docs/adr/0086, section 7.1, the Kotlin row).
+//!
+//! | `list<T>[N]` | `string[N]` / `bytes[N]` | `optional<T>` | record |
+//! |---|---|---|---|
+//! | `List<T>` | `String` / `ByteArray` | `T?` | the machine's data class |
+//!
+//! No Kotlin type carries a bound (section 7.4, last paragraph), so two places
+//! whose types differ only in their bounds are one type, and a value that fits
+//! is copied as it is.
 
 use super::*;
 

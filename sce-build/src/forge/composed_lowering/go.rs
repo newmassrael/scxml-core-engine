@@ -4,6 +4,15 @@
 //! The Go spelling of the walks over a composed value ([`super`])
 //! (docs/adr/0086, section 7.1, the Go row), and the checks a Go raise seam
 //! runs over a host's value before it encodes it (section 5.4).
+//!
+//! | `list<T>[N]` | `string[N]` / `bytes[N]` | `optional<T>` | record |
+//! |---|---|---|---|
+//! | `[]T` | `string` / `[]byte` | `optional.Of[T]` | the machine's struct |
+//!
+//! No Go type carries a bound (section 7.4, last paragraph), so two places
+//! whose types differ only in their bounds are one type, and a value that fits
+//! is copied as it is: the list a place holds into a slice of its own, since
+//! the variable it is copied into is appended to in place.
 
 use super::*;
 

@@ -4,6 +4,15 @@
 //! The C++ spelling of the walks over a composed value ([`super`])
 //! (docs/adr/0086, section 7.1, the C++ row), and the checks a C++ raise seam
 //! runs over a host's value before it encodes it (section 5.4).
+//!
+//! | `list<T>[N]` | `string[N]` / `bytes[N]` | `optional<T>` | record |
+//! |---|---|---|---|
+//! | `std::vector<T>` | `std::string` / `std::vector<uint8_t>` | `std::optional<T>` | the machine's struct |
+//!
+//! No C++ type carries a bound yet (section 7.4, last paragraph), so two
+//! places whose types differ only in their bounds are one type, and a value
+//! that fits is copied as it is, by the assignment, which copies a list by
+//! value at every depth.
 
 use super::*;
 
