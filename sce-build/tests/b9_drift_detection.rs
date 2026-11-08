@@ -28,7 +28,7 @@
 
 mod common;
 
-use sce_build::forge::drift::{compute_source_hash, DriftHeader, HEADER_BANNER};
+use sce_build::forge::drift::{ClosureOptions, DriftHeader, InputClosure, HEADER_BANNER};
 use sce_build::generator::GeneratedOutput;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -108,11 +108,16 @@ fn env_bin() -> &'static str {
     env!("CARGO_BIN_EXE_sce-codegen")
 }
 
+/// The header of a file generated from `document`: its input closure.
+fn header_of(document: &Path) -> DriftHeader {
+    DriftHeader::of(
+        &InputClosure::of(&[document], ClosureOptions::default())
+            .unwrap_or_else(|e| panic!("the closure of {} is read: {e}", document.display())),
+    )
+}
+
 fn header_for_fixture(fix: &VerifyFixture) -> DriftHeader {
-    DriftHeader {
-        source_hash: compute_source_hash(&fix.input_root, None).unwrap(),
-        seeds: Vec::new(),
-    }
+    header_of(&fix.input_root.join("foo.scxml"))
 }
 
 #[test]
@@ -143,12 +148,12 @@ fn verify_fails_when_source_drifts() {
     );
 }
 
-/// A tree generated before the header dropped `template-hash` and
-/// `generated-at` still carries them. `verify` judges the `source-hash`
-/// such a file carries like any other; the retired lines are for a
-/// regeneration to remove, not for `verify` to refuse.
+/// A header of a shape before ADR 0094 names no document, so `verify` has
+/// no closure to recompute for it: a tree that missed the migration is
+/// refused, whatever its `source-hash` says. It is still read as a header,
+/// not skipped as headerless.
 #[test]
-fn verify_reads_a_header_of_the_older_shape() {
+fn verify_refuses_a_header_that_names_no_document() {
     let fix = VerifyFixture::new();
     let header = header_for_fixture(&fix);
     fs::write(
@@ -163,9 +168,13 @@ fn verify_reads_a_header_of_the_older_shape() {
     .unwrap();
 
     let (code, _stdout, stderr) = fix.run_verify();
-    assert_eq!(
+    assert_ne!(
         code, 0,
-        "a legacy header with a current source-hash must pass. stderr: {stderr}"
+        "a header with no `source:` line must not pass. stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("source:"),
+        "the refusal names what the header lacks. stderr: {stderr}"
     );
     assert!(
         !stderr.contains("headerless"),
@@ -255,56 +264,33 @@ fn verify_passes_when_run_from_different_working_directory() {
     );
 }
 
+/// A file whose document is under none of the roots `verify` is given has
+/// no closure to recompute, and is refused rather than passed.
 #[test]
-fn verify_passes_when_input_set_is_empty_scxml_directory() {
-    // Edge case: no `.scxml` files under input_root. compute_source_hash
-    // walks an empty tree but should produce a stable hash (just the
-    // BTreeMap-with-zero-entries digest). The synthetic GeneratedOutput
-    // sees that hash; verify confirms no drift.
-    let root = TempDir::new().unwrap();
-    let input_root = root.path().join("empty-input");
-    let out_dir = root.path().join("out");
-    fs::create_dir_all(&input_root).unwrap();
-    fs::create_dir_all(&out_dir).unwrap();
+fn verify_refuses_a_file_whose_document_is_under_no_root() {
+    let fix = VerifyFixture::new();
+    fix.generate_headered_rust(&header_for_fixture(&fix));
+    fs::remove_file(fix.input_root.join("foo.scxml")).unwrap();
 
-    let header = DriftHeader {
-        source_hash: compute_source_hash(&input_root, None).unwrap(),
-        seeds: Vec::new(),
-    };
-    let mut output = GeneratedOutput {
-        files: vec![("foo_sm.rs".into(), "pub struct Foo;\n".into())],
-        ..Default::default()
-    };
-    sce_build::apply_drift_headers_to_output(&mut output, &header);
-    for (name, content) in output.files {
-        fs::write(out_dir.join(name), content).unwrap();
-    }
-    let bin = env_bin();
-    let result = Command::new(bin)
-        .arg("verify")
-        .arg(out_dir.to_str().unwrap())
-        .arg("--input-root")
-        .arg(input_root.to_str().unwrap())
-        .output()
-        .unwrap();
-    assert_eq!(
-        result.status.code().unwrap_or(-1),
-        0,
-        "empty-input verify must pass. stderr: {}",
-        String::from_utf8_lossy(&result.stderr)
+    let (code, _stdout, stderr) = fix.run_verify();
+    assert_ne!(
+        code, 0,
+        "a file whose document is gone must not pass. stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("foo.scxml"),
+        "the refusal names the document it could not find. stderr: {stderr}"
     );
 }
 
+/// ADR 0094 test 5 through the command: a staging script copies its tracked
+/// fixture into a directory of its own and names the tracked directory as
+/// `--input-root`. The copy's files carry the header a generation of the
+/// tracked document gives, so `verify` against the tracked directory passes;
+/// and a sibling of the tracked document, which it never reads, moves
+/// nothing.
 #[test]
-fn input_root_override_pins_hash_to_canonical_location() {
-    // Round B donedata symmetry follow-up: when an authoring script
-    // stages its tracked input into a tmp dir (so split-out children
-    // don't pollute the source tree), the `--input-root` override
-    // lets the cmd_generate hash root point back at the canonical
-    // location. The embedded source-hash must therefore match
-    // `compute_source_hash(canonical)` — not the staging dir — so a
-    // stranger running `sce-codegen verify <out> --input-root <canonical>`
-    // reproduces the hash directly from the repo.
+fn a_staged_copy_carries_the_header_of_the_document_it_stands_for() {
     let root = TempDir::new().unwrap();
     let canonical = root.path().join("canonical");
     let stage = root.path().join("stage");
@@ -320,12 +306,11 @@ fn input_root_override_pins_hash_to_canonical_location() {
                  <state id='s0'/></scxml>";
     fs::write(canonical.join("foo.scxml"), scxml).unwrap();
     fs::write(stage.join("foo.scxml"), scxml).unwrap();
-    // Add a second SCXML to canonical only so the two dirs produce
-    // different recursive hashes — proves `--input-root` actually
-    // routes through compute_source_hash and is not silently
-    // discarded.
+    // A sibling of the tracked document, which it does not read: under the
+    // directory rule it moved the header, under the closure it does not.
+    let sibling = canonical.join("bar.scxml");
     fs::write(
-        canonical.join("bar.scxml"),
+        &sibling,
         "<?xml version='1.0'?>\n\
          <scxml xmlns='http://www.w3.org/2005/07/scxml' \
          initial='b0' version='1.0' datamodel='ecmascript'>\
@@ -352,20 +337,7 @@ fn input_root_override_pins_hash_to_canonical_location() {
         String::from_utf8_lossy(&result.stderr),
     );
 
-    let canonical_header = DriftHeader {
-        source_hash: compute_source_hash(&canonical, None).unwrap(),
-        seeds: Vec::new(),
-    };
-    let stage_header = DriftHeader {
-        source_hash: compute_source_hash(&stage, None).unwrap(),
-        seeds: Vec::new(),
-    };
-    assert_ne!(
-        canonical_header.source_hex(),
-        stage_header.source_hex(),
-        "test setup: canonical and stage dirs must produce different hashes",
-    );
-
+    let tracked_header = header_of(&canonical.join("foo.scxml"));
     let foo_sm = out_dir.join("foo_sm.rs");
     assert!(
         foo_sm.exists(),
@@ -373,43 +345,267 @@ fn input_root_override_pins_hash_to_canonical_location() {
         foo_sm.display()
     );
     let content = fs::read_to_string(&foo_sm).unwrap();
-    let expected_line = format!("source-hash: {}", canonical_header.source_hex());
+    let expected_line = format!("source-hash: {}", tracked_header.source_hex());
     assert!(
-        content.contains(&expected_line),
-        "generated file must embed canonical source-hash. expected line: `{expected_line}`\nfirst 5 lines of {}:\n{}",
+        content.contains(&expected_line) && content.contains("source: foo.scxml\n"),
+        "the copy's file must carry the tracked document's header. expected line: \
+         `{expected_line}`\nfirst 5 lines of {}:\n{}",
         foo_sm.display(),
         content.lines().take(5).collect::<Vec<_>>().join("\n"),
     );
 
-    // Verify against canonical should pass.
-    let result = Command::new(bin)
-        .arg("verify")
-        .arg(out_dir.to_str().unwrap())
-        .arg("--input-root")
-        .arg(canonical.to_str().unwrap())
-        .output()
-        .unwrap();
+    let verify = || {
+        Command::new(bin)
+            .arg("verify")
+            .arg(out_dir.to_str().unwrap())
+            .arg("--input-root")
+            .arg(canonical.to_str().unwrap())
+            .output()
+            .unwrap()
+    };
+    let result = verify();
     assert_eq!(
         result.status.code(),
         Some(0),
-        "verify against canonical must pass. stderr: {}",
+        "verify against the tracked directory must pass. stderr: {}",
         String::from_utf8_lossy(&result.stderr),
     );
 
-    // Verify against stage should fail — different file set than
-    // the embedded hash was computed against.
-    let result = Command::new(bin)
-        .arg("verify")
-        .arg(out_dir.to_str().unwrap())
-        .arg("--input-root")
-        .arg(stage.to_str().unwrap())
-        .output()
-        .unwrap();
-    assert_ne!(
+    fs::write(
+        &sibling,
+        "<?xml version='1.0'?>\n\
+         <scxml xmlns='http://www.w3.org/2005/07/scxml' \
+         initial='b1' version='1.0' datamodel='ecmascript'>\
+         <state id='b1'/></scxml>",
+    )
+    .unwrap();
+    let result = verify();
+    assert_eq!(
         result.status.code(),
         Some(0),
-        "verify against stage must fail (different file set than canonical). stderr: {}",
+        "an edit to a sibling the document never reads moves nothing. stderr: {}",
         String::from_utf8_lossy(&result.stderr),
+    );
+}
+
+/// A statechart that starts the child `child.scxml` by `src`.
+const PARENT_OF_A_FILE_CHILD: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" name="parent" initial="s0">
+  <state id="s0">
+    <invoke type="http://www.w3.org/TR/scxml/" src="child.scxml"/>
+    <transition event="done.invoke" target="s1"/>
+  </state>
+  <final id="s1"/>
+</scxml>
+"#;
+
+/// The child `PARENT_OF_A_FILE_CHILD` starts, its final state named `mark`.
+fn file_child(mark: &str) -> String {
+    format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<scxml \
+         xmlns=\"http://www.w3.org/2005/07/scxml\" version=\"1.0\" name=\"child\" \
+         initial=\"{mark}\">\n  <final id=\"{mark}\"/>\n</scxml>\n"
+    )
+}
+
+/// A directory holding `parent.scxml`, the child it starts, and `lone.scxml`,
+/// which reads neither.
+fn three_documents(dir: &Path) {
+    fs::create_dir_all(dir).unwrap();
+    fs::write(dir.join("parent.scxml"), PARENT_OF_A_FILE_CHILD).unwrap();
+    fs::write(dir.join("child.scxml"), file_child("done")).unwrap();
+    fs::write(
+        dir.join("lone.scxml"),
+        COVERAGE_FIXTURE.replace("covered", "lone"),
+    )
+    .unwrap();
+}
+
+/// Every file under `dir`, by name, with its bytes.
+fn tree(dir: &Path) -> std::collections::BTreeMap<String, String> {
+    fs::read_dir(dir)
+        .unwrap()
+        .flatten()
+        .filter(|entry| entry.path().is_file())
+        .map(|entry| {
+            (
+                entry.file_name().to_string_lossy().into_owned(),
+                fs::read_to_string(entry.path()).unwrap_or_default(),
+            )
+        })
+        .collect()
+}
+
+fn source_hash_line(text: &str) -> Option<&str> {
+    text.lines()
+        .find(|line| line.starts_with("// source-hash: "))
+}
+
+/// ADR 0094 test 1: editing one document moves no header of a file whose
+/// closure excludes it. `lone`'s files are byte for byte what they were;
+/// `parent`, which reads the child for its interface, has a new header.
+#[test]
+fn editing_one_document_moves_no_header_whose_closure_excludes_it() {
+    let root = TempDir::new().unwrap();
+    let input = root.path().join("input");
+    three_documents(&input);
+    let lone_out = root.path().join("lone");
+    let parent_out = root.path().join("parent");
+    fs::create_dir_all(&lone_out).unwrap();
+    fs::create_dir_all(&parent_out).unwrap();
+    let generate_both = || {
+        for (doc, out) in [("lone.scxml", &lone_out), ("parent.scxml", &parent_out)] {
+            let (code, stderr) = run_generate(&input.join(doc), out, &[]);
+            assert_eq!(code, Some(0), "generate {doc}: {stderr}");
+        }
+    };
+    generate_both();
+    let lone_before = tree(&lone_out);
+    let parent_before = fs::read_to_string(parent_out.join("parent_sm.rs")).unwrap();
+    assert!(!lone_before.is_empty(), "lone generated nothing");
+
+    fs::write(input.join("child.scxml"), file_child("finished")).unwrap();
+    generate_both();
+
+    assert_eq!(
+        tree(&lone_out),
+        lone_before,
+        "a document that does not read the child keeps every byte, header included"
+    );
+    let parent_after = fs::read_to_string(parent_out.join("parent_sm.rs")).unwrap();
+    assert_ne!(
+        source_hash_line(&parent_after),
+        source_hash_line(&parent_before),
+        "the parent reads the child, so its header moves"
+    );
+}
+
+/// ADR 0094 test 8: after an edit, `verify` refuses exactly the files whose
+/// closure moved, with the digest of that file's own closure as `expected`,
+/// and passes once those alone are generated again.
+#[test]
+fn verify_refuses_exactly_the_files_whose_closure_moved() {
+    let root = TempDir::new().unwrap();
+    let input = root.path().join("input");
+    three_documents(&input);
+    let out = root.path().join("out");
+    fs::create_dir_all(&out).unwrap();
+    for doc in ["lone.scxml", "parent.scxml"] {
+        let (code, stderr) = run_generate(&input.join(doc), &out, &[]);
+        assert_eq!(code, Some(0), "generate {doc}: {stderr}");
+    }
+    let (code, stderr) = run_verify_real_tree(&out, &input);
+    assert_eq!(code, 0, "a fresh tree passes: {stderr}");
+
+    fs::write(input.join("child.scxml"), file_child("finished")).unwrap();
+    let (code, stderr) = run_verify_real_tree(&out, &input);
+    assert_ne!(code, 0, "the parent's closure moved: {stderr}");
+    assert!(stderr.contains("parent_sm.rs"), "{stderr}");
+    let expected = header_of(&input.join("parent.scxml")).source_hex();
+    assert!(
+        stderr.contains(&format!("recomputed={expected}")),
+        "expected is the parent's own closure: {stderr}"
+    );
+
+    let (code, stderr) = run_generate(&input.join("parent.scxml"), &out, &[]);
+    assert_eq!(code, Some(0), "{stderr}");
+    let (code, stderr) = run_verify_real_tree(&out, &input);
+    assert_eq!(
+        code, 0,
+        "lone's files were never stale, so the parent's alone fix the tree: {stderr}"
+    );
+}
+
+/// ADR 0094 test 7: a machine written in-line in an `<invoke>` is generated
+/// from the document that holds its text, so its files carry that
+/// document's header.
+#[test]
+fn an_inline_child_carries_its_parents_header() {
+    let root = TempDir::new().unwrap();
+    let input = root.path().join("input");
+    let out = root.path().join("out");
+    fs::create_dir_all(&input).unwrap();
+    fs::create_dir_all(&out).unwrap();
+    let doc = input.join("holder.scxml");
+    fs::write(
+        &doc,
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" name="holder" initial="s0">
+  <state id="s0">
+    <invoke id="inner" type="http://www.w3.org/TR/scxml/">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="done">
+          <final id="done"/>
+        </scxml>
+      </content>
+    </invoke>
+    <transition event="done.invoke" target="s1"/>
+  </state>
+  <final id="s1"/>
+</scxml>
+"#,
+    )
+    .unwrap();
+    let (code, stderr) = run_generate(&doc, &out, &[]);
+    assert_eq!(code, Some(0), "{stderr}");
+
+    let files = tree(&out);
+    let header_lines = |text: &str| -> Vec<String> {
+        text.lines()
+            .take_while(|line| line.starts_with("// "))
+            .filter(|line| line.contains("source"))
+            .map(str::to_string)
+            .collect()
+    };
+    let parent = header_lines(files.get("holder_sm.rs").expect("the holder's machine"));
+    let children: Vec<&String> = files
+        .iter()
+        .filter(|(name, _)| name.contains("__sce_synth_invoke__") && name.ends_with(".rs"))
+        .map(|(_, text)| text)
+        .collect();
+    assert!(
+        !children.is_empty(),
+        "no in-line child was generated: {:?}",
+        files.keys()
+    );
+    for child in children {
+        assert_eq!(
+            header_lines(child),
+            parent,
+            "the child carries the holder's header"
+        );
+    }
+    assert!(
+        parent.iter().any(|line| line == "// source: holder.scxml"),
+        "{parent:?}"
+    );
+}
+
+/// ADR 0094 test 13: a depfile declares the closure, so a sibling the
+/// document never reads is not a prerequisite and its edit re-runs nothing.
+#[test]
+fn the_depfile_names_the_closure_and_no_sibling() {
+    let root = TempDir::new().unwrap();
+    let input = root.path().join("input");
+    three_documents(&input);
+    let out = root.path().join("out");
+    fs::create_dir_all(&out).unwrap();
+    let depfile = root.path().join("parent.d");
+    let (code, stderr) = run_generate(
+        &input.join("parent.scxml"),
+        &out,
+        &["--write-deps", depfile.to_str().unwrap()],
+    );
+    assert_eq!(code, Some(0), "{stderr}");
+    let deps = fs::read_to_string(&depfile).unwrap();
+    assert!(deps.contains("parent.scxml"), "{deps}");
+    assert!(
+        deps.contains("child.scxml"),
+        "the child the parent reads: {deps}"
+    );
+    assert!(
+        !deps.contains("lone.scxml"),
+        "a sibling it never reads: {deps}"
     );
 }
 
@@ -497,6 +693,38 @@ fn verify_passes_on_real_committed_rust_w3c_tree() {
          backends/rust/tests/src/generated/. Run \
          `scripts/regen_all_committed_trees.sh` and commit the result. \
          stderr:\n{stderr}"
+    );
+}
+
+/// ADR 0094 test 16 for the tree the defect was measured on: every file of
+/// the committed Rust `static_datamodel` tree states the closure of the
+/// documents it was generated from, found under the three fixture
+/// directories its regeneration script reads (standard documents need no
+/// root). Before the ADR one digest of the whole fixture directory stood in
+/// all of them.
+#[test]
+fn verify_passes_on_real_committed_rust_static_datamodel_tree() {
+    let workspace = workspace_root();
+    let target = workspace.join("backends/rust/tests/src/integration/static_datamodel");
+    let fixtures = workspace.join("sce-build/tests/fixtures");
+    let result = Command::new(env_bin())
+        .arg("verify")
+        .arg(&target)
+        .arg("--input-root")
+        .arg(fixtures.join("static_datamodel"))
+        .arg("--input-root")
+        .arg(fixtures.join("test_profile"))
+        .arg("--input-root")
+        .arg(fixtures.join("union"))
+        .output()
+        .expect("spawn sce-codegen");
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "verify must pass on the committed Rust static_datamodel tree. A failure \
+         here means a fixture changed without refreshing it. Run \
+         `scripts/regen_static_datamodel_rust.sh` and commit the result. stderr:\n{}",
+        String::from_utf8_lossy(&result.stderr),
     );
 }
 
@@ -899,10 +1127,11 @@ fn run_generate(doc: &Path, out: &Path, extra: &[&str]) -> (Option<i32>, String)
     )
 }
 
-/// An input root that resolves to nothing must be refused rather than
-/// embedding the empty-input digest.
+/// The header covers the document's closure, never the directory the run
+/// names: an `--input-root` that holds nothing leaves the header the one a
+/// run without it writes, and never the empty-input digest.
 #[test]
-fn generate_refuses_when_the_source_set_is_empty() {
+fn generate_does_not_hash_the_input_root_it_is_given() {
     let root = TempDir::new().unwrap();
     let doc = root.path().join("covered.scxml");
     fs::write(&doc, COVERAGE_FIXTURE).unwrap();
@@ -911,30 +1140,21 @@ fn generate_refuses_when_the_source_set_is_empty() {
     fs::create_dir_all(&empty).unwrap();
     fs::create_dir_all(&out).unwrap();
 
-    let (code, stderr) = run_generate(
-        &doc,
-        &out,
-        &[
-            "--input-root",
-            empty.to_str().unwrap(),
-            "--error-format=json",
-        ],
-    );
-    assert_ne!(code, Some(0), "empty source set must not emit");
+    let (code, stderr) = run_generate(&doc, &out, &["--input-root", empty.to_str().unwrap()]);
+    assert_eq!(code, Some(0), "{stderr}");
+    let written = fs::read_to_string(out.join("covered_sm.rs")).unwrap();
+    let expected = format!("// source-hash: {}", header_of(&doc).source_hex());
+    assert_eq!(source_hash_line(&written), Some(expected.as_str()));
     assert!(
-        stderr.contains("forge/source-hash-input-uncovered"),
-        "refusal must carry the contract code, got: {stderr}"
-    );
-    assert!(
-        !out.join("covered_sm.rs").exists(),
-        "nothing may be written when the header cannot be trusted"
+        !written.contains("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"),
+        "the empty-input digest must never reach a header"
     );
 }
 
-/// A declared `--input-root` that does collect sources is an assertion
-/// about where the sources live, so generating from a staged derivative of
-/// them is allowed — this is what the fixture regen scripts do, and the
-/// empty-set floor above still applies to them.
+/// Generating from a staged derivative under a declared `--input-root` is
+/// allowed — this is what the fixture regen scripts do — even when the
+/// derivative's bytes differ from the tracked document's: its header then
+/// describes the bytes it was generated from.
 #[test]
 fn generate_allows_a_staged_derivative_under_a_declared_root() {
     let root = TempDir::new().unwrap();
@@ -1033,6 +1253,11 @@ fn committed_generated_files_carry_the_current_header_shape() {
         if let Some(key) = keys.iter().find(|key| RETIRED_HEADER_KEYS.contains(key)) {
             retired.push(format!("{} carries `{key}`", path.display()));
         }
+        // ADR 0094: a header names the documents its digest is a closure
+        // of, or `verify` has nothing to recompute.
+        if !keys.contains(&"source") {
+            retired.push(format!("{} names no `source:` document", path.display()));
+        }
     }
 
     // Every committed sourcemap sits beside the generated files it maps,
@@ -1047,7 +1272,8 @@ fn committed_generated_files_carry_the_current_header_shape() {
     );
     assert!(
         retired.is_empty(),
-        "{} of {headered} committed generated files carry a retired header key. \
+        "{} of {headered} committed generated files carry a retired header key \
+         or name no `source:` document. \
          Re-run `scripts/regen_all_committed_trees.sh` with a current sce-codegen \
          and commit the result. First few:\n{}",
         retired.len(),
@@ -1075,16 +1301,18 @@ fn header_keys(content: &str) -> Option<Vec<&str>> {
                 .strip_prefix("// ")
                 .or_else(|| trimmed.strip_prefix("# "))?;
             let (key, _) = body.split_once(": ")?;
-            (key == "source-hash" || RETIRED_HEADER_KEYS.contains(&key)).then_some(key)
+            (key == "source-hash" || key == "source" || RETIRED_HEADER_KEYS.contains(&key))
+                .then_some(key)
         })
         .collect();
     Some(keys)
 }
 
-/// Every document in a batch must contribute to the drift hash, even
-/// when its directory differs from the first document's directory.
+/// Every document of a set contributes to the header of every file the set
+/// writes (its compile is joint, ADR 0094 section 4), even when its
+/// directory differs from the first document's, and with no `--input-root`.
 #[test]
-fn orchestrate_requires_a_root_covering_the_entire_document_set() {
+fn orchestrate_covers_every_document_of_its_set() {
     let root = TempDir::new().unwrap();
     let inputs = root.path().join("inputs");
     let left = inputs.join("left");
@@ -1096,38 +1324,38 @@ fn orchestrate_requires_a_root_covering_the_entire_document_set() {
     let second = right.join("second.scxml");
     fs::write(&first, COVERAGE_FIXTURE.replace("covered", "first")).unwrap();
     fs::write(&second, COVERAGE_FIXTURE.replace("covered", "second")).unwrap();
-    let run = |explicit: bool| {
-        let mut cmd = Command::new(env_bin());
-        cmd.arg("orchestrate")
-            .arg("--scxml")
-            .arg(&first)
-            .arg("--scxml")
-            .arg(&second)
-            .arg("-o")
-            .arg(&out)
-            .args(["-l", "rust", "--error-format=json"]);
-        if explicit {
-            cmd.arg("--input-root").arg(&inputs);
-        }
-        cmd.output().unwrap()
-    };
-    let refused = run(false);
-    assert!(
-        !refused.status.success(),
-        "an inferred root must not omit the second input"
-    );
-    let diagnostic = String::from_utf8_lossy(&refused.stderr);
-    assert!(
-        diagnostic.contains("forge/source-hash-input-uncovered"),
-        "{diagnostic}"
-    );
-    assert!(diagnostic.contains("second.scxml"), "{diagnostic}");
-    let generated = run(true);
+    let generated = Command::new(env_bin())
+        .arg("orchestrate")
+        .arg("--scxml")
+        .arg(&first)
+        .arg("--scxml")
+        .arg(&second)
+        .arg("-o")
+        .arg(&out)
+        .args(["-l", "rust", "--error-format=json"])
+        .output()
+        .unwrap();
     assert!(
         generated.status.success(),
         "{}",
         String::from_utf8_lossy(&generated.stderr)
     );
+    let headed: Vec<String> = tree(&out)
+        .into_iter()
+        .filter(|(name, text)| name.ends_with(".rs") && text.starts_with("// SCE-GENERATED"))
+        .map(|(_, text)| text)
+        .collect();
+    assert!(
+        !headed.is_empty(),
+        "orchestrate wrote no drift-headed Rust file"
+    );
+    for written in &headed {
+        assert!(
+            written.contains("// source: left/first.scxml\n// source: right/second.scxml\n"),
+            "each document of the set is named, from the directory that holds both:\n{}",
+            written.lines().take(5).collect::<Vec<_>>().join("\n")
+        );
+    }
     let (code, stderr) = run_verify_real_tree(&out, &inputs);
     assert_eq!(code, 0, "{stderr}");
     fs::write(
@@ -1141,49 +1369,6 @@ fn orchestrate_requires_a_root_covering_the_entire_document_set() {
         "a change outside the first input's directory must invalidate output"
     );
     assert!(stderr.contains("source-hash mismatch"), "{stderr}");
-}
-
-/// Coverage is a question about the file, not its bytes. The second input
-/// sits outside the inferred root but matches, byte for byte, a document
-/// that does sit inside it. Judged by content it passed, and every later
-/// edit to it would have left the `source-hash` unmoved.
-#[test]
-fn orchestrate_refuses_an_outside_input_that_duplicates_a_covered_file() {
-    let root = TempDir::new().unwrap();
-    let left = root.path().join("left");
-    let right = root.path().join("right");
-    let out = root.path().join("out");
-    fs::create_dir_all(&left).unwrap();
-    fs::create_dir_all(&right).unwrap();
-    let first = left.join("first.scxml");
-    let second = right.join("second.scxml");
-    let twin = COVERAGE_FIXTURE.replace("covered", "second");
-    fs::write(&first, COVERAGE_FIXTURE.replace("covered", "first")).unwrap();
-    fs::write(&second, &twin).unwrap();
-    // Inside the inferred root, not an input: the same bytes as `second`.
-    fs::write(left.join("twin.scxml"), &twin).unwrap();
-
-    let refused = Command::new(env_bin())
-        .arg("orchestrate")
-        .arg("--scxml")
-        .arg(&first)
-        .arg("--scxml")
-        .arg(&second)
-        .arg("-o")
-        .arg(&out)
-        .args(["-l", "rust", "--error-format=json"])
-        .output()
-        .unwrap();
-    assert!(
-        !refused.status.success(),
-        "a byte-identical file inside the root does not make the outside input covered"
-    );
-    let diagnostic = String::from_utf8_lossy(&refused.stderr);
-    assert!(
-        diagnostic.contains("forge/source-hash-input-uncovered"),
-        "{diagnostic}"
-    );
-    assert!(diagnostic.contains("second.scxml"), "{diagnostic}");
 }
 
 /// The committed Mesh trees are generated from `stdlib/mesh`, whose

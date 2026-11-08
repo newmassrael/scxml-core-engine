@@ -87,7 +87,7 @@ regenerating it writes the current header in place of the old one.
 *Tests:* `regeneration_is_byte_stable_with_nothing_pinned`
 (`sce-build/tests/codegen_invocation_determinism.rs`);
 `committed_generated_files_carry_the_current_header_shape`,
-`verify_reads_a_header_of_the_older_shape`
+`verify_refuses_a_header_that_names_no_document`
 (`sce-build/tests/b9_drift_detection.rs`);
 `prepend_header_replaces_a_header_of_the_older_shape`
 (`sce-build/src/forge/drift.rs`).
@@ -233,7 +233,7 @@ A link resolving to a directory already on the current descent path is a
 cycle, not aliasing: it is skipped without being descended, so it costs
 nothing against the ceiling and a cyclic layout never approaches the bound.
 
-*Tests:* `generate_refuses_when_the_source_set_is_empty`,
+*Tests:* `generate_does_not_hash_the_input_root_it_is_given`,
 `generate_allows_a_staged_derivative_under_a_declared_root`,
 `generate_hashes_a_symlinked_input_rather_than_the_empty_digest`
 (`sce-build/tests/b9_drift_detection.rs`);
