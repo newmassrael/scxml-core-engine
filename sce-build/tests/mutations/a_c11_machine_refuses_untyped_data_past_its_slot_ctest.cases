@@ -1,0 +1,37 @@
+# Mutation cases for "a C11 machine with no script engine keeps the data a host
+# hands it by name up to the bound the host ABI declares, and refuses whole,
+# counted and named, data past its slot" (docs/adr/0086, section 8.6 (c)).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_c11_machine_refuses_untyped_data_past_its_slot_ctest.cases`.
+#
+# `backends/c/tests/integration/test_untyped_data_by_name.c` hands a `sce-static`
+# machine `note` by name with data of SCE_UNTYPED_EVENT_DATA_MAX_LEN bytes, which
+# the machine keeps and takes, and then with data one byte past its slot, which
+# the machine refuses: it stays where it was, counts one refusal and names
+# `note` as the event refused. The mutants take one decision away each:
+#
+#   a refused event is counted but not named;
+#   data past the slot is dropped with no count.
+#
+# The queue's push is emitted by the template, which the build reads at
+# generation time, so the template is the target.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^c11_integration_untyped_data_by_name$'
+mutation_targets tools/codegen/templates/c/state_machine.c.jinja2
+mutation_oracles backends/c/tests/integration/test_untyped_data_by_name.c
+
+mutation_case "a refused event is counted but not named" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "    if (!{{ csym_prefix }}{{ model.name }}_event_keep(&q->buf[q->tail], evt)) {\n        refuse_event_data(sm, &evt->event);\n",
+     "    if (!{{ csym_prefix }}{{ model.name }}_event_keep(&q->buf[q->tail], evt)) {\n        refuse_event_data(sm, NULL);\n")
+PY
+
+mutation_case "data past the slot is dropped with no count" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "    if (!{{ csym_prefix }}{{ model.name }}_event_keep(&q->buf[q->tail], evt)) {\n        refuse_event_data(sm, &evt->event);\n        return;\n",
+     "    if (!{{ csym_prefix }}{{ model.name }}_event_keep(&q->buf[q->tail], evt)) {\n        return;\n")
+PY
