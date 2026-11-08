@@ -48,6 +48,11 @@ enum class PatternKind : uint16_t {
     InvokeCancel = 19,
     InvokeError = 20,
     ParallelRegionDone = 21,  // SCE_MESH.md §mesh-16.5 — distributed parallel-final barrier envelope.
+    // 22 is the durable receipt's (SCE_MESH.md section 10.11), not built yet. 23 is the one
+    // control message of a causal route (docs/adr/0085, section 3.2), which never reaches an
+    // engine. This core does not carry the causal route yet: the build refuses `delivery: causal`
+    // for C++, and dispatchEnvelope drops the pattern.
+    CausalVector = 23,
 };
 
 /// Wire-value guards. Any reorder or renumber breaks cross-machine
@@ -70,5 +75,6 @@ static_assert(static_cast<uint16_t>(PatternKind::InvokeDone) == 18, "PatternKind
 static_assert(static_cast<uint16_t>(PatternKind::InvokeCancel) == 19, "PatternKind wire value changed");
 static_assert(static_cast<uint16_t>(PatternKind::InvokeError) == 20, "PatternKind wire value changed");
 static_assert(static_cast<uint16_t>(PatternKind::ParallelRegionDone) == 21, "PatternKind wire value changed");
+static_assert(static_cast<uint16_t>(PatternKind::CausalVector) == 23, "PatternKind wire value changed");
 
 }  // namespace SCE::Mesh
