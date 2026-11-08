@@ -6405,6 +6405,7 @@ if (payload == NULL) {{ payload = &_zero; }}\n    \
 evt.event = {event_const};\n    \
 /* The wire must hold the complete payload before either carrier can be\n       \
 queued. A truncated value must never disagree with the native guard. */\n    \
+/* sce-scratch-activity: seam */\n    \
 if (!{wire_fn}(payload, sm->scratch.seam, sizeof(sm->scratch.seam))) {{ return false; }}\n    \
 evt.data = sm->scratch.seam;\n\
 {owned_payload}    {sm}_raise_external(sm, &evt);\n    return true;\n}}\n\n"
@@ -6463,6 +6464,7 @@ static {sm}_door_t {sm}_lift_payload({sm}_t *sm, {sm}_event_with_meta_t *evt);\n
 producer, and every other producer fills `data`, so an event that arrived\n   \
 without a payload has its fields read out of that instead. */\n\
 static {sm}_door_t {sm}_lift_payload({sm}_t *sm, {sm}_event_with_meta_t *evt) {{\n    \
+/* sce-scratch-activity: lift */\n    \
 char *const _message = sm->scratch.message;\n    _message[0] = '\\0';\n    \
 if (sm->pending_payload.tag != {name_upper}_PAYLOAD_NONE) {{\n        \
 return {sm_upper}_DOOR_ADMITTED;\n    }}\n    \

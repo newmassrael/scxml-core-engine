@@ -94,6 +94,58 @@ pub enum Activity {
     Restore,
 }
 
+impl Activity {
+    /// Every activity.
+    pub const ALL: [Activity; 16] = [
+        Activity::Send,
+        Activity::InvokeStart,
+        Activity::Restart,
+        Activity::HostCallback,
+        Activity::Drain,
+        Activity::Seam,
+        Activity::Result,
+        Activity::Failure,
+        Activity::Reply,
+        Activity::HostReply,
+        Activity::HostAnswer,
+        Activity::ChildDone,
+        Activity::DoneState,
+        Activity::Lift,
+        Activity::Reason,
+        Activity::Restore,
+    ];
+
+    /// The name the generated C marks where the activity begins, in a comment
+    /// `/* sce-scratch-activity: <name> */`: the activity runs from there to
+    /// the end of the block that holds the comment. A host callback has no
+    /// mark: it is a call through a function pointer of the machine.
+    pub fn marker(self) -> &'static str {
+        match self {
+            Activity::Send => "send",
+            Activity::InvokeStart => "invoke_start",
+            Activity::Restart => "restart",
+            Activity::HostCallback => "host_callback",
+            Activity::Drain => "drain",
+            Activity::Seam => "seam",
+            Activity::Result => "result",
+            Activity::Failure => "failure",
+            Activity::Reply => "reply",
+            Activity::HostReply => "host_reply",
+            Activity::HostAnswer => "host_answer",
+            Activity::ChildDone => "child_done",
+            Activity::DoneState => "done_state",
+            Activity::Lift => "lift",
+            Activity::Reason => "reason",
+            Activity::Restore => "restore",
+        }
+    }
+
+    /// The activity the generated C marks by `marker` ([`Self::marker`]).
+    pub fn marked(marker: &str) -> Option<Activity> {
+        Self::ALL.iter().copied().find(|a| a.marker() == marker)
+    }
+}
+
 /// `(outer, inner)`: `inner` can begin and end while `outer` is in progress.
 /// An over-approximation: a pair in doubt is listed.
 pub const NESTS: &[(Activity, Activity)] = &[
@@ -372,6 +424,16 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Each activity's mark names it alone, so the generated code's marks read
+    /// back as the activities they were written for.
+    #[test]
+    fn every_activity_reads_back_from_its_mark() {
+        for activity in Activity::ALL {
+            assert_eq!(Activity::marked(activity.marker()), Some(activity));
+        }
+        assert_eq!(Activity::marked("no_such_activity"), None);
     }
 
     /// The roles of one `<send>` are live at once, as are a start's; a typed

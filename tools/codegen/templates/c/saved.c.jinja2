@@ -539,6 +539,7 @@ SCE_SM_FN static bool {{ _t }}_saved_events(const sce_saved_session_t *s, {{ _t 
     sce_jiter_t it;
     sce_jv_t item;
     const size_t held = sce_jv_count(s->external);
+    /* sce-scratch-activity: restore */
     (void)sm;
     if (held > (size_t)SCE_MAX_EVENTS) {
         return sce_saved_refuse(err, "'external' holds %lu events, past the %lu this build queues", (unsigned long)held,
