@@ -526,8 +526,9 @@ template <typename Policy, typename Engine> bool dispatchEnvelope(const MeshEnve
     case PatternKind::InvokeCancel:
         return false;
     // A causal route's control message (docs/adr/0085, section 3.2) never
-    // reaches an engine. This core carries no causal route (the build refuses
-    // `delivery: causal` for C++), so one that arrives is dropped.
+    // reaches an engine. A causal binding's route (mesh/CausalRoute.h) takes
+    // it before dispatch; one that reaches here came on a binding that is not
+    // causal, and is dropped.
     case PatternKind::CausalVector:
         return false;
     }

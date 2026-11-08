@@ -154,9 +154,9 @@ enum class ReasonCode : std::uint8_t {
     Restored,
     /// §mesh-16.7 row 18 — wire `"CAUSAL_VIEW_MISMATCH"`. An envelope on a
     /// causal route tagged with another epoch than the receiver's view, or by a
-    /// replica the view does not hold. The C++ core carries no causal route yet
-    /// (the build refuses `delivery: causal` for C++); the vocabulary carries
-    /// the reason from the day the catalog does.
+    /// replica the view does not hold. Raised by the causal route
+    /// (mesh/CausalRoute.h) through `causalViewMismatch`, on the receiving
+    /// side; the envelope is not delivered.
     CausalViewMismatch,
 };
 
@@ -423,6 +423,15 @@ struct CommunicationError {
     /// observes a DELETE on `sce/live/<machine>/<partition>`.
     std::optional<std::string> partition;
 
+    /// Row 18 of the catalog (CAUSAL_VIEW_MISMATCH): the epoch the envelope on
+    /// a causal route was tagged with.
+    std::optional<std::uint64_t> epoch;
+
+    /// Row 18 of the catalog (CAUSAL_VIEW_MISMATCH): the replica identity
+    /// that tagged it, as RFC 4122 text; the empty text when the envelope
+    /// named none.
+    std::optional<std::string> replica;
+
     /// §mesh-16.7 row 14 exactly as the row names it: the machine the reply
     /// came from, and the request it tried to retire — the correlation key
     /// it carried, as RFC 4122 text. Every site that refuses such a reply
@@ -434,6 +443,22 @@ struct CommunicationError {
         err.reason = ReasonCode::RpcReplyFromUndeclaredPeer;
         err.source = std::move(replier);
         err.invoke_id = SCE::uuid::to_string(request);
+        return err;
+    }
+
+    /// Row 18 of the catalog exactly as the row names it: the machine the
+    /// envelope came from, the epoch it was tagged with and the replica that
+    /// tagged it (RFC 4122 text, empty when it named none). Its columns follow
+    /// `source` in the order the Rust core writes them
+    /// (backends/rust/mesh/src/signal.rs), so a document cannot tell which
+    /// core refused the envelope.
+    [[nodiscard]] static CommunicationError causalViewMismatch(std::string sender, std::uint64_t tagged_epoch,
+                                                               std::string tagged_by) {
+        CommunicationError err;
+        err.reason = ReasonCode::CausalViewMismatch;
+        err.source = std::move(sender);
+        err.epoch = tagged_epoch;
+        err.replica = std::move(tagged_by);
         return err;
     }
 
@@ -524,6 +549,12 @@ struct CommunicationError {
         }
         if (partition) {
             j["partition"] = *partition;
+        }
+        if (epoch) {
+            j["epoch"] = *epoch;
+        }
+        if (replica) {
+            j["replica"] = *replica;
         }
         const std::string out = j.dump();
         return std::vector<std::uint8_t>(out.begin(), out.end());
