@@ -12,7 +12,8 @@
 //
 // What remains here is the conversion between the runtime's MeshEnvelope —
 // the type every transport and the engine bridge already hold — and the
-// generated value.
+// generated value, which is made by its constructor, each text and byte string
+// within its bound, and read by its accessors (docs/adr/0081 step 4).
 
 #include "mesh/MeshEnvelopeCodec.h"
 
@@ -21,8 +22,11 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <optional>
+#include <string>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace SCE::Mesh {
 
@@ -31,15 +35,42 @@ namespace {
 namespace gen = ::SCE::Generated;
 using GenEnvelope = gen::Envelope::Envelope;
 
-std::vector<uint8_t> bytes16(const std::array<uint8_t, 16> &v) {
-    return std::vector<uint8_t>(v.begin(), v.end());
+// What the generated value presents an entry as: a text or a byte string as
+// its bound's view, made by its `make`, which refuses one past the bound.
+using Id = decltype(std::declval<const GenEnvelope &>().id());
+using Text = decltype(std::declval<const GenEnvelope &>().source());
+using Data = decltype(std::declval<const GenEnvelope &>().data());
+
+// The runtime holds each entry in a type of its own; the generated value
+// holds it within the document's bound. An entry outside it is no value of the
+// generated codec, and `make` says so.
+std::optional<Id> boundedId(const std::array<uint8_t, 16> &v) {
+    return Id::make(::SCE::Forge::Span<const uint8_t>(v.data(), v.size()));
 }
 
-// The generated decode has already held a 16-byte entry to its exact length.
-std::array<uint8_t, 16> array16(const std::vector<uint8_t> &v) {
+std::optional<Text> boundedText(const std::string &v) {
+    return Text::make(v);
+}
+
+// An optional entry within its bound: absent where the runtime holds none,
+// `false` where the one it holds is past the bound.
+template <typename B, typename T, typename F>
+bool boundedOptional(const std::optional<T> &v, F make, std::optional<B> &out) {
+    if (!v) {
+        return true;
+    }
+    out = make(*v);
+    return out.has_value();
+}
+
+std::array<uint8_t, 16> array16(const Id &v) {
     std::array<uint8_t, 16> out{};
-    std::copy(v.begin(), v.begin() + static_cast<std::ptrdiff_t>(out.size()), out.begin());
+    std::copy(v.inner().begin(), v.inner().end(), out.begin());
     return out;
+}
+
+std::string text(const Text &v) {
+    return std::string(v.inner());
 }
 
 template <typename T, typename F> auto mapOptional(const std::optional<T> &v, F f) -> std::optional<decltype(f(*v))> {
@@ -76,51 +107,74 @@ RpcStatus toRuntime(gen::RpcStatus::RpcStatus v) {
     return static_cast<RpcStatus>(gen::RpcStatus::to_underlying(v));
 }
 
-GenEnvelope toGenerated(const MeshEnvelope &env) {
-    GenEnvelope g;
-    g.id = bytes16(env.id);
-    g.source = env.source;
-    g.event_type = env.type;
-    g.pattern = toGenerated(env.pattern);
-    g.datacontenttype = toGenerated(env.datacontenttype);
-    g.data = env.data;
-    g.subject = env.subject;
-    g.correlation_id = mapOptional(env.correlation_id, bytes16);
-    g.reply_to = env.reply_to;
-    g.invoke_id = mapOptional(env.invoke_id, bytes16);
-    g.rpc_status = mapOptional(env.rpc_status, [](RpcStatus s) { return toGenerated(s); });
-    g.rpc_error_message = env.rpc_error_message;
-    g.deadline_unix_ms = env.deadline_unix_ms;
+// The generated value of `env`, or none where an entry lies past the bound the
+// document states for it: a string over 256 KiB, a payload over
+// kMaxEnvelopeBytes. The views it is made of read `env`, and the value copies
+// what they view.
+std::optional<GenEnvelope> toGenerated(const MeshEnvelope &env) {
+    const auto id = boundedId(env.id);
+    const auto source = boundedText(env.source);
+    const auto eventType = boundedText(env.type);
+    const auto data = Data::make(env.data);
+    if (!id || !source || !eventType || !data) {
+        return std::nullopt;
+    }
+    std::optional<Text> subject, replyTo, rpcErrorMessage, parallelId, regionId, childSessionId;
+    std::optional<Id> correlationId, invokeId, routingId;
+    if (!boundedOptional(env.subject, boundedText, subject) || !boundedOptional(env.reply_to, boundedText, replyTo) ||
+        !boundedOptional(env.rpc_error_message, boundedText, rpcErrorMessage) ||
+        !boundedOptional(env.parallel_id, boundedText, parallelId) ||
+        !boundedOptional(env.region_id, boundedText, regionId) ||
+        !boundedOptional(env.child_session_id, boundedText, childSessionId) ||
+        !boundedOptional(env.correlation_id, boundedId, correlationId) ||
+        !boundedOptional(env.invoke_id, boundedId, invokeId) ||
+        !boundedOptional(env.routing_id, boundedId, routingId)) {
+        return std::nullopt;
+    }
     // qos (key 13) is reserved and never written: no transport consumes it,
     // and the standard document does not declare it.
-    g.sequence_no = env.sequence_no;
-    g.routing_id = mapOptional(env.routing_id, bytes16);
-    g.parallel_id = env.parallel_id;
-    g.region_id = env.region_id;
-    g.child_session_id = env.child_session_id;
-    return g;
+    return GenEnvelope{
+        /*id=*/*id,
+        /*source=*/*source,
+        /*event_type=*/*eventType,
+        /*pattern=*/toGenerated(env.pattern),
+        /*datacontenttype=*/toGenerated(env.datacontenttype),
+        /*data=*/*data,
+        /*subject=*/subject,
+        /*correlation_id=*/correlationId,
+        /*reply_to=*/replyTo,
+        /*invoke_id=*/invokeId,
+        /*rpc_status=*/mapOptional(env.rpc_status, [](RpcStatus s) { return toGenerated(s); }),
+        /*rpc_error_message=*/rpcErrorMessage,
+        /*deadline_unix_ms=*/env.deadline_unix_ms,
+        /*sequence_no=*/env.sequence_no,
+        /*routing_id=*/routingId,
+        /*parallel_id=*/parallelId,
+        /*region_id=*/regionId,
+        /*child_session_id=*/childSessionId,
+    };
 }
 
-MeshEnvelope toRuntime(GenEnvelope &&g) {
+MeshEnvelope toRuntime(const GenEnvelope &g) {
     MeshEnvelope env;
-    env.id = array16(g.id);
-    env.source = std::move(g.source);
-    env.type = std::move(g.event_type);
-    env.pattern = toRuntime(g.pattern);
-    env.datacontenttype = toRuntime(g.datacontenttype);
-    env.data = std::move(g.data);
-    env.subject = std::move(g.subject);
-    env.correlation_id = mapOptional(g.correlation_id, array16);
-    env.reply_to = std::move(g.reply_to);
-    env.invoke_id = mapOptional(g.invoke_id, array16);
-    env.rpc_status = mapOptional(g.rpc_status, [](gen::RpcStatus::RpcStatus s) { return toRuntime(s); });
-    env.rpc_error_message = std::move(g.rpc_error_message);
-    env.deadline_unix_ms = g.deadline_unix_ms;
-    env.sequence_no = g.sequence_no;
-    env.routing_id = mapOptional(g.routing_id, array16);
-    env.parallel_id = std::move(g.parallel_id);
-    env.region_id = std::move(g.region_id);
-    env.child_session_id = std::move(g.child_session_id);
+    env.id = array16(g.id());
+    env.source = text(g.source());
+    env.type = text(g.event_type());
+    env.pattern = toRuntime(g.pattern());
+    env.datacontenttype = toRuntime(g.datacontenttype());
+    env.data.assign(g.data().inner().begin(), g.data().inner().end());
+    env.subject = mapOptional(g.subject(), text);
+    env.correlation_id = mapOptional(g.correlation_id(), array16);
+    env.reply_to = mapOptional(g.reply_to(), text);
+    env.invoke_id = mapOptional(g.invoke_id(), array16);
+    env.rpc_status = mapOptional(g.rpc_status(), [](gen::RpcStatus::RpcStatus s) { return toRuntime(s); });
+    env.rpc_error_message = mapOptional(g.rpc_error_message(), text);
+    env.deadline_unix_ms = g.deadline_unix_ms();
+    env.sequence_no = g.sequence_no();
+    env.routing_id = mapOptional(g.routing_id(), array16);
+    env.parallel_id = mapOptional(g.parallel_id(), text);
+    env.region_id = mapOptional(g.region_id(), text);
+    env.child_session_id = mapOptional(g.child_session_id(), text);
     return env;
 }
 
@@ -136,12 +190,13 @@ std::vector<uint8_t> encodeEnvelope(const MeshEnvelope &env) {
     //
     // An envelope with an entry past its bound — a string over 256 KiB, a
     // payload over kMaxEnvelopeBytes — is refused here, as every decoder
-    // refuses it, rather than written for the receiver to refuse.
-    auto encoded = toGenerated(env).encode_to_vec();
-    if (!encoded) {
+    // refuses it, rather than written for the receiver to refuse: it has no
+    // generated value.
+    const auto generated = toGenerated(env);
+    if (!generated) {
         return {};
     }
-    return std::move(*encoded);
+    return generated->encode_to_vec();
 }
 
 bool decodeEnvelope(const uint8_t *raw, std::size_t len, MeshEnvelope &out) {
@@ -153,11 +208,11 @@ bool decodeEnvelope(const uint8_t *raw, std::size_t len, MeshEnvelope &out) {
         return false;
     }
     ::SCE::Forge::SceCursor cursor(raw, len);
-    auto decoded = GenEnvelope::decode(cursor);
+    const auto decoded = GenEnvelope::decode(cursor);
     if (!decoded) {
         return false;
     }
-    out = toRuntime(std::move(*decoded));
+    out = toRuntime(*decoded);
     return true;
 }
 

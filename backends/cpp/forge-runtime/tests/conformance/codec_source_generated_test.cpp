@@ -25,6 +25,7 @@
 // derives the bit; codec_length_ref_dotted_basic.scxml (a carrier whose high
 // nibble holds the length of the payload after it) derives the nibble.
 
+#include "codec_cbor_map.h"
 #include "codec_chain_depth_gated.h"
 #include "codec_chain_depth_plain.h"
 #include "codec_chain_flag_carrier.h"
@@ -1868,6 +1869,46 @@ void a_bare_entry_is_held_as_its_place_among_the_others() {
           "a frame of no marker holds the plain arm and encodes back to it");
 }
 
+namespace CborMap = ::SCE::Generated::CodecCborMap;
+using CborValue = CborMap::CodecCborMap;
+using CborSource = decltype(std::declval<const CborValue &>().source());
+using CborId = decltype(std::declval<const CborValue &>().id());
+using CborPayload = decltype(std::declval<const CborValue &>().payload());
+
+// A bare string is no text of the map: one past the bound would then be one the
+// encode refuses, so a source presents it within its bound, made by `make`.
+static_assert(!std::is_convertible<std::string, CborSource>::value, "a text is presented within its bound");
+static_assert(std::is_same<decltype(std::declval<const CborValue &>().deadline()), std::optional<std::uint64_t>>::value,
+              "an entry the map may lack is presented as an optional");
+
+void a_cbor_map_is_made_within_its_bounds_and_written_in_key_order() {
+    const std::string text = "ab";
+    const std::vector<std::uint8_t> uuid(16, 0x01);
+    const std::vector<std::uint8_t> body{0xAA};
+    const auto source = CborSource::make(text);
+    const auto id = CborId::make(uuid);
+    const auto payload = CborPayload::make(body);
+    CHECK(source && id && payload, "each entry lies within its bound");
+    CHECK(!CborId::make(std::vector<std::uint8_t>(15, 0x01)).has_value(), "an identifier holds exactly 16 bytes");
+    if (!source || !id || !payload) {
+        return;
+    }
+    // Declared as source, id, pattern, payload, deadline, urgent; written by
+    // ascending key: id (0), source (1), pattern (3), payload (5), urgent (7).
+    const CborValue map{*source, *id, 3, *payload, std::nullopt, true};
+    std::vector<std::uint8_t> frame{0xA5, 0x00, 0x50};
+    frame.insert(frame.end(), 16, 0x01);
+    const std::vector<std::uint8_t> rest{0x01, 0x62, 'a', 'b', 0x03, 0x03, 0x05, 0x41, 0xAA, 0x07, 0xF5};
+    frame.insert(frame.end(), rest.begin(), rest.end());
+    CHECK(map.encode_to_vec() == frame, "the map head counts the entries present, written in key order");
+
+    ::SCE::Forge::SceCursor cursor(frame.data(), frame.size());
+    const auto decoded = CborValue::decode(cursor);
+    CHECK(decoded && decoded->source() == text && decoded->pattern() == 3 && !decoded->deadline() &&
+              decoded->urgent() == std::optional<bool>{true} && decoded->encode_to_vec() == frame,
+          "a decoded map holds each entry it read and encodes back to its frame");
+}
+
 void encode_source_reports_the_sinks_failure() {
     std::uint8_t buffer[3] = {};
     ::SCE::Forge::SpanSink sink(buffer, sizeof buffer);
@@ -1910,6 +1951,7 @@ int main() {
     a_chain_is_held_in_the_arm_of_the_kinds_of_its_entries();
     a_chain_its_own_gate_leaves_out_is_held_optionally_in_the_arm_of_no_kind();
     a_bare_entry_is_held_as_its_place_among_the_others();
+    a_cbor_map_is_made_within_its_bounds_and_written_in_key_order();
     encode_source_reports_the_sinks_failure();
     if (failures != 0) {
         std::fprintf(stderr, "codec_source_generated_test: %d failure(s)\n", failures);

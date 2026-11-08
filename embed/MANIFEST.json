@@ -1,6 +1,6 @@
 {
   "clang_version": "Ubuntu clang version 19.1.1 (1ubuntu1~24.04.2)",
-  "embed_version": "552840a",
+  "embed_version": "3cdd3b6",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
   "symbol_count": 567,
@@ -3347,7 +3347,7 @@
       "header": "sce/forge/cbor.h",
       "kind": "function",
       "name": "SCE::Forge::Cbor::write_bytes",
-      "signature": "std::optional<CodecError> SCE::Forge::Cbor::write_bytes(SceSink &, const std::vector<std::uint8_t> &) noexcept"
+      "signature": "std::optional<CodecError> SCE::Forge::Cbor::write_bytes(SceSink &, Span<const std::uint8_t>) noexcept"
     },
     {
       "header": "sce/forge/cbor.h",
@@ -3365,7 +3365,7 @@
       "header": "sce/forge/cbor.h",
       "kind": "function",
       "name": "SCE::Forge::Cbor::write_text",
-      "signature": "std::optional<CodecError> SCE::Forge::Cbor::write_text(SceSink &, const std::string &) noexcept"
+      "signature": "std::optional<CodecError> SCE::Forge::Cbor::write_text(SceSink &, std::string_view) noexcept"
     },
     {
       "header": "sce/forge/cbor.h",

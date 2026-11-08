@@ -8622,6 +8622,23 @@ pub(crate) fn cpp_codec_unlowered(m: &CodecModel, imports: &[ImportContext]) -> 
     )
 }
 
+/// The text the C++ backend prints the CBOR codec `m` as from its plan, inside
+/// its namespace (docs/adr/0081 step 4), or `None` where the plan uses a form
+/// the C++ printer does not lower, which keeps the template's struct whole.
+pub(crate) fn cpp_cbor_printed(m: &CodecModel, imports: &[ImportContext]) -> Option<String> {
+    let plan = crate::forge::encode_plan::CborPlan::of(m, imports);
+    if !cpp_source::cbor::unlowered_forms(&plan).is_empty() {
+        return None;
+    }
+    let l = LangCtx::new(crate::generator::Language::Cpp, imports);
+    Some(cpp_source::cbor::render(
+        &plan,
+        &l,
+        imports,
+        &filters::to_pascal_case(m.name.clone()),
+    ))
+}
+
 /// Whether the eager form at the default profile, `{Codec}In<Lent<'a>>`,
 /// holds `m` (`CodecModel::lent_holds_with`, docs/adr/0077 §7), the codecs it
 /// imports answered by their import's [`ImportContext::codec_lent_holds`].

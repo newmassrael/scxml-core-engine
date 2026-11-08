@@ -1517,6 +1517,21 @@ fields a bare marker entry of its chain decides (1 more codec of the resources, 
   `<Codec><Chain>Has0x<id>Key::named()`, with its continuation flag as the walk sets it.
 - The arm where the gate does not hold holds the chain as in the section above, of no entry of the kind.
 
+## A printed C++ CBOR map is made by its constructor and read by its accessors (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C++ tree is regenerated after it. It moves the CBOR map of
+the resources (1 more codec, 139 in all: `codec_cbor_map`) and every CBOR map whose enums have unsigned
+carriers, the standard mesh envelope among them.
+
+- The map is a class with its entries behind accessors, made by a constructor that takes each in declaration
+  order, where it held them as public members. A text is a `SCE::Forge::Text<Max>` and a byte string a
+  `SCE::Forge::Bytes<Max>` (`Bytes<N, N>` for one of exact length), made by `make`, which is empty past the
+  bound; an entry the map may lack is a `std::optional` of its type.
+- `encode_to_vec` returns the bytes, not an optional: a value within its bounds has a frame. A value past a
+  bound is refused where it is made. `Wire::encode_source` encodes any type that presents the entries.
+- `SCE::Forge::Cbor::write_text` and `write_bytes` take a `std::string_view` and a `Span<const std::uint8_t>`;
+  a `std::string` and a `std::vector` still convert.
+
 ## A payload schema states its keys in the order the document declares them (ADR 0087 §1.1)
 
 Landing: the commit that adds this section; every tree holding a `JSON_SCHEMA` constant or a GBNF table (the Rust,

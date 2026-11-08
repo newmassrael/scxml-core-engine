@@ -452,6 +452,12 @@ fn render_cpp(
     let mut ctx = common_context(&l, m, imports, |e| {
         l.type_name(e.present_type()).into_owned()
     })?;
+    // docs/adr/0081 step 4: a map whose plan the C++ printer lowers is printed
+    // from it, its entries presented through accessors and encoded over any
+    // source; any other keeps the template's struct whole.
+    if let Some(printed) = crate::forge::generator::cpp_cbor_printed(m, imports) {
+        ctx.insert("cpp_source".into(), printed.into());
+    }
     // A value-initialized member holds its type's zero, which is the right
     // start for every entry but an enum's: a closed set need not declare the
     // carrier's zero, so an enum starts at its first declared variant — the
