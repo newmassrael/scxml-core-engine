@@ -1225,8 +1225,8 @@ pub fn generate_mesh(
 /// renders the group into its peer table: Rust, the reference, whose router
 /// routes it to `backends/rust/mesh/src/causal.rs`; C++, whose generated
 /// router routes it to `sce/include/mesh/CausalRoute.h` on every transport it
-/// carries; then Kotlin and Swift. Until then a backend refuses the binding
-/// rather than building it as a plain route.
+/// carries; Kotlin, whose router routes it to `Causal.kt`; then Swift. Until
+/// then a backend refuses the binding rather than building it as a plain route.
 ///
 /// The C++ route is a layer of the Mesh core above the transport: it sends
 /// its own control message (pattern 23) and answers a repair with the
@@ -1240,7 +1240,7 @@ pub fn generate_mesh(
 /// [`super::topology::CAUSAL_VECTOR_EVENT`]; `local` writes only through the
 /// peer's linked router; and `shm` peers drain each other's channel through
 /// the router (`pumpCausalShm`).
-const CAUSAL_DELIVERY_LANGUAGES: &[Language] = &[Language::Rust, Language::Cpp];
+const CAUSAL_DELIVERY_LANGUAGES: &[Language] = &[Language::Rust, Language::Cpp, Language::Kotlin];
 
 /// The repair the refusal's message offers: the `--lang` choices that build
 /// a causal binding, read from [`CAUSAL_DELIVERY_LANGUAGES`] so a core that
