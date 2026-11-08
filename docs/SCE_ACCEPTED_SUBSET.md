@@ -10124,6 +10124,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/deploy-child-undeclared` | Mesh Deploy |
 | `mesh/deploy-invalid-ordering-timings` | Mesh Deploy |
 | `mesh/deploy-invalid-dedup-window` | Mesh Deploy |
+| `mesh/deploy-delivery-conflict` | Mesh Deploy |
 | `mesh/deploy-invalid-custom-tcp-socket` | Mesh Deploy |
 | `mesh/deploy-invalid-dds-qos` | Mesh Deploy |
 | `mesh/deploy-invalid-liveliness` | Mesh Deploy |
@@ -10237,6 +10238,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `mesh/codegen-event-name-collision` | Mesh Codegen |
 | `mesh/codegen-pool-with-rpc-client-unsupported` | Mesh Codegen |
 | `mesh/codegen-host-core-unsupported` | Mesh Codegen |
+| `mesh/codegen-causal-delivery-unsupported` | Mesh Codegen |
 
 ### Diagnostic-only
 

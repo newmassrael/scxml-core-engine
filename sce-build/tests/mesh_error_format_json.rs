@@ -507,6 +507,58 @@ fn the_kotlin_core_has_no_zenoh_adapter_so_its_peer_table_refuses_zenoh_inbox() 
     );
 }
 
+/// A deploy.yaml whose one binding, `#server`, is the route of a causal group
+/// (docs/adr/0085, section 3.2) holding the client and the server.
+const CAUSAL_DEPLOY: &str = r##"
+version: "1.0"
+topology:
+  phone:
+    machines:
+      client:
+        source: client.scxml
+        bindings:
+          "#server":
+            transport: wss
+            url: "wss://cal.example"
+            delivery: causal
+            group: { name: people, view: [phone/client, cloud/server] }
+  cloud:
+    machines:
+      server: { source: server.scxml }
+"##;
+
+#[test]
+fn a_backend_whose_core_has_no_causal_route_refuses_a_causal_binding_by_name() {
+    // docs/adr/0085, section 3.2: until its core lands the causal route, a
+    // language refuses `delivery: causal` at build time rather than building
+    // the binding as a plain route.
+    for language in ["kotlin", "swift", "cpp"] {
+        let dir = ScratchDir::new(&format!("mesh-causal-refused-{language}"));
+        let scxml = dir.write("client.scxml", CLIENT_SCXML);
+        dir.write("server.scxml", SERVER_SCXML);
+        let deploy = dir.write("deploy.yaml", CAUSAL_DEPLOY);
+        let out = run_with_deploy_for(language, &scxml, &deploy, dir.path());
+        assert!(
+            !out.status.success(),
+            "{language} must refuse a causal binding"
+        );
+        let stderr = String::from_utf8(out.stderr).expect("stderr utf8");
+        let rec = sole_ndjson_record(&stderr);
+        assert_core_shape(&rec);
+        assert_eq!(
+            rec["code"], "mesh/codegen-causal-delivery-unsupported",
+            "{language} record: {rec}"
+        );
+        assert_eq!(rec["actual"], "#server", "{language} record: {rec}");
+        let message = rec["message"].as_str().expect("message");
+        assert!(
+            message.contains(&format!("the {language} Mesh core"))
+                && message.contains("`--lang rust`"),
+            "{language} record: {rec}"
+        );
+    }
+}
+
 /// The Rust peer table `sce-codegen generate --deploy` wrote under `dir`,
 /// wherever the generator put it.
 fn peer_table_under(dir: &std::path::Path) -> String {

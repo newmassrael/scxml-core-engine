@@ -3016,6 +3016,13 @@ pub enum DiagnosticCode {
     /// (§mesh-10.5). Parse-time reject; no closed candidate set.
     #[serde(rename = "mesh/deploy-invalid-dedup-window")]
     MeshDeployInvalidDedupWindow,
+    /// A machine's delivery settings contradict one another or the
+    /// topology around a causal binding (docs/adr/0085, section 3.2): `ordering:` beside
+    /// `delivery: causal`, a `dedup:` section that reaches only causal
+    /// bindings, a causal binding without its group, or a view that names
+    /// no declared instance. Parse-time reject; no closed candidate set.
+    #[serde(rename = "mesh/deploy-delivery-conflict")]
+    MeshDeployDeliveryConflict,
     /// A device's `transports.custom_tcp:` socket-layer field declares a
     /// value that would disable what it configures (§mesh-16.8.3).
     /// Parse-time reject; the legal set is open, so no candidates.
@@ -3574,6 +3581,11 @@ pub enum DiagnosticCode {
     MeshCodegenPoolWithRpcClientUnsupported,
     #[serde(rename = "mesh/codegen-host-core-unsupported")]
     MeshCodegenHostCoreUnsupported,
+    /// A binding with `delivery: causal` on a backend whose Mesh core does
+    /// not carry the causal route yet (docs/adr/0085, section 3.2). Refused
+    /// by name.
+    #[serde(rename = "mesh/codegen-causal-delivery-unsupported")]
+    MeshCodegenCausalDeliveryUnsupported,
     // Mesh I/O
     #[serde(rename = "mesh/io")]
     MeshIo,
@@ -4323,6 +4335,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeployChildUndeclared,
         MeshDeployInvalidOrderingTimings,
         MeshDeployInvalidDedupWindow,
+        MeshDeployDeliveryConflict,
         MeshDeployInvalidCustomTcpSocket,
         MeshDeployInvalidDdsQos,
         MeshDeployInvalidLiveliness,
@@ -4452,6 +4465,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshCodegenEventNameCollision,
         MeshCodegenPoolWithRpcClientUnsupported,
         MeshCodegenHostCoreUnsupported,
+        MeshCodegenCausalDeliveryUnsupported,
         // Mesh Io
         MeshIo,
         // Forge generated-source drift detection (SCE Protocol-Synthesis RFC §synth-6.2.6)
@@ -5105,11 +5119,13 @@ impl DiagnosticCode {
 
             // ── Host Mesh Router (SCE_MESH.md §19) ───────────────
             MeshCodegenHostCoreUnsupported => Some("SCE Mesh §19"),
+            MeshCodegenCausalDeliveryUnsupported => Some("SCE Mesh §10.12"),
 
             // ── Mesh sequence ordering (SCE_MESH.md §10.6) ──────
             MeshTopologyOrderingCannotBeGuaranteed => Some("SCE Mesh §10.6"),
             MeshDeployInvalidOrderingTimings => Some("SCE Mesh §10.6"),
             MeshDeployInvalidDedupWindow => Some("SCE Mesh §10.5"),
+            MeshDeployDeliveryConflict => Some("SCE Mesh §10.12"),
             MeshDeployInvalidCustomTcpSocket => Some("SCE Mesh §16.8.3"),
             MeshDeployInvalidDdsQos => Some("SCE Mesh §8.2"),
 
@@ -5959,6 +5975,7 @@ impl DiagnosticCode {
             | MeshDeployChildUndeclared
             | MeshDeployInvalidOrderingTimings
             | MeshDeployInvalidDedupWindow
+            | MeshDeployDeliveryConflict
             | MeshDeployInvalidCustomTcpSocket
             | MeshDeployInvalidDdsQos
             | MeshDeployInvalidLiveliness
@@ -6077,6 +6094,7 @@ impl DiagnosticCode {
             | MeshCodegenEventNameCollision
             | MeshCodegenPoolWithRpcClientUnsupported
             | MeshCodegenHostCoreUnsupported
+            | MeshCodegenCausalDeliveryUnsupported
             | MeshIo
             | ForgeSourceHashMismatch
             | ForgeSourceHashInputUncovered
@@ -6543,6 +6561,7 @@ impl DiagnosticCode {
             MeshDeployChildUndeclared => "mesh/deploy-child-undeclared",
             MeshDeployInvalidOrderingTimings => "mesh/deploy-invalid-ordering-timings",
             MeshDeployInvalidDedupWindow => "mesh/deploy-invalid-dedup-window",
+            MeshDeployDeliveryConflict => "mesh/deploy-delivery-conflict",
             MeshDeployInvalidCustomTcpSocket => "mesh/deploy-invalid-custom-tcp-socket",
             MeshDeployInvalidDdsQos => "mesh/deploy-invalid-dds-qos",
             MeshDeployInvalidLiveliness => "mesh/deploy-invalid-liveliness",
@@ -6735,6 +6754,7 @@ impl DiagnosticCode {
                 "mesh/codegen-pool-with-rpc-client-unsupported"
             }
             MeshCodegenHostCoreUnsupported => "mesh/codegen-host-core-unsupported",
+            MeshCodegenCausalDeliveryUnsupported => "mesh/codegen-causal-delivery-unsupported",
             MeshIo => "mesh/io",
             ForgeSourceHashMismatch => "forge/source-hash-mismatch",
             ForgeSourceHashInputUncovered => "forge/source-hash-input-uncovered",
@@ -18012,6 +18032,16 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:e3f14d59a0d51e88","code":"mesh/deploy-invalid-dedup-window","stage":"mesh-deploy","spec":"SCE Mesh §10.5","message":"machine 'brake': invalid `dedup:` section in deploy.yaml — window_size must be greater than zero — a zero-length window admits every duplicate, which is not a narrow filter but no filter. Omit the `dedup:` section to take the default of 256 entries.","actual":"brake"}"#,
             ),
             (
+                "mesh/deploy-delivery-conflict",
+                DeployError::DeliveryConflict {
+                    machine: "list".into(),
+                    target: "#people".into(),
+                    reason: "binding `#people` declares `ordering: required` beside `delivery: causal`. A causal route delivers each change once and in causal order by its vectors, which subsumes per-source ordering; remove `ordering:` from the binding.".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:f2c3b40874b3959f","code":"mesh/deploy-delivery-conflict","stage":"mesh-deploy","spec":"SCE Mesh §10.12","message":"machine 'list': binding `#people` declares `ordering: required` beside `delivery: causal`. A causal route delivers each change once and in causal order by its vectors, which subsumes per-source ordering; remove `ordering:` from the binding.","actual":"list"}"#,
+            ),
+            (
                 "mesh/deploy-invalid-custom-tcp-socket",
                 DeployError::InvalidCustomTcpSocket {
                     device: "ecu1".into(),
@@ -19358,6 +19388,16 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:b7033381df436a0b","code":"mesh/codegen-host-core-unsupported","stage":"mesh-codegen","spec":"SCE Mesh §19","message":"machine 'calendar' declares a `server:` block on transport 'zenoh_keyexpr', which the host Mesh cores do not carry (SCE_MESH.md §mesh-19). Generate this machine with `--lang cpp`, or remove it from deploy.yaml.","actual":"calendar"}"#,
+            ),
+            (
+                "mesh/codegen-causal-delivery-unsupported",
+                CodegenError::CausalDeliveryUnsupported {
+                    machine: "list".into(),
+                    target: "#people".into(),
+                    backend: "kotlin".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:5fe95cdd48172816","code":"mesh/codegen-causal-delivery-unsupported","stage":"mesh-codegen","spec":"SCE Mesh §10.12","message":"machine 'list' binds `#people` with `delivery: causal`, which the kotlin Mesh core does not carry yet (SCE_MESH.md §mesh-10.12). Generate this machine with `--lang rust`, or bind the peer without `delivery: causal`.","actual":"#people"}"#,
             ),
             (
                 "mesh/io",
@@ -20862,6 +20902,7 @@ mod tests {
             | MeshDeployChildUndeclared
             | MeshDeployInvalidOrderingTimings
             | MeshDeployInvalidDedupWindow
+            | MeshDeployDeliveryConflict
             | MeshDeployInvalidCustomTcpSocket
             | MeshDeployInvalidDdsQos
             | MeshDeployInvalidLiveliness
@@ -20992,6 +21033,7 @@ mod tests {
             | MeshCodegenEventNameCollision
             | MeshCodegenPoolWithRpcClientUnsupported
             | MeshCodegenHostCoreUnsupported
+            | MeshCodegenCausalDeliveryUnsupported
             | MeshIo
             // ── §synth-6.2.6 generated-source drift (B9). Repair is the
             //    deterministic `sce-codegen <regen-command>` — no
@@ -21730,6 +21772,7 @@ mod tests {
                 | MeshDeployChildPartitioned | MeshDeployChildUnknownInvoke
                 | MeshDeployChildGeneratedId | MeshDeployChildUndeclared
                 | MeshDeployInvalidDedupWindow
+                | MeshDeployDeliveryConflict
                 | MeshDeployInvalidCustomTcpSocket
                 | MeshDeployInvalidDdsQos
                 | MeshDeployInvalidLiveliness
@@ -21838,6 +21881,7 @@ mod tests {
                 | MeshCodegenTemplateRender | MeshCodegenEventNameCollision
                 | MeshCodegenPoolWithRpcClientUnsupported
                 | MeshCodegenHostCoreUnsupported
+                | MeshCodegenCausalDeliveryUnsupported
                 | MeshIo
                 // B9 §synth-6.2.6 generated-source drift detection
                 | ForgeSourceHashMismatch
@@ -22809,6 +22853,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | MeshDeployChildUndeclared
             | MeshDeployInvalidOrderingTimings
             | MeshDeployInvalidDedupWindow
+            | MeshDeployDeliveryConflict
             | MeshDeployInvalidCustomTcpSocket
             | MeshDeployInvalidDdsQos
             | MeshDeployInvalidLiveliness
@@ -22927,6 +22972,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | MeshCodegenEventNameCollision
             | MeshCodegenPoolWithRpcClientUnsupported
             | MeshCodegenHostCoreUnsupported
+            | MeshCodegenCausalDeliveryUnsupported
             | MeshIo
             | ForgeSourceHashMismatch
             | ForgeSourceHashInputUncovered
