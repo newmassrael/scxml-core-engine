@@ -4309,6 +4309,58 @@ set_tests_properties(c11_integration_forge_bounded_collection PROPERTIES
     LABELS "integration;c11;aot"
 )
 
+# ─── test templates: docs/SCE_TEST_PROFILE.md §11.4, §12.6 ──────────
+#
+# The test profile's templates, each a document of its own kind whose header
+# declares its `<name>_matches` and, for a specific one, its `<name>_value`,
+# generated beside the records, the enum and the templates their headers
+# include, and matched against payloads written by hand
+# (integration/test_a_test_template_matches_its_values.c, the twin of the C++
+# ATestTemplateMatchesItsValuesTest). `voucher_is` and its record are not
+# among them: C11 refuses a template over a byte string of one entry, which its
+# event schema unit holds as a pointer with no length.
+set(_TP_FIXTURE_DIR "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/test_profile")
+set(_TP_HEADERS "")
+foreach(_TP_DOCUMENT job_status elapsed_at_most every_matcher job_report job_report_of report_within)
+    sce_c_integration_generation(_TP_${_TP_DOCUMENT} "${_TP_FIXTURE_DIR}/${_TP_DOCUMENT}.scxml")
+    list(APPEND _TP_HEADERS ${_TP_${_TP_DOCUMENT}_HEADERS})
+endforeach()
+foreach(_TP_DOCUMENT paint_color order_line quantity_two quantity_at_most order_line_exact
+                     order_line_bounded card_payment card_within)
+    sce_c_integration_generation(_TP_${_TP_DOCUMENT} "${_TP_FIXTURE_DIR}/imports/${_TP_DOCUMENT}.scxml")
+    list(APPEND _TP_HEADERS ${_TP_${_TP_DOCUMENT}_HEADERS})
+endforeach()
+
+add_executable(sce_c_integration_a_test_template_matches_its_values
+    integration/test_a_test_template_matches_its_values.c
+    ${_TP_HEADERS}
+)
+target_include_directories(sce_c_integration_a_test_template_matches_its_values PRIVATE
+    "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
+    "${CMAKE_SOURCE_DIR}/backends/c/runtime/include"
+)
+# A template's unit is header-only `static inline` over the records it
+# matches, so there is no runtime library to link: a generation that came to
+# require one fails the configure.
+sce_c_link_runtime(sce_c_integration_a_test_template_matches_its_values EXCLUDES lua dom http clock)
+target_compile_options(sce_c_integration_a_test_template_matches_its_values PRIVATE
+    -Wall -Wextra -Werror -Wpedantic
+    -Wconversion -Wsign-conversion -Wshadow -Wcast-align
+)
+set_target_properties(sce_c_integration_a_test_template_matches_its_values PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_integration_a_test_template_matches_its_values
+    COMMAND sce_c_integration_a_test_template_matches_its_values
+)
+set_tests_properties(c11_integration_a_test_template_matches_its_values PROPERTIES
+    TIMEOUT 30
+    LABELS "integration;c11;aot"
+)
+
 # ─── EventSchema native lowering fixture (NL→IR C1 Path A, RFC §10.4 step 5) ─
 #
 # Proves the C11 backend's native typed `_event.data` lowering at runtime
