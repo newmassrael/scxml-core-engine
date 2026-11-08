@@ -44,7 +44,7 @@
             if (!set_document_global(sm->L, "{{ name | escape_c }}")) {
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    "<data id='{{ name | escape_c }}'> could not be stored");
+                    {{ reason("data_unstored", name) }});
             }
 {% endmacro %}
 
@@ -70,7 +70,7 @@
 {% else %}
             {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                 sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                "<data id='{{ name | escape_c }}'> expr failed to evaluate");
+                {{ reason("data_expr_failed", name) }});
 {% endif %}
         } else {
 {{ lua_set_document_global_top(name) }}
@@ -161,7 +161,7 @@
         if (!bind_system_variable(sm->L, "_sessionid")) {
             {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                 sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                "the system variable _sessionid could not be bound");
+                {{ reason("system_variable_unbound", "_sessionid") }});
         }
         /* W3C SCXML 5.10: `_name` is the SCXML element's `name` attribute
            (cpp `LuaEngine.cpp` calls this `sessionName`). Falls back to
@@ -177,7 +177,7 @@
         if (!bind_system_variable(sm->L, "_name")) {
             {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                 sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                "the system variable _name could not be bound");
+                {{ reason("system_variable_unbound", "_name") }});
         }
         /* W3C SCXML C.1.1 / C.2.3: `_ioprocessors` holds one entry per
            processor the deployment supports, each with a `location` field
@@ -225,7 +225,7 @@
             if (!bind_system_variable(sm->L, "_ioprocessors")) {
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    "the system variable _ioprocessors could not be bound");
+                    {{ reason("system_variable_unbound", "_ioprocessors") }});
             }
         }
         /* W3C SCXML 5.5 + 3.7: the final-state entry emit evaluates
@@ -436,7 +436,7 @@
             lua_pop(sm->L, 1);
             {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                 sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                "a top-level <script> failed to execute");
+                {{ reason("top_script_failed") }});
         }
         {% endfor %}
         {% endif %}
@@ -528,7 +528,7 @@
         lua_pop(sm->L, 1);
         {{ csym_prefix }}{{ model.name }}_raise_platform_error(
             sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-            "<assign> to '{{ loc | escape_c }}' failed");
+            {{ reason("assign_failed", loc) }});
         return;
     }
 {% endmacro %}
@@ -576,7 +576,7 @@
 {% endif %}
         {{ csym_prefix }}{{ model.name }}_raise_platform_error(
             sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-            "{{ element }} cond failed to evaluate");
+            {{ reason("cond_failed", element) }});
     }
 {% endmacro %}
 
@@ -660,7 +660,7 @@
             lua_pop(sm->L, 1);
             {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                 sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                "a runtime-built expression failed to evaluate");
+                {{ reason("built_expression_failed") }});
             return;  /* W3C SCXML 4.6: ends the <foreach> and its block */
         }
     }
@@ -704,7 +704,7 @@
         (void)luaL_dostring(sm->L, "_sce_donedata = nil");
         {{ csym_prefix }}{{ model.name }}_raise_platform_error(
             sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-            "<donedata> failed to evaluate");
+            {{ reason("donedata_failed") }});
     }
 {% endmacro %}
 
@@ -746,7 +746,7 @@
         lua_pop(sm->L, 1);
         {{ csym_prefix }}{{ model.name }}_raise_platform_error(
             sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-            "<donedata> <param> failed to evaluate");
+            {{ reason("donedata_param_failed") }});
     }
 {% endmacro %}
 
@@ -1079,7 +1079,7 @@
             if (!set_document_global({{ dst_L }}, "{{ dst_name | escape_c }}")) {
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    "<invoke> could not give the child '{{ dst_name | escape_c }}'");
+                    {{ reason("invoke_child_ungiven", dst_name) }});
             }
             lua_pop({{ src_L }}, 1);
         }

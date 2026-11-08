@@ -51,7 +51,7 @@
                error.execution per cpp `InvokeExecutor`. */
             {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                 sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                "<invoke> namelist names '{{ _ns_name }}', which the parent does not declare");
+                {{ reason("invoke_namelist_undeclared", _ns_name) }});
             continue;
             {% endif %}
             {% endfor %}
@@ -133,7 +133,7 @@
             /* `<param name="{{ param.name }}" location=""/>` names no location. */
             {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                 sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                "<invoke> <param name='{{ param.name | escape_c }}'> names no location");
+                {{ reason("param_names_no_location", "<invoke>", param.name) }});
             {% else %}
             /* `<param name="{{ param.name }}"/>` */
             if (luaL_dostring(sm->L,
@@ -159,7 +159,7 @@
                 lua_pop(sm->L, 1);
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    "<invoke> <param name='{{ param.name | escape_c }}'> could not be read");
+                    {{ reason("param_unreadable", "<invoke>", param.name) }});
             }
             {% endif %}
             {% endfor %}
@@ -206,7 +206,7 @@
                     {% if 'error.execution' in model.events %}
                     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                         sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                        "<invoke> <param name='{{ param.name | escape_c }}'> could not be read");
+                        {{ reason("param_unreadable", "<invoke>", param.name) }});
                     {% endif %}
                 } else {
                     {{ seed_write }}
@@ -228,7 +228,7 @@
                     {% if 'error.execution' in model.events %}
                     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                         sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                        "<invoke> <param name='{{ param.name | escape_c }}'> could not be read");
+                        {{ reason("param_unreadable", "<invoke>", param.name) }});
                     {% endif %}
                 }
             }
@@ -395,7 +395,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
 {% if 'error.execution' in model.events %}
                     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                         sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                        "<invoke idlocation='{{ invoke_info.idlocation | escape_c }}'> could not take the invoke id");
+                        {{ reason("invoke_idlocation_failed", invoke_info.idlocation) }});
 {% endif %}
                     continue;
                 }
@@ -419,7 +419,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
 {% if 'error.execution' in model.events %}
                     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                         sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                        "<invoke> srcexpr failed to evaluate");
+                        {{ reason("invoke_srcexpr_failed") }});
 {% endif %}
                     continue;
                 }
@@ -439,7 +439,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
 {% if 'error.execution' in model.events %}
                     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                         sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                        "<invoke> content expr failed to evaluate");
+                        {{ reason("invoke_content_expr_failed") }});
 {% endif %}
                     continue;
                 }
@@ -456,7 +456,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
 {% if 'error.execution' in model.events %}
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    "<invoke> {{ attr }}expr failed to evaluate");
+                    {{ reason("invoke_attribute_expr_failed", attr) }});
 {% endif %}
                 continue;
             }
@@ -488,7 +488,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
 {% if 'error.execution' in model.events %}
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    "<invoke> namelist names '{{ var_name | escape_c }}', which could not be read");
+                    {{ reason("invoke_namelist_unreadable", var_name) }});
 {% endif %}
                 continue;
             }
@@ -552,14 +552,14 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
 {% if 'error.execution' in model.events %}
                     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                         sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                        "<invoke> <param name='{{ param.name | escape_c }}'> cannot be its request field: it failed to evaluate");
+                        {{ reason("invoke_param_not_request_field", param.name) }});
 {% endif %}
                     continue;
 {% else %}
 {% if 'error.execution' in model.events %}
                     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                         sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                        "<invoke> <param name='{{ param.name | escape_c }}'> failed to evaluate");
+                        {{ reason("param_failed", "<invoke>", param.name) }});
 {% endif %}
 {% endif %}
                 }
@@ -568,7 +568,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
 {% if 'error.execution' in model.events %}
             {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                 sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                "<invoke> <param name='{{ param.name | escape_c }}'> names no location");
+                {{ reason("param_names_no_location", "<invoke>", param.name) }});
 {% endif %}
 {% endif %}
 {% endfor %}
@@ -577,7 +577,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
 {% if 'error.execution' in model.events %}
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    "<invoke>'s request does not fit the event's data, so nothing was started");
+                    {{ reason("invoke_request_past_slot") }});
 {% endif %}
                 continue;
             }
@@ -637,7 +637,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
 {% if 'error.execution' in model.events %}
                     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                         sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                        "<invoke>'s request does not fit the event's data, so nothing was started");
+                        {{ reason("invoke_request_past_slot") }});
 {% endif %}
                     continue;
                 }
@@ -675,7 +675,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
 {% if 'error.execution' in model.events %}
                     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                         sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                        "<invoke> names an invoker the host declared but never registered");
+                        {{ reason("invoke_invoker_unregistered") }});
 {% endif %}
                 }
             }
@@ -684,7 +684,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                the internal queue and start nothing. */
             {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                 sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                "<invoke type='{{ invoke_info.invoke_type | escape_c }}'> names an external service this platform does not support");
+                {{ reason("invoke_type_unsupported", invoke_info.invoke_type) }});
 {% endif %}
             continue;
         }
@@ -709,7 +709,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
 {% if 'error.execution' in model.events %}
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    "<invoke id='{{ invoke_info.invoke_id | escape_c }}'> was given no complete host for its child");
+                    {{ reason("invoke_child_host_incomplete", invoke_info.invoke_id) }});
 {% endif %}
                 continue;
             {% endcall %}
@@ -724,7 +724,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
 {% if 'error.execution' in model.events %}
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    "<invoke id='{{ invoke_info.invoke_id | escape_c }}'>'s session id does not fit the id this build holds");
+                    {{ reason("invoke_session_id_past_room", invoke_info.invoke_id) }});
 {% endif %}
                 continue;
             }
@@ -883,7 +883,7 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
 {% if 'error.execution' in model.events %}
                     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                         sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                        "<invoke srcexpr> could not be evaluated");
+                        {{ reason("invoke_srcexpr_unevaluated") }});
 {% endif %}
                     continue;
                 }
@@ -901,7 +901,7 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
 {% if 'error.execution' in model.events %}
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    "<invoke srcexpr='{{ invoke_info.srcexpr | escape_c }}'> could not be evaluated");
+                    {{ reason("invoke_srcexpr_unevaluated_named", invoke_info.srcexpr) }});
 {% endif %}
                 continue;
             }
@@ -920,7 +920,7 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
 {% if 'error.execution' in model.events %}
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    "<invoke contentexpr='{{ invoke_info.contentexpr | escape_c }}'> could not be evaluated");
+                    {{ reason("invoke_contentexpr_unevaluated", invoke_info.contentexpr) }});
 {% endif %}
                 continue;
             }
@@ -937,7 +937,7 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
 {% if 'error.execution' in model.events %}
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    "<invoke srcexpr{% if invoke_info.srcexpr %}='{{ invoke_info.srcexpr | escape_c }}'{% endif %}> evaluated to a document it did not declare");
+                    {% if invoke_info.srcexpr %}{{ reason("invoke_document_undeclared_named", invoke_info.srcexpr) }}{% else %}{{ reason("invoke_document_undeclared") }}{% endif %});
 {% endif %}
                 continue;
             }
@@ -963,7 +963,7 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
 {% if 'error.execution' in model.events %}
                     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                         sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                        "<invoke id='{{ invoke_info.invoke_id | escape_c }}'> was given no complete host for its child");
+                        {{ reason("invoke_child_host_incomplete", invoke_info.invoke_id) }});
 {% endif %}
                     continue;
 {% endcall %}
@@ -975,7 +975,7 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
 {% if 'error.execution' in model.events %}
                     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                         sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                        "<invoke id='{{ invoke_info.invoke_id | escape_c }}'>'s session id does not fit the id this build holds");
+                        {{ reason("invoke_session_id_past_room", invoke_info.invoke_id) }});
 {% endif %}
                     continue;
                 }

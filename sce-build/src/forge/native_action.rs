@@ -1860,10 +1860,13 @@ fn guard_payload(
     //
     // One message for all six. A per-backend wording is how a single contract
     // turns back into six, which is the drift this lowering exists to prevent.
-    let msg = format!(
-        "<sce:action name='{action_name}'> needs the typed payload of \
-         '{event}', which this delivery did not carry"
-    );
+    // Its text is a row of the C11 machine's table of reasons, which measures
+    // what a C11 machine raises for its slot (docs/adr/0086, section 8.6 (b)).
+    let reason = crate::forge::c11_reasons::ACTION_PAYLOAD_ABSENT;
+    let holes = [action_name, event];
+    let msg = reason
+        .fill(&holes)
+        .expect("the reason takes the action's name and the event");
     match lang {
         Language::Rust => {
             let enum_name = format!("{machine_name}Payload");
@@ -1970,9 +1973,12 @@ fn guard_payload(
             // and the event constant), the payload channel's tag does not.
             let otherwise = if raises_error {
                 let symbol_upper = symbol_prefix.to_uppercase();
+                let literal = reason
+                    .literal(&holes)
+                    .expect("an action emits its reason before the machine's slot is computed");
                 format!(
                     " else {{\n    {symbol_prefix}{machine_name}_raise_platform_error(\
-                     sm, {symbol_upper}{upper}_EVENT_ERROR_EXECUTION, \"{msg}\");\n}}"
+                     sm, {symbol_upper}{upper}_EVENT_ERROR_EXECUTION, {literal});\n}}"
                 )
             } else {
                 String::new()
