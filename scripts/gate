@@ -405,6 +405,143 @@ if (( ${#ORDER[@]} == 0 )); then
     exit 0
 fi
 
+# ── Gates that run in an image ─────────────────────────────────────────
+#
+# A gate whose verdict is one compiler's names the Containerfile of its image
+# (`container` in the registry, "Gates that run in an image"). It is never run
+# on this machine: `gate_in_container` builds the image and runs this runner on
+# the gate inside it, where its dependencies run too. The registry says which
+# gates of this run go in and which stay (`--placement`), leaving out the
+# dependencies only a gate in an image needs, so they are not built twice and
+# not built here with another compiler. Inside the image (SCE_GATE_CONTAINER is
+# the Containerfile it was built from) every gate runs where it is.
+declare -A CONTAINER_OF=()
+if [[ -z "${SCE_GATE_CONTAINER:-}" ]]; then
+    if ! PLACEMENT_TEXT="$(python3 "$REGISTRY" --repo-root "$REPO_ROOT" --placement "${ORDER[@]}")"; then
+        printf 'gate: the registry could not say where %s run\n' "${ORDER[*]}" >&2
+        exit 2
+    fi
+    ORDER=()
+    while read -r _where _slug _containerfile; do
+        [[ -z "$_slug" ]] && continue
+        ORDER+=("$_slug")
+        [[ "$_where" == "container" ]] && CONTAINER_OF["$_slug"]="$_containerfile"
+    done <<<"$PLACEMENT_TEXT"
+fi
+
+# gate_in_container <slug> <containerfile>: run this runner on the gate inside
+# the image the file builds, and end with its status.
+#
+# The checkout is mounted at its own path, and so is the repository's git
+# directory when it lies outside (a worktree), so git and every absolute path
+# mean inside what they mean here. The cargo cache, a home and the build
+# directory (`target/`, so a generator linked against the image's libc is
+# never handed to this machine or taken from it) are a cache directory of the
+# image's own, kept across runs.
+#
+# The image carries no Rust, and nothing installs one in it: the toolchain this
+# run selected (`gate_select_rust`, so the release a plan named) is mounted
+# read-only where the runner inside looks for a declared release
+# (`~/.local/rust/<release>` under the image's home), and its release goes in
+# as `--rust`, with `--landing` and `--at`. The gate inside therefore builds
+# with exactly the compiler the unit's key names. A toolchain whose release is
+# no x.y.z, or that has no cargo beside its rustc, is 3, could not run.
+#
+# The uid follows the daemon (bx's rule for containers on fleet machines,
+# measured 2026-10-19): under a rootless one, uid 0 inside IS the caller and any other
+# uid is one of its subordinates, to which the mounted checkout reads as
+# root's, unwritable and refused by git; under a system daemon (a hosted
+# runner) the caller's own uid owns what it writes. `safe.directory` would
+# answer git and leave the write refused.
+#
+# Docker missing, or an image that does not build, is 3, could not run: the
+# machine cannot measure the gate, and a landing unit asks bx for docker so it
+# is placed where it can. Docker's own failures (125, 126, 127) are 3 as well;
+# the gate's statuses inside pass through as they are.
+gate_in_container() {
+    local slug="$1" containerfile="$2" tag rc=0 cache target common security
+    local release sysroot
+    local -a user mounts inner
+    if ! command -v docker >/dev/null 2>&1; then
+        printf '\nERROR gate: %s runs in the image %s builds, and docker is not on PATH here.\n' \
+            "$slug" "$containerfile" >&2
+        return 3
+    fi
+    release="$(rustc --version 2>/dev/null | awk '{ print $2 }')" || release=""
+    sysroot="$(rustc --print sysroot 2>/dev/null)" || sysroot=""
+    if [[ ! "$release" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ || -z "$sysroot" \
+            || ! -x "$sysroot/bin/cargo" || ! -x "$sysroot/bin/rustc" ]]; then
+        printf '\nERROR gate: %s runs in the image %s builds, on the Rust this run selected,\n' \
+            "$slug" "$containerfile" >&2
+        printf 'and that is no release with cargo beside rustc (release %q, sysroot %q).\n' \
+            "$release" "$sysroot" >&2
+        return 3
+    fi
+    if [[ -n "$RUST_WANT" && "$release" != "$RUST_WANT" ]]; then
+        printf '\nERROR gate: the plan named Rust %s and the rustc on PATH is %s\n' \
+            "$RUST_WANT" "$release" >&2
+        return 3
+    fi
+    tag="sce-gate-${slug}:$(sha256sum "$REPO_ROOT/$containerfile" | cut -c1-16)"
+    if ! docker image inspect "$tag" >/dev/null 2>&1; then
+        printf '\ngate: building the image of %s from %s (%s)\n' "$slug" "$containerfile" "$tag" >&2
+        docker build --tag "$tag" --file "$REPO_ROOT/$containerfile" \
+                "$(dirname "$REPO_ROOT/$containerfile")" >&2 \
+            || { printf '\nERROR gate: the image of %s did not build from %s\n' "$slug" "$containerfile" >&2; return 3; }
+    fi
+    security="$(docker info --format '{{.SecurityOptions}}' 2>/dev/null || true)"
+    if [[ "$security" == *name=rootless* ]]; then
+        user=(--user 0:0)
+    else
+        user=(--user "$(id -u):$(id -g)")
+    fi
+    cache="${XDG_CACHE_HOME:-$HOME/.cache}/sce-gate-containers/$slug"
+    # The toolchain's mount point is made here, by the caller, rather than by
+    # the daemon inside the image's home.
+    mkdir -p "$cache/home/.local/rust/$release" "$cache/cargo" "$cache/target"
+    mounts=(-v "$REPO_ROOT:$REPO_ROOT" -v "$cache:/sce-cache"
+            -v "$sysroot:/sce-cache/home/.local/rust/$release:ro")
+    common="$(git rev-parse --path-format=absolute --git-common-dir)"
+    case "$common/" in
+        "$REPO_ROOT"/*) ;;
+        *) mounts+=(-v "$common:$common") ;;
+    esac
+    # `target` is often a link into a build cache outside the checkout: the
+    # image's own cache is mounted where the link points, so the link resolves
+    # to it inside. A checkout with no `target` gets the directory here, made
+    # by the caller, rather than by the daemon as root.
+    target="$REPO_ROOT/target"
+    if [[ -L "$target" ]]; then
+        target="$(readlink -m "$target")"
+    else
+        mkdir -p "$target"
+    fi
+    mounts+=(-v "$cache/target:$target")
+    inner=(bash scripts/gate --rust "$release")
+    if (( LANDING )); then
+        inner+=(--landing)
+    fi
+    if [[ -n "$AT_WANT" ]]; then
+        inner+=(--at "$AT_WANT")
+    fi
+    inner+=("$slug")
+    printf '\ngate: %s runs in %s (%s) on Rust %s from %s: %s\n' \
+        "$slug" "$tag" "${user[*]}" "$release" "$sysroot" "${inner[*]}" >&2
+    docker run --rm "${user[@]}" "${mounts[@]}" -w "$REPO_ROOT" \
+        -e SCE_GATE_CONTAINER="$containerfile" \
+        -e HOME=/sce-cache/home -e CARGO_HOME=/sce-cache/cargo \
+        -e PATH="/opt/clang-format-19/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+        -e BX_GRANT_CORES -e BX_GRANT_MEM_MB -e SCE_GATE_NO_FAIL_FAST \
+        "$tag" "${inner[@]}" || rc=$?
+    case "$rc" in
+        125|126|127)
+            printf '\nERROR gate: docker could not start the image of %s (status %s)\n' "$slug" "$rc" >&2
+            return 3
+            ;;
+    esac
+    return "$rc"
+}
+
 # ── Submodule parity: a gate cannot mirror a checkout it does not have ──
 #
 # `git worktree add` does not populate submodules, and neither does a plain
@@ -488,7 +625,12 @@ for slug in "${ORDER[@]}"; do
     [[ -x "$script" ]] || { printf '\nERROR gate: %s is not executable\n' "$script" >&2; exit 1; }
     printf '\n==> gate[%s]\n' "$slug" >&2
     start_ms=$(gate_now_ms)
-    bash "$script" || {
+    if [[ -n "${CONTAINER_OF[$slug]:-}" ]]; then
+        gate_cmd=(gate_in_container "$slug" "${CONTAINER_OF[$slug]}")
+    else
+        gate_cmd=(bash "$script")
+    fi
+    "${gate_cmd[@]}" || {
         rc=$?
         # Exit 3 is `sce_gate_cannot_run`: the gate's own tooling is missing,
         # not the tree it judges. Still a failure — a machine that cannot run a
