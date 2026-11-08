@@ -125,6 +125,24 @@ static inline sce_queue_push_status_t sce_queue_irq_try_push(sce_queue_irq_t *q,
     return status;
 }
 
+/* `try_push`, with the element written in place: `write` is called with the
+ * slot and `context` inside the critical section, for the length of one write,
+ * as `try_push` masks interrupts for the length of one copy. */
+static inline sce_queue_push_status_t sce_queue_irq_try_push_with(sce_queue_irq_t *q, unsigned char *slots,
+                                                                  size_t element_size, sce_queue_slot_writer_fn write,
+                                                                  const void *context) {
+    sce_queue_push_status_t status = SCE_QUEUE_PUSH_FULL;
+    const irq_state_t state = sce_irq_save();
+    if (q->count < q->capacity) {
+        const uint32_t at = (q->head + q->count) % q->capacity;
+        write(slots + (size_t)at * element_size, context);
+        q->count++;
+        status = SCE_QUEUE_PUSH_OK;
+    }
+    sce_irq_restore(state);
+    return status;
+}
+
 /* Takes the oldest element into `*out`, or returns zero when the queue is
  * empty. Blocking: the critical section. */
 static inline int sce_queue_irq_try_pop(sce_queue_irq_t *q, unsigned char *slots, size_t element_size, void *out) {
