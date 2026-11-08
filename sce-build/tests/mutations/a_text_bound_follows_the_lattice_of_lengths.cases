@@ -13,8 +13,10 @@
 # module ask each rule for its number. Each case breaks one rule: a
 # concatenation is as long as its longer operand, a choice as long as its
 # shorter branch, a literal as long as its characters rather than its bytes, a
-# call takes nothing from the bound its callee declares, and a choice of byte
-# strings is as long as its two branches together.
+# call takes nothing from the bound its callee declares, a choice of byte
+# strings is as long as its two branches together, and a choice of texts or of
+# byte strings is judged by the type the inference gives the whole, which is
+# unknown for a choice of calls, rather than branch by branch.
 
 mutation_tests -p sce-build --lib forge::text_bound
 mutation_targets sce-build/src/forge/text_bound.rs
@@ -46,6 +48,18 @@ PY
 
 mutation_case "a choice of byte strings is as long as its two branches together" <<'PY'
 edit("sce-build/src/forge/text_bound.rs",
-     "        } => byte_string_bound(consequent, ctx).larger(byte_string_bound(alternate, ctx)),\n",
-     "        } => byte_string_bound(consequent, ctx).plus(byte_string_bound(alternate, ctx)),\n")
+     "        return byte_string_bound(consequent, ctx).larger(byte_string_bound(alternate, ctx));\n",
+     "        return byte_string_bound(consequent, ctx).plus(byte_string_bound(alternate, ctx));\n")
+PY
+
+mutation_case "a conditional is judged by the type inference gives the whole" <<'PY'
+edit("sce-build/src/forge/text_bound.rs",
+     "    if let ExprKind::Conditional {\n        consequent,\n        alternate,\n        ..\n    } = &node.kind\n    {\n        return text_bound(consequent, ctx).larger(text_bound(alternate, ctx));\n    }\n",
+     "")
+PY
+
+mutation_case "a choice of byte strings is judged by the type inference gives the whole" <<'PY'
+edit("sce-build/src/forge/text_bound.rs",
+     "    if let ExprKind::Conditional {\n        consequent,\n        alternate,\n        ..\n    } = &node.kind\n    {\n        return byte_string_bound(consequent, ctx).larger(byte_string_bound(alternate, ctx));\n    }\n",
+     "")
 PY
