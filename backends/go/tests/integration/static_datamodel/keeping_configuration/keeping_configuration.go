@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 021fdf0d0c3ee151c664e2ecf6a7e5a797d68aaf3d399831e8dfd49b9e10bec9
+// source-hash: 011d804f887126b888ea6ba5b4213d56e0f5c8740555a154c83e9b8d0105c4b6
 // SCE-MAP: keeping_configuration.scxml:6 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="test-configuration")
@@ -10,7 +10,7 @@ package keeping_configuration
 
 import (
 	"github.com/newmassrael/sce-go-runtime/testprofile"
-	sce_keeper "github.com/newmassrael/sce-go-tests/integration/static_datamodel/keeper"
+	sce_ptc_keeper "github.com/newmassrael/sce-go-tests/integration/static_datamodel/ptc_keeper"
 	sce_idler "github.com/newmassrael/sce-go-tests/integration/static_datamodel/idler"
 )
 
@@ -19,7 +19,7 @@ import (
 // and timers each type declares, each `<sce:connect>` and each `<sce:map>`.
 func Configuration() testprofile.Configuration {
 	return testprofile.Configuration{
-		MTCType: "keeper",
+		MTCType: "ptc_keeper",
 		PTCTypes: map[string]string{
 			"idler": "idler",
 		},
@@ -27,7 +27,7 @@ func Configuration() testprofile.Configuration {
 			"idler": {"peer"},
 		},
 		TimersOfType: map[string][]string{
-			"keeper": {"patience", "linger"},
+			"ptc_keeper": {"patience", "linger"},
 		},
 		Connections: []testprofile.Connection{},
 		Mappings: []testprofile.Mapping{
@@ -42,8 +42,8 @@ func Configuration() testprofile.Configuration {
 // run ends with `error` where it is created. It is a testprofile.MachineFactory.
 func Machine(componentType string) testprofile.ComponentMachine {
 	switch componentType {
-	case "keeper":
-		return &sce_keeper.KeeperComponent{}
+	case "ptc_keeper":
+		return &sce_ptc_keeper.PtcKeeperComponent{}
 	case "idler":
 		return &sce_idler.IdlerComponent{}
 	}
