@@ -3854,9 +3854,11 @@ impl StaticTarget for RustTarget {
                         // of one field in one type, the field's `SceString<N>`
                         // (docs/adr/0086, section 7.4), so the algorithm takes a
                         // copy of it as it is, absent where it is absent. A
-                        // payload whose schema holds text never crosses here: the
-                        // call that hands one is refused at check until its struct
-                        // is held to its bounds where it is read (section 4.4).
+                        // payload whose schema holds text never crosses here: its
+                        // struct holds the text in the engine's own text type, which
+                        // the lift holds to the bound (section 4.4) and the type
+                        // does not, so the call that hands one is refused at check
+                        // until the struct holds the field's `SceString<N>`.
                         match f.sce_type.present_type() {
                             SceType::String => format!("{read}.clone()"),
                             _ => read.to_string(),

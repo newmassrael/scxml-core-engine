@@ -5157,9 +5157,11 @@ delivery whole on every engine, before any transition runs and on a route that w
 none of it (`scenarios/static_payload_bytes.json` measures a frame, and
 `scenarios/static_record_string.json` takes a label into a wider variable). Each
 generated lift reads the field by the reader a byte string or a text inside a
-composition is read by, with the field's bound; the Interpreter reads it through the
-library's `field` with the bound in its type (`{bytes: 8}`, `{string: 8}`) wherever an
-expression reads it. A payload within the field's bound is then held to the bound of
+composition is read by, with the field's bound; the Interpreter reads the whole record
+when it binds `_event`, before it selects a transition, through the library's `field`
+with the bound in its type (`{bytes: 8}`, `{string: 8}`), and holds every guard and
+content that reads the payload to the event having been let in. A payload within the
+field's bound is then held to the bound of
 the place it is written to, as any value is. Measured 2026-10-07 by the scenario,
 the C++ payload lift had read the bytes of the UTF-8 text as the bytes of the field and
 written them into a JSON string as they were, and C11 had read a character written as
@@ -5864,19 +5866,20 @@ algorithm's record holds it in a buffer of the same bound
 record only from a literal that fits or from a field of the same or a smaller bound,
 so what it returns is within the bound the variable it is assigned to holds it in, and
 no copy back can be cut or fail. The payload of an event is the one source that is not
-handed over whole when its schema holds text: `_event.data` carries the text the host
-sent, which is held to its bound only by the assignment that takes it into a variable,
-so a call of `Alg(_event.data)` is refused at the call (`expression/unsupported-construct`,
-"the payload of the event holds text") and the author assigns the payload to a record
-variable and hands the algorithm that. This is a decision and not a gap in the
-lowering: the one place a text is judged against a bound is the assignment into a
-variable, which every backend and the Interpreter carry out as the same rule (nothing
-is written, `error.execution` is raised, the block ends), and it is also where a
-payload's text is lifted out of the wire. Judging it again in each adapter would need a
-second failure channel, spelled differently in six languages (a `Result`, an exception,
-an `Outcome`, a recorded failure), in a position where a guard cannot say what a
-failed call means, and it would give the author nothing the assignment does not: the
-record variable is the copy the call would have made. `scenarios/static_text_record.json`
+handed over whole when its schema holds text: a call of `Alg(_event.data)` is refused at
+the call (`expression/unsupported-construct`, "the payload of the event holds text") and
+the author assigns the payload to a record variable and hands the algorithm that. The
+payload's text is held to its bound where the delivery is read, on every engine
+(docs/adr/0086, section 4.4), so the value always fits; what does not is the Rust type
+it is held in. The Rust payload struct of a schema of entries holds a text in the
+engine's own text type, and an algorithm's record holds it in the field's bounded text
+(`SceString<N>`, docs/adr/0086, section 7.4), so the adapter would copy it across a
+conversion that can fail in its type though never in its value, and would need a second
+failure channel, spelled differently in each language, in a position where a guard
+cannot say what a failed call means. A record variable holds the text in the bounded
+type already, and is the copy the call would have made. The refusal stands until the
+payload struct holds the field's bounded text, as a composed payload's struct does,
+which turns the copy into a clone on every backend. `scenarios/static_text_record.json`
 runs the form the rule asks for — the payload taken into `incoming`, then handed to
 `Latest`, `Holds` and, through `slots`, `Retitled` — on every engine that runs the
 model, with a text of exactly the bound, one byte past it that is refused with the
