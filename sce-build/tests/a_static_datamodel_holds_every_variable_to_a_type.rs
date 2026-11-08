@@ -4989,7 +4989,7 @@ fn a_host_run_invoke_content_expr_is_lowered_to_the_string_it_computes_and_needs
         (
             "c",
             "_host_inv_content_native = sm->policy.v_place",
-            "char _host_inv_content[",
+            "const char *_host_inv_content = \"\";",
         ),
         (
             "cpp",

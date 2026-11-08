@@ -49,13 +49,13 @@ PY
 
 mutation_case "C11 delivers no data for a failing content expr" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     """                    memcpy(_ed, "\\"\\"", sizeof("\\"\\""));""",
-     """                    _ed[0] = '\\0';""")
+     """                    _ed = "\\"\\"";""",
+     """                    _ed = "";""")
 PY
 
 mutation_case "C11 runs the rest of the block after a failing content expr" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     """                    memcpy(_ed, "\\"\\"", sizeof("\\"\\""));
+     """                    _ed = "\\"\\"";
                     _param_failed = true;""",
-     """                    memcpy(_ed, "\\"\\"", sizeof("\\"\\""));""")
+     """                    _ed = "\\"\\"";""")
 PY
