@@ -1131,8 +1131,9 @@ func PayloadBool(obj PayloadFields, name string) (bool, error) {
 	return v.Bool()
 }
 
-// PayloadString reads a text field as the text it carries; PayloadValue.Text
-// holds a text to the bound its type declares.
+// PayloadString reads the text a field carries, held to no bound: what an enum
+// field's variant is named by, which its reader matches against the names its
+// enum declares. A text field is read by PayloadText, which holds its bound.
 func PayloadString(obj PayloadFields, name string) (string, error) {
 	v, err := field(obj, name)
 	if err != nil {
@@ -1141,14 +1142,25 @@ func PayloadString(obj PayloadFields, name string) (string, error) {
 	return v.Name()
 }
 
-// PayloadBytes reads a byte-string field (see PayloadValue.Bytes), held to no
-// bound; PayloadValue.Bytes holds it to the one its type declares.
-func PayloadBytes(obj PayloadFields, name string) ([]byte, error) {
+// PayloadText reads a text field of at most bound UTF-8 bytes (docs/adr/0086,
+// section 4.4): the top level of a payload is held to its bound by
+// PayloadValue.Text, the reader a text at any depth is held by.
+func PayloadText(obj PayloadFields, name string, bound int) (string, error) {
+	v, err := field(obj, name)
+	if err != nil {
+		return "", err
+	}
+	return v.Text(bound)
+}
+
+// PayloadBytes reads a byte-string field of at most bound bytes (see
+// PayloadValue.Bytes, the reader a byte string at any depth is held by).
+func PayloadBytes(obj PayloadFields, name string, bound int) ([]byte, error) {
 	v, err := field(obj, name)
 	if err != nil {
 		return nil, err
 	}
-	return v.Bytes(math.MaxInt)
+	return v.Bytes(bound)
 }
 
 // PayloadPair is one field of an inject seam's payload, in schema order.
