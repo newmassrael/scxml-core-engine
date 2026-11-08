@@ -28,6 +28,7 @@
 #include "codec_chain_depth_gated.h"
 #include "codec_chain_depth_plain.h"
 #include "codec_chain_flag_carrier.h"
+#include "codec_chain_has_tagged.h"
 #include "codec_chain_prev_carrier.h"
 #include "codec_embed_basic.h"
 #include "codec_ext_encoding_info.h"
@@ -1660,6 +1661,55 @@ void two_lists_of_one_count_are_held_as_one_and_counted_once() {
     CHECK(decoded.has_value() && decoded->encode_to_vec() == both_frame, "and encodes back to it");
 }
 
+namespace Tagged = ::SCE::Generated::CodecChainHasTagged;
+using TaggedValue = Tagged::CodecChainHasTagged;
+using TaggedEntry = ::SCE::Generated::CodecChainHasTaggedEntry::CodecChainHasTaggedEntry;
+using TaggedGroup = Tagged::CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWide;
+using TaggedSeven = Tagged::CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWideHas0x7;
+using TaggedWide = Tagged::CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWideWide;
+using TaggedNeither = Tagged::CodecChainHasTaggedEntriesHas0x7Has0x9HeaderWideNeither;
+template <class Arm> using TaggedChainOf = std::decay_t<decltype(std::declval<const Arm &>().entries())>;
+using TaggedEntries = ::SCE::Forge::Span<const TaggedEntry>;
+
+void a_chain_is_held_in_the_arm_of_the_kinds_of_its_entries() {
+    const std::vector<TaggedEntry> one_and_seven{TaggedEntry{0x01, 0x00, 0xBB}, TaggedEntry{0x07, 0x00, 0xAA}};
+    const std::vector<TaggedEntry> one{TaggedEntry{0x01, 0x00, 0xBB}};
+    const TaggedEntries with_seven(one_and_seven.data(), one_and_seven.size());
+    const TaggedEntries without(one.data(), one.size());
+    // The arm's chain is made only of entries of the kinds the arm says.
+    CHECK(!TaggedChainOf<TaggedSeven>::make(without).has_value(), "a chain with no 7 is not the arm of a 7");
+    const auto seven_chain = TaggedChainOf<TaggedSeven>::make(with_seven);
+    const auto wide_chain = TaggedChainOf<TaggedWide>::make(without);
+    CHECK(seven_chain && wide_chain, "each chain holds the kinds its arm says");
+    if (!seven_chain || !wide_chain) {
+        return;
+    }
+
+    // A 7 and no 9 and wide clear: the flag derived clear, each entry but the
+    // last marked as followed, then the fields the arm holds.
+    const TaggedValue seven{0xF1, TaggedGroup{TaggedSeven{*seven_chain, 0x05, 0x1234}}};
+    const std::vector<std::uint8_t> seven_frame{0xF0, 0x01, 0x01, 0xBB, 0x07, 0x00, 0xAA, 0x05, 0x12, 0x34};
+    CHECK(seven.encode_to_vec() == seven_frame, "the arm of a 7 clears wide and writes priority and checksum");
+
+    // Neither kind and wide set: the flag derived set.
+    const TaggedValue wide{0x00, TaggedGroup{TaggedWide{*wide_chain, 0x06, 0x0001}}};
+    const std::vector<std::uint8_t> wide_frame{0x01, 0x01, 0x00, 0xBB, 0x06, 0x00, 0x01};
+    CHECK(wide.encode_to_vec() == wide_frame, "the wide arm sets wide");
+
+    CHECK(std::holds_alternative<TaggedNeither>(TaggedValue{}.entries_has_0x7_has_0x9_header_wide()),
+          "a value made by default holds the arm where no gate holds");
+    CHECK(TaggedValue{}.encode_to_vec() == (std::vector<std::uint8_t>{0x00, 0x00, 0x00, 0x00, 0x00, 0x00}),
+          "and one value-made entry and its checksum");
+
+    ::SCE::Forge::SceCursor cursor(seven_frame.data(), seven_frame.size());
+    const auto decoded = TaggedValue::decode(cursor);
+    const auto *held = decoded ? std::get_if<TaggedSeven>(&decoded->entries_has_0x7_has_0x9_header_wide()) : nullptr;
+    CHECK(held != nullptr && held->entries().size() == 2 && held->entries()[1].body() == 0xAA &&
+              held->priority() == 0x05 && held->checksum() == 0x1234,
+          "a frame whose chain holds a 7 and no 9 holds the arm of a 7");
+    CHECK(decoded.has_value() && decoded->encode_to_vec() == seven_frame, "and encodes back to it");
+}
+
 void encode_source_reports_the_sinks_failure() {
     std::uint8_t buffer[3] = {};
     ::SCE::Forge::SpanSink sink(buffer, sizeof buffer);
@@ -1699,6 +1749,7 @@ int main() {
     a_flag_of_a_disjunction_is_derived_from_the_arm_the_value_holds();
     a_tag_the_arms_own_header_holds_is_written_by_the_arm();
     two_lists_of_one_count_are_held_as_one_and_counted_once();
+    a_chain_is_held_in_the_arm_of_the_kinds_of_its_entries();
     encode_source_reports_the_sinks_failure();
     if (failures != 0) {
         std::fprintf(stderr, "codec_source_generated_test: %d failure(s)\n", failures);

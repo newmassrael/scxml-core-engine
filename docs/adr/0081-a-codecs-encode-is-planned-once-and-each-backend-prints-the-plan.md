@@ -586,6 +586,17 @@ old encode, the old encode and its templates are removed in the same landing.
    what it kept, so the count it derives from the first is the count of both; a source presents the first
    list as one type wherever an arm holds it. The decode makes the two of the lists it read by the one
    count. The printed set is 135 codecs.
+
+   *The twenty-sixth C++ landing, 2026-11-08:* a group the gates on a chain's entries decide, whose entries
+   have content (docs/adr/0065 §6 R6b). The runtime's `sce/forge/membership.h` gives the chain each arm
+   holds its type, as the Rust runtime's `membership.rs` does: `SCE::Forge::Chain<L, Kinds<...>, Kinds<...>,
+   Max, Min>`, made only of a chain within its bounds that holds an entry of each kind of the first set and
+   of none of the second, and `Placed`, for the bare entry a later landing holds. The printer gives each kind
+   a key, which reads an entry's identifier through the entry codec's readers; each arm holds the chain as a
+   `Chain` of the kinds it says; the encode keeps the list the chain holds, one type in every arm, and
+   writes it as any chain; the decode picks the arm by the kinds the chain it read holds. A chain whose arm
+   holds an entry of some kind has no value made by default, so a value made by default holds the arm where
+   no gate holds. The printed set is 136 codecs.
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences

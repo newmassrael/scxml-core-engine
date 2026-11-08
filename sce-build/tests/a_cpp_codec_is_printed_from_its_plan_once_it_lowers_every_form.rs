@@ -29,6 +29,7 @@ const PRINTED: &[&str] = &[
     "codec_chain_flag_forward",
     "codec_chain_has_marker_slice",
     "codec_chain_has_slice",
+    "codec_chain_has_tagged",
     "codec_chain_has_tagged_entry",
     "codec_chain_prev_carrier",
     "codec_chain_prev_entry",

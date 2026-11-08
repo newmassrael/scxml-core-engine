@@ -1477,6 +1477,22 @@ two lists share one count and one of them a gate decides (1 more codec of the re
 - `SCE::Forge::Aligned` (`sce/forge/bounded.h`) presents `first()`, `second()` and `size()`; two of them
   convert as their lists do and compare equal where both lists do.
 
+## A printed C++ codec holds a chain in the arm of the gates on its entries (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C++ tree is regenerated after it. It moves the codec whose
+fields the kinds of entry its chain holds decide, with a flag of its own (1 more codec of the resources, 136
+in all: `codec_chain_has_tagged`).
+
+- The value is the class with the group of the gates behind its accessor, a `std::variant` of a class per
+  assignment of the gates, where it held the chain and each gated field as public members. Each arm holds the
+  chain as a `SCE::Forge::Chain` of the kinds it says the chain holds an entry of and none of, made by
+  `make(list)`, which is empty where the list is not such a chain; the fields the gates leave in are the
+  arm's.
+- The flag joined with the memberships (`header.wide`) is derived from the arm the value holds: drop the
+  code that set it. The carrier's other bits stay what the value presents.
+- `sce/forge/membership.h`, included by `sce/forge/codec.h`, holds `Chain`, `Kinds` and `Placed`; a kind is
+  the codec's `<Codec><Chain>Has0x<id>Key`, whose `matches(entry)` reads the entry's identifier.
+
 ## A payload schema states its keys in the order the document declares them (ADR 0087 §1.1)
 
 Landing: the commit that adds this section; every tree holding a `JSON_SCHEMA` constant or a GBNF table (the Rust,

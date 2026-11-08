@@ -329,6 +329,18 @@ target_include_directories(law_runtime_test PRIVATE "${RUNTIME_INCLUDE_DIR}")
 target_compile_options(law_runtime_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
 add_test(NAME law_runtime COMMAND law_runtime_test)
 
+# The runtime's chains refined by the kinds of their entries on their own
+# (sce/forge/membership.h, docs/adr/0065 section 6 R6, docs/adr/0081 step 4), at
+# C++17 and under the same blanket -Werror: what converts to what is asserted at
+# compile time, what `make` admits and what a held chain reads at run time. What
+# a generated value presents through them is judged by
+# codec_source_generated_test and the harness above.
+add_executable(membership_runtime_test "${CMAKE_CURRENT_SOURCE_DIR}/membership_runtime_test.cpp")
+set_target_properties(membership_runtime_test PROPERTIES CXX_STANDARD 17)
+target_include_directories(membership_runtime_test PRIVATE "${RUNTIME_INCLUDE_DIR}")
+target_compile_options(membership_runtime_test PRIVATE -Wall -Wextra -Wpedantic -Werror)
+add_test(NAME membership_runtime COMMAND membership_runtime_test)
+
 # The runtime's wrapping and saturating integer helpers on their own
 # (sce/forge/algorithm.h, docs/adr/0063) against their definition, at C++17,
 # the standard the interface is for, and under the same blanket -Werror with the
