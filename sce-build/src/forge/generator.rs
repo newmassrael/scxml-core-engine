@@ -6713,10 +6713,16 @@ pub fn c11_data_slot(
 /// XML (docs/adr/0086, section 8.6 (c)); the rest grows with the engine
 /// (section 8.6 (d)). `scope` is the document's, which the reading of inline
 /// content is decided in.
+///
+/// The done data of each `<final>` is measured too ([`c11_done_data_bound`]):
+/// the data of the done event the final raises, and, for a top-level final,
+/// of the `done.invoke` its parent takes. A machine with no script engine
+/// holds its done data in a buffer of its slot, so done data it cannot bound
+/// is refused by name; one with an engine grows what the engine writes.
 pub fn c11_literal_sent_data(
     model: &crate::model::SCXMLModel,
     scope: &crate::ecmascript::DocumentScope,
-) -> (u64, u64) {
+) -> Result<(u64, u64), GenerateError> {
     let mut sent = 0u64;
     let mut to_parent = 0u64;
     for (_, send) in model.sends() {
@@ -6751,7 +6757,94 @@ pub fn c11_literal_sent_data(
             to_parent = to_parent.max(bytes);
         }
     }
-    (sent, to_parent)
+    for (id, state) in &model.states {
+        let Some(done) = state.donedata.as_ref().filter(|_| state.is_final) else {
+            continue;
+        };
+        let bytes = match c11_done_data_bound(done, model.datamodel, scope) {
+            crate::forge::text_bound::TextBound::Bounded(bytes) => bytes,
+            crate::forge::text_bound::TextBound::Unbounded(_) if model.needs_script_engine => {
+                continue
+            }
+            crate::forge::text_bound::TextBound::Unbounded(why) => {
+                return Err(GenerateError::unsupported(format!(
+                    "<donedata> of <final id=\"{id}\">: {}; a machine with no script engine \
+                     holds its done data in storage the build sizes, so the data needs a bound \
+                     the build knows (docs/adr/0086, section 8.6 (c))",
+                    why.why
+                )))
+            }
+        };
+        sent = sent.max(bytes);
+        if state.parent.is_none() {
+            to_parent = to_parent.max(bytes);
+        }
+    }
+    Ok((sent, to_parent))
+}
+
+/// The most bytes of the JSON the `<donedata>` `done` of a C11 machine that
+/// is not a `sce-static` one writes (docs/adr/0086, section 8.6 (c)),
+/// `datamodel` the machine's and `scope` the document's, which the reading of
+/// inline content is decided in: an inline `<content>` its data model reads
+/// as a value or as XML at the text it is finished as; a value the data model
+/// fixes at build time (a literal, and an array or an object of literals) at
+/// the JSON every engine writes it in ([`crate::filters::json_wire_text`]);
+/// and the object of its pairs, each its name with its value's. A value a
+/// script engine computes has no bound the build knows, and the reason names
+/// the part that carries it.
+pub fn c11_done_data_bound(
+    done: &crate::model::DoneData,
+    datamodel: crate::model::Datamodel,
+    scope: &crate::ecmascript::DocumentScope,
+) -> crate::forge::text_bound::TextBound {
+    use crate::forge::text_bound::{TextBound, Unbounded};
+    let unbounded = |why: String| TextBound::Unbounded(Unbounded { span: None, why });
+    let value = |written: &str| match crate::ecmascript::constant_value(written) {
+        Some(fixed) => TextBound::Bounded(crate::filters::json_wire_text(&fixed).len() as u64),
+        None => unbounded(format!(
+            "`{}` is a value the data model computes, which no type bounds",
+            written.trim()
+        )),
+    };
+    let named = |part: &str, bound: TextBound| match bound {
+        TextBound::Unbounded(why) => unbounded(format!("{part}: {}", why.why)),
+        bounded => bounded,
+    };
+    match &done.content {
+        crate::model::DoneDataContent::Expression(expr) => {
+            return named("<content expr>", value(expr));
+        }
+        crate::model::DoneDataContent::InlineText(text) => {
+            return match crate::filters::inline_content_reading(text, datamodel, scope) {
+                crate::filters::InlineContentReading::Xml(wire)
+                | crate::filters::InlineContentReading::Value(wire) => {
+                    TextBound::Bounded(wire.len() as u64)
+                }
+                crate::filters::InlineContentReading::Expression => named("<content>", value(text)),
+            };
+        }
+        crate::model::DoneDataContent::None => {}
+    }
+    if done.params.is_empty() {
+        return TextBound::Bounded(0);
+    }
+    crate::forge::text_bound::params_json_bound(done.params.iter().map(|param| {
+        let bound = match (param.expr.as_deref(), param.location.as_deref()) {
+            (Some(expr), _) => value(expr),
+            (None, Some(location)) => unbounded(format!(
+                "`{}` is a location of the data model, which no type bounds",
+                location.trim()
+            )),
+            // A pair with neither carries no value: it is left out with an
+            // error, and its name counted here is room to spare.
+            (None, None) => TextBound::Bounded(0),
+        };
+        (
+            param.name.as_str(),
+            named(&format!("the pair '{}'", param.name), bound),
+        )
+    }))
 }
 
 /// The bounds the reason a host-run invocation's unreadable deadline quotes
@@ -46350,6 +46443,92 @@ mod tests {
         assert_eq!(
             long,
             format!("{{\n    {},\n    '\\0'\n}}", ["'x'"; 16].join(", "))
+        );
+    }
+
+    /// A machine with three top-level finals: one whose pair is a literal,
+    /// one whose `<content expr>` is, and one whose pair its script engine
+    /// computes.
+    const DONE_DATA_KINDS: &str = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       initial="s" datamodel="ecmascript" name="kid">
+  <datamodel><data id="v" expr="1"/></datamodel>
+  <state id="s">
+    <transition event="a" target="literal"/>
+    <transition event="b" target="content"/>
+    <transition event="c" target="computed"/>
+  </state>
+  <final id="literal"><donedata><param name="greeting" expr="'hi'"/></donedata></final>
+  <final id="content"><donedata><content expr="'hello'"/></donedata></final>
+  <final id="computed"><donedata><param name="n" expr="v + 1"/></donedata></final>
+</scxml>"#;
+
+    /// docs/adr/0086, section 8.6 (c): the done data of a machine that is not a
+    /// `sce-static` one is measured as the JSON it writes: a value its data
+    /// model fixes at build time at the text every engine writes it in, the
+    /// object of its pairs at each name with its value, and a value a script
+    /// engine computes at no bound, named by the part that carries it.
+    #[test]
+    fn done_data_is_bounded_by_the_values_its_data_model_fixes() {
+        use crate::forge::text_bound::TextBound;
+        let model = crate::parser::SCXMLParser::new()
+            .parse_string(DONE_DATA_KINDS, "test")
+            .expect("the document parses");
+        let scope = crate::ecmascript::DocumentScope::from_model(&model);
+        let bound = |id: &str| {
+            let done = model.states[id]
+                .donedata
+                .as_ref()
+                .expect("the final's donedata");
+            c11_done_data_bound(done, model.datamodel, &scope)
+        };
+        // `{"greeting":"hi"}`.
+        assert_eq!(bound("literal"), TextBound::Bounded(17));
+        // `"hello"`.
+        assert_eq!(bound("content"), TextBound::Bounded(7));
+        match bound("computed") {
+            TextBound::Unbounded(why) => assert!(
+                why.why.contains("the pair 'n'") && why.why.contains("`v + 1`"),
+                "the reason names the pair and its value: {}",
+                why.why
+            ),
+            other => panic!("a value the engine computes has no bound, not {other:?}"),
+        }
+    }
+
+    /// docs/adr/0086, section 8.6 (c): a machine whose data model is a script
+    /// engine grows the done data it cannot bound, and holds the rest as an
+    /// input of its slot and of what it hands its parent. A machine with no
+    /// engine holds its done data in its slot, so done data it cannot bound is
+    /// refused by name rather than sized by a guess; the analysis gives an
+    /// engine to every document whose done data an engine computes, so the
+    /// refusal is reached here by a model that claims none.
+    #[test]
+    fn done_data_a_machine_without_an_engine_cannot_bound_is_refused_by_name() {
+        let mut model = crate::parser::SCXMLParser::new()
+            .parse_string(DONE_DATA_KINDS, "test")
+            .expect("the document parses");
+        let scope = crate::ecmascript::DocumentScope::from_model(&model);
+        assert!(
+            model.needs_script_engine,
+            "the computed pair costs the document an engine"
+        );
+        assert_eq!(
+            c11_literal_sent_data(&model, &scope)
+                .expect("a script machine grows what it cannot bound"),
+            (17, 17),
+            "the longest done data it can bound is an input, and its parent's"
+        );
+        model.needs_script_engine = false;
+        let refusal = c11_literal_sent_data(&model, &scope)
+            .expect_err("done data with no bound on a machine with a slot")
+            .to_string();
+        assert!(
+            refusal.contains("<donedata> of <final id=\"computed\">"),
+            "the refusal names the final: {refusal}"
+        );
+        assert!(
+            refusal.contains("`v + 1`") && refusal.contains("8.6 (c)"),
+            "the refusal names the value and why: {refusal}"
         );
     }
 
