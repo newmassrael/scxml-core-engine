@@ -1827,6 +1827,14 @@ name = "a_kotlin_machine_reads_a_composed_payload_at_any_depth"
 path = "tests/a_kotlin_machine_reads_a_composed_payload_at_any_depth.rs"
 required-features = ["cli"]
 
+# A Go machine reads a composed payload at any depth and sends one by its name,
+# as the Rust and Kotlin machines do (docs/adr/0086, sections 5 and 6). It runs
+# `sce-codegen`, so it carries the `cli` gate.
+[[test]]
+name = "a_go_machine_reads_a_composed_payload_at_any_depth"
+path = "tests/a_go_machine_reads_a_composed_payload_at_any_depth.rs"
+required-features = ["cli"]
+
 # A statechart sends a composed value by the name of the place that holds it
 # (docs/adr/0086, section 5.2). It runs `sce-codegen`, so it carries the `cli` gate.
 [[test]]
