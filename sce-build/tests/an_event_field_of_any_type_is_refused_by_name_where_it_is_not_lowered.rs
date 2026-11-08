@@ -319,28 +319,26 @@ fn a_read_of_the_data_of_a_composed_schema_is_refused_by_name() {
       </if>
     </transition>"#,
     );
-    // Rust, Kotlin, Go and Python read a composed payload (docs/adr/0086,
-    // section 6), so the gate every backend passes lets the read through, and each
-    // backend that does not lower it refuses it by its own name where it is
+    // Rust, Kotlin, Go, Python and C++ read a composed payload (docs/adr/0086,
+    // section 6), so the gate every backend passes lets the read through, and
+    // the backend that does not lower it refuses it by its own name where it is
     // generated.
     for document in [guarded, nested] {
-        for language in ["cpp", "c11"] {
-            let out = refusal_of(&["check", "-l", language], &document);
-            assert!(out.contains("the field `items`"), "{language}: {out}");
-            assert!(
-                out.contains("a statechart's read of `_event.data`"),
-                "{language}: {out}"
-            );
-            assert!(
-                out.contains(&format!("has no {language} lowering of its list")),
-                "{language}: {out}"
-            );
-            assert!(
-                out.contains("list<record:Item>[batch_items=3]"),
-                "{language}: {out}"
-            );
-        }
-        for language in ["rust", "kotlin", "go", "python"] {
+        let out = refusal_of(&["check", "-l", "c11"], &document);
+        assert!(out.contains("the field `items`"), "c11: {out}");
+        assert!(
+            out.contains("a statechart's read of `_event.data`"),
+            "c11: {out}"
+        );
+        assert!(
+            out.contains("has no c11 lowering of its list"),
+            "c11: {out}"
+        );
+        assert!(
+            out.contains("list<record:Item>[batch_items=3]"),
+            "c11: {out}"
+        );
+        for language in ["rust", "kotlin", "go", "python", "cpp"] {
             let (ok, out) = run(
                 &["check", "-l", language],
                 &[("batch_reader.scxml", &document)],

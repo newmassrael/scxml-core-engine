@@ -9331,11 +9331,40 @@ impl StaticTarget for CppTarget {
             _ => None,
         }
     }
+    // One spelling of a record's type, whether a variable or a composed value
+    // holds it.
     fn record_type(&self, machine: &str, alias: &str) -> String {
-        format!(
-            "{machine}{}Record",
-            filters::to_pascal_case(alias.to_string())
-        )
+        use crate::forge::composed_lowering::{ComposedSpelling, CppCarrier, CppComposed};
+        CppComposed {
+            machine,
+            carrier: CppCarrier::Json,
+        }
+        .record_type(alias)
+    }
+    // The runtime's `EventPayloadValue` reads each constructor of a composed
+    // payload, and its writers write the JSON the inject seam carries as the
+    // event's `data` (docs/adr/0086, section 7.1, the C++ row).
+    fn composed_spelling<'a>(
+        &self,
+        machine: &'a str,
+    ) -> Option<Box<dyn crate::forge::composed_lowering::ComposedSpelling + 'a>> {
+        Some(Box::new(crate::forge::composed_lowering::CppComposed {
+            machine,
+            carrier: crate::forge::composed_lowering::CppCarrier::Json,
+        }))
+    }
+    // The walks of `composed_spelling`, each writer writing the `ScriptValue`
+    // every param of a `<send>` is held in (`wire_value`) until the engine's
+    // `EventDataHelper::buildEventDataJson` writes them as one JSON object
+    // (docs/adr/0086, section 5.3).
+    fn composed_send_spelling<'a>(
+        &self,
+        machine: &'a str,
+    ) -> Option<Box<dyn crate::forge::composed_lowering::ComposedSpelling + 'a>> {
+        Some(Box::new(crate::forge::composed_lowering::CppComposed {
+            machine,
+            carrier: crate::forge::composed_lowering::CppCarrier::Wire,
+        }))
     }
     // Plain data by the record rule: a struct of the schema's fields in the
     // schema's order, which a value is built from by position in that order

@@ -7285,6 +7285,212 @@ if (!refusal.empty()) {{\n                    return refusal;\n                }
     )
 }
 
+/// What the C++ typed channel holds and reads of one event's payload
+/// ([`build_cpp_event_payload`]).
+struct CppPayloadParts {
+    /// The payload struct's members, one line each, in the schema's order.
+    field_lines: String,
+    /// The inject seam's parameters, joined by `, `.
+    params: String,
+    /// The lift's statements that read each member out of the decoded
+    /// `fields` into `payload`, returning the first refusal.
+    field_reads: String,
+    /// The JSON of the defaults of the fields a later revision added, or
+    /// `None` for a schema that added none.
+    defaults: Option<String>,
+    /// The statements the inject seam runs before it builds the event, each a
+    /// line of its own; empty where it needs none.
+    prelude: String,
+    /// The typed carrier the inject seam sends.
+    typed_payload: String,
+    /// The JSON text the inject seam writes as the event's `data`.
+    data: String,
+    /// Whether the inject seam answers a `std::string`: the refusal of a value
+    /// a host hands it past a bound its type declares, empty where it raised
+    /// the event (docs/adr/0086, section 5.4).
+    refuses: bool,
+}
+
+/// [`CppPayloadParts`] of a schema each field of which is one entry, the struct
+/// `struct_name`: each field read by the reader of its declared type.
+fn cpp_entry_payload(
+    schema: &EntrySchema,
+    l: &LangCtx,
+    static_enums: &[crate::forge::static_lowering::StaticEnumType],
+    struct_name: &str,
+) -> CppPayloadParts {
+    let mut field_lines = String::new();
+    let mut params = String::new();
+    let mut struct_inits: Vec<(&str, &str)> = Vec::new();
+    // What the lift reads back out of `data`, and what the inject seam
+    // writes into it beside the typed carrier: the same fields, named once.
+    let mut field_reads = String::new();
+    let mut data_items = String::new();
+    for f in &schema.fields {
+        // An optional field is held in the one optional type over its
+        // present value's (docs/adr/0055).
+        let present = l.type_name(f.sce_type.present_type()).into_owned();
+        let ty = match &f.sce_type {
+            EntryType::Scalar(_) => present.clone(),
+            EntryType::Optional { .. } => l
+                .optional_of(&present)
+                .expect("C++ spells an optional value"),
+        };
+        field_lines.push_str(&format!("    {ty} {};\n", f.id));
+        if !params.is_empty() {
+            params.push_str(", ");
+            data_items.push_str(", ");
+        }
+        params.push_str(&format!("{ty} {}", f.id));
+        // By position, in the order `field_lines` declares the struct
+        // (docs/adr/0059, section 5).
+        struct_inits.push((f.id.as_str(), f.id.as_str()));
+        field_reads.push_str(&cpp_payload_field_lift(f, &present, static_enums));
+        // ⚠ The wire is built by the same header the lift reads it with,
+        // and by nothing else: a generated C++ machine LINKS against
+        // `sce/include` alone (`event_schema_bytes_guard.rs` builds one
+        // that way), so a call into the runtime library here would take
+        // that property away. Each field's spelling follows its declared
+        // type — a `bytes` field as its byte-exact Latin-1 text, because
+        // JSON has no byte string ([`cpp_payload_data_item`]).
+        data_items.push_str(&cpp_payload_data_item(f));
+    }
+    CppPayloadParts {
+        field_lines,
+        params,
+        field_reads,
+        defaults: crate::forge::schema_revision::defaults_wire(schema),
+        prelude: String::new(),
+        typed_payload: format!("{struct_name}{{{}}}", cpp_positional_init(&struct_inits)),
+        data: format!("::SCE::Common::EventPayloadFields::wire({{{data_items}}})"),
+        refuses: false,
+    }
+}
+
+/// [`CppPayloadParts`] of the payload of `event`, the struct `struct_name`,
+/// whose schema holds a composition (docs/adr/0086), by the walks over its type
+/// ([`crate::forge::composed_lowering`]): each member in the type the machine
+/// holds it in (section 7.1, the C++ row), each read by one lambda per
+/// constructor over the runtime's `EventPayloadValue`, which refuses the
+/// delivery whole, naming the path, at the first value outside its type
+/// (section 4), and written as its JSON (section 3.1) from the payload the
+/// inject seam builds. A C++ struct has no constructor that could refuse a
+/// value, so the inject seam holds what a host hands it to every bound its type
+/// declares, at any depth, before it builds anything, and answers the refusal
+/// (section 5.4).
+///
+/// The static lowering declared every record and enum the payload names before
+/// the channel is built ([`crate::forge::static_lowering::lower_cpp`]), so a
+/// walk that fails here is a routing defect.
+fn cpp_composed_payload(
+    model: &crate::model::SCXMLModel,
+    machine_name: &str,
+    event: &str,
+    static_enums: &[crate::forge::static_lowering::StaticEnumType],
+    struct_name: &str,
+) -> CppPayloadParts {
+    use crate::forge::composed_lowering::{self as composed, ComposedSpelling, RecordEnv};
+    let unlowered = |why: &str| -> String {
+        format!(
+            "the payload of `{event}` reached the C++ typed channel unlowered ({why}): the \
+             static lowering declares what a composed payload names before the channel is built"
+        )
+    };
+    let schema = model
+        .imported_event_schemas
+        .get(event)
+        .unwrap_or_else(|| panic!("{}", unlowered("no schema")));
+    let alias = model
+        .imported_records
+        .iter()
+        .find(|(_, held)| held.name == schema.name)
+        .map(|(alias, _)| alias.as_str())
+        .unwrap_or_else(|| panic!("{}", unlowered("no record of its schema")));
+    let records = composed::StatechartRecords::of(model);
+    let enums: std::collections::BTreeMap<String, composed::MachineEnum> = static_enums
+        .iter()
+        .map(|e| (e.alias.clone(), e.machine_enum()))
+        .collect();
+    let spelling = composed::CppComposed {
+        machine: machine_name,
+        carrier: composed::CppCarrier::Json,
+    };
+    let walked = |result: Result<Vec<(String, String)>, String>| {
+        result.unwrap_or_else(|why| panic!("{}", unlowered(&why)))
+    };
+    let held = records
+        .record(None, alias)
+        .unwrap_or_else(|why| panic!("{}", unlowered(&why)));
+    let members = walked(composed::record_members(alias, &records, &enums, &spelling));
+    let readers = walked(composed::field_readers(held, &records, &enums, &spelling));
+    // The inject seam builds the payload once its checks have passed, and
+    // writes each field from the value the typed carrier holds. The local is
+    // named in the prefix the generator keeps for its own names, so it shadows
+    // no parameter of the seam, each of which a field names.
+    const PAYLOAD_LOCAL: &str = "scePayload";
+    let writers = walked(composed::field_writers(
+        held,
+        &records,
+        &spelling,
+        &composed::Held::place(PAYLOAD_LOCAL),
+    ));
+    let checks = composed::cpp_raise_checks(held, &records)
+        .unwrap_or_else(|why| panic!("{}", unlowered(&why)));
+    // Each member read into the payload by its own reader, a lambda of the
+    // value the field's name holds and the member it fills.
+    let binding = spelling.read_binding();
+    let field_reads: String = readers
+        .iter()
+        .map(|(id, read)| {
+            format!(
+                "            {{\n                ::SCE::Common::EventPayloadValue {binding};\n                \
+refusal = fields.value(\"{}\", {binding});\n                if (!refusal.empty()) {{\n                    \
+return refusal;\n                }}\n                refusal = ({read})({binding}, payload.{id});\n                \
+if (!refusal.empty()) {{\n                    return refusal;\n                }}\n            }}\n",
+                filters::escape_cpp(id.clone())
+            )
+        })
+        .collect();
+    let mut prelude = String::new();
+    if !checks.is_empty() {
+        prelude.push_str("        ::std::string sceRefused;\n");
+        for check in &checks {
+            prelude.push_str(&format!(
+                "        sceRefused = {check};\n        if (!sceRefused.empty()) {{\n            \
+return sceRefused;\n        }}\n"
+            ));
+        }
+    }
+    // Built by position, in the order the struct declares its members
+    // (docs/adr/0059, section 5), each parameter moved into the member it
+    // fills, since the seam takes it by value.
+    let moved: Vec<(String, String)> = members
+        .iter()
+        .map(|(id, _)| (id.clone(), format!("::std::move({id})")))
+        .collect();
+    prelude.push_str(&format!(
+        "        {struct_name} {PAYLOAD_LOCAL}{{{}}};\n",
+        cpp_positional_init(&moved)
+    ));
+    CppPayloadParts {
+        field_lines: members
+            .iter()
+            .map(|(id, ty)| format!("    {ty} {id};\n"))
+            .collect(),
+        params: members
+            .iter()
+            .map(|(id, ty)| format!("{ty} {id}"))
+            .collect::<Vec<_>>()
+            .join(", "),
+        field_reads,
+        defaults: crate::forge::schema_revision::composed_defaults_wire(schema),
+        prelude,
+        typed_payload: PAYLOAD_LOCAL.to_string(),
+        data: spelling.write_record(&writers),
+        refuses: !checks.is_empty(),
+    }
+}
+
 /// Build the [`CppEventPayload`] for `model`. Same SSOT guard selection
 /// ([`select_native_typed_guards`]) as the Rust / Go / C11 builders.
 pub fn build_cpp_event_payload(
@@ -7309,8 +7515,9 @@ pub fn build_cpp_event_payload(
     let mut guard_writes: Vec<NativeGuardWrite> = Vec::new();
     let mut guarded_events: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     // Each payload event's schema, read one entry per field: a schema that holds
-    // a composition has no native guard, and a statechart that reads its data is
-    // refused where it is parsed
+    // a composition has no native guard, and a statechart reads its data through
+    // the walks over its type ([`cpp_composed_payload`]) where the one decision
+    // of what is lowered lets it
     // ([`crate::forge::event_schema_check::check_composed_uses`]).
     let entry_schemas = model.entry_event_schemas();
     for g in select_native_typed_guards(model) {
@@ -7369,53 +7576,35 @@ pendingPayloadTag_ = {TAG}::None;\n",
     let mut inject = String::new();
 
     for event in &guarded_events {
-        let schema = &entry_schemas[event];
         let variant = filters::to_event_variant(event.clone());
         let struct_name = format!("{machine}{variant}Payload");
         let field = format!("pending{variant}Payload_");
         let event_enum = cpp_event_enum_value(event);
 
-        let mut field_lines = String::new();
-        let mut params = String::new();
-        let mut struct_inits: Vec<(&str, &str)> = Vec::new();
-        // What the lift reads back out of `data`, and what the inject seam
-        // writes into it beside the typed carrier: the same fields, named once.
-        let mut field_reads = String::new();
-        let mut data_items = String::new();
-        for f in &schema.fields {
-            // An optional field is held in the one optional type over its
-            // present value's (docs/adr/0055).
-            let present = l.type_name(f.sce_type.present_type()).into_owned();
-            let ty = match &f.sce_type {
-                EntryType::Scalar(_) => present.clone(),
-                EntryType::Optional { .. } => l
-                    .optional_of(&present)
-                    .expect("C++ spells an optional value"),
-            };
-            field_lines.push_str(&format!("    {ty} {};\n", f.id));
-            if !params.is_empty() {
-                params.push_str(", ");
-                data_items.push_str(", ");
-            }
-            params.push_str(&format!("{ty} {}", f.id));
-            // By position, in the order `field_lines` declares the struct
-            // (docs/adr/0059, section 5).
-            struct_inits.push((f.id.as_str(), f.id.as_str()));
-            field_reads.push_str(&cpp_payload_field_lift(f, &present, static_enums));
-            // ⚠ The wire is built by the same header the lift reads it with,
-            // and by nothing else: a generated C++ machine LINKS against
-            // `sce/include` alone (`event_schema_bytes_guard.rs` builds one
-            // that way), so a call into the runtime library here would take
-            // that property away. Each field's spelling follows its declared
-            // type — a `bytes` field as its byte-exact Latin-1 text, because
-            // JSON has no byte string ([`cpp_payload_data_item`]).
-            data_items.push_str(&cpp_payload_data_item(f));
-        }
+        // The struct's members, the lift's reads, the inject seam's parameters,
+        // what it runs before it sends and the carriers it sends, and the
+        // defaults of the fields a later revision added: a schema of entries
+        // field by field, and one that holds a composition by the walks over
+        // its type (docs/adr/0086), which the static lowering reads a payload
+        // of only on a target that spells them.
+        let CppPayloadParts {
+            field_lines,
+            params,
+            field_reads,
+            defaults,
+            prelude,
+            typed_payload,
+            data,
+            refuses,
+        } = match entry_schemas.get(event) {
+            Some(schema) => cpp_entry_payload(schema, &l, static_enums, &struct_name),
+            None => cpp_composed_payload(model, &machine, event, static_enums, &struct_name),
+        };
         // A field a later revision of the schema added is read out of the
         // schema's defaults where the delivery lacks it
         // (`crate::forge::schema_revision`); a schema with none reads the
         // delivery alone, as it always has.
-        let decode_args = match crate::forge::schema_revision::defaults_wire(schema) {
+        let decode_args = match defaults {
             Some(defaults) => format!("meta.data, \"{}\", fields", filters::escape_cpp(defaults)),
             None => "meta.data, fields".to_string(),
         };
@@ -7448,21 +7637,36 @@ pendingPayloadTag_ = {tag_type}::{variant};\n            \
         // Per-event typed inject seam on the generated engine class — binds the
         // event name + payload field values in one call (the C++ twin of the
         // Rust `raise_<event>` extension trait and the Go
-        // `<Machine>Raise<Event>` func).
-        let struct_inits = cpp_positional_init(&struct_inits);
+        // `<Machine>Raise<Event>` func). A seam that holds a host's value to its
+        // bounds answers the refusal, and raises nothing where it refuses.
+        let (refusal_doc, result, answered) = if refuses {
+            (
+                "    /// A value past a bound its type declares, at any depth, is refused before\n    \
+/// anything is sent (docs/adr/0086, section 5.4): the seam answers the\n    \
+/// refusal, naming the path to the place, and raises nothing; it answers\n    \
+/// an empty text where it raised the event.\n",
+                "[[nodiscard]] ::std::string",
+                "        return {};\n",
+            )
+        } else {
+            ("", "void", "")
+        };
         inject.push_str(&format!(
             "    /// Typed `_event.data` inject for `{event}` —\n    \
 /// binds the event name and the payload field values in one call so the\n    \
-/// name↔type pairing cannot be constructed inconsistently.\n    \
-void raise{variant}({params}) {{\n        \
+/// name↔type pairing cannot be constructed inconsistently.\n\
+{refusal_doc}    \
+{result} raise{variant}({params}) {{\n\
+{prelude}        \
 EventWithMetadata m(PolicyType::Event::{event_enum});\n        \
-m.typedPayload = {struct_name}{{{struct_inits}}};\n        \
+m.typedPayload = {typed_payload};\n        \
 // Both carriers are filled: the typed one a native guard reads, and\n        \
 // `data`, which is what the script engine binds `_event.data` from.\n        \
 // Filling only the first left an `<assign expr=\"_event.data.x\">` on this\n        \
 // event reading nothing, on every backend alike.\n        \
-m.data = ::SCE::Common::EventPayloadFields::wire({{{data_items}}});\n        \
-this->raiseExternal(m);\n    }}\n"
+m.data = {data};\n        \
+this->raiseExternal(m);\n\
+{answered}    }}\n"
         ));
     }
     // The carrier first, then the lift — an event the inject seam sent has its
