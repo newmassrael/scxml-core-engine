@@ -110,6 +110,7 @@ class WssClientTest {
                     responders = listOf(peer),
                     deadlineMs = null,
                     replyEvents = emptyList(),
+                    causal = null,
                 ),
             )
         }

@@ -59,6 +59,14 @@ sealed class Signal {
      */
     data class InvokeChildLost(val invokeId: String, val target: String) : Signal()
 
+    /**
+     * CAUSAL_VIEW_MISMATCH (row 18): an envelope from [source] on a causal
+     * route was tagged with [epoch], another than the receiver's view, or by
+     * the replica [replica] (RFC 4122 text) the view does not hold
+     * (docs/adr/0085, section 3.2). It was not delivered.
+     */
+    data class CausalViewMismatch(val source: String, val epoch: ULong, val replica: String) : Signal()
+
     /** The row's `reason`, as §mesh-16.7 spells it. */
     val reason: String
         get() = when (this) {
@@ -73,6 +81,7 @@ sealed class Signal {
             is DeliveryExhausted -> "DELIVERY_EXHAUSTED"
             is RpcReplyFromUndeclaredPeer -> "RPC_REPLY_FROM_UNDECLARED_PEER"
             is InvokeChildLost -> "INVOKE_CHILD_LOST"
+            is CausalViewMismatch -> "CAUSAL_VIEW_MISMATCH"
         }
 
     /**
@@ -92,6 +101,7 @@ sealed class Signal {
             is MissingSequence -> source
             is EnvelopeCorrupt -> source
             is RpcReplyFromUndeclaredPeer -> source
+            is CausalViewMismatch -> source
             else -> null
         }
         val sending = this is BackpressureDrop || this is OutboundStaleDrop || this == TransportUnavailable ||
@@ -125,6 +135,12 @@ sealed class Signal {
             is InvokeChildLost -> {
                 text("invoke_id", invokeId)
                 text("target", target)
+            }
+            // Row 18's columns: `source`, then the epoch the envelope was
+            // tagged with and the replica that tagged it.
+            is CausalViewMismatch -> {
+                number("epoch", epoch)
+                text("replica", replica)
             }
             is MissingSequence, TransportUnavailable -> Unit
         }

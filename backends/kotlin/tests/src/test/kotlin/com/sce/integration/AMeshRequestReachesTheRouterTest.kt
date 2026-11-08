@@ -157,6 +157,7 @@ class AMeshRequestReachesTheRouterTest {
                     responders = listOf("motor"),
                     deadlineMs = null,
                     replyEvents = emptyList(),
+                    causal = null,
                 ),
             )
         }
