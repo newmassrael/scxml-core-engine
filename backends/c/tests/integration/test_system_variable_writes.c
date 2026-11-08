@@ -159,14 +159,18 @@ static bool read_table_event(event_t *evt, char *name, size_t name_cap) {
     char invokeid[SCE_MAX_ID_LEN];
     char origin[SCE_MAX_URI_LEN];
     char origintype[SCE_MAX_ID_LEN];
+    /* The record holds a view of its data, which the machine's queue copies: the
+       text is held here, at the size of the machine's slot. */
+    static char data[sizeof(((system_variable_writes_queued_event_t *)0)->data)];
     memset(evt, 0, sizeof(*evt));
+    evt->data = data;
     if (read_field(event_object, "name", name, name_cap, NULL) != NULL ||
         read_field(event_object, "type", type, sizeof(type), NULL) != NULL ||
         read_field(event_object, "sendid", sendid, sizeof(sendid), NULL) != NULL ||
         read_field(event_object, "invokeid", invokeid, sizeof(invokeid), NULL) != NULL ||
         read_field(event_object, "origin", origin, sizeof(origin), NULL) != NULL ||
         read_field(event_object, "origintype", origintype, sizeof(origintype), NULL) != NULL ||
-        read_field(event_object, "data", evt->data, sizeof(evt->data), NULL) != NULL) {
+        read_field(event_object, "data", data, sizeof(data), NULL) != NULL) {
         (void)fprintf(stderr, "FAIL: the table's event cannot be read whole\n");
         return false;
     }

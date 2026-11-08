@@ -227,12 +227,11 @@ static bool find(const name_value_t *table, size_t count, const char *name, int 
         M##_event_with_meta_t meta;                                                                                    \
         memset(&meta, 0, sizeof(meta));                                                                                \
         meta.event = event;                                                                                            \
-        if (data != NULL) {                                                                                            \
-            if (strlen(data) >= sizeof(meta.data)) {                                                                   \
-                return false;                                                                                          \
-            }                                                                                                          \
-            memcpy(meta.data, data, strlen(data) + 1u);                                                                \
+        /* A view of the step's data; the machine's queue copies it, and data past the slot fails the step. */         \
+        if (data != NULL && strlen(data) >= sizeof(((M##_queued_event_t *)0)->data)) {                                 \
+            return false;                                                                                              \
         }                                                                                                              \
+        meta.data = data;                                                                                              \
         M##_raise_external((M##_t *)sm, &meta);                                                                        \
         M##_step((M##_t *)sm);                                                                                         \
         return true;                                                                                                   \
