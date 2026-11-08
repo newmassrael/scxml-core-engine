@@ -326,23 +326,35 @@ fn c11_typed_payload_preserves_values_and_rejects_overflow() {
 #include <stdio.h>
 #include <string.h>
 int main(void) {
-    bounded_payload_t sm;
-    char label[SCE_MAX_DATA_LEN + 8];
+    static bounded_payload_t sm;
+    /* docs/adr/0086, section 8.1: the machine's slot is sized by the schema of
+       the event its transition takes, so every label up to the 1024 bytes its
+       type allows is carried whole. */
+    char label[1024 + 1];
     bounded_payload_sample_received_payload_t p = {0};
     memcpy(p.raw, "ack", 3); p.raw_len = 3; p.label = label; p.ratio = 1.5; p.count = 7;
     for (size_t n = 0; n < sizeof(label); ++n) {
         memset(label, 'x', n); label[n] = 0;
         bounded_payload_init(&sm);
         int needed = snprintf(NULL, 0, "{\"raw\":\"ack\",\"label\":\"%s\",\"ratio\":1.5,\"count\":7}", label);
-        bool accepted = bounded_payload_raise_sample_received_typed(&sm, &p);
-        assert(accepted == (needed < SCE_MAX_DATA_LEN));
-        assert(sm.external_queue.count == (accepted ? 1 : 0));
-        if (accepted) {
-            sce_payload_fields_t fields; char decoded[SCE_MAX_DATA_LEN];
-            assert(sce_payload_decode(sm.external_queue.buf[sm.external_queue.head].data, &fields) == NULL);
-            assert(sce_payload_read_text(&fields, "label", decoded, sizeof(decoded)) == NULL);
-            assert(strlen(decoded) == n);
-        }
+        assert(needed >= 0 && (size_t)needed < BOUNDED_PAYLOAD_DATA_LEN_DECLARED);
+        assert(bounded_payload_raise_sample_received_typed(&sm, &p));
+        assert(sm.external_queue.count == 1);
+        sce_payload_fields_t fields; static char decoded[BOUNDED_PAYLOAD_DATA_LEN];
+        assert(sce_payload_decode(sm.external_queue.buf[sm.external_queue.head].data, &fields) == NULL);
+        assert(sce_payload_read_text(&fields, "label", decoded, sizeof(decoded)) == NULL);
+        assert(strlen(decoded) == n);
+    }
+    /* A payload past what the slot holds is refused whole: nothing is queued. */
+    {
+        static char past[BOUNDED_PAYLOAD_DATA_LEN + 1];
+        memset(past, 'x', sizeof(past) - 1u);
+        past[sizeof(past) - 1u] = 0;
+        p.label = past;
+        bounded_payload_init(&sm);
+        assert(!bounded_payload_raise_sample_received_typed(&sm, &p));
+        assert(sm.external_queue.count == 0);
+        p.label = label;
     }
     strcpy(label, "ready");
     bounded_payload_init(&sm);

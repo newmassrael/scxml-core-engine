@@ -1932,6 +1932,13 @@ name = "a_long_document_text_is_held_as_characters_in_c_and_cpp"
 path = "tests/a_long_document_text_is_held_as_characters_in_c_and_cpp.rs"
 required-features = ["cli"]
 
+# A C11 machine sizes its slot of `_event.data` from the schemas of the events it receives
+# (docs/adr/0086, section 8.1). It runs `sce-codegen`, so it carries the `cli` gate.
+[[test]]
+name = "a_c11_machine_sizes_its_event_data_slot"
+path = "tests/a_c11_machine_sizes_its_event_data_slot.rs"
+required-features = ["cli"]
+
 # A C++ machine whose only invokes are remote has no pending-invoke queue and no
 # drain. It runs `sce-codegen`, so it carries the `cli` gate.
 [[test]]

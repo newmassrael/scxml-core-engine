@@ -84,7 +84,7 @@
    `_host_param_texts` (one row per param), and each pair that crosses is written
    there too, from the one value that is written into the JSON. #}
 {% macro send_payload_json(params, namelist, csym_prefix, machine, keep_pairs=false, host_texts=false) %}
-                char _ed[SCE_MAX_DATA_LEN];
+                char _ed[{{ data_slot.name }}];
 {% if static_datamodel %}
                 /* SCE Accepted Subset §2.15 + §scxml-6.2: under `sce-static` each
                    `<param>`'s value is native code (`Param::native_value`) read
@@ -155,8 +155,8 @@
                    is finished at codegen time. */
                 {
                     static const char _lit[] = {{ params | static_params_json | c_char_array_init }};
-                    _Static_assert(sizeof(_lit) <= SCE_MAX_DATA_LEN,
-                                   "<send>'s literal payload does not fit SCE_MAX_DATA_LEN");
+                    _Static_assert(sizeof(_lit) <= sizeof(_ed),
+                                   "<send>'s literal payload does not fit {{ data_slot.name }}");
                     memcpy(_ed, _lit, sizeof(_lit));
                 }
 {% else %}
@@ -285,17 +285,17 @@
 {% endmacro %}
 {% macro send_content_json(action, csym_prefix, machine, host_text=false) %}
 {% set content_reading = action.content | inline_content_reading(model.datamodel) %}
-                char _ed[SCE_MAX_DATA_LEN];
+                char _ed[{{ data_slot.name }}];
 {% if action.native_content_value %}
 {% if host_text %}
-                char _host_content[SCE_MAX_DATA_LEN];
+                char _host_content[{{ data_slot.name }}];
 {% endif %}
 {{ send_native_content(action, csym_prefix, machine, '_ed', '_host_content' if host_text else none) }}
 {% elif action.native_content %}
                 {
                     static const char _lit[] = {{ action.native_content | c_char_array_init }};
-                    _Static_assert(sizeof(_lit) <= SCE_MAX_DATA_LEN,
-                                   "<send>'s literal <content> does not fit SCE_MAX_DATA_LEN");
+                    _Static_assert(sizeof(_lit) <= sizeof(_ed),
+                                   "<send>'s literal <content> does not fit {{ data_slot.name }}");
                     memcpy(_ed, _lit, sizeof(_lit));
                 }
 {% elif action.contentexpr %}
@@ -313,8 +313,8 @@
 {% elif content_reading.kind != 'expression' %}
                 {
                     static const char _lit[] = {{ content_reading.wire | c_char_array_init }};
-                    _Static_assert(sizeof(_lit) <= SCE_MAX_DATA_LEN,
-                                   "<send>'s literal <content> does not fit SCE_MAX_DATA_LEN");
+                    _Static_assert(sizeof(_lit) <= sizeof(_ed),
+                                   "<send>'s literal <content> does not fit {{ data_slot.name }}");
                     memcpy(_ed, _lit, sizeof(_lit));
                 }
 {% else %}
@@ -1115,7 +1115,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                    with no script engine to read them back from. */
                 sce_host_send_param_t _host_params[{{ host_pair_cap }}];
                 int _host_param_count = 0;
-                char _host_param_texts[{{ host_pair_cap }}][SCE_MAX_DATA_LEN];
+                char _host_param_texts[{{ host_pair_cap }}][{{ data_slot.name }}];
 {{ send_payload_json(action.params, action.namelist, csym_prefix, model.name, true, true) }}
 {% elif action.params or action.namelist %}
 {{ send_payload_json(action.params, action.namelist, csym_prefix, model.name, true) }}
@@ -1125,7 +1125,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
 {{ param_macros.collect_host_params_into(action.params, model, csym_prefix, '_host_params', '_host_param_count', '_host_param', '<send>', '                ', '_param_failed') -}}
 {% else %}
                 char _host_param_names[{{ host_pair_cap }}][SCE_MAX_ID_LEN];
-                char _host_param_values[{{ host_pair_cap }}][SCE_MAX_DATA_LEN];
+                char _host_param_values[{{ host_pair_cap }}][{{ data_slot.name }}];
                 if (luaL_dostring(sm->L,
 {{ se.lua_wire_string_fn() }}
                     "local o = {} "
@@ -1138,7 +1138,8 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                         sce_copy_bounded_id(_host_param_names[_host_param_count], lua_tostring(sm->L, -1));
                         lua_pop(sm->L, 1);
                         lua_rawgeti(sm->L, -1, 2 * _hp + 2);
-                        sce_copy_bounded_data(_host_param_values[_host_param_count], lua_tostring(sm->L, -1));
+                        sce_copy_bounded_n(_host_param_values[_host_param_count], lua_tostring(sm->L, -1),
+                                           sizeof(_host_param_values[_host_param_count]));
                         lua_pop(sm->L, 1);
                         _host_params[_host_param_count].name = _host_param_names[_host_param_count];
                         _host_params[_host_param_count].value = _host_param_values[_host_param_count];
@@ -1646,7 +1647,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
             /* W3C SCXML C.2 + 5.10: the `<content expr>` body, a value of the
                machine's own fields (`Action::native_content_value`), shipped as
                text/plain. */
-            char _http_content[SCE_MAX_DATA_LEN];
+            char _http_content[{{ data_slot.name }}];
 {{ send_native_content(action, csym_prefix, model.name, none, '_http_content') }}
 {% elif action.contentexpr and not (action.event or action.params or action.namelist) %}
             /* W3C SCXML C.2 + 5.10: dynamic `<content expr=...>` body,
@@ -3243,7 +3244,7 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
         {
             static const char sce_lit_[] = {{ state.donedata.native_content | c_char_array_init }};
             _Static_assert(sizeof(sce_lit_) <= sizeof(sm->done_data),
-                           "<donedata>'s inline <content> does not fit SCE_MAX_DATA_LEN");
+                           "<donedata>'s inline <content> does not fit {{ data_slot.name }}");
             memcpy(sm->done_data, sce_lit_, sizeof(sce_lit_));
         }
         {% elif static_datamodel and state.donedata.native_content_value %}
@@ -3327,7 +3328,7 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
         {
             static const char sce_lit_[] = {{ done_wire | c_char_array_init }};
             _Static_assert(sizeof(sce_lit_) <= sizeof(sm->done_data),
-                           "<donedata>'s inline <content> does not fit SCE_MAX_DATA_LEN");
+                           "<donedata>'s inline <content> does not fit {{ data_slot.name }}");
             memcpy(sm->done_data, sce_lit_, sizeof(sce_lit_));
         }
         {% endif %}
@@ -3949,7 +3950,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise_external_forwarded({{ csy
     }
     {{ csym_prefix }}{{ model.name }}_event_with_meta_t evt;
     memset(&evt, 0, sizeof(evt));
-    sce_copy_bounded_data(evt.data, fwd->data);
+    sce_copy_bounded_n(evt.data, fwd->data, sizeof(evt.data));
     /* docs/adr/0090: the pair as the processor that built the event wrote it,
        unchanged, and with it the session that sent it. */
     evt.origin = fwd->origin;
@@ -4064,7 +4065,7 @@ SCE_SM_FN static SCE_C_UNUSED void scheduled_push_routed({{ csym_prefix }}{{ mod
        `data[]` takes — `send_payload_json` already refused one that does
        not fit, so the copy is whole. */
     if (payload_json != NULL) {
-        sce_copy_bounded_data(slot->data, payload_json);
+        sce_copy_bounded_n(slot->data, payload_json, sizeof(slot->data));
     }
 {% endif %}
 }
@@ -4085,7 +4086,7 @@ SCE_SM_FN static SCE_C_UNUSED void scheduled_push_routed({{ csym_prefix }}{{ mod
 
    A field too long for its slot is truncated rather than dropped, matching
    `sce_copy_bounded_id`'s contract everywhere else in this file; the
-   bounds are SCE_MAX_ID_LEN / SCE_MAX_URI_LEN / SCE_MAX_DATA_LEN, the same
+   bounds are SCE_MAX_ID_LEN / SCE_MAX_URI_LEN / {{ data_slot.name }}, the same
    ones every other carried string in the generated machine uses. */
 SCE_SM_FN static SCE_C_UNUSED void scheduled_push_host({{ csym_prefix }}{{ model.name }}_t *sm,
                            uint64_t fire_time_ms,
@@ -4102,14 +4103,15 @@ SCE_SM_FN static SCE_C_UNUSED void scheduled_push_host({{ csym_prefix }}{{ model
     sce_copy_bounded_id(slot->host_processor_type, request->processor_type);
     sce_copy_bounded_id(slot->host_event_name, request->event_name);
     sce_copy_bounded_n(slot->host_target, request->target, sizeof(slot->host_target));
-    sce_copy_bounded_data(slot->host_content, request->content);
-    sce_copy_bounded_data(slot->host_event_data, request->event_data);
+    sce_copy_bounded_n(slot->host_content, request->content, sizeof(slot->host_content));
+    sce_copy_bounded_n(slot->host_event_data, request->event_data, sizeof(slot->host_event_data));
     sce_copy_bounded_id(slot->host_invoke_id, request->invoke_id);
 {% if model.delayed_host_send_max_params > 0 %}
     slot->host_param_count = 0;
     for (int _p = 0; _p < request->param_count && _p < {{ model.delayed_host_send_max_params }}; ++_p) {
         sce_copy_bounded_id(slot->host_param_names[_p], request->params[_p].name);
-        sce_copy_bounded_data(slot->host_param_values[_p], request->params[_p].value);
+        sce_copy_bounded_n(slot->host_param_values[_p], request->params[_p].value,
+                           sizeof(slot->host_param_values[_p]));
         slot->host_param_count++;
     }
 {% endif %}
@@ -6123,7 +6125,7 @@ SCE_SM_FN static void expire_host_invoke({{ csym_prefix }}{{ model.name }}_t *sm
     if (prefix_len + id_len < sizeof(name) &&
         {{ csym_prefix }}{{ model.name }}_arrive(name, prefix_len + id_len, &raised.event, raised.name)) {
         /* The JSON spelling of the string, as every other backend carries it. */
-        sce_copy_bounded_data(raised.data, "\"deadline\"");
+        sce_copy_bounded_n(raised.data, "\"deadline\"", sizeof(raised.data));
         sce_copy_bounded_id(raised.invoke_id, deadline->deadline_invoke_id);
         {{ csym_prefix }}{{ model.name }}_raise_external(sm, &raised);
     }
@@ -6158,11 +6160,11 @@ SCE_SM_FN static void note_host_request({{ csym_prefix }}{{ model.name }}_t *sm,
     sce_copy_bounded_id(slot->processor_type, start->processor_type);
     sce_copy_bounded_id(slot->invoke_id, start->invoke_id);
     sce_copy_bounded_n(slot->src, start->src, sizeof(slot->src));
-    sce_copy_bounded_data(slot->content, start->content);
-    sce_copy_bounded_data(slot->event_data, start->event_data);
+    sce_copy_bounded_n(slot->content, start->content, sizeof(slot->content));
+    sce_copy_bounded_n(slot->event_data, start->event_data, sizeof(slot->event_data));
     for (int i = 0; i < start->param_count && i < (int)(sizeof(slot->param_names) / sizeof(slot->param_names[0])); ++i) {
         sce_copy_bounded_id(slot->param_names[i], start->params[i].name);
-        sce_copy_bounded_data(slot->param_values[i], start->params[i].value);
+        sce_copy_bounded_n(slot->param_values[i], start->params[i].value, sizeof(slot->param_values[i]));
         slot->param_count++;
     }
 }
@@ -6212,7 +6214,7 @@ SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_perform_host_invoke({{ c
     param_count = kept;
     if (unreadable != NULL) {
 {% if 'error.execution' in model.events %}
-        char message[SCE_MAX_DATA_LEN];
+        char message[{{ data_slot.name }}];
         (void)snprintf(message, sizeof(message),
                        "<invoke type='%s' id='%s'>: " SCE_HOST_INVOKE_DEADLINE_PARAM
                        "='%s' is not a whole number of milliseconds",
@@ -6423,7 +6425,7 @@ SCE_SM_FN static bool end_host_invoke({{ csym_prefix }}{{ model.name }}_t *sm, c
        longest prefix it does (`done.invoke`, `done`) — and `_event.name` is the
        specific name either way. */
     if ({{ csym_prefix }}{{ model.name }}_arrive(name, prefix_len + id_len, &completion.event, completion.name)) {
-        sce_copy_bounded_data(completion.data, data != NULL ? data : "");
+        sce_copy_bounded_n(completion.data, data != NULL ? data : "", sizeof(completion.data));
         /* W3C SCXML 5.10.1: the completion is an event of the invocation, so
            `_event.invokeid` is the invocation's id — the one the event names
            and the host was handed. */
@@ -7011,7 +7013,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_apply_mesh_calls({{ csym_prefix
             {{ csym_prefix }}{{ model.name }}_event_with_meta_t _meta;
             memset(&_meta, 0, sizeof(_meta));
             _meta.event = _event;
-            sce_copy_bounded_data(_meta.data, _call.data);
+            sce_copy_bounded_n(_meta.data, _call.data, sizeof(_meta.data));
             sce_copy_bounded_id(_meta.send_id, _call.send_id);
             sce_copy_bounded_event_type(_meta.type, "external");
             (void)sce_event_origin_mesh_peer(&_meta.origin, _call.source);
