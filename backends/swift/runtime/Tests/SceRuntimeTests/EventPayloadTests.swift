@@ -169,6 +169,18 @@ private let revisedDefaults = #"{"layout":"week","count":"7","urgent":true}"#
     #expect(WireValue.text("x").json == "\"x\"")
 }
 
+// A composed value a `<send>` names crosses as the JSON its typed writers wrote, kept as
+// it is in a pair and in a form alike (docs/adr/0086, section 5.3).
+@Test func aComposedValueCrossesAsTheJSONItsWritersWrote() {
+    let written = recordJSON([
+        PayloadPair.json("tags", rawJSON: listJSON(["a", "b"]) { WireValue.text($0).json }),
+        PayloadPair.integer("id", 1),
+    ])
+    #expect(payloadJSON([PayloadPair("item", .composed(written))]) == #"{"item":{"id":1,"tags":["a","b"]}}"#)
+    #expect(WireValue.composed("[1,2]").json == "[1,2]")
+    #expect(WireValue.composed("[1,2]").formText == "[1,2]")
+}
+
 // A form carries a value as ECMAScript's `String(value)`: a text without the quotes JSON
 // wraps it in, a number as the shortest text that reads back, absence as the empty text.
 

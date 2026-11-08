@@ -979,6 +979,12 @@ public enum WireValue {
     /// A value that is absent, written as JSON `null`.
     case null
 
+    /// A composed value (docs/adr/0086): a list, a record, or an optional one of them,
+    /// as the JSON its typed writers wrote it (`listJSON`, `recordJSON`, `optionalJSON`),
+    /// whose keys they order by their bytes at every depth. A `<send>` that names the
+    /// place holding one carries it as it is (section 5.3).
+    case composed(String)
+
     /// The value as JSON text.
     public var json: String {
         switch self {
@@ -990,6 +996,7 @@ public enum WireValue {
         case .truth(let value): return value ? "true" : "false"
         case .bytes(let value): return quoteJSON(bytesAsPayloadText(value))
         case .null: return "null"
+        case .composed(let written): return written
         }
     }
 
@@ -1007,6 +1014,9 @@ public enum WireValue {
         case .truth(let value): return value ? "true" : "false"
         case .bytes(let value): return bytesAsPayloadText(value)
         case .null: return ""
+        // A list or a record is the JSON it was written as, as every other engine puts one
+        // in a form (`ToWireString` in Go writes a list and an object as their JSON).
+        case .composed(let written): return written
         }
     }
 }
