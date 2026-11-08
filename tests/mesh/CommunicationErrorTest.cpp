@@ -573,3 +573,19 @@ TEST(CommunicationErrorTest, RpcReplyFromUndeclaredPeerShape) {
                    "\"source\":\"mallory\","
                    "\"invoke_id\":\"01920000-0000-7000-8000-0000000000ab\"}");
 }
+
+TEST(CommunicationErrorTest, CausalViewMismatchShape) {
+    // Row 18 as the causal route raises it, through `causalViewMismatch`:
+    // the machine the envelope came from, then the epoch it was tagged with
+    // and the replica that tagged it, in the order the Rust core writes them
+    // (backends/rust/mesh/src/signal.rs). Red if a column is renamed or
+    // written before `source`.
+    const auto err = CommunicationError::causalViewMismatch("list", 1, "01010101-0101-0101-0101-010101010101");
+
+    const auto out = bytes_to_string(err.toJsonBytes());
+    EXPECT_EQ(out, "{\"errorName\":\"communication\","
+                   "\"reason\":\"CAUSAL_VIEW_MISMATCH\","
+                   "\"source\":\"list\","
+                   "\"epoch\":1,"
+                   "\"replica\":\"01010101-0101-0101-0101-010101010101\"}");
+}

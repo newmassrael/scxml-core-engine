@@ -126,7 +126,7 @@ target_link_libraries(sce_core INTERFACE sce_forge_runtime)
 # ============================================================================
 # Headers: SchedulerConcepts, EventQueueBridge, ShmChannel, PatternKind,
 #          PayloadCodec, RpcStatus, MeshEnvelope, MeshEnvelopeCodec,
-#          CausalEntry, CausalRules, CausalLayer.
+#          CausalEntry, CausalRules, CausalLayer, CausalRoute.
 # Compiled: MeshEnvelopeCodec.cpp — the envelope's CBOR through the codec
 # generated from sce:std/mesh/envelope.scxml (src/mesh/generated/, committed
 # so a C++ consumer needs no Rust toolchain), whose CBOR items are the C++

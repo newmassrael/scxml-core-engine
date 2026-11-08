@@ -50,8 +50,8 @@ enum class PatternKind : uint16_t {
     ParallelRegionDone = 21,  // SCE_MESH.md §mesh-16.5 — distributed parallel-final barrier envelope.
     // 22 is the durable receipt's (SCE_MESH.md section 10.11), not built yet. 23 is the one
     // control message of a causal route (docs/adr/0085, section 3.2), which never reaches an
-    // engine. This core does not carry the causal route yet: the build refuses `delivery: causal`
-    // for C++, and dispatchEnvelope drops the pattern.
+    // engine: a causal binding's route (mesh/CausalRoute.h) takes it before dispatch, and
+    // dispatchEnvelope drops one that arrives on any other binding.
     CausalVector = 23,
 };
 
