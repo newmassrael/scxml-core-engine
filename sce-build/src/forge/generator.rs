@@ -6557,7 +6557,7 @@ pub fn c11_data_slot(
         inputs,
         declared: largest.map_or(1, |len| len.saturating_add(1)),
         pairs: c11_scratch_pairs(model),
-        scratch: crate::forge::c11_scratch::layout(),
+        scratch: crate::forge::c11_scratch::layout(!model.host_processor_types.is_empty()),
     })
 }
 

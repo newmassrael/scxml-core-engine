@@ -246,6 +246,12 @@ typedef struct {
     int start;
     bool running;
     sce_mesh_call_t calls[CHILD_CALLS_KEPT];
+    /* Each queued call's data, the call's view pointing at none until it is
+       taken: the router holds its texts, as a call's view requires. */
+    char texts[CHILD_CALLS_KEPT][SCE_MAX_DATA_LEN];
+    /* The data of the call taken last, which its view points at until the next
+       take. */
+    char taken[SCE_MAX_DATA_LEN];
     size_t queued;
 } child_router_t;
 
@@ -275,7 +281,10 @@ static bool child_router_take_call(void *user_data, sce_mesh_call_t *out) {
         return false;
     }
     *out = router->calls[0];
+    memcpy(router->taken, router->texts[0], sizeof(router->taken));
+    out->data = router->taken;
     memmove(&router->calls[0], &router->calls[1], (router->queued - 1u) * sizeof(router->calls[0]));
+    memmove(&router->texts[0], &router->texts[1], (router->queued - 1u) * sizeof(router->texts[0]));
     router->queued--;
     return true;
 }
@@ -342,12 +351,14 @@ static bool child_routers_deliver(const char *path, const char *event, const cha
             (data != NULL && strlen(data) >= SCE_MAX_DATA_LEN)) {
             return false;
         }
+        char *text = router->texts[router->queued];
         sce_mesh_call_t *call = &router->calls[router->queued++];
         memset(call, 0, sizeof(*call));
         call->kind = SCE_MESH_CALL_RAISE;
         memcpy(call->name, event, strlen(event) + 1u);
+        text[0] = '\0';
         if (data != NULL) {
-            memcpy(call->data, data, strlen(data) + 1u);
+            memcpy(text, data, strlen(data) + 1u);
         }
         return true;
     }

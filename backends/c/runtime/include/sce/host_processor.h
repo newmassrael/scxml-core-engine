@@ -203,7 +203,10 @@ static inline const char *sce_host_send_param(const sce_host_send_request_t *req
  */
 typedef struct sce_host_send_response_s {
     char event_name[SCE_MAX_ID_LEN];
-    char event_data[SCE_MAX_DATA_LEN];
+    /* The event's data, a view of the list's text storage, which the machine
+       provides at the size of its slot of `_event.data` (docs/adr/0086, section
+       8.5 (b)); written only by `sce_host_response_push`. */
+    const char *event_data;
     /* `_event.origin` and `_event.origintype` of the reply, in the host's own
        terms (docs/adr/0090, section 2): the host processor's type and the
        address a `<send>` of that type reaches the party at. None when the reply
@@ -232,14 +235,25 @@ typedef struct sce_host_send_response_list_s {
     sce_host_send_response_t entries[SCE_MAX_HOST_RESPONSES];
     int count;
     bool overflowed;
+    /* The storage each entry's data is copied into, `text_cap` bytes per entry,
+       entry `i` at `texts + i * text_cap`: the machine's own, at the size of its
+       slot of `_event.data`, provided by the machine before it calls the
+       handler (docs/adr/0086, section 8.5 (b)). NULL for a list with none,
+       which takes events with no data only. */
+    char *texts;
+    size_t text_cap;
+    /* Events whose data did not fit `text_cap`: refused whole, never cut, and
+       counted here, so the machine counts and raises each refusal. */
+    int refused;
 } sce_host_send_response_list_t;
 
 /**
  * Append one event to the report.
  *
  * Refuses rather than truncates, in both directions: a list already full
- * and a name or payload longer than this build reserved both leave the
- * entry unwritten and set `overflowed`. Truncating an event NAME would
+ * and a name longer than this build reserved both leave the entry unwritten
+ * and set `overflowed`, and a payload longer than the machine's slot leaves
+ * it unwritten and is counted in `refused`. Truncating an event NAME would
  * be worse than dropping it — a shortened name can match a DIFFERENT
  * transition, so the machine would take a step the host never asked for.
  *
@@ -256,15 +270,21 @@ static inline bool sce_host_response_push(sce_host_send_response_list_t *out, co
         return false;
     }
     const char *data = (event_data != NULL) ? event_data : "";
-    if (strlen(event_name) >= sizeof(out->entries[0].event_name) ||
-        strlen(data) >= sizeof(out->entries[0].event_data)) {
+    if (strlen(event_name) >= sizeof(out->entries[0].event_name)) {
         out->overflowed = true;
+        return false;
+    }
+    /* docs/adr/0086, section 8.5 (b): data the machine's slot cannot hold is
+       refused whole and counted, and the machine raises the refusal. */
+    char *text = out->texts != NULL ? out->texts + (size_t)out->count * out->text_cap : NULL;
+    if (data[0] != '\0' && (text == NULL || !sce_copy_text_whole(text, out->text_cap, data))) {
+        out->refused++;
         return false;
     }
     sce_host_send_response_t *slot = &out->entries[out->count];
     memset(slot, 0, sizeof(*slot));
     strcpy(slot->event_name, event_name);
-    strcpy(slot->event_data, data);
+    slot->event_data = data[0] != '\0' ? text : "";
     out->count++;
     return true;
 }
@@ -717,9 +737,10 @@ typedef struct sce_host_invoke_response_s {
         terminates never fires `done.invoke`, which is what §scxml-6.4
         says. */
     bool has_done_data;
-    /** Payload for an immediate `done.invoke.<invoke_id>`. Copied by the
-        engine before this struct goes out of scope. */
-    char done_data[SCE_MAX_DATA_LEN];
+    /** Payload for an immediate `done.invoke.<invoke_id>`: a view of `text`,
+        written only by `sce_host_invoke_answer_done`. Copied by the engine
+        before this struct goes out of scope. */
+    const char *done_data;
     /** Whether `refusal` below says the host could not start the invocation
         at all. Then `refusal` is `_event.data` for the `error.execution` the
         machine raises instead (§scxml-6.4.1 — an invocation that cannot
@@ -731,8 +752,57 @@ typedef struct sce_host_invoke_response_s {
         reported for it later is refused. It overrides `has_done_data`, since
         nothing ran to complete. */
     bool has_refusal;
-    char refusal[SCE_MAX_DATA_LEN];
+    /** A view of `text`, written only by `sce_host_invoke_answer_refusal`. */
+    const char *refusal;
+    /** The storage either answer's text is copied into, `text_cap` bytes: the
+        machine's own, at the size of its slot of `_event.data`, provided before
+        it calls the handler (docs/adr/0086, section 8.5 (b)); NULL for a call
+        whose answer is ignored, a cancel's. */
+    char *text;
+    size_t text_cap;
+    /** An answer's text did not fit `text_cap`: refused whole, never cut, and
+        the machine counts and raises the refusal. */
+    bool oversized;
 } sce_host_invoke_response_t;
+
+/**
+ * Answer a start with an immediate completion carrying `data` (NULL for none),
+ * copied whole into the machine's storage, or refused: false, `oversized` set,
+ * and no completion, when it does not fit. A refusal answered already stands.
+ */
+static inline bool sce_host_invoke_answer_done(sce_host_invoke_response_t *out, const char *data) {
+    if (out == NULL || out->has_refusal) {
+        return false;
+    }
+    if (out->text == NULL || !sce_copy_text_whole(out->text, out->text_cap, data)) {
+        out->oversized = true;
+        return false;
+    }
+    out->has_done_data = true;
+    out->done_data = out->text;
+    return true;
+}
+
+/**
+ * Answer a start with the reason it could not start (NULL for none), copied
+ * whole into the machine's storage. A reason that does not fit refuses the
+ * start with no reason, sets `oversized`, and answers false.
+ */
+static inline bool sce_host_invoke_answer_refusal(sce_host_invoke_response_t *out, const char *reason) {
+    if (out == NULL) {
+        return false;
+    }
+    out->has_refusal = true;
+    out->has_done_data = false;
+    out->done_data = NULL;
+    if (out->text == NULL || !sce_copy_text_whole(out->text, out->text_cap, reason)) {
+        out->oversized = true;
+        out->refusal = "";
+        return false;
+    }
+    out->refusal = out->text;
+    return true;
+}
 
 /**
  * What runs one declared invoke type.
@@ -1059,7 +1129,11 @@ typedef enum sce_mesh_call_kind_e {
 typedef struct sce_mesh_call_s {
     sce_mesh_call_kind_t kind;
     char name[SCE_MAX_ID_LEN];
-    char data[SCE_MAX_DATA_LEN];
+    /* The call's data, a view of text the router holds, valid until its next
+       `take_call` or `detach`; NULL and "" are no data. The machine copies it
+       into its own slot of `_event.data` at once, and refuses data that does
+       not fit, counted and raised (docs/adr/0086, section 8.5 (b)). */
+    const char *data;
     char send_id[SCE_MAX_ID_LEN];
     char source[SCE_MAX_ID_LEN];
     char invoke_id[SCE_MAX_ID_LEN];
