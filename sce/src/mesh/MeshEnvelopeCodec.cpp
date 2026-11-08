@@ -107,10 +107,44 @@ RpcStatus toRuntime(gen::RpcStatus::RpcStatus v) {
     return static_cast<RpcStatus>(gen::RpcStatus::to_underlying(v));
 }
 
+// A causal route's vector (key 20) is a list of the record
+// sce:std/mesh/causal_entry.scxml declares, which the generated value presents
+// as a view of that schema's own payload type within the list's bound of 64,
+// made by its `make`, which refuses a longer one. CausalEntry is the runtime's
+// spelling of the same three fields.
+using GenCausalEntry = gen::CausalEntry::CausalEntryPayload;
+using CausalVector = decltype(std::declval<const GenEnvelope &>().causal_vector())::value_type;
+
+std::vector<GenCausalEntry> causalToGenerated(const std::vector<CausalEntry> &v) {
+    std::vector<GenCausalEntry> out;
+    out.reserve(v.size());
+    for (const auto &entry : v) {
+        GenCausalEntry g;
+        g.hi = entry.hi;
+        g.lo = entry.lo;
+        g.seq = entry.seq;
+        out.push_back(g);
+    }
+    return out;
+}
+
+std::vector<CausalEntry> causalToRuntime(const CausalVector &v) {
+    std::vector<CausalEntry> out;
+    out.reserve(v.size());
+    for (const auto &g : v) {
+        CausalEntry entry;
+        entry.hi = g.hi;
+        entry.lo = g.lo;
+        entry.seq = g.seq;
+        out.push_back(entry);
+    }
+    return out;
+}
+
 // The generated value of `env`, or none where an entry lies past the bound the
 // document states for it: a string over 256 KiB, a payload over
-// kMaxEnvelopeBytes. The views it is made of read `env`, and the value copies
-// what they view.
+// kMaxEnvelopeBytes, a causal vector of more than 64 entries. The views it is
+// made of read `env`, and the value copies what they view.
 std::optional<GenEnvelope> toGenerated(const MeshEnvelope &env) {
     const auto id = boundedId(env.id);
     const auto source = boundedText(env.source);
@@ -129,6 +163,19 @@ std::optional<GenEnvelope> toGenerated(const MeshEnvelope &env) {
         !boundedOptional(env.correlation_id, boundedId, correlationId) ||
         !boundedOptional(env.invoke_id, boundedId, invokeId) ||
         !boundedOptional(env.routing_id, boundedId, routingId)) {
+        return std::nullopt;
+    }
+    // The vector's records in the generated payload type, which the view of
+    // them reads until the value is made and copies them.
+    std::vector<GenCausalEntry> causalRecords;
+    std::optional<CausalVector> causalVector;
+    if (!boundedOptional(
+            env.causal_vector,
+            [&causalRecords](const std::vector<CausalEntry> &v) {
+                causalRecords = causalToGenerated(v);
+                return CausalVector::make(causalRecords);
+            },
+            causalVector)) {
         return std::nullopt;
     }
     // qos (key 13) is reserved and never written: no transport consumes it,
@@ -152,6 +199,8 @@ std::optional<GenEnvelope> toGenerated(const MeshEnvelope &env) {
         /*parallel_id=*/parallelId,
         /*region_id=*/regionId,
         /*child_session_id=*/childSessionId,
+        /*causal_epoch=*/env.causal_epoch,
+        /*causal_vector=*/causalVector,
     };
 }
 
@@ -175,6 +224,8 @@ MeshEnvelope toRuntime(const GenEnvelope &g) {
     env.parallel_id = mapOptional(g.parallel_id(), text);
     env.region_id = mapOptional(g.region_id(), text);
     env.child_session_id = mapOptional(g.child_session_id(), text);
+    env.causal_epoch = g.causal_epoch();
+    env.causal_vector = mapOptional(g.causal_vector(), causalToRuntime);
     return env;
 }
 
