@@ -11,8 +11,9 @@
 # coverage loss the gate exists to remove. That refusal is the right answer for
 # a developer — configuring and building this tree is half an hour, and a gate
 # that started spending it on their behalf would be deciding something that is
-# theirs to decide — which leaves exactly one party needing a step that does it:
-# CI.
+# theirs to decide — which leaves the parties nobody iterates with needing a
+# step that does it: CI, and the landing queue's judgment of an update to main,
+# where the gate runs this script itself rather than refusing.
 #
 # The step lived in the lane's YAML and both halves of it were wrong. It
 # configured without building `sce-codegen` first, which cannot work on a

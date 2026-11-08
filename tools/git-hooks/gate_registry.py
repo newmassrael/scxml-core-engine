@@ -450,6 +450,20 @@ PACE_NORMALISED: dict[str, str] = {
 #                     it skip and pass, a host compiler or browser no
 #                     declaration names, or thread interleavings it samples.
 #
+# A gate that skips and exits 0 where a tool or a prerequisite is missing says
+# so in `skips_unless_landing`, with what it skips without. A skip is not a
+# pass, so a landing closes every such path: its units run with `--landing`,
+# the runner exports SCE_GATE_LANDING, and `sce_gate_requires_tool` (and the
+# other skip sites of scripts/gates/lib.sh) then end with 3, could not run,
+# which bx reports as not measured and the integrator never lands. Such a gate
+# may claim `cache: True`, and its pass is kept only from a landing unit: a
+# unit without `--landing` could still have skipped (`plan_units`).
+#
+# `unit_requires` names what one gate's unit needs of a machine beyond bx.toml's
+# platform, as bx reads it on a plan line (bx RFC 0004, section 6): `needs`
+# (commands) and `packages`. A machine without them is not given the unit and
+# takes the others; the platform's own lists would refuse it for every job.
+#
 # The residue, stated rather than hidden: a tool bx.toml requires by name only
 # (`needs`, `packages`) is whatever version the machine carries, and a verdict
 # that moved with that version would be kept across it. bx runs one kept pass in
@@ -521,6 +535,9 @@ UNIT_EXCLUSIVE = "checkout"
 
 # The shape of a Rust release a plan may name (`rustc --version`'s second word).
 RUST_RELEASE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
+
+# The keys of `unit_requires`, as a plan line spells them for bx.
+UNIT_REQUIRES_KEYS = ("needs", "packages")
 
 # The shape of a full commit id a plan carries (SHA-1, or SHA-256).
 COMMIT_ID = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
@@ -678,11 +695,13 @@ GATES: dict[str, dict] = {
         "runner_workflow": True,
         "cost_s": 0,
         "summary": "emit_embed_manifest fail-fast case",
-        "cache": False,
-        "no_cache_reason": "skip-capable: `scripts/test_emit_manifest_fail_fast.sh` "
-                           "exits 0 on a machine without clang++-19, which bx.toml "
-                           "does not require, so a pass there is the machine's and "
-                           "not the tree's",
+        # Kept only from a landing unit, where the skip below cannot pass, and
+        # a landing's unit goes only to a machine with clang-19 installed.
+        "cache": True,
+        "skips_unless_landing": "`scripts/test_emit_manifest_fail_fast.sh` "
+                                "skips and exits 0 on a machine without "
+                                "clang++-19",
+        "unit_requires": {"packages": ["clang-19"]},
         "inputs": None,
         "commits": [],
         "peak_gb": 1,
@@ -839,7 +858,11 @@ GATES: dict[str, dict] = {
         #
         # And the lockfile: a change to it moves every tree a `<tree>:<path>`
         # target names (docs/adr/0097), so it selects the rounds that mutate one.
-        "extra": ["scripts/mutate", "scripts/lib/mutation_rounds_cost.sh", "Cargo.lock"],
+        #
+        # And the script a landing configures `build/` with for the ctest
+        # casefiles (the gate runs it itself there, rather than refusing).
+        "extra": ["scripts/mutate", "scripts/lib/mutation_rounds_cost.sh", "Cargo.lock",
+                  "scripts/prepare_ctest_tree.sh"],
         "cost_s": 877,
         "summary": "changed mutation targets still turn their suites red",
         "cache": False,
@@ -1157,13 +1180,18 @@ GATES: dict[str, dict] = {
                    "later.",
         "cost_s": 1363,
         "summary": "cargo test --workspace --features cli,sce-rust-mesh/wss",
-        "cache": False,
-        "no_cache_reason": "skip-capable on an artifact: `forge_conformance` "
-                           "skips its Kotlin compile and run cases where the "
-                           "gitignored forge-runtime jar was never built "
-                           "(`KOTLIN_JAR_HINT`), so a pass depends on what that "
-                           "machine built before. It also reads HEAD's history "
-                           "(`lowering_decision_ledger`), which `commits` carries",
+        # The gate builds the Gradle prerequisites the suites run (the Kotlin
+        # runtime jars and the three JVM programs) before the suites, so a
+        # pass no longer depends on what the machine built before. What is
+        # left is a test that skips on a missing tool, and a landing runs the
+        # suites under SCE_REQUIRE_TOOLS and reads such a miss as could not
+        # run. It also reads HEAD's history (`lowering_decision_ledger`),
+        # which `commits` carries.
+        "cache": True,
+        "skips_unless_landing": "a suite test skips with a warning where a "
+                                "tool or a built JVM program it runs is "
+                                "missing (`ToolLocator::require_or_skip`, "
+                                "`require_all_or_warn`)",
         "inputs": None,
         "commits": ["HEAD"],
         "peak_gb": 5,
@@ -1958,11 +1986,10 @@ GATES: dict[str, dict] = {
         "cost_s": 22,
         "summary": "diagram layout invariants, drag/collapse/stress survival, "
                    "and the shared scenarios on the browser's engine",
-        "cache": False,
-        "no_cache_reason": "reads an artifact another gate leaves: the codegen "
-                           "and engine WASMs `visualizer-wasm` writes into "
-                           "gitignored directories; its unit builds them first "
-                           "(deps), and that gate's own verdict is not kept",
+        # The WASMs it reads are built in the same unit (`deps`), and the
+        # stress half's seed is pinned in the script, so the verdict is the
+        # tree's. Kept only from a landing unit, through `visualizer-wasm`.
+        "cache": True,
         "inputs": None,
         "commits": [],
         "peak_gb": 1,
@@ -1976,14 +2003,12 @@ GATES: dict[str, dict] = {
                    "filter IS the trigger — the two cannot disagree.",
         "cost_s": 77,
         "summary": "codegen + visualizer + DOOM WASM builds",
-        "cache": False,
-        "no_cache_reason": "skip-capable: the emscripten half runs only where "
-                           "emsdk is found (on PATH or under the home), so a "
-                           "pass without it judged one artifact of three. "
-                           "bx.toml installs the pinned SDK for this gate's "
-                           "units (`[platform.linux.tools.emsdk]`), and the "
-                           "skip stays in the script, so a kept pass could "
-                           "still be a skip",
+        # The SDK is bx.toml's pinned emsdk tool, wasm-pack a need of the
+        # platform.
+        "cache": True,
+        "skips_unless_landing": "the emscripten half runs only where emsdk is "
+                                "found, so a pass without it judged one "
+                                "artifact of three",
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
@@ -2633,10 +2658,10 @@ GATES: dict[str, dict] = {
                    "arm on every push.",
         "cost_s": 184,
         "summary": "W3C conformance, pybind11 -> C++ Interpreter",
-        "cache": False,
-        "no_cache_reason": "skip-capable: it exits 0 on a machine without "
-                           "python3-config, which bx.toml requires by no name, so "
-                           "a pass there is the machine's and not the tree's",
+        "cache": True,
+        "skips_unless_landing": "it skips and exits 0 on a machine without "
+                                "python3-config (python3-dev)",
+        "unit_requires": {"packages": ["python3-dev"]},
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
@@ -2689,13 +2714,10 @@ GATES: dict[str, dict] = {
         "summary": "W3C conformance and the interactive suite, C++ "
                    "Interpreter + AOT built with emscripten, under Node, on "
                    "the threaded and the host-driven engine",
-        "cache": False,
-        "no_cache_reason": "skip-capable: it exits 0 on a machine without "
-                           "emsdk. bx.toml installs the pinned SDK, and with "
-                           "it the Node it ships, for this gate's units "
-                           "(`[platform.linux.tools.emsdk]`), and the skip "
-                           "stays in the script, so a kept pass could still "
-                           "be a skip",
+        # The SDK and the Node it ships are bx.toml's pinned emsdk tool.
+        "cache": True,
+        "skips_unless_landing": "it skips and exits 0 on a machine without "
+                                "emsdk (`[platform.linux.tools.emsdk]`)",
         "inputs": None,
         "commits": [],
         "peak_gb": 5.3,
@@ -2735,13 +2757,10 @@ GATES: dict[str, dict] = {
                    "a job of its own beside the native suite.",
         "cost_s": 3328,
         "summary": "C++ ctest suite built with emscripten, every case under Node",
-        "cache": False,
-        "no_cache_reason": "skip-capable: it exits 0 on a machine without "
-                           "emsdk. bx.toml installs the pinned SDK, and with "
-                           "it the Node it ships, for this gate's units "
-                           "(`[platform.linux.tools.emsdk]`), and the skip "
-                           "stays in the script, so a kept pass could still "
-                           "be a skip",
+        # The SDK and the Node it ships are bx.toml's pinned emsdk tool.
+        "cache": True,
+        "skips_unless_landing": "it skips and exits 0 on a machine without "
+                                "emsdk (`[platform.linux.tools.emsdk]`)",
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
@@ -3734,7 +3753,7 @@ def head_commit(repo_root: Path):
 
 
 def plan_units(selected, rust=None, tree_is_head=True, table=None,
-               head=None) -> list[dict]:
+               head=None, landing=False) -> list[dict]:
     """The bx check units (bx RFC 0004, section 6) that verify `selected`.
 
     `selected` is a set the registry already chose: `select` for a change,
@@ -3760,13 +3779,21 @@ def plan_units(selected, rust=None, tree_is_head=True, table=None,
       * the tracked tree is HEAD's (`tree_is_head`, see
         `tracked_tree_is_head`);
       * every gate the unit runs declares `cache: True`;
-      * a unit that reads HEAD has its id (`head`) to carry.
+      * a unit that reads HEAD has its id (`head`) to carry;
+      * a unit that runs a gate which can skip (`skips_unless_landing`) is
+        a landing's, where the skip ends 3 instead of passing.
     Each unit says `cache` either way, because the set in bx.toml keeps
     verdicts by default and a unit that is not to be kept has to say so.
 
+    A LANDING'S UNIT SAYS SO. `landing` puts `--landing` in every unit's
+    argv: the runner then counts no skip as a pass (see "Whether a gate's
+    verdict may be kept"), and the flag is in the key, so a pass kept from a
+    landing is never handed to a run that could have skipped, or back.
+
     `exclusive` is `UNIT_EXCLUSIVE` for every unit. `secs` is the declared
     cost of everything the unit runs, a first estimate that bx replaces with
-    its own timings, and `mem_gb` the largest `peak_gb` among them.
+    its own timings, and `mem_gb` the largest `peak_gb` among them. `needs`
+    and `packages` are the union of the `unit_requires` of what it runs.
     """
     table = GATES if table is None else table
     chosen = set(selected)
@@ -3777,12 +3804,16 @@ def plan_units(selected, rust=None, tree_is_head=True, table=None,
     for slug in run_order(chosen - run_by_another, table):
         closure = {slug} | transitive_deps(slug, table)
         reads_head = any("HEAD" in table[s].get("commits", []) for s in closure)
+        can_skip = any(table[s].get("skips_unless_landing") for s in closure)
         kept = (rust is not None and tree_is_head
                 and all(table[s]["cache"] is True for s in closure)
-                and (head is not None or not reads_head))
+                and (head is not None or not reads_head)
+                and (landing or not can_skip))
         argv = ["bash", "scripts/gate"]
         if rust is not None:
             argv += ["--rust", rust]
+        if landing:
+            argv.append("--landing")
         if reads_head and head is not None:
             argv += ["--at", head]
         argv.append(slug)
@@ -3801,6 +3832,12 @@ def plan_units(selected, rust=None, tree_is_head=True, table=None,
         if cost > 0:
             unit["secs"] = float(cost)
         unit["mem_gb"] = float(max(table[s]["peak_gb"] for s in closure))
+        for key in UNIT_REQUIRES_KEYS:
+            wanted = sorted({item for s in closure
+                             for item in (table[s].get("unit_requires") or {})
+                             .get(key, [])})
+            if wanted:
+                unit[key] = wanted
         inputs = unit_inputs(closure, table)
         if kept and inputs:
             unit["inputs"] = inputs
@@ -6291,18 +6328,20 @@ def self_test(repo_root: Path) -> int:
     # selected gate, name no gate the selection left out, and never make a
     # unit of a gate another unit already runs. A plan that drifted from the
     # selection would be the push verifying something else than it says.
-    for label, selection in (
-            ("rust-source", select(repo_root, ["sce-build/src/mesh/deploy.rs"])[0]),
+    for label, selection, landing in (
+            ("rust-source", select(repo_root, ["sce-build/src/mesh/deploy.rs"])[0], False),
             ("rust-source-landing", select(repo_root, ["sce-build/src/mesh/deploy.rs"],
-                                           landing=True)[0]),
-            ("docs-only", select(repo_root, ["README.md"])[0]),
-            ("go-backend", select(repo_root, ["backends/go/forge-runtime/go.mod"])[0]),
-            ("unclassified", select(repo_root, ["some_new_top_level_dir/x.txt"])[0]),
-            ("every-gate", list(GATES)),
+                                           landing=True)[0], True),
+            ("docs-only", select(repo_root, ["README.md"])[0], False),
+            ("go-backend", select(repo_root, ["backends/go/forge-runtime/go.mod"])[0], False),
+            ("unclassified", select(repo_root, ["some_new_top_level_dir/x.txt"])[0], False),
+            ("every-gate", list(GATES), False),
+            ("every-gate-landing", list(GATES), True),
     ):
         cases += 1
         head = "0" * 40
-        units = plan_units(set(selection), rust="1.0.0", head=head)
+        units = plan_units(set(selection), rust="1.0.0", head=head,
+                           landing=landing)
         names = [u["name"] for u in units]
         if len(names) != len(set(names)):
             failures.append(f"plan[{label}]: a unit is named twice: {names}")
@@ -6316,12 +6355,29 @@ def self_test(repo_root: Path) -> int:
                     f"selection {sorted(selection)}")
             reads_head = any("HEAD" in GATES[s]["commits"] for s in closure)
             want = (["bash", "scripts/gate", "--rust", "1.0.0"]
+                    + (["--landing"] if landing else [])
                     + (["--at", head] if reads_head else []) + [unit["name"]])
             if unit["argv"] != want:
                 failures.append(
                     f"plan[{label}]: unit {unit['name']} runs {unit['argv']}, "
                     f"not the runner on its own slug at the planned release "
-                    f"(and at HEAD's id when it reads HEAD): {want}")
+                    f"(as a landing's when it is one, and at HEAD's id when "
+                    f"it reads HEAD): {want}")
+            can_skip = any(GATES[s].get("skips_unless_landing") for s in closure)
+            if can_skip and not landing and unit["cache"]:
+                failures.append(
+                    f"plan[{label}]: unit {unit['name']} runs a gate that can "
+                    f"skip and keeps its verdict outside a landing, where the "
+                    f"pass could be a skip")
+            for key in UNIT_REQUIRES_KEYS:
+                wanted = sorted({item for s in closure
+                                 for item in (GATES[s].get("unit_requires") or {})
+                                 .get(key, [])})
+                if unit.get(key, []) != wanted:
+                    failures.append(
+                        f"plan[{label}]: unit {unit['name']} asks bx for "
+                        f"{key}={unit.get(key, [])}, and what it runs requires "
+                        f"{wanted}")
             peak = max(GATES[s]["peak_gb"] for s in closure)
             if unit.get("mem_gb") != float(peak):
                 failures.append(
@@ -6412,6 +6468,73 @@ def self_test(repo_root: Path) -> int:
                                               table=fixture)):
             failures.append(
                 f"plan-fixture: a unit kept its verdict when {why}")
+    # a-pass-that-could-be-a-skip-is-kept-only-from-a-landing. A gate that
+    # skips where a tool is missing keeps its pass only from a unit that runs
+    # with `--landing`, where the skip ends 3; and a unit asks bx for what the
+    # gates it runs require, through what they depend on.
+    cases += 1
+    skip_fixture = {
+        "prereq": {"cost_s": 1, "cache": True, "inputs": None, "commits": [],
+                   "peak_gb": 1, "unit_requires": {"packages": ["pkg-b"]}},
+        "skipper": {"cost_s": 1, "cache": True, "inputs": None, "commits": [],
+                    "peak_gb": 1, "deps": ["prereq"],
+                    "skips_unless_landing": "x" * 40,
+                    "unit_requires": {"needs": ["tool-a"],
+                                      "packages": ["pkg-a"]}},
+    }
+    branch_unit = plan_units({"skipper"}, rust="1.0.0", table=skip_fixture)[0]
+    landing_unit = plan_units({"skipper"}, rust="1.0.0", table=skip_fixture,
+                              landing=True)[0]
+    if branch_unit["cache"] is not False or "--landing" in branch_unit["argv"]:
+        failures.append(
+            f"plan-fixture: a gate that can skip was planned outside a landing "
+            f"as {branch_unit}; its pass could be a skip and is not kept")
+    if landing_unit["cache"] is not True \
+            or landing_unit["argv"] != ["bash", "scripts/gate", "--rust",
+                                        "1.0.0", "--landing", "skipper"]:
+        failures.append(
+            f"plan-fixture: a landing's unit of a gate that can skip was "
+            f"planned as {landing_unit}, not with --landing and its pass kept")
+    if landing_unit.get("needs") != ["tool-a"] \
+            or landing_unit.get("packages") != ["pkg-a", "pkg-b"]:
+        failures.append(
+            f"plan-fixture: a unit asks bx for needs={landing_unit.get('needs')} "
+            f"packages={landing_unit.get('packages')}, not the union of what "
+            f"it runs requires")
+
+    # every-skip-and-requirement-is-declared-in-its-shape. A gate that can skip
+    # names what it skips without, and claims `cache: True` (its pass is kept
+    # only from a landing, which `plan_units` decides); `unit_requires` holds
+    # only the keys a plan line gives bx, each a list of names.
+    cases += 1
+    for slug, spec in sorted(GATES.items()):
+        why = spec.get("skips_unless_landing")
+        if why is not None:
+            if not isinstance(why, str) or len(why.strip()) < 30:
+                failures.append(
+                    f"skip: {slug} declares skips_unless_landing={why!r}; it "
+                    f"says what the gate skips without")
+            if spec.get("cache") is not True:
+                failures.append(
+                    f"skip: {slug} can skip and is `cache: False`; a landing "
+                    f"closes the skip, so say what else keeps the pass from "
+                    f"being kept, or claim it")
+        wants = spec.get("unit_requires")
+        if wants is None:
+            continue
+        if not isinstance(wants, dict) or not wants \
+                or set(wants) - set(UNIT_REQUIRES_KEYS):
+            failures.append(
+                f"unit_requires: {slug} declares {wants!r}; it is a table of "
+                f"{', '.join(UNIT_REQUIRES_KEYS)}")
+            continue
+        for key, names in wants.items():
+            if not isinstance(names, list) or not names \
+                    or not all(isinstance(n, str) and n.strip() for n in names):
+                failures.append(
+                    f"unit_requires: {slug} declares {key}={names!r}; it is a "
+                    f"non-empty list of names")
+
     cases += 1
     unpinned = plan_units({"alone"}, rust=None, table=fixture)
     if unpinned and "--rust" in unpinned[0]["argv"]:
@@ -6652,7 +6775,7 @@ def print_plan(args, repo_root: Path) -> int:
     tree_is_head = tracked_tree_is_head(repo_root)
     head = head_commit(repo_root)
     units = plan_units(selected, rust=args.rust, tree_is_head=tree_is_head,
-                       head=head)
+                       head=head, landing=bool(args.landing))
     print(f"  selection: {reason}", file=sys.stderr)
     for slug in off_fleet:
         print(f"  NOT JUDGED HERE, hosted CI audits it after landing: {slug} "
