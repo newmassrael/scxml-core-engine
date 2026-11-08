@@ -77,6 +77,45 @@ typedef struct sce_host_send_param_s {
 } sce_host_send_param_t;
 
 /**
+ * A value as the code that holds it lends it: the name of its C type, where it
+ * is, and its size in bytes.
+ *
+ * C has no `std::any` or `Any` to hold a value of any type, and a box would
+ * need storage this backend does not allocate, so a value crosses as a view.
+ * `type` is the C name of the value's type exactly as the code spells it
+ * (`JobStatusPayload_t`), a string of static storage, by which a reader of the
+ * value tells one type from another (`SCE_HOST_VALUE` writes it with the
+ * pointer, so the two cannot disagree); `data` points into the lender's frame
+ * and is valid for the call it is handed to, as every pointer of a request is.
+ * A reader that keeps the value copies its `size` bytes, which holds the
+ * values the C11 backend writes in a value of fixed layout.
+ *
+ * No value is `type` NULL, `data` NULL and `size` 0 (`sce_host_value_none`).
+ */
+typedef struct sce_host_value_s {
+    const char *type;
+    const void *data;
+    size_t size;
+} sce_host_value_t;
+
+/** The view of the value `*pointer`, of the C type `Type`. */
+#define SCE_HOST_VALUE(Type, pointer) sce_host_value_of(#Type, (pointer), sizeof(Type))
+
+/** The view of the `size` bytes at `data`, a value of the C type named `type`. */
+static inline sce_host_value_t sce_host_value_of(const char *type, const void *data, size_t size) {
+    sce_host_value_t value;
+    value.type = type;
+    value.data = data;
+    value.size = size;
+    return value;
+}
+
+/** No value: what every request carries but a test-port send's. */
+static inline sce_host_value_t sce_host_value_none(void) {
+    return sce_host_value_of(NULL, NULL, 0u);
+}
+
+/**
  * What a `<send>` addressed to a host-served processor said.
  *
  * Every field is what the document wrote, not an interpretation of it: a
@@ -120,6 +159,16 @@ typedef struct sce_host_send_request_s {
         (SCE_MESH.md §mesh-10.7). Taken when the send executes, so a delayed
         one carries the invokeid current then, not when it fires. */
     const char *invoke_id;
+    /** The message as the value the generated code holds, for a processor
+        whose messages are values and never encodings: the test profile's
+        test-port processor, whose send carries its specific template's value,
+        a record of the type the event schema's unit declares
+        (docs/SCE_TEST_PROFILE.md §12.3; docs/adr/0091, C2). No value
+        (`sce_host_value_none`) for every other send, whose data is
+        `event_data`. A saved state does not carry it: a test-port send has no
+        delay (the test profile's P6), so none is pending when a machine is
+        saved, and a delayed host send is one of another processor. */
+    sce_host_value_t value;
 } sce_host_send_request_t;
 
 /**

@@ -1175,6 +1175,9 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                    processed now, carried back out as a W3C child's send to
                    its parent carries it (§scxml-6.4.1). */
                 _host_req.invoke_id = sm->current_event_invoke_id;
+                /* Only a test-port send carries a value (docs/SCE_TEST_PROFILE.md
+                   §12.3); this one's data is `event_data`. */
+                _host_req.value = sce_host_value_none();
 {% set host_delay_ms = action.delay_ms if (action.delay_ms is defined and action.delay_ms is not none and action.delay_ms > 0) else 0 %}
 {% set host_perform = csym_prefix ~ model.name ~ ('_perform_basic_http' if basic_http else '_perform_host_send') %}
 {% if action.delayexpr or host_delay_ms > 0 %}
@@ -5162,6 +5165,9 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
             _ready_req.send_id = ready.send_id;
             _ready_req.event_data = ready.host_event_data;
             _ready_req.invoke_id = ready.host_invoke_id;
+            /* A delayed send carries no value: a test-port send has none of
+               a delay (docs/SCE_TEST_PROFILE.md, P6). */
+            _ready_req.value = sce_host_value_none();
 {% if model.delayed_host_send_max_params > 0 %}
             _ready_req.params = ready.host_param_count > 0u ? _ready_params : NULL;
             _ready_req.param_count = (int)ready.host_param_count;
