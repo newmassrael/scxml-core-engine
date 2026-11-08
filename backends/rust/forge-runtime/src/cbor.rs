@@ -4,7 +4,8 @@
 //! The CBOR (RFC 8949) items a `sce:encoding="cbor"` codec reads and writes
 //! (SCE_FORGE.md §4.6.1): one definite-length map whose keys are small
 //! unsigned integers and whose values are unsigned integers, booleans, text
-//! strings and byte strings.
+//! strings and byte strings, or a definite-length array of maps, each a record
+//! keyed by its fields' ids as text (docs/adr/0086, section 9.2).
 //!
 //! A generated codec calls these; it spells no CBOR of its own. Written here
 //! once, beside [`SceCursor`] and [`SceSink`], rather than per codec — the
@@ -25,6 +26,8 @@ pub const MAJOR_UNSIGNED: u8 = 0;
 pub const MAJOR_BYTES: u8 = 2;
 /// Major type 3, a UTF-8 text string.
 pub const MAJOR_TEXT: u8 = 3;
+/// Major type 4, an array.
+pub const MAJOR_ARRAY: u8 = 4;
 /// Major type 5, a map.
 pub const MAJOR_MAP: u8 = 5;
 /// Major type 7, simple values (`false` = 20, `true` = 21).
@@ -78,6 +81,12 @@ pub fn write_text<S: SceSink + ?Sized>(w: &mut S, value: &str) -> Result<(), S::
 pub fn write_bytes<S: SceSink + ?Sized>(w: &mut S, value: &[u8]) -> Result<(), S::Error> {
     write_head(w, MAJOR_BYTES, crate::codec::widen_usize(value.len()))?;
     w.write_bytes(value)
+}
+
+/// Write the head of a definite-length array of `items` items: a list of
+/// records an entry holds (docs/adr/0086, section 9.2).
+pub fn write_array_head<S: SceSink + ?Sized>(w: &mut S, items: u64) -> Result<(), S::Error> {
+    write_head(w, MAJOR_ARRAY, items)
 }
 
 /// Write the head of a definite-length map of `entries` entries.
@@ -190,6 +199,12 @@ pub fn read_bytes_exact<'a>(c: &mut SceCursor<'a>, length: usize) -> Result<&'a 
     read_payload(c, len)
 }
 
+/// Read the head of a definite-length array: how many items follow. An
+/// indefinite length is refused, as a map's is.
+pub fn read_array_len(c: &mut SceCursor<'_>) -> Result<u64, CodecError> {
+    expect(c, MAJOR_ARRAY)
+}
+
 /// Read the head of a definite-length map: how many entries follow.
 pub fn read_map_len(c: &mut SceCursor<'_>) -> Result<u64, CodecError> {
     expect(c, MAJOR_MAP)
@@ -266,6 +281,23 @@ mod tests {
         assert_eq!(written(|w| write_bytes(w, &[1, 2])), [0x42, 1, 2]);
         assert_eq!(written(|w| write_bool(w, true)), [0xf5]);
         assert_eq!(written(|w| write_map_head(w, 2)), [0xa2]);
+        assert_eq!(written(|w| write_array_head(w, 2)), [0x82]);
+        assert_eq!(written(|w| write_array_head(w, 24)), [0x98, 0x18]);
+    }
+
+    #[test]
+    fn an_array_head_is_read_as_its_count_and_no_other_item_is() {
+        assert_eq!(read_array_len(&mut SceCursor::new(&[0x83])), Ok(3));
+        assert_eq!(read_array_len(&mut SceCursor::new(&[0x98, 0x18])), Ok(24));
+        // An indefinite-length array, and a map where an array stands.
+        assert_eq!(
+            read_array_len(&mut SceCursor::new(&[0x9f])),
+            Err(CodecError::CborMalformed)
+        );
+        assert_eq!(
+            read_array_len(&mut SceCursor::new(&[0xa1])),
+            Err(CodecError::CborMalformed)
+        );
     }
 
     #[test]

@@ -71,6 +71,9 @@ pub use crate::capped::{CappedBytes, CappedStr, CappedVec};
 #[cfg(feature = "alloc")]
 pub use sce_portable_bytes::HeapBytes;
 pub use sce_portable_bytes::{InlineBytes, SceBytes};
+// The language's list, hard-bounded on every profile: what a CBOR map holds a
+// list of records in (docs/adr/0086, section 7.4), and no codec container.
+pub use sce_portable_bytes::BoundedList;
 
 /// A bounded or growable sequence of `T`, as a codec's owned list field.
 ///
