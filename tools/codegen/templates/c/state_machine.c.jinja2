@@ -2545,7 +2545,8 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
 /* ── Local helpers: bounded event queue (FIFO circular buffer) ────── */
 {# C++ `EventQueueManager<EventWithMetadata>` is a class template parameterised
    on capacity-via-policy; the C11 backend instead bakes a per-fixture
-   circular buffer with `SCE_MAX_EVENTS` slots. Overflow drops silently —
+   circular buffer with `<SM>_EVENT_QUEUE_DEPTH` slots, the document's
+   `sce:capacity` or else SCE_MAX_EVENTS. Overflow drops silently —
    matching the C++ behaviour when the underlying queue rejects a push.
    docs/adr/0086, section 8.5 (a): the entry owns a copy of the event's data,
    and an event whose data does not fit the slot is refused as a full queue
@@ -2632,7 +2633,7 @@ SCE_SM_FN static void event_queue_push_moving({{ csym_prefix }}{{ model.name }}_
                                               {{ csym_prefix }}{{ model.name }}_event_queue_t *q,
                                               const {{ csym_prefix }}{{ model.name }}_event_with_meta_t *evt,
                                               char **text, size_t *text_size) {
-    if (q->count >= (uint16_t)SCE_MAX_EVENTS) {
+    if (q->count >= (uint16_t){{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_QUEUE_DEPTH) {
         event_text_free(sm, text, text_size);
         return;
     }
@@ -2651,7 +2652,7 @@ SCE_SM_FN static void event_queue_push_moving({{ csym_prefix }}{{ model.name }}_
     {{ csym_prefix }}{{ model.name }}_event_keep_members(dst, evt);
     dst->data = owned;
     dst->data_size = owned_size;
-    q->tail = (uint16_t)((q->tail + 1u) % (uint16_t)SCE_MAX_EVENTS);
+    q->tail = (uint16_t)((q->tail + 1u) % (uint16_t){{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_QUEUE_DEPTH);
     q->count = (uint16_t)(q->count + 1u);
 }
 {% else %}
@@ -2659,14 +2660,14 @@ SCE_SM_FN static void event_queue_push_moving({{ csym_prefix }}{{ model.name }}_
 SCE_SM_FN static void event_queue_push({{ csym_prefix }}{{ model.name }}_t *sm,
                              {{ csym_prefix }}{{ model.name }}_event_queue_t *q,
                              const {{ csym_prefix }}{{ model.name }}_event_with_meta_t *evt) {
-    if (q->count >= (uint16_t)SCE_MAX_EVENTS) {
+    if (q->count >= (uint16_t){{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_QUEUE_DEPTH) {
         return;
     }
     if (!{{ csym_prefix }}{{ model.name }}_event_keep(&q->buf[q->tail], evt)) {
         refuse_event_data(sm, &evt->event);
         return;
     }
-    q->tail = (uint16_t)((q->tail + 1u) % (uint16_t)SCE_MAX_EVENTS);
+    q->tail = (uint16_t)((q->tail + 1u) % (uint16_t){{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_QUEUE_DEPTH);
     q->count = (uint16_t)(q->count + 1u);
 }
 {% endif %}
@@ -2674,7 +2675,7 @@ SCE_SM_FN static void event_queue_push({{ csym_prefix }}{{ model.name }}_t *sm,
 /* Step past the oldest entry of a queue that holds one, which holds nothing
    the machine still has to free. */
 SCE_SM_FN static void event_queue_advance({{ csym_prefix }}{{ model.name }}_event_queue_t *q) {
-    q->head = (uint16_t)((q->head + 1u) % (uint16_t)SCE_MAX_EVENTS);
+    q->head = (uint16_t)((q->head + 1u) % (uint16_t){{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_QUEUE_DEPTH);
     q->count = (uint16_t)(q->count - 1u);
 }
 
@@ -7524,7 +7525,7 @@ SCE_SM_FN static void drain_inbox({{ csym_prefix }}{{ model.name }}_t *sm) {
     }
     /* sce-scratch-activity: drain */
     sm->draining_inbox = true;
-    while (applied < (uint32_t)SCE_MAX_INBOX && sm->external_queue.count < (uint16_t)SCE_MAX_EVENTS &&
+    while (applied < (uint32_t)SCE_MAX_INBOX && sm->external_queue.count < (uint16_t){{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_QUEUE_DEPTH &&
            sce_inbox_take(&sm->inbox, (unsigned char *)sm->inbox_slots, sizeof(sm->inbox_slots[0]), input)) {
         apply_inbox_input(sm, input);
         applied++;

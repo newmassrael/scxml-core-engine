@@ -599,8 +599,21 @@ typedef struct {{ csym_prefix }}{{ model.name }}_transition_info {
 } {{ csym_prefix }}{{ model.name }}_transition_info_t;
 
 /* ── Internal/external event queues — circular buffer ─────────────── */
+{% set queue_depth = (csym_prefix | upper) ~ (model.name | upper) ~ '_EVENT_QUEUE_DEPTH' %}
+/* docs/adr/0086, section 8.5 (c): the events each of the machine's two queues
+   holds at once. {% if model.event_queue_capacity %}The document declares it
+   (`sce:capacity="{{ model.event_queue_capacity }}"` on its root), so a machine
+   that takes large events can take few of them at a time and reserve no more
+   than that.{% else %}The document declares none, so it is the deployment's
+   SCE_MAX_EVENTS.{% endif %} Each entry holds the slot of `_event.data` on a
+   machine without a script engine, so the depth is what the queues cost. */
+#define {{ queue_depth }} {% if model.event_queue_capacity %}{{ model.event_queue_capacity }}u{% else %}((unsigned)(SCE_MAX_EVENTS)){% endif %}
+
+SCE_STATIC_ASSERT({{ queue_depth }} >= 1u && {{ queue_depth }} <= 65535u,
+                  "a queue's depth is at least one event and is counted in 16 bits");
+
 typedef struct {{ csym_prefix }}{{ model.name }}_event_queue {
-    {{ csym_prefix }}{{ model.name }}_queued_event_t buf[SCE_MAX_EVENTS];
+    {{ csym_prefix }}{{ model.name }}_queued_event_t buf[{{ queue_depth }}];
     uint16_t head;
     uint16_t tail;
     uint16_t count;
