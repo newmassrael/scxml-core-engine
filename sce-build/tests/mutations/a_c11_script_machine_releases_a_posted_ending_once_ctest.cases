@@ -1,0 +1,36 @@
+# Mutation cases for "a C11 machine whose data model is a script engine takes a
+# posted ending's data as storage the poster hands over, and releases it once"
+# (docs/adr/0086, section 8.6 (d)).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_c11_script_machine_releases_a_posted_ending_once_ctest.cases`.
+#
+# The inbox of such a machine holds no fixed storage for an ending's data: the
+# post hands over the poster's text with the function that releases it, as an
+# event's, and the machine calls it once, when it applies the ending or when it
+# is destroyed with the ending still in its inbox. The inbox test posts endings
+# from other threads, counts every text handed over and every release, and
+# asks that each was released exactly once and that an applied ending raised
+# its data whole. The mutants take one decision away each:
+#
+#   an applied ending's text is never released;
+#   an ending still in the inbox at destroy is never released.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^c11_integration_what_another_thread_posts_enters_through_the_inbox_64$'
+mutation_targets tools/codegen/templates/c/state_machine.c.jinja2
+mutation_oracles backends/c/tests/integration/test_what_another_thread_posts_enters_through_the_inbox.c
+
+mutation_case "an applied ending's text is never released" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "        apply_host_invoke_ending(sm, &input->as.ending.record);\n        release_inbox_input(input);\n",
+     "        apply_host_invoke_ending(sm, &input->as.ending.record);\n")
+PY
+
+mutation_case "an ending still in the inbox at destroy is never released" <<'PY'
+edit("tools/codegen/templates/c/state_machine.c.jinja2",
+     "            input->as.ending.release(input->as.ending.release_context, input->as.ending.record.data);\n",
+     "            (void)input->as.ending.release_context;\n")
+PY
