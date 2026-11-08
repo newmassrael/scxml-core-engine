@@ -5991,14 +5991,27 @@ snprintf(_message, _message_cap, \"`{event}` payload: '{id}' %s\", _refusal);\n 
 return false;\n            }}\n"
         )
     };
+    // A present text or byte string is held to its bound, which the buffer of its
+    // optional value is sized by (docs/adr/0086, section 4.4).
     let present = match elem {
-        SceType::String => refused(&format!(
-            "sce_payload_read_text(&_fields, \"{id}\", {dest}.data, sizeof({dest}.data))"
-        )),
-        SceType::Bytes => refused(&format!(
-            "sce_payload_read_bytes(&_fields, \"{id}\", {dest}.data, sizeof({dest}.data), \
-&{dest}.len)"
-        )),
+        SceType::String => c11_field_value_read(
+            id,
+            &format!(
+                "sce_payload_value_text(_value, {dest}.data, {}u)",
+                lift_text_bound(f)
+            ),
+            event,
+            "            ",
+        ),
+        SceType::Bytes => c11_field_value_read(
+            id,
+            &format!(
+                "sce_payload_value_bytes(_value, {dest}.data, {}u, &{dest}.len)",
+                lift_bytes_bound(f)
+            ),
+            event,
+            "            ",
+        ),
         SceType::Enum(r) => c11_payload_enum_read(
             static_enum_of(static_enums, &r.alias),
             &r.alias,
@@ -6016,6 +6029,24 @@ snprintf(_message, _message_cap, \"`{event}` payload: '{id}' %s\", _refusal);\n 
 return false;\n        }}\n        \
 out->{id}.present = _present_{id};\n        \
 if (_present_{id}) {{\n{present}        }}\n    }}\n"
+    )
+}
+
+/// The statements that read the payload field `id` of `event` by `value_read`,
+/// a value reader of `sce/event_payload.h` handed the field's value as
+/// `_value` (`sce_payload_value_text(_value, buf, 8u)`), each line led by
+/// `indent`: the reader a value of the type is read by at any depth, so a text
+/// or a byte string at the top level is held to its bound as one inside a
+/// composition is (docs/adr/0086, section 4.4), as the C11 `<sce:lift>` reads a
+/// field. A refusal returns false with the sentence the caller raises.
+fn c11_field_value_read(id: &str, value_read: &str, event: &str, indent: &str) -> String {
+    format!(
+        "{indent}{{\n{indent}    const char *_value = NULL;\n{indent}    \
+_refusal = sce_payload_field(&_fields, \"{id}\", &_value);\n{indent}    \
+if (_refusal == NULL) {{\n{indent}        _refusal = {value_read};\n{indent}    }}\n{indent}}}\n\
+{indent}if (_refusal != NULL) {{\n{indent}    \
+snprintf(_message, _message_cap, \"`{event}` payload: '{id}' %s\", _refusal);\n{indent}    \
+return false;\n{indent}}}\n"
     )
 }
 
@@ -6138,10 +6169,21 @@ pub fn build_c11_event_payload(
                 continue;
             }
             let read = match f.sce_type.present_type() {
-                SceType::Bytes => format!(
-                    "sce_payload_read_bytes(&_fields, \"{id}\", out->{id}, sizeof(out->{id}), \
-&out->{id}_len)"
-                ),
+                // A byte string is held to its bound at the lift, which the
+                // buffer the payload holds it in is sized by
+                // ([`c11_payload_field_decl`], docs/adr/0086, section 4.4).
+                SceType::Bytes => {
+                    field_reads.push_str(&c11_field_value_read(
+                        id,
+                        &format!(
+                            "sce_payload_value_bytes(_value, out->{id}, {}u, &out->{id}_len)",
+                            lift_bytes_bound(f)
+                        ),
+                        event,
+                        "    ",
+                    ));
+                    String::new()
+                }
                 SceType::Enum(r) => {
                     field_reads.push_str(&c11_payload_enum_read(
                         static_enum_of(static_enums, &r.alias),
@@ -6154,28 +6196,25 @@ pub fn build_c11_event_payload(
                 }
                 SceType::String => {
                     // The machine owns where a lifted text lives — see
-                    // `lift_storage`. Bounded by the data buffer the text
-                    // arrived in, which nothing longer can have fitted, and
-                    // not by the field's `sce:max-size`: that bound is held
-                    // where the text is written, as every other engine holds
-                    // it, so a text past it is an assignment that fails inside
-                    // the transition and not a payload refused before one.
-                    let cap = "SCE_MAX_DATA_LEN";
+                    // `lift_storage`, which holds the field's bound and its
+                    // terminator. The text is held to that bound at the lift,
+                    // the top level included, so a text past it refuses the
+                    // payload before any transition reads it, as on every
+                    // other engine (docs/adr/0086, section 4.4).
+                    let bound = lift_text_bound(f);
                     let lifted = c11_lifted_text(event, id);
                     lift_storage.push_str(&format!(
                         "    /* NL\u{2192}IR Item C1 Path A: where `{event}`'s lifted `{id}` lives \
-(the payload\n       field is a borrowed `const char *`). */\n    \
-char {lifted}[{cap}];\n"
+(the payload\n       field is a borrowed `const char *`): its bound and the terminator. */\n    \
+char {lifted}[{bound}u + 1u];\n"
                     ));
-                    field_reads.push_str(&format!(
-                        "    _refusal = sce_payload_read_text(&_fields, \"{id}\", \
-sm->{lifted},\n                                     \
-sizeof(sm->{lifted}));\n    \
-if (_refusal != NULL) {{\n        \
-snprintf(_message, _message_cap, \"`{event}` payload: '{id}' %s\", _refusal);\n        \
-return false;\n    }}\n    \
-out->{id} = sm->{lifted};\n"
+                    field_reads.push_str(&c11_field_value_read(
+                        id,
+                        &format!("sce_payload_value_text(_value, sm->{lifted}, {bound}u)"),
+                        event,
+                        "    ",
                     ));
+                    field_reads.push_str(&format!("    out->{id} = sm->{lifted};\n"));
                     String::new()
                 }
                 scalar => c11_scalar_payload_read(scalar, id, &format!("out->{id}")),
