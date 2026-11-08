@@ -229,6 +229,44 @@ install_inputs = ["scripts/install_genmc.sh"]
 packages = ["g++-14", "clang-19", "llvm-19-dev", "cmake", "ninja-build", "libffi-dev", "zlib1g-dev", "libedit-dev"]
 needed_by = ["genmc-queue"]
 
+# THE PYTHON THE PYTHON SUITES RUN IN: a virtual environment holding the Python runtime's
+# dependencies as `backends/python/runtime/pyproject.toml` pins them (`lupa>=2.0`), and pytest and
+# the packages tools/authoring and tools/targets import. The runtime imports `lupa.lua54`, which
+# lupa ships from 2.0 on, and the build machines' only lupa was the distribution's python3-lupa
+# 1.14.1 (measured 2026-11-08 on one of them): under the system python3 every test that imports
+# the runtime failed at collection, after a gate's precondition that asked only for `import lupa`
+# had passed. A red that blamed the code for a property of the machine.
+#
+# `scripts/install_sce_python.sh` is the one place the build is written, as `install_genmc.sh`
+# is GenMC's: provision copies it to the machine with pyproject.toml (`install_inputs`), so the
+# pin is read from the runtime's own declaration and a changed pin is a new store entry. The
+# version is the script's `SCE_PYTHON_REV`, and `path` carries it, because bx tells a machine
+# has the tool by running `path`, not by comparing what built it: a change to what the
+# environment holds raises the revision, or no machine that has the old one builds it again.
+# `prefix_link` makes the whole venv the store entry, because a venv's python finds its packages
+# through the `pyvenv.cfg` beside its `bin/`, which a link to the one file would not reach.
+#
+# `check` is all that `python --version` has to say: the venv's python is the machine's own
+# python3, 3.10 on Ubuntu 22.04 and 3.12 on 24.04. What the environment holds is the gates'
+# precondition to check (`sce_gate_python_requires_lupa` in scripts/gates/lib.sh), against the
+# floor pyproject.toml pins. `python3-venv` is the package Debian and Ubuntu put `venv` in.
+#
+# `needed_by` names the three gates that run Python against the runtime: `w3c-python` (and with
+# it `w3c-python-bindings`, whose name contains it), `authoring-core` and `targets`, whose
+# statecharts run through the generated Python. ` targets` keeps its leading space so that
+# `--all-targets` on a cargo line does not match it. `forge-python` is not here: the forge
+# runtime's suites import nothing of the AOT runtime, and run on any python3.
+[platform.linux.tools.sce-python]
+version_file = "scripts/install_sce_python.sh"
+version_pattern = '^SCE_PYTHON_REV="([0-9]+)"'
+path = "~/.local/share/sce-python/{version}/bin/python"
+check = "Python 3."
+prefix_link = "~/.local/share/sce-python/{version}"
+install = "SCE_PYTHON_ROOT={prefix} bash scripts/install_sce_python.sh"
+install_inputs = ["scripts/install_sce_python.sh", "backends/python/runtime/pyproject.toml"]
+packages = ["python3-venv"]
+needed_by = ["w3c-python", "authoring-core", " targets"]
+
 # The two named commands, each a table of its own: in platform tables a command
 # is `[commands.<name>]` with `run`, and with one platform it runs there. Until
 # 2026-11-04 they were `build = "..."` and `verify = "..."` lines of one
