@@ -1,0 +1,42 @@
+# Mutation cases for "a C11 reason that quotes a value of the run is measured
+# at its text plus the quote's bound".
+#
+# Run with:
+#   scripts/mutate sce-build/tests/mutations/a_c11_reason_that_quotes_a_value_is_sized_by_its_bound.cases
+#
+# docs/adr/0086, section 8.6 (b): a row of the table of reasons may quote a
+# value of the run (`{v}`), and each quote carries a bound the build knows: a
+# bound the runtime publishes, which the machine checks, or one the document's
+# text gives. The unit tests of `c11_reasons` measure a quoting reason, ask
+# for its format, ask which bounds a machine checks, and hold each published
+# bound to its header. Each case breaks one link: the quote adds nothing to
+# the measure, a published bound is not checked, a `%` of the document is
+# read as a conversion, the build's bound drifts from the header's.
+
+mutation_tests -p sce-build --lib forge::c11_reasons
+mutation_targets sce-build/src/forge/c11_reasons.rs
+mutation_oracles sce-build/src/forge/c11_reasons.rs
+
+mutation_case "a quote adds nothing to the reason's measure" <<'PY'
+edit("sce-build/src/forge/c11_reasons.rs",
+     "                    longest.saturating_add(usize::try_from(quote.bound()).unwrap_or(usize::MAX));\n",
+     "                    longest.saturating_add(0);\n")
+PY
+
+mutation_case "a bound of the runtime a reason quotes is never checked" <<'PY'
+edit("sce-build/src/forge/c11_reasons.rs",
+     "                rely(self.row, *bound)?;\n",
+     "                let _ = bound;\n")
+PY
+
+mutation_case "a percent the document wrote is left a conversion" <<'PY'
+edit("sce-build/src/forge/c11_reasons.rs",
+     "                format.push_str(&hole.replace('%', \"%%\"));\n",
+     "                format.push_str(hole);\n")
+PY
+
+mutation_case "the build sizes a payload refusal shorter than its header publishes" <<'PY'
+edit("sce-build/src/forge/c11_reasons.rs",
+     "    name: \"SCE_PAYLOAD_REFUSAL_MAX_LEN\",\n    max_len: 120,\n",
+     "    name: \"SCE_PAYLOAD_REFUSAL_MAX_LEN\",\n    max_len: 119,\n")
+PY

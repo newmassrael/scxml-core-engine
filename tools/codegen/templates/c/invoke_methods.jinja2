@@ -599,8 +599,11 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
 {% if 'error.execution' in model.events %}
                 /* sce-scratch-activity: reason */
                 char *const _host_inv_message = sm->scratch.message;
+                {# docs/adr/0086, section 8.6 (b): the sentence is the request
+                   reader's, which its header bounds, so the reason has a bound
+                   the build knows. #}
                 snprintf(_host_inv_message, sizeof(sm->scratch.message),
-                         "<invoke> <param name='{{ param.name | escape_c }}'> cannot be its request field: '{{ param.name | escape_c }}' %s",
+                         {{ reason_format("invoke_param_request_field_refused", ["request_refusal"], param.name) }},
                          _host_inv_refusal_{{ loop.index0 }});
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, _host_inv_message);
