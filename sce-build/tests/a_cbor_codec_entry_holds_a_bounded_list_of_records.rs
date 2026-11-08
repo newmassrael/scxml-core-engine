@@ -390,6 +390,35 @@ fn the_c11_map_holds_each_list_in_a_fixed_array_of_the_schemas_payload() {
 }
 
 #[test]
+fn the_go_map_holds_each_list_in_a_slice_of_the_schemas_payload() {
+    holds(
+        Language::Go,
+        &generated_fixture(Language::Go),
+        &[
+            "\"example.com/sce-forge/cbor_causal_entry\"",
+            ".CborCausalEntryPayload\n",
+            // A read past the bound is refused before any record is read.
+            "if n > 2 {",
+            "if n > 3 {",
+            "record, err := decodeCodecCborRecordListRecordCausalEntry(c)",
+            "v, err := codec.CborReadText(c, 16)",
+            "record.Author = v",
+            // The slice carries no bound, so the encode refuses past it.
+            "if len(v) > 2 {",
+            "if err := codec.CborWriteArrayHead(w, uint64(len(v))); err != nil {",
+            "if err := encodeCodecCborRecordListRecordCausalEntry(w, &v[item]); err != nil {",
+            "if len(record.Author) > 16 {",
+            "if err := codec.CborWriteMapHead(w, 2); err != nil {",
+        ],
+        "func encodeCodecCborRecordListRecordCausalEntry(",
+        [
+            "codec.CborWriteText(w, \"seq\")",
+            "codec.CborWriteText(w, \"author\")",
+        ],
+    );
+}
+
+#[test]
 fn a_record_with_a_field_no_codec_writes_is_refused_by_name() {
     let text = document(
         "",
