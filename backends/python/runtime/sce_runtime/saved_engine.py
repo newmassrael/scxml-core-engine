@@ -335,6 +335,8 @@ def _save_pending(engine: Any, policy: Any, wall_now_ms: int) -> List[SavedSend]
             )
         if entry.host_send is not None:
             request = entry.host_send
+            # The request's value is not saved: a send that carries one has no
+            # delay, so it is never pending here.
             act = SavedAct(
                 kind=ACT_HOST,
                 processor_type=request.processor_type,
@@ -759,6 +761,8 @@ def _arm_pending(engine: Any, pending: Sequence[_ReadSend], wall_now_ms: int) ->
                 act.send_id,
                 None,
                 "",
+                # The value is left None: a send that carries a value has no
+                # delay, so none is saved.
                 host_send=HostSendRequest(
                     processor_type=act.processor_type,
                     event_name=act.event,
