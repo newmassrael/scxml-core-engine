@@ -3,8 +3,12 @@
 - Status: Accepted (2026-11-03). Written at the owner's order of that day, which chose this structure over an
   earlier draft (recorded in "Alternatives rejected"), under the rule of 2026-10-26 and 2026-10-27: the most
   long-term correct structure, textbook in its foundations, cost ignored. The owner accepted the draft the same day
-  with the answers recorded in "Owner's answers".
-- Date: 2026-11-03
+  with the answers recorded in "Owner's answers". Amended after acceptance on 2026-11-08, at the owner's order: the
+  Mesh core's causal route is written to the owner's answers Q1 to Q8 of that day (sections 3 and 3.2 rewritten,
+  section 3.3 new, section 9.2, "Landing order", "Owner's answers"). The author of a dot is a replica, membership
+  is a numbered view, a copy keeps its own highest number in its journal and begins a new incarnation when it cannot
+  know it, and landing 3 is split into a codec step and one step per Mesh core.
+- Date: 2026-11-03; amended 2026-11-08
 - Amends:
   - ADR 0046 sections 1 to 4, 6 and 7: a change of several operations is no longer parts held until whole; it is one
     message, and the list keeps no tombstones and no held parts;
@@ -21,14 +25,20 @@
   - the event-schema grammar: an event schema's field may be a bounded list of records (section 6), in the forge
     AST, `sce-build`'s validation, every generated backend's payload codec, the Interpreter's lowering and the Mesh
     codec;
-  - the Mesh core (`SCE_MESH.md` section 10): a causal delivery setting beside `ordering:` and `receipt:`;
+  - the Mesh core (`SCE_MESH.md` section 10): a causal delivery setting beside `ordering:` and `receipt:`, its
+    group and view, the envelope's tag entries and the control message `causalVector`, the standard Mesh algorithms
+    of the rule (`stdlib/mesh`), and the four Mesh cores (Rust, C++, Kotlin, Swift);
+  - the CBOR codec (`sce-build/src/forge/cbor_codec.rs` and every backend's CBOR codec): an entry may be a bounded
+    list of records (answer Q1);
   - `sce-rust-trust` (`message.rs`, `chain.rs`, `trust.rs`), `sce-rust-relay`, `sce-rust-peer`, `sce-rust-peer-capi`;
     `docs/SCE_SHARED_LIST_TRUST.md`, `docs/SCE_SHARED_LIST_RELAY.md`, `docs/SCE_SHARED_LIST_PEER_ABI.md`;
   - the list's scenarios and the seven drivers that replay them, the world tests of the list, the saved-shape pin,
     and every generated tree of the list.
 - Related: ADR 0034 (a shared list is held by its members; the relay only relays), ADR 0044 (the revisions of a
   schema), ADR 0045 (a standard statechart that saves is a promise about its shape), ADR 0077 (a declared bound is
-  part of a field's type), ADR 0078 (a consumer follows SCE one landing at a time), ADR 0080 (a device's relay token).
+  part of a field's type), ADR 0078 (a consumer follows SCE one landing at a time), ADR 0080 (a device's relay token),
+  ADR 0086 (an event's field may hold a bounded list: landing 1 of this decision), ADR 0093 (a copy's durable state is
+  its journal, and its own change is taken in once its layer accepts it).
 
 ## Context
 
@@ -163,12 +173,17 @@ tombstones, no digest, no settle round. Compaction happens at causal stability, 
 
 ### 3. Delivery is a layer below the list, with one rule in two places
 
-**The tag.** The layer tags each change it accepts from its source with its **dot**, `(author, seq)`, the author's
-node and its number among the author's changes, from 1 with no gap, and its **causal context**, the layer's version
-vector of what it had delivered to that copy when it accepted the change (one `(author, seq)` entry per author it
-delivered anything of; at most `shared_roster`). The list never sees the tag. A context taken when the change is
-handed down may name a change delivered to the copy's queue that the list had not yet taken when it prepared; that
-overstates the change's causal past, which only orders more than needed and is never unsafe.
+(Amended 2026-11-08, answers Q2, Q3, Q6 and Q7: the author is a replica, the members are a numbered view, the
+source's change is answered by a verdict, and a copy's own highest number is durable. Section 3.3 is new.)
+
+**The tag.** The layer tags each change it accepts from its source with its **dot**, `(author, seq)`: the author is
+the source's **replica identity**, one incarnation of one member of the group (section 3.3), and `seq` is the change's
+number among that replica's changes, from 1 with no gap. It also tags it with its **causal context**, the layer's
+version vector of what it had delivered to that copy when it accepted the change: one `(author, seq)` entry per
+replica of the current view it delivered anything of, so at most the view's size (section 3.3), which `shared_roster`
+bounds for the list. The list never sees the tag. A context taken when the change is handed down may name a change
+delivered to the copy's queue that the list had not yet taken when it prepared; that overstates the change's causal
+past, which only orders more than needed and is never unsafe.
 
 **The rule, the same in both places.** For a copy whose delivered vector is `D`, a change tagged `(a, s)` with
 context `C`:
@@ -179,13 +194,25 @@ context `C`:
 - otherwise it is held until it is deliverable; a gap is repaired by asking a peer for the changes the copy's vector
   lacks, never skipped.
 
-The source's own change counts as delivered at the source when the layer tags it (`D[self]` becomes its `s`). A copy
-that does not know its own highest number (restored from an older save, set up again from its seed) learns it from
-its peers before it tags anything, so that no number is used twice (ADR 0083 section 3.4).
+**The source's own change: offer and verdict.** The layer answers each change its source offers with a verdict
+(ADR 0093 section 3.1), and the copy takes the change in only after it. The core's verdicts are ADR 0093 section
+6.4's. The Mesh route answers `Accepted(dot)`, the dot it tagged the change with, or `Refused(reason)`. An accepted
+change counts as delivered at the source when it is tagged (`D[self]` becomes its `s`). A refused change takes no
+number and is taken in by no copy; a layer whose log has no room left for a change not yet stable refuses it, and
+the list tells that refusal as `noRoomForHistory` (section 2.5).
 
-**Stability.** A change is stable when every member's delivered vector covers it. The stable cut is the pointwise
-minimum of the latest delivered vector known from each member of the roster. Every member's vector is known from the
-contexts of its changes and, for a member that has not written since, from a mark the layer sends of its own vector.
+**A copy's own number is durable.** On the Mesh route the host records each accepted change with its dot in the
+copy's journal, in the transaction of ADR 0093 section 1.3, and the layer releases the change to no peer before that
+record is committed. A restart reads the replica identity and its highest number from the journal and continues
+after it. A crash between the tag and the commit loses a number no peer has seen and no copy took in, so using it
+again names no second change. A copy that cannot know its highest number (restored from an older save, or set up
+again from its seed) does not ask its peers for it: it begins a new incarnation, with a new replica identity
+(section 3.3). The core's numbers are its chain's, which it keeps in its sealed state (section 3.1).
+
+**Stability.** A change is stable when every member of the current view has delivered it. The stable cut is the
+pointwise minimum, over the replicas of the current view, of the latest delivered vector known from each; a member
+whose vector is not known yet holds its column of the cut at 0. Every member's vector is known from the contexts of
+its changes and, for a member that has not written since, from a mark the layer sends of its own vector.
 
 #### 3.1 For a host with a core: the core is the layer
 
@@ -206,22 +233,104 @@ contexts of its changes and, for a member that has not written since, from a mar
 
 #### 3.2 For a copy without a core: the Mesh core is the layer
 
-- **A binding setting.** A route a deploy binds with `delivery: causal` (a Mesh-core setting beside `ordering:` and
-  `receipt:`, `SCE_MESH.md` section 5, "Mesh-core delivery settings") is a causal broadcast group: the sending side
-  stamps each envelope with the dot and the context (optional CBOR envelope fields, as `sequence_no` is, section
-  10.6.3); the receiving side applies the rule above before dispatch, and keeps what it sent and delivered, until it
-  is stable, to answer a peer's repair.
+(Rewritten 2026-11-08 to answers Q1 to Q8.)
+
+- **A binding setting that names its group.** A route a deploy binds with `delivery: causal` (a Mesh-core setting
+  beside `ordering:` and `receipt:`, `SCE_MESH.md` section 5, "Mesh-core delivery settings") is a causal broadcast
+  group, and names the group and its initial view:
+
+  ```yaml
+  bindings:
+    "#people":
+      transport: wss
+      delivery: causal
+      group:
+        name: people
+        view: [phone/list, laptop/list, tablet/list]   # the initial view, epoch 0
+  ```
+
+  `group:` is the binding's own key. `members:` keeps its one meaning, the members of a DDS or Zenoh pool
+  (`SCE_MESH.md` section 14.4), and is not read on a causal binding. Each entry of `view` names one instance the
+  deploy declares; the example's spelling `<device>/<machine>` shows the shape, and the landing fixes it within the
+  deploy grammar. Every member sends to the route and reads it.
+- **The tag on the envelope.** The sending side stamps each envelope with the tag, as optional CBOR envelope entries,
+  as `sequence_no` is (section 10.6.3): the author's replica identity, the number, the view's epoch, and the context
+  as a bounded list of `(author, seq)` records in the envelope's own CBOR map. A CBOR codec entry holds a scalar
+  only today, so the codec gains entries of a bounded list of records first (Landing order, step 3a; answer Q1). A
+  context written as bytes inside a byte string is not offered: it would be a second encoding of one value, outside
+  the type grammar every backend generates from.
+- **The rule before dispatch.** The receiving side applies the rule of section 3 before the engine sees anything. An
+  envelope tagged with another epoch than the receiver's current view, or by a replica the view does not hold, is
+  not delivered and is raised as `error.communication` (a row of `SCE_MESH.md` section 16.7 that the landing adds).
+- **One control message, `causalVector`.** A new variant of `PatternKind` (`stdlib/mesh/pattern_kind.scxml`) is
+  the layer's only control message and never reaches an engine. It carries its sender's replica identity, the view's
+  epoch and its delivered vector, and it serves two ends: the **anti-entropy summary**, to which a receiver answers
+  with every change of its log that the vector lacks, sent as the original envelopes with their tags intact; and the
+  **mark** of a member that has not written since, which the receiver records as that member's latest known vector
+  for the stable cut.
 - **Repair, not skipping.** A causal route has no gap timeout: section 10.6's fast-forward drops a gap, which would
-  lose an effector for good. The repair is anti-entropy: peers exchange vectors on a period and when a link is back,
-  and each sends the changes the other's vector lacks. That is what `record_list.resync` and the digest walk did,
-  done once in the layer for every document that needs it.
+  lose an effector for good. Each member sends `causalVector` on a period and when a link is back. That is what
+  `record_list.resync` and the digest walk did, done once in the layer for every document that needs it.
+- **Retention until stable.** The layer keeps every change it sent and every change it delivered until the stable
+  cut passes it, to answer repairs, and drops it there (section 4.2). The log's room is a bound the deployment sets;
+  an offer the log has no room for is refused (section 3, "offer and verdict").
 - **No machine-level relay.** The route `#people` is one group every copy sends to and reads; a transport without a
   topic is realised by the Mesh core forwarding envelopes at a relay node with their tags intact. A hub machine that
   passed changes on would re-send them under its own identity, which is why the hub's relay goes (section 2.1). The
   hub flag of `record_list.join` keeps no role in the list and is retired.
-- **Dedup and ordering.** Section 10.5's dedup window and section 10.6's per-source buffer are subsumed on a causal
-  route by the vector, which dedups exactly and orders causally; the two settings are refused beside `delivery:
-  causal` on one binding, so a route has one delivery rule.
+- **One delivery rule per binding.** Section 10.5's dedup window and section 10.6's per-source buffer are subsumed
+  on a causal route by the vector, which dedups exactly and orders causally. A causal binding skips the dedup window
+  (the build's `needs_dedup` is false for it). `ordering:` beside `delivery: causal` on one binding is refused with
+  a new code, `mesh/deploy-delivery-conflict`, and so is a machine's `dedup:` section when every binding it would
+  reach is causal: that section would read as configured and filter nothing, which is why `window_size: 0` is
+  refused too (section 10.5).
+- **One rule on every core.** The rule, the merge of a delivered vector, what a vector lacks and the stable cut are
+  written once, as standard Mesh algorithms (`stdlib/mesh`), and generated for each language; each core keeps the
+  state they are applied to and the envelopes themselves, as it does for sections 10.5 and 10.6. Four cores take the
+  route: Rust (the reference), then C++, Kotlin and Swift, all before landing 4. Until its core has landed, a
+  language refuses `delivery: causal` at build time, by name; no build ignores the setting.
+
+#### 3.3 Views and incarnations
+
+(New 2026-11-08, answers Q2, Q3 and Q6.)
+
+1. **A replica is one incarnation of one member.** The author of a dot is a replica identity that is unique within
+   the group and never used again (ADR 0093 section 4). It is not the machine name, the envelope's `source`
+   (`SCE_MESH.md` section 10.9): a machine name names a kind, and two instances of one machine would share a column
+   of every vector, while a refusal of the duplicate would forbid running a machine more than once. It is not
+   `routing_id` either (section 10.9): a router draws that at each construction, so it changes at every restart
+   while a replica's numbers continue, and it keeps its own role, the self-filter of an echo. The replica identity is
+   a 16-byte UUID v7 the layer draws when an incarnation begins, kept in the copy's journal (ADR 0093 section 1.1)
+   from that moment, beside the highest number the incarnation used. Section 10.9's invariant 5 keys a sender's
+   window and buffer on `source` and foresaw a second axis for a machine hosted more than once; the causal route
+   keys on the replica identity, a stable axis.
+2. **A copy that cannot know its own highest number begins a new incarnation.** A normal restart continues from its
+   journal (section 3). A copy restored from an older save, or set up again from its seed, draws a new replica
+   identity, so no dot is used twice, which is crash recovery with incarnation numbers. Asking the peers for the
+   highest number is unsafe: the change with that number may be held only by a member that is offline. The members
+   that answer report a lower number, the copy gives its next change the dot of the change that member holds, and
+   when the member comes back one dot names two contents. The rule then drops whichever arrives second as delivered
+   already, so copies that took the first never take the second, and the group diverges for good. No answer from
+   the members reachable now bounds what an unreachable one holds; the copy's own journal does, and a fresh identity
+   needs no bound. The old incarnation's changes stay delivered, and its column stays in the view until a view
+   change removes it.
+3. **Membership is a numbered view, `(epoch, members)`.** As in virtual synchrony (Birman and Joseph 1987; Chockler,
+   Keidar and Vitenberg, "Group Communication Specifications: A Comprehensive Study", ACM Computing Surveys 33(4),
+   2001), the group's members are a view with an epoch. The deploy gives the initial view, epoch 0. Each member of a
+   view is held by one incarnation at a time, whose replica identity the member's first envelope of the epoch
+   presents. Every tagged envelope and every `causalVector` carries its epoch; stability and the cut are computed
+   over the current view's members; a context holds at most one entry per replica of the view.
+4. **Changing the view may land later; the model is view-based from the start.** Join and leave (and a member's new
+   incarnation, which is the old incarnation's leave and the new one's join) are a protocol of their own (Landing
+   order, step 7). The data model, the envelope and the rule carry the epoch from landing 3 on, so that protocol adds
+   messages and changes none. Until it lands, epoch 0 is the only view: a second replica identity for a member is
+   not delivered, so a copy restored from an older save or set up from its seed is cut off from its group, and its
+   old incarnation's column holds the stable cut where it stopped. A deployment plans for that until step 7.
+
+For a host with a core, ADR 0093 section 4.1 governs a device's incarnations: a device set up from its seed alone
+joins as a new node, and one that holds an older sealed state waits for its own chain. That wait is on the relay,
+which holds every link a chain published, since a link reaches every other device through it; on a Mesh route no
+one place holds every change, which is why the copy there does not wait (decided while writing, below).
 
 ### 4. Compaction at causal stability
 
@@ -345,9 +454,48 @@ today's list (parts over a route with no causal layer, the per-part recall) befo
    per change, and the clock at or past every stamp held; a rebuild ends with the state before it. On today's rule
    the schedules of cases (a) and (b), and the snapshot past a settle, fail.
 2. **The rule, per layer.** In `sce-rust-trust`/`sce-rust-peer`: a change is not delivered before its context, is
-   delivered once whatever the relay repeats, and a gap is fetched, never skipped. In the Mesh core (C++ and Rust):
-   the same rule on a `delivery: causal` route, repair by vectors, and the refusal of `ordering:` or a dedup window
-   beside it.
+   delivered once whatever the relay repeats, and a gap is fetched, never skipped. In the Mesh core, on each of the
+   four cores as it lands (amended 2026-11-08), the tests below; each names the change to the rule that turns it red,
+   which the landing checks once against that mutant:
+   - **Drop.** A change with `s <= D[a]`, given again after it was delivered, is not delivered a second time. Red if
+     `<=` becomes `<`.
+   - **Deliver.** The next change of an author whose context is covered is delivered once and raises `D[a]` to `s`,
+     so that author's following change is delivered next. Red if `D[a]` is not raised.
+   - **Hold, a gap of the author.** A change with `s > D[a] + 1` is held, and delivered once the change before it is.
+     Red if `s = D[a] + 1` is weakened to `s > D[a]`.
+   - **Hold, an uncovered context.** A change whose context names a change of another author not yet delivered is
+     held until that change is. Red if the check `C[b] <= D[b]` is removed.
+   - **No gap timeout.** A held change stays held however long the world's time runs, and is delivered only after
+     the change before it is repaired. Red if a gap timeout fast-forwards the author's column.
+   - **Repair by vector.** A copy that lost a change receives it after one `causalVector` exchange, on the period
+     and when its link is back. Red if what a vector lacks is computed as empty, or if a link that comes back sends
+     no vector.
+   - **The stable cut.** The cut is the pointwise minimum over the current view, with a member not heard from at 0.
+     Red if the minimum becomes a maximum, or if a member whose vector is unknown is left out.
+   - **The mark.** A member that has not written moves the cut by its `causalVector` alone. Red if a received
+     vector is not recorded as that member's latest.
+   - **Retention.** The log drops a change once the cut passes it and not before, and a repair asked for a change
+     the log still holds is answered. Red if the log is pruned at the copy's own delivered vector instead of the cut.
+   - **The verdict.** An offer the log has no room for is answered `Refused` and takes no number, so the copy's next
+     accepted change is delivered at every peer. Red if the number is taken before the refusal.
+   - **Write-ahead.** No accepted change reaches a peer before the host commits its journal record. Red if the core
+     transmits at the tag.
+   - **Incarnation.** A copy started without a trustworthy journal tags under a new replica identity, and a world in
+     which the old incarnation's last change sits at an offline member ends with no dot naming two contents. Red if
+     the copy reuses its previous identity, or continues from the highest number its reachable peers report.
+   - **The view.** An envelope of another epoch, or of a replica the view does not hold, is not delivered and is
+     raised. Red if the epoch check is removed.
+   - **The settings.** `ordering:` beside `delivery: causal`, and a machine's `dedup:` section that reaches only
+     causal bindings, are refused with `mesh/deploy-delivery-conflict`; a causal binding's `needs_dedup` is false.
+     Red if either refusal is removed, or if the build's per-binding policy ignores `delivery:`.
+   - **The language refusal.** A language whose core has not landed refuses `delivery: causal` by name. Red if the
+     refusal is removed, which builds the binding as a plain route.
+   - **The wire.** An envelope with the tag entries is written to the same bytes by every core (one golden vector).
+     Red if one core numbers an entry's key otherwise.
+   - **The world.** In `backends/rust/world`, three copies on links that lose, duplicate and reorder deliver every
+     change exactly once, in an order that is a linear extension of the contexts, with no gap skipped, and their
+     logs drop to the cut once the links are quiet. Red if the hold branch delivers, or if repair is removed (a lost
+     change then never arrives).
 3. **The list, on every lane.** New scenarios `record_list_concurrent_clears` (case a given as two concurrent changes
    in both orders: `y` gone, nothing held, the parent told once), `record_list_out_of_causal_order_is_not_given` (a
    change and the one it writes over, given in their causal order, the only order a layer gives), and
@@ -364,13 +512,30 @@ today's list (parts over a route with no causal layer, the per-part recall) befo
 
 1. **The event-schema list field** (section 6), on every backend, with its own scenarios; nothing of the list moves.
 2. **The relay** (ADR 0083 landing 1, protocol 2 and `conflict`), unchanged and independent.
-3. **The Mesh core's causal route** (section 3.2), with its tests; nothing uses it yet.
+3. **The Mesh core's causal route** (sections 3.2 and 3.3), with its tests; nothing uses it yet. Amended 2026-11-08
+   (answers Q1 and Q8) into lettered steps, so that landings 4 to 6, which other decisions cite by number, keep their
+   numbers:
+   - **3a. CBOR codec entries of a bounded list of records** (answer Q1), before every core: ADR 0086's one type
+     grammar applied to a CBOR codec's entry, in `sce-build/src/forge/cbor_codec.rs` (whose entries take a scalar
+     only today) and in the CBOR codec of every backend that generates one (Rust, Kotlin, C++, Go, Python, C11,
+     Swift), with C11's sizing, fixtures and conformance. The envelope does not move in this step.
+   - **3b. The route on the Rust core, the reference**: the setting with its group and view, its refusals and
+     `mesh/deploy-delivery-conflict`; the envelope's tag entries and `causalVector`; the standard Mesh algorithms of
+     the rule, the merge, what a vector lacks and the cut; the Rust core's offer and verdict, write-ahead release,
+     repair, retention, cut and mark, and its replica identity and incarnations; the tests of section 9.2 and the
+     world test. Every Mesh tree is regenerated from `stdlib/mesh` in the same step, and the other three languages
+     refuse `delivery: causal` by name.
+   - **3c. C++**, **3d. Kotlin**, **3e. Swift**: each core applies the same generated algorithms, takes the tests of
+     section 9.2, and lifts its language's refusal. All three land before landing 4.
 4. **The list at change units, with ADR 0083 step 2 reworked**: `record_list.change`, the effect-only list, the
    journal per change, recall and restore, the scenarios on seven lanes, the world tests over the causal route, the
    saved-shape pin, every generated tree regenerated. The branch `adr0083-l2-journal` is reworked into this landing.
 5. **The core** (ADR 0083 landing 3 at change units): one operation per change, `Link.context`, delivery by the rule,
    stability and its mark, history in causal order, the fold of the second domain, `sce-trust/event/3` once, ABI 7.
 6. **The hosts**, one landing each (ADR 0078); a host that pins SCE takes landings 4 and 5 together.
+7. **View changes on the Mesh route** (section 3.3.4, added 2026-11-08): join, leave and a member's new incarnation,
+   on every core, with their tests. It may land after landing 4; until it does, a member restored from an older save
+   or set up from its seed is cut off from its group, and a deployment of a causal route plans for that.
 
 ## Consequences
 
@@ -379,7 +544,10 @@ today's list (parts over a route with no causal layer, the per-part recall) befo
 - The list is the effect and nothing else; it holds no tombstones, which ADR 0046 section 2 kept until a settle.
 - Dedup, causal order, repair and stability are one layer's, with one rule, in the core and in the Mesh core.
 - A settle needs no round of hashes among the copies: stability is read from the vectors the layer keeps.
-- One more list-valued event field kind in the toolchain, on every backend.
+- One more list-valued event field kind in the toolchain, on every backend, and a CBOR codec entry of a bounded list
+  of records (landing 3a).
+- On the Mesh route a dot's author is a replica of a numbered view; a copy that lost its journal begins a new
+  incarnation and, until view changes land (landing 7), is cut off from its group.
 - A deployed list moves across one protocol cut, folded once into a snapshot; a device not moved is cut off until it
   moves.
 
@@ -401,6 +569,15 @@ today's list (parts over a route with no causal layer, the per-part recall) befo
 - **Explicit dependencies instead of a version vector** (each change names the dots of the changes whose values it
   writes over). Smaller, but it orders only what a change names, needs a map from a value's dot to its change's
   number, and gives no stability; the vector is bounded by the roster and gives all three.
+- **The deploy's machine name as the author of a dot** (answer Q2). Two instances of one machine would share a
+  column of every vector; refusing the duplicate would forbid running a machine more than once.
+- **Learn one's own highest number from the peers before tagging** (the text of section 3 before the amendment of
+  2026-11-08; answer Q6). The change with that number may be held only by a member that is offline, so the peers'
+  answer can be too low, and a number used twice names two changes by one dot.
+- **The context as bytes inside a byte string** (answer Q1). A second encoding of one value, outside the type
+  grammar every backend generates from.
+- **A fixed roster without an epoch** (answer Q3). A change of membership would then change the meaning of every
+  vector in flight; a numbered view says which members a vector and a cut are over.
 - **Keep the settle round of hashes.** Agreement on a hash of the state is a stability test for a layer that has no
   vectors; it stalls behind any copy that differs, as case (a) showed.
 
@@ -426,3 +603,44 @@ recommendation as the answer; the sections named are written to the answers.
    separate C11 backend decision, taken only if a device needs changes larger than it can slot (section 5).
 
 No question is left open.
+
+Scoping landing 3 raised eight more questions. The owner answered them on 2026-11-08, under the same rule (the
+structure that is correct longest and is the textbook one, cost ignored); Q2, Q3 and Q6 differ from the
+recommendations put to the owner, and Q8 is wider than recommended. Sections 3, 3.2, 3.3, 9.2 and the landing order
+are written to them.
+
+- **Q1. The context is a bounded list of records in the envelope's CBOR map.** CBOR codec entries gain that type in
+  a step of their own before the route (landing 3a), as ADR 0086's one type grammar applied to the codec. A context
+  carried as bytes inside a byte string is not acceptable.
+- **Q2. The author of a dot is the instance's stable replica identity, not the deploy's machine name.** A machine
+  name is a kind, not a replica: two instances of one machine would share a column, and refusing the duplicate would
+  forbid scale-out. The identity is unique within the group and never used again (ADR 0093), and section 3.3.1 says
+  how it relates to `routing_id`, which is not stable across a restart.
+- **Q3. A causal binding names its group, whose membership is a numbered view `(epoch, members)`**, as in virtual
+  synchrony. The deploy gives the initial view, epoch 0; stability and the cut are computed over the current view.
+  The protocol that changes the view may land later (landing 7), but the data model, the envelope and the rule are
+  view-based from the start. The binding's key does not collide with `members:`, which names a DDS or Zenoh pool.
+- **Q4. One control message of the layer, `causalVector`**, a new `PatternKind`: both the anti-entropy summary and
+  the mark of a member that has not written.
+- **Q5. `ordering:` beside `delivery: causal` on one binding is refused with `mesh/deploy-delivery-conflict`.** A
+  causal binding skips the dedup window, and a machine's `dedup:` section that reaches only causal bindings is
+  refused with the same code.
+- **Q6. A copy keeps its own highest number durably in its journal, written before the change is released** (ADR
+  0093: the journal is the durable state). A normal restart continues from the journal; a copy restored from an
+  older save or set up again from its seed does not wait for its peers, and joins as a new incarnation with a new
+  replica identity, so no number is used again (crash recovery with incarnation numbers). This replaces the sentence
+  of section 3 by which such a copy learned its number from its peers: an offline member may hold its latest change.
+- **Q7. A causal send is answered `Accepted(dot)` or `Refused(reason)`**, under ADR 0093's offer and verdict; a
+  full retention log is a refusal, told as `noRoomForHistory`.
+- **Q8. The rule is written once, as `stdlib/mesh` algorithms, and generated per language.** All four Mesh cores
+  land before landing 4: Rust, the reference, then C++, Kotlin and Swift. Until its core has landed, a language
+  refuses `delivery: causal` at build time.
+
+Decided while writing, within those answers, and open to the owner's review: the binding's keys `group:`, with
+`name` and `view` (section 3.2); the replica identity as a 16-byte UUID v7 drawn when an incarnation begins and kept
+in the journal (section 3.3.1); a member of a view bound to the replica identity its first envelope of the epoch
+presents, a second identity being a view change (section 3.3.3); the epoch carried by every tagged envelope; a
+member not heard from holding its column of the cut at 0; the layer releasing an accepted change only once the
+host's journal record is committed (section 3); landing 3's steps lettered so that landings 4 to 6 keep their
+numbers, and view changes as landing 7; and Q6 read for the Mesh route alone, a device with a core keeping ADR 0093
+section 4.1's wait for its own chain, which waits on the relay that every published link reached (section 3.3).
