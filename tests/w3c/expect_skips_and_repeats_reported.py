@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
-"""A skip is reported as a skip, and a repeated run keeps every iteration.
+"""A manual fixture is judged, a skip is reported as a skip, and a repeated run keeps every iteration.
 
 Usage: expect_skips_and_repeats_reported.py <w3c_test_cli> <resources dir> <variant number> <fixture id>...
 
@@ -8,17 +8,25 @@ The fixture ids are every fixture the build registers; the variant number is a
 test number whose fixtures are variants (403 for 403a 403b 403c). Each run is
 made in a directory of its own, and the XML report it writes there is read.
 
-Skips. A manual fixture is not run on the Interpreter. It used to be reported
-as a PASS whose reason said "Test skipped", so the summary, the XML report and
-the console counted a test nobody ran as passing, and a BasicHTTP fixture
-skipped under ThreadSanitizer the same way. One manual fixture is run alone on
-the Interpreter, and the run must say it skipped it: the testcase carries
-result="SKIPPED" and a <skipped/> element and no <failure/>, the header counts
-it under `skipped` and in no other bucket, the console's Total row counts it
-as skipped and not as passed, and the run exits 0 (a skip is not a failure).
-The manual fixture is the first the build registers whose metadata says
-`manual: True`, other than 178: the runner verifies 178 itself
-(W3CTestRunner::runManualTest178), so it is run, not skipped.
+Manual verdicts. A fixture whose metadata says `manual: True` names an
+observable its final state cannot carry, and the runner judges it by the
+fixture's verifier (W3CTestRunner::runManualFixture, ManualVerification.cpp).
+Every registered manual fixture is run on the Interpreter in one invocation,
+and each must be listed once, with result="PASS" and type="manual" (judged by
+its verifier, not passed on its final state and not skipped), the header must
+count no failure, error or skip, and the run must exit 0.
+
+Skips. A test that is not run used to be reported as a PASS whose reason said
+"Test skipped", so the summary, the XML report and the console counted a test
+nobody ran as passing. Two kinds are still not run: a manual fixture with no
+verifier, and a BasicHTTP fixture under ThreadSanitizer. The suite registers no
+manual fixture without a verifier, so this writes one, in a resources
+directory of its own (`--resources`), numbered below the suite's first test
+(144) so that no verifier holds it, and runs it alone on the Interpreter. The
+run must say it skipped it: the testcase carries result="SKIPPED" and a
+<skipped/> element and no <failure/>, the header counts it under `skipped`
+and in no other bucket, the console's Total row counts it as skipped and not
+as passed, and the run exits 0 (a skip is not a failure).
 
 Repeats. `--repeat 2` runs every test twice in one invocation, which is one
 test run for the reporter: both iterations are in the report, each testcase
@@ -45,8 +53,9 @@ from typing import Dict, List, Optional, Tuple
 INTERPRETER_SUITE = "W3C_SCXML_Interpreter"
 AOT_SUITE = "W3C_SCXML_AOT"
 
-# A fixture the runner verifies itself although its metadata says manual
-RUNNER_VERIFIED_MANUAL = "178"
+# The ID of the manual fixture this writes: below the W3C suite's first test
+# (144), so no verifier in ManualVerification.cpp holds it
+UNVERIFIED_MANUAL_FIXTURE = "1"
 
 
 class Run:
@@ -89,23 +98,77 @@ def run(cli: str, arguments: List[str], timeout: int, problems: List[str]) -> Ru
         return Run(completed.returncode, output, ElementTree.parse(report_path).getroot())
 
 
-def manual_fixture(resources: str, fixture_ids: List[str]) -> Optional[str]:
-    """The first registered fixture whose metadata says it is manual, 178 aside."""
+def manual_fixtures(resources: str, fixture_ids: List[str]) -> List[str]:
+    """Every registered fixture whose metadata says it is manual, in registration order."""
+    manual = []  # type: List[str]
     for fixture_id in fixture_ids:
-        if fixture_id == RUNNER_VERIFIED_MANUAL or not fixture_id.isdigit():
+        if not fixture_id.isdigit():
             continue
         metadata = os.path.join(resources, fixture_id, "metadata.txt")
         if not os.path.isfile(metadata):
             continue
         with open(metadata, encoding="utf-8", errors="replace") as text:
             if re.search(r"^\s*manual:\s*true\s*$", text.read(), re.M | re.I):
-                return fixture_id
-    return None
+                manual.append(fixture_id)
+    return manual
 
 
-def check_skip(cli: str, fixture_id: str, problems: List[str]) -> None:
-    arguments = [fixture_id, "--interpreter-only"]
-    result = run(cli, arguments, 240, problems)
+def check_manual_verdicts(cli: str, fixture_ids: List[str], problems: List[str]) -> None:
+    arguments = fixture_ids + ["--interpreter-only"]
+    result = run(cli, arguments, 300, problems)
+    if result.root is None:
+        return
+    where = " ".join(arguments)
+
+    cases = result.cases(INTERPRETER_SUITE)
+    listed = sorted(case.get("id", "") for case in cases)
+    if listed != sorted(fixture_ids):
+        problems.append(f"{where}: the Interpreter suite lists {listed}, expected each of {sorted(fixture_ids)} once")
+    for case in cases:
+        name = case.get("name")
+        if case.get("result") != "PASS":
+            problems.append(f"{where}: {name} has result={case.get('result')!r}, expected 'PASS' "
+                            f"(its verifier said: {case.get('description')!r})")
+        if case.get("type") != "manual":
+            problems.append(f"{where}: {name} has type={case.get('type')!r}, expected 'manual': "
+                            "a manual fixture is judged by its verifier, not by its final state")
+        if case.find("skipped") is not None or case.find("failure") is not None:
+            problems.append(f"{where}: {name} carries a <skipped/> or <failure/> element")
+
+    header = {key: result.root.get(key) for key in ("tests", "failures", "errors", "skipped")}
+    expected = {"tests": str(len(fixture_ids)), "failures": "0", "errors": "0", "skipped": "0"}
+    if header != expected:
+        problems.append(f"{where}: the report's header counts {header}, expected {expected}")
+
+    if result.returncode != 0:
+        problems.append(f"{where}: exited {result.returncode}, expected 0")
+
+
+def write_unverified_manual_fixture(resources: str) -> None:
+    """A manual fixture no verifier holds: its metadata, and a document that would pass were it run."""
+    directory = os.path.join(resources, UNVERIFIED_MANUAL_FIXTURE)
+    os.makedirs(directory)
+    with open(os.path.join(directory, "metadata.txt"), "w", encoding="utf-8") as metadata:
+        metadata.write(f"id: {UNVERIFIED_MANUAL_FIXTURE}\n"
+                       "specnum: none\n"
+                       "conformance: mandatory\n"
+                       "manual: True\n"
+                       "description: A manual fixture no verifier judges\n"
+                       "variants: 1\n")
+    with open(os.path.join(directory, f"test{UNVERIFIED_MANUAL_FIXTURE}.txml"), "w", encoding="utf-8") as document:
+        document.write('<?xml version="1.0"?>\n'
+                       '<scxml xmlns="http://www.w3.org/2005/07/scxml" '
+                       'xmlns:conf="http://www.w3.org/2005/scxml-conformance" version="1.0" initial="pass">\n'
+                       '  <conf:pass/>\n'
+                       '</scxml>\n')
+
+
+def check_skip(cli: str, problems: List[str]) -> None:
+    with tempfile.TemporaryDirectory() as scratch:
+        resources = os.path.join(scratch, "resources")
+        write_unverified_manual_fixture(resources)
+        arguments = ["--resources", resources, UNVERIFIED_MANUAL_FIXTURE, "--interpreter-only"]
+        result = run(cli, arguments, 240, problems)
     if result.root is None:
         return
     where = " ".join(arguments)
@@ -114,6 +177,8 @@ def check_skip(cli: str, fixture_id: str, problems: List[str]) -> None:
     if len(cases) != 1:
         problems.append(f"{where}: the Interpreter suite lists {len(cases)} cases, expected 1")
     for case in cases:
+        if case.get("id") != UNVERIFIED_MANUAL_FIXTURE:
+            problems.append(f"{where}: the case is fixture {case.get('id')!r}, expected {UNVERIFIED_MANUAL_FIXTURE!r}")
         if case.get("result") != "SKIPPED":
             problems.append(f"{where}: {case.get('name')} has result={case.get('result')!r}, expected 'SKIPPED'")
         if case.find("skipped") is None:
@@ -196,11 +261,13 @@ def main(argv: List[str]) -> int:
     variants = [fixture_id for fixture_id in fixture_ids if re.fullmatch(re.escape(number) + "[a-z]", fixture_id)]
     problems = []  # type: List[str]
 
-    manual = manual_fixture(resources, fixture_ids)
-    if manual is None:
-        problems.append("no registered fixture other than 178 says `manual: True`, so no skip path can be run")
+    manual = manual_fixtures(resources, fixture_ids)
+    if not manual:
+        problems.append("no registered fixture says `manual: True`, so no manual verdict can be checked")
     else:
-        check_skip(cli, manual, problems)
+        check_manual_verdicts(cli, manual, problems)
+
+    check_skip(cli, problems)
 
     if not variants:
         problems.append(f"no registered fixture is a variant of {number}")
@@ -214,12 +281,14 @@ def main(argv: List[str]) -> int:
                  problems)
 
     if problems:
-        print("The W3C runner did not report what it skipped, or what each iteration ran:", file=sys.stderr)
+        print("The W3C runner did not judge a manual fixture, report what it skipped, or keep what each iteration "
+              "ran:", file=sys.stderr)
         for problem in problems:
             print(f"  - {problem}", file=sys.stderr)
         return 1
 
-    print(f"Fixture {manual} was reported skipped, and both iterations of each repeated run were kept.")
+    print(f"Manual fixtures {', '.join(manual)} were each judged a pass by their verifier, a manual fixture with "
+          "no verifier was reported skipped, and both iterations of each repeated run were kept.")
     return 0
 
 

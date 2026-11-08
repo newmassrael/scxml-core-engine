@@ -260,6 +260,9 @@ add_executable(sce_scxml_tests
     common/EventDataHelperTest.cpp
     common/TestSummaryExitStatusTest.cpp
     common/UuidTest.cpp
+    # The verdicts of the manual W3C fixtures, on runs written by hand
+    w3c/ManualVerification.cpp
+    w3c/ManualVerificationTest.cpp
 )
 
 target_include_directories(sce_scxml_tests
@@ -8357,8 +8360,11 @@ if(Python3_FOUND AND NOT EMSCRIPTEN AND _W3C_VARIANT_IDS)
     set_tests_properties(W3COneReporterForBothEngines PROPERTIES TIMEOUT 300)
 endif()
 
-# A test that was not run is reported as a skip, and a repeated run keeps every
-# iteration. A manual fixture run alone on the Interpreter must be SKIPPED in
+# A manual fixture is judged, a test that was not run is reported as a skip,
+# and a repeated run keeps every iteration. Every registered manual fixture,
+# run on the Interpreter, must be a PASS its verifier gave (type="manual",
+# W3CTestRunner::runManualFixture). A manual fixture with no verifier, which
+# the script writes into a resources directory of its own, must be SKIPPED in
 # the XML report (<skipped/>, the header's `skipped`), in the console's Total
 # row, and not fail the exit status; both were once a PASS. `--repeat 2` must
 # list each test once per iteration, named "Test_<id>@<iteration>": the run

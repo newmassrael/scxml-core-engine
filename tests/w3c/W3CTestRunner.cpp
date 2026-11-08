@@ -3,6 +3,7 @@
 
 #include "W3CTestRunner.h"
 #include "BasicHttpTestEndpoint.h"
+#include "ManualVerification.h"
 #ifndef __EMSCRIPTEN__
 #include "W3CHttpTestServer.h"
 #endif
@@ -271,6 +272,8 @@ std::unique_ptr<ITestResultValidator> TestComponentFactory::createValidator() {
     class TestResultValidator : public ITestResultValidator {
     public:
         ValidationResult validateResult(const TestExecutionContext &context) override {
+            // A manual fixture's final state is not its verdict: its verifier
+            // judges it (ManualVerification.h), never this
             if (context.metadata.manual) {
                 return ValidationResult::skip("Skipped: manual test");
             }
@@ -864,6 +867,79 @@ static std::string fixtureIdOf(const std::string &testDirectory) {
     return fixtureId;
 }
 
+/**
+ * @brief Wait one poll interval, yielding to the host's event loop under WASM
+ *        as the executor's wait does
+ */
+static void waitOnePollInterval() {
+#ifdef __EMSCRIPTEN__
+    emscripten_sleep(static_cast<int>(POLL_INTERVAL_MS.count()));
+#else
+    std::this_thread::sleep_for(POLL_INTERVAL_MS);
+#endif
+}
+
+/**
+ * @brief Run a manual fixture's document on the Interpreter and record what
+ *        the run showed
+ *
+ * The machine runs until it halts or EXECUTOR_DEFAULT_TIMEOUT_MS ends the run,
+ * and is watched on until `watchAtLeast` from its start has passed, since what
+ * a verifier judges can come after the halt. The queued events of every
+ * session the run started, the delayed ones the scheduler polls for included,
+ * are delivered on each turn; once the machine has halted they are offered to
+ * a machine that must refuse them.
+ *
+ * @return Why the run could not be started; empty when it started, or when
+ *         the document was rejected at load (which some verdicts ask for)
+ */
+static std::string watchManualRun(const std::string &scxml, const std::string &sourcePath,
+                                  std::chrono::milliseconds watchAtLeast, ManualRun &run) {
+    auto resources = TestComponentFactory::createResources();
+
+    auto stateMachineUnique = SCE::StateMachineBuilder()
+                                  .withScriptEngine(SCE::ScriptEngineProvider::getScriptEngine())
+                                  .withEventDispatcher(resources->eventDispatcher)
+                                  .withEventRaiser(resources->eventRaiser)
+                                  .build();
+    auto smContext = std::make_unique<SCE::StateMachineContext>(std::move(stateMachineUnique));
+    auto *stateMachine = smContext->get();
+
+    // Relative references in the document resolve against its own file
+    SCE::SessionRegistry::instance().registerSessionFilePath(stateMachine->getSessionId(), sourcePath);
+
+    if (!stateMachine->loadSCXMLFromString(scxml)) {
+        run.loaded = false;
+        run.loadError = stateMachine->getLastLoadError();
+        return {};
+    }
+    run.loaded = true;
+
+    stateMachine->setEventRaiser(resources->eventRaiser);
+    if (!stateMachine->start()) {
+        return "Failed to start StateMachine";
+    }
+
+    const auto runStart = std::chrono::steady_clock::now();
+    while (true) {
+        const auto elapsed = std::chrono::steady_clock::now() - runStart;
+        if (elapsed >= EXECUTOR_DEFAULT_TIMEOUT_MS) {
+            break;
+        }
+        resources->eventRaiser->processQueuedEvents();
+        if (!stateMachine->isRunning() && elapsed >= watchAtLeast) {
+            break;
+        }
+        waitOnePollInterval();
+    }
+
+    run.halted = !stateMachine->isRunning();
+    run.terminalState = stateMachine->terminalState();
+    run.endState = run.terminalState.value_or(stateMachine->getCurrentState());
+    run.eventsProcessed = stateMachine->getStatistics().totalEvents;
+    return {};
+}
+
 TestReport W3CTestRunner::errorReport(const std::string &testId, const std::string &engineType,
                                       const std::string &reason) {
     TestReport report;
@@ -982,123 +1058,20 @@ TestReport W3CTestRunner::runSingleTest(const std::string &testDirectory) {
         // The fixture's full ID, variant suffix included ("path/403:a" is "403a")
         report.testId = fixtureIdOf(testDirectory);
 
-        // W3C SCXML 6.2: Special handling for Test 178 (manual duplicate param verification)
-        if (report.metadata.id == 178 && report.metadata.manual) {
-            SCE_LOG_INFO("W3C Test 178: Running manual verification for duplicate param keys");
+        // A manual fixture names an observable its final state cannot carry,
+        // so the validator cannot judge it: its verifier does, from a run
+        // watched under a log capture of its own (runManualFixture).
+        if (report.metadata.manual) {
             SCE::Logger::stopCapture();
             SCE::Logger::getCapturedLogs();  // Discard
-            return runManualTest178(testDirectory, report);
+            return runManualFixture(testDirectory, report);
         }
 
-        // Skip other manual tests
-        if (validator_->shouldSkipTest(report.metadata)) {
-            SCE_LOG_DEBUG("W3C Single Test: Skipping test {} (manual test)", report.testId);
-            report.validationResult = ValidationResult::skip("Skipped: manual test");
-            SCE::Logger::stopCapture();
-            SCE::Logger::getCapturedLogs();  // Discard
-            return report;
-        }
-
-        // Check if SCXML file exists directly (for tests like 513 with direct SCXML)
-        std::string scxmlPath = testDirectory + "/test" + report.testId + ".scxml";
-        std::string scxml;
-        std::string txmlPath;
-
-        std::ifstream scxmlFile(scxmlPath);
-        if (scxmlFile.good()) {
-            // Use existing SCXML file directly (skip TXML conversion)
-            SCE_LOG_DEBUG("W3C Single Test: Using existing SCXML from {}", scxmlPath);
-            scxml = std::string((std::istreambuf_iterator<char>(scxmlFile)), std::istreambuf_iterator<char>());
-            txmlPath = scxmlPath;  // Use SCXML path as reference
-        } else {
-            // Read and convert TXML
-            txmlPath = testSuite_->getTXMLPath(testDirectory);
-            SCE_LOG_DEBUG("W3C Single Test: Reading TXML from {}", txmlPath);
-            std::ifstream txmlFile(txmlPath);
-            std::string txml((std::istreambuf_iterator<char>(txmlFile)), std::istreambuf_iterator<char>());
-
-            SCE_LOG_DEBUG("W3C Single Test: Converting TXML to SCXML for test {}", report.testId);
-
-            // Log original TXML before conversion
-            SCE_LOG_DEBUG("W3C Test {}: Original TXML content:\n{}", report.testId, txml);
-
-            scxml = converter_->convertTXMLToSCXML(txml);
-
-            // Log converted SCXML after conversion
-            SCE_LOG_DEBUG("W3C Test {}: Converted SCXML content:\n{}", report.testId, scxml);
-        }
-
-        // Convert all sub-TXML files in the test directory for invoke elements
-        // Extract actual directory path (remove variant suffix if present)
-        std::string actualTestDir = testDirectory;
-        size_t colonPos2 = testDirectory.find(':');
-        if (colonPos2 != std::string::npos) {
-            actualTestDir = testDirectory.substr(0, colonPos2);
-        }
-        std::filesystem::path testDir(actualTestDir);
-        for (const auto &entry : std::filesystem::directory_iterator(testDir)) {
-            if (entry.is_regular_file() && entry.path().extension() == ".txml") {
-                std::string filename = entry.path().filename().string();
-                // Skip main test file
-                if (filename == "test" + report.testId + ".txml") {
-                    continue;
-                }
-
-                // Convert sub-TXML file to SCXML (without W3C validation for sub-files)
-                std::ifstream subTxmlFile(entry.path());
-                std::string subTxml((std::istreambuf_iterator<char>(subTxmlFile)), std::istreambuf_iterator<char>());
-                std::string subScxml = static_cast<SCE::W3C::TXMLConverter *>(converter_.get())
-                                           ->convertTXMLToSCXMLWithoutValidation(subTxml);
-
-                // Write the converted SCXML only when it differs from what is
-                // already there.
-                //
-                // This writes into `resources/<N>/`, which is the TRACKED
-                // source tree, and the conversion is deterministic — the
-                // result equals the committed file every time. Writing it
-                // unconditionally therefore changed nothing but the mtime,
-                // and that was not free: the generated `.d` depfiles list
-                // these documents as inputs, so one test run left eight
-                // generation rules permanently dirty. Every subsequent build
-                // regenerated and relinked, and the relinked binary differed
-                // (measured 2026-08-13: 40 bytes, in `.debug_info` and the
-                // build-id derived from it) even though every object file was
-                // byte-identical.
-                //
-                // The cost of that was a check nobody could run: the second
-                // question `scripts/mutate` asks is "did restoring the source
-                // restore the binaries", and for any ctest target reached
-                // through this runner the answer was permanently no — so
-                // mutation evidence there was unavailable rather than merely
-                // unpinned.
-                std::filesystem::path scxmlPath = entry.path();
-                scxmlPath.replace_extension(".scxml");
-
-                bool identical = false;
-                {
-                    std::ifstream existing(scxmlPath);
-                    if (existing) {
-                        const std::string current((std::istreambuf_iterator<char>(existing)),
-                                                  std::istreambuf_iterator<char>());
-                        identical = (current == subScxml);
-                    }
-                }
-
-                if (identical) {
-                    SCE_LOG_DEBUG("W3C Test {}: Sub-file {} already matches its conversion, leaving it alone",
-                                  report.testId, filename);
-                } else {
-                    std::ofstream scxmlFile(scxmlPath);
-                    scxmlFile << subScxml;
-                    SCE_LOG_DEBUG("W3C Test {}: Converted sub-file {} to {}", report.testId, filename,
-                                  scxmlPath.filename().string());
-                }
-            }
-        }
+        const FixtureDocument document = loadFixtureDocument(testDirectory, report.testId);
 
         // Execute test
         SCE_LOG_DEBUG("W3C Single Test: Executing test {}", report.testId);
-        report.executionContext = executor_->executeTest(scxml, report.metadata, txmlPath);
+        report.executionContext = executor_->executeTest(document.scxml, report.metadata, document.sourcePath);
 
         // Validate result
         SCE_LOG_DEBUG("W3C Single Test: Validating result for test {}", report.testId);
@@ -1139,6 +1112,163 @@ TestReport W3CTestRunner::runSingleTest(const std::string &testDirectory) {
 
         throw;  // The caller reports it as an ERROR (reportingErrors)
     }
+}
+
+W3CTestRunner::FixtureDocument W3CTestRunner::loadFixtureDocument(const std::string &testDirectory,
+                                                                  const std::string &testId) {
+    FixtureDocument document;
+
+    // Check if SCXML file exists directly (for tests like 513 with direct SCXML)
+    std::string scxmlPath = testDirectory + "/test" + testId + ".scxml";
+
+    std::ifstream scxmlFile(scxmlPath);
+    if (scxmlFile.good()) {
+        // Use existing SCXML file directly (skip TXML conversion)
+        SCE_LOG_DEBUG("W3C Single Test: Using existing SCXML from {}", scxmlPath);
+        document.scxml = std::string((std::istreambuf_iterator<char>(scxmlFile)), std::istreambuf_iterator<char>());
+        document.sourcePath = scxmlPath;  // Use SCXML path as reference
+    } else {
+        // Read and convert TXML
+        document.sourcePath = testSuite_->getTXMLPath(testDirectory);
+        SCE_LOG_DEBUG("W3C Single Test: Reading TXML from {}", document.sourcePath);
+        std::ifstream txmlFile(document.sourcePath);
+        std::string txml((std::istreambuf_iterator<char>(txmlFile)), std::istreambuf_iterator<char>());
+
+        SCE_LOG_DEBUG("W3C Single Test: Converting TXML to SCXML for test {}", testId);
+
+        // Log original TXML before conversion
+        SCE_LOG_DEBUG("W3C Test {}: Original TXML content:\n{}", testId, txml);
+
+        document.scxml = converter_->convertTXMLToSCXML(txml);
+
+        // Log converted SCXML after conversion
+        SCE_LOG_DEBUG("W3C Test {}: Converted SCXML content:\n{}", testId, document.scxml);
+    }
+
+    // Convert all sub-TXML files in the test directory for invoke elements
+    // Extract actual directory path (remove variant suffix if present)
+    std::string actualTestDir = testDirectory;
+    size_t colonPos2 = testDirectory.find(':');
+    if (colonPos2 != std::string::npos) {
+        actualTestDir = testDirectory.substr(0, colonPos2);
+    }
+    std::filesystem::path testDir(actualTestDir);
+    for (const auto &entry : std::filesystem::directory_iterator(testDir)) {
+        if (entry.is_regular_file() && entry.path().extension() == ".txml") {
+            std::string filename = entry.path().filename().string();
+            // Skip main test file
+            if (filename == "test" + testId + ".txml") {
+                continue;
+            }
+
+            // Convert sub-TXML file to SCXML (without W3C validation for sub-files)
+            std::ifstream subTxmlFile(entry.path());
+            std::string subTxml((std::istreambuf_iterator<char>(subTxmlFile)), std::istreambuf_iterator<char>());
+            std::string subScxml =
+                static_cast<SCE::W3C::TXMLConverter *>(converter_.get())->convertTXMLToSCXMLWithoutValidation(subTxml);
+
+            // Write the converted SCXML only when it differs from what is
+            // already there.
+            //
+            // This writes into `resources/<N>/`, which is the TRACKED
+            // source tree, and the conversion is deterministic — the
+            // result equals the committed file every time. Writing it
+            // unconditionally therefore changed nothing but the mtime,
+            // and that was not free: the generated `.d` depfiles list
+            // these documents as inputs, so one test run left eight
+            // generation rules permanently dirty. Every subsequent build
+            // regenerated and relinked, and the relinked binary differed
+            // (measured 2026-08-13: 40 bytes, in `.debug_info` and the
+            // build-id derived from it) even though every object file was
+            // byte-identical.
+            //
+            // The cost of that was a check nobody could run: the second
+            // question `scripts/mutate` asks is "did restoring the source
+            // restore the binaries", and for any ctest target reached
+            // through this runner the answer was permanently no — so
+            // mutation evidence there was unavailable rather than merely
+            // unpinned.
+            std::filesystem::path subScxmlPath = entry.path();
+            subScxmlPath.replace_extension(".scxml");
+
+            bool identical = false;
+            {
+                std::ifstream existing(subScxmlPath);
+                if (existing) {
+                    const std::string current((std::istreambuf_iterator<char>(existing)),
+                                              std::istreambuf_iterator<char>());
+                    identical = (current == subScxml);
+                }
+            }
+
+            if (identical) {
+                SCE_LOG_DEBUG("W3C Test {}: Sub-file {} already matches its conversion, leaving it alone", testId,
+                              filename);
+            } else {
+                std::ofstream subScxmlFile(subScxmlPath);
+                subScxmlFile << subScxml;
+                SCE_LOG_DEBUG("W3C Test {}: Converted sub-file {} to {}", testId, filename,
+                              subScxmlPath.filename().string());
+            }
+        }
+    }
+
+    return document;
+}
+
+TestReport W3CTestRunner::runManualFixture(const std::string &testDirectory, TestReport report) {
+    const ManualVerifier *verifier = manualVerifierFor(report.testId);
+    if (verifier == nullptr) {
+        // Not run, and reported as a skip under its own ID, so a manual
+        // fixture registered without a verifier shows in every tally instead
+        // of passing (ManualVerification.h)
+        SCE_LOG_WARN("W3C Test {}: manual fixture with no verifier in ManualVerification.cpp, skipped", report.testId);
+        report.validationResult = ValidationResult::skip("Skipped: manual fixture with no verifier");
+        return report;
+    }
+    report.testType = "manual";
+
+    const FixtureDocument document = loadFixtureDocument(testDirectory, report.testId);
+    const auto startTime = std::chrono::steady_clock::now();
+
+    // The verifier reads the <log> output of the run, the invoked sessions'
+    // included, so the run is watched under a capture of its own, which also
+    // serves as the failed-test log. A run that cannot start, or that throws,
+    // is the fixture's ERROR, not a verdict.
+    ManualRun run;
+    std::string startFailure;
+    SCE::Logger::startCapture();
+    try {
+        startFailure = watchManualRun(document.scxml, document.sourcePath, verifier->watchAtLeast, run);
+    } catch (const std::exception &e) {
+        SCE_LOG_ERROR("W3C Test {}: Exception during manual verification: {}", report.testId, e.what());
+        startFailure = "Exception: " + std::string(e.what());
+    }
+    SCE::Logger::stopCapture();
+    const std::string capturedLogs = SCE::Logger::getCapturedLogs();
+
+    report.executionContext.executionTime =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - startTime);
+
+    if (!startFailure.empty()) {
+        report.executionContext.finalState = "error";
+        report.executionContext.errorMessage = startFailure;
+        report.validationResult = ValidationResult(false, TestResult::ERROR, startFailure);
+    } else {
+        run.logCaptured = !capturedLogs.empty();
+        run.logMessages = logMessagesIn(capturedLogs);
+        report.executionContext.finalState = run.loaded ? run.endState : "rejected at load";
+        report.validationResult = verifier->judge(run);
+    }
+
+    SCE_LOG_INFO("W3C Test {}: manual verification {}: {}", report.testId,
+                 testResultToString(report.validationResult.finalResult), report.validationResult.reason);
+
+    if (!failedLogDir_.empty() && report.validationResult.finalResult != TestResult::PASS) {
+        saveFailedTestLog(failedLogDir_, report.testId, report.engineType, report, capturedLogs);
+    }
+
+    return report;
 }
 
 void W3CTestRunner::cleanupBetweenTests() {
@@ -1321,10 +1451,13 @@ TestReport W3CTestRunner::runSingleTestWithHttpServer(const std::string &testDir
         // The fixture's full ID, variant suffix included ("path/403:a" is "403a")
         report.testId = fixtureIdOf(testDirectory);
 
-        // Skip if necessary
+        // A manual fixture is judged by its verifier, whose run has no
+        // BasicHTTP listener (runManualFixture); one the registry runs under
+        // its `http` harness is not run, and is reported as a skip by name.
         if (validator_->shouldSkipTest(report.metadata)) {
-            SCE_LOG_DEBUG("W3C Single Test (HTTP): Skipping test {} (manual test)", report.testId);
-            report.validationResult = ValidationResult::skip("Skipped: manual test");
+            SCE_LOG_WARN("W3C Test {}: manual fixture under the BasicHTTP harness, which no verifier runs, skipped",
+                         report.testId);
+            report.validationResult = ValidationResult::skip("Skipped: manual fixture under the BasicHTTP harness");
             return report;
         }
 
@@ -1623,115 +1756,6 @@ TestReport W3CTestRunner::runAotTestOrThrow(const std::string &testId) {
     report.executionContext.executionTime = std::chrono::milliseconds(0);
 
     return report;
-}
-
-TestReport W3CTestRunner::runManualTest178(const std::string &testDirectory, TestReport &report) {
-    auto startTime = std::chrono::steady_clock::now();
-
-    try {
-        SCE_LOG_INFO("W3C Test 178: Starting manual verification for duplicate param keys (W3C SCXML 6.2)");
-        SCE_LOG_INFO("W3C Test 178: Verification approach - final state validates duplicate param handling");
-
-        // Read and convert TXML to SCXML
-        std::string txmlPath = testSuite_->getTXMLPath(testDirectory);
-        SCE_LOG_DEBUG("W3C Test 178: Reading TXML from {}", txmlPath);
-        std::ifstream txmlFile(txmlPath);
-        std::string txml((std::istreambuf_iterator<char>(txmlFile)), std::istreambuf_iterator<char>());
-        std::string scxml = converter_->convertTXMLToSCXML(txml);
-
-        // Create shared resources using RAII factory pattern
-        auto resources = TestComponentFactory::createResources();
-
-        // Build StateMachine with resource injection
-        auto stateMachineUnique = SCE::StateMachineBuilder()
-                                      .withScriptEngine(SCE::ScriptEngineProvider::getScriptEngine())
-                                      .withEventDispatcher(resources->eventDispatcher)
-                                      .withEventRaiser(resources->eventRaiser)
-                                      .build();
-
-        auto smContext = std::make_unique<SCE::StateMachineContext>(std::move(stateMachineUnique));
-        auto *stateMachine = smContext->get();
-
-        // Load SCXML content
-        if (!stateMachine->loadSCXMLFromString(scxml)) {
-            SCE_LOG_ERROR("W3C Test 178: Failed to load SCXML content");
-            report.executionContext.finalState = "error";
-            report.executionContext.errorMessage = "Failed to load SCXML content";
-            report.validationResult = ValidationResult(false, TestResult::ERROR, "Failed to load SCXML content");
-            return report;
-        }
-
-        // Set EventRaiser and start StateMachine
-        stateMachine->setEventRaiser(resources->eventRaiser);
-        if (!stateMachine->start()) {
-            SCE_LOG_ERROR("W3C Test 178: Failed to start StateMachine");
-            report.executionContext.finalState = "error";
-            report.executionContext.errorMessage = "Failed to start StateMachine";
-            report.validationResult = ValidationResult(false, TestResult::ERROR, "Failed to start StateMachine");
-            return report;
-        }
-
-        // Wait for StateMachine to complete (reach final or fail state)
-        auto waitStart = std::chrono::steady_clock::now();
-        const std::chrono::milliseconds timeout = EXECUTOR_DEFAULT_TIMEOUT_MS;
-
-        while (stateMachine->isRunning() && std::chrono::steady_clock::now() - waitStart < timeout) {
-            // Process queued events to allow onentry send and event1 transition
-            resources->eventRaiser->processQueuedEvents();
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-
-        auto endTime = std::chrono::steady_clock::now();
-        report.executionContext.executionTime =
-            std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
-
-        // Get final state name
-        std::string finalState = stateMachine->terminalState().value_or(stateMachine->getCurrentState());
-        SCE_LOG_INFO("W3C Test 178: StateMachine reached state: {}", finalState);
-
-        // W3C SCXML 6.2: Validate based on final state
-        // Reaching "final" state validates that:
-        // 1. Send with duplicate params (Var1=2, Var1=3) executed successfully
-        // 2. Event1 was raised with correct EventData: {"Var1":["2","3"]}
-        // 3. Transition to final state succeeded (event1 received correctly)
-        if (finalState == "final") {
-            SCE_LOG_INFO("W3C Test 178: PASS - StateMachine reached final state");
-            SCE_LOG_INFO(
-                "W3C Test 178: W3C SCXML 6.2 validated - duplicate params preserved as {{\"Var1\":[\"2\",\"3\"]}}");
-            SCE_LOG_INFO("W3C Test 178: Trace logs confirm: Param[1] Var1=2, Param[2] Var1=3, EventData: "
-                         "{{\"Var1\":[\"2\",\"3\"]}}");
-            report.executionContext.finalState = "pass";
-            report.validationResult = ValidationResult(
-                true, TestResult::PASS, "W3C SCXML 6.2: param preserves duplicate keys with multiple values");
-        } else if (finalState == "fail") {
-            SCE_LOG_ERROR("W3C Test 178: FAIL - StateMachine reached fail state");
-            SCE_LOG_ERROR(
-                "W3C Test 178: W3C SCXML 6.2 violation - event1 with duplicate params not received correctly");
-            report.executionContext.finalState = "fail";
-            report.validationResult =
-                ValidationResult(false, TestResult::FAIL,
-                                 "W3C SCXML 6.2 violation: StateMachine reached fail state (event1 not received)");
-        } else {
-            SCE_LOG_ERROR("W3C Test 178: TIMEOUT - StateMachine did not reach final state. Current state: {}",
-                          finalState);
-            report.executionContext.finalState = "fail";
-            report.validationResult = ValidationResult(
-                false, TestResult::FAIL,
-                "Timeout: StateMachine did not complete within 5000ms (current state: " + finalState + ")");
-        }
-
-        return report;
-
-    } catch (const std::exception &e) {
-        SCE_LOG_ERROR("W3C Test 178: Exception during manual verification: {}", e.what());
-        auto endTime = std::chrono::steady_clock::now();
-        report.executionContext.executionTime =
-            std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
-        report.executionContext.finalState = "error";
-        report.executionContext.errorMessage = "Exception: " + std::string(e.what());
-        report.validationResult = ValidationResult(false, TestResult::ERROR, "Exception: " + std::string(e.what()));
-        return report;
-    }
 }
 
 }  // namespace SCE::W3C

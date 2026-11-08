@@ -206,19 +206,40 @@ private:
     TestReport runOnInterpreter(const std::string &testDir);
 
     /**
-     * @brief W3C SCXML 6.2: Manual verification for Test 178 (duplicate param keys)
-     *
-     * Test 178 verifies that SCXML processors include all param key/value pairs,
-     * even when duplicate keys exist. This manual test validates that:
-     * 1. Send with duplicate param names (Var1=2, Var1=3) generates correct EventData
-     * 2. EventData contains both values: {"Var1":["2","3"]}
-     * 3. W3C SCXML 6.2 compliance: duplicates are preserved, not overwritten
-     *
-     * @param testDirectory Path to test directory
-     * @param report Test report to populate with results
-     * @return TestReport with validation results
+     * @brief The document a fixture runs, and the path its relative
+     *        references resolve against
      */
-    TestReport runManualTest178(const std::string &testDirectory, TestReport &report);
+    struct FixtureDocument {
+        std::string scxml;
+        std::string sourcePath;
+    };
+
+    /**
+     * @brief Read the document a fixture runs
+     *
+     * The fixture's committed SCXML when it has one, its TXML converted
+     * otherwise; the other TXML documents of its directory, which it invokes,
+     * are converted beside it.
+     *
+     * @param testDirectory Path to the test directory ("path/403:a" for a variant)
+     * @param testId The fixture's full ID ("403a")
+     */
+    FixtureDocument loadFixtureDocument(const std::string &testDirectory, const std::string &testId);
+
+    /**
+     * @brief Run a manual fixture on the Interpreter and judge it by its verifier
+     *
+     * A fixture whose metadata says `manual: True` names an observable its
+     * final state cannot carry, so the validator cannot judge it: its verifier
+     * does (ManualVerification.h), from what the run showed (ManualRun). The
+     * report's testType is "manual". A manual fixture with no verifier is not
+     * run, and is reported as a skip under its own ID.
+     *
+     * @param testDirectory Path to the test directory
+     * @param report The fixture's report, its ID and metadata read
+     * @return The report with the verifier's verdict
+     */
+    TestReport runManualFixture(const std::string &testDirectory, TestReport report);
 
     /**
      * @brief Run a single test with AOT engine; throws what the run throws

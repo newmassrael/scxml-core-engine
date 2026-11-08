@@ -79,17 +79,17 @@ SCE::W3C::TestReport reportOf(const std::string &testId, const SCE::W3C::Validat
 }
 
 // The tally, from the reports a run made. A BasicHTTP fixture under
-// ThreadSanitizer and a manual fixture are not run, and were once reported as
-// PASS with a reason that said "Skipped": the summary, the XML report and the
-// console all counted them as passes, so a build that ran none of the HTTP
-// fixtures reported them passing.
+// ThreadSanitizer and a manual fixture with no verifier are not run, and were
+// once reported as PASS with a reason that said "Skipped": the summary, the
+// XML report and the console all counted them as passes, so a build that ran
+// none of the HTTP fixtures reported them passing.
 TEST(TestSummaryTally, ASkipIsCountedAsASkipNeverAsAPass) {
     using SCE::W3C::TestResult;
     using SCE::W3C::ValidationResult;
     const auto summary = TestSummaryHelper::calculateSummary({
         reportOf("201", ValidationResult(true, TestResult::PASS, "ran")),
         reportOf("513", ValidationResult::skip("Skipped: HTTP test under ThreadSanitizer")),
-        reportOf("250", ValidationResult::skip("Skipped: manual test")),
+        reportOf("1", ValidationResult::skip("Skipped: manual fixture with no verifier")),
     });
 
     EXPECT_EQ(3u, summary.totalTests);

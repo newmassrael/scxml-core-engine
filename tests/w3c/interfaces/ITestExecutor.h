@@ -19,7 +19,7 @@ enum class TestResult {
     FAIL,     // Test completed but reached wrong target
     ERROR,    // Test execution failed (parse error, runtime exception, etc.)
     TIMEOUT,  // Test execution timed out
-    SKIPPED   // Test was not run (a manual fixture, or a BasicHTTP one under ThreadSanitizer)
+    SKIPPED   // Test was not run (a manual fixture with no verifier, or a BasicHTTP one under ThreadSanitizer)
 };
 
 /**

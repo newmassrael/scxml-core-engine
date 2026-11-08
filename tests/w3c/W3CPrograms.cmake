@@ -235,6 +235,7 @@ endforeach()
 set(W3C_TEST_CLI_SOURCES
     w3c/W3CTestCLI.cpp
     w3c/W3CTestRunner.cpp
+    w3c/ManualVerification.cpp  # The verdicts of the manual fixtures
     ${CMAKE_CURRENT_BINARY_DIR}/w3c/W3CTestRegistry.cpp  # Auto-generated test registry
     ${W3C_AOT_RUNNER_SOURCES}  # Explicit AOT test runners (from W3C_AOT_TESTS list)
     w3c/impl/TXMLConverter.cpp
