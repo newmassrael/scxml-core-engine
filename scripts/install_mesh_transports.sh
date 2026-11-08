@@ -43,6 +43,15 @@ VSOMEIP_TAG="3.7.3"
 ZENOH_C_TAG="1.5.0"
 ZENOH_CPP_TAG="1.5.0"
 
+# The revision of the set above, raised with every change to a tag or to how a
+# package is built. The build machines get the SDKs as the
+# `[platform.linux.tools.mesh-transports]` tool of bx.toml, which installs them
+# at ~/.local/share/sce-mesh-transports/<revision>/ and tells a machine that has
+# them by running the stamp written at the end, so a change at the same
+# revision would never be built again. `scripts/gates/lib.sh` puts that prefix
+# on CMAKE_PREFIX_PATH and LD_LIBRARY_PATH.
+MESH_TRANSPORTS_REV="1"
+
 # The prefix is created before anything asks whether it is writable, because
 # `-w` on a path that does not exist is false — which made every install
 # escalate to `sudo` and leave a root-owned tree behind, including under a
@@ -132,6 +141,15 @@ else
         -DZENOHCXX_ZENOHC=ON -DZENOHCXX_ZENOHPICO=OFF \
         -DCMAKE_PREFIX_PATH="$PREFIX"
 fi
+
+# The stamp bx runs to tell that a machine has this revision (its `check`). No
+# SDK of the three ships an executable that names the set, so the install
+# writes one; it is written last, so a build that stopped part way leaves no
+# stamp and is built again.
+as_owner mkdir -p "$PREFIX/bin"
+printf '#!/bin/sh\necho "sce-mesh-transports %s"\n' "$MESH_TRANSPORTS_REV" \
+    | as_owner tee "$PREFIX/bin/sce-mesh-transports" >/dev/null
+as_owner chmod +x "$PREFIX/bin/sce-mesh-transports"
 
 echo "install_mesh_transports: installed under $PREFIX"
 ls "$PREFIX/lib/cmake" | grep -iE "cyclone|vsomeip|zenoh" || true

@@ -229,6 +229,98 @@ install_inputs = ["scripts/install_genmc.sh"]
 packages = ["g++-14", "clang-19", "llvm-19-dev", "cmake", "ninja-build", "libffi-dev", "zlib1g-dev", "libedit-dev"]
 needed_by = ["genmc-queue"]
 
+# THE EMSCRIPTEN SDK, at the release the hosted lanes install (`emsdk install 6.0.13` in
+# w3c-tests.yml, cpp-suite.yml and deploy-visualizer.yml; the registry's self-test holds them to
+# the script's pin). An update to main is judged here with every gate it reaches, `ci_only`
+# included, and the four emscripten gates skip and pass on a machine without emsdk, so a landing
+# judged there would count as passed what ran nothing. As a tool, bx installs it and runs those
+# units only where it is (2026-11-08).
+#
+# `scripts/install_emsdk.sh` is the one place the install is written, as `install_genmc.sh` is
+# GenMC's: provision copies it to the machine (`install_inputs`) and runs it with EMSDK_ROOT set to
+# the store entry. `prefix_link` makes the whole SDK the store entry, because `emsdk_env.sh`, which
+# the gates source (`sce_gate_activate_emsdk` in scripts/gates/lib.sh), finds the compiler, the
+# LLVM it drives and the Node it runs on by their places beside it. `check` is left to its
+# default, the release itself: `emcc --version` prints it after the compiler's name. `needed_by`
+# names the four gates, so a host without the SDK still takes every other job of this repository;
+# `visualizer-layout` is there because its unit runs `visualizer-wasm` first.
+[platform.linux.tools.emsdk]
+version_file = "scripts/install_emsdk.sh"
+version_pattern = '^EMSDK_REV="([0-9.]+)"'
+path = "~/.local/share/emsdk/{version}/upstream/emscripten/emcc"
+prefix_link = "~/.local/share/emsdk/{version}"
+install = "EMSDK_ROOT={prefix} bash scripts/install_emsdk.sh"
+install_inputs = ["scripts/install_emsdk.sh"]
+needed_by = ["w3c-wasm", "cpp-suite-wasm", "visualizer-wasm", "visualizer-layout"]
+
+# THE MESH TRANSPORT SDKS (vsomeip3, zenohcxx and CycloneDDS with their C++ bindings), at the tags
+# `scripts/install_mesh_transports.sh` pins, the script the hosted cpp-suite lane installs them
+# with. `tests/CMakeLists.txt` registers the transport suites only where `find_package` finds the
+# three, and `cpp-suite` refuses (exit 3, could not run) a tree that registered fewer: measured
+# 2026-08-14 on a build machine, 49 mesh cases absent. An update to main is judged here with every
+# gate it reaches, `ci_only` included, so a machine without the SDKs would send every item that
+# reaches the engine back unmeasured (2026-11-08).
+#
+# The script installs into the prefix it is given and writes a stamp, `bin/sce-mesh-transports`,
+# that prints its revision: none of the SDKs ships an executable that names the set, and bx tells
+# a machine has a tool by running `path`. The version is the script's `MESH_TRANSPORTS_REV`, raised
+# with any tag. `prefix_link` makes the whole prefix the store entry, because `find_package` reads
+# the CMake package files under its `lib/cmake/`; `scripts/gates/lib.sh` puts the prefix on
+# CMAKE_PREFIX_PATH and LD_LIBRARY_PATH where it finds it. zenoh-c is a cargo build, so the
+# install's cargo cache is kept out of the home (`CARGO_HOME`), as the mnemosyne-cli install keeps
+# its own. `packages` are Boost's development files, which vsomeip3 builds against (the hosted
+# lane installs the same). `needed_by` names the gates that need the suites registered:
+# `cpp-suite` (and with it `cpp-suite-wasm`, whose name contains it) and `mutation-rounds`, whose
+# ctest casefiles run in the same tree.
+[platform.linux.tools.mesh-transports]
+version_file = "scripts/install_mesh_transports.sh"
+version_pattern = '^MESH_TRANSPORTS_REV="([0-9]+)"'
+path = "~/.local/share/sce-mesh-transports/{version}/bin/sce-mesh-transports"
+check = "sce-mesh-transports {version}"
+prefix_link = "~/.local/share/sce-mesh-transports/{version}"
+install = "CARGO_HOME={scratch}/cargo bash scripts/install_mesh_transports.sh {prefix}"
+install_inputs = ["scripts/install_mesh_transports.sh"]
+packages = ["libboost-dev", "libboost-system-dev", "libboost-thread-dev", "libboost-filesystem-dev"]
+needed_by = ["cpp-suite", "mutation-rounds"]
+
+# THE TWO TOOLS `wasm32-scenarios` NEEDS BESIDE ITS RUST (2026-11-08). The gate builds the engine
+# for wasm32, writes the module's JavaScript glue with wasm-bindgen, and replays every scenario in
+# Node and in headless Chrome. An update to main is judged here with every gate it reaches, and no
+# build machine carried either tool, so the gate could not have been measured. The wasm32 standard
+# library is not a tool here: it belongs to the Rust release the plan names, so the gate adds it to
+# that release itself (`rustup target add`), as the runner adds clippy.
+#
+# wasm-bindgen at the version Cargo.lock holds: the tool refuses a module another version of the
+# crate built. `scripts/install_wasm_bindgen.sh` carries the version in one line bx can read (it is
+# not one line of Cargo.lock), and the registry's self-test holds it to Cargo.lock's. A cargo
+# install, so its cache is kept out of the home (`CARGO_HOME`) and `prefix_file` names the binary,
+# as mnemosyne-cli's install does. `check` is the default, the version: the tool prints
+# `wasm-bindgen 0.2.117`.
+[platform.linux.tools.wasm-bindgen]
+version_file = "scripts/install_wasm_bindgen.sh"
+version_pattern = '^WASM_BINDGEN_REV="([0-9.]+)"'
+path = "~/.local/share/wasm-bindgen/{version}/bin/wasm-bindgen"
+install = "CARGO_HOME={scratch}/cargo WASM_BINDGEN_ROOT={prefix} bash scripts/install_wasm_bindgen.sh"
+install_inputs = ["scripts/install_wasm_bindgen.sh"]
+prefix_file = "bin/wasm-bindgen"
+needed_by = ["wasm32-scenarios"]
+
+# Headless Chrome, pinned as a Chrome for Testing release (`scripts/install_chrome.sh`, which says
+# why and how it is checked). `prefix_link` makes the unpacked archive the store entry, because the
+# binary loads the files beside it. `check` is the default, the version: the binary prints
+# `Google Chrome for Testing <version>`. Its shared libraries are system packages whose names
+# differ between Ubuntu 22.04 and 24.04, so they are not this tool's `packages`: a machine without
+# them fails the install's postcondition, gets no tool, and takes no unit of the gate. The script's
+# header lists them for each release.
+[platform.linux.tools.chrome]
+version_file = "scripts/install_chrome.sh"
+version_pattern = '^CHROME_REV="([0-9.]+)"'
+path = "~/.local/share/chrome-for-testing/{version}/chrome-linux64/chrome"
+prefix_link = "~/.local/share/chrome-for-testing/{version}"
+install = "CHROME_ROOT={prefix} bash scripts/install_chrome.sh"
+install_inputs = ["scripts/install_chrome.sh"]
+needed_by = ["wasm32-scenarios"]
+
 # THE PYTHON THE PYTHON SUITES RUN IN: a virtual environment holding the Python runtime's
 # dependencies as `backends/python/runtime/pyproject.toml` pins them (`lupa>=2.0`), and pytest and
 # the packages tools/authoring and tools/targets import. The runtime imports `lupa.lua54`, which
@@ -254,8 +346,10 @@ needed_by = ["genmc-queue"]
 # `needed_by` names the three gates that run Python against the runtime: `w3c-python` (and with
 # it `w3c-python-bindings`, whose name contains it), `authoring-core` and `targets`, whose
 # statecharts run through the generated Python. ` targets` keeps its leading space so that
-# `--all-targets` on a cargo line does not match it. `forge-python` is not here: the forge
-# runtime's suites import nothing of the AOT runtime, and run on any python3.
+# `--all-targets` on a cargo line does not match it. `workspace-tests` joined on 2026-11-08: its
+# suites start the Python runtime, the hosted lane installs lupa for them, and the gate puts this
+# environment first on PATH where it is. `forge-python` is not here: the forge runtime's suites
+# import nothing of the AOT runtime, and run on any python3.
 [platform.linux.tools.sce-python]
 version_file = "scripts/install_sce_python.sh"
 version_pattern = '^SCE_PYTHON_REV="([0-9]+)"'
@@ -265,7 +359,7 @@ prefix_link = "~/.local/share/sce-python/{version}"
 install = "SCE_PYTHON_ROOT={prefix} bash scripts/install_sce_python.sh"
 install_inputs = ["scripts/install_sce_python.sh", "backends/python/runtime/pyproject.toml"]
 packages = ["python3-venv"]
-needed_by = ["w3c-python", "authoring-core", " targets"]
+needed_by = ["w3c-python", "authoring-core", " targets", "workspace-tests"]
 
 # The two named commands, each a table of its own: in platform tables a command
 # is `[commands.<name>]` with `run`, and with one platform it runs there. Until
