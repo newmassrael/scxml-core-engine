@@ -170,12 +170,17 @@ status=0
 # (`scxml_location` and its inverse) and the reading of a stored origin to the
 # answers the C++ `IOProcessorHelper` gives (docs/adr/0090, test 6), over no
 # document.
+#
+# `testprofile/` is the eleventh: it holds the test profile's runtime
+# (`sce_runtime.testprofile`, docs/SCE_TEST_PROFILE.md §12.2) to the cases of
+# the Rust one, over components written by hand, which no document drives.
 PYTHONPATH="$SCE_REPO_ROOT/backends/python/runtime${PYTHONPATH:+:$PYTHONPATH}" \
     "$SCE_GATE_PYTHON" -m pytest backends/python/tests/generated/ backends/python/tests/integration/ \
         backends/python/tests/ecmascript/ backends/python/tests/configuration_entry/ \
         backends/python/tests/microstep/ backends/python/tests/json_text/ \
         backends/python/tests/durations/ backends/python/tests/mesh/ \
         backends/python/tests/scheduler/ backends/python/tests/io_processors/ \
+        backends/python/tests/testprofile/ \
         --no-header -v >"$LOG/pytest.log" 2>&1 || status=$?
 cat "$LOG/pytest.log"
 
