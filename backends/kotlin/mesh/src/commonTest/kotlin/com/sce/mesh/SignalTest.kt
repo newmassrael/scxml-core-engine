@@ -61,6 +61,18 @@ class SignalTest {
         )
     }
 
+    /**
+     * Row 18 names its source, then the epoch and the replica, and neither a target nor a
+     * transport: the columns and order the Rust core's signal.rs writes for it.
+     */
+    @Test
+    fun aViewMismatchNamesItsSourceEpochAndReplica() {
+        assertEquals(
+            """{"errorName":"communication","reason":"CAUSAL_VIEW_MISMATCH","source":"list","epoch":1,"replica":"01010101-0101-0101-0101-010101010101"}""",
+            Signal.CausalViewMismatch("list", 1uL, "01010101-0101-0101-0101-010101010101").eventData(wssToHmi),
+        )
+    }
+
     @Test
     fun aGapEndedByATickHasNoBindingToName() {
         assertEquals(

@@ -5,12 +5,17 @@
 
 package com.sce.mesh
 
+import com.sce.forge.runtime.SceCursor
+import com.sce.generated.envelope.Envelope
+import com.sce.generated.pattern_kind.PatternKind
 import com.sce.runtime.EventOrigin
 import com.sce.runtime.IoProcessors
 import com.sce.runtime.StateMachineEngine
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.test.fail
 
 class EndpointTest {
     /** A transport that records what it sent and fails as told. */
@@ -65,6 +70,7 @@ class EndpointTest {
                     responders = listOf(peer),
                     deadlineMs = null,
                     replyEvents = emptyList(),
+                    causal = null,
                 ),
             )
             endpoint = Endpoint(router, transport, environment)
@@ -237,6 +243,69 @@ class EndpointTest {
         ecu.environment.now = 1000
         ecu.endpoint.tick()
         assertTrue(ecu.transport.sent.isEmpty())
+    }
+
+    /**
+     * docs/adr/0085, section 3, "offer and verdict": a causal peer's verdicts reach the host, a
+     * change leaves only once the host reports its journal record committed, and a link that comes
+     * back sends this copy's vector under an id the endpoint drew. Red if the endpoint drops a
+     * verdict, if it releases a change at its verdict, or if it performs no announcement.
+     */
+    @Test
+    fun aCausalChangeLeavesWhenTheHostCommitsItsVerdict() {
+        val transport = Recorder()
+        val environment = Fixed()
+        val router = Router("list", 8u, 50)
+        router.addPeer(
+            "people",
+            PeerConfig(
+                transport = "wss",
+                buffer = null,
+                retry = null,
+                stampSequence = false,
+                delivery = Delivery(dedup = false, ordered = false),
+                responders = listOf("people"),
+                deadlineMs = null,
+                replyEvents = emptyList(),
+                causal = CausalGroup("people", 0uL, listOf("phone/list", "laptop/list")),
+            ),
+        )
+        val endpoint = Endpoint(router, transport, environment)
+        val phone = Replica.fromBytes(ByteArray(16) { 1 })
+        assertNull(endpoint.startCausal("people", CausalStart.NewIncarnation(phone), 1, 100))
+        val edit = StateMachineEngine.HostSendRequest(
+            processorType = MESH_PROCESSOR_TYPE,
+            eventName = "edit",
+            target = "#people",
+            sendId = "",
+            eventData = """{"a":1}""",
+        )
+
+        endpoint.send(edit)
+        assertTrue(transport.sent.isEmpty(), "nothing leaves before the commit")
+        val verdict = endpoint.takeVerdicts().single() as? CausalVerdict.Accepted ?: fail("expected one acceptance")
+        assertEquals(CausalVerdict.Accepted("people", Dot(phone, 1uL)), verdict)
+        endpoint.committed("people", verdict.dot)
+        assertEquals(1, transport.sent.size)
+
+        // The log has room for one change not yet stable, and the laptop has
+        // not said what it delivered.
+        endpoint.send(edit)
+        assertEquals(
+            listOf<CausalVerdict>(CausalVerdict.Refused("people", Refusal.NO_ROOM_FOR_HISTORY)),
+            endpoint.takeVerdicts(),
+        )
+        assertEquals(1, transport.sent.size)
+
+        endpoint.peerReady("people")
+        assertEquals(2, transport.sent.size)
+        val (peer, bytes) = transport.sent.last()
+        assertEquals("people", peer)
+        val vector = Envelope.decode(SceCursor(bytes)) ?: fail("the vector is an envelope")
+        assertEquals(PatternKind.CAUSAL_VECTOR, vector.pattern)
+        assertEquals(listOf(phone.entry(1uL)), vector.causal_vector)
+        // Each send drew an id, the refused one too; the vector drew the third.
+        assertTrue(vector.id.contentEquals(ByteArray(16) { 3 }))
     }
 
     @Test

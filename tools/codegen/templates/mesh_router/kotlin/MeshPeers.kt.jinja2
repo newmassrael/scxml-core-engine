@@ -61,6 +61,15 @@ object {{ document_pascal }}MeshPeers {
                     responders = listOf({% for r in peer.responders %}"{{ r | escape_kotlin }}"{% if not loop.last %}, {% endif %}{% endfor %}),
                     deadlineMs = {% if peer.deadline_ms is not none %}{{ peer.deadline_ms }}L{% else %}null{% endif %},
                     replyEvents = listOf({% for e in peer.reply_events %}"{{ e | escape_kotlin }}"{% if not loop.last %}, {% endif %}{% endfor %}),
+{%- if peer.causal %}
+                    causal = com.sce.mesh.CausalGroup(
+                        name = "{{ peer.causal.name | escape_kotlin }}",
+                        epoch = {{ peer.causal.epoch }}uL,
+                        view = listOf({% for v in peer.causal.view %}"{{ v | escape_kotlin }}"{% if not loop.last %}, {% endif %}{% endfor %}),
+                    ),
+{%- else %}
+                    causal = null,
+{%- endif %}
                 ),
 {%- if peer.link.kind == "wss_dial" %}
                 link = PeerLink.WssDial(

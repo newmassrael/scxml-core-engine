@@ -29,6 +29,7 @@ class RouterTest {
         responders = listOf("hmi"),
         deadlineMs = null,
         replyEvents = emptyList(),
+        causal = null,
     )
     private val unordered = ordered.copy(stampSequence = false, delivery = Delivery(dedup = true, ordered = false))
 
@@ -203,8 +204,8 @@ class RouterTest {
 
     @Test
     fun aCausalRoutesControlMessageNeverReachesTheEngine() {
-        // docs/adr/0085, section 3.2: this core carries no causal route, and a
-        // `causalVector` that reaches it is dropped, not delivered as an event.
+        // docs/adr/0085, section 3.2: a `causalVector` on a binding that is not
+        // causal is dropped, not delivered as an event.
         val hmi = Router("hmi", 8u, 50)
         hmi.addPeer("ecu", unordered)
         val bytes = Envelope(

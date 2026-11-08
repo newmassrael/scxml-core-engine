@@ -137,6 +137,21 @@ fun interface Sealer {
     fun seal(target: String, event: String, data: String): Sealed
 }
 
+/**
+ * The verdict of a causal peer's layer on a change the machine sent to it
+ * (docs/adr/0085, section 3, "offer and verdict").
+ */
+sealed class CausalVerdict {
+    /**
+     * Tagged with [dot]. The host records it with its dot in the copy's
+     * journal and then calls [Endpoint.committed], which releases it.
+     */
+    data class Accepted(val peer: String, val dot: Dot) : CausalVerdict()
+
+    /** Refused: it took no number and no copy takes it in. */
+    data class Refused(val peer: String, val refusal: Refusal) : CausalVerdict()
+}
+
 /** One machine's Mesh endpoint on a host. */
 class Endpoint(
     private val router: Router,
@@ -151,6 +166,28 @@ class Endpoint(
     private val forbidden = mutableMapOf<String, Set<String>>()
     private var admission: EventAdmission? = null
     private var sealer: Sealer? = null
+
+    /** The verdicts of the causal layers on the changes the machine sent, in the order they were given ([takeVerdicts]). */
+    private val verdicts = mutableListOf<CausalVerdict>()
+
+    /** Start the causal layer of the causal peer [peer] (see [Router.startCausal]); `null` when it started. */
+    fun startCausal(peer: String, start: CausalStart, room: Int, announceEveryMs: Long): RouterError? =
+        router.startCausal(peer, start, room, announceEveryMs)
+
+    /**
+     * The verdicts of the causal layers on what the machine sent, in order. The host records each
+     * accepted change in the copy's journal, calls [committed] once the record is committed, and
+     * tells the copy of each refusal.
+     */
+    fun takeVerdicts(): List<CausalVerdict> = verdicts.toList().also { verdicts.clear() }
+
+    /**
+     * The host committed the journal record of [dot], a change sent to the causal peer [peer]: it,
+     * and every accepted change before it, leaves.
+     */
+    fun committed(peer: String, dot: Dot) {
+        apply(router.committed(peer, dot, environment.nowMs()))
+    }
 
     /**
      * The events the link [peer] may not deliver to the machine: what arrives on it under one of
@@ -308,6 +345,10 @@ class Endpoint(
                     toEngine += EngineCall.EndInvoke(effect.invokeId, effect.token, false, effect.data, effect.source)
                 is Effect.Fail ->
                     toEngine += EngineCall.EndInvoke(effect.invokeId, effect.token, true, effect.data, effect.source)
+                is Effect.Accepted -> verdicts += CausalVerdict.Accepted(effect.peer, effect.dot)
+                is Effect.Refused -> verdicts += CausalVerdict.Refused(effect.peer, effect.refusal)
+                is Effect.AnnounceDue ->
+                    apply(router.announce(effect.peer, environment.envelopeId(), environment.nowMs()))
             }
         }
     }
