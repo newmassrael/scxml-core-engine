@@ -16,6 +16,7 @@
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
 {%- import '_macros/sce_annotation_marker.jinja2' as annot %}
 {%- import '_macros/c_tree_directory.jinja2' as tree_directory %}
+{%- from '_macros/c_saved_value.jinja2' import get_scalar %}
 
 {# W3C SCXML 5.10 + 6.2 — build a `<send>`'s payload as JSON in `_ed`, the
    text the event's `data[]` carries to `set_current_event`.
@@ -437,6 +438,12 @@
    `<param>`s are the JSON object of an event's data, written from the machine's
    own fields by the wire writer. */
 #include <sce/forge/wire.h>
+{% if model.test_component and model.test_component.module_parameters %}
+/* docs/SCE_TEST_PROFILE.md §11.5, §11.8: a test component reads each of its
+   module parameters as a saved value of its type is read back, whether or not
+   a saved state can hold the machine. */
+#include <sce/saved_values.h>
+{% endif %}
 {% for line in static_imports %}
 {# An algorithm the document calls: its generated header, which `sce-codegen
    generate` writes beside the machine's own and does not include for it. #}
@@ -5605,7 +5612,13 @@ SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_init_construct({{ csym_p
        starts empty, which the memset above already made it: its value is not
        written again from a copy of its whole bound (docs/adr/0082). */
     {% endif %}
-{% if field.saved_kind != "list" and field.saved_kind != "record_list" %}
+{% if field.module_parameter %}
+    /* docs/SCE_TEST_PROFILE.md §11.5: the module parameter `{{ field.id }}` has no value
+       of the document's. The component reads the run's value into it before the initial
+       configuration is entered, so it starts at a value nothing reads: its type's zero,
+       or for an enum the variant its document declares first. */
+    sm->policy.{{ field.name }} = {{ module_parameter_starts[field.id] }};
+{% elif field.saved_kind != "list" and field.saved_kind != "record_list" %}
     sm->policy.{{ field.name }} = {{ field.init }};
 {% endif %}
 {% endfor %}
@@ -7449,10 +7462,39 @@ SCE_SM_FN static void {{ P }}_component_invoke(void *user_data, const sce_host_i
     }
 }
 {% endif %}
+{% if model.test_component.module_parameters %}
+{% set parameter_fields = static_fields | selectattr('module_parameter') | list %}
+
+/* §11.5, §11.8: each module parameter takes the value the suite gives it, read as a saved value of its
+   declared type is read back (`sce/saved_values.h`), from the run's module parameters, which
+   `sce_test_context_read_module_parameters` hands it before the initial configuration is entered. It
+   answers false, the refusal in `err` naming the module parameter whose value is not given, not of its
+   type or past its bound, and then writes no variable: every value is read before any is written. */
+SCE_SM_FN static bool {{ P }}_component_accept_module_parameters(void *user_data,
+                                                                const sce_test_module_parameters_t *given,
+                                                                sce_saved_error_t *err) {
+    {{ P }}_t *sm = ({{ P }}_t *)user_data;
+{% for field in parameter_fields %}
+    sce_jv_t raw{{ loop.index }};
+    {{ field.ty }} read{{ loop.index }};
+    memset(&raw{{ loop.index }}, 0, sizeof(raw{{ loop.index }}));
+    memset(&read{{ loop.index }}, 0, sizeof(read{{ loop.index }}));
+    if (!sce_test_module_parameters_of(given, "{{ field.id | escape_c }}", &raw{{ loop.index }}, err) ||
+        !{{ get_scalar(field.saved_kind == "enum", field.saved_type, field.bound, "raw" ~ loop.index, '"' ~ (field.id | escape_c) ~ '"', "read" ~ loop.index) }}) {
+        return false;
+    }
+{% endfor %}
+{% for field in parameter_fields %}
+    sm->policy.{{ field.name }} = read{{ loop.index }};
+{% endfor %}
+    return true;
+}
+{% endif %}
 
 /* The component's machine starts: its doors are given to the construction, which keeps them before
    the first `<onentry>` runs, and the context is set on the machine the construction has just
-   cleared, before the initial configuration is entered (`_init_enter`). */
+   cleared, before the initial configuration is entered (`_init_enter`). A component that declares a
+   module parameter reads the run's value of each into its variable between the two. */
 SCE_SM_FN static void {{ P }}_component_start(sce_test_component_machine_t *self,
                                               const sce_test_component_context_t *context) {
     {{ P }}_t *sm = &(({{ P }}_component_t *)(void *)self)->machine;
@@ -7470,6 +7512,16 @@ SCE_SM_FN static void {{ P }}_component_start(sce_test_component_machine_t *self
 {% endif %}
     (void){{ P }}_init_construct(sm, false{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, {% if sends_on_ports %}&processors{% else %}NULL{% endif %}{% endif %}{% if model.host_invoker_types %}, {% if creates_ptcs %}&invokers{% else %}NULL{% endif %}{% endif %});
     sm->test_context = *context;
+{% if model.test_component.module_parameters %}
+    /* §11.5, §11.8: the module parameters take the suite's values before the initial configuration is
+       entered. Without one, or with one not of its type, the run ends in error (P13), and the machine
+       is not started on a value made up in its place: it stays constructed and not entered, and its
+       `release` tears it down as any other. */
+    if (!sce_test_context_read_module_parameters(&sm->test_context, {{ P }}_component_accept_module_parameters,
+                                                 sm)) {
+        return;
+    }
+{% endif %}
     {{ P }}_init_enter(sm);
 }
 

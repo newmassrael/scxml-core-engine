@@ -34123,20 +34123,23 @@ fn kotlin_default(ty: &SceType) -> &'static str {
 /// machine `lowering` lowered for `language` starts at, by its id. A module
 /// parameter has no initial value of its document's: the component reads the
 /// suite's value into it before the machine starts, so it starts at its type's
-/// zero (`zero`), or for an enum, whose machine type has no zero of the
-/// language's, at the variant its document declares first, as `variant`
-/// names a variant of the machine's enum type; nothing reads either. Every
-/// other variable starts at its `expr` and has no entry. One walk for every
-/// backend whose template declares the slot with a value
-/// ([`kotlin_module_parameter_starts`], [`go_module_parameter_starts`],
-/// [`python_module_parameter_starts`]).
+/// zero (`zero`, given the type and the field that holds it), or for an enum,
+/// whose machine type has no zero of the language's, at the variant its
+/// document declares first, as `variant` names a variant of the machine's enum
+/// type; nothing reads either. Every other variable starts at its `expr` and
+/// has no entry. One walk for every backend whose template declares the slot
+/// with a value ([`kotlin_module_parameter_starts`],
+/// [`go_module_parameter_starts`], [`python_module_parameter_starts`],
+/// [`c11_module_parameter_starts`]).
 ///
 /// Refused by name where a module parameter is of no type the lowering
-/// declares, which a lowering that held it to a scalar type cannot reach.
+/// declares, which a lowering that held it to a scalar type cannot reach, and
+/// where `zero` has none for the field, which the machine holds in no place a
+/// value of its type can be read into.
 fn module_parameter_starts(
     lowering: &crate::forge::static_lowering::StaticLowering,
     language: &str,
-    zero: impl Fn(&SceType) -> &'static str,
+    zero: impl Fn(&SceType, &crate::forge::static_lowering::StaticField) -> Option<String>,
     variant: impl Fn(
         &crate::forge::static_lowering::StaticEnumType,
         &crate::forge::static_lowering::StaticEnumVariant,
@@ -34150,7 +34153,7 @@ fn module_parameter_starts(
         }
         match SceType::from_attr(&field.saved_type)? {
             SceType::Enum(_) => None,
-            scalar => Some(zero(&scalar).to_string()),
+            scalar => zero(&scalar, field),
         }
     };
     lowering
@@ -34176,9 +34179,12 @@ fn module_parameter_starts(
 pub(crate) fn kotlin_module_parameter_starts(
     lowering: &crate::forge::static_lowering::StaticLowering,
 ) -> Result<std::collections::BTreeMap<String, String>, GenerateError> {
-    module_parameter_starts(lowering, "Kotlin", kotlin_default, |declared, first| {
-        format!("{}.{}", declared.ty, first.ident)
-    })
+    module_parameter_starts(
+        lowering,
+        "Kotlin",
+        |ty, _| Some(kotlin_default(ty).to_string()),
+        |declared, first| format!("{}.{}", declared.ty, first.ident),
+    )
 }
 
 /// [`module_parameter_starts`] of the Go machine `lowering`: a scalar at
@@ -34188,9 +34194,12 @@ pub(crate) fn kotlin_module_parameter_starts(
 pub(crate) fn go_module_parameter_starts(
     lowering: &crate::forge::static_lowering::StaticLowering,
 ) -> Result<std::collections::BTreeMap<String, String>, GenerateError> {
-    module_parameter_starts(lowering, "Go", go_zero_value, |_, first| {
-        first.ident.clone()
-    })
+    module_parameter_starts(
+        lowering,
+        "Go",
+        |ty, _| Some(go_zero_value(ty).to_string()),
+        |_, first| first.ident.clone(),
+    )
 }
 
 /// [`module_parameter_starts`] of the Python machine `lowering`: a scalar at
@@ -34199,9 +34208,39 @@ pub(crate) fn go_module_parameter_starts(
 pub(crate) fn python_module_parameter_starts(
     lowering: &crate::forge::static_lowering::StaticLowering,
 ) -> Result<std::collections::BTreeMap<String, String>, GenerateError> {
-    module_parameter_starts(lowering, "Python", python_default, |declared, first| {
-        format!("{}.{}", declared.ty, first.ident)
-    })
+    module_parameter_starts(
+        lowering,
+        "Python",
+        |ty, _| Some(python_default(ty).to_string()),
+        |declared, first| format!("{}.{}", declared.ty, first.ident),
+    )
+}
+
+/// [`module_parameter_starts`] of the C11 machine `lowering`, each start a
+/// value the machine's construction assigns to the member: a number at `0`, a
+/// `bool` at `false`, a text or a byte string at the empty value of the buffer
+/// of its bound (a compound literal of the field's own type, a byte string's
+/// length `0` too), and an enum at its first variant, a constant of the enum's
+/// unit. A text or a byte string the machine holds in no buffer, one that
+/// declares no bound, is refused by name: there is no place the run's value
+/// could be read into, and a pointer into the run's text is no value of the
+/// type.
+pub(crate) fn c11_module_parameter_starts(
+    lowering: &crate::forge::static_lowering::StaticLowering,
+) -> Result<std::collections::BTreeMap<String, String>, GenerateError> {
+    module_parameter_starts(
+        lowering,
+        "C11",
+        |ty, field| match ty {
+            SceType::String => field.bound.map(|_| format!("({}){{ {{ 0 }} }}", field.ty)),
+            SceType::Bytes => field
+                .bound
+                .map(|_| format!("({}){{ {{ 0 }}, 0 }}", field.ty)),
+            SceType::Bool => Some("false".to_string()),
+            _ => Some("0".to_string()),
+        },
+        |_, first| first.ident.clone(),
+    )
 }
 
 /// The zero value of a Go type ([`go_type`]), as a value a field of that type

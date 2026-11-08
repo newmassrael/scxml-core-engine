@@ -1,0 +1,45 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{#
+    A scalar's saved form (SCE Accepted Subset §2.15, docs/adr/0045), as a C11 machine
+    writes it and reads it back: a value of an enum by the functions its type declares
+    beside it (`<type>_saved_write`, `<type>_saved_read`, emitted with the type by the
+    static lowering), a text and a byte string from the buffer of their bound, and every
+    other type by the runtime's function named for the `sce:type`
+    (`backends/c/runtime/include/sce/saved_values.h`). One text for a machine's
+    `_save`, `_judge` and `_restore` (`c/saved.c.jinja2`) and for a test component's
+    read of its module parameters (`c/state_machine.c.jinja2`, docs/SCE_TEST_PROFILE.md
+    §11.5), which reads a value as a restored variable of its type is read. The C11 twin
+    of `_macros/cpp_saved_value.jinja2`.
+#}
+
+{#- The statement that writes `expr`, a value of the scalar type `stype`, to the saved
+    state `w`. `is_enum` says the value is of an enum. -#}
+{% macro put_scalar(is_enum, stype, expr) -%}
+{%- if is_enum -%}
+{{ stype }}_saved_write(w, {{ expr }});
+{%- elif stype == "string" -%}
+sce_saved_write_string(w, ({{ expr }}).data);
+{%- elif stype == "bytes" -%}
+sce_saved_write_bytes(w, ({{ expr }}).data, ({{ expr }}).len);
+{%- else -%}
+sce_saved_write_{{ stype }}(w, {{ expr }});
+{%- endif -%}
+{%- endmacro %}
+
+{#- The expression that reads `member`, the saved value named `what` (a C expression of a
+    text), into `dest`, a place of the scalar type `stype`, and answers whether it did,
+    the refusal in `err` where it did not. A text and a byte string are held to `bound`,
+    the bound of the buffer `dest` is. `is_enum` says the value is of an enum. -#}
+{% macro get_scalar(is_enum, stype, bound, member, what, dest) -%}
+{%- if is_enum -%}
+{{ stype }}_saved_read({{ member }}, {{ what }}, &{{ dest }}, err)
+{%- elif stype == "string" -%}
+sce_saved_read_string_bounded({{ member }}, {{ what }}, ({{ dest }}).data, {{ bound }}u, err)
+{%- elif stype == "bytes" -%}
+sce_saved_read_bytes({{ member }}, {{ what }}, ({{ dest }}).data, {{ bound }}u, &({{ dest }}).len, err)
+{%- else -%}
+sce_saved_read_{{ stype }}({{ member }}, {{ what }}, &{{ dest }}, err)
+{%- endif -%}
+{%- endmacro %}

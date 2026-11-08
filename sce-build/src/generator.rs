@@ -4026,6 +4026,10 @@ fn render_c11(
     // ([`crate::forge::native_action`] reaches only what a backend lowers).
     let static_lowering =
         crate::forge::static_lowering::lower_c11(&mut model_lowered, &csym_prefix)?;
+    // docs/SCE_TEST_PROFILE.md §11.5: what each module parameter of a test
+    // component starts at before the component reads the suite's value into it.
+    let module_parameter_starts =
+        crate::forge::generator::c11_module_parameter_starts(&static_lowering)?;
     // §scxml-G-7: lower `<sce:action>` Custom Action Elements to native host
     // dispatch (engine-free). The C11 token is the raw snake stem — the same
     // one `build_c11_event_payload` names its types after — not the PascalCase
@@ -4216,6 +4220,7 @@ fn render_c11(
         static_imports => &static_lowering.imports,
         static_adapter_defs => static_lowering.adapter_defs.join("\n\n"),
         static_saved_shape => &static_saved_shape,
+        module_parameter_starts => &module_parameter_starts,
         // docs/SCE_TEST_PROFILE.md §12.3: the doors a test component's machine
         // reaches its runtime through, which the component the runtime drives
         // registers and delivers the snapshot by.

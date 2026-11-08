@@ -21,30 +21,9 @@
 
 {%- import '_macros/c_child_begin.jinja2' as child_begin %}
 {%- import '_macros/c_tree_directory.jinja2' as tree_directory %}
-{#- A variable's saved form. `is_enum` says the value is of an enum, written and
-    read by the functions its type declares beside it. -#}
-{% macro put_scalar(is_enum, stype, expr) -%}
-{%- if is_enum -%}
-{{ stype }}_saved_write(w, {{ expr }});
-{%- elif stype == "string" -%}
-sce_saved_write_string(w, ({{ expr }}).data);
-{%- elif stype == "bytes" -%}
-sce_saved_write_bytes(w, ({{ expr }}).data, ({{ expr }}).len);
-{%- else -%}
-sce_saved_write_{{ stype }}(w, {{ expr }});
-{%- endif -%}
-{%- endmacro %}
-{% macro get_scalar(is_enum, stype, bound, member, what, dest) -%}
-{%- if is_enum -%}
-{{ stype }}_saved_read({{ member }}, {{ what }}, &{{ dest }}, err)
-{%- elif stype == "string" -%}
-sce_saved_read_string_bounded({{ member }}, {{ what }}, ({{ dest }}).data, {{ bound }}u, err)
-{%- elif stype == "bytes" -%}
-sce_saved_read_bytes({{ member }}, {{ what }}, ({{ dest }}).data, {{ bound }}u, &({{ dest }}).len, err)
-{%- else -%}
-sce_saved_read_{{ stype }}({{ member }}, {{ what }}, &{{ dest }}, err)
-{%- endif -%}
-{%- endmacro %}
+{#- A scalar's saved form, one text with a test component's read of its module
+    parameters (`c/state_machine.c.jinja2`). -#}
+{%- from '_macros/c_saved_value.jinja2' import put_scalar, get_scalar %}
 {#- The statement that writes the variable `field`, held in `expr`. -#}
 {% macro put_value(field, expr) -%}
 {%- if field.saved_kind == "scalar" -%}
