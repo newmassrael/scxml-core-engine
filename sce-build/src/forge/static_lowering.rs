@@ -15353,7 +15353,7 @@ impl StaticTarget for CTarget {
                             copies.push_str(&format!(
                                 " SCE_STATIC_ASSERT(sizeof({read}.data) <= sizeof({buffer}), \
                                  \"the text `{id}` of `{event}` fits the buffer the machine \
-                                 keeps for it (SCE_MAX_DATA_LEN)\"); \
+                                 keeps for it (its bound and the terminator)\"); \
                                  memcpy({buffer}, {read}.data, sizeof({read}.data)); \
                                  {accessor}.{id} = {buffer};",
                                 event = filters::escape_c(template.event.clone())
