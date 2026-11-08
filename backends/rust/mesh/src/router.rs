@@ -1032,7 +1032,7 @@ mod tests {
         let mut hmi = Router::new("hmi", 8, 50).unwrap();
         hmi.add_peer("ecu", UNORDERED);
         let bytes = Envelope {
-            id: (&[1; 16]).into(),
+            id: (&[1u8; 16]).into(),
             source: within("ecu").unwrap(),
             event_type: within("").unwrap(),
             pattern: PatternKind::CausalVector,
