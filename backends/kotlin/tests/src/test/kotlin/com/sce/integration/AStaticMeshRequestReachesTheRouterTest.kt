@@ -223,6 +223,7 @@ class AStaticMeshRequestReachesTheRouterTest {
                 responders = listOf("motor"),
                 deadlineMs = null,
                 replyEvents = emptyList(),
+                causal = null,
             ),
         )
         return Endpoint(router, { peer, bytes -> sent += peer to bytes; null }, Fixed())

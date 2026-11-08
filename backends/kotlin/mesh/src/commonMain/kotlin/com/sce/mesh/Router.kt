@@ -43,6 +43,12 @@ data class PeerConfig(
      * (§mesh-10.7); every other send is `FireForget`.
      */
     val replyEvents: List<String>,
+    /**
+     * The causal group this binding is the route of (docs/adr/0085, section 3.2), or `null` for the
+     * per-source rules. A causal peer's changes go through its causal layer ([Router.startCausal]),
+     * which then replaces the duplicate window and the sequence buffer for it.
+     */
+    val causal: CausalGroup?,
 )
 
 /** One thing the host must do. */
@@ -82,6 +88,28 @@ sealed class Effect {
      * `null` when the requester's own deadline ended it.
      */
     data class Fail(val invokeId: String, val token: Long, val data: String, val source: String?) : Effect()
+
+    /**
+     * A change the document sent to the causal peer [peer] was accepted and
+     * tagged with [dot] (docs/adr/0085, section 3, "offer and verdict"). The
+     * host records it with its dot in the copy's journal, then calls
+     * [Router.committed]; nothing of it leaves before.
+     */
+    data class Accepted(val peer: String, val dot: Dot) : Effect()
+
+    /**
+     * A change the document sent to the causal peer [peer] was refused: it
+     * took no number and no copy takes it in. The host tells the copy, which
+     * tells `noRoomForHistory`.
+     */
+    data class Refused(val peer: String, val refusal: Refusal) : Effect()
+
+    /**
+     * The causal peer [peer] is owed this copy's `causalVector`, its link
+     * having come back or its period having passed. The host draws an
+     * envelope id and calls [Router.announce].
+     */
+    data class AnnounceDue(val peer: String) : Effect()
 }
 
 /** What became of a request [Router.invoke] was handed. */
@@ -128,6 +156,12 @@ sealed class RouterError {
 
     /** An event the machine sent was not sent: the host's [Sealer] said it must not leave; [reason] is its word for it. */
     data class EventNotSealed(val target: String, val event: String, val reason: String) : RouterError()
+
+    /** The host asked for the causal layer of a peer whose binding is not causal. */
+    data class NotCausal(val peer: String) : RouterError()
+
+    /** A causal peer was used before the host started its causal layer ([Router.startCausal]). */
+    data class CausalNotStarted(val peer: String) : RouterError()
 }
 
 /** A router call's answer: the effects to perform, or why there are none. */
@@ -152,6 +186,14 @@ class Router(val machine: String, dedupWindow: UInt, gapTimeoutMs: Long) {
     private class Peer(val config: PeerConfig) {
         val outbound = Outbound(config.buffer)
         var nextSequence: ULong = 1u
+
+        /** The causal layer of a causal peer, once the host started it. */
+        var causal: Causal? = null
+    }
+
+    /** A causal peer's layer and when it last announced its vector. */
+    private class Causal(val layer: CausalLayer<ByteArray>, val announceEveryMs: Long) {
+        var announcedMs: Long? = null
     }
 
     private val inbound = Inbound(dedupWindow, gapTimeoutMs)
@@ -162,6 +204,58 @@ class Router(val machine: String, dedupWindow: UInt, gapTimeoutMs: Long) {
     fun addPeer(peer: String, config: PeerConfig) {
         peers[peer] = Peer(config)
     }
+
+    /**
+     * Start the causal layer of the causal peer [peer] (docs/adr/0085,
+     * sections 3.2 and 3.3): [start] is the incarnation the host read from the
+     * copy's journal, or a new one; [room] the most changes the layer may hold
+     * not yet stable; [announceEveryMs] the period of its `causalVector`. A
+     * send to a causal peer before this is refused. `null` when it started.
+     */
+    fun startCausal(peer: String, start: CausalStart, room: Int, announceEveryMs: Long): RouterError? {
+        val bound = peers[peer] ?: return RouterError.UnknownPeer(peer)
+        val group = bound.config.causal ?: return RouterError.NotCausal(peer)
+        bound.causal = Causal(CausalLayer(group, start, room), announceEveryMs)
+        return null
+    }
+
+    /** The causal layer of [peer], for the host to read (its replica, its delivered vector, what it holds). */
+    fun causalLayer(peer: String): CausalLayer<ByteArray>? = peers[peer]?.causal?.layer
+
+    /**
+     * The host committed the journal record of [dot], a change of the causal
+     * peer [peer]: what it releases goes to that peer's send half.
+     */
+    fun committed(peer: String, dot: Dot, nowMs: Long): Routed {
+        val bound = peers[peer] ?: return Routed.Refused(RouterError.UnknownPeer(peer))
+        val causal = bound.causal ?: return Routed.Refused(notStarted(peer, bound))
+        return Routed.Done(causal.layer.committed(dot).flatMap { dispatch(peer, bound, it, nowMs) })
+    }
+
+    /**
+     * Send this copy's `causalVector` to the causal peer [peer] (pattern 23:
+     * the epoch and its delivered vector, keys 19 and 20). [id] is the
+     * envelope id the host drew.
+     */
+    fun announce(peer: String, id: ByteArray, nowMs: Long): Routed {
+        val bound = peers[peer] ?: return Routed.Refused(RouterError.UnknownPeer(peer))
+        val causal = bound.causal ?: return Routed.Refused(notStarted(peer, bound))
+        val tag = causal.layer.summary()
+        causal.announcedMs = nowMs
+        val envelope = Envelope(
+            id = id,
+            source = machine,
+            event_type = "",
+            pattern = PatternKind.CAUSAL_VECTOR,
+            datacontenttype = PayloadCodec.NONE,
+        )
+        val bytes = stamp(envelope, tag).encodeToByteArray() ?: return Routed.Refused(RouterError.Encode)
+        return Routed.Done(dispatch(peer, bound, bytes, nowMs))
+    }
+
+    /** Why [peer], bound as [bound], has no causal layer to use. */
+    private fun notStarted(peer: String, bound: Peer): RouterError =
+        if (bound.config.causal == null) RouterError.NotCausal(peer) else RouterError.CausalNotStarted(peer)
 
     /** The retry policy the host applies when a transmission to [peer] fails. */
     fun retryPolicy(peer: String): RetryPolicy? = peers[peer]?.config?.retry
@@ -201,8 +295,28 @@ class Router(val machine: String, dedupWindow: UInt, gapTimeoutMs: Long) {
             invoke_id = if (reply) parseUuidText(request.invokeId) else null,
             rpc_status = if (reply) RpcStatus.OK else null,
         )
+        if (peer.config.causal != null) return offer(peerName, peer, envelope)
         return transmit(peerName, peer, envelope, nowMs)?.let { Routed.Done(it) }
             ?: Routed.Refused(RouterError.Encode)
+    }
+
+    /**
+     * Offer [envelope] to the causal layer of [peerName] (docs/adr/0085,
+     * section 3, "offer and verdict"): the verdict is the host's to act on,
+     * and nothing leaves before the host commits an accepted change's journal
+     * record.
+     */
+    private fun offer(peerName: String, peer: Peer, envelope: Envelope): Routed {
+        val causal = peer.causal ?: return Routed.Refused(notStarted(peerName, peer))
+        val verdict = when (val offered = causal.layer.offer { tag -> stamp(envelope, tag).encodeToByteArray() }) {
+            Offered.Unbuilt -> return Routed.Refused(RouterError.Encode)
+            is Offered.Answered -> offered.verdict
+        }
+        val effect = when (verdict) {
+            is Verdict.Accepted -> Effect.Accepted(peerName, verdict.dot)
+            is Verdict.Refused -> Effect.Refused(peerName, verdict.refusal)
+        }
+        return Routed.Done(listOf(effect))
     }
 
     /**
@@ -283,21 +397,30 @@ class Router(val machine: String, dedupWindow: UInt, gapTimeoutMs: Long) {
         // §mesh-10.6.3: the counter advances once per envelope written, and has
         // no wrap guard.
         if (peer.config.stampSequence) peer.nextSequence += 1u
-        return when (val admitted = peer.outbound.admit(bytes, nowMs)) {
+        return dispatch(peerName, peer, bytes, nowMs)
+    }
+
+    /** Hand written envelope [bytes] to [peer]'s send half. */
+    private fun dispatch(peerName: String, peer: Peer, bytes: ByteArray, nowMs: Long): List<Effect> =
+        when (val admitted = peer.outbound.admit(bytes, nowMs)) {
             is Admitted.Send -> listOf(Effect.Transmit(peerName, admitted.bytes))
             Admitted.Queued -> emptyList()
             is Admitted.Dropped -> listOf(Effect.Raise(peerName, admitted.signal))
         }
-    }
 
     /** [peer]'s transport became ready: release what waited for it. */
     fun peerReady(peer: String, nowMs: Long): Routed {
         val bound = peers[peer] ?: return Routed.Refused(RouterError.UnknownPeer(peer))
+        // docs/adr/0085, section 3.2: a link that comes back carries this
+        // copy's vector at once, so what was lost while it was down is
+        // repaired without waiting for the period.
+        val announce = if (bound.causal != null) listOf(Effect.AnnounceDue(peer)) else emptyList()
         return when (val drained = bound.outbound.markReady(nowMs)) {
             is AlgorithmResult.Failed -> Routed.Refused(RouterError.Rule(drained.error))
             is AlgorithmResult.Ok -> Routed.Done(
                 drained.value.send.map { Effect.Transmit(peer, it) } +
-                    drained.value.signals.map { Effect.Raise(peer, it) },
+                    drained.value.signals.map { Effect.Raise(peer, it) } +
+                    announce,
             )
         }
     }
@@ -319,7 +442,9 @@ class Router(val machine: String, dedupWindow: UInt, gapTimeoutMs: Long) {
      * limit of this receiver, which no row names, so it is returned.
      */
     fun receive(peer: String, bytes: ByteArray, nowMs: Long): Routed {
-        val delivery = peers[peer]?.config?.delivery ?: return Routed.Refused(RouterError.UnknownPeer(peer))
+        val bound = peers[peer] ?: return Routed.Refused(RouterError.UnknownPeer(peer))
+        if (bound.config.causal != null) return receiveCausal(peer, bound, bytes, nowMs)
+        val delivery = bound.config.delivery
         // §mesh-14.6: a reply is checked against its request's responder set on
         // arrival, while the binding it came in on is still known — an ordered
         // binding may hold it and release it on a later tick. One from outside
@@ -361,7 +486,58 @@ class Router(val machine: String, dedupWindow: UInt, gapTimeoutMs: Long) {
                 null,
             )
         }
-        return Routed.Done(gaps + expired)
+        // docs/adr/0085, section 3.2: each causal peer is owed this copy's
+        // vector on its period, which repairs a loss no link edge reports.
+        // Peers are visited in name order, as the Rust core visits them.
+        val announce = peers.keys.sorted().mapNotNull { name ->
+            val causal = peers.getValue(name).causal ?: return@mapNotNull null
+            val at = causal.announcedMs
+            if (at == null || saturatingSub(nowMs, at) >= causal.announceEveryMs) Effect.AnnounceDue(name) else null
+        }
+        return Routed.Done(gaps + expired + announce)
+    }
+
+    /**
+     * Envelope [bytes] the causal peer [peerName] delivered: a change goes
+     * through the causal layer, which delivers it with whatever it releases,
+     * holds it or drops it; a `causalVector` is recorded as its sender's mark
+     * and answered with every change of the log it lacks. An envelope of
+     * another epoch, or by a replica the view does not hold, is raised as
+     * `CAUSAL_VIEW_MISMATCH` and is not delivered (docs/adr/0085, section 3.2).
+     */
+    private fun receiveCausal(peerName: String, peer: Peer, bytes: ByteArray, nowMs: Long): Routed {
+        fun raise(signal: Signal) = Routed.Done(listOf(Effect.Raise(peerName, signal)))
+        // The bytes are the envelope's CBOR (§mesh-7.5); nothing in them can
+        // be trusted to name a source.
+        val envelope = Envelope.decode(SceCursor(bytes)) ?: return raise(Signal.EnvelopeCorrupt(null, "cbor"))
+        val tag = when (val read = envelopeTag(envelope)) {
+            is EnvelopeTag.Tagged -> read.tag
+            // An envelope on a causal route carries its tag; one without it,
+            // or with half of it, cannot be placed, and is not delivered.
+            EnvelopeTag.Untagged, EnvelopeTag.HalfTagged ->
+                return raise(Signal.EnvelopeCorrupt(envelope.source, "cbor"))
+        }
+        val causal = peer.causal ?: return Routed.Refused(notStarted(peerName, peer))
+        val summary = envelope.pattern == PatternKind.CAUSAL_VECTOR
+        val received = if (summary) causal.layer.receiveSummary(tag) else causal.layer.receive(tag, bytes)
+        val messages = when (received) {
+            is CausalReceived.Messages -> received.messages
+            is CausalReceived.Rejected -> return when (val rejection = received.rejection) {
+                is Rejection.OtherEpoch ->
+                    raise(viewMismatch(envelope.source, rejection.epoch, tag.vector.firstOrNull()?.let { Replica.of(it) }))
+                is Rejection.NotInView -> raise(viewMismatch(envelope.source, tag.epoch, rejection.replica))
+                Rejection.Malformed -> raise(Signal.EnvelopeCorrupt(envelope.source, "cbor"))
+                is Rejection.Rule -> Routed.Refused(RouterError.Rule(rejection.error))
+            }
+        }
+        // A vector is answered with the changes it lacks, sent back as they
+        // were sent; a change releases the changes it lets this copy deliver.
+        if (summary) return Routed.Done(messages.flatMap { dispatch(peerName, peer, it, nowMs) })
+        // These bytes decoded on arrival, and decoding is a function of the
+        // bytes alone.
+        return Routed.Done(
+            messages.mapNotNull { released -> Envelope.decode(SceCursor(released))?.let { deliver(it, peerName) } },
+        )
     }
 
     /**
@@ -383,9 +559,8 @@ class Router(val machine: String, dedupWindow: UInt, gapTimeoutMs: Long) {
         outcome.released.mapNotNull { envelope ->
             when {
                 // A causal route's control message never reaches an engine
-                // (docs/adr/0085, section 3.2). This core carries no causal
-                // route yet (the build refuses `delivery: causal` for Kotlin),
-                // so one that arrives is dropped.
+                // (docs/adr/0085, section 3.2); one on a binding that is not
+                // causal is no message of its route, and is dropped.
                 envelope.pattern == PatternKind.CAUSAL_VECTOR -> null
                 // A reply's responder was checked on arrival.
                 else -> when (val wireId = replyTo(envelope)) {
@@ -471,6 +646,26 @@ private fun payloadText(envelope: Envelope): PayloadText =
 
 /** [a] + [b] for non-negative [b], held at `Long.MAX_VALUE` rather than wrapping. */
 private fun saturatingAdd(a: Long, b: Long): Long = if (a > Long.MAX_VALUE - b) Long.MAX_VALUE else a + b
+
+/** [a] - [b], held at the bound it passes rather than wrapping, as Rust's `saturating_sub`. */
+private fun saturatingSub(a: Long, b: Long): Long {
+    val difference = a - b
+    // The subtraction overflowed when the operands' signs differ and the
+    // result's sign is not the minuend's.
+    return if (((a xor b) and (a xor difference)) < 0) {
+        if (a < 0) Long.MIN_VALUE else Long.MAX_VALUE
+    } else {
+        difference
+    }
+}
+
+/**
+ * The row an envelope of another epoch, or of a replica the view does not
+ * hold, raises: §mesh-16.7 row 18, naming the replica as RFC 4122 text, or
+ * nothing when the envelope named none.
+ */
+private fun viewMismatch(source: String, epoch: ULong, replica: Replica?): Signal =
+    Signal.CausalViewMismatch(source, epoch, replica?.let { uuidText(it.toBytes()) } ?: "")
 
 /**
  * The event an admitted envelope raises. A JSON or empty payload is the
