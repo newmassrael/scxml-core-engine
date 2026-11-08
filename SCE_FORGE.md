@@ -1181,6 +1181,14 @@ declares; a lower count is, on every backend alike:
 - Swift: `[<Schema>Payload]`, the functions private static members of the codec's
   struct; a refused read throws as Rust's returns (`cborOutOfRange`,
   `cborMalformed`, `cborRequiredKeyMissing`).
+- C11: `struct { uint32_t len; <Schema>Payload_t items[N]; }` in the codec's
+  struct (with `bool present` first where the entry may be absent), each text of
+  a record the buffer of its bound ended by its terminator, the functions
+  `static inline` in the header, prefixed with the codec's name. A read refuses a
+  text that carries the terminator's byte, as an optional text entry's does, and
+  a write a text whose buffer holds no terminator at its bound; the array holds
+  `N` items, so what is refused is a `len` past `N`. `<NAME>_MAX_BYTES` counts
+  each list at its bound.
 
 Every other backend refuses such a codec by name until its template writes the
 array (`cbor_codec::lowers_record_list`), and a broadcast log over one is refused
