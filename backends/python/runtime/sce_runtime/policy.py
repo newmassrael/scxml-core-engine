@@ -290,6 +290,16 @@ class StatePolicy(ABC, Generic[S, E]):
         no-op so generated policies opt in; concrete `*_sm.py`
         emits a binding into `self._ns["_event"]`."""
 
+    def lift_event_payload(self, event: E, metadata) -> Optional[str]:
+        """The door of an event just taken off a queue (docs/adr/0086,
+        section 4.2): bind its typed `_event.data` view, the one natively
+        lowered guards read, and answer why its data does not fit its type,
+        or `None` for an event it admits. The engine refuses a delivery with
+        a refusal whole: no transition is selected for it, and an
+        `error.execution` that carries the sentence is taken in its place.
+        Default `None` for a policy that reads no typed payload."""
+        return None
+
     # ── Invoke hooks (§scxml-6.4) ─────────────────────────────
 
     def get_event_from_name(self, event_name: str) -> Optional[E]:
