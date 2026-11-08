@@ -162,6 +162,16 @@ struct RecordingEngine {
         invokeDoneSubjects.push_back(env.subject.value_or(std::string{}));
     }
 
+    // SCE_MESH.md §mesh-9.6.2 wire 15. A real parent's generated hook posts the
+    // child's session id for its owner to stamp into `activeInvokes_`; the
+    // double records every id handed to it, so an envelope the dispatch should
+    // have dropped shows up here.
+    std::vector<std::string> invokeStartedSessionIds;
+
+    void onInvokeStarted(const MeshEnvelope &env) {
+        invokeStartedSessionIds.push_back(env.child_session_id.value_or(std::string{}));
+    }
+
     // SCE_MESH.md §9.6.4 step 4: the parent identifies the `<invoke>` a
     // wire-16 ChildEvent belongs to before the event may take part in
     // transition selection. A real parent answers from `activeInvokes_`;
@@ -408,6 +418,73 @@ TEST(MeshDispatchTest, ChildEventWithoutASessionIdIsNotDelivered) {
 
     EXPECT_FALSE((dispatchEnvelope<RecordingEngine::Policy, RecordingEngine>(env, engine)));
     EXPECT_TRUE(engine.events.empty());
+}
+
+// A session id is an XML Nmtoken (saved/SessionId.h), and the parent writes a
+// child's as the sender of the child's events, which a saved state refuses when
+// it is not one. A wire-16 whose `child_session_id` is no Nmtoken names no
+// session, as one without the field names none. The double admits the id as an
+// active session, so only the Nmtoken rule can keep the event out.
+TEST(MeshDispatchTest, ChildEventWhoseSessionIdIsNoNmtokenIsNotDelivered) {
+    for (const char *id : {"a b", ""}) {
+        RecordingEngine engine;
+        engine.activeChildSessions.push_back(id);
+
+        EXPECT_FALSE((dispatchEnvelope<RecordingEngine::Policy, RecordingEngine>(makeChildEvent(id), engine)))
+            << "a ChildEvent naming '" << id << "' was delivered";
+        EXPECT_TRUE(engine.events.empty()) << "a ChildEvent naming '" << id << "' reached the parent's queue";
+    }
+
+    // ':' is a name character, so a `<parent_machine>:<invoke_id>` id is one.
+    RecordingEngine engine;
+    engine.activeChildSessions.push_back("parent:inv1");
+    EXPECT_TRUE((dispatchEnvelope<RecordingEngine::Policy, RecordingEngine>(makeChildEvent("parent:inv1"), engine)));
+    ASSERT_EQ(engine.events.size(), 1u);
+    EXPECT_EQ(engine.events[0].sender, "parent:inv1");
+}
+
+namespace {
+
+MeshEnvelope makeInvokeStarted(const std::string &childSessionId) {
+    MeshEnvelope env;
+    env.pattern = PatternKind::InvokeStarted;
+    env.type = "sce.invoke.started";
+    env.subject = "inv1";
+    env.child_session_id = childSessionId;
+    env.invoke_id = std::array<std::uint8_t, 16>{
+        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x70, 0x08, 0x90, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+    };
+    return env;
+}
+
+}  // namespace
+
+// The wire-15 counterpart: the parent stamps the id into its invoke table, from
+// which it matches the child's events, so an id that is no Nmtoken never gets
+// there; neither does an envelope without one.
+TEST(MeshDispatchTest, InvokeStartedWhoseSessionIdIsNoNmtokenIsDropped) {
+    for (const char *id : {"a b", ""}) {
+        RecordingEngine engine;
+
+        EXPECT_FALSE((dispatchEnvelope<RecordingEngine::Policy, RecordingEngine>(makeInvokeStarted(id), engine)))
+            << "an InvokeStarted naming '" << id << "' was delivered";
+        EXPECT_TRUE(engine.invokeStartedSessionIds.empty())
+            << "an InvokeStarted naming '" << id << "' reached the parent's hook";
+    }
+
+    RecordingEngine engine;
+    auto env = makeInvokeStarted("parent:inv1");
+    env.child_session_id.reset();
+    EXPECT_FALSE((dispatchEnvelope<RecordingEngine::Policy, RecordingEngine>(env, engine)));
+    EXPECT_TRUE(engine.invokeStartedSessionIds.empty());
+}
+
+TEST(MeshDispatchTest, InvokeStartedNamingASessionReachesTheHook) {
+    RecordingEngine engine;
+
+    EXPECT_TRUE((dispatchEnvelope<RecordingEngine::Policy, RecordingEngine>(makeInvokeStarted("parent:inv1"), engine)));
+    ASSERT_EQ(engine.invokeStartedSessionIds.size(), 1u);
+    EXPECT_EQ(engine.invokeStartedSessionIds[0], "parent:inv1");
 }
 
 TEST(MeshDispatchTest, InboundEnvelopeCarriesMeshOriginFromSource) {

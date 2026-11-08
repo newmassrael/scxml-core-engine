@@ -42,6 +42,14 @@
 // (invoke_methods.jinja2) compares `activeInvokes_[id].sessionId ==
 // meta.sender`, as on the local-invoke path.
 //
+// Wires 15 and 16 take `child_session_id` only when it names a session: a
+// session id is an XML Nmtoken (saved/SessionId.h), and the parent writes
+// this one as the sender of the child's events, which a saved state refuses
+// when it is no Nmtoken. An envelope whose `child_session_id` is absent or
+// no Nmtoken names no session and is dropped, the one rule
+// `detail::namesChildSession` holds for both wires. Wires 18 and 20 are
+// matched on `subject` and `invoke_id` and do not read the field.
+//
 // SCE_MESH.md §mesh-9.6.2 wire 18 (`InvokeDone`): parent-side receiver. The
 // envelope carries `invoke_id` and donedata in `data`. Dispatch invokes
 // `engine.onInvokeDone(env)` (SFINAE-gated) which raises
@@ -84,6 +92,7 @@
 #include "core/HostProcessor.h"
 #include "core/StatePolicyConcepts.h"
 #include "mesh/MeshEnvelope.h"
+#include "saved/SessionId.h"
 
 #include <string>
 #include <type_traits>
@@ -182,6 +191,20 @@ bool tryDeliverParallelRegionDone(const MeshEnvelope & /*env*/, Engine & /*engin
     return false;
 }
 
+/// Whether @p env names a child session in `child_session_id` (SCE_MESH.md,
+/// session establishment of a remote invoke): the field is present and holds
+/// an XML Nmtoken, which every session id is (saved/SessionId.h). The parent
+/// stamps the id into `activeInvokes_` from wire 15 and writes it as the
+/// sender of each wire-16 event (docs/adr/0090), and every saved-state reader
+/// refuses a sender that is no Nmtoken, so taking one in would let the parent
+/// save a state it cannot restore. A worker this build generates never sends
+/// one (`WorkerSessionHost::onWire14` brings no session up under it); an
+/// envelope from any other carries one only by fault, and it names no
+/// session, as one without the field names none.
+inline bool namesChildSession(const MeshEnvelope &env) {
+    return env.child_session_id.has_value() && ::SCE::Saved::SessionId::isNmtoken(*env.child_session_id);
+}
+
 /// SFINAE probe: does `Engine` expose
 /// `onInvokeStarted(const MeshEnvelope&)`? Only parent engines that host at
 /// least one `<invoke type="scxml">` targeting a mesh peer emit the hook;
@@ -193,8 +216,14 @@ struct HasInvokeStartedHook<
     Engine, std::void_t<decltype(std::declval<Engine &>().onInvokeStarted(std::declval<const MeshEnvelope &>()))>>
     : std::true_type {};
 
+/// A wire-15 envelope that names no child session ([namesChildSession]) is
+/// dropped here rather than handed to the hook, so the parent's invoke table
+/// never holds an id that is no session id.
 template <typename Engine>
 bool tryDeliverInvokeStarted(const MeshEnvelope &env, Engine &engine, std::true_type /*has_hook*/) {
+    if (!namesChildSession(env)) {
+        return false;
+    }
     engine.onInvokeStarted(env);
     return true;
 }
@@ -418,7 +447,9 @@ template <typename Policy, typename Engine> bool dispatchEnvelope(const MeshEnve
         // macrostep in which the parent exits the invoking state is applied
         // before that exit, while `activeInvokes_` still holds the entry.
         if constexpr (detail::HasActiveChildSessionHook<Engine>::value) {
-            if (!env.child_session_id) {
+            // An envelope that names no child session has no sender to give
+            // its event and no session to admit it for.
+            if (!detail::namesChildSession(env)) {
                 return false;
             }
             auto ev = ::SCE::Core::resolveArrivingEventName(
