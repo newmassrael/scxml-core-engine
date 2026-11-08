@@ -298,10 +298,10 @@ type StatePolicy[S comparable, E comparable] interface {
 	// including one on the far side of an invoke boundary.
 	//
 	// A non-nil error says the data cannot be read as this event's schema. The
-	// engine then raises error.execution and the guard does not fire, which is
-	// what §scxml-3.13 gives for a guard that cannot be evaluated, and what
-	// the script engine gives for the same guard on the same data. A policy
-	// with no typed payloads returns nil.
+	// engine then refuses the delivery whole (docs/adr/0086, section 4.2): no
+	// transition is selected for it, and an error.execution that carries the
+	// refusal is taken in its place. A policy with no typed payloads returns
+	// nil.
 	LiftTypedPayload(event E, meta *EventMetadata) error
 
 	// ClearEventMetadata clears pending event metadata after transition processing.
