@@ -4,9 +4,11 @@
 #
 # Regenerate backends/python/tests/integration/static_datamodel/<machine>_sm.py
 # from sce-build/tests/fixtures/static_datamodel/<machine>.scxml, for every
-# machine the Python backend lowers; and the test profile's templates from
+# machine the Python backend lowers; the test profile's templates from
 # sce-build/tests/fixtures/test_profile/ with the documents they name, a module
-# each beside the machines.
+# each beside the machines; and the test components of
+# sce-build/tests/fixtures/test_profile/runtime/, a module each, with the
+# records and templates they name.
 #
 # The Python run gate for datamodel="sce-static"
 # (docs/SCE_ACCEPTED_SUBSET.md §2.15), the twin of
@@ -186,6 +188,18 @@ TEST_PROFILE_DIR="sce-build/tests/fixtures/test_profile"
 TEST_PROFILE=(job_status elapsed_at_most every_matcher job_report job_report_of report_within)
 TEST_PROFILE_IMPORTS=(paint_color order_line quantity_two quantity_at_most order_line_exact order_line_bounded)
 TEST_PROFILE_IMPORTS+=(card_payment card_within voucher_payment voucher_is)
+# The test components test_a_test_component_runs_through_its_doors.py runs through the
+# profile's runtime (docs/SCE_TEST_PROFILE.md §12.3): each its statechart machine and the
+# component beside it, generated as a module of its own as a fixture's machine is, beside
+# the records and the templates its machine imports as sibling modules, which are
+# generated as the templates above are. The port types are read where the components are
+# and write no file; param_asker, which declares a module parameter, waits for Python's
+# suite tables (docs/SCE_TEST_PROFILE.md §12.6). The Rust, Kotlin and Go trees generate the
+# same components (scripts/regen_static_datamodel_rust.sh,
+# scripts/regen_static_datamodel_kotlin.sh, scripts/regen_static_datamodel_go.sh).
+TEST_PROFILE_RUNTIME_DIR="$TEST_PROFILE_DIR/runtime"
+TEST_PROFILE_RUNTIME=(job_request job_reply request_of any_request reply_ok reply_of)
+TEST_COMPONENTS=(asker coordinator answerer keeper idler)
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -207,6 +221,12 @@ for document in "${TEST_PROFILE[@]}"; do
 done
 for document in "${TEST_PROFILE_IMPORTS[@]}"; do
     "$CODEGEN" generate "$TEST_PROFILE_DIR/imports/$document.scxml" -l python -o "$TMP/profile_$document/"
+done
+for document in "${TEST_PROFILE_RUNTIME[@]}"; do
+    "$CODEGEN" generate "$TEST_PROFILE_RUNTIME_DIR/$document.scxml" -l python -o "$TMP/runtime_$document/"
+done
+for component in "${TEST_COMPONENTS[@]}"; do
+    "$CODEGEN" generate "$TEST_PROFILE_RUNTIME_DIR/$component.scxml" -l python -o "$TMP/component_$component/"
 done
 
 # What this directory holds that is not generated is its package marker and its
@@ -246,6 +266,19 @@ for document in "${TEST_PROFILE[@]}" "${TEST_PROFILE_IMPORTS[@]}"; do
         cp "$generated" "$GENERATED_DIR/"
         MODULES+=("$(basename "$generated" .py)")
     done
+done
+
+for document in "${TEST_PROFILE_RUNTIME[@]}"; do
+    for generated in "$TMP/runtime_$document"/*.py; do
+        cp "$generated" "$GENERATED_DIR/"
+        MODULES+=("$(basename "$generated" .py)")
+    done
+done
+# A component's machine is copied as a fixture's is: its `_sm.py` alone, which the test's
+# factory of machines imports.
+for component in "${TEST_COMPONENTS[@]}"; do
+    cp "$TMP/component_$component"/*_sm.py "$GENERATED_DIR/"
+    MACHINES+=("$component")
 done
 
 echo "Regenerated: ${MACHINES[*]} and the algorithms ${MODULES[*]:-none} under $GENERATED_DIR/"
