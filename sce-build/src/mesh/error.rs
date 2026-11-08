@@ -3332,34 +3332,6 @@ pub enum CodegenError {
         target: String,
         backend: String,
     },
-
-    /// A binding with `delivery: causal` (docs/adr/0085, section 3.2) on a
-    /// transport the generated C++ router does not carry the causal route on.
-    /// The route sends its own control message and answers a repair with the
-    /// original envelopes, so a transport that cannot carry them would build a
-    /// route whose gaps are never repaired. Refused by name, with the
-    /// transports that carry it.
-    #[error(
-        "machine '{machine}' binds `{target}` with `delivery: causal` on transport '{transport}', \
-         which the cpp Mesh core does not carry the causal route on (SCE_MESH.md §mesh-10.12). \
-         Bind the peer over {}, or bind it without `delivery: causal`.",
-        quoted_alternatives(.carriers)
-    )]
-    CausalTransportUnsupported {
-        machine: String,
-        target: String,
-        transport: String,
-        carriers: Vec<String>,
-    },
-}
-
-/// `names` as a refusal offers them: each in backticks, joined by `or`.
-fn quoted_alternatives(names: &[String]) -> String {
-    names
-        .iter()
-        .map(|name| format!("`{name}`"))
-        .collect::<Vec<_>>()
-        .join(" or ")
 }
 
 /// What a [`CodegenError::HostCoreUnsupported`] refused: a deployment
@@ -5652,22 +5624,6 @@ fn codegen_fields(e: &CodegenError) -> DiagnosticPayload {
             expected: None,
             fix: None,
             key_fragments: vec![machine.clone(), target.clone(), backend.clone()],
-        },
-        CodegenError::CausalTransportUnsupported {
-            machine,
-            target,
-            transport,
-            carriers,
-        } => DiagnosticPayload {
-            code: DiagnosticCode::MeshCodegenCausalTransportUnsupported,
-            stage: Stage::MeshCodegen,
-            actual: Some(transport.clone()),
-            // The transports that carry the route are what the binding may
-            // name instead; dropping `delivery: causal` is the other repair,
-            // so neither is offered as the fix.
-            expected: Some(carriers.clone()),
-            fix: None,
-            key_fragments: vec![machine.clone(), target.clone(), transport.clone()],
         },
     }
 }
