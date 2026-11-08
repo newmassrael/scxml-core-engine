@@ -8014,6 +8014,276 @@ pub struct PythonEventPayload {
     pub guard_writes: Vec<NativeGuardWrite>,
 }
 
+/// What the Python typed channel holds and reads of one event's payload
+/// ([`build_python_event_payload`]).
+struct PythonPayloadParts {
+    /// The payload class's decorator.
+    decorator: &'static str,
+    /// The payload class's fields, an annotated line each.
+    field_lines: String,
+    /// What follows the fields in the payload class: a `__post_init__` that
+    /// holds a value a host makes to every bound its type declares
+    /// (docs/adr/0086, section 5.4), or nothing where none is to check.
+    class_body: String,
+    /// The inject seam's parameters after `engine`, each led by `, `.
+    params: String,
+    /// What the lift reads the data as: each field's name with the type it is
+    /// read by, each followed by `, `.
+    lift_fields: String,
+    /// The JSON of the defaults of the fields a later revision added, or
+    /// `None` for a schema that added none.
+    defaults: Option<String>,
+    /// The lines the inject seam runs before it sends, each indented as the
+    /// seam's body is; empty where it needs none.
+    prelude: String,
+    /// The typed carrier the inject seam sends.
+    typed_payload: String,
+    /// What the inject seam writes into `data` beside the typed carrier.
+    data: String,
+    /// Whether a field is a `float32`, which the module names the rounding of.
+    single: bool,
+    /// Whether a field is a 64-bit integer, which the runtime's `Wide` reads.
+    wide: bool,
+    /// Whether a field is optional, which the runtime's `OptionalOf` reads and
+    /// its `write_optional` writes.
+    optional: bool,
+    /// Whether the payload holds a composition, whose type names, writers and
+    /// check the module imports the runtime module for.
+    composed: bool,
+}
+
+/// [`PythonPayloadParts`] of a schema each field of which is one entry, the
+/// class `class_name`: each field read by the type name of its declared type.
+fn python_entry_payload(schema: &EntrySchema, l: &LangCtx, class_name: &str) -> PythonPayloadParts {
+    use crate::forge::static_lowering::PYTHON_PRESENT;
+    // Whether a field a schema declares `float32` is read, so the module names
+    // what rounds it to a single.
+    let mut uses_single = false;
+    // Whether a 64-bit integer field is read, so the module names the marker that
+    // reads it from the text of its digits.
+    let mut uses_wide = false;
+    // Whether a field is optional (docs/adr/0055), so the module names the
+    // runtime's reader and writer of `null`.
+    let mut uses_optional = false;
+    // Constructor field annotations / inject params / call args. Fields are
+    // the verbatim schema ids (matching the verbatim attribute emit of
+    // `expr.rs::emit_python`) so the lowered guard's `<accessor>.<id>`
+    // resolves against the dataclass attribute.
+    let mut field_lines = String::new();
+    let mut params = String::new();
+    let mut call_args = String::new();
+    // What the lift reads the data as, and what the inject seam writes
+    // into `data` beside the typed carrier: the same fields, named once.
+    let mut lift_fields = String::new();
+    let mut data_items = String::new();
+    for f in &schema.fields {
+        // An optional field (docs/adr/0055) is held in the one optional type
+        // over its present value's, `None` for absent: the lift reads JSON
+        // `null` as `None` and refuses a missing key (`OptionalOf`), and the
+        // inject seam writes `None` as `null` (`write_optional`).
+        let present = f.sce_type.present_type();
+        let optional = f.sce_type.optional_elem().is_some();
+        uses_optional |= optional;
+        let present_ty = l.type_name(present).into_owned();
+        let ty = if optional {
+            l.optional_of(&present_ty)
+                .expect("Python spells an optional value over its present one")
+        } else {
+            present_ty.clone()
+        };
+        field_lines.push_str(&format!("    {}: {ty}\n", f.id));
+        params.push_str(&format!(", {}: {ty}", f.id));
+        if !call_args.is_empty() {
+            call_args.push_str(", ");
+            data_items.push_str(", ");
+        }
+        // Python's `float` is a binary64: a field a schema declares `float32`
+        // holds the binary32 nearest the number it is given, whether the
+        // lift reads it out of the data or the inject seam is handed it, as
+        // every engine with a single of its own holds it.
+        let single = matches!(present, SceType::Float32);
+        uses_single |= single;
+        // What a present value is written as, mapped over an optional one so
+        // that `None` stays `None` (`write_optional`).
+        let present_or_none = |written: &str| {
+            if optional {
+                format!(
+                    "_write_optional({}, lambda {PYTHON_PRESENT}: {written})",
+                    f.id
+                )
+            } else {
+                written.to_string()
+            }
+        };
+        let held = |v: &str| {
+            if optional {
+                PYTHON_PRESENT.to_string()
+            } else {
+                v.to_string()
+            }
+        };
+        if single {
+            call_args.push_str(&present_or_none(&format!("_as_single({})", held(&f.id))));
+        } else {
+            call_args.push_str(&f.id);
+        }
+        // An integer is read at the width its schema declares, as every
+        // other engine reads it: Python's `int` has no width to refuse a
+        // value past it by.
+        let width = present
+            .int_value_range()
+            .map_or(String::new(), |(low, high)| format!(", {low}, {high}"));
+        // A 64-bit integer is read from the text of its digits, or from a number
+        // exact in a double, and crosses as that text.
+        let wide = matches!(present, SceType::Uint64 | SceType::Int64);
+        uses_wide |= wide;
+        let declared = if single {
+            "_Single"
+        } else if wide {
+            "_Wide"
+        } else {
+            present_ty.as_str()
+        };
+        if optional {
+            lift_fields.push_str(&format!("(\"{}\", _OptionalOf({declared}){width}), ", f.id));
+        } else {
+            lift_fields.push_str(&format!("(\"{}\", {declared}{width}), ", f.id));
+        }
+        // ⚠ JSON has no byte string, and `json.dumps` REFUSES one, so a
+        // `bytes` field rides the wire as its byte-exact Latin-1 text (the
+        // lift reads it back the same way). Printable ASCII — what a bytes
+        // guard compares — is the same characters either way.
+        let value = held(&f.id);
+        let written = if single {
+            present_or_none(&format!("_as_single({value})"))
+        } else if let Some(text) = python_payload_wire_value(present, &value) {
+            present_or_none(&text)
+        } else {
+            // A present value is written as it is, and an absent one as the
+            // `None` it is, which `json.dumps` writes as `null`.
+            f.id.clone()
+        };
+        data_items.push_str(&format!("\"{}\": {written}", f.id));
+    }
+    PythonPayloadParts {
+        decorator: "@dataclass",
+        field_lines,
+        class_body: String::new(),
+        params,
+        lift_fields,
+        defaults: crate::forge::schema_revision::defaults_wire(schema),
+        prelude: String::new(),
+        typed_payload: format!("{class_name}({call_args})"),
+        data: format!("{{{data_items}}}"),
+        single: uses_single,
+        wide: uses_wide,
+        optional: uses_optional,
+        composed: false,
+    }
+}
+
+/// [`PythonPayloadParts`] of the payload of `event`, the class `class_name`,
+/// whose schema holds a composition (docs/adr/0086), by the walks over its type
+/// ([`crate::forge::composed_lowering`]): each field in the type the machine
+/// holds it in (section 7.1, the Python row), read by the runtime's name of
+/// that type, which refuses the delivery whole, naming the path, at the first
+/// value outside it (section 4); written as its JSON (section 3.1) from the
+/// payload the inject seam builds first; and held to every bound its type
+/// declares at any depth in the class's `__post_init__`, where a host's value
+/// is made (section 5.4). The class is frozen, so a value a check held cannot
+/// be replaced by one it did not.
+///
+/// The static lowering declared every record and enum the payload names before
+/// the channel is built ([`crate::forge::static_lowering::lower_python`]), so a
+/// walk that fails here is a routing defect.
+fn python_composed_payload(
+    model: &crate::model::SCXMLModel,
+    machine_name: &str,
+    event: &str,
+    static_enums: &[crate::forge::static_lowering::StaticEnumType],
+    class_name: &str,
+) -> PythonPayloadParts {
+    use crate::forge::composed_lowering::{self as composed, ComposedSpelling, RecordEnv};
+    let unlowered = |why: &str| -> String {
+        format!(
+            "the payload of `{event}` reached the Python typed channel unlowered ({why}): the \
+             static lowering declares what a composed payload names before the channel is built"
+        )
+    };
+    let schema = model
+        .imported_event_schemas
+        .get(event)
+        .unwrap_or_else(|| panic!("{}", unlowered("no schema")));
+    let alias = model
+        .imported_records
+        .iter()
+        .find(|(_, held)| held.name == schema.name)
+        .map(|(alias, _)| alias.as_str())
+        .unwrap_or_else(|| panic!("{}", unlowered("no record of its schema")));
+    let records = composed::StatechartRecords::of(model);
+    let enums: std::collections::BTreeMap<String, composed::MachineEnum> = static_enums
+        .iter()
+        .map(|e| (e.alias.clone(), e.machine_enum()))
+        .collect();
+    let spelling = composed::PythonComposed {
+        machine: machine_name,
+        carrier: composed::PythonCarrier::Json,
+    };
+    let walked = |result: Result<Vec<(String, String)>, String>| {
+        result.unwrap_or_else(|why| panic!("{}", unlowered(&why)))
+    };
+    let held = records
+        .record(None, alias)
+        .unwrap_or_else(|why| panic!("{}", unlowered(&why)));
+    let members = walked(composed::record_members(alias, &records, &enums, &spelling));
+    let readers = walked(composed::field_readers(held, &records, &enums, &spelling));
+    // The inject seam builds the payload first, so each field is written from
+    // the value the typed carrier holds, which its class checked. The local is
+    // named under the prefix the generator keeps for its own names, so it
+    // shadows no parameter of the seam, each of which a field names.
+    const PAYLOAD_LOCAL: &str = "sce_payload";
+    let writers = walked(composed::field_writers(
+        held,
+        &records,
+        &spelling,
+        &composed::Held::place(PAYLOAD_LOCAL),
+    ));
+    // The payload a host hands the inject seam is refused where it is made, in
+    // its class's `__post_init__`, at the first value past a bound its type
+    // declares at any depth (docs/adr/0086, section 5.4), as each record it
+    // holds is in its own.
+    let checks = composed::record_checks(alias, &records, &spelling)
+        .unwrap_or_else(|why| panic!("{}", unlowered(&why)));
+    let call_args: Vec<&str> = members.iter().map(|(id, _)| id.as_str()).collect();
+    PythonPayloadParts {
+        decorator: "@dataclass(frozen=True)",
+        field_lines: members
+            .iter()
+            .map(|(id, ty)| format!("    {id}: {ty}\n"))
+            .collect(),
+        class_body: composed::python_post_init(&checks),
+        params: members
+            .iter()
+            .map(|(id, ty)| format!(", {id}: {ty}"))
+            .collect(),
+        lift_fields: readers
+            .iter()
+            .map(|(id, read)| format!("({}, {read}), ", filters::py_string_literal(id.clone())))
+            .collect(),
+        defaults: crate::forge::schema_revision::composed_defaults_wire(schema),
+        prelude: format!(
+            "    {PAYLOAD_LOCAL} = {class_name}({})\n",
+            call_args.join(", ")
+        ),
+        typed_payload: PAYLOAD_LOCAL.to_string(),
+        data: spelling.write_record(&writers),
+        single: false,
+        wide: false,
+        optional: false,
+        composed: true,
+    }
+}
+
 /// Build the [`PythonEventPayload`] for `model`. Same SSOT guard selection
 /// ([`select_native_typed_guards`]) as the Rust / Go / C11 / C++ / Kotlin
 /// builders.
@@ -8022,7 +8292,6 @@ pub fn build_python_event_payload(
     extra_payload_events: &std::collections::BTreeSet<String>,
     static_enums: &[crate::forge::static_lowering::StaticEnumType],
 ) -> PythonEventPayload {
-    use crate::forge::static_lowering::PYTHON_PRESENT;
     let inactive = || PythonEventPayload {
         defs: String::new(),
         active: false,
@@ -8041,8 +8310,9 @@ pub fn build_python_event_payload(
     let mut guard_writes: Vec<NativeGuardWrite> = Vec::new();
     let mut guarded_events: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     // Each payload event's schema, read one entry per field: a schema that holds
-    // a composition has no native guard, and a statechart that reads its data is
-    // refused where it is parsed
+    // a composition has no native guard, and a statechart reads its data through
+    // the walks over its type ([`python_composed_payload`]) where the one
+    // decision of what is lowered lets it
     // ([`crate::forge::event_schema_check::check_composed_uses`]).
     let entry_schemas = model.entry_event_schemas();
     for g in select_native_typed_guards(model) {
@@ -8100,121 +8370,50 @@ pub fn build_python_event_payload(
     // Whether a field is optional (docs/adr/0055), so the module names the
     // runtime's reader and writer of `null`.
     let mut uses_optional = false;
+    // Whether a payload holds a composition (docs/adr/0086), so the module
+    // names the runtime module whose type names, writers and check it calls.
+    let mut uses_composed = false;
 
     let mut first = true;
     for event in &guarded_events {
-        let schema = &entry_schemas[event];
         let variant = filters::to_event_variant(event.clone());
         let snake = filters::to_snake_case(event.clone());
         let class_name = format!("{machine}{variant}Payload");
         let event_const = filters::to_python_const(event.clone());
 
-        // Constructor field annotations / inject params / call args. Fields are
-        // the verbatim schema ids (matching the verbatim attribute emit of
-        // `expr.rs::emit_python`) so the lowered guard's `<accessor>.<id>`
-        // resolves against the dataclass attribute.
-        let mut field_lines = String::new();
-        let mut params = String::new();
-        let mut call_args = String::new();
-        // What the lift reads the data as, and what the inject seam writes
-        // into `data` beside the typed carrier: the same fields, named once.
-        let mut lift_fields = String::new();
-        let mut data_items = String::new();
-        for f in &schema.fields {
-            // An optional field (docs/adr/0055) is held in the one optional type
-            // over its present value's, `None` for absent: the lift reads JSON
-            // `null` as `None` and refuses a missing key (`OptionalOf`), and the
-            // inject seam writes `None` as `null` (`write_optional`).
-            let present = f.sce_type.present_type();
-            let optional = f.sce_type.optional_elem().is_some();
-            uses_optional |= optional;
-            let present_ty = l.type_name(present).into_owned();
-            let ty = if optional {
-                l.optional_of(&present_ty)
-                    .expect("Python spells an optional value over its present one")
-            } else {
-                present_ty.clone()
-            };
-            field_lines.push_str(&format!("    {}: {ty}\n", f.id));
-            params.push_str(&format!(", {}: {ty}", f.id));
-            if !call_args.is_empty() {
-                call_args.push_str(", ");
-                data_items.push_str(", ");
-            }
-            // Python's `float` is a binary64: a field a schema declares `float32`
-            // holds the binary32 nearest the number it is given, whether the
-            // lift reads it out of the data or the inject seam is handed it, as
-            // every engine with a single of its own holds it.
-            let single = matches!(present, SceType::Float32);
-            uses_single |= single;
-            // What a present value is written as, mapped over an optional one so
-            // that `None` stays `None` (`write_optional`).
-            let present_or_none = |written: &str| {
-                if optional {
-                    format!(
-                        "_write_optional({}, lambda {PYTHON_PRESENT}: {written})",
-                        f.id
-                    )
-                } else {
-                    written.to_string()
-                }
-            };
-            let held = |v: &str| {
-                if optional {
-                    PYTHON_PRESENT.to_string()
-                } else {
-                    v.to_string()
-                }
-            };
-            if single {
-                call_args.push_str(&present_or_none(&format!("_as_single({})", held(&f.id))));
-            } else {
-                call_args.push_str(&f.id);
-            }
-            // An integer is read at the width its schema declares, as every
-            // other engine reads it: Python's `int` has no width to refuse a
-            // value past it by.
-            let width = present
-                .int_value_range()
-                .map_or(String::new(), |(low, high)| format!(", {low}, {high}"));
-            // A 64-bit integer is read from the text of its digits, or from a number
-            // exact in a double, and crosses as that text.
-            let wide = matches!(present, SceType::Uint64 | SceType::Int64);
-            uses_wide |= wide;
-            let declared = if single {
-                "_Single"
-            } else if wide {
-                "_Wide"
-            } else {
-                present_ty.as_str()
-            };
-            if optional {
-                lift_fields.push_str(&format!("(\"{}\", _OptionalOf({declared}){width}), ", f.id));
-            } else {
-                lift_fields.push_str(&format!("(\"{}\", {declared}{width}), ", f.id));
-            }
-            // ⚠ JSON has no byte string, and `json.dumps` REFUSES one, so a
-            // `bytes` field rides the wire as its byte-exact Latin-1 text (the
-            // lift reads it back the same way). Printable ASCII — what a bytes
-            // guard compares — is the same characters either way.
-            let value = held(&f.id);
-            let written = if single {
-                present_or_none(&format!("_as_single({value})"))
-            } else if let Some(text) = python_payload_wire_value(present, &value) {
-                present_or_none(&text)
-            } else {
-                // A present value is written as it is, and an absent one as the
-                // `None` it is, which `json.dumps` writes as `null`.
-                f.id.clone()
-            };
-            data_items.push_str(&format!("\"{}\": {written}", f.id));
-        }
+        // The class's fields, the type the lift reads each by, the inject
+        // seam's carriers and the defaults of the fields a later revision
+        // added: a schema of entries field by field, and one that holds a
+        // composition by the walks over its type (docs/adr/0086), which the
+        // static lowering reads a payload of only on a target that spells them.
+        let PythonPayloadParts {
+            decorator,
+            field_lines,
+            class_body,
+            params,
+            lift_fields,
+            defaults,
+            prelude,
+            typed_payload,
+            data,
+            single,
+            wide,
+            optional,
+            composed,
+        } = match entry_schemas.get(event) {
+            Some(schema) => python_entry_payload(schema, &l, &class_name),
+            None => python_composed_payload(model, &machine, event, static_enums, &class_name),
+        };
+        uses_single |= single;
+        uses_wide |= wide;
+        uses_optional |= optional;
+        uses_composed |= composed;
         data_classes.push_str(&format!(
-            "@dataclass\n\
+            "{decorator}\n\
 class {class_name}:\n    \
 \"\"\"NL\u{2192}IR Item C1 Path A typed `_event.data` payload for `{event}`.\n\n    \
 Consumers inject it via the module-level `raise_{snake}` seam; they never\n    \
-name this class directly.\"\"\"\n\n{field_lines}\n\n"
+name this class directly.\"\"\"\n\n{field_lines}{class_body}\n\n"
         ));
         init.push_str(&format!("        self._pending_{snake}_payload = None\n"));
         let kw = if first { "if" } else { "elif" };
@@ -8223,10 +8422,9 @@ name this class directly.\"\"\"\n\n{field_lines}\n\n"
         // schema's defaults where the delivery lacks it
         // (`crate::forge::schema_revision`); a schema with none reads the
         // delivery alone, as it always has.
-        let defaults_arg = crate::forge::schema_revision::defaults_wire(schema)
-            .map_or(String::new(), |defaults| {
-                format!(", {}", filters::py_string_literal(defaults))
-            });
+        let defaults_arg = defaults.map_or(String::new(), |defaults| {
+            format!(", {}", filters::py_string_literal(defaults))
+        });
         // The typed carrier first, then the lift. ⚠ The lift's refusal is
         // `error.execution` and a guard that does not fire, which is what the
         // SCRIPT ENGINE answers for the same guard on the same data (W3C SCXML
@@ -8262,13 +8460,13 @@ binds the event name and the payload field values in one call.\n\n    \
 Both carriers are filled: the typed one a native guard reads, and `data`,\n    \
 which is what the script engine binds `_event.data` from. Filling only the\n    \
 first left an `<assign expr=\\\"_event.data.x\\\">` on this event reading\n    \
-nothing, on every backend alike.\"\"\"\n    \
+nothing, on every backend alike.\"\"\"\n{prelude}    \
 engine.send_event(\n        \
 {machine}Event.{event_const},\n        \
 EventMetadata(\n            \
 event_type=\"external\",\n            \
-typed_payload={class_name}({call_args}),\n            \
-data={{{data_items}}},\n        ),\n    )\n\n\n"
+typed_payload={typed_payload},\n            \
+data={data},\n        ),\n    )\n\n\n"
         ));
     }
 
@@ -8289,7 +8487,18 @@ from sce_runtime.event_payload import write_optional as _write_optional\n"
     } else {
         ""
     };
-    let single_import = format!("{single_import}{wide_import}{optional_import}");
+    // The module a composed payload's type names, writers and check are of,
+    // under the alias the walks spell them through, and which each record the
+    // payload holds is checked by too (docs/adr/0086).
+    let composed_import = if uses_composed {
+        format!(
+            "import sce_runtime.event_payload as {}\n",
+            crate::forge::composed_lowering::PYTHON_PAYLOAD
+        )
+    } else {
+        String::new()
+    };
+    let single_import = format!("{single_import}{wide_import}{optional_import}{composed_import}");
     let defs = format!(
         "# NL\u{2192}IR Item C1 Path A (EventSchema MCU native lowering): typed\n\
 # `_event.data` payload dataclasses for the EventSchema-imported events whose\n\

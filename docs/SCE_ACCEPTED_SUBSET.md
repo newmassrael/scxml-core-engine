@@ -5284,6 +5284,23 @@ type, and the variable is appended to and emptied in place. A payload that holds
 union, at any depth, is refused by name on Go, which holds no union yet
 (docs/adr/0092, section 7).
 
+The Python backend reads a composed payload as the Rust and Kotlin backends do
+(docs/adr/0086, section 7.1, the Python row): its payload class holds each field in
+`list[T]`, `str`, `bytes`, `Optional[T]` and the machine's frozen record class,
+each record it names declared once; the lift reads each field by the runtime's name
+of its type (`ListOf`, `RecordOf`, `Text`, `Whole`, ...) and refuses the delivery
+whole, naming the path, at the first value outside it; the inject seam writes the
+payload it builds as the JSON a lift reads back, a value a host hands it held to
+every bound and every width its type declares at any depth where it is made, in the
+`__post_init__` of the payload class and of each record it holds, which raises the
+runtime's `BoundError` naming the path (docs/adr/0086, section 5.4; a Python `int`
+holds no width, so the width is held there too); and `len`, an index, a field of a
+record element and a `<foreach>` over a list the payload or an enclosing loop's item
+holds lower at any depth. A list a place holds is taken whole into a list variable
+whose type it fits as a copy that shares no list with the place, since the variable
+is written into in place. A payload that holds a union, at any depth, is refused by
+name on Python, which holds no union yet (docs/adr/0092, section 7).
+
 A `<send>` of the event of a schema whose field is composed gives that field by
 a `<param>` naming the place that holds the value whole (docs/adr/0086, section
 5.2): a variable, a field of a record variable, or a part of the payload of the

@@ -24,8 +24,8 @@
 //!   `a_statechart_sends_a_composed_value_by_its_name`), a variable that names
 //!   a record holding a composition at any depth, and a host-run record. So is
 //!   an algorithm that names such a record. A read of `_event.data` on a
-//!   transition taken on the event is lowered by Rust and Kotlin, and refused
-//!   by every other backend by its own name.
+//!   transition taken on the event is lowered by Rust, Kotlin, Go and Python,
+//!   and refused by every other backend by its own name.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -319,11 +319,12 @@ fn a_read_of_the_data_of_a_composed_schema_is_refused_by_name() {
       </if>
     </transition>"#,
     );
-    // Rust and Kotlin read a composed payload (docs/adr/0086, section 6), so the
-    // gate every backend passes lets the read through, and each backend that
-    // does not lower it refuses it by its own name where it is generated.
+    // Rust, Kotlin, Go and Python read a composed payload (docs/adr/0086,
+    // section 6), so the gate every backend passes lets the read through, and each
+    // backend that does not lower it refuses it by its own name where it is
+    // generated.
     for document in [guarded, nested] {
-        for language in ["cpp", "python", "c11"] {
+        for language in ["cpp", "c11"] {
             let out = refusal_of(&["check", "-l", language], &document);
             assert!(out.contains("the field `items`"), "{language}: {out}");
             assert!(
@@ -339,7 +340,7 @@ fn a_read_of_the_data_of_a_composed_schema_is_refused_by_name() {
                 "{language}: {out}"
             );
         }
-        for language in ["rust", "kotlin"] {
+        for language in ["rust", "kotlin", "go", "python"] {
             let (ok, out) = run(
                 &["check", "-l", language],
                 &[("batch_reader.scxml", &document)],

@@ -373,16 +373,16 @@ fn kotlin_takes_the_read_and_another_backend_refuses_it_by_name() {
     );
     assert!(ok, "Kotlin reads a composed payload:\n{out}");
     let (ok, out) = run(
-        &["check", "-l", "python"],
+        &["check", "-l", "cpp"],
         &fixtures(),
         &SIBLINGS,
         "batch_reader.scxml",
         READER,
     );
-    assert!(!ok, "Python does not read a composed payload yet:\n{out}");
+    assert!(!ok, "C++ does not read a composed payload yet:\n{out}");
     assert!(out.contains("generate/unsupported-feature"), "{out}");
     assert!(
-        out.contains("a statechart's read of `_event.data` has no python lowering of its list"),
+        out.contains("a statechart's read of `_event.data` has no cpp lowering of its list"),
         "{out}"
     );
 }
