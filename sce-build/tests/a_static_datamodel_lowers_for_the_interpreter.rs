@@ -374,6 +374,46 @@ fn a_delivery_is_read_whole_at_the_interpreters_door() {
     );
 }
 
+/// The door holds wherever an event's type is known, whatever the data model
+/// (docs/adr/0086, section 4.2, amended 2026-11-09): an `ecmascript` document
+/// whose guard reads a payload through its schema is lowered with the library
+/// installed and the door of that event, in a `<datamodel>` of its own when it
+/// declares none, and nothing else of it changes. `statechart_lifted` guards
+/// `job.completed` on `elapsed_ms`, a `uint32`.
+#[test]
+fn an_ecmascript_document_is_given_the_door_of_each_event_it_reads_through_a_schema() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/event_schema/statechart_lifted.scxml");
+    let out = lower_file(path.to_str().unwrap(), Vec::new())
+        .unwrap_or_else(|e| panic!("statechart_lifted does not lower: {e:?}"));
+    let document = roxmltree::Document::parse(&out).expect("well-formed");
+    let scxml = |n: &roxmltree::Node<'_, '_>, name: &str| {
+        n.is_element()
+            && n.tag_name().name() == name
+            && n.tag_name().namespace() == Some("http://www.w3.org/2005/07/scxml")
+    };
+    let root = document.root_element();
+    assert_eq!(root.attribute("datamodel"), Some("ecmascript"));
+    let library = document
+        .descendants()
+        .find(|n| scxml(n, "data") && n.attribute("id") == Some("SceStaticInstalled"))
+        .and_then(|n| n.attribute("expr"))
+        .unwrap_or_else(|| panic!("the library is installed:\n{out}"));
+    assert!(
+        library.contains("SceStatic.door(\"job.completed\", {record: {'elapsed_ms': 'uint32'}});"),
+        "the door of the event is installed with its record: {library}"
+    );
+    let guard = document
+        .descendants()
+        .find(|n| scxml(n, "transition") && n.attribute("event") == Some("job.completed"))
+        .and_then(|n| n.attribute("cond"));
+    assert_eq!(
+        guard,
+        Some("_event.data.elapsed_ms === 0"),
+        "the guard stands as written"
+    );
+}
+
 /// An algorithm the document imports travels in it: installed by the library's
 /// `<data>` under `SceStatic.algorithms`, and called by that name from the
 /// guard that calls it — the function a generated machine would have linked.

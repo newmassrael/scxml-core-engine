@@ -136,6 +136,27 @@ fn is_native(action: &Action) -> bool {
     action.action_type == ACTION_TYPE
 }
 
+/// The events whose typed payload an `<sce:action>` with arguments reads, under
+/// a data model other than `sce-static`: the event of each transition whose
+/// content calls one, which [`validate`] binds to that event's schema. They are
+/// the events [`render`] adds to every generated lane's typed channel, and the
+/// ones the Interpreter's door reads beside the typed guards' (docs/adr/0086,
+/// section 4.4).
+pub(crate) fn argument_payload_events(model: &SCXMLModel) -> BTreeSet<String> {
+    model
+        .states
+        .values()
+        .flat_map(|state| state.transitions.iter())
+        .filter(|transition| {
+            transition
+                .actions
+                .iter()
+                .any(|action| is_native(action) && !action.params.is_empty())
+        })
+        .map(|transition| transition.event.clone())
+        .collect()
+}
+
 /// `true` iff `model` declares any `<sce:action>` anywhere (transitions,
 /// entry/exit, or nested executable content). The non-Rust backends call
 /// this to refuse the construct with a clear `generate/unsupported-feature`
