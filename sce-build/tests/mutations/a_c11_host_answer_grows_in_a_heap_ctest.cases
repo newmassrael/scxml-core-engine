@@ -1,0 +1,43 @@
+# Mutation cases for "a C11 host's replies and a host-run invocation's answer
+# grow in a heap, each text freed exactly once" (docs/adr/0086, section 8.6 (d)).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_c11_host_answer_grows_in_a_heap_ctest.cases`.
+#
+# A machine whose data model is a script engine hands the runtime's writers its
+# engine's allocator, and `sce_host_response_push` and the two answer writers
+# copy each text into storage of its own size there, owned by the list or the
+# response until the machine releases it. `c11_unit_host_answer_heap` asks the
+# writers, under the tests' counting allocator, for every text whole, for each
+# freed exactly once, for a later answer to free the text an earlier one held,
+# and for a text the heap refuses to be counted apart from one past fixed
+# storage. The mutants take one decision away each:
+#
+#   a release frees none of the replies' texts;
+#   a later answer keeps the text an earlier one held, which nothing frees;
+#   a reply the heap refuses is counted as one past fixed storage.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^c11_unit_host_answer_heap$'
+mutation_targets backends/c/runtime/include/sce/host_processor.h
+mutation_oracles backends/c/tests/unit/host_answer_heap_test.c
+
+mutation_case "a release frees none of the replies' texts" <<'PY'
+edit("backends/c/runtime/include/sce/host_processor.h",
+     "        sce_text_alloc_free(list->alloc, list->alloc_context, &list->owned[i], &list->owned_sizes[i]);\n",
+     "        (void)list->owned_sizes[i];\n")
+PY
+
+mutation_case "a later answer keeps the text an earlier one held" <<'PY'
+edit("backends/c/runtime/include/sce/host_processor.h",
+     "        sce_text_alloc_free(out->alloc, out->alloc_context, &out->owned, &out->owned_size);\n        if (!sce_text_alloc_copy(",
+     "        if (!sce_text_alloc_copy(")
+PY
+
+mutation_case "a reply the heap refuses is counted as one past fixed storage" <<'PY'
+edit("backends/c/runtime/include/sce/host_processor.h",
+     "            out->unallocated++;\n",
+     "            out->refused++;\n")
+PY

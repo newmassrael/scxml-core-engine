@@ -351,6 +351,52 @@ SCE_C_UNUSED static inline bool sce_copy_text_whole(char *dst, size_t cap, const
     return true;
 }
 
+/* ── docs/adr/0086, section 8.6 (d): a text that grows in a heap ─────── */
+
+/* An allocator of the shape of Lua's `lua_Alloc`, so a machine whose data model
+   is a script engine hands its engine's own and keeps one heap: `new_size` 0
+   frees `ptr`, `old_size` bytes, and answers NULL; any other answers a block of
+   `new_size` bytes holding what `ptr` held up to the smaller size (`ptr` NULL
+   for a new block), or NULL, with `ptr` left as it was, when it cannot. */
+typedef void *(*sce_alloc_fn)(void *context, void *ptr, size_t old_size, size_t new_size);
+
+/* §scxml-5.10 `_event.data`: copy the text `src` (NULL or "" for none) whole
+   into a text `alloc` gives at its own size, which `*out` then owns, `*out_size`
+   bytes with its NUL; for no data `*out` is NULL and `*out_size` 0. False, with
+   `*out` NULL, when there is no allocator or it gives nothing: the text is
+   refused whole, never cut, and the caller makes the refusal visible. */
+SCE_C_UNUSED static inline bool sce_text_alloc_copy(sce_alloc_fn alloc, void *context, const char *src, char **out,
+                                                    size_t *out_size) {
+    *out = NULL;
+    *out_size = 0u;
+    if (src == NULL || src[0] == '\0') {
+        return true;
+    }
+    if (alloc == NULL) {
+        return false;
+    }
+    const size_t size = strlen(src) + 1u;
+    char *copy = (char *)alloc(context, NULL, 0u, size);
+    if (copy == NULL) {
+        return false;
+    }
+    memcpy(copy, src, size);
+    *out = copy;
+    *out_size = size;
+    return true;
+}
+
+/* Free the text `*text` owns, `*size` bytes, through the allocator that gave
+   it, and clear the holder, so a holder freed twice frees nothing the second
+   time. Nothing for a holder that owns no text. */
+SCE_C_UNUSED static inline void sce_text_alloc_free(sce_alloc_fn alloc, void *context, char **text, size_t *size) {
+    if (*text != NULL && alloc != NULL) {
+        (void)alloc(context, *text, *size, 0u);
+    }
+    *text = NULL;
+    *size = 0u;
+}
+
 /* §scxml-5.10.1 `_event.type` ("internal" / "external" / "platform"). */
 SCE_C_UNUSED static inline void sce_copy_bounded_event_type(char *dst, const char *src) {
     sce_copy_bounded_n(dst, src, (size_t)SCE_MAX_EVENT_TYPE_LEN);
