@@ -435,14 +435,18 @@ fn a_selection_keeps_its_inner_joins_a_case_is_imported_once_and_an_empty_suite_
         "a suite that writes no default names no writer, so Go refuses its import: {text}"
     );
 
+    // An alias is executed once (a second `<sce:execute>` of it is refused as
+    // a duplicate), but one document may be imported under two aliases: both
+    // rows then name one Go package, which Go accepts only when imported once.
     let twice = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" sce:kind="test-suite" name="twice">
   <sce:import kind="test-case" src="{runtime}/answers_the_job.scxml" as="AnswersTheJob"/>
+  <sce:import kind="test-case" src="{runtime}/answers_the_job.scxml" as="AnswersAgain"/>
   <sce:module-parameter id="job" type="uint32" value="7"/>
   <sce:execute test-case="AnswersTheJob"/>
-  <sce:execute test-case="AnswersTheJob" guard="1s"/>
+  <sce:execute test-case="AnswersAgain" guard="1s"/>
 </scxml>
 "#,
         runtime = runtime_dir().display()
