@@ -6,3 +6,9 @@ commit = "04f326a1b8f386a43846ed2a8e8796eed4fa3108"
 base = "6fea7664f31b71581cfecc259a34b479b6c99061"
 machine = "mf977c53d872e"
 at = 1794124093
+
+[return]
+reason = "conflict"
+detail = "tests/integration/AComposedPayloadIsReadAtAnyDepthTest.cpp"
+report = "mf977c53d872e:0000000038-9ad7da838a5c/attempt-2.log"
+at = 1794134728
