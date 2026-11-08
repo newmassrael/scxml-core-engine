@@ -2270,6 +2270,10 @@ impl<P: StatePolicy> Engine<P> {
     ///
     /// Counts external-queue events only. An internal `<raise>` that matches
     /// nothing is discarded too, but both ends of that are inside the document.
+    ///
+    /// It counts, too, an external delivery its door refused in a document
+    /// that declares no `error.execution`: nothing is taken in its place, so
+    /// this is where the host sees it (docs/adr/0086, section 4.2).
     pub fn discarded_external_events(&self) -> u32 {
         // §scxml-3.1.2 is the clause: an event no transition matches is
         // discarded. Cited in the body rather than the doc comment because the
@@ -6305,7 +6309,15 @@ impl Turn<'_> {
         core.main_loop.macrostep_microsteps_taken = 0;
         // §scxml-5.10.1: this event came off the external queue.
         core.current_event_from_external_queue = true;
+        let delivered = queued.event;
         let Some(bound) = self.host.bind_queued(queued, true) else {
+            // A delivery its door refused in a document that declares no
+            // `error.execution` has nothing taken in its place, and is not
+            // dropped unseen: it is counted as a discarded external event, the
+            // hook every lane shares for an external event that moved nothing
+            // (docs/adr/0086, section 4.2).
+            self.record_discarded(delivered);
+            sce_log_debug!("Engine: an external delivery was refused at its door; discarded");
             return ExternalEvent::Refused;
         };
         if bound.in_place {
@@ -6342,12 +6354,19 @@ impl Turn<'_> {
             return;
         }
         if outcome == EventOutcome::Discarded {
-            let core = self.host.core();
-            core.discarded_external_events = core.discarded_external_events.saturating_add(1);
-            core.last_discarded_event = Some(taken.event);
+            self.record_discarded(taken.event);
             sce_log_debug!("Engine: no transition matched an external event; discarded");
         }
         self.host.end_event();
+    }
+
+    /// Count `event` as an external event this engine took and that moved
+    /// nothing, and name it the last one: one no transition matched, or one
+    /// its door refused with nothing to take in its place.
+    fn record_discarded(&mut self, event: EventId) {
+        let core = self.host.core();
+        core.discarded_external_events = core.discarded_external_events.saturating_add(1);
+        core.last_discarded_event = Some(event);
     }
 
     /// The loop is over. What the host put on the external queue is counted

@@ -2111,6 +2111,11 @@ public final class Engine<Policy: StatePolicy> {
         // the engine's own error, so no <finalize> or autoforward runs for it, and it is
         // answered as one off the internal queue is.
         guard let admitted = liftPayload(eventWithMeta, fromExternalQueue: true) else {
+            // Nothing is taken in its place, and it is not dropped unseen: it is
+            // counted as a discarded external event, the hook every lane shares for
+            // an external event that moved nothing (docs/adr/0086, section 4.2).
+            discardedExternalEvents += 1
+            lastDiscardedEvent = eventWithMeta.event
             return true
         }
         if admitted.inPlace {

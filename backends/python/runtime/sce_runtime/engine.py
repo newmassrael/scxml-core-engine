@@ -3048,6 +3048,12 @@ class Engine(Generic[S, E]):
         # queue is.
         taken = self._admit(evt)
         if taken is None:
+            # Nothing is taken in its place, and it is not dropped unseen: it is
+            # counted as a discarded external event, the hook every lane shares
+            # for an external event that moved nothing (docs/adr/0086, section
+            # 4.2).
+            self._discarded_external_events += 1
+            self._last_discarded_event = evt.event
             return
         evt, in_place = taken
         if in_place:
