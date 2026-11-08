@@ -76,6 +76,7 @@ cd58b0ccb904ca445b56292ecfb28c3bd3cb7202 sce/include/common/MeshEndpoint.h
 905d7f7bdd6e5335f66846839c63af8fddfd9196 sce/include/common/NoParent.h
 78721e19bcf356793a76095d76e2b67fe041fc01 sce/include/common/SCXMLConstants.h
 ed6ce3e63d4bdeb18929d6fccd5dba028d781d85 sce/include/common/SceClock.h
+dde5c89ce1f6a611dafe40c5c5a40beab8fff387 sce/include/common/ScriptValueJson.h
 f5aceaf6fa506e091867d85acdb620cb37e56d98 sce/include/common/SendHelper.h
 833f1ed8282c28e359926a3eb8dc1d7493295052 sce/include/common/SendSchedulingHelper.h
 3f85b8512ea7a82df14037e7dd49308334b3ea58 sce/include/common/SourceLocation.h
@@ -194,7 +195,7 @@ bd7458ab3cc9c2dc98b321917d7aecebeb251298 sce/include/scripting/LuaEngine.h
 32d5c4bdcef45dfdbeb3eb331d5d1a8bdc237f17 sce/include/scripting/ScriptDialect.h
 b5ab6b9b0e0aedff2603051d0fff204d1994c6b8 sce/include/scripting/ScriptEngineProvider.h
 2a8b37123aabe583f7faa2471ccf0615c37ec9a7 sce/include/scripting/ScriptResult.h
-0ed65b626c1109b6523e31dfaeccad395b8dd8a4 sce/include/scripting/ScriptResultUtils.h
+beb471619b7743258eebf50c0d666c7820f3f005 sce/include/scripting/ScriptResultUtils.h
 e8a09c09ce2014d9227f9d9837337622d132fd72 sce/include/scripting/ScriptSource.h
 14f286c1b7979780970fe5e371106e3d5aa0d74e sce/include/scripting/SessionRegistry.h
 61fc4430522e08836f820e9a62291fd59bddf7d7 sce/include/scripting/XMLDOMWrapper.h
