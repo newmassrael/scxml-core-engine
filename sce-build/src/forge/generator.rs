@@ -22,6 +22,7 @@ use crate::forge::model::*;
 use crate::generator::{self, GeneratedOutput};
 use std::path::Path;
 
+mod c11_test_template;
 mod cpp_source;
 mod cpp_test_tables;
 mod cpp_test_template;
@@ -32200,10 +32201,16 @@ pub fn generate_c11_with_imports_and_externs(
         ForgeDocument::Union(m) => {
             return Err(crate::forge::union_check::document_unlowered(m).into())
         }
-        // docs/SCE_TEST_PROFILE.md §11.9: no backend generates a document of
-        // the test profile until its runtime lands, so each is refused by name.
-        ForgeDocument::TestTemplate(_)
-        | ForgeDocument::TestPortType(_)
+        // docs/SCE_TEST_PROFILE.md §11.9, §12.6, slice 6: a template's
+        // `<name>_matches` and a specific template's `<name>_value`
+        // (`codegen_matrix::TEST_TEMPLATE_BACKENDS`); C11 lowers no union, so one
+        // whose type reaches a union is refused by the union's own refusal.
+        ForgeDocument::TestTemplate(m) => {
+            c11_test_template::render_test_template_c11(&env, m, imports)?
+        }
+        // docs/SCE_TEST_PROFILE.md §11.9: the other kinds of the test profile
+        // are refused by name until their runtime lands here.
+        ForgeDocument::TestPortType(_)
         | ForgeDocument::TestConfiguration(_)
         | ForgeDocument::TestCase(_)
         | ForgeDocument::TestSuite(_) => {
@@ -37508,6 +37515,32 @@ fn c11_schema_field_optional(
     field: &EntryField,
 ) -> Result<C11OptionalElem, ForgeError> {
     match (elem, field.max_size) {
+        (SceType::String, None) => Err(crate::forge::static_lowering::optional_not_lowered(
+            &format!(
+                "<data id=\"{}\" sce:type=\"{}\">, a text with no sce:max-size, which the buffer \
+                 it is held in is declared over",
+                field.id,
+                field.sce_type.as_attr()
+            ),
+            l.lang.canonical_name(),
+        )
+        .into()),
+        (_, bound) => c11_entry_optional(l, imports, elem, bound),
+    }
+}
+
+/// The optional value of `elem` as the C11 unit of an event schema holds a field
+/// of `optional<elem>` (docs/adr/0055, step 9), a text over the buffer of
+/// `bound` bytes: the one spelling a schema's field and a test template's value
+/// of the same type share, so a template's value is the field's type. A text of
+/// no bound is what [`c11_algorithm_optional`] refuses.
+fn c11_entry_optional(
+    l: &LangCtx,
+    imports: &[ImportContext],
+    elem: &SceType,
+    bound: Option<u32>,
+) -> Result<C11OptionalElem, ForgeError> {
+    match (elem, bound) {
         (SceType::String, Some(bound)) => {
             let present = crate::forge::static_lowering::c_string_storage_type(bound);
             let name = format!("string_{bound}");
@@ -37524,16 +37557,6 @@ fn c11_schema_field_optional(
                 ),
             })
         }
-        (SceType::String, None) => Err(crate::forge::static_lowering::optional_not_lowered(
-            &format!(
-                "<data id=\"{}\" sce:type=\"{}\">, a text with no sce:max-size, which the buffer \
-                 it is held in is declared over",
-                field.id,
-                field.sce_type.as_attr()
-            ),
-            l.lang.canonical_name(),
-        )
-        .into()),
         _ => c11_algorithm_optional(l, imports, &AlgorithmValueType::of_scalar(elem.clone())),
     }
 }

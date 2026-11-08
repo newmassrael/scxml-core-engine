@@ -1,0 +1,79 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "c", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+/* SCE Forge: Auto-generated from Extended SCXML (sce:kind="test-template") */
+/* Runtime: {{ runtime_dep }} */
+/* Do not edit — regenerate from the source SCXML file. */
+
+#ifndef {{ guard }}
+#define {{ guard }}
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <string.h>
+{% if needs_optional %}
+#include "sce/forge/optional.h"  /* a value that may be absent, docs/adr/0055 */
+{% endif %}
+{% if counts_characters %}
+#include "{{ text_length_header }}"
+{% endif %}
+{% for inc in type_includes %}
+{{ inc }}
+{% endfor %}
+
+{# The buffer of each text bound the template's type and its parameters hold,
+   the optional value of each element the runtime does not declare, and each
+   composition, inner before outer, each under the guard every unit that
+   declares it shares, as the unit of an event schema declares them
+   (docs/adr/0086, section 7.2). #}
+{% for def in c_text_defs %}
+{{ def }}
+
+{% endfor %}
+{% for def in optional_defs %}
+{{ def }}
+
+{% endfor %}
+{% for def in c_composite_defs %}
+{{ def }}
+
+{% endfor %}
+/* The type the template `{{ template_name }}` matches: `{{ template_type }}`, as the unit of its type
+ * declares it. */
+typedef {{ value_type }} {{ prefix }}_value_t;
+
+{# Every parameter is cast to void: a formal parameter a matcher does not read is
+   still one a reference binds, and a matcher that holds no value to compare
+   (`any-value`) reads no `value`. #}
+/* Whether `*value` matches the template `{{ template_name }}` (ES 201 873-1 Annex B.1,
+ * docs/SCE_TEST_PROFILE.md §6.1).
+{% for p in parameters %}
+ * `{{ p.name }}`: the formal parameter `{{ p.id }}`, of type `{{ p.sce_type }}`.
+{% endfor %}
+ */
+static inline bool {{ prefix }}_matches(const {{ prefix }}_value_t *value{% for p in parameters %}, {{ p.ty }} {{ p.name }}{% endfor %}) {
+    (void)value;
+{% for p in parameters %}
+    (void){{ p.name }};
+{% endfor %}
+    return {{ match_expr }};
+}
+{% if value_expr %}
+
+/* The value the specific template `{{ template_name }}` sends (docs/SCE_TEST_PROFILE.md §6.2): every
+ * field it names at its value, every field it omits absent. It matches the template by
+ * `{{ prefix }}_matches`, given the same parameters. */
+static inline {{ prefix }}_value_t {{ prefix }}_value({% for p in parameters %}{{ p.ty }} {{ p.name }}{% if not loop.last %}, {% endif %}{% else %}void{% endfor %}) {
+{% for p in parameters %}
+    (void){{ p.name }};
+{% endfor %}
+    const {{ prefix }}_value_t value = {{ value_expr }};
+    return value;
+}
+{% endif %}
+
+#endif  /* {{ guard }} */
