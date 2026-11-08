@@ -3,7 +3,8 @@
 
 // The CBOR (RFC 8949) items a `sce:encoding="cbor"` codec reads and writes (SCE_FORGE.md §4.6.1): one
 // definite-length map whose keys are small unsigned integers and whose values are unsigned integers,
-// booleans, text strings and byte strings.
+// booleans, text strings and byte strings, or a definite-length array of maps, each a record keyed by
+// its fields' ids as text (docs/adr/0086, section 9.2).
 //
 // Siblings, rule for rule: `codec.CborRead*` (Go, `backends/go/forge-runtime/codec/cbor.go`) and the
 // `Cbor` object (Kotlin). A generated codec calls these; it spells no CBOR of its own.
@@ -24,6 +25,8 @@ public enum Cbor {
     public static let majorBytes: UInt8 = 2
     /// Major type 3, a UTF-8 text string.
     public static let majorText: UInt8 = 3
+    /// Major type 4, an array.
+    public static let majorArray: UInt8 = 4
     /// Major type 5, a map.
     public static let majorMap: UInt8 = 5
     /// Major type 7, simple values (false is 20, true is 21).
@@ -75,6 +78,11 @@ public enum Cbor {
     public static func writeBytes(_ value: [UInt8], to buffer: inout [UInt8]) {
         writeHead(majorBytes, UInt64(value.count), to: &buffer)
         buffer.append(contentsOf: value)
+    }
+
+    /// Appends the head of a definite-length array of `items` items: a list of records an entry holds.
+    public static func writeArrayHead(_ items: UInt64, to buffer: inout [UInt8]) {
+        writeHead(majorArray, items, to: &buffer)
     }
 
     /// Appends the head of a definite-length map of `entries` entries.
@@ -180,6 +188,12 @@ public enum Cbor {
             throw .cborWrongLength
         }
         return Array(try readPayload(&cursor, said))
+    }
+
+    /// Reads the head of a definite-length array: how many items follow. An indefinite length is
+    /// refused, as a map's is.
+    public static func readArrayLen(_ cursor: inout SceCursor) throws(CodecError) -> UInt64 {
+        try expect(&cursor, majorArray)
     }
 
     /// Reads the head of a definite-length map: how many entries follow.
