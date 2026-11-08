@@ -86,7 +86,9 @@ from pathlib import Path
 #
 # The ceiling on what a push may cost the developer, in the same warm
 # wall-clock seconds `cost_s` is measured in. Set by the owner: a push
-# takes under five minutes.
+# takes under five minutes. It bounds a push of any ref but main; an update
+# to main is the landing queue's judgment on the build machines and runs the
+# `ci_only` gates too (see "What `ci_only` means" above GATES).
 #
 # It bounds the WORST case, not the average. Rule 1 hands back every gate
 # a push can run for any unclassified path, so that set is what a developer
@@ -1444,18 +1446,20 @@ GATES: dict[str, dict] = {
         # repository. Both figures include the transfer.
         #
         # `ci_only` is not about the 38s, which the push budget could spend. The
-        # toolchain is what keeps it out: a hand-installed pin that `provision`
-        # puts on a build machine, and a push the hook handed to a machine that
-        # lacks it would be refused for a reason that says nothing about the
-        # tree. That is `genmc-queue`'s argument, and the gate fails loudly
-        # without a toolchain rather than skipping, so the lane is the place it
-        # runs until every build machine is verified to carry the pin.
+        # toolchain kept it out of every push: a hand-installed pin that
+        # `provision` puts on a build machine, and a push the hook ran in place
+        # on a machine that lacked it would be refused for a reason that says
+        # nothing about the tree. The gate fails loudly without a toolchain
+        # rather than skipping. An update to main runs it all the same (see
+        # "What `ci_only` means"): the pin is a tool of bx.toml's platform, so
+        # bx runs the unit only on a machine that carries it.
         "ci_only": "38s, and the 6.4.0 toolchain is a hand-installed pin "
-                   "(`[platform.linux.tools.swift]` in bx.toml) that not every build machine "
-                   "is verified to carry; the gate refuses without it, so a "
-                   "push that selected it there would be refused for a reason "
-                   "that says nothing about the tree. swift-backend.yml "
-                   "installs the pin by its digest.",
+                   "(`[platform.linux.tools.swift]` in bx.toml); the gate "
+                   "refuses without it, so a push of another ref run on a "
+                   "machine without the pin would be refused for a reason that "
+                   "says nothing about the tree. An update to main runs it "
+                   "where bx placed it, on a machine that carries the pin. "
+                   "swift-backend.yml installs the pin by its digest.",
         "cost_s": 38,
         # The suite's committed traces, which `ATestSuiteRunsThroughItsRunnerTests.swift`
         # replays through the function and the runner program, and the trace's wire schema,
@@ -1484,17 +1488,18 @@ GATES: dict[str, dict] = {
     # same: the generator built, the pinned toolchain installed and checked against its digest.
     # A job of its own would repeat those steps and pay for them twice.
     #
-    # `ci_only` for the reason `swift-backend` is: the 6.4.0 toolchain is a hand-installed pin
-    # that not every build machine is verified to carry, and the gate fails loudly without it.
+    # `ci_only` for the reason `swift-backend` is: the 6.4.0 toolchain is a hand-installed pin,
+    # and the gate fails loudly without it. An update to main runs it where bx placed it.
     "w3c-swift": {
         "workflows": ["swift-backend.yml"],
         "runner_workflow": True,
         "deps": ["codegen-build"],
         "ci_only": "the 6.4.0 toolchain is a hand-installed pin (`[platform.linux.tools.swift]` "
-                   "in bx.toml) that not every build machine is verified to "
-                   "carry; the gate refuses without it, so a push that "
-                   "selected it there would be refused for a reason that says "
-                   "nothing about the tree. swift-backend.yml installs the pin "
+                   "in bx.toml); the gate refuses without it, so a push of "
+                   "another ref run on a machine without the pin would be "
+                   "refused for a reason that says nothing about the tree. An "
+                   "update to main runs it where bx placed it, on a machine "
+                   "that carries the pin. swift-backend.yml installs the pin "
                    "by its digest.",
         # 76s, `scripts/test_swift_backend.sh w3c` through `bx` on a build machine on
         # 2026-11-01, which is what the gate runs and reads (a gate run is refused locally
@@ -1518,10 +1523,11 @@ GATES: dict[str, dict] = {
         "runner_workflow": True,
         "deps": ["codegen-build"],
         "ci_only": "the 6.4.0 toolchain is a hand-installed pin (`[platform.linux.tools.swift]` "
-                   "in bx.toml) that not every build machine is verified to "
-                   "carry; the gate refuses without it, so a push that "
-                   "selected it there would be refused for a reason that says "
-                   "nothing about the tree. swift-backend.yml installs the pin "
+                   "in bx.toml); the gate refuses without it, so a push of "
+                   "another ref run on a machine without the pin would be "
+                   "refused for a reason that says nothing about the tree. An "
+                   "update to main runs it where bx placed it, on a machine "
+                   "that carries the pin. swift-backend.yml installs the pin "
                    "by its digest.",
         # 11s, `scripts/test_swift_backend.sh ecma262-lowered` through `bx` on a build machine
         # on 2026-11-01 (the script under the gate: a gate run is refused locally for this
@@ -1547,10 +1553,11 @@ GATES: dict[str, dict] = {
         "runner_workflow": True,
         "deps": ["codegen-build"],
         "ci_only": "the 6.4.0 toolchain is a hand-installed pin (`[platform.linux.tools.swift]` "
-                   "in bx.toml) that not every build machine is verified to "
-                   "carry; the gate refuses without it, so a push that "
-                   "selected it there would be refused for a reason that says "
-                   "nothing about the tree. swift-backend.yml installs the pin "
+                   "in bx.toml); the gate refuses without it, so a push of "
+                   "another ref run on a machine without the pin would be "
+                   "refused for a reason that says nothing about the tree. An "
+                   "update to main runs it where bx placed it, on a machine "
+                   "that carries the pin. swift-backend.yml installs the pin "
                    "by its digest.",
         # 102s, `scripts/test_swift_backend.sh forge` through `bx` on a build machine on
         # 2026-11-01 (the script under the gate: a gate run is refused locally for this
@@ -1596,7 +1603,9 @@ GATES: dict[str, dict] = {
         "ci_only": "72s measured 2026-10-10 on a host that has GenMC, and the "
                    "host is the constraint: GenMC is built from source "
                    "(scripts/install_genmc.sh), no hosted runner carries it, "
-                   "and the build machines do not all have it. "
+                   "and the build machines do not all have it. An update to "
+                   "main runs it where bx placed it: GenMC is a tool of "
+                   "bx.toml's platform, needed by this gate's runs. "
                    "genmc-queue.yml builds it once per pin and caches it.",
         "cost_s": 72,
         "summary": "C11 and C++ queues under GenMC + weakened-ordering mutants",
@@ -1940,6 +1949,14 @@ GATES: dict[str, dict] = {
         # instead, which is inside this trigger; what that costs is written
         # there.
         "extra": ["web/visualizer/**"],
+        # The WASMs it measures are `visualizer-wasm`'s output, in gitignored
+        # directories, so that gate runs first: a landing unit runs on a
+        # build machine's checkout, where they are absent (the gate ends 3,
+        # and the item would never land) or left by an older tree (a verdict
+        # about WASMs this change did not build). deploy-visualizer.yml runs
+        # the two as steps of one job, so there the second run of
+        # `visualizer-wasm` finds its output built.
+        "deps": ["visualizer-wasm"],
         # 22s measured 2026-09-18, up from 6s: the lane gained a stress half
         # that replays 25 seeded gestures per fixture over all ten. The seed
         # is pinned in the gate script, so the cost is stable and a red is
@@ -1953,8 +1970,8 @@ GATES: dict[str, dict] = {
         "cache": False,
         "no_cache_reason": "reads an artifact another gate leaves: the codegen "
                            "and engine WASMs `visualizer-wasm` writes into "
-                           "gitignored directories, which the key does not hold "
-                           "and nothing here rebuilds",
+                           "gitignored directories; its unit builds them first "
+                           "(deps), and that gate's own verdict is not kept",
         "inputs": None,
         "commits": [],
         "peak_gb": 1,
@@ -2006,6 +2023,19 @@ GATES: dict[str, dict] = {
                    "holds, which a push hook cannot assume.",
         "cost_s": 107,
         "summary": "Rust engine built for wasm32, every scenario replayed in Node and Chrome",
+        # Off the fleet, so a landing leaves it to the hosted lane (see "Where
+        # a gate can run"). The browser is the platform: the hosted image
+        # carries a headless Chrome, no build machine is declared to, and the
+        # gate ends 3 without one, so a landing unit could never be measured
+        # and every item reaching it would come back unlanded. Bringing it in
+        # takes Chrome declared at a pinned version as a tool of bx.toml's
+        # platform, with the wasm32 target and wasm-bindgen at the Cargo.lock
+        # version beside it; this attribute then goes.
+        "platform": "github-hosted-ubuntu-24.04",
+        "platform_reason": "the scenarios replay in headless Chrome, which the "
+                           "hosted image carries and no build machine is "
+                           "declared to; the gate ends 3, could not run, "
+                           "without it",
         "cache": False,
         "no_cache_reason": "a host browser: the scenarios replay in whatever "
                            "headless Chrome the machine carries, and no "
@@ -2108,6 +2138,18 @@ GATES: dict[str, dict] = {
                    "compiler is whatever that host carries.",
         "cost_s": 300,
         "summary": "C++ interface compiled alone at C++17 and C++20 (ADR 0059)",
+        # Off the fleet, so a landing leaves it to the hosted lane (see "Where
+        # a gate can run"). The verdict is GCC 15's: its libstdc++ is the one
+        # that drops a transitive include first, and the lane runs a Debian
+        # image with GCC 15.3.0 for that reason. A build machine's Ubuntu GCC
+        # is older, would pass what GCC 15 refuses, and could refuse with a
+        # warning GCC 15 does not give, so a landing judged there would be
+        # neither the lane's verdict nor a weaker one of it.
+        "platform": "gcc-15.3.0-container",
+        "platform_reason": "the verdict is GCC 15's, compiled in the lane's "
+                           "gcc:15.3.0 Debian image; a build machine carries "
+                           "an older Ubuntu GCC, whose -Werror verdict is "
+                           "another compiler's",
         "cache": False,
         "no_cache_reason": "a host compiler: it compiles every header alone with "
                            "-Werror under whatever GCC and libstdc++ the machine "
@@ -2180,6 +2222,16 @@ GATES: dict[str, dict] = {
                    "runner.",
         "cost_s": 1500,
         "summary": "C++ host, COSE and generated machines with MSVC; Bazel channels",
+        # Off the fleet, so a landing leaves it to the hosted lane (see "Where
+        # a gate can run"). The host is the platform: every build machine is
+        # the Linux bx.toml declares, and the verdict is MSVC's on Windows, so
+        # a landing unit could never be placed and every item reaching the
+        # gate would come back unlanded. When bx.toml declares a Windows
+        # platform this attribute names it, and the gate joins the judgment.
+        "platform": "github-hosted-windows-2022",
+        "platform_reason": "the verdict is MSVC's, with Visual Studio 2022 and "
+                           "vcpkg on the hosted windows-2022 image; every build "
+                           "machine is the Linux platform bx.toml declares",
         "cache": False,
         "no_cache_reason": "a host compiler and ports no declaration pins: the "
                            "verdict is MSVC's as the Windows image carries it, and "
