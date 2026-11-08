@@ -1796,6 +1796,36 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         LABELS "integration;c11;aot"
     )
 
+    # docs/adr/0086, section 8.5 (a): a machine whose data model is a script
+    # engine owns each event's data in a text its engine's allocator gives it,
+    # freed once by its last holder: the dequeue, a <cancel>, or `_destroy`. A
+    # document of this channel alone, beside the C test, which counts the texts
+    # the machine holds after each act.
+    sce_generate_static_integration_c_test(a_script_machine_owns_each_event_text
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+        SCXML_FILE "${CMAKE_CURRENT_SOURCE_DIR}/integration_resources/a_script_machine_owns_each_event_text/a_script_machine_owns_each_event_text.scxml"
+    )
+    add_executable(sce_c_integration_a_script_machine_owns_each_event_text
+        integration/test_a_script_machine_owns_each_event_text.c
+        ${INTEGRATION_C_TEST_a_script_machine_owns_each_event_text_SOURCES}
+    )
+    sce_c_link_runtime(sce_c_integration_a_script_machine_owns_each_event_text)
+    target_include_directories(sce_c_integration_a_script_machine_owns_each_event_text PRIVATE
+        "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    )
+    set_target_properties(sce_c_integration_a_script_machine_owns_each_event_text PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_EXTENSIONS OFF
+    )
+    add_test(NAME c11_integration_a_script_machine_owns_each_event_text
+        COMMAND sce_c_integration_a_script_machine_owns_each_event_text
+    )
+    set_tests_properties(c11_integration_a_script_machine_owns_each_event_text PROPERTIES
+        TIMEOUT 30
+        LABELS "integration;c11;aot"
+    )
+
     # §scxml-5.10 + §scxml-B-2-8: a write that changes a system variable fails
     # (tests/ecmascript/system_variable_writes.json, which every backend reads).
     # A document of this channel alone, beside the C test: this backend binds the
