@@ -100,6 +100,7 @@ fn config(responder: &'static str, buffer: Option<OutboundBuffer>) -> PeerConfig
         responders: Box::leak(Box::new([responder])),
         deadline_ms: None,
         reply_events: &[],
+        causal: None,
     }
 }
 

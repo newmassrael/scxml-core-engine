@@ -160,6 +160,7 @@ fn peer_config(peer: &'static str) -> PeerConfig {
         responders: Box::leak(Box::new([peer])),
         deadline_ms: None,
         reply_events: &[],
+        causal: None,
     }
 }
 

@@ -61,6 +61,7 @@ pub fn peer(responders: &'static [&'static str], ordered: bool) -> PeerConfig {
         responders,
         deadline_ms: None,
         reply_events: &[],
+        causal: None,
     }
 }
 

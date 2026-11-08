@@ -41,6 +41,7 @@ fn peer(responders: &'static [&'static str]) -> PeerConfig {
         responders,
         deadline_ms: None,
         reply_events: &[],
+        causal: None,
     }
 }
 
