@@ -119,7 +119,6 @@ fn record_refusal_declares_no_variant_for_no_refusal_and_starts_at_not_writer() 
             "noRoomForValue",
             "noRoomForHistory",
             "noRoomForDigest",
-            "textTooLong",
             "changeTooLarge",
             "registerNamedTwice",
             "clockExhausted",
@@ -135,15 +134,20 @@ fn record_refusal_declares_no_variant_for_no_refusal_and_starts_at_not_writer() 
         Some(&("notWriter".to_string(), 1)),
         "the first variant is notWriter, at the number it always had"
     );
-    // Every other number is the one it had before `none` was removed: one more than
-    // its place, so nothing a saved state or a peer holds was renumbered.
-    for (place, (name, value)) in variants.iter().enumerate() {
-        assert_eq!(
-            *value,
-            u32::try_from(place + 1).expect("a few variants"),
-            "{name} keeps its number"
-        );
-    }
+    // Every number is the one it had before `none` was removed, so nothing a saved
+    // state or a peer holds was renumbered. 5 was `textTooLong`, retired when an
+    // edit's text bound moved to the type the delivery is read by (docs/adr/0086,
+    // section 4.4; docs/adr/0046, section 6), and is no variant's.
+    let numbers: Vec<u32> = variants.iter().map(|(_, value)| *value).collect();
+    assert_eq!(
+        numbers,
+        [1, 2, 3, 4, 6, 7, 8],
+        "each variant keeps its number: {variants:?}"
+    );
+    assert!(
+        !names.contains(&"textTooLong"),
+        "`textTooLong` is retired: no delivery past the text's bound reaches the list"
+    );
 }
 
 #[test]

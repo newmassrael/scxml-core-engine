@@ -141,7 +141,8 @@
   adds, tombstones and the lists a change is judged by), `merge_values` (512 values),
   `merge_digest` (2048 nodes of the digest), `merge_text` (the 96 bytes of text a write
   carries and a value keeps), `shared_typed_text` (the 32 bytes of text a person types,
-  record_edit; a build that raises it keeps `merge_text` at least as large),
+  the type of record_edit's text, which an edit past it is refused at where it is read,
+  before the list sees it; a build that raises it keeps `merge_text` at least as large),
   `shared_roster` (64 members), `shared_answers` (512 answers to a settle),
   `shared_staged` (32 commands one change stages), `shared_parts` (64 operations of one
   change, and parts of changes not yet whole a copy holds) and `shared_moved` (64
@@ -280,11 +281,6 @@
       <sce:set name="nodeId" expr="0"/>
     </data>
     <data id="values" sce:type="list&lt;record:Value&gt;[merge_values=512]" sce:direction="out"/>
-    <!-- The text a person types, held to the 32 bytes a person writes (record_edit), the
-         bound `shared_typed_text` names: a write has room for more, for what a host puts
-         there when it keeps the content from the hub (record_write), and a text past the
-         bound that a person typed is refused as one past the room. -->
-    <data id="typed" sce:type="string[shared_typed_text=32]" expr="''"/>
     <data id="held" sce:type="record:Value">
       <sce:set name="id" expr="0"/>
       <sce:set name="field" expr="0"/>
@@ -363,8 +359,8 @@
     <!-- A change (docs/adr/0046): the commands of the change in hand (`staged`), whether
          the command in hand says the change goes on (`holding`), the `now` of the one that
          ends it, whether the change is refused (`spoiled`), and whether the statement in
-         hand is one whose failure refuses it (`probing`): a text past its bound and a
-         list past its room fail as an assignment does, ending the block, and
+         hand is one whose failure refuses it (`probing`): a list past its room fails as
+         an assignment does, ending the block, and
          error.execution is where the change is then refused. What a change is judged by:
          the values it writes over (`gone`), the registers it writes (`writes`), and
          whether the value in hand is in a register it names (`covered`). -->
@@ -454,11 +450,12 @@
 
     <!-- A person's edit of one field: a command of a change (docs/adr/0046). It is
          staged, and the command that does not say `more` ends the change, which
-         `record_list.close` judges, stamps and takes in whole. The text is read first,
-         into a place nothing else reads: a text past what a person writes is an
-         assignment that fails and ends the block, and error.execution refuses the
-         change, as a change past the room of `staged` is. Nothing is stamped or sent
-         here. A change already refused stages nothing more, and is ended all the same. -->
+         `record_list.close` judges, stamps and takes in whole. A change past the room of
+         `staged` fails the append, which ends the block, and error.execution refuses the
+         change. A text past what a person writes never reaches here: record_edit's text
+         is of that bound, and an edit past it is refused whole where it is read
+         (docs/adr/0086, section 4.4). Nothing is stamped or sent here. A change already
+         refused stages nothing more, and is ended all the same. -->
     <transition event="record_list.edit" type="internal">
       <assign location="holding" expr="_event.data.more"/>
       <if cond="!spoiled">
@@ -466,8 +463,6 @@
         <assign location="namedField" expr="_event.data.field"/>
         <assign location="namedKind" expr="Command.edit"/>
         <assign location="probing" expr="true"/>
-        <assign location="probe" expr="Refusal.textTooLong"/>
-        <assign location="typed" expr="_event.data.text"/>
         <assign location="part.kind" expr="0"/>
         <assign location="part.id" expr="_event.data.id"/>
         <assign location="part.field" expr="_event.data.field"/>
@@ -1587,9 +1582,11 @@
 
     <!-- Every failure is counted. One a command or the end of a change met while it was
          staging the change or turning it into its operations (`probing`) refuses the
-         change: a text past what a person writes, a change past the room of `staged` or
-         of `taking`. The block it stood in has ended, so a command that ended the change
-         has its end raised here, where the change is refused whole. -->
+         change: a change past the room of `staged` or of `taking`. A command whose
+         delivery is outside its type is refused where it is read, never reaches the
+         change, and is counted here all the same. The block it stood in has ended, so a
+         command that ended the change has its end raised here, where the change is
+         refused whole. -->
     <transition event="error.execution" type="internal">
       <assign location="refusals" expr="refusals + 1"/>
       <if cond="probing">

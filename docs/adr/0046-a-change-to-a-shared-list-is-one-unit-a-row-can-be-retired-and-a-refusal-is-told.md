@@ -219,7 +219,7 @@ and is never told it (ADR 0052):
 | `noRoomForValue` | 2 | the values the copy would hold after the change pass the room's `values`; counted in `full` |
 | `noRoomForHistory` | 3 | the copy holds as many tombstones as the room's `history` (a settle frees them); counted in `full` |
 | `noRoomForDigest` | 4 | the copy holds as many digest nodes as the room's `digest`; counted in `full` |
-| `textTooLong` | 5 | an edit's text is past what a person writes (`shared_typed_text`, section 6) |
+| (5, retired 2026-11-09) | 5 | was `textTooLong`, an edit's text past what a person writes; no variant now (section 6) |
 | `changeTooLarge` | 6 | the change stages more commands than `shared_staged`, or is more operations than `shared_parts` |
 | `registerNamedTwice` | 7 | two commands of the change write or clear one register |
 | `clockExhausted` | 8 | the copy's clock cannot stamp another change in its millisecond (`hlc_send` overflows) |
@@ -237,7 +237,22 @@ does (docs/SCE_ACCEPTED_SUBSET.md, "An event schema that grows").
 
 - **`shared_typed_text`, 32 bytes by default**, is the most UTF-8 bytes of text a person writes in
   one `record_list.edit` (`record_edit`'s `text` and the list's `typed`); a longer one is refused
-  whole (`textTooLong`). A build raises it with `sce-codegen --limit shared_typed_text=N`, and
+  whole (`textTooLong`). *Amended 2026-11-09:* the bound moved to the door. Under docs/adr/0086,
+  section 4.4, every lane's lift holds each bound of a delivery's type where the delivery is read,
+  and refuses one outside it whole, with `error.execution`, before any transition runs. The type of
+  `record_edit`'s `text` is `string[shared_typed_text=32]`, so an edit past the bound never reaches
+  the list, and the list's own check of it (`typed`, of the same bound) became a branch no delivery
+  could reach. The declared type is the contract and the door is its one check, so the check, the
+  list's `typed` and the variant `textTooLong` are retired; 5 is given to no other reason, and
+  every other number is the one it had. A statechart cannot send such an edit (docs/adr/0050,
+  which holds a send to the bound its receiver reads), and a host that does is answered
+  `error.execution` where the edit is read, as for any delivery outside its type; the list is told
+  nothing and tells its parent nothing. `record_edit`'s `text` is not widened: a wider type would
+  admit what the list then refuses, which is two bounds for one fact, and would undo the check of
+  docs/adr/0050. The saved shape of the list moves with `typed` and the enum, so a state the list
+  saved before it is refused on restore (docs/adr/0045); the pin in
+  `sce-build/tests/fixtures/standard_saved_shapes.json` moves with it.
+  A build raises it with `sce-codegen --limit shared_typed_text=N`, and
   every copy of one list is built with the same N. A write carries and a copy keeps the text in
   `merge_text` bytes (96 by default: the write, the value, the register and value told to a parent,
   `record_take`), so a build that raises the first keeps `merge_text` at least N
