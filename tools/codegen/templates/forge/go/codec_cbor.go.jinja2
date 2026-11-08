@@ -39,12 +39,73 @@
 				return nil, codec.ErrUndeclaredEnumValue
 			}
 {% endif %}
+{% elif e.kind == "record_list" %}
+			// A definite-length array within the list's counts, each item
+			// one record's map.
+			n, err := codec.CborReadArrayLen(c)
+			if err != nil {
+				return nil, err
+			}
+			if n > {{ e.list_max }}{% if e.list_min > 0 %} || n < {{ e.list_min }}{% endif %} {
+				return nil, codec.ErrCborOutOfRange
+			}
+			v := make({{ e.value_type }}, 0, n)
+			for item := uint64(0); item < n; item++ {
+				record, err := {{ e.record_decode_fn }}(c)
+				if err != nil {
+					return nil, err
+				}
+				v = append(v, record)
+			}
 {% else %}
 			raw, err := codec.CborReadUintUpto(c, {{ e.max }})
 			if err != nil {
 				return nil, err
 			}
 			v := {{ e.value_type }}(raw)
+{% endif %}
+{% endmacro %}
+{#- The read of one field of a record a list holds into `record`. #}
+{% macro decode_record_field(f) %}
+{% if f.kind == "bool" %}
+			v, err := codec.CborReadBool(c)
+			if err != nil {
+				return record, err
+			}
+			record.{{ f.name }} = v
+{% elif f.kind == "text" or f.kind == "bytes" %}
+			v, err := codec.CborRead{% if f.kind == "text" %}Text{% else %}Bytes{% endif %}(c, {{ f.max }})
+			if err != nil {
+				return record, err
+			}
+			record.{{ f.name }} = v
+{% else %}
+			raw, err := codec.CborReadUintUpto(c, {{ f.int_max }})
+			if err != nil {
+				return record, err
+			}
+			record.{{ f.name }} = {{ f.value_type }}(raw)
+{% endif %}
+{% endmacro %}
+{#- The write of one field of `record`, its key already written. The
+    language's string and slice carry no bound, so a text or a byte string
+    past its bound is refused, not written. #}
+{% macro encode_record_field(f) %}
+{% if f.kind == "bool" %}
+	if err := codec.CborWriteBool(w, record.{{ f.name }}); err != nil {
+		return err
+	}
+{% elif f.kind == "text" or f.kind == "bytes" %}
+	if len(record.{{ f.name }}) > {{ f.max }} {
+		return codec.ErrCborOutOfRange
+	}
+	if err := codec.CborWrite{% if f.kind == "text" %}Text{% else %}Bytes{% endif %}(w, record.{{ f.name }}); err != nil {
+		return err
+	}
+{% else %}
+	if err := codec.CborWriteUint(w, uint64(record.{{ f.name }})); err != nil {
+		return err
+	}
 {% endif %}
 {% endmacro %}
 {#- The write of one entry's value `v`, key already written. #}
@@ -80,6 +141,21 @@
 {% endif %}
 		if err := codec.CborWriteUint(w, uint64(u)); err != nil {
 			return err
+		}
+{% elif e.kind == "record_list" %}
+		{# The language's slice carries no bound, so a count past the list's
+		   bound, or short of its lower count, is refused before anything of
+		   the list is written. #}
+		if len(v) > {{ e.list_max }}{% if e.list_min > 0 %} || len(v) < {{ e.list_min }}{% endif %} {
+			return codec.ErrCborOutOfRange
+		}
+		if err := codec.CborWriteArrayHead(w, uint64(len(v))); err != nil {
+			return err
+		}
+		for item := range v {
+			if err := {{ e.record_encode_fn }}(w, &v[item]); err != nil {
+				return err
+			}
 		}
 {% else %}
 		if err := codec.CborWriteUint(w, uint64(v)); err != nil {
@@ -221,3 +297,65 @@ func (s *{{ struct_name }}) EncodeToBytes() ([]byte, error) {
 	}
 	return out, nil
 }
+{% for r in cbor_records %}
+
+// {{ r.decode_fn }} reads one record of the event schema `{{ r.schema }}`
+// (`record:{{ r.alias }}`), as a list of this map holds it (docs/adr/0085,
+// Landing order step 3a), into the payload type the schema's own unit
+// declares: one CBOR map of every field, each under its id as text
+// (docs/adr/0086, section 9.2). Its keys in any order, a key the schema does
+// not declare skipped whole; a key given twice is ErrCborMalformed, a field
+// missing ErrCborRequiredKeyMissing, a text or byte string past its bound
+// ErrCborOutOfRange.
+func {{ r.decode_fn }}(c *codec.SceCursor) ({{ r.type_name }}, error) {
+	var record {{ r.type_name }}
+	count, err := codec.CborReadMapLen(c)
+	if err != nil {
+		return record, err
+	}
+{% for f in r.fields %}
+	seen{{ f.name }} := false
+{% endfor %}
+	for i := uint64(0); i < count; i++ {
+		key, err := codec.CborReadText(c, -1)
+		if err != nil {
+			return record, err
+		}
+		switch key {
+{% for f in r.fields %}
+		case {{ f.key_literal }}:
+			// A key given twice is not one map entry.
+			if seen{{ f.name }} {
+				return record, codec.ErrCborMalformed
+			}
+			seen{{ f.name }} = true
+{{ decode_record_field(f) }}{% endfor %}
+		default:
+			if err := codec.CborSkip(c); err != nil {
+				return record, err
+			}
+		}
+	}
+{% for f in r.fields %}
+	if !seen{{ f.name }} {
+		return record, codec.ErrCborRequiredKeyMissing
+	}
+{% endfor %}
+	return record, nil
+}
+
+// {{ r.encode_fn }} writes one record of `{{ r.schema }}` as one map of every
+// field, the keys in the order RFC 8949 §4.2.1 sorts their encodings: a
+// shorter key first.
+func {{ r.encode_fn }}(w codec.SceSink, record *{{ r.type_name }}) error {
+	if err := codec.CborWriteMapHead(w, {{ r.field_count }}); err != nil {
+		return err
+	}
+{% for f in r.fields_by_key %}
+	if err := codec.CborWriteText(w, {{ f.key_literal }}); err != nil {
+		return err
+	}
+{{ encode_record_field(f) }}{% endfor %}
+	return nil
+}
+{% endfor %}

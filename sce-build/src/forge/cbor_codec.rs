@@ -58,7 +58,7 @@ pub fn lowers_record_list(lang: Language) -> bool {
         Language::Rust => true,
         Language::Kotlin => true,
         Language::Cpp => false,
-        Language::Go => false,
+        Language::Go => true,
         Language::Python => false,
         Language::C11 => true,
         Language::Swift => true,
@@ -785,7 +785,17 @@ fn render_go(
     // Owned values, as every Go codec holds them. An optional entry is the one
     // optional type (docs/adr/0055, section 5), so an absent byte string and a
     // present empty one stay two values; a required one is the value itself.
-    let mut ctx = common_context(&l, m, imports, |e| l.type_name(leaf(e)).into_owned())?;
+    // A list of records is a slice of the schema's payload, which carries no
+    // bound: the encode refuses a count past it.
+    let mut ctx = common_context(&l, m, imports, |e| match e.leaf_type() {
+        Some(present) => l.type_name(present).into_owned(),
+        None => format!("[]{}", record_type_of(&l, imports, e)),
+    })?;
+    // Each field of a record as the schema's Go unit holds it: a text in a
+    // `string`, a byte string in a `[]byte`.
+    insert_cbor_records(&l, m, imports, &mut ctx, &|ty| {
+        scalar_record_field_type(&l, ty)
+    })?;
     if let Some(serde_json::Value::Array(entries)) = ctx.get_mut("entries") {
         for (entry, e) in entries.iter_mut().zip(&m.cbor_entries) {
             let value_type = entry["value_type"].as_str().unwrap_or_default().to_string();
@@ -803,8 +813,8 @@ fn render_go(
             // A required enum starts at its first declared variant, as the
             // other backends' do: a closed set need not declare the zero Go
             // would otherwise start it at.
-            entry["init"] = match leaf(e) {
-                SceType::Enum(r) if e.is_required() => l.enum_default_expr(&r.alias),
+            entry["init"] = match e.leaf_type() {
+                Some(SceType::Enum(r)) if e.is_required() => l.enum_default_expr(&r.alias),
                 _ => String::new(),
             }
             .into();
