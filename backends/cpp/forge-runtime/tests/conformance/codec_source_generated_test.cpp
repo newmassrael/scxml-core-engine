@@ -29,6 +29,7 @@
 #include "codec_chain_depth_plain.h"
 #include "codec_chain_flag_carrier.h"
 #include "codec_chain_has_envelope.h"
+#include "codec_chain_has_marker.h"
 #include "codec_chain_has_tagged.h"
 #include "codec_chain_prev_carrier.h"
 #include "codec_embed_basic.h"
@@ -1791,6 +1792,82 @@ void a_chain_its_own_gate_leaves_out_is_held_optionally_in_the_arm_of_no_kind() 
     CHECK(decoded_plain && decoded_plain->encode_to_vec() == plain_frame, "and encodes back to it");
 }
 
+namespace HasMarker = ::SCE::Generated::CodecChainHasMarker;
+using MarkerValue = HasMarker::CodecChainHasMarker;
+using MarkerGroup = HasMarker::CodecChainHasMarkerExtensionsHas0x12;
+using MarkerHas = HasMarker::CodecChainHasMarkerExtensionsHas0x12Has0x12;
+using MarkerNot = HasMarker::CodecChainHasMarkerExtensionsHas0x12NotHas0x12;
+using MarkerKey = HasMarker::CodecChainHasMarkerExtensionsHas0x12Key;
+using MarkerSlice = ::SCE::Generated::CodecChainHasMarkerSlice::CodecChainHasMarkerSlice;
+using MarkerPlaced = std::decay_t<decltype(std::declval<const MarkerHas &>().extensions())>;
+using MarkerNotChain = typename std::decay_t<decltype(std::declval<const MarkerNot &>().extensions())>::value_type;
+
+void a_bare_entry_is_held_as_its_place_among_the_others() {
+    const ExtEntry::CodecZenohExtEntry unit_one{0x01,
+                                                ExtEntry::CodecZenohExtEntryVariant{std::in_place_index<0>, ExtUnit{}}};
+    const ExtEntry::CodecZenohExtEntry mandatory_clear{
+        0x02, ExtEntry::CodecZenohExtEntryVariant{std::in_place_index<0>, ExtUnit{}}};
+    CHECK(MarkerKey::matches(MarkerKey::named()) && !MarkerKey::matches(mandatory_clear),
+          "the named entry is of the kind, and one that shares only its 4-bit id is not");
+
+    const std::vector<std::uint8_t> data_bytes{0xAA, 0xBB};
+    const auto data = ::SCE::Forge::Bytes<256>::make(data_bytes);
+    CHECK(data.has_value(), "two bytes lie within 256");
+    if (!data) {
+        return;
+    }
+    const std::vector<MarkerSlice> one_slice{MarkerSlice{0x00, *data}};
+    const auto slices = ::SCE::Forge::List<MarkerSlice, 4>::make(one_slice);
+    const std::vector<ExtEntry::CodecZenohExtEntry> others{unit_one};
+    const auto first = MarkerPlaced::make(::SCE::Forge::Span<const ExtEntry::CodecZenohExtEntry>(others.data(), 1), 0);
+    CHECK(slices && first, "a slice, and the marker placed before one other entry");
+    if (!slices || !first) {
+        return;
+    }
+
+    // The marker alone, last: its continuation flag clear.
+    const MarkerValue alone{0x00, MarkerGroup{MarkerHas{MarkerPlaced{}, *slices}}};
+    const std::vector<std::uint8_t> alone_frame{0x80, 0x12, 0x01, 0x00, 0x02, 0xAA, 0xBB};
+    CHECK(alone.encode_to_vec() == alone_frame, "the marker alone is written as its identifier");
+
+    // The marker first: its continuation flag set, so its byte is 0x92.
+    const MarkerValue leading{0x00, MarkerGroup{MarkerHas{*first, *slices}}};
+    const std::vector<std::uint8_t> leading_frame{0x80, 0x92, 0x01, 0x01, 0x00, 0x02, 0xAA, 0xBB};
+    CHECK(leading.encode_to_vec() == leading_frame, "the marker is written where the value holds its place");
+
+    // An entry that shares only the 4-bit id is another kind: the plain arm.
+    const std::vector<ExtEntry::CodecZenohExtEntry> unmarked{mandatory_clear};
+    const auto plain_chain =
+        MarkerNotChain::make(::SCE::Forge::Span<const ExtEntry::CodecZenohExtEntry>(unmarked.data(), 1));
+    const std::vector<ExtEntry::CodecZenohExtEntry> marked{MarkerKey::named()};
+    CHECK(plain_chain &&
+              !MarkerNotChain::make(::SCE::Forge::Span<const ExtEntry::CodecZenohExtEntry>(marked.data(), 1)),
+          "the plain arm's chain holds an entry of the 4-bit id and not the marker");
+    if (!plain_chain) {
+        return;
+    }
+    const MarkerValue plain{0x00, MarkerGroup{MarkerNot{*plain_chain, *data}}};
+    const std::vector<std::uint8_t> plain_frame{0x80, 0x02, 0x02, 0xAA, 0xBB};
+    CHECK(plain.encode_to_vec() == plain_frame, "the plain arm writes the payload and its length");
+
+    CHECK(std::holds_alternative<MarkerNot>(MarkerValue{}.extensions_has_0x12()),
+          "a value made by default holds the arm of no marker");
+
+    ::SCE::Forge::SceCursor cursor(leading_frame.data(), leading_frame.size());
+    const auto decoded = MarkerValue::decode(cursor);
+    const auto *held = decoded ? std::get_if<MarkerHas>(&decoded->extensions_has_0x12()) : nullptr;
+    CHECK(held != nullptr && held->extensions().place() == 0 && held->extensions().rest().size() == 1 &&
+              held->extensions().rest()[0].header() == 0x01,
+          "a frame whose marker stands first holds its place and the one other entry");
+    CHECK(decoded && decoded->encode_to_vec() == leading_frame, "and encodes back to it");
+
+    ::SCE::Forge::SceCursor plain_cursor(plain_frame.data(), plain_frame.size());
+    const auto decoded_plain = MarkerValue::decode(plain_cursor);
+    CHECK(decoded_plain && std::holds_alternative<MarkerNot>(decoded_plain->extensions_has_0x12()) &&
+              decoded_plain->encode_to_vec() == plain_frame,
+          "a frame of no marker holds the plain arm and encodes back to it");
+}
+
 void encode_source_reports_the_sinks_failure() {
     std::uint8_t buffer[3] = {};
     ::SCE::Forge::SpanSink sink(buffer, sizeof buffer);
@@ -1832,6 +1909,7 @@ int main() {
     two_lists_of_one_count_are_held_as_one_and_counted_once();
     a_chain_is_held_in_the_arm_of_the_kinds_of_its_entries();
     a_chain_its_own_gate_leaves_out_is_held_optionally_in_the_arm_of_no_kind();
+    a_bare_entry_is_held_as_its_place_among_the_others();
     encode_source_reports_the_sinks_failure();
     if (failures != 0) {
         std::fprintf(stderr, "codec_source_generated_test: %d failure(s)\n", failures);

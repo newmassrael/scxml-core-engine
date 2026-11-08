@@ -109,19 +109,10 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
     // one held to a law is not yet, nor is a group of a chain's memberships, or
     // one that holds an enum.
     for group in plan.groups() {
-        let label = group
-            .gates
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join(" || ");
         // A chain's memberships make arms that each hold the chain as a `Chain`
         // of the kinds the arm says (R6b), optionally where a gate of its own
-        // may leave it out; a bare entry's, whose arm holds the entry's place
-        // (R6a), is not yet.
-        if group.chain().is_some() && group.member_is_bare() {
-            forms.push(format!("`{label}`, a group of a bare entry's membership"));
-        }
+        // may leave it out, and a bare entry's the arm where its gate holds
+        // as the entry's place among the others (R6a).
         for id in group.fields() {
             let member = m
                 .fields
@@ -278,8 +269,9 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
             // and one a gate decides is walked where the value holds it. An
             // entry says the input a chain supplies from the entry before, which
             // the list's law holds it to (docs/adr/0065 §6 R8b); one handed such
-            // an input it does not say, or a chain that holds memberships, is
-            // not yet.
+            // an input it does not say is not yet. A bare entry's chain is
+            // walked as slots, the named entry where the value holds its place
+            // (R6a).
             Write::Streamed {
                 field,
                 guard,
@@ -292,9 +284,9 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
                     .previous
                     .iter()
                     .any(|(input, _)| !law.inputs.iter().any(|held| held.input == *input));
-                if unsaid || list.slots.is_some() {
+                if unsaid {
                     forms.push(format!(
-                        "`{}`, a chain whose entries the entry before or a group decides",
+                        "`{}`, a chain whose entries say an input the entry before supplies",
                         field.id
                     ));
                 }
@@ -776,6 +768,59 @@ fn entry_identifier(
     }
 }
 
+/// The member of the key of the kind `key` of a bare entry of the chain
+/// `chain` (docs/adr/0065 §6 R6a) that makes the entry of the kind: its
+/// carrier, the identifier, and, where the entry codec has a variant, the arm
+/// the identifier's tag bits select, value-made, as the Rust key's `named()`.
+fn named_entry(plan: &EncodePlan<'_>, imports: &[ImportContext], chain: &str, key: u64) -> String {
+    let field = plan
+        .model
+        .fields
+        .iter()
+        .find(|f| f.id == chain)
+        .expect("a membership names a chain of the codec");
+    let Value::List { codec, .. } = plan.value(field) else {
+        unreachable!("the chain whose memberships are gates is a list")
+    };
+    let (class, _) = held_codec(imports, codec);
+    let import = imports
+        .iter()
+        .find(|i| i.alias == codec)
+        .expect("a chain imports its entry codec");
+    let body = match &import.codec_variant {
+        None => String::new(),
+        Some(variant) => {
+            let carrier = import
+                .codec_fields
+                .first()
+                .expect("a bare entry is its carrier");
+            let flag = carrier
+                .flags
+                .iter()
+                .find(|f| variant.tag_flag.as_deref() == Some(f.name.as_str()))
+                .expect("a bare entry's tag is a flag of its carrier");
+            let mask = if flag.width >= 64 {
+                u64::MAX
+            } else {
+                (1u64 << flag.width) - 1
+            };
+            let tag = key.checked_shr(flag.bit).unwrap_or(0) & mask;
+            let index = variant
+                .arms
+                .iter()
+                .position(|a| a.value == tag)
+                .expect("a bare entry's tag selects an arm");
+            format!(", {class}Variant{{std::in_place_index<{index}>}}")
+        }
+    };
+    format!(
+        "\x20   /// The entry of the kind: its identifier, and nothing else to say.\n\
+         \x20   [[nodiscard]] static {class} named() {{\n\
+         \x20       return {class}{{0x{key:X}{body}}};\n\
+         \x20   }}\n"
+    )
+}
+
 /// The types each list held to a law is held by (docs/adr/0065 §6 R8), in the
 /// codec's namespace: for each input its entries say, the type that reads it
 /// off any source of an entry through the entry codec's `input_<name>`; for
@@ -969,15 +1014,39 @@ struct ChainKinds {
     least: u64,
     /// The namespace of the chain's entry codec.
     namespace: String,
+    /// The value class of the chain's entry codec.
+    entry: String,
     /// The view of the chain itself, which the decode makes of what it read.
     view: String,
     /// Whether the arm may hold no chain: the chain is gated itself, and the
     /// arm holds no kind of entry, which an absent chain holds none of either.
     /// It is then viewed and held as a `std::optional` of the chain.
     optional: bool,
+    /// Whether the arm is the one where the gate on a bare entry holds
+    /// (docs/adr/0065 §6 R6a): it then holds the other entries and the named
+    /// entry's place, a `::SCE::Forge::Placed` of the one kind it holds.
+    placed: bool,
 }
 
 impl ChainKinds {
+    /// Whether the arm's chain has a value made by default: one that must
+    /// hold no kind holds the fewest entries value-made, and a bare entry's
+    /// place the named entry alone; one that must hold an entry of some kind
+    /// has none.
+    fn has_default(&self) -> bool {
+        self.holds.is_empty() || self.placed
+    }
+
+    /// What the encode keeps of the chain the arm holds: the others of a bare
+    /// entry's place, or the list a chain holds.
+    fn list_read(&self) -> &'static str {
+        if self.placed {
+            "rest()"
+        } else {
+            "inner()"
+        }
+    }
+
     /// The trait that says whether a type is what a source may present for
     /// the chain in the arm: the chain, or an optional of it.
     fn presented_trait(&self) -> String {
@@ -1230,16 +1299,40 @@ impl<'p> GroupPart<'p> {
                 .chain(lacked_keys.iter().map(|k| format!("_not_0x{k:x}")))
                 .collect();
             let mut p = presented(id);
-            let view = format!(
-                "::SCE::Forge::Chain<::SCE::Forge::Span<const {class}>, {}, {}, {bounds}>",
-                kinds(&holds),
-                kinds(&lacks)
+            let most = bound.most.map_or_else(
+                || "::SCE::Forge::kUnbounded".to_string(),
+                |most| most.to_string(),
             );
-            let held = format!(
-                "::SCE::Forge::Chain<std::vector<{class}>, {}, {}, {bounds}>",
-                kinds(&holds),
-                kinds(&lacks)
-            );
+            // Where the one gate on a bare entry holds, the arm holds the
+            // other entries and the named entry's place (R6a).
+            let placed = group.member_is_bare() && !holds.is_empty();
+            let (view, held, trait_name) = if placed {
+                (
+                    format!(
+                        "::SCE::Forge::Placed<::SCE::Forge::Span<const {class}>, {}, {most}>",
+                        holds[0]
+                    ),
+                    format!(
+                        "::SCE::Forge::Placed<std::vector<{class}>, {}, {most}>",
+                        holds[0]
+                    ),
+                    format!("is_{}_placed{suffix}", p.name),
+                )
+            } else {
+                (
+                    format!(
+                        "::SCE::Forge::Chain<::SCE::Forge::Span<const {class}>, {}, {}, {bounds}>",
+                        kinds(&holds),
+                        kinds(&lacks)
+                    ),
+                    format!(
+                        "::SCE::Forge::Chain<std::vector<{class}>, {}, {}, {bounds}>",
+                        kinds(&holds),
+                        kinds(&lacks)
+                    ),
+                    format!("is_{}_chain{suffix}", p.name),
+                )
+            };
             // An arm that holds no kind of a chain gated itself holds the
             // chain optionally (docs/adr/0065 §6 R6b).
             let optional = super::rust_source::chain_optional_in(group, field, arm);
@@ -1254,13 +1347,12 @@ impl<'p> GroupPart<'p> {
             p.chain = Some(ChainKinds {
                 view,
                 optional,
-                trait_name: format!("is_{}_chain{suffix}", p.name),
+                placed,
+                trait_name,
                 holds,
                 lacks,
-                most: bound.most.map_or_else(
-                    || "::SCE::Forge::kUnbounded".to_string(),
-                    |most| most.to_string(),
-                ),
+                most,
+                entry: class.to_string(),
                 least: bound.least,
                 namespace: namespace.to_string(),
             });
@@ -1380,6 +1472,15 @@ impl<'p> GroupPart<'p> {
             .iter()
             .flat_map(|arm| arm.members.iter())
             .any(|m| m.name == member && m.chain.is_some())
+    }
+
+    /// Whether some arm holds `member` as a bare entry's place (docs/adr/0065
+    /// §6 R6a), the others and where the named entry stands.
+    fn holds_placed(&self, member: &str) -> bool {
+        self.arms
+            .iter()
+            .flat_map(|arm| arm.members.iter())
+            .any(|m| m.name == member && m.chain.as_ref().is_some_and(|c| c.placed))
     }
 
     /// The test, on the chain the decode read, that it holds an entry of the
@@ -1623,6 +1724,26 @@ impl<'p> GroupPart<'p> {
                 continue;
             }
             chains.push(chain.trait_name.as_str());
+            if chain.placed {
+                out.push_str(&format!(
+                    "/// Whether `R` is what a source may present for `{member}` where the one gate\n\
+                     /// on a bare entry holds (docs/adr/0065 §6 R6a): a `Placed` of the entry's\n\
+                     /// kind, held to a bound within the chain's, of any list of the others,\n\
+                     /// each a source of the entry codec.\n\
+                     template <class R>\n\
+                     struct {trait_name} : std::false_type {{}};\n\
+                     template <class L, std::size_t Max>\n\
+                     struct {trait_name}<::SCE::Forge::Placed<L, {key}, Max>>\n\
+                     \x20   : std::conjunction<std::bool_constant<Max <= {most}>,\n\
+                     \x20                      {ns}::is_source<::SCE::Forge::Detail::ElementOf<L>>> {{}};\n\n",
+                    member = m.name,
+                    trait_name = chain.trait_name,
+                    key = chain.holds[0],
+                    most = chain.most,
+                    ns = chain.namespace
+                ));
+                continue;
+            }
             out.push_str(&format!(
                 "/// Whether `R` is what a source may present for `{member}` where the chain holds\n\
                  /// an entry of each kind of `{holds}` and of none of `{lacks}`\n\
@@ -1858,6 +1979,14 @@ impl<'p> GroupPart<'p> {
                     self.kept_read(&held, &m.name),
                     m.name
                 ));
+                // Where the named entry of a bare entry's chain stands among
+                // the others, where the arm the value holds holds it.
+                if self.holds_placed(&m.name) {
+                    out.push_str(&format!(
+                        "        std::optional<std::size_t> _p_{};\n",
+                        m.name
+                    ));
+                }
             } else {
                 out.push_str(&format!(
                     "        std::optional<{}> _e_{};\n",
@@ -1898,6 +2027,17 @@ impl<'p> GroupPart<'p> {
                             format!(
                                 "{indent}if (const auto& _c_{member} = source::{member}({from})) {{\n\
                                  {indent}    _r_{member}.keep(_c_{member}->inner());\n\
+                                 {indent}}}\n",
+                                member = m.name
+                            )
+                        } else if chain.placed {
+                            // A bare entry's place keeps the others and where
+                            // the named entry stands among them.
+                            format!(
+                                "{indent}{{\n\
+                                 {indent}    const auto& _c_{member} = source::{member}({from});\n\
+                                 {indent}    _r_{member}.keep(_c_{member}.rest());\n\
+                                 {indent}    _p_{member} = _c_{member}.place();\n\
                                  {indent}}}\n",
                                 member = m.name
                             )
@@ -1991,7 +2131,30 @@ impl<'p> GroupPart<'p> {
                             // gates it chose the arm by test: the arm's chain, as
                             // its type says; where the arm may hold none, the
                             // chain where the decode read one.
-                            if chain.optional {
+                            if chain.placed {
+                                // A bare entry's place: the first entry of the
+                                // kind, which the gate the arm was chosen by
+                                // found, is the named one, and the others are
+                                // held apart from it.
+                                format!(
+                                    "{indent}std::vector<{entry}> _rest_{name}(_b_{name}->inner().begin(), _b_{name}->inner().end());\n\
+                                     {indent}const auto _at_{name} = ::SCE::Forge::Detail::first_of_kind<{key}>(_rest_{name});\n\
+                                     {indent}if (!_at_{name}) {{\n\
+                                     {indent}    cursor.refuse(::SCE::Forge::CodecError::PresentIfMismatch);\n\
+                                     {indent}    return std::nullopt;\n\
+                                     {indent}}}\n\
+                                     {indent}_rest_{name}.erase(_rest_{name}.begin() + static_cast<std::ptrdiff_t>(*_at_{name}));\n\
+                                     {indent}const auto _ch_{name} = {view}::make(::SCE::Forge::Span<const {entry}>(_rest_{name}.data(), _rest_{name}.size()), *_at_{name});\n\
+                                     {indent}if (!_ch_{name}) {{\n\
+                                     {indent}    cursor.refuse(::SCE::Forge::CodecError::TooManyElements);\n\
+                                     {indent}    return std::nullopt;\n\
+                                     {indent}}}\n",
+                                    name = m.name,
+                                    view = chain.view,
+                                    key = chain.holds[0],
+                                    entry = chain.entry
+                                )
+                            } else if chain.optional {
                                 format!(
                                     "{indent}std::optional<{view}> _ch_{name};\n\
                                      {indent}if (_b_{name}) {{\n\
@@ -2083,7 +2246,7 @@ impl<'p> GroupPart<'p> {
         let made_by_default = self.arms.iter().all(|arm| {
             !arm.members
                 .iter()
-                .any(|m| m.chain.as_ref().is_some_and(|c| !c.holds.is_empty()))
+                .any(|m| m.chain.as_ref().is_some_and(|c| !c.has_default()))
         });
         let mut out = if made_by_default {
             format!("        {holds} _g_{name};\n")
@@ -2153,11 +2316,12 @@ impl ArmPart<'_> {
             .collect();
         let mut out = format!("{doc}class {class} {{\npublic:\n");
         // An arm whose chain holds an entry of some kind has no value made by
-        // default: no list of value-made entries holds one.
+        // default: no list of value-made entries holds one. A bare entry's
+        // place has one, the named entry alone.
         if !self
             .members
             .iter()
-            .any(|m| m.chain.as_ref().is_some_and(|c| !c.holds.is_empty()))
+            .any(|m| m.chain.as_ref().is_some_and(|c| !c.has_default()))
         {
             out.push_str(&format!("    {class}() = default;\n"));
         }
@@ -2198,8 +2362,9 @@ impl ArmPart<'_> {
             out.push_str("\nprivate:\n");
             for m in &self.members {
                 // A chain that holds an entry of some kind has no value made by
-                // default, and is made by the arm's constructor alone.
-                let init = if m.chain.as_ref().is_some_and(|c| !c.holds.is_empty()) {
+                // default, and is made by the arm's constructor alone; a bare
+                // entry's place has one.
+                let init = if m.chain.as_ref().is_some_and(|c| !c.has_default()) {
                     ""
                 } else {
                     "{}"
@@ -2590,13 +2755,14 @@ impl<'p> Presented<'p> {
         // as sources of its entry codec.
         // An optional one, where it is there.
         if let Some(chain) = &self.chain {
+            let list = chain.list_read();
             let inner = if chain.optional {
-                format!("({read})->inner()")
+                format!("({read})->{list}")
             } else {
-                format!("{read}.inner()")
+                format!("{read}.{list}")
             };
             return format!(
-                "noexcept(std::declval<::SCE::Forge::Detail::Kept<::SCE::Forge::Detail::InnerRead<decltype({read})>>&>().keep({inner})) && {}::is_nothrow_source<::SCE::Forge::Detail::ElementOf<typename ::SCE::Forge::Detail::ChainOf<std::decay_t<decltype({read})>>::type>>::value",
+                "noexcept(std::declval<::SCE::Forge::Detail::Kept<::SCE::Forge::Detail::InnerRead<decltype({read})>>&>().keep({inner})) && {}::is_nothrow_source<::SCE::Forge::Detail::ElementOf<typename ::SCE::Forge::Detail::ChainOf<std::decay_t<decltype({read})>>::type::list_type>>::value",
                 chain.namespace
             );
         }
@@ -2741,14 +2907,28 @@ pub(super) fn render(
             .map(|(held, _)| held.namespace.clone())
             .expect("the chain whose memberships are gates is a list of the group");
         for (_, key) in g.group.members() {
+            // A bare entry is its identifier alone, which the encode writes
+            // where the value holds its place (R6a).
+            let (doc, named) = if g.group.member_is_bare() {
+                (
+                    "which is all of its value (docs/adr/0065 §6 R6a)",
+                    named_entry(plan, imports, chain, key),
+                )
+            } else {
+                (
+                    "which a value holds where it stands (docs/adr/0065 §6 R6b)",
+                    String::new(),
+                )
+            };
             before.push_str(&format!(
                 "/// The kind of entry `{chain}.has(0x{key:X})` names: an entry whose identifier\n\
-                 /// is 0x{key:X}, which a value holds where it stands (docs/adr/0065 §6 R6b).\n\
+                 /// is 0x{key:X}, {doc}.\n\
                  struct {key_type} {{\n\
                  \x20   template <class E>\n\
                  \x20   [[nodiscard]] static bool matches(const E& entry) {{\n\
                  \x20       return {identifier} == 0x{key:X}u;\n\
                  \x20   }}\n\
+                 {named}\
                  }};\n\n",
                 key_type = super::rust_source::key_type(struct_name, chain, key),
                 identifier = entry_identifier(plan, l, &ns, chain, "entry")
@@ -3575,7 +3755,44 @@ pub(super) fn render(
                             .expect("a list field is a list the value presents");
                         let name = l.codec_field_id(&field.id);
                         let entries = walked.entries();
-                        match list.as_ref().and_then(|list| list.ends.as_ref()) {
+                        let ends = list.as_ref().and_then(|list| list.ends.as_ref());
+                        // A bare entry's chain is walked as slots: the others in
+                        // order, the named entry where the value holds its place
+                        // (docs/adr/0065 §6 R6a).
+                        let slots = list.as_ref().and_then(|list| list.slots);
+                        if let Some(key) = slots {
+                            let key = super::rust_source::key_type(struct_name, &field.id, key);
+                            let (overrides, arg) = match ends {
+                                Some((carrier, flag)) => (
+                                    format!(
+                                        "\x20               {ns}::Overrides _o_{name}{{}};\n\
+                                         \x20               _o_{name}.{member} = _i + 1 < _k_{name};\n",
+                                        ns = held.namespace,
+                                        member = override_member(l, carrier, flag)
+                                    ),
+                                    format!(", _o_{name}"),
+                                ),
+                                None => (String::new(), String::new()),
+                            };
+                            format!(
+                                "        {{\n\
+                                 \x20           const std::size_t _k_{name} = {entries}.size() + (_p_{name} ? 1u : 0u);\n\
+                                 \x20           auto _n_{name} = {entries}.begin();\n\
+                                 \x20           for (std::size_t _i = 0; _i < _k_{name}; ++_i) {{\n\
+                                 {overrides}\
+                                 \x20               if (_p_{name} && *_p_{name} == _i) {{\n\
+                                 \x20                   if (auto _e = {ns}::Wire::encode_source({key}::named(), w{handed}{arg}); _e) return _e;\n\
+                                 \x20               }} else {{\n\
+                                 \x20                   if (auto _e = {ns}::Wire::encode_source(*_n_{name}, w{handed}{arg}); _e) return _e;\n\
+                                 \x20                   ++_n_{name};\n\
+                                 \x20               }}\n\
+                                 \x20           }}\n\
+                                 \x20       }}\n",
+                                ns = held.namespace,
+                                handed = handed(&held.alias)
+                            )
+                        } else {
+                        match ends {
                             // A chain sets on each entry but the last the flag
                             // its entries end on, in place of the one the entry
                             // presents.
@@ -3600,6 +3817,7 @@ pub(super) fn render(
                                 held.namespace,
                                 handed(&held.alias)
                             ),
+                        }
                         }
                     }
                     BitSize::Fixed { .. } => fixed_write(plan, field, &read(field)),

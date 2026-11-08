@@ -17895,14 +17895,24 @@ fn marker_cpp_program() -> String {
         .position(|f| f.name == MARKER_WITH_FLAG_SET)
         .expect("the frame the encoder is held to exists");
     format!(
-        r#"#include <cstdint>
+        r#"#include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <optional>
+#include <type_traits>
+#include <utility>
+#include <variant>
 #include <vector>
 
 #include "codec_chain_has_marker.h"
 
-using Marker = ::SCE::Generated::CodecChainHasMarker::CodecChainHasMarker;
+namespace Ns = ::SCE::Generated::CodecChainHasMarker;
+using Marker = Ns::CodecChainHasMarker;
+using Sliced = Ns::CodecChainHasMarkerExtensionsHas0x12Has0x12;
+using Plain = Ns::CodecChainHasMarkerExtensionsHas0x12NotHas0x12;
+using Key = Ns::CodecChainHasMarkerExtensionsHas0x12Key;
+using PlainChain = std::decay_t<decltype(std::declval<const Plain&>().extensions())>::value_type;
+using Entry = std::decay_t<decltype(*std::declval<const Sliced&>().extensions().rest().begin())>;
 
 namespace {{
 struct Frame {{
@@ -17935,29 +17945,29 @@ int main() {{
             expect(false, f.name, "decode");
             continue;
         }}
+        const auto* sliced = std::get_if<Sliced>(&v->extensions_has_0x12());
         if (f.sliced) {{
-            expect(!v->payload_len && !v->payload, f.name, "plain fields on a marker");
-            expect(v->slice_count == 1u && v->slices && v->slices->size() == 1, f.name,
-                   "slices missing");
+            expect(sliced != nullptr, f.name, "plain layout on a marker");
+            expect(sliced != nullptr && sliced->slices().size() == 1, f.name, "slices missing");
         }} else {{
-            expect(!v->slice_count && !v->slices, f.name, "slices without a marker");
-            expect(v->payload_len.has_value(), f.name, "plain layout missing");
+            expect(std::holds_alternative<Plain>(v->extensions_has_0x12()), f.name,
+                   "slices without a marker");
         }}
-        auto out = v->encode_to_vec();
-        expect(out.has_value() && *out == f.bytes, f.name, "round trip");
+        expect(v->encode_to_vec() == f.bytes, f.name, "round trip");
     }}
 
+    // A plain layout under a marker is no value: the chain of the arm without
+    // the marker is made of no list that holds it, read through the same mask.
     auto v = decode(frames[{flagged}]);
-    if (!v) {{
+    const auto* sliced = v ? std::get_if<Sliced>(&v->extensions_has_0x12()) : nullptr;
+    if (sliced == nullptr) {{
         expect(false, "{MARKER_WITH_FLAG_SET}", "decode");
         return 1;
     }}
-    v->slice_count.reset();
-    v->slices.reset();
-    v->payload_len = 2;
-    v->payload = std::vector<std::uint8_t>{{0xAA, 0xBB}};
-    expect(!v->encode_to_vec().has_value(), "{MARKER_WITH_FLAG_SET}",
-           "the encoder wrote a plain layout under a marker");
+    std::vector<Entry> whole(sliced->extensions().rest().begin(), sliced->extensions().rest().end());
+    whole.insert(whole.begin() + static_cast<std::ptrdiff_t>(sliced->extensions().place()), Key::named());
+    expect(!PlainChain::make(::SCE::Forge::Span<const Entry>(whole.data(), whole.size())).has_value(),
+           "{MARKER_WITH_FLAG_SET}", "a plain layout was made under a marker");
     return failures == 0 ? 0 : 1;
 }}
 "#
@@ -18115,7 +18125,9 @@ fn run_marker_native(dir: &std::path::Path, backend: &NativeMarkerBackend) -> Re
 /// What a masked identifier DOES on the backends that can be run from here:
 /// every one decodes the same frames to the same layouts and encodes them back
 /// to the same bytes, and a backend that carries presence in a wrapper refuses a
-/// plain layout under a marker whose continuation flag is set. A backend that
+/// plain layout under a marker whose continuation flag is set; C++, whose value
+/// holds the layout in the arm of the marker's gate, makes no chain of the plain
+/// arm that holds the marker (docs/adr/0065 §6 R6a). A backend that
 /// read `0x92` as another kind would pass its golden and its compile gate and
 /// fail here, as `has(0x12)` on the wrong byte is a program that compiles.
 ///

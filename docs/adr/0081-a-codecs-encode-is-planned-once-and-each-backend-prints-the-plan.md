@@ -605,6 +605,14 @@ old encode, the old encode and its templates are removed in the same landing.
    a count or a length the encode derives, is written where the arm the value holds says the chain has the
    kind, as the Rust printer tests it. The decode reads an absent chain as holding no kind. The printed set
    is 137 codecs.
+
+   *The twenty-eighth C++ landing, 2026-11-08:* the one gate on a bare entry (R6a), an entry whose
+   identifier is all of its value. The arm where the gate holds holds a `SCE::Forge::Placed` of the other
+   entries and the named entry's place, as the Rust arm does; the kind's key makes the named entry
+   (`named()`), its carrier the identifier and its variant the arm the identifier's tag selects. The encode
+   walks the chain as slots, writing the named entry where the value holds its place and each other in
+   order, the flag its entries end on set on each but the last; the decode takes the first entry of the
+   kind, which the gate found, out of the chain it read as the place. The printed set is 138 codecs.
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences
