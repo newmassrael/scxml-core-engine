@@ -13,7 +13,9 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <optional>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 namespace {
@@ -36,6 +38,24 @@ std::string readFrame(const std::string &wire, std::vector<uint8_t> &out) {
         return refusal;
     }
     return fields.readBytes("frame", out);
+}
+
+// What a generated lift of a schema of entries reads a text or byte-string field by
+// (docs/adr/0086, section 4.4): the value the field's name holds, then the value reader
+// of its type with the bound the type declares, as a field of a composed type is read.
+template <typename Out>
+SCE::Common::EventPayloadRefusal readWithin(const EventPayloadFields &fields, const char *name, size_t bound,
+                                            Out &out) {
+    SCE::Common::EventPayloadValue value;
+    SCE::Common::EventPayloadRefusal refusal = fields.value(name, value);
+    if (!refusal.empty()) {
+        return refusal;
+    }
+    if constexpr (std::is_same_v<Out, std::string>) {
+        return value.readText(bound, out);
+    } else {
+        return value.readBytes(bound, out);
+    }
 }
 
 }  // namespace
@@ -128,6 +148,42 @@ TEST(EventPayloadBytes, AnEscapeInATextFieldIsTheCharacterItNames) {
     EXPECT_EQ(fields.readString("label", label), "");
     EXPECT_EQ(label, "\xC3\xA9\xE2\x82\xAC\xF0\x9F\x98\x80"
                      "A");
+}
+
+// A payload's own text and byte-string fields are held to their bound where the delivery
+// is read, as a text and a byte string are at any depth (docs/adr/0086, section 4.4): one
+// past it is refused with the code, pointer and bound of the value reader's refusal.
+TEST(EventPayloadBytes, ATopLevelTextAndByteStringAreHeldToTheirBoundWhereTheyAreRead) {
+    EventPayloadFields fields;
+    const std::string wire = "{\"note\":\"abcde\",\"wide\":\"\xC3\xA9\xC3\xA9\",\"frame\":\"abcde\"}";
+    ASSERT_EQ(EventPayloadFields::decode(wire, fields), "");
+    std::string note = "kept";
+    const SCE::Common::EventPayloadRefusal past = readWithin(fields, "note", 4u, note);
+    EXPECT_EQ(past, "'note' is 5 bytes, past the 4 its type declares");
+    EXPECT_EQ(past.code(), SCE::Common::RefusalCode::TooLong);
+    EXPECT_EQ(past.pointer(), "/note");
+    EXPECT_EQ(past.bound(), std::optional<uint32_t>(4u));
+    EXPECT_EQ(note, "kept") << "a refused text writes nothing";
+    EXPECT_EQ(readWithin(fields, "note", 5u, note), "");
+    EXPECT_EQ(note, "abcde");
+    // The bound counts UTF-8 bytes: two characters, four bytes.
+    std::string wide;
+    EXPECT_EQ(readWithin(fields, "wide", 3u, wide).code(), SCE::Common::RefusalCode::TooLong);
+    EXPECT_EQ(readWithin(fields, "wide", 4u, wide), "");
+    EXPECT_EQ(wide, "\xC3\xA9\xC3\xA9");
+
+    std::vector<uint8_t> frame = {1};
+    const SCE::Common::EventPayloadRefusal pastBytes = readWithin(fields, "frame", 4u, frame);
+    EXPECT_EQ(pastBytes, "'frame' is 5 bytes, past the 4 its type declares");
+    EXPECT_EQ(pastBytes.code(), SCE::Common::RefusalCode::TooLong);
+    EXPECT_EQ(pastBytes.pointer(), "/frame");
+    EXPECT_EQ(pastBytes.bound(), std::optional<uint32_t>(4u));
+    EXPECT_EQ(frame, (std::vector<uint8_t>{1})) << "a refused byte string writes nothing";
+    EXPECT_EQ(readWithin(fields, "frame", 5u, frame), "");
+    EXPECT_EQ(frame, (std::vector<uint8_t>{'a', 'b', 'c', 'd', 'e'}));
+    // A field the delivery lacks is refused by name before any reader runs.
+    std::string absent;
+    EXPECT_EQ(readWithin(fields, "missing", 4u, absent).code(), SCE::Common::RefusalCode::Missing);
 }
 
 TEST(EventPayloadBytes, HalfACharacterOrABadEscapeIsNoText) {
