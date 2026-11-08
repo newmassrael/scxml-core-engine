@@ -60,7 +60,7 @@ pub fn lowers_record_list(lang: Language) -> bool {
         Language::Cpp => false,
         Language::Go => false,
         Language::Python => false,
-        Language::C11 => false,
+        Language::C11 => true,
         Language::Swift => true,
     }
 }
@@ -819,7 +819,18 @@ fn render_c(
     imports: &[ImportContext],
 ) -> Result<String, ForgeError> {
     let l = LangCtx::new(Language::C11, imports);
-    let mut ctx = common_context(&l, m, imports, |e| l.type_name(leaf(e)).into_owned())?;
+    let mut ctx = common_context(&l, m, imports, |e| match e.leaf_type() {
+        Some(present) => l.type_name(present).into_owned(),
+        None => record_type_of(&l, imports, e),
+    })?;
+    // Each field of a record as the schema's C11 unit holds it: a number as its
+    // type, and a text in the buffer of its bound, ended by its terminator. A
+    // record with a byte string, which that unit borrows, was refused before
+    // any backend renders ([`record_list_unlowered_on`]).
+    insert_cbor_records(&l, m, imports, &mut ctx, &|ty| match ty {
+        ValueType::Text { max } => crate::forge::static_lowering::c_string_storage_type(max.max),
+        other => scalar_record_field_type(&l, other),
+    })?;
     crate::forge::generator::insert_c_codec_symbols(&mut ctx, &m.name);
     // A required text or byte string is a fixed array of its capacity beside
     // its length (the capacity is the deployment's or the bound, and present:
@@ -844,6 +855,24 @@ fn render_c(
                 .map_or_else(|| "SIZE_MAX".to_string(), |max| format!("{max}U"))
                 .into();
             let optional = !e.is_required();
+            // A list of records is its length beside a fixed array of its
+            // bound, each item the schema's payload; one that may be absent
+            // carries `present` beside them.
+            if let Some(list) = e.record_list() {
+                entry["field_type"] = format!(
+                    "struct {{\n        {}uint32_t len;\n        {} items[{}];\n    }}",
+                    if optional {
+                        "bool present;\n        "
+                    } else {
+                        ""
+                    },
+                    record_type_of(&l, imports, e),
+                    list.max
+                )
+                .into();
+                entry["present_ref"] = format!("{name}.present").into();
+                continue;
+            }
             let value = if optional {
                 let held = l.c11_codec_optional(leaf(e), capacity);
                 if !held.declaration.is_empty() && !declarations.contains(&held.declaration) {
