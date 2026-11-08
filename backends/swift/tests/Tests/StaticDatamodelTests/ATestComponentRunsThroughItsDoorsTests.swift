@@ -120,7 +120,9 @@ private func recordOf(_ result: TestCaseResult, _ component: String, _ kind: Log
     try XCTUnwrap(firstRecord(result, component, kind), "\(component) logs \(kind): \(result.log)")
 }
 
-private func run(_ configuration: Configuration, _ adapter: any SystemAdapter) -> TestCaseResult {
+/// One test case run of `configuration` against `adapter`. Not named `run`: inside a test
+/// method that name is `XCTestCase.run()`, which hides a function of the module.
+private func runTestCase(_ configuration: Configuration, _ adapter: any SystemAdapter) -> TestCaseResult {
     TestCaseRun(configuration, machine(of:), adapter).run()
 }
 
@@ -137,7 +139,7 @@ private func askerConfiguration() -> Configuration {
 /// when one is given.
 private func runAsker(code: UInt32, job: UInt32? = nil) -> (TestCaseResult, Seen) {
     let seen = Seen()
-    return (run(askerConfiguration(), Responder(seen, code: code, job: job)), seen)
+    return (runTestCase(askerConfiguration(), Responder(seen, code: code, job: job)), seen)
 }
 
 final class ATestComponentRunsThroughItsDoorsTests: XCTestCase {
@@ -193,7 +195,7 @@ final class ATestComponentRunsThroughItsDoorsTests: XCTestCase {
             connections: [
                 Connection(Endpoint(component: mtcName, port: "peer"), Endpoint(component: "answerer", port: "peer"))
             ])
-        let result = run(configuration, Silent())
+        let result = runTestCase(configuration, Silent())
 
         XCTAssertEqual(result.verdict, .pass, "\(result.log)")
         XCTAssertEqual(result.endedAt, 0, "a branch fired in every round, so time never moved")
@@ -226,7 +228,7 @@ final class ATestComponentRunsThroughItsDoorsTests: XCTestCase {
             ptcTypes: ["idler": "idler"],
             portsOfType: ["idler": ["peer"]],
             timersOfType: ["ptc_keeper": ["patience", "linger"]])
-        let result = run(configuration, Silent())
+        let result = runTestCase(configuration, Silent())
 
         let killed = try recordOf(result, "idler", .kill)
         XCTAssertEqual(result.log[killed].at, 10 * millisecond, "the PTC is removed when `patience` runs out")
