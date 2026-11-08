@@ -45,19 +45,14 @@
 // What the host meant to send.
 #define INTACT_OBJECT "{\"done\":true}"
 
-// The host's own bounded copy, exactly as an embedder writes it. Shared by both
-// queues' helpers below: only WHICH queue the carrier is handed to differs, and
-// a second copy of the bounding would let the two drift apart.
+// A view of the host's text, exactly as an embedder hands it, which the machine's
+// queue copies (docs/adr/0086, section 8.5 (a)). Shared by both queues' helpers
+// below: only WHICH queue the carrier is handed to differs.
 static void build_carrier(undecodable_payload_is_reported_event_with_meta_t *carrier,
                           undecodable_payload_is_reported_event_t event, const char *payload) {
     memset(carrier, 0, sizeof(*carrier));
     carrier->event = event;
-    size_t len = strlen(payload);
-    if (len >= sizeof(carrier->data)) {
-        len = sizeof(carrier->data) - 1u;
-    }
-    memcpy(carrier->data, payload, len);
-    carrier->data[len] = '\0';
+    carrier->data = payload;
 }
 
 static void deliver(undecodable_payload_is_reported_t *sm, undecodable_payload_is_reported_event_t event,

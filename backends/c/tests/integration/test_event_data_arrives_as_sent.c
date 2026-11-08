@@ -31,13 +31,9 @@ static void send_with_payload(event_data_arrives_as_sent_t *sm, event_data_arriv
                               const char *payload) {
     event_data_arrives_as_sent_event_with_meta_t carrier = {0};
     carrier.event = event;
-    // The host's own bounded copy, exactly as an embedder writes it.
-    size_t len = strlen(payload);
-    if (len >= sizeof(carrier.data)) {
-        len = sizeof(carrier.data) - 1u;
-    }
-    memcpy(carrier.data, payload, len);
-    carrier.data[len] = '\0';
+    // A view of the host's text, exactly as an embedder hands it: the machine's
+    // queue copies it (docs/adr/0086, section 8.5 (a)).
+    carrier.data = payload;
     event_data_arrives_as_sent_raise_external(sm, &carrier);
     event_data_arrives_as_sent_run(sm);
 }
