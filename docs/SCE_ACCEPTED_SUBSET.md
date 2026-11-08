@@ -5460,7 +5460,8 @@ this list):
 
 - `ecmascript`: `sce-codegen lower` lowers the documents where the test runs,
   and `AComposedPayloadIsReadAtAnyDepth`,
-  `AComposedPayloadOutsideItsTypeIsRefusedWhole` and
+  `AComposedPayloadOutsideItsTypeIsRefusedWhole`,
+  `ARefusedComposedDeliveryRunsNoContentOfItsTransition` and
   `AComposedValueIsSentByItsName` in
   `tests/integration/AStaticDatamodelRunsLoweredUnderTheInterpreterTest.cpp`
   run them on the Interpreter.
@@ -7148,12 +7149,12 @@ names a composed value carries it as its `<param>` writes it, a 64-bit integer
 as the text of its digits. Its parts are walked into the data model, which holds
 no integer past 2^53 - 1, so one there is refused at its pointer as `outOfRange`,
 as a lift refuses it (docs/adr/0087, section 2.1), where a generated machine
-whose int64 holds it reads it. Of the differences above, the third stands in
-this form: the content of a transition that runs before its first read of the
-data runs for a delivery the read then refuses, where a generated machine
-refused the delivery before any of it ran, so the fixture that is held to a
-refusal reads the data in its transition's first statement
-(`static_composed_payload`).
+whose int64 holds it reads it. None of the differences above stands for such a
+delivery: each transition taken on an event whose composed payload the machine
+reads opens its content with a `<script>` that reads the whole data, so a
+delivery outside its type raises `error.execution` once there and the block
+ends before any of the transition's content runs, as a generated machine, which
+lifts the payload when the event is dequeued, runs none of it.
 
 A list is an array and a record a plain object, and neither is changed in
 place: `<sce:append>` becomes the `<assign>` of the list written again with the

@@ -1225,6 +1225,65 @@ fn a_composed_payload_is_read_whole_and_at_any_depth_through_the_library() {
     );
 }
 
+/// The first element of each transition taken on `event` in `document` that
+/// holds one, as its name and its text, in document order.
+fn first_elements(document: &roxmltree::Document<'_>, event: &str) -> Vec<(String, String)> {
+    document
+        .descendants()
+        .filter(|n| n.is_element() && n.tag_name().name() == "transition")
+        .filter(|n| n.attribute("event") == Some(event))
+        .filter_map(|n| n.children().find(|child| child.is_element()))
+        .map(|first| {
+            (
+                first.tag_name().name().to_string(),
+                first.text().unwrap_or_default().to_string(),
+            )
+        })
+        .collect()
+}
+
+/// A transition taken on an event whose composed payload the machine reads
+/// opens its content with a read of the whole data, a `<script>` that keeps
+/// nothing of it (docs/adr/0086, section 4.2): a delivery outside its type makes
+/// it throw, `error.execution` is raised and the block ends, so none of the
+/// transition's content runs, as on the generated backends, which lift the
+/// payload when the event is dequeued. Every transition on the event opens with
+/// it, the one that reads nothing of the data before its first statement too;
+/// a transition on another event does not.
+#[test]
+fn a_transition_on_a_composed_payload_reads_it_whole_before_its_content() {
+    for machine in ["static_composed_payload", "static_composed_send"] {
+        let out = lowered_fixture(machine);
+        let document = roxmltree::Document::parse(&out).expect("well-formed");
+        let read = batch_payload_read(&document);
+        let opened = first_elements(&document, "batch.sent");
+        assert!(!opened.is_empty(), "{machine}: {out}");
+        for (name, text) in &opened {
+            assert_eq!(name, "script", "{machine}: {out}");
+            assert_eq!(text, &format!("{read};"), "{machine}");
+        }
+        for (name, _) in first_elements(&document, "error.execution") {
+            assert_eq!(name, "assign", "{machine}: {out}");
+        }
+    }
+    // `static_composed_send`'s first transition counts the delivery before it
+    // reads the data: the read stands before the count.
+    let out = lowered_fixture("static_composed_send");
+    let document = roxmltree::Document::parse(&out).expect("well-formed");
+    let counted = document
+        .descendants()
+        .find(|n| {
+            n.is_element() && n.tag_name().name() == "transition" && n.attribute("cond").is_some()
+        })
+        .expect("the guarded transition");
+    let names: Vec<&str> = counted
+        .children()
+        .filter(|child| child.is_element())
+        .map(|child| child.tag_name().name())
+        .collect();
+    assert_eq!(names.get(..2), Some(&["script", "assign"][..]), "{out}");
+}
+
 /// What a `<send>` carries where a `<param>` names a composed value: the value
 /// as it crosses (docs/adr/0086, section 5.3), a list mapped element by element
 /// only where an element changes, here a record whose 64-bit integers cross as

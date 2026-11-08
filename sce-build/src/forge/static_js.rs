@@ -138,8 +138,10 @@
 //! a list the data or an enclosing loop's item holds walks that list, a list
 //! taken whole into a list variable is the value itself, which nothing changes
 //! in place, and a `<send>` carries a composed value by its name as the value
-//! its `<param>` writes, a 64-bit integer as the text of its digits. A delivery
-//! outside its type is refused by the first expression that reads any of it.
+//! its `<param>` writes, a 64-bit integer as the text of its digits. Each
+//! transition taken on such an event opens its content with a read of the whole
+//! data ([`leading_read_edits`]), so a delivery outside its type runs none of
+//! the transition's content, as on the generated backends.
 
 use std::collections::BTreeMap;
 use std::ops::Range;
@@ -296,11 +298,11 @@ impl JsTarget {
     /// machine reads the payload it lifted.
     ///
     /// The Interpreter's script engine reads an event's data in the expression
-    /// that names it, so the data is read where each expression reads it, and a
-    /// transition's content that runs before its first read of the data runs
-    /// for a delivery the read then refuses, where a generated machine lifts
-    /// the payload once, when the event is dequeued (docs/SCE_ACCEPTED_SUBSET.md
-    /// §2.15).
+    /// that names it, so the data is read where each expression reads it, and
+    /// once more before anything else a transition taken on the event runs
+    /// ([`leading_read_edits`]): a delivery the read refuses runs none of the
+    /// transition's content, as a generated machine, which lifts the payload
+    /// once when the event is dequeued, runs none of it.
     ///
     /// An event whose read the walk cannot spell (its record no import of the
     /// statechart's) is left out, so its data is `_event.data` as the engine
@@ -1377,6 +1379,103 @@ fn is_scxml_element(node: &roxmltree::Node<'_, '_>, name: &str) -> bool {
         && node.tag_name().namespace() == Some(SCXML_NAMESPACE)
 }
 
+/// The offset just past the `>` that closes the start tag opened at `start` in
+/// `text`, a `>` inside a quoted attribute value passed over; `None` for a tag
+/// that does not close.
+fn start_tag_end(text: &str, start: usize) -> Option<usize> {
+    let mut quote: Option<char> = None;
+    for (offset, c) in text.get(start..)?.char_indices() {
+        match (quote, c) {
+            (Some(open), c) if c == open => quote = None,
+            (Some(_), _) => {}
+            (None, '"' | '\'') => quote = Some(c),
+            (None, '>') => return Some(start + offset + 1),
+            (None, _) => {}
+        }
+    }
+    None
+}
+
+/// The read that opens the content of each transition taken on an event whose
+/// composed payload the machine reads (docs/adr/0086, section 4.2): a
+/// `<script>` that reads the whole data ([`JsTarget::reading_composed_payloads`])
+/// and keeps nothing of it, inserted before the transition's first element. A
+/// delivery outside its type makes it throw, which the Interpreter answers as
+/// it does any executable content that fails: `error.execution` is raised and
+/// the block ends (§scxml-4.9), so none of the transition's content runs, as a
+/// generated machine, which lifts the payload when the event is dequeued, runs
+/// none of it. A delivery of its type passes, and every expression after it
+/// reads the data as it would have.
+///
+/// An event is read where `lowered`, the model the walk lowered, has a
+/// transition on it whose condition or content reads `_event.data`, which is
+/// where a generated machine lifts its payload; a machine that only takes the
+/// event reads nothing of it and refuses nothing. A transition with no content
+/// has no block to end; one inside an inline child is the child's, lowered with
+/// it ([`child_edits`]).
+fn leading_read_edits(
+    text: &str,
+    lowered: &SCXMLModel,
+    target: &JsTarget,
+) -> Result<Vec<Edit>, GenerateError> {
+    let received = lowered.received_events();
+    let read: std::collections::BTreeSet<String> = lowered
+        .states
+        .values()
+        .flat_map(|state| &state.transitions)
+        .filter(|t| {
+            t.content_reads_payload || crate::forge::expr::references_event_data_lexically(&t.cond)
+        })
+        .map(|t| t.payload_event(&received).to_string())
+        .filter(|event| target.payloads.contains_key(event))
+        .collect();
+    if read.is_empty() {
+        return Ok(Vec::new());
+    }
+    let document = roxmltree::Document::parse(text).map_err(|e| {
+        GenerateError::unsupported(format!(
+            "the document cannot be read again to be rewritten: {e}"
+        ))
+    })?;
+    let mut edits = Vec::new();
+    for node in document
+        .descendants()
+        .filter(|node| is_scxml_element(node, "transition"))
+    {
+        let in_a_child = node
+            .ancestors()
+            .filter(|ancestor| is_scxml_element(ancestor, "scxml"))
+            .count()
+            > 1;
+        let Some(payload) = node
+            .attribute("event")
+            .map(str::trim)
+            .filter(|event| read.contains(*event))
+            .and_then(|event| target.payloads.get(event))
+        else {
+            continue;
+        };
+        if in_a_child || !node.children().any(|child| child.is_element()) {
+            continue;
+        }
+        let at = start_tag_end(text, node.range().start).ok_or_else(|| {
+            GenerateError::unsupported(format!(
+                "the <transition event=\"{}\"> has a start tag that does not close, so there is \
+                 no place to read its data before its content",
+                node.attribute("event").unwrap_or_default()
+            ))
+        })?;
+        edits.push(Edit {
+            range: at..at,
+            text: format!(
+                "<script>{}</script>",
+                xml_attribute_value(&format!("{payload};"))
+            ),
+        });
+    }
+    Ok(edits)
+}
+
 /// The edits that turn the document into an ECMAScript one: its data model,
 /// and — when an expression calls the library — the `<data>` that installs it,
 /// placed first so every other `<data>` and every later expression finds it.
@@ -1468,6 +1567,7 @@ fn lower_parsed(
     let lowering = lower(&mut lowered, &machine, &target).map_err(refuse)?;
     let mut edits = site_edits(&lowering.sites).map_err(refuse)?;
     edits.extend(element_edits(text, &lowering.elements).map_err(refuse)?);
+    edits.extend(leading_read_edits(text, &lowered, &target).map_err(refuse)?);
     let library_call = format!("{RUNTIME_GLOBAL}.");
     let needs_library = lowering
         .sites
@@ -2635,6 +2735,18 @@ mod tests {
         assert_eq!(lowering.sends, sent.is_some());
         assert_eq!(lowering.unions, holds_unions);
         assert_eq!(lowering.name, target.name());
+    }
+
+    /// The read that opens a transition's content is placed just past its start
+    /// tag, a `>` inside a quoted attribute value of either quote passed over,
+    /// and a tag that never closes has no such place.
+    #[test]
+    fn the_leading_read_goes_just_past_the_start_tag() {
+        let text = r#"<s><transition cond="a > b" event='x>y'><assign/></transition></s>"#;
+        let start = text.find("<transition").expect("the tag");
+        let at = start_tag_end(text, start).expect("the tag closes");
+        assert_eq!(&text[at..], "<assign/></transition></s>");
+        assert_eq!(start_tag_end("<transition cond=\"a > b", 0), None);
     }
 
     /// The data of an event whose schema holds no composed value is the

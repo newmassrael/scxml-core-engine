@@ -1853,9 +1853,9 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, AComposedPayloadIsRea
 // A delivery outside its type is refused whole by the Interpreter too (docs/adr/0086,
 // sections 4.2 and 5.4): a list one past its bound at depth two, a text past its bound at
 // depth three and at the top level, a list a later revision added one past its bound, and
-// an integer past what the data model holds. Each is refused by the first expression that
-// reads the data, which is the transition's first: none of the content runs, nothing of the
-// delivery is kept, and error.execution reaches the document once for each.
+// an integer past what the data model holds. Each is refused by the read of the whole data
+// the lowering opens the transition with: none of the content runs, nothing of the delivery
+// is kept, and error.execution reaches the document once for each.
 TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, AComposedPayloadOutsideItsTypeIsRefusedWhole) {
     const Lowered lowered = lower(kFixtures / "static_composed_payload.scxml");
     ASSERT_TRUE(lowered.ok) << lowered.refusal.dump();
@@ -1914,6 +1914,32 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, AComposedValueIsSentB
     // The list variable, sent by its name.
     EXPECT_EQ(variable(*machine, "late_sum"), 11);
     EXPECT_EQ(variable(*machine, "late"), nlohmann::json::array({5, 6}));
+}
+
+// A delivery outside its type runs none of its transition's content on the Interpreter,
+// as on the generated machines, which lift the payload when the event is dequeued
+// (docs/adr/0086, section 4.2): `static_composed_send`'s first transition counts the
+// delivery before any statement of it reads the data, and the read the lowering opens the
+// transition with refuses the delivery first, so the count is not taken. A delivery of
+// its type then runs the transition whole.
+TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, ARefusedComposedDeliveryRunsNoContentOfItsTransition) {
+    const Lowered lowered = lower(kFixtures / "static_composed_send.scxml");
+    ASSERT_TRUE(lowered.ok) << lowered.refusal.dump();
+    const auto machine = std::make_shared<StateMachine>(*engine_);
+    const auto raiser = wire(*machine);
+    ASSERT_TRUE(machine->loadSCXMLFromString(lowered.document)) << "the Interpreter does not load the document";
+    ASSERT_TRUE(machine->start());
+    machine->processEvent("batch.sent", composedBatch(5));
+    EXPECT_TRUE(settles(raiser, [&] { return variable(*machine, "refusals") == 1; }))
+        << "refusals is " << variable(*machine, "refusals").dump();
+    EXPECT_EQ(variable(*machine, "deliveries"), 0) << "the <assign> before the first read of the data ran";
+    EXPECT_EQ(variable(*machine, "late"), nlohmann::json::array()) << "nothing of the delivery was kept";
+    machine->processEvent("batch.sent", composedBatch(3));
+    EXPECT_TRUE(settles(raiser, [&] { return variable(*machine, "deliveries") == 2; }))
+        << "a delivery of its type after the refusal was not forwarded and read: deliveries "
+        << variable(*machine, "deliveries").dump();
+    EXPECT_EQ(variable(*machine, "refusals"), 1) << "the delivery of its type is no error";
+    EXPECT_EQ(variable(*machine, "item_count"), 3);
 }
 
 // SCE_MESH.md, Errors: a send to a peer from a machine whose host registered no Mesh
