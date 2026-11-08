@@ -301,6 +301,15 @@ impl Connectives {
         not_held: "false",
     };
 
+    /// Python's.
+    pub(super) const PYTHON: Self = Self {
+        and: " and ",
+        or: " or ",
+        not: "not ",
+        held: "True",
+        not_held: "False",
+    };
+
     /// The constant of a test that holds for every value where `held`, and for
     /// none otherwise.
     pub(super) fn truth(self, held: bool) -> String {
