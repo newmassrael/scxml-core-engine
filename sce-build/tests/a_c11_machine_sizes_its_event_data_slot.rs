@@ -216,6 +216,36 @@ fn a_machine_that_receives_no_schema_declares_a_slot_of_its_nul_alone() {
     );
 }
 
+/// docs/adr/0086, section 8.5 (c): each queue of a C11 machine holds as many
+/// events as the document's `sce:capacity` declares, so a machine that takes
+/// large events reserves room for few of them; a document that declares none
+/// takes the deployment's SCE_MAX_EVENTS.
+#[test]
+fn a_c11_queue_takes_the_depth_its_document_declares() {
+    let body = r#"    <transition event="poke"><assign location="seen" expr="1"/></transition>"#;
+    let undeclared = header(&machine(&[], body), &[], None);
+    assert!(
+        undeclared.contains("#define PROBE_EVENT_QUEUE_DEPTH ((unsigned)(SCE_MAX_EVENTS))"),
+        "a document that declares no depth takes the deployment's:\n{undeclared}"
+    );
+    let declared_doc =
+        machine(&[], body).replace(r#"name="probe">"#, r#"name="probe" sce:capacity="4">"#);
+    assert!(
+        declared_doc.contains(r#"sce:capacity="4""#),
+        "the probe declares its depth"
+    );
+    let declared = header(&declared_doc, &[], None);
+    assert!(
+        declared.contains("#define PROBE_EVENT_QUEUE_DEPTH 4u"),
+        "the depth is the one the document declares:\n{declared}"
+    );
+    assert!(
+        record(&declared, "probe_event_queue")
+            .contains("probe_queued_event_t buf[PROBE_EVENT_QUEUE_DEPTH];"),
+        "each queue holds that many entries:\n{declared}"
+    );
+}
+
 // ── docs/adr/0086, section 8.5 (d): no buffer of the slot's size on a stack ──
 
 /// `c` with every comment and every string and character literal blanked to
