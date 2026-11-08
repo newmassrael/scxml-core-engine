@@ -27,7 +27,7 @@
 #include "idler_sm.h"
 #include "job_reply.h"
 #include "job_request.h"
-#include "keeper_sm.h"
+#include "ptc_keeper_sm.h"
 #include "test/TestCaseRun.h"
 
 namespace {
@@ -63,8 +63,8 @@ std::unique_ptr<ComponentMachine> machineOf(const std::string &type) {
     if (type == "answerer") {
         return std::make_unique<SCE::Generated::answerer::answererComponent>();
     }
-    if (type == "keeper") {
-        return std::make_unique<SCE::Generated::keeper::keeperComponent>();
+    if (type == "ptc_keeper") {
+        return std::make_unique<SCE::Generated::ptc_keeper::ptc_keeperComponent>();
     }
     if (type == "idler") {
         return std::make_unique<SCE::Generated::idler::idlerComponent>();
@@ -244,10 +244,10 @@ TEST(ATestComponent, CreatesAPtcExchangesAMessageWithItAndReadsItsDone) {
 /// runs, at that instant, and its local verdict still counts.
 TEST(ATestComponent, KillsAPtcOnLeavingTheStateThatInvokedIt) {
     Configuration configuration;
-    configuration.mtcType = "keeper";
+    configuration.mtcType = "ptc_keeper";
     configuration.ptcTypes = {{"idler", "idler"}};
     configuration.portsOfType = {{"idler", {"peer"}}};
-    configuration.timersOfType = {{"keeper", {"patience", "linger"}}};
+    configuration.timersOfType = {{"ptc_keeper", {"patience", "linger"}}};
     Silent adapter;
     const TestCaseResult result = TestCaseRun(configuration, machineOf, adapter, std::nullopt).run();
 

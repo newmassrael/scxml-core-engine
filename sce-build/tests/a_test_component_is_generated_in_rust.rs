@@ -48,7 +48,7 @@ const COMPONENTS: [(&str, &str); 6] = [
     ("asker", "Asker"),
     ("coordinator", "Coordinator"),
     ("answerer", "Answerer"),
-    ("keeper", "Keeper"),
+    ("ptc_keeper", "PtcKeeper"),
     ("idler", "Idler"),
     ("param_asker", "ParamAsker"),
 ];
@@ -255,7 +255,7 @@ fn taking_a_branch_removes_what_it_matched_before_its_content() {
     // A receive any branch with no content still takes its message, and a
     // timeout branch with none still takes its timer.
     assert!(text("idler").contains("self.test_context().receive(\"peer\");"));
-    assert!(text("keeper").contains("self.test_context().timeout(\"patience\");"));
+    assert!(text("ptc_keeper").contains("self.test_context().timeout(\"patience\");"));
 }
 
 /// §11.5, §12.3: the statements are calls on the runtime context, a duration
@@ -286,7 +286,7 @@ fn the_statements_the_send_and_the_ptc_go_through_the_runtime() {
     ] {
         assert!(coordinator.contains(needle), "coordinator holds `{needle}`");
     }
-    assert!(text("keeper").contains("self.test_context().start_timer(\"patience\", 10000);"));
+    assert!(text("ptc_keeper").contains("self.test_context().start_timer(\"patience\", 10000);"));
     assert!(text("idler").contains(
         "self.test_context().setverdict(::sce_rust_runtime::test::Verdict::Inconclusive, \"\");"
     ));

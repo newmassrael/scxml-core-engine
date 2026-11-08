@@ -34,7 +34,7 @@ import (
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/idler"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/job_reply"
 	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/job_request"
-	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/keeper"
+	"github.com/newmassrael/sce-go-tests/integration/static_datamodel/ptc_keeper"
 )
 
 // componentMillisecond is a millisecond of `NOW`, which counts microseconds.
@@ -58,8 +58,8 @@ func componentMachineOf(componentType string) testprofile.ComponentMachine {
 		return &coordinator.CoordinatorComponent{}
 	case "answerer":
 		return &answerer.AnswererComponent{}
-	case "keeper":
-		return &keeper.KeeperComponent{}
+	case "ptc_keeper":
+		return &ptc_keeper.PtcKeeperComponent{}
 	case "idler":
 		return &idler.IdlerComponent{}
 	}
@@ -311,10 +311,10 @@ func TestATestComponentRunsThroughItsDoors_ATestComponentCreatesAPtcExchangesAMe
 // at that instant, and its local verdict still counts.
 func TestATestComponentRunsThroughItsDoors_ATestComponentKillsAPtcOnLeavingTheStateThatInvokedIt(t *testing.T) {
 	configuration := testprofile.Configuration{
-		MTCType:      "keeper",
+		MTCType:      "ptc_keeper",
 		PTCTypes:     map[string]string{"idler": "idler"},
 		PortsOfType:  map[string][]string{"idler": {"peer"}},
-		TimersOfType: map[string][]string{"keeper": {"patience", "linger"}},
+		TimersOfType: map[string][]string{"ptc_keeper": {"patience", "linger"}},
 	}
 	result := componentRun(configuration, componentSilent{})
 

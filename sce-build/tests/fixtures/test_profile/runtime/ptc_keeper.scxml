@@ -5,7 +5,7 @@
      after lingering a while longer. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       version="1.0" sce:kind="test-component" name="keeper"
+       version="1.0" sce:kind="test-component" name="ptc_keeper"
        datamodel="sce-static" initial="watching">
   <sce:test-timer id="patience" duration="10ms"/>
   <sce:test-timer id="linger" duration="5ms"/>

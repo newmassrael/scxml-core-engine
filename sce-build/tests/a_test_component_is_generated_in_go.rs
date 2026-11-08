@@ -70,7 +70,7 @@ const COMPONENTS: [(&str, &str); 6] = [
     ("asker", "Asker"),
     ("coordinator", "Coordinator"),
     ("answerer", "Answerer"),
-    ("keeper", "Keeper"),
+    ("ptc_keeper", "PtcKeeper"),
     ("idler", "Idler"),
     ("param_asker", "ParamAsker"),
 ];
@@ -346,7 +346,7 @@ fn taking_a_branch_removes_what_it_matched_before_its_content() {
     let idler = text("idler");
     assert!(idler.contains("p.sceTestContext.Receive(\"peer\")"));
     assert!(idler.contains("HasActions:      true,"), "{idler}");
-    assert!(text("keeper").contains("p.sceTestContext.Timeout(\"patience\")"));
+    assert!(text("ptc_keeper").contains("p.sceTestContext.Timeout(\"patience\")"));
 }
 
 /// §11.5, §12.3: the statements are calls on the runtime context, a duration
@@ -377,7 +377,7 @@ fn the_statements_the_send_and_the_ptc_go_through_the_runtime() {
     ] {
         assert!(coordinator.contains(needle), "coordinator holds `{needle}`");
     }
-    assert!(text("keeper").contains("p.sceTestContext.StartTimer(\"patience\", 10000)"));
+    assert!(text("ptc_keeper").contains("p.sceTestContext.StartTimer(\"patience\", 10000)"));
     assert!(text("idler")
         .contains("p.sceTestContext.Setverdict(scetestprofile.VerdictInconclusive, \"\")"));
 }
@@ -458,8 +458,8 @@ fn a_component_that_uses_a_template_needs_the_module_path() {
         diagnostics.contains("requires ForgeCompileOptions.go_module_prefix"),
         "{diagnostics}"
     );
-    let (ok, diagnostics, _) = generate_with(&runtime_dir().join("keeper.scxml"), false);
-    assert!(ok, "the keeper names no template:\n{diagnostics}");
+    let (ok, diagnostics, _) = generate_with(&runtime_dir().join("ptc_keeper.scxml"), false);
+    assert!(ok, "ptc_keeper names no template:\n{diagnostics}");
 }
 
 /// A component over a record with a text field, whose receive branch

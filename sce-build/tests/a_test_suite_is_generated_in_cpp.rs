@@ -107,7 +107,7 @@ fn a_configuration_is_its_table_its_machines_and_what_they_read() {
 
     let keeping = header("keeping_configuration");
     for needle in [
-        "configuration.timersOfType.emplace(\"keeper\", ::std::vector<::std::string>{\"patience\", \
+        "configuration.timersOfType.emplace(\"ptc_keeper\", ::std::vector<::std::string>{\"patience\", \
          \"linger\"});",
         "configuration.portsOfType.emplace(\"idler\", ::std::vector<::std::string>{\"peer\"});",
         "configuration.mappings.push_back({::SCE::Test::Endpoint{\"idler\", \"peer\"}, \"quiet\"});",
@@ -115,7 +115,7 @@ fn a_configuration_is_its_table_its_machines_and_what_they_read() {
         assert!(keeping.contains(needle), "keeping_configuration holds `{needle}`");
     }
     assert!(
-        !keeping.contains("configuration.portsOfType.emplace(\"keeper\""),
+        !keeping.contains("configuration.portsOfType.emplace(\"ptc_keeper\""),
         "a type that declares no port has no entry"
     );
 }

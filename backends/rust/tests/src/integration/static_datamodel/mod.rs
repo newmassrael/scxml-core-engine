@@ -57,7 +57,6 @@ pub mod job_report;
 pub mod job_report_of;
 pub mod job_request;
 pub mod job_status;
-pub mod keeper_sm;
 pub mod keeping_configuration;
 pub mod keeps_a_ptc;
 pub mod ledger_add;

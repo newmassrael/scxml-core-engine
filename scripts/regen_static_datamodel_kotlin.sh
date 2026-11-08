@@ -317,7 +317,7 @@ done
 # (scripts/regen_static_datamodel_rust.sh).
 TEST_PROFILE_RUNTIME_DIR="$TEST_PROFILE_DIR/runtime"
 TEST_PROFILE_RUNTIME=(job_request job_reply request_of any_request reply_ok reply_of)
-TEST_COMPONENTS=(asker coordinator answerer keeper idler param_asker)
+TEST_COMPONENTS=(asker coordinator answerer ptc_keeper idler param_asker)
 for document in "${TEST_PROFILE_RUNTIME[@]}"; do
     "$CODEGEN" generate "$TEST_PROFILE_RUNTIME_DIR/$document.scxml" -l kotlin -o "$TMP/runtime_$document/"
     install_generated "$TMP/runtime_$document"

@@ -164,7 +164,7 @@ UNIONS=(shape_kind shape_radius shape_rect union_shape)
 # suite runs the same components (tests/integration/ATestComponentRunsThroughItsDoorsTest.cpp).
 TEST_PROFILE_RUNTIME_DIR="$TEST_PROFILE_DIR/runtime"
 TEST_PROFILE_RUNTIME=(job_request job_reply request_of any_request reply_ok reply_of)
-TEST_COMPONENTS=(asker coordinator answerer keeper idler param_asker)
+TEST_COMPONENTS=(asker coordinator answerer ptc_keeper idler param_asker)
 # The tables of the suite tests/a_test_suite_runs_through_its_runner.rs runs through the
 # profile's runner (docs/SCE_TEST_PROFILE.md §11.6 to §11.8, §12.2): each configuration's
 # unit names the machines of its components above as `super::<name>_sm`, each test
