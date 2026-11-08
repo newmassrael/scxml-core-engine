@@ -22,8 +22,8 @@ mutation_targets sce-build/src/forge/generator.rs sce-build/src/forge/c11_reason
 
 mutation_case "the slot leaves the longest reason out" <<'PY'
 edit("sce-build/src/forge/generator.rs",
-     "            .chain(std::iter::once(reasons))\n",
-     "            .chain(std::iter::once(0))\n")
+     "            .chain([self.reasons, self.sent])\n",
+     "            .chain([0, self.sent])\n")
 PY
 
 mutation_case "the book records no reason's length" <<'PY'

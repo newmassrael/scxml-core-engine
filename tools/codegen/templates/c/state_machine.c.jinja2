@@ -6609,9 +6609,11 @@ SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_perform_host_invoke({{ c
         /* sce-scratch-activity: reason */
         /* docs/adr/0086, section 8.5 (d): the machine's scratch. */
         char *const message = sm->scratch.message;
+        {# docs/adr/0086, section 8.6 (c): the invocation's type and id are the
+           document's texts, and the deadline's text is bounded by the expression
+           it was written as, so the reason has a bound the build knows. #}
         (void)snprintf(message, sizeof(sm->scratch.message),
-                       "<invoke type='%s' id='%s'>: " SCE_HOST_INVOKE_DEADLINE_PARAM
-                       "='%s' is not a whole number of milliseconds",
+                       {{ reason_format("invoke_deadline_unreadable", data_slot.deadline_quotes) }},
                        start->processor_type, start->invoke_id, unreadable);
         {{ csym_prefix }}{{ model.name }}_raise_platform_error(
             sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, message);

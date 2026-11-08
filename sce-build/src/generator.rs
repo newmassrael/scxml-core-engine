@@ -4127,6 +4127,20 @@ fn render_c11(
     // takes, computed from the schemas of the events it receives, which every
     // place of the machine that holds an event's data is declared at.
     let mut data_slot = crate::forge::generator::c11_data_slot(model, &csym_prefix)?;
+    // docs/adr/0086, section 8.6 (c): the data the machine's sends and its done
+    // data write is an input of the slot, and the share it hands its parent is
+    // what its header publishes for a parent's slot; a `sce-static` machine's is
+    // measured where it is lowered, any other's where it is a literal.
+    let (sent, to_parent) = if model.datamodel == crate::model::Datamodel::SceStatic {
+        (static_lowering.sent_data, static_lowering.parent_data)
+    } else {
+        crate::forge::generator::c11_literal_sent_data(model, &document_scope(model))
+    };
+    data_slot.hold_sent(sent, to_parent);
+    // The texts the reason a host-run invocation's unreadable deadline quotes,
+    // each at the bound the build knows of it.
+    data_slot.deadline_quotes =
+        crate::forge::generator::c11_deadline_quotes(model, static_lowering.deadline_text)?;
     // SCE Accepted Subset §2.12: the typed host-run invoke interface and what
     // the start site holds each request field to; all empty without one.
     let host_invoker = crate::forge::host_invoker_interface::render_c11(
