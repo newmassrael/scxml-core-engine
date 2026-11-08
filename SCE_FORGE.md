@@ -1192,6 +1192,9 @@ declares; a lower count is, on every backend alike:
 - Go: `[]<schema>.<Schema>Payload`, the functions unexported in the codec's
   package and named for the codec; a refused read returns Rust's error
   (`ErrCborOutOfRange`, `ErrCborMalformed`, `ErrCborRequiredKeyMissing`).
+- Python: `list[<schema>.<Schema>Payload]`, the functions private static methods
+  of the codec's class; a write refuses a record's number past its width too, a
+  Python `int` holding none, as it refuses an entry's.
 
 Every other backend refuses such a codec by name until its template writes the
 array (`cbor_codec::lowers_record_list`), and a broadcast log over one is refused

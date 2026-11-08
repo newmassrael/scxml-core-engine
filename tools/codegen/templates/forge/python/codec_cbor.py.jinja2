@@ -23,8 +23,47 @@
                 if v is None:
                     raise UndeclaredEnumValue()
 {% endif %}
+{% elif e.kind == "record_list" %}
+                # A definite-length array within the list's counts, each item
+                # one record's map.
+                n = cbor.read_array_len(c)
+                if n > {{ e.list_max }}{% if e.list_min > 0 %} or n < {{ e.list_min }}{% endif %}:
+                    raise cbor.CborOutOfRange()
+                v = [{{ struct_name }}.{{ e.record_decode_fn }}(c) for _ in range(n)]
 {% else %}
                 v = cbor.read_uint_upto(c, {{ e.max }})
+{% endif %}
+{% endmacro %}
+{#- The read of one field of a record a list holds, bound to its `held_` local. #}
+{% macro decode_record_field(f) %}
+{% if f.kind == "bool" %}
+                held_{{ f.name }} = cbor.read_bool(c)
+{% elif f.kind == "text" %}
+                held_{{ f.name }} = cbor.read_text(c, {{ f.max }})
+{% elif f.kind == "bytes" %}
+                held_{{ f.name }} = cbor.read_bytes(c, {{ f.max }})
+{% else %}
+                held_{{ f.name }} = cbor.read_uint_upto(c, {{ f.int_max }})
+{% endif %}
+{% endmacro %}
+{#- The write of one field of `record`, its key already written. A Python
+    string, byte string and int carry no bound, so a text or a byte string past
+    its bound, and a number past its width, are refused, not written. #}
+{% macro encode_record_field(f) %}
+{% if f.kind == "bool" %}
+        cbor.write_bool(w, record.{{ f.name }})
+{% elif f.kind == "text" %}
+        if len(record.{{ f.name }}.encode("utf-8")) > {{ f.max }}:
+            raise cbor.CborOutOfRange()
+        cbor.write_text(w, record.{{ f.name }})
+{% elif f.kind == "bytes" %}
+        if len(record.{{ f.name }}) > {{ f.max }}:
+            raise cbor.CborOutOfRange()
+        cbor.write_bytes(w, record.{{ f.name }})
+{% else %}
+        if not 0 <= record.{{ f.name }} <= {{ f.int_max }}:
+            raise cbor.CborOutOfRange()
+        cbor.write_uint(w, record.{{ f.name }})
 {% endif %}
 {% endmacro %}
 {#- The write of one entry — its key, then its value `v` — at indent `i`. #}
@@ -57,6 +96,14 @@
 {{ i }}    raise cbor.CborOutOfRange()
 {% endif %}
 {{ i }}cbor.write_uint(w, u)
+{% elif e.kind == "record_list" %}
+{#- A Python list carries no bound, so a count past the list's bound, or
+    short of its lower count, is refused before any record is written. #}
+{{ i }}if len(v) > {{ e.list_max }}{% if e.list_min > 0 %} or len(v) < {{ e.list_min }}{% endif %}:
+{{ i }}    raise cbor.CborOutOfRange()
+{{ i }}cbor.write_array_head(w, len(v))
+{{ i }}for record in v:
+{{ i }}    {{ struct_name }}.{{ e.record_encode_fn }}(w, record)
 {% else %}
 {#- A Python int is unbounded, so the declared width is held here rather
     than by the type. #}
@@ -81,6 +128,9 @@ from sce_forge_runtime.codec import BytearraySink, CodecError, SceCursor, SceSin
 {% endif %}
 {% endfor %}
 
+{% if cbor_records %}
+import dataclasses
+{% endif %}
 from dataclasses import dataclass
 from typing import Optional
 
@@ -167,3 +217,51 @@ class {{ struct_name }}:
         out = bytearray()
         self.encode(BytearraySink(out))
         return bytes(out)
+{% for r in cbor_records %}
+
+    @staticmethod
+    def {{ r.decode_fn }}(c: SceCursor) -> {{ r.type_name }}:
+        """Read one record of the event schema ``{{ r.schema }}``
+        (``record:{{ r.alias }}``), as a list of this map holds it
+        (docs/adr/0085, Landing order step 3a), into the payload type the
+        schema's own unit declares: one CBOR map of every field, each under its
+        id as text (docs/adr/0086, section 9.2). Its keys in any order, a key
+        the schema does not declare skipped whole; a key given twice raises
+        :class:`~sce_forge_runtime.cbor.CborMalformed`, a field missing
+        :class:`~sce_forge_runtime.cbor.CborRequiredKeyMissing`, and a text or
+        byte string past its bound
+        :class:`~sce_forge_runtime.cbor.CborOutOfRange`."""
+        count = cbor.read_map_len(c)
+{% for f in r.fields %}
+        held_{{ f.name }}: Optional[{{ f.value_type }}] = None
+{% endfor %}
+        for _ in range(count):
+            key = cbor.read_text(c, None)
+{% for f in r.fields %}
+{% if loop.first %}            if{% else %}            elif{% endif %} key == {{ f.key_literal }}:
+                # A key given twice is not one map entry.
+                if held_{{ f.name }} is not None:
+                    raise cbor.CborMalformed()
+{{ decode_record_field(f) }}{% endfor %}
+            else:
+                cbor.skip(c)
+{% for f in r.fields %}
+        if held_{{ f.name }} is None:
+            raise cbor.CborRequiredKeyMissing()
+{% endfor %}
+        return {{ r.type_name }}(
+{% for f in r.fields %}
+            {{ f.name }}=held_{{ f.name }},
+{% endfor %}
+        )
+
+    @staticmethod
+    def {{ r.encode_fn }}(w: SceSink, record: {{ r.type_name }}) -> None:
+        """Write one record of ``{{ r.schema }}`` as one map of every field,
+        the keys in the order RFC 8949 §4.2.1 sorts their encodings: a shorter
+        key first."""
+        cbor.write_map_head(w, {{ r.field_count }})
+{% for f in r.fields_by_key %}
+        cbor.write_text(w, {{ f.key_literal }})
+{{ encode_record_field(f) }}{% endfor %}
+{% endfor %}

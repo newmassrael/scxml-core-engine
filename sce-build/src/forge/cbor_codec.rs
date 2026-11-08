@@ -59,7 +59,7 @@ pub fn lowers_record_list(lang: Language) -> bool {
         Language::Kotlin => true,
         Language::Cpp => false,
         Language::Go => true,
-        Language::Python => false,
+        Language::Python => true,
         Language::C11 => true,
         Language::Swift => true,
     }
@@ -273,12 +273,13 @@ pub(crate) fn kind(entry: &CborEntry) -> &'static str {
     }
 }
 
-/// The type a present value of the leaf entry `e` is, as a backend that lowers
-/// no list of records reads it: [`refusal`] refused a map that holds one before
-/// the backend renders, so every entry it sees is a leaf.
+/// The type a present value of the leaf entry `e` is, asked where `e` is known
+/// to be a leaf: by a backend that lowers no list of records, which [`refusal`]
+/// refused a map that holds one before it renders, or after a list entry was
+/// told apart.
 fn leaf(e: &CborEntry) -> &SceType {
     e.leaf_type()
-        .expect("a backend that lowers no list of records refuses one before it renders")
+        .expect("a list of records is told apart before its present type is asked")
 }
 
 /// The largest number an integer type holds, as the bound its entry's read
@@ -999,9 +1000,20 @@ fn render_python(
     imports: &[ImportContext],
 ) -> Result<String, ForgeError> {
     let l = LangCtx::new(Language::Python, imports);
-    let mut ctx = common_context(&l, m, imports, |e| l.type_name(leaf(e)).into_owned())?;
+    // A list of records is a `list` of the schema's payload, which carries no
+    // bound: the encode refuses a count past it.
+    let mut ctx = common_context(&l, m, imports, |e| match e.leaf_type() {
+        Some(present) => l.type_name(present).into_owned(),
+        None => format!("list[{}]", record_type_of(&l, imports, e)),
+    })?;
+    // Each field of a record as the schema's Python unit holds it: a text in a
+    // `str`, a byte string in `bytes`, a number in an `int`.
+    insert_cbor_records(&l, m, imports, &mut ctx, &|ty| {
+        scalar_record_field_type(&l, ty)
+    })?;
     // A required entry starts at its type's own default — an enum at its
-    // first declared variant — and an optional one absent (`None`).
+    // first declared variant, a list of records a new empty list — and an
+    // optional one absent (`None`).
     if let Some(serde_json::Value::Array(entries)) = ctx.get_mut("entries") {
         for (entry, e) in entries.iter_mut().zip(&m.cbor_entries) {
             let value_type = entry["value_type"].as_str().unwrap_or_default().to_string();
@@ -1011,10 +1023,10 @@ fn render_python(
                 l.codec_optional_of(&value_type)
             }
             .into();
-            entry["default"] = if e.is_required() {
-                l.default_expr(leaf(e))
-            } else {
-                "None".to_string()
+            entry["default"] = match (e.is_required(), e.leaf_type()) {
+                (false, _) => "None".to_string(),
+                (true, Some(present)) => l.default_expr(present),
+                (true, None) => "dataclasses.field(default_factory=list)".to_string(),
             }
             .into();
         }
@@ -1023,7 +1035,7 @@ fn render_python(
         "has_closed_enum".into(),
         m.cbor_entries
             .iter()
-            .any(|e| matches!(leaf(e), SceType::Enum(r) if !l.enum_is_open(&r.alias)))
+            .any(|e| matches!(e.leaf_type(), Some(SceType::Enum(r)) if !l.enum_is_open(&r.alias)))
             .into(),
     );
     render_in_key_order(&l, env, ctx)
