@@ -8140,6 +8140,17 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
     let deploy_dir: Option<&Path> = deploy_path
         .map(|deploy_file| Path::new(deploy_file).parent().unwrap_or(Path::new(".")))
         .filter(|deploy_dir| *deploy_dir != out_path);
+    // Each written child records the document it came from (ADR 0094, owner's
+    // answer 2): the document this run's closure is of, which is the
+    // authored one even when this run itself generates from a written child.
+    // A run that generates from the child is then stamped with that
+    // document's closure, and `verify` finds that document under a root.
+    let origin = drift_ctx
+        .header
+        .seeds
+        .first()
+        .map(String::as_str)
+        .unwrap_or_default();
     let carried_documents: Vec<(String, String)> = model
         .inline_child_invokes()
         .into_iter()
@@ -8150,7 +8161,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
                 } else {
                     Some((
                         inv.child_name.clone(),
-                        with_trailing_newline(xml).into_owned(),
+                        drift::record_origin(&with_trailing_newline(xml), origin),
                     ))
                 }
             })
