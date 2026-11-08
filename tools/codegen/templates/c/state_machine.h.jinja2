@@ -807,7 +807,13 @@ typedef struct {{ csym_prefix }}{{ model.name }}_inbox_input {
         /* Owned, since a post crosses from another context (docs/adr/0086,
            section 8.5 (b)). */
         {{ csym_prefix }}{{ model.name }}_queued_event_t event;
-        sce_forwarded_event_t by_name;
+        /* An event by name, with its data held here, at the size of this
+           machine's slot: `event.data` is not read, and the data is handed on
+           as a view of `data` when the input is applied. */
+        struct {
+            sce_forwarded_event_t event;
+            char data[{{ data_slot.name }}];
+        } by_name;
 {% if inbox_endings %}
         sce_host_invoke_ending_t ending;
 {% endif %}
