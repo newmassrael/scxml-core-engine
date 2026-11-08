@@ -53,7 +53,7 @@
 {% endif %}
 {{ indent }}{{ failed_flag }} = true;
 {% else %}
-{{ indent }}char {{ prefix }}_value_{{ loop.index0 }}[SCE_MAX_DATA_LEN];
+{{ indent }}char {{ prefix }}_value_{{ loop.index0 }}[{{ csym_prefix | upper }}{{ model.name | upper }}_DATA_LEN];
 {{ indent }}bool {{ prefix }}_ok_{{ loop.index0 }} = false;
 {{ se.lua_eval_to_wire_string(param.expr or param.location, prefix ~ '_value_' ~ loop.index0, 'sizeof(' ~ prefix ~ '_value_' ~ loop.index0 ~ ')', prefix ~ '_ok_' ~ loop.index0, record_as) }}
 {{ indent }}if ({{ prefix }}_ok_{{ loop.index0 }}) {
