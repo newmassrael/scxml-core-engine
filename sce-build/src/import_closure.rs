@@ -91,6 +91,12 @@ pub struct Unit {
     /// The references that brought it into the run, the document named on
     /// the command line first; empty for a document the caller named.
     pub reached_from: Vec<RelatedSite>,
+    /// The files its load read besides the document itself: the targets of
+    /// its `<xi:include>`s and the fragments of its `<sce:use>`s, canonical,
+    /// as the loader recorded them (`LoadedForgeSource::deps`). Inputs of its
+    /// generation as much as the document is, which a depfile and an input
+    /// closure (ADR 0094) name.
+    pub reads: Vec<PathBuf>,
 }
 
 impl Unit {
@@ -213,6 +219,7 @@ pub fn walk(named: &[String], options: WalkOptions<'_>) -> Result<Vec<Unit>, Ref
                         src: import.src.clone(),
                         line: import.line,
                         by: By::Import,
+                        read: None,
                     })
                     .collect();
                 (
@@ -355,6 +362,7 @@ pub fn walk(named: &[String], options: WalkOptions<'_>) -> Result<Vec<Unit>, Ref
             kind,
             role,
             reached_from: next.reached_from,
+            reads: loaded.deps,
         });
     }
     let started: BTreeSet<String> = units
@@ -368,6 +376,73 @@ pub fn walk(named: &[String], options: WalkOptions<'_>) -> Result<Vec<Unit>, Ref
             && started.contains(&unit.identity))
     });
     Ok(units)
+}
+
+/// Every file the generation of `seeds` reads, each once, the seeds first:
+/// every document reached from them by every kind of reference [`walk`]
+/// follows, transitively, and every fragment the load of each read (its
+/// `<xi:include>` targets and `<sce:use>` fragments).
+///
+/// The input closure a generated file's header digests (ADR 0094 section 1)
+/// is taken over this list. It is [`walk`] made total where that walk is
+/// strict, since a closure is taken before a generation and must not refuse
+/// what the generation reports in its own words, or not at all: a reference
+/// that names no document reads nothing; a document that does not load
+/// contributes itself and nothing it names; a statechart a parent starts,
+/// in-line or as a child, is followed as an import is, since the parent's
+/// generation reads it. A child the parent starts by `src` is followed where
+/// the parent's parse reads it, under `input_root` first and then where `src`
+/// points, and a candidate as [`walk`] finds one.
+///
+/// A document is spelled as the generator takes it (a standard one by its
+/// library name, a file with `.` and `..` folded); a fragment as the loader
+/// recorded it, canonical.
+pub fn reads(seeds: &[PathBuf], options: WalkOptions<'_>) -> Vec<PathBuf> {
+    let mut pending: VecDeque<PathBuf> = seeds.iter().cloned().collect();
+    let mut walked: BTreeSet<String> = BTreeSet::new();
+    let mut listed: BTreeSet<String> = BTreeSet::new();
+    let mut found: Vec<PathBuf> = Vec::new();
+    while let Some(document) = pending.pop_front() {
+        let identity = stdlib::identity(&document);
+        if !walked.insert(identity.clone()) {
+            continue;
+        }
+        if listed.insert(identity) {
+            found.push(document.clone());
+        }
+        let Ok(loaded) = crate::load_forge_source(&document, options.include_dirs) else {
+            continue;
+        };
+        for fragment in &loaded.deps {
+            if listed.insert(stdlib::identity(fragment)) {
+                found.push(fragment.clone());
+            }
+        }
+        let base = document.parent().map(Path::to_path_buf).unwrap_or_default();
+        for reference in statechart_references(loaded.text()) {
+            if let Some(next) = read_of(&base, options.input_root, &reference) {
+                pending.push_back(next);
+            }
+        }
+    }
+    found
+}
+
+/// The document `reference`, written in a document whose directory is `base`,
+/// is read from, spelled as [`reads`] lists it; `None` when it names none.
+fn read_of(base: &Path, input_root: Option<&Path>, reference: &Reference) -> Option<PathBuf> {
+    let path = match reference.by {
+        By::Import | By::StandardChild => stdlib::resolve(base, &reference.src),
+        By::Candidate => candidate_document(base, input_root, &reference.src)?,
+        By::FileChild => {
+            let roots: Vec<PathBuf> = input_root.map(Path::to_path_buf).into_iter().collect();
+            crate::parser::locate_child_document(&roots, Some(base), reference.read.as_deref()?)?
+        }
+    };
+    if stdlib::names_standard(&path) {
+        return stdlib::lookup(&path).map(|_| PathBuf::from(stdlib::identity(&path)));
+    }
+    crate::confine::exists(&path).then(|| PathBuf::from(as_generated(&path)))
 }
 
 /// A document waiting to be read.
@@ -422,6 +497,11 @@ struct Reference {
     src: String,
     line: Option<u32>,
     by: By,
+    /// For a [`By::FileChild`], the child's document as the parent's parse
+    /// reads it for its interface: the directory `src` names, holding
+    /// `<stem>.scxml` (`model::ScxmlInvokeInfo::child_document_path`), which
+    /// [`reads`] follows. `None` for every other reference.
+    read: Option<PathBuf>,
 }
 
 /// Every reference a statechart's text makes, in document order: each
@@ -446,6 +526,7 @@ fn statechart_references(text: &str) -> Vec<Reference> {
                     src: src.to_string(),
                     line,
                     by: By::Import,
+                    read: None,
                 });
             }
         } else if tag.name() == "invoke" && tag.namespace() == Some(crate::model::SCXML_NAMESPACE) {
@@ -457,12 +538,14 @@ fn statechart_references(text: &str) -> Vec<Reference> {
                     src: src.to_string(),
                     line,
                     by: By::StandardChild,
+                    read: None,
                 });
-            } else if let Some(file) = file_child(&node) {
+            } else if let Some((file, read)) = file_child(&node) {
                 found.push(Reference {
                     src: file,
                     line,
                     by: By::FileChild,
+                    read: Some(read),
                 });
             }
             if let Some(entries) = crate::sce_attr::read(&node, "candidates") {
@@ -472,6 +555,7 @@ fn statechart_references(text: &str) -> Vec<Reference> {
                             src: candidate.path,
                             line,
                             by: By::Candidate,
+                            read: None,
                         });
                     }
                 }
@@ -488,7 +572,11 @@ fn statechart_references(text: &str) -> Vec<Reference> {
 /// `<stem>.scxml` beside the parent, the stem taken from `src` with a `file:`
 /// scheme dropped. A `src` that names a Mesh peer (`#machine`) starts no
 /// document of its own and is not one.
-fn file_child(node: &roxmltree::Node) -> Option<String> {
+///
+/// Beside that name, the path the parent's parse reads the child from for its
+/// interface: the same file name in the directory `src` names
+/// (`model::ScxmlInvokeInfo::child_document_path`), which [`reads`] follows.
+fn file_child(node: &roxmltree::Node) -> Option<(String, PathBuf)> {
     let src = node.attribute("src").filter(|src| !src.is_empty())?;
     let written = |name: &str| node.attribute(name).is_some_and(|value| !value.is_empty());
     let dynamic = written("srcexpr") || written("contentexpr");
@@ -499,8 +587,10 @@ fn file_child(node: &roxmltree::Node) -> Option<String> {
         return None;
     }
     let stripped = src.replace("file:", "");
-    let stem = Path::new(&stripped).file_stem()?.to_str()?;
-    Some(format!("{stem}.scxml"))
+    let stripped = Path::new(&stripped);
+    let file = format!("{}.scxml", stripped.file_stem()?.to_str()?);
+    let read = stripped.parent().unwrap_or(Path::new("")).join(&file);
+    Some((file, read))
 }
 
 /// The document a candidate entry names: under `input_root` first, then
@@ -676,6 +766,92 @@ mod tests {
         assert_eq!(inner.reached_from[0].role, RelatedRole::ReachedFrom);
     }
 
+    /// What a closure is taken over: the import of an import, the child a
+    /// statechart starts by `src`, each once and breadth first, and nothing
+    /// for an import that names no file, which the generation reports in its
+    /// own words.
+    #[test]
+    fn reads_follow_every_reference_and_leave_out_what_names_nothing() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        write(
+            dir.path(),
+            "algorithm_inner.scxml",
+            &algorithm("inner_even", &[]),
+        );
+        write(
+            dir.path(),
+            "algorithm_outer.scxml",
+            &algorithm("outer_pick", &[("algorithm_inner.scxml", "inner")]),
+        );
+        write(dir.path(), "child.scxml", &statechart("child", ""));
+        let machine = write(
+            dir.path(),
+            "machine.scxml",
+            &statechart(
+                "machine",
+                "  <sce:import kind=\"algorithm\" src=\"algorithm_outer.scxml\" as=\"Outer\"/>\n  \
+                 <sce:import kind=\"algorithm\" src=\"algorithm_missing.scxml\" as=\"Gone\"/>\n  \
+                 <state id=\"run\">\n    <invoke src=\"child.scxml\"/>\n  </state>\n",
+            ),
+        );
+
+        let found = reads(&[PathBuf::from(&machine)], WalkOptions::default());
+        let names: Vec<String> = found
+            .iter()
+            .map(|path| {
+                path.file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_default()
+            })
+            .collect();
+        assert_eq!(
+            names,
+            [
+                "machine.scxml",
+                "algorithm_outer.scxml",
+                "child.scxml",
+                "algorithm_inner.scxml"
+            ],
+            "the seed, then each reference breadth first; the missing import reads nothing"
+        );
+    }
+
+    /// The walk keeps what each unit's load read, so a caller declaring a
+    /// unit's inputs does not read the document a second time for them.
+    #[test]
+    fn a_unit_keeps_the_fragments_its_load_read() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        write(
+            dir.path(),
+            "frag.xml",
+            "<state xmlns=\"http://www.w3.org/2005/07/scxml\" id=\"included\"/>\n",
+        );
+        let machine = write(
+            dir.path(),
+            "machine.scxml",
+            &statechart(
+                "machine",
+                "  <xi:include xmlns:xi=\"http://www.w3.org/2001/XInclude\" href=\"frag.xml\"/>\n",
+            ),
+        );
+
+        let units = walked(std::slice::from_ref(&machine));
+        let reads: Vec<PathBuf> = units
+            .iter()
+            .flat_map(|unit| unit.reads.iter().cloned())
+            .collect();
+        let frag = fs::canonicalize(dir.path().join("frag.xml")).expect("frag resolves");
+        assert_eq!(reads, [frag.clone()], "the unit names the fragment it read");
+        assert!(
+            reads_of(&machine).contains(&frag),
+            "and the closure walk lists it beside the documents"
+        );
+    }
+
+    fn reads_of(document: &str) -> Vec<PathBuf> {
+        reads(&[PathBuf::from(document)], WalkOptions::default())
+    }
+
     #[test]
     fn a_missing_import_is_refused_where_it_is_written_with_the_chain_above_it() {
         let dir = tempfile::tempdir().expect("temp dir");
@@ -839,6 +1015,7 @@ mod tests {
             kind: UnitKind::Forge,
             role: Role::Imported,
             reached_from: Vec::new(),
+            reads: Vec::new(),
         };
         assert_eq!(
             forge.directory(Language::Kotlin, Some("com.acme.app")),
