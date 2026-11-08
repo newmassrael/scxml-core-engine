@@ -1,0 +1,80 @@
+# Mutation cases for "every lane's lift of a schema of entries holds a text and a byte
+# string to the bound its type declares where the delivery is read, the top level
+# included" (docs/adr/0086, section 4.4, amended 2026-11-09).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/every_lift_holds_a_top_level_text_and_byte_string_to_their_bound.cases`.
+#
+# The walk over a composed type held a text and a byte string to their bound at any
+# depth, and the lift of a schema of entries held a text to no bound on any lane and a
+# byte string to none but on Rust and C11. Each lane now reads the field by the reader of
+# its type with the bound the field declares (`lift_text_bound`, `lift_bytes_bound`).
+# The mutants take one decision away each:
+#
+#   a byte string's bound is not the one its field declares;
+#   the Rust lift reads a text held to no bound;
+#   the Go lift reads a text held to no bound;
+#   the Kotlin lift reads a text held to no bound;
+#   the Python lift names a text by its type alone;
+#   the C++ lift reads a text held to no bound;
+#   the C11 lift's text buffer is the data's and not the bound's;
+#   the Swift lift reads a text held to no bound.
+#
+# The oracle is the generator's own test of the text each lane writes; the scenarios
+# `static_record_string.json` and `static_payload_bytes.json` hold the machines the
+# text compiles to, on every lane that replays them.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-build --lib forge::generator::tests::every_lift_holds_a_top_level_text_and_byte_string_to_their_bound
+mutation_targets sce-build/src/forge/generator.rs
+mutation_oracles sce-build/src/forge/generator.rs
+
+mutation_case "a byte string's bound is not the one its field declares" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     "    crate::forge::limits::resolve_bytes_max(f.max_size)\n}",
+     "    crate::forge::limits::resolve_bytes_max(None)\n}")
+PY
+
+mutation_case "the Rust lift reads a text held to no bound" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     "            SceType::String => format!(\"fields.text(\\\"{}\\\", {})?\", f.id, lift_text_bound(f)),",
+     "            SceType::String => format!(\"fields.text(\\\"{}\\\", {})?\", f.id, u32::MAX),")
+PY
+
+mutation_case "the Go lift reads a text held to no bound" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     "        SceType::String => format!(\"sce.PayloadText({obj}, \\\"{id}\\\", {})\", lift_text_bound(f)),",
+     "        SceType::String => format!(\"sce.PayloadString({obj}, \\\"{id}\\\")\"),")
+PY
+
+mutation_case "the Kotlin lift reads a text held to no bound" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     "        SceType::String => return format!(\"fields.string(\\\"{id}\\\", {})\", lift_text_bound(f)),",
+     "        SceType::String => return format!(\"fields.string(\\\"{id}\\\")\"),")
+PY
+
+mutation_case "the Python lift names a text by its type alone" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     "                format!(\"{module}.Text({})\", lift_text_bound(f))",
+     "                present_ty.clone()")
+PY
+
+mutation_case "the C++ lift reads a text held to no bound" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     "        SceType::String => (\"readText\", lift_text_bound(f)),",
+     "        SceType::String => (\"readText\", u32::MAX),")
+PY
+
+mutation_case "the C11 lift's text buffer is the data's and not the bound's" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     "char lifted_{member}_{id}[{bound}u + 1u];\\n\"",
+     "char lifted_{member}_{id}[SCE_MAX_DATA_LEN];\\n\"")
+PY
+
+mutation_case "the Swift lift reads a text held to no bound" <<'PY'
+edit("sce-build/src/forge/generator.rs",
+     "        SceType::String => format!(\"try fields.text(\\\"{id}\\\", bound: {})\", lift_text_bound(f)),",
+     "        SceType::String => format!(\"try fields.text(\\\"{id}\\\")\"),")
+PY
