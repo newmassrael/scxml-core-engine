@@ -309,6 +309,31 @@ int main(void) {
         assert(sce_payload_read_text(&fields, "label", decoded, sizeof(decoded)) == NULL);
         assert(strlen(decoded) == n);
     }
+    /* docs/adr/0086, sections 2.3 and 8.1: a payload at every bound, each byte
+       at its longest escape, is the largest data the schema carries, and the
+       slot sized from it holds that data whole. */
+    {
+        static unsigned char raw_back[512];
+        static char label_back[1024 + 1];
+        sce_payload_fields_t max_fields;
+        size_t raw_back_len = 0;
+        memset(label, 0x01, sizeof(label) - 1u);
+        label[sizeof(label) - 1u] = 0;
+        memset(p.raw, 0, sizeof(p.raw));
+        p.raw_len = sizeof(p.raw);
+        p.count = UINT32_MAX;
+        bounded_payload_init(&sm);
+        assert(bounded_payload_raise_sample_received_typed(&sm, &p));
+        assert(sm.external_queue.count == 1);
+        const char *queued = sm.external_queue.buf[sm.external_queue.head].data;
+        assert(strlen(queued) < BOUNDED_PAYLOAD_DATA_LEN_DECLARED);
+        assert(sce_payload_decode(queued, &max_fields) == NULL);
+        assert(sce_payload_read_bytes(&max_fields, "raw", raw_back, sizeof(raw_back), &raw_back_len) == NULL);
+        assert(raw_back_len == sizeof(p.raw) && memcmp(raw_back, p.raw, raw_back_len) == 0);
+        assert(sce_payload_read_text(&max_fields, "label", label_back, sizeof(label_back)) == NULL);
+        assert(strcmp(label_back, label) == 0);
+        memcpy(p.raw, "ack", 3); p.raw_len = 3; p.count = 7;
+    }
     /* A payload past what the slot holds is refused whole: nothing is queued. */
     {
         static char past[BOUNDED_PAYLOAD_DATA_LEN + 1];
@@ -353,10 +378,6 @@ int main(void) {
     p.raw_len = sizeof(p.raw) + 1;
     assert(!bounded_payload_raise_sample_received_typed(&sm, &p));
     p.raw_len = SIZE_MAX;
-    assert(!bounded_payload_raise_sample_received_typed(&sm, &p));
-    p.raw_len = 42;
-    assert(!bounded_payload_raise_sample_received_typed(&sm, &p));
-    p.raw_len = 43;
     assert(!bounded_payload_raise_sample_received_typed(&sm, &p));
     p.raw_len = 0; p.ratio = NAN;
     assert(!bounded_payload_raise_sample_received_typed(&sm, &p));
