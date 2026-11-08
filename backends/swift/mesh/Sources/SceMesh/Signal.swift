@@ -49,6 +49,11 @@ public enum Signal: Equatable, Sendable {
     /// (§mesh-9.5), since no reply can arrive on a link that is gone.
     case invokeChildLost(invokeID: String, target: String)
 
+    /// CAUSAL_VIEW_MISMATCH (row 18): an envelope from `source` on a causal route was tagged with
+    /// `epoch`, another than the receiver's view, or by the replica `replica` (RFC 4122 text) the view
+    /// does not hold (docs/adr/0085, section 3.2). It was not delivered.
+    case causalViewMismatch(source: String, epoch: UInt64, replica: String)
+
     /// The row's `reason`, as §mesh-16.7 spells it.
     public var reason: String {
         switch self {
@@ -63,6 +68,7 @@ public enum Signal: Equatable, Sendable {
         case .deliveryExhausted: "DELIVERY_EXHAUSTED"
         case .rpcReplyFromUndeclaredPeer: "RPC_REPLY_FROM_UNDECLARED_PEER"
         case .invokeChildLost: "INVOKE_CHILD_LOST"
+        case .causalViewMismatch: "CAUSAL_VIEW_MISMATCH"
         }
     }
 
@@ -84,6 +90,7 @@ public enum Signal: Equatable, Sendable {
         case let .missingSequence(source): source
         case let .envelopeCorrupt(source, _): source
         case let .rpcReplyFromUndeclaredPeer(source, _): source
+        case let .causalViewMismatch(source, _, _): source
         default: nil
         }
     }
@@ -139,6 +146,11 @@ public enum Signal: Equatable, Sendable {
             // order puts it.
             json.text("invoke_id", invokeID)
             json.text("target", target)
+        case let .causalViewMismatch(_, epoch, replica):
+            // Row 18's columns: `source`, then the epoch the envelope was tagged with and the replica
+            // that tagged it.
+            json.number("epoch", epoch)
+            json.text("replica", replica)
         case .missingSequence, .transportUnavailable:
             break
         }

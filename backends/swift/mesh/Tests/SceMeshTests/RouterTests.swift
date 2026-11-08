@@ -224,8 +224,8 @@ func sendRequest(_ target: String, _ event: String, _ data: String, sendID: Stri
     }
 
     @Test func aCausalRoutesControlMessageNeverReachesTheEngine() throws {
-        // docs/adr/0085, section 3.2: this core carries no causal route, and a `causalVector` that
-        // reaches it is dropped, not delivered as an event.
+        // docs/adr/0085, section 3.2: a `causalVector` on a binding that is not causal is no message of
+        // a causal route, and is dropped, not delivered as an event.
         let hmi = Router(machine: "hmi", dedupWindow: 8, gapTimeoutMs: 50)
         hmi.addPeer("ecu", config: unordered)
         var envelope = Envelope()
