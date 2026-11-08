@@ -440,10 +440,18 @@ public struct PayloadFields {
         try field(name).truth()
     }
 
-    /// A text field, as the text it carries; `PayloadValue.text(bound:)` holds it to
-    /// its bound.
+    /// The text a field carries, held to no bound: what an enum field's variant is
+    /// named by, which its reader matches against the names its enum declares. A text
+    /// field is read by `text(_:bound:)`, which holds its bound.
     public func text(_ name: String) throws -> String {
         try field(name).name()
+    }
+
+    /// A text field of at most `bound` UTF-8 bytes (docs/adr/0086, section 4.4): the
+    /// top level of a payload is held to its bound by `PayloadValue.text(bound:)`, the
+    /// reader a text at any depth is held by.
+    public func text(_ name: String, bound: Int) throws -> String {
+        try field(name).text(bound: bound)
     }
 
     /// A byte-string field, at the capacity its schema declares when it declares

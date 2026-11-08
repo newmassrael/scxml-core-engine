@@ -100,6 +100,28 @@ private let revisedDefaults = #"{"layout":"week","count":"7","urgent":true}"#
     #expect(throws: PayloadRefusal.self) { try wide.bytes("w") }
 }
 
+// A payload's own text and byte-string fields are held to their bound where the delivery
+// is read, as a text and a byte string are at any depth (docs/adr/0086, section 4.4):
+// `text(_:bound:)` and `bytes(_:capacity:)` are the readers a generated lift of a schema
+// of entries calls, and each refuses one past the bound with its code, pointer and bound.
+@Test func aTopLevelTextAndByteStringAreHeldToTheirBoundWhereTheyAreRead() throws {
+    let fields = try PayloadFields.decode(#"{"note": "abcde", "wide": "éé", "blob": "abcde"}"#)
+    let note = #expect(throws: PayloadRefusal.self) { try fields.text("note", bound: 4) }
+    #expect(note?.reason == "'note' is 5 bytes, past the 4 its type declares")
+    #expect(note?.code == .tooLong)
+    #expect(note?.pointer == "/note")
+    #expect(note?.bound == 4)
+    #expect(try fields.text("note", bound: 5) == "abcde")
+    // The bound counts UTF-8 bytes: two characters, four bytes.
+    #expect(throws: PayloadRefusal.self) { try fields.text("wide", bound: 3) }
+    #expect(try fields.text("wide", bound: 4) == "éé")
+    let blob = #expect(throws: PayloadRefusal.self) { try fields.bytes("blob", capacity: 4) }
+    #expect(blob?.reason == "'blob' is 5 bytes, past the 4 its type declares")
+    #expect(blob?.pointer == "/blob")
+    #expect(blob?.bound == 4)
+    #expect(try fields.bytes("blob", capacity: 5) == Array("abcde".utf8))
+}
+
 @Test func anOptionalFieldReadsNullAsAbsentAndAValueAsPresent() throws {
     let fields = try PayloadFields.decode(#"{"id": 1, "due": null, "title": "soon"}"#)
     #expect(try fields.optional("due") { try $0.signed64("due") } == nil)
