@@ -1741,8 +1741,7 @@ fn size(
         ValueType::Text { max } | ValueType::Bytes { max } => {
             let b = u64::from(max.max);
             match measure {
-                // Every byte at its worst escape, `\u00XX`, and the quotes.
-                Measure::Json => add(2, mul(6, b)?),
+                Measure::Json => json_string_max_len(b),
                 Measure::Cbor => add(cbor_head_len(b), b),
             }
         }
@@ -1858,6 +1857,14 @@ fn case_size(
     }
     leave_case(case, records);
     Ok(total)
+}
+
+/// `J` of a text or a byte string of at most `bytes` bytes: every byte at its
+/// worst escape, `\u00XX`, and the quotes (docs/adr/0086, section 2.1). What a
+/// text whose bound an expression gives is measured by too
+/// ([`crate::forge::text_bound`]).
+pub fn json_string_max_len(bytes: u64) -> Result<u64, SizeError> {
+    add(2, mul(6, bytes)?)
 }
 
 /// `J(T)`: the length of the largest JSON text of a value of `ty`, as the wire
