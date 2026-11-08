@@ -764,6 +764,7 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 // and in causal order, in place of the duplicate window and the sequence
 // buffer, which are off for the binding.
 #include "mesh/CausalRoute.h"
+#include <array>
 #include <cstdint>
 #include <mutex>
 #include <optional>
@@ -950,6 +951,17 @@ static constexpr vsomeip::method_t SOMEIP_SETTER_{{ target.target_snake | upper 
 // declares for a causal route's vector (the reserved event name
 // `mesh.causal_vector`), which carries no event of the document.
 static constexpr vsomeip::method_t SOMEIP_CAUSAL_VECTOR_METHOD_{{ target.target_snake | upper }} = {{ target.causal_vector_method }};
+{% endif %}
+{% if target.causal and target.pool_plan and target.pool_plan.kind == "typed_instance" and target.pool_plan.causal_members %}
+// docs/adr/0085, sections 3.2 and 3.3: the pool instance of each view member
+// this causal pool binding reaches, as the deploy places it (the one instance
+// the member serves). The route's vector and its repairs go to every one.
+{% for m in target.pool_plan.causal_members %}
+//   {{ m.member }} -> instance {{ m.instance }}
+{% endfor %}
+static constexpr std::array<vsomeip::instance_t, {{ target.pool_plan.causal_members | length }}> CAUSAL_POOL_INSTANCES_{{ target.target_snake | upper }} = {
+{% for m in target.pool_plan.causal_members %}    {{ m.instance }}{% if not loop.last %},{% endif %}
+{% endfor %}};
 {% endif %}
 {# Machine-lifetime subscriptions (SCE_MESH.md §13): same constant shape as
    the event_group arm above, resolved from the same vsomeip.json. The list
@@ -5711,7 +5723,7 @@ struct TransportRouter {
             }
             if (vector) {
                 vector->routing_id = routing_id_;
-                (void)route_send("{{ t.target }}", *vector);
+                (void)sendCausalToPeers("{{ t.target }}", *vector);
             }
         }
 {% endfor %}
@@ -5733,12 +5745,39 @@ struct TransportRouter {
                 return false;
             }
             vector->routing_id = routing_id_;
-            (void)route_send("{{ t.target }}", *vector);
+            (void)sendCausalToPeers("{{ t.target }}", *vector);
             return true;
         }
 {% endfor %}
         (void)now_ms;
         return false;
+    }
+
+    /// Send what a causal route owes its peers and no document sent: its
+    /// vector, and the originals a repair sends again. On a SOME/IP pool
+    /// binding, where a change goes to the instance its `<param>` names,
+    /// they go to the instance of every view member the pool reaches, as
+    /// the deploy places each one; a repair goes to them all because the
+    /// vector that asked for it arrived at this machine's own service and
+    /// names no instance of the pool, and a member that has the change
+    /// drops it by its dot. On any other binding they go the binding's one
+    /// way. Returns how many sends the transport took.
+    std::size_t sendCausalToPeers(const std::string& target, const SCE::Mesh::MeshEnvelope& env) {
+{% for t in targets if t.causal and t.pool_plan and t.pool_plan.kind == "typed_instance" and t.pool_plan.causal_members %}
+        if (target == "{{ t.target }}") {
+            if (!{{ t.target_snake }}_app_) {
+                return 0;
+            }
+            std::size_t sent = 0;
+            for (const vsomeip::instance_t instance : CAUSAL_POOL_INSTANCES_{{ t.target_snake | upper }}) {
+                if (send_to_{{ t.target_snake }}(*{{ t.target_snake }}_app_, env, instance)) {
+                    ++sent;
+                }
+            }
+            return sent;
+        }
+{% endfor %}
+        return route_send(target, env) ? 1u : 0u;
     }
 
 {% set ns_causal_shm = namespace(v=false) %}
@@ -5836,7 +5875,7 @@ struct TransportRouter {
                               : "a causal rule refused its input; the envelope was not judged");
         }
         for (const auto& answer : receipt.send) {
-            (void)route_send(target, answer);
+            (void)sendCausalToPeers(target, answer);
         }
         using SenderPolicy = std::decay_t<decltype(sessions_[0]->getPolicy())>;
         for (const auto& change : receipt.deliver) {
