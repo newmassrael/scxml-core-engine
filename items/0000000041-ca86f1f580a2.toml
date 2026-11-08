@@ -6,3 +6,9 @@ commit = "7c0c8112bc5898e46ad8958085a27ee27001d53d"
 base = "81a907ec322eee7a6e252e68ed3d5021c48ae2ad"
 machine = "mf977c53d872e"
 at = 1794128020
+
+[return]
+reason = "refused"
+detail = "the remote refused the landing push: refs/bx-land/main/log: [remote rejected] (failed)"
+report = "mf977c53d872e:0000000041-ca86f1f580a2/attempt-1.log"
+at = 1794151953
