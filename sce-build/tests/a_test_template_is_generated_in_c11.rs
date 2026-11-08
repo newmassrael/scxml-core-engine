@@ -11,8 +11,8 @@
 //! template is reached through the header of its own document, which the unit
 //! includes. A text is compared by `strcmp` and its length counted in
 //! characters by the profile's runtime; a value that may be absent is tested by
-//! `present` and read by `value`; a value a parameter of a composed type gives
-//! is compared part by part; a value is built as the initializer of its
+//! `present` and read by `value`; a value that may be absent a parameter gives
+//! is compared by its two parts; a value is built as the initializer of its
 //! variable. C11 lowers no union (docs/adr/0092), so a template whose type
 //! reaches one is refused as C++ refuses it, and it refuses a byte string of
 //! one entry, which its event schema unit holds as a pointer with no length.
@@ -352,7 +352,7 @@ const BLOB_RECORD: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 
 /// A template over the blob record whose `code` matcher is `code` and whose
 /// first spare is the byte string `00ff`.
-fn blob_template(name: &str, code: &str, parameters: &str) -> String {
+fn blob_template(name: &str, code: &str) -> String {
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
@@ -360,7 +360,6 @@ fn blob_template(name: &str, code: &str, parameters: &str) -> String {
        version="1.0" sce:kind="test-template" name="{name}"
        sce:type="record:Blob">
   <sce:import kind="event-schema" src="blob_record.scxml" as="Blob"/>
-  {parameters}
   <sce:record-match>
     {code}
     <sce:list-match field="spares">
@@ -375,10 +374,13 @@ fn blob_template(name: &str, code: &str, parameters: &str) -> String {
 
 /// A byte string of one entry is held by the C11 event schema unit as a
 /// pointer with no length, so a template that compares, counts or builds one is
-/// refused by name: a literal of it, a length restriction on it, and a record
-/// that holds one compared whole. One inside a list is the composition's,
-/// which holds its length, and is compared by its length and its octets. The
-/// documents are a test's alone, written into a directory of their own.
+/// refused by name: a literal of it, and a length restriction on it. No
+/// parameter reaches one: a parameter of a byte string is refused where its
+/// type is spelled, and the profile admits no specific value of a record that
+/// holds one (`test_profile::matcher_admitted`). One inside a list is the
+/// composition's, which holds its length, and is compared by its length and its
+/// octets. The documents are a test's alone, written into a directory of their
+/// own.
 #[test]
 fn a_byte_string_of_one_entry_is_refused_and_one_in_a_list_is_compared_by_its_octets() {
     let detail = refused(&imports_dir().join("voucher_is.scxml"));
@@ -397,7 +399,7 @@ fn a_byte_string_of_one_entry_is_refused_and_one_in_a_list_is_compared_by_its_oc
 
     let any_code = write(
         "blob_spare",
-        blob_template("blob_spare", r#"<sce:any-value field="code"/>"#, ""),
+        blob_template("blob_spare", r#"<sce:any-value field="code"/>"#),
     );
     let text = unit(&any_code, "blob_spare");
     holds_each(
@@ -411,19 +413,17 @@ fn a_byte_string_of_one_entry_is_refused_and_one_in_a_list_is_compared_by_its_oc
     );
     assert!(!text.contains("(*value).code"), "{text}");
 
-    for (name, code, parameters) in [
+    for (name, code) in [
         (
             "blob_code_is",
             r#"<sce:specific field="code" value="00ff10a0"/>"#,
-            "",
         ),
         (
             "blob_code_short",
             r#"<sce:any-value field="code" length-max="2"/>"#,
-            "",
         ),
     ] {
-        let path = write(name, blob_template(name, code, parameters));
+        let path = write(name, blob_template(name, code));
         let detail = refused(&path);
         assert!(
             detail.starts_with(&format!(
@@ -432,87 +432,181 @@ fn a_byte_string_of_one_entry_is_refused_and_one_in_a_list_is_compared_by_its_oc
             "{detail}"
         );
     }
+}
 
-    let whole = write(
-        "blob_is",
+/// A template over the profile's job status, named `name`, whose formal
+/// parameters are `parameters` and whose matcher is `matcher`, importing the
+/// schema at `schema`.
+fn job_template(name: &str, schema: &Path, parameters: &str, matcher: &str) -> String {
+    format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       version="1.0" sce:kind="test-template" name="blob_is"
-       sce:type="record:Blob">
-  <sce:import kind="event-schema" src="blob_record.scxml" as="Blob"/>
+       version="1.0" sce:kind="test-template" name="{name}"
+       sce:type="record:JobStatus">
+  <sce:import kind="event-schema" src="{schema}" as="JobStatus"/>
   <datamodel>
-    <data id="expected" sce:type="record:Blob" sce:direction="in"/>
+    {parameters}
   </datamodel>
-  <sce:specific param="expected"/>
+  {matcher}
 </scxml>
-"#
-        .to_string(),
-    );
-    let detail = refused(&whole);
-    assert!(
-        detail.starts_with("test-template 'blob_is': `bytes[4]` is a byte string the C11 unit"),
-        "{detail}"
-    );
+"#,
+        schema = schema.display()
+    )
 }
 
-/// A record, a list and a value that may be absent a parameter gives are
-/// compared part by part, since C compares no two structs, and a specific
-/// template built from them holds each as given. The document is a test's
-/// alone, written into a directory of its own, over the profile's job status.
+/// A specific value stands only where a value of one entry is matched
+/// (docs/SCE_TEST_PROFILE.md §11.4, `test_profile::matcher_admitted`), so no
+/// parameter of a list or a record is ever compared: the profile's check
+/// refuses one with `test-profile/matcher-type` before C11, or any backend,
+/// spells it, and C11 has no comparison of two lists or two records to write.
+/// The documents are a test's alone, written into a directory of their own.
 #[test]
-fn a_parameter_of_a_composed_type_is_compared_part_by_part() {
+fn a_parameter_of_a_list_or_a_record_stands_at_no_specific_value() {
     let dir = tempfile::tempdir().expect("a directory for the documents");
     let schema = profile_dir().join("job_status.scxml");
-    let path = dir.path().join("job_like.scxml");
+    for (name, ty, parameters, matcher) in [
+        (
+            "job_codes_are",
+            "list<uint8>[4]",
+            r#"<data id="codes" sce:type="list&lt;uint8&gt;[4]" sce:direction="in"/>"#,
+            r#"<sce:record-match>
+    <sce:any-value field="elapsed_ms"/>
+    <sce:any-value-or-none field="note"/>
+    <sce:specific field="codes" param="codes"/>
+    <sce:any-value-or-none field="tag"/>
+    <sce:any-value-or-none field="retry"/>
+    <sce:any-value field="count"/>
+  </sce:record-match>"#,
+        ),
+        (
+            "job_is",
+            "record:JobStatus",
+            r#"<data id="expected" sce:type="record:JobStatus" sce:direction="in"/>"#,
+            r#"<sce:specific param="expected"/>"#,
+        ),
+    ] {
+        let path = dir.path().join(format!("{name}.scxml"));
+        std::fs::write(&path, job_template(name, &schema, parameters, matcher))
+            .expect("the template");
+        let Err(err) = sce_build::compile_forge_file(
+            &path,
+            Language::C11,
+            &[],
+            &ForgeCompileOptions::default(),
+        ) else {
+            panic!("{name} generated on C11");
+        };
+        let diagnostic = &err.error.to_diagnostics()[0];
+        assert_eq!(
+            diagnostic.code.as_str(),
+            DiagnosticCode::TestProfileMatcherType.as_str(),
+            "{name}: {err:?}"
+        );
+        assert_eq!(diagnostic.actual.as_deref(), Some("specific"), "{name}");
+        assert!(
+            format!("{err:?}").contains(&format!("stands where a value of {ty} is matched")),
+            "{name}: {err:?}"
+        );
+    }
+}
+
+/// The schema of a record that holds a list of values that may be absent.
+const TAG_RECORD: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="tag_record"
+       sce:event-name="tag.record">
+  <datamodel>
+    <data id="tags" sce:type="list&lt;optional&lt;uint8&gt;&gt;[2]" sce:direction="in"/>
+  </datamodel>
+</scxml>
+"#;
+
+/// A value that may be absent is the one composed value a parameter compared by
+/// a specific value gives (`test_profile::matcher_admitted`): it is compared by
+/// its two parts, since C compares no two structs, at a field of a record and
+/// inside a list, and a specific template holds it as given at a field, and
+/// built from its two parts inside a list, whose optional type is the list's
+/// own. The documents are a test's alone, written into a directory of their
+/// own.
+#[test]
+fn a_parameter_that_may_be_absent_is_compared_by_its_two_parts() {
+    let dir = tempfile::tempdir().expect("a directory for the documents");
+    let schema = profile_dir().join("job_status.scxml");
+    let tag = r#"<data id="tag" sce:type="optional&lt;uint8&gt;" sce:direction="in"/>"#;
+    let field = dir.path().join("job_tagged.scxml");
     std::fs::write(
-        &path,
+        &field,
+        job_template(
+            "job_tagged",
+            &schema,
+            tag,
+            r#"<sce:record-match>
+    <sce:specific field="elapsed_ms" value="0"/>
+    <sce:omit field="note"/>
+    <sce:list-match field="codes">
+      <sce:specific value="7"/>
+    </sce:list-match>
+    <sce:specific field="tag" param="tag"/>
+    <sce:omit field="retry"/>
+    <sce:specific field="count" value="1"/>
+  </sce:record-match>"#,
+        ),
+    )
+    .expect("the template");
+    let text = unit(&field, "job_tagged");
+    holds_each(
+        &text,
+        &[
+            "static inline bool job_tagged_matches(const job_tagged_value_t *value, \
+             sce_optional_uint8_t param_tag) {\n",
+            "((*value).tag.present == param_tag.present && (!(*value).tag.present || \
+             (*value).tag.value == param_tag.value))",
+            ".tag = param_tag,",
+            "#include \"sce/forge/optional.h\"",
+        ],
+    );
+    assert!(!text.contains("(*value).tag == "), "{text}");
+
+    std::fs::write(dir.path().join("tag_record.scxml"), TAG_RECORD).expect("the schema");
+    let listed = dir.path().join("tags_of.scxml");
+    std::fs::write(
+        &listed,
         format!(
             r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       version="1.0" sce:kind="test-template" name="job_like"
-       sce:type="record:JobStatus">
-  <sce:import kind="event-schema" src="{schema}" as="JobStatus"/>
+       version="1.0" sce:kind="test-template" name="tags_of"
+       sce:type="record:Tags">
+  <sce:import kind="event-schema" src="tag_record.scxml" as="Tags"/>
   <datamodel>
-    <data id="codes" sce:type="list&lt;uint8&gt;[4]" sce:direction="in"/>
-    <data id="tag" sce:type="optional&lt;uint8&gt;" sce:direction="in"/>
+    {tag}
   </datamodel>
   <sce:record-match>
-    <sce:specific field="elapsed_ms" value="0"/>
-    <sce:omit field="note"/>
-    <sce:specific field="codes" param="codes"/>
-    <sce:specific field="tag" param="tag"/>
-    <sce:omit field="retry"/>
-    <sce:specific field="count" value="1"/>
+    <sce:list-match field="tags">
+      <sce:specific param="tag"/>
+      <sce:specific param="tag"/>
+    </sce:list-match>
   </sce:record-match>
 </scxml>
-"#,
-            schema = schema.display()
+"#
         ),
     )
     .expect("the template");
-    let text = unit(&path, "job_like");
+    let text = unit(&listed, "tags_of");
     holds_each(
         &text,
         &[
-            "static inline bool job_like_matches(const job_like_value_t *value, \
-             sce_list_4_uint8_t param_codes, sce_optional_uint8_t param_tag) {\n",
-            "((*value).codes.len == param_codes.len && ((*value).codes.len <= 0u || \
-             (*value).codes.items[0] == param_codes.items[0]) && ((*value).codes.len <= 1u || \
-             (*value).codes.items[1] == param_codes.items[1]) && ((*value).codes.len <= 2u || \
-             (*value).codes.items[2] == param_codes.items[2]) && ((*value).codes.len <= 3u || \
-             (*value).codes.items[3] == param_codes.items[3]))",
-            "((*value).tag.present == param_tag.present && (!(*value).tag.present || \
-             (*value).tag.value == param_tag.value))",
-            ".codes = param_codes, .tag = param_tag,",
-            // The list's type, declared once under its guard, and the
-            // runtime's optional values.
-            "#ifndef SCE_LIST_4_UINT8_DECLARED\n",
-            "#include \"sce/forge/optional.h\"",
+            "((*value).tags.items[0].present == param_tag.present && \
+             (!(*value).tags.items[0].present || (*value).tags.items[0].value == param_tag.value))",
+            "((*value).tags.items[1].present == param_tag.present && \
+             (!(*value).tags.items[1].present || (*value).tags.items[1].value == param_tag.value))",
+            "{ .tags = { .len = 2u, .items = { { .present = param_tag.present, \
+             .value = param_tag.value }, { .present = param_tag.present, \
+             .value = param_tag.value } } } }",
         ],
     );
-    assert!(!text.contains("(*value).codes =="), "{text}");
 }
 
 /// A list holds a value that may be absent in its composition's own optional
@@ -522,20 +616,7 @@ fn a_parameter_of_a_composed_type_is_compared_part_by_part() {
 #[test]
 fn a_reference_inside_a_list_to_a_template_of_an_optional_type_is_refused() {
     let dir = tempfile::tempdir().expect("a directory for the documents");
-    std::fs::write(
-        dir.path().join("tag_record.scxml"),
-        r#"<?xml version="1.0" encoding="UTF-8"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml"
-       xmlns:sce="http://sce.dev/ext"
-       version="1.0" sce:kind="event-schema" name="tag_record"
-       sce:event-name="tag.record">
-  <datamodel>
-    <data id="tags" sce:type="list&lt;optional&lt;uint8&gt;&gt;[2]" sce:direction="in"/>
-  </datamodel>
-</scxml>
-"#,
-    )
-    .expect("the schema");
+    std::fs::write(dir.path().join("tag_record.scxml"), TAG_RECORD).expect("the schema");
     std::fs::write(
         dir.path().join("no_tag.scxml"),
         r#"<?xml version="1.0" encoding="UTF-8"?>

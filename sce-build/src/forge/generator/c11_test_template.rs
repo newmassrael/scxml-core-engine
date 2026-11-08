@@ -28,8 +28,9 @@
 //! length restriction counts characters through the profile's runtime
 //! ([`TEXT_LENGTH`]); a byte string is compared by its length and its octets
 //! (`memcmp`); a value that may be absent is tested by `present` and read by
-//! `value` behind that test; and an optional value, a list or a record a
-//! parameter gives is compared part by part, since C compares no two structs.
+//! `value` behind that test; and an optional value a parameter gives is
+//! compared by its two parts, since C compares no two structs (a specific
+//! value stands for no list, record or union, `test_profile::matcher_admitted`).
 //! A value is built as the initializer of the variable `<name>_value`
 //! returns, each record by its fields' designators, so no type is named inside
 //! it; a text through the fill function of its buffer.
@@ -54,7 +55,7 @@ use crate::forge::schema_unit_type::{unit_type, C11Declarations, UnitNames};
 use crate::forge::static_lowering::{
     c_string_storage_def, c_string_storage_of, c_string_storage_type,
 };
-use crate::forge::value_type::{ScopedRecord, ScopedUnion, TypeOf, TypeScope, ValueType};
+use crate::forge::value_type::{ScopedRecord, ScopedUnion, TypeOf, ValueType};
 use crate::generator::Language;
 
 /// The header of the test profile's C11 runtime that declares the length of a
@@ -248,88 +249,25 @@ impl CSpelling {
             *kept = Some(why);
         }
     }
+}
 
-    /// Whether the values at the places `left` and `right`, both of `ty`, read
-    /// in `scope`, are one value, part by part: C compares no two structs. A
-    /// position inside a list is `composed`.
-    fn equal(
-        &self,
-        left: &str,
-        right: &str,
-        ty: &ValueType,
-        scope: &TypeScope,
-        composed: bool,
-    ) -> String {
-        match ty {
-            TypeOf::Scalar(_) => format!("{left} == {right}"),
-            TypeOf::Text { .. } => format!("strcmp({left}.data, {right}.data) == 0"),
-            TypeOf::Bytes { .. } => {
-                if !composed {
-                    self.refuse(bytes_unheld(ty));
-                }
-                format!(
-                    "({left}.len == {right}.len && memcmp({left}.data, {right}.data, {left}.len) == 0)"
-                )
-            }
-            TypeOf::Optional { elem } => format!(
-                "({left}.present == {right}.present && (!{left}.present || {}))",
-                self.equal(
-                    &format!("{left}.value"),
-                    &format!("{right}.value"),
-                    elem,
-                    scope,
-                    composed
-                )
-            ),
-            TypeOf::List { elem, max } => {
-                let mut parts = vec![format!("{left}.len == {right}.len")];
-                for index in 0..max.max {
-                    parts.push(format!(
-                        "({left}.len <= {index}u || {})",
-                        self.equal(
-                            &format!("{left}.items[{index}]"),
-                            &format!("{right}.items[{index}]"),
-                            elem,
-                            scope,
-                            true
-                        )
-                    ));
-                }
-                format!("({})", parts.join(" && "))
-            }
-            TypeOf::Record { alias } => {
-                let Some(record) = scope.records.get(alias) else {
-                    self.refuse(format!("`record:{alias}` names no event schema read"));
-                    return String::new();
-                };
-                let parts: Vec<String> = record
-                    .fields
-                    .iter()
-                    .map(|(id, field)| {
-                        let member = event_schema_field_ident(id, Language::C11);
-                        self.equal(
-                            &format!("{left}.{member}"),
-                            &format!("{right}.{member}"),
-                            field,
-                            &record.scope,
-                            false,
-                        )
-                    })
-                    .collect();
-                format!("({})", parts.join(" && "))
-            }
-            TypeOf::Union { alias } => {
-                self.refuse(crate::forge::value_type::union_unlowered(alias));
-                String::new()
-            }
-        }
+/// Whether the present values at the places `left` and `right`, both of `ty`,
+/// are one value: the one entry an optional value a parameter gives holds, a
+/// number, a `bool`, a value of an enum or a text. No other stands there: the
+/// profile admits a specific value of one entry alone
+/// (`test_profile::matcher_admitted`), and no parameter is an optional byte
+/// string, whose type [`HeldTypes::of`] refuses as the schema unit refuses it.
+fn equal_present(left: &str, right: &str, ty: &ValueType) -> String {
+    match ty {
+        TypeOf::Text { .. } => format!("strcmp({left}.data, {right}.data) == 0"),
+        _ => format!("{left} == {right}"),
     }
 }
 
 impl JoinSpelling for CSpelling {
     /// A text by its bytes up to its terminator, a byte string by its length
-    /// and its octets, a value a parameter of a composed type gives part by
-    /// part, and anything else by the operator.
+    /// and its octets, a value that may be absent a parameter gives by its two
+    /// parts, and anything else by the operator.
     fn compare(&self, at: &Position<'_, CAt>, op: Op, negated: bool, rhs: &str) -> String {
         let place = &at.at.expr;
         match (&at.ty, op) {
@@ -347,10 +285,18 @@ impl JoinSpelling for CSpelling {
                 ),
                 negated,
             ),
-            (TypeOf::Optional { .. } | TypeOf::List { .. } | TypeOf::Record { .. }, Op::Eq) => {
-                let equal = self.equal(place, rhs, &at.ty, at.scope, at.at.composed);
+            // A parameter of the optional type itself, the one composed value a
+            // specific value stands for (`test_profile::matcher_admitted` admits
+            // none of a list, a record or a union): equal where both are absent,
+            // or both present and their values equal, since C compares no two
+            // structs.
+            (TypeOf::Optional { elem }, Op::Eq) => {
+                let equal = format!(
+                    "({place}.present == {rhs}.present && (!{place}.present || {}))",
+                    equal_present(&format!("{place}.value"), &format!("{rhs}.value"), elem)
+                );
                 if negated {
-                    format!("!({equal})")
+                    format!("!{equal}")
                 } else {
                     equal
                 }

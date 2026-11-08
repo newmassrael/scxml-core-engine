@@ -872,8 +872,8 @@ forge unit is, and, since C has no namespace, each declaration carries the docum
 - `bool <name>_matches(const <name>_value_t *value, <the formal parameters, in order>)`, which holds each mechanism
   of §6.1 by the rules C++ holds it by. A text is compared by its bytes (`strcmp`), a byte string inside a list by
   its length and its octets (`memcmp`), and a value that may be absent is tested by `present` and read by `value`
-  behind that test; an optional value, a list and a record a parameter gives are compared part by part, since C
-  compares no two structs. A length restriction on a `string[N]` counts characters, through the profile's runtime
+  behind that test; an optional value a parameter gives, the one composed value a specific value stands for, is
+  compared by its two parts, since C compares no two structs. A length restriction on a `string[N]` counts characters, through the profile's runtime
   (`sce_test_text_length`, `sce/test/text_length.h`), and on `bytes[N]` and `list<T>[B]` octets and elements
   (`len`);
 - for a specific template (§6.2) alone, `<name>_value_t <name>_value(<the formal parameters>)`, the value it sends,
