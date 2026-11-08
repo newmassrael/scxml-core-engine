@@ -770,6 +770,21 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 #include <condition_variable>
 #include <thread>
 {% endif %}
+{% if has_causal_binding %}
+// docs/adr/0085, section 3.2: the route of each causal binding. It offers
+// the binding's sends and releases them once the host commits their journal
+// records, answers the peer's vectors, and delivers the peer's changes once
+// and in causal order, in place of the duplicate window and the sequence
+// buffer, which are off for the binding.
+#include "mesh/CausalRoute.h"
+#include <cstdint>
+#include <mutex>
+#include <optional>
+#include <string>
+#include <utility>
+#include <variant>
+#include <vector>
+{% endif %}
 {% if raises_communication_error %}
 // SCE_MESH.md §10.10.1 + §16.7: `_event.data` builder for the
 // error.communication reason codes raised from the ordering admit path
@@ -2039,6 +2054,24 @@ struct TransportRouter {
     std::condition_variable ordering_tick_cv_;
     std::thread ordering_tick_thread_;
 {% endif %}
+{% if has_causal_binding %}
+    // docs/adr/0085, section 3.2: one route per causal binding, each under
+    // its own mutex, since the engine's step thread offers to it, the
+    // transports' read threads hand it the peer's envelopes, and the host
+    // starts, commits and ticks it. The group and its view of epoch 0 are
+    // the deploy's. A route is not started until the host gives it the
+    // incarnation it read from the copy's journal (`startCausal`).
+{% for target in targets if target.causal %}
+    SCE::Mesh::CausalRoute causal_{{ target.target_snake }}_{
+        "{{ machine_name }}", "{{ target.state.kind }}",
+        SCE::Mesh::CausalGroup{"{{ target.causal.name }}", {{ target.causal.epoch }}u, { {% for member in target.causal.view %}"{{ member }}"{% if not loop.last %}, {% endif %}{% endfor %} }}};
+    std::mutex causal_{{ target.target_snake }}_mutex_;
+{% endfor %}
+    // The verdicts on the changes the machine sent, in order, each with its
+    // binding, until the host takes them (`takeCausalVerdicts`).
+    std::mutex causal_verdicts_mutex_;
+    std::vector<std::pair<std::string, SCE::Mesh::CausalVerdict>> causal_verdicts_;
+{% endif %}
 {% if machine_subscriptions %}
     // SCE_MESH.md §13: guards the machine-lifetime unsubscribe against
     // the dtor-via-shutdown path, the same hazard the ordering tick
@@ -2935,6 +2968,17 @@ struct TransportRouter {
 {% endif %}
                 }
 {% endif %}
+{% for t in targets if t.causal %}
+                // docs/adr/0085, section 3.2: a send to the causal binding
+                // {{ t.target }} is offered to its route. The verdict goes to
+                // the host (`takeCausalVerdicts`), and the change leaves only
+                // once the host commits its journal record
+                // (`causalCommitted`).
+                if (target == "{{ t.target }}") {
+                    return offerCausal("{{ t.target }}", causal_{{ t.target_snake }}_,
+                                       causal_{{ t.target_snake }}_mutex_, env);
+                }
+{% endfor %}
 {% for t in targets if t.needs_ordering %}
                 // SCE_MESH.md §10.6.3: sequence stamp for {{ t.target }}.
                 // The counter is incremented on the engine's single step
@@ -5455,6 +5499,14 @@ struct TransportRouter {
     /// @return true if MeshDispatch delivered the envelope
     [[nodiscard]] bool dispatchToSession(const SCE::Mesh::MeshEnvelope& env,
                                          std::size_t session_idx) {
+{% if has_causal_binding %}
+        // docs/adr/0085, section 3.2: an envelope of a causal binding's
+        // peer is that binding's route's to judge, whichever endpoint it
+        // arrived on.
+        if (takeCausal(env, session_idx)) {
+            return true;
+        }
+{% endif %}
 {% if has_mesh_rpc.v %}
         // SCE_MESH.md §9.5: RpcReply + invoke_id = mesh-rpc reply.
         // Consult the correlation table first — if the invoke_id owns
@@ -5537,6 +5589,15 @@ struct TransportRouter {
     /// @return true iff the envelope was novel AND MeshDispatch accepted it
     [[nodiscard]] bool admitInbound(const SCE::Mesh::MeshEnvelope& env,
                                     std::size_t session_idx) {
+{% if has_causal_binding %}
+        // docs/adr/0085, section 3.2: a causal binding's route replaces the
+        // duplicate window for its peer. It is asked first, so a change sent
+        // again by a repair, under its original envelope id, is judged by
+        // its dot and never dropped by the window.
+        if (takeCausal(env, session_idx)) {
+            return true;
+        }
+{% endif %}
         const auto dedup_result = dedup_.admitWithSignal(env.source, env.id);
         if (dedup_result == ::SCE::Mesh::DedupResult::Duplicate) {
             return false;
@@ -5562,6 +5623,190 @@ struct TransportRouter {
     }
 {% endif %}
 
+{% if has_causal_binding %}
+    // ── The causal route (docs/adr/0085, sections 3, 3.2 and 3.3) ──────
+    //
+    // What a host does, as with the Rust core: it starts each causal
+    // binding's route with the incarnation it read from the copy's journal,
+    // or a new one (`startCausal`); it takes the verdicts on what the machine
+    // sent (`takeCausalVerdicts`), records each accepted change with its dot
+    // in the journal and reports the record committed (`causalCommitted`),
+    // which releases it; and it asks for the routes' vectors on a timer
+    // (`causalTick`) and when it learns a binding's link came back
+    // (`causalLinkBack`). The peer's envelopes reach the route through
+    // `dispatchToSession` and `admitInbound`, which give them to `takeCausal`
+    // before any dedup window or engine.
+
+    /// Start the causal route of the binding `target`: `start` is the
+    /// incarnation the host read from the copy's journal, or a new one;
+    /// `room` the most changes its log may hold not yet stable;
+    /// `announce_every_ms` the period of its vector. A send to the binding
+    /// before this is not offered. False when `target` is not a causal
+    /// binding of this machine.
+    bool startCausal(const std::string& target, const SCE::Mesh::CausalStart& start, std::size_t room,
+                     std::int64_t announce_every_ms) {
+{% for t in targets if t.causal %}
+        if (target == "{{ t.target }}") {
+            std::lock_guard<std::mutex> lock(causal_{{ t.target_snake }}_mutex_);
+            causal_{{ t.target_snake }}_.start(start, room, announce_every_ms);
+            return true;
+        }
+{% endfor %}
+        return false;
+    }
+
+    /// The verdicts of the causal routes on the changes the machine sent, in
+    /// the order they were given, each with its binding. The host records
+    /// each accepted change with its dot in the copy's journal and calls
+    /// `causalCommitted` once the record is committed, and tells the copy of
+    /// each refusal, which the list tells as `noRoomForHistory`.
+    std::vector<std::pair<std::string, SCE::Mesh::CausalVerdict>> takeCausalVerdicts() {
+        std::lock_guard<std::mutex> lock(causal_verdicts_mutex_);
+        return std::exchange(causal_verdicts_, {});
+    }
+
+    /// The host committed the journal record of `dot`, a change sent to the
+    /// causal binding `target`: it, and every accepted change before it,
+    /// leaves for the binding's peer. False when `target` is not a causal
+    /// binding of this machine.
+    bool causalCommitted(const std::string& target, const SCE::Mesh::CausalDot& dot) {
+{% for t in targets if t.causal %}
+        if (target == "{{ t.target }}") {
+            std::vector<SCE::Mesh::MeshEnvelope> released;
+            {
+                std::lock_guard<std::mutex> lock(causal_{{ t.target_snake }}_mutex_);
+                released = causal_{{ t.target_snake }}_.committed(dot);
+            }
+            for (const auto& env : released) {
+                (void)route_send("{{ t.target }}", env);
+            }
+            return true;
+        }
+{% endfor %}
+        (void)dot;
+        return false;
+    }
+
+    /// Send the vector of every started causal route whose period has passed
+    /// at `now_ms`, the host's monotonic clock in milliseconds. A causal
+    /// route has no gap timeout: these vectors are what repairs a change lost
+    /// on a link that never dropped. The host calls this on a timer.
+    void causalTick(std::int64_t now_ms) {
+{% for t in targets if t.causal %}
+        {
+            std::optional<SCE::Mesh::MeshEnvelope> vector;
+            {
+                std::lock_guard<std::mutex> lock(causal_{{ t.target_snake }}_mutex_);
+                if (causal_{{ t.target_snake }}_.announceDue(now_ms)) {
+                    vector = causal_{{ t.target_snake }}_.announce(SCE::uuid::v7(), now_ms);
+                }
+            }
+            if (vector) {
+                vector->routing_id = routing_id_;
+                (void)route_send("{{ t.target }}", *vector);
+            }
+        }
+{% endfor %}
+    }
+
+    /// The link to the causal binding `target` came back: its vector leaves
+    /// at once, so what was lost while the link was down is repaired without
+    /// waiting for the period. False when `target` is not a started causal
+    /// binding of this machine.
+    bool causalLinkBack(const std::string& target, std::int64_t now_ms) {
+{% for t in targets if t.causal %}
+        if (target == "{{ t.target }}") {
+            std::optional<SCE::Mesh::MeshEnvelope> vector;
+            {
+                std::lock_guard<std::mutex> lock(causal_{{ t.target_snake }}_mutex_);
+                vector = causal_{{ t.target_snake }}_.announce(SCE::uuid::v7(), now_ms);
+            }
+            if (!vector) {
+                return false;
+            }
+            vector->routing_id = routing_id_;
+            (void)route_send("{{ t.target }}", *vector);
+            return true;
+        }
+{% endfor %}
+        (void)now_ms;
+        return false;
+    }
+
+    /// Offer a send to the causal binding `target` to its `route`. The
+    /// verdict, accepted or refused, is queued for the host and the send is
+    /// answered; a send before `startCausal`, or one whose envelope cannot be
+    /// written with its tag, is not offered, takes no number and fails.
+    bool offerCausal(const std::string& target, SCE::Mesh::CausalRoute& route, std::mutex& mutex,
+                     const SCE::Mesh::MeshEnvelope& env) {
+        std::optional<SCE::Mesh::CausalOffered> offered;
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            offered = route.offer(env);
+        }
+        if (!offered) {
+            SCE_LOG_ERROR("Mesh causal binding '{}': a send before startCausal is not offered", target);
+            return false;
+        }
+        if (const auto* verdict = std::get_if<SCE::Mesh::CausalVerdict>(&*offered)) {
+            std::lock_guard<std::mutex> lock(causal_verdicts_mutex_);
+            causal_verdicts_.emplace_back(target, *verdict);
+            return true;
+        }
+        SCE_LOG_ERROR("Mesh causal binding '{}': the change could not be tagged and took no number", target);
+        return false;
+    }
+
+    /// An envelope of a causal binding's peer goes to that binding's route,
+    /// whichever endpoint it arrived on: a change is delivered once and in a
+    /// causal order with whatever it releases, held, or dropped; a vector is
+    /// recorded as the peer's mark and answered with every change the peer
+    /// lacks; an envelope of another view raises CAUSAL_VIEW_MISMATCH and one
+    /// without its tag ENVELOPE_CORRUPT. True when the envelope was a route's
+    /// to judge. The peer of a binding is the machine it targets, which is
+    /// the `source` of every envelope it sends.
+    bool takeCausal(const SCE::Mesh::MeshEnvelope& env, std::size_t session_idx) {
+{% for t in targets if t.causal %}
+        if (env.source == "{{ t.target_stem }}") {
+            SCE::Mesh::CausalReceipt receipt;
+            {
+                std::lock_guard<std::mutex> lock(causal_{{ t.target_snake }}_mutex_);
+                receipt = causal_{{ t.target_snake }}_.receive(env);
+            }
+            settleCausal("{{ t.target }}", std::move(receipt), session_idx);
+            return true;
+        }
+{% endfor %}
+        (void)session_idx;
+        return false;
+    }
+
+    /// Act on what a causal route made of an envelope, outside its mutex:
+    /// raise its row, send the peer what it lacks, and hand the delivered
+    /// changes to the session in their causal order. A delivered change is
+    /// an event the document receives, so it goes to the engine directly,
+    /// not through `dispatchToSession`, which would hand it to the route
+    /// again.
+    void settleCausal(const std::string& target, SCE::Mesh::CausalReceipt receipt, std::size_t session_idx) {
+        if (receipt.raise) {
+            raiseCommunicationError(std::move(*receipt.raise));
+        }
+        if (receipt.fault) {
+            SCE_LOG_ERROR("Mesh causal binding '{}': {}", target,
+                          receipt.fault->kind == SCE::Mesh::CausalRouteFault::Kind::NotStarted
+                              ? "an envelope arrived before startCausal and was not judged"
+                              : "a causal rule refused its input; the envelope was not judged");
+        }
+        for (const auto& answer : receipt.send) {
+            (void)route_send(target, answer);
+        }
+        using SenderPolicy = std::decay_t<decltype(sessions_[0]->getPolicy())>;
+        for (const auto& change : receipt.deliver) {
+            (void)SCE::Mesh::dispatchEnvelope<SenderPolicy>(change, *sessions_[session_idx]);
+        }
+    }
+
+{% endif %}
 {% if raises_communication_error %}
     /// Raise an `error.communication` event on every hosted session with
     /// the §10.10.1 / §16.7 `_event.data` shape encoded as JSON.
