@@ -16,6 +16,10 @@ on:
       - 'tests/w3c/InteractiveTestRunner.cpp'
       - 'examples/doom_wasm/**'
       - 'web/site/**'
+      # The emsdk release the build machines install for this lane's gates
+      # (`[platform.linux.tools.emsdk]` in bx.toml); the step below names the
+      # same release, and the gate registry's self-test holds the two to one.
+      - 'scripts/install_emsdk.sh'
       - '.github/workflows/deploy-visualizer.yml'
       - 'rust-toolchain.toml'
       - '.github/actions/install-rust/**'
