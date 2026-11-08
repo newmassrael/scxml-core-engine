@@ -419,6 +419,35 @@ fn the_go_map_holds_each_list_in_a_slice_of_the_schemas_payload() {
 }
 
 #[test]
+fn the_python_map_holds_each_list_in_a_list_of_the_schemas_payload() {
+    holds(
+        Language::Python,
+        &generated_fixture(Language::Python),
+        &[
+            "from . import cbor_causal_entry as ",
+            "import dataclasses\n",
+            ".CborCausalEntryPayload] = dataclasses.field(default_factory=list)",
+            // A read past the bound is refused before any record is read.
+            "if n > 2:",
+            "if n > 3:",
+            "v = [CodecCborRecordList._decode_record_causal_entry(c) for _ in range(n)]",
+            "held_author = cbor.read_text(c, 16)",
+            // The list carries no bound, so the encode refuses past it.
+            "if len(v) > 2:",
+            "cbor.write_array_head(w, len(v))",
+            "CodecCborRecordList._encode_record_causal_entry(w, record)",
+            "if len(record.author.encode(\"utf-8\")) > 16:",
+            "cbor.write_map_head(w, 2)",
+        ],
+        "def _encode_record_causal_entry(",
+        [
+            "cbor.write_text(w, \"seq\")",
+            "cbor.write_text(w, \"author\")",
+        ],
+    );
+}
+
+#[test]
 fn a_record_with_a_field_no_codec_writes_is_refused_by_name() {
     let text = document(
         "",
