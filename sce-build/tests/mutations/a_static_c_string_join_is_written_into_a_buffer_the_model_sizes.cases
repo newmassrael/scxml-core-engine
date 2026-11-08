@@ -43,8 +43,8 @@ PY
 # name declares; both are taken away, so nothing sizes it.
 mutation_case "a string variable's declared bound is not read" <<'PY'
 edit("sce-build/src/forge/text_bound.rs",
-     "            return TextBound::Bounded(u64::from(max.max));\n",
-     "            let _ = max;\n")
+     "        if let ValueType::Text { max } = &place.ty {\n            return TextBound::Bounded(u64::from(max.max));\n",
+     "        if let ValueType::Text { max } = &place.ty {\n            let _ = max;\n")
 edit("sce-build/src/forge/text_bound.rs",
      "    match ctx.string_capacities.get(path.as_str()) {\n",
      "    match None::<&usize> {\n")

@@ -6518,9 +6518,23 @@ pub struct C11DataSlot {
     /// (docs/adr/0086, section 8.6 (b)): known once the machine's source is
     /// emitted, and folded in by [`Self::hold_reasons`]; zero before.
     pub reasons: u64,
-    /// One more than the largest of [`Self::inputs`]' `data_max_len` and
-    /// [`Self::reasons`], for the NUL a slot holds a text with; 1 for a
-    /// machine with neither, whose slot holds the empty text.
+    /// The most bytes of the data any send of the machine or its done data
+    /// writes, as JSON (docs/adr/0086, section 8.6 (c)): every buffer a send
+    /// writes its data into is the slot's size, and a send to the machine
+    /// itself lands in its queue. Folded in by [`Self::hold_sent`].
+    pub sent: u64,
+    /// The share of [`Self::sent`] the machine hands its parent, its sends to
+    /// `#_parent` and its done data, which its header publishes for a parent's
+    /// slot to hold (`<SM>_DATA_LEN_TO_PARENT`, docs/adr/0086, section 8.6 (c)).
+    pub to_parent: u64,
+    /// The bounds the reason a host-run invocation's unreadable deadline quotes
+    /// its three texts at: the invocation's type, its id and the deadline's
+    /// text (docs/adr/0086, section 8.6 (c)); empty for a machine whose
+    /// invocations carry no deadline.
+    pub deadline_quotes: Vec<u64>,
+    /// One more than the largest of [`Self::inputs`]' `data_max_len`,
+    /// [`Self::reasons`] and [`Self::sent`], for the NUL a slot holds a text
+    /// with; 1 for a machine with none, whose slot holds the empty text.
     pub declared: u64,
     /// The rows of slots the machine's scratch holds for the pairs one element
     /// hands a host (docs/adr/0086, section 8.5 (d)): the most `<param>`s and
@@ -6539,11 +6553,26 @@ impl C11DataSlot {
     /// ([`crate::forge::c11_reasons::seal`]).
     pub fn hold_reasons(&mut self, reasons: u64) {
         self.reasons = reasons;
+        self.declare();
+    }
+
+    /// Take the most bytes of the data the machine's sends and its done data
+    /// write, `sent`, as an input of the slot, and `to_parent`, the share it
+    /// hands its parent, as what its header publishes (docs/adr/0086, section
+    /// 8.6 (c)).
+    pub fn hold_sent(&mut self, sent: u64, to_parent: u64) {
+        self.sent = sent;
+        self.to_parent = to_parent;
+        self.declare();
+    }
+
+    /// [`Self::declared`], from every input held so far.
+    fn declare(&mut self) {
         let largest = self
             .inputs
             .iter()
             .map(|input| input.data_max_len)
-            .chain(std::iter::once(reasons))
+            .chain([self.reasons, self.sent])
             .max()
             .unwrap_or(0);
         self.declared = largest.saturating_add(1);
@@ -6611,12 +6640,135 @@ pub fn c11_data_slot(
         name: c11_data_len(csym_prefix, &model.name),
         inputs,
         reasons: 0,
+        sent: 0,
+        to_parent: 0,
+        deadline_quotes: Vec::new(),
         declared: 1,
         pairs: c11_scratch_pairs(model),
         scratch: crate::forge::c11_scratch::layout(!model.host_processor_types.is_empty()),
     };
     slot.hold_reasons(0);
     Ok(slot)
+}
+
+/// The most bytes of the data the sends of the C11 machine `model` write, and
+/// the share of them it hands its parent, where the machine is not a
+/// `sce-static` one, whose sends the static lowering measures where it lowers
+/// them ([`crate::forge::static_lowering::StaticLowering::sent_data`]). Such a
+/// machine computes a value in its script engine, where no type bounds it, so
+/// what the build knows the size of is a payload every pair of which is a
+/// literal, and an inline `<content>` its data model reads as a value or as
+/// XML (docs/adr/0086, section 8.6 (c)); the rest grows with the engine
+/// (section 8.6 (d)). `scope` is the document's, which the reading of inline
+/// content is decided in.
+pub fn c11_literal_sent_data(
+    model: &crate::model::SCXMLModel,
+    scope: &crate::ecmascript::DocumentScope,
+) -> (u64, u64) {
+    let mut sent = 0u64;
+    let mut to_parent = 0u64;
+    for (_, send) in model.sends() {
+        let pairs_only = send.namelist.trim().is_empty() && send.contentexpr.trim().is_empty();
+        let data = if pairs_only
+            && !send.params.is_empty()
+            && send.params.iter().all(|param| param.is_static_literal)
+        {
+            crate::forge::text_bound::params_json_bound(send.params.iter().map(|param| {
+                (
+                    param.name.as_str(),
+                    crate::forge::text_bound::TextBound::Bounded(
+                        crate::forge::text_bound::json_literal_len(&param.static_value),
+                    ),
+                )
+            }))
+            .bounded()
+        } else if pairs_only && send.params.is_empty() && !send.content.trim().is_empty() {
+            match crate::filters::inline_content_reading(&send.content, model.datamodel, scope) {
+                crate::filters::InlineContentReading::Xml(wire)
+                | crate::filters::InlineContentReading::Value(wire) => Some(wire.len() as u64),
+                crate::filters::InlineContentReading::Expression => None,
+            }
+        } else {
+            None
+        };
+        let Some(bytes) = data else {
+            continue;
+        };
+        sent = sent.max(bytes);
+        if send.target.trim() == "#_parent" || !send.targetexpr.trim().is_empty() {
+            to_parent = to_parent.max(bytes);
+        }
+    }
+    (sent, to_parent)
+}
+
+/// The bounds the reason a host-run invocation's unreadable deadline quotes
+/// its three texts at (docs/adr/0086, section 8.6 (c)): the longest `type` and
+/// the longest `id` of an invocation of `model` that carries a deadline, the
+/// document's own texts, and the longest text of a deadline, `deadline_text`
+/// where the static lowering measured it. Any other machine's deadline is
+/// measured here, its expression read in no scope, so a literal and a
+/// composition of literals has a bound and anything its script engine computes
+/// is refused by name: the reason quotes the text whole, so it needs the
+/// bound. Empty for a machine none of whose invocations carries a deadline.
+pub fn c11_deadline_quotes(
+    model: &crate::model::SCXMLModel,
+    deadline_text: Option<u64>,
+) -> Result<Vec<u64>, GenerateError> {
+    let deadline = crate::host_processor_analyzer::HOST_INVOKE_DEADLINE_PARAM;
+    let mut longest_type = 0u64;
+    let mut longest_id = 0u64;
+    let mut longest_text = deadline_text;
+    let mut any = false;
+    for invoke in &model.invokes {
+        let crate::model::Invoke::Unsupported(info) = invoke else {
+            continue;
+        };
+        if !info.host_served {
+            continue;
+        }
+        for param in info.base.params.iter().filter(|p| p.name == deadline) {
+            any = true;
+            longest_type = longest_type.max(info.invoke_type.len() as u64);
+            longest_id = longest_id.max(info.base.invoke_id.len() as u64);
+            if deadline_text.is_some() {
+                continue;
+            }
+            let bytes = if param.is_static_literal {
+                param.static_value.len() as u64
+            } else {
+                let written = if param.expr.trim().is_empty() {
+                    param.location.as_str()
+                } else {
+                    param.expr.as_str()
+                };
+                let refuse = |why: String| {
+                    GenerateError::unsupported(format!(
+                        "<invoke id=\"{}\"> <param name=\"{deadline}\" expr=\"{}\">: {why}; the \
+                         reason a deadline the machine cannot read quotes its text whole, so a \
+                         C11 machine needs its bound (docs/adr/0086, section 8.6 (c))",
+                        info.base.invoke_id,
+                        written.trim()
+                    ))
+                };
+                match crate::forge::text_bound::text_bound_of(
+                    written,
+                    &crate::forge::types::TypeCtx::new(),
+                ) {
+                    Ok(crate::forge::text_bound::TextBound::Bounded(bytes)) => bytes,
+                    Ok(crate::forge::text_bound::TextBound::Unbounded(why)) => {
+                        return Err(refuse(why.describe(written.trim())))
+                    }
+                    Err(refusal) => return Err(refuse(refusal.error.to_string())),
+                }
+            };
+            longest_text = Some(longest_text.map_or(bytes, |held| held.max(bytes)));
+        }
+    }
+    if !any {
+        return Ok(Vec::new());
+    }
+    Ok(vec![longest_type, longest_id, longest_text.unwrap_or(0)])
 }
 
 /// The most pairs one element of `model` hands a host, each `<param>` and each
