@@ -276,9 +276,12 @@ func TestATestSuiteRunsThroughItsRunner_ReadsTheModuleParametersItsConfiguration
 	if asking_configuration.Machine("param_asker") == nil {
 		t.Errorf("the MTC's type has its machine")
 	}
+	if answers_the_job.Name != "answers_the_job" {
+		t.Errorf("the unit names its test case %q", answers_the_job.Name)
+	}
 	testCase := answers_the_job.TestCase()
-	if testCase.Name != answers_the_job.Name || testCase.Name != "answers_the_job" {
-		t.Errorf("the test case is named %q", testCase.Name)
+	if testCase.Name != answers_the_job.Name {
+		t.Errorf("the test case is named %q, not its unit's name", testCase.Name)
 	}
 	if !reflect.DeepEqual(testCase.Configuration, asking_configuration.Configuration()) {
 		t.Errorf("the test case runs %v", testCase.Configuration)
