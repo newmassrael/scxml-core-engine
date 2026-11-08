@@ -23,11 +23,20 @@
 # What stays here is what only a push knows: which refs are being pushed and
 # what they change relative to the remote.
 #
-# A push is bounded. `PUSH_BUDGET_S` in the registry is the ceiling on what
-# this hook may cost — the owner set it at five minutes — and the gates that
-# did not fit are marked `ci_only` and run in CI instead. The hook prints
-# which ones it handed over at the end of a run, because a delegation nobody
-# is told about is how a CI lane stays red for eight pushes.
+# A push of a ref other than main is bounded. `PUSH_BUDGET_S` in the registry
+# is the ceiling on what this hook may cost — the owner set it at five minutes
+# — and the gates that did not fit are marked `ci_only`: no push of another ref
+# runs them, and CI does. The hook prints which ones it handed over at the end
+# of a run, because a delegation nobody is told about is how a CI lane stays
+# red for eight pushes.
+#
+# A push that UPDATES MAIN is the landing queue's judgment, and it runs every
+# gate its change reaches, `ci_only` included (`--landing`), on the build
+# machines. Only the queue's integrator can make that push (a GitHub ruleset
+# refuses any other), and it runs this hook for the landing push's own line to
+# judge each candidate. The gates whose platform the fleet does not have are
+# left to hosted CI's audit and named. prepush-gates.sh says why; the registry
+# makes the selection.
 #
 # `PREPUSH_FULL=1` runs every gate regardless of paths, `ci_only` included,
 # so it is NOT bounded by the budget and is the deliberate way to verify a
@@ -218,19 +227,22 @@ fi
 # verdict where it runs, and nothing is piped, so the status below is bx's:
 # the largest status of any unit, 0 when every unit passed, 1 when a gate
 # found its tree wrong, 2 or more when a unit could not be measured (a gate's
-# own 3, "could not run", stays 3).
-run_gates() {
-    if [[ -n "${BX:-}" && -x "${BX}" ]]; then
-        "$BX" --checks prepush -- bash scripts/gate --plan "$@"
-    else
-        "$RUNNER" "$@"
-    fi
-}
+# own 3, "could not run", stays 3). Every path below exits with that status
+# as it came: the landing queue's integrator reads it, and lands only on 0.
+#
+# `run_gates` and the choice of selection (`prepush_select_refs`) live in
+# prepush-gates.sh, so its test drives the same functions this hook runs.
+# shellcheck source=tools/git-hooks/prepush-gates.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/prepush-gates.sh"
+prepush_select_refs <<<"$GATED_REFS"
+if (( ${#PREPUSH_SELECT_ARGS[@]} )); then
+    printf '\n==> pre-push: this push updates refs/heads/main — the landing selection, ci_only gates included\n' >&2
+fi
 
 if [[ "${PREPUSH_FULL:-0}" == "1" ]]; then
     printf '\n==> pre-push: PREPUSH_FULL=1 — running every gate\n' >&2
     full_rc=0
-    run_gates --all || full_rc=$?
+    run_gates --all "${PREPUSH_SELECT_ARGS[@]}" || full_rc=$?
     exit "$full_rc"
 fi
 
@@ -289,7 +301,7 @@ fi
 if (( force_full )); then
     printf '\n==> pre-push: push range unresolvable — running every gate\n' >&2
     full_rc=0
-    run_gates --all || full_rc=$?
+    run_gates --all "${PREPUSH_SELECT_ARGS[@]}" || full_rc=$?
     exit "$full_rc"
 fi
 
@@ -308,16 +320,18 @@ printf '\n==> pre-push: %s changed path(s)\n' \
 # failing runner would end the script before the assignment ran and the
 # exit status below would never be reached.
 gate_rc=0
-run_gates "${RANGE_ARGS[@]}" || gate_rc=$?
+run_gates "${PREPUSH_SELECT_ARGS[@]}" "${RANGE_ARGS[@]}" || gate_rc=$?
 
 # What this push did NOT verify, said out loud.
 #
-# `ci_only` keeps the push inside its budget by handing whole gates to CI,
-# and the failure mode of that trade is silence: four CI lanes on this
-# repository stayed red for five to eight pushes because nothing said they
-# were now the only thing looking. Printing the delegation names the
-# outstanding verdicts and the workflow that owns each, in the terminal
-# where the decision was made.
+# `ci_only` keeps the push of a non-main ref inside its budget by handing
+# whole gates to CI, and the failure mode of that trade is silence: four CI
+# lanes on this repository stayed red for five to eight pushes because
+# nothing said they were now the only thing looking. Printing the delegation
+# names the outstanding verdicts and the workflow that owns each, in the
+# terminal where the decision was made. On an update to main the list is the
+# gates the landing left to hosted CI because the fleet cannot run them: the
+# registry derives it from the same selection the push ran.
 #
 # Only on the path-scoped branch: `--all` above runs the ci_only gates too,
 # so on those branches nothing is owed. Failures here are swallowed — a
@@ -325,7 +339,8 @@ run_gates "${RANGE_ARGS[@]}" || gate_rc=$?
 # one, since this paragraph is a notice and not a gate.
 if (( gate_rc == 0 )); then
     OWED="$(python3 "$REPO_ROOT/tools/git-hooks/gate_registry.py" \
-                --changed-from "$CHANGED_FILE" --ci-owed 2>/dev/null || true)"
+                --changed-from "$CHANGED_FILE" --ci-owed \
+                "${PREPUSH_SELECT_ARGS[@]}" 2>/dev/null || true)"
     if [[ -n "$OWED" ]]; then
         printf '\n==> pre-push: handed to CI, not run here:\n' >&2
         while read -r slug workflow; do
@@ -344,7 +359,8 @@ if (( gate_rc == 0 )); then
     # a lane that quietly stopped reporting. A notice, like the block above:
     # failures swallowed, `gate_rc` untouched.
     UNOWED="$(python3 "$REPO_ROOT/tools/git-hooks/gate_registry.py" \
-                  --changed-from "$CHANGED_FILE" --ci-unowed 2>/dev/null || true)"
+                  --changed-from "$CHANGED_FILE" --ci-unowed \
+                  "${PREPUSH_SELECT_ARGS[@]}" 2>/dev/null || true)"
     if [[ -n "$UNOWED" ]]; then
         printf '\n==> pre-push: reached but run by NOBODY (filtered out of CI):\n' >&2
         while read -r slug workflow; do
