@@ -27,7 +27,7 @@ string.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from .event_origin import EventOrigin
 from .invoke import DONE_INVOKE_EVENT, DONE_INVOKE_PREFIX
@@ -70,6 +70,18 @@ class HostSendRequest:
     #: when the send executes, so a delayed one carries the invokeid current
     #: then, not when it fires.
     invoke_id: str = ""
+    #: The message as the value the generated code holds, for a processor
+    #: whose messages are values and never encodings: the test profile's
+    #: test-port processor, whose send carries its specific template's value,
+    #: a record of the type the event schema's unit declares
+    #: (docs/SCE_TEST_PROFILE.md §12.3; docs/adr/0091, C2). ``None`` for every
+    #: other send, whose data is `event_data`, so a send site that names no
+    #: value is unchanged.
+    #:
+    #: A saved state does not carry it: a test-port send has no delay (the test
+    #: profile's P6), so none is pending when a machine is saved, and a
+    #: restored host send is one of another processor, whose value is ``None``.
+    value: Any = None
 
 
 @dataclass
