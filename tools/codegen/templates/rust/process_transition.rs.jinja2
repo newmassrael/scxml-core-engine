@@ -201,10 +201,13 @@
 {% endif %}
 {#  SCE Accepted Subset §2.15: content that reads the event's typed payload
     cannot run for a delivery that did not carry one, so it binds the payload
-    once, before any of it runs, or does not run — raising nothing: the engine
-    already said `error.execution` where it failed to read the delivery, and
-    one unreadable delivery is one error (the Kotlin arm's rule). The binding
-    is owned, so the statements after it may write the machine's fields. #}
+    once, before any of it runs, or does not run. A delivery of this event
+    whose data does not fit is refused whole at the door and never reaches it
+    (docs/adr/0086, section 4.2); the binding fails here only for an event of
+    another name the transition's descriptor also matches, which carries no
+    payload of this event, or, on a `no_std` build, which lifts no wire, for
+    one sent without its typed payload; nothing is raised. The binding is
+    owned, so the statements after it may write the machine's fields. #}
 {% if trans.content_reads_payload %}
                 let ev = match &self.pending_payload {
                     {{ machine_name }}Payload::{{ trans.event | to_event_variant }}(ev) => ev.clone(),

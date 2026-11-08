@@ -3610,31 +3610,46 @@ impl<P: StatePolicy> Engine<P> {
         }
     }
 
-    /// Bind the dequeued event's typed `_event.data` view from the data it
-    /// carries, and report a payload that cannot be read as `error.execution`
-    /// (EventSchema native lowering).
+    /// The door of the event just taken off a queue (docs/adr/0086, section
+    /// 4.2): bind its typed `_event.data` view from the data it carries, and
+    /// answer what is taken in its place when that data does not fit its type.
     ///
     /// The typed payload [`StatePolicy::populate_event_payload`] binds is
     /// filled by ONE producer, the generated `raise_<event>` inject seam; every
     /// other producer fills `metadata.data`, so the fields are lifted out of
-    /// that instead when no payload rode with the event. The raise lives here
-    /// rather than in each generated policy so every machine answers a payload
-    /// it cannot read the same way, and the answer is the script engine's:
-    /// §scxml-3.13 gives `error.execution` for a guard that cannot be evaluated
-    /// and treats it as false, which is what an unbound payload already does.
+    /// that instead when no payload rode with the event. A delivery that does
+    /// not fit is refused whole: it is never offered to the configuration, and
+    /// an `error.execution` carrying the refusal takes its place in the queue.
+    /// The verdict lives here rather than in each generated policy so every
+    /// machine answers a payload it cannot read the same way.
     #[cfg(feature = "std")]
-    fn bind_lifted_payload(&mut self, event: P::Event, data: &str) {
+    fn bind_lifted_payload(&mut self, event: P::Event, data: &str) -> Admission<P::Event> {
         let Err(refusal) = self.policy.lift_event_payload(event, data) else {
-            return;
+            return Admission::Admitted;
         };
         // §scxml-3.12.2 leaves a document that declares no `error.execution`
-        // transition nothing to answer with; the guard still does not fire.
-        if let Some(evt) = P::get_event_from_name("error.execution") {
-            let err = EventWithMetadata::platform_error(
-                evt,
-                &format!("`{}` payload: {refusal}", P::get_event_name(event)),
-            );
-            self.raise(err);
+        // transition nothing to answer with: the delivery is refused all the
+        // same, and nothing is taken in its place.
+        match P::get_event_from_name("error.execution") {
+            Some(error) => Admission::Replaced {
+                error,
+                refusal: format!("`{}` payload: {refusal}", P::get_event_name(event)),
+            },
+            None => Admission::Refused,
+        }
+    }
+
+    /// Bind `error`, the `error.execution` a door put in a refused delivery's
+    /// place, as `_event`, carrying `refusal` and no typed payload: it is the
+    /// engine's own error, so no `<finalize>` or autoforward runs for it.
+    #[cfg(feature = "std")]
+    fn bind_in_place(&mut self, error: P::Event, refusal: &str) -> Bound {
+        let replacement = EventWithMetadata::<P::Event, P::Payload>::platform_error(error, refusal);
+        self.policy.populate_event_metadata(&replacement.metadata);
+        self.policy.populate_event_payload(&replacement.payload);
+        Bound {
+            event: P::event_id(error),
+            in_place: true,
         }
     }
 
@@ -5197,9 +5212,16 @@ impl<P: StatePolicy> Engine<P> {
     /// Bind the event `queued`, just taken off the internal queue or (when
     /// `external`) the external one, as `_event`: what only this machine's
     /// policy can do with it, the typed payload queued with it among them.
-    /// For an external event, the preliminary `<finalize>` and autoforward step
-    /// of §scxml-D-mainEventLoop runs first.
-    fn bind_queued(&mut self, queued: QueuedEvent, external: bool) {
+    ///
+    /// The door comes first (docs/adr/0086, section 4.2): a delivery whose data
+    /// does not fit its type is refused whole, and the `error.execution` that
+    /// says why is bound in its place and answered, with no `<finalize>` or
+    /// autoforward step, since it is the engine's own error. `None` is a
+    /// delivery refused in a document that declares no `error.execution`:
+    /// nothing is taken in its place. For an admitted external event, the
+    /// preliminary `<finalize>` and autoforward step of §scxml-D-mainEventLoop
+    /// runs before it is bound.
+    fn bind_queued(&mut self, queued: QueuedEvent, external: bool) -> Option<Bound> {
         // The two queues are of two types (docs/adr/0076), so each is asked
         // for its own payload rather than one chosen by reference.
         let payload = if core::mem::size_of::<P::Payload>() != 0 {
@@ -5212,13 +5234,30 @@ impl<P: StatePolicy> Engine<P> {
         } else {
             P::Payload::default()
         };
+        let delivered = queued.event;
         let event_with_meta = EventWithMetadata {
-            event: Self::event_of(queued.event),
+            event: Self::event_of(delivered),
             payload,
             metadata: queued.metadata,
             #[cfg(feature = "std")]
             target: queued.target,
         };
+        // EventSchema native lowering: bind the typed payload that rode with
+        // this event so `_event.data.<field>` guards read it natively. No-op
+        // for schemaless policies (`Payload = ()`).
+        self.policy.populate_event_payload(&event_with_meta.payload);
+        // …and when no typed payload rode with it, read that view out of the
+        // `data` every other producer fills, at the door.
+        #[cfg(feature = "std")]
+        {
+            match self.bind_lifted_payload(event_with_meta.event, &event_with_meta.metadata.data) {
+                Admission::Admitted => {}
+                Admission::Replaced { error, refusal } => {
+                    return Some(self.bind_in_place(error, &refusal));
+                }
+                Admission::Refused => return None,
+            }
+        }
         if external {
             // §scxml-6.5: Execute finalize before parent's own transition matching
             if concepts::has_finalize::<P>() {
@@ -5269,15 +5308,25 @@ impl<P: StatePolicy> Engine<P> {
         // §scxml-5.10: Populate policy metadata from event (ports C++ populatePolicyFromMetadata)
         self.policy
             .populate_event_metadata(&event_with_meta.metadata);
-        // EventSchema native lowering: bind the typed payload
-        // that rode with this event so `_event.data.<field>` guards read it
-        // natively. No-op for schemaless policies (`Payload = ()`).
-        self.policy.populate_event_payload(&event_with_meta.payload);
-        // …and when no typed payload rode with it, read that view out of
-        // the `data` every other producer fills.
-        #[cfg(feature = "std")]
-        self.bind_lifted_payload(event_with_meta.event, &event_with_meta.metadata.data);
+        Some(Bound {
+            event: delivered,
+            in_place: false,
+        })
     }
+}
+
+/// What a door made of a delivery just taken off a queue (docs/adr/0086,
+/// section 4.2).
+#[cfg(feature = "std")]
+enum Admission<E> {
+    /// Its data fits its type, or the document reads none of it: it is taken.
+    Admitted,
+    /// It is refused whole, and `error`, the document's `error.execution`,
+    /// carrying `refusal`, is taken in its place.
+    Replaced { error: E, refusal: String },
+    /// It is refused whole, and the document declares no `error.execution` to
+    /// take in its place.
+    Refused,
 }
 
 // ════════════════════════════════════════
@@ -5708,13 +5757,25 @@ impl EngineCore {
     }
 }
 
+/// The event [`MainLoop::bind_queued`] bound as `_event`: the one taken off the
+/// queue, or the `error.execution` its door took in its place (docs/adr/0086,
+/// section 4.2).
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Bound {
+    event: EventId,
+    /// Whether `event` is the `error.execution` a door put in a refused
+    /// delivery's place.
+    in_place: bool,
+}
+
 /// An event a hook took off a queue and bound as `_event`, as the loop offers
 /// it to the configuration.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct TakenEvent {
     event: EventId,
-    /// Whether it is an `error.*` event, which an internal one counts when it
-    /// matches nothing.
+    /// Whether it is an `error.*` event the engine raised, which counts when
+    /// it matches nothing: one taken off the internal queue, or the
+    /// `error.execution` a door took in an external delivery's place.
     is_error: bool,
 }
 
@@ -5723,9 +5784,10 @@ pub(crate) struct TakenEvent {
 pub(crate) enum ExternalEvent {
     /// The queue was empty.
     Empty,
-    /// An event was taken and refused before selection: a host-run
-    /// invocation's late reply, which only the `std` profile has.
-    #[cfg(feature = "std")]
+    /// An event was taken and refused before selection, with nothing taken in
+    /// its place: a host-run invocation's late reply, or a delivery its door
+    /// refused in a document that declares no `error.execution`. A `no_std`
+    /// build has neither: it runs no host invocation and lifts no wire.
     Refused,
     /// An event was taken and bound; the loop offers it to the configuration.
     Taken(TakenEvent),
@@ -5752,8 +5814,10 @@ trait MainLoop {
     /// Bind the event just taken off the internal queue, or the external one
     /// when `external`, through the machine's policy, with the typed payload
     /// queued with it; for an external event, after the preliminary
-    /// `<finalize>` and autoforward step.
-    fn bind_queued(&mut self, queued: QueuedEvent, external: bool);
+    /// `<finalize>` and autoforward step. What is bound is the event, or the
+    /// `error.execution` its door took in its place; `None` when the door
+    /// refused it with nothing to take in its place.
+    fn bind_queued(&mut self, queued: QueuedEvent, external: bool) -> Option<Bound>;
     /// Whether the external event just taken is one the machine takes: a
     /// host-run invocation's late reply is refused (§scxml-6.4).
     #[cfg(feature = "std")]
@@ -5796,8 +5860,8 @@ impl<P: StatePolicy> MainLoop for EngineHost<'_, P> {
             .with_policy(|policy, engine| policy.bind_current_event(event, engine));
     }
 
-    fn bind_queued(&mut self, queued: QueuedEvent, external: bool) {
-        self.engine.bind_queued(queued, external);
+    fn bind_queued(&mut self, queued: QueuedEvent, external: bool) -> Option<Bound> {
+        self.engine.bind_queued(queued, external)
     }
 
     #[cfg(feature = "std")]
@@ -5985,7 +6049,6 @@ impl Turn<'_> {
             taken += 1;
             match self.take_external_event() {
                 ExternalEvent::Empty => break,
-                #[cfg(feature = "std")]
                 ExternalEvent::Refused => {}
                 ExternalEvent::Taken(event) => {
                     let outcome = self.take_event(event.event);
@@ -6151,11 +6214,18 @@ impl Turn<'_> {
     /// hands the outcome to [`end_internal_event`](Self::end_internal_event).
     /// `None` when the queue is empty.
     fn take_internal_event(&mut self) -> Option<TakenEvent> {
-        let queued = self.host.queue(false).pop()?;
-        let event = queued.event;
-        // §scxml-5.10.1: this event came off the internal queue.
-        self.host.core().current_event_from_external_queue = false;
-        self.host.bind_queued(queued, false);
+        // A delivery its door refused with nothing to take in its place is
+        // gone, and the next event is taken: it took no microstep and moved
+        // nothing, so the eventless selection and the budget asked before it
+        // would answer as they did (docs/adr/0086, section 4.2).
+        let event = loop {
+            let queued = self.host.queue(false).pop()?;
+            // §scxml-5.10.1: this event came off the internal queue.
+            self.host.core().current_event_from_external_queue = false;
+            if let Some(bound) = self.host.bind_queued(queued, false) {
+                break bound.event;
+            }
+        };
         // §scxml-3.12.2: the processor raises `error.*` into this queue and
         // the clause says they "are ignored if no transition is found that
         // matches them". Ignoring them is the clause; staying silent about
@@ -6217,7 +6287,6 @@ impl Turn<'_> {
         if !self.host.admit_external(&queued) {
             return ExternalEvent::Refused;
         }
-        let event = queued.event;
         // §scxml-D-mainEventLoop: taking an event off the external queue is
         // where a macrostep begins, so it is where the previous one's ceiling
         // stops applying. A machine left inside an endless chain gets a full
@@ -6236,10 +6305,20 @@ impl Turn<'_> {
         core.main_loop.macrostep_microsteps_taken = 0;
         // §scxml-5.10.1: this event came off the external queue.
         core.current_event_from_external_queue = true;
-        self.host.bind_queued(queued, true);
+        let Some(bound) = self.host.bind_queued(queued, true) else {
+            return ExternalEvent::Refused;
+        };
+        if bound.in_place {
+            // The `error.execution` a door took in a refused delivery's place
+            // is the engine's own error, not an external event.
+            self.host.core().current_event_from_external_queue = false;
+            // An error raised while it is answered is raised by an error
+            // handler, as for one taken off the internal queue.
+            self.host.core().handling_error_event = true;
+        }
         ExternalEvent::Taken(TakenEvent {
-            event,
-            is_error: false,
+            event: bound.event,
+            is_error: bound.in_place,
         })
     }
 
@@ -6254,7 +6333,14 @@ impl Turn<'_> {
     /// event wrong. Recorded on the external queue only: an internal `<raise>`
     /// that matches nothing is the document's own business, and both ends of
     /// it are in the document.
+    ///
+    /// The `error.execution` a door took in a refused delivery's place is the
+    /// engine's own error, and is answered as one off the internal queue is.
     fn end_external_event(&mut self, taken: TakenEvent, outcome: EventOutcome) {
+        if taken.is_error {
+            self.end_internal_event(taken, outcome);
+            return;
+        }
         if outcome == EventOutcome::Discarded {
             let core = self.host.core();
             core.discarded_external_events = core.discarded_external_events.saturating_add(1);
