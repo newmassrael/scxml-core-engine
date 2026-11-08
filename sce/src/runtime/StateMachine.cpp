@@ -51,6 +51,40 @@
 
 namespace SCE {
 
+namespace {
+
+// What the door is asked through: the reader a document lowered from
+// `sce-static` installs, handed the event just bound, and the empty text for a
+// document that installs none.
+constexpr const char *kDoorRead = "(typeof __sceDequeued === 'function') ? String(__sceDequeued(_event)) : ''";
+
+// The door of a document lowered from `sce-static` (docs/adr/0086, section 4.4),
+// asked as the event just taken is bound and before any transition is selected
+// for it. A generated machine lifts the payload of an event it reads at that
+// moment and refuses a delivery outside its type whole: the lowering's library
+// installs `__sceDequeued`, which reads the record of the event's schema whole and
+// answers the sentence of a refusal, and every guard and content of the document
+// that reads the payload holds back on a refused event (`SceStatic.admitted`).
+// The refusal is raised here, once, as `error.execution`, as the generated
+// machines raise it. Any other ECMAScript document installs no reader and is read
+// as it always was; a document under another data model is not asked.
+void readAtTheDoor(IScriptEngine &engine, const std::string &sessionId, const SCXMLModel *model, IEventRaiser *raiser) {
+    if (model == nullptr || raiser == nullptr || model->getDatamodel() != "ecmascript") {
+        return;
+    }
+    const ScriptResult read = engine.evaluateExpression(sessionId, ScriptSource::ecmascript(kDoorRead)).get();
+    if (!read.isSuccess()) {
+        SCE_LOG_ERROR("StateMachine: the payload door could not be asked: {}", read.getErrorMessage());
+        return;
+    }
+    const std::string refusal = read.getValue<std::string>();
+    if (!refusal.empty()) {
+        raiser->raiseEvent("error.execution", refusal);
+    }
+}
+
+}  // namespace
+
 // ── W3C SCXML Appendix D over the parsed model ───────────────────────────
 //
 // What Appendix D does with a document is `SCE::Core::MicrostepAlgorithms`,
@@ -1080,6 +1114,7 @@ void StateMachine::bindCurrentEvent(const EventMetadata &event) {
         ++undecodablePayloads_;
         lastUndecodablePayloadEvent_ = event.name;
     }
+    readAtTheDoor(scriptEngine_, sessionId_, model_.get(), eventRaiser_.get());
 }
 
 void StateMachine::applyFinalize(const std::string &senderSessionId, const std::string &eventName) {
