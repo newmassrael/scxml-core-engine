@@ -516,20 +516,8 @@ fn verify_refuses_exactly_the_files_whose_closure_moved() {
     );
 }
 
-/// ADR 0094 test 7: a machine written in-line in an `<invoke>` is generated
-/// from the document that holds its text, so its files carry that
-/// document's header.
-#[test]
-fn an_inline_child_carries_its_parents_header() {
-    let root = TempDir::new().unwrap();
-    let input = root.path().join("input");
-    let out = root.path().join("out");
-    fs::create_dir_all(&input).unwrap();
-    fs::create_dir_all(&out).unwrap();
-    let doc = input.join("holder.scxml");
-    fs::write(
-        &doc,
-        r#"<?xml version="1.0" encoding="UTF-8"?>
+/// A statechart holding one machine written in-line, its `<invoke id="inner">`.
+const HOLDER: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" name="holder" initial="s0">
   <state id="s0">
     <invoke id="inner" type="http://www.w3.org/TR/scxml/">
@@ -543,20 +531,41 @@ fn an_inline_child_carries_its_parents_header() {
   </state>
   <final id="s1"/>
 </scxml>
-"#,
-    )
-    .unwrap();
+"#;
+
+/// The `source` lines of a generated file's header.
+fn header_lines(text: &str) -> Vec<String> {
+    text.lines()
+        .take_while(|line| line.starts_with("// "))
+        .filter(|line| line.contains("source"))
+        .map(str::to_string)
+        .collect()
+}
+
+/// `input/holder.scxml` generated into `out`, both under `root`; the
+/// document's path.
+fn generated_holder(root: &Path) -> PathBuf {
+    let input = root.join("input");
+    let out = root.join("out");
+    fs::create_dir_all(&input).unwrap();
+    fs::create_dir_all(&out).unwrap();
+    let doc = input.join("holder.scxml");
+    fs::write(&doc, HOLDER).unwrap();
     let (code, stderr) = run_generate(&doc, &out, &[]);
     assert_eq!(code, Some(0), "{stderr}");
+    doc
+}
+
+/// ADR 0094 test 7: a machine written in-line in an `<invoke>` is generated
+/// from the document that holds its text, so its files carry that
+/// document's header.
+#[test]
+fn an_inline_child_carries_its_parents_header() {
+    let root = TempDir::new().unwrap();
+    generated_holder(root.path());
+    let out = root.path().join("out");
 
     let files = tree(&out);
-    let header_lines = |text: &str| -> Vec<String> {
-        text.lines()
-            .take_while(|line| line.starts_with("// "))
-            .filter(|line| line.contains("source"))
-            .map(str::to_string)
-            .collect()
-    };
     let parent = header_lines(files.get("holder_sm.rs").expect("the holder's machine"));
     let children: Vec<&String> = files
         .iter()
@@ -579,6 +588,64 @@ fn an_inline_child_carries_its_parents_header() {
         parent.iter().any(|line| line == "// source: holder.scxml"),
         "{parent:?}"
     );
+}
+
+/// ADR 0094, owner's answer 2: the document of an in-line child that a run
+/// writes records the document it came from, and a run that generates from
+/// that written document, as the integration scripts and a Mesh partition's
+/// run do, is stamped with that document's closure and names it, so
+/// `verify` finds it under the root that holds the authored document.
+#[test]
+fn a_written_child_carries_the_header_of_the_document_it_came_from() {
+    let root = TempDir::new().unwrap();
+    let doc = generated_holder(root.path());
+    let input = root.path().join("input");
+    let written = root
+        .path()
+        .join("out")
+        .join("holder__sce_synth_invoke__inner.scxml");
+    let text = fs::read_to_string(&written).expect("the run writes the child's document");
+    assert_eq!(
+        sce_build::forge::drift::recorded_origin(&text).as_deref(),
+        Some("holder.scxml"),
+        "the written child records its origin: {text}"
+    );
+
+    let child_out = root.path().join("child_out");
+    fs::create_dir_all(&child_out).unwrap();
+    let (code, stderr) = run_generate(
+        &written,
+        &child_out,
+        &[
+            "--as-child",
+            "--parent-stem",
+            "holder",
+            "--input-root",
+            input.to_str().unwrap(),
+        ],
+    );
+    assert_eq!(code, Some(0), "{stderr}");
+    let expected = vec![
+        format!("// source-hash: {}", header_of(&doc).source_hex()),
+        "// source: holder.scxml".to_string(),
+    ];
+    let headed: Vec<String> = tree(&child_out)
+        .into_values()
+        .filter(|text| text.starts_with("// SCE-GENERATED"))
+        .collect();
+    assert!(
+        !headed.is_empty(),
+        "the child's run wrote no drift-headed file"
+    );
+    for file in &headed {
+        assert_eq!(
+            header_lines(file),
+            expected,
+            "the child carries its origin's header"
+        );
+    }
+    let (code, stderr) = run_verify_real_tree(&child_out, &input);
+    assert_eq!(code, 0, "verify finds the origin under the root: {stderr}");
 }
 
 /// ADR 0094 test 13: a depfile declares the closure, so a sibling the

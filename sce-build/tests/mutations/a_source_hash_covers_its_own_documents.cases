@@ -48,3 +48,23 @@ edit("sce-build/src/forge/drift.rs",
      "            if stands_for_one {",
      "            if stands_for_one && false {")
 PY
+
+# ── a written child is seeded by the document it came from ─────────
+
+mutation_case "a written child is its own seed" <<'PY'
+edit("sce-build/src/forge/drift.rs",
+     "            .map(|seed| origin_seed(seed, options.input_root))\n",
+     "            .map(|seed| seed.to_path_buf())\n")
+PY
+
+mutation_case "a recorded origin is not read back" <<'PY'
+edit("sce-build/src/forge/drift.rs",
+     "        .find(|pi| pi.target == ORIGIN_INSTRUCTION)?;",
+     "        .find(|pi| pi.target == ORIGIN_INSTRUCTION && false)?;")
+PY
+
+mutation_case "the origin is recorded on a line of its own" <<'PY'
+edit("sce-build/src/forge/drift.rs",
+     "    format!(\"{instruction}{text}\")\n",
+     "    format!(\"{instruction}\\n{text}\")\n")
+PY

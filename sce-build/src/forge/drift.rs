@@ -502,11 +502,17 @@ impl InputClosure {
             include_dirs: options.include_dirs,
             input_root: options.input_root,
         };
-        let owned: Vec<PathBuf> = seeds.iter().map(|seed| seed.to_path_buf()).collect();
+        // A child document a run wrote stands for the document it came from
+        // ([`recorded_origin`]), whose closure it carries.
+        let owned: Vec<PathBuf> = seeds
+            .iter()
+            .map(|seed| origin_seed(seed, options.input_root))
+            .collect();
+        let seeds: Vec<&Path> = owned.iter().map(PathBuf::as_path).collect();
         for _ in 0..MAX_SNAPSHOT_ATTEMPTS {
-            let mut reader = ClosureReader::new(Anchor::of(seeds, options.input_root));
+            let mut reader = ClosureReader::new(Anchor::of(&seeds, options.input_root));
             let mut keys: Vec<String> = Vec::with_capacity(seeds.len());
-            for seed in seeds {
+            for seed in &seeds {
                 let key = reader.read(seed).map_err(|source| DriftHashError::Io {
                     path: seed.to_path_buf(),
                     source,
@@ -679,6 +685,116 @@ fn relative(base: &Path, path: &Path) -> PathBuf {
         out.push(part.as_os_str());
     }
     out
+}
+
+/// The target of the processing instruction that records, at the head of a
+/// child document a run writes itself, the document it came from (ADR 0094,
+/// owner's answer 2): `<?sce-origin document="parent.scxml"?>`.
+///
+/// A run writes the document of each machine written in-line in an
+/// `<invoke>`'s `<content>` (the `__sce_synth_invoke__` children, and the
+/// documents of the SCE Mesh §9.6.6 children a deploy places on a partition
+/// of their own), and another run generates from it. Its bytes are a
+/// function of the document it was cut from, so a file generated from it is
+/// generated from that document, and carries that document's closure; the
+/// written child has to say which document that is, since no build system
+/// keeps the relation for it.
+///
+/// A processing instruction is the carrier because it is XML's channel for
+/// an instruction to one application (XML 1.0 section 2.6): it is in the
+/// document, so the record travels with every copy of it, which a sidecar or
+/// a staging record would not; it is no element or attribute, so the
+/// document's content and its schema are unchanged and an SCXML processor
+/// that does not know it ignores it; and unlike a comment, which an XML
+/// processor may discard and which carries no structure, a reader is handed
+/// it by target and pseudo-attribute.
+pub const ORIGIN_INSTRUCTION: &str = "sce-origin";
+
+/// How many recorded origins [`origin_seed`] follows: a child written by the
+/// run of a child that was itself written records the authored document
+/// directly, so one step is the rule and the bound only ends a loop.
+const MAX_ORIGIN_STEPS: usize = 8;
+
+/// `text`, a child document a run writes itself, with the document it came
+/// from recorded ([`ORIGIN_INSTRUCTION`]). `document` is that document as its
+/// closure keys it (its `source:`), which a run that generates from the child
+/// finds under its `--input-root`, or beside the child.
+///
+/// The instruction goes on the first line, after an XML declaration when the
+/// text has one (which must come first), so every row of the child is the row
+/// it was and what is said about the child names the same rows. A document
+/// name an instruction could not hold (a `"` or a `?>`) records nothing.
+pub fn record_origin(text: &str, document: &str) -> String {
+    if document.is_empty() || document.contains('"') || document.contains("?>") {
+        return text.to_string();
+    }
+    let instruction = format!("<?{ORIGIN_INSTRUCTION} document=\"{document}\"?>");
+    if text.starts_with("<?xml") {
+        if let Some(end) = text.find("?>") {
+            let (declaration, rest) = text.split_at(end + 2);
+            return format!("{declaration}{instruction}{rest}");
+        }
+    }
+    format!("{instruction}{text}")
+}
+
+/// The document a child document records it came from ([`record_origin`]),
+/// or `None` for a document that records none: an instruction of the
+/// target in its prolog, before its root element, with a `document`
+/// pseudo-attribute.
+pub fn recorded_origin(text: &str) -> Option<String> {
+    let document = roxmltree::Document::parse(text).ok()?;
+    let instruction = document
+        .root()
+        .children()
+        .take_while(|node| !node.is_element())
+        .filter_map(|node| node.pi())
+        .find(|pi| pi.target == ORIGIN_INSTRUCTION)?;
+    let (_, after) = instruction.value?.split_once("document=\"")?;
+    let (value, _) = after.split_once('"')?;
+    (!value.is_empty()).then(|| value.to_string())
+}
+
+/// The document `seed` stands for: itself, or, for a child document a run
+/// wrote, the document it records it came from, found under `input_root`
+/// first and then beside the child. A recorded origin found in neither place
+/// leaves the child its own seed: its bytes are a function of the document
+/// it came from, so its closure is still sound, but nothing under a root
+/// names it for `verify`, which is why a run that generates from a written
+/// child names the directory of its origin as `--input-root`.
+fn origin_seed(seed: &Path, input_root: Option<&Path>) -> PathBuf {
+    let mut current = seed.to_path_buf();
+    for _ in 0..MAX_ORIGIN_STEPS {
+        if crate::forge::stdlib::names_standard(&current) {
+            break;
+        }
+        let Some(document) = crate::confine::read_to_string(&current)
+            .ok()
+            .as_deref()
+            .and_then(recorded_origin)
+        else {
+            break;
+        };
+        // A child of a standard statechart came from the library.
+        let standard = Path::new(&document);
+        if crate::forge::stdlib::names_standard(standard) {
+            if crate::forge::stdlib::lookup(standard).is_some() {
+                current = standard.to_path_buf();
+            }
+            break;
+        }
+        let beside = current.parent().map(|dir| dir.join(document.as_str()));
+        let Some(found) = input_root
+            .map(|root| root.join(document.as_str()))
+            .into_iter()
+            .chain(beside)
+            .find(|candidate| candidate != &current && crate::confine::exists(candidate))
+        else {
+            break;
+        };
+        current = found;
+    }
+    current
 }
 
 /// One coherent read of a closure's members.
@@ -2305,6 +2421,81 @@ mod tests {
             !InputClosure::of_directory(empty.path(), ClosureOptions::default())
                 .unwrap()
                 .holds_a_document()
+        );
+    }
+
+    // ── written children (ADR 0094, owner's answer 2) ─────────────────
+
+    /// The origin a run records in a child it writes reads back, behind an
+    /// XML declaration or without one, and adds no line: every row of the
+    /// child is the row it was.
+    #[test]
+    fn a_written_child_records_its_origin_on_its_first_line() {
+        for text in [
+            "<?xml version=\"1.0\"?>\n\n<scxml xmlns=\"http://www.w3.org/2005/07/scxml\"/>\n",
+            "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\"/>\n",
+        ] {
+            let recorded = record_origin(text, "parent.scxml");
+            assert_eq!(recorded_origin(&recorded).as_deref(), Some("parent.scxml"));
+            assert_eq!(
+                recorded.lines().count(),
+                text.lines().count(),
+                "the instruction shares the first line: {recorded}"
+            );
+            assert_eq!(
+                recorded_origin(text),
+                None,
+                "an authored document records none"
+            );
+        }
+        assert_eq!(
+            record_origin("<scxml/>", "a\"b.scxml"),
+            "<scxml/>",
+            "a name the instruction cannot hold records nothing"
+        );
+    }
+
+    /// A child document a run wrote is seeded by the document it came from:
+    /// its closure is that document's, found under the input root, and
+    /// beside the child when it stands there. Found in neither place, the
+    /// child is its own seed.
+    #[test]
+    fn a_written_child_is_seeded_by_the_document_it_came_from() {
+        let tracked = TempDir::new().unwrap();
+        let out = TempDir::new().unwrap();
+        write_file(tracked.path(), "a.scxml", algorithm("a", "").as_bytes());
+        let parent = write_file(
+            tracked.path(),
+            "parent.scxml",
+            chart(&import("a.scxml")).as_bytes(),
+        );
+        let child_text = record_origin(&chart(""), "parent.scxml");
+        let child = write_file(
+            out.path(),
+            "parent__sce_synth_invoke__inner.scxml",
+            child_text.as_bytes(),
+        );
+
+        let from_parent = closure_of(&parent);
+        let from_child = InputClosure::of(
+            &[child.as_path()],
+            ClosureOptions {
+                input_root: Some(tracked.path()),
+                ..ClosureOptions::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(from_child.digest(), from_parent.digest());
+        assert_eq!(from_child.seeds(), ["parent.scxml"]);
+
+        let beside = write_file(tracked.path(), "beside__child.scxml", child_text.as_bytes());
+        assert_eq!(closure_of(&beside).digest(), from_parent.digest());
+
+        let alone = closure_of(&child);
+        assert_eq!(
+            alone.seeds(),
+            ["parent__sce_synth_invoke__inner.scxml"],
+            "an origin found nowhere leaves the child its own seed"
         );
     }
 }
