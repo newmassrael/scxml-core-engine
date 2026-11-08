@@ -349,8 +349,14 @@ fn the_http_host_machines_scratch_is_one_union_per_colour_not_one_member_per_rol
             .expect("the end of the scratch record");
     let record = &header[start..end];
     let unions = record.matches("    union {").count();
-    let layout = sce_build::forge::c11_scratch::layout();
-    let roles = sce_build::forge::c11_scratch::ROLES;
+    // The replies of a host-served send are held by a machine that serves one,
+    // which the HTTP host machine, whose work is a host-run invocation, is not.
+    let host_sends = record.contains("char replies[");
+    let layout = sce_build::forge::c11_scratch::layout(host_sends);
+    let roles: Vec<&sce_build::forge::c11_scratch::Role> = sce_build::forge::c11_scratch::ROLES
+        .iter()
+        .filter(|role| sce_build::forge::c11_scratch::held(role, host_sends))
+        .collect();
     assert_eq!(unions, layout.len(), "one union per colour:\n{record}");
     assert!(
         layout.len() < roles.len(),
@@ -358,7 +364,7 @@ fn the_http_host_machines_scratch_is_one_union_per_colour_not_one_member_per_rol
         layout.len(),
         roles.len()
     );
-    for role in roles {
+    for role in &roles {
         let declared = record.matches(&format!("char {}[", role.name)).count();
         assert_eq!(declared, 1, "`{}` is declared once:\n{record}", role.name);
     }

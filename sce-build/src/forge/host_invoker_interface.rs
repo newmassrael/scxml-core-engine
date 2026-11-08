@@ -1621,7 +1621,14 @@ if (!({})) {{\n                abort();\n            }}\n",
                     "            {sm}_{snake}_result_t result;\n            \
 memset(&result, 0, sizeof(result));\n            \
 if (invoker->start_{snake}(invoker->user_data, {request_arg}event->token, &result)) {{\n                \
-out->has_done_data = {sm}_{snake}_result_wire(&result, out->done_data, sizeof(out->done_data));\n            \
+/* docs/adr/0086, section 8.5 (b): written into the machine's storage, or\n                   \
+refused whole, which the machine counts and raises. */\n                \
+if (out->text != NULL && {sm}_{snake}_result_wire(&result, out->text, out->text_cap)) {{\n                    \
+out->has_done_data = true;\n                    \
+out->done_data = out->text;\n                \
+}} else {{\n                    \
+out->oversized = true;\n                \
+}}\n            \
 }}\n"
                 )
             } else {
