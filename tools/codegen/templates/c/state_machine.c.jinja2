@@ -4272,7 +4272,9 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_scheduled_entry_t *scheduled_
 
 /* Give back the place `slot`, which `scheduled_reserve` handed out and which
    owns nothing (`scheduled_entry_release` emptied it): every later entry moves
-   one place left, so the queue is as it was before the reservation. */
+   one place left, so the queue is as it was before the reservation. The index
+   is of the queue's own count, 8 bits, which the header holds SCE_MAX_SCHEDULED
+   to. */
 SCE_SM_FN static void scheduled_unreserve({{ csym_prefix }}{{ model.name }}_t *sm,
                                           const {{ csym_prefix }}{{ model.name }}_scheduled_entry_t *slot) {
     const uint8_t pos = (uint8_t)(slot - sm->scheduled_queue.buf);
