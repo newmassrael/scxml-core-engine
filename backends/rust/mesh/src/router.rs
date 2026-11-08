@@ -499,6 +499,12 @@ impl Router {
             .iter()
             .filter_map(|received| {
                 let envelope = received.envelope();
+                // A causal route's control message never reaches an engine
+                // (docs/adr/0085, section 3.2); one on a binding that is not
+                // causal is no message of its route, and is dropped.
+                if envelope.pattern == PatternKind::CausalVector {
+                    return None;
+                }
                 match reply_to(&envelope) {
                     // Its responder was checked on arrival.
                     Some(wire_id) => self.answer(&envelope, &wire_id, peer),
@@ -1017,6 +1023,25 @@ mod tests {
                 }]
             );
         }
+    }
+
+    /// docs/adr/0085, section 3.2: a `causalVector` on a binding that is not
+    /// causal is dropped, not delivered as an event.
+    #[test]
+    fn a_causal_routes_control_message_never_reaches_the_engine() {
+        let mut hmi = Router::new("hmi", 8, 50).unwrap();
+        hmi.add_peer("ecu", UNORDERED);
+        let bytes = Envelope {
+            id: (&[1; 16]).into(),
+            source: within("ecu").unwrap(),
+            event_type: within("").unwrap(),
+            pattern: PatternKind::CausalVector,
+            datacontenttype: PayloadCodec::None,
+            ..Envelope::new()
+        }
+        .encode_to_vec();
+        let effects = hmi.receive("ecu", bytes, 0).unwrap();
+        assert!(effects.is_empty(), "{effects:?}");
     }
 
     #[test]

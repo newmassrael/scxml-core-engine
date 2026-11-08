@@ -395,6 +395,12 @@ public final class Router {
     /// What the receive half released, as effects, in release order, followed by the rows it observed.
     private func effectsOf(_ outcome: Outcome, peer: String?) -> [Effect] {
         let released = outcome.released.compactMap { envelope -> Effect? in
+            // A causal route's control message never reaches an engine (docs/adr/0085, section
+            // 3.2). This core carries no causal route yet (the build refuses `delivery: causal` for
+            // Swift), so one that arrives is dropped.
+            if envelope.pattern == .causalVector {
+                return nil
+            }
             // A reply's responder was checked on arrival.
             if let wireID = replyTo(envelope) {
                 return answer(envelope, wireID: wireID, peer: peer)

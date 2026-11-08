@@ -202,6 +202,23 @@ class RouterTest {
     }
 
     @Test
+    fun aCausalRoutesControlMessageNeverReachesTheEngine() {
+        // docs/adr/0085, section 3.2: this core carries no causal route, and a
+        // `causalVector` that reaches it is dropped, not delivered as an event.
+        val hmi = Router("hmi", 8u, 50)
+        hmi.addPeer("ecu", unordered)
+        val bytes = Envelope(
+            id = id(1),
+            source = "ecu",
+            event_type = "",
+            pattern = PatternKind.CAUSAL_VECTOR,
+            datacontenttype = PayloadCodec.NONE,
+            data = byteArrayOf(),
+        ).encodeToByteArray() ?: fail("encodes")
+        assertEquals(emptyList(), done(hmi.receive("ecu", bytes, 0)))
+    }
+
+    @Test
     fun aRaisedRowCarriesTheBindingItWasObservedOn() {
         val ecu = Router("ecu", 8u, 50)
         ecu.addPeer("hmi", ordered)

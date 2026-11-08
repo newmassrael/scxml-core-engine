@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/mesh/causal_entry.scxml — one entry of a causal route's version
+  vector (docs/adr/0085, sections 3 and 3.3): a replica of the group and a
+  number among that replica's changes. A list of these is a vector: the
+  delivered vector of a copy, the context a change is tagged with, the vector
+  a `causalVector` carries, and the stable cut. An entry also names one change,
+  its dot: the replica that authored it and its number, from 1 with no gap.
+
+  The replica is its 16-byte UUID v7 as two halves, its first eight bytes and
+  its last eight, each read big-endian, as envelope_id holds an envelope id:
+  a record's fields are fixed-width scalars, and two identities compare as
+  their byte strings do.
+
+  The envelope carries a vector under key 20 (`causal_vector`), the sender's
+  own entry first.
+
+  replica 0001...0f, its third change → hi 0x0001020304050607,
+  lo 0x08090a0b0c0d0e0f, seq 3.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="causal_entry"
+       sce:event-name="mesh.causal_entry">
+  <datamodel>
+    <data id="hi" sce:type="uint64" sce:direction="in"/>
+    <data id="lo" sce:type="uint64" sce:direction="in"/>
+    <data id="seq" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>

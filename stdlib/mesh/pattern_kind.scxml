@@ -3,7 +3,12 @@
   SCE_MESH.md §13 — the envelope's `pattern` (key 3): which interaction an
   envelope is one edge of. The values are the wire's, and the holes are
   deliberate: 10–13 are reserved for the Stream patterns (§8.1) and must not
-  be assigned, so a closed set refuses them on decode.
+  be assigned, so a closed set refuses them on decode; 22 is the durable
+  receipt's (§10.11), not built yet. 23, `causalVector`, is the one control
+  message of a causal route (docs/adr/0085, section 3.2): its sender's
+  replica, the view's epoch and its delivered vector, which a receiver
+  answers with what the vector lacks and records as the sender's mark. It
+  never reaches an engine.
 
   Mirrors sce/include/mesh/PatternKind.h, whose static_asserts pin the same
   numbers.
@@ -29,6 +34,7 @@
       <sce:variant name="invokeCancel" value="19"/>
       <sce:variant name="invokeError" value="20"/>
       <sce:variant name="parallelRegionDone" value="21"/>
+      <sce:variant name="causalVector" value="23"/>
     </data>
   </datamodel>
 </scxml>

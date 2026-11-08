@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/mesh/causal_cut.scxml — the stable cut of a causal route
+  (docs/adr/0085, section 3, "Stability"): the pointwise minimum, over the
+  `members` replicas of the current view, of the latest delivered vector known
+  from each. `known` spells those vectors entry by entry (causal_known), the
+  copy's own delivered vector among them.
+
+  A member whose vector is not known yet holds its column of the cut at 0, so
+  while fewer than `members` distinct members appear in `known` the cut is
+  empty: nothing is stable. An author a member's vector does not name is at 0
+  in it, and an author at 0 in the cut is left out of it. A change the cut
+  covers (causal_lacks is false) is delivered at every member of the view, so
+  the log drops it. The cut names authors in the order `known` first names
+  them, and holds at most 64, the bound of a view.
+
+  members 2, known {p: a:3 b:1, q: a:2} → {a:2} · members 3 → {} ·
+  known {p: a:3, q: a:5} → {a:3}.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="algorithm" name="causal_cut" version="1.0">
+  <sce:import kind="event-schema" src="causal_entry.scxml" as="Entry"/>
+  <sce:import kind="event-schema" src="causal_known.scxml" as="Known"/>
+  <sce:import kind="event-schema" src="envelope_id.scxml" as="Id"/>
+  <sce:signature>
+    <sce:param name="members" type="uint32"/>
+    <sce:param name="known" type="list&lt;record:Known&gt;"/>
+    <sce:return type="list&lt;record:Entry&gt;[64]"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="holders" type="list&lt;record:Id&gt;[64]"/>
+    <sce:var name="counted" type="bool" init="false"/>
+    <sce:foreach item="mark" in="known">
+      <sce:assign target="counted" expr="false"/>
+      <sce:foreach item="holder" in="holders">
+        <sce:if cond="holder.hi === mark.holderHi &amp;&amp; holder.lo === mark.holderLo">
+          <sce:assign target="counted" expr="true"/>
+        </sce:if>
+      </sce:foreach>
+      <sce:if cond="!counted">
+        <sce:var name="member" type="record:Id">
+          <sce:set name="hi" expr="mark.holderHi"/>
+          <sce:set name="lo" expr="mark.holderLo"/>
+        </sce:var>
+        <sce:append target="holders" expr="member"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:var name="out" type="list&lt;record:Entry&gt;[64]"/>
+    <sce:if cond="len(holders) &gt;= members">
+      <sce:var name="done" type="bool" init="false"/>
+      <sce:var name="low" type="uint64" init="0"/>
+      <sce:var name="value" type="uint64" init="0"/>
+      <sce:foreach item="author" in="known">
+        <sce:assign target="done" expr="false"/>
+        <sce:foreach item="cut" in="out">
+          <sce:if cond="cut.hi === author.hi &amp;&amp; cut.lo === author.lo">
+            <sce:assign target="done" expr="true"/>
+          </sce:if>
+        </sce:foreach>
+        <sce:if cond="!done">
+          <sce:assign target="low" expr="author.seq"/>
+          <sce:foreach item="peer" in="holders">
+            <sce:assign target="value" expr="0"/>
+            <sce:foreach item="entry" in="known">
+              <sce:if cond="entry.holderHi === peer.hi &amp;&amp; entry.holderLo === peer.lo &amp;&amp; entry.hi === author.hi &amp;&amp; entry.lo === author.lo">
+                <sce:assign target="value" expr="entry.seq"/>
+              </sce:if>
+            </sce:foreach>
+            <sce:if cond="value &lt; low">
+              <sce:assign target="low" expr="value"/>
+            </sce:if>
+          </sce:foreach>
+          <sce:if cond="low &gt; 0">
+            <sce:var name="stable" type="record:Entry">
+              <sce:set name="hi" expr="author.hi"/>
+              <sce:set name="lo" expr="author.lo"/>
+              <sce:set name="seq" expr="low"/>
+            </sce:var>
+            <sce:append target="out" expr="stable"/>
+          </sce:if>
+        </sce:if>
+      </sce:foreach>
+    </sce:if>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>

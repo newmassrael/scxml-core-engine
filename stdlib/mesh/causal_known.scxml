@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/mesh/causal_known.scxml — one entry of the latest delivered vector a
+  copy knows of a member of its view (docs/adr/0085, section 3, "Stability"):
+  the member's replica (`holderHi`, `holderLo`), and the entry `seq` that
+  member's vector gives the author `hi`, `lo`. A copy knows a member's vector
+  from the contexts of its changes and from its `causalVector`; its own is
+  its delivered vector. The list of these over the view is what causal_cut
+  reads: a record's fields are fixed-width scalars, so a vector per member is
+  spelled as its entries, each with the member it belongs to.
+
+  Each identity is its UUID v7 as two big-endian halves (causal_entry).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="causal_known"
+       sce:event-name="mesh.causal_known">
+  <datamodel>
+    <data id="holderHi" sce:type="uint64" sce:direction="in"/>
+    <data id="holderLo" sce:type="uint64" sce:direction="in"/>
+    <data id="hi" sce:type="uint64" sce:direction="in"/>
+    <data id="lo" sce:type="uint64" sce:direction="in"/>
+    <data id="seq" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>
