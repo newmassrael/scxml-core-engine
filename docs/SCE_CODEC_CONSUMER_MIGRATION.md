@@ -1546,3 +1546,22 @@ Kotlin, Go and Swift static_datamodel units, and the Rust and Kotlin mesh units)
 - A consumer that holds the constant's text, or a digest of it, as a fixture sees new bytes of the same length;
   replace the fixture. A consumer that parses the schema sees the same schema.
 
+## A Kotlin Mesh peer names its causal group, and the router answers a causal offer (ADR 0085 §3.2)
+
+Landing: a6528e08ae (the Kotlin core's causal route) and e80bd67293 (the rule as standard Mesh algorithms, which
+regenerates every Mesh tree from `stdlib/mesh`).
+
+- `PeerConfig` gains `causal: CausalGroup?` with no default. A host that builds a `PeerConfig` by hand passes
+  `causal = null` for a binding without `delivery: causal`; the generated `MeshPeers.kt` already does. A causal
+  binding's group is `CausalGroup(name, epoch, view)` as `deploy.yaml`'s `group:` states it.
+- `Effect` gains `Accepted(peer, dot)`, `Refused(peer, refusal)` and `AnnounceDue(peer)`, and `RouterError` gains
+  `NotCausal(peer)` and `CausalNotStarted(peer)`. A `when` over either sealed class that has no `else` stops
+  compiling: add the arms. A host with no causal binding never receives them, and handling them as no-ops is correct
+  there.
+- A causal peer is started with `Router.startCausal(peer, start, room, announceEveryMs)` before its first send, told
+  each commit with `Router.committed(peer, dot, nowMs)` once its journal holds it, and asked to announce with
+  `Router.announce(peer, id, nowMs)` when `AnnounceDue` comes. Nothing changes for a peer whose `causal` is `null`.
+- The Rust Mesh units `envelope_id` and `ordering_slot` keep their schemas; only the `x-sce-source-hash` inside
+  their `JSON_SCHEMA` text moves with the regenerated standard library. A consumer that holds that text or its
+  digest as a fixture replaces it; a consumer that parses the schema sees the same schema.
+
