@@ -1474,10 +1474,12 @@ workflow edit.
 ⚠ It does NOT ride `rust-workspace-tests.yml`'s filter, and the attempt is
 worth recording: adding `.github/workflows/**` there made the hook's
 `unfiltered-workflow-self` case fail. A gate inherits its workflow's `paths:`
-as its hook triggers, `workspace-tests` is `ci_only`, and the hook is never
-offered a `ci_only` gate — so the glob would have classified every workflow
-path as known while selecting nothing to check it, taking away the full-run
-fail-safe that editing an unfiltered lane is supposed to buy.
+as its hook triggers, `workspace-tests` is `ci_only`, and a push of a ref other
+than main is never offered a `ci_only` gate — so the glob would have classified
+every workflow path as known while selecting nothing to check it, taking away
+the full-run fail-safe that editing an unfiltered lane is supposed to buy. (An
+update to main, which only the landing queue makes, runs the `ci_only` gates it
+reaches; see "What `ci_only` means" in `tools/git-hooks/gate_registry.py`.)
 
 `false` and not a per-commit key, deliberately: a newly queued run still
 cancels a PENDING one, so `false` saves the run in flight and the latest commit
