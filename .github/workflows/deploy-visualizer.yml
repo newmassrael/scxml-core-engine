@@ -135,6 +135,14 @@ jobs:
       with:
         version: 'v0.15.0'
 
+    # The emscripten trees link sce-build's ECMAScript frontend built for
+    # wasm32-unknown-emscripten; scripts/lib/wasm_rust.sh owns what that needs
+    # (the target, and the pinned nightly with rust-src for the tree with threads).
+    - name: Install the Rust toolchain the emscripten trees build the frontend with
+      run: |
+        source scripts/lib/wasm_rust.sh
+        sce_wasm_rust_install
+
     - name: Setup Emscripten (emsdk)
       run: |
         git clone https://github.com/emscripten-core/emsdk.git

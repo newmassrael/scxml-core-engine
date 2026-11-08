@@ -9,10 +9,40 @@
 # The path comes from cargo, never from a spelled profile directory —
 # see the header of SCEBuildLowering.cmake for what that rule cost once.
 
+#
+# What differs by tree is only how cargo is asked, and it is decided by the
+# variables the including module passes:
+#
+#   SCE_LOWERING_TARGET      the rustc target; empty builds for the host.
+#   SCE_LOWERING_TARGET_DIR  where cargo builds; empty is the workspace's own
+#                            `target/`. A tree that is not the host's gets a
+#                            directory of its own, because two trees that
+#                            differ in RUSTFLAGS and in `-Z build-std` sharing
+#                            one would each rebuild the other's artifact on
+#                            every build.
+#   SCE_LOWERING_NIGHTLY     a pinned nightly toolchain; non-empty rebuilds the
+#                            standard library with atomics and bulk-memory
+#                            (the pin's header, scripts/lib/wasm_rust.sh, says
+#                            why a threaded emscripten link needs that).
+set(_cargo_env "")
+set(_cargo_args rustc -p sce-build --lib --release
+    --crate-type staticlib --no-default-features --features ffi
+    --message-format=json)
+if(SCE_LOWERING_TARGET)
+    list(APPEND _cargo_args --target "${SCE_LOWERING_TARGET}")
+endif()
+if(SCE_LOWERING_TARGET_DIR)
+    list(APPEND _cargo_env "CARGO_TARGET_DIR=${SCE_LOWERING_TARGET_DIR}")
+endif()
+if(SCE_LOWERING_NIGHTLY)
+    list(APPEND _cargo_env
+        "RUSTUP_TOOLCHAIN=${SCE_LOWERING_NIGHTLY}"
+        "RUSTFLAGS=-C target-feature=+atomics,+bulk-memory,+mutable-globals")
+    list(APPEND _cargo_args -Z build-std=std,panic_abort)
+endif()
+
 execute_process(
-    COMMAND "${SCE_CARGO}" rustc -p sce-build --lib --release
-            --crate-type staticlib --no-default-features --features ffi
-            --message-format=json
+    COMMAND "${CMAKE_COMMAND}" -E env ${_cargo_env} "${SCE_CARGO}" ${_cargo_args}
     WORKING_DIRECTORY "${SCE_LOWERING_ROOT}"
     OUTPUT_VARIABLE _messages
     RESULT_VARIABLE _rc

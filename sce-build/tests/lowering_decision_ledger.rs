@@ -1197,15 +1197,45 @@ fn check_row(row: &Row, tracked: &BTreeSet<String>) {
         let mut depth_in_lua_guard = 0usize;
         let mut nesting = 0usize;
         let mut linked_under_lua = false;
+        // The guards open around each line, innermost last, so a link can be
+        // asked what it sits inside.
+        let mut open_guards: Vec<String> = Vec::new();
         for line in site.lines() {
             let code = line.split('#').next().unwrap_or("").trim();
             if code.starts_with("if(") {
                 nesting += 1;
+                open_guards.push(code.to_string());
                 if code.contains("SCE_ENABLE_LUA") && depth_in_lua_guard == 0 {
                     depth_in_lua_guard = nesting;
                 }
             }
-            if depth_in_lua_guard > 0 && code.contains("SCE::Lowering") {
+            // No tree is exempt. The emscripten trees were once, behind
+            // `if(NOT EMSCRIPTEN)`, and the engine in them refused every
+            // ECMAScript document by design: eight suites that hand it one
+            // were red there for as long as the exemption stood, and in no
+            // other configuration could they have passed. The frontend is
+            // built for the tree's own target instead
+            // (cmake/SCEBuildLowering.cmake), so a platform guard around the
+            // link is the exemption coming back.
+            if code.contains("sce_link_ecmascript_frontend(") || code.contains("SCE::Lowering") {
+                assert!(
+                    !open_guards.iter().any(|g| g.contains("EMSCRIPTEN")),
+                    "row `{}`: `sce/CMakeLists.txt` links the frontend inside a guard that \
+                     names EMSCRIPTEN ({:?}). A tree that links no frontend refuses every \
+                     ECMAScript document by design, and the suites that hand it one cannot \
+                     pass there.",
+                    row.id,
+                    open_guards
+                );
+            }
+            // The link is `sce_link_ecmascript_frontend(...)`, which links
+            // `SCE::Lowering` and defines `SCE_HAS_LOWERING_FFI` together
+            // (cmake/SCEBuildLowering.cmake); the target's own name is the
+            // older spelling of the same line.
+            if depth_in_lua_guard > 0
+                && (code.contains("SCE::Lowering")
+                    || code.contains("sce_link_ecmascript_frontend("))
+            {
                 linked_under_lua = true;
             }
             if code.starts_with("endif(") {
@@ -1213,12 +1243,14 @@ fn check_row(row: &Row, tracked: &BTreeSet<String>) {
                     depth_in_lua_guard = 0;
                 }
                 nesting = nesting.saturating_sub(1);
+                open_guards.pop();
             }
         }
         assert!(
             linked_under_lua,
-            "row `{}`: `sce/CMakeLists.txt` does not link `SCE::Lowering` \
-             inside an `if(SCE_ENABLE_LUA)` guard. The decision was for the \
+            "row `{}`: `sce/CMakeLists.txt` does not link the frontend \
+             (`sce_link_ecmascript_frontend`) inside an `if(SCE_ENABLE_LUA)` \
+             guard. The decision was for the \
              CAPABILITY, not the selection: scoping it to \
              `SCE_SCRIPT_ENGINE=lua` takes `EcmaScriptSemanticsOnLuaEngine` \
              its subject in every default build, and that suite is what \

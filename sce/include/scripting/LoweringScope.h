@@ -74,8 +74,9 @@ namespace SCE {
  * text this will not lower is text the datamodel does not evaluate, said out
  * loud rather than approximated.
  *
- * A build that links no frontend (`SCE_HAS_LOWERING_FFI` undefined — the wasm
- * build is one) refuses everything, by the same door. `LuaEngine` answers
+ * A build that links no frontend (`SCE_HAS_LOWERING_FFI` undefined, which
+ * `sce_link_ecmascript_frontend` never leaves so) refuses everything, by the
+ * same door. `LuaEngine` answers
  * that build's `acceptsLanguage(ECMAScript)` with false rather than accepting
  * a call it would refuse per expression.
  */

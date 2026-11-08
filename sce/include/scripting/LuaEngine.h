@@ -64,12 +64,14 @@ public:
 
     /// A build with no frontend is a LUA engine, and says so.
     ///
-    /// `SCE_HAS_LOWERING_FFI` is set on the same two lines that link the
-    /// frontend, so this cannot claim a lowering route the image does not
-    /// carry. The wasm build is the one that reaches neither line, and
-    /// answering `true` there would accept every ECMAScript expression in
-    /// order to fail it one refusal at a time — a capability announced and
-    /// then withdrawn per call. `IScriptEngine`'s three entry points already
+    /// `SCE_HAS_LOWERING_FFI` is set by the same call that links the
+    /// frontend (`sce_link_ecmascript_frontend`), so this cannot claim a
+    /// lowering route the image does not carry. Every tree the build
+    /// produces carries it, the emscripten trees included; the branch is for
+    /// a consumer that configures `sce_scripting` some other way, where
+    /// answering `true` would accept every ECMAScript expression in order to
+    /// fail it one refusal at a time — a capability announced and then
+    /// withdrawn per call. `IScriptEngine`'s three entry points already
     /// refuse a language this rejects, with the language named, which is the
     /// clearer failure and the earlier one.
     bool acceptsLanguage(ScriptLanguage language) const override {
