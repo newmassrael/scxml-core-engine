@@ -18,7 +18,8 @@
 //!   declares for its name;
 //! - a string literal takes the bytes of the text it denotes, its escapes read;
 //! - a concatenation takes the saturating sum of its operands', a conditional
-//!   the larger of its branches';
+//!   the larger of its branches', and `x ?? d` the larger of `x`'s present text
+//!   and `d`'s;
 //! - a number or a boolean, read as text, takes the longest text of its type
 //!   ([`longest_text`], the one table);
 //! - anything else has no bound, and says why, naming the subexpression that
@@ -30,7 +31,7 @@
 
 use std::ops::Range;
 
-use crate::forge::expr::{self, ExprKind, Refusal, TypedExpr};
+use crate::forge::expr::{self, BinOp, ExprKind, Refusal, TypedExpr};
 use crate::forge::types::{InferredType, TypeCtx};
 use crate::forge::value_type::ValueType;
 
@@ -112,15 +113,6 @@ impl TextBound {
             }
         }
     }
-
-    /// The bound `f` makes of this one, which stays without a bound where it
-    /// has none.
-    pub fn map(self, f: impl FnOnce(u64) -> u64) -> TextBound {
-        match self {
-            TextBound::Bounded(bytes) => TextBound::Bounded(f(bytes)),
-            unbounded => unbounded,
-        }
-    }
 }
 
 /// The most bytes of the decimal text of an integer of type `ty`: the digits
@@ -197,6 +189,12 @@ fn text_of_a_string(node: &TypedExpr, ctx: &TypeCtx<'_>) -> TextBound {
         {
             text_bound(left, ctx).plus(text_bound(right, ctx))
         }
+        // `x ?? d` is a choice: the present value of `x`, or `d`.
+        ExprKind::Binary {
+            op: BinOp::Coalesce,
+            left,
+            right,
+        } => present_text_bound(left, ctx).larger(text_bound(right, ctx)),
         ExprKind::Call { .. } => TextBound::Unbounded(Unbounded::at(
             node,
             "is a call, and the text it answers has no bound its signature declares",
@@ -206,6 +204,27 @@ fn text_of_a_string(node: &TypedExpr, ctx: &TypeCtx<'_>) -> TextBound {
             "is a text computed by an operation the bound of whose text is not known",
         )),
     }
+}
+
+/// The bound of the text the present value of `node` is, for the left side of
+/// `node ?? d`: the `B` of the `optional<string[B]>` a place declares. A value
+/// that is no optional one is its own present value.
+fn present_text_bound(node: &TypedExpr, ctx: &TypeCtx<'_>) -> TextBound {
+    if !matches!(node.ty, InferredType::Optional(_)) {
+        return text_bound(node, ctx);
+    }
+    let held = expr::place_path(node).and_then(|path| ctx.value_of(&path));
+    if let Some(place) = held {
+        if let ValueType::Optional { elem } = &place.ty {
+            if let ValueType::Text { max } = elem.as_ref() {
+                return TextBound::Bounded(u64::from(max.max));
+            }
+        }
+    }
+    TextBound::Unbounded(Unbounded::at(
+        node,
+        "is an optional value whose present text no place's type bounds",
+    ))
 }
 
 /// The bound of the text a place holds: the `B` of the `string[B]` its type
@@ -372,6 +391,20 @@ mod tests {
     fn a_conditional_takes_the_larger_of_its_branches() {
         assert_eq!(bound("on ? name : 'x'"), TextBound::Bounded(8));
         assert_eq!(bound("on ? 'x' : note"), TextBound::Bounded(12));
+    }
+
+    #[test]
+    fn a_coalescing_choice_takes_the_larger_of_the_present_text_and_the_default() {
+        let mut ctx = ctx();
+        ctx.insert_value(
+            "maybe",
+            Place::of(ValueType::Optional {
+                elem: Box::new(ValueType::Text { max: Bound::of(9) }),
+            }),
+        );
+        let at = |written: &str| text_bound_of(written, &ctx).expect("the expression resolves");
+        assert_eq!(at("maybe ?? 'x'"), TextBound::Bounded(9));
+        assert_eq!(at("maybe ?? note"), TextBound::Bounded(12));
     }
 
     #[test]
