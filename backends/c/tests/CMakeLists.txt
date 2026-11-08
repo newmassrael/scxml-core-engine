@@ -4861,6 +4861,22 @@ set_tests_properties(c11_unit_event_origin PROPERTIES
     TIMEOUT 10
     LABELS "unit;c11"
 )
+# docs/adr/0086, section 8.6 (d): a host's replies and a host-run invocation's
+# answer grow in a heap behind the calls a handler makes into fixed storage,
+# each text freed exactly once, asked of the tests' counting allocator.
+# Header-only code; the heap is the C library's, through that allocator.
+add_executable(sce_c_host_answer_heap_unit_test unit/host_answer_heap_test.c)
+target_link_libraries(sce_c_host_answer_heap_unit_test PRIVATE sce_c_runtime)
+set_target_properties(sce_c_host_answer_heap_unit_test PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_unit_host_answer_heap COMMAND sce_c_host_answer_heap_unit_test)
+set_tests_properties(c11_unit_host_answer_heap PROPERTIES
+    TIMEOUT 10
+    LABELS "unit;c11"
+)
 set_tests_properties(c11_unit_json_text PROPERTIES
     TIMEOUT 10
     LABELS "unit;c11"
