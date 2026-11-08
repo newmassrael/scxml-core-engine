@@ -51,6 +51,30 @@ func TestCborEveryHeadIsWrittenInItsShortestForm(t *testing.T) {
 	}
 }
 
+func TestCborAnArrayHeadIsWrittenShortestAndReadAsItsCountAndNoOtherItemIs(t *testing.T) {
+	if got := cborWritten(t, func(w SceSink) error { return CborWriteArrayHead(w, 2) }); !bytes.Equal(got, []byte{0x82}) {
+		t.Errorf("array head of 2: % x", got)
+	}
+	if got := cborWritten(t, func(w SceSink) error { return CborWriteArrayHead(w, 24) }); !bytes.Equal(got, []byte{0x98, 0x18}) {
+		t.Errorf("array head of 24: % x", got)
+	}
+	three := NewSceCursor([]byte{0x83})
+	if v, err := CborReadArrayLen(&three); err != nil || v != 3 {
+		t.Errorf("an array of three: %d, %v", v, err)
+	}
+	wide := NewSceCursor([]byte{0x98, 0x18})
+	if v, err := CborReadArrayLen(&wide); err != nil || v != 24 {
+		t.Errorf("an array of 24: %d, %v", v, err)
+	}
+	// An indefinite-length array, and a map where an array stands.
+	for _, b := range [][]byte{{0x9f}, {0xa1}} {
+		c := NewSceCursor(b)
+		if _, err := CborReadArrayLen(&c); !errors.Is(err, ErrCborMalformed) {
+			t.Errorf("% x read as an array: %v", b, err)
+		}
+	}
+}
+
 func TestCborAHeadIsReadInAnyValidLength(t *testing.T) {
 	// 1 written in its 2-byte form still reads as 1.
 	c := NewSceCursor([]byte{0x18, 0x01})

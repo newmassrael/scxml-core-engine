@@ -6,7 +6,8 @@ package codec
 // The CBOR (RFC 8949) items a `sce:encoding="cbor"` codec reads and writes
 // (SCE_FORGE.md §4.6.1): one definite-length map whose keys are small
 // unsigned integers and whose values are unsigned integers, booleans, text
-// strings and byte strings.
+// strings and byte strings, or a definite-length array of maps, each a record
+// keyed by its fields' ids as text (docs/adr/0086, section 9.2).
 //
 // Mirrors backends/rust/forge-runtime/src/cbor.rs, rule for rule. A
 // generated codec calls these; it spells no CBOR of its own.
@@ -50,6 +51,8 @@ const (
 	CborMajorBytes uint8 = 2
 	// CborMajorText is major type 3, a UTF-8 text string.
 	CborMajorText uint8 = 3
+	// CborMajorArray is major type 4, an array.
+	CborMajorArray uint8 = 4
 	// CborMajorMap is major type 5, a map.
 	CborMajorMap uint8 = 5
 	// CborMajorSimple is major type 7, simple values (false = 20, true = 21).
@@ -113,6 +116,12 @@ func CborWriteBytes(w SceSink, value []byte) error {
 		return err
 	}
 	return w.WriteBytes(value)
+}
+
+// CborWriteArrayHead writes the head of a definite-length array of `items`
+// items: a list of records an entry holds.
+func CborWriteArrayHead(w SceSink, items uint64) error {
+	return CborWriteHead(w, CborMajorArray, items)
 }
 
 // CborWriteMapHead writes the head of a definite-length map of `entries`
@@ -261,6 +270,12 @@ func CborReadBytesExact(c *SceCursor, length uint64) ([]byte, error) {
 		return nil, ErrCborWrongLength
 	}
 	return cborReadPayload(c, n)
+}
+
+// CborReadArrayLen reads the head of a definite-length array: how many items
+// follow. An indefinite length is refused, as a map's is.
+func CborReadArrayLen(c *SceCursor) (uint64, error) {
+	return cborExpect(c, CborMajorArray)
 }
 
 // CborReadMapLen reads the head of a definite-length map: how many entries
