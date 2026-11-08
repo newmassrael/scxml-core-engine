@@ -2565,9 +2565,96 @@ SCE_SM_FN static void refuse_event_data({{ csym_prefix }}{{ model.name }}_t *sm,
 {% if 'error.execution' in model.events %}
     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
         sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+{% if model.needs_script_engine %}
+        "the script engine could not allocate storage for an event's data, so the event was refused");
+{% else %}
         "an event's data does not fit this machine's slot of _event.data, so the event was refused");
 {% endif %}
+{% endif %}
 }
+{% if model.needs_script_engine %}
+
+/* docs/adr/0086, section 8.5 (a): an event's data on this machine is an owned
+   text, allocated through the script engine's allocator (`lua_getallocf`), the
+   one heap the machine has, which a host may replace when it creates the
+   engine. `event_text_take` allocates a copy of `text` into `*out`, NULL for no
+   data, and answers false, with `*out` NULL, when the allocator gives nothing.
+   The text is then its holder's: moved to the next holder, which clears the
+   source, and freed by the last with `event_text_free`, which clears the
+   holder it frees, so a holder freed twice frees nothing the second time. */
+SCE_SM_FN static bool event_text_take({{ csym_prefix }}{{ model.name }}_t *sm, const char *text, char **out,
+                                      size_t *out_size) {
+    *out = NULL;
+    *out_size = 0u;
+    if (text == NULL || text[0] == '\0') {
+        return true;
+    }
+    if (sm->L == NULL) {
+        return false;
+    }
+    void *alloc_context = NULL;
+    const lua_Alloc alloc = lua_getallocf(sm->L, &alloc_context);
+    const size_t size = strlen(text) + 1u;
+    char *copy = (char *)alloc(alloc_context, NULL, 0u, size);
+    if (copy == NULL) {
+        return false;
+    }
+    memcpy(copy, text, size);
+    *out = copy;
+    *out_size = size;
+    sm->owned_event_texts++;
+    return true;
+}
+
+/* Free the text `*text` holds, `*size` bytes, and clear its holder. Nothing for
+   a NULL holder or one that holds no text. Every text is freed before the
+   engine is closed (`_destroy`), so the allocator is the one that gave it. */
+SCE_SM_FN static void event_text_free({{ csym_prefix }}{{ model.name }}_t *sm, char **text, size_t *size) {
+    if (text == NULL || *text == NULL) {
+        return;
+    }
+    if (sm->L != NULL) {
+        void *alloc_context = NULL;
+        const lua_Alloc alloc = lua_getallocf(sm->L, &alloc_context);
+        (void)alloc(alloc_context, *text, *size, 0u);
+    }
+    *text = NULL;
+    *size = 0u;
+    sm->owned_event_texts--;
+}
+
+/* Put `evt` at the tail of `q`. Its data is the text `*text` holds, moved into
+   the entry, when `text` is not NULL; otherwise a copy of `evt->data` the
+   machine allocates. A full queue drops the event, as it drops any, and frees
+   the text moved into it; an allocation that fails refuses the event
+   (`refuse_event_data`). */
+SCE_SM_FN static void event_queue_push_moving({{ csym_prefix }}{{ model.name }}_t *sm,
+                                              {{ csym_prefix }}{{ model.name }}_event_queue_t *q,
+                                              const {{ csym_prefix }}{{ model.name }}_event_with_meta_t *evt,
+                                              char **text, size_t *text_size) {
+    if (q->count >= (uint16_t)SCE_MAX_EVENTS) {
+        event_text_free(sm, text, text_size);
+        return;
+    }
+    {{ csym_prefix }}{{ model.name }}_queued_event_t *const dst = &q->buf[q->tail];
+    char *owned = NULL;
+    size_t owned_size = 0u;
+    if (text != NULL) {
+        owned = *text;
+        owned_size = *text_size;
+        *text = NULL;
+        *text_size = 0u;
+    } else if (!event_text_take(sm, evt->data, &owned, &owned_size)) {
+        refuse_event_data(sm, &evt->event);
+        return;
+    }
+    {{ csym_prefix }}{{ model.name }}_event_keep_members(dst, evt);
+    dst->data = owned;
+    dst->data_size = owned_size;
+    q->tail = (uint16_t)((q->tail + 1u) % (uint16_t)SCE_MAX_EVENTS);
+    q->count = (uint16_t)(q->count + 1u);
+}
+{% else %}
 
 SCE_SM_FN static void event_queue_push({{ csym_prefix }}{{ model.name }}_t *sm,
                              {{ csym_prefix }}{{ model.name }}_event_queue_t *q,
@@ -2582,24 +2669,60 @@ SCE_SM_FN static void event_queue_push({{ csym_prefix }}{{ model.name }}_t *sm,
     q->tail = (uint16_t)((q->tail + 1u) % (uint16_t)SCE_MAX_EVENTS);
     q->count = (uint16_t)(q->count + 1u);
 }
+{% endif %}
 
-/* Drop the oldest entry of a queue that holds one. */
-SCE_SM_FN static void event_queue_drop({{ csym_prefix }}{{ model.name }}_event_queue_t *q) {
+/* Step past the oldest entry of a queue that holds one, which holds nothing
+   the machine still has to free. */
+SCE_SM_FN static void event_queue_advance({{ csym_prefix }}{{ model.name }}_event_queue_t *q) {
     q->head = (uint16_t)((q->head + 1u) % (uint16_t)SCE_MAX_EVENTS);
     q->count = (uint16_t)(q->count - 1u);
 }
 
+/* Drop the oldest entry of a queue that holds one, with what it owns. */
+SCE_SM_FN static void event_queue_drop({{ csym_prefix }}{{ model.name }}_t *sm,
+                                       {{ csym_prefix }}{{ model.name }}_event_queue_t *q) {
+{% if model.needs_script_engine %}
+    event_text_free(sm, &q->buf[q->head].data, &q->buf[q->head].data_size);
+{% else %}
+    (void)sm;
+{% endif %}
+    event_queue_advance(q);
+}
+
 /* Move the oldest entry into `out`, which the machine owns (docs/adr/0086,
-   section 8.5 (d)). */
-SCE_SM_FN static bool event_queue_pop({{ csym_prefix }}{{ model.name }}_event_queue_t *q,
+   section 8.5 (a) and (d)){% if model.needs_script_engine %}: what `out` held
+   before is freed first, and the entry keeps nothing of the text it hands
+   over{% endif %}. */
+SCE_SM_FN static bool event_queue_pop({{ csym_prefix }}{{ model.name }}_t *sm,
+                            {{ csym_prefix }}{{ model.name }}_event_queue_t *q,
                             {{ csym_prefix }}{{ model.name }}_queued_event_t *out) {
     if (q->count == 0u) {
         return false;
     }
+{% if model.needs_script_engine %}
+    event_text_free(sm, &out->data, &out->data_size);
     *out = q->buf[q->head];
-    event_queue_drop(q);
+    q->buf[q->head].data = NULL;
+    q->buf[q->head].data_size = 0u;
+{% else %}
+    (void)sm;
+    *out = q->buf[q->head];
+{% endif %}
+    event_queue_advance(q);
     return true;
 }
+{% if model.needs_script_engine %}
+
+/* docs/adr/0086, section 8.5 (a): the event `current` holds has been handed to
+   the engine (`set_current_event`) and to every child it is forwarded to, so
+   its text is freed here; `view` reads no text from now on. */
+SCE_SM_FN static void event_release_current({{ csym_prefix }}{{ model.name }}_t *sm,
+                                            {{ csym_prefix }}{{ model.name }}_queued_event_t *current,
+                                            {{ csym_prefix }}{{ model.name }}_event_with_meta_t *view) {
+    event_text_free(sm, &current->data, &current->data_size);
+    view->data = "";
+}
+{% endif %}
 
 {% set error_events = model.events | select('startingwith', 'error.') | list %}
 {% if error_events %}
@@ -3914,8 +4037,18 @@ SCE_SM_FN static bool first_enabled_transition({{ csym_prefix }}{{ model.name }}
 
 /* ── W3C SCXML 6.2: External-facing raise APIs ────────────────────── */
 
+{% if model.needs_script_engine %}
+/* `_raise`, with the event's data the owned text `*text` holds moved into the
+   queue when `text` is not NULL (docs/adr/0086, section 8.5 (a)): a scheduled
+   entry that comes due hands its text on rather than have it copied. An event
+   this refuses frees the text moved into it. */
+SCE_SM_FN static void raise_moving({{ csym_prefix }}{{ model.name }}_t *sm,
+                                   const {{ csym_prefix }}{{ model.name }}_event_with_meta_t *evt, char **text,
+                                   size_t *text_size) {
+{% else %}
 SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise({{ csym_prefix }}{{ model.name }}_t *sm,
                             const {{ csym_prefix }}{{ model.name }}_event_with_meta_t *evt) {
+{% endif %}
 {% if error_events %}
     /* W3C SCXML 3.12.2: the clause bounds what happens to an error event
        nothing matches. It says nothing about one a handler DOES match and
@@ -3931,15 +4064,33 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise({{ csym_prefix }}{{ model
             sm->error_cascade_events++;
             sm->last_error_cascade_event = evt->event;
             sm->has_error_cascade_event = true;
+{% if model.needs_script_engine %}
+            event_text_free(sm, text, text_size);
+{% endif %}
             return;
         }
     }
 {% endif %}
+{% if model.needs_script_engine %}
+    event_queue_push_moving(sm, &sm->internal_queue, evt, text, text_size);
+}
+
+SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise({{ csym_prefix }}{{ model.name }}_t *sm,
+                            const {{ csym_prefix }}{{ model.name }}_event_with_meta_t *evt) {
+    raise_moving(sm, evt, NULL, NULL);
+}
+
+/* `_raise_external`, with the event's data moved as `raise_moving` moves it. */
+SCE_SM_FN static void raise_external_moving({{ csym_prefix }}{{ model.name }}_t *sm,
+                                            const {{ csym_prefix }}{{ model.name }}_event_with_meta_t *evt,
+                                            char **text, size_t *text_size) {
+{% else %}
     event_queue_push(sm, &sm->internal_queue, evt);
 }
 
 SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise_external({{ csym_prefix }}{{ model.name }}_t *sm,
                                      const {{ csym_prefix }}{{ model.name }}_event_with_meta_t *evt) {
+{% endif %}
     /* ⚠ No `is_running` refusal here, and the reason is that this function is
        NOT the host's door on this backend: the generated `<send>` actions call
        it too (four sites), so a guard here refuses the DOCUMENT's own events.
@@ -3960,8 +4111,18 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise_external({{ csym_prefix }
        a push. `_raise` does not drain: the internal queue is the running
        macrostep's own, and arrival order is the external queue's. */
     drain_inbox(sm);
+{% if model.needs_script_engine %}
+    event_queue_push_moving(sm, &sm->external_queue, evt, text, text_size);
+}
+
+SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise_external({{ csym_prefix }}{{ model.name }}_t *sm,
+                                     const {{ csym_prefix }}{{ model.name }}_event_with_meta_t *evt) {
+    raise_external_moving(sm, evt, NULL, NULL);
+}
+{% else %}
     event_queue_push(sm, &sm->external_queue, evt);
 }
+{% endif %}
 
 {% if event_payload_active %}
 /* NL→IR Item C1 Path A: per-event typed-payload inject
@@ -4096,9 +4257,26 @@ SCE_SM_FN static SCE_C_UNUSED void scheduled_push_routed({{ csym_prefix }}{{ mod
 {%- if model.needs_script_engine or model.has_delayed_send_payload %},
                                   const char *payload_json
 {%- endif %}) {
+{% if model.needs_script_engine %}
+    /* docs/adr/0086, section 8.5 (a): the entry owns a copy of the payload,
+       allocated through the engine before a place is reserved, so a send the
+       allocator cannot hold is refused and raises error.execution, and a full
+       queue frees what it was handed. */
+    char *text = NULL;
+    size_t text_size = 0u;
+    if (!event_text_take(sm, payload_json, &text, &text_size)) {
+        const bool own_event = route == {{ csym_prefix | upper }}{{ model.name | upper }}_SCHED_ROUTE_EXTERNAL ||
+                               route == {{ csym_prefix | upper }}{{ model.name | upper }}_SCHED_ROUTE_INTERNAL;
+        refuse_event_data(sm, own_event ? &event : NULL);
+        return;
+    }
+{% endif %}
     {{ csym_prefix }}{{ model.name }}_scheduled_entry_t *slot = scheduled_reserve(
         sm, fire_time_ms, "the scheduled-send queue is full, so this <send delay> was dropped");
     if (slot == NULL) {
+{% if model.needs_script_engine %}
+        event_text_free(sm, &text, &text_size);
+{% endif %}
         return;
     }
     slot->route = (uint8_t)route;
@@ -4128,7 +4306,11 @@ SCE_SM_FN static SCE_C_UNUSED void scheduled_push_routed({{ csym_prefix }}{{ mod
 {% else %}
     (void)invoke_id;
 {% endif %}
-{% if model.needs_script_engine or model.has_delayed_send_payload %}
+{% if model.needs_script_engine %}
+    /* §scxml-5.10: the payload the event will carry, moved into the entry. */
+    slot->data = text;
+    slot->data_size = text_size;
+{% elif model.has_delayed_send_payload %}
     /* §scxml-5.10: the payload the event will carry, as the JSON its
        `data[]` takes — `send_payload_json` already refused one that does
        not fit, so the copy is whole. */
@@ -4201,6 +4383,11 @@ SCE_SM_FN static bool scheduled_pop_ready({{ csym_prefix }}{{ model.name }}_t *s
         return false;
     }
 
+{% if model.needs_script_engine %}
+    /* docs/adr/0086, section 8.5 (a): `out` is the machine's, and what it held
+       was handed on when it was delivered; the entry moves its text into it. */
+    event_text_free(sm, &out->data, &out->data_size);
+{% endif %}
     *out = sm->scheduled_queue.buf[0];
     for (uint8_t k = 1; k < sm->scheduled_queue.count; ++k) {
         sm->scheduled_queue.buf[k - 1u] = sm->scheduled_queue.buf[k];
@@ -4238,6 +4425,12 @@ SCE_SM_FN static SCE_C_UNUSED void scheduled_cancel({{ csym_prefix }}{{ model.na
                 sm->scheduled_queue.buf[pos] = sm->scheduled_queue.buf[i];
             }
             pos++;
+{% if model.needs_script_engine %}
+        } else {
+            /* docs/adr/0086, section 8.5 (a): a cancelled entry's text is
+               freed here, before a later entry is moved over it. */
+            event_text_free(sm, &sm->scheduled_queue.buf[i].data, &sm->scheduled_queue.buf[i].data_size);
+{% endif %}
         }
     }
     sm->scheduled_queue.count = pos;
@@ -4665,7 +4858,7 @@ SCE_SM_FN static void process_internal_queue({{ csym_prefix }}{{ model.name }}_t
             record_truncated_macrostep(sm, sm->policy.last_transition_source_state);
             return;
         }
-        if (!event_queue_pop(&sm->internal_queue, &sm->current_internal)) {
+        if (!event_queue_pop(sm, &sm->internal_queue, &sm->current_internal)) {
             break;
         }
         /* docs/adr/0086, section 8.5 (d): the machine holds the event; what
@@ -4717,6 +4910,9 @@ SCE_SM_FN static void process_internal_queue({{ csym_prefix }}{{ model.name }}_t
            needs no such guard, because it only ever rises while an error
            handler is running. */
         sm->handling_error_event = event_is_error(evt.event);
+{% endif %}
+{% if model.needs_script_engine %}
+        event_release_current(sm, &sm->current_internal, &evt);
 {% endif %}
         if (select_transitions(sm, evt.event, enabled, &count)) {
             microstep(sm, enabled, count);
@@ -4814,7 +5010,7 @@ SCE_SM_FN static bool process_next_external_event({{ csym_prefix }}{{ model.name
     {{ csym_prefix }}{{ model.name }}_transition_info_t enabled[{{ csym_prefix | upper }}{{ model.name | upper }}_MAX_SELECTED] = {0};
     uint8_t count;
 
-    if (event_queue_pop(&sm->external_queue, &sm->current_external)) {
+    if (event_queue_pop(sm, &sm->external_queue, &sm->current_external)) {
         /* docs/adr/0086, section 8.5 (d): the machine holds the event; what
            follows reads it through a view. */
         evt = {{ csym_prefix }}{{ model.name }}_event_view(&sm->current_external);
@@ -4963,6 +5159,9 @@ SCE_SM_FN static bool process_next_external_event({{ csym_prefix }}{{ model.name
         {{ csym_prefix }}{{ model.name }}_forward_to_autoforward_children(sm, &evt);
         {% endif %}
         {% endif %}
+{% if model.needs_script_engine %}
+        event_release_current(sm, &sm->current_external, &evt);
+{% endif %}
 
 {% if event_payload_active and error_events %}
         /* The `error.execution` a door took in a refused delivery's place is
@@ -5392,7 +5591,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
         if (ready->route == (uint8_t){{ csym_prefix | upper }}{{ model.name | upper }}_SCHED_ROUTE_PARENT) {
             if (sm->parent_dispatch != NULL) {
                 sm->parent_dispatch(sm->parent_sm, ready->route_event, sm->invoke_id, sm->session_id,
-{%- if model.needs_script_engine or model.has_delayed_send_payload %} ready->data[0] != '\0' ? ready->data : NULL{% else %} NULL{% endif %});
+{%- if model.needs_script_engine %} ready->data{% elif model.has_delayed_send_payload %} ready->data[0] != '\0' ? ready->data : NULL{% else %} NULL{% endif %});
             } else if (sm->parent_sm == NULL) {
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_COMMUNICATION,
@@ -5448,7 +5647,14 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
            terminator without tripping `-Wstringop-truncation` (which
            strncpy would since src is a same-size buffer). */
         memcpy(evt.send_id, ready->send_id, (size_t)SCE_MAX_ID_LEN);
-{% if model.needs_script_engine or model.has_delayed_send_payload %}
+{% if model.needs_script_engine %}
+        /* §scxml-5.10 (test186): the payload captured at send time rides on
+           the event it belongs to (mirrors cpp's EventWithMetadata::data →
+           LuaEngine::setCurrentEvent delivery): the entry's text, moved into
+           the queue below rather than copied (docs/adr/0086, section 8.5
+           (a)). */
+        evt.data = NULL;
+{% elif model.has_delayed_send_payload %}
         /* §scxml-5.10 (test186): the payload captured at send time rides
            on the event it belongs to (mirrors cpp's EventWithMetadata::data
            → LuaEngine::setCurrentEvent delivery): a view of the entry the
@@ -5467,10 +5673,18 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
            carrying the pair of this session, which sent it (docs/adr/0090,
            section 2). */
         if (ready->route == (uint8_t){{ csym_prefix | upper }}{{ model.name | upper }}_SCHED_ROUTE_INTERNAL) {
+{% if model.needs_script_engine %}
+            raise_moving(sm, &evt, &ready->data, &ready->data_size);
+{% else %}
             {{ csym_prefix }}{{ model.name }}_raise(sm, &evt);
+{% endif %}
         } else {
             sce_event_stamp_session(&evt.origin, &evt.from_session, sm->session_id);
+{% if model.needs_script_engine %}
+            raise_external_moving(sm, &evt, &ready->data, &ready->data_size);
+{% else %}
             {{ csym_prefix }}{{ model.name }}_raise_external(sm, &evt);
+{% endif %}
         }
 
         /* The macrostep this entry drives may `<cancel>` a later one, so the
@@ -5482,6 +5696,13 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
             break;
         }
     }
+{% if model.needs_script_engine %}
+    /* docs/adr/0086, section 8.5 (a): the last entry delivered was handed on,
+       to a queue that took its text or as a view the receiver copied, so what
+       it still holds is freed here and the machine keeps no text past the
+       tick that delivered it. */
+    event_text_free(sm, &ready->data, &ready->data_size);
+{% endif %}
 
     {{ csym_prefix }}{{ model.name }}_step(sm);
     end_turn(sm, _turn_opened);
@@ -6165,6 +6386,13 @@ SCE_SM_FN static void drop_host_invoke_deadline({{ csym_prefix }}{{ model.name }
                 sm->scheduled_queue.buf[pos] = sm->scheduled_queue.buf[i];
             }
             pos++;
+{% if model.needs_script_engine %}
+        } else {
+            /* A deadline carries no data; freeing what it holds keeps every
+               dropped entry's text freed by one rule (docs/adr/0086, section
+               8.5 (a)). */
+            event_text_free(sm, &sm->scheduled_queue.buf[i].data, &sm->scheduled_queue.buf[i].data_size);
+{% endif %}
         }
     }
     sm->scheduled_queue.count = pos;
@@ -6502,11 +6730,15 @@ SCE_SM_FN static bool end_host_invoke({{ csym_prefix }}{{ model.name }}_t *sm, c
        refused whole, before the invocation is ended, rather than cut: counted
        and raised as error.execution (`refuse_event_data`), and the host is told
        by the false it is answered. The invocation runs on, so a host may end it
-       again with data that fits. */
+       again with data that fits.{% if model.needs_script_engine %} This machine has no slot: its queue
+       copies the data into a text the engine allocates, and refuses the event
+       there when the allocator gives nothing (section 8.5 (a)).{% endif %} */
+{% if not model.needs_script_engine %}
     if (data != NULL && strlen(data) >= sizeof(sm->current_external.data)) {
         refuse_event_data(sm, NULL);
         return false;
     }
+{% endif %}
     if (!sce_host_invocation_take_token(&sm->started_host_invokes, processor_type, invoke_id, token)) {
         return false;
     }
@@ -6611,6 +6843,13 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_last_discarded_event(const {{ c
 SCE_SM_FN uint32_t {{ csym_prefix }}{{ model.name }}_refused_event_data(const {{ csym_prefix }}{{ model.name }}_t *sm) {
     return (sm == NULL) ? 0u : sm->refused_event_data;
 }
+{% if model.needs_script_engine %}
+
+/* docs/adr/0086, section 8.5 (a): the event texts the machine holds now. */
+SCE_SM_FN uint32_t {{ csym_prefix }}{{ model.name }}_owned_event_texts(const {{ csym_prefix }}{{ model.name }}_t *sm) {
+    return (sm == NULL) ? 0u : sm->owned_event_texts;
+}
+{% endif %}
 
 /* Which event the count above last recorded. */
 SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_last_refused_event_data(const {{ csym_prefix }}{{ model.name }}_t *sm,
@@ -7192,10 +7431,45 @@ SCE_SM_FN static void apply_host_invoke_ending({{ csym_prefix }}{{ model.name }}
 }
 
 {% endif %}
+{% if model.needs_script_engine %}
+/* docs/adr/0086, section 8.5 (a): hand the storage a poster handed over with
+   `input` to the release function it came with, once: when the input has been
+   applied, or when the machine is destroyed with the input still in its inbox.
+   An ending holds its data in the input itself and has nothing to release. */
+SCE_SM_FN static void release_inbox_input(const {{ csym_prefix }}{{ model.name }}_inbox_input_t *input) {
+    switch (input->kind) {
+    case {{ csym_prefix | upper }}{{ model.name | upper }}_INBOX_EXTERNAL_EVENT:
+        if (input->as.event.release != NULL) {
+            input->as.event.release(input->as.event.release_context, input->as.event.record.data);
+        }
+        break;
+    case {{ csym_prefix | upper }}{{ model.name | upper }}_INBOX_EXTERNAL_EVENT_BY_NAME:
+        if (input->as.by_name.release != NULL) {
+            input->as.by_name.release(input->as.by_name.release_context, input->as.by_name.event.data);
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+{% endif %}
 /* Apply one posted `input` by the owner-thread operation its kind names. */
 SCE_SM_FN static void apply_inbox_input({{ csym_prefix }}{{ model.name }}_t *sm,
                                         const {{ csym_prefix }}{{ model.name }}_inbox_input_t *input) {
     switch (input->kind) {
+{% if model.needs_script_engine %}
+    case {{ csym_prefix | upper }}{{ model.name | upper }}_INBOX_EXTERNAL_EVENT:
+        /* The poster's storage, read as a view the queue copies into a text
+           the engine allocates, then released: the input is applied. */
+        {{ csym_prefix }}{{ model.name }}_raise_external(sm, &input->as.event.record);
+        release_inbox_input(input);
+        break;
+    case {{ csym_prefix | upper }}{{ model.name | upper }}_INBOX_EXTERNAL_EVENT_BY_NAME:
+        {{ csym_prefix }}{{ model.name }}_raise_external_forwarded(sm, &input->as.by_name.event);
+        release_inbox_input(input);
+        break;
+{% else %}
     case {{ csym_prefix | upper }}{{ model.name | upper }}_INBOX_EXTERNAL_EVENT: {
         /* A view of the input the machine holds, which the queue copies. */
         const {{ csym_prefix }}{{ model.name }}_event_with_meta_t view =
@@ -7210,6 +7484,7 @@ SCE_SM_FN static void apply_inbox_input({{ csym_prefix }}{{ model.name }}_t *sm,
         {{ csym_prefix }}{{ model.name }}_raise_external_forwarded(sm, &forwarded);
         break;
     }
+{% endif %}
 {% if inbox_endings %}
     case {{ csym_prefix | upper }}{{ model.name | upper }}_INBOX_HOST_INVOKE_ENDING: {
         /* The record with its data a view of the text the input holds. */
@@ -7390,6 +7665,36 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_invoked_end({{ csym_prefix }}{{
 {% endif %}
 #endif
 
+{% if model.needs_script_engine %}
+/* docs/adr/0086, section 8.5 (a): free every event text the machine holds, in
+   its queues, its current events and its scheduled entries, and release what
+   posters handed over with the inputs its inbox still holds. Before the engine
+   is closed, since the texts came from its allocator. */
+SCE_SM_FN static void release_owned_event_texts({{ csym_prefix }}{{ model.name }}_t *sm) {
+    while (sm->internal_queue.count != 0u) {
+        event_queue_drop(sm, &sm->internal_queue);
+    }
+    while (sm->external_queue.count != 0u) {
+        event_queue_drop(sm, &sm->external_queue);
+    }
+    event_text_free(sm, &sm->current_internal.data, &sm->current_internal.data_size);
+    event_text_free(sm, &sm->current_external.data, &sm->current_external.data_size);
+{% if model.needs_event_scheduler %}
+    for (uint8_t i = 0u; i < sm->scheduled_queue.count; ++i) {
+        event_text_free(sm, &sm->scheduled_queue.buf[i].data, &sm->scheduled_queue.buf[i].data_size);
+    }
+    sm->scheduled_queue.count = 0u;
+    event_text_free(sm, &sm->ready_entry.data, &sm->ready_entry.data_size);
+{% endif %}
+#if SCE_MAX_INBOX > 0
+    while (sce_inbox_take(&sm->inbox, (unsigned char *)sm->inbox_slots, sizeof(sm->inbox_slots[0]),
+                          &sm->inbox_taken)) {
+        release_inbox_input(&sm->inbox_taken);
+    }
+#endif
+}
+
+{% endif %}
 SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_destroy({{ csym_prefix }}{{ model.name }}_t *sm) {
     {% if model.invokes | scxml_family %}
     /* W3C SCXML 6.4: tear down any active invoke children before the
@@ -7412,6 +7717,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_destroy({{ csym_prefix }}{{ mod
     {{ csym_prefix }}{{ model.name }}_detach_mesh(sm);
     {% endif %}
     {% if model.needs_script_engine %}
+    release_owned_event_texts(sm);
 {{ se.lua_destroy_engine() }}
     {% else %}
     (void)sm;
@@ -7451,7 +7757,7 @@ SCE_SM_FN static void record_unseen_external_events({{ csym_prefix }}{{ model.na
        size is copied onto this stack (docs/adr/0086, section 8.5 (d)). */
     while (sm->external_queue.count != 0u) {
         note_unseen_event(sm, sm->external_queue.buf[sm->external_queue.head].event);
-        event_queue_drop(&sm->external_queue);
+        event_queue_drop(sm, &sm->external_queue);
     }
 }
 
