@@ -36,6 +36,8 @@ def _written(write) -> bytes:
         (lambda w: cbor.write_bytes(w, b"\x01\x02"), b"\x42\x01\x02"),
         (lambda w: cbor.write_bool(w, True), b"\xf5"),
         (lambda w: cbor.write_map_head(w, 2), b"\xa2"),
+        (lambda w: cbor.write_array_head(w, 2), b"\x82"),
+        (lambda w: cbor.write_array_head(w, 24), b"\x98\x18"),
     ],
 )
 def test_every_head_is_written_in_its_shortest_form(write, want):
@@ -46,6 +48,15 @@ def test_a_head_is_read_in_any_valid_length():
     # 1 written in its 2-byte form still reads as 1.
     assert cbor.read_uint(SceCursor(b"\x18\x01")) == 1
     assert cbor.read_uint(SceCursor(b"\x1b\x00\x00\x00\x01\x00\x00\x00\x00")) == 1 << 32
+
+
+def test_an_array_head_is_read_as_its_count_and_no_other_item_is():
+    assert cbor.read_array_len(SceCursor(b"\x83")) == 3
+    assert cbor.read_array_len(SceCursor(b"\x98\x18")) == 24
+    # An indefinite-length array, and a map where an array stands.
+    for data in (b"\x9f", b"\xa1"):
+        with pytest.raises(cbor.CborMalformed):
+            cbor.read_array_len(SceCursor(data))
 
 
 def test_what_the_codec_cannot_read_is_refused():

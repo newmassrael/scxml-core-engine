@@ -4,7 +4,8 @@
 """The CBOR (RFC 8949) items a ``sce:encoding="cbor"`` codec reads and writes
 (SCE_FORGE.md §4.6.1): one definite-length map whose keys are small unsigned
 integers and whose values are unsigned integers, booleans, text strings and
-byte strings.
+byte strings, or a definite-length array of maps, each a record keyed by its
+fields' ids as text (docs/adr/0086, section 9.2).
 
 Mirrors ``backends/rust/forge-runtime/src/cbor.rs``, rule for rule. A
 generated codec calls these; it spells no CBOR of its own.
@@ -47,6 +48,7 @@ class CborOutOfRange(CodecError):
 MAJOR_UNSIGNED = 0
 MAJOR_BYTES = 2
 MAJOR_TEXT = 3
+MAJOR_ARRAY = 4
 MAJOR_MAP = 5
 MAJOR_SIMPLE = 7
 
@@ -94,6 +96,12 @@ def write_bytes(w: SceSink, value: bytes) -> None:
     """Write a byte string."""
     write_head(w, MAJOR_BYTES, len(value))
     w.write_bytes(value)
+
+
+def write_array_head(w: SceSink, items: int) -> None:
+    """Write the head of a definite-length array of ``items`` items: a list of
+    records an entry holds."""
+    write_head(w, MAJOR_ARRAY, items)
 
 
 def write_map_head(w: SceSink, entries: int) -> None:
@@ -193,6 +201,12 @@ def read_bytes_exact(c: SceCursor, length: int) -> bytes:
     if n != length:
         raise CborWrongLength()
     return _read_payload(c, n)
+
+
+def read_array_len(c: SceCursor) -> int:
+    """Read the head of a definite-length array: how many items follow. An
+    indefinite length is refused, as a map's is."""
+    return _expect(c, MAJOR_ARRAY)
 
 
 def read_map_len(c: SceCursor) -> int:
