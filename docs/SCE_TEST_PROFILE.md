@@ -1001,8 +1001,8 @@ context on its policy, registers the test-port processor and the test-component 
 `__test__ = False`, so pytest collects none, whatever the document's name makes of its own. The engine takes a session
 id it is given, or draws one, whether or not a saved state can hold its machine, so the component's session id needs
 no saved shape. Python refuses by name a component that declares `<sce:action>`, whose policy is constructed with a
-host the component is given nothing of; one that uses a template whose type reaches a union, which Python does not
-lower (ADR 0092, section 7); and, until it generates a suite's tables, a component that declares a module parameter.
+host the component is given nothing of, and one that uses a template whose type reaches a union, which Python does
+not lower (ADR 0092, section 7).
 
 A module parameter (§11.5) is a variable of the machine declared with its type and no value of the document's: the
 static lowering, written once for every backend, lowers no initial value for it. Its value is the run's. Before
@@ -1042,8 +1042,20 @@ restore reads a variable of its type by (`sce.SavedRead<Type>`, a text and a byt
 `<Type>FromSaved` for an enum) before it writes any. A refused read ends the run with `error` and leaves the machine
 unbuilt.
 
+Python reads a module parameter the same way: the policy's attribute is declared at its type's zero, or for an enum at
+the variant its document declares first, a member of the machine's `IntEnum`, neither of which anything reads; the
+starts are the one walk Kotlin's and Go's are (`forge::generator::python_module_parameter_starts`). An enum's class
+declares its saved form (`from_saved`) with the type, whether or not the machine saves. Then `start`, after it builds
+the engine through `create_engine` and sets the context on the policy, and before it registers a door on the engine or
+starts it, calls `ComponentContext.read_module_parameters` with the policy's `_sce_accept_module_parameters`, which
+reads every module parameter from the run's values by the reader a restore reads a variable of its type by
+(`sce_runtime.saved_values.saved_read_<type>`, a text and a byte string held to their bounds, `from_saved` for an
+enum; the one spelling `_macros/python_saved_value.jinja2` gives the saved functions too) before it writes any. A
+refused read ends the run with `error` and leaves the machine unstarted, and the component one that has not started.
+
 A backend that generates a component and not the suite's tables refuses a component that declares a module parameter
-by name (`test_component::snapshot::lower`), since its value is the suite's; C++, Rust, Kotlin and Go generate both.
+by name (`test_component::snapshot::lower`), since its value is the suite's; C++, Rust, Kotlin, Go and Python
+generate both.
 
 C++ generates `test-configuration`, `test-case` and `test-suite`, and writes no file for `test-port-type` (§12.6,
 slice 5; `codegen_matrix::TEST_SUITE_BACKENDS`): the units of the components and configurations that read a port
@@ -1129,9 +1141,37 @@ package two rows name is imported once:
   (`testprofile.GuardOf` of its microseconds, or `testprofile.NoGuard`) and its selection as a function literal over
   the world's features, whose returned expression stands bare as Rust's closure's body does.
 
+The runner `testprofile.RunSuite` runs the test cases a world selects (§12.4).
+
+Python generates `test-configuration`, `test-case` and `test-suite`, and writes no file for `test-port-type` (§12.6,
+slice 6). Each table is a module `<file>.py`, named by the document's file as every forge unit is, over the profile's
+runtime, which it imports as `_sce_testprofile`, the name a component's machine imports it by. Each table imports
+what it reads as a sibling module, under the alias `sce_<document>` every Python unit imports a sibling by (`from .
+import <document> as sce_<document>`): a test case its configuration's unit and a suite its test cases'. A
+configuration imports each component's machine from the module the component's statechart is generated as,
+`<machine>_sm` (the file `<stem>_sm.py` the Python generator writes for any statechart), under `sce_<machine>_sm`; so a
+configuration, the components it runs, its test cases and the suite are one package, as the machines and the units
+they import are. A module two rows name is imported once. The runtime modules a table reads are imported under names
+with a leading underscore, which no sibling's alias and no declaration of a table can be:
+
+- a configuration declares `configuration()`, the `Configuration` the runtime reads, every field written and an empty
+  table as empty; `machine(component_type)`, a `MachineFactory` that makes the `<Name>Component` of each type and
+  `None` for another; and `module_parameters()`, the ids its components read;
+- a test case declares `NAME` and `test_case()`, the `TestCase` of its name, its configuration's tables, its
+  configuration's `machine` as the factory of machines, and the module parameters they read. `test_case` begins as a
+  test of pytest's does, and a test case's document may be named `test_<...>`, whose module pytest collects where it
+  lies among tests, so the function says `__test__ = False`;
+- a suite declares `suite()`, the `Suite` of its module parameters at their defaults, each the saved value of its
+  declared type written by the writer of that type (`sce_runtime.saved_values.saved_write_<type>`, imported as
+  `_sce_saved` where a module parameter is declared, which writes a 64-bit integer as its text and a byte string as
+  its Latin-1 text; an enum's variant by the name its document declares, written as a text is), and of its
+  `<sce:execute>` entries in run order, each with its test case, its guard in microseconds or `None`, and its
+  selection as a `lambda` over the world's features in Python's `and` and `or`, whose body stands bare as Rust's
+  closure's does, every join inside it in parentheses.
+
 Which rows each table holds, in which order, and what is refused is decided once for every backend
-(`forge::generator::test_tables`); a backend spells them. The runner `testprofile.RunSuite` runs the test cases a
-world selects (§12.4). Every kind stays refused on the other backends until their slices land.
+(`forge::generator::test_tables`); a backend spells them. The runner `sce_runtime.testprofile.run_suite` runs the
+test cases a world selects (§12.4). Every kind stays refused on the other backends until their slices land.
 
 ### 11.10 The rules under feature derivation
 
@@ -1293,5 +1333,7 @@ the equivalence law (order of work step 6).
    `test-template`; Python lowers no union, so a template whose type reaches one stays refused there, as on C++ and
    Go. Python generates test components next, through the doors of §12.3, and runs them through
    `sce_runtime.testprofile.TestCaseRun`; the refusal is lifted for Python for `test-component`, but for a component
-   that declares a module parameter, whose value Python's suite tables give, for one that declares `<sce:action>`, and
-   for one whose template reaches a union.
+   that declares `<sce:action>` and for one whose template reaches a union. Python then generates the configuration,
+   case and suite tables over the same rows, each importing what it reads as a sibling module, and runs the examples
+   end to end through `sce_runtime.testprofile.run_suite`; the refusal is lifted for Python for the remaining kinds,
+   and for a component's module parameter.
