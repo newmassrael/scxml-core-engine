@@ -46,6 +46,13 @@
  * declares it. */
 typedef {{ value_type }} {{ prefix }}_value_t;
 
+/* The name a message's value of `{{ prefix }}_value_t` is known by (`sce_host_value_t::type`,
+ * docs/SCE_TEST_PROFILE.md §12.3): the type it stands for, which every template of the type
+ * names alike, so a value one template's sender writes is one another template's receiver reads. */
+static inline const char *{{ prefix }}_value_type(void) {
+    return {{ value_type_name }};
+}
+
 {# Every parameter is cast to void: a formal parameter a matcher does not read is
    still one a reference binds, and a matcher that holds no value to compare
    (`any-value`) reads no `value`. #}

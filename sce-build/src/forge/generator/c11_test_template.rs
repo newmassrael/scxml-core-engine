@@ -3,6 +3,9 @@
 
 //! The C11 unit of a test template (docs/SCE_TEST_PROFILE.md §6, §11.4,
 //! §11.9, §12.2): `<name>_value_t`, the type the template matches;
+//! `<name>_value_type`, the name a message's value of that type is known by
+//! (`sce_host_value_t::type`), the type's own and not the alias, so every
+//! template of one type names it alike;
 //! `<name>_matches`, whether a value matches it (ES 201 873-1 Annex B.1); and,
 //! for a specific template (§6.2), `<name>_value`, the one value it sends. C has
 //! no namespace, so each declaration carries the document's name, as the units
@@ -114,6 +117,15 @@ pub(super) fn render_test_template_c11(
     );
     ctx.insert("template_name".into(), m.name.clone().into());
     ctx.insert("template_type".into(), m.template_type.to_string().into());
+    // The name a message's value of the type is known by (`sce_host_value_t::type`),
+    // which the runtime compares by its text: the type the unit of the
+    // template's type declares, and not this unit's own alias of it, so that a
+    // value one template's sender writes is one another template of the same
+    // type receives.
+    ctx.insert(
+        "value_type_name".into(),
+        format!("\"{}\"", filters::escape_c(value_type.clone())).into(),
+    );
     ctx.insert("value_type".into(), value_type.into());
     ctx.insert("parameters".into(), serde_json::Value::Array(parameters));
     ctx.insert("match_expr".into(), match_expr.into());

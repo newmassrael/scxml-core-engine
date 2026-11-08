@@ -118,6 +118,8 @@ fn each_template_declares_matches_and_a_value_exactly_when_specific() {
         let text = unit(&path, name);
         let guard = format!("#ifndef SCE_FORGE_{}_H\n", name.to_uppercase());
         let value_type = format!(" {name}_value_t;\n");
+        let type_name =
+            format!("\nstatic inline const char *{name}_value_type(void) {{\n    return \"");
         let matches = format!("\nstatic inline bool {name}_matches(const {name}_value_t *value");
         holds_each(
             &text,
@@ -125,6 +127,7 @@ fn each_template_declares_matches_and_a_value_exactly_when_specific() {
                 guard.as_str(),
                 "\ntypedef ",
                 value_type.as_str(),
+                type_name.as_str(),
                 matches.as_str(),
             ],
         );
@@ -225,6 +228,37 @@ fn a_specific_templates_value_is_its_records_initializer() {
             "#ifndef SCE_STATIC_STRING_32\n",
             "} sce_static_string_32_t;\n",
         ],
+    );
+}
+
+/// docs/SCE_TEST_PROFILE.md §12.3: a message's value is known by the name of
+/// its C type (`sce_host_value_t::type`), which the runtime compares by its
+/// text, so every template of one record names the type the record's unit
+/// declares, and none names its own alias of it: a value the sender of one
+/// template writes is one the receiver of another takes.
+#[test]
+fn every_template_of_a_record_names_the_records_type_for_its_messages() {
+    for name in ["job_report", "job_report_of", "every_matcher"] {
+        let text = unit_of(&profile_dir(), name);
+        holds_each(
+            &text,
+            &[
+                &format!("typedef JobStatusPayload_t {name}_value_t;\n"),
+                &format!(
+                    "static inline const char *{name}_value_type(void) {{\n    return \
+                     \"JobStatusPayload_t\";\n}}\n"
+                ),
+            ],
+        );
+    }
+    // A template of a number names the number's type.
+    let at_most = unit_of(&profile_dir(), "elapsed_at_most");
+    assert!(
+        at_most.contains(
+            "static inline const char *elapsed_at_most_value_type(void) {\n    return \
+             \"uint32_t\";\n}\n"
+        ),
+        "{at_most}"
     );
 }
 
