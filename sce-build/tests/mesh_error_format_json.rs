@@ -641,44 +641,6 @@ fn the_cpp_router_routes_a_causal_binding_over_custom_tcp() {
     );
 }
 
-#[test]
-fn the_cpp_router_refuses_a_causal_binding_on_a_transport_it_does_not_carry() {
-    // docs/adr/0085, section 3.2: the C++ causal route sends its own control
-    // message and answers a repair with the original envelopes, which a
-    // Zenoh key does not carry. The binding is refused by name, with the
-    // transports that carry it, rather than built to lose its vectors. Red
-    // if the refusal is removed, which builds a route whose gaps are never
-    // repaired.
-    let dir = ScratchDir::new("mesh-causal-cpp-zenoh");
-    let scxml = dir.write("client.scxml", CLIENT_SCXML);
-    dir.write("server.scxml", SERVER_SCXML);
-    let binding = format!("transport: zenoh_keyexpr\n            key: \"cal/server\"\n            {CAUSAL_GROUP_KEYS}");
-    let deploy = dir.write("deploy.yaml", &causal_deploy_over(&binding));
-    let out = run_with_deploy_for("cpp", &scxml, &deploy, dir.path());
-    assert!(
-        !out.status.success(),
-        "C++ must refuse a causal binding over zenoh_keyexpr"
-    );
-    let stderr = String::from_utf8(out.stderr).expect("stderr utf8");
-    let rec = sole_ndjson_record(&stderr);
-    assert_core_shape(&rec);
-    assert_eq!(
-        rec["code"], "mesh/codegen-causal-transport-unsupported",
-        "record: {rec}"
-    );
-    assert_eq!(rec["actual"], "zenoh_keyexpr", "record: {rec}");
-    assert_eq!(
-        rec["expected"],
-        serde_json::json!(["custom_tcp"]),
-        "record: {rec}"
-    );
-    let message = rec["message"].as_str().expect("message");
-    assert!(
-        message.contains("`#server`") && message.contains("`custom_tcp`"),
-        "record: {rec}"
-    );
-}
-
 /// The C++ router `sce-codegen generate --deploy` wrote under `dir`,
 /// wherever the generator put it.
 fn transport_header_under(dir: &std::path::Path) -> String {

@@ -89,6 +89,14 @@ pub enum SomeipEventIds {
     Setter { setter_id: u16 },
 }
 
+/// The reserved event name under which a causal binding's SOME/IP service
+/// interface declares the method that carries its vector (pattern 23,
+/// `causalVector`; docs/adr/0085, section 3.2), on the sending binding's
+/// `events:` table and on the receiving machine's `server:` events alike.
+/// The vector itself carries no event name: this name only addresses its
+/// method, as every event name addresses one.
+pub const CAUSAL_VECTOR_EVENT: &str = "mesh.causal_vector";
+
 impl SomeipEventIds {
     /// The SOME/IP field kind this entry represents. Used by codegen and
     /// validation to dispatch uniformly (`match SomeipFieldKind { … }`)
@@ -3255,15 +3263,44 @@ fn resolve_someip_ids(
         }
     }
 
+    // docs/adr/0085, section 3.2: a causal binding sends its vector, pattern
+    // 23, which carries no event of the document. SOME/IP addresses a message
+    // by the method its service interface gives a name, so the vector takes a
+    // method of its own, declared under the reserved name
+    // [`CAUSAL_VECTOR_EVENT`] in the binding's `events:` table and resolved
+    // against `vsomeip.json` like every event. A causal binding without it is
+    // refused here: its gaps could never be repaired.
+    if pt.causal.is_some() {
+        match per_binding.by_event.get(CAUSAL_VECTOR_EVENT) {
+            Some(ids @ SomeipEventIds::Method { .. }) => {
+                event_bindings.insert(CAUSAL_VECTOR_EVENT.to_string(), ids.clone());
+            }
+            _ => {
+                return Err(TopologyError::MissingBindingField {
+                    machine: machine_name.to_string(),
+                    target: pt.target.clone(),
+                    transport: "someip".to_string(),
+                    field: format!(
+                        "{} (the causal vector of a `delivery: causal` binding, \
+                         event \"{CAUSAL_VECTOR_EVENT}\")",
+                        field_kind_yaml_name(super::pattern::SomeipFieldKind::Method),
+                    ),
+                });
+            }
+        }
+    }
+
     // Detect unused per-event entries (likely typos). Subscription
     // interest counts as a use: a subscriptions-only machine sends
     // nothing, so cross-checking against the outbound vocabulary alone
     // would reject the `events:` entry that makes the deployment work.
+    // A causal binding's vector method is a use of its own.
     let actual_events: BTreeSet<&str> = pt
         .event_patterns
         .iter()
         .map(|ep| ep.event.as_str())
         .chain(pt.subscription_events.iter().map(String::as_str))
+        .chain(pt.causal.as_ref().map(|_| CAUSAL_VECTOR_EVENT))
         .collect();
     for declared in per_binding.by_event.keys() {
         if !actual_events.contains(declared.as_str()) {

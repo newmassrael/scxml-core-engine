@@ -5898,6 +5898,11 @@ fn validate_delivery(cfg: &DeployConfig) -> Result<(), DeployError> {
                         {
                             return Err(conflict(machine_name, target, reason));
                         }
+                        if let Some(reason) =
+                            causal_shm_size_error(&devices, machine_name, target, binding)
+                        {
+                            return Err(conflict(machine_name, target, reason));
+                        }
                         let here = format!("{this_instance} `{target}`");
                         match groups.get(group.name.as_str()) {
                             Some((view, first)) if *view != group.view.as_slice() => {
@@ -5938,6 +5943,47 @@ fn validate_delivery(cfg: &DeployConfig) -> Result<(), DeployError> {
         }
     }
     Ok(())
+}
+
+/// Why a causal shm binding and its peer's causal binding back cannot share
+/// one channel layout, or `None`. Each peer of a causal shm pair drains the
+/// channel the other creates (docs/adr/0085, section 3.2: the receiving side
+/// reads through its router), and opens it with its own binding's arena and
+/// ring, so the two bindings declare the same `shm_arena_bytes` and
+/// `shm_ring_capacity`. A peer without a causal binding back has no route to
+/// read with, and nothing to agree with.
+fn causal_shm_size_error(
+    devices: &std::collections::BTreeMap<&str, &DeviceConfig>,
+    machine_name: &str,
+    target: &str,
+    binding: &BindingConfig,
+) -> Option<String> {
+    if binding.transport != "shm" {
+        return None;
+    }
+    let peer = target.trim_start_matches('#');
+    let back_target = format!("#{machine_name}");
+    let back = devices
+        .values()
+        .filter_map(|device| device.machines.get(peer))
+        .flat_map(|machine| machine.bindings.iter())
+        .find(|(t, b)| {
+            t.as_str() == back_target
+                && b.transport == "shm"
+                && b.delivery == Some(DeliveryMode::Causal)
+        })
+        .map(|(_, b)| b)?;
+    for key in ["shm_arena_bytes", "shm_ring_capacity"] {
+        if binding.extra.get(key) != back.extra.get(key) {
+            return Some(format!(
+                "binding `{target}` and the binding `{back_target}` of '{peer}' are the two \
+                 ends of one causal shm route, and declare different `{key}`. Each end opens \
+                 the channel the other creates with its own layout; declare the same `{key}` \
+                 on both."
+            ));
+        }
+    }
+    None
 }
 
 /// Why a causal binding's group cannot be the view of epoch 0, or `None`:
@@ -9625,6 +9671,41 @@ topology:
             }) => {
                 assert_eq!(machine, "list");
                 (target, reason)
+            }
+            other => panic!("expected DeliveryConflict, got {other:?}"),
+        }
+    }
+
+    /// Two machines of one device bound to each other over shm by one causal
+    /// group, the motor's binding with `arena` as its `shm_arena_bytes`.
+    fn causal_shm_pair(arena: u32) -> String {
+        format!(
+            "version: \"1.0\"\ntopology:\n  ecu:\n    machines:\n      brake:\n        \
+             source: brake.scxml\n        bindings:\n          \"#motor\":\n            \
+             transport: shm\n            shm_arena_bytes: 65536\n            \
+             delivery: causal\n            group: {{ name: pair, view: [ecu/brake, ecu/motor] }}\n      \
+             motor:\n        source: motor.scxml\n        bindings:\n          \"#brake\":\n            \
+             transport: shm\n            shm_arena_bytes: {arena}\n            \
+             delivery: causal\n            group: {{ name: pair, view: [ecu/brake, ecu/motor] }}\n"
+        )
+    }
+
+    #[test]
+    fn the_two_ends_of_a_causal_shm_route_declare_one_channel_layout() {
+        // docs/adr/0085, section 3.2: each end drains the channel the other
+        // creates, opened with its own binding's layout. Red if the check is
+        // removed: the brake then maps the motor's larger arena at its own
+        // size, and the motor reads past the brake's.
+        parse_deploy_str(&causal_shm_pair(65536)).expect("one layout on both ends");
+        match parse_deploy_str(&causal_shm_pair(131072)) {
+            Err(DeployError::DeliveryConflict {
+                machine,
+                target,
+                reason,
+            }) => {
+                assert_eq!(machine, "brake");
+                assert_eq!(target, "#motor");
+                assert!(reason.contains("`shm_arena_bytes`"), "{reason}");
             }
             other => panic!("expected DeliveryConflict, got {other:?}"),
         }

@@ -10960,7 +10960,27 @@ pub fn compile_mesh_transport(
         .and_then(|m| m.server.as_ref());
 
     let server_pairs = mesh::topology::detect_server_pairs(model);
-    let server_fire_forget_events = mesh::topology::detect_server_fire_forget_events(model);
+    let mut server_fire_forget_events = mesh::topology::detect_server_fire_forget_events(model);
+    // docs/adr/0085, section 3.2: a machine that is a member of a causal
+    // group over SOME/IP reads its peers' vectors on the method its own
+    // service interface declares for them, so its server serves that method
+    // as one more one-way request, beside the events its document receives.
+    let causal_over_someip = deploy_cfg
+        .device_for_machine(&effective_machine_name)
+        .and_then(|d| d.machines.get(&effective_machine_name))
+        .is_some_and(|m| {
+            m.bindings.values().any(|b| {
+                b.transport == "someip" && b.delivery == Some(mesh::deploy::DeliveryMode::Causal)
+            })
+        });
+    if causal_over_someip
+        && server_config.is_some_and(|s| s.transport == "someip")
+        && !server_fire_forget_events
+            .iter()
+            .any(|e| e == mesh::topology::CAUSAL_VECTOR_EVENT)
+    {
+        server_fire_forget_events.push(mesh::topology::CAUSAL_VECTOR_EVENT.to_string());
+    }
     let server_field_access_pairs = mesh::topology::detect_server_field_access_pairs(model);
     // Eventgroup events are deploy.yaml-driven (server.events with
     // event_group: binding). Detection requires the server config.
