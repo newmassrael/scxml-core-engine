@@ -1455,8 +1455,18 @@ fn the_push_hands_bx_the_set_the_registry_plans() {
          {set:?}"
     );
 
-    let hook = std::fs::read_to_string(root.join("tools/git-hooks/pre-push"))
-        .expect("read tools/git-hooks/pre-push");
+    // The hook sources `run_gates` from prepush-gates.sh, so the bx line is
+    // looked for in the two files the push runs, and only there.
+    let hook = [
+        "tools/git-hooks/pre-push",
+        "tools/git-hooks/prepush-gates.sh",
+    ]
+    .iter()
+    .map(|rel| {
+        std::fs::read_to_string(root.join(rel)).unwrap_or_else(|e| panic!("read {rel}: {e}"))
+    })
+    .collect::<Vec<_>>()
+    .join("\n");
     assert!(
         code_lines(&hook).any(|l| l.contains("--checks prepush -- bash scripts/gate --plan")),
         "the push hook no longer hands bx the set `prepush` with the runner's \
