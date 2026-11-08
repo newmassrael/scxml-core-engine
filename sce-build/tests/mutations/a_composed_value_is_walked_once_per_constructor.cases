@@ -15,19 +15,19 @@
 # reported INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-build --lib forge::composed_lowering
-mutation_targets sce-build/src/forge/composed_lowering.rs
-mutation_oracles sce-build/src/forge/composed_lowering.rs
+mutation_targets sce-build/src/forge/composed_lowering.rs sce-build/src/forge/composed_lowering/rust.rs
+mutation_oracles sce-build/src/forge/composed_lowering.rs sce-build/src/forge/composed_lowering/rust.rs sce-build/src/forge/composed_lowering/test_support.rs
 
 # An optional value is held as its present value: absence has nowhere to be.
 mutation_case "the machine holds no optional" <<'PY'
-edit("sce-build/src/forge/composed_lowering.rs",
+edit("sce-build/src/forge/composed_lowering/rust.rs",
      r'''        format!("Option<{elem}>")''',
      r'''        elem.to_string()''')
 PY
 
 # A list is read past its bound: one element too many is kept.
 mutation_case "a list is read with no bound" <<'PY'
-edit("sce-build/src/forge/composed_lowering.rs",
+edit("sce-build/src/forge/composed_lowering/rust.rs",
      r'''        format!("{value}.list::<_, {max}>(|v| {elem})")''',
      r'''        format!("{value}.list::<_, {}>(|v| {elem})", max + 1)''')
 PY
@@ -35,7 +35,7 @@ PY
 # A list is held in a type whose bound is not the list's own (docs/adr/0086,
 # section 7.4): the machine would hold one element past it.
 mutation_case "a list is held past its bound" <<'PY'
-edit("sce-build/src/forge/composed_lowering.rs",
+edit("sce-build/src/forge/composed_lowering/rust.rs",
      r'''    format!("{RUST_PORTABLE}::BoundedList<{elem}, {max}>")''',
      r'''    format!("{RUST_PORTABLE}::BoundedList<{elem}, {}>", max + 1)''')
 PY
@@ -54,7 +54,7 @@ PY
 
 # A text is read with no bound, so a text past it is kept (section 4.4).
 mutation_case "a text is read with no bound" <<'PY'
-edit("sce-build/src/forge/composed_lowering.rs",
+edit("sce-build/src/forge/composed_lowering/rust.rs",
      r'''        format!("{value}.text::<{max}>()")''',
      r'''        format!("{value}.text::<{}>()", u32::MAX)''')
 PY
@@ -69,7 +69,7 @@ PY
 
 # An enum name the enum does not declare is not refused.
 mutation_case "an unknown variant name is not refused" <<'PY'
-edit("sce-build/src/forge/composed_lowering.rs",
+edit("sce-build/src/forge/composed_lowering/rust.rs",
      r'''            "{value}.name().and_then(|name| match name {{ {arms}other => \
              Err({value}.unknown_variant(other, \"{}\")) }})",
             crate::filters::escape_rust(held.alias.clone())''',
@@ -98,7 +98,7 @@ PY
 
 # A value that may be absent is written as though it were present.
 mutation_case "an optional value is written as its present value" <<'PY'
-edit("sce-build/src/forge/composed_lowering.rs",
+edit("sce-build/src/forge/composed_lowering/rust.rs",
      r'''            "{RUST_PAYLOAD}::optional_json({}.as_ref(), |h| {elem})",''',
      r'''            "{RUST_PAYLOAD}::list_json({}.as_ref(), |h| {elem})",''')
 PY
