@@ -163,6 +163,17 @@ pub fn longest_text(ty: InferredType) -> Option<u64> {
 /// [`crate::forge::expr`]'s inference against `ctx`, which `ctx` the bounds
 /// of its places are read from too.
 pub(crate) fn text_bound(node: &TypedExpr, ctx: &TypeCtx<'_>) -> TextBound {
+    // A conditional is a choice of one of its branches, each judged by its own
+    // type: its bound is the larger of theirs, whatever the inference makes of
+    // the whole (two branches of different types meet at no one type).
+    if let ExprKind::Conditional {
+        consequent,
+        alternate,
+        ..
+    } = &node.kind
+    {
+        return text_bound(consequent, ctx).larger(text_bound(alternate, ctx));
+    }
     // A number or a boolean is read as the text of its value, which is never
     // longer than the longest text of its type, whatever computes it.
     if let Some(longest) = longest_text(node.ty) {
@@ -186,11 +197,6 @@ fn text_of_a_string(node: &TypedExpr, ctx: &TypeCtx<'_>) -> TextBound {
         ExprKind::Ident(_) | ExprKind::Member { .. } | ExprKind::Index { .. } => {
             place_bound(node, ctx)
         }
-        ExprKind::Conditional {
-            consequent,
-            alternate,
-            ..
-        } => text_bound(consequent, ctx).larger(text_bound(alternate, ctx)),
         ExprKind::Binary { op, left, right }
             if expr::is_string_concatenation(*op, left.ty, right.ty) =>
         {
@@ -288,6 +294,16 @@ fn call_bound(node: &TypedExpr, callee: &TypedExpr, ctx: &TypeCtx<'_>) -> TextBo
 /// larger of a conditional's branches. Anything else has no bound, and says
 /// why (docs/adr/0086, section 8.6 (c)).
 fn byte_string_bound(node: &TypedExpr, ctx: &TypeCtx<'_>) -> TextBound {
+    // A conditional is a byte string when both its branches are, each judged
+    // by its own type, whatever the inference makes of the whole.
+    if let ExprKind::Conditional {
+        consequent,
+        alternate,
+        ..
+    } = &node.kind
+    {
+        return byte_string_bound(consequent, ctx).larger(byte_string_bound(alternate, ctx));
+    }
     if node.ty != InferredType::Bytes {
         return TextBound::Unbounded(Unbounded::at(
             node,
@@ -306,11 +322,6 @@ fn byte_string_bound(node: &TypedExpr, ctx: &TypeCtx<'_>) -> TextBound {
             }
         }
         ExprKind::Call { callee, .. } => call_bound(node, callee, ctx),
-        ExprKind::Conditional {
-            consequent,
-            alternate,
-            ..
-        } => byte_string_bound(consequent, ctx).larger(byte_string_bound(alternate, ctx)),
         _ => TextBound::Unbounded(Unbounded::at(
             node,
             "is a byte string computed by an operation the bound of whose length is not known",
@@ -579,6 +590,11 @@ mod tests {
         // The present text of an optional one, beside its default.
         assert_eq!(at("Maybe() ?? 'x'"), TextBound::Bounded(9));
         assert_eq!(at("Maybe() ?? note"), TextBound::Bounded(12));
+        // A conditional is the larger of its branches, each judged by its own
+        // type, whatever the inference makes of the whole.
+        assert_eq!(at("on ? Label(1) : note"), TextBound::Bounded(40));
+        assert_eq!(at("on ? (Maybe() ?? 'x') : note"), TextBound::Bounded(12));
+        assert!(at("on ? Label(1) : Free(1)").bounded().is_none());
     }
 
     #[test]
