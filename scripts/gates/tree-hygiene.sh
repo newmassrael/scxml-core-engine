@@ -267,3 +267,11 @@ cargo test -p sce-build --features cli,ffi \
 # of each case, a commit of this repository pushed under a queue's name among them.
 bash tools/git-hooks/test-bx-land-refs.sh \
     || sce_gate_fail "the pre-push hook's judgement of bx landing refs"
+
+# An update to main asks for the landing selection, ci_only gates included, and
+# the hook hands bx's status through as it came: the landing queue's integrator
+# lands an item only on 0, so a 2 (a unit not measured) read as 0 would land it
+# unjudged (tools/git-hooks/prepush-gates.sh). The test runs the whole hook on a
+# repository it makes, with a stand-in bx and a stand-in runner.
+bash tools/git-hooks/test-prepush-gates.sh \
+    || sce_gate_fail "the pre-push hook's selection for main, or the status it hands through"

@@ -1,0 +1,159 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# What the pre-push hook hands the gates (prepush-gates.sh), on a repository made here, with a stand-in
+# bx and a stand-in runner that record what they were asked and end with a status the case chooses.
+#
+# The selection:
+#   1. an update to refs/heads/main asks for the landing selection (--landing)
+#   2. a push of another branch does not
+#   3. a deletion of main publishes nothing and does not
+#   4. a branch whose name only starts with main does not
+#   5. a push of a branch and main together does
+#
+# The whole hook, run as git runs it, so the wiring is what is tested and not a copy of it:
+#   6. a main update through bx plans the landing selection of its range
+#   7. bx's 2 (a unit not measured) is the hook's 2, never a 0 that would land the item
+#   8. bx's 1 is the hook's 1, and its 0 the hook's 0
+#   9. a branch push through bx plans without --landing
+#  10. in place (no bx), a main update hands the runner --landing, and the runner's 3 is the hook's 3
+#  11. in place, a branch push's runner status 2 is the hook's 2, and no --landing
+#  12. PREPUSH_FULL=1 on a main update plans every gate the fleet can run (--all --landing), status as is
+#  13. a genuine landing queue item (refs/bx-land/main/items/<id>) is published and asks for no gate
+#
+# The landing queue's refs are classified by bx's description of their kinds (bx-land-refs.sh). The
+# fixture states that description as a file, as test-bx-land-refs.sh does, so no case asks a bx-fleet
+# this machine may carry, and refs/heads/main is gated whichever way the description reads.
+#
+# Usage: tools/git-hooks/test-prepush-gates.sh   (no network, no build; a few seconds)
+
+set -euo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=tools/git-hooks/prepush-gates.sh
+source "$HERE/prepush-gates.sh"
+# shellcheck source=tools/git-hooks/ident-gate.sh
+source "$HERE/ident-gate.sh"
+
+WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
+Z=0000000000000000000000000000000000000000
+A=1111111111111111111111111111111111111111
+B=2222222222222222222222222222222222222222
+
+fails=0
+pass() { printf 'PASS %s\n' "$1"; }
+fail() { printf 'FAIL %s: %s\n' "$1" "$2"; fails=$((fails + 1)); }
+
+# select_case <name> <want: landing|none> <pushed lines>
+select_case() {
+    local name="$1" want="$2" lines="$3" got=none
+    prepush_select_refs <<<"$lines"
+    (( ${#PREPUSH_SELECT_ARGS[@]} )) && got="${PREPUSH_SELECT_ARGS[*]}"
+    [[ "$got" == "--landing" ]] && got=landing
+    if [[ "$got" == "$want" ]]; then pass "$name"; else fail "$name" "selection '$got', want '$want'"; fi
+}
+
+select_case "1 an update to main asks for the landing selection" landing "refs/heads/main $A refs/heads/main $B"
+select_case "2 a push of another branch does not" none "refs/heads/topic $A refs/heads/topic $B"
+select_case "3 a deletion of main does not" none "(delete) $Z refs/heads/main $B"
+select_case "4 a branch named mainline does not" none "refs/heads/mainline $A refs/heads/mainline $B"
+select_case "5 a branch and main together do" landing "refs/heads/topic $A refs/heads/topic $B
+refs/heads/main $A refs/heads/main $B"
+
+# ── The whole hook, on a repository made here ────────────────────────────────────────────────────
+#
+# The hook files are copied in, since the hook sources its neighbours by its own path, and
+# scripts/gate is a stand-in. Commits are made under the first identity ident-gate.sh accepts, and
+# the restricted-term list is one term no fixture holds, so the checks ahead of the gates pass.
+REPO="$WORK/repo"
+LOG="$WORK/asked"
+mkdir -p "$REPO/tools/git-hooks" "$REPO/scripts" "$WORK/bin"
+cp "$HERE"/* "$REPO/tools/git-hooks/"
+cat >"$REPO/scripts/gate" <<'STUB'
+#!/usr/bin/env bash
+printf 'runner %s\n' "$*" >>"$PREPUSH_TEST_LOG"
+exit "${PREPUSH_TEST_RUNNER_RC:-0}"
+STUB
+chmod +x "$REPO/scripts/gate"
+cat >"$WORK/bin/bx" <<'STUB'
+#!/usr/bin/env bash
+printf 'bx %s\n' "$*" >>"$PREPUSH_TEST_LOG"
+exit "${PREPUSH_TEST_BX_RC:-0}"
+STUB
+chmod +x "$WORK/bin/bx"
+printf 'zz-fixture-term-no-file-here-holds-qq\n' >"$WORK/terms.txt"
+# bx's description of the queue's kinds, the item kind as bx describes it (format 1). An item shares
+# history with origin/HEAD, is published, and is not gated.
+{
+    printf '# bx-land-refs 1\n'
+    printf 'item\t^refs/bx-land/.+/items/[^/]+$\t-\t-\tshares\t1\t0\n'
+} >"$WORK/description.tsv"
+
+EMAIL="${SCE_ALLOWED_IDENT_EMAILS[0]}"
+fixture_git() { git -C "$REPO" -c user.name=fixture -c "user.email=$EMAIL" "$@"; }
+fixture_git init -q -b main
+fixture_git add -A
+fixture_git commit -qm "seed"
+BASE="$(fixture_git rev-parse HEAD)"
+# The remote's main is the seed, as it is when the integrator judges a candidate on top of it.
+fixture_git update-ref refs/remotes/origin/main "$BASE"
+fixture_git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+printf 'a change\n' >"$REPO/notes.txt"
+fixture_git add notes.txt
+fixture_git commit -qm "change"
+TIP="$(fixture_git rev-parse HEAD)"
+
+# hook_case <name> <want status> <want asked line> <pushed line> [VAR=value...]
+#
+# Runs the hook from the fixture with the line on stdin and the variables set, and compares its exit
+# status and the one line the stand-ins recorded.
+hook_case() {
+    local name="$1" want_rc="$2" want_asked="$3" line="$4" rc=0 asked
+    shift 4
+    : >"$LOG"
+    (
+        cd "$REPO"
+        env -u BX -u PREPUSH_FULL -u SKIP_PREPUSH -u BX_FLEET_BIN \
+            BX_LAND_REFS_DESCRIPTION="$WORK/description.tsv" \
+            PREPUSH_TEST_LOG="$LOG" \
+            SCE_RESTRICTED_TERMS="$WORK/terms.txt" \
+            SCE_RESTRICTED_OVERRIDE_LOG="$WORK/override.log" \
+            "$@" bash tools/git-hooks/pre-push origin https://example.invalid/repo.git <<<"$line"
+    ) >"$WORK/hook.out" 2>&1 || rc=$?
+    asked="$(cat "$LOG")"
+    if [[ "$rc" != "$want_rc" ]]; then
+        fail "$name" "the hook exited $rc, want $want_rc; its output:"
+        sed 's/^/      /' "$WORK/hook.out"
+    elif [[ "$asked" != "$want_asked" ]]; then
+        fail "$name" "the stand-ins were asked '$asked', want '$want_asked'"
+    else
+        pass "$name"
+    fi
+}
+
+MAIN="refs/heads/main $TIP refs/heads/main $BASE"
+TOPIC="refs/heads/topic $TIP refs/heads/topic $BASE"
+PLAN="bx --checks prepush -- bash scripts/gate --plan"
+
+hook_case "6 a main update through bx plans the landing selection" 0 \
+    "$PLAN --landing --changed-in $BASE..$TIP" "$MAIN" BX="$WORK/bin/bx" PREPUSH_TEST_BX_RC=0
+hook_case "7 bx's 2, a unit not measured, is the hook's 2" 2 \
+    "$PLAN --landing --changed-in $BASE..$TIP" "$MAIN" BX="$WORK/bin/bx" PREPUSH_TEST_BX_RC=2
+hook_case "8 bx's 1 is the hook's 1" 1 \
+    "$PLAN --landing --changed-in $BASE..$TIP" "$MAIN" BX="$WORK/bin/bx" PREPUSH_TEST_BX_RC=1
+hook_case "9 a branch push through bx plans without --landing" 0 \
+    "$PLAN --changed-in $BASE..$TIP" "$TOPIC" BX="$WORK/bin/bx" PREPUSH_TEST_BX_RC=0
+hook_case "10 in place, a main update hands the runner --landing, and its 3 is the hook's 3" 3 \
+    "runner --landing --changed-in $BASE..$TIP" "$MAIN" PREPUSH_TEST_RUNNER_RC=3
+hook_case "11 in place, a branch push's runner 2 is the hook's 2" 2 \
+    "runner --changed-in $BASE..$TIP" "$TOPIC" PREPUSH_TEST_RUNNER_RC=2
+hook_case "12 PREPUSH_FULL on a main update plans --all --landing, status as is" 2 \
+    "$PLAN --all --landing" "$MAIN" BX="$WORK/bin/bx" PREPUSH_TEST_BX_RC=2 PREPUSH_FULL=1
+# An item's tree is judged on its candidate, by the integrator's own run for refs/heads/main, so its
+# push asks the stand-ins nothing, and a bx that would fail says nothing about it.
+hook_case "13 a genuine landing queue item asks for no gate" 0 \
+    "" "refs/heads/topic $TIP refs/bx-land/main/items/0000000001-abc $Z" \
+    BX="$WORK/bin/bx" PREPUSH_TEST_BX_RC=1
+
+exit "$fails"
