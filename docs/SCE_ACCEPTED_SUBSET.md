@@ -5354,6 +5354,69 @@ value as `ScriptNull`, each scalar as a scalar param crosses, which
 `EventDataHelper::buildEventDataJson` writes as the event's JSON, keys ascending at
 every depth; a place read through an index is refused by name on C++ too.
 
+**Which backend lowers a composed value** (docs/adr/0086, section 7.3). One table
+decides what each backend lowers of a composed value, a row per backend
+(`ComposedLowering::of`, `sce-build/src/forge/event_schema_check.rs`), and the
+rows below are that table as it stands: the test
+`the_accepted_subset_states_what_each_backend_lowers_of_a_composed_value`
+renders each row from it and holds this list to them, so the list cannot say
+what the build does not. `reads` is a statechart's read of a composed payload at
+any depth, `copies` a list taken whole into a list variable, `unions` a variable
+of a union and a payload that holds one, and `sends` a `<send>` of a composed
+value by its name. `ecmascript` is the Interpreter's lowering. A backend refuses
+by its own name each position it does not lower.
+
+<!-- composed-lowering-rows: begin -->
+- `rust` lowers reads, copies, unions, sends; refuses none
+
+- `cpp` lowers reads, copies, sends; refuses unions
+
+- `kotlin` lowers reads, copies, sends; refuses unions
+
+- `go` lowers reads, copies, sends; refuses unions
+
+- `python` lowers reads, copies, sends; refuses unions
+
+- `c11` lowers none; refuses reads, copies, unions, sends
+
+- `swift` lowers none; refuses reads, copies, unions, sends
+
+- `ecmascript` lowers none; refuses reads, copies, unions, sends
+<!-- composed-lowering-rows: end -->
+
+The fixtures `static_composed_payload` and `static_composed_send`
+(`sce-build/tests/fixtures/static_datamodel/`) name no backend; each backend
+whose row reads a composed payload compiles and runs their machines in a harness
+of its own, listed here (the same test holds every such backend to a line of
+this list):
+
+<!-- composed-lowering-harnesses: begin -->
+- `rust`: `scripts/regen_static_datamodel_rust.sh` commits the generated
+  machines, and `backends/rust/tests/tests/a_composed_payload_is_read_at_any_depth.rs`
+  and `backends/rust/tests/tests/a_composed_value_is_sent_by_its_name.rs` drive
+  them.
+
+- `cpp`: `tests/CMakeLists.txt` generates the machines into
+  `static_datamodel_generated_cpp_test`, and
+  `tests/integration/AComposedPayloadIsReadAtAnyDepthTest.cpp` and
+  `tests/integration/AComposedValueIsSentByItsNameTest.cpp` drive them.
+
+- `kotlin`: `scripts/regen_static_datamodel_kotlin.sh` commits the generated
+  machines, and `AComposedPayloadIsReadAtAnyDepthTest.kt` and
+  `AComposedValueIsSentByItsNameTest.kt` under
+  `backends/kotlin/tests/src/test/kotlin/com/sce/integration/` drive them.
+
+- `go`: `scripts/regen_static_datamodel_go.sh` commits the generated machines,
+  and `a_composed_payload_is_read_at_any_depth_test.go` and
+  `a_composed_value_is_sent_by_its_name_test.go` under
+  `backends/go/tests/integration/static_datamodel/` drive them.
+
+- `python`: `scripts/regen_static_datamodel_python.sh` generates the machines,
+  and `test_a_composed_payload_is_read_at_any_depth.py` and
+  `test_a_composed_value_is_sent_by_its_name.py` under
+  `backends/python/tests/integration/static_datamodel/` drive them.
+<!-- composed-lowering-harnesses: end -->
+
 What no backend lowers yet is refused by name where the machine is generated, in
 the one gate every route asks first (`check` with or without a backend,
 `generate`), as `generate/unsupported-feature`, naming the field, the type and

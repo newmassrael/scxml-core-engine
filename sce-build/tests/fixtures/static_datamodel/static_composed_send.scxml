@@ -9,22 +9,22 @@
   delivery is what the first held, and the second delivery fits its schema
   (`refusals` stays 0).
 
-  The Rust, Kotlin, Go, Python and C++ backends lower it; every other backend
-  refuses the read and the send by its own name until it lowers them (section 7.3). Rust
-  compile+run gate: scripts/regen_static_datamodel_rust.sh commits the generated
-  machine, and backends/rust/tests/tests/a_composed_value_is_sent_by_its_name.rs
-  drives it. Kotlin compile+run gate: scripts/regen_static_datamodel_kotlin.sh
-  commits the generated machine, and AComposedValueIsSentByItsNameTest.kt under
-  backends/kotlin/tests/src/test/kotlin/com/sce/integration/ drives it. Go
-  compile+run gate: scripts/regen_static_datamodel_go.sh commits the generated
-  machine, and a_composed_value_is_sent_by_its_name_test.go under
-  backends/go/tests/integration/static_datamodel/ drives it. Python run gate:
-  scripts/regen_static_datamodel_python.sh generates the machine, and
-  test_a_composed_value_is_sent_by_its_name.py under
-  backends/python/tests/integration/static_datamodel/ drives it. C++ compile+run
-  gate: tests/CMakeLists.txt generates the machine into
-  static_datamodel_generated_cpp_test, and
-  tests/integration/AComposedValueIsSentByItsNameTest.cpp drives it.
+  It reads the schemas beside it, as static_composed_payload does:
+  event_batch.scxml (batch.sent), event_batch_item.scxml (the record each
+  element of items is) and enum_signal_level.scxml.
+
+  It names no backend. Which backends lower it, and the harness that compiles
+  and runs its machine on each, are listed once, in docs/SCE_ACCEPTED_SUBSET.md
+  section 2.15 ("Which backend lowers a composed value"), whose rows a test
+  renders from the one table of what each backend lowers
+  (ComposedLowering::of, sce-build/src/forge/event_schema_check.rs). A backend
+  whose row does not read and send a composed value refuses the read and the
+  send by its own name (section 7.3). A backend's step that comes to lower it
+  adds its row and its harness line there, and leaves this file as it is, so
+  the source hash of every tree generated from it does not move with the step:
+  this comment says what the document holds and sends, never which backend
+  lowers it (ARCHITECTURE.md, "Composed Values: One Walk, One Module per
+  Backend").
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"

@@ -8,22 +8,22 @@
   that may be absent, and takes the list `late` whole into a list of a larger
   bound. Every out variable is what a host reads back of the delivery.
 
-  The Rust, Kotlin, Go, Python and C++ backends lower it; every other backend
-  refuses the read by its own name until it lowers one (section 7.3). Rust compile+run gate:
-  scripts/regen_static_datamodel_rust.sh commits the generated machine, and
-  backends/rust/tests/tests/a_composed_payload_is_read_at_any_depth.rs drives it.
-  Kotlin compile+run gate: scripts/regen_static_datamodel_kotlin.sh commits the
-  generated machine, and AComposedPayloadIsReadAtAnyDepthTest.kt under
-  backends/kotlin/tests/src/test/kotlin/com/sce/integration/ drives it. Go
-  compile+run gate: scripts/regen_static_datamodel_go.sh commits the generated
-  machine, and a_composed_payload_is_read_at_any_depth_test.go under
-  backends/go/tests/integration/static_datamodel/ drives it. Python run gate:
-  scripts/regen_static_datamodel_python.sh generates the machine, and
-  test_a_composed_payload_is_read_at_any_depth.py under
-  backends/python/tests/integration/static_datamodel/ drives it. C++ compile+run
-  gate: tests/CMakeLists.txt generates the machine into
-  static_datamodel_generated_cpp_test, and
-  tests/integration/AComposedPayloadIsReadAtAnyDepthTest.cpp drives it.
+  It reads the schemas beside it: event_batch.scxml (batch.sent, revision 2,
+  whose list late the second revision added), event_batch_item.scxml (the
+  record each element of items is, holding the list tags) and
+  enum_signal_level.scxml. A delivery of the first revision reads late empty.
+
+  It names no backend. Which backends lower it, and the harness that compiles
+  and runs its machine on each, are listed once, in docs/SCE_ACCEPTED_SUBSET.md
+  section 2.15 ("Which backend lowers a composed value"), whose rows a test
+  renders from the one table of what each backend lowers
+  (ComposedLowering::of, sce-build/src/forge/event_schema_check.rs). A backend
+  whose row does not read a composed payload refuses the read by its own name
+  (section 7.3). A backend's step that comes to lower it adds its row and its
+  harness line there, and leaves this file as it is, so the
+  source hash of every tree generated from it does not move with the step: this
+  comment says what the document holds and reads, never which backend lowers it
+  (ARCHITECTURE.md, "Composed Values: One Walk, One Module per Backend").
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
