@@ -23,6 +23,25 @@ cd "$SCE_REPO_ROOT"
 # script filename so a gate cannot report a slug it is not.
 SCE_GATE_SLUG="$(basename "${BASH_SOURCE[1]:-unknown}" .sh)"
 
+# The mesh transport SDKs a build machine carries, put where CMake and the
+# loader look. `tests/CMakeLists.txt` registers the transport suites only where
+# `find_package` finds vsomeip3, zenohcxx and CycloneDDS, and `cpp-suite`
+# refuses (exit 3) a tree that registered fewer. bx installs the three under a
+# prefix of their own, as the `[platform.linux.tools.mesh-transports]` tool of
+# bx.toml, at the path `scripts/install_mesh_transports.sh` derives from its
+# revision; the hosted lane exports its own prefix the same way. Done for every
+# gate, because the gates that configure the main tree share `build/`, and a
+# tree configured once with the SDKs and once without would flip what it
+# registers. Where the prefix is absent nothing changes.
+_sce_mesh_rev="$(sed -n 's/^MESH_TRANSPORTS_REV="\([0-9][0-9]*\)"$/\1/p' "$SCE_REPO_ROOT/scripts/install_mesh_transports.sh" 2>/dev/null || true)"
+if [ -n "$_sce_mesh_rev" ] && [ -d "$HOME/.local/share/sce-mesh-transports/$_sce_mesh_rev/lib" ]; then
+    _sce_mesh_prefix="$HOME/.local/share/sce-mesh-transports/$_sce_mesh_rev"
+    export CMAKE_PREFIX_PATH="$_sce_mesh_prefix${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"
+    export LD_LIBRARY_PATH="$_sce_mesh_prefix/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    unset _sce_mesh_prefix
+fi
+unset _sce_mesh_rev
+
 # Fail the gate with a message that names the slug. The slug — not a stage
 # number — is the stable identifier: it survives reordering, so a failure
 # message, a doc reference and a memory note all keep pointing at the same
@@ -526,10 +545,18 @@ _sce_gate_w3c_report_attr() {
 # Never fails: whether the tools are now there is the caller's question, asked
 # through `sce_gate_requires_tool`, which knows whether a missing one is a skip
 # or a failure.
+#
+# The pinned SDK a build machine carries is looked for too, at the path
+# `scripts/install_emsdk.sh` derives from its release: bx installs it there as
+# the `[platform.linux.tools.emsdk]` tool of bx.toml and runs the units of the
+# emscripten gates only where it is, and no lane step sources it for them.
 sce_gate_activate_emsdk() {
     command -v emcmake >/dev/null 2>&1 && return 0
-    local emsdk_env
-    for emsdk_env in "${EMSDK:-}/emsdk_env.sh" "${HOME}/emsdk/emsdk_env.sh"; do
+    local emsdk_env rev
+    rev="$(sed -n 's/^EMSDK_REV="\([0-9.][0-9.]*\)"$/\1/p' "$SCE_REPO_ROOT/scripts/install_emsdk.sh" 2>/dev/null)"
+    for emsdk_env in "${EMSDK:-}/emsdk_env.sh" \
+        ${rev:+"${HOME}/.local/share/emsdk/${rev}/emsdk_env.sh"} \
+        "${HOME}/emsdk/emsdk_env.sh"; do
         [ -f "${emsdk_env}" ] || continue
         # shellcheck disable=SC1090
         source "${emsdk_env}" >/dev/null 2>&1 || true
