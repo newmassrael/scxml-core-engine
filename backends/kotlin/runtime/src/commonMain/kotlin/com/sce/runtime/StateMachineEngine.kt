@@ -744,28 +744,42 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * invoke boundary.
      *
      * An override throws [EventPayload.Refusal] when the data cannot be read as
-     * the event's schema; [bindTypedPayload] turns it into `error.execution`.
+     * the event's schema; [bindTypedPayload] refuses the delivery whole on it.
      */
     protected open fun populateTypedPayload(event: E, metadata: EventMetadata) {}
 
     /**
-     * Bind the dequeued event's typed `_event.data` view, reporting a payload
-     * that cannot be read as `error.execution` (NL→IR Item C1 Path A).
+     * The door of an event just taken off a queue (docs/adr/0086, section 4.2):
+     * bind it as `_event` with its typed `_event.data` view (NL→IR Item C1 Path
+     * A), and answer the event the loop offers to the configuration: [queued]
+     * itself, the `error.execution` that carries the refusal of a delivery whose
+     * data does not fit its type, taken in its place, or `null` when such a
+     * delivery is refused in a document that declares no `error.execution`.
      *
-     * The raise lives here rather than in each generated machine so every one
-     * of them answers alike, and the answer is the script engine's: W3C SCXML
-     * 3.13 gives `error.execution` for a guard that cannot be evaluated and
-     * treats it as false, which is what an unbound typed field already does.
+     * A refused delivery is never offered to the configuration. The verdict
+     * lives here rather than in each generated machine so every one of them
+     * answers alike.
      */
-    private fun bindTypedPayload(event: E, metadata: EventMetadata) {
+    private fun bindTypedPayload(queued: QueuedEvent<E>): QueuedEvent<E>? {
+        currentEventMetadata = queued.metadata
         try {
-            populateTypedPayload(event, metadata)
+            populateTypedPayload(queued.event, queued.metadata)
+            return queued
         } catch (refusal: EventPayload.Refusal) {
             // §scxml-3.12.2 leaves a document that declares no `error.execution`
-            // transition nothing to answer with; the guard still does not fire.
-            val errorEvent = resolveEventByName("error.execution") ?: return
-            val name = eventNameOf(event) ?: "the event"
-            raisePlatformError(errorEvent, "`$name` payload: ${refusal.message}")
+            // transition nothing to answer with: the delivery is refused all the
+            // same, and nothing is taken in its place.
+            val errorEvent = resolveEventByName("error.execution") ?: return null
+            val name = eventNameOf(queued.event) ?: "the event"
+            val replacement = QueuedEvent(
+                errorEvent,
+                EventMetadata(data = "`$name` payload: ${refusal.message}", type = "platform")
+            )
+            // The replacement carries no typed payload, so binding it clears the
+            // view the refused delivery left half read.
+            currentEventMetadata = replacement.metadata
+            populateTypedPayload(replacement.event, replacement.metadata)
+            return replacement
         }
     }
 
@@ -3027,9 +3041,12 @@ abstract class StateMachineEngine<S : State, E : Event>(
                         // §scxml-6.4: the refusal the sync loop applies at its
                         // dequeue, applied at this one.
                         if (!refusesHostInvokeCompletion(queued)) {
-                            currentEventMetadata = queued.metadata
-                            bindTypedPayload(queued.event, queued.metadata)
-                            processMicrostep(queued.event, queued.metadata)
+                            // docs/adr/0086, section 4.2: the door this mode's
+                            // dequeue passes through, as the sync loop's does.
+                            val taken = bindTypedPayload(queued)
+                            if (taken != null) {
+                                processMicrostep(taken.event, taken.metadata, inPlace = taken !== queued)
+                            }
                         }
                         true
                     }
@@ -4935,8 +4952,16 @@ abstract class StateMachineEngine<S : State, E : Event>(
         // comes back.
         macrostepTruncated = false
         macrostepMicrostepsTaken = 0
-        currentEventMetadata = queued.metadata
-        bindTypedPayload(queued.event, queued.metadata)
+        // The door comes first (docs/adr/0086, section 4.2): a delivery whose
+        // data does not fit its type is refused whole. The `error.execution`
+        // taken in its place is the engine's own error, so no `<finalize>` or
+        // autoforward runs for it, and it is answered as one off the internal
+        // queue is.
+        val taken = bindTypedPayload(queued) ?: return
+        if (taken !== queued) {
+            answerInternal(taken.event)
+            return
+        }
         executeFinalizeForChildEvent(queued.event)
         autoForwardEvent(queued.event, queued.metadata)
         // §scxml-3.1.2: discarding an event no transition matched is the rule;
@@ -5928,8 +5953,13 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * 4. Drain eventless transitions and internal events until stable
      * 5. Execute pending invokes at macrostep end (§scxml-6.4)
      * 6. Clean up completed invoke sessions
+     *
+     * [inPlace] says [event] is the `error.execution` a door took in a refused
+     * delivery's place (docs/adr/0086, section 4.2): the engine's own error, so
+     * steps 1 and 2 do not run for it, and it is answered as one off the
+     * internal queue is ([answerInternal]).
      */
-    private fun processMicrostep(event: E, metadata: EventMetadata) {
+    private fun processMicrostep(event: E, metadata: EventMetadata, inPlace: Boolean = false) {
         // This engine has two driving modes and this is the other one's
         // external dequeue: the coroutine mode reads its events from a channel
         // and never passes through [processNextExternalEvent], so the ceiling
@@ -5939,6 +5969,11 @@ abstract class StateMachineEngine<S : State, E : Event>(
         // running.
         macrostepTruncated = false
         macrostepMicrostepsTaken = 0
+        if (inPlace) {
+            answerInternal(event)
+            finishMacrostep()
+            return
+        }
         // §scxml-6.5: Execute finalize before event processing
         executeFinalizeForChildEvent(event)
         // §scxml-6.4: Auto-forward external events to child invoke sessions.
@@ -6385,57 +6420,17 @@ abstract class StateMachineEngine<S : State, E : Event>(
                     recordTruncatedMacrostep(_currentState.value)
                     break
                 }
-                val queued = internalEventQueue.removeFirst()
-                currentEventMetadata = queued.metadata
-                bindTypedPayload(queued.event, queued.metadata)
+                // The door binds it, or the `error.execution` taken in its
+                // place; a delivery refused with nothing to take in its place
+                // took no microstep and moved nothing (docs/adr/0086, section
+                // 4.2).
+                val taken = bindTypedPayload(internalEventQueue.removeFirst()) ?: continue
                 // §scxml-3.12.2: the processor raises `error.*` into this
                 // queue and the clause says they "are ignored if no transition
                 // is found that matches them". Ignoring them is the clause;
-                // staying silent about it is not.
-                // [discardedExternalEvents] deliberately stops at the external
-                // queue because an unmatched `<raise>` has both ends inside
-                // the document — but the sender of an error event is this
-                // engine, so that reasoning does not reach it. The host never
-                // wrote the document, cannot see the failure in the
-                // configuration, and is the only party able to act on it.
-                //
-                // The dispatch runs first and unconditionally: it is what
-                // processes every internal event, and folding it into the
-                // condition below would skip it for everything that is not an
-                // error. This drain is the machine's only internal-queue path,
-                // so unlike the external count there is one site, not two.
-                // An error raised from here on is raised *by an error
-                // handler*, which is the one situation the engine cannot leave
-                // to the document: the handler that failed is the same one
-                // that will answer the failure. The flag is what
-                // [enqueueInternal] reads to tell that apart from a first
-                // failure, and it is cleared before anything else can run so a
-                // chain cannot be attributed to the wrong event.
-                val name = eventNameOf(queued.event)
-                val isError = name != null && isErrorEvent(name)
-                // The chain is not ended by the drain doing something else. An
-                // earlier draft reset the depth on every non-error event,
-                // which reads as the careful choice and is the opposite: a
-                // handler that raises its own event before failing — a
-                // document that logs, then fails, which is most of them —
-                // leaves the queue alternating `tick, error, tick, error…`,
-                // and each `tick` put the ceiling back out of reach. The count
-                // needs no such guard, because it only ever rises while an
-                // error handler is running.
-                handlingErrorEvent = isError
-                val selected = takeEvent(queued.event)
-                handlingErrorEvent = false
-                if (selected) {
-                    // Appendix D: the loop turn that selects nothing takes no
-                    // microstep, so it spends no budget. Only a turn that
-                    // answered the event moved the machine, and only those are
-                    // what a ceiling on microsteps can be counted in.
-                    macrostepMicrostepsTaken++
-                }
-                if (!selected && isError) {
-                    unhandledErrorEventCount++
-                    lastUnhandledErrorEvent = queued.event
-                }
+                // staying silent about it is not, and [answerInternal] counts
+                // one no transition matched.
+                answerInternal(taken.event)
                 continue
             }
 
@@ -6445,6 +6440,57 @@ abstract class StateMachineEngine<S : State, E : Event>(
             // the count of what was refused stays where the host reads it.
             errorCascadeDepth = 0
             break
+        }
+    }
+
+    /**
+     * Select for [event], bound as `_event`, taken off the internal queue or
+     * taken by a door in a refused delivery's place, take the microstep it
+     * selects, and count what became of it.
+     */
+    private fun answerInternal(event: E) {
+        // An error event no transition matches is ignored, and counted:
+        // [discardedExternalEvents] deliberately stops at the external
+        // queue because an unmatched `<raise>` has both ends inside the
+        // document — but the sender of an error event is this engine, so that
+        // reasoning does not reach it. The host never wrote the document,
+        // cannot see the failure in the configuration, and is the only party
+        // able to act on it.
+        //
+        // The dispatch runs first and unconditionally: it is what processes
+        // every internal event, and folding it into the condition below would
+        // skip it for everything that is not an error. The drain and the
+        // error a door takes in an external delivery's place are its only
+        // callers, so unlike the external count there is one site, not two.
+        // An error raised from here on is raised *by an error handler*, which
+        // is the one situation the engine cannot leave to the document: the
+        // handler that failed is the same one that will answer the failure.
+        // The flag is what [enqueueInternal] reads to tell that apart from a
+        // first failure, and it is cleared before anything else can run so a
+        // chain cannot be attributed to the wrong event.
+        val name = eventNameOf(event)
+        val isError = name != null && isErrorEvent(name)
+        // The chain is not ended by the drain doing something else. An earlier
+        // draft reset the depth on every non-error event, which reads as the
+        // careful choice and is the opposite: a handler that raises its own
+        // event before failing — a document that logs, then fails, which is
+        // most of them — leaves the queue alternating `tick, error, tick,
+        // error…`, and each `tick` put the ceiling back out of reach. The count
+        // needs no such guard, because it only ever rises while an error
+        // handler is running.
+        handlingErrorEvent = isError
+        val selected = takeEvent(event)
+        handlingErrorEvent = false
+        if (selected) {
+            // Appendix D: the loop turn that selects nothing takes no
+            // microstep, so it spends no budget. Only a turn that answered the
+            // event moved the machine, and only those are what a ceiling on
+            // microsteps can be counted in.
+            macrostepMicrostepsTaken++
+        }
+        if (!selected && isError) {
+            unhandledErrorEventCount++
+            lastUnhandledErrorEvent = event
         }
     }
 
