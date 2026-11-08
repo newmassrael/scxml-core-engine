@@ -5538,6 +5538,10 @@ fn render_python(env: &mut Environment, model: &SCXMLModel) -> Result<String, Ge
         static_imports => &static_lowering.imports,
         static_format2_shape => format2_keys(&static_lowering),
         static_saved_shape => &static_lowering.saved_shape,
+        // A `<log>` that writes a value shows it through `_sce_log_name`, which
+        // the module declares wherever one does, a machine with no variable
+        // among them.
+        static_logs_a_value => static_lowering.logs_a_value,
         // docs/SCE_TEST_PROFILE.md §12.3: the doors a test component's machine
         // reaches its runtime through, which the component the runtime drives
         // registers and delivers the snapshot by, and the runtime's module,

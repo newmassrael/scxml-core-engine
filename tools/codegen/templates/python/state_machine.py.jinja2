@@ -341,9 +341,12 @@ SAVED_ENUM_KEYS = ()
 
 
 {% endif %}
-{% if static_fields %}
+{# Declared where a `<log>` writes a value, to the engine's log or to a test
+   component's test log: what uses it, whether or not the machine holds a
+   variable. #}
+{% if static_logs_a_value %}
 # ======================================================================
-# SCE Accepted Subset §2.15: the types a `sce-static` datamodel holds
+# SCE Accepted Subset §2.15: what a `<log>` of a `sce-static` machine shows
 # ======================================================================
 
 def _sce_log_name(value):
@@ -354,6 +357,12 @@ def _sce_log_name(value):
         return "null"
     return value.sce_name if hasattr(value, "sce_name") else value
 
+
+{% endif %}
+{% if static_fields %}
+# ======================================================================
+# SCE Accepted Subset §2.15: the types a `sce-static` datamodel holds
+# ======================================================================
 
 {% if static_type_defs %}
 {{ static_type_defs }}
