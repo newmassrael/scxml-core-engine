@@ -379,7 +379,7 @@ fn zenoh_inbox_reaches_the_rust_peer_table_as_a_link_with_no_parameters() {
         "the Rust host core carries zenoh_inbox; stderr:\n{}",
         String::from_utf8_lossy(&out.stderr)
     );
-    let table = peer_table_under(dir.path());
+    let table = generated_file_under(dir.path(), "_mesh_peers.rs");
     assert!(
         table.contains("link: PeerLink::ZenohInbox,"),
         "the peer is reached through the host's Zenoh session:\n{table}"
@@ -409,7 +409,7 @@ fn zenoh_inbox_reaches_the_swift_peer_table_as_a_link_with_no_parameters() {
         "the Swift host core carries zenoh_inbox; stderr:\n{}",
         String::from_utf8_lossy(&out.stderr)
     );
-    let table = swift_peer_table_under(dir.path());
+    let table = generated_file_under(dir.path(), "MeshPeers.swift");
     assert!(
         table.contains("link: .zenohInbox"),
         "the peer is reached through the host's Zenoh session:\n{table}"
@@ -422,28 +422,6 @@ fn zenoh_inbox_reaches_the_swift_peer_table_as_a_link_with_no_parameters() {
         !table.contains(".wss"),
         "a Zenoh peer must not be read as a WebSocket one:\n{table}"
     );
-}
-
-/// The Swift peer table `sce-codegen generate --deploy` wrote under `dir`.
-fn swift_peer_table_under(dir: &std::path::Path) -> String {
-    fn find(dir: &std::path::Path) -> Option<PathBuf> {
-        for entry in std::fs::read_dir(dir).ok()?.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                if let Some(found) = find(&path) {
-                    return Some(found);
-                }
-            } else if path
-                .file_name()
-                .is_some_and(|name| name.to_string_lossy().ends_with("MeshPeers.swift"))
-            {
-                return Some(path);
-            }
-        }
-        None
-    }
-    let path = find(dir).expect("the Swift backend writes `<Document>MeshPeers.swift`");
-    std::fs::read_to_string(path).expect("read the peer table")
 }
 
 #[test]
@@ -527,37 +505,120 @@ topology:
       server: { source: server.scxml }
 "##;
 
+/// What a host core's peer table writes for the causal binding of
+/// [`CAUSAL_DEPLOY`]: the file it is in, the lines that carry the group and
+/// its view of epoch 0, the duplicate window the causal route replaces, and
+/// what the same binding without `delivery: causal` carries instead.
+struct HostCausalTable {
+    language: &'static str,
+    file_suffix: &'static str,
+    group: &'static [&'static str],
+    dedup_off: &'static str,
+    plain: &'static str,
+}
+
+/// Every host core the Mesh codegen has an emitter for (`mesh_backend` in
+/// `sce-build/src/mesh/codegen.rs`). The C++ router, the fourth emitter, is
+/// held to the same by `the_cpp_router_routes_a_causal_binding_over_custom_tcp`,
+/// over a transport it serves.
+const HOST_CAUSAL_TABLES: &[HostCausalTable] = &[
+    HostCausalTable {
+        language: "rust",
+        file_suffix: "_mesh_peers.rs",
+        group: &[
+            "causal: Some(sce_rust_mesh::causal::CausalGroup {",
+            "name: \"people\",",
+            "epoch: 0,",
+            "view: &[\"phone/client\", \"cloud/server\"],",
+        ],
+        dedup_off: "dedup: false,",
+        plain: "causal: None,",
+    },
+    HostCausalTable {
+        language: "kotlin",
+        file_suffix: "MeshPeers.kt",
+        group: &[
+            "causal = com.sce.mesh.CausalGroup(",
+            "name = \"people\",",
+            "epoch = 0uL,",
+            "view = listOf(\"phone/client\", \"cloud/server\"),",
+        ],
+        dedup_off: "Delivery(dedup = false,",
+        plain: "causal = null,",
+    },
+    HostCausalTable {
+        language: "swift",
+        file_suffix: "MeshPeers.swift",
+        group: &[
+            "causal: CausalGroup(",
+            "name: \"people\",",
+            "epoch: 0,",
+            "view: [\"phone/client\", \"cloud/server\"]",
+        ],
+        dedup_off: "Delivery(dedup: false,",
+        plain: "causal: nil",
+    },
+];
+
 #[test]
-fn a_backend_whose_core_has_no_causal_route_refuses_a_causal_binding_by_name() {
-    // docs/adr/0085, section 3.2: until its core routes the causal binding, a
-    // language refuses `delivery: causal` at build time rather than building
-    // the binding as a plain route, and offers the ones that route it.
-    for language in ["kotlin", "swift"] {
-        let dir = ScratchDir::new(&format!("mesh-causal-refused-{language}"));
+fn every_host_core_peer_table_carries_a_causal_bindings_group() {
+    // docs/adr/0085, section 3.2: each host core's router routes a causal
+    // binding to its causal layer, so its peer table carries the group and
+    // its view of epoch 0 with the duplicate window off, and a binding that
+    // is not causal carries none. Red if a backend's build refuses the
+    // binding, if the peer policy ignores `delivery:`, or if a backend's
+    // template drops the group.
+    for table in HOST_CAUSAL_TABLES {
+        let language = table.language;
+        let dir = ScratchDir::new(&format!("mesh-causal-{language}"));
         let scxml = dir.write("client.scxml", CLIENT_SCXML);
         dir.write("server.scxml", SERVER_SCXML);
         let deploy = dir.write("deploy.yaml", CAUSAL_DEPLOY);
         let out = run_with_deploy_for(language, &scxml, &deploy, dir.path());
         assert!(
-            !out.status.success(),
-            "{language} must refuse a causal binding"
+            out.status.success(),
+            "the {language} core routes a causal binding; stderr:\n{}",
+            String::from_utf8_lossy(&out.stderr)
         );
-        let stderr = String::from_utf8(out.stderr).expect("stderr utf8");
-        let rec = sole_ndjson_record(&stderr);
-        assert_core_shape(&rec);
-        assert_eq!(
-            rec["code"], "mesh/codegen-causal-delivery-unsupported",
-            "{language} record: {rec}"
-        );
-        assert_eq!(rec["actual"], "#server", "{language} record: {rec}");
-        let message = rec["message"].as_str().expect("message");
+        let peers = generated_file_under(dir.path(), table.file_suffix);
+        for expected in table.group {
+            assert!(
+                peers.contains(expected),
+                "{language}: missing `{expected}`:\n{peers}"
+            );
+        }
         assert!(
-            message.contains(&format!("the {language} Mesh core"))
-                && message.contains("`--lang rust`")
-                && message.contains("`--lang cpp`"),
-            "{language} record: {rec}"
+            peers.contains(table.dedup_off),
+            "{language}: the causal route replaces the duplicate window:\n{peers}"
+        );
+
+        let plain = ScratchDir::new(&format!("mesh-causal-{language}-plain"));
+        let scxml = plain.write("client.scxml", CLIENT_SCXML);
+        plain.write("server.scxml", SERVER_SCXML);
+        let deploy = plain.write("deploy.yaml", &plain_of(CAUSAL_DEPLOY));
+        let out = run_with_deploy_for(language, &scxml, &deploy, plain.path());
+        assert!(
+            out.status.success(),
+            "{language} stderr:\n{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let peers = generated_file_under(plain.path(), table.file_suffix);
+        assert!(
+            peers.contains(table.plain) && !peers.contains(table.group[0]),
+            "{language}: a plain binding carries no group:\n{peers}"
         );
     }
+}
+
+/// `deploy` with the causal binding's `delivery:` and `group:` lines
+/// removed, so the same binding is a plain route.
+fn plain_of(deploy: &str) -> String {
+    deploy
+        .replace("            delivery: causal\n", "")
+        .replace(
+            "            group: { name: people, view: [phone/client, cloud/server] }\n",
+            "",
+        )
 }
 
 /// [`CAUSAL_DEPLOY`]'s group over `binding`, the client's one binding to
@@ -607,7 +668,7 @@ fn the_cpp_router_routes_a_causal_binding_over_custom_tcp() {
         "the C++ core routes a causal binding over custom_tcp; stderr:\n{}",
         String::from_utf8_lossy(&out.stderr)
     );
-    let router = transport_header_under(dir.path());
+    let router = generated_file_under(dir.path(), "_transport.h");
     for expected in [
         "#include \"mesh/CausalRoute.h\"",
         "SCE::Mesh::CausalRoute causal_server_{",
@@ -636,106 +697,35 @@ fn the_cpp_router_routes_a_causal_binding_over_custom_tcp() {
         String::from_utf8_lossy(&out.stderr)
     );
     assert!(
-        !transport_header_under(plain.path()).contains("CausalRoute"),
+        !generated_file_under(plain.path(), "_transport.h").contains("CausalRoute"),
         "a plain binding holds no causal route"
     );
 }
 
-/// The C++ router `sce-codegen generate --deploy` wrote under `dir`,
-/// wherever the generator put it.
-fn transport_header_under(dir: &std::path::Path) -> String {
-    fn find(dir: &std::path::Path) -> Option<PathBuf> {
+/// The file `sce-codegen generate --deploy` wrote under `dir` whose name ends
+/// in `suffix`, wherever the generator put it: `_transport.h` for the C++
+/// router, `_mesh_peers.rs`, `MeshPeers.kt` and `MeshPeers.swift` for the
+/// Rust, Kotlin and Swift peer tables.
+fn generated_file_under(dir: &std::path::Path, suffix: &str) -> String {
+    fn find(dir: &std::path::Path, suffix: &str) -> Option<PathBuf> {
         for entry in std::fs::read_dir(dir).ok()?.flatten() {
             let path = entry.path();
             if path.is_dir() {
-                if let Some(found) = find(&path) {
+                if let Some(found) = find(&path, suffix) {
                     return Some(found);
                 }
             } else if path
                 .file_name()
-                .is_some_and(|name| name.to_string_lossy().ends_with("_transport.h"))
+                .is_some_and(|name| name.to_string_lossy().ends_with(suffix))
             {
                 return Some(path);
             }
         }
         None
     }
-    let path = find(dir).expect("the C++ backend writes `<document>_transport.h`");
-    std::fs::read_to_string(path).expect("read the router")
-}
-
-#[test]
-fn the_rust_peer_table_carries_a_causal_bindings_group() {
-    // docs/adr/0085, section 3.2: the Rust router routes a causal binding to
-    // its causal layer, so the peer table carries the group and its view of
-    // epoch 0, and a binding that is not causal carries none. Red if the
-    // build's peer policy ignores `delivery:`.
-    let dir = ScratchDir::new("mesh-causal-rust");
-    let scxml = dir.write("client.scxml", CLIENT_SCXML);
-    dir.write("server.scxml", SERVER_SCXML);
-    let deploy = dir.write("deploy.yaml", CAUSAL_DEPLOY);
-    let out = run_with_deploy_for("rust", &scxml, &deploy, dir.path());
-    assert!(
-        out.status.success(),
-        "the Rust core routes a causal binding; stderr:\n{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    let table = peer_table_under(dir.path());
-    assert!(
-        table.contains("causal: Some(sce_rust_mesh::causal::CausalGroup {")
-            && table.contains("name: \"people\",")
-            && table.contains("epoch: 0,")
-            && table.contains("view: &[\"phone/client\", \"cloud/server\"],"),
-        "the peer carries its group:\n{table}"
-    );
-    // The causal route replaces the duplicate window for the binding.
-    assert!(table.contains("dedup: false,"), "{table}");
-
-    let plain = ScratchDir::new("mesh-causal-rust-plain");
-    let scxml = plain.write("client.scxml", CLIENT_SCXML);
-    plain.write("server.scxml", SERVER_SCXML);
-    let deploy = plain.write(
-        "deploy.yaml",
-        &CAUSAL_DEPLOY
-            .replace("            delivery: causal\n", "")
-            .replace(
-                "            group: { name: people, view: [phone/client, cloud/server] }\n",
-                "",
-            ),
-    );
-    let out = run_with_deploy_for("rust", &scxml, &deploy, plain.path());
-    assert!(
-        out.status.success(),
-        "stderr:\n{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    assert!(
-        peer_table_under(plain.path()).contains("causal: None,"),
-        "a plain binding carries no group"
-    );
-}
-
-/// The Rust peer table `sce-codegen generate --deploy` wrote under `dir`,
-/// wherever the generator put it.
-fn peer_table_under(dir: &std::path::Path) -> String {
-    fn find(dir: &std::path::Path) -> Option<PathBuf> {
-        for entry in std::fs::read_dir(dir).ok()?.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                if let Some(found) = find(&path) {
-                    return Some(found);
-                }
-            } else if path
-                .file_name()
-                .is_some_and(|name| name.to_string_lossy().ends_with("_mesh_peers.rs"))
-            {
-                return Some(path);
-            }
-        }
-        None
-    }
-    let path = find(dir).expect("the Rust backend writes `<document>_mesh_peers.rs`");
-    std::fs::read_to_string(path).expect("read the peer table")
+    let path = find(dir, suffix)
+        .unwrap_or_else(|| panic!("no generated file ending in `{suffix}` under {dir:?}"));
+    std::fs::read_to_string(path).expect("read the generated file")
 }
 
 #[test]
