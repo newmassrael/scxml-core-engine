@@ -1,0 +1,72 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH AdditionRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# The image `cpp-interface-standard` runs in, wherever it runs: the hosted lane,
+# a build machine judging an update to main, a workstation. `scripts/gate`
+# builds it (tagged by this file's digest) and runs `scripts/gate
+# cpp-interface-standard` inside it with the checkout mounted at its own path
+# ("Gates that run in an image" in tools/git-hooks/gate_registry.py).
+#
+# ## Why GCC 15, pinned
+#
+# The defect that started the gate was a transitive include: a public header
+# named `uint64_t` without `<cstdint>`, and GCC 15's libstdc++ stopped providing
+# `<cstdint>` through `<string>` at C++17 while still doing so at C++20. The
+# newest libstdc++ is the one that drops such includes first, so the gate runs
+# the newest GCC, pinned so that a new release moves the measurement only when
+# someone moves the pin. The image is Debian with GCC 15 in /usr/local.
+#
+# ## What the configure needs beside it
+#
+# CMake and Ninja, Python for the tool and the tests' CMake, git for the
+# submodules, and the development packages cpp-httplib (TLS, zlib, brotli) and
+# the GLib dispatcher link against. `sce-codegen`, which the runner builds in
+# here before the gate, needs libxml2 (the `libxml` crate behind its XSD
+# validator) and libclang (that crate's bindgen): measured on the lane's second
+# run, `Unable to find libclang`.
+#
+# `sce-codegen` formats the C++ it writes with clang-format of major 19 and
+# refuses without it (docs/SCE_CODEGEN_DETERMINISM.md). The image's Debian
+# release decides which clang-format its archive carries, so the pinned major
+# comes from the wheel instead, which is the same on any base.
+#
+# ## Rust
+#
+# None is installed here, and no gate installs one (scripts/lib/rust_toolchains.sh).
+# The runner outside mounts the toolchain it selected, read-only, where the
+# runner inside looks for a declared release (`~/.local/rust/<release>`), and
+# names that release with `--rust`: the pinned release a build machine carries
+# as a bx tool, or the one the hosted lane installed. The gate in the image
+# therefore builds with the release the plan named and no other. A generator
+# linked in this image is not one to hand to another libc, or back, so its
+# build directory and cargo's registry are a cache of the image's own.
+#
+# The mesh SDKs are not installed: their targets are then not configured, and a
+# header that needs one of them is reported by name as NOT MEASURED, which is
+# neither a pass nor a failure. The floors the gate holds are set below what
+# such an image measures.
+FROM gcc:15.3.0
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        cmake \
+        ninja-build \
+        python3 \
+        python3-venv \
+        pkg-config \
+        git \
+        ca-certificates \
+        libssl-dev \
+        zlib1g-dev \
+        libbrotli-dev \
+        libglib2.0-dev \
+        libxml2-dev \
+        libclang-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python3 -m venv /opt/clang-format-19 \
+    && /opt/clang-format-19/bin/pip install --no-cache-dir clang-format==19.1.7
+
+ENV PATH=/opt/clang-format-19/bin:$PATH \
+    CC=gcc \
+    CXX=g++
