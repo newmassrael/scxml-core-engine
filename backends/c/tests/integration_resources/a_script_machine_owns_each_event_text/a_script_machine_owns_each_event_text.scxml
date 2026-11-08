@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  docs/adr/0086, section 8.5 (a): a C11 machine whose data model is a script
+  engine holds each event's data in a text its engine's allocator gives it,
+  moved from holder to holder and freed once by the last. A document of this
+  channel alone, beside its C test: the other channels hold an event's data in
+  their own language's storage, and this backend's machine is what owns the
+  texts, so a machine is what carries the question here.
+
+  `taken` records each event's data as the machine read it, in order. `note`
+  carries a JSON text a host hands it; `arm` schedules two sends with data,
+  `later` long after `soon`; `drop` cancels `later`; `echo` sends `inner` with
+  data to the internal queue. An event refused for its data raises
+  error.execution, recorded as `refused;`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="waiting"
+       name="a_script_machine_owns_each_event_text">
+  <datamodel>
+    <data id="taken" expr="''"/>
+  </datamodel>
+
+  <state id="waiting">
+    <transition event="note">
+      <assign location="taken" expr="taken + _event.data + ';'"/>
+    </transition>
+    <transition event="arm">
+      <send event="later" id="later" delay="10s"><param name="text" expr="'kept'"/></send>
+      <send event="soon" delay="1s"><param name="text" expr="'due'"/></send>
+    </transition>
+    <transition event="drop">
+      <cancel sendid="later"/>
+    </transition>
+    <transition event="echo">
+      <send event="inner" target="#_internal"><param name="text" expr="'inner'"/></send>
+    </transition>
+    <transition event="inner">
+      <assign location="taken" expr="taken + _event.data.text + ';'"/>
+    </transition>
+    <transition event="soon">
+      <assign location="taken" expr="taken + _event.data.text + ';'"/>
+    </transition>
+    <transition event="later">
+      <assign location="taken" expr="taken + _event.data.text + ';'"/>
+    </transition>
+    <transition event="error.execution">
+      <assign location="taken" expr="taken + 'refused;'"/>
+    </transition>
+  </state>
+</scxml>
