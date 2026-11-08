@@ -33,6 +33,7 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use sce_forge_runtime::algorithm::AlgorithmError;
+use sce_forge_runtime::codec::BoundedList;
 use sce_portable_bytes::SceOwnedList;
 
 use crate::generated::causal_admission::CausalAdmission;
@@ -42,6 +43,7 @@ use crate::generated::causal_entry::CausalEntryPayload;
 use crate::generated::causal_known::CausalKnownPayload;
 use crate::generated::causal_lacks::causal_lacks;
 use crate::generated::causal_raise::causal_raise;
+use crate::generated::envelope::Envelope;
 
 /// One entry of a version vector, and the dot of one change: a replica and
 /// a number among its changes (`sce:std/mesh/causal_entry`).
@@ -537,6 +539,28 @@ fn raise(vector: &[Entry], other: &[Entry]) -> Result<Vec<Entry>, AlgorithmError
     Ok(out.as_slice().to_vec())
 }
 
+/// The tag `envelope` carries in keys 19 (`causal_epoch`) and 20
+/// (`causal_vector`), `None` when it carries neither, and
+/// [`Rejected::Malformed`] when it carries one without the other.
+pub fn envelope_tag(envelope: &Envelope<'_>) -> Result<Option<Tag>, Rejected> {
+    match (envelope.causal_epoch, envelope.causal_vector.as_ref()) {
+        (None, None) => Ok(None),
+        (Some(epoch), Some(vector)) => Ok(Some(Tag {
+            epoch,
+            vector: vector.as_slice().to_vec(),
+        })),
+        _ => Err(Rejected::Malformed),
+    }
+}
+
+/// `envelope` with `tag` in keys 19 and 20.
+pub fn stamp<'a>(mut envelope: Envelope<'a>, tag: &Tag) -> Result<Envelope<'a>, Rejected> {
+    let vector = BoundedList::from_slice(&tag.vector).map_err(|_| Rejected::Malformed)?;
+    envelope.causal_epoch = Some(tag.epoch);
+    envelope.causal_vector = Some(vector);
+    Ok(envelope)
+}
+
 /// The number `vector` gives `replica`, 0 when it names none.
 fn seen(vector: &[Entry], replica: Replica) -> u64 {
     vector
@@ -851,6 +875,56 @@ mod tests {
             Err(Rejected::OtherEpoch { epoch: 1 })
         );
         assert_eq!(column(&q, replica(1)), 0);
+    }
+
+    fn plain_envelope() -> Envelope<'static> {
+        use crate::generated::pattern_kind::PatternKind;
+        use crate::generated::payload_codec::PayloadCodec;
+        use sce_forge_runtime::codec::Bounded;
+        Envelope {
+            id: (&[7u8; 16]).into(),
+            source: Bounded::new("list").expect("a source within its bound"),
+            event_type: Bounded::new("").expect("an empty type"),
+            pattern: PatternKind::CausalVector,
+            datacontenttype: PayloadCodec::None,
+            ..Envelope::new()
+        }
+    }
+
+    /// The wire. A tag is written as keys 19 and 20, the highest keys, so it
+    /// ends the map: the epoch, then an array of one map per entry, its keys
+    /// as text in RFC 8949 order (`hi`, `lo`, `seq`). Red if a core numbers
+    /// either key otherwise, or writes an entry's fields in another order.
+    #[test]
+    fn a_tag_is_written_as_keys_19_and_20_and_read_back() {
+        let tag = Tag {
+            epoch: 0,
+            vector: alloc::vec![Entry {
+                hi: 1,
+                lo: 2,
+                seq: 3
+            }],
+        };
+        let envelope = stamp(plain_envelope(), &tag).expect("a vector within its bound");
+        let bytes = envelope.encode_to_vec();
+        let tail: [u8; 18] = [
+            0x13, 0x00, // key 19, epoch 0
+            0x14, 0x81, // key 20, an array of one
+            0xA3, // a map of three
+            0x62, b'h', b'i', 0x01, // "hi": 1
+            0x62, b'l', b'o', 0x02, // "lo": 2
+            0x63, b's', b'e', b'q', 0x03, // "seq": 3
+        ];
+        assert!(bytes.ends_with(&tail), "{bytes:02x?}");
+        let decoded =
+            Envelope::decode(&mut sce_forge_runtime::codec::SceCursor::new(&bytes)).unwrap();
+        assert_eq!(envelope_tag(&decoded), Ok(Some(tag)));
+        assert_eq!(envelope_tag(&plain_envelope()), Ok(None));
+        let half = Envelope {
+            causal_epoch: Some(0),
+            ..plain_envelope()
+        };
+        assert_eq!(envelope_tag(&half), Err(Rejected::Malformed));
     }
 
     /// A small deterministic generator for the world below.
