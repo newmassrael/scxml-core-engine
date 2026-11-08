@@ -5333,8 +5333,19 @@ fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), Generate
         // does not spell; under any other data model the element is not
         // lowered and stays refused here.
         // ... and so is a text template a `sce-static` document renders into a
-        // string variable (`<sce:render>`, docs/adr/0087).
-        const STATIC_ACTIONS: &[&str] = &["sce_append", "sce_clear", "sce_lift", "sce_render"];
+        // string variable (`<sce:render>`, docs/adr/0087), and each statement
+        // of a test component (docs/SCE_TEST_PROFILE.md §12.3: a verdict and a
+        // timer's start and stop), which `PythonTarget::test_statement` spells
+        // as a call on the component's context.
+        const STATIC_ACTIONS: &[&str] = &[
+            "sce_append",
+            "sce_clear",
+            "sce_lift",
+            "sce_render",
+            "sce_setverdict",
+            "sce_start_timer",
+            "sce_stop_timer",
+        ];
         for action in actions {
             let static_lowered =
                 static_model && STATIC_ACTIONS.contains(&action.action_type.as_str());
