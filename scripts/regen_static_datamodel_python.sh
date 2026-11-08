@@ -8,7 +8,7 @@
 # sce-build/tests/fixtures/test_profile/ with the documents they name, a module
 # each beside the machines; and the test components of
 # sce-build/tests/fixtures/test_profile/runtime/, a module each, with the
-# records and templates they name.
+# records and templates they name and the tables of the suite that runs them.
 #
 # The Python run gate for datamodel="sce-static"
 # (docs/SCE_ACCEPTED_SUBSET.md §2.15), the twin of
@@ -193,13 +193,21 @@ TEST_PROFILE_IMPORTS+=(card_payment card_within voucher_payment voucher_is)
 # component beside it, generated as a module of its own as a fixture's machine is, beside
 # the records and the templates its machine imports as sibling modules, which are
 # generated as the templates above are. The port types are read where the components are
-# and write no file; param_asker, which declares a module parameter, waits for Python's
-# suite tables (docs/SCE_TEST_PROFILE.md §12.6). The Rust, Kotlin and Go trees generate the
-# same components (scripts/regen_static_datamodel_rust.sh,
+# and write no file; param_asker reads the module parameter the suite below gives it. The
+# Rust, Kotlin and Go trees generate the same components (scripts/regen_static_datamodel_rust.sh,
 # scripts/regen_static_datamodel_kotlin.sh, scripts/regen_static_datamodel_go.sh).
 TEST_PROFILE_RUNTIME_DIR="$TEST_PROFILE_DIR/runtime"
 TEST_PROFILE_RUNTIME=(job_request job_reply request_of any_request reply_ok reply_of)
-TEST_COMPONENTS=(asker coordinator answerer ptc_keeper idler)
+TEST_COMPONENTS=(asker coordinator answerer ptc_keeper idler param_asker)
+# The tables of the suite test_a_test_suite_runs_through_its_runner.py runs through the
+# profile's runner (docs/SCE_TEST_PROFILE.md §11.6 to §11.8, §12.2), a module each beside
+# the machines: each configuration's unit imports the module of each component's machine,
+# `<machine>_sm`, as each component above is copied; each test case's imports its
+# configuration's, and the suite's its test cases'. The feature model writes no file. The
+# Rust, Kotlin and Go trees generate the same tables (scripts/regen_static_datamodel_rust.sh,
+# scripts/regen_static_datamodel_kotlin.sh, scripts/regen_static_datamodel_go.sh).
+TEST_TABLES=(asking_configuration serving_configuration keeping_configuration)
+TEST_TABLES+=(answers_the_job answers_before_the_guard serves_a_ptc keeps_a_ptc runtime_suite)
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -227,6 +235,9 @@ for document in "${TEST_PROFILE_RUNTIME[@]}"; do
 done
 for component in "${TEST_COMPONENTS[@]}"; do
     "$CODEGEN" generate "$TEST_PROFILE_RUNTIME_DIR/$component.scxml" -l python -o "$TMP/component_$component/"
+done
+for document in "${TEST_TABLES[@]}"; do
+    "$CODEGEN" generate "$TEST_PROFILE_RUNTIME_DIR/$document.scxml" -l python -o "$TMP/table_$document/"
 done
 
 # What this directory holds that is not generated is its package marker and its
@@ -274,8 +285,15 @@ for document in "${TEST_PROFILE_RUNTIME[@]}"; do
         MODULES+=("$(basename "$generated" .py)")
     done
 done
+
+for document in "${TEST_TABLES[@]}"; do
+    for generated in "$TMP/table_$document"/*.py; do
+        cp "$generated" "$GENERATED_DIR/"
+        MODULES+=("$(basename "$generated" .py)")
+    done
+done
 # A component's machine is copied as a fixture's is: its `_sm.py` alone, which the test's
-# factory of machines imports.
+# factory of machines and each configuration's table above import (`<machine>_sm`).
 for component in "${TEST_COMPONENTS[@]}"; do
     cp "$TMP/component_$component"/*_sm.py "$GENERATED_DIR/"
     MACHINES+=("$component")
