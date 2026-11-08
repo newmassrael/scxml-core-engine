@@ -24,6 +24,17 @@
 {% else %}
                 auto v = {{ e.enum_from_underlying }}(static_cast<{{ e.carrier_type }}>(*raw));
 {% endif %}
+{% elif e.kind == "record_list" %}
+                // A definite-length array within the list's counts, each item
+                // one record's map.
+                const auto len = cbor::read_array_len(c);
+                if (!len || *len > {{ e.list_max }}{% if e.list_min > 0 %} || *len < {{ e.list_min }}{% endif %}) return std::nullopt;
+                std::optional<{{ e.value_type }}> v{std::in_place};
+                for (std::uint64_t n = 0; n < *len; ++n) {
+                    auto record = {{ e.record_decode_fn }}(c);
+                    if (!record) return std::nullopt;
+                    v->push_back(std::move(*record));
+                }
 {% elif e.value_type == "uint64_t" %}
                 auto v = cbor::read_uint(c);
 {% else %}
@@ -34,6 +45,37 @@
 {% endif %}
                 if (!v) return std::nullopt;
                 {{ e.name }} = std::move(*v);
+{% endmacro %}
+{#- The read of one field of a record a list holds into `held_<name>`, which
+    the caller has checked is still empty. #}
+{% macro decode_record_field(f) %}
+{% if f.kind == "bool" %}
+                held_{{ f.name }} = cbor::read_bool(c);
+{% elif f.kind == "text" %}
+                held_{{ f.name }} = cbor::read_text(c, {{ f.max }});
+{% elif f.kind == "bytes" %}
+                held_{{ f.name }} = cbor::read_bytes(c, {{ f.max }});
+{% elif f.value_type == "uint64_t" %}
+                held_{{ f.name }} = cbor::read_uint(c);
+{% else %}
+                const auto raw = cbor::read_uint_upto(c, {{ f.int_max }}U);
+                if (!raw) return std::nullopt;
+                held_{{ f.name }} = static_cast<{{ f.value_type }}>(*raw);
+{% endif %}
+                if (!held_{{ f.name }}) return std::nullopt;
+{% endmacro %}
+{#- The write of one field of `record`, its key already written. The
+    language's string and vector carry no bound, so a text or a byte string
+    past its bound is refused, not written. #}
+{% macro encode_record_field(f) %}
+{% if f.kind == "bool" %}
+        if (auto e = cbor::write_bool(w, record.{{ f.name }})) return e;
+{% elif f.kind == "text" or f.kind == "bytes" %}
+        if (record.{{ f.name }}.size() > {{ f.max }}) return ::SCE::Forge::CodecError::CborOutOfRange;
+        if (auto e = cbor::write_{{ f.kind }}(w, record.{{ f.name }})) return e;
+{% else %}
+        if (auto e = cbor::write_uint(w, static_cast<std::uint64_t>(record.{{ f.name }}))) return e;
+{% endif %}
 {% endmacro %}
 {#- The write of one entry's value `v`, key already written. #}
 {% macro encode_value(e) %}
@@ -60,6 +102,15 @@
             if (u < 0) return ::SCE::Forge::CodecError::CborOutOfRange;
 {% endif %}
             if (auto e = cbor::write_uint(w, static_cast<std::uint64_t>(u))) return e;
+{% elif e.kind == "record_list" %}
+            {# The language's vector carries no bound, so a count past the list's
+               bound, or short of its lower count, is refused before anything of
+               the list is written. #}
+            if (v.size() > {{ e.list_max }}{% if e.list_min > 0 %} || v.size() < {{ e.list_min }}{% endif %}) return ::SCE::Forge::CodecError::CborOutOfRange;
+            if (auto e = cbor::write_array_head(w, v.size())) return e;
+            for (const auto &record : v) {
+                if (auto e = {{ e.record_encode_fn }}(w, record)) return e;
+            }
 {% else %}
             if (auto e = cbor::write_uint(w, static_cast<std::uint64_t>(v))) return e;
 {% endif %}
@@ -180,6 +231,56 @@ private:
 {% endfor %}
         return out;
     }
+{% for r in cbor_records %}
+
+    /// Read one record of the event schema `{{ r.schema }}` (`record:{{ r.alias }}`)
+    /// from `c`, as a list of this map holds it (docs/adr/0085, Landing order
+    /// step 3a), into the payload type the schema's own unit declares: one CBOR
+    /// map of every field, each under its id as text (docs/adr/0086, section
+    /// 9.2). Its keys in any order, a key the schema does not declare skipped
+    /// whole; a key given twice, a field missing and a text or byte string past
+    /// its bound are `std::nullopt`.
+    static std::optional<{{ r.type_name }}> {{ r.decode_fn }}(::SCE::Forge::SceCursor &c) {
+        namespace cbor = ::SCE::Forge::Cbor;
+        const auto count = cbor::read_map_len(c);
+        if (!count) return std::nullopt;
+{% for f in r.fields %}
+        std::optional<{{ f.value_type }}> held_{{ f.name }};
+{% endfor %}
+        for (std::uint64_t i = 0; i < *count; ++i) {
+            const auto key = cbor::read_text(c, std::nullopt);
+            if (!key) return std::nullopt;
+{% for f in r.fields %}
+            {{ "} else " if not loop.first else "" }}if (*key == {{ f.key_literal }}) {
+                // A key given twice is not one map entry.
+                if (held_{{ f.name }}.has_value()) return std::nullopt;
+{{ decode_record_field(f) }}{% endfor %}
+            } else if (!cbor::skip(c)) {
+                return std::nullopt;
+            }
+        }
+{% for f in r.fields %}
+        if (!held_{{ f.name }}.has_value()) return std::nullopt;
+{% endfor %}
+        {{ r.type_name }} record;
+{% for f in r.fields %}
+        record.{{ f.name }} = std::move(*held_{{ f.name }});
+{% endfor %}
+        return record;
+    }
+
+    /// Write one record of `{{ r.schema }}` as one map of every field, the keys
+    /// in the order RFC 8949 §4.2.1 sorts their encodings: a shorter key first.
+    [[nodiscard]] static std::optional<::SCE::Forge::CodecError> {{ r.encode_fn }}(
+        ::SCE::Forge::SceSink &w, const {{ r.type_name }} &record) noexcept {
+        namespace cbor = ::SCE::Forge::Cbor;
+        if (auto e = cbor::write_map_head(w, {{ r.field_count }})) return e;
+{% for f in r.fields_by_key %}
+        if (auto e = cbor::write_text(w, {{ f.key_literal }})) return e;
+{{ encode_record_field(f) }}{% endfor %}
+        return std::nullopt;
+    }
+{% endfor %}
 };
 
 }  // namespace SCE::Generated::{{ namespace }}

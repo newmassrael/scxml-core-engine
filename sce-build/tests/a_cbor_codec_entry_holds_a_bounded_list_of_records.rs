@@ -297,6 +297,34 @@ fn holds(lang: Language, code: &str, expected: &[&str], encode_at: &str, keys: [
 }
 
 #[test]
+fn the_cpp_map_holds_each_list_in_a_vector_of_the_schemas_payload() {
+    holds(
+        Language::Cpp,
+        &generated_fixture(Language::Cpp),
+        &[
+            "#include \"cbor_causal_entry.h\"",
+            "std::vector<SCE::Generated::CborCausalEntry::CborCausalEntryPayload> seen{};",
+            // A read past the bound is refused before any record is read.
+            "if (!len || *len > 2) return std::nullopt;",
+            "if (!len || *len > 3) return std::nullopt;",
+            "auto record = decode_record_causal_entry(c);",
+            "held_author = cbor::read_text(c, 16);",
+            // The vector carries no bound, so the encode refuses past it.
+            "if (v.size() > 2) return ::SCE::Forge::CodecError::CborOutOfRange;",
+            "if (auto e = cbor::write_array_head(w, v.size())) return e;",
+            "if (auto e = encode_record_causal_entry(w, record)) return e;",
+            "if (record.author.size() > 16) return ::SCE::Forge::CodecError::CborOutOfRange;",
+            "if (auto e = cbor::write_map_head(w, 2)) return e;",
+        ],
+        "encode_record_causal_entry(\n",
+        [
+            "cbor::write_text(w, \"seq\")",
+            "cbor::write_text(w, \"author\")",
+        ],
+    );
+}
+
+#[test]
 fn the_kotlin_map_holds_each_list_in_a_list_of_the_schemas_payload() {
     holds(
         Language::Kotlin,

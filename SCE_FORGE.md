@@ -1176,6 +1176,8 @@ lower count, and a text or byte string of a record past its bound, with
 reference's types hold those upper bounds, so they are no refusal the codec
 declares; a lower count is, on every backend alike:
 
+- C++: `std::vector<<Schema>Payload>`, the functions private static members of
+  the codec's struct; a refused read is `std::nullopt`, as every C++ decode's.
 - Kotlin: `List<<Schema>Payload>`, the functions private members of the codec's
   companion object.
 - Swift: `[<Schema>Payload]`, the functions private static members of the codec's
@@ -1196,9 +1198,9 @@ declares; a lower count is, on every backend alike:
   of the codec's class; a write refuses a record's number past its width too, a
   Python `int` holding none, as it refuses an entry's.
 
-Every other backend refuses such a codec by name until its template writes the
-array (`cbor_codec::lowers_record_list`), and a broadcast log over one is refused
-on those backends with it.
+Every backend generates the list. `cbor_codec::lowers_record_list` keeps one arm
+per backend: a backend it does not name refuses such a codec by name, and a
+broadcast log over one with it.
 
 **Wire rules.** Encode writes a definite-length map of the entries present,
 in ascending key order, every head in its shortest form (RFC 8949 §4.2.1,
@@ -1304,9 +1306,8 @@ positional C11 decode; `<name>_encode` and `<name>_encode_to_buf` beside
 skip walking a fixed stack rather than recursing.
 
 Every backend generates a CBOR codec. What still refuses one, by name
-(`generate/unsupported-feature`), is a list of records on a backend
-`cbor_codec::lowers_record_list` does not name (above), and a document C11
-cannot hold: a text or
+(`generate/unsupported-feature`), is a record of a list C11 cannot own (above),
+and a document C11 cannot hold: a text or
 byte string entry with neither `sce:max-size` nor `sce:length`, which has no
 fixed array to live in — every other backend's string grows. The generator's
 refusal and the conformance harness's schedule read one answer

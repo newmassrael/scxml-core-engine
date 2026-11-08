@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.1 (1ubuntu1~24.04.2)",
-  "embed_version": "50e1e94",
+  "embed_version": "f69461f",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 558,
+  "symbol_count": 556,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -547,30 +547,6 @@
       "kind": "class",
       "members": [],
       "name": "SCE::MonotonicClock"
-    },
-    {
-      "header": "common/ScriptValueJson.h",
-      "kind": "function",
-      "name": "SCE::ScriptValueJson::append",
-      "signature": "void SCE::ScriptValueJson::append(std::string &, const ScriptValue &)"
-    },
-    {
-      "header": "common/ScriptValueJson.h",
-      "kind": "function",
-      "name": "SCE::ScriptValueJson::appendObject",
-      "signature": "void SCE::ScriptValueJson::appendObject(std::string &, const std::map<std::string, std::string> &)"
-    },
-    {
-      "header": "common/ScriptValueJson.h",
-      "kind": "function",
-      "name": "SCE::ScriptValueJson::object",
-      "signature": "std::string SCE::ScriptValueJson::object(const std::map<std::string, std::string> &)"
-    },
-    {
-      "header": "common/ScriptValueJson.h",
-      "kind": "function",
-      "name": "SCE::ScriptValueJson::text",
-      "signature": "std::string SCE::ScriptValueJson::text(const ScriptValue &)"
     },
     {
       "header": "common/SendHelper.h",
@@ -3310,6 +3286,12 @@
     {
       "header": "sce/forge/cbor.h",
       "kind": "function",
+      "name": "SCE::Forge::Cbor::read_array_len",
+      "signature": "std::optional<std::uint64_t> SCE::Forge::Cbor::read_array_len(SceCursor &) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
       "name": "SCE::Forge::Cbor::read_bool",
       "signature": "std::optional<bool> SCE::Forge::Cbor::read_bool(SceCursor &) noexcept"
     },
@@ -3364,6 +3346,12 @@
     {
       "header": "sce/forge/cbor.h",
       "kind": "function",
+      "name": "SCE::Forge::Cbor::write_array_head",
+      "signature": "std::optional<CodecError> SCE::Forge::Cbor::write_array_head(SceSink &, std::uint64_t) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
       "name": "SCE::Forge::Cbor::write_bool",
       "signature": "std::optional<CodecError> SCE::Forge::Cbor::write_bool(SceSink &, bool) noexcept"
     },
@@ -3389,7 +3377,7 @@
       "header": "sce/forge/cbor.h",
       "kind": "function",
       "name": "SCE::Forge::Cbor::write_text",
-      "signature": "std::optional<CodecError> SCE::Forge::Cbor::write_text(SceSink &, const std::string &) noexcept"
+      "signature": "std::optional<CodecError> SCE::Forge::Cbor::write_text(SceSink &, std::string_view) noexcept"
     },
     {
       "header": "sce/forge/cbor.h",
