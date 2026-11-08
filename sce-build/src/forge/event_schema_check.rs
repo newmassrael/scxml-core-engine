@@ -270,26 +270,52 @@ impl ComposedLowering {
         sends: true,
     };
 
-    /// What the backend `language` lowers: Rust reads a composed payload at
-    /// any depth, takes a list whole, holds a union variable and sends a
-    /// composed value; Kotlin, Go, Python and C++ do each of those but hold a
-    /// union, and so read no payload that holds one. Each is a backend whose
+    /// What the backend `language` lowers: the one table of what each
+    /// backend lowers of a composed value, a row per backend. A backend whose
     /// machine spells the walks over a composed value
     /// ([`crate::forge::static_lowering::StaticTarget::composed_spelling`],
-    /// [`crate::forge::static_lowering::StaticTarget::composed_send_spelling`]);
-    /// every other backend lowers no composed value yet.
+    /// [`crate::forge::static_lowering::StaticTarget::composed_send_spelling`])
+    /// reads a composed payload at any depth, takes a list whole and sends a
+    /// composed value; one whose spelling holds a union reads a payload that
+    /// holds one too; every other backend lowers no composed value yet.
+    ///
+    /// A backend's step flips its own row and nothing else: the rows stand a
+    /// line apart, so two steps landed side by side touch no line in common,
+    /// and every test that asks which backends lower a position asks this
+    /// table rather than listing them (ARCHITECTURE.md, "Composed Values: One
+    /// Walk, One Module per Backend").
     pub fn of(language: crate::generator::Language) -> Self {
         use crate::generator::Language;
-        let walks = matches!(
-            language,
-            Language::Rust | Language::Kotlin | Language::Go | Language::Python | Language::Cpp
-        );
-        Self {
+        let none = Self {
             name: language.canonical_name(),
-            reads: walks,
-            copies: walks,
-            unions: matches!(language, Language::Rust),
-            sends: walks,
+            reads: false,
+            copies: false,
+            unions: false,
+            sends: false,
+        };
+        let walks = Self {
+            reads: true,
+            copies: true,
+            sends: true,
+            ..none
+        };
+        match language {
+            Language::Rust => Self {
+                unions: true,
+                ..walks
+            },
+
+            Language::Kotlin => walks,
+
+            Language::Go => walks,
+
+            Language::Python => walks,
+
+            Language::Cpp => walks,
+
+            Language::C11 => none,
+
+            Language::Swift => none,
         }
     }
 }
@@ -2631,24 +2657,31 @@ mod tests {
         );
     }
 
-    /// Rust reads a composed payload, takes a list whole and sends a composed
-    /// value (docs/adr/0086, sections 5 and 6), Kotlin, Go, Python and C++ do
-    /// each of those but hold a union, and every other backend refuses each by
-    /// its own name until its step lowers it.
+    /// Each backend's row says what its machine spells, no more and no less:
+    /// a backend reads a composed payload, takes a list whole and sends a
+    /// composed value exactly where its static target spells the walks for a
+    /// read and for a send (docs/adr/0086, sections 5 and 6), and holds a
+    /// union exactly where that spelling names a read of a union's tag
+    /// (docs/adr/0092, section 7). A row flipped without the spelling, or a
+    /// spelling landed without its row, is a backend the gate would hand what
+    /// it cannot write, or refuse what it writes. Each backend's own row is
+    /// pinned beside its spelling (`composed_lowering/<backend>.rs`).
     #[test]
-    fn each_backend_lowers_the_composed_positions_its_step_landed() {
+    fn each_backend_lowers_the_composed_positions_its_spelling_spells() {
         use crate::generator::Language;
         for language in Language::ALL {
             let lowering = ComposedLowering::of(*language);
-            let rust = *language == Language::Rust;
-            let walks = matches!(
-                language,
-                Language::Kotlin | Language::Go | Language::Python | Language::Cpp
-            );
-            assert_eq!(lowering.reads, rust || walks, "{language:?}");
-            assert_eq!(lowering.copies, rust || walks, "{language:?}");
-            assert_eq!(lowering.unions, rust, "{language:?}");
-            assert_eq!(lowering.sends, rust || walks, "{language:?}");
+            let target = crate::forge::static_lowering::target_for(*language)
+                .unwrap_or_else(|| panic!("{language:?} lowers sce-static"));
+            let read = target.composed_spelling("M");
+            let sent = target.composed_send_spelling("M");
+            let holds_unions = read
+                .as_ref()
+                .is_some_and(|spelling| spelling.union_tag_read("kind").is_some());
+            assert_eq!(lowering.reads, read.is_some(), "{language:?}");
+            assert_eq!(lowering.copies, read.is_some(), "{language:?}");
+            assert_eq!(lowering.sends, sent.is_some(), "{language:?}");
+            assert_eq!(lowering.unions, holds_unions, "{language:?}");
             assert_eq!(lowering.name, language.canonical_name());
         }
     }

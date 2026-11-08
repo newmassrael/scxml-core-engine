@@ -634,6 +634,25 @@ mod tests {
         carrier: CppCarrier::Json,
     };
 
+    /// The C++ row of the one table of what each backend lowers of a composed
+    /// value: a payload read at any depth, a list taken whole and a composed
+    /// value sent (docs/adr/0086, sections 5 and 6), and no union held yet
+    /// (docs/adr/0092, section 7).
+    #[test]
+    fn the_cpp_row_lowers_every_composed_position_but_a_union() {
+        use crate::forge::event_schema_check::ComposedLowering;
+        assert_eq!(
+            ComposedLowering::of(crate::generator::Language::Cpp),
+            ComposedLowering {
+                name: "cpp",
+                reads: true,
+                copies: true,
+                unions: false,
+                sends: true,
+            }
+        );
+    }
+
     /// The head of every C++ reader, as the tests below spell what they
     /// expect of one.
     const R: &str = "[&](const ::SCE::Common::EventPayloadValue &sceValue, auto &sceInto) -> \

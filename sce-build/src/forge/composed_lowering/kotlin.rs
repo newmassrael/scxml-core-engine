@@ -459,6 +459,25 @@ mod tests {
         carrier: KotlinCarrier::Json,
     };
 
+    /// The Kotlin row of the one table of what each backend lowers of a
+    /// composed value: a payload read at any depth, a list taken whole and a
+    /// composed value sent (docs/adr/0086, sections 5 and 6), and no union
+    /// held yet (docs/adr/0092, section 7).
+    #[test]
+    fn the_kotlin_row_lowers_every_composed_position_but_a_union() {
+        use crate::forge::event_schema_check::ComposedLowering;
+        assert_eq!(
+            ComposedLowering::of(crate::generator::Language::Kotlin),
+            ComposedLowering {
+                name: "kotlin",
+                reads: true,
+                copies: true,
+                unions: false,
+                sends: true,
+            }
+        );
+    }
+
     /// The value a Kotlin `<send>` holds a composed param in: a `List`, a `Map`
     /// whose keys the engine orders, `null` where a value is absent, and each
     /// scalar as a scalar param is (a narrow integer widened to `Long`, a
