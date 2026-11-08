@@ -562,6 +562,47 @@ PACKAGE_NAME = re.compile(r"^[a-z0-9][a-z0-9+.-]+$")
 # unit whose result is already known.
 NOTHING_TO_VERIFY = "no-gate-applies"
 
+# ── What `ci_only` means, and the one push that runs those gates anyway ──
+#
+# `ci_only` says that a push of any ref OTHER than main does not run the gate.
+# It used to say that no push ran it: the gate did not fit `PUSH_BUDGET_S`, a
+# ceiling on what a push from this workstation could make its author wait for,
+# so it was handed to hosted CI and judged a round later. The measured figures
+# beside each gate are why that trade was made, and they still price a push of
+# any other ref.
+#
+# main moves only through the bx landing queue (bx RFC 0024), whose integrator
+# judges each candidate by running the pre-push hook for the landing push's own
+# line (`refs/heads/main <candidate> refs/heads/main <base>`), and the hook
+# hands the units to the build machines. The budget's reason does not hold
+# there: the gates run side by side on the fleet, not one after another here.
+# Measured 2026-11-08: a landed item (cdba8e0eb0) was judged on 7 gates while
+# 34 `ci_only` gates it reached ran only after it landed, and main went red. The
+# owner decided that the queue's judgment runs every gate the change reaches,
+# `ci_only` included, still path-scoped. That selection is `select(...,
+# landing=True)`; the hook asks for it (`--landing`) for a push that updates
+# `refs/heads/main`, which only the integrator can make. Hosted CI stays, as an
+# audit after landing; `--ci-owed` and the workflow mapping still read the field.
+#
+# ── Where a gate can run: `platform` ─────────────────────────────────
+#
+# A gate runs on the platform bx.toml declares (`[platform.<name>]`) unless it
+# names another in `platform`, with `platform_reason` saying what that runner
+# has that the fleet does not. A landing unit bx cannot place on any machine
+# ends "not measured" (exit 2), and the integrator sends such an item back
+# unlanded; a gate only a hosted runner can run would therefore keep every item
+# that reaches it out of main for ever. So the landing selection leaves out a
+# gate whose `platform` bx.toml does not declare, names it, and hosted CI keeps
+# auditing it after landing (`drop_hosted_only`). One attribute, read against
+# bx.toml: when the fleet gains that platform, the gate joins the judgment
+# without an edit here. A toolchain the fleet merely lacks is not a platform:
+# it is a tool of bx.toml's platform, with an install, so bx provisions it and
+# places the unit where it is (Swift, GenMC, the Python environment, emsdk).
+# `a-gate-off-the-fleet-is-ci-only-and-says-why` in the self-test holds that
+# such a gate is `ci_only` (no push of another ref could run it either), names
+# a workflow, and gives its reason.
+BX_PLATFORM_HEADER = re.compile(r"^\[platform\.([A-Za-z0-9_-]+)\]\s*$")
+
 GATES: dict[str, dict] = {
     # Prerequisite, not a gate: several gates execute target/debug/sce-codegen.
     # Triggered by its own sources, and forced on by its dependents.
@@ -3466,7 +3507,7 @@ def matched(repo_root: Path, changed: list[str]) -> tuple[set[str], str]:
     """Every gate the change set reaches, BEFORE `ci_only` is applied.
 
     Split out of `select` so the two readers of this answer share one
-    implementation. `select` drops the `ci_only` gates and runs the rest;
+    implementation. `select` keeps what the push runs (`push_keeps`);
     `ci_owed` keeps exactly the ones it dropped, which is what the hook
     prints so a developer knows which verdicts the push handed to CI. A
     second copy of the matching would be a second answer to "what does this
@@ -3514,13 +3555,69 @@ def matched(repo_root: Path, changed: list[str]) -> tuple[set[str], str]:
     return (selected, "path-scoped selection")
 
 
-def select(repo_root: Path, changed: list[str]) -> tuple[list[str], str]:
-    """Return (gates to run in order, reason). Empty list means nothing to do."""
+def select(repo_root: Path, changed: list[str],
+           landing: bool = False) -> tuple[list[str], str]:
+    """Return (gates to run in order, reason). Empty list means nothing to do.
+
+    `landing` is the judgment of an update to main (see "What `ci_only`
+    means"): every reached gate the fleet can run, `ci_only` included.
+    """
     reached, reason = matched(repo_root, changed)
-    return (run_order(drop_ci_only(reached)), reason)
+    return (run_order(push_keeps(repo_root, reached, landing)), reason)
 
 
-def ci_owed(repo_root: Path, changed: list[str]) -> list[str]:
+def push_keeps(repo_root: Path, reached, landing: bool = False) -> set[str]:
+    """The gates a push runs out of the ones its change reached.
+
+    The one place the two kinds of push differ, so the hook, the runner and
+    the plan cannot select differently: a push of another ref drops every
+    `ci_only` gate (`drop_ci_only`); an update to main keeps them and drops
+    only the gates whose platform the fleet does not have (`drop_hosted_only`).
+    """
+    if landing:
+        return drop_hosted_only(reached, fleet_platforms(repo_root))
+    return drop_ci_only(reached)
+
+
+def fleet_platforms(repo_root: Path) -> set[str]:
+    """The platforms bx.toml declares (`[platform.<name>]`), which bx places on.
+
+    Read by its table headers rather than parsed as TOML: the registry runs
+    on the Python the build machines carry, and Ubuntu 22.04's 3.10 has no
+    `tomllib`. A tool's table (`[platform.linux.tools.swift]`) has a dot in
+    what follows `platform.` and is not a platform. A bx.toml that cannot be
+    read declares nothing, so every gate that names a platform is left out
+    of a landing rather than handed to a fleet that may not run it.
+    """
+    try:
+        text = (repo_root / "bx.toml").read_text(encoding="utf-8")
+    except OSError:
+        return set()
+    return {m.group(1) for m in map(BX_PLATFORM_HEADER.match, text.splitlines())
+            if m}
+
+
+def drop_hosted_only(selected, platforms, table=None) -> set[str]:
+    """Remove the gates whose `platform` is not one the fleet has.
+
+    A gate that names no platform runs on bx.toml's own and stays. Its
+    dependencies stay as well, as `drop_ci_only` keeps them: they are gates
+    the change reached, whichever gate pulled them in.
+    """
+    table = GATES if table is None else table
+    return {slug for slug in selected
+            if table[slug].get("platform") is None
+            or table[slug]["platform"] in platforms}
+
+
+def hosted_only(repo_root: Path, selected) -> list[str]:
+    """The gates of `selected` that a landing leaves to hosted CI, in order."""
+    return run_order(set(selected)
+                     - drop_hosted_only(selected, fleet_platforms(repo_root)))
+
+
+def ci_owed(repo_root: Path, changed: list[str],
+            landing: bool = False) -> list[str]:
     """The gates this change reaches that only CI will run.
 
     A push that silently stops running four gates is how a lane stays red for
@@ -3545,18 +3642,20 @@ def ci_owed(repo_root: Path, changed: list[str]) -> list[str]:
     a deny-list that quietly removes coverage is visible at the same moment
     in the same terminal rather than inferred later from a lane that stopped
     reporting.
+
+    "Only CI" is whatever the push left out, so it follows `landing`: a push
+    of another ref leaves out every `ci_only` gate, and an update to main
+    only the gates off the fleet (`push_keeps`). Derived from the selection
+    rather than from the field, so the notice cannot name a gate the push ran.
     """
-    reached, _ = matched(repo_root, changed)
-    return run_order({
-        s for s in reached
-        if GATES[s].get("ci_only")
-        and any(workflow_starts_for(repo_root, wf, changed)
-                for wf in GATES[s].get("workflows", []))
-    })
+    return run_order({s for s in left_out(repo_root, changed, landing)
+                      if any(workflow_starts_for(repo_root, wf, changed)
+                             for wf in GATES[s].get("workflows", []))})
 
 
-def ci_unowed(repo_root: Path, changed: list[str]) -> list[str]:
-    """`ci_only` gates this change reaches that NO workflow will start for.
+def ci_unowed(repo_root: Path, changed: list[str],
+              landing: bool = False) -> list[str]:
+    """Gates this change reaches that the push left out and NO workflow starts for.
 
     The residue of `ci_owed`, and the reason a deny-list cannot remove
     coverage in silence. A gate here is run by neither the push nor CI, so
@@ -3565,17 +3664,25 @@ def ci_unowed(repo_root: Path, changed: list[str]) -> list[str]:
     said out loud rather than discovered when a lane has been quiet for
     eight pushes.
     """
+    return run_order({s for s in left_out(repo_root, changed, landing)
+                      if not any(workflow_starts_for(repo_root, wf, changed)
+                                 for wf in GATES[s].get("workflows", []))})
+
+
+def left_out(repo_root: Path, changed: list[str],
+             landing: bool = False) -> set[str]:
+    """The gates this change reaches that the push does not run."""
     reached, _ = matched(repo_root, changed)
-    return run_order({
-        s for s in reached
-        if GATES[s].get("ci_only")
-        and not any(workflow_starts_for(repo_root, wf, changed)
-                    for wf in GATES[s].get("workflows", []))
-    })
+    return set(reached) - push_keeps(repo_root, reached, landing)
 
 
 def drop_ci_only(selected) -> set[str]:
-    """Remove the gates a push does not run, keeping their deps.
+    """Remove the gates a push of a non-main ref does not run, keeping their deps.
+
+    An update to main does not come here: the landing queue's judgment keeps
+    every `ci_only` gate it reaches (`push_keeps`, and "What `ci_only` means"
+    above GATES). Everything below is about the push of any other ref, which
+    is still bounded by `PUSH_BUDGET_S`.
 
     The hook mirrors CI for every other gate, and that symmetry is worth
     stating before breaking it: a check that runs in both places can be
@@ -4962,6 +5069,132 @@ def self_test(repo_root: Path) -> int:
     if "rustdoc-links" not in keys:
         failures.append("doc-check-self: rustdoc-links missing from " + str(keys))
 
+    # ── The judgment of an update to main ───────────────────────────
+    #
+    # a-landing-runs-the-ci-only-gates-it-reaches. The landing queue judges a
+    # candidate by the hook's selection for `refs/heads/main`, and that
+    # selection keeps every reached `ci_only` gate (see "What `ci_only`
+    # means"). A Rust source edit reaches `clippy` and `workspace-tests`, both
+    # `ci_only`: the landing must run them and a push of another ref must
+    # not. A selection that went on dropping `ci_only` for main is the state
+    # that let cdba8e0eb0 land on 7 gates while 34 it reached ran afterwards.
+    cases += 1
+    rust_path = ["sce-build/src/mesh/deploy.rs"]
+    landing_keys, _ = select(repo_root, rust_path, landing=True)
+    branch_keys, _ = select(repo_root, rust_path)
+    for slug in ("clippy", "workspace-tests"):
+        if not GATES[slug].get("ci_only"):
+            failures.append(
+                f"landing: {slug} is no longer ci_only, so this case cannot "
+                f"tell the two selections apart; pick a ci_only witness")
+        if slug not in landing_keys:
+            failures.append(
+                f"landing: an update to main that edits {rust_path[0]} does "
+                f"not run {slug}, a ci_only gate the change reaches; the "
+                f"queue's judgment would land it unjudged: {landing_keys}")
+        if slug in branch_keys:
+            failures.append(
+                f"landing: a push of another ref runs {slug}, which is "
+                f"ci_only; only an update to main keeps those gates")
+    # Still path-scoped: the landing keeps what the change REACHES, so a
+    # docs-only edit does not buy the Rust workspace or the C++ suite, and it
+    # still runs the always-on tree-wide gates.
+    cases += 1
+    docs_keys, _ = select(repo_root, ["README.md"], landing=True)
+    for slug in ("workspace-tests", "cpp-suite"):
+        if slug in docs_keys:
+            failures.append(
+                f"landing: a README edit selects {slug} on an update to main; "
+                f"the landing keeps ci_only gates, it does not stop scoping")
+    if "tree-hygiene" not in docs_keys:
+        failures.append(
+            "landing: a README edit does not run tree-hygiene on an update to "
+            "main, and that gate rides an unfiltered workflow: " + str(docs_keys))
+    # The notice follows the selection: a gate the landing ran is not "handed
+    # to CI", and on a push of another ref the same gate is.
+    cases += 1
+    if "clippy" in ci_owed(repo_root, rust_path, landing=True):
+        failures.append(
+            "landing: --ci-owed names clippy as handed to CI on an update to "
+            "main, which runs it")
+    if "clippy" not in ci_owed(repo_root, rust_path) \
+            and "clippy" not in ci_unowed(repo_root, rust_path):
+        failures.append(
+            "landing: on a push of another ref, clippy is reached and left out, "
+            "and neither --ci-owed nor --ci-unowed names it")
+
+    # a-landing-leaves-out-only-the-gates-off-the-fleet. An unclassified path
+    # reaches every gate (rule 1), so the landing's answer there is exactly
+    # the table less the gates whose platform bx.toml does not declare, and
+    # what it leaves out is exactly those.
+    cases += 1
+    platforms = fleet_platforms(repo_root)
+    if not platforms:
+        failures.append(
+            "platform: no `[platform.<name>]` table was read from bx.toml, so "
+            "every gate that names a platform reads as off the fleet")
+    off_fleet = {s for s in GATES
+                 if GATES[s].get("platform") is not None
+                 and GATES[s]["platform"] not in platforms}
+    unclassified = ["some_new_top_level_dir/thing.txt"]
+    full_keys, _ = select(repo_root, unclassified, landing=True)
+    if set(full_keys) != set(GATES) - off_fleet:
+        failures.append(
+            f"landing: an unclassified path on an update to main runs "
+            f"{len(full_keys)} gate(s), not the {len(GATES) - len(off_fleet)} "
+            f"the fleet can run; missing="
+            f"{sorted(set(GATES) - off_fleet - set(full_keys))} "
+            f"extra={sorted(set(full_keys) & off_fleet)}")
+    if left_out(repo_root, unclassified, landing=True) != off_fleet:
+        failures.append(
+            f"landing: what an update to main leaves out is "
+            f"{sorted(left_out(repo_root, unclassified, landing=True))}, not "
+            f"the gates off the fleet {sorted(off_fleet)}")
+    # The filter itself, on a fixture, so it keeps measuring when the live
+    # table has no gate off the fleet.
+    cases += 1
+    platform_fixture = {
+        "anywhere": {},
+        "on-linux": {"platform": "linux"},
+        "on-macos": {"platform": "macos"},
+    }
+    kept = drop_hosted_only(set(platform_fixture), {"linux"},
+                            table=platform_fixture)
+    if kept != {"anywhere", "on-linux"}:
+        failures.append(
+            f"platform-fixture: with only `linux` declared the fleet keeps "
+            f"{sorted(kept)}; a gate naming no platform and a gate naming a "
+            f"declared one stay, a gate naming another goes")
+
+    # a-gate-off-the-fleet-is-ci-only-and-says-why. Such a gate is left out of
+    # the landing, so it has to be `ci_only` (no push of another ref can run
+    # it on the fleet either), it has to name the workflow that audits it,
+    # and the reason is printed in the judgment, so it has to be one.
+    cases += 1
+    for slug, spec in sorted(GATES.items()):
+        if "platform" not in spec:
+            continue
+        if not isinstance(spec["platform"], str) or not spec["platform"]:
+            failures.append(
+                f"platform: {slug} declares platform={spec['platform']!r}; it "
+                f"is the name of a platform, as bx.toml spells one")
+            continue
+        if spec["platform"] in platforms:
+            continue
+        if not spec.get("ci_only"):
+            failures.append(
+                f"platform: {slug} runs on {spec['platform']!r}, which bx.toml "
+                f"does not declare, and is not ci_only; no push can run it")
+        if not spec.get("workflows"):
+            failures.append(
+                f"platform: {slug} is off the fleet and names no workflow, so "
+                f"nothing judges it before or after landing")
+        why = spec.get("platform_reason")
+        if not isinstance(why, str) or len(why.strip()) < 40:
+            failures.append(
+                f"platform: {slug} is off the fleet with no `platform_reason` "
+                f"saying what that runner has that the fleet does not")
+
     # A gate that enumerates the tree must be triggered by everything it
     # enumerates. The two statements about a gate — when it runs and what
     # it judges — were written in different places and nothing compared
@@ -6239,6 +6472,8 @@ def self_test(repo_root: Path) -> int:
     # selection would be the push verifying something else than it says.
     for label, selection in (
             ("rust-source", select(repo_root, ["sce-build/src/mesh/deploy.rs"])[0]),
+            ("rust-source-landing", select(repo_root, ["sce-build/src/mesh/deploy.rs"],
+                                           landing=True)[0]),
             ("docs-only", select(repo_root, ["README.md"])[0]),
             ("go-backend", select(repo_root, ["backends/go/forge-runtime/go.mod"])[0]),
             ("unclassified", select(repo_root, ["some_new_top_level_dir/x.txt"])[0]),
@@ -6634,8 +6869,20 @@ def print_plan(args, repo_root: Path) -> int:
               "--named, or a change (--changed / --changed-from)",
               file=sys.stderr)
         return 2
+    if args.landing and args.named:
+        print("gate_registry: --landing selects for an update to main, and "
+              "named gates are not a selection; pass --all or a change",
+              file=sys.stderr)
+        return 2
+    # What a landing leaves to hosted CI, named on stderr below so the
+    # judgment says which reached gates it did not measure.
+    off_fleet: list[str] = []
     if args.all:
         selected, reason = set(GATES), "every gate (--all)"
+        if args.landing:
+            off_fleet = hosted_only(repo_root, selected)
+            selected = drop_hosted_only(selected, fleet_platforms(repo_root))
+            reason = "every gate the fleet can run (--all --landing)"
     elif args.named:
         unknown = sorted(set(args.named) - set(GATES))
         if unknown:
@@ -6653,14 +6900,22 @@ def print_plan(args, repo_root: Path) -> int:
             text = sys.stdin.read() if str(args.changed_from) == "-" \
                 else args.changed_from.read_text(encoding="utf-8")
             changed = [ln.strip() for ln in text.splitlines() if ln.strip()]
-        keys, reason = select(repo_root, changed)
+        keys, reason = select(repo_root, changed, landing=args.landing)
         selected = set(keys)
+        if args.landing:
+            off_fleet = hosted_only(repo_root, matched(repo_root, changed)[0])
+            reason += ", ci_only included (--landing)"
 
     tree_is_head = tracked_tree_is_head(repo_root)
     head = head_commit(repo_root)
     units = plan_units(selected, rust=args.rust, tree_is_head=tree_is_head,
                        head=head)
     print(f"  selection: {reason}", file=sys.stderr)
+    for slug in off_fleet:
+        print(f"  NOT JUDGED HERE, hosted CI audits it after landing: {slug} "
+              f"needs platform {GATES[slug]['platform']!r}, which bx.toml "
+              f"does not declare ({GATES[slug].get('platform_reason', '')})",
+              file=sys.stderr)
     if head is None:
         print("  git names no HEAD commit, so no unit that reads it keeps a "
               "verdict", file=sys.stderr)
@@ -6710,6 +6965,10 @@ def main() -> int:
                          "that verify the selection: the change's gates "
                          "(--changed / --changed-from), every gate (--all) or "
                          "the named gates and their dependencies (--named)")
+    ap.add_argument("--landing", action="store_true",
+                    help="select as the judgment of an update to main: every "
+                         "reached gate the fleet can run, ci_only included "
+                         "(with a change, --plan, --ci-owed or --ci-unowed)")
     ap.add_argument("--all", action="store_true",
                     help="with --plan: every gate, ci_only included")
     ap.add_argument("--named", nargs="+", metavar="SLUG",
@@ -6790,20 +7049,27 @@ def main() -> int:
         return 2
 
     if args.ci_owed:
-        for slug in ci_owed(repo_root, changed):
+        for slug in ci_owed(repo_root, changed, landing=args.landing):
             workflows = ",".join(GATES[slug].get("workflows") or ["?"])
             print(f"{slug} {workflows}")
         return 0
 
     if args.ci_unowed:
-        for slug in ci_unowed(repo_root, changed):
+        for slug in ci_unowed(repo_root, changed, landing=args.landing):
             workflows = ",".join(GATES[slug].get("workflows") or ["?"])
             print(f"{slug} {workflows}")
         return 0
 
-    keys, reason = select(repo_root, changed)
+    keys, reason = select(repo_root, changed, landing=args.landing)
     if args.explain:
-        print(f"  selection: {reason}", file=sys.stderr)
+        print(f"  selection: {reason}"
+              + (", ci_only included (--landing)" if args.landing else ""),
+              file=sys.stderr)
+        if args.landing:
+            for slug in hosted_only(repo_root, matched(repo_root, changed)[0]):
+                print(f"  NOT JUDGED HERE, hosted CI audits it after landing: "
+                      f"{slug} ({GATES[slug].get('platform_reason', '')})",
+                      file=sys.stderr)
     for k in keys:
         print(k)
     return 0
