@@ -1,0 +1,37 @@
+# Mutation cases for "the bound of an expression's text follows the lattice of
+# lengths".
+#
+# Run with:
+#   scripts/mutate sce-build/tests/mutations/a_text_bound_follows_the_lattice_of_lengths.cases
+#
+# docs/adr/0086, section 8.6 (c): the bound of a text expression is computed
+# by an analysis beside type inference (`sce-build/src/forge/text_bound.rs`):
+# a concatenation takes the sum of its operands' bounds, a choice the larger
+# of its branches', and a literal the bytes of the text it denotes. The C11
+# size calculus and the C11 join of strings size storage by it, so a bound
+# that comes out short is a buffer a run can overflow. The unit tests of the
+# module ask each rule for its number. Each case breaks one rule: a
+# concatenation is as long as its longer operand, a choice as long as its
+# shorter branch, a literal as long as its characters rather than its bytes.
+
+mutation_tests -p sce-build --lib forge::text_bound
+mutation_targets sce-build/src/forge/text_bound.rs
+mutation_oracles sce-build/src/forge/text_bound.rs
+
+mutation_case "a concatenation is as long as its longer operand" <<'PY'
+edit("sce-build/src/forge/text_bound.rs",
+     "                TextBound::Bounded(a.saturating_add(b))\n",
+     "                TextBound::Bounded(a.max(b))\n")
+PY
+
+mutation_case "a choice is as long as its shorter branch" <<'PY'
+edit("sce-build/src/forge/text_bound.rs",
+     "            (TextBound::Bounded(a), TextBound::Bounded(b)) => TextBound::Bounded(a.max(b)),\n",
+     "            (TextBound::Bounded(a), TextBound::Bounded(b)) => TextBound::Bounded(a.min(b)),\n")
+PY
+
+mutation_case "a literal is as long as its characters, not its bytes" <<'PY'
+edit("sce-build/src/forge/text_bound.rs",
+     "        ExprKind::StringLit { value } => TextBound::Bounded(value.len() as u64),\n",
+     "        ExprKind::StringLit { value } => TextBound::Bounded(value.chars().count() as u64),\n")
+PY
