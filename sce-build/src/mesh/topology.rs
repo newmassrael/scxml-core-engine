@@ -416,6 +416,14 @@ pub struct ResolvedTarget {
         skip_serializing_if = "crate::mesh::deploy::OrderingRequirement::is_none"
     )]
     pub ordering: crate::mesh::deploy::OrderingRequirement,
+    /// The causal group (docs/adr/0085, section 3.2): `Some` when the binding
+    /// declares `delivery: causal`, with the group's name and initial view
+    /// (deploy validation holds the two keys together). Codegen reads it
+    /// to turn the per-source rules off for the binding and to give the
+    /// core its group, and to refuse the binding on a backend whose core
+    /// does not carry the causal route.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub causal: Option<crate::mesh::deploy::CausalGroupConfig>,
     /// SCE_MESH.md §mesh-14.6 responder set — the machine names (no
     /// leading `#`) whose RpcReply may retire a correlation entry for a
     /// request sent to this target. Derived from the binding's
@@ -1859,6 +1867,9 @@ pub(crate) struct PartialTarget {
     /// per-binding `needs_ordering` decision without revisiting
     /// deploy.yaml.
     pub ordering: crate::mesh::deploy::OrderingRequirement,
+    /// See [`ResolvedTarget::causal`]. Derived from the `BindingConfig` by
+    /// [`causal_group`].
+    pub causal: Option<crate::mesh::deploy::CausalGroupConfig>,
     /// SCE_MESH.md §mesh-14.6 responder set, derived from the binding's
     /// `reply_from:` by [`responder_set`]. Carried through the partial
     /// so the merge step does not have to revisit deploy.yaml.
@@ -1983,6 +1994,7 @@ pub(crate) fn contribute_send_partials(
                     event_patterns: pattern_map.remove(target).unwrap_or_default(),
                     invoke_sites: merged_sites,
                     ordering: binding.ordering,
+                    causal: causal_group(binding),
                     responders: responder_set(target, binding),
                     deadline_ms: binding.deadline_ms,
                     retry: binding.retry,
@@ -2209,6 +2221,18 @@ fn responder_set(target: &TargetId, binding: &crate::mesh::deploy::BindingConfig
     }
 }
 
+/// A binding's causal group (docs/adr/0085, section 3.2): its `group:` when
+/// it declares `delivery: causal`, and `None` otherwise. Deploy validation
+/// refuses one key without the other.
+fn causal_group(
+    binding: &crate::mesh::deploy::BindingConfig,
+) -> Option<crate::mesh::deploy::CausalGroupConfig> {
+    match binding.delivery {
+        Some(crate::mesh::deploy::DeliveryMode::Causal) => binding.group.clone(),
+        None => None,
+    }
+}
+
 fn merge_partial_into(partials: &mut Vec<PartialTarget>, new: PartialTarget) {
     let Some(existing) = partials.iter_mut().find(|pt| pt.target == new.target) else {
         partials.push(new);
@@ -2350,6 +2374,7 @@ pub(crate) fn contribute_subscription_partials(
                 event_patterns: Vec::new(),
                 invoke_sites: Vec::new(),
                 ordering: binding.ordering,
+                causal: causal_group(binding),
                 responders: responder_set(&source_target, binding),
                 deadline_ms: binding.deadline_ms,
                 retry: binding.retry,
@@ -2429,6 +2454,7 @@ pub(crate) fn contribute_srcexpr_partials(
                 event_patterns,
                 invoke_sites,
                 ordering: binding.ordering,
+                causal: causal_group(binding),
                 responders: responder_set(&target, binding),
                 deadline_ms: binding.deadline_ms,
                 retry: binding.retry,
@@ -2487,6 +2513,7 @@ pub(crate) fn contribute_targetexpr_partials(
                 event_patterns,
                 invoke_sites: Vec::new(),
                 ordering: binding.ordering,
+                causal: causal_group(binding),
                 responders: responder_set(&target, binding),
                 deadline_ms: binding.deadline_ms,
                 retry: binding.retry,
@@ -2843,6 +2870,7 @@ pub(crate) fn finalize_targets(
             state,
             invoke_sites: pt.invoke_sites,
             ordering: pt.ordering,
+            causal: pt.causal,
             responders: pt.responders,
             deadline_ms: pt.deadline_ms,
             retry: pt.retry,
@@ -4288,6 +4316,7 @@ mod tests {
             state: TransportState::Local,
             invoke_sites: Vec::new(),
             ordering: crate::mesh::deploy::OrderingRequirement::None,
+            causal: None,
             responders: vec!["motor".to_string()],
             deadline_ms: None,
             retry: None,
