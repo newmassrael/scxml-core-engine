@@ -116,11 +116,12 @@
 {#  SCE Accepted Subset §2.15: content that reads the event's typed payload
     cannot run for a delivery that did not carry one, and an error stops the
     block it arose in (W3C SCXML 4.9) — so the check guards the whole content,
-    once, before any of it runs. It raises nothing: the payload is null only
-    when the engine could not read it from the delivery, and the engine has
-    already said so with `error.execution` where it read it
-    (`StateMachineEngine.bindTypedPayload`). One unreadable delivery is one
-    error; a second raise here would report it twice. #}
+    once, before any of it runs. A delivery of this event whose data does not
+    fit is refused whole at the door and never reaches it
+    (`StateMachineEngine.bindTypedPayload`, docs/adr/0086 section 4.2); the
+    payload is null here only for an event of another name the transition's
+    descriptor also matches, which carries no payload of this event. It
+    raises nothing: no delivery was refused. #}
 {% if trans.content_reads_payload %}
                 if (pending{{ trans.event | to_event_variant }}Payload == null) {
                     return
