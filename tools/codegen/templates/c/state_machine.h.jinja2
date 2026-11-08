@@ -975,6 +975,12 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
     uint32_t discarded_external_events;
     {{ csym_prefix }}{{ model.name }}_event_t last_discarded_event;
     bool has_discarded_event;
+    /* docs/adr/0086, section 8.5 (b): events refused whole because their data
+       does not fit the machine's slot of `_event.data`, and the most recent of
+       them; a refusal is never a cut, and never silent. */
+    uint32_t refused_event_data;
+    {{ csym_prefix }}{{ model.name }}_event_t last_refused_event_data;
+    bool has_refused_event_data;
     /* W3C SCXML B.2.8.1: deliveries whose payload announced structure and that
        the datamodel could not read as one, and the most recent of them.
        `has_undecodable_payload` is separate for the same reason as above. */
@@ -1790,6 +1796,19 @@ uint32_t {{ csym_prefix }}{{ model.name }}_discarded_external_events(const {{ cs
    false, leaving `*out` untouched, while that count is zero — a count says
    something went nowhere; this says which thing did. */
 bool {{ csym_prefix }}{{ model.name }}_last_discarded_event(const {{ csym_prefix }}{{ model.name }}_t *sm,
+                            {{ csym_prefix }}{{ model.name }}_event_t *out);
+
+/* docs/adr/0086, section 8.5 (b): events refused whole because their data did
+   not fit this machine's slot of `_event.data` ({{ data_slot.name }}): one the
+   machine raised, sent or was handed, and a host-run invocation's completion
+   whose data did not fit. Each refusal is counted here and raised as
+   `error.execution` where the document declares it; none is cut or dropped
+   unseen. */
+uint32_t {{ csym_prefix }}{{ model.name }}_refused_event_data(const {{ csym_prefix }}{{ model.name }}_t *sm);
+
+/* The most recent event the count above refused. Returns false, leaving `*out`
+   untouched, while that count is zero. */
+bool {{ csym_prefix }}{{ model.name }}_last_refused_event_data(const {{ csym_prefix }}{{ model.name }}_t *sm,
                             {{ csym_prefix }}{{ model.name }}_event_t *out);
 
 /* W3C SCXML B.2.8.1: events delivered with a payload that announced itself as
