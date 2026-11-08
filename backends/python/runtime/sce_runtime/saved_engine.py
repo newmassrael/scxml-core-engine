@@ -756,13 +756,13 @@ def _arm_pending(engine: Any, pending: Sequence[_ReadSend], wall_now_ms: int) ->
                 route=_route(_ROUTE_INTERNAL, event_name=act.event),
             )
         elif act.kind == ACT_HOST:
+            # The request's value is left None: a send that carries a value has
+            # no delay, so none is saved.
             scheduler.schedule(
                 ready_at(read.due),
                 act.send_id,
                 None,
                 "",
-                # The value is left None: a send that carries a value has no
-                # delay, so none is saved.
                 host_send=HostSendRequest(
                     processor_type=act.processor_type,
                     event_name=act.event,
