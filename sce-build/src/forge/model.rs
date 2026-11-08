@@ -3627,7 +3627,7 @@ impl CborEntryType {
             .bounded()
             .ok()?;
         let entry = Self::RecordList(ty);
-        entry.record_list().map(|_| entry)
+        entry.record_list().is_some().then_some(entry)
     }
 }
 
