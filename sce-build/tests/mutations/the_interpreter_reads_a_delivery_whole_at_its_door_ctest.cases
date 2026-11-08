@@ -1,0 +1,56 @@
+# Mutation cases for "the Interpreter reads a delivery whole at its door, before it
+# selects a transition, as every generated machine lifts it when it takes the event"
+# (docs/adr/0086, section 4.4, amended 2026-11-09).
+#
+# The lowering installs the record of each event whose payload the document reads
+# (`SceStatic.door`); the Interpreter asks the library's reader when it binds `_event`
+# (`StateMachine::bindCurrentEvent`), which raises error.execution once for a delivery
+# outside its type; every guard that reads the payload is held to `SceStatic.admitted()`
+# and content that reads it stands inside an `<if>` of the same. `static_payload_bytes`,
+# replayed by `static_datamodel_lowered`, sends a frame past its bound on a route that
+# reads none of it (a sensor of 40 to 49), and a character past U+00FF on a route whose
+# content reads the frame. The mutants take one decision away each:
+#
+#   the engine never asks the door;
+#   the library lets a refused delivery in;
+#   the library's reader reads no field of the record;
+#   a guard that reads the payload is not held to the door;
+#   content that reads the payload is not held to the door.
+#
+# The library is embedded in the generator, so the regeneration is the build the ctest
+# names. Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^static_datamodel_lowered$'
+mutation_targets sce/src/runtime/StateMachine.cpp sce-build/src/forge/static_js/sce_static.js sce-build/src/forge/static_js.rs
+mutation_oracles tests/integration/AStaticDatamodelRunsLoweredUnderTheInterpreterTest.cpp sce-build/tests/fixtures/static_datamodel/static_payload_bytes.scxml sce-build/tests/fixtures/static_datamodel/scenarios/static_payload_bytes.json
+
+mutation_case "the engine never asks the door" <<'PY'
+edit("sce/src/runtime/StateMachine.cpp",
+     "    readAtTheDoor(scriptEngine_, sessionId_, model_.get(), eventRaiser_.get());\n",
+     "")
+PY
+
+mutation_case "the library lets a refused delivery in" <<'PY'
+edit("sce-build/src/forge/static_js/sce_static.js",
+     "      refusedNow = true;",
+     "      refusedNow = false;")
+PY
+
+mutation_case "the library's reader reads no field of the record" <<'PY'
+edit("sce-build/src/forge/static_js/sce_static.js",
+     "    var door = doors[event.name];",
+     "    return '';")
+PY
+
+mutation_case "a guard that reads the payload is not held to the door" <<'PY'
+edit("sce-build/src/forge/static_js.rs",
+     "            if guard_reads {",
+     "            if false && guard_reads {")
+PY
+
+mutation_case "content that reads the payload is not held to the door" <<'PY'
+edit("sce-build/src/forge/static_js.rs",
+     "            if transition.content_reads_payload {",
+     "            if false && transition.content_reads_payload {")
+PY
