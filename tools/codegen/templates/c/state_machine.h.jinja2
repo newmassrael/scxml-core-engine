@@ -815,7 +815,13 @@ typedef struct {{ csym_prefix }}{{ model.name }}_inbox_input {
             char data[{{ data_slot.name }}];
         } by_name;
 {% if inbox_endings %}
-        sce_host_invoke_ending_t ending;
+        /* An ending, with its data held here, at the size of this machine's
+           slot: `record.data` is not read, and the data is handed on as a view
+           of `data` when the input is applied (docs/adr/0086, section 8.5 (b)). */
+        struct {
+            sce_host_invoke_ending_t record;
+            char data[{{ data_slot.name }}];
+        } ending;
 {% endif %}
     } as;
 } {{ csym_prefix }}{{ model.name }}_inbox_input_t;
