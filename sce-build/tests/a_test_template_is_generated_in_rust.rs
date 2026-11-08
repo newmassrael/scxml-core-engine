@@ -242,8 +242,8 @@ fn a_union_is_matched_by_the_variant_of_its_case() {
     holds_each(
         &circle,
         &[
-            "pub type Value = super::union_shape::UnionShape;",
-            "    matches!(value, super::union_shape::UnionShape::Circle(_))\n",
+            "pub type Value = super::union_shape_minimal::UnionShapeMinimal;",
+            "    matches!(value, super::union_shape_minimal::UnionShapeMinimal::Circle(_))\n",
         ],
     );
     let placed = unit_of(&imports_dir(), "order_placed_match");
