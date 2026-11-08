@@ -16,10 +16,55 @@ Cbor.readBytes(c, {{ e.max_size if e.max_size is not none else "null" }}) ?: ret
 Cbor.readBytesExact(c, {{ e.length }}) ?: return null
 {%- elif e.kind == "enum" -%}
 {{ e.enum_from_underlying }}((Cbor.readUintUpto(c, {{ e.carrier_type }}.MAX_VALUE.toULong()) ?: return null).to{{ e.carrier_type }}()){% if not e.enum_is_open %} ?: return null{% endif %}
+{%- elif e.kind == "record_list" -%}
+run {
+                            // A definite-length array within the list's counts,
+                            // each item one record's map.
+                            val len = Cbor.readArrayLen(c) ?: return null
+                            if (len > {{ e.list_max }}UL{% if e.list_min > 0 %} || len < {{ e.list_min }}UL{% endif %}) return null
+                            val list = ArrayList<{{ e.record_type }}>(len.toInt())
+                            var n = 0UL
+                            while (n < len) {
+                                n++
+                                list.add({{ e.record_decode_fn }}(c) ?: return null)
+                            }
+                            list
+                        }
 {%- elif e.value_type == "ULong" -%}
 Cbor.readUint(c) ?: return null
 {%- else -%}
 (Cbor.readUintUpto(c, {{ e.value_type }}.MAX_VALUE.toULong()) ?: return null).to{{ e.value_type }}()
+{%- endif -%}
+{%- endmacro %}
+{#- The read of one field of a record a list holds, as the expression bound to
+    its `held_` local. #}
+{% macro decode_record_field(f) -%}
+{%- if f.kind == "bool" -%}
+Cbor.readBool(c) ?: return null
+{%- elif f.kind == "text" -%}
+Cbor.readText(c, {{ f.max }}) ?: return null
+{%- elif f.kind == "bytes" -%}
+Cbor.readBytes(c, {{ f.max }}) ?: return null
+{%- elif f.value_type == "ULong" -%}
+Cbor.readUint(c) ?: return null
+{%- else -%}
+(Cbor.readUintUpto(c, {{ f.int_max }}UL) ?: return null).to{{ f.value_type }}()
+{%- endif -%}
+{%- endmacro %}
+{#- The write of one field of `record`, its key already written. The
+    language's string and array carry no bound, so a text or a byte string
+    past its bound is refused, not written. #}
+{% macro encode_record_field(f) -%}
+{%- if f.kind == "bool" -%}
+Cbor.writeBool(w, record.{{ f.name }})?.let { return it }
+{%- elif f.kind == "text" -%}
+if (record.{{ f.name }}.encodeToByteArray().size > {{ f.max }}) return CodecError.CborOutOfRange
+            Cbor.writeText(w, record.{{ f.name }})?.let { return it }
+{%- elif f.kind == "bytes" -%}
+if (record.{{ f.name }}.size > {{ f.max }}) return CodecError.CborOutOfRange
+            Cbor.writeBytes(w, record.{{ f.name }})?.let { return it }
+{%- else -%}
+Cbor.writeUint(w, record.{{ f.name }}.toULong())?.let { return it }
 {%- endif -%}
 {%- endmacro %}
 {#- The write of one entry's value `v`, key already written. #}
@@ -40,6 +85,14 @@ if (v.size != {{ e.length }}) return CodecError.CborWrongLength
     `toULong()` would wrap it; refused as the Rust backend refuses it. #}
 {% if e.carrier_signed %}if (({{ e.enum_to_underlying }}) < 0) return CodecError.CborOutOfRange
 {{ indent }}{% endif %}Cbor.writeUint(w, ({{ e.enum_to_underlying }}).toULong())?.let { return it }
+{%- elif e.kind == "record_list" -%}
+{#- The language's list carries no bound, so a count past the list's bound,
+    or short of its lower count, is refused before anything of it is written. -#}
+if (v.size > {{ e.list_max }}{% if e.list_min > 0 %} || v.size < {{ e.list_min }}{% endif %}) return CodecError.CborOutOfRange
+{{ indent }}Cbor.writeArrayHead(w, v.size.toULong())?.let { return it }
+{{ indent }}for (record in v) {
+{{ indent }}    {{ e.record_encode_fn }}(w, record)?.let { return it }
+{{ indent }}}
 {%- else -%}
 Cbor.writeUint(w, v.toULong())?.let { return it }
 {%- endif -%}
@@ -152,5 +205,56 @@ data class {{ struct_name }}(
 {% endfor %}
             )
         }
+{% for r in cbor_records %}
+
+        /**
+         * Read one record of the event schema `{{ r.schema }}` (`record:{{ r.alias }}`)
+         * from [c], as a list of this map holds it (docs/adr/0085, Landing order
+         * step 3a), into the payload type the schema's own unit declares: one
+         * CBOR map of every field, each under its id as text (docs/adr/0086,
+         * section 9.2). Its keys in any order, a key the schema does not declare
+         * skipped whole; a key given twice, a field missing and a text or byte
+         * string past its bound are `null`.
+         */
+        private fun {{ r.decode_fn }}(c: SceCursor): {{ r.type_name }}? {
+            val count = Cbor.readMapLen(c) ?: return null
+{% for f in r.fields %}
+            var held_{{ f.name }}: {{ f.value_type }}? = null
+{% endfor %}
+            var i = 0UL
+            while (i < count) {
+                i++
+                when (Cbor.readText(c, null) ?: return null) {
+{% for f in r.fields %}
+                    {{ f.key_literal }} -> {
+                        // A key given twice is not one map entry.
+                        if (held_{{ f.name }} != null) return null
+                        held_{{ f.name }} = {{ decode_record_field(f) }}
+                    }
+{% endfor %}
+                    else -> if (!Cbor.skip(c)) return null
+                }
+            }
+            return {{ r.type_name }}(
+{% for f in r.fields %}
+                {{ f.name }} = held_{{ f.name }} ?: return null,
+{% endfor %}
+            )
+        }
+
+        /**
+         * Write one record of `{{ r.schema }}` into [w] as one map of every field,
+         * the keys in the order RFC 8949 §4.2.1 sorts their encodings: a shorter
+         * key first. `null` on success.
+         */
+        private fun {{ r.encode_fn }}(w: SceSink, record: {{ r.type_name }}): CodecError? {
+            Cbor.writeMapHead(w, {{ r.field_count }}UL)?.let { return it }
+{% for f in r.fields_by_key %}
+            Cbor.writeText(w, {{ f.key_literal }})?.let { return it }
+            {{ encode_record_field(f) }}
+{% endfor %}
+            return null
+        }
+{% endfor %}
     }
 }
