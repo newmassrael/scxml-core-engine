@@ -1843,6 +1843,14 @@ name = "a_python_machine_reads_a_composed_payload_at_any_depth"
 path = "tests/a_python_machine_reads_a_composed_payload_at_any_depth.rs"
 required-features = ["cli"]
 
+# A C++ machine reads a composed payload at any depth and sends a composed value
+# by its name, as the Rust, Kotlin, Go and Python machines do (docs/adr/0086,
+# sections 5.2 and 6). It runs `sce-codegen`, so it carries the `cli` gate.
+[[test]]
+name = "a_cpp_machine_reads_a_composed_payload_at_any_depth"
+path = "tests/a_cpp_machine_reads_a_composed_payload_at_any_depth.rs"
+required-features = ["cli"]
+
 # A statechart sends a composed value by the name of the place that holds it
 # (docs/adr/0086, section 5.2). It runs `sce-codegen`, so it carries the `cli` gate.
 [[test]]
