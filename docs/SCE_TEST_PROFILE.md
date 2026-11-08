@@ -890,6 +890,32 @@ builds a byte string of one entry, which the C11 unit of an event schema holds a
 reference, inside a list, to a template of an optional type, whose value the list holds in its composition's own
 optional type and not in the one the referenced template takes.
 
+Swift generates `test-template` (§12.6, slice 6). The unit is a file `<Name>.swift`, named by the document's file as
+every forge unit is. Every unit of a run is a file of one module, so the unit declares a caseless enum `<Name>`, as an
+algorithm's unit does, whose members are:
+
+- `Value`, a type alias of the template's type as the unit of an `event-schema` spells a field of that type (a record
+  is the schema's payload struct, a value that may be absent `T?`);
+- `static func matches(_ value: Value, <the formal parameters, in order>) -> Bool`, which holds each mechanism of §6.1
+  by the rules C++ holds it by. A value that may be absent is read through its `map`, whose closure binds the present
+  value under a name of its own and states its result, and the answer for an absent value is given by `??`; a text,
+  a byte string, a list and a value that may be absent are compared by `==`, which compares a Swift value by its
+  contents. A length restriction on a `string[N]` counts characters, through the profile's runtime
+  (`SceTestProfile.textLength`, a text's Unicode code points, since a Swift `String` counts grapheme clusters), and on
+  `bytes[N]` and `list<T>[B]` octets and elements (`count`);
+- for a specific template (§6.2) alone, `static func value(<the formal parameters>) -> Value`, the value it sends,
+  which matches it: a record built by the initializer of every field, a field it omits `nil`. A byte string a
+  parameter gives is held as given, since a Swift array is a value.
+
+Every enum, record and referenced template the unit names is named bare, as its own unit declares it in the module,
+and a referenced template's functions through its enum (`<Name>.matches`, `<Name>.value`); the unit imports the
+profile's runtime (`import SceTestProfile`) exactly where it counts a text. Swift joins the tests as Rust, Kotlin,
+Go, Python and C11 do. Swift lowers no union, so a template whose type reaches a union at any depth is refused on
+Swift as on C++ (ADR 0092, section 7). It refuses by name too a template whose type, or a formal parameter's, holds
+at any depth a record or an enum whose own Swift unit is not written, by what that unit is refused for (a record
+with a byte string that may be absent, an enum of an open set of variants), so no unit names a type nothing
+declares. Every backend generates `test-template`.
+
 C++ generates `test-component` (§12.6, slice 4). The unit is the statechart machine the C++ generator writes for any
 `sce-static` document, `<file>_sm.h` and its `<file>_sm.inl`, in the namespace `SCE::Generated::<name>`, lowered
 through the doors of §12.3 before it is rendered (`test_component::snapshot::lower`, written once for every
@@ -1336,7 +1362,7 @@ one at a time. Each lifts the refusal of §11.9 for itself when its runtime land
 
 | Part | Where | Why there |
 |---|---|---|
-| Round scheduler, `NOW`, port queues and snapshots, timer bindings, verdicts, entity table, guard | a runtime library per backend (C++: `sce/include/test/`, Rust: `sce_rust_runtime::test`, Kotlin: `com.sce.runtime.test`, Go: the package `testprofile` of `sce-go-runtime`, Python: `sce_runtime.testprofile`, C11: the headers `sce/test/` of `backends/c/runtime`) | it is the same for every suite, so it is written once and tested on its own (Zero Duplication) |
+| Round scheduler, `NOW`, port queues and snapshots, timer bindings, verdicts, entity table, guard | a runtime library per backend (C++: `sce/include/test/`, Rust: `sce_rust_runtime::test`, Kotlin: `com.sce.runtime.test`, Go: the package `testprofile` of `sce-go-runtime`, Python: `sce_runtime.testprofile`, C11: the headers `sce/test/` of `backends/c/runtime`, Swift: the library `SceTestProfile` of `backends/swift/runtime`) | it is the same for every suite, so it is written once and tested on its own (Zero Duplication) |
 | A component's machine | generated from the `test-component`, by the backend's statechart generator | it is a statechart (§7) |
 | A template's matcher and a specific template's value | generated from the `test-template`, over the record types the statechart generator already writes for an `event-schema` | matching is on values, not on encoded bytes, so no codec takes part (C2) |
 | Which port is connected or mapped to which, and the MTC and PTC of each component | generated tables from the `test-configuration` and `test-case` | they are data |
@@ -1357,7 +1383,7 @@ requires.
 | taking a branch, P4 step 1 | one statement the generator puts before the branch's executable content. A receive branch removes the head of its port's queue and holds it as the transition's `_event.data`, in the payload member of its record's event (`Transition::payload_event`). A timeout branch sets its timer to `IDLE`. Every branch's statement also tells the runtime that the component took a branch in this round. |
 | `<sce:setverdict>`, `<sce:start-timer>`, `<sce:stop-timer>` | actions of their block (§11.5) that call the component's runtime context |
 | a `<log>` (P8) | the same action of its block, which calls the runtime context instead of the engine's log, so the test log records it with `NOW` and the component |
-| a send (P6) | a host Event I/O Processor for the test-port URI, registered by the runtime (ADR 0084). The request names the port and carries the template's value, as the value the generated code holds and never an encoding (C++ and Rust: `HostSendRequest::value`, Kotlin and Python: `HostSendRequest.value`, Go: `HostSendRequest.Value`, C11: `sce_host_send_request_t.value`, a view of the value's bytes beside the name of its C type). The runtime appends the value to the queue of the connected port, or hands it to the system adapter when the port is mapped. |
+| a send (P6) | a host Event I/O Processor for the test-port URI, registered by the runtime (ADR 0084). The request names the port and carries the template's value, as the value the generated code holds and never an encoding (C++ and Rust: `HostSendRequest::value`, Kotlin and Python: `HostSendRequest.value`, Go: `HostSendRequest.Value`, C11: `sce_host_send_request_t.value`, a view of the value's bytes beside the name of its C type, Swift: `HostSendRequest.value`, a `HostSendValue` that holds any value Swift compares and shares across threads). The runtime appends the value to the queue of the connected port, or hands it to the system adapter when the port is mapped. |
 | a PTC (P9) | a host invoke processor for the test-component URI, registered by the runtime. The engine asks for the start when the macrostep that entered the state ends (§scxml-6.4), which is when P9 creates, connects, maps and starts the PTC. It asks for the cancel when the state is exited, which is P9's kill. The runtime never reports a completion to the engine: `done` is read from the snapshot (P2). So a PTC that has terminated is still running for the engine, and the engine delivers the cancel for it too, which P9's kill requires. |
 
 A module parameter (§11.5) takes no door of the engine. It is a variable of the machine, and the component writes
@@ -1393,9 +1419,9 @@ ends it with `error` (P13). The lane's clock does the same (§10), so the two ru
 A suite is run by a library function, with no `main` of its own (C++: `SCE::Test::runSuite`, Rust:
 `sce_rust_runtime::test::run_suite`, Kotlin: `com.sce.runtime.test.runSuite`, Go: `testprofile.RunSuite`, Python:
 `sce_runtime.testprofile.run_suite`, C11: `sce_test_run_suite`, which hands each result to the caller's function as
-it ends rather than returning a list, in one run the caller places): given the suite's
-tables, a world of its features and a factory of system adapters, it runs the test cases the world selects, one at
-a time on the calling thread, in the suite's order (P11), each a fresh run from `NOW = 0` against a fresh adapter,
+it ends rather than returning a list, in one run the caller places, Swift: `runSuite` of `SceTestProfile`): given
+the suite's tables, a world of its features and a factory of system adapters, it runs the test cases the world
+selects, one at a time on the calling thread, in the suite's order (P11), each a fresh run from `NOW = 0` against a fresh adapter,
 and returns each one's result. The caller may give a module parameter another value than the suite's default; a
 value for a parameter the suite does not declare is the caller's mistake and is refused before any test case runs.
 A test case whose components read a module parameter the run has no value for, or for which no adapter is given,
@@ -1478,4 +1504,15 @@ the equivalence law (order of work step 6).
    generates the configuration, case and suite tables over the same rows, each including what it reads by its
    header and making every machine from storage the caller places, and runs the examples end to end through
    `sce_test_run_suite`; the refusal is lifted for C11 for the remaining kinds, and for a component's module
-   parameter.
+   parameter. Swift's runtime library of §12.2 is the library `SceTestProfile` of the runtime package, over
+   `SceRuntime`, the Rust one ported type for type and held to its cases. Its port, timer, instant and duration are
+   `TestPort`, `TestTimer`, `TestInstant` and `TestDuration`, since Swift and Foundation declare a `Duration`, a
+   `Timer` and a `Port` of their own that a module of the same names would hide or make ambiguous; a misuse the Rust
+   runtime panics on (a re-entrant call, a context that outlived its component) stops the program, and a
+   `TestCaseRun` is not copyable and its `run` consumes it, so a second run of it does not compile, as in Rust. It
+   has `textLength` for a template's length restriction, a text's Unicode code points, and the Swift host send
+   request carries a test-port send's value (`HostSendRequest.value`, a `HostSendValue`), which a saved state does
+   not carry: a save that finds one waiting refuses by name. Swift generates templates, and the refusal of §11.9 is
+   lifted for Swift for `test-template`; Swift lowers no union, so a template whose type reaches one stays refused
+   there, as on C++, Go, Python and C11, and so does one that holds a record or an enum whose own Swift unit is not
+   written.

@@ -545,7 +545,12 @@ template too, and refuse one whose type reaches a union as C++ does. C11 generat
 template too, refuses one whose type reaches a union as C++ does, and refuses with
 `generate/unsupported-feature` one that compares, counts or builds a byte string of one
 entry, which its event schema unit holds as a pointer with no length, and one that
-references, inside a list, a template of an optional type. C++ generates a test
+references, inside a list, a template of an optional type. Swift generates a template
+too, so every backend generates one; it refuses one whose type reaches a union as C++
+does, and refuses with `generate/unsupported-feature` one whose type, or a formal
+parameter's, holds at any depth a record or an enum whose own Swift unit is not written
+(a record with a byte string that may be absent, an enum of an open set of variants), by
+what that unit is refused for. C++ generates a test
 component, its machine driven by the profile's runtime through the doors of
 `docs/SCE_TEST_PROFILE.md` §12.3, each module parameter read from the run before the
 machine starts, and refuses, with `generate/unsupported-feature`, one that uses a template
