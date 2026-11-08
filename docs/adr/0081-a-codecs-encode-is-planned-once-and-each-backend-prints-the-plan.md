@@ -622,6 +622,17 @@ old encode, the old encode and its templates are removed in the same landing.
    refuses, is not printed yet. The engine's mesh envelope (`sce:std/mesh/envelope.scxml`) is such a map: the
    engine's adapter makes it by its constructor, each bounded entry by its `make`, which is where an entry
    past its bound is refused, and reads it by its accessors. The printed set is 139 codecs.
+
+   *The thirtieth C++ landing, 2026-11-09:* a content-line component, printed from its own plan
+   (`cpp_source::content_line`), and the first C++ encode that refuses. Every entry is presented, as the Rust
+   interface presents it: an accessor for a property's value and one for each of its parameters, an optional
+   for one that may be absent, a range (a begin and end pair) for a repeated property and for the values of one
+   line, and a range of line records for a repeated property with parameters or values, each record a source
+   of its own class. A text is a view: a line refuses a value by its content as well as its size, so the
+   plan's checks stay checks and no bound refines them. The encode writes over a counting sink first and then
+   over the caller's (§1), so a refusal leaves the caller's sink untouched; it returns the refusal as a
+   `CodecError`. The runtime's line writer takes views and any range of texts, and throws nothing. The
+   template's struct is gone: every content-line plan is printed. The printed set is 144 codecs.
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences

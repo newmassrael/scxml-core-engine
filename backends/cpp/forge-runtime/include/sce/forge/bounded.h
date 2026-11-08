@@ -357,6 +357,45 @@ struct IsBoundedWithin<Bounded<L, Max2, Min2>, Max, Min> : WithinBounds<Max, Min
 /// The type of the elements a list `T` holds, as iteration reads them.
 template <typename T> using ElementOf = std::decay_t<decltype(*std::declval<const T &>().begin())>;
 
+/// The iterator of a range `R`, as `begin` gives it on a `const R`.
+template <typename R> using IteratorOf = decltype(std::declval<const R &>().begin());
+
+/// Whether `R` is a range a source may present for a list no bound refines (a
+/// begin and end pair, docs/adr/0081 §2): its `begin` and `end` compared by
+/// `!=`, the iterator advanced by `++` and read by `*`. A range is read more
+/// than once, so it is walked again from `begin`.
+template <typename R, typename = void> struct IsRange : std::false_type {};
+
+template <typename R>
+struct IsRange<R, std::void_t<decltype(std::declval<const R &>().begin() != std::declval<const R &>().end()),
+                              decltype(++std::declval<IteratorOf<R> &>()), decltype(*std::declval<IteratorOf<R> &>())>>
+    : std::true_type {};
+
+/// Whether `R` is a range whose every element converts to `T`.
+template <typename R, typename T, typename = void> struct IsRangeOf : std::false_type {};
+
+template <typename R, typename T>
+struct IsRangeOf<R, T, std::enable_if_t<IsRange<R>::value>>
+    : std::is_convertible<decltype(*std::declval<IteratorOf<R> &>()), T> {};
+
+/// Whether walking the range `R` throws nothing: its `begin`, `end`, the
+/// comparison, the advance and the read of an element.
+template <typename R, typename = void> struct IsNothrowRange : std::false_type {};
+
+template <typename R>
+struct IsNothrowRange<R, std::enable_if_t<IsRange<R>::value>>
+    : std::bool_constant<noexcept(std::declval<const R &>().begin()) && noexcept(std::declval<const R &>().end()) &&
+                         noexcept(std::declval<const R &>().begin() != std::declval<const R &>().end()) &&
+                         noexcept(++std::declval<IteratorOf<R> &>()) && noexcept(*std::declval<IteratorOf<R> &>())> {};
+
+/// Whether walking the range `R` of elements that convert to `T`, and taking
+/// each as `T`, throws nothing.
+template <typename R, typename T, typename = void> struct IsNothrowRangeOf : std::false_type {};
+
+template <typename R, typename T>
+struct IsNothrowRangeOf<R, T, std::enable_if_t<IsRangeOf<R, T>::value>>
+    : std::bool_constant<IsNothrowRange<R>::value && noexcept(converts_to<T>(*std::declval<IteratorOf<R> &>()))> {};
+
 /// Whether a value of type `V` is a view of elements that belong to something
 /// else: a `Bounded` over a list that owns nothing, a `Span`, a string view.
 template <typename V> struct IsView : std::false_type {};

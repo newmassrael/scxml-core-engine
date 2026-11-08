@@ -33,6 +33,7 @@
 #include "codec_chain_has_marker.h"
 #include "codec_chain_has_tagged.h"
 #include "codec_chain_prev_carrier.h"
+#include "codec_content_line_required_lists.h"
 #include "codec_embed_basic.h"
 #include "codec_ext_encoding_info.h"
 #include "codec_init_syn_body.h"
@@ -1909,6 +1910,111 @@ void a_cbor_map_is_made_within_its_bounds_and_written_in_key_order() {
           "a decoded map holds each entry it read and encodes back to its frame");
 }
 
+namespace RequiredLists = ::SCE::Generated::CodecContentLineRequiredLists;
+using LinesValue = RequiredLists::CodecContentLineRequiredLists;
+using RecLine = RequiredLists::CodecContentLineRequiredListsRecLine;
+
+namespace lines_consumer {
+
+/// A consumer's own record of one `REC` line: a kind it may name, and a text.
+struct Rec {
+    std::optional<std::string> kind;
+    std::string text;
+
+    std::optional<std::string_view> recKind() const noexcept {
+        if (!kind) {
+            return std::nullopt;
+        }
+        return std::string_view(*kind);
+    }
+
+    std::string_view value() const noexcept {
+        return text;
+    }
+};
+
+/// A consumer's own component: its lists in containers of its choosing, a list
+/// of values as views of text it keeps elsewhere.
+struct Lines {
+    std::string id;
+    std::vector<std::string> tags;
+    std::vector<std::string_view> categories;
+    std::vector<Rec> recs;
+
+    std::string_view uid() const noexcept {
+        return id;
+    }
+
+    const std::vector<std::string> &tag() const noexcept {
+        return tags;
+    }
+
+    const std::vector<std::string_view> &cats() const noexcept {
+        return categories;
+    }
+
+    const std::vector<Rec> &rec() const noexcept {
+        return recs;
+    }
+};
+
+}  // namespace lines_consumer
+
+static_assert(RequiredLists::is_source<lines_consumer::Lines>::value, "a consumer's component is a source of one");
+static_assert(RequiredLists::is_nothrow_source<lines_consumer::Lines>::value, "reading it throws nothing");
+static_assert(RequiredLists::is_rec_line_source<lines_consumer::Rec>::value, "a consumer's record is a line of one");
+static_assert(!RequiredLists::is_source<lines_consumer::Rec>::value, "a record is no component");
+
+void a_component_of_content_lines_is_written_from_any_source_or_not_at_all() {
+    const lines_consumer::Lines lines{"u1", {"a", "b"}, {"x", "y"}, {{std::string("k"), "r1"}, {std::nullopt, "r2"}}};
+    const std::string text = "BEGIN:VEVENT\r\nUID:u1\r\nTAG:a\r\nTAG:b\r\nCATS:x,y\r\nREC;KIND=k:r1\r\nREC:r2\r\n"
+                             "END:VEVENT\r\n";
+    const std::vector<std::uint8_t> frame(text.begin(), text.end());
+    std::vector<std::uint8_t> out;
+    ::SCE::Forge::VectorSink sink(out);
+    CHECK(!RequiredLists::Wire::encode_source(lines, sink) && out == frame,
+          "the lines of each property present, in declaration order");
+
+    const std::vector<std::string> tags{"a", "b"};
+    const std::vector<std::string> cats{"x", "y"};
+    const std::vector<RecLine> recs{RecLine(std::string_view("k"), "r1"), RecLine(std::nullopt, "r2")};
+    const LinesValue value("u1", tags, cats, recs);
+    CHECK(value.encode_to_vec() == std::optional<std::vector<std::uint8_t>>(frame),
+          "the value made by its constructor is written as the consumer's component is");
+
+    ::SCE::Forge::SceCursor cursor(frame.data(), frame.size());
+    const auto decoded = LinesValue::decode(cursor);
+    CHECK(decoded && decoded->uid() == "u1" && decoded->tag().size() == 2 && decoded->cats().size() == 2 &&
+              decoded->rec().size() == 2 && decoded->rec()[0].recKind() == std::optional<std::string_view>("k") &&
+              !decoded->rec()[1].recKind() && decoded->rec()[1].value() == "r2",
+          "a decoded component holds each line it read");
+
+    // Each refusal is found before the first byte is written, though the line
+    // it is on comes after lines the component could carry.
+    const auto refused = [](const lines_consumer::Lines &bad) {
+        std::vector<std::uint8_t> written;
+        ::SCE::Forge::VectorSink into(written);
+        const auto error = RequiredLists::Wire::encode_source(bad, into);
+        return std::make_pair(error, written.empty());
+    };
+    auto too_many = lines;
+    too_many.tags.push_back("c");
+    CHECK(refused(too_many) ==
+              std::make_pair(std::optional<::SCE::Forge::CodecError>(::SCE::Forge::CodecError::LineTooMany), true),
+          "three lines of a property of at most two");
+    auto none = lines;
+    none.recs.clear();
+    CHECK(refused(none) ==
+              std::make_pair(std::optional<::SCE::Forge::CodecError>(::SCE::Forge::CodecError::LineRequiredMissing),
+                             true),
+          "no line of a required property");
+    auto bad = lines;
+    bad.recs[1].text = std::string("r\x01");
+    CHECK(refused(bad) ==
+              std::make_pair(std::optional<::SCE::Forge::CodecError>(::SCE::Forge::CodecError::LineBadValue), true),
+          "a control character in the last line");
+}
+
 void encode_source_reports_the_sinks_failure() {
     std::uint8_t buffer[3] = {};
     ::SCE::Forge::SpanSink sink(buffer, sizeof buffer);
@@ -1952,6 +2058,7 @@ int main() {
     a_chain_its_own_gate_leaves_out_is_held_optionally_in_the_arm_of_no_kind();
     a_bare_entry_is_held_as_its_place_among_the_others();
     a_cbor_map_is_made_within_its_bounds_and_written_in_key_order();
+    a_component_of_content_lines_is_written_from_any_source_or_not_at_all();
     encode_source_reports_the_sinks_failure();
     if (failures != 0) {
         std::fprintf(stderr, "codec_source_generated_test: %d failure(s)\n", failures);

@@ -20,6 +20,7 @@ use crate::forge::encode_plan::{
 };
 
 pub(super) mod cbor;
+pub(super) mod content_line;
 
 /// The first form of `plan` the C++ printer does not print yet, or `None`
 /// where it prints the codec whole. `imports` are the codec's own, which say
@@ -36,7 +37,8 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
     let plan = match plan {
         CodecPlan::Positional(plan) => plan,
         CodecPlan::Cbor(plan) => return cbor::unlowered_forms(plan),
-        CodecPlan::ContentLine(_) => return vec!["a content-line codec".to_string()],
+        // Every form of a content-line plan is printed (`content_line`).
+        CodecPlan::ContentLine(_) => return Vec::new(),
     };
     let m = plan.model;
     let mut forms = Vec::new();

@@ -180,6 +180,56 @@ void make_admits_exactly_two_lists_of_one_count() {
     CHECK(empty.empty() && empty.first().empty() && empty.second().empty(), "the default holds two empty lists");
 }
 
+// A range a source presents for a list no bound refines is any begin and end
+// pair whose elements convert to the element type; walking one that throws is
+// told apart from one that does not.
+using ::SCE::Forge::Detail::IsNothrowRange;
+using ::SCE::Forge::Detail::IsNothrowRangeOf;
+using ::SCE::Forge::Detail::IsRange;
+using ::SCE::Forge::Detail::IsRangeOf;
+
+/// A range whose read of an element may throw.
+struct ThrowingRange {
+    struct Iterator {
+        const std::string *at;
+
+        bool operator!=(const Iterator &other) const noexcept {
+            return at != other.at;
+        }
+
+        Iterator &operator++() noexcept {
+            ++at;
+            return *this;
+        }
+
+        const std::string &operator*() const {
+            return *at;
+        }
+    };
+
+    Iterator begin() const noexcept {
+        return Iterator{nullptr};
+    }
+
+    Iterator end() const noexcept {
+        return Iterator{nullptr};
+    }
+};
+
+static_assert(IsRange<std::vector<std::string>>::value, "a vector is a range");
+static_assert(IsRange<Text<8>>::value, "a bounded view is a range");
+static_assert(!IsRange<int>::value, "a number is no range");
+static_assert(IsRangeOf<std::vector<std::string>, std::string_view>::value, "texts are viewed as text");
+static_assert(!IsRangeOf<std::vector<int>, std::string_view>::value, "numbers are not text");
+static_assert(!IsRangeOf<int, int>::value, "a number is no range of numbers");
+static_assert(IsNothrowRange<std::vector<std::string>>::value, "walking a vector throws nothing");
+static_assert(IsNothrowRangeOf<std::vector<std::string>, std::string_view>::value,
+              "viewing each text of a vector throws nothing");
+static_assert(IsRangeOf<std::vector<const char *>, std::string>::value, "a pointer to text converts to a string");
+static_assert(!IsNothrowRangeOf<std::vector<const char *>, std::string>::value, "copying each into a string can throw");
+static_assert(IsRangeOf<ThrowingRange, std::string_view>::value, "a range of any iterator is a range");
+static_assert(!IsNothrowRange<ThrowingRange>::value, "a read that can throw is seen");
+
 }  // namespace
 
 int main() {

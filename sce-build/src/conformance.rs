@@ -2826,6 +2826,34 @@ fn derive_codec_shape(
                 Vec::new()
             };
         }
+        // The fields in the order the codec presents them: each property, then
+        // each parameter of a property whose lines are no records. A backend that
+        // makes a value by its constructor (C++, docs/adr/0081 step 4) takes
+        // them in this order, so the manifest lists every one of them in it.
+        let presented: Vec<&str> = entries
+            .iter()
+            .filter(|e| e.param.is_none())
+            .flat_map(|property| {
+                std::iter::once(property.id.as_str()).chain(
+                    entries
+                        .iter()
+                        .filter(|p| {
+                            p.param.is_some()
+                                && p.property.eq_ignore_ascii_case(&property.property)
+                                && record_member_of(p).is_none()
+                        })
+                        .map(|p| p.id.as_str()),
+                )
+            })
+            .collect();
+        let listed: Vec<&str> = fields.iter().map(|f| f.name.as_str()).collect();
+        if listed != presented {
+            return Err(format!(
+                "fixture {fixture_name}: the manifest lists the fields {listed:?}; a content-line \
+                 codec presents {presented:?}, each property followed by its parameters, and the \
+                 manifest lists every one of them in that order"
+            ));
+        }
     }
     Ok(())
 }

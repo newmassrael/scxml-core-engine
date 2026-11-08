@@ -1532,6 +1532,26 @@ carriers, the standard mesh envelope among them.
 - `SCE::Forge::Cbor::write_text` and `write_bytes` take a `std::string_view` and a `Span<const std::uint8_t>`;
   a `std::string` and a `std::vector` still convert.
 
+## A printed C++ content-line codec is made by its constructor and read by its accessors (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C++ tree is regenerated after it. It moves every content-line
+codec (5 more of the resources, 144 in all: `codec_content_line_enums`, `codec_content_line_event`,
+`codec_content_line_open`, `codec_content_line_records`, `codec_content_line_required_lists`).
+
+- The component is a class with its entries behind accessors, made by a constructor that takes each in the
+  order the codec presents them (each property, then its parameters), where it held them as public members. A
+  text is read as a `std::string_view`, a repeated property or a list of values as a `SCE::Forge::Span` of
+  what the value holds, and an entry that may be absent as a `std::optional`; the constructor takes the same
+  types, so a `std::string`, a `std::vector` and a `std::optional<std::string>` convert.
+- A line record (`{Codec}{Property}Line`) is a class made the same way: its parameters, then its `value` or
+  its `values`.
+- `encode` still returns the refusal and `encode_to_vec` still returns `std::nullopt` for a value the lines
+  cannot carry; nothing of a refused value reaches the sink. `Wire::encode_source` encodes any type that
+  presents the entries, a repeated property as any range and a line record as any type that presents its
+  elements (`is_{property}_line_source`).
+- `SCE::Forge::ContentLine::Writer` takes views: `param` and `string` a `std::string_view`, `strings` any range
+  of elements that convert to one. A braced list no longer deduces a range; name its type.
+
 ## A payload schema states its keys in the order the document declares them (ADR 0087 §1.1)
 
 Landing: the commit that adds this section; every tree holding a `JSON_SCHEMA` constant or a GBNF table (the Rust,

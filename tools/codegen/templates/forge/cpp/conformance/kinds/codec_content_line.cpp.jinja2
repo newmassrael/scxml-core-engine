@@ -4,19 +4,26 @@
 {# Content-line codec kind (SCE_FORGE.md §4.6.4) — { decoded, encoded } cases
    and reject vectors, as the generic codec fragment has them, with what a
    content-line component adds: an entry can be absent (`std::optional`) or a
-   list (`std::vector`), a case marked `decode_only` is an input the codec reads
-   and does not write, and a refused decode leaves the cursor where it found it.
-   C++ names no failure (the nullopt convention), so a reject asserts refusal.
-   The rejects are read from the reference like the cases are, and not inlined
-   as byte literals.
+   list, a case marked `decode_only` is an input the codec reads and does not
+   write, and a refused decode leaves the cursor where it found it. C++ names no
+   failure (the nullopt convention), so a reject asserts refusal. The rejects are
+   read from the reference like the cases are, and not inlined as byte literals.
+
+   The codec is printed from its plan (docs/adr/0081 step 4): a value is made by
+   its constructor, its elements in the order the manifest lists them, which is
+   the order the codec presents them (`conformance.rs` holds the manifest to it),
+   and read by its accessors. A text is presented as a view and a list as a span,
+   so what is read is copied into what the reference holds before it is
+   compared. A line record is made and read the same way.
 
    An entry that is an enum (docs/adr/0015) is written in a vector as its carrier
    number and held by the codec as the enum's own type. A decoded value is
-   compared as its carrier (`to_underlying`), and a value written into the codec
-   is taken from the number by the enum's `from_underlying`, which a closed enum
+   compared as its carrier (`to_underlying`), and a value made for the codec is
+   taken from the number by the enum's `from_underlying`, which a closed enum
    answers `std::nullopt` for a carrier it does not declare, so a closed enum's is
    unwrapped and an open one, whose conversion is total, is not. `enum_ns` is the
-   namespace of the enum's own header. #}
+   namespace of the enum's own header; the enum's type is the one the codec's
+   accessor presents. #}
 {% macro enum_ns(m) -%}
 SCE::Generated::{{ m.enum_document | to_pascal_case }}
 {%- endmacro %}
@@ -26,6 +33,38 @@ static_cast<std::uint64_t>({{ enum_ns(m) }}::to_underlying({{ expr }}))
 {% macro lift(m, json) -%}
 {{ enum_ns(m) }}::from_underlying(static_cast<{{ m.type | cpp_type }}>({{ json }}.get<{{ m.type | cpp_type }}>())){% if not m.enum_open %}.value(){% endif %}
 {%- endmacro %}
+{#- What a value read through an accessor is as the reference holds it: a text
+    view as a string, anything else as it is. #}
+{% macro held(m, expr) -%}
+{% if m.type == "string" %}std::string({{ expr }}){% else %}{{ expr }}{% endif %}
+{%- endmacro %}
+{#- The statements that make `name` from `json`, the reference's value of the
+    element `m` of the class `owner`, as what that class's constructor takes. #}
+{% macro made(m, owner, name, json) %}
+{% if m.enum_document and m.list %}
+            std::vector<typename decltype(std::declval<const {{ owner }} &>().{{ m.name }}())::value_type> {{ name }};
+            for (const auto &n : {{ json }}) {
+                {{ name }}.push_back({{ lift(m, "n") }});
+            }
+{% elif m.enum_document and m.optional %}
+            std::optional<typename decltype(std::declval<const {{ owner }} &>().{{ m.name }}())::value_type> {{ name }};
+            if (!{{ json }}.is_null()) {
+                {{ name }} = {{ lift(m, json) }};
+            }
+{% elif m.enum_document %}
+            const auto {{ name }} = {{ lift(m, json) }};
+{% elif m.list %}
+            const auto {{ name }} = {{ json }}.get<std::vector<{{ m.type | cpp_type }}>>();
+{% elif m.optional %}
+            std::optional<{{ m.type | cpp_type }}> {{ name }};
+            if (!{{ json }}.is_null()) {
+                {{ name }} = {{ json }}.get<{{ m.type | cpp_type }}>();
+            }
+{% else %}
+            const auto {{ name }} = {{ json }}.get<{{ m.type | cpp_type }}>();
+{% endif %}
+{% endmacro %}
+    using Codec = SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }};
     const auto &spec =ref["{{ f.ref_section }}"]["{{ f.name }}"];
     int i = 0;
     for (const auto &case_entry : spec["cases"]) {
@@ -42,7 +81,7 @@ static_cast<std::uint64_t>({{ enum_ns(m) }}::to_underlying({{ expr }}))
         const bool decode_only = case_entry.value("decode_only", false);
 
         ::SCE::Forge::SceCursor cursor(expected_bytes.data(), expected_bytes.size());
-        auto round_tripped = SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }}::decode(cursor);
+        auto round_tripped = Codec::decode(cursor);
         CHECK(round_tripped.has_value(), "{{ f.name }} case %d decode returned nullopt", i);
         if (round_tripped.has_value()) {
 {% for field in f.fields %}
@@ -51,17 +90,19 @@ static_cast<std::uint64_t>({{ enum_ns(m) }}::to_underlying({{ expr }}))
             // object keyed by the parameter ids, then `value` or `values`.
             {
                 auto got = nlohmann::json::array();
-                for (const auto &r : round_tripped->{{ field.name }}) {
+                for (const auto &r : round_tripped->{{ field.name }}()) {
                     nlohmann::json o = nlohmann::json::object();
 {% for m in field.members %}
 {% if m.enum_document and m.optional %}
-                    o["{{ m.name }}"] = r.{{ m.name }}.has_value() ? nlohmann::json({{ carrier(m, "*r." ~ m.name) }}) : nlohmann::json(nullptr);
+                    o["{{ m.name }}"] = r.{{ m.name }}().has_value() ? nlohmann::json({{ carrier(m, "*r." ~ m.name ~ "()") }}) : nlohmann::json(nullptr);
 {% elif m.enum_document %}
-                    o["{{ m.name }}"] = {{ carrier(m, "r." ~ m.name) }};
+                    o["{{ m.name }}"] = {{ carrier(m, "r." ~ m.name ~ "()") }};
+{% elif m.list %}
+                    o["{{ m.name }}"] = std::vector<{{ m.type | cpp_type }}>(r.{{ m.name }}().begin(), r.{{ m.name }}().end());
 {% elif m.optional %}
-                    o["{{ m.name }}"] = r.{{ m.name }}.has_value() ? nlohmann::json(*r.{{ m.name }}) : nlohmann::json(nullptr);
+                    o["{{ m.name }}"] = r.{{ m.name }}().has_value() ? nlohmann::json({{ held(m, "*r." ~ m.name ~ "()") }}) : nlohmann::json(nullptr);
 {% else %}
-                    o["{{ m.name }}"] = r.{{ m.name }};
+                    o["{{ m.name }}"] = {{ held(m, "r." ~ m.name ~ "()") }};
 {% endif %}
 {% endfor %}
                     got.push_back(std::move(o));
@@ -71,7 +112,7 @@ static_cast<std::uint64_t>({{ enum_ns(m) }}::to_underlying({{ expr }}))
 {% elif field.list and field.enum_document %}
             {
                 std::vector<std::uint64_t> got;
-                for (const auto &e : round_tripped->{{ field.name }}) {
+                for (const auto &e : round_tripped->{{ field.name }}()) {
                     got.push_back({{ carrier(field, "e") }});
                 }
                 CHECK(got == decoded_json["{{ field.name }}"].get<std::vector<std::uint64_t>>(),
@@ -84,77 +125,56 @@ static_cast<std::uint64_t>({{ enum_ns(m) }}::to_underlying({{ expr }}))
                     want = decoded_json["{{ field.name }}"].get<std::uint64_t>();
                 }
                 std::optional<std::uint64_t> got;
-                if (round_tripped->{{ field.name }}.has_value()) {
-                    got = {{ carrier(field, "*round_tripped->" ~ field.name) }};
+                if (round_tripped->{{ field.name }}().has_value()) {
+                    got = {{ carrier(field, "*round_tripped->" ~ field.name ~ "()") }};
                 }
                 CHECK(got == want, "{{ f.name }} case %d decode {{ field.name }}", i);
             }
 {% elif field.enum_document %}
-            CHECK({{ carrier(field, "round_tripped->" ~ field.name) }} == decoded_json["{{ field.name }}"].get<std::uint64_t>(),
+            CHECK({{ carrier(field, "round_tripped->" ~ field.name ~ "()") }} == decoded_json["{{ field.name }}"].get<std::uint64_t>(),
                   "{{ f.name }} case %d decode {{ field.name }}", i);
 {% elif field.list %}
-            CHECK(round_tripped->{{ field.name }} == decoded_json["{{ field.name }}"].get<std::vector<{{ field.type | cpp_type }}>>(),
-                  "{{ f.name }} case %d decode {{ field.name }}", i);
+            {
+                const auto read = round_tripped->{{ field.name }}();
+                CHECK(std::vector<{{ field.type | cpp_type }}>(read.begin(), read.end()) ==
+                          decoded_json["{{ field.name }}"].get<std::vector<{{ field.type | cpp_type }}>>(),
+                      "{{ f.name }} case %d decode {{ field.name }}", i);
+            }
 {% elif field.optional %}
             {
                 std::optional<{{ field.type | cpp_type }}> want;
                 if (!decoded_json["{{ field.name }}"].is_null()) {
                     want = decoded_json["{{ field.name }}"].get<{{ field.type | cpp_type }}>();
                 }
-                CHECK(round_tripped->{{ field.name }} == want, "{{ f.name }} case %d decode {{ field.name }}", i);
+                std::optional<{{ field.type | cpp_type }}> got;
+                if (round_tripped->{{ field.name }}().has_value()) {
+                    got = {{ held(field, "*round_tripped->" ~ field.name ~ "()") }};
+                }
+                CHECK(got == want, "{{ f.name }} case %d decode {{ field.name }}", i);
             }
 {% else %}
-            CHECK(round_tripped->{{ field.name }} == decoded_json["{{ field.name }}"].get<{{ field.type | cpp_type }}>(),
+            CHECK({{ held(field, "round_tripped->" ~ field.name ~ "()") }} == decoded_json["{{ field.name }}"].get<{{ field.type | cpp_type }}>(),
                   "{{ f.name }} case %d decode {{ field.name }}", i);
 {% endif %}
 {% endfor %}
         }
 
         if (!decode_only) {
-            SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }} _codec_val{};
 {% for field in f.fields %}
 {% if field.members %}
+{% set record = "SCE::Generated::" ~ (f.name | to_pascal_case) ~ "::" ~ (f.name | to_pascal_case) ~ (field.name | to_pascal_case) ~ "Line" %}
+            std::vector<{{ record }}> input_{{ field.name }};
             for (const auto &r : decoded_json["{{ field.name }}"]) {
-                SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }}{{ field.name | to_pascal_case }}Line rec;
 {% for m in field.members %}
-{% if m.enum_document and m.optional %}
-                if (!r["{{ m.name }}"].is_null()) {
-                    rec.{{ m.name }} = {{ lift(m, 'r["' ~ m.name ~ '"]') }};
-                }
-{% elif m.enum_document %}
-                rec.{{ m.name }} = {{ lift(m, 'r["' ~ m.name ~ '"]') }};
-{% elif m.list %}
-                rec.{{ m.name }} = r["{{ m.name }}"].get<std::vector<std::string>>();
-{% elif m.optional %}
-                if (!r["{{ m.name }}"].is_null()) {
-                    rec.{{ m.name }} = r["{{ m.name }}"].get<std::string>();
-                }
-{% else %}
-                rec.{{ m.name }} = r["{{ m.name }}"].get<std::string>();
-{% endif %}
-{% endfor %}
-                _codec_val.{{ field.name }}.push_back(std::move(rec));
-            }
-{% elif field.list and field.enum_document %}
-            for (const auto &n : decoded_json["{{ field.name }}"]) {
-                _codec_val.{{ field.name }}.push_back({{ lift(field, "n") }});
-            }
-{% elif field.enum_document and field.optional %}
-            if (!decoded_json["{{ field.name }}"].is_null()) {
-                _codec_val.{{ field.name }} = {{ lift(field, 'decoded_json["' ~ field.name ~ '"]') }};
-            }
-{% elif field.enum_document %}
-            _codec_val.{{ field.name }} = {{ lift(field, 'decoded_json["' ~ field.name ~ '"]') }};
-{% elif field.list %}
-            _codec_val.{{ field.name }} = decoded_json["{{ field.name }}"].get<std::vector<{{ field.type | cpp_type }}>>();
-{% elif field.optional %}
-            if (!decoded_json["{{ field.name }}"].is_null()) {
-                _codec_val.{{ field.name }} = decoded_json["{{ field.name }}"].get<{{ field.type | cpp_type }}>();
+{{ made(m, record, "member_" ~ m.name, 'r["' ~ m.name ~ '"]') }}
+{%- endfor %}
+                input_{{ field.name }}.push_back({{ record }}({% for m in field.members %}{% if not loop.first %}, {% endif %}member_{{ m.name }}{% endfor %}));
             }
 {% else %}
-            _codec_val.{{ field.name }} = decoded_json["{{ field.name }}"].get<{{ field.type | cpp_type }}>();
-{% endif %}
+{{ made(field, "Codec", "input_" ~ field.name, 'decoded_json["' ~ field.name ~ '"]') }}
+{%- endif %}
 {% endfor %}
+            const Codec _codec_val({% for field in f.fields %}{% if not loop.first %}, {% endif %}input_{{ field.name }}{% endfor %});
             auto encoded = _codec_val.encode_to_vec();
             CHECK(encoded.has_value(), "{{ f.name }} case %d encode refused", i);
             CHECK(encoded.value_or(std::vector<std::uint8_t>{}) == expected_bytes,
@@ -170,7 +190,7 @@ static_cast<std::uint64_t>({{ enum_ns(m) }}::to_underlying({{ expr }}))
             reject_bytes.push_back(static_cast<std::uint8_t>(b.get<unsigned int>()));
         }
         ::SCE::Forge::SceCursor reject_cursor(reject_bytes.data(), reject_bytes.size());
-        auto refused = SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }}::decode(reject_cursor);
+        auto refused = Codec::decode(reject_cursor);
         CHECK(!refused.has_value(), "{{ f.name }} reject %d: %s", reject_index,
               reject["why"].get<std::string>().c_str());
         CHECK(reject_cursor.remaining() == reject_bytes.size(), "{{ f.name }} reject %d: the cursor moved",

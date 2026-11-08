@@ -826,7 +826,10 @@ private:
 /// `finish`. Each answers the `CodecError` that refused it, or `std::nullopt`.
 class Writer {
 public:
-    Writer(SceSink &sink, std::string_view component) : sink_(sink), component_(component) {}
+    /// A writer of the component `component` into `sink`; the name is viewed,
+    /// not copied, so it outlives the writer (a generated encode hands it a
+    /// literal).
+    Writer(SceSink &sink, std::string_view component) noexcept : sink_(sink), component_(component) {}
 
     /// Write `BEGIN:<component>`.
     [[nodiscard]] std::optional<CodecError> begin() noexcept {
@@ -853,7 +856,7 @@ public:
     /// Write `;<name>=<value>`, quoting the value when it holds `:`, `;` or `,`.
     /// A value past `max_size` is `LineTooLong`; one with a control character or
     /// a `"` is `LineBadValue`.
-    [[nodiscard]] std::optional<CodecError> param(std::string_view name, const std::string &value,
+    [[nodiscard]] std::optional<CodecError> param(std::string_view name, std::string_view value,
                                                   std::size_t max_size) noexcept {
         if (value.size() > max_size) {
             return CodecError::LineTooLong;
@@ -898,7 +901,7 @@ public:
     /// feed are written as escapes. A value past `max_size` is `LineTooLong`; one
     /// with a control character (but a TEXT's line feed) or invalid UTF-8 is
     /// `LineBadValue`.
-    [[nodiscard]] std::optional<CodecError> string(const std::string &value, bool text, std::size_t max_size) noexcept {
+    [[nodiscard]] std::optional<CodecError> string(std::string_view value, bool text, std::size_t max_size) noexcept {
         if (value.size() > max_size) {
             return CodecError::LineTooLong;
         }
@@ -926,16 +929,27 @@ public:
     /// character (but a TEXT's line feed), invalid UTF-8, an empty one, and one
     /// that is not a TEXT and holds the separator are `LineBadValue`, because a
     /// reader would cut or refuse them. Every value is held before any of the line
-    /// is written.
-    [[nodiscard]] std::optional<CodecError> strings(const std::vector<std::string> &values, char separator, bool text,
-                                                    std::size_t max_size, std::size_t max_values) {
-        if (values.empty()) {
+    /// is written. `values` is any range of elements that convert to a text view
+    /// (`Detail::IsRangeOf`); it is walked twice, and throws only what walking it
+    /// and viewing an element throw.
+    template <typename R>
+    [[nodiscard]] std::optional<CodecError>
+    strings(const R &values, char separator, bool text, std::size_t max_size,
+            std::size_t max_values) noexcept(::SCE::Forge::Detail::IsNothrowRangeOf<R, std::string_view>::value) {
+        static_assert(::SCE::Forge::Detail::IsRangeOf<R, std::string_view>::value,
+                      "the values of a line are a range of texts");
+        std::size_t count = 0;
+        for (auto it = values.begin(); it != values.end(); ++it) {
+            ++count;
+        }
+        if (count == 0) {
             return CodecError::LineRequiredMissing;
         }
-        if (values.size() > max_values) {
+        if (count > max_values) {
             return CodecError::LineTooMany;
         }
-        for (const auto &value : values) {
+        for (auto it = values.begin(); it != values.end(); ++it) {
+            const std::string_view value = *it;
             if (value.size() > max_size) {
                 return CodecError::LineTooLong;
             }
@@ -958,13 +972,15 @@ public:
         if (auto e = unit_char(':')) {
             return e;
         }
-        for (std::size_t i = 0; i < values.size(); ++i) {
-            if (i > 0) {
+        bool first = true;
+        for (auto it = values.begin(); it != values.end(); ++it) {
+            if (!first) {
                 if (auto e = unit_char(separator)) {
                     return e;
                 }
             }
-            if (auto e = value_units(values[i], text)) {
+            first = false;
+            if (auto e = value_units(*it, text)) {
                 return e;
             }
         }
@@ -972,18 +988,38 @@ public:
     }
 
     /// Write `:<value>` as decimal digits and end the line.
-    [[nodiscard]] std::optional<CodecError> uint(std::uint64_t value) {
-        return digits(std::to_string(value));
+    [[nodiscard]] std::optional<CodecError> uint(std::uint64_t value) noexcept {
+        // The digits of the largest `uint64_t`, twenty, filled from the end.
+        char buf[20];
+        std::size_t at = sizeof buf;
+        do {
+            buf[--at] = static_cast<char>('0' + value % 10);
+            value /= 10;
+        } while (value != 0);
+        return digits(std::string_view(buf + at, sizeof buf - at));
     }
 
     /// Write `:<value>` as decimal digits, `-` first when negative, and end the
     /// line.
-    [[nodiscard]] std::optional<CodecError> integer(std::int64_t value) {
-        return digits(std::to_string(value));
+    [[nodiscard]] std::optional<CodecError> integer(std::int64_t value) noexcept {
+        // The magnitude as unsigned, so the most negative value has one too.
+        const std::uint64_t magnitude =
+            value < 0 ? ~static_cast<std::uint64_t>(value) + 1u : static_cast<std::uint64_t>(value);
+        char buf[21];
+        std::size_t at = sizeof buf;
+        std::uint64_t rest = magnitude;
+        do {
+            buf[--at] = static_cast<char>('0' + rest % 10);
+            rest /= 10;
+        } while (rest != 0);
+        if (value < 0) {
+            buf[--at] = '-';
+        }
+        return digits(std::string_view(buf + at, sizeof buf - at));
     }
 
     /// Write `:TRUE` or `:FALSE` and end the line.
-    [[nodiscard]] std::optional<CodecError> boolean(bool value) {
+    [[nodiscard]] std::optional<CodecError> boolean(bool value) noexcept {
         return digits(value ? "TRUE" : "FALSE");
     }
 
@@ -1011,7 +1047,7 @@ public:
     /// Write `:<text>` for the variant of `table` with `carrier` and end the line
     /// (docs/adr/0015). A carrier no variant declares has no text and is
     /// `LineBadValue`.
-    [[nodiscard]] std::optional<CodecError> enum_value(const EnumTexts &table, std::uint64_t carrier) {
+    [[nodiscard]] std::optional<CodecError> enum_value(const EnumTexts &table, std::uint64_t carrier) noexcept {
         const char *text = text_of(table, carrier);
         if (text == nullptr) {
             return CodecError::LineBadValue;
@@ -1076,7 +1112,7 @@ private:
     }
 
     /// The units of the UTF-8 `value`: one character each, escaped when `text`.
-    [[nodiscard]] std::optional<CodecError> value_units(const std::string &value, bool text) noexcept {
+    [[nodiscard]] std::optional<CodecError> value_units(std::string_view value, bool text) noexcept {
         const auto *bytes = reinterpret_cast<const std::uint8_t *>(value.data());
         std::size_t i = 0;
         while (i < value.size()) {
@@ -1135,7 +1171,7 @@ private:
     }
 
     SceSink &sink_;
-    std::string component_;
+    std::string_view component_;
     /// Octets already on the current physical line.
     std::size_t column_ = 0;
 };

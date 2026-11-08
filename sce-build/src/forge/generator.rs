@@ -9048,6 +9048,29 @@ pub(crate) fn cpp_cbor_printed(m: &CodecModel, imports: &[ImportContext]) -> Opt
     ))
 }
 
+/// The text the C++ backend prints the content-line codec `m` as from its plan,
+/// inside its namespace (docs/adr/0081 step 4). Every content-line codec is
+/// printed: its plan uses no form the C++ printer does not lower.
+pub(crate) fn cpp_content_line_printed(m: &CodecModel, imports: &[ImportContext]) -> String {
+    let l = LangCtx::new(crate::generator::Language::Cpp, imports);
+    cpp_source::content_line::render(m, &l, &filters::to_pascal_case(m.name.clone()))
+}
+
+/// `lines` as a block at `columns` of indent, each statement on its own line:
+/// how a printer of a codec's plan lays out a body it builds line by line.
+fn indent(lines: &[String], columns: usize) -> String {
+    let pad = " ".repeat(columns);
+    let mut out = String::new();
+    for line in lines {
+        for part in line.lines() {
+            out.push_str(&pad);
+            out.push_str(part);
+            out.push('\n');
+        }
+    }
+    out
+}
+
 /// Whether the eager form at the default profile, `{Codec}In<Lent<'a>>`,
 /// holds `m` (`CodecModel::lent_holds_with`, docs/adr/0077 §7), the codecs it
 /// imports answered by their import's [`ImportContext::codec_lent_holds`].

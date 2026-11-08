@@ -463,23 +463,13 @@ fn render_cpp(
     let l = LangCtx::new(Language::Cpp, imports);
     let mut ctx = l.base_context(&m.name);
     l.insert_imports(&mut ctx, imports);
-    // Owned values, as every C++ codec holds them: a string is a `std::string`, a
-    // list a `std::vector`, and an optional entry or parameter a `std::optional`.
-    // A member is value-initialized, which is the right start for every kind
-    // this codec holds: an empty string, a zero, `false`.
-    let mut entries = entries_context(&l, m, |_| "std::string".to_string(), |_| None);
-    shape_fields(
-        &mut entries,
-        &FieldShapes {
-            list_of: &|t| format!("std::vector<{t}>"),
-            list_default: None,
-            optional_type: &|t| l.codec_optional_of(t),
-            optional_default: None,
-        },
-    );
-    insert_component(&mut ctx, m);
     insert_enum_tables(&mut ctx, &l, m);
-    ctx.insert("entries".into(), entries.into());
+    // docs/adr/0081 step 4: the codec is printed from its plan, every entry
+    // presented through an accessor and encoded over any source of it.
+    ctx.insert(
+        "cpp_source".into(),
+        crate::forge::generator::cpp_content_line_printed(m, imports).into(),
+    );
     l.render(env, "codec_content_line", ctx)
 }
 

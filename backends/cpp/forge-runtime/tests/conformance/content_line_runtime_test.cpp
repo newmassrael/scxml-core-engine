@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace {
@@ -34,6 +35,8 @@ namespace cl = ::SCE::Forge::ContentLine;
 using ::SCE::Forge::CodecError;
 using ::SCE::Forge::VectorSink;
 using Bytes = std::vector<std::uint8_t>;
+/// The values of one line, as a writer takes any range of texts.
+using Texts = std::vector<std::string>;
 
 Bytes bytes_of(const std::string &s) {
     return Bytes(s.begin(), s.end());
@@ -307,12 +310,16 @@ void a_property_is_written_with_its_parameters_and_a_value_that_is_escaped() {
         CHECK(!w.uint(UINT64_MAX), "uint");
         CHECK(!w.property("M"), "name");
         CHECK(!w.integer(INT64_MIN), "int");
+        CHECK(!w.property("Z"), "name");
+        CHECK(!w.uint(0), "zero");
+        CHECK(!w.property("P"), "name");
+        CHECK(!w.integer(42), "a positive int");
         CHECK(!w.property("B"), "name");
         CHECK(!w.boolean(true), "bool");
     });
     CHECK(text == "BEGIN:VEVENT\r\nUID:a1\r\nDTSTART;TZID=Europe/Seoul;X-Q=\"a:b\":20260101T000000\r\n"
-                  "SUMMARY:a\\\\b\\;c\\,d\\ne\r\nN:18446744073709551615\r\nM:-9223372036854775808\r\nB:TRUE\r\n"
-                  "END:VEVENT\r\n",
+                  "SUMMARY:a\\\\b\\;c\\,d\\ne\r\nN:18446744073709551615\r\nM:-9223372036854775808\r\nZ:0\r\nP:42\r\n"
+                  "B:TRUE\r\nEND:VEVENT\r\n",
           "the written component");
 }
 
@@ -459,9 +466,12 @@ void a_list_is_refused_at_its_first_failing_part() {
 void a_list_is_written_with_its_separator_and_held_before_it_is_written() {
     const std::string text = written([](cl::Writer &w) {
         CHECK(!w.property("C"), "name");
-        CHECK(!w.strings({"a,b", "c;d", "e\\f"}, ',', true, 8, 4), "a TEXT list");
+        CHECK(!w.strings(Texts{"a,b", "c;d", "e\\f"}, ',', true, 8, 4), "a TEXT list");
         CHECK(!w.property("G"), "name");
-        CHECK(!w.strings({"1", "2"}, ';', false, 8, 2), "a list cut at a semicolon");
+        // Any range of texts: here views of literals.
+        const std::string_view numbers[] = {"1", "2"};
+        CHECK(!w.strings(::SCE::Forge::Span<const std::string_view>(numbers), ';', false, 8, 2),
+              "a list cut at a semicolon");
     });
     CHECK(text == "BEGIN:VEVENT\r\nC:a\\,b,c\\;d,e\\\\f\r\nG:1;2\r\nEND:VEVENT\r\n", "the written lists");
 
@@ -471,13 +481,16 @@ void a_list_is_written_with_its_separator_and_held_before_it_is_written() {
     CHECK(!w.begin(), "begin");
     CHECK(!w.property("C"), "name");
     const auto before = out.size();
-    CHECK(w.strings({}, ',', false, 8, 4) == CodecError::LineRequiredMissing, "no values");
-    CHECK(w.strings({"a", "b", "c"}, ',', false, 8, 2) == CodecError::LineTooMany, "past the count");
-    CHECK(w.strings({"a", "abcdefghi"}, ',', false, 8, 4) == CodecError::LineTooLong, "past the size");
-    CHECK(w.strings({"a", ""}, ',', false, 8, 4) == CodecError::LineBadValue, "an empty value");
+    CHECK(w.strings(Texts{}, ',', false, 8, 4) == CodecError::LineRequiredMissing, "no values");
+    CHECK(w.strings(Texts{"a", "b", "c"}, ',', false, 8, 2) == CodecError::LineTooMany, "past the count");
+    // The count is judged before any value: three values past a count of two
+    // are too many, whatever the third holds.
+    CHECK(w.strings(Texts{"a", "b", ""}, ',', false, 8, 2) == CodecError::LineTooMany, "the count first");
+    CHECK(w.strings(Texts{"a", "abcdefghi"}, ',', false, 8, 4) == CodecError::LineTooLong, "past the size");
+    CHECK(w.strings(Texts{"a", ""}, ',', false, 8, 4) == CodecError::LineBadValue, "an empty value");
     // Not a TEXT, so a separator in a value could not be told from a cut.
-    CHECK(w.strings({"a,b"}, ',', false, 8, 4) == CodecError::LineBadValue, "the separator in a value");
-    CHECK(w.strings({"a\nb"}, ',', false, 8, 4) == CodecError::LineBadValue, "a line feed outside a TEXT");
+    CHECK(w.strings(Texts{"a,b"}, ',', false, 8, 4) == CodecError::LineBadValue, "the separator in a value");
+    CHECK(w.strings(Texts{"a\nb"}, ',', false, 8, 4) == CodecError::LineBadValue, "a line feed outside a TEXT");
     CHECK(out.size() == before, "something of a refused list reached the sink");
 }
 

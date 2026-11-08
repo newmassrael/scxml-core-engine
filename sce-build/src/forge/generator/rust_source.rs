@@ -5504,17 +5504,3 @@ fn shl(value: &str, bit: u32) -> String {
         format!("({value} << {bit})")
     }
 }
-
-/// `lines` as a block at `columns` of indent, each statement on its own line.
-fn indent(lines: &[String], columns: usize) -> String {
-    let pad = " ".repeat(columns);
-    let mut out = String::new();
-    for line in lines {
-        for part in line.lines() {
-            out.push_str(&pad);
-            out.push_str(part);
-            out.push('\n');
-        }
-    }
-    out
-}
