@@ -4268,6 +4268,20 @@ SCE_SM_FN static {{ csym_prefix }}{{ model.name }}_scheduled_entry_t *scheduled_
     sm->scheduled_queue.count++;
     return slot;
 }
+{% if model.needs_script_engine and model.has_delayed_host_send %}
+
+/* Give back the place `slot`, which `scheduled_reserve` handed out and which
+   owns nothing (`scheduled_entry_release` emptied it): every later entry moves
+   one place left, so the queue is as it was before the reservation. */
+SCE_SM_FN static void scheduled_unreserve({{ csym_prefix }}{{ model.name }}_t *sm,
+                                          const {{ csym_prefix }}{{ model.name }}_scheduled_entry_t *slot) {
+    const uint8_t pos = (uint8_t)(slot - sm->scheduled_queue.buf);
+    for (uint8_t k = (uint8_t)(pos + 1u); k < sm->scheduled_queue.count; ++k) {
+        sm->scheduled_queue.buf[k - 1u] = sm->scheduled_queue.buf[k];
+    }
+    sm->scheduled_queue.count--;
+}
+{% endif %}
 
 SCE_SM_FN static SCE_C_UNUSED void scheduled_push_routed({{ csym_prefix }}{{ model.name }}_t *sm,
                                   uint64_t fire_time_ms,
@@ -4374,49 +4388,41 @@ SCE_SM_FN static SCE_C_UNUSED void scheduled_push_host({{ csym_prefix }}{{ model
                            uint64_t fire_time_ms,
                            const char *send_id,
                            const sce_host_send_request_t *request) {
+    /* docs/adr/0086, section 8.5 (d): the entry is built in the place the
+       queue reserves for it, never on this stack. */
+    {{ csym_prefix }}{{ model.name }}_scheduled_entry_t *slot = scheduled_reserve(
+        sm, fire_time_ms, "the scheduled-send queue is full, so this <send delay> was dropped");
+    if (slot == NULL) {
+        return;
+    }
 {% if model.needs_script_engine %}
     /* docs/adr/0086, section 8.5 (a): the texts a script engine computed are
-       copied into storage its allocator gives before a place is reserved, in
-       an entry of their own, so a send the allocator cannot hold is refused
-       whole and raises error.execution, and a full queue frees what was taken.
-       Nothing is cut. */
-    {{ csym_prefix }}{{ model.name }}_scheduled_entry_t taken;
-    memset(&taken, 0, sizeof(taken));
-    bool held = event_text_take(sm, request->content, &taken.host_content, &taken.host_content_size) &&
-                event_text_take(sm, request->event_data, &taken.host_event_data, &taken.host_event_data_size);
+       copied into storage its allocator gives, straight into the reserved
+       place, which `scheduled_reserve` cleared. A send the allocator cannot
+       hold is refused whole: what was taken is freed, the place is given back,
+       and error.execution is raised. Nothing is cut. */
+    bool held = event_text_take(sm, request->content, &slot->host_content, &slot->host_content_size) &&
+                event_text_take(sm, request->event_data, &slot->host_event_data, &slot->host_event_data_size);
 {% if model.delayed_host_send_max_params > 0 %}
     for (int _p = 0; held && _p < request->param_count && _p < {{ model.delayed_host_send_max_params }}; ++_p) {
-        held = event_text_take(sm, request->params[_p].value, &taken.host_param_values[_p],
-                               &taken.host_param_value_sizes[_p]);
+        held = event_text_take(sm, request->params[_p].value, &slot->host_param_values[_p],
+                               &slot->host_param_value_sizes[_p]);
     }
 {% endif %}
     if (!held) {
-        scheduled_entry_release(sm, &taken);
+        scheduled_entry_release(sm, slot);
+        scheduled_unreserve(sm, slot);
         refuse_event_data(sm, NULL);
         return;
     }
 {% endif %}
-    {{ csym_prefix }}{{ model.name }}_scheduled_entry_t *slot = scheduled_reserve(
-        sm, fire_time_ms, "the scheduled-send queue is full, so this <send delay> was dropped");
-    if (slot == NULL) {
-{% if model.needs_script_engine %}
-        scheduled_entry_release(sm, &taken);
-{% endif %}
-        return;
-    }
     slot->event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE;
     sce_copy_bounded_id(slot->send_id, send_id);
     slot->host_send = true;
     sce_copy_bounded_id(slot->host_processor_type, request->processor_type);
     sce_copy_bounded_id(slot->host_event_name, request->event_name);
     sce_copy_bounded_n(slot->host_target, request->target, sizeof(slot->host_target));
-{% if model.needs_script_engine %}
-    /* Moved from `taken`, which keeps nothing. */
-    slot->host_content = taken.host_content;
-    slot->host_content_size = taken.host_content_size;
-    slot->host_event_data = taken.host_event_data;
-    slot->host_event_data_size = taken.host_event_data_size;
-{% else %}
+{% if not model.needs_script_engine %}
     sce_copy_bounded_n(slot->host_content, request->content, sizeof(slot->host_content));
     sce_copy_bounded_n(slot->host_event_data, request->event_data, sizeof(slot->host_event_data));
 {% endif %}
@@ -4425,10 +4431,7 @@ SCE_SM_FN static SCE_C_UNUSED void scheduled_push_host({{ csym_prefix }}{{ model
     slot->host_param_count = 0;
     for (int _p = 0; _p < request->param_count && _p < {{ model.delayed_host_send_max_params }}; ++_p) {
         sce_copy_bounded_id(slot->host_param_names[_p], request->params[_p].name);
-{% if model.needs_script_engine %}
-        slot->host_param_values[_p] = taken.host_param_values[_p];
-        slot->host_param_value_sizes[_p] = taken.host_param_value_sizes[_p];
-{% else %}
+{% if not model.needs_script_engine %}
         sce_copy_bounded_n(slot->host_param_values[_p], request->params[_p].value,
                            sizeof(slot->host_param_values[_p]));
 {% endif %}
