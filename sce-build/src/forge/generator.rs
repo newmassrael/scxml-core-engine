@@ -6980,8 +6980,13 @@ fn swift_payload_present_reader(
         SceType::Float32 => format!("try fields.float32(\"{id}\")"),
         SceType::Float64 => format!("try fields.float64(\"{id}\")"),
         SceType::Bool => format!("try fields.truth(\"{id}\")"),
-        SceType::String => format!("try fields.text(\"{id}\")"),
-        SceType::Bytes => format!("try fields.bytes(\"{id}\")"),
+        // A text and a byte string are held to their bound at the lift, the top
+        // level included (docs/adr/0086, section 4.4).
+        SceType::String => format!("try fields.text(\"{id}\", bound: {})", lift_text_bound(f)),
+        SceType::Bytes => format!(
+            "try fields.bytes(\"{id}\", capacity: {})",
+            lift_bytes_bound(f)
+        ),
     }
 }
 
