@@ -111,6 +111,34 @@ def test_a_list_past_its_bound_at_depth_two_is_refused_whole() -> None:
     assert policy.late() == [], "nothing of the delivery was kept"
 
 
+def _past(change) -> str:
+    """A delivery of ``batch.sent`` whose every list is full, changed by
+    ``change`` in place to put one value past its bound."""
+    batch = json.loads(_batch(4))
+    change(batch)
+    return json.dumps(batch)
+
+
+@pytest.mark.parametrize("delivery", [
+    # A text and a byte string inside an element.
+    _past(lambda b: b["items"][0].update(label="abcdefghi")),
+    _past(lambda b: b["items"][0].update(blob="vwxyz")),
+    # The top-level text.
+    _past(lambda b: b.update(note="abcde")),
+    # The count of the top-level list.
+    _past(lambda b: b["items"].insert(0, _item(0, 1))),
+])
+def test_every_bound_of_the_schema_is_held_where_the_delivery_is_read(delivery: str) -> None:
+    """Every bound of the schema is held where the delivery is read
+    (docs/adr/0086, section 4.4): each value one past its bound in a delivery
+    otherwise full refuses the delivery whole."""
+    assert delivery != _batch(4), "the case changes the delivery"
+    policy = _delivered(delivery)
+    assert policy.refusals() == 1, "error.execution reached the document once"
+    assert policy.item_count() == 0, "none of the content ran"
+    assert policy.late() == [], "nothing of the delivery was kept"
+
+
 def _host_item(module, id_: int, tags: int):
     """An item a host builds, its ``tags`` holding ``tags`` texts."""
     level = next(iter(module.StaticComposedPayloadSignalLevelEnum))

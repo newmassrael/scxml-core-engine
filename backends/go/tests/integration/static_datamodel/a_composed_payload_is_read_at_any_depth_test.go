@@ -138,6 +138,35 @@ func TestAListPastItsBoundAtDepthTwoIsRefusedWhole(t *testing.T) {
 	}
 }
 
+// Every bound of the schema is held where the delivery is read (docs/adr/0086,
+// section 4.4): a text and a byte string inside an element, the top-level text,
+// and the count of the top-level list, each one past its bound in a delivery
+// otherwise full, are refused whole.
+func TestEveryBoundOfTheSchemaIsHeldWhereTheDeliveryIsRead(t *testing.T) {
+	full := composedBatch(4, 4, 4)
+	cases := []string{
+		strings.Replace(full, `"label":"abcdefgh"`, `"label":"abcdefghi"`, 1),
+		strings.Replace(full, `"blob":"wxyz"`, `"blob":"vwxyz"`, 1),
+		strings.Replace(full, `"note":"abcd"`, `"note":"abcde"`, 1),
+		strings.Replace(full, `"items":[`, `"items":[`+composedItem(0, 1)+`,`, 1),
+	}
+	for _, delivery := range cases {
+		if delivery == full {
+			t.Fatalf("a case did not change the delivery")
+		}
+		policy := deliveredComposedPayload(delivery)
+		if got := policy.Refusals(); got != 1 {
+			t.Errorf("error.execution reached the document %d times, not once: %s", got, delivery)
+		}
+		if got := policy.ItemCount(); got != 0 {
+			t.Errorf("item_count is %d, some of the content ran: %s", got, delivery)
+		}
+		if got := policy.Late(); len(got) != 0 {
+			t.Errorf("late is %v, something of the delivery was kept: %s", got, delivery)
+		}
+	}
+}
+
 // composedHostItem is an item a host builds, its `tags` holding the texts given.
 func composedHostItem(id uint32, tags ...string) static_composed_payload.StaticComposedPayloadItemRecord {
 	return static_composed_payload.NewStaticComposedPayloadItemRecord(id, 2, "abc",
