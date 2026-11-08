@@ -62,6 +62,6 @@ PY
 
 mutation_case "a delayed send is raised without the name its entry carried" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     "        memcpy(evt.name, ready.name, sizeof(evt.name));\n",
+     "        memcpy(evt.name, ready->name, sizeof(evt.name));\n",
      "")
 PY

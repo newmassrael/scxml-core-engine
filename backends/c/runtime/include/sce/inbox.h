@@ -164,13 +164,17 @@ static inline uint32_t sce_inbox_refused(const sce_inbox_t *inbox) {
 #endif
 }
 
-/* Copy `element_size` bytes at `input` into the inbox whose slots are `slots`;
-   whether the inbox took them. Any context's. A refusal is counted; after a post
-   the inbox took, the waker is called on this context. */
-static inline bool sce_inbox_post(sce_inbox_t *inbox, unsigned char *slots, size_t element_size, const void *input) {
+/* Write an input into the inbox whose slots are `slots`, in place: `write` fills
+   the slot the inbox holds for it, with `context`, so a poster never assembles
+   an input on its own stack, which an interrupt handler's has no room for when
+   the input holds an event's data (docs/adr/0086, section 8.5 (d)); whether the
+   inbox took it. Any context's. A refusal is counted; after a post the inbox
+   took, the waker is called on this context. */
+static inline bool sce_inbox_post_with(sce_inbox_t *inbox, unsigned char *slots, size_t element_size,
+                                       sce_queue_slot_writer_fn write, const void *context) {
     bool taken = false;
     if (SCE_INBOX_ROW_(producer_acquire)(&inbox->queue)) {
-        taken = SCE_INBOX_ROW_(try_push)(&inbox->queue, slots, element_size, input) == SCE_QUEUE_PUSH_OK;
+        taken = SCE_INBOX_ROW_(try_push_with)(&inbox->queue, slots, element_size, write, context) == SCE_QUEUE_PUSH_OK;
         SCE_INBOX_ROW_(producer_release)(&inbox->queue);
     }
     if (!taken) {
@@ -181,6 +185,24 @@ static inline bool sce_inbox_post(sce_inbox_t *inbox, unsigned char *slots, size
         inbox->waker(inbox->waker_context);
     }
     return true;
+}
+
+/* An input a poster holds whole, and its size: what `sce_inbox_post` copies. */
+typedef struct sce_inbox_copy_s {
+    const void *input;
+    size_t size;
+} sce_inbox_copy_t;
+
+static inline void sce_inbox_copy_in_(void *slot, const void *context) {
+    const sce_inbox_copy_t *copy = (const sce_inbox_copy_t *)context;
+    memcpy(slot, copy->input, copy->size);
+}
+
+/* Copy `element_size` bytes at `input` into the inbox whose slots are `slots`;
+   whether the inbox took them, as `sce_inbox_post_with` answers. */
+static inline bool sce_inbox_post(sce_inbox_t *inbox, unsigned char *slots, size_t element_size, const void *input) {
+    const sce_inbox_copy_t copy = {input, element_size};
+    return sce_inbox_post_with(inbox, slots, element_size, sce_inbox_copy_in_, &copy);
 }
 
 /* Take the oldest input into `out`; false when the inbox holds none the owner

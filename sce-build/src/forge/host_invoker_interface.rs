@@ -1456,9 +1456,9 @@ pub struct C11HostInvokerInterface {
 
 /// The C11 host interface for `model`'s typed host-run invokes. `sm` is the
 /// machine's symbol stem (`<prefix><name>`), and `data_len` the name of its
-/// slot of `_event.data` ([`crate::forge::generator::c11_data_len`]), which a
-/// result's record is written into before it completes the invocation
-/// (docs/adr/0086, section 8.1).
+/// slot of `_event.data` ([`crate::forge::generator::c11_data_len`]), the
+/// most a result's record may take, written into the machine's scratch before
+/// it completes the invocation (docs/adr/0086, sections 8.1 and 8.5 (d)).
 ///
 /// C has no closure, so the invoker is a table of function pointers with the
 /// `user_data` handed back to each, as the runtime's own registry is, and the
@@ -1545,17 +1545,13 @@ typedef struct {sm}_{snake}_{what_snake}_s {{\n{fields}}} {name};\n\n",
                 id = invoke.invoke_id,
             ));
             if what == "Result" {
-                let crate::forge::generator::C11RecordWire {
-                    locals,
-                    format,
-                    args,
-                } = crate::forge::generator::c11_record_wire(&schema.fields, "result", data_len);
+                let crate::forge::generator::C11RecordWire { body } =
+                    crate::forge::generator::c11_record_wire(&schema.fields, "result");
                 defs.push_str(&format!(
                     "/* The JSON `done.invoke.{id}` carries `result` as, into `out` of `cap` bytes;\n   \
 false when it does not fit. */\n\
 static bool {sm}_{snake}_result_wire(const {name} *result, char *out, size_t cap) {{\n\
-{locals}    const int _wire_len = snprintf(out, cap, \"{{{format}}}\"{args});\n    \
-return _wire_len >= 0 && (size_t)_wire_len < cap;\n}}\n\n",
+{body}    return true;\n}}\n\n",
                     id = invoke.invoke_id,
                 ));
             }
@@ -1649,9 +1645,10 @@ bool {sm}_complete_{snake}({sm}_t *sm, uint64_t token, const {sm}_{snake}_result
                 ));
                 defs.push_str(&format!(
                     "bool {sm}_complete_{snake}({sm}_t *sm, uint64_t token, const {sm}_{snake}_result_t *result) {{\n    \
-char data[{data_len}];\n    \
-if (!{sm}_{snake}_result_wire(result, data, sizeof(data))) {{\n        return false;\n    }}\n    \
-return {sm}_complete_host_invoke(sm, \"{invoke_type}\", \"{id}\", token, data);\n}}\n\n"
+/* docs/adr/0086, section 8.5 (d): written into the machine's scratch. */\n    \
+if (sm == NULL || !{sm}_{snake}_result_wire(result, sm->scratch.result, sizeof(sm->scratch.result))) {{\n        \
+return false;\n    }}\n    \
+return {sm}_complete_host_invoke(sm, \"{invoke_type}\", \"{id}\", token, sm->scratch.result);\n}}\n\n"
                 ));
             }
         }

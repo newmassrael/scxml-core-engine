@@ -45,7 +45,8 @@ static void deliver_data(statechart_lifted_t *sm, const char *data) {
     statechart_lifted_event_with_meta_t evt;
     memset(&evt, 0, sizeof(evt));
     evt.event = STATECHART_LIFTED_EVENT_JOB_COMPLETED;
-    snprintf(evt.data, sizeof(evt.data), "%s", data);
+    /* A view of the data, which the machine's queue copies. */
+    evt.data = data;
     statechart_lifted_raise_external(sm, &evt);
     statechart_lifted_run(sm);
 }
