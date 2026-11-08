@@ -1133,6 +1133,43 @@ static int a_request_field_is_checked_and_read_back_by_one_rule(void) {
         bad |=
             expect("one-rule", refused[i].why, sce_request_field_wire(&v, refused[i].type, text, sizeof(text)) != NULL);
     }
+
+    // docs/adr/0086, section 8.6 (d): a buffer of `sce_request_field_wire_size`
+    // bytes holds the longest spelling of each value, so a script machine that
+    // grows its buffer to it is never refused for the buffer's length.
+    struct {
+        sce_script_scalar_kind_t kind;
+        int64_t integer;
+        double floating;
+        sce_request_field_type_t type;
+        const char *why;
+    } longest[] = {
+        {SCE_SCRIPT_SCALAR_INTEGER, INT64_MIN, 0.0, {SCE_REQUEST_FIELD_INT64, 0u}, "the least int64"},
+        {SCE_SCRIPT_SCALAR_FLOAT, 0, 18446744073709549568.0, {SCE_REQUEST_FIELD_UINT64, 0u}, "a uint64 near 2^64"},
+        {SCE_SCRIPT_SCALAR_FLOAT, 0, -1.2345678901234e-308, {SCE_REQUEST_FIELD_FLOAT64, 0u}, "a float64 of 14 digits"},
+        {SCE_SCRIPT_SCALAR_BOOL, 0, 0.0, {SCE_REQUEST_FIELD_BOOL, 0u}, "false"},
+    };
+
+    char sized[64];
+    for (size_t i = 0; i < sizeof(longest) / sizeof(longest[0]); i++) {
+        memset(&v, 0, sizeof(v));
+        v.kind = longest[i].kind;
+        v.integer = longest[i].integer;
+        v.floating = longest[i].floating;
+        const size_t size = sce_request_field_wire_size(&v);
+        bad |= expect("wire-size", longest[i].why,
+                      size <= sizeof(sized) && sce_request_field_wire(&v, longest[i].type, sized, size) == NULL &&
+                          strlen(sized) + 1u <= size);
+    }
+    memset(&v, 0, sizeof(v));
+    v.kind = SCE_SCRIPT_SCALAR_STRING;
+    v.text = "abcdef";
+    v.text_len = 6u;
+    bad |= expect("wire-size", "a text takes its own bytes and its NUL",
+                  sce_request_field_wire_size(&v) == 7u &&
+                      sce_request_field_wire(&v, (sce_request_field_type_t){SCE_REQUEST_FIELD_STRING, 0u}, sized,
+                                             sce_request_field_wire_size(&v)) == NULL &&
+                      strcmp(sized, "abcdef") == 0);
     return bad;
 }
 
