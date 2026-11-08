@@ -49,6 +49,12 @@
 //! listed. The colouring is greedy in [`ROLES`]' order, so it is
 //! deterministic, and it uses at most one colour more than the largest number
 //! of neighbours any role has.
+//!
+//! **A machine whose data model is a script engine** writes values its engine
+//! computed, which no type bounds, so the roles that hold them are not slots:
+//! each is a buffer of its own that grows in the engine's heap
+//! ([`GROWN_IN_THE_SCRATCH`], docs/adr/0086, section 8.6 (d)), outside every
+//! colour, and only its typed roles are coloured.
 
 /// A stretch of a C11 machine's generated code in which the roles it writes
 /// are live ([`Role::activities`]).
@@ -336,6 +342,35 @@ pub fn held(role: &Role, holder: Holder) -> bool {
     role.rows != Rows::Responses || holder.host_sends
 }
 
+/// The roles a machine whose data model is a script engine holds as buffers
+/// that grow in its engine's heap, through its allocator, to the text each is
+/// asked to hold (`sce_grown_text_t`, docs/adr/0086, section 8.6 (d)): what
+/// such a machine writes into them is a value its engine computed, which no
+/// type bounds. Each is a member of the scratch of its own, outside every
+/// colour, owned by the machine and freed once before its engine is closed;
+/// the generated code reaches each through the accessors `SCE_SCRATCH_BUF`,
+/// `SCE_SCRATCH_CAP` and `SCE_SCRATCH_RESERVE`, which a machine without a
+/// script engine spells over its fixed storage. The roles left out are typed,
+/// so the machine's slot bounds them: a typed raise's data, a typed result's,
+/// and a restore's failure, which no script machine has.
+pub const GROWN_IN_THE_SCRATCH: &[&str] = &[
+    "payload",
+    "content",
+    "pairs",
+    "request",
+    "invoke_content",
+    "message",
+    "done",
+    "reply",
+];
+
+/// Whether a machine `holder` describes holds the role `role` as a buffer
+/// that grows in its engine's heap ([`GROWN_IN_THE_SCRATCH`]): a role it
+/// holds, on a machine whose data model is a script engine.
+pub fn grown(role: &Role, holder: Holder) -> bool {
+    holder.script_engine && held(role, holder) && GROWN_IN_THE_SCRATCH.contains(&role.name)
+}
+
 /// Whether `inner` can run while `outer` is in progress: `outer` contains it,
 /// directly or through activities it contains ([`NESTS`]).
 pub fn contains(outer: Activity, inner: Activity) -> bool {
@@ -402,14 +437,14 @@ pub struct ScratchColour {
     pub roles: Vec<ScratchRole>,
 }
 
-/// The scratch of a machine that holds the roles [`held`] answers for
-/// `holder`, as its header declares it: one union per colour of those roles,
-/// in the order of the colours.
+/// The fixed storage of the scratch of a machine that holds the roles [`held`]
+/// answers for `holder`, as its header declares it: one union per colour of
+/// those roles it does not grow ([`grown`]), in the order of the colours.
 pub fn layout(holder: Holder) -> Vec<ScratchColour> {
     let roles: Vec<Role> = ROLES
         .iter()
         .copied()
-        .filter(|role| held(role, holder))
+        .filter(|role| held(role, holder) && !grown(role, holder))
         .collect();
     let colours = colours_of(&roles);
     let count = colours.iter().copied().max().map_or(0, |top| top + 1);
@@ -424,6 +459,21 @@ pub fn layout(holder: Holder) -> Vec<ScratchColour> {
         });
     }
     layout
+}
+
+/// The roles the scratch of a machine `holder` describes holds as buffers
+/// that grow in its engine's heap ([`grown`]), in [`ROLES`]' order: none for
+/// a machine without a script engine.
+pub fn grown_roles(holder: Holder) -> Vec<ScratchRole> {
+    ROLES
+        .iter()
+        .filter(|role| grown(role, holder))
+        .map(|role| ScratchRole {
+            name: role.name,
+            rows: role.rows.spelling(),
+            about: role.about,
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -510,14 +560,20 @@ mod tests {
                     script_engine,
                 };
                 let layout = layout(holder);
-                let names: Vec<&str> = layout
+                let mut names: Vec<&str> = layout
                     .iter()
                     .flat_map(|colour| colour.roles.iter().map(|role| role.name))
                     .collect();
+                let fixed = names.len();
+                assert!(layout.len() < fixed);
+                assert!(layout.iter().all(|colour| !colour.roles.is_empty()));
+                names.extend(grown_roles(holder).iter().map(|role| role.name));
                 let expected = ROLES.iter().filter(|role| held(role, holder)).count();
                 assert_eq!(names.len(), expected);
-                assert!(layout.len() < expected);
-                assert!(layout.iter().all(|colour| !colour.roles.is_empty()));
+                let mut once = names.clone();
+                once.sort_unstable();
+                once.dedup();
+                assert_eq!(once.len(), names.len(), "a role is declared twice");
                 assert_eq!(names.contains(&"replies"), host_sends && !script_engine);
             }
         }
@@ -543,5 +599,45 @@ mod tests {
         assert!(held(role("payload"), scripted));
         assert!(held(role("answer"), typed));
         assert!(held(role("replies"), typed));
+    }
+
+    /// A machine whose data model is a script engine grows every role its
+    /// engine's values are written into, and keeps in fixed storage only the
+    /// typed roles its slot bounds; a machine without one grows none.
+    #[test]
+    fn a_script_machine_grows_the_roles_its_engine_writes_and_no_other_machine_does() {
+        let scripted = Holder {
+            host_sends: true,
+            script_engine: true,
+        };
+        let typed = Holder {
+            host_sends: true,
+            script_engine: false,
+        };
+        let names = |roles: Vec<ScratchRole>| -> Vec<&'static str> {
+            roles.iter().map(|role| role.name).collect()
+        };
+        assert_eq!(names(grown_roles(scripted)), GROWN_IN_THE_SCRATCH.to_vec());
+        assert!(grown_roles(typed).is_empty());
+        let fixed: Vec<&str> = layout(scripted)
+            .iter()
+            .flat_map(|colour| colour.roles.iter().map(|role| role.name))
+            .collect();
+        for name in ["failure", "seam", "result"] {
+            assert!(fixed.contains(&name), "`{name}` stays in fixed storage");
+        }
+        assert!(fixed
+            .iter()
+            .all(|name| !GROWN_IN_THE_SCRATCH.contains(name)));
+        for name in GROWN_IN_THE_SCRATCH {
+            assert!(
+                ROLES.iter().any(|role| role.name == *name),
+                "`{name}` names a role"
+            );
+            assert!(
+                !GROWN_ON_A_SCRIPT_ENGINE.contains(name),
+                "`{name}` is grown by the runtime's writers, not held"
+            );
+        }
     }
 }

@@ -292,6 +292,23 @@ SCE_C_UNUSED static inline const char *sce_request_field_wire(const sce_script_s
     }
 }
 
+/* The most bytes, its NUL not counted, `sce_request_field_wire` spells a number or
+   a truth value in, with room to spare: a whole number's sign and twenty digits,
+   or `%.14g`'s sign, fourteen significant digits, a point and an exponent of
+   three digits with its letter and sign (21 bytes at most). */
+#define SCE_REQUEST_SCALAR_TEXT_MAX_LEN 24u
+
+/**
+ * The most bytes, its NUL counted, `sce_request_field_wire` writes for `v` at any
+ * field type: a text's own bytes for a text, else the longest spelling of a
+ * number. A buffer of this size never refuses `v` as too long, so a machine
+ * whose data model is a script engine grows its buffer to it before it writes
+ * (docs/adr/0086, section 8.6 (d)).
+ */
+SCE_C_UNUSED static inline size_t sce_request_field_wire_size(const sce_script_scalar_t *v) {
+    return (v->kind == SCE_SCRIPT_SCALAR_STRING ? v->text_len : (size_t)SCE_REQUEST_SCALAR_TEXT_MAX_LEN) + 1u;
+}
+
 /* ── The adapter's reading of a checked request ─────────────────────────── */
 
 /* The one text a typed request carries for `name`, or NULL. A request that
