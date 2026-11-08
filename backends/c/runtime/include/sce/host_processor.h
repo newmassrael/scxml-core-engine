@@ -245,6 +245,21 @@ typedef struct sce_host_send_response_list_s {
     /* Events whose data did not fit `text_cap`: refused whole, never cut, and
        counted here, so the machine counts and raises each refusal. */
     int refused;
+    /* docs/adr/0086, section 8.6 (d): the heap each entry's data grows in, for a
+       machine whose data model is a script engine, which holds no fixed storage
+       for it: `texts` is NULL, and each entry's data is copied into a text of
+       its own size that `alloc` gives. Entry `i`'s text is `owned[i]`,
+       `owned_sizes[i]` bytes with its NUL, which the list owns until the
+       machine calls `sce_host_response_list_release` once the replies are
+       raised. NULL for a list of fixed storage, which `texts` is. A handler
+       pushes the same calls into either. */
+    sce_alloc_fn alloc;
+    void *alloc_context;
+    char *owned[SCE_MAX_HOST_RESPONSES];
+    size_t owned_sizes[SCE_MAX_HOST_RESPONSES];
+    /* Events whose data `alloc` could not give storage for: refused whole,
+       never cut, and counted here, so the machine counts and raises each. */
+    int unallocated;
 } sce_host_send_response_list_t;
 
 /**
@@ -274,12 +289,25 @@ static inline bool sce_host_response_push(sce_host_send_response_list_t *out, co
         out->overflowed = true;
         return false;
     }
-    /* docs/adr/0086, section 8.5 (b): data the machine's slot cannot hold is
-       refused whole and counted, and the machine raises the refusal. */
-    char *text = out->texts != NULL ? out->texts + (size_t)out->count * out->text_cap : NULL;
-    if (data[0] != '\0' && (text == NULL || !sce_copy_text_whole(text, out->text_cap, data))) {
-        out->refused++;
-        return false;
+    char *text = NULL;
+    if (out->alloc != NULL) {
+        /* docs/adr/0086, section 8.6 (d): the data grows in the machine's heap,
+           and data the heap cannot hold is refused whole and counted. */
+        size_t size = 0u;
+        if (!sce_text_alloc_copy(out->alloc, out->alloc_context, data, &text, &size)) {
+            out->unallocated++;
+            return false;
+        }
+        out->owned[out->count] = text;
+        out->owned_sizes[out->count] = size;
+    } else {
+        /* docs/adr/0086, section 8.5 (b): data the machine's slot cannot hold
+           is refused whole and counted, and the machine raises the refusal. */
+        text = out->texts != NULL ? out->texts + (size_t)out->count * out->text_cap : NULL;
+        if (data[0] != '\0' && (text == NULL || !sce_copy_text_whole(text, out->text_cap, data))) {
+            out->refused++;
+            return false;
+        }
     }
     sce_host_send_response_t *slot = &out->entries[out->count];
     memset(slot, 0, sizeof(*slot));
@@ -287,6 +315,24 @@ static inline bool sce_host_response_push(sce_host_send_response_list_t *out, co
     slot->event_data = data[0] != '\0' ? text : "";
     out->count++;
     return true;
+}
+
+/**
+ * Free every text a list that grows in a heap owns (docs/adr/0086, section 8.6
+ * (d)), each once, and clear its holder, so a second release frees nothing.
+ * The machine calls it once the replies have been raised, each of which the
+ * queue copied. Nothing for a list of fixed storage.
+ */
+static inline void sce_host_response_list_release(sce_host_send_response_list_t *list) {
+    if (list == NULL || list->alloc == NULL) {
+        return;
+    }
+    for (int i = 0; i < (int)SCE_MAX_HOST_RESPONSES; i++) {
+        sce_text_alloc_free(list->alloc, list->alloc_context, &list->owned[i], &list->owned_sizes[i]);
+        if (i < list->count) {
+            list->entries[i].event_data = "";
+        }
+    }
 }
 
 /**
@@ -763,7 +809,61 @@ typedef struct sce_host_invoke_response_s {
     /** An answer's text did not fit `text_cap`: refused whole, never cut, and
         the machine counts and raises the refusal. */
     bool oversized;
+    /** docs/adr/0086, section 8.6 (d): the heap the answer's text grows in,
+        for a machine whose data model is a script engine, which holds no fixed
+        storage for it: `text` is NULL, and the text is copied into `owned`,
+        `owned_size` bytes with its NUL, of its own size, which the response
+        owns until the machine calls `sce_host_invoke_response_release` once
+        the answer is raised. NULL for a response of fixed storage, which
+        `text` is. A handler answers with the same calls into either. */
+    sce_alloc_fn alloc;
+    void *alloc_context;
+    char *owned;
+    size_t owned_size;
+    /** An answer's text `alloc` could not give storage for: refused whole,
+        never cut, and the machine counts and raises the refusal. */
+    bool unallocated;
 } sce_host_invoke_response_t;
+
+/* Copy `text` (NULL for none) whole into the storage of `out`: its own text of
+   fixed storage, or a text of its own size from its heap, which replaces what
+   the response owned. The answer's text, "" for none, or NULL with the reason
+   flagged, `oversized` for one past the fixed storage and `unallocated` for
+   one its heap could not hold. */
+static inline const char *sce_host_invoke_answer_keep_(sce_host_invoke_response_t *out, const char *text) {
+    if (out->alloc != NULL) {
+        char *copy = NULL;
+        size_t size = 0u;
+        sce_text_alloc_free(out->alloc, out->alloc_context, &out->owned, &out->owned_size);
+        if (!sce_text_alloc_copy(out->alloc, out->alloc_context, text, &copy, &size)) {
+            out->unallocated = true;
+            return NULL;
+        }
+        out->owned = copy;
+        out->owned_size = size;
+        return copy != NULL ? copy : "";
+    }
+    if (out->text == NULL || !sce_copy_text_whole(out->text, out->text_cap, text)) {
+        out->oversized = true;
+        return NULL;
+    }
+    return out->text;
+}
+
+/**
+ * Free the text a response that grows in a heap owns (docs/adr/0086, section
+ * 8.6 (d)), once, and clear it, so a second release frees nothing. The machine
+ * calls it once the answer has been raised, which the queue copied. Nothing
+ * for a response of fixed storage.
+ */
+static inline void sce_host_invoke_response_release(sce_host_invoke_response_t *out) {
+    if (out == NULL || out->alloc == NULL) {
+        return;
+    }
+    sce_text_alloc_free(out->alloc, out->alloc_context, &out->owned, &out->owned_size);
+    out->done_data = NULL;
+    out->refusal = "";
+}
 
 /**
  * Answer a start with an immediate completion carrying `data` (NULL for none),
@@ -774,12 +874,12 @@ static inline bool sce_host_invoke_answer_done(sce_host_invoke_response_t *out, 
     if (out == NULL || out->has_refusal) {
         return false;
     }
-    if (out->text == NULL || !sce_copy_text_whole(out->text, out->text_cap, data)) {
-        out->oversized = true;
+    const char *kept = sce_host_invoke_answer_keep_(out, data);
+    if (kept == NULL) {
         return false;
     }
     out->has_done_data = true;
-    out->done_data = out->text;
+    out->done_data = kept;
     return true;
 }
 
@@ -804,13 +904,16 @@ static inline bool sce_host_invoke_answer_refusal(sce_host_invoke_response_t *ou
     out->has_refusal = true;
     out->has_done_data = false;
     out->done_data = NULL;
-    if (out->text == NULL || (reason != NULL && strlen(reason) > (size_t)SCE_HOST_INVOKE_REFUSAL_MAX_LEN) ||
-        !sce_copy_text_whole(out->text, out->text_cap, reason)) {
+    out->refusal = "";
+    if (reason != NULL && strlen(reason) > (size_t)SCE_HOST_INVOKE_REFUSAL_MAX_LEN) {
         out->oversized = true;
-        out->refusal = "";
         return false;
     }
-    out->refusal = out->text;
+    const char *kept = sce_host_invoke_answer_keep_(out, reason);
+    if (kept == NULL) {
+        return false;
+    }
+    out->refusal = kept;
     return true;
 }
 
