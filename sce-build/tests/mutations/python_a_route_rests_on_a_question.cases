@@ -48,7 +48,7 @@ PY
 
 mutation_case "the question is never recorded against the unanswered error" <<'PY'
 edit("backends/python/runtime/sce_runtime/engine.py",
-     "                self._last_unhandled_error_rests_on = rests_on\n",
+     "            self._last_unhandled_error_rests_on = rests_on\n",
      "")
 PY
 
@@ -62,8 +62,8 @@ PY
 
 mutation_case "an error raised with no question is given the last one's" <<'PY'
 edit("backends/python/runtime/sce_runtime/engine.py",
-     "                self._last_unhandled_error_rests_on = rests_on\n",
-     "                self._last_unhandled_error_rests_on = rests_on or self._last_unhandled_error_rests_on\n")
+     "            self._last_unhandled_error_rests_on = rests_on\n",
+     "            self._last_unhandled_error_rests_on = rests_on or self._last_unhandled_error_rests_on\n")
 PY
 
 # ── A delayed send is refused long after its site returned ──────────
@@ -118,6 +118,6 @@ PY
 
 mutation_case "a question outlives the error that carried it" <<'PY'
 edit("backends/python/runtime/sce_runtime/engine.py",
-     "                self._queued_route_failures.pop(evt.metadata.send_id, ())",
-     "                self._queued_route_failures.get(evt.metadata.send_id, ())")
+     "            self._queued_route_failures.pop(evt.metadata.send_id, ())",
+     "            self._queued_route_failures.get(evt.metadata.send_id, ())")
 PY

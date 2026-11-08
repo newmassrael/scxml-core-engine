@@ -16,16 +16,14 @@ nothing did. Measured 2026-09-22: a document with a native typed guard and an
 could see.
 
 So `data` is the canonical carrier and the typed view is lifted from it here,
-at the one point an event is dequeued. What the lift refuses is what the SCRIPT
-ENGINE already refuses for the same guard, measured on the same document:
+at the one point an event is dequeued, the engine's door:
 
-    no data at all              error.execution, guard false
-    a field the data lacks      error.execution, guard false
-    a value of another type     error.execution, guard false
-    the fields, well typed      the guard evaluates
+    no data at all              refused whole, error.execution in its place
+    a field the data lacks      refused whole, error.execution in its place
+    a value of another type     refused whole, error.execution in its place
+    the fields, well typed      taken, and the guard evaluates
 
-A native lowering that answered differently from the engine would make the
-optimisation observable, which is the one thing it may not be.
+A delivery refused whole selects no transition (docs/adr/0086, section 4.2).
 
 A refusal is a `TypedPayloadError`: the sentence the delivery's
 `error.execution` carries, and beside it what a statechart reads as data

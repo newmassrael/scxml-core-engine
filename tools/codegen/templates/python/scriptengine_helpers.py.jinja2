@@ -649,6 +649,21 @@
                     failures.append(name)
                 continue
         return marshalled
+{% if event_payload_active %}
+
+    def lift_event_payload(self, event, metadata):
+        """The door (docs/adr/0086, section 4.2): bind the dequeued event's
+        typed `_event.data` view (NL→IR Item C1 Path A), from the type-erased
+        carrier the inject seam fills, and otherwise by lifting the fields
+        out of `EventMetadata.data`, which every other producer fills.
+        Answers the sentence of a refusal, on which the engine refuses the
+        delivery whole and takes the `error.execution` that carries it in its
+        place, or `None` for an event it admits. Independent of any session,
+        so a native-lowered guard machine needs no Lua session for its typed
+        `_event.data`. Twin of the Kotlin `populateTypedPayload` / the Go
+        policy type-switch."""
+{{ event_payload_populate }}
+{% endif %}
 
     def set_current_event(self, event, metadata) -> None:
         """W3C SCXML 5.10 — bind `_event` into the script-engine session
@@ -657,16 +672,6 @@
         via native dot-access; the engine bridges Python values into
         Lua tables at the `set_current_event` boundary so the runtime
         contract matches every other backend."""
-{% if event_payload_active %}
-        # NL→IR Item C1 Path A: bind the dequeued event's typed `_event.data`
-        # view — from the type-erased carrier the inject seam fills, and
-        # otherwise by lifting the fields out of `EventMetadata.data`, which
-        # every other producer fills. Runs before the script-engine bind
-        # below and independently of any session, so a native-lowered guard
-        # machine needs no Lua session for its typed `_event.data`.
-        # Twin of the Kotlin `populateTypedPayload` / the Go policy type-switch.
-{{ event_payload_populate }}
-{% endif %}
         engine_ref = getattr(self, "_engine_ref", None)
         if engine_ref is None or not self._session_id:
             return

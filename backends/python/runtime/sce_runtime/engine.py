@@ -2923,44 +2923,86 @@ class Engine(Generic[S, E]):
             # The dispatch runs first and unconditionally: it is what processes
             # every internal event, and folding it into the condition below
             # would skip it for everything that is not an error.
-            evt = self._internal_queue.popleft()
-            # An error raised from here on is raised *by an error handler*,
-            # which is the one situation the engine cannot leave to the
-            # document: the handler that failed is the same one that will
-            # answer the failure. The flag is what `raise_internal` reads to
-            # tell that apart from a first failure, and it is cleared before
-            # anything else can run so a chain cannot be attributed to the
-            # wrong event.
-            is_error = is_error_event(self._policy.get_event_name(evt.event))
-            # What a send said its route rested on leaves with the error it
-            # raised, answered or not: it is read below only for the error no
-            # transition matched, and kept no longer than the event is queued.
-            rests_on = (
-                self._queued_route_failures.pop(evt.metadata.send_id, ())
-                if is_error and self._queued_route_failures
-                else ()
-            )
-            # The chain is not ended by the drain doing something else. An
-            # earlier draft reset the depth on every non-error event, which
-            # reads as the careful choice and is the opposite: a handler that
-            # raises its own event before failing — a document that logs, then
-            # fails, which is most of them — leaves the queue alternating
-            # `tick, error, tick, error…`, and each `tick` put the ceiling back
-            # out of reach. The count needs no such guard, because it only ever
-            # rises while an error handler is running.
-            self._handling_error_event = is_error
-            selected = self._dispatch(evt)
-            self._handling_error_event = False
-            if selected:
-                # Appendix D: the loop turn that selects nothing takes no
-                # microstep, so it spends no budget. Only a turn that answered
-                # the event moved the machine, and only those are what a
-                # ceiling on microsteps can be counted in.
-                self._macrostep_microsteps_taken += 1
-            if not selected and is_error:
-                self._unhandled_error_events += 1
-                self._last_unhandled_error = evt.event
-                self._last_unhandled_error_rests_on = rests_on
+            #
+            # The door binds it, or the `error.execution` taken in its place; a
+            # delivery refused with nothing to take in its place took no
+            # microstep and moved nothing (docs/adr/0086, section 4.2).
+            taken = self._admit(self._internal_queue.popleft())
+            if taken is None:
+                continue
+            self._answer_internal(taken[0])
+
+    def _admit(
+        self, evt: EventWithMetadata[E]
+    ) -> Optional[Tuple[EventWithMetadata[E], bool]]:
+        """The door of an event just taken off a queue (docs/adr/0086, section
+        4.2): bind its typed `_event.data` view, and answer the event the loop
+        offers to the configuration and whether a door took it in a refused
+        delivery's place.
+
+        A delivery whose data does not fit its type is refused whole: it is
+        never offered to the configuration, and the `error.execution` that
+        carries the refusal is taken in its place. `None` is a delivery
+        refused in a document that declares no `error.execution`: nothing is
+        taken in its place. The verdict lives here rather than in each
+        generated policy so every machine answers alike."""
+        refusal = self._policy.lift_event_payload(evt.event, evt.metadata)
+        if refusal is None:
+            return evt, False
+        # A document that declares no `error.execution` transition has nothing
+        # to answer with: the delivery is refused all the same, and nothing is
+        # taken in its place.
+        error = self._policy.get_event_from_name("error.execution")
+        if error is None:
+            return None
+        replacement = EventWithMetadata(
+            event=error, metadata=EventMetadata(data=refusal, event_type="platform")
+        )
+        # The replacement carries no typed payload, so its own door clears the
+        # view the refused delivery left half read.
+        self._policy.lift_event_payload(replacement.event, replacement.metadata)
+        return replacement, True
+
+    def _answer_internal(self, evt: EventWithMetadata[E]) -> None:
+        """Select for `evt`, taken off the internal queue or taken by a door in
+        a refused delivery's place, take the microstep it selects, and count
+        what became of it."""
+        # An error raised from here on is raised *by an error handler*, which
+        # is the one situation the engine cannot leave to the document: the
+        # handler that failed is the same one that will answer the failure.
+        # The flag is what `raise_internal` reads to tell that apart from a
+        # first failure, and it is cleared before anything else can run so a
+        # chain cannot be attributed to the wrong event.
+        is_error = is_error_event(self._policy.get_event_name(evt.event))
+        # What a send said its route rested on leaves with the error it
+        # raised, answered or not: it is read below only for the error no
+        # transition matched, and kept no longer than the event is queued.
+        rests_on = (
+            self._queued_route_failures.pop(evt.metadata.send_id, ())
+            if is_error and self._queued_route_failures
+            else ()
+        )
+        # The chain is not ended by the drain doing something else. An earlier
+        # draft reset the depth on every non-error event, which reads as the
+        # careful choice and is the opposite: a handler that raises its own
+        # event before failing — a document that logs, then fails, which is
+        # most of them — leaves the queue alternating `tick, error, tick,
+        # error…`, and each `tick` put the ceiling back out of reach. The count
+        # needs no such guard, because it only ever rises while an error
+        # handler is running.
+        self._handling_error_event = is_error
+        selected = self._dispatch(evt)
+        self._handling_error_event = False
+        if selected:
+            # Appendix D: the loop turn that selects nothing takes no
+            # microstep, so it spends no budget. Only a turn that answered the
+            # event moved the machine, and only those are what a ceiling on
+            # microsteps can be counted in.
+            self._macrostep_microsteps_taken += 1
+        if not selected and is_error:
+            self._unhandled_error_events += 1
+            self._last_unhandled_error = evt.event
+            self._last_unhandled_error_rests_on = rests_on
 
     def _process_next_external_event(self) -> None:
         """Take exactly one event off the external queue, run the preliminary
@@ -2999,6 +3041,18 @@ class Engine(Generic[S, E]):
         # comes back.
         self._macrostep_truncated = False
         self._macrostep_microsteps_taken = 0
+        # The door comes first (docs/adr/0086, section 4.2): a delivery whose
+        # data does not fit its type is refused whole. The `error.execution`
+        # taken in its place is the engine's own error, so no `<finalize>` or
+        # autoforward runs for it, and it is answered as one off the internal
+        # queue is.
+        taken = self._admit(evt)
+        if taken is None:
+            return
+        evt, in_place = taken
+        if in_place:
+            self._answer_internal(evt)
+            return
         # §scxml-6.5 — `<finalize>` runs before transition selection for
         # events originating from invoked children, so the finalize body can
         # write child-derived values back into the parent datamodel that
@@ -3007,10 +3061,8 @@ class Engine(Generic[S, E]):
         # `_event` is bound here once, for both the finalize body and the
         # transition selection after it: §scxml-5.10 binds it when the
         # event is selected for processing, and `<finalize>` writes the
-        # datamodel, not `_event`. Binding it a second time in `_dispatch`
-        # re-ran the typed payload lift, so a completion whose data did not
-        # fit its record reported error.execution twice where every other
-        # backend reports it once.
+        # datamodel, not `_event`. The typed payload was lifted once, at the
+        # door, whatever binds `_event` after it.
         already_bound = bool(evt.metadata.invoke_id)
         if already_bound:
             self._bind_current_event(evt)
