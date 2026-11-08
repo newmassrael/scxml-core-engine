@@ -336,11 +336,19 @@ SCE_C_UNUSED static inline bool sce_parse_delay_ms(const char *text, uint64_t *o
     return true;
 }
 
-/* §scxml-5.10 `_event.data` payload buffer (SCE_MAX_DATA_LEN). Separate
-   from the id-sized helper because the two caps differ; both delegate to
-   `sce_copy_bounded_n` so the scan/copy/NUL logic exists once. */
-SCE_C_UNUSED static inline void sce_copy_bounded_data(char *dst, const char *src) {
-    sce_copy_bounded_n(dst, src, (size_t)SCE_MAX_DATA_LEN);
+/* §scxml-5.10 `_event.data`: copy the text `src` (NULL for none) whole into
+   `dst` of `cap` bytes, or refuse it: false, and `dst` left as it was, when it
+   does not fit. An event's data is never cut, since a cut payload parses as
+   something its sender never said (docs/adr/0086, section 8.5 (b)); the
+   caller makes a refusal visible. */
+SCE_C_UNUSED static inline bool sce_copy_text_whole(char *dst, size_t cap, const char *src) {
+    const char *s = src != NULL ? src : "";
+    const size_t len = strlen(s);
+    if (len >= cap) {
+        return false;
+    }
+    memcpy(dst, s, len + 1u);
+    return true;
 }
 
 /* §scxml-5.10.1 `_event.type` ("internal" / "external" / "platform"). */
@@ -626,7 +634,12 @@ typedef void (*sce_parent_dispatch_fn)(void *parent_sm, const char *event_name, 
    `SCE::Common::ForwardedEvent` / Rust `(&str, &EventMetadata)`. */
 typedef struct sce_forwarded_event_s {
     char name[SCE_MAX_ID_LEN];
-    char data[SCE_MAX_DATA_LEN];
+    /* The event's data, a view of text the sender holds, valid for the one
+       synchronous call the record is handed to; NULL and "" are no data. The
+       receiving machine copies it into its own slot of `_event.data` and
+       refuses, counted and raised, data that does not fit (docs/adr/0086,
+       section 8.5 (b)). */
+    const char *data;
     /* `_event.origin` and `_event.origintype`, the one pair the delivering
        processor wrote (docs/adr/0090). A host posting an event by name names
        its origin here in its own terms, or none. */
