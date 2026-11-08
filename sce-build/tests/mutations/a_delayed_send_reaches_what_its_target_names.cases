@@ -52,7 +52,7 @@ PY
 
 mutation_case "C11 delivers a delayed #_internal to the external queue" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     "        if (ready.route == (uint8_t){{ csym_prefix | upper }}{{ model.name | upper }}_SCHED_ROUTE_INTERNAL) {",
+     "        if (ready->route == (uint8_t){{ csym_prefix | upper }}{{ model.name | upper }}_SCHED_ROUTE_INTERNAL) {",
      "        if (false) {")
 PY
 
@@ -68,6 +68,6 @@ PY
 
 mutation_case "C11 sends the parent a delayed event without its payload" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     " ready.data[0] != '\\0' ? ready.data : NULL{% else %} NULL{% endif %});",
+     " ready->data[0] != '\\0' ? ready->data : NULL{% else %} NULL{% endif %});",
      " NULL{% else %} NULL{% endif %});")
 PY

@@ -422,9 +422,13 @@ const sce_answer_schema_t *{{ csym_prefix }}{{ model.name }}_answer_schemas(void
 
 /* ── W3C SCXML 5.10: Event with metadata ──────────────────────────── */
 {# Mirrors `StaticExecutionEngine<P>::EventWithMetadata` (sce/include/static).
-   Strings are bounded char arrays sized via `sce/types.h` so the entire
-   event record is value-typed and queue storage is statically reservable. #}
-typedef struct {{ csym_prefix }}{{ model.name }}_event_with_meta {
+   The event is two records with the same members (docs/adr/0086, section 8.5
+   (a) and (d)): the one an event is handed in, whose `data` is a view of text
+   another owner holds, valid for the call it is handed to, and the one a queue
+   entry owns, whose `data` is the machine's slot. Neither has a member the
+   other lacks, so the members are written once, here, and `data` is the line
+   the caller gives. #}
+{% macro event_members(data_member) %}
     {{ csym_prefix }}{{ model.name }}_event_t event;
     /* §scxml-5.10: `_event.name` is the name an event ARRIVED under. The event
        is carried as the enum member of a name the document writes, and
@@ -433,7 +437,7 @@ typedef struct {{ csym_prefix }}{{ model.name }}_event_with_meta {
        through a prefix; empty means the member's own name IS the name, which is
        every event the document itself raises or sends. */
     char name[SCE_MAX_ID_LEN];
-    char data[{{ data_slot.name }}];
+{{ data_member }}
     /* §scxml-5.10.1: `_event.origin` and `_event.origintype`, the one pair the
        delivering processor wrote where it built the event (docs/adr/0090,
        `sce_event_origin_t` in `sce/types.h`); none, both empty, for an event
@@ -470,7 +474,76 @@ typedef struct {{ csym_prefix }}{{ model.name }}_event_with_meta {
     bool has_host_invoke_token;
     uint64_t host_invoke_token;
 {% endif %}
+{% endmacro %}
+/* An event as it is handed to the machine (`_raise`, `_raise_external`): every
+   member a value, and `data` a view of the event's data, which another owner
+   holds and which must stay as it is for the length of the call. NULL and ""
+   are both no data. The machine copies the data into the queue entry that owns
+   it, and refuses an event whose data does not fit that slot rather than cut it
+   (docs/adr/0086, section 8.5 (a)). */
+typedef struct {{ csym_prefix }}{{ model.name }}_event_with_meta {
+{{ event_members('    const char *data;') }}
 } {{ csym_prefix }}{{ model.name }}_event_with_meta_t;
+
+/* An event a queue entry, the inbox or the machine's current event owns: the
+   members of `_event_with_meta_t`, with the data held in the machine's slot of
+   `_event.data` (docs/adr/0086, section 8.1). */
+typedef struct {{ csym_prefix }}{{ model.name }}_queued_event {
+{{ event_members('    char data[' ~ data_slot.name ~ '];') }}
+} {{ csym_prefix }}{{ model.name }}_queued_event_t;
+
+/* Copy `src` into `dst`, which owns what it holds: false, and `dst` left as it
+   was, when the data does not fit the slot (docs/adr/0086, section 8.5 (b)). */
+SCE_C_UNUSED static inline bool {{ csym_prefix }}{{ model.name }}_event_keep(
+        {{ csym_prefix }}{{ model.name }}_queued_event_t *dst,
+        const {{ csym_prefix }}{{ model.name }}_event_with_meta_t *src) {
+    const char *data = src->data != NULL ? src->data : "";
+    const size_t len = strlen(data);
+    if (len >= sizeof(dst->data)) {
+        return false;
+    }
+    dst->event = src->event;
+    memcpy(dst->name, src->name, sizeof(dst->name));
+    memcpy(dst->data, data, len + 1u);
+    dst->origin = src->origin;
+    dst->from_session = src->from_session;
+    memcpy(dst->send_id, src->send_id, sizeof(dst->send_id));
+    memcpy(dst->type, src->type, sizeof(dst->type));
+    memcpy(dst->invoke_id, src->invoke_id, sizeof(dst->invoke_id));
+    memcpy(dst->target, src->target, sizeof(dst->target));
+{% if event_payload_active %}
+    dst->payload = src->payload;
+{% endif %}
+{% if model.host_invoker_types %}
+    dst->has_host_invoke_token = src->has_host_invoke_token;
+    dst->host_invoke_token = src->host_invoke_token;
+{% endif %}
+    return true;
+}
+
+/* The event `src` holds, handed on as a view of its data, valid while `src`
+   holds it. */
+SCE_C_UNUSED static inline {{ csym_prefix }}{{ model.name }}_event_with_meta_t {{ csym_prefix }}{{ model.name }}_event_view(
+        const {{ csym_prefix }}{{ model.name }}_queued_event_t *src) {
+    {{ csym_prefix }}{{ model.name }}_event_with_meta_t view;
+    view.event = src->event;
+    memcpy(view.name, src->name, sizeof(view.name));
+    view.data = src->data;
+    view.origin = src->origin;
+    view.from_session = src->from_session;
+    memcpy(view.send_id, src->send_id, sizeof(view.send_id));
+    memcpy(view.type, src->type, sizeof(view.type));
+    memcpy(view.invoke_id, src->invoke_id, sizeof(view.invoke_id));
+    memcpy(view.target, src->target, sizeof(view.target));
+{% if event_payload_active %}
+    view.payload = src->payload;
+{% endif %}
+{% if model.host_invoker_types %}
+    view.has_host_invoke_token = src->has_host_invoke_token;
+    view.host_invoke_token = src->host_invoke_token;
+{% endif %}
+    return view;
+}
 
 /* ── Appendix D: one transition of the optimal enabled transition set ─── */
 {# Appendix D's EnabledTransition, as the C11 microstep (c/microstep.jinja2)
@@ -495,11 +568,50 @@ typedef struct {{ csym_prefix }}{{ model.name }}_transition_info {
 
 /* ── Internal/external event queues — circular buffer ─────────────── */
 typedef struct {{ csym_prefix }}{{ model.name }}_event_queue {
-    {{ csym_prefix }}{{ model.name }}_event_with_meta_t buf[SCE_MAX_EVENTS];
+    {{ csym_prefix }}{{ model.name }}_queued_event_t buf[SCE_MAX_EVENTS];
     uint16_t head;
     uint16_t tail;
     uint16_t count;
 } {{ csym_prefix }}{{ model.name }}_event_queue_t;
+
+/* ── docs/adr/0086, section 8.5 (d): the buffers of an event's size ───── */
+/* Every buffer the machine writes an event's data into before it hands the
+   data on is one of these, the machine's own storage and never a stack's: a
+   local of the slot's size overflows a microcontroller's stack. One member per
+   role, so two roles live at once never share storage; no role is live twice at
+   once, since no function that writes into one calls itself on the same
+   machine. Each is lent as a view for the call it is handed to, and its content
+   means nothing once that call returns. */
+typedef struct {{ csym_prefix }}{{ model.name }}_scratch {
+    /* A `<send>`'s payload, as JSON, from its evaluation until it is sent; and
+       the data a restore reads into a queued event, which runs alone. */
+    char payload[{{ data_slot.name }}];
+    /* A `<send>`'s `<content expr>` as the text a host's request carries, or
+       the body of a BasicHTTP request. */
+    char content[{{ data_slot.name }}];
+    /* The text of each pair a host-served `<send>` or a host-run `<invoke>`
+       hands over, one row per pair, the namelist's first: the widest such
+       element of the document holds {{ data_slot.pairs }}. */
+    char pairs[{{ data_slot.pairs }}][{{ data_slot.name }}];
+    /* A host-run invocation's request event data, and its `<content expr>`
+       under a script engine. */
+    char request[{{ data_slot.name }}];
+    char invoke_content[{{ data_slot.name }}];
+    /* A reason the machine raises as the data of an internal error event. */
+    char message[{{ data_slot.name }}];
+    /* The reason a host-run invocation failed, raised as its `error.invoke`'s
+       data on the external queue, whose drain of the inbox may raise another
+       reason while this one waits: a role apart from `message`. */
+    char failure[{{ data_slot.name }}];
+    /* The data a typed raise seam writes a host's payload as. */
+    char seam[{{ data_slot.name }}];
+    /* The data a typed host-run result completes its invocation with. */
+    char result[{{ data_slot.name }}];
+    /* The done data a child session or the script engine hands a done event. */
+    char done[{{ data_slot.name }}];
+    /* The data of a reply a BasicHTTP response carries. */
+    char reply[{{ data_slot.name }}];
+} {{ csym_prefix }}{{ model.name }}_scratch_t;
 
 {% if model.needs_event_scheduler %}
 /* W3C SCXML 6.2.4: the queue a scheduled entry delivers to when due. */
@@ -708,7 +820,9 @@ typedef enum {{ csym_prefix }}{{ model.name }}_inbox_kind_e {
 typedef struct {{ csym_prefix }}{{ model.name }}_inbox_input {
     {{ csym_prefix }}{{ model.name }}_inbox_kind_t kind;
     union {
-        {{ csym_prefix }}{{ model.name }}_event_with_meta_t event;
+        /* Owned, since a post crosses from another context (docs/adr/0086,
+           section 8.5 (b)). */
+        {{ csym_prefix }}{{ model.name }}_queued_event_t event;
         sce_forwarded_event_t by_name;
 {% if inbox_endings %}
         sce_host_invoke_ending_t ending;
@@ -839,7 +953,17 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
        clock per `<send>` instead did to two of them. */
     uint64_t turn_now_ms;
     bool in_turn;
+    /* The entry `_tick` took off the scheduled queue, held here while it is
+       delivered: the machine's storage, since an entry holds the slot
+       (docs/adr/0086, section 8.5 (d)). */
+    {{ csym_prefix }}{{ model.name }}_scheduled_entry_t ready_entry;
 {% endif %}
+    /* The event each queue's drain took and is processing, owned here while its
+       microsteps run, which may queue other events into the slot it left
+       (docs/adr/0086, section 8.5 (a) and (d)). */
+    {{ csym_prefix }}{{ model.name }}_queued_event_t current_internal;
+    {{ csym_prefix }}{{ model.name }}_queued_event_t current_external;
+    {{ csym_prefix }}{{ model.name }}_scratch_t scratch;
     {{ csym_prefix }}{{ model.name }}_policy_t policy;
 {% if static_scratch_member %}
     /* docs/adr/0082: the storage of the machine's calls of algorithms and of its
@@ -1092,6 +1216,9 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
        external event, which asks for a drain first; this makes that request
        nothing rather than a drain inside the drain. */
     bool draining_inbox;
+    /* The input the drain took and is applying: the machine's storage, since an
+       input holds the slot (docs/adr/0086, section 8.5 (d)). The owner's alone. */
+    {{ csym_prefix }}{{ model.name }}_inbox_input_t inbox_taken;
     /* docs/adr/0084: what follows `inbox` is the part of the machine another
        context may reach, so a child session started again in the same slot keeps
        it (`_invoked_begin` zeroes the machine up to `inbox`): a post that found
@@ -1907,7 +2034,8 @@ SCE_C_UNUSED static inline void {{ csym_prefix }}{{ model.name }}_raise_platform
     {{ csym_prefix }}{{ model.name }}_event_with_meta_t _pe;
     memset(&_pe, 0, sizeof(_pe));
     _pe.event = event;
-    sce_copy_bounded_n(_pe.data, message, sizeof(_pe.data));
+    /* A view: `_raise` copies it into the queue entry before it returns. */
+    _pe.data = message;
     sce_copy_bounded_n(_pe.type, "platform", (size_t)SCE_MAX_EVENT_TYPE_LEN);
     sce_copy_bounded_id(_pe.send_id, send_id);
     {{ csym_prefix }}{{ model.name }}_raise(sm, &_pe);

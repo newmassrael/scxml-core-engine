@@ -64,7 +64,7 @@
                 {
                     size_t _jl = 0;
                     const char *_j = lua_tolstring(sm->L, -1, &_jl);
-                    if (_j == NULL || _jl >= sizeof(_ed)) {
+                    if (_j == NULL || _jl >= sizeof(sm->scratch.payload)) {
                         lua_pop(sm->L, 1);
                         {{ csym_prefix }}{{ machine }}_raise_platform_error(
                             sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
@@ -84,7 +84,9 @@
    `_host_param_texts` (one row per param), and each pair that crosses is written
    there too, from the one value that is written into the JSON. #}
 {% macro send_payload_json(params, namelist, csym_prefix, machine, keep_pairs=false, host_texts=false) %}
-                char _ed[{{ data_slot.name }}];
+                /* docs/adr/0086, section 8.5 (d): the payload is written into the
+                   machine's own scratch, never a stack's. */
+                char *const _ed = sm->scratch.payload;
 {% if static_datamodel %}
                 /* SCE Accepted Subset §2.15 + §scxml-6.2: under `sce-static` each
                    `<param>`'s value is native code (`Param::native_value`) read
@@ -96,7 +98,7 @@
                    error ends the block once it has (4.9). */
                 {
                     sce_forge_wire_t sce_wire_;
-                    sce_forge_wire_begin(&sce_wire_, _ed, sizeof(_ed));
+                    sce_forge_wire_begin(&sce_wire_, _ed, sizeof(sm->scratch.payload));
 {# Ascending by the name's UTF-8 bytes, as on every engine (ARCHITECTURE.md,
    "JSON Object Key Order"): a pair left out leaves the order of the others as
    it was, so the names are sorted here, once, and not at run time. #}
@@ -155,7 +157,7 @@
                    is finished at codegen time. */
                 {
                     static const char _lit[] = {{ params | static_params_json | c_char_array_init }};
-                    _Static_assert(sizeof(_lit) <= sizeof(_ed),
+                    _Static_assert(sizeof(_lit) <= sizeof(sm->scratch.payload),
                                    "<send>'s literal payload does not fit {{ data_slot.name }}");
                     memcpy(_ed, _lit, sizeof(_lit));
                 }
@@ -266,7 +268,9 @@
                     }
 {% endif %}
 {% if json_buf %}
-                    if (!sce_forge_wire_json(sce_value, {{ json_buf }}, sizeof({{ json_buf }}))) {
+{# `json_buf` names the scratch's `payload` and `text_buf` its `content`
+   (docs/adr/0086, section 8.5 (d)), whose sizes these are. #}
+                    if (!sce_forge_wire_json(sce_value, {{ json_buf }}, sizeof(sm->scratch.payload))) {
                         {{ csym_prefix }}{{ machine }}_raise_platform_error(
                             sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
                             "<send> <content expr> does not fit the event's data, so the message was not sent");
@@ -274,7 +278,7 @@
                     }
 {% endif %}
 {% if text_buf %}
-                    if (!sce_forge_wire_text(sce_value, {{ text_buf }}, sizeof({{ text_buf }}))) {
+                    if (!sce_forge_wire_text(sce_value, {{ text_buf }}, sizeof(sm->scratch.content))) {
                         {{ csym_prefix }}{{ machine }}_raise_platform_error(
                             sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
                             "<send> <content expr> does not fit a request's content, so the message was not sent");
@@ -285,16 +289,17 @@
 {% endmacro %}
 {% macro send_content_json(action, csym_prefix, machine, host_text=false) %}
 {% set content_reading = action.content | inline_content_reading(model.datamodel) %}
-                char _ed[{{ data_slot.name }}];
+                /* docs/adr/0086, section 8.5 (d): the machine's own scratch. */
+                char *const _ed = sm->scratch.payload;
 {% if action.native_content_value %}
 {% if host_text %}
-                char _host_content[{{ data_slot.name }}];
+                char *const _host_content = sm->scratch.content;
 {% endif %}
 {{ send_native_content(action, csym_prefix, machine, '_ed', '_host_content' if host_text else none) }}
 {% elif action.native_content %}
                 {
                     static const char _lit[] = {{ action.native_content | c_char_array_init }};
-                    _Static_assert(sizeof(_lit) <= sizeof(_ed),
+                    _Static_assert(sizeof(_lit) <= sizeof(sm->scratch.payload),
                                    "<send>'s literal <content> does not fit {{ data_slot.name }}");
                     memcpy(_ed, _lit, sizeof(_lit));
                 }
@@ -313,7 +318,7 @@
 {% elif content_reading.kind != 'expression' %}
                 {
                     static const char _lit[] = {{ content_reading.wire | c_char_array_init }};
-                    _Static_assert(sizeof(_lit) <= sizeof(_ed),
+                    _Static_assert(sizeof(_lit) <= sizeof(sm->scratch.payload),
                                    "<send>'s literal <content> does not fit {{ data_slot.name }}");
                     memcpy(_ed, _lit, sizeof(_lit));
                 }
@@ -914,14 +919,17 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_basic_http({{ cs
                         "return JSON.stringify(_s)");
                     _hd = lua_tolstring(sm->L, -1, &_hd_n);
                 }
-                if (_hd == NULL || _hd_n >= sizeof(_http_evt.data)) {
+                if (_hd == NULL || _hd_n >= sizeof(sm->scratch.reply)) {
                     _http_data_fits = false;
                     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                         sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
                         "a BasicHTTP reply's data does not fit the event's data, so the reply was not delivered");
                 } else {
-                    memcpy(_http_evt.data, _hd, _hd_n);
-                    _http_evt.data[_hd_n] = '\0';
+                    /* docs/adr/0086, section 8.5 (d): the text is held in the
+                       machine's scratch, and the event is a view of it. */
+                    memcpy(sm->scratch.reply, _hd, _hd_n);
+                    sm->scratch.reply[_hd_n] = '\0';
+                    _http_evt.data = sm->scratch.reply;
                 }
                 if (_http_json.data_is_string) {
                     lua_pop(sm->L, 1);
@@ -992,13 +1000,11 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
         {
             /* §scxml-B-2-8-1 reads this field as a host payload — XML to a
                DOM, JSON to a value, anything else to a normalized string —
-               so it crosses as the bytes the handler wrote. Copied whole or
-               not at all: a truncated payload is one that parses to
-               something the host never said. */
-            const size_t _dn = strlen(_replies.entries[_i].event_data);
-            if (_dn < sizeof(_reply_evt.data)) {
-                memcpy(_reply_evt.data, _replies.entries[_i].event_data, _dn + 1u);
-            }
+               so it crosses as the bytes the handler wrote: a view of the
+               handler's reply, which the queue copies whole or not at all
+               (docs/adr/0086, section 8.5 (a)), since a truncated payload is
+               one that parses to something the host never said. */
+            _reply_evt.data = _replies.entries[_i].event_data;
         }
         /* docs/adr/0090, section 2: the reply's origin is the pair the host
            named for the party it comes from, in its own terms, or none. The
@@ -1115,7 +1121,9 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                    with no script engine to read them back from. */
                 sce_host_send_param_t _host_params[{{ host_pair_cap }}];
                 int _host_param_count = 0;
-                char _host_param_texts[{{ host_pair_cap }}][{{ data_slot.name }}];
+                /* docs/adr/0086, section 8.5 (d): one row of the scratch's pairs
+                   per pair, the machine's storage. */
+                char (*const _host_param_texts)[{{ data_slot.name }}] = sm->scratch.pairs;
 {{ send_payload_json(action.params, action.namelist, csym_prefix, model.name, true, true) }}
 {% elif action.params or action.namelist %}
 {{ send_payload_json(action.params, action.namelist, csym_prefix, model.name, true) }}
@@ -1125,7 +1133,9 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
 {{ param_macros.collect_host_params_into(action.params, model, csym_prefix, '_host_params', '_host_param_count', '_host_param', '<send>', '                ', '_param_failed') -}}
 {% else %}
                 char _host_param_names[{{ host_pair_cap }}][SCE_MAX_ID_LEN];
-                char _host_param_values[{{ host_pair_cap }}][{{ data_slot.name }}];
+                /* docs/adr/0086, section 8.5 (d): one row of the scratch's pairs
+                   per pair, the machine's storage. */
+                char (*const _host_param_values)[{{ data_slot.name }}] = sm->scratch.pairs;
                 if (luaL_dostring(sm->L,
 {{ se.lua_wire_string_fn() }}
                     "local o = {} "
@@ -1647,7 +1657,8 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
             /* W3C SCXML C.2 + 5.10: the `<content expr>` body, a value of the
                machine's own fields (`Action::native_content_value`), shipped as
                text/plain. */
-            char _http_content[{{ data_slot.name }}];
+            /* docs/adr/0086, section 8.5 (d): the machine's own scratch. */
+            char *const _http_content = sm->scratch.content;
 {{ send_native_content(action, csym_prefix, model.name, none, '_http_content') }}
 {% elif action.contentexpr and not (action.event or action.params or action.namelist) %}
             /* W3C SCXML C.2 + 5.10: dynamic `<content expr=...>` body,
@@ -1958,7 +1969,8 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                     sce_copy_bounded_id(_send_evt.send_id, {{ meta_send_id }});
 {% endif %}
 {% if has_payload %}
-                    memcpy(_send_evt.data, _ed, sizeof(_send_evt.data));
+                    /* A view of the payload, which the queue copies. */
+                    _send_evt.data = _ed;
 {% endif %}
 {% if raise_fn == csym_prefix ~ model.name ~ '_raise_external' %}
                     /* docs/adr/0090, section 2: the SCXML processor writes the
@@ -2520,25 +2532,37 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
 {# C++ `EventQueueManager<EventWithMetadata>` is a class template parameterised
    on capacity-via-policy; the C11 backend instead bakes a per-fixture
    circular buffer with `SCE_MAX_EVENTS` slots. Overflow drops silently —
-   matching the C++ behaviour when the underlying queue rejects a push.    #}
+   matching the C++ behaviour when the underlying queue rejects a push.
+   docs/adr/0086, section 8.5 (a): the entry owns a copy of the event's data,
+   and an event whose data does not fit the slot is refused as a full queue
+   refuses one, never cut. #}
 SCE_SM_FN static void event_queue_push({{ csym_prefix }}{{ model.name }}_event_queue_t *q,
                              const {{ csym_prefix }}{{ model.name }}_event_with_meta_t *evt) {
     if (q->count >= (uint16_t)SCE_MAX_EVENTS) {
         return;
     }
-    q->buf[q->tail] = *evt;
+    if (!{{ csym_prefix }}{{ model.name }}_event_keep(&q->buf[q->tail], evt)) {
+        return;
+    }
     q->tail = (uint16_t)((q->tail + 1u) % (uint16_t)SCE_MAX_EVENTS);
     q->count = (uint16_t)(q->count + 1u);
 }
 
+/* Drop the oldest entry of a queue that holds one. */
+SCE_SM_FN static void event_queue_drop({{ csym_prefix }}{{ model.name }}_event_queue_t *q) {
+    q->head = (uint16_t)((q->head + 1u) % (uint16_t)SCE_MAX_EVENTS);
+    q->count = (uint16_t)(q->count - 1u);
+}
+
+/* Move the oldest entry into `out`, which the machine owns (docs/adr/0086,
+   section 8.5 (d)). */
 SCE_SM_FN static bool event_queue_pop({{ csym_prefix }}{{ model.name }}_event_queue_t *q,
-                            {{ csym_prefix }}{{ model.name }}_event_with_meta_t *out) {
+                            {{ csym_prefix }}{{ model.name }}_queued_event_t *out) {
     if (q->count == 0u) {
         return false;
     }
     *out = q->buf[q->head];
-    q->head = (uint16_t)((q->head + 1u) % (uint16_t)SCE_MAX_EVENTS);
-    q->count = (uint16_t)(q->count - 1u);
+    event_queue_drop(q);
     return true;
 }
 
@@ -3353,11 +3377,12 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
             _done_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_DONE_STATE_{{ state.parent | to_c11_upper_ident }};
             {% if state.donedata and static_done_data %}
             /* §scxml-5.5: the pairs or the text written above ride on this
-               event's data, a buffer of the size `done_data` is. The buffer
-               is cleared once they are on it, as the engine's stash is below,
-               so a top-level final that writes nothing is not answered with
-               this final's data. */
-            memcpy(_done_evt.data, sm->done_data, sizeof(_done_evt.data));
+               event's data, a view of `done_data` the queue copies. The buffer
+               is cleared once they are on the queue, as the engine's stash is
+               below, so a top-level final that writes nothing is not answered
+               with this final's data. */
+            _done_evt.data = sm->done_data;
+            {{ csym_prefix }}{{ model.name }}_raise(sm, &_done_evt);
             sm->done_data[0] = '\0';
             {% elif state.donedata and model.needs_script_engine %}
             /* W3C SCXML 5.5: the evaluated donedata rides on THIS event, as
@@ -3369,10 +3394,16 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
                read queues error.execution ahead of done.state (§scxml-5.7), and
                that error took the data. The stash is cleared so nothing dequeued
                before this event can read it. */
-            {{ se.lua_donedata_wire_into('sm->L', '_done_evt.data', 'sizeof(_done_evt.data)') }}
+            sm->scratch.done[0] = '\0';
+            {{ se.lua_donedata_wire_into('sm->L', 'sm->scratch.done', 'sizeof(sm->scratch.done)') }}
             (void)luaL_dostring(sm->L, "_sce_donedata = nil");
-            {% endif %}
+            /* docs/adr/0086, section 8.5 (d): written into the machine's
+               scratch, and handed on as a view the queue copies. */
+            _done_evt.data = sm->scratch.done;
             {{ csym_prefix }}{{ model.name }}_raise(sm, &_done_evt);
+            {% else %}
+            {{ csym_prefix }}{{ model.name }}_raise(sm, &_done_evt);
+            {% endif %}
         }
         {% if model.states[state.parent].parent and model.states[model.states[state.parent].parent].is_parallel %}
         {% set parallel_id = model.states[state.parent].parent %}
@@ -3950,7 +3981,8 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise_external_forwarded({{ csy
     }
     {{ csym_prefix }}{{ model.name }}_event_with_meta_t evt;
     memset(&evt, 0, sizeof(evt));
-    sce_copy_bounded_n(evt.data, fwd->data, sizeof(evt.data));
+    /* A view of the sender's data, valid for this call; the queue copies it. */
+    evt.data = fwd->data;
     /* docs/adr/0090: the pair as the processor that built the event wrote it,
        unchanged, and with it the session that sent it. */
     evt.origin = fwd->origin;
@@ -4596,9 +4628,12 @@ SCE_SM_FN static void process_internal_queue({{ csym_prefix }}{{ model.name }}_t
             record_truncated_macrostep(sm, sm->policy.last_transition_source_state);
             return;
         }
-        if (!event_queue_pop(&sm->internal_queue, &evt)) {
+        if (!event_queue_pop(&sm->internal_queue, &sm->current_internal)) {
             break;
         }
+        /* docs/adr/0086, section 8.5 (d): the machine holds the event; what
+           follows reads it through a view. */
+        evt = {{ csym_prefix }}{{ model.name }}_event_view(&sm->current_internal);
         sce_copy_bounded_id(sm->current_event_invoke_id, evt.invoke_id);
         {% if event_payload_active %}
         /* NL→IR Item C1 Path A: bind the dequeued event's typed payload so
@@ -4742,7 +4777,10 @@ SCE_SM_FN static bool process_next_external_event({{ csym_prefix }}{{ model.name
     {{ csym_prefix }}{{ model.name }}_transition_info_t enabled[{{ csym_prefix | upper }}{{ model.name | upper }}_MAX_SELECTED] = {0};
     uint8_t count;
 
-    if (event_queue_pop(&sm->external_queue, &evt)) {
+    if (event_queue_pop(&sm->external_queue, &sm->current_external)) {
+        /* docs/adr/0086, section 8.5 (d): the machine holds the event; what
+           follows reads it through a view. */
+        evt = {{ csym_prefix }}{{ model.name }}_event_view(&sm->current_external);
         {% if model.host_invoker_types %}
         /* W3C SCXML 6.4: a host-run invocation's `done.invoke` counts only
            when `_complete_host_invoke` confirmed the invocation was still
@@ -5188,7 +5226,9 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
        (measured 2026-08-19 on the rust, go and python backends, whose
        scheduler this one mirrors). */
     uint64_t now_ms = sched_now_ms(sm);
-    {{ csym_prefix }}{{ model.name }}_scheduled_entry_t ready;
+    /* docs/adr/0086, section 8.5 (d): the entry taken off the queue is held in
+       the machine, not on this stack. */
+    {{ csym_prefix }}{{ model.name }}_scheduled_entry_t *const ready = &sm->ready_entry;
     /* A scheduler that can deliver an entry due at the instant it is popping is
        a drain that refills itself: an entry a handler re-arms at that same
        reading (a `delay` of zero, which reaches this scheduler here, or a
@@ -5228,7 +5268,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
             }
             ++popped_due_at_reading;
         }
-        if (!scheduled_pop_ready(sm, now_ms, &ready)) {
+        if (!scheduled_pop_ready(sm, now_ms, ready)) {
             break;
         }
 {% if model.has_delayed_host_send %}
@@ -5240,28 +5280,28 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
            armed. The request is rebuilt over the entry's OWN buffers: the
            values were evaluated at send time and the block that computed
            them is long gone. */
-        if (ready.host_send) {
+        if (ready->host_send) {
 {% if model.delayed_host_send_max_params > 0 %}
             sce_host_send_param_t _ready_params[{{ model.delayed_host_send_max_params }}];
-            for (uint8_t _p = 0; _p < ready.host_param_count; ++_p) {
-                _ready_params[_p].name = ready.host_param_names[_p];
-                _ready_params[_p].value = ready.host_param_values[_p];
+            for (uint8_t _p = 0; _p < ready->host_param_count; ++_p) {
+                _ready_params[_p].name = ready->host_param_names[_p];
+                _ready_params[_p].value = ready->host_param_values[_p];
             }
 {% endif %}
             sce_host_send_request_t _ready_req;
-            _ready_req.processor_type = ready.host_processor_type;
-            _ready_req.event_name = ready.host_event_name;
-            _ready_req.target = ready.host_target;
-            _ready_req.content = ready.host_content;
-            _ready_req.send_id = ready.send_id;
-            _ready_req.event_data = ready.host_event_data;
-            _ready_req.invoke_id = ready.host_invoke_id;
+            _ready_req.processor_type = ready->host_processor_type;
+            _ready_req.event_name = ready->host_event_name;
+            _ready_req.target = ready->host_target;
+            _ready_req.content = ready->host_content;
+            _ready_req.send_id = ready->send_id;
+            _ready_req.event_data = ready->host_event_data;
+            _ready_req.invoke_id = ready->host_invoke_id;
             /* A delayed send carries no value: a test-port send has none of
                a delay (docs/SCE_TEST_PROFILE.md, P6). */
             _ready_req.value = sce_host_value_none();
 {% if model.delayed_host_send_max_params > 0 %}
-            _ready_req.params = ready.host_param_count > 0u ? _ready_params : NULL;
-            _ready_req.param_count = (int)ready.host_param_count;
+            _ready_req.params = ready->host_param_count > 0u ? _ready_params : NULL;
+            _ready_req.param_count = (int)ready->host_param_count;
 {% else %}
             _ready_req.params = NULL;
             _ready_req.param_count = 0;
@@ -5292,8 +5332,8 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
 {% endif %}
 {% if model.has_host_invoke_deadline %}
         /* W3C SCXML 6.4: a host-run invocation's deadline came due. */
-        if (ready.host_invoke_deadline) {
-            expire_host_invoke(sm, &ready);
+        if (ready->host_invoke_deadline) {
+            expire_host_invoke(sm, ready);
             run_main_event_loop(sm);
             if (!sm->is_running || {{ csym_prefix }}{{ model.name }}_is_in_final_state(sm)) {
                 break;
@@ -5312,15 +5352,15 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
            cleared the dispatch pointer, the in-flight delayed send falls
            away silently. A session its host started never had a parent
            (`parent_sm` NULL), and hears error.communication (C.1). */
-        if (ready.route == (uint8_t){{ csym_prefix | upper }}{{ model.name | upper }}_SCHED_ROUTE_PARENT) {
+        if (ready->route == (uint8_t){{ csym_prefix | upper }}{{ model.name | upper }}_SCHED_ROUTE_PARENT) {
             if (sm->parent_dispatch != NULL) {
-                sm->parent_dispatch(sm->parent_sm, ready.route_event, sm->invoke_id, sm->session_id,
-{%- if model.needs_script_engine or model.has_delayed_send_payload %} ready.data[0] != '\0' ? ready.data : NULL{% else %} NULL{% endif %});
+                sm->parent_dispatch(sm->parent_sm, ready->route_event, sm->invoke_id, sm->session_id,
+{%- if model.needs_script_engine or model.has_delayed_send_payload %} ready->data[0] != '\0' ? ready->data : NULL{% else %} NULL{% endif %});
             } else if (sm->parent_sm == NULL) {
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_COMMUNICATION,
                     "a delayed <send target='#_parent'> has no parent session to reach",
-                    ready.send_id);
+                    ready->send_id);
             }
             continue;
         }
@@ -5330,30 +5370,30 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
            invocation if it is still running now; one that has ended or was
            cancelled since the send cannot take it, and this session hears
            error.communication carrying the send id. */
-        if (ready.route == (uint8_t){{ csym_prefix | upper }}{{ model.name | upper }}_SCHED_ROUTE_INVOCATION) {
+        if (ready->route == (uint8_t){{ csym_prefix | upper }}{{ model.name | upper }}_SCHED_ROUTE_INVOCATION) {
             sce_forwarded_event_t _ready_fwd;
             memset(&_ready_fwd, 0, sizeof(_ready_fwd));
-            sce_copy_bounded_id(_ready_fwd.name, ready.route_event);
+            sce_copy_bounded_id(_ready_fwd.name, ready->route_event);
 {% if model.needs_script_engine or model.has_delayed_send_payload %}
-            sce_copy_bounded_data(_ready_fwd.data, ready.data);
+            sce_copy_bounded_data(_ready_fwd.data, ready->data);
 {% endif %}
-            sce_copy_bounded_id(_ready_fwd.send_id, ready.send_id);
+            sce_copy_bounded_id(_ready_fwd.send_id, ready->send_id);
             /* docs/adr/0090, section 2: a waiting send is always this
                session's, so the event built when it comes due names this
                session as its sender. */
             sce_event_stamp_session(&_ready_fwd.origin, &_ready_fwd.from_session, sm->session_id);
 {% if 'error.communication' in model.events %}
-            if (!deliver_to_invocation(sm, ready.route_invoke, &_ready_fwd)) {
+            if (!deliver_to_invocation(sm, ready->route_invoke, &_ready_fwd)) {
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_COMMUNICATION,
                     "a delayed <send> names an invocation that is not running",
-                    ready.send_id);
+                    ready->send_id);
             }
 {% else %}
             /* No `<send>` of this document can be unreachable, so none
                schedules this route (the parser adds error.communication
                for every target that can be). */
-            (void)deliver_to_invocation(sm, ready.route_invoke, &_ready_fwd);
+            (void)deliver_to_invocation(sm, ready->route_invoke, &_ready_fwd);
 {% endif %}
             run_main_event_loop(sm);
             if (!sm->is_running || {{ csym_prefix }}{{ model.name }}_is_in_final_state(sm)) {
@@ -5364,32 +5404,32 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
 {% endif %}
         {{ csym_prefix }}{{ model.name }}_event_with_meta_t evt;
         memset(&evt, 0, sizeof(evt));
-        evt.event = ready.event;
+        evt.event = ready->event;
         /* Both arrays are SCE_MAX_ID_LEN-sized and `scheduled_push_routed` always
            writes a terminating NUL inside the buffer, so a verbatim
            memcpy of the whole array transfers the string and its
            terminator without tripping `-Wstringop-truncation` (which
            strncpy would since src is a same-size buffer). */
-        memcpy(evt.send_id, ready.send_id, (size_t)SCE_MAX_ID_LEN);
+        memcpy(evt.send_id, ready->send_id, (size_t)SCE_MAX_ID_LEN);
 {% if model.needs_script_engine or model.has_delayed_send_payload %}
         /* §scxml-5.10 (test186): the payload captured at send time rides
            on the event it belongs to (mirrors cpp's EventWithMetadata::data
-           → LuaEngine::setCurrentEvent delivery). Same-sized arrays, NUL
-           written by `scheduled_push_routed`. */
-        memcpy(evt.data, ready.data, sizeof(evt.data));
+           → LuaEngine::setCurrentEvent delivery): a view of the entry the
+           machine holds, which the queue copies. */
+        evt.data = ready->data;
 {% endif %}
 {% if model.needs_script_engine %}
         /* W3C SCXML 5.10: the name the event was sent under, when its member is
            not called that. Same-sized arrays; the NUL is written by
            `scheduled_push_routed`. */
-        memcpy(evt.name, ready.name, sizeof(evt.name));
+        memcpy(evt.name, ready->name, sizeof(evt.name));
 {% endif %}
         /* W3C SCXML 6.2.4 + C.1: a `#_internal` entry joins the internal
            queue it named, an internal event whose origin is left blank
            (§scxml-5.10.1); every other one this session's external queue,
            carrying the pair of this session, which sent it (docs/adr/0090,
            section 2). */
-        if (ready.route == (uint8_t){{ csym_prefix | upper }}{{ model.name | upper }}_SCHED_ROUTE_INTERNAL) {
+        if (ready->route == (uint8_t){{ csym_prefix | upper }}{{ model.name | upper }}_SCHED_ROUTE_INTERNAL) {
             {{ csym_prefix }}{{ model.name }}_raise(sm, &evt);
         } else {
             sce_event_stamp_session(&evt.origin, &evt.from_session, sm->session_id);
@@ -6125,7 +6165,7 @@ SCE_SM_FN static void expire_host_invoke({{ csym_prefix }}{{ model.name }}_t *sm
     if (prefix_len + id_len < sizeof(name) &&
         {{ csym_prefix }}{{ model.name }}_arrive(name, prefix_len + id_len, &raised.event, raised.name)) {
         /* The JSON spelling of the string, as every other backend carries it. */
-        sce_copy_bounded_n(raised.data, "\"deadline\"", sizeof(raised.data));
+        raised.data = "\"deadline\"";
         sce_copy_bounded_id(raised.invoke_id, deadline->deadline_invoke_id);
         {{ csym_prefix }}{{ model.name }}_raise_external(sm, &raised);
     }
@@ -6214,8 +6254,9 @@ SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_perform_host_invoke({{ c
     param_count = kept;
     if (unreadable != NULL) {
 {% if 'error.execution' in model.events %}
-        char message[{{ data_slot.name }}];
-        (void)snprintf(message, sizeof(message),
+        /* docs/adr/0086, section 8.5 (d): the machine's scratch. */
+        char *const message = sm->scratch.message;
+        (void)snprintf(message, sizeof(sm->scratch.message),
                        "<invoke type='%s' id='%s'>: " SCE_HOST_INVOKE_DEADLINE_PARAM
                        "='%s' is not a whole number of milliseconds",
                        start->processor_type, start->invoke_id, unreadable);
@@ -6281,7 +6322,10 @@ SCE_SM_FN static void raise_host_invoke_failure({{ csym_prefix }}{{ model.name }
     memcpy(name + prefix_len, invoke_id, id_len);
     name[prefix_len + id_len] = '\0';
     if ({{ csym_prefix }}{{ model.name }}_arrive(name, prefix_len + id_len, &raised.event, raised.name)) {
-        (void)snprintf(raised.data, sizeof(raised.data), "\"%s\"", reason);
+        /* docs/adr/0086, section 8.5 (d): written into the machine's scratch,
+           a role of its own, since the raise below drains the inbox first. */
+        (void)snprintf(sm->scratch.failure, sizeof(sm->scratch.failure), "\"%s\"", reason);
+        raised.data = sm->scratch.failure;
         sce_copy_bounded_id(raised.invoke_id, invoke_id);
         {{ csym_prefix }}{{ model.name }}_raise_external(sm, &raised);
     }
@@ -6405,6 +6449,11 @@ SCE_SM_FN static bool end_host_invoke({{ csym_prefix }}{{ model.name }}_t *sm, c
     if (sm == NULL || processor_type == NULL || invoke_id == NULL) {
         return false;
     }
+    /* docs/adr/0086, section 8.5 (b): data the machine's slot cannot hold is
+       refused whole, before the invocation is ended, rather than cut. */
+    if (data != NULL && strlen(data) >= sizeof(sm->current_external.data)) {
+        return false;
+    }
     if (!sce_host_invocation_take_token(&sm->started_host_invokes, processor_type, invoke_id, token)) {
         return false;
     }
@@ -6425,7 +6474,8 @@ SCE_SM_FN static bool end_host_invoke({{ csym_prefix }}{{ model.name }}_t *sm, c
        longest prefix it does (`done.invoke`, `done`) — and `_event.name` is the
        specific name either way. */
     if ({{ csym_prefix }}{{ model.name }}_arrive(name, prefix_len + id_len, &completion.event, completion.name)) {
-        sce_copy_bounded_n(completion.data, data != NULL ? data : "", sizeof(completion.data));
+        /* A view of the caller's data, which the queue copies. */
+        completion.data = data;
         /* W3C SCXML 5.10.1: the completion is an event of the invocation, so
            `_event.invokeid` is the invocation's id — the one the event names
            and the host was handed. */
@@ -7013,7 +7063,8 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_apply_mesh_calls({{ csym_prefix
             {{ csym_prefix }}{{ model.name }}_event_with_meta_t _meta;
             memset(&_meta, 0, sizeof(_meta));
             _meta.event = _event;
-            sce_copy_bounded_n(_meta.data, _call.data, sizeof(_meta.data));
+            /* A view of the call's data, which the queue copies. */
+            _meta.data = _call.data;
             sce_copy_bounded_id(_meta.send_id, _call.send_id);
             sce_copy_bounded_event_type(_meta.type, "external");
             (void)sce_event_origin_mesh_peer(&_meta.origin, _call.source);
@@ -7076,9 +7127,13 @@ SCE_SM_FN static void apply_host_invoke_ending({{ csym_prefix }}{{ model.name }}
 SCE_SM_FN static void apply_inbox_input({{ csym_prefix }}{{ model.name }}_t *sm,
                                         const {{ csym_prefix }}{{ model.name }}_inbox_input_t *input) {
     switch (input->kind) {
-    case {{ csym_prefix | upper }}{{ model.name | upper }}_INBOX_EXTERNAL_EVENT:
-        {{ csym_prefix }}{{ model.name }}_raise_external(sm, &input->as.event);
+    case {{ csym_prefix | upper }}{{ model.name | upper }}_INBOX_EXTERNAL_EVENT: {
+        /* A view of the input the machine holds, which the queue copies. */
+        const {{ csym_prefix }}{{ model.name }}_event_with_meta_t view =
+            {{ csym_prefix }}{{ model.name }}_event_view(&input->as.event);
+        {{ csym_prefix }}{{ model.name }}_raise_external(sm, &view);
         break;
+    }
     case {{ csym_prefix | upper }}{{ model.name | upper }}_INBOX_EXTERNAL_EVENT_BY_NAME:
         {{ csym_prefix }}{{ model.name }}_raise_external_forwarded(sm, &input->as.by_name);
         break;
@@ -7108,19 +7163,17 @@ SCE_SM_FN static void apply_inbox_input({{ csym_prefix }}{{ model.name }}_t *sm,
    input's event is pushed as it stands, with no drain inside a drain. */
 SCE_SM_FN static void drain_inbox({{ csym_prefix }}{{ model.name }}_t *sm) {
 #if SCE_MAX_INBOX > 0
-    {{ csym_prefix }}{{ model.name }}_inbox_input_t input;
+    /* docs/adr/0086, section 8.5 (d): an input holds the slot, so the one taken
+       is held in the machine, not on this stack. */
+    {{ csym_prefix }}{{ model.name }}_inbox_input_t *const input = &sm->inbox_taken;
     uint32_t applied = 0u;
     if (sm->draining_inbox) {
         return;
     }
     sm->draining_inbox = true;
-    /* Zeroed once, because GCC cannot follow a copy made inside the queue's
-       take into the reads that follow it, and `-Werror=maybe-uninitialized`
-       would stop an optimising build. */
-    memset(&input, 0, sizeof(input));
     while (applied < (uint32_t)SCE_MAX_INBOX && sm->external_queue.count < (uint16_t)SCE_MAX_EVENTS &&
-           sce_inbox_take(&sm->inbox, (unsigned char *)sm->inbox_slots, sizeof(sm->inbox_slots[0]), &input)) {
-        apply_inbox_input(sm, &input);
+           sce_inbox_take(&sm->inbox, (unsigned char *)sm->inbox_slots, sizeof(sm->inbox_slots[0]), input)) {
+        apply_inbox_input(sm, input);
         applied++;
     }
     sm->draining_inbox = false;
@@ -7141,16 +7194,25 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_build_inboxes({{ csym_prefix }}
 }
 {% if inbox_endings %}
 
+/* Write `context`, an ending, into the inbox slot `slot` as an input of this
+   machine. */
+SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_inbox_write_ending(void *slot, const void *context) {
+    {{ csym_prefix }}{{ model.name }}_inbox_input_t *input = ({{ csym_prefix }}{{ model.name }}_inbox_input_t *)slot;
+    memset(input, 0, sizeof(*input));
+    input->kind = {{ csym_prefix | upper }}{{ model.name | upper }}_INBOX_HOST_INVOKE_ENDING;
+    input->as.ending = *(const sce_host_invoke_ending_t *)context;
+}
+
 SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_inbox_post_ending({{ csym_prefix }}{{ model.name }}_t *sm,
                                                                    const sce_host_invoke_ending_t *ending) {
-    {{ csym_prefix }}{{ model.name }}_inbox_input_t input;
     if (sm == NULL || ending == NULL) {
         return false;
     }
-    memset(&input, 0, sizeof(input));
-    input.kind = {{ csym_prefix | upper }}{{ model.name | upper }}_INBOX_HOST_INVOKE_ENDING;
-    input.as.ending = *ending;
-    return sce_inbox_post(&sm->inbox, (unsigned char *)sm->inbox_slots, sizeof(sm->inbox_slots[0]), &input);
+    /* docs/adr/0086, section 8.5 (d): an input holds the slot, so it is written
+       where the inbox keeps it, never on the poster's stack, which may be an
+       interrupt handler's. */
+    return sce_inbox_post_with(&sm->inbox, (unsigned char *)sm->inbox_slots, sizeof(sm->inbox_slots[0]),
+                               {{ csym_prefix }}{{ model.name }}_inbox_write_ending, ending);
 }
 
 /* D2 as amended at step 10: each slot's entry is read where it stands, in the
@@ -7291,9 +7353,11 @@ SCE_SM_FN static void note_unseen_event({{ csym_prefix }}{{ model.name }}_t *sm,
    the same queue on every call, and a count that grows while nothing arrives
    is a count nobody can use. */
 SCE_SM_FN static void record_unseen_external_events({{ csym_prefix }}{{ model.name }}_t *sm) {
-    {{ csym_prefix }}{{ model.name }}_event_with_meta_t _abandoned;
-    while (event_queue_pop(&sm->external_queue, &_abandoned)) {
-        note_unseen_event(sm, _abandoned.event);
+    /* Each entry is read where it stands and dropped: nothing of an entry's
+       size is copied onto this stack (docs/adr/0086, section 8.5 (d)). */
+    while (sm->external_queue.count != 0u) {
+        note_unseen_event(sm, sm->external_queue.buf[sm->external_queue.head].event);
+        event_queue_drop(&sm->external_queue);
     }
 }
 

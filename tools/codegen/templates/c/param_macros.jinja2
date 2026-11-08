@@ -30,8 +30,12 @@
    `record`, when true, also keeps each value the author sent in
    `_sce_invoke_pairs` as the data model holds it (`se.lua_record_pair`), for
    the host-run `<invoke>`'s event data — the one evaluation read twice. A
-   param the build marked `envelope_metadata` is text only. #}
-{% macro collect_host_params_into(params, model, csym_prefix, arr, count, prefix, element, indent, failed_flag='', record=false) %}
+   param the build marked `envelope_metadata` is text only.
+
+   `row_base` is the first row of the machine's scratch of pairs these params'
+   texts are written into, one row each (docs/adr/0086, section 8.5 (d)): the
+   rows before it hold the pairs of the same element already collected. #}
+{% macro collect_host_params_into(params, model, csym_prefix, arr, count, prefix, element, indent, failed_flag='', record=false, row_base=0) %}
 {% for param in params %}
 {% set record_as = param.name if (record and not param.envelope_metadata) else none %}
 {% if param.is_static_literal %}
@@ -53,9 +57,9 @@
 {% endif %}
 {{ indent }}{{ failed_flag }} = true;
 {% else %}
-{{ indent }}char {{ prefix }}_value_{{ loop.index0 }}[{{ csym_prefix | upper }}{{ model.name | upper }}_DATA_LEN];
+{{ indent }}char *const {{ prefix }}_value_{{ loop.index0 }} = sm->scratch.pairs[{{ row_base + loop.index0 }}];
 {{ indent }}bool {{ prefix }}_ok_{{ loop.index0 }} = false;
-{{ se.lua_eval_to_wire_string(param.expr or param.location, prefix ~ '_value_' ~ loop.index0, 'sizeof(' ~ prefix ~ '_value_' ~ loop.index0 ~ ')', prefix ~ '_ok_' ~ loop.index0, record_as) }}
+{{ se.lua_eval_to_wire_string(param.expr or param.location, prefix ~ '_value_' ~ loop.index0, 'sizeof(sm->scratch.pairs[' ~ (row_base + loop.index0) ~ '])', prefix ~ '_ok_' ~ loop.index0, record_as) }}
 {{ indent }}if ({{ prefix }}_ok_{{ loop.index0 }}) {
 {{ indent }}    {{ arr }}[{{ count }}].name = "{{ param.name | escape_c }}";
 {{ indent }}    {{ arr }}[{{ count }}].value = {{ prefix }}_value_{{ loop.index0 }};
