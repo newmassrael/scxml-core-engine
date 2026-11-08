@@ -91,6 +91,7 @@ pub mod paint_color;
 pub mod param_asker_sm;
 pub mod payment_kind;
 pub mod presence_peer_sm;
+pub mod ptc_keeper_sm;
 pub mod quantity_at_most;
 pub mod quantity_two;
 pub mod record_list_parent__sce_synth_invoke__list_sm;

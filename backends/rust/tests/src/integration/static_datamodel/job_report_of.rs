@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 44e42be193b6ad6075c6d0b043abdcd82b148ab78d0b09d43794619a04e8d622
+// source-hash: f37425ae3865d6dd180df44e52fd892d2910b6883720df85bc9f25b65e2d89d3
 #![doc = "SCE-MAP: job_report_of.scxml:6 :: _forge_body"]
 // SCE-MAP: job_report_of.scxml:6 :: _forge_body
 

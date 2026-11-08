@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 021fdf0d0c3ee151c664e2ecf6a7e5a797d68aaf3d399831e8dfd49b9e10bec9
+// source-hash: 011d804f887126b888ea6ba5b4213d56e0f5c8740555a154c83e9b8d0105c4b6
 #![doc = "SCE-MAP: keeping_configuration.scxml:6 :: _forge_body"]
 // SCE-MAP: keeping_configuration.scxml:6 :: _forge_body
 
@@ -12,14 +12,14 @@
 /// each type declares, each `<sce:connect>` and each `<sce:map>`.
 pub fn configuration() -> ::sce_rust_runtime::test::Configuration {
     ::sce_rust_runtime::test::Configuration {
-        mtc_type: "keeper".to_string(),
+        mtc_type: "ptc_keeper".to_string(),
         ptc_types: ::std::collections::BTreeMap::from([("idler".to_string(), "idler".to_string())]),
         ports_of_type: ::std::collections::BTreeMap::from([(
             "idler".to_string(),
             vec!["peer".to_string()],
         )]),
         timers_of_type: ::std::collections::BTreeMap::from([(
-            "keeper".to_string(),
+            "ptc_keeper".to_string(),
             vec!["patience".to_string(), "linger".to_string()],
         )]),
         connections: Vec::new(),
@@ -38,7 +38,7 @@ pub fn machine(
     component_type: &str,
 ) -> Option<Box<dyn ::sce_rust_runtime::test::ComponentMachine>> {
     let machine: Box<dyn ::sce_rust_runtime::test::ComponentMachine> = match component_type {
-        "keeper" => Box::<super::keeper_sm::KeeperComponent>::default(),
+        "ptc_keeper" => Box::<super::ptc_keeper_sm::PtcKeeperComponent>::default(),
         "idler" => Box::<super::idler_sm::IdlerComponent>::default(),
         _ => return None,
     };
