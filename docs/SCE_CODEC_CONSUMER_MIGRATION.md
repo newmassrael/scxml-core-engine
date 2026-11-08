@@ -1493,6 +1493,18 @@ in all: `codec_chain_has_tagged`).
 - `sce/forge/membership.h`, included by `sce/forge/codec.h`, holds `Chain`, `Kinds` and `Placed`; a kind is
   the codec's `<Codec><Chain>Has0x<id>Key`, whose `matches(entry)` reads the entry's identifier.
 
+## A printed C++ codec holds a chain its own gate leaves out optionally in the arm of no kind (ADR 0081 step 4)
+
+Landing: the commit that adds this section; every C++ tree is regenerated after it. It moves the codec whose
+fields the kinds of entry a gated chain holds decide (1 more codec of the resources, 137 in all:
+`codec_chain_has_envelope`).
+
+- The arm where the chain holds none of the kinds holds it as a `std::optional` of its `Chain`: an absent
+  chain holds no entry of any kind either. The chain's presence flag (`header.E`) is derived from whether
+  the arm holds it: drop the code that set it.
+- A count or a length gated on a membership (`payload_len`, `slice_count`) is derived from what the arm
+  holds and written where the arm the value holds says the chain has the kind.
+
 ## A payload schema states its keys in the order the document declares them (ADR 0087 §1.1)
 
 Landing: the commit that adds this section; every tree holding a `JSON_SCHEMA` constant or a GBNF table (the Rust,

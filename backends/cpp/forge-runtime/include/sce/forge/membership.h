@@ -76,14 +76,35 @@ template <typename S> struct IsNoKinds : std::false_type {};
 
 template <> struct IsNoKinds<Kinds<>> : std::true_type {};
 
+/// The place of the first entry of the kind `K` of a chain that may be
+/// absent: an absent chain holds no entry of any kind.
+template <typename K, typename L> constexpr std::optional<std::size_t> first_of_kind(const std::optional<L> &list) {
+    if (!list.has_value()) {
+        return std::nullopt;
+    }
+    return first_of_kind<K>(*list);
+}
+
+/// The chain `C` is, or holds where it is there: an arm whose kinds an absent
+/// chain also has holds the chain as a `std::optional` of it.
+template <typename C> struct ChainOf {
+    using type = C;
+};
+
+template <typename C> struct ChainOf<std::optional<C>> {
+    using type = C;
+};
+
 /// What an encode keeps of the list a chain holds, where a read returning `R`
-/// presents the chain: the list by reference where the read names a chain that
-/// lives on, and a copy of it where the read returns the chain by value, which
-/// dies at the end of the expression that read it. Each arm of a group holds
-/// its chain as a type of its own kinds, and every arm the same list.
+/// presents the chain, or an optional of it: the list by reference where the
+/// read names a chain that lives on, and a copy of it where the read returns
+/// the chain by value, which dies at the end of the expression that read it.
+/// Each arm of a group holds its chain as a type of its own kinds, and every
+/// arm the same list.
 template <typename R>
-using InnerRead = std::conditional_t<std::is_lvalue_reference<R>::value, const typename std::decay_t<R>::list_type &,
-                                     typename std::decay_t<R>::list_type>;
+using InnerRead =
+    std::conditional_t<std::is_lvalue_reference<R>::value, const typename ChainOf<std::decay_t<R>>::type::list_type &,
+                       typename ChainOf<std::decay_t<R>>::type::list_type>;
 
 }  // namespace Detail
 

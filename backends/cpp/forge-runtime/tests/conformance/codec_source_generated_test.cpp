@@ -28,6 +28,7 @@
 #include "codec_chain_depth_gated.h"
 #include "codec_chain_depth_plain.h"
 #include "codec_chain_flag_carrier.h"
+#include "codec_chain_has_envelope.h"
 #include "codec_chain_has_tagged.h"
 #include "codec_chain_prev_carrier.h"
 #include "codec_embed_basic.h"
@@ -1710,6 +1711,86 @@ void a_chain_is_held_in_the_arm_of_the_kinds_of_its_entries() {
     CHECK(decoded.has_value() && decoded->encode_to_vec() == seven_frame, "and encodes back to it");
 }
 
+namespace HasEnvelope = ::SCE::Generated::CodecChainHasEnvelope;
+using EnvelopeValue = HasEnvelope::CodecChainHasEnvelope;
+using EnvelopeGroup = HasEnvelope::CodecChainHasEnvelopeExtensionsHas0x2;
+using EnvelopeHas = HasEnvelope::CodecChainHasEnvelopeExtensionsHas0x2Has0x2;
+using EnvelopeNot = HasEnvelope::CodecChainHasEnvelopeExtensionsHas0x2NotHas0x2;
+using EnvelopeSlice = ::SCE::Generated::CodecChainHasSlice::CodecChainHasSlice;
+using EnvelopeHasChain = std::decay_t<decltype(std::declval<const EnvelopeHas &>().extensions())>;
+using EnvelopeNotChain = typename std::decay_t<decltype(std::declval<const EnvelopeNot &>().extensions())>::value_type;
+using EnvelopeEntries = ::SCE::Forge::Span<const ExtEntry::CodecZenohExtEntry>;
+
+static_assert(
+    std::is_same<decltype(std::declval<const EnvelopeNot &>().extensions()), std::optional<EnvelopeNotChain>>::value,
+    "the arm where the chain holds no 0x2 may hold no chain, which holds none either");
+
+void a_chain_its_own_gate_leaves_out_is_held_optionally_in_the_arm_of_no_kind() {
+    const std::vector<ExtEntry::CodecZenohExtEntry> two{
+        ExtEntry::CodecZenohExtEntry{0x02, ExtEntry::CodecZenohExtEntryVariant{std::in_place_index<0>, ExtUnit{}}}};
+    const std::vector<ExtEntry::CodecZenohExtEntry> one{
+        ExtEntry::CodecZenohExtEntry{0x01, ExtEntry::CodecZenohExtEntryVariant{std::in_place_index<0>, ExtUnit{}}}};
+    const auto has_chain = EnvelopeHasChain::make(EnvelopeEntries(two.data(), two.size()));
+    const auto not_chain = EnvelopeNotChain::make(EnvelopeEntries(one.data(), one.size()));
+    const std::vector<std::uint8_t> slice_bytes{0xAA, 0xBB};
+    const std::vector<std::uint8_t> payload_bytes{0x11, 0x22};
+    const auto slice_body = ::SCE::Forge::Bytes<256>::make(slice_bytes);
+    const auto payload = ::SCE::Forge::Bytes<256>::make(payload_bytes);
+    CHECK(has_chain && not_chain && slice_body && payload, "each part lies within its bound and kinds");
+    if (!has_chain || !not_chain || !slice_body || !payload) {
+        return;
+    }
+    const std::vector<EnvelopeSlice> slices{EnvelopeSlice{0x05, *slice_body}};
+    const auto slice_list = ::SCE::Forge::List<EnvelopeSlice, 4>::make(slices);
+    CHECK(slice_list.has_value(), "one slice lies within four");
+    if (!slice_list) {
+        return;
+    }
+
+    // An entry of 0x2: E derived set, then the slices and their count.
+    const EnvelopeValue sliced{0x03, EnvelopeGroup{EnvelopeHas{*has_chain, *slice_list}}};
+    const std::vector<std::uint8_t> sliced_frame{0x83, 0x02, 0x01, 0x05, 0x02, 0xAA, 0xBB};
+    CHECK(sliced.encode_to_vec() == sliced_frame, "the arm of a 0x2 writes the chain, the count and the slices");
+
+    // No chain: E derived clear whatever the header says, then the payload
+    // and its length.
+    const EnvelopeValue absent{0x83, EnvelopeGroup{EnvelopeNot{std::nullopt, *payload}}};
+    const std::vector<std::uint8_t> absent_frame{0x03, 0x02, 0x11, 0x22};
+    CHECK(absent.encode_to_vec() == absent_frame, "an absent chain clears E and holds no 0x2");
+
+    // A chain of no 0x2: E set, then the payload.
+    const std::vector<std::uint8_t> one_byte{0x33};
+    const EnvelopeValue plain{0x03, EnvelopeGroup{EnvelopeNot{*not_chain, *::SCE::Forge::Bytes<256>::make(one_byte)}}};
+    const std::vector<std::uint8_t> plain_frame{0x83, 0x01, 0x01, 0x33};
+    CHECK(plain.encode_to_vec() == plain_frame, "a chain of no 0x2 sets E and writes the payload");
+
+    CHECK(std::holds_alternative<EnvelopeNot>(EnvelopeValue{}.extensions_has_0x2()),
+          "a value made by default holds the arm of no 0x2");
+    CHECK(EnvelopeValue{}.encode_to_vec() == (std::vector<std::uint8_t>{0x00, 0x00}),
+          "with no chain and an empty payload");
+
+    ::SCE::Forge::SceCursor sliced_cursor(sliced_frame.data(), sliced_frame.size());
+    const auto decoded_sliced = EnvelopeValue::decode(sliced_cursor);
+    const auto *has = decoded_sliced ? std::get_if<EnvelopeHas>(&decoded_sliced->extensions_has_0x2()) : nullptr;
+    CHECK(has != nullptr && has->extensions().size() == 1 && has->slices().size() == 1,
+          "a frame whose chain holds a 0x2 holds the arm of a 0x2");
+    CHECK(decoded_sliced && decoded_sliced->encode_to_vec() == sliced_frame, "and encodes back to it");
+
+    ::SCE::Forge::SceCursor absent_cursor(absent_frame.data(), absent_frame.size());
+    const auto decoded_absent = EnvelopeValue::decode(absent_cursor);
+    const auto *none = decoded_absent ? std::get_if<EnvelopeNot>(&decoded_absent->extensions_has_0x2()) : nullptr;
+    CHECK(none != nullptr && !none->extensions().has_value() && none->payload().size() == 2,
+          "a frame with no chain holds the arm of no 0x2 and no chain");
+    CHECK(decoded_absent && decoded_absent->encode_to_vec() == absent_frame, "and encodes back to it");
+
+    ::SCE::Forge::SceCursor plain_cursor(plain_frame.data(), plain_frame.size());
+    const auto decoded_plain = EnvelopeValue::decode(plain_cursor);
+    const auto *kept = decoded_plain ? std::get_if<EnvelopeNot>(&decoded_plain->extensions_has_0x2()) : nullptr;
+    CHECK(kept != nullptr && kept->extensions().has_value() && kept->extensions()->size() == 1,
+          "a frame whose chain holds no 0x2 holds that chain in the arm of no 0x2");
+    CHECK(decoded_plain && decoded_plain->encode_to_vec() == plain_frame, "and encodes back to it");
+}
+
 void encode_source_reports_the_sinks_failure() {
     std::uint8_t buffer[3] = {};
     ::SCE::Forge::SpanSink sink(buffer, sizeof buffer);
@@ -1750,6 +1831,7 @@ int main() {
     a_tag_the_arms_own_header_holds_is_written_by_the_arm();
     two_lists_of_one_count_are_held_as_one_and_counted_once();
     a_chain_is_held_in_the_arm_of_the_kinds_of_its_entries();
+    a_chain_its_own_gate_leaves_out_is_held_optionally_in_the_arm_of_no_kind();
     encode_source_reports_the_sinks_failure();
     if (failures != 0) {
         std::fprintf(stderr, "codec_source_generated_test: %d failure(s)\n", failures);
