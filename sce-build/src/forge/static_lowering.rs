@@ -15339,7 +15339,7 @@ impl StaticTarget for CTarget {
                 for f in &schema.fields {
                     let id = &f.id;
                     let read = format!(
-                        "{C_TEST_VALUE}->{}",
+                        "{C_TEST_RECEIVED}->{}",
                         crate::forge::generator::event_schema_field_ident(id, Language::C11)
                     );
                     match (&f.sce_type, f.sce_type.present_type()) {
@@ -15365,10 +15365,10 @@ impl StaticTarget for CTarget {
                     "sce_test_message_t {C_TEST_MESSAGE}; \
                      if (!sce_test_context_receive({C_TEST_CONTEXT}, {}, &{C_TEST_MESSAGE})) \
                      {{ return; }} \
-                     const {unit}_value_t *{C_TEST_VALUE} = (const {unit}_value_t *)\
+                     const {unit}_value_t *{C_TEST_RECEIVED} = (const {unit}_value_t *)\
                      sce_test_message_value_as(&{C_TEST_MESSAGE}, {unit}_value_type(), \
                      sizeof({unit}_value_t)); \
-                     if ({C_TEST_VALUE} == NULL) {{ return; }}{copies}",
+                     if ({C_TEST_RECEIVED} == NULL) {{ return; }}{copies}",
                     c_text(port)
                 )
             }
@@ -15448,9 +15448,9 @@ impl StaticTarget for CTarget {
     fn test_message(&self, message: &TemplateRef, args: &[String]) -> Option<String> {
         let unit = c_test_template(&message.unit);
         Some(format!(
-            "const {unit}_value_t {C_TEST_VALUE} = {unit}_value({}); \
-             _host_req.value = sce_host_value_of({unit}_value_type(), &{C_TEST_VALUE}, \
-             sizeof({C_TEST_VALUE}));",
+            "const {unit}_value_t {C_TEST_SENT} = {unit}_value({}); \
+             _host_req.value = sce_host_value_of({unit}_value_type(), &{C_TEST_SENT}, \
+             sizeof({C_TEST_SENT}));",
             args.join(", ")
         ))
     }
@@ -15473,9 +15473,15 @@ const C_TEST_CONTEXT: &str = "&sm->test_context";
 /// every name the generator declares beside an author's carries.
 const C_TEST_MESSAGE: &str = "sce_test_message_";
 
-/// The local that holds a test template's value: the message a receive branch
-/// took, as its record, and the value a send lends its request.
-const C_TEST_VALUE: &str = "sce_test_value_";
+/// The local that holds the message a receive branch took, as its template's
+/// record, in the block of the branch's content.
+const C_TEST_RECEIVED: &str = "sce_test_received_";
+
+/// The local that holds the value a send lends its request, in the block the
+/// request stands in. That block is nested in the block of a receive branch's
+/// content when the branch both receives and sends, so the two locals carry
+/// two names: one name would shadow the other (`-Wshadow`).
+const C_TEST_SENT: &str = "sce_test_sent_";
 
 /// `text` as a C string literal.
 fn c_text(text: &str) -> String {

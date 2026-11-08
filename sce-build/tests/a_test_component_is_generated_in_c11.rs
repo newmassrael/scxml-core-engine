@@ -418,14 +418,14 @@ fn taking_a_branch_removes_what_it_matched_before_its_content() {
     );
     let checked = at(
         &asker,
-        "const reply_ok_value_t *sce_test_value_ = (const reply_ok_value_t \
+        "const reply_ok_value_t *sce_test_received_ = (const reply_ok_value_t \
          *)sce_test_message_value_as(&sce_test_message_, reply_ok_value_type(), \
-         sizeof(reply_ok_value_t)); if (sce_test_value_ == NULL) { return; }",
+         sizeof(reply_ok_value_t)); if (sce_test_received_ == NULL) { return; }",
     );
     let bound = at(
         &asker,
-        " sm->pending_payload.as.job_reply.job = sce_test_value_->job; \
-         sm->pending_payload.as.job_reply.code = sce_test_value_->code;",
+        " sm->pending_payload.as.job_reply.job = sce_test_received_->job; \
+         sm->pending_payload.as.job_reply.code = sce_test_received_->code;",
     );
     let content = at(
         &asker,
@@ -474,9 +474,9 @@ fn the_statements_the_send_and_the_ptc_go_through_the_runtime() {
         "_host_req.processor_type = \"http://sce.dev/ext/test-port\";",
         "_host_req.event_name = \"job.request\";",
         "_host_req.target = \"sut\";",
-        "const request_of_value_t sce_test_value_ = request_of_value(sm->policy.v_job); \
-         _host_req.value = sce_host_value_of(request_of_value_type(), &sce_test_value_, \
-         sizeof(sce_test_value_));",
+        "const request_of_value_t sce_test_sent_ = request_of_value(sm->policy.v_job); \
+         _host_req.value = sce_host_value_of(request_of_value_type(), &sce_test_sent_, \
+         sizeof(sce_test_sent_));",
     ] {
         assert!(asker.contains(needle), "asker holds `{needle}`:\n{asker}");
     }
@@ -488,6 +488,15 @@ fn the_statements_the_send_and_the_ptc_go_through_the_runtime() {
     assert!(
         coordinator.contains("reply_of_value(sm->policy.v_job, sm->policy.v_ok);"),
         "coordinator sends the reply its variables name:\n{coordinator}"
+    );
+    // A branch that receives and sends holds the send's value in a block
+    // nested in the block that holds the message it took: the two locals
+    // carry two names, so neither shadows the other (`-Wshadow`).
+    let received = at(&coordinator, "if (sce_test_received_ == NULL) { return; }");
+    let sent = at(&coordinator, "const reply_of_value_t sce_test_sent_ = ");
+    assert!(
+        received < sent,
+        "coordinator receives, then sends:\n{coordinator}"
     );
     assert!(text("ptc_keeper").contains(
         "sce_test_context_start_timer(&sm->test_context, \"patience\", INT64_C(10000));"
@@ -681,12 +690,12 @@ fn a_message_with_a_text_field_its_content_reads_is_copied_on_c11() {
         "sce_test_receives(&sm->test_context, \"sut\", \"payment.card\", \
          card_within_value_type(), sizeof(card_within_value_t), card_watcher_test_matches_1, sm)",
         "return card_within_matches((const card_within_value_t *)value, sm->policy.v_most);",
-        "SCE_STATIC_ASSERT(sizeof(sce_test_value_->last4.data) <= \
+        "SCE_STATIC_ASSERT(sizeof(sce_test_received_->last4.data) <= \
          sizeof(sm->lifted_payment_card_last4), ",
-        "memcpy(sm->lifted_payment_card_last4, sce_test_value_->last4.data, \
-         sizeof(sce_test_value_->last4.data)); \
+        "memcpy(sm->lifted_payment_card_last4, sce_test_received_->last4.data, \
+         sizeof(sce_test_received_->last4.data)); \
          sm->pending_payload.as.payment_card.last4 = sm->lifted_payment_card_last4;",
-        "sm->pending_payload.as.payment_card.amount = sce_test_value_->amount;",
+        "sm->pending_payload.as.payment_card.amount = sce_test_received_->amount;",
     ] {
         assert!(
             code.contains(needle),
@@ -727,10 +736,10 @@ fn a_message_with_an_enum_field_its_content_reads_is_copied_on_c11() {
     let code = text_at(&dir.path().join("color_reader.scxml"));
     for needle in [
         "return order_line_exact_matches((const order_line_exact_value_t *)value);",
-        "sm->pending_payload.as.order_line.color = sce_test_value_->color;",
-        "sm->pending_payload.as.order_line.quantity = sce_test_value_->quantity;",
-        "memcpy(sm->lifted_order_line_sku, sce_test_value_->sku.data, \
-         sizeof(sce_test_value_->sku.data));",
+        "sm->pending_payload.as.order_line.color = sce_test_received_->color;",
+        "sm->pending_payload.as.order_line.quantity = sce_test_received_->quantity;",
+        "memcpy(sm->lifted_order_line_sku, sce_test_received_->sku.data, \
+         sizeof(sce_test_received_->sku.data));",
     ] {
         assert!(
             code.contains(needle),
