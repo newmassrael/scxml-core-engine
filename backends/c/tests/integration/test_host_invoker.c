@@ -74,8 +74,7 @@ static void recording_invoker(void *user_data, const sce_host_invoke_event_t *ev
         (void)snprintf(line, sizeof(line), "START id=%s type=%s src=%s within=%s", event->invoke_id,
                        event->processor_type, event->src, within != NULL ? within : "absent");
         record(rec, line);
-        out->has_done_data = true;
-        (void)snprintf(out->done_data, sizeof(out->done_data), "%s", "ok");
+        (void)sce_host_invoke_answer_done(out, "ok");
     } else {
         (void)snprintf(line, sizeof(line), "CANCEL id=%s", event->invoke_id);
         record(rec, line);
@@ -395,8 +394,7 @@ static int a_failed_invocation_raises_error_invoke_once_with_its_origin(void) {
 static void refusing_invoker(void *user_data, const sce_host_invoke_event_t *event, sce_host_invoke_response_t *out) {
     running_invoker(user_data, event, out);
     if (event->phase == SCE_HOST_INVOKE_START && strcmp(event->invoke_id, "gate") == 0) {
-        out->has_refusal = true;
-        (void)snprintf(out->refusal, sizeof(out->refusal), "%s", "{\"reason\":\"NOT_HERE\"}");
+        (void)sce_host_invoke_answer_refusal(out, "{\"reason\":\"NOT_HERE\"}");
     }
 }
 
