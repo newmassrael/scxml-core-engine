@@ -10,12 +10,13 @@ f657e3e5ffe92cc381e80fcfbec344703e88b71a backends/cpp/forge-runtime/include/sce/
 75343d94d9f432eae354ee0f5c3c7040c4a3ef4e backends/cpp/forge-runtime/include/sce/forge/broadcast_log.h
 9520922a0f12e3b2819d9f69e7b4f020fb004856 backends/cpp/forge-runtime/include/sce/forge/broadcast_log_narrow.h
 efed76f244df5fc0fa93f34b2d878ba64ebedda7 backends/cpp/forge-runtime/include/sce/forge/cbor.h
-67aad37a9b618670cb0828edf201a5faedbd1fc3 backends/cpp/forge-runtime/include/sce/forge/codec.h
+7c4ff086ba96be33fbc61d7d6e6282a0f16cb9f1 backends/cpp/forge-runtime/include/sce/forge/codec.h
 b444b4c25231cb4b37824f92a5423ccea5a11bfd backends/cpp/forge-runtime/include/sce/forge/content_line.h
 4ec772dec5636a271e2bd98786fb672dce714123 backends/cpp/forge-runtime/include/sce/forge/filter.h
 e4c2a5b0612b72e59d9f168cb7d309d91a1d9ac9 backends/cpp/forge-runtime/include/sce/forge/interpolation.h
 7b6218d5ea7d49108789184f3b25288748f68ffa backends/cpp/forge-runtime/include/sce/forge/law.h
 76d8cbc6a797561723f883e9610347e4476050c6 backends/cpp/forge-runtime/include/sce/forge/lookup.h
+19f0c51bb7957bf4ab5e23b7ffb4aceb70ef7453 backends/cpp/forge-runtime/include/sce/forge/membership.h
 59ae8513571c3d52945b4230aef2a7bf8f9fe7d2 backends/cpp/forge-runtime/include/sce/forge/observer.h
 0dd04cf71e25ca016831d531d3230af1667a5695 backends/cpp/forge-runtime/include/sce/forge/optional.h
 d521e84a1aa512d0cd54bc9cc9895927c8618084 backends/cpp/forge-runtime/include/sce/forge/queue.h
