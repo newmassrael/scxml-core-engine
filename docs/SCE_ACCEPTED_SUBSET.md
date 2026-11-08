@@ -4569,6 +4569,28 @@ fields is absent by a declaration of its own (`sce:present-if` leaves one out an
 no format changes it); written there, the attribute is
 `validation/sce-attribute-unread`.
 
+**A CBOR codec's list of records** (docs/adr/0085, Landing order step 3a;
+SCE_FORGE.md §4.6.1). An entry of a CBOR codec may also hold a bounded list of
+records, `list<record:R>[N]` or `optional<…>` over one, read by the one type
+grammar (docs/adr/0086, section 1) with every named bound at the number the build
+gives it: `R` names an `<sce:import kind="event-schema">` of the codec (another
+alias is `validation/invalid-attribute`, naming the records it imports), a list
+with no bound and a lower count past the bound are refused as in every other
+position, a list of anything but a record is `validation/attribute-rule-violated`
+naming the kinds an entry holds, and `sce:length` or `sce:max-size` on the entry is
+`validation/attribute-rule-violated`, its bound being in its type. The model
+carries the type (`sce_type`, the value type `{"list": {"record": "R"}, "max": N}`).
+A record such a list holds is a map of every field of its schema keyed by the field's
+id (docs/adr/0086, section 9.2), and its fields are unsigned integers, `bool`s,
+texts and byte strings: a record with a field of any other type, a record of no
+field, and a record whose schema no import resolves are refused before any language
+renders as `generate/unsupported-feature`, naming the entry and the field. A lower
+count is a refusal of the encode (a value of fewer records), held to
+`sce:encode-may-fail` as every other refusal is. Rust generates such a codec; every
+other backend refuses it by name as `generate/unsupported-feature` ("holds a list of
+records (...), which has no <language> lowering yet"), and a broadcast log over one
+is refused on those backends by name.
+
 **An algorithm's optional value** (docs/adr/0055, steps 8 and 9). An algorithm's
 `<sce:param>`, `<sce:return>` and `<sce:var>` take `optional<T>` over a number, a
 `bool`, a text, a byte string, a value of an enum or a record, and a record it reads

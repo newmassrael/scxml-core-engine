@@ -1100,7 +1100,7 @@ element of its `<datamodel>` keyed by `sce:key`:
 |---|---|
 | `sce:codec-format` | The format the document is written in, on its root: `2`, the only one read (below). |
 | `sce:key` | The entry's map key, `0`–`23` — a key whose CBOR head is one byte. Unique within the codec. |
-| `sce:type` | An unsigned integer (`uint8`–`uint64`), `bool`, `string` (a CBOR text string), `bytes` (a byte string) or `enum:<alias>` (an unsigned integer checked against the enum's declared values), or `optional<T>` over one of them. A bare type is an entry a decode of a map without this key refuses; `optional<T>` is an entry that may be absent, in every language (docs/adr/0055, section 8). |
+| `sce:type` | An unsigned integer (`uint8`–`uint64`), `bool`, `string` (a CBOR text string), `bytes` (a byte string), `enum:<alias>` (an unsigned integer checked against the enum's declared values) or a bounded list of records `list<record:R>[N]` (below), or `optional<T>` over one of them. A bare type is an entry a decode of a map without this key refuses; `optional<T>` is an entry that may be absent, in every language (docs/adr/0055, section 8). |
 | `sce:length` | On `bytes` only: the exact length; any other length is refused on decode and on encode. |
 | `sce:max-size` | On `string` or `bytes`: the most bytes the entry holds. Not with `sce:length`. |
 
@@ -1127,6 +1127,39 @@ today is refused and told its rewrite, as one built the day after. A positional
 codec declares no format, since none of its fields is absent by a declaration of
 its own (a field is left out by `sce:present-if`); written there, the attribute is
 `validation/sce-attribute-unread`.
+
+**A list of records.** An entry may hold a bounded list of records
+(docs/adr/0085, Landing order step 3a): `sce:type="list&lt;record:R&gt;[N]"`,
+or `optional<…>` over one, read by the one type grammar of docs/adr/0086, so
+its bound is written in its type (`[N]`, `[name=N]` with a limit name, or a lower
+count `[M..N]`), a list with no bound is refused as every unbounded type is, and
+`R` names an `<sce:import kind="event-schema">` of the codec. `sce:length` and
+`sce:max-size` are refused on it. On the wire it is a definite-length array of
+at most `N` items, each one CBOR map of every field of `R`, keyed by the field's
+id as a text string and written in the order RFC 8949 §4.2.1 sorts the keys'
+encodings (a shorter key first), each value as docs/adr/0086 section 9.2 writes
+its type. A decode refuses an array past `N` items or below the lower count, an
+item that is no map, a key of a record given twice and a field absent, each as
+`CborOutOfRange`, `CborMalformed` or `CborRequiredKeyMissing`, and skips a key
+of a record its schema does not declare. A record a list holds is a map of
+unsigned integers, `bool`s, texts and byte strings, each bounded by its type; a
+record with a field of any other type, a record of no field, and one whose schema
+no import resolves are refused by name (`generate/unsupported-feature`) before
+any language renders. The size the build counts for the entry is
+`C(list<record:R>[N])` of the size calculus (docs/adr/0086, section 2.1): the
+array's head and `N` times the record's largest map. A list with a lower count
+makes the encode refusable (a value of fewer records), so its codec declares
+`sce:encode-may-fail="true"`.
+
+Rust generates the list: one struct per record in the codec's own module,
+`{Codec}{Alias}`, its fields in the language's bounded types (`SceString<N>`,
+`SceBytes<N>`), held in `BoundedList<{Codec}{Alias}, N>` (docs/adr/0086, section
+7.4), which holds no more than `N` on every profile, so a list past its bound
+cannot be made and the encode refuses nothing for its count. The source interface
+lends the list by reference, and the owned mirror holds it as the view does.
+Every other backend refuses such a codec by name until its template writes the
+array (`cbor_codec::lowers_record_list`), and a broadcast log over one is refused
+on those backends with it.
 
 **Wire rules.** Encode writes a definite-length map of the entries present,
 in ascending key order, every head in its shortest form (RFC 8949 §4.2.1,
@@ -1232,7 +1265,8 @@ positional C11 decode; `<name>_encode` and `<name>_encode_to_buf` beside
 skip walking a fixed stack rather than recursing.
 
 Every backend generates a CBOR codec. What still refuses one, by name
-(`generate/unsupported-feature`), is a document C11 cannot hold: a text or
+(`generate/unsupported-feature`), is a list of records on every backend but
+Rust (above), and a document C11 cannot hold: a text or
 byte string entry with neither `sce:max-size` nor `sce:length`, which has no
 fixed array to live in — every other backend's string grows. The generator's
 refusal and the conformance harness's schedule read one answer
