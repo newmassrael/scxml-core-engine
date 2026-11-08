@@ -5265,6 +5265,25 @@ type it fits as it is: no Kotlin type carries a bound, so the two places are one
 type. A payload that holds a union, at any depth, is refused by name on Kotlin,
 which holds no union yet (docs/adr/0092, section 7).
 
+The Go backend reads a composed payload as the Rust and Kotlin backends do
+(docs/adr/0086, section 7.1, the Go row): its payload struct holds each field in
+`[]T`, `string`, `[]byte`, `optional.Of[T]` and the machine's struct, each record
+it names declared once with a constructor, `New<Record>`, that a host builds one
+by; the lift reads each field by one call of the runtime's `PayloadValue` readers
+per constructor and refuses the delivery whole, naming the path, at the first value
+outside its type; and `len`, an index, a field of a record element and a
+`<foreach>` over a list the payload or an enclosing loop's item holds lower at any
+depth. A Go struct has no constructor that could refuse a value, so the inject seam
+holds what a host hands it to every bound its type declares, at any depth, before
+it builds anything (docs/adr/0086, section 5.4): it answers the runtime's refusal,
+naming the path (`'items/0/tags' holds 5 elements, past the 4 its type declares`),
+and raises nothing; within every bound it writes the payload as the JSON a lift
+reads back. A list a place holds is taken whole into a list variable whose type it
+fits, as a slice of its own: no Go type carries a bound, so the two places are one
+type, and the variable is appended to and emptied in place. A payload that holds a
+union, at any depth, is refused by name on Go, which holds no union yet
+(docs/adr/0092, section 7).
+
 A `<send>` of the event of a schema whose field is composed gives that field by
 a `<param>` naming the place that holds the value whole (docs/adr/0086, section
 5.2): a variable, a field of a record variable, or a part of the payload of the
@@ -5281,7 +5300,12 @@ through an index is refused by name on Rust. The Kotlin backend writes it the sa
 way into the value its send holds each param in, a list as a `List`, a record as a
 `Map` and an absent value as `null`, each scalar as a scalar param crosses, which
 the engine writes as the event's JSON, keys ascending at every depth; a place read
-through an index is refused by name on Kotlin too.
+through an index is refused by name on Kotlin too. The Go backend writes it into
+the value its send holds each param in, a list as an `[]any`, a record as a
+`map[string]any` and an absent value as `nil`, each scalar as a scalar param
+crosses, which the runtime's `ScriptValueToJSON` writes as the event's JSON, keys
+ascending at every depth; a place read through an index is refused by name on Go
+too.
 
 What no backend lowers yet is refused by name where the machine is generated, in
 the one gate every route asks first (`check` with or without a backend,
