@@ -62,20 +62,34 @@
    One path for every child: the child is asked through its own
    `_done_data_wire`, which answers from wherever the child holds the data (its
    buffer when it has no script engine, under any data model, and its engine's
-   state otherwise), cut to the event's `data[]` and ended there. Asked only of
-   a child one of whose top-level finals carries a `<donedata>`
-   (`child_ends_with_done_data`), which is the child that defines the accessor;
-   any other ends with no data, and the event's `data[]` stays empty. `child`
-   describes the session started (the invoke itself, or the hybrid candidate
-   it chose), `stem` names its machine and `slot` is its struct. #}
-{% macro lift_child_done_data(child, stem, slot, evt, csym_prefix) %}
+   state otherwise), and the event raised. Asked only of a child one of whose
+   top-level finals carries a `<donedata>` (`child_ends_with_done_data`), which
+   is the child that defines the accessor; any other ends with no data, and the
+   event's data stays empty. The data is written whole into the scratch's
+   `done`, which the accessor first measures (docs/adr/0086, section 8.6 (d)):
+   data the scratch cannot hold refuses the event whole, counted and raised as
+   error.execution (`refuse_event_data`), never cut. `child` describes the
+   session started (the invoke itself, or the hybrid candidate it chose), `stem`
+   names its machine, `slot` is its struct, and `machine` names this one. #}
+{% macro raise_child_done(child, stem, slot, evt, csym_prefix, machine) %}
 {% if child.child_ends_with_done_data %}
                 /* sce-scratch-activity: child_done */
                 /* §scxml-6.4: the done data of the final the child ended at,
                    written into this machine's scratch and handed on as a view
                    the queue copies (docs/adr/0086, section 8.5 (d)). */
-                {{ csym_prefix }}{{ stem }}_done_data_wire(&{{ slot }}, sm->scratch.done, sizeof(sm->scratch.done));
-                ({{ evt }}).data = sm->scratch.done;
+                {
+                    const size_t _done_whole = {{ csym_prefix }}{{ stem }}_done_data_wire(&{{ slot }}, NULL, 0u);
+                    if (SCE_SCRATCH_RESERVE(done, _done_whole + 1u)) {
+                        (void){{ csym_prefix }}{{ stem }}_done_data_wire(&{{ slot }}, SCE_SCRATCH_BUF(done),
+                                                                         SCE_SCRATCH_CAP(done));
+                        ({{ evt }}).data = SCE_SCRATCH_BUF(done);
+                        {{ csym_prefix }}{{ machine }}_raise_external(sm, &({{ evt }}));
+                    } else {
+                        refuse_event_data(sm, &({{ evt }}).event);
+                    }
+                }
+{% else %}
+                {{ csym_prefix }}{{ machine }}_raise_external(sm, &({{ evt }}));
 {% endif %}
 {% endmacro %}
 
@@ -445,18 +459,33 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                 }
             }
 {% endif %}
-{# The `src` is a URI's length, held here; the content is an event's size, held
-   in the machine's scratch (docs/adr/0086, section 8.5 (d)). #}
-{% for attr, buf, decl, size, expr in [('src', '_host_inv_src', 'char _host_inv_src[SCE_MAX_URI_LEN];', 'sizeof(_host_inv_src)', invoke_info.srcexpr), ('content', '_host_inv_content', 'char *const _host_inv_content = sm->scratch.invoke_content;', 'sizeof(sm->scratch.invoke_content)', invoke_info.contentexpr)] %}
+{# The `src` is a URI's length, held here; the content is an event's size,
+   written whole into the machine's scratch, which `_host_inv_content` views
+   (docs/adr/0086, sections 8.5 (d) and 8.6 (d)): content the scratch cannot
+   hold is refused whole, and the invocation does not start. #}
+{% for attr, buf, decl, size, role, expr in [('src', '_host_inv_src', 'char _host_inv_src[SCE_MAX_URI_LEN];', 'sizeof(_host_inv_src)', none, invoke_info.srcexpr), ('content', '_host_inv_content', 'const char *_host_inv_content = "";', none, 'invoke_content', invoke_info.contentexpr)] %}
 {% if expr %}
             {{ decl }}
             bool {{ buf }}_ok = false;
-{{ se.lua_eval_to_wire_string(expr, buf, size, buf ~ '_ok') }}
+{% if role %}
+            bool {{ buf }}_held = true;
+{% endif %}
+{{ se.lua_eval_to_wire_string(expr, buf, size, buf ~ '_ok', none, role, (buf ~ '_held') if role else none) }}
             if (!{{ buf }}_ok) {
 {% if 'error.execution' in model.events %}
+{% if role %}
+                if ({{ buf }}_held) {
+                    {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                        {{ reason("invoke_attribute_expr_failed", attr) }});
+                }
+{% else %}
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
                     {{ reason("invoke_attribute_expr_failed", attr) }});
+{% endif %}
+{% elif role %}
+                (void){{ buf }}_held;
 {% endif %}
                 continue;
             }
@@ -479,16 +508,22 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
    one invocation share a row. #}
 {% set host_nl_count = host_namelist | length %}
 {% for var_name in host_namelist %}
-            char *const _host_inv_nl_value_{{ loop.index0 }} = sm->scratch.pairs[{{ loop.index0 }}];
+            const char *_host_inv_nl_value_{{ loop.index0 }} = "";
             bool _host_inv_nl_ok_{{ loop.index0 }} = false;
-{{ se.lua_namelist_var_to_wire_string(var_name, '_host_inv_nl_value_' ~ loop.index0, 'sizeof(sm->scratch.pairs[' ~ loop.index0 ~ '])', '_host_inv_nl_ok_' ~ loop.index0, var_name if record_pairs else none) }}
+            bool _host_inv_nl_held_{{ loop.index0 }} = true;
+{{ se.lua_namelist_var_to_wire_string(var_name, '_host_inv_nl_value_' ~ loop.index0, none, '_host_inv_nl_ok_' ~ loop.index0, var_name if record_pairs else none, 'pairs[' ~ loop.index0 ~ ']', '_host_inv_nl_held_' ~ loop.index0) }}
             if (!_host_inv_nl_ok_{{ loop.index0 }}) {
                 /* W3C SCXML 5.9.2: a namelist item that names no readable
-                   location is an error, and the invocation does not start. */
+                   location is an error, and the invocation does not start;
+                   one the scratch could not hold was refused whole. */
 {% if 'error.execution' in model.events %}
-                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    {{ reason("invoke_namelist_unreadable", var_name) }});
+                if (_host_inv_nl_held_{{ loop.index0 }}) {
+                    {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+                        {{ reason("invoke_namelist_unreadable", var_name) }});
+                }
+{% else %}
+                (void)_host_inv_nl_held_{{ loop.index0 }};
 {% endif %}
                 continue;
             }
@@ -507,12 +542,11 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                invocation still starts with the others. */
             /* docs/adr/0086, section 8.5 (d): the request's data and each
                pair's text are the machine's scratch, never this stack. */
-            char *const _host_inv_event_data = sm->scratch.request;
+            char *const _host_inv_event_data = SCE_SCRATCH_BUF(request);
             _host_inv_event_data[0] = '\0';
 {% if payload_params %}
-            char (*const _host_inv_texts)[{{ data_slot.name }}] = sm->scratch.pairs + {{ host_nl_count }};
             sce_forge_wire_t _host_inv_wire;
-            sce_forge_wire_begin(&_host_inv_wire, _host_inv_event_data, sizeof(sm->scratch.request));
+            sce_forge_wire_begin(&_host_inv_wire, _host_inv_event_data, SCE_SCRATCH_CAP(request));
 {% endif %}
 {# Ascending by the name's UTF-8 bytes, as on every engine (ARCHITECTURE.md,
    "JSON Object Key Order"): a pair left out leaves the order of the others as
@@ -537,9 +571,10 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                 sce_forge_algorithm_failure_t sce_failure_ = {0};
                 const sce_forge_wire_value_t sce_value = {{ param.native_value }};
                 if (!sce_failure_.failed
-                    && sce_forge_wire_text(sce_value, _host_inv_texts[{{ loop.index0 }}], sizeof(_host_inv_texts[{{ loop.index0 }}]))) {
+                    && sce_forge_wire_text(sce_value, SCE_SCRATCH_BUF(pairs[{{ host_nl_count + loop.index0 }}]),
+                                           SCE_SCRATCH_CAP(pairs[{{ host_nl_count + loop.index0 }}]))) {
                     _host_inv_params[_host_inv_param_count].name = "{{ param.name | escape_c }}";
-                    _host_inv_params[_host_inv_param_count].value = _host_inv_texts[{{ loop.index0 }}];
+                    _host_inv_params[_host_inv_param_count].value = SCE_SCRATCH_BUF(pairs[{{ host_nl_count + loop.index0 }}]);
                     _host_inv_param_count++;
 {% if not param.envelope_metadata %}
                     sce_forge_wire_pair(&_host_inv_wire, "\"{{ param.name | escape_json_string | escape_c }}\"", sce_value);
@@ -592,21 +627,31 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
 {% for param in invoke_info.params %}
 {% if param.name in request_checks and not param.is_static_literal %}
 {% set host_row = host_nl_count + loop.index0 %}
-            char *const _host_inv_typed_{{ loop.index0 }} = sm->scratch.pairs[{{ host_row }}];
+            const char *_host_inv_typed_{{ loop.index0 }} = "";
             const char *_host_inv_refusal_{{ loop.index0 }} = NULL;
-{{ se.lua_eval_to_request_field(param.expr or param.location, request_checks[param.name], '_host_inv_typed_' ~ loop.index0, 'sizeof(sm->scratch.pairs[' ~ host_row ~ '])', '_host_inv_refusal_' ~ loop.index0, param.name if (record_pairs and not param.envelope_metadata) else none) }}
+            bool _host_inv_typed_held_{{ loop.index0 }} = true;
+{{ se.lua_eval_to_request_field(param.expr or param.location, request_checks[param.name], '_host_inv_typed_' ~ loop.index0, 'pairs[' ~ host_row ~ ']', '_host_inv_typed_held_' ~ loop.index0, '_host_inv_refusal_' ~ loop.index0, param.name if (record_pairs and not param.envelope_metadata) else none) }}
+            if (!_host_inv_typed_held_{{ loop.index0 }}) {
+                /* The value was refused whole and counted: the scratch could
+                   not hold its text, and the invocation does not start. */
+                continue;
+            }
             if (_host_inv_refusal_{{ loop.index0 }} != NULL) {
 {% if 'error.execution' in model.events %}
                 /* sce-scratch-activity: reason */
-                char *const _host_inv_message = sm->scratch.message;
                 {# docs/adr/0086, section 8.6 (b): the sentence is the request
                    reader's, which its header bounds, so the reason has a bound
-                   the build knows. #}
-                snprintf(_host_inv_message, sizeof(sm->scratch.message),
-                         {{ reason_format("invoke_param_request_field_refused", ["request_refusal"], param.name) }},
-                         _host_inv_refusal_{{ loop.index0 }});
-                {{ csym_prefix }}{{ model.name }}_raise_platform_error(
-                    sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, _host_inv_message);
+                   the build knows, and the message role holds any reason
+                   (`_DATA_LEN_REASONS`). #}
+                if (SCE_SCRATCH_RESERVE(message, {{ data_slot.name }}_REASONS)) {
+                    snprintf(SCE_SCRATCH_BUF(message), SCE_SCRATCH_CAP(message),
+                             {{ reason_format("invoke_param_request_field_refused", ["request_refusal"], param.name) }},
+                             _host_inv_refusal_{{ loop.index0 }});
+                    {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+                        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION, SCE_SCRATCH_BUF(message));
+                } else {
+                    SCE_SCRATCH_REFUSE({{ reason("event_data_past_slot") }});
+                }
 {% endif %}
                 continue;
             }
@@ -623,19 +668,19 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
 {% if static_datamodel %}
 {# The event data was written with the params above. #}
 {% elif record_pairs %}
-            /* docs/adr/0086, section 8.5 (d): the machine's scratch. */
-            char *const _host_inv_event_data = sm->scratch.request;
-            _host_inv_event_data[0] = '\0';
+            /* docs/adr/0086, sections 8.5 (d) and 8.6 (d): written whole into
+               the machine's scratch, grown to hold it, which
+               `_host_inv_event_data` then views. */
+            const char *_host_inv_event_data = "";
             if (luaL_dostring(sm->L,
                 "local p = _sce_invoke_pairs or {}; _sce_invoke_pairs = nil; "
                 "if #p == 0 then return '' end; "
                 "return JSON.stringify(_scxml_params(table.unpack(p)))") == 0) {
                 size_t _host_inv_ed_len = 0u;
                 const char *_host_inv_ed = lua_tolstring(sm->L, -1, &_host_inv_ed_len);
-                if (_host_inv_ed == NULL || _host_inv_ed_len >= sizeof(sm->scratch.request)) {
-                    /* Truncated JSON does not parse, so it would arrive as some
-                       other value: an argument this platform cannot marshal is
-                       one the invocation cannot start with (W3C SCXML 6.4.1). */
+                if (_host_inv_ed == NULL) {
+                    /* An argument this platform cannot marshal is one the
+                       invocation cannot start with (W3C SCXML 6.4.1). */
                     lua_pop(sm->L, 1);
 {% if 'error.execution' in model.events %}
                     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
@@ -644,7 +689,15 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
 {% endif %}
                     continue;
                 }
-                memcpy(_host_inv_event_data, _host_inv_ed, _host_inv_ed_len + 1u);
+                if (!SCE_SCRATCH_RESERVE(request, _host_inv_ed_len + 1u)) {
+                    /* Truncated JSON does not parse, so it would arrive as some
+                       other value: refused whole, and nothing starts. */
+                    lua_pop(sm->L, 1);
+                    SCE_SCRATCH_REFUSE({{ reason("invoke_request_past_slot") }});
+                    continue;
+                }
+                memcpy(SCE_SCRATCH_BUF(request), _host_inv_ed, _host_inv_ed_len + 1u);
+                _host_inv_event_data = SCE_SCRATCH_BUF(request);
             }
             lua_pop(sm->L, 1);
 {% else %}
@@ -853,9 +906,8 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
                    for completeness but is not exercised by the IRP corpus;
                    the integration_resources/donedata_local_invoke fixture
                    closes the IRP gap on every backend. */
-{{ lift_child_done_data(invoke_info, invoke_info.child_name, "sm->child_" ~ invoke_info.field_suffix, "_done_evt", csym_prefix) }}
                 {% endif %}
-                {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_done_evt);
+{{ raise_child_done(invoke_info, invoke_info.child_name, "sm->child_" ~ invoke_info.field_suffix, "_done_evt", csym_prefix, model.name) }}
             }
             continue;
         }
@@ -1043,8 +1095,7 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
 sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | escape_c }}");
 {% endif %}
                     sce_copy_bounded_id(_done_evt.invoke_id, p->invoke_id);
-{{ lift_child_done_data(candidate, candidate.stem, "sm->child_" ~ (invoke_info.field_suffix | candidate_identifier(candidate.stem)), "_done_evt", csym_prefix) }}
-                    {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_done_evt);
+{{ raise_child_done(candidate, candidate.stem, "sm->child_" ~ (invoke_info.field_suffix | candidate_identifier(candidate.stem)), "_done_evt", csym_prefix, model.name) }}
                 }
 {% endif %}
                 continue;
@@ -1150,8 +1201,7 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
             {# W3C SCXML 5.5 + 6.3.1: hybrid async-final donedata carry, asked
                of the candidate that ended; a stub (`{'stem': …}`) carries no
                `<donedata>` and so names no flag, and nothing is lifted. #}
-{{ lift_child_done_data(target, target.stem, "sm->" ~ slot, "_done_evt", csym_prefix) }}
-            {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_done_evt);
+{{ raise_child_done(target, target.stem, "sm->" ~ slot, "_done_evt", csym_prefix, model.name) }}
         }
 {% endif %}
     }
@@ -1207,9 +1257,8 @@ sce_copy_bounded_id(_done_evt.name, "done.invoke.{{ invoke_info.invoke_id | esca
                `execute_pending_invokes`: the child answers, through its
                `_done_data_wire`, what its terminal `<donedata>` emit
                wrote before this `_step` returned. */
-{{ lift_child_done_data(invoke_info, invoke_info.child_name, "sm->child_" ~ invoke_info.field_suffix, "_done_evt", csym_prefix) }}
             {% endif %}
-            {{ csym_prefix }}{{ model.name }}_raise_external(sm, &_done_evt);
+{{ raise_child_done(invoke_info, invoke_info.child_name, "sm->child_" ~ invoke_info.field_suffix, "_done_evt", csym_prefix, model.name) }}
         }
     }
     {% endfor %}
