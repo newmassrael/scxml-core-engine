@@ -450,12 +450,14 @@ PACE_NORMALISED: dict[str, str] = {
 #                     it skip and pass, a host compiler or browser no
 #                     declaration names, or thread interleavings it samples.
 #
-# A gate that skips and exits 0 where a tool or a prerequisite is missing says
-# so in `skips_unless_landing`, with what it skips without. A skip is not a
-# pass, so a landing closes every such path: its units run with `--landing`,
-# the runner exports SCE_GATE_LANDING, and `sce_gate_requires_tool` (and the
-# other skip sites of scripts/gates/lib.sh) then end with 3, could not run,
-# which bx reports as not measured and the integrator never lands. Such a gate
+# A gate whose verdict outside a landing can rest on the machine says how in
+# `kept_only_from_a_landing`: it skips and exits 0 where a tool or a
+# prerequisite is missing, or it takes a tool the machine carries where the
+# pinned one is absent. A landing closes every such path: its units run with
+# `--landing`, the runner exports SCE_GATE_LANDING, and `sce_gate_requires_tool`
+# (and the other skip sites of scripts/gates/lib.sh, and the gate's own check
+# for its pinned tool) then end with 3, could not run, which bx reports as not
+# measured and the integrator never lands. A skip is not a pass. Such a gate
 # may claim `cache: True`, and its pass is kept only from a landing unit: a
 # unit without `--landing` could still have skipped (`plan_units`).
 #
@@ -719,7 +721,7 @@ GATES: dict[str, dict] = {
         # Kept only from a landing unit, where the skip below cannot pass, and
         # a landing's unit goes only to a machine with clang-19 installed.
         "cache": True,
-        "skips_unless_landing": "`scripts/test_emit_manifest_fail_fast.sh` "
+        "kept_only_from_a_landing": "`scripts/test_emit_manifest_fail_fast.sh` "
                                 "skips and exits 0 on a machine without "
                                 "clang++-19",
         "unit_requires": {"packages": ["clang-19"]},
@@ -1209,7 +1211,7 @@ GATES: dict[str, dict] = {
         # run. It also reads HEAD's history (`lowering_decision_ledger`),
         # which `commits` carries.
         "cache": True,
-        "skips_unless_landing": "a suite test skips with a warning where a "
+        "kept_only_from_a_landing": "a suite test skips with a warning where a "
                                 "tool or a built JVM program it runs is "
                                 "missing (`ToolLocator::require_or_skip`, "
                                 "`require_all_or_warn`)",
@@ -2027,7 +2029,7 @@ GATES: dict[str, dict] = {
         # The SDK is bx.toml's pinned emsdk tool, wasm-pack a need of the
         # platform.
         "cache": True,
-        "skips_unless_landing": "the emscripten half runs only where emsdk is "
+        "kept_only_from_a_landing": "the emscripten half runs only where emsdk is "
                                 "found, so a pass without it judged one "
                                 "artifact of three",
         "inputs": None,
@@ -2060,26 +2062,22 @@ GATES: dict[str, dict] = {
                    "added, 620s in release). wasm32-scenarios.yml runs it, "
                    "and needs the wasm32 standard library, Node, headless "
                    "Chrome and a wasm-bindgen at the version Cargo.lock "
-                   "holds, which a push hook cannot assume.",
+                   "holds. An update to main runs it where bx placed it, on "
+                   "a machine carrying bx.toml's pinned Chrome and "
+                   "wasm-bindgen tools.",
         "cost_s": 107,
         "summary": "Rust engine built for wasm32, every scenario replayed in Node and Chrome",
-        # Off the fleet, so a landing leaves it to the hosted lane (see "Where
-        # a gate can run"). The browser is the platform: the hosted image
-        # carries a headless Chrome, no build machine is declared to, and the
-        # gate ends 3 without one, so a landing unit could never be measured
-        # and every item reaching it would come back unlanded. Bringing it in
-        # takes Chrome declared at a pinned version as a tool of bx.toml's
-        # platform, with the wasm32 target and wasm-bindgen at the Cargo.lock
-        # version beside it; this attribute then goes.
-        "platform": "github-hosted-ubuntu-24.04",
-        "platform_reason": "the scenarios replay in headless Chrome, which the "
-                           "hosted image carries and no build machine is "
-                           "declared to; the gate ends 3, could not run, "
-                           "without it",
-        "cache": False,
-        "no_cache_reason": "a host browser: the scenarios replay in whatever "
-                           "headless Chrome the machine carries, and no "
-                           "declaration names its version",
+        # The browser and the glue tool are pinned tools of bx.toml's platform
+        # (`chrome`, Chrome for Testing at the version scripts/install_chrome.sh
+        # names, and `wasm-bindgen` at Cargo.lock's), and the gate adds the
+        # wasm32 standard library to the release the plan names. In a landing
+        # only the pinned Chrome judges the module, so a pass kept from one is
+        # that browser's; outside a landing the gate may replay in the Chrome on
+        # the machine's PATH, which no key names.
+        "cache": True,
+        "kept_only_from_a_landing": "outside a landing it replays in whatever "
+                                    "Chrome is on PATH where the pinned Chrome "
+                                    "for Testing is absent",
         "inputs": None,
         "commits": [],
         "peak_gb": 5,
@@ -2677,7 +2675,7 @@ GATES: dict[str, dict] = {
         "cost_s": 184,
         "summary": "W3C conformance, pybind11 -> C++ Interpreter",
         "cache": True,
-        "skips_unless_landing": "it skips and exits 0 on a machine without "
+        "kept_only_from_a_landing": "it skips and exits 0 on a machine without "
                                 "python3-config (python3-dev)",
         "unit_requires": {"packages": ["python3-dev"]},
         "inputs": None,
@@ -2734,7 +2732,7 @@ GATES: dict[str, dict] = {
                    "the threaded and the host-driven engine",
         # The SDK and the Node it ships are bx.toml's pinned emsdk tool.
         "cache": True,
-        "skips_unless_landing": "it skips and exits 0 on a machine without "
+        "kept_only_from_a_landing": "it skips and exits 0 on a machine without "
                                 "emsdk (`[platform.linux.tools.emsdk]`)",
         "inputs": None,
         "commits": [],
@@ -2777,7 +2775,7 @@ GATES: dict[str, dict] = {
         "summary": "C++ ctest suite built with emscripten, every case under Node",
         # The SDK and the Node it ships are bx.toml's pinned emsdk tool.
         "cache": True,
-        "skips_unless_landing": "it skips and exits 0 on a machine without "
+        "kept_only_from_a_landing": "it skips and exits 0 on a machine without "
                                 "emsdk (`[platform.linux.tools.emsdk]`)",
         "inputs": None,
         "commits": [],
@@ -3824,8 +3822,9 @@ def plan_units(selected, rust=None, tree_is_head=True, table=None,
         `tracked_tree_is_head`);
       * every gate the unit runs declares `cache: True`;
       * a unit that reads HEAD has its id (`head`) to carry;
-      * a unit that runs a gate which can skip (`skips_unless_landing`) is
-        a landing's, where the skip ends 3 instead of passing.
+      * a unit that runs a gate whose verdict outside a landing can rest on
+        the machine (`kept_only_from_a_landing`) is a landing's, where a skip
+        or a missing pinned tool ends 3 instead of passing.
     Each unit says `cache` either way, because the set in bx.toml keeps
     verdicts by default and a unit that is not to be kept has to say so.
 
@@ -3848,7 +3847,7 @@ def plan_units(selected, rust=None, tree_is_head=True, table=None,
     for slug in run_order(chosen - run_by_another, table):
         closure = {slug} | transitive_deps(slug, table)
         reads_head = any("HEAD" in table[s].get("commits", []) for s in closure)
-        can_skip = any(table[s].get("skips_unless_landing") for s in closure)
+        can_skip = any(table[s].get("kept_only_from_a_landing") for s in closure)
         kept = (rust is not None and tree_is_head
                 and all(table[s]["cache"] is True for s in closure)
                 and (head is not None or not reads_head)
@@ -5184,6 +5183,36 @@ def self_test(repo_root: Path) -> int:
                 "emsdk: no workflow names an `emsdk install` release, so this "
                 "case read nothing")
 
+    # the-fleet-runs-the-wasm-bindgen-cargo-lock-holds. The tool refuses a
+    # module another version of the crate built. The build machines install
+    # the version scripts/install_wasm_bindgen.sh names (bx reads a version
+    # from one line, which Cargo.lock does not give), and the hosted lane the
+    # one Cargo.lock holds, so the two are held to one here, in the commit that
+    # moves either.
+    cases += 1
+    bindgen_script = repo_root / "scripts" / "install_wasm_bindgen.sh"
+    bindgen_pin = None
+    if bindgen_script.is_file():
+        found = re.search(r'^WASM_BINDGEN_REV="([0-9.]+)"$',
+                          bindgen_script.read_text(encoding="utf-8"), re.M)
+        bindgen_pin = found.group(1) if found else None
+    lock = (repo_root / "Cargo.lock").read_text(encoding="utf-8")
+    locked = re.findall(r'^name = "wasm-bindgen"\nversion = "([^"]+)"$', lock,
+                        re.M)
+    if bindgen_pin is None:
+        failures.append(
+            "wasm-bindgen: no WASM_BINDGEN_REV line in "
+            "scripts/install_wasm_bindgen.sh, the pin bx.toml's tool reads")
+    elif len(locked) != 1:
+        failures.append(
+            f"wasm-bindgen: Cargo.lock holds {len(locked)} wasm-bindgen "
+            f"package(s), not one, so the tool's version is not defined")
+    elif locked[0] != bindgen_pin:
+        failures.append(
+            f"wasm-bindgen: Cargo.lock holds {locked[0]} and the build "
+            f"machines install {bindgen_pin} (scripts/install_wasm_bindgen.sh); "
+            f"raise the script's WASM_BINDGEN_REV with the lock")
+
     # A gate that enumerates the tree must be triggered by everything it
     # enumerates. The two statements about a gate — when it runs and what
     # it judges — were written in different places and nothing compared
@@ -6461,7 +6490,7 @@ def self_test(repo_root: Path) -> int:
                     f"not the runner on its own slug at the planned release "
                     f"(as a landing's when it is one, and at HEAD's id when "
                     f"it reads HEAD): {want}")
-            can_skip = any(GATES[s].get("skips_unless_landing") for s in closure)
+            can_skip = any(GATES[s].get("kept_only_from_a_landing") for s in closure)
             if can_skip and not landing and unit["cache"]:
                 failures.append(
                     f"plan[{label}]: unit {unit['name']} runs a gate that can "
@@ -6576,7 +6605,7 @@ def self_test(repo_root: Path) -> int:
                    "peak_gb": 1, "unit_requires": {"packages": ["pkg-b"]}},
         "skipper": {"cost_s": 1, "cache": True, "inputs": None, "commits": [],
                     "peak_gb": 1, "deps": ["prereq"],
-                    "skips_unless_landing": "x" * 40,
+                    "kept_only_from_a_landing": "x" * 40,
                     "unit_requires": {"needs": ["tool-a"],
                                       "packages": ["pkg-a"]}},
     }
@@ -6606,12 +6635,12 @@ def self_test(repo_root: Path) -> int:
     # only the keys a plan line gives bx, each a list of names.
     cases += 1
     for slug, spec in sorted(GATES.items()):
-        why = spec.get("skips_unless_landing")
+        why = spec.get("kept_only_from_a_landing")
         if why is not None:
             if not isinstance(why, str) or len(why.strip()) < 30:
                 failures.append(
-                    f"skip: {slug} declares skips_unless_landing={why!r}; it "
-                    f"says what the gate skips without")
+                    f"skip: {slug} declares kept_only_from_a_landing={why!r}; it "
+                    f"says what the verdict rests on outside a landing")
             if spec.get("cache") is not True:
                 failures.append(
                     f"skip: {slug} can skip and is `cache: False`; a landing "
