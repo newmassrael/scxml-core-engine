@@ -18,9 +18,12 @@
       from_note   a variable of sixteen bytes into a field of eight: fits only while
                   the variable holds eight or fewer
 
-  The payload is read field by field, the string first, so a label that does not fit
-  leaves the sensor where it was as well: the whole event is refused, which is the
-  answer the Interpreter's lazy reading of a payload gives too.
+  A payload whose label is past the eight bytes its schema declares is refused whole
+  where it is read (docs/adr/0086, section 4.4): nothing of it is written, the sensor
+  included, and error.execution is raised once. The route that takes the label into
+  `note`, a variable of sixteen bytes, shows it: a label of nine would fit `note`, and
+  is refused all the same. Each route reads the label in one place, so the
+  Interpreter, which reads a field where an expression reads it, gives the same answer.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
        version="1.0" initial="idle" datamodel="sce-static" name="static_record_string">
@@ -62,6 +65,14 @@
     <transition event="labelled.taken" cond="_event.data.sensor &gt;= 200" type="internal">
       <assign location="last" expr="_event.data"/>
       <sce:append target="labels" expr="_event.data"/>
+    </transition>
+    <!-- A sensor of 100 to 199 takes the label into `note`, a variable of sixteen
+         bytes, which a label of nine would fit: the label is held to the eight its
+         schema declares where the payload is read, before any transition runs
+         (docs/adr/0086, section 4.4), so a label past it writes nothing here
+         either and raises error.execution once. -->
+    <transition event="labelled.taken" cond="_event.data.sensor &gt;= 100" type="internal">
+      <assign location="note" expr="_event.data.label"/>
     </transition>
     <transition event="labelled.taken" type="internal">
       <assign location="last.label" expr="_event.data.label"/>

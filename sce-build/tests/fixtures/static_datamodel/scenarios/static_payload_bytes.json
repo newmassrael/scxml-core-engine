@@ -1,6 +1,6 @@
 {
   "machine": "static_payload_bytes",
-  "about": "The bytes a typed event payload carries, read into a bytes variable of four bytes, into a record's field and into a whole record whose field is bounded at eight, and read by a guard. The wire spells a byte string as its byte-exact Latin-1 text, each byte the character of that code point, so a byte above 0x7F is written as that character. A value past its bound fails as any assignment does: nothing is written, error.execution is raised (`errors` counts it) and the block ends, so what the block would have written after it is not written either. A character past U+00FF is no byte, so a payload that carries one does not read as its schema: error.execution is raised and nothing is written. What this scenario does not say is what a payload longer than the field's sce:max-size does when it takes a route that writes none of it: an engine whose payload buffer is the bound (C11, Rust without an allocator) refuses it whole at the lift, and the others hold the bound where the bytes are written, as a string's is. Expected values are derived from the byte counts, not observed from a backend.",
+  "about": "The bytes a typed event payload carries, read into a bytes variable of four bytes, into a record's field and into a whole record whose field is bounded at eight, and read by a guard. The wire spells a byte string as its byte-exact Latin-1 text, each byte the character of that code point, so a byte above 0x7F is written as that character. A value past its bound fails as any assignment does: nothing is written, error.execution is raised (`errors` counts it) and the block ends, so what the block would have written after it is not written either. A character past U+00FF is no byte, so a payload that carries one does not read as its schema: error.execution is raised and nothing is written. A frame longer than the eight bytes its schema declares is refused whole where the payload is read, on every engine (docs/adr/0086, section 4.4), even on the route that only measures it and writes none of it. Expected values are derived from the byte counts, not observed from a backend.",
   "steps": [
     { "note": "starting values",
       "expect": { "state": "idle", "variables": { "last": { "sensor": 1, "frame": "ab" }, "held": "z", "frames": [], "size": 0, "matches": 0, "misses": 0, "errors": 0 } } },
@@ -59,6 +59,14 @@
 
     { "note": "a character past U+00FF is no byte: the payload does not read as its schema, error.execution is raised and nothing is written",
       "event": "framed.taken", "data": { "sensor": 9, "frame": "Ā" },
-      "expect": { "variables": { "last": { "sensor": 202, "frame": "ÿ\u0080" }, "errors": 4 } } }
+      "expect": { "variables": { "last": { "sensor": 202, "frame": "ÿ\u0080" }, "errors": 4 } } },
+
+    { "note": "a sensor of 50 to 99 only measures the frame: eight bytes",
+      "event": "framed.taken", "data": { "sensor": 50, "frame": "12345678" },
+      "expect": { "variables": { "size": 8, "held": "éÿ", "errors": 4 } } },
+
+    { "note": "nine bytes are past the eight the schema declares: the payload is refused whole where it is read, so the size is left as it was and error.execution is raised once, though the route writes none of the frame",
+      "event": "framed.taken", "data": { "sensor": 50, "frame": "123456789" },
+      "expect": { "variables": { "size": 8, "held": "éÿ", "matches": 1, "misses": 2, "errors": 5 } } }
   ]
 }
