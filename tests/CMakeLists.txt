@@ -1703,6 +1703,7 @@ add_executable(action_tests
     actions/ForeachActionTest.cpp
     actions/SendParamLocationTest.cpp
     actions/AssignNeedsAValueTest.cpp
+    actions/LogMessageTest.cpp
     runtime/ActionExecutorImplTest.cpp
     mocks/MockActionExecutor.cpp
     mocks/MockEventRaiser.cpp

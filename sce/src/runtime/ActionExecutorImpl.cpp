@@ -572,19 +572,17 @@ bool ActionExecutorImpl::executeLogAction(const LogAction &action) {
     SCE_LOG_DEBUG("Executing log action: {}", action.getId());
 
     try {
-        // Evaluate the expression to get the log message
-        std::string message;
+        // §scxml-4.7.1: the message is the label, then the value `expr` returns,
+        // as the generated engines write it: "<label>: <value>", the value alone
+        // with no label, and the label alone with no expr. The value is what the
+        // expression returned, the empty text included (undefined and null read
+        // as empty, ScriptResultUtils::scalarText). Logging the expression's own
+        // source in its place made two expressions that both yield nothing read
+        // as two different values, which is what W3C test 307 compares.
+        std::string message = action.getLabel();
         if (!action.getExpr().empty()) {
-            message = evaluateExpression(action.getExpr());
-            if (message.empty()) {
-                SCE_LOG_WARN("Log expression evaluated to empty string: {}", action.getExpr());
-                message = action.getExpr();  // Fallback to raw expression
-            }
-        }
-
-        // Add label prefix if specified
-        if (!action.getLabel().empty()) {
-            message = action.getLabel() + ": " + message;
+            const std::string value = evaluateExpression(action.getExpr());
+            message = message.empty() ? value : message + ": " + value;
         }
 
         // Log with specified level

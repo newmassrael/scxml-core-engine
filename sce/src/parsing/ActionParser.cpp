@@ -438,17 +438,20 @@ SCE::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
 
     } else if (elementName == "log") {
         // §scxml-4.7.2: both <log> attributes are optional — 'expr' is the
-        // value to log, 'label' a string identifying the message. This build
-        // logs one string, preferring 'expr' and falling back to 'label',
-        // which §scxml-4.7.3 permits by leaving the manner of logging
-        // platform-dependent.
-        std::string message;
-        if (actionElement->hasAttribute("expr")) {
-            message = actionElement->getAttribute("expr");
-        } else if (actionElement->hasAttribute("label")) {
-            message = actionElement->getAttribute("label");
+        // value to log, 'label' a string identifying the message. Both are
+        // kept, and each in its own role: the label is never evaluated, and
+        // the message is the label followed by the value
+        // (ActionExecutorImpl::executeLogAction), as the generated engines
+        // write it. §scxml-4.7.3 leaves the manner of logging to the platform,
+        // not which of the two is kept: a label dropped when 'expr' is present
+        // left two <log>s of one value indistinguishable, which the manual W3C
+        // tests 230 and 307 read their verdict from.
+        auto logAction = std::make_shared<SCE::LogAction>(
+            actionElement->hasAttribute("expr") ? actionElement->getAttribute("expr") : std::string(), id);
+        if (actionElement->hasAttribute("label")) {
+            logAction->setLabel(actionElement->getAttribute("label"));
         }
-        return std::make_shared<SCE::LogAction>(message, id);
+        return logAction;
 
     } else if (elementName == "raise") {
         // §scxml-4.2.1: 'event' is <raise>'s only attribute and is required.
