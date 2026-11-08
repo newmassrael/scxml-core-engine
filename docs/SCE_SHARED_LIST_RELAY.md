@@ -264,7 +264,7 @@ relay forget operations (that is a compaction, which is not built).
 
 A host that has no hub puts `Keep` behind its machine: the host signs what the machine sends and
 remembers it (the operation is in its `Trust` from then on), and the machine's send is not delivered
-to any peer. A `Courier` holds the host's `Trust` and a `Link` to one relay, and a round does three
+to any peer. A `Courier` holds the host's `Trust` and a `Link` to one relay, and a round does four
 things:
 
 1. brings the two logs level: the relay's entries come in and are checked, the entries the relay lacks
@@ -276,12 +276,23 @@ things:
    device whose state came back from an older store numbers its next operation past every one it
    made (below);
 3. reads what the relay holds after its cursor and takes each record in as it would from anyone
-   (`Trust::take_operation`). It returns the events the machine is to be told: the roster when the
-   log moved, then each operation the host did not hold. A record that names an entry of the log the
-   host lacks stops the round after one more try at the log, with the cursor before it.
+   (`Trust::take_operation`). A record that names an entry of the log the host lacks stops the
+   round after one more try at the log, with the cursor before it;
+4. asks the relay for what a held operation waits on (`Trust::lacking`): the gap before a device's
+   next operation, and what a context names that the host does not hold, each range asked once
+   (`operations`, the device's node and the range). A range the relay does not fill is asked again
+   by the next round, and what waits on it stays held: a gap is repaired, never skipped.
 
-`Courier::resync` reads from the start and tells the machine every operation, for a machine that lost
-its state. `publish_checkpoint(before, digest)` signs what the machine froze for an instant
+It returns the events the machine is to be told: the roster when the log moved, then what an earlier
+round did not hand over, then every operation the machine may be told now by the rule of causal
+delivery (`Trust::deliver`, `docs/SCE_SHARED_LIST_TRUST.md` section 3; docs/adr/0085, section 3.1):
+the next of each device whose context the machine was told, in an order that is a linear extension
+of the contexts, however the relay ordered them or whatever it left out of its feed
+(`a_round_repairs_what_a_relay_withholds_and_tells_it_in_causal_order`).
+
+`Courier::resync` reads from the start and tells the machine every operation the host holds again,
+in causal order (`Trust::forget_delivered`), for a machine that lost its state.
+`publish_checkpoint(before, digest)` signs what the machine froze for an instant
 (`record_list.propose` of the machine, which a hub would send) and gives it to the relay;
 `floor_event(before, digest)` is the word `record_list.floor` for the machine once the checkpoints the host
 holds make a settlement. No machine of a hub and no administrator takes part.
