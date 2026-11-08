@@ -667,6 +667,7 @@ fn a_relay_holds_sealed_content_of_one_size_and_refuses_plaintext_in_a_sealed_li
         prev: message::NO_OPERATION,
         log: next - 1,
         log_hash,
+        context: Vec::new(),
     };
     let bytes = message::operation_bytes(&signing.message, &link);
     link.write_into(&mut value).unwrap();
