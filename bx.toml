@@ -143,9 +143,16 @@ needs =["cargo", "cmake", "ninja", "g++", "node", "git", "go", "java", "python3"
 # Measured 2026-10-20: one build machine had no curl, and the install exited 127 there.
 packages = ["libssl-dev", "openjdk-17-jdk-headless", "curl", "binutils", "libc6-dev", "libcurl4-openssl-dev", "libedit2", "libncurses-dev", "libpython3-dev", "libsqlite3-0", "libxml2-dev", "libz3-dev", "pkg-config", "tzdata", "unzip", "zlib1g-dev"]
 
-# The C++ tree is the constraint: a debug build of this repository has
+# The C++ tree is the constraint on disk: a debug build of this repository has
 # measured 4.2 GB of debug info in its executables alone.
-min_ram_gb  = 16
+#
+# No `min_ram_gb`. Until 2026-11-08 it was 16, which kept every run of this
+# repository off every machine of less memory, though most units peak at 1 to
+# 4 GB. bx places by memory per unit already: a fanout
+# unit goes only where the ceiling holds its learned peak, and a run is
+# admitted only where its reservation fits; one killed at a learned
+# reservation is run again at twice it (bx 6a7ac6a). So the C++ debug units
+# still go only to the large machines, and the small ones may use the rest.
 min_free_gb = 60
 
 # A hint for the run-time parallelism calculation, not a limit. Rust test
