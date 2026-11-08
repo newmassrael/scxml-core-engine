@@ -1151,12 +1151,22 @@ array's head and `N` times the record's largest map. A list with a lower count
 makes the encode refusable (a value of fewer records), so its codec declares
 `sce:encode-may-fail="true"`.
 
-Rust generates the list: one struct per record in the codec's own module,
-`{Codec}{Alias}`, its fields in the language's bounded types (`SceString<N>`,
-`SceBytes<N>`), held in `BoundedList<{Codec}{Alias}, N>` (docs/adr/0086, section
-7.4), which holds no more than `N` on every profile, so a list past its bound
-cannot be made and the encode refuses nothing for its count. The source interface
-lends the list by reference, and the owned mirror holds it as the view does.
+A record is the payload type the event schema's own unit declares
+(`<Schema>Payload`), the one type every algorithm that holds the record names
+too: the codec brings the schema's unit into scope as it brings an enum's, reads
+and writes the record's map by functions of its own scope, and declares no record
+type of its own, so the schema is generated beside the codec. That unit holds a
+text in a bounded text on Rust and a byte string in the language's own vector,
+which carries no bound: a record with a byte string makes the encode refusable
+(a byte string past its bound), so its codec declares `sce:encode-may-fail="true"`
+as for a lower count. C11's unit holds a byte string as a borrowed pointer, which
+a list the codec holds by value cannot own, so C11 refuses such a record by name.
+
+Rust generates the list: each in `BoundedList<<schema>::<Schema>Payload, N>`
+(docs/adr/0086, section 7.4), which holds no more than `N` on every profile, so a
+list past its bound cannot be made and the encode refuses nothing for its count.
+The source interface lends the list by reference, and the owned mirror holds it as
+the view does.
 Every other backend refuses such a codec by name until its template writes the
 array (`cbor_codec::lowers_record_list`), and a broadcast log over one is refused
 on those backends with it.

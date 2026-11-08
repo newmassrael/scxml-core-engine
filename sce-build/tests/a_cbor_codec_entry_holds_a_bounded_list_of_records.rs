@@ -17,6 +17,7 @@
 
 use std::path::{Path, PathBuf};
 
+use sce_build::forge::cbor_codec;
 use sce_build::forge::model::{CodecModel, ForgeDocument};
 use sce_build::forge::parser::parse_forge;
 use sce_build::forge::{pseudo, unpseudo};
@@ -189,59 +190,66 @@ fn the_page_shows_a_list_of_records_and_reads_it_back() {
 }
 
 #[test]
-fn every_backend_but_rust_refuses_the_codec_by_name() {
+fn every_backend_generates_the_codec_exactly_where_it_lowers_a_list_of_records() {
     let text = fixture_text();
-    for lang in [
-        Language::Kotlin,
-        Language::Cpp,
-        Language::Go,
-        Language::Python,
-        Language::C11,
-        Language::Swift,
-    ] {
-        let why = generated(&text, CODEC, lang)
-            .err()
-            .unwrap_or_else(|| panic!("{lang:?} generated a codec it does not lower"));
-        assert!(
-            why.contains("list of records") && why.contains("'seen'"),
-            "{lang:?}: {why}"
-        );
+    for &lang in Language::ALL {
+        match generated(&text, CODEC, lang) {
+            Ok(_) => assert!(
+                cbor_codec::lowers_record_list(lang),
+                "{lang:?} generated a codec it does not lower"
+            ),
+            Err(why) => {
+                assert!(
+                    !cbor_codec::lowers_record_list(lang),
+                    "{lang:?} lowers a list of records and refused the codec: {why}"
+                );
+                assert!(
+                    why.contains("list of records") && why.contains("'seen'"),
+                    "{lang:?}: {why}"
+                );
+            }
+        }
     }
-    assert!(generated(&text, CODEC, Language::Rust).is_ok());
+    assert!(cbor_codec::lowers_record_list(Language::Rust));
 }
 
 #[test]
-fn the_rust_map_holds_each_list_in_the_bounded_list_of_its_record() {
+fn the_rust_map_holds_each_list_in_the_bounded_list_of_the_schemas_payload() {
     let rust = rust_of(&fixture_text(), CODEC);
     for expected in [
-        // One struct for the record, in the codec's own module.
-        "pub struct CodecCborRecordListCausalEntry {",
-        "pub author: ::sce_forge_runtime::codec::SceBytes<16>,",
-        "pub seq: u64,",
+        // The record is the payload type of the schema's own unit, brought in
+        // as an enum's unit is; the codec declares no type of its own for it.
+        "use super::cbor_causal_entry;",
         // The map holds each list at its bound, the optional one in an Option.
-        "pub seen: ::sce_forge_runtime::codec::BoundedList<CodecCborRecordListCausalEntry, 2>,",
-        "pub context: Option<::sce_forge_runtime::codec::BoundedList<CodecCborRecordListCausalEntry, 3>>,",
+        "pub seen: ::sce_forge_runtime::codec::BoundedList<cbor_causal_entry::CborCausalEntryPayload, 2>,",
+        "pub context: Option<::sce_forge_runtime::codec::BoundedList<cbor_causal_entry::CborCausalEntryPayload, 3>>,",
         // A read past the bound is refused before any record is read.
         "let len = cbor::read_array_len(&mut c)?;",
         "if len > 2 {",
         "if len > 3 {",
-        "list.push(CodecCborRecordListCausalEntry::decode_cbor(&mut c)?)?;",
+        "list.push(decode_record_causal_entry(&mut c)?)?;",
+        // The record is read and written by functions private to the module.
+        "fn decode_record_causal_entry(c: &mut SceCursor<'_>) -> Result<cbor_causal_entry::CborCausalEntryPayload, CodecError> {",
+        "Ok(cbor_causal_entry::CborCausalEntryPayload {",
+        "::sce_forge_runtime::codec::SceString::<16>::from_text(cbor::read_text(c, Some(16))?)?",
         // The write is the array head and each record's map.
         "let len = v.as_slice().len();",
         "cbor::write_array_head(w, ::sce_forge_runtime::codec::widen_usize(len))?;",
-        "record.encode_cbor(w)?;",
+        "encode_record_causal_entry(w, record)?;",
     ] {
         assert!(rust.contains(expected), "missing `{expected}`:\n{rust}");
     }
-    // The schema's unit is named nowhere: the record is the codec's own struct.
-    assert!(!rust.contains("use super::cbor_causal_entry"), "{rust}");
+    assert!(
+        !rust.contains("struct CodecCborRecordListCausalEntry"),
+        "{rust}"
+    );
 }
 
 #[test]
 fn a_record_writes_its_keys_in_the_order_their_encodings_sort() {
     let rust = rust_of(&fixture_text(), CODEC);
     let write = rust
-        .split("pub fn encode_cbor")
+        .split("fn encode_record_causal_entry")
         .nth(1)
         .expect("the record has an encode");
     let seq = write
@@ -290,4 +298,65 @@ fn a_lower_count_is_read_and_its_write_refuses_fewer_records() {
     assert!(rust.contains("if len > 2 || len < 1 {"), "{rust}");
     // The write refuses a value of fewer records than the lower count.
     assert!(rust.contains("if len < 1 {"), "{rust}");
+}
+
+/// The import of a record whose field is a byte string of at most four bytes.
+const DIGEST_IMPORT: &str =
+    r#"  <sce:import kind="event-schema" src="cbor_digest_entry.scxml" as="DigestEntry"/>"#;
+
+/// A list of at most two records of `cbor_digest_entry`.
+const DIGEST_ENTRY: &str = r#"    <data id="n" sce:type="list&lt;record:DigestEntry&gt;[2]" sce:key="0" sce:direction="out"/>"#;
+
+#[test]
+fn a_record_byte_string_is_held_to_its_bound_by_the_encode() {
+    // The schema's Rust unit holds the byte string in `Vec<u8>`, which carries
+    // no bound, so a record past it has no encoding: the codec states its
+    // encode may fail or is refused at the entry.
+    let why = generated(
+        &document("", DIGEST_IMPORT, DIGEST_ENTRY),
+        "probe_list",
+        Language::Rust,
+    )
+    .err()
+    .unwrap_or_else(|| panic!("an undeclared refusal generated"));
+    assert!(
+        why.contains("whose byte string `digest` is past its bound 4"),
+        "{why}"
+    );
+
+    let rust = rust_of(
+        &document(
+            r#" sce:encode-may-fail="true""#,
+            DIGEST_IMPORT,
+            DIGEST_ENTRY,
+        ),
+        "probe_list",
+    );
+    for expected in [
+        "if record.digest.len() > 4 {",
+        "cbor::read_bytes(c, Some(4))?.to_vec()",
+        "cbor::write_bytes(w, &record.digest)?;",
+    ] {
+        assert!(rust.contains(expected), "missing `{expected}`:\n{rust}");
+    }
+}
+
+#[test]
+fn c11_refuses_a_record_whose_byte_string_its_unit_borrows() {
+    let why = generated(
+        &document(
+            r#" sce:encode-may-fail="true""#,
+            DIGEST_IMPORT,
+            DIGEST_ENTRY,
+        ),
+        "probe_list",
+        Language::C11,
+    )
+    .err()
+    .unwrap_or_else(|| panic!("C11 generated a list of records it cannot own"));
+    // Refused before any backend renders, by the record and its field.
+    assert!(
+        why.contains("field `digest` is a byte string") && why.contains("borrowed pointer"),
+        "{why}"
+    );
 }
