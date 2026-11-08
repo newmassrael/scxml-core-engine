@@ -44695,7 +44695,7 @@
     "pattern_kind": {
       "fixture": "PatternKind",
       "signature": "enum PatternKind : uint16",
-      "description": "The Mesh envelope's pattern (SCE_MESH.md §13, key 3), from sce:std/mesh/pattern_kind.scxml. The numbers are the wire's; 10-13 are reserved for the Stream patterns and must not appear, so a conversion that assigned ordinals would give 17 consecutive values and fail here.",
+      "description": "The Mesh envelope's pattern (SCE_MESH.md §13, key 3), from sce:std/mesh/pattern_kind.scxml. The numbers are the wire's; 10-13 are reserved for the Stream patterns and 22 for the durable receipt, and must not appear, so a conversion that assigned ordinals would give 18 consecutive values and fail here.",
       "underlying_type": "uint16",
       "variants": [
         { "name": "fireForget", "value": 1 },
@@ -44714,7 +44714,8 @@
         { "name": "invokeDone", "value": 18 },
         { "name": "invokeCancel", "value": 19 },
         { "name": "invokeError", "value": 20 },
-        { "name": "parallelRegionDone", "value": 21 }
+        { "name": "parallelRegionDone", "value": 21 },
+        { "name": "causalVector", "value": 23 }
       ]
     },
     "payload_codec": {
