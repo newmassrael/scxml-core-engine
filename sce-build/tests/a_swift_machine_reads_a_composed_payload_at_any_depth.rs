@@ -209,6 +209,37 @@ fn the_payload_is_held_in_the_machine_types_each_record_declared_once() {
     );
 }
 
+/// A reader of `batch.sent` that holds no variable: its guard alone reads the
+/// payload, whose record the machine declares all the same.
+const GUARD_ONLY: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="batch_guard">
+  <sce:import kind="event-schema" src="event_batch.scxml" as="Batch"/>
+  <sce:import kind="event-schema" src="event_batch_item.scxml" as="Item"/>
+  <sce:import kind="enum" src="enum_signal_level.scxml" as="SignalLevel"/>
+  <state id="idle">
+    <transition event="batch.sent" cond="len(_event.data.items) &gt; 0" target="full"/>
+  </state>
+  <state id="full"/>
+</scxml>
+"#;
+
+/// Pinned by the import of `state_machine.swift.jinja2`
+/// (`tools/codegen/templates/swift/`): a record the machine declares is the
+/// forge runtime's `SceDefault`, so a machine that holds no variable and only
+/// reads a payload that names a record imports the forge runtime too.
+#[test]
+fn a_machine_of_no_variable_imports_the_runtime_its_records_name() {
+    let code = swift_machine("batch_guard.scxml", GUARD_ONLY);
+    holds(
+        &code,
+        &[
+            "public struct BatchGuardItemRecord: Equatable, Sendable, SceDefault {\n",
+            "\nimport SceForgeRuntime\n",
+        ],
+    );
+}
+
 /// Pinned by `SwiftComposed::read_list`, `SwiftComposed::read_record`,
 /// `SwiftComposed::read_text`, `SwiftComposed::read_optional` and
 /// `SwiftComposed::read_scalar` (`sce-build/src/forge/composed_lowering/swift.rs`),
