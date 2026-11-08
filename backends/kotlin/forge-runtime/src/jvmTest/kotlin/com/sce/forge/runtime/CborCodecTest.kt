@@ -165,4 +165,20 @@ class CborCodecTest {
             value().copy(source = "x".repeat(65)).encode(MutableListSink(mutableListOf())),
         )
     }
+
+    @Test
+    fun anArrayHeadIsWrittenShortestAndReadAsItsCountAndNoOtherItemIs() {
+        fun written(items: ULong): ByteArray {
+            val out = mutableListOf<Byte>()
+            assertNull(Cbor.writeArrayHead(MutableListSink(out), items))
+            return out.toByteArray()
+        }
+        assertContentEquals(bytes(0x82), written(2UL))
+        assertContentEquals(bytes(0x98, 0x18), written(24UL))
+        assertEquals(3UL, Cbor.readArrayLen(SceCursor(bytes(0x83))))
+        assertEquals(24UL, Cbor.readArrayLen(SceCursor(bytes(0x98, 0x18))))
+        // An indefinite-length array, and a map where an array stands.
+        assertNull(Cbor.readArrayLen(SceCursor(bytes(0x9F))))
+        assertNull(Cbor.readArrayLen(SceCursor(bytes(0xA1))))
+    }
 }
