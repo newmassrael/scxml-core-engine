@@ -76,6 +76,38 @@ RpcStatus toRuntime(gen::RpcStatus::RpcStatus v) {
     return static_cast<RpcStatus>(gen::RpcStatus::to_underlying(v));
 }
 
+// A causal route's vector (key 20) is a list of the record
+// sce:std/mesh/causal_entry.scxml declares, which the generated codec holds in
+// that schema's own payload type; CausalEntry is the runtime's spelling of the
+// same three fields. The generated encode holds the list to its bound of 64.
+using GenCausalEntry = gen::CausalEntry::CausalEntryPayload;
+
+std::vector<GenCausalEntry> causalToGenerated(const std::vector<CausalEntry> &v) {
+    std::vector<GenCausalEntry> out;
+    out.reserve(v.size());
+    for (const auto &entry : v) {
+        GenCausalEntry g;
+        g.hi = entry.hi;
+        g.lo = entry.lo;
+        g.seq = entry.seq;
+        out.push_back(g);
+    }
+    return out;
+}
+
+std::vector<CausalEntry> causalToRuntime(const std::vector<GenCausalEntry> &v) {
+    std::vector<CausalEntry> out;
+    out.reserve(v.size());
+    for (const auto &g : v) {
+        CausalEntry entry;
+        entry.hi = g.hi;
+        entry.lo = g.lo;
+        entry.seq = g.seq;
+        out.push_back(entry);
+    }
+    return out;
+}
+
 GenEnvelope toGenerated(const MeshEnvelope &env) {
     GenEnvelope g;
     g.id = bytes16(env.id);
@@ -98,6 +130,8 @@ GenEnvelope toGenerated(const MeshEnvelope &env) {
     g.parallel_id = env.parallel_id;
     g.region_id = env.region_id;
     g.child_session_id = env.child_session_id;
+    g.causal_epoch = env.causal_epoch;
+    g.causal_vector = mapOptional(env.causal_vector, causalToGenerated);
     return g;
 }
 
@@ -121,6 +155,8 @@ MeshEnvelope toRuntime(GenEnvelope &&g) {
     env.parallel_id = std::move(g.parallel_id);
     env.region_id = std::move(g.region_id);
     env.child_session_id = std::move(g.child_session_id);
+    env.causal_epoch = g.causal_epoch;
+    env.causal_vector = mapOptional(g.causal_vector, causalToRuntime);
     return env;
 }
 

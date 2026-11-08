@@ -9,8 +9,11 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -564,4 +567,72 @@ TEST(MeshEnvelopeCodecTest, InvokeErrorRoundTrip) {
     ASSERT_TRUE(decoded.rpc_error_message.has_value());
     EXPECT_EQ(*decoded.rpc_error_message, "SESSION_F_NOT_IMPLEMENTED");
     EXPECT_EQ(env, decoded);
+}
+
+// ── A causal route's tag (SCE_MESH.md, section 10.12) ─────────────────
+
+namespace {
+
+/// The `causalVector` the Rust core's golden is written for
+/// (backends/rust/mesh/src/causal.rs,
+/// `a_tag_is_written_as_keys_19_and_20_and_read_back`): id 07..07, source
+/// "list", an empty type, pattern 23, no payload, epoch 0 and one entry.
+MeshEnvelope causalVectorEnvelope() {
+    MeshEnvelope env{};
+    env.id.fill(7);
+    env.source = "list";
+    env.type = "";
+    env.pattern = PatternKind::CausalVector;
+    env.datacontenttype = PayloadCodec::None;
+    env.causal_epoch = 0;
+    SCE::Mesh::CausalEntry entry;
+    entry.hi = 1;
+    entry.lo = 2;
+    entry.seq = 3;
+    env.causal_vector = std::vector<SCE::Mesh::CausalEntry>{entry};
+    return env;
+}
+
+}  // namespace
+
+TEST(MeshEnvelopeCodecTest, CausalTagIsWrittenAsKeys19And20AndReadBack) {
+    // The wire. A tag is keys 19 and 20, the highest keys, so it ends the
+    // map: the epoch, then an array of one map per entry, its keys as text in
+    // RFC 8949 order (`hi`, `lo`, `seq`). The same bytes as the Rust core's
+    // golden. Red if this core numbers either key otherwise, writes an
+    // entry's fields in another order, or drops the tag on either half of
+    // the codec.
+    const MeshEnvelope env = causalVectorEnvelope();
+    const auto bytes = SCE::Mesh::encodeEnvelope(env);
+    ASSERT_FALSE(bytes.empty());
+    // Six required entries and the two of the tag.
+    EXPECT_EQ(bytes[0], 0xA8);
+    const std::vector<uint8_t> tail = {
+        0x13, 0x00,                   // key 19, epoch 0
+        0x14, 0x81,                   // key 20, an array of one
+        0xA3,                         // a map of three
+        0x62, 'h',  'i', 0x01,        // "hi": 1
+        0x62, 'l',  'o', 0x02,        // "lo": 2
+        0x63, 's',  'e', 'q',  0x03,  // "seq": 3
+    };
+    ASSERT_GE(bytes.size(), tail.size());
+    EXPECT_TRUE(std::equal(tail.begin(), tail.end(), bytes.end() - static_cast<std::ptrdiff_t>(tail.size())));
+
+    MeshEnvelope decoded;
+    ASSERT_TRUE(SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), decoded));
+    EXPECT_EQ(decoded.causal_epoch, std::optional<std::uint64_t>(0));
+    ASSERT_TRUE(decoded.causal_vector.has_value());
+    EXPECT_EQ(*decoded.causal_vector, *env.causal_vector);
+    EXPECT_EQ(env, decoded);
+}
+
+TEST(MeshEnvelopeCodecTest, CausalVectorPastItsBoundIsNotWritten) {
+    // A vector holds at most 64 entries, one per replica of a view. One past
+    // the bound is refused at the encode, as every decoder refuses it. Red if
+    // the bound of the list is not held.
+    MeshEnvelope env = causalVectorEnvelope();
+    env.causal_vector = std::vector<SCE::Mesh::CausalEntry>(65);
+    EXPECT_TRUE(SCE::Mesh::encodeEnvelope(env).empty());
+    env.causal_vector = std::vector<SCE::Mesh::CausalEntry>(64);
+    EXPECT_FALSE(SCE::Mesh::encodeEnvelope(env).empty());
 }
