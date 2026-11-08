@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: a0d514a5bb9842543c3a83f1c232fcee900a165f2a3ed19fb29e42d249c8aa22
+// source-hash: ea764ab5524bc7a7e7d4553640b3fb26547d13f0d2053c0f5e7214161efbc6d0
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -78,8 +78,8 @@
 // closure; this one suspicious-category lint reads the `match` of a constant
 // default as a hand-written `unwrap_or_default`.
 #![allow(clippy::manual_unwrap_or_default)]
-#![doc = "SCE-MAP: static_composed_send.scxml:26 :: _machine"]
-// SCE-MAP: static_composed_send.scxml:26 :: _machine
+#![doc = "SCE-MAP: static_composed_send.scxml:29 :: _machine"]
+// SCE-MAP: static_composed_send.scxml:29 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -1283,8 +1283,8 @@ impl StatePolicy for StaticComposedSendPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: static_composed_send.scxml:26 :: _machine"]
-    // SCE-MAP: static_composed_send.scxml:26 :: _machine
+    #[doc = "SCE-MAP: static_composed_send.scxml:29 :: _machine"]
+    // SCE-MAP: static_composed_send.scxml:29 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -1300,8 +1300,8 @@ impl StatePolicy for StaticComposedSendPolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: static_composed_send.scxml:26 :: _machine"]
-    // SCE-MAP: static_composed_send.scxml:26 :: _machine
+    #[doc = "SCE-MAP: static_composed_send.scxml:29 :: _machine"]
+    // SCE-MAP: static_composed_send.scxml:29 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -1319,8 +1319,8 @@ impl StatePolicy for StaticComposedSendPolicy {
     // enables, as its row of the tables, which holds its targets and its
     // type. The engine walks the atomic states and their ancestors and keeps
     // the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: static_composed_send.scxml:26 :: _machine"]
-    // SCE-MAP: static_composed_send.scxml:26 :: _machine
+    #[doc = "SCE-MAP: static_composed_send.scxml:29 :: _machine"]
+    // SCE-MAP: static_composed_send.scxml:29 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -1356,8 +1356,8 @@ impl StatePolicy for StaticComposedSendPolicy {
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries. `transition` is a
     // written transition's row, one whose row says it has content.
-    #[doc = "SCE-MAP: static_composed_send.scxml:26 :: _machine"]
-    // SCE-MAP: static_composed_send.scxml:26 :: _machine
+    #[doc = "SCE-MAP: static_composed_send.scxml:29 :: _machine"]
+    // SCE-MAP: static_composed_send.scxml:29 :: _machine
     fn execute_transition_content(
         &mut self,
         transition: ::sce_rust_runtime::TransitionId,
@@ -1366,7 +1366,7 @@ impl StatePolicy for StaticComposedSendPolicy {
         match transition.0 {
             // idle, transition 0
             0 => {
-                // SCE-MAP: static_composed_send.scxml:50 :: idle :: _transition_0
+                // SCE-MAP: static_composed_send.scxml:53 :: idle :: _transition_0
                 // W3C SCXML 3.13: Transition 0 actions
                 let ev = match &self.pending_payload {
                     StaticComposedSendPayload::BatchSent(ev) => ev.clone(),
@@ -1506,7 +1506,7 @@ impl StatePolicy for StaticComposedSendPolicy {
             }
             // idle, transition 1
             1 => {
-                // SCE-MAP: static_composed_send.scxml:64 :: idle :: _transition_1
+                // SCE-MAP: static_composed_send.scxml:67 :: idle :: _transition_1
                 // W3C SCXML 3.13: Transition 1 actions
                 let ev = match &self.pending_payload {
                     StaticComposedSendPayload::BatchSent(ev) => ev.clone(),
@@ -1635,7 +1635,7 @@ impl StatePolicy for StaticComposedSendPolicy {
             }
             // idle, transition 2
             2 => {
-                // SCE-MAP: static_composed_send.scxml:86 :: idle :: _transition_2
+                // SCE-MAP: static_composed_send.scxml:89 :: idle :: _transition_2
                 // W3C SCXML 3.13: Transition 2 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: a0d514a5bb9842543c3a83f1c232fcee900a165f2a3ed19fb29e42d249c8aa22
+// source-hash: ea764ab5524bc7a7e7d4553640b3fb26547d13f0d2053c0f5e7214161efbc6d0
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: static_composed_payload.scxml:25 :: _machine
+// SCE-MAP: static_composed_payload.scxml:28 :: _machine
 
 package static_composed_payload
 
@@ -1149,7 +1149,7 @@ func (p *StaticComposedPayloadPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line static_composed_payload.scxml:25
+//line static_composed_payload.scxml:28
 func (p *StaticComposedPayloadPolicy) ExecuteEntryActions(state StaticComposedPayloadState, engine *sce.Engine[StaticComposedPayloadState, StaticComposedPayloadEvent], isDefaultEntry bool) {
 	switch state {
 	default:
@@ -1162,7 +1162,7 @@ func (p *StaticComposedPayloadPolicy) ExecuteEntryActions(state StaticComposedPa
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line static_composed_payload.scxml:25
+//line static_composed_payload.scxml:28
 func (p *StaticComposedPayloadPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[StaticComposedPayloadState, StaticComposedPayloadEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -1170,7 +1170,7 @@ func (p *StaticComposedPayloadPolicy) ExecuteHistoryDefaultContent(history sce.H
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line static_composed_payload.scxml:25
+//line static_composed_payload.scxml:28
 func (p *StaticComposedPayloadPolicy) ExecuteExitActions(state StaticComposedPayloadState, engine *sce.Engine[StaticComposedPayloadState, StaticComposedPayloadEvent], configurationBeforeExit []StaticComposedPayloadState) {
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
@@ -1187,7 +1187,7 @@ func (p *StaticComposedPayloadPolicy) ExecuteExitActions(state StaticComposedPay
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line static_composed_payload.scxml:25
+//line static_composed_payload.scxml:28
 func (p *StaticComposedPayloadPolicy) BindCurrentEvent(event StaticComposedPayloadEvent, engine *sce.Engine[StaticComposedPayloadState, StaticComposedPayloadEvent]) {
 	// This document's guards never read _event, so there is nothing to bind.
 }
@@ -1197,7 +1197,7 @@ func (p *StaticComposedPayloadPolicy) BindCurrentEvent(event StaticComposedPaylo
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line static_composed_payload.scxml:25
+//line static_composed_payload.scxml:28
 func (p *StaticComposedPayloadPolicy) FirstEnabledTransition(state StaticComposedPayloadState, event StaticComposedPayloadEvent, engine *sce.Engine[StaticComposedPayloadState, StaticComposedPayloadEvent]) (sce.EnabledTransition[StaticComposedPayloadState, sce.HistoryID], bool) {
 	switch state {
 	case StaticComposedPayloadStateIdle:
@@ -1227,13 +1227,13 @@ func (p *StaticComposedPayloadPolicy) FirstEnabledTransition(state StaticCompose
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line static_composed_payload.scxml:25
+//line static_composed_payload.scxml:28
 func (p *StaticComposedPayloadPolicy) ExecuteTransitionContent(source StaticComposedPayloadState, transitionIndex int, engine *sce.Engine[StaticComposedPayloadState, StaticComposedPayloadEvent]) {
 	switch source {
 	case StaticComposedPayloadStateIdle:
 		switch transitionIndex {
 		case 0:
-//line static_composed_payload.scxml:47
+//line static_composed_payload.scxml:50
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticComposedPayloadPayloadTagBatchSent {
@@ -1333,7 +1333,7 @@ func (p *StaticComposedPayloadPolicy) ExecuteTransitionContent(source StaticComp
 
 			}()
 		case 1:
-//line static_composed_payload.scxml:74
+//line static_composed_payload.scxml:77
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

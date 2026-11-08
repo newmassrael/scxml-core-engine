@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: a0d514a5bb9842543c3a83f1c232fcee900a165f2a3ed19fb29e42d249c8aa22
+// source-hash: ea764ab5524bc7a7e7d4553640b3fb26547d13f0d2053c0f5e7214161efbc6d0
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_composed_send.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: static_composed_send.scxml:26 :: _machine
+// SCE-MAP: static_composed_send.scxml:29 :: _machine
 
 package com.sce.integration.static_composed_send
 
@@ -548,7 +548,7 @@ class StaticComposedSendStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: static_composed_send.scxml:26 :: _machine
+    // SCE-MAP: static_composed_send.scxml:29 :: _machine
     override fun onEntry(state: StaticComposedSendState, isDefaultEntry: Boolean) {
         when (state) {
             is StaticComposedSendState.Idle -> onEntryOfIdle()
@@ -557,11 +557,11 @@ class StaticComposedSendStateMachine(
 
 
     private fun onEntryOfIdle() {
-                // SCE-MAP: static_composed_send.scxml:47 :: idle :: _state_body
+                // SCE-MAP: static_composed_send.scxml:50 :: idle :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: static_composed_send.scxml:26 :: _machine
+    // SCE-MAP: static_composed_send.scxml:29 :: _machine
     override fun onExit(state: StaticComposedSendState) {
         when (state) {
             is StaticComposedSendState.Idle -> onExitOfIdle()
@@ -570,13 +570,13 @@ class StaticComposedSendStateMachine(
 
 
     private fun onExitOfIdle() {
-                // SCE-MAP: static_composed_send.scxml:47 :: idle :: _state_body
+                // SCE-MAP: static_composed_send.scxml:50 :: idle :: _state_body
     }
 
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: static_composed_send.scxml:26 :: _machine
+    // SCE-MAP: static_composed_send.scxml:29 :: _machine
     override fun executeTransitionContent(source: StaticComposedSendState, transitionIndex: Int) {
         when (source) {
             is StaticComposedSendState.Idle -> transitionContentOfIdle(transitionIndex)
@@ -600,7 +600,7 @@ class StaticComposedSendStateMachine(
 
 
     private fun transitionContentOfIdleAt0() {
-                // SCE-MAP: static_composed_send.scxml:50 :: idle :: _transition_0
+                // SCE-MAP: static_composed_send.scxml:53 :: idle :: _transition_0
                 if (pendingBatchSentPayload == null) {
                     return
                 }
@@ -638,7 +638,7 @@ class StaticComposedSendStateMachine(
     }
 
     private fun transitionContentOfIdleAt1() {
-                // SCE-MAP: static_composed_send.scxml:64 :: idle :: _transition_1
+                // SCE-MAP: static_composed_send.scxml:67 :: idle :: _transition_1
                 if (pendingBatchSentPayload == null) {
                     return
                 }
@@ -694,7 +694,7 @@ class StaticComposedSendStateMachine(
     }
 
     private fun transitionContentOfIdleAt2() {
-                // SCE-MAP: static_composed_send.scxml:86 :: idle :: _transition_2
+                // SCE-MAP: static_composed_send.scxml:89 :: idle :: _transition_2
 
             if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedSendEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return

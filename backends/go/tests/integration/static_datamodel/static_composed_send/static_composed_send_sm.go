@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: a0d514a5bb9842543c3a83f1c232fcee900a165f2a3ed19fb29e42d249c8aa22
+// source-hash: ea764ab5524bc7a7e7d4553640b3fb26547d13f0d2053c0f5e7214161efbc6d0
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: static_composed_send.scxml:26 :: _machine
+// SCE-MAP: static_composed_send.scxml:29 :: _machine
 
 package static_composed_send
 
@@ -1149,7 +1149,7 @@ func (p *StaticComposedSendPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line static_composed_send.scxml:26
+//line static_composed_send.scxml:29
 func (p *StaticComposedSendPolicy) ExecuteEntryActions(state StaticComposedSendState, engine *sce.Engine[StaticComposedSendState, StaticComposedSendEvent], isDefaultEntry bool) {
 	switch state {
 	default:
@@ -1162,7 +1162,7 @@ func (p *StaticComposedSendPolicy) ExecuteEntryActions(state StaticComposedSendS
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line static_composed_send.scxml:26
+//line static_composed_send.scxml:29
 func (p *StaticComposedSendPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[StaticComposedSendState, StaticComposedSendEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -1170,7 +1170,7 @@ func (p *StaticComposedSendPolicy) ExecuteHistoryDefaultContent(history sce.Hist
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line static_composed_send.scxml:26
+//line static_composed_send.scxml:29
 func (p *StaticComposedSendPolicy) ExecuteExitActions(state StaticComposedSendState, engine *sce.Engine[StaticComposedSendState, StaticComposedSendEvent], configurationBeforeExit []StaticComposedSendState) {
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
@@ -1187,7 +1187,7 @@ func (p *StaticComposedSendPolicy) ExecuteExitActions(state StaticComposedSendSt
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line static_composed_send.scxml:26
+//line static_composed_send.scxml:29
 func (p *StaticComposedSendPolicy) BindCurrentEvent(event StaticComposedSendEvent, engine *sce.Engine[StaticComposedSendState, StaticComposedSendEvent]) {
 	// This document's guards never read _event, so there is nothing to bind.
 }
@@ -1197,7 +1197,7 @@ func (p *StaticComposedSendPolicy) BindCurrentEvent(event StaticComposedSendEven
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line static_composed_send.scxml:26
+//line static_composed_send.scxml:29
 func (p *StaticComposedSendPolicy) FirstEnabledTransition(state StaticComposedSendState, event StaticComposedSendEvent, engine *sce.Engine[StaticComposedSendState, StaticComposedSendEvent]) (sce.EnabledTransition[StaticComposedSendState, sce.HistoryID], bool) {
 	switch state {
 	case StaticComposedSendStateIdle:
@@ -1240,13 +1240,13 @@ func (p *StaticComposedSendPolicy) FirstEnabledTransition(state StaticComposedSe
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line static_composed_send.scxml:26
+//line static_composed_send.scxml:29
 func (p *StaticComposedSendPolicy) ExecuteTransitionContent(source StaticComposedSendState, transitionIndex int, engine *sce.Engine[StaticComposedSendState, StaticComposedSendEvent]) {
 	switch source {
 	case StaticComposedSendStateIdle:
 		switch transitionIndex {
 		case 0:
-//line static_composed_send.scxml:50
+//line static_composed_send.scxml:53
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticComposedSendPayloadTagBatchSent {
@@ -1317,7 +1317,7 @@ func (p *StaticComposedSendPolicy) ExecuteTransitionContent(source StaticCompose
 	}
 			}()
 		case 1:
-//line static_composed_send.scxml:64
+//line static_composed_send.scxml:67
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticComposedSendPayloadTagBatchSent {
@@ -1397,7 +1397,7 @@ func (p *StaticComposedSendPolicy) ExecuteTransitionContent(source StaticCompose
 
 			}()
 		case 2:
-//line static_composed_send.scxml:86
+//line static_composed_send.scxml:89
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
