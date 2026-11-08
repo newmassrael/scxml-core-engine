@@ -9,7 +9,10 @@ name: C++ Interface Standard
 # that something. `scripts/gates/cpp-interface-standard.sh` says what it
 # compiles and why each header is compiled alone; this file says where.
 #
-# ## Why a pinned GCC 15 container
+# ## Why a pinned GCC 15 image
+#
+# The image is `tools/interface-standard/Containerfile`, built and entered by
+# `scripts/gate` itself, so every machine that runs the gate runs this one.
 #
 # The defect that started this was a transitive include: a public header named
 # `uint64_t` without `<cstdint>`, and GCC 15's libstdc++ stopped providing
@@ -89,85 +92,46 @@ jobs:
     name: C++ interface at C++17 and C++20 (GCC 15)
     runs-on: ubuntu-24.04
     timeout-minutes: 90
-    container:
-      image: gcc:15.3.0
-    env:
-      CC: gcc
-      CXX: g++
-      # The runner hands a container job HOME=/github/home, while the image's
-      # root account has /root. rustup-init refuses that disagreement ("$HOME
-      # differs from euid-obtained home directory"), measured on this lane's
-      # first run. One home for the job: rustup, the cargo cache paths (`~/`)
-      # and git's global config then all name the same directory.
-      HOME: /root
+    # No `container:` here. The image the gate runs in is
+    # `tools/interface-standard/Containerfile` (gcc:15.3.0 and what the
+    # configure and the generator need), and the runner builds it and runs the
+    # gate inside it wherever the gate runs: this lane, a build machine judging
+    # an update to main, a workstation. Until 2026-11-08 the image was this
+    # job's `container:` and its install steps, which only this lane had, so a
+    # build machine would have judged the gate with its own GCC.
 
     steps:
-      # The image is Debian with GCC 15 in /usr/local. What the configure needs
-      # beside it: CMake and Ninja, Python for the tool and the tests' CMake,
-      # git for the submodules, and the development packages cpp-httplib (TLS,
-      # zlib, brotli) and the GLib dispatcher link against. `sce-codegen`'s own
-      # build needs libxml2 (the `libxml` crate behind its XSD validator) and
-      # libclang (that crate's bindgen), which the hosted image carries and
-      # this one does not: measured on this lane's second run, `Unable to find
-      # libclang`.
-      - name: Install Dependencies
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends \
-            cmake \
-            ninja-build \
-            python3 \
-            python3-venv \
-            pkg-config \
-            git \
-            ca-certificates \
-            libssl-dev \
-            zlib1g-dev \
-            libbrotli-dev \
-            libglib2.0-dev \
-            libxml2-dev \
-            libclang-dev
-
-      # `sce-codegen` formats the C++ it writes with clang-format of major 19
-      # and refuses without it (docs/SCE_CODEGEN_DETERMINISM.md). The image's
-      # Debian release decides which clang-format its archive carries, so the
-      # pinned major comes from the wheel instead, which is the same on any
-      # base.
-      - name: Install clang-format 19
-        run: |
-          python3 -m venv /opt/clang-format-19
-          /opt/clang-format-19/bin/pip install --no-cache-dir clang-format==19.1.7
-          echo "/opt/clang-format-19/bin" >> "$GITHUB_PATH"
-
       - name: Checkout Repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           submodules: recursive
 
-      # The checkout belongs to the runner's user and the container runs as
-      # root, so git refuses the directory as dubiously owned unless told
-      # otherwise; the gates start with `git rev-parse --show-toplevel`.
-      - name: Trust the checkout
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-
+      # The pinned release, installed on this runner. The runner hands its
+      # toolchain directory to the image, read-only, and the gate inside runs
+      # on it (`gate_in_container` in scripts/gate): the image carries no Rust
+      # of its own, so the release the gate builds with is the pin here as on
+      # a build machine.
       - name: Install Rust Toolchain
         uses: ./.github/actions/install-rust
 
-      # Keyed apart from the hosted lanes' caches: a generator linked inside
-      # this image is not one to hand to a runner on another libc, or back.
-      - name: Cache Cargo
+      # The image's own cache (`gate_in_container` in scripts/gate): its cargo
+      # registry and its build directory, kept apart from this runner's because
+      # a generator linked in the image is not one to hand to another libc, or
+      # back. Keyed on the pin, as every Rust cache is.
+      - name: Cache the image's cargo registry and build directory
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: gcc15-container-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('sce-build/Cargo.toml') }}
+            ~/.cache/sce-gate-containers/cpp-interface-standard/cargo/registry
+            ~/.cache/sce-gate-containers/cpp-interface-standard/cargo/git
+            ~/.cache/sce-gate-containers/cpp-interface-standard/target
+          key: gcc15-image-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('tools/interface-standard/Containerfile', 'sce-build/Cargo.toml') }}
           restore-keys: |
-            gcc15-container-cargo-codegen-${{ hashFiles('rust-toolchain.toml') }}-
+            gcc15-image-${{ hashFiles('rust-toolchain.toml') }}-
 
       # Guards, configure, generation, then every compile at both standards are
       # one gate, so the check has one spelling here and for a developer. The
-      # runner builds `sce-codegen` first, through its `codegen-build` gate.
+      # runner inside the image builds `sce-codegen` first, through its
+      # `codegen-build` gate.
       - name: Compile the interface at C++17 and C++20
         run: scripts/gate cpp-interface-standard
