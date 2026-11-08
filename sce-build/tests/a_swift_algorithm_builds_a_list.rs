@@ -101,3 +101,38 @@ fn an_algorithm_that_does_not_declare_may_fail_returns_its_list_without_throwing
     assert!(!code.contains("sceFailure"), "{code}");
     assert!(code.contains("return out"), "{code}");
 }
+
+#[test]
+fn two_lists_of_records_are_two_local_arrays_each_of_its_own_bound() {
+    // The stable cut of a causal route builds the members it has heard from in a
+    // working list and the cut in the list it returns (SCE_FORGE.md §4.12,
+    // byte-buffer-build v2): two arrays of two record types, each with the
+    // capacity its own declaration states reserved.
+    let code = swift_of("stdlib/mesh/causal_cut.scxml");
+    assert!(
+        code.contains(
+            "static func causalCut(_ members: UInt32, _ known: [CausalKnownPayload]) \
+             -> [CausalEntryPayload]"
+        ),
+        "{code}"
+    );
+    assert!(!code.contains("throws"), "{code}");
+    assert!(
+        code.contains("var holders: [EnvelopeIdPayload] = []"),
+        "{code}"
+    );
+    assert!(code.contains("holders.reserveCapacity(64)"), "{code}");
+    assert!(
+        code.contains("var out: [CausalEntryPayload] = []"),
+        "{code}"
+    );
+    assert!(code.contains("out.reserveCapacity(64)"), "{code}");
+    // Each list is walked by a loop that does not append to it, and appended to
+    // after that loop.
+    assert!(code.contains("for holder in holders {"), "{code}");
+    assert!(code.contains("for cut in out {"), "{code}");
+    assert!(code.contains("for peer in holders {"), "{code}");
+    assert!(code.contains("holders.append(member)"), "{code}");
+    assert!(code.contains("out.append(stable)"), "{code}");
+    assert!(code.contains("return out"), "{code}");
+}

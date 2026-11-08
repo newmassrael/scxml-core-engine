@@ -823,7 +823,7 @@ impl Body<'_> {
                 if !self.iterable.contains(source) {
                     return Err(refuse(
                         self.algorithm,
-                        format!("<sce:foreach item=\"{item}\" in=\"{source}\">, which is not a list or bytes parameter"),
+                        format!("<sce:foreach item=\"{item}\" in=\"{source}\">, which is not a list or bytes parameter or a list buffer"),
                     ));
                 }
                 let counter = format!("__i{depth}");
@@ -961,6 +961,16 @@ pub(crate) fn lower(m: &AlgorithmModel, imports: &Imports) -> Result<String, Gen
     let mut buffers = HashMap::new();
     collect_buffers(&m.body, &mut buffers);
     whole_values.extend(buffers.keys().copied());
+    // A list buffer is walked as a list parameter is (SCE_FORGE.md §4.12, v2):
+    // the parser has refused a loop that appends to the buffer it walks, so
+    // the array the loop reads is not written while it reads it. A byte
+    // buffer is walked by no backend.
+    iterable.extend(
+        buffers
+            .iter()
+            .filter(|(_, buffer)| !matches!(buffer.element, BufferElement::Byte))
+            .map(|(name, _)| *name),
+    );
 
     let options = crate::ForgeCompileOptions::default();
     let types = AlgorithmTypes::collect(m, &imports.contexts, &options)
