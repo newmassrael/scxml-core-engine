@@ -591,7 +591,7 @@ typedef struct {{ csym_prefix }}{{ model.name }}_scratch {
     union {
 {% for role in colour.roles %}
         /* {{ role.about }} */
-        char {{ role.name }}{% if role.pairs %}[{{ data_slot.pairs }}]{% endif %}[{{ data_slot.name }}];
+        char {{ role.name }}{% if role.rows == 'pairs' %}[{{ data_slot.pairs }}]{% elif role.rows == 'responses' %}[SCE_MAX_HOST_RESPONSES]{% endif %}[{{ data_slot.name }}];
 {% endfor %}
     };
 {% endfor %}

@@ -577,8 +577,7 @@ static void serve_posting(void *user_data, const sce_host_invoke_event_t *event,
     }
     ping(&input, "posted");
     host->posted = post_from_another_thread(host->sm, &input);
-    out->has_done_data = true;
-    (void)snprintf(out->done_data, sizeof(out->done_data), "%s", "\"own\"");
+    (void)sce_host_invoke_answer_done(out, "\"own\"");
 }
 
 /* ADR 0084, D2 as amended at step 8. Inside the owner's macrostep a host call
