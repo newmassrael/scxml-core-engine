@@ -1,0 +1,183 @@
+# Mutation cases for "a causal route delivers each change once in causal order"
+# under the Kotlin Mesh core (docs/adr/0085, sections 3, 3.2, 3.3 and 9.2;
+# Landing order step 3d).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_kotlin_causal_route_delivers_each_change_once_in_causal_order_kotlin.cases`.
+#
+# The rule is written once, as the standard Mesh algorithms, and the Kotlin
+# core applies the tree backends/kotlin/mesh/generate.sh writes from them: the
+# first cases take one branch of the rule away in the documents, as the Rust
+# casefile does, and hold the Kotlin core's tests to noticing. The rest take
+# away one decision the Kotlin core makes around the rule: the write-ahead
+# release, the retention at the stable cut, the mark, the verdict that takes no
+# number, the view and epoch checks, the vector on a link that comes back and
+# on its period, and the host's half that queues verdicts and performs the
+# announcement. Each mutant still compiles.
+#
+# The rule reaches the core only through the committed tree its regeneration
+# writes, so the tree is a declared target and the regeneration is what carries
+# a mutated document into it.
+#
+# Anchors are literal slices of the sources; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_gradle . :sce-kotlin-mesh:jvmTest --tests 'com.sce.mesh.CausalLayerTest' --tests 'com.sce.mesh.CausalRouteTest' --tests 'com.sce.mesh.EndpointTest'
+mutation_targets stdlib/mesh/causal_admit.scxml
+mutation_targets stdlib/mesh/causal_raise.scxml
+mutation_targets stdlib/mesh/causal_lacks.scxml
+mutation_targets stdlib/mesh/causal_cut.scxml
+mutation_targets backends/kotlin/mesh/src/commonMain/kotlin/generated/CausalAdmit.kt
+mutation_targets backends/kotlin/mesh/src/commonMain/kotlin/generated/CausalRaise.kt
+mutation_targets backends/kotlin/mesh/src/commonMain/kotlin/generated/CausalLacks.kt
+mutation_targets backends/kotlin/mesh/src/commonMain/kotlin/generated/CausalCut.kt
+mutation_targets backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Causal.kt
+mutation_targets backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Router.kt
+mutation_targets backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Endpoint.kt
+mutation_regen backends/kotlin/mesh/generate.sh
+mutation_oracles backends/kotlin/mesh/src/commonTest/kotlin/com/sce/mesh/CausalLayerTest.kt backends/kotlin/mesh/src/commonTest/kotlin/com/sce/mesh/CausalRouteTest.kt backends/kotlin/mesh/src/commonTest/kotlin/com/sce/mesh/EndpointTest.kt
+
+# ── causal_admit: drop, deliver, hold ──────────────────────────────
+
+# CausalLayerTest.aChangeGivenAgainIsDroppedAndNotHeld.
+mutation_case "a change delivered already is held, not dropped (<= becomes <)" <<'PY'
+edit("stdlib/mesh/causal_admit.scxml",
+     r'''<sce:if cond="dot.seq &lt;= seen">''',
+     r'''<sce:if cond="dot.seq &lt; seen">''')
+PY
+
+# CausalLayerTest.aChangePastAGapOfItsAuthorIsHeldUntilTheGapFills.
+mutation_case "a change past a gap of its author is delivered (s = D[a] + 1 becomes s > D[a])" <<'PY'
+edit("stdlib/mesh/causal_admit.scxml",
+     r'''<sce:if cond="dot.seq === seen + 1 &amp;&amp; covered">''',
+     r'''<sce:if cond="dot.seq &gt; seen &amp;&amp; covered">''')
+PY
+
+# CausalLayerTest.aChangeWhoseContextIsNotDeliveredIsHeldUntilItIs.
+mutation_case "a change whose context is not delivered is delivered (C[b] <= D[b] removed)" <<'PY'
+edit("stdlib/mesh/causal_admit.scxml",
+     r'''(needed.hi !== dot.hi || needed.lo !== dot.lo) &amp;&amp; needed.seq &gt; have''',
+     r'''(needed.hi !== dot.hi || needed.lo !== dot.lo) &amp;&amp; false''')
+PY
+
+# ── causal_raise, causal_lacks, causal_cut ─────────────────────────
+
+# CausalLayerTest.theNextChangeIsDeliveredOnceAndRaisesItsAuthorsColumn.
+mutation_case "a vector is not raised by a larger entry of the other" <<'PY'
+edit("stdlib/mesh/causal_raise.scxml",
+     r'''theirs.hi === mine.hi &amp;&amp; theirs.lo === mine.lo &amp;&amp; theirs.seq &gt; top''',
+     r'''theirs.hi === mine.hi &amp;&amp; theirs.lo === mine.lo &amp;&amp; false''')
+PY
+
+# CausalLayerTest.aLostChangeIsReceivedAfterOneVectorExchange.
+mutation_case "a vector lacks nothing, so no repair is sent" <<'PY'
+edit("stdlib/mesh/causal_lacks.scxml",
+     r'''<sce:return expr="dot.seq &gt; seen"/>''',
+     r'''<sce:return expr="false"/>''')
+PY
+
+# CausalLayerTest.theStableCutIsTheMinimumOverTheViewWithAnUnknownMemberAtZero.
+mutation_case "the cut is the maximum over the view, not the minimum" <<'PY'
+edit("stdlib/mesh/causal_cut.scxml",
+     r'''<sce:if cond="value &lt; low">''',
+     r'''<sce:if cond="value &gt; low">''')
+PY
+
+# CausalLayerTest.theStableCutIsTheMinimumOverTheViewWithAnUnknownMemberAtZero.
+mutation_case "a member whose vector is unknown is left out of the cut" <<'PY'
+edit("stdlib/mesh/causal_cut.scxml",
+     r'''<sce:if cond="len(holders) &gt;= members">''',
+     r'''<sce:if cond="true">''')
+PY
+
+# ── the Kotlin layer ───────────────────────────────────────────────
+
+# CausalLayerTest.anAcceptedChangeLeavesOnlyOnceItsJournalRecordIsCommitted.
+mutation_case "the layer releases a change when it tags it" <<'PY'
+edit("backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Causal.kt",
+     "log += CausalLogged(dot, message, released = false)",
+     "log += CausalLogged(dot, message, released = true)")
+PY
+
+# CausalLayerTest.theLogDropsAChangeAtTheCutAndAnswersARepairBeforeIt.
+mutation_case "the log is pruned at the copy's own delivered vector, not the cut" <<'PY'
+edit("backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Causal.kt",
+     "log.removeAll { !causalLacks(cut, it.dot) }",
+     "log.removeAll { !causalLacks(delivered, it.dot) }")
+PY
+
+# CausalLayerTest.membersThatNeverWroteMoveTheCutByTheirVectorsAlone.
+mutation_case "a received vector is not recorded as its member's mark" <<'PY'
+edit("backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Causal.kt",
+     "        // The mark: what the member says it delivered.\n        noteKnown(author, tag.vector)\n",
+     "")
+PY
+
+# CausalLayerTest.anOfferPastTheRoomIsRefusedAndTakesNoNumber.
+mutation_case "a refused offer takes a number" <<'PY'
+edit("backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Causal.kt",
+     "        if (log.size >= room) return Offered.Answered(Verdict.Refused(Refusal.NO_ROOM_FOR_HISTORY))\n",
+     "        if (log.size >= room) {\n"
+     "            delivered = causalRaise(delivered, listOf(replica.entry(ownSeq + 1uL)))\n"
+     "            return Offered.Answered(Verdict.Refused(Refusal.NO_ROOM_FOR_HISTORY))\n"
+     "        }\n")
+PY
+
+# CausalLayerTest.aChangeOfAnotherEpochIsRejectedAndNotDelivered and
+# CausalRouteTest.aChangeOfAnotherViewIsRaisedAndNotDelivered.
+mutation_case "the epoch check is removed" <<'PY'
+edit("backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Causal.kt",
+     "            tag.epoch != group.epoch -> Rejection.OtherEpoch(tag.epoch)",
+     "            group.epoch != group.epoch -> Rejection.OtherEpoch(tag.epoch)")
+PY
+
+# CausalLayerTest.aCopyWithoutItsJournalBeginsANewIncarnation.
+mutation_case "a second incarnation of a member is held to the view" <<'PY'
+edit("backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Causal.kt",
+     "        author in known || 1 + known.size < group.view.size",
+     "        author in known || 1 + known.size <= group.view.size")
+PY
+
+# ── the Kotlin router and endpoint ─────────────────────────────────
+
+# CausalRouteTest.aCausalSendLeavesOnlyOnceItsJournalRecordIsCommitted.
+mutation_case "a causal send is transmitted at once, not offered" <<'PY'
+edit("backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Router.kt",
+     "        if (peer.config.causal != null) return offer(peerName, peer, envelope)",
+     "        if (peer.config.causal == null) return offer(peerName, peer, envelope)")
+PY
+
+# CausalRouteTest.aLinkThatComesBackSendsAVectorAndRepairsWhatWasLost.
+mutation_case "a link that comes back asks for no vector" <<'PY'
+edit("backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Router.kt",
+     "val announce = if (bound.causal != null) listOf(Effect.AnnounceDue(peer)) else emptyList()",
+     "val announce = if (bound.causal == null) listOf(Effect.AnnounceDue(peer)) else emptyList()")
+PY
+
+# CausalRouteTest.aCausalPeerIsOwedAVectorOnItsPeriod.
+mutation_case "a vector is owed only past its period, not at it" <<'PY'
+edit("backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Router.kt",
+     "saturatingSub(nowMs, at) >= causal.announceEveryMs",
+     "saturatingSub(nowMs, at) > causal.announceEveryMs")
+PY
+
+# CausalRouteTest.aPeriodAcrossTheWholeClockIsDueNotWrapped.
+mutation_case "the age of an announcement wraps" <<'PY'
+edit("backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Router.kt",
+     "    return if (((a xor b) and (a xor difference)) < 0) {",
+     "    return if (((a xor b) and (a xor difference)) < Long.MIN_VALUE) {")
+PY
+
+# EndpointTest.aCausalChangeLeavesWhenTheHostCommitsItsVerdict.
+mutation_case "the endpoint drops an acceptance" <<'PY'
+edit("backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Endpoint.kt",
+     "                is Effect.Accepted -> verdicts += CausalVerdict.Accepted(effect.peer, effect.dot)",
+     "                is Effect.Accepted -> Unit")
+PY
+
+# EndpointTest.aCausalChangeLeavesWhenTheHostCommitsItsVerdict.
+mutation_case "the endpoint performs no announcement" <<'PY'
+edit("backends/kotlin/mesh/src/commonMain/kotlin/com/sce/mesh/Endpoint.kt",
+     "                is Effect.AnnounceDue ->\n                    apply(router.announce(effect.peer, environment.envelopeId(), environment.nowMs()))\n",
+     "                is Effect.AnnounceDue -> Unit\n")
+PY
