@@ -847,8 +847,10 @@ static inline const sce_host_invoker_entry_t *sce_host_invoker_find(const sce_ho
  * a machine's inbox from another context carries what a direct call on its
  * owner would have passed (docs/adr/0084). The C11 port of
  * `SCE::HostInvokeEnding` (`sce/include/core/HostProcessor.h`), with the
- * session it names beside it, and every string held rather than pointed at,
- * because a post copies the value into the inbox.
+ * session it names beside it. The short strings are held; `data` is a view,
+ * which a post copies into the machine's own inbox slot, at the size of its
+ * slot of `_event.data`, refusing data that does not fit (docs/adr/0086,
+ * section 8.5 (b)).
  */
 typedef struct sce_host_invoke_ending_s {
     /** The session that started the invocation, as its request named it
@@ -863,8 +865,9 @@ typedef struct sce_host_invoke_ending_s {
     uint64_t token;
     /** True for a completion and false for a failure. */
     bool done;
-    /** `_event.data` of the event the ending raises. */
-    char data[SCE_MAX_DATA_LEN];
+    /** `_event.data` of the event the ending raises: a view of text the poster
+        holds, valid for the call it is handed to; NULL and "" are no data. */
+    const char *data;
     /** `_event.origin` and `_event.origintype` of that event, for a host whose
         invocation stands for a party it can name, in the host's own terms
         (docs/adr/0090, section 2): its declared type and the address a
