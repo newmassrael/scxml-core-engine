@@ -1034,11 +1034,13 @@ pub struct StateContext<'a> {
     /// The alias of the schema the triggering event carries, if it carries one — what
     /// `_event.data` is a record of.
     pub payload_alias: Option<&'a str>,
-    /// Whether that schema has a `string` field. A payload's text is not yet held to
-    /// the bound its schema declares — the assignment that takes it into a variable
-    /// is what holds it — so a payload that carries text is not handed to an
-    /// algorithm whole (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A record's string
-    /// field").
+    /// Whether that schema has a `string` field. A payload's text is held to the
+    /// bound its schema declares where the delivery is read (docs/adr/0086, section
+    /// 4.4), but the Rust payload struct of a schema of entries holds it in the
+    /// engine's own text type, where an algorithm's record holds the field's bounded
+    /// text, so a payload that carries text is not handed to an algorithm whole
+    /// until that struct holds the bounded text too (section 7.4); a record variable
+    /// does (docs/SCE_ACCEPTED_SUBSET.md §2.15, "A record's string field").
     pub payload_holds_text: bool,
 }
 
@@ -1361,9 +1363,11 @@ impl StaticScope {
                 }
             }
             (StaticSlot::Record(_), ArgShape::EventData) if context.payload_holds_text => Err(
-                "the payload of the event holds text, which is not held to the bound its \
-                 schema declares until it is taken into a variable: assign `_event.data` to a \
-                 record variable and hand the algorithm that"
+                "the payload of the event holds text, which the Rust payload struct holds in \
+                 the engine's own text type and an algorithm's record in the bounded text of \
+                 its field, so the call would copy it across a conversion the payload's type \
+                 does not prove fits: assign `_event.data` to a record variable, which holds \
+                 the text in that bounded type, and hand the algorithm that"
                     .to_string(),
             ),
             (StaticSlot::Record(alias), ArgShape::EventData) => match context.payload_alias {
