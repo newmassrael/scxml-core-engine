@@ -954,6 +954,18 @@ typedef struct {{ csym_prefix }}{{ model.name }}_inbox_input {
         } by_name;
 {% endif %}
 {% if inbox_endings %}
+{% if model.needs_script_engine %}
+        /* An ending, with its data handed over as `event`'s is (docs/adr/0086,
+           section 8.6 (d)): `record.data` is the poster's storage, NULL for no
+           data, released as above, once, when the input is applied, when a
+           session below this one that it names has taken it, or when the
+           machine is destroyed with it still in the inbox. */
+        struct {
+            sce_host_invoke_ending_t record;
+            sce_inbox_release_fn release;
+            void *release_context;
+        } ending;
+{% else %}
         /* An ending, with its data held here, at the size of this machine's
            slot: `record.data` is not read, and the data is handed on as a view
            of `data` when the input is applied (docs/adr/0086, section 8.5 (b)). */
@@ -961,6 +973,7 @@ typedef struct {{ csym_prefix }}{{ model.name }}_inbox_input {
             sce_host_invoke_ending_t record;
             char data[{{ data_slot.name }}];
         } ending;
+{% endif %}
 {% endif %}
     } as;
 } {{ csym_prefix }}{{ model.name }}_inbox_input_t;
@@ -2346,9 +2359,22 @@ void {{ csym_prefix }}{{ model.name }}_build_inboxes({{ csym_prefix }}{{ model.n
    session's inbox, and answers whether it took it. `_inbox_route_ending`
    finds the session `ending` names in a slot below this one, at any depth,
    and posts it there: it answers whether it found the session, and `*taken`
-   whether that session's inbox took the ending. */
+   whether that session's inbox took the ending.{% if model.needs_script_engine %}
+
+   docs/adr/0086, section 8.6 (d): this machine's inbox holds no fixed storage
+   for an ending's data, so a post hands over `ending->data`, storage the poster
+   allocated, with `release`, which the machine calls with `release_context`
+   and the data once, as it does for an event's (`_inbox_input_t`). A post the
+   inbox refuses hands nothing over, and the poster still owns its data.
+   `release` is NULL for data nobody frees.{% endif %} */
+{% if model.needs_script_engine %}
+bool {{ csym_prefix }}{{ model.name }}_inbox_post_ending({{ csym_prefix }}{{ model.name }}_t *sm,
+                                                         const sce_host_invoke_ending_t *ending,
+                                                         sce_inbox_release_fn release, void *release_context);
+{% else %}
 bool {{ csym_prefix }}{{ model.name }}_inbox_post_ending({{ csym_prefix }}{{ model.name }}_t *sm,
                                                          const sce_host_invoke_ending_t *ending);
+{% endif %}
 bool {{ csym_prefix }}{{ model.name }}_inbox_route_ending({{ csym_prefix }}{{ model.name }}_t *sm,
                                                           const sce_host_invoke_ending_t *ending, bool *taken);
 {% endif %}
