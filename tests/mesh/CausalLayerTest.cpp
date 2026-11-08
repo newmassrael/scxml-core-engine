@@ -47,11 +47,11 @@ using Layer = CausalLayer<Msg>;
 using Names = std::vector<std::uint32_t>;
 
 CausalGroup view() {
-    return CausalGroup{"people", 0, {"phone/list", "laptop/list", "tablet/list"}};
+    return CausalGroup{"people", 0, {"phone/phone_list", "laptop/laptop_list", "tablet/tablet_list"}};
 }
 
 CausalGroup pairView() {
-    return CausalGroup{"pair", 0, {"phone/list", "laptop/list"}};
+    return CausalGroup{"pair", 0, {"phone/phone_list", "laptop/laptop_list"}};
 }
 
 CausalReplica replica(std::uint8_t n) {

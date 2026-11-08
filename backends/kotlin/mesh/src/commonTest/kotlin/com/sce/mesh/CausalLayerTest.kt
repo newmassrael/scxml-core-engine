@@ -20,8 +20,9 @@ import kotlin.test.assertTrue
 import kotlin.test.fail
 
 class CausalLayerTest {
-    private val view = CausalGroup("people", 0uL, listOf("phone/list", "laptop/list", "tablet/list"))
-    private val pair = CausalGroup("pair", 0uL, listOf("phone/list", "laptop/list"))
+    private val view =
+        CausalGroup("people", 0uL, listOf("phone/phone_list", "laptop/laptop_list", "tablet/tablet_list"))
+    private val pair = CausalGroup("pair", 0uL, listOf("phone/phone_list", "laptop/laptop_list"))
 
     /** A message as the tests carry it: the tag it was sent with and a name. */
     private data class Msg(val tag: CausalTag, val name: Int)

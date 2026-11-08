@@ -267,7 +267,7 @@ class EndpointTest {
                 responders = listOf("people"),
                 deadlineMs = null,
                 replyEvents = emptyList(),
-                causal = CausalGroup("people", 0uL, listOf("phone/list", "laptop/list")),
+                causal = CausalGroup("people", 0uL, listOf("phone/phone_list", "laptop/laptop_list")),
             ),
         )
         val endpoint = Endpoint(router, transport, environment)

@@ -47,8 +47,9 @@ private enum Packet {
     case vector(from: Int, tag: CausalTag)
 }
 
-private let threeView = CausalGroup(name: "people", epoch: 0, view: ["phone/list", "laptop/list", "tablet/list"])
-private let twoView = CausalGroup(name: "pair", epoch: 0, view: ["phone/list", "laptop/list"])
+private let threeView = CausalGroup(
+    name: "people", epoch: 0, view: ["phone/phone_list", "laptop/laptop_list", "tablet/tablet_list"])
+private let twoView = CausalGroup(name: "pair", epoch: 0, view: ["phone/phone_list", "laptop/laptop_list"])
 
 private func layer(_ group: CausalGroup, _ n: UInt8, _ room: Int) -> CausalLayer<Msg> {
     CausalLayer(group: group, start: .newIncarnation(causalReplica(n)), room: room)

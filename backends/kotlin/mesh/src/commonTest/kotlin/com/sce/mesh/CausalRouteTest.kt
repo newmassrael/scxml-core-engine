@@ -35,7 +35,7 @@ class CausalRouteTest {
         responders = listOf("people"),
         deadlineMs = null,
         replyEvents = emptyList(),
-        causal = CausalGroup("people", 0uL, listOf("phone/list", "laptop/list", "tablet/list")),
+        causal = CausalGroup("people", 0uL, listOf("phone/phone_list", "laptop/laptop_list", "tablet/tablet_list")),
     )
 
     /** A binding that is not causal. */
