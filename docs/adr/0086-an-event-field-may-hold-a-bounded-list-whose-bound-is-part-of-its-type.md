@@ -938,6 +938,26 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
    tests' counting allocator (`backends/c/tests/unit/counting_alloc.h`) that every text is freed exactly
    once. The other scratch roles still hold the slot on a script machine.
 
+   *As landed (the second part of (d), 2026-11-09).* A script machine holds every role its engine's
+   values are written into (`c11_scratch::GROWN_IN_THE_SCRATCH`: payload, content, pairs, request,
+   invoke_content, message, done and the BasicHTTP reply) as a `sce_grown_text_t` of its own, outside
+   every colour, grown through the engine's allocator by `sce_grown_text_reserve`, reused from one write
+   to the next and freed once by `release_scratch` before the engine is closed. Only its typed roles
+   (a typed raise's data, a typed result's, a restore's failure), which the slot bounds, stay coloured
+   unions. Every site reaches a grown role through one set of accessors the source defines for its
+   kind of machine, `SCE_SCRATCH_BUF`, `SCE_SCRATCH_CAP`, `SCE_SCRATCH_RESERVE` and
+   `SCE_SCRATCH_REFUSE`, so a site is written once and none sizes a role by `sizeof`, which would be a
+   pointer's size on a script machine; a test refuses any such spelling in a script machine's generated
+   C. A site reserves the text's length before it writes: a Lua string's own length, a request field's
+   longest spelling (`sce_request_field_wire_size`), a child's done data as `_done_data_wire` measures
+   it (it now answers the whole length, as `snprintf` does), and a reason at
+   `<SM>_DATA_LEN_REASONS`, the longest reason the machine raises. A literal payload is viewed in its
+   static storage, not copied. A reserve the heap refuses refuses the act whole, counted and raised as
+   `error.execution` (`refuse_event_data`, row `event_data_unallocated`), and no text is cut, where the
+   Lua writers cut one to the buffer before. A refusal whose own error the heap cannot hold is counted
+   and not raised again (`refusing_event_data`), so a heap that gives nothing ends the chain at one
+   link.
+
    **(e) Retire the knob.** Once (a) to (d) hold, `SCE_MAX_DATA_LEN` is removed and a build that defines it
    fails with `#error` (item 3), and every test and note that names it moves.
 
