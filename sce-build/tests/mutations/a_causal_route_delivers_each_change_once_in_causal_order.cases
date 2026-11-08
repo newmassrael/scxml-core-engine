@@ -1,0 +1,83 @@
+# Mutation cases for "a causal route delivers each change once in causal order".
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_causal_route_delivers_each_change_once_in_causal_order.cases`.
+#
+# The rule of a causal route is written once, as the standard Mesh algorithms
+# (docs/adr/0085, sections 3 and 9.2.6): `causal_admit` drops a change its copy
+# delivered already, delivers the next change of its author whose context is
+# delivered and holds any other; `causal_raise` merges two vectors;
+# `causal_lacks` says what a vector lacks; `causal_cut` is the stable cut, the
+# pointwise minimum over the view with a member not heard from at 0. Each case
+# takes one rule away. The Rust core's tests of section 9.2 (`causal::tests`)
+# and its routes (`router::tests`) hold the generated rule to what each
+# branch answers, the three-copy worlds among them.
+#
+# The rule reaches the core only through the committed tree its regeneration
+# writes, so the tree is a declared target and the regeneration is what carries
+# a mutated document into it.
+#
+# Anchors are literal slices of the documents; an edit that moves one is
+# reported INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-mesh --lib
+mutation_targets stdlib/mesh/causal_admit.scxml
+mutation_targets stdlib/mesh/causal_raise.scxml
+mutation_targets stdlib/mesh/causal_lacks.scxml
+mutation_targets stdlib/mesh/causal_cut.scxml
+mutation_targets backends/rust/mesh/src/generated/causal_admit.rs
+mutation_targets backends/rust/mesh/src/generated/causal_raise.rs
+mutation_targets backends/rust/mesh/src/generated/causal_lacks.rs
+mutation_targets backends/rust/mesh/src/generated/causal_cut.rs
+mutation_regen backends/rust/mesh/generate.sh
+mutation_oracles backends/rust/mesh/src/causal.rs backends/rust/mesh/src/router.rs
+
+# ── causal_admit: drop, deliver, hold ──────────────────────────────
+
+mutation_case "a change delivered already is held, not dropped (<= becomes <)" <<'PY'
+edit("stdlib/mesh/causal_admit.scxml",
+     r'''<sce:if cond="dot.seq &lt;= seen">''',
+     r'''<sce:if cond="dot.seq &lt; seen">''')
+PY
+
+mutation_case "a change past a gap of its author is delivered (s = D[a] + 1 becomes s > D[a])" <<'PY'
+edit("stdlib/mesh/causal_admit.scxml",
+     r'''<sce:if cond="dot.seq === seen + 1 &amp;&amp; covered">''',
+     r'''<sce:if cond="dot.seq &gt; seen &amp;&amp; covered">''')
+PY
+
+mutation_case "a change whose context is not delivered is delivered (C[b] <= D[b] removed)" <<'PY'
+edit("stdlib/mesh/causal_admit.scxml",
+     r'''(needed.hi !== dot.hi || needed.lo !== dot.lo) &amp;&amp; needed.seq &gt; have''',
+     r'''(needed.hi !== dot.hi || needed.lo !== dot.lo) &amp;&amp; false''')
+PY
+
+# ── causal_raise: the merge ────────────────────────────────────────
+
+mutation_case "a vector is not raised by a larger entry of the other" <<'PY'
+edit("stdlib/mesh/causal_raise.scxml",
+     r'''theirs.hi === mine.hi &amp;&amp; theirs.lo === mine.lo &amp;&amp; theirs.seq &gt; top''',
+     r'''theirs.hi === mine.hi &amp;&amp; theirs.lo === mine.lo &amp;&amp; false''')
+PY
+
+# ── causal_lacks: what a vector lacks ──────────────────────────────
+
+mutation_case "a vector lacks nothing, so no repair is sent" <<'PY'
+edit("stdlib/mesh/causal_lacks.scxml",
+     r'''<sce:return expr="dot.seq &gt; seen"/>''',
+     r'''<sce:return expr="false"/>''')
+PY
+
+# ── causal_cut: the stable cut ─────────────────────────────────────
+
+mutation_case "the cut is the maximum over the view, not the minimum" <<'PY'
+edit("stdlib/mesh/causal_cut.scxml",
+     r'''<sce:if cond="value &lt; low">''',
+     r'''<sce:if cond="value &gt; low">''')
+PY
+
+mutation_case "a member whose vector is unknown is left out of the cut" <<'PY'
+edit("stdlib/mesh/causal_cut.scxml",
+     r'''<sce:if cond="len(holders) &gt;= members">''',
+     r'''<sce:if cond="true">''')
+PY
