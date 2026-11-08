@@ -68,7 +68,7 @@
                         lua_pop(sm->L, 1);
                         {{ csym_prefix }}{{ machine }}_raise_platform_error(
                             sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
-                            "<send> {{ what }} does not fit the event's data, so the message was not sent");
+                            {{ reason("send_part_past_slot", what) }});
                         return;
                     }
                     memcpy(_ed, _j, _jl + 1u);
@@ -133,21 +133,21 @@
                         } else {
                             {{ csym_prefix }}{{ machine }}_raise_platform_error(
                                 sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
-                                "<send> <param name='{{ param.name | escape_c }}'> failed to evaluate");
+                                {{ reason("param_failed", "<send>", param.name) }});
                             _param_failed = true;
                         }
                     }
 {% else %}
                     {{ csym_prefix }}{{ machine }}_raise_platform_error(
                         sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
-                        "<send> <param name='{{ param.name | escape_c }}'> names no location");
+                        {{ reason("param_names_no_location", "<send>", param.name) }});
                     _param_failed = true;
 {% endif %}
 {% endfor %}
                     if (!sce_forge_wire_end(&sce_wire_)) {
                         {{ csym_prefix }}{{ machine }}_raise_platform_error(
                             sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
-                            "<send>'s payload does not fit the event's data, so the message was not sent");
+                            {{ reason("send_payload_past_slot") }});
                         return;
                     }
                 }
@@ -175,7 +175,7 @@
                     lua_pop(sm->L, 1);
                     {{ csym_prefix }}{{ machine }}_raise_platform_error(
                         sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
-                        "<send> namelist names '{{ var_name | escape_c }}', which cannot be read");
+                        {{ reason("send_namelist_unreadable", var_name) }});
                     return;
                 }
 {% endfor %}
@@ -188,7 +188,7 @@
                    data model — reported, and the pair left out. */
                 {{ csym_prefix }}{{ machine }}_raise_platform_error(
                     sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
-                    "<send> <param name='{{ param.name | escape_c }}'> names no location");
+                    {{ reason("param_names_no_location", "<send>", param.name) }});
                 _param_failed = true;
 {% else %}
                 if (luaL_dostring(sm->L,
@@ -198,7 +198,7 @@
                        and value. */
                     {{ csym_prefix }}{{ machine }}_raise_platform_error(
                         sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
-                        "<send> <param name='{{ param.name | escape_c }}'> expr failed to evaluate");
+                        {{ reason("param_expr_failed", "<send>", param.name) }});
                     _param_failed = true;
                 }
 {% endif %}
@@ -216,7 +216,7 @@
                     lua_pop(sm->L, 1);
                     {{ csym_prefix }}{{ machine }}_raise_platform_error(
                         sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
-                        "<send>'s payload could not be serialised, so the message was not sent");
+                        {{ reason("send_payload_unserialised") }});
                     return;
                 }
 {{ send_payload_take(csym_prefix, machine, "payload") }}
@@ -262,7 +262,7 @@
                     if (sce_failure_.failed) {
                         {{ csym_prefix }}{{ machine }}_raise_platform_error(
                             sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
-                            "<send> <content expr> failed to evaluate");
+                            {{ reason("send_content_expr_failed") }});
                         sce_value = sce_forge_wire_string("");
                         _param_failed = true;
                     }
@@ -273,7 +273,7 @@
                     if (!sce_forge_wire_json(sce_value, {{ json_buf }}, sizeof(sm->scratch.payload))) {
                         {{ csym_prefix }}{{ machine }}_raise_platform_error(
                             sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
-                            "<send> <content expr> does not fit the event's data, so the message was not sent");
+                            {{ reason("send_content_expr_past_slot") }});
                         return;
                     }
 {% endif %}
@@ -281,7 +281,7 @@
                     if (!sce_forge_wire_text(sce_value, {{ text_buf }}, sizeof(sm->scratch.content))) {
                         {{ csym_prefix }}{{ machine }}_raise_platform_error(
                             sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
-                            "<send> <content expr> does not fit a request's content, so the message was not sent");
+                            {{ reason("send_content_expr_past_request") }});
                         return;
                     }
 {% endif %}
@@ -309,7 +309,7 @@
                     lua_pop(sm->L, 1);
                     {{ csym_prefix }}{{ machine }}_raise_platform_error(
                         sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
-                        "<send> <content expr> failed to evaluate");
+                        {{ reason("send_content_expr_failed") }});
                     memcpy(_ed, "\"\"", sizeof("\"\""));
                     _param_failed = true;
                 } else {
@@ -328,7 +328,7 @@
                     lua_pop(sm->L, 1);
                     {{ csym_prefix }}{{ machine }}_raise_platform_error(
                         sm, {{ csym_prefix | upper }}{{ machine | upper }}_EVENT_ERROR_EXECUTION,
-                        "<send> <content> failed to evaluate");
+                        {{ reason("send_content_failed") }});
                     _ed[0] = '\0';
                 } else {
 {{ send_payload_take(csym_prefix, machine, "<content>") }}
@@ -924,7 +924,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_basic_http({{ cs
                     _http_data_fits = false;
                     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                         sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                        "a BasicHTTP reply's data does not fit the event's data, so the reply was not delivered");
+                        {{ reason("http_reply_past_slot") }});
                 } else {
                     /* docs/adr/0086, section 8.5 (d): the text is held in the
                        machine's scratch, and the event is a view of it. */
@@ -984,7 +984,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
 {% if 'error.execution' in model.events %}
         {{ csym_prefix }}{{ model.name }}_raise_platform_error(
             sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-            "<send> names a processor the host declared but never registered");
+            {{ reason("send_processor_unregistered") }});
 {% endif %}
         return;
     }
@@ -1028,8 +1028,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
     if (_replies.overflowed) {
         {{ csym_prefix }}{{ model.name }}_raise_platform_error(
             sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-            "<send> to a host-served processor reported more events than this "
-            "build reserved room for (SCE_MAX_HOST_RESPONSES)");
+            {{ reason("send_replies_past_room") }});
     }
 {% endif %}
 }
@@ -1242,8 +1241,8 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                     if (sce_failure_.failed || !sce_parse_delay_ms(_host_delay_text, &_host_delay_ms)) {
                         {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
                             sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                            sce_failure_.failed ? "<send> delayexpr could not be evaluated"
-                                                : "<send> delayexpr is not a CSS2 time",
+                            sce_failure_.failed ? {{ reason("send_delayexpr_unevaluated") }}
+                                                : {{ reason("send_delayexpr_not_time") }},
                             _host_req.send_id);
                         return;
                     }
@@ -1260,8 +1259,8 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                 if (!_host_delay_evaluated || !_host_delay_is_time) {
                     {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
                         sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                        _host_delay_evaluated ? "<send> delayexpr is not a CSS2 time"
-                                              : "<send> delayexpr could not be evaluated",
+                        _host_delay_evaluated ? {{ reason("send_delayexpr_not_time") }}
+                                              : {{ reason("send_delayexpr_unevaluated") }},
                         _host_req.send_id);
                     return;
                 }
@@ -1382,7 +1381,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                did not name is a silent misdelivery. */
             {{ P }}_raise_platform_error_with_send_id(
                 sm, {{ PU }}_EVENT_ERROR_EXECUTION,
-                "<send> uses a combination of attributes this backend cannot emit",
+                {{ reason("send_attributes_unemitted") }},
                 {{ send_id_c }});
             return;
 {# This arm and each build-time refusal below end the block unconditionally:
@@ -1409,7 +1408,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                 if (!_idloc_ok) {
                     {{ P }}_raise_platform_error_with_send_id(
                         sm, {{ PU }}_EVENT_ERROR_EXECUTION,
-                        "<send idlocation='{{ action.idlocation | escape_c }}'> could not take the send id",
+                        {{ reason("send_idlocation_failed", action.idlocation) }},
                         {{ send_id_c }});
                     return;
                 }
@@ -1426,7 +1425,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                 if (!_send_type_ok) {
                     {{ P }}_raise_platform_error_with_send_id(
                         sm, {{ PU }}_EVENT_ERROR_EXECUTION,
-                        "<send> typeexpr could not be evaluated",
+                        {{ reason("send_typeexpr_unevaluated") }},
                         {{ send_id_c }});
                     return;
                 }
@@ -1443,7 +1442,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
 {% endif %}
                     {{ P }}_raise_platform_error_with_send_id(
                         sm, {{ PU }}_EVENT_ERROR_EXECUTION,
-                        "<send> typeexpr names a processor this platform does not support",
+                        {{ reason("send_typeexpr_unsupported") }},
                         {{ send_id_c }});
                     return;
                 }
@@ -1465,7 +1464,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
             if (_send_evt_name[0] == '\0') {
                 {{ P }}_raise_platform_error_with_send_id(
                     sm, {{ PU }}_EVENT_ERROR_EXECUTION,
-                    "<send> eventexpr could not be evaluated to an event name",
+                    {{ reason("send_eventexpr_unevaluated") }},
                     {{ send_id_c }});
                 return;
             }
@@ -1479,7 +1478,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
             if (!_send_evt_ok || _send_evt_name[0] == '\0') {
                 {{ P }}_raise_platform_error_with_send_id(
                     sm, {{ PU }}_EVENT_ERROR_EXECUTION,
-                    "<send> eventexpr could not be evaluated to an event name",
+                    {{ reason("send_eventexpr_unevaluated") }},
                     {{ send_id_c }});
                 return;
             }
@@ -1501,7 +1500,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                 if (sce_failure_.failed) {
                     {{ P }}_raise_platform_error_with_send_id(
                         sm, {{ PU }}_EVENT_ERROR_EXECUTION,
-                        "<send> targetexpr could not be evaluated",
+                        {{ reason("send_targetexpr_unevaluated") }},
                         {{ send_id_c }});
                     return;
                 }
@@ -1520,7 +1519,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
             if (!_send_target_ok) {
                 {{ P }}_raise_platform_error_with_send_id(
                     sm, {{ PU }}_EVENT_ERROR_EXECUTION,
-                    "<send> targetexpr failed to evaluate",
+                    {{ reason("send_targetexpr_failed") }},
                     {{ send_id_c }});
                 return;
             }
@@ -1535,7 +1534,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                    cannot address is refused as a static one is. */
                 {{ P }}_raise_platform_error_with_send_id(
                     sm, {{ PU }}_EVENT_ERROR_EXECUTION,
-                    "<send> targetexpr produced a target this processor cannot address",
+                    {{ reason("send_targetexpr_unaddressable") }},
                     {{ send_id_c }});
                 return;
             }
@@ -1545,7 +1544,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                    delivered, the block ended. */
                 {{ P }}_raise_platform_error_with_send_id(
                     sm, {{ PU }}_EVENT_ERROR_COMMUNICATION,
-                    "<send> targetexpr evaluated to nothing, so there is no target to reach",
+                    {{ reason("send_targetexpr_empty") }},
                     {{ send_id_c }});
                 return;
             }
@@ -1555,7 +1554,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                    http(s) URL (`SendHelper::isHttpTarget`). */
                 {{ P }}_raise_platform_error_with_send_id(
                     sm, {{ PU }}_EVENT_ERROR_COMMUNICATION,
-                    "<send> over BasicHTTPEventProcessor resolved a target that is not an http(s) URL",
+                    {{ reason("send_http_target_not_url") }},
                     {{ send_id_c }});
                 return;
             }
@@ -1574,8 +1573,8 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                 if (sce_failure_.failed || !sce_parse_delay_ms(_send_delay_text, &_send_delay_ms)) {
                     {{ P }}_raise_platform_error_with_send_id(
                         sm, {{ PU }}_EVENT_ERROR_EXECUTION,
-                        sce_failure_.failed ? "<send> delayexpr could not be evaluated"
-                                            : "<send> delayexpr is not a CSS2 time",
+                        sce_failure_.failed ? {{ reason("send_delayexpr_unevaluated") }}
+                                            : {{ reason("send_delayexpr_not_time") }},
                         {{ send_id_c }});
                     return;
                 }
@@ -1593,8 +1592,8 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
             if (!_send_delay_evaluated || !_send_delay_is_time) {
                 {{ P }}_raise_platform_error_with_send_id(
                     sm, {{ PU }}_EVENT_ERROR_EXECUTION,
-                    _send_delay_evaluated ? "<send> delayexpr is not a CSS2 time"
-                                          : "<send> delayexpr could not be evaluated",
+                    _send_delay_evaluated ? {{ reason("send_delayexpr_not_time") }}
+                                          : {{ reason("send_delayexpr_unevaluated") }},
                     {{ send_id_c }});
                 return;
             }
@@ -1611,7 +1610,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                here. */
             {{ P }}_raise_platform_error_with_send_id(
                 sm, {{ PU }}_EVENT_ERROR_EXECUTION,
-                "<send type='{{ action.send_type | escape_c }}'> names a processor this platform does not support",
+                {{ reason("send_type_unsupported", action.send_type) }},
                 {{ send_id_c }});
             return;
 {% if flow is not none %}
@@ -1623,7 +1622,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                build time — the send id riding on the error. */
             {{ P }}_raise_platform_error_with_send_id(
                 sm, {{ PU }}_EVENT_ERROR_EXECUTION,
-                "<send target='{{ action.target | escape_c }}'> is not a target this processor can address",
+                {{ reason("send_target_unaddressable", action.target) }},
                 {{ send_id_c }});
             return;
 {% if flow is not none %}
@@ -1633,7 +1632,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
             /* W3C SCXML C.2 (test577): BasicHTTP names no target to post to. */
             {{ P }}_raise_platform_error_with_send_id(
                 sm, {{ PU }}_EVENT_ERROR_COMMUNICATION,
-                "<send> over BasicHTTPEventProcessor has no target to post to",
+                {{ reason("send_http_target_absent") }},
                 {{ send_id_c }});
             return;
 {% if flow is not none %}
@@ -1646,7 +1645,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                ended. */
             {{ P }}_raise_platform_error_with_send_id(
                 sm, {{ PU }}_EVENT_ERROR_COMMUNICATION,
-                "<send target='{{ static_target | escape_c }}'> names no invocation of this session",
+                {{ reason("send_target_no_invocation", static_target) }},
                 {{ send_id_c }});
             return;
 {% if flow is not none %}
@@ -1682,7 +1681,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
             if (!_http_content_ok) {
                 {{ P }}_raise_platform_error_with_send_id(
                     sm, {{ PU }}_EVENT_ERROR_EXECUTION,
-                    "<send> contentexpr failed to evaluate",
+                    {{ reason("send_contentexpr_failed") }},
                     {{ send_id_c }});
                 return;
             }
@@ -1723,7 +1722,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                 if (strcmp(sm->session_id, "{{ static_target[8:] | escape_c }}") != 0) {
                     {{ P }}_raise_platform_error_with_send_id(
                         sm, {{ PU }}_EVENT_ERROR_COMMUNICATION,
-                        "<send target='{{ static_target | escape_c }}'> names a session this processor cannot reach",
+                        {{ reason("send_target_unreachable", static_target) }},
                         {{ send_id_c }});
                     return;
                 }
@@ -1754,7 +1753,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                        send is dropped, not reported. */
                     {{ P }}_raise_platform_error_with_send_id(
                         sm, {{ PU }}_EVENT_ERROR_COMMUNICATION,
-                        "<send target='#_parent'> has no parent session to reach",
+                        {{ reason("send_parent_absent") }},
                         {{ send_id_c }});
                     return;
                 }
@@ -1827,7 +1826,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                             if (sm->parent_sm == NULL) {
                                 {{ P }}_raise_platform_error_with_send_id(
                                     sm, {{ PU }}_EVENT_ERROR_COMMUNICATION,
-                                    "<send> targetexpr names #_parent, and nothing invoked this session",
+                                    {{ reason("send_targetexpr_parent_absent") }},
                                     {{ send_id_c }});
                                 return;
                             }
@@ -1877,7 +1876,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                         }
                         {{ P }}_raise_platform_error_with_send_id(
                             sm, {{ PU }}_EVENT_ERROR_COMMUNICATION,
-                            "<send> targetexpr names a session this processor cannot reach",
+                            {{ reason("send_targetexpr_unreachable") }},
                             {{ send_id_c }});
                         return;
                     }
@@ -1893,7 +1892,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                         (void)_send_target_id;
                         {{ P }}_raise_platform_error_with_send_id(
                             sm, {{ PU }}_EVENT_ERROR_COMMUNICATION,
-                            "<send> targetexpr names a session this processor cannot reach",
+                            {{ reason("send_targetexpr_unreachable") }},
                             {{ send_id_c }});
                         return;
                     default:
@@ -1901,7 +1900,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                            machine has no router for. */
                         {{ P }}_raise_platform_error_with_send_id(
                             sm, {{ PU }}_EVENT_ERROR_EXECUTION,
-                            "<send> targetexpr produced a value that is not a target",
+                            {{ reason("send_targetexpr_not_target") }},
                             {{ send_id_c }});
                         return;
                     }
@@ -2027,7 +2026,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                     if (!deliver_to_invocation(sm, "{{ invoke_info.invoke_id | escape_c }}", &_send_fwd)) {
                         {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
                             sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_COMMUNICATION,
-                            "<send target='{{ action.target | escape_c }}'> names an invocation that is not running",
+                            {{ reason("send_target_invocation_stopped", action.target) }},
                             {{ send_id_c_expr(action) }});
                         return;
                     }
@@ -2082,7 +2081,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                model.events via analyzer.rs. */
             {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                 sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                "<assign> has an invalid or read-only location '{{ action.location | escape_c }}'");
+                {{ reason("assign_location_illegal", action.location) }});
             return;  /* W3C 4.9: the error ends the block (and any <foreach> in it) */
 {% if flow is not none %}
 {% set flow.ended = true %}
@@ -2102,7 +2101,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                 lua_pop(sm->L, 1);
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    "<assign> to '{{ action.location | escape_c }}' failed");
+                    {{ reason("assign_failed", action.location) }});
                 return;  /* W3C 4.9: the error ends the block (and any <foreach> in it) */
             }
 {% else %}
@@ -2140,7 +2139,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                apply_script_engine_implications. */
             {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                 sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                "<foreach> is missing its 'array' or 'item' attribute");
+                {{ reason("foreach_attribute_missing") }});
 {% elif action.actions and action.actions | length > 0 %}
 {# W3C SCXML 4.6: each nesting depth caches its collection under its own
    Lua global, so an inner <foreach> neither overwrites nor clears the
@@ -2159,7 +2158,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                    still runs. */
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    "<foreach array='{{ action.array | escape_c }}'> is not an array");
+                    {{ reason("foreach_not_array", action.array) }});
                 return;
             }
             for (int _i = 0; _i < _sce_n; ++_i) {
@@ -2203,7 +2202,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                with the argument error, as it does on every engine. */
             {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
                 sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                "<send> delay is not a CSS2 time",
+                {{ reason("send_delay_not_time") }},
                 {{ send_id_c_expr(action) }});
             return;
 {% if flow is not none %}
@@ -2423,7 +2422,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                     "Failed to evaluate log expression: %s\n", {{ action.expr | c_text_expr }});
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    "<log> expr failed to evaluate");
+                    {{ reason("log_expr_failed") }});
                 return;
             }
         }
@@ -2475,7 +2474,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
             if (sce_failure_.failed) {
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    "<cancel> sendidexpr failed to evaluate");
+                    {{ reason("cancel_sendidexpr_failed") }});
                 return;
             }
             scheduled_cancel(sm, _cancel_id);
@@ -2493,7 +2492,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                    block. */
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    "<cancel> sendidexpr failed to evaluate");
+                    {{ reason("cancel_sendidexpr_failed") }});
                 return;
             }
         }
@@ -2526,7 +2525,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                 lua_pop(sm->L, 1);
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    "<script> failed to execute");
+                    {{ reason("script_failed") }});
                 return;  /* W3C 4.9: the error ends the block (and any <foreach> in it) */
             }
         }
@@ -2567,9 +2566,9 @@ SCE_SM_FN static void refuse_event_data({{ csym_prefix }}{{ model.name }}_t *sm,
     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
         sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
 {% if model.needs_script_engine %}
-        "the script engine could not allocate storage for an event's data, so the event was refused");
+        {{ reason("event_data_unallocated") }});
 {% else %}
-        "an event's data does not fit this machine's slot of _event.data, so the event was refused");
+        {{ reason("event_data_past_slot") }});
 {% endif %}
 {% endif %}
 }
@@ -3320,7 +3319,7 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
             if (!_idloc_ok) {
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    "<invoke idlocation='{{ invoke_info.idlocation | escape_c }}'> could not take the invoke id");
+                    {{ reason("invoke_idlocation_failed", invoke_info.idlocation) }});
             } else
             {% endif %}
             {# Under `sce-static` the id this start is started under goes to the variable
@@ -3355,7 +3354,7 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
             if (!_idloc_ok) {
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    "<invoke idlocation='{{ invoke_info.idlocation | escape_c }}'> could not take the invoke id");
+                    {{ reason("invoke_idlocation_failed", invoke_info.idlocation) }});
             } else
             {% endif %}
             {{ invoke_defer.queue_start(csym_prefix | upper ~ model.name | upper, state_id, state_id | to_c11_upper_ident, invoke_info, (state.invokes | scxml | length) + loop.index0) }}
@@ -3398,21 +3397,21 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
                 else {
                     {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                         sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                        "<donedata> <param name='{{ param.name | escape_c }}'> failed to evaluate");
+                        {{ reason("param_failed", "<donedata>", param.name) }});
                 }
         {% endif %}
             }
         {% elif 'error.execution' in model.events %}
             {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                 sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                "<donedata> <param name='{{ param.name | escape_c }}'> has an empty location");
+                {{ reason("param_empty_location", "<donedata>", param.name) }});
         {% endif %}
         {% endfor %}
             if (!sce_forge_wire_end(&sce_wire_)) {
         {% if 'error.execution' in model.events %}
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    "<donedata> does not fit the event's data, so it was left empty");
+                    {{ reason("donedata_past_slot") }});
         {% endif %}
             }
         }
@@ -3448,7 +3447,7 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
         {% if 'error.execution' in model.events %}
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    "<donedata> <content expr> failed to evaluate");
+                    {{ reason("donedata_content_expr_failed") }});
         {% endif %}
                 sce_value = sce_forge_wire_string("");
             }
@@ -3457,7 +3456,7 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
         {% if 'error.execution' in model.events %}
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                    "<donedata> does not fit the event's data, so it was left empty");
+                    {{ reason("donedata_past_slot") }});
         {% endif %}
             }
         }
@@ -3479,7 +3478,7 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
         {% else %}
         {{ csym_prefix }}{{ model.name }}_raise_platform_error(
             sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-            "<donedata> <param name='{{ param.name | escape_c }}'> has an empty location");
+            {{ reason("param_empty_location", "<donedata>", param.name) }});
         {% endif %}
         {% endfor %}
         {% elif state.donedata.content.kind == "expression" %}
@@ -4310,7 +4309,7 @@ SCE_SM_FN static SCE_C_UNUSED void scheduled_push_routed({{ csym_prefix }}{{ mod
     }
 {% endif %}
     {{ csym_prefix }}{{ model.name }}_scheduled_entry_t *slot = scheduled_reserve(
-        sm, fire_time_ms, "the scheduled-send queue is full, so this <send delay> was dropped");
+        sm, fire_time_ms, {{ reason("scheduled_queue_full_send") }});
     if (slot == NULL) {
 {% if model.needs_script_engine %}
         event_text_free(sm, &text, &text_size);
@@ -4393,7 +4392,7 @@ SCE_SM_FN static SCE_C_UNUSED void scheduled_push_host({{ csym_prefix }}{{ model
     /* docs/adr/0086, section 8.5 (d): the entry is built in the place the
        queue reserves for it, never on this stack. */
     {{ csym_prefix }}{{ model.name }}_scheduled_entry_t *slot = scheduled_reserve(
-        sm, fire_time_ms, "the scheduled-send queue is full, so this <send delay> was dropped");
+        sm, fire_time_ms, {{ reason("scheduled_queue_full_send") }});
     if (slot == NULL) {
         return;
     }
@@ -5683,7 +5682,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
             } else if (sm->parent_sm == NULL) {
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_COMMUNICATION,
-                    "a delayed <send target='#_parent'> has no parent session to reach",
+                    {{ reason("delayed_send_parent_absent") }},
                     ready->send_id);
             }
             continue;
@@ -5710,7 +5709,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
             if (!deliver_to_invocation(sm, ready->route_invoke, &_ready_fwd)) {
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error_with_send_id(
                     sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_COMMUNICATION,
-                    "a delayed <send> names an invocation that is not running",
+                    {{ reason("delayed_send_invocation_stopped") }},
                     ready->send_id);
             }
 {% else %}
@@ -6450,7 +6449,7 @@ SCE_SM_FN static void schedule_host_invoke_deadline({{ csym_prefix }}{{ model.na
     const uint64_t now_ms = sched_now_ms(sm);
     const uint64_t fire_time_ms = deadline_ms > UINT64_MAX - now_ms ? UINT64_MAX : now_ms + deadline_ms;
     {{ csym_prefix }}{{ model.name }}_scheduled_entry_t *slot = scheduled_reserve(
-        sm, fire_time_ms, "the scheduled-send queue is full, so an <invoke> deadline was dropped");
+        sm, fire_time_ms, {{ reason("scheduled_queue_full_deadline") }});
     if (slot == NULL) {
         return;
     }
@@ -6723,7 +6722,7 @@ SCE_SM_FN static void start_restored_host_invokes({{ csym_prefix }}{{ model.name
 {% if 'error.execution' in model.events %}
             {{ csym_prefix }}{{ model.name }}_raise_platform_error(
                 sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
-                "<invoke> names an invoker the host declared but never registered");
+                {{ reason("invoke_invoker_unregistered") }});
 {% endif %}
         } else {
             sce_host_send_param_t params[sizeof(request->param_names) / sizeof(request->param_names[0]) + 1u];

@@ -1946,6 +1946,9 @@ pub fn register_c11_filters(env: &mut minijinja::Environment, scope: &Arc<Docume
     register_invoke_filters(env);
     register_event_wire_filters(env);
     env.add_filter("escape_c", escape_c);
+    // docs/adr/0086, section 8.6 (b): every reason a raise site emits comes
+    // from one table, by the name of its row, and is measured for the slot.
+    env.add_function("reason", crate::forge::c11_reasons::template_function);
     register_literal_door(env, crate::generator::Language::C11);
     register_ecmascript_filters(env, scope);
     env.add_filter("to_in_predicate_c11", to_in_predicate_c11);
