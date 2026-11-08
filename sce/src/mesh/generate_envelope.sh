@@ -3,8 +3,9 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
 # Regenerate the Mesh envelope codec the C++ runtime is built on
-# (sce/src/mesh/generated/): the standard document sce:std/mesh/envelope.scxml
-# and the three enums it imports, generated for C++. MeshEnvelopeCodec.cpp
+# (sce/src/mesh/generated/): the standard document sce:std/mesh/envelope.scxml,
+# the three enums it imports and the record its causal vector holds, generated
+# for C++. MeshEnvelopeCodec.cpp
 # converts the runtime's MeshEnvelope to and from this codec's value, so the
 # envelope's CBOR is written and read by the same generated code every other
 # backend runs (SCE_FORGE.md §4.6.1).
@@ -38,6 +39,7 @@ mkdir -p "$OUT_DIR"
 STDLIB_MESH="$REPO_ROOT/stdlib/mesh"
 DOCUMENTS=(
     envelope
+    causal_entry
     pattern_kind
     payload_codec
     rpc_status

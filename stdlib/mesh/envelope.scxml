@@ -24,6 +24,7 @@
   <sce:import kind="enum" src="pattern_kind.scxml" as="PatternKind"/>
   <sce:import kind="enum" src="payload_codec.scxml" as="PayloadCodec"/>
   <sce:import kind="enum" src="rpc_status.scxml" as="RpcStatus"/>
+  <sce:import kind="event-schema" src="causal_entry.scxml" as="CausalEntry"/>
   <datamodel>
     <data id="raw" sce:type="bytes" sce:direction="in"/>
     <!-- The envelope's own id: a UUID. -->
@@ -49,5 +50,12 @@
     <data id="parallel_id" sce:type="optional&lt;string&gt;" sce:key="16" sce:max-size="262144" sce:direction="out"/>
     <data id="region_id" sce:type="optional&lt;string&gt;" sce:key="17" sce:max-size="262144" sce:direction="out"/>
     <data id="child_session_id" sce:type="optional&lt;string&gt;" sce:key="18" sce:max-size="262144" sce:direction="out"/>
+    <!-- A causal route's tag (docs/adr/0085, section 3.2): the view's epoch,
+         and a vector of at most 64 entries, one per replica of the view, the
+         sender's own first. On a change that entry is its dot and the rest its
+         causal context; on a `causalVector` the vector is the sender's
+         delivered vector. Present together, on a causal route only. -->
+    <data id="causal_epoch" sce:type="optional&lt;uint64&gt;" sce:key="19" sce:direction="out"/>
+    <data id="causal_vector" sce:type="optional&lt;list&lt;record:CausalEntry&gt;[64]&gt;" sce:key="20" sce:direction="out"/>
   </datamodel>
 </scxml>
