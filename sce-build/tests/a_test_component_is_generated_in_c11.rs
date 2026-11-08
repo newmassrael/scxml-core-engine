@@ -20,10 +20,13 @@
 //! the buffer the machine keeps for it; nothing is allocated, the component
 //! being storage its factory owns. C11 holds a number, a `bool`, a text and an
 //! enum of a received message as the record's unit does, and refuses a byte
-//! string, which the unit holds as a pointer with no length. What C11 refuses
-//! is held here too: a component that declares a module parameter, since C11
-//! generates no suite's tables yet, one that declares `<sce:action>`, and one
-//! whose template reaches a union, which C11 does not lower.
+//! string, which the unit holds as a pointer with no length. A module
+//! parameter starts at its type's zero, or its enum's first variant, and is
+//! read from the run as a saved value of its type is read back, between the
+//! construction of the machine and the entry into its initial configuration.
+//! What C11 refuses is held here too: a component that declares
+//! `<sce:action>`, and one whose template reaches a union, which C11 does not
+//! lower.
 //!
 //! What the generated components do when they run is held by
 //! `backends/c/tests/integration/test_a_test_component_runs_through_its_doors.c`,
@@ -796,19 +799,160 @@ fn a_message_with_a_byte_string_its_content_reads_is_refused_on_c11() {
     );
 }
 
-/// §11.5, §11.8, §12.6: a module parameter's value is the suite's, and C11
-/// does not generate a suite's tables yet, so its component has no read of the
-/// value and refuses one that declares a module parameter by name rather than
-/// make a value up.
+/// §11.5, §11.8, §12.3: a module parameter is declared with its type and no
+/// value of the document's, and the construction starts it at its type's
+/// zero, which nothing reads; the component reads the run's value into it, as
+/// a saved value of its type is read back, after the construction has cleared
+/// the machine and the context is set and before the initial configuration is
+/// entered, and does not enter it when the read is refused. Every value is
+/// read before any is written. The twin of the Go and Rust tests of the same
+/// name.
 #[test]
-fn a_component_that_declares_a_module_parameter_is_refused_on_c11() {
-    assert!(!sce_build::forge::codegen_matrix::TEST_SUITE_BACKENDS.contains(&Language::C11));
-    let detail = refused(&runtime_dir().join("param_asker.scxml"), "param_asker");
+fn a_module_parameter_is_read_from_the_run_before_the_machine_starts() {
+    assert!(sce_build::forge::codegen_matrix::TEST_SUITE_BACKENDS.contains(&Language::C11));
+    let source = file("param_asker", "param_asker_sm.c");
     for needle in [
-        "test-component 'param_asker': the module parameter 'job' takes the value the suite",
-        "which C11 reads into a component once it generates the tables of a suite",
+        "\n#include <sce/saved_values.h>\n",
+        "\n    sm->policy.v_job = 0;\n",
+        "SCE_SM_FN static bool param_asker_component_accept_module_parameters(void *user_data,",
+        "\n    param_asker_t *sm = (param_asker_t *)user_data;\n",
+        "\n    sce_jv_t raw1;\n    uint32_t read1;\n",
+        "\n    if (!sce_test_module_parameters_of(given, \"job\", &raw1, err) ||\n        \
+         !sce_saved_read_uint32(raw1, \"job\", &read1, err)) {\n        return false;\n    }\n",
+        "\n    sm->policy.v_job = read1;\n    return true;\n}",
     ] {
-        assert!(detail.contains(needle), "`{needle}`:\n{detail}");
+        assert!(
+            source.contains(needle),
+            "param_asker holds `{needle}`:\n{source}"
+        );
+    }
+    let accept = &source[at(
+        &source,
+        "_component_accept_module_parameters(void *user_data,",
+    )..];
+    let read_back = at(accept, "sce_saved_read_uint32(raw1, \"job\", &read1, err)");
+    let written = at(accept, "sm->policy.v_job = read1;");
+    assert!(
+        read_back < written,
+        "the value is read before it is written"
+    );
+    let start = &source[at(&source, "param_asker_component_start(")..];
+    let constructed = at(start, "(void)param_asker_init_construct(sm, false");
+    let set = at(start, "sm->test_context = *context;");
+    let read = at(
+        start,
+        "if (!sce_test_context_read_module_parameters(&sm->test_context, \
+         param_asker_component_accept_module_parameters,",
+    );
+    let entered = at(start, "param_asker_init_enter(sm);");
+    assert!(
+        constructed < set && set < read && read < entered,
+        "the parameters are read once the context is set and before the entry"
+    );
+    assert!(
+        start[read..entered].contains("return;"),
+        "a refused read leaves the initial configuration unentered"
+    );
+    // The variable that is no module parameter starts at its `expr`.
+    assert!(
+        source.contains("\n    sm->policy.v_answered = "),
+        "{source}"
+    );
+    let asker = file("asker", "asker_sm.c");
+    assert!(
+        !asker.contains("_component_accept_module_parameters"),
+        "a component with no module parameter reads none"
+    );
+}
+
+/// §11.8: a byte string module parameter is read back held to its bound, as a
+/// restored byte string is, and a text by the reader of its bounded buffer;
+/// each starts at the empty value of the buffer of its bound.
+#[test]
+fn a_bounded_module_parameter_is_read_back_held_to_its_bound() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let component = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="keyed"
+       datamodel="sce-static" initial="checking">
+  <sce:test-timer id="pause" duration="1ms"/>
+  <datamodel>
+    <data id="key" sce:type="bytes[2]" sce:module-parameter="true"/>
+    <data id="label" sce:type="string[8]" sce:module-parameter="true"/>
+  </datamodel>
+  <state id="checking">
+    <onentry>
+      <sce:start-timer timer="pause"/>
+    </onentry>
+    <transition sce:timeout="pause" target="done">
+      <sce:setverdict value="pass"/>
+    </transition>
+  </state>
+  <final id="done"/>
+</scxml>
+"#;
+    let path = dir.path().join("keyed.scxml");
+    std::fs::write(&path, component).expect("the component is written");
+    let code = text_at(&path);
+    for needle in [
+        "\n    sm->policy.v_key = (sce_static_bytes_2_t){ { 0 }, 0 };\n",
+        "\n    sm->policy.v_label = (sce_static_string_8_t){ { 0 } };\n",
+        "\n    sce_static_bytes_2_t read1;\n",
+        "\n    sce_static_string_8_t read2;\n",
+        "!sce_saved_read_bytes(raw1, \"key\", (read1).data, 2u, &(read1).len, err)",
+        "!sce_saved_read_string_bounded(raw2, \"label\", (read2).data, 8u, err)",
+        "\n    sm->policy.v_key = read1;\n    sm->policy.v_label = read2;\n",
+    ] {
+        assert!(code.contains(needle), "keyed holds `{needle}`:\n{code}");
+    }
+}
+
+/// §11.8: a module parameter of an enum is read through the enum's saved
+/// form, the `_saved_read` its machine type declares beside it whether or not
+/// a saved state of the machine can be written. Zero may name no variant of
+/// the enum, so the variable starts at the variant its document declares
+/// first, which nothing reads before the run's value replaces it.
+#[test]
+fn an_enum_module_parameter_is_read_through_the_enums_saved_form() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let component = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="color_picker"
+       datamodel="sce-static" initial="picking">
+  <sce:import kind="enum" src="{imports}/paint_color.scxml" as="Color"/>
+  <sce:test-timer id="pause" duration="1ms"/>
+  <datamodel>
+    <data id="tint" sce:type="enum:Color" sce:module-parameter="true"/>
+  </datamodel>
+  <state id="picking">
+    <onentry>
+      <sce:start-timer timer="pause"/>
+    </onentry>
+    <transition sce:timeout="pause" target="done">
+      <sce:setverdict value="pass"/>
+    </transition>
+  </state>
+  <final id="done"/>
+</scxml>
+"#,
+        imports = imports_dir().display()
+    );
+    let path = dir.path().join("color_picker.scxml");
+    std::fs::write(&path, component).expect("the component is written");
+    let code = text_at(&path);
+    for needle in [
+        "static inline bool paint_color_enum_t_saved_read(sce_jv_t v, const char *what, \
+         paint_color_enum_t *out, sce_saved_error_t *err) {",
+        "\n    sm->policy.v_tint = PAINT_COLOR_RED;\n",
+        "\n    paint_color_enum_t read1;\n",
+        "!paint_color_enum_t_saved_read(raw1, \"tint\", &read1, err)",
+        "\n    sm->policy.v_tint = read1;\n",
+    ] {
+        assert!(
+            code.contains(needle),
+            "color_picker holds `{needle}`:\n{code}"
+        );
     }
 }
 

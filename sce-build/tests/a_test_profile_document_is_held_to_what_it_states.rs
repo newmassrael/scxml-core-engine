@@ -1225,11 +1225,11 @@ fn not_generated(kind: &str, language: Language, err: Located<ForgeError>) {
 /// `a_test_component_is_generated_in_python.rs`) and the tables of a test
 /// (`a_test_suite_is_generated_in_cpp.rs`, `a_test_suite_is_generated_in_rust.rs`,
 /// `a_test_suite_is_generated_in_kotlin.rs`, `a_test_suite_is_generated_in_go.rs`,
-/// `a_test_suite_is_generated_in_python.rs`), and C11 a template
-/// (`a_test_template_is_generated_in_c11.rs`) and a component
-/// (`a_test_component_is_generated_in_c11.rs`); each example generates where its
-/// kind is generated, but for the component's on C11, whose module parameter
-/// waits for C11's suite tables. A Go machine imports
+/// `a_test_suite_is_generated_in_python.rs`), and so does C11
+/// (`a_test_template_is_generated_in_c11.rs`,
+/// `a_test_component_is_generated_in_c11.rs`,
+/// `a_test_suite_is_generated_in_c11.rs`); each example generates where its
+/// kind is generated. A Go machine imports
 /// the package of each template it uses under the run's module path, which
 /// the statechart entry read here is given by no option, so on Go the example
 /// component is refused for the path and generates where the path is given
@@ -1280,14 +1280,19 @@ fn a_document_of_the_profile_is_refused_by_name_where_its_kind_is_not_generated(
             // `a_test_template_is_generated_in_go.rs`,
             // `a_test_suite_is_generated_in_go.rs`,
             // `a_test_template_is_generated_in_python.rs`,
-            // `a_test_suite_is_generated_in_python.rs`), and C11 a template
-            // (`a_test_template_is_generated_in_c11.rs`); a port type writes no
+            // `a_test_suite_is_generated_in_python.rs`), and so does C11
+            // (`a_test_template_is_generated_in_c11.rs`,
+            // `a_test_suite_is_generated_in_c11.rs`); a port type writes no
             // file.
             let generated_here = matches!(
                 language,
-                Language::Rust | Language::Cpp | Language::Kotlin | Language::Go | Language::Python
-            ) || (language == Language::C11
-                && parsed == ForgeKind::TestTemplate);
+                Language::Rust
+                    | Language::Cpp
+                    | Language::Kotlin
+                    | Language::Go
+                    | Language::Python
+                    | Language::C11
+            );
             if generated_here {
                 assert_eq!(codegen_matrix::lookup(parsed, language), EmitOutcome::Emit);
                 let output =
@@ -1324,16 +1329,17 @@ fn a_document_of_the_profile_is_refused_by_name_where_its_kind_is_not_generated(
             &template_dir,
             language,
         );
-        // C++, Rust, Kotlin and Python generate a test component
+        // C++, Rust, Kotlin, Python and C11 generate a test component
         // (`a_test_component_is_generated_in_cpp.rs`,
         // `a_test_component_is_generated_in_rust.rs`,
         // `a_test_component_is_generated_in_kotlin.rs`,
-        // `a_test_component_is_generated_in_python.rs`), the example's module
+        // `a_test_component_is_generated_in_python.rs`,
+        // `a_test_component_is_generated_in_c11.rs`), the example's module
         // parameter read from the suite's value (docs/SCE_TEST_PROFILE.md
         // §12.6, slices 5 and 6).
         if matches!(
             language,
-            Language::Rust | Language::Cpp | Language::Kotlin | Language::Python
+            Language::Rust | Language::Cpp | Language::Kotlin | Language::Python | Language::C11
         ) {
             assert_eq!(
                 codegen_matrix::lookup(ForgeKind::TestComponent, language),
@@ -1364,30 +1370,6 @@ fn a_document_of_the_profile_is_refused_by_name_where_its_kind_is_not_generated(
                 "{refusal}"
             );
             assert!(!refusal.contains("module parameter"), "{refusal}");
-            continue;
-        }
-        // C11 generates a test component
-        // (`a_test_component_is_generated_in_c11.rs`) and not yet the suite's
-        // tables, so it refuses the example, which declares a module parameter,
-        // by that parameter (§12.6, slice 6).
-        if language == Language::C11 {
-            assert_eq!(
-                codegen_matrix::lookup(ForgeKind::TestComponent, language),
-                EmitOutcome::Emit
-            );
-            let Err(err) = generated else {
-                panic!("the example's module parameter has no value on C11");
-            };
-            match err.error {
-                ForgeError::Generate(boxed) => match *boxed {
-                    GenerateError::UnsupportedFeature { detail, .. } => assert!(
-                        detail.contains("the module parameter 'limit' takes the value the suite"),
-                        "{detail}"
-                    ),
-                    other => panic!("test-component on C11: {other:?}"),
-                },
-                other => panic!("test-component on C11: {other:?}"),
-            }
             continue;
         }
         match generated {
