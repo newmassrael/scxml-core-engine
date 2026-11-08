@@ -92,7 +92,9 @@ let package = Package(
             ]
         ),
         // The test profile's runtime is the module a test template's unit counts a text's
-        // characters through (docs/SCE_TEST_PROFILE.md §11.9).
+        // characters through (docs/SCE_TEST_PROFILE.md §11.9) and the one the tables of a test are
+        // read by; a suite's unit writes each module parameter's default through the runtime's
+        // `SavedValues`.
         .target(
             name: "StaticDatamodelMachines",
             dependencies: [
@@ -102,7 +104,8 @@ let package = Package(
             ]
         ),
         // The test profile's runtime runs the generated test components
-        // (`ATestComponentRunsThroughItsDoorsTests.swift`, docs/SCE_TEST_PROFILE.md §12.3).
+        // (`ATestComponentRunsThroughItsDoorsTests.swift`, docs/SCE_TEST_PROFILE.md §12.3) and the
+        // generated suite through its runner (`ATestSuiteRunsThroughItsRunnerTests.swift`, §12.4).
         .testTarget(
             name: "StaticDatamodelTests",
             dependencies: [

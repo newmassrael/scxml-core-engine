@@ -9,7 +9,7 @@
 # sce-build/tests/fixtures/test_profile/ with the documents they name, a file each
 # beside the machines; and the test components of
 # sce-build/tests/fixtures/test_profile/runtime/, a machine each, with the records
-# and templates they name.
+# and templates they name and the tables of the suite that runs them.
 #
 # The Swift compile+run gate for datamodel="sce-static"
 # (docs/SCE_ACCEPTED_SUBSET.md §2.15), the twin of
@@ -297,12 +297,21 @@ TEST_PROFILE_IMPORTS+=(card_payment card_within voucher_payment voucher_is)
 # runtime (docs/SCE_TEST_PROFILE.md §12.3): each its statechart machine with the component the
 # runtime drives beside it, generated as a fixture's machine is, beside the records and the
 # templates its machine names, which are generated as the templates above are. The port types are
-# read where the components are and write no file; param_asker, which declares a module parameter,
-# waits for Swift's suite tables (docs/SCE_TEST_PROFILE.md §12.6). The Rust, Kotlin, Go and Python
-# trees generate the same components (scripts/regen_static_datamodel_rust.sh and its siblings).
+# read where the components are and write no file; param_asker reads the module parameter the suite
+# below gives it. The Rust, Kotlin, Go and Python trees generate the same components
+# (scripts/regen_static_datamodel_rust.sh and its siblings).
 TEST_PROFILE_RUNTIME_DIR="$TEST_PROFILE_DIR/runtime"
 TEST_PROFILE_RUNTIME=(job_request job_reply request_of any_request reply_ok reply_of)
-TEST_COMPONENTS=(asker coordinator answerer ptc_keeper idler)
+TEST_COMPONENTS=(asker coordinator answerer ptc_keeper idler param_asker)
+# The tables of the suite ATestSuiteRunsThroughItsRunnerTests.swift runs through the profile's
+# runner (docs/SCE_TEST_PROFILE.md §11.6 to §11.8, §12.2), a file each beside the machines, each the
+# members of an enum named by its document: each configuration's unit names the classes of the
+# components above as their machines' files declare them, each test case's the enum of its
+# configuration's unit, and the suite's those of its test cases'. The feature model writes no file.
+# The Rust, Kotlin, Go and Python trees generate the same tables
+# (scripts/regen_static_datamodel_rust.sh and its siblings).
+TEST_TABLES=(asking_configuration serving_configuration keeping_configuration)
+TEST_TABLES+=(answers_the_job answers_before_the_guard serves_a_ptc keeps_a_ptc runtime_suite)
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -348,6 +357,9 @@ for document in "${TEST_PROFILE_RUNTIME[@]}"; do
 done
 for component in "${TEST_COMPONENTS[@]}"; do
     "$CODEGEN" generate "$TEST_PROFILE_RUNTIME_DIR/$component.scxml" -l swift -o "$TMP/component_$component/"
+done
+for document in "${TEST_TABLES[@]}"; do
+    "$CODEGEN" generate "$TEST_PROFILE_RUNTIME_DIR/$document.scxml" -l swift -o "$TMP/table_$document/"
 done
 
 mkdir -p "$GENERATED_DIR"
@@ -453,6 +465,19 @@ for document in "${TEST_PROFILE[@]}" "${TEST_PROFILE_IMPORTS[@]}"; do
 done
 for document in "${TEST_PROFILE_RUNTIME[@]}"; do
     for generated in "$TMP/runtime_$document"/*.swift; do
+        unit="$(basename "$generated" .swift)"
+        if [ -n "${UNIT_FROM[$unit]:-}" ]; then
+            echo "error: ${UNIT_FROM[$unit]} and the test profile fixture $document are both written as $unit; one of them needs another name" >&2
+            exit 1
+        fi
+        cp "$generated" "$GENERATED_DIR/"
+        UNIT_FROM[$unit]="$TEST_PROFILE_RUNTIME_DIR/$document"
+        TEST_PROFILE_UNITS+=("$unit")
+    done
+done
+# The tables of the suite: a unit each, of a name no unit above may take.
+for document in "${TEST_TABLES[@]}"; do
+    for generated in "$TMP/table_$document"/*.swift; do
         unit="$(basename "$generated" .swift)"
         if [ -n "${UNIT_FROM[$unit]:-}" ]; then
             echo "error: ${UNIT_FROM[$unit]} and the test profile fixture $document are both written as $unit; one of them needs another name" >&2

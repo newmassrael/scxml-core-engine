@@ -18,9 +18,9 @@ import XCTest
 // `ATestComponentRunsThroughItsDoorsTest.kt`, of the Go `a_test_component_runs_through_its_doors_test.go`,
 // of the Python `test_a_test_component_runs_through_its_doors.py` and of the C11
 // `test_a_test_component_runs_through_its_doors.c`, with the same scenario, verdict, `NOW` and log.
-// `param_asker`, which declares a module parameter, has no twin here: Swift refuses it until it
-// generates a suite's tables. What the generator writes for each component is held by
-// `sce-build/tests/a_test_component_is_generated_in_swift.rs`.
+// `param_asker`, which declares a module parameter, is run where the other backends run it, by the
+// suite whose tables give its value (`ATestSuiteRunsThroughItsRunnerTests.swift`). What the generator
+// writes for each component is held by `sce-build/tests/a_test_component_is_generated_in_swift.rs`.
 
 /// A millisecond of `NOW`, which counts microseconds.
 private let millisecond: TestInstant = 1000
