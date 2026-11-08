@@ -319,7 +319,8 @@ private final class Host {
 
         endpoint.peerReady("people")
         #expect(transport.sent.count == 2)
-        let vector = try decodeEnvelope(try #require(transport.sent.last).bytes)
+        let last = try #require(transport.sent.last)
+        let vector = try decodeEnvelope(last.bytes)
         #expect(vector.pattern == .causalVector)
         #expect(endpoint.takeHostErrors().isEmpty)
     }
