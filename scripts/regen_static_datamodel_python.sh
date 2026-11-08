@@ -199,7 +199,7 @@ TEST_PROFILE_IMPORTS+=(card_payment card_within voucher_payment voucher_is)
 # scripts/regen_static_datamodel_kotlin.sh, scripts/regen_static_datamodel_go.sh).
 TEST_PROFILE_RUNTIME_DIR="$TEST_PROFILE_DIR/runtime"
 TEST_PROFILE_RUNTIME=(job_request job_reply request_of any_request reply_ok reply_of)
-TEST_COMPONENTS=(asker coordinator answerer keeper idler)
+TEST_COMPONENTS=(asker coordinator answerer ptc_keeper idler)
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT

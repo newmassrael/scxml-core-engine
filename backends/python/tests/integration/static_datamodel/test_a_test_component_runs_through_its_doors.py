@@ -40,7 +40,7 @@ from integration.static_datamodel import (  # noqa: E402 -- path inserted above
     idler_sm,
     job_reply,
     job_request,
-    keeper_sm,
+    ptc_keeper_sm,
 )
 from sce_runtime.testprofile import (  # noqa: E402
     MTC_NAME,
@@ -72,7 +72,7 @@ COMPONENTS: Dict[str, Callable[[], ComponentMachine]] = {
     "asker": asker_sm.AskerComponent,
     "coordinator": coordinator_sm.CoordinatorComponent,
     "answerer": answerer_sm.AnswererComponent,
-    "keeper": keeper_sm.KeeperComponent,
+    "ptc_keeper": ptc_keeper_sm.PtcKeeperComponent,
     "idler": idler_sm.IdlerComponent,
 }
 
@@ -269,10 +269,10 @@ def test_a_test_component_kills_a_ptc_on_leaving_the_state_that_invoked_it() -> 
     """P9, P14: leaving the state that invoked a PTC removes it while it still
     runs, at that instant, and its local verdict still counts."""
     configuration = Configuration(
-        mtc_type="keeper",
+        mtc_type="ptc_keeper",
         ptc_types={"idler": "idler"},
         ports_of_type={"idler": ["peer"]},
-        timers_of_type={"keeper": ["patience", "linger"]},
+        timers_of_type={"ptc_keeper": ["patience", "linger"]},
     )
     result = run(configuration, Silent())
 
