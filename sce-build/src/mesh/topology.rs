@@ -540,6 +540,13 @@ pub enum PoolPlan {
         /// `request_service(SERVICE, i)`. Runtime values outside the
         /// list fail fast with `RpcStatus::Unavailable`.
         instances: Vec<u16>,
+        /// On a causal binding (docs/adr/0085, sections 3.2 and 3.3), each
+        /// view member the pool reaches with the instance it is
+        /// ([`crate::mesh::deploy::causal_pool_members`]): the route's
+        /// vector and its repairs go to every one of them, while a change
+        /// goes to the instance its `<param>` names. Empty otherwise.
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        causal_members: Vec<crate::mesh::deploy::CausalPoolMember>,
     },
 }
 
@@ -2176,7 +2183,29 @@ pub fn build_resolved_targets(
         merge_partial_into(&mut partials, p);
     }
 
-    let resolved = finalize_targets(partials, machine_name, external)?;
+    let mut resolved = finalize_targets(partials, machine_name, external)?;
+    // docs/adr/0085, sections 3.2 and 3.3: a causal SOME/IP pool binding
+    // sends its vector and its repairs to every view member it reaches, so
+    // each member's instance is read off the deploy here. Deploy validation
+    // has refused a member it cannot place; one that fails here would be a
+    // deploy that skipped it.
+    for target in &mut resolved {
+        if let Some(PoolPlan::TypedInstance { causal_members, .. }) = target.pool_plan.as_mut() {
+            if let Some(binding) = bindings.get(&target.target) {
+                *causal_members = crate::mesh::deploy::causal_pool_members(
+                    deploy,
+                    target.target.as_str(),
+                    binding,
+                )
+                .map_err(|reason| TopologyError::MissingBindingField {
+                    machine: machine_name.to_string(),
+                    target: target.target.clone(),
+                    transport: "someip".to_string(),
+                    field: format!("server instance of a causal pool member ({reason})"),
+                })?;
+            }
+        }
+    }
     validate_someip_event_fields(&resolved, machine_name)?;
     validate_pool_param_names(&resolved, machine_name)?;
     Ok(TargetResolution {
@@ -2916,6 +2945,9 @@ fn derive_pool_plan(pt: &PartialTarget) -> Option<PoolPlan> {
                     Some(PoolPlan::TypedInstance {
                         instance_from: instance_from.clone(),
                         instances: list.clone(),
+                        // Filled by `build_resolved_targets`, which holds
+                        // the deploy the members are read from.
+                        causal_members: Vec::new(),
                     })
                 }
                 _ => None,
