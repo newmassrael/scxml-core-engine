@@ -359,16 +359,26 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
    text past its bound inside a case. The composed payload of each lane's `a_composed_payload_is_read_at_any_depth`
    test is refused whole for a nested text, a nested byte string, the top-level text and the top-level count.
 
-   The Interpreter reads a payload where an expression reads a field of it, not when the event is dequeued: each read
-   holds the field's bound, so the expression that reads a field past it fails and raises `error.execution`, but a
-   route that reads no such field runs, where a generated lane refuses the delivery before any transition. The
-   scenarios read the field past its bound once on the route taken, so every engine answers them alike; a read of the
-   whole delivery when the Interpreter dequeues it is the one difference left.
+   The Interpreter reads a delivery whole at its door too. The lowering installs, beside the library, the record of
+   each event whose payload the document reads (`SceStatic.door`), and the Interpreter, when it binds `_event` and
+   before it selects a transition (`StateMachine::bindCurrentEvent`), asks the library's reader of it, which reads
+   every field as `SceStatic.field` reads one and raises `error.execution` once for a delivery outside its type. Every
+   guard that reads the payload is then held to the event having been let in (`SceStatic.admitted() && (…)`), and the
+   content of a transition that reads it stands inside `<if cond="SceStatic.admitted()">`, as a generated lane holds a
+   guard to the payload its lift bound and opens such content with the same check: the transition is taken as it is
+   on every engine, and none of its content runs. A field past its bound refuses the delivery even on a route that
+   reads none of it (`scenarios/static_payload_bytes.json`, a sensor of 40 to 49).
 
    The shared record list (ADR 0046) follows: an edit whose text is past `shared_typed_text` is refused where it is
-   read, as every delivery outside its type is, and is no longer told as `textTooLong`, since the list's own check of
-   the text (`typed`, of the same bound) is reached by no delivery. A statechart cannot send one (ADR 0050), and a
-   host that does is answered `error.execution`; `scenarios/record_list_parent.json` states it.
+   read, as every delivery outside its type is, and the list's own check of the text (`typed`, of the same bound),
+   which no delivery could reach any more, is retired with the variant `textTooLong` (ADR 0046, section 6, amended
+   2026-11-09). A statechart cannot send such an edit (ADR 0050), and a host that does is answered `error.execution`;
+   `scenarios/record_list_parent.json` states it.
+
+   A call that hands an algorithm `_event.data` whose schema holds text stays refused, for its real reason: the value
+   fits now, and the Rust payload struct of a schema of entries still holds the text in the engine's own text type,
+   where the algorithm's record holds `SceString<N>`, so the copy would be a conversion that can fail in its type. It
+   is lifted when that struct holds the field's bounded text, as a composed payload's struct does (section 7.4).
 
 ### 5. Validation where a value is written
 
