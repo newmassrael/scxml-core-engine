@@ -9,10 +9,10 @@
   the result the same day ("Owner's answers"). Amended after acceptance on 2026-11-04, at the owner's order: every
   place of a Rust machine holds its bound in its Rust type (section 7.4, answer G, landing step 4). Amended again
   on 2026-11-06, at the owner's order: a list states its lower count in its type, beside its bound, so "every
-  bound, written in the type" covers the fewest elements too (section 15, answer H, landing step 9). An amendment
-  of section 8 is proposed on 2026-11-08 and awaits the owner: who owns an event's data in a C11 machine and its
-  runtime, and the inputs of the slot section 8.1 does not list (section 8.5).
-- Date: 2026-11-03; amended 2026-11-04 and 2026-11-06; amendment proposed 2026-11-08
+  bound, written in the type" covers the fewest elements too (section 15, answer H, landing step 9). Amended again
+  on 2026-11-08, at the owner's order: who owns an event's data in a C11 machine and its runtime, the inputs of
+  the slot section 8.1 did not list, and no buffer of an event's size on a stack (section 8.5, answer I).
+- Date: 2026-11-03; amended 2026-11-04, 2026-11-06 and 2026-11-08
 - Amends:
   - ADR 0087 section 1.1: the JSON Schema of a list that states a lower count carries `minItems`, and its GBNF
     grammar leaves the shorter lists out (section 15.9, 15.10); section 2.3: a fourteenth refusal code, `tooFew`
@@ -666,12 +666,13 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
    `test_ai_loop.c`) move with the landing.
 4. **What this replaces.** ADR 0085 section 5 asked for a static assertion against the knob. A slot sized by the
    build makes the assertion unnecessary: no slot can be smaller than what its machine receives.
-5. **Who owns an event's data, and for how long (Proposed 2026-11-08, awaiting the owner).** Landing step 5's
-   first slice computes `<SM>_DATA_LEN` (item 1, from the schemas whose event a transition takes or whose record a
-   host-run invocation completes with) and declares every buffer the machine owns at it, with `SCE_MAX_DATA_LEN`
-   kept as its floor for the inputs nothing sizes yet. The rest of step 5 needs two decisions item 2 and the
-   paragraph on script engines in item 1 leave open, and the slice found inputs item 1 does not list. Each is
-   stated below with its options, the recommendation and why.
+5. **Who owns an event's data, and for how long (amended 2026-11-08, answer I; Accepted 2026-11-08).** Landing
+   step 5's first slice computes `<SM>_DATA_LEN` (item 1, from the schemas whose event a transition takes or whose
+   record a host-run invocation completes with) and declares every buffer the machine owns at it, with
+   `SCE_MAX_DATA_LEN` kept as its floor for the inputs nothing sizes yet. The rest of step 5 needed two decisions
+   item 2 and the paragraph on script engines in item 1 left open, and the slice found inputs item 1 does not list.
+   Each was proposed below with its options, the recommendation and why; the owner accepted every recommendation of
+   (a), (b) and (c) as written, and added (d).
 
    **The rule every recommendation applies.** Every buffer of event data has exactly one owner, and the owner
    knows its size. A function that reads data only during a call takes a borrowed view, a pointer and a length,
@@ -753,6 +754,24 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
      queue value-typed and statically reservable, as item 1 decides, and let the C11 queue take the depth a
      document declares (`sce:capacity`, which the Rust profile without `alloc` already reads), so a machine that
      takes large events takes few of them at a time.
+
+   **(d) No buffer of an event's size lives on a stack** (added by the owner). A local of `<SM>_DATA_LEN` bytes
+   overflows a microcontroller's stack once the slot holds a large schema: 123 KB for the HTTP result of c4, where
+   an MCU's stack is a few kilobytes. Every buffer sized by the slot is therefore the machine's own storage, a
+   member of the machine's struct, reused from one step to the next and lent as a view for the length of a call:
+   - an event a function builds and enqueues is the view record of (a), whose data points at text that already has
+     an owner (a literal, the machine's done data, a scheduled entry, a buffer below), so it costs no slot; the
+     queue entry owns the copy, and the event being processed is held in one member of the machine;
+   - each buffer a function writes data into before it hands it on (a send's payload and its texts, a request's
+     texts, a lift's reason, the quoted fields of a record it writes, the deadline's reason) is a member of one
+     scratch record of the machine, one member per role, so two roles that are live at once never share storage;
+     a role is never live twice at once, since no function that writes into one calls itself on the same machine;
+   - an input posted to or taken from the inbox is written into its slot and read out of it in place, by a push
+     and a pop that hand the slot to the caller's writer or reader, since a poster runs on another context, which
+     the machine's storage is not, and may be an interrupt handler.
+
+   A test generates C11 machines that hold every kind of buffer and refuses any function-local array whose size
+   names `_DATA_LEN`.
 
 ### 9. Signed values are deterministic CBOR
 
@@ -1246,3 +1265,19 @@ The owner decided on 2026-11-06, from a measurement of the answer schemas under 
   revision adds stating none (sections 15.7, 15.8); the GBNF chain in place of a repetition (section 15.10); the
   number 14 for `tooFew` and 15 for the harness's `notOffered` (section 15.11); and the two codes, the second with
   `replace_with` (section 15.13).
+
+The owner reviewed the proposed amendment of section 8 on 2026-11-08, after the first slice of landing step 5, and
+answered:
+
+- **I. Who owns an event's data, as section 8.5 recommends, and no buffer of an event's size on a stack.** (a) A
+  machine with a script engine holds each event's data in an owned text from the engine's allocator, moved and
+  never copied in place; the record a host hands an event in carries its data as a view on both kinds of machine,
+  and the queue entry owns. (b) The runtime's records take the rule by the lifetime of their data: a view for a
+  call, a caller-provided buffer with its capacity for an out-parameter, a copy into the receiver's slot for an
+  input that crosses to another context, and copies that refuse what does not fit in place of copies that cut.
+  (c) The inputs section 8.1 did not list are settled as recommended: the door lifts a delivery and the queue
+  holds its canonical text or a refusal mark, a machine's own reasons and a child's sends are inputs of the slot,
+  and the C11 queue takes the depth a document declares. (d), the owner's addition: every buffer sized by the
+  slot is the machine's own storage, reused from step to step and lent as a view for a call, since a local of
+  the slot's size overflows a microcontroller's stack. The landing order within step 5: (d) with the first slice,
+  so it lands alone; then (b); then (a); then (c) and the retirement of `SCE_MAX_DATA_LEN` with its `#error`.
