@@ -101,6 +101,8 @@ let package = Package(
                 .product(name: "SceTestProfile", package: "runtime"),
             ]
         ),
+        // The test profile's runtime runs the generated test components
+        // (`ATestComponentRunsThroughItsDoorsTests.swift`, docs/SCE_TEST_PROFILE.md §12.3).
         .testTarget(
             name: "StaticDatamodelTests",
             dependencies: [
@@ -108,6 +110,7 @@ let package = Package(
                 .product(name: "SceRuntime", package: "runtime"),
                 .product(name: "SceForgeRuntime", package: "forge-runtime"),
                 .product(name: "SceHostFeatures", package: "host-features"),
+                .product(name: "SceTestProfile", package: "runtime"),
             ]
         ),
         .target(

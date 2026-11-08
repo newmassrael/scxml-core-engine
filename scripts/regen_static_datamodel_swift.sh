@@ -5,9 +5,11 @@
 # Regenerate backends/swift/tests/Sources/StaticDatamodelMachines/ from
 # sce-build/tests/fixtures/static_datamodel/<machine>.scxml, for every machine
 # the Swift backend lowers, every algorithm those machines call, and every event
-# schema the Swift backend lowers; and the test profile's templates from
+# schema the Swift backend lowers; the test profile's templates from
 # sce-build/tests/fixtures/test_profile/ with the documents they name, a file each
-# beside the machines.
+# beside the machines; and the test components of
+# sce-build/tests/fixtures/test_profile/runtime/, a machine each, with the records
+# and templates they name.
 #
 # The Swift compile+run gate for datamodel="sce-static"
 # (docs/SCE_ACCEPTED_SUBSET.md §2.15), the twin of
@@ -291,6 +293,16 @@ TEST_PROFILE_DIR="sce-build/tests/fixtures/test_profile"
 TEST_PROFILE=(job_status elapsed_at_most every_matcher job_report job_report_of report_within)
 TEST_PROFILE_IMPORTS=(paint_color order_line quantity_two quantity_at_most order_line_exact order_line_bounded)
 TEST_PROFILE_IMPORTS+=(card_payment card_within voucher_payment voucher_is)
+# The test components ATestComponentRunsThroughItsDoorsTests.swift runs through the profile's
+# runtime (docs/SCE_TEST_PROFILE.md §12.3): each its statechart machine with the component the
+# runtime drives beside it, generated as a fixture's machine is, beside the records and the
+# templates its machine names, which are generated as the templates above are. The port types are
+# read where the components are and write no file; param_asker, which declares a module parameter,
+# waits for Swift's suite tables (docs/SCE_TEST_PROFILE.md §12.6). The Rust, Kotlin, Go and Python
+# trees generate the same components (scripts/regen_static_datamodel_rust.sh and its siblings).
+TEST_PROFILE_RUNTIME_DIR="$TEST_PROFILE_DIR/runtime"
+TEST_PROFILE_RUNTIME=(job_request job_reply request_of any_request reply_ok reply_of)
+TEST_COMPONENTS=(asker coordinator answerer ptc_keeper idler)
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -330,6 +342,12 @@ for document in "${TEST_PROFILE[@]}"; do
 done
 for document in "${TEST_PROFILE_IMPORTS[@]}"; do
     "$CODEGEN" generate "$TEST_PROFILE_DIR/imports/$document.scxml" -l swift -o "$TMP/profile_$document/"
+done
+for document in "${TEST_PROFILE_RUNTIME[@]}"; do
+    "$CODEGEN" generate "$TEST_PROFILE_RUNTIME_DIR/$document.scxml" -l swift -o "$TMP/runtime_$document/"
+done
+for component in "${TEST_COMPONENTS[@]}"; do
+    "$CODEGEN" generate "$TEST_PROFILE_RUNTIME_DIR/$component.scxml" -l swift -o "$TMP/component_$component/"
 done
 
 mkdir -p "$GENERATED_DIR"
@@ -432,6 +450,31 @@ for document in "${TEST_PROFILE[@]}" "${TEST_PROFILE_IMPORTS[@]}"; do
         UNIT_FROM[$unit]="$TEST_PROFILE_DIR/$document"
         TEST_PROFILE_UNITS+=("$unit")
     done
+done
+for document in "${TEST_PROFILE_RUNTIME[@]}"; do
+    for generated in "$TMP/runtime_$document"/*.swift; do
+        unit="$(basename "$generated" .swift)"
+        if [ -n "${UNIT_FROM[$unit]:-}" ]; then
+            echo "error: ${UNIT_FROM[$unit]} and the test profile fixture $document are both written as $unit; one of them needs another name" >&2
+            exit 1
+        fi
+        cp "$generated" "$GENERATED_DIR/"
+        UNIT_FROM[$unit]="$TEST_PROFILE_RUNTIME_DIR/$document"
+        TEST_PROFILE_UNITS+=("$unit")
+    done
+done
+# A component's machine is copied as a fixture's is: its `_sm.swift` alone. A fixture's machine of
+# the same name would be one file holding whichever was copied last, the defect two units of one
+# name are above.
+for component in "${TEST_COMPONENTS[@]}"; do
+    for generated in "$TMP/component_$component"/*_sm.swift; do
+        if [ -e "$GENERATED_DIR/$(basename "$generated")" ]; then
+            echo "error: a machine and the test component $component are both written as $(basename "$generated"); one of them needs another name" >&2
+            exit 1
+        fi
+        cp "$generated" "$GENERATED_DIR/"
+    done
+    MACHINES+=("$component")
 done
 
 # The numerical conformance harness (tests/forge/conformance): the oracle's cases for the
