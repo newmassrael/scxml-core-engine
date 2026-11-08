@@ -3989,6 +3989,20 @@ fn render_c11(
     // sealed once the source is rendered, when its longest reason becomes an
     // input of the slot the header declares.
     let _reasons = crate::forge::c11_reasons::scope();
+    // A host may refuse a host-run invocation's start with a text of its own,
+    // which the machine copies into its answer and raises whole; the host ABI
+    // bounds it (`SCE_HOST_INVOKE_REFUSAL_MAX_LEN`), so it is a reason the
+    // build knows the length of, and the machine checks the bound.
+    if !model.host_invoker_types.is_empty() {
+        crate::forge::c11_reasons::HOST_INVOKE_REFUSED
+            .hold(
+                &[],
+                &[crate::forge::c11_reasons::Quote::Published(
+                    crate::forge::c11_reasons::HOST_INVOKE_REFUSAL,
+                )],
+            )
+            .map_err(|e| GenerateError::TemplateRender(e.to_string()))?;
+    }
 
     // EventSchema MCU native lowering — the C11 typed `_event.data`
     // payload channel: a tagged

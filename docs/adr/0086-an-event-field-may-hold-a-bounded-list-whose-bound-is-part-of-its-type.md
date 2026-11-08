@@ -866,6 +866,18 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
    deadline the host cannot read) and a host's own refusal text are still held by the floor: what they quote is
    bounded by (c) and (a).
 
+   *As landed (the second part of (b)).* A row may quote a value of the run, `{v}`, and every quote carries a
+   bound the build knows (`c11_reasons::Quote`): a bound the runtime publishes for the sentences it answers with,
+   or a bound the document's own text gives, spelled `%.<n>s` so the C library holds it on every path. The reason
+   is measured at its row's text plus each quote's bound. `sce/event_payload.h` publishes
+   `SCE_PAYLOAD_REFUSAL_MAX_LEN` (120) and asserts each of its sentences fits it; `sce/request_field.h` publishes
+   `SCE_REQUEST_REFUSAL_MAX_LEN` over its own sentences and the payload reader's; `sce/host_processor.h` declares
+   `SCE_HOST_INVOKE_REFUSAL_MAX_LEN` (255), past which `sce_host_invoke_answer_refusal` refuses a host's reason
+   whole. Each generated machine ends its source with one static assertion per bound its reasons quote, that the
+   header it compiles with publishes no more than the generator sized it by. A lift's refusal, a request field's
+   refusal and a host's refusal are so sized; a deadline the host cannot read quotes the deadline's text, whose
+   bound is the text expression's, and lands with (c).
+
    **(c) Bounds for text expressions.** A text-valued expression carries a bound in type inference:
    `InferredType::Str` gains its bound. The bound comes from a typed place (a variable or field of
    `string[B]`), a literal's length, or a composition (a concatenation is the sum of its parts' bounds, a
