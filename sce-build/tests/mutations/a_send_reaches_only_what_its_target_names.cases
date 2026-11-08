@@ -90,10 +90,10 @@ PY
 
 mutation_case "C11 runs the rest of the block after a target naming no invocation" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     """                "<send target='{{ static_target | escape_c }}'> names no invocation of this session",
+     """                {{ reason("send_target_no_invocation", static_target) }},
                 {{ send_id_c }});
             return;""",
-     """                "<send target='{{ static_target | escape_c }}'> names no invocation of this session",
+     """                {{ reason("send_target_no_invocation", static_target) }},
                 {{ send_id_c }});""")
 PY
 

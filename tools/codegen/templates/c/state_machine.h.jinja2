@@ -411,10 +411,13 @@ const sce_answer_schema_t *{{ csym_prefix }}{{ model.name }}_answer_schemas(void
 {% endfor %}
 {% else %}; it receives none.
 {% endif %}
+   docs/adr/0086, section 8.6 (b): every reason the build writes for the
+   machine to raise with an error comes from one table, and the longest it
+   raises is an input too: {{ data_slot.reasons }} bytes.
    An input no declaration sizes yet is held to SCE_MAX_DATA_LEN, which the slot
    is never smaller than: the data a host hands an event by name, a host's reply,
-   a child session's data and an error's reason{% if model.needs_script_engine %}, and every value the
-   script engine computes, which no type bounds{% endif %}. */
+   a child session's data and a reason composed with a value of the run{% if model.needs_script_engine %}, and
+   every value the script engine computes, which no type bounds{% endif %}. */
 #define {{ data_slot.name }}_DECLARED {{ data_slot.declared }}u
 #define {{ data_slot.name }}                                                                   \
     ((size_t){{ data_slot.name }}_DECLARED > (size_t)(SCE_MAX_DATA_LEN) ? (size_t){{ data_slot.name }}_DECLARED \

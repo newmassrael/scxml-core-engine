@@ -199,20 +199,84 @@ fn a_host_run_result_is_an_input_of_the_slot_though_no_transition_names_its_even
     );
 }
 
+/// The longest reason the header of a machine says it raises (docs/adr/0086,
+/// section 8.6 (b)), in bytes.
+fn longest_reason(header: &str) -> u64 {
+    let (_, after) = header
+        .split_once("the longest it\n   raises is an input too: ")
+        .unwrap_or_else(|| panic!("the header states the longest reason:\n{header}"));
+    let (bytes, _) = after
+        .split_once(" bytes.")
+        .unwrap_or_else(|| panic!("the longest reason is a number of bytes:\n{header}"));
+    bytes
+        .parse()
+        .unwrap_or_else(|_| panic!("`{bytes}` is a number of bytes:\n{header}"))
+}
+
 #[test]
-fn a_machine_that_receives_no_schema_declares_a_slot_of_its_nul_alone() {
+fn a_machine_that_receives_no_schema_declares_a_slot_of_its_longest_reason() {
     let doc = machine(
         &[],
         r#"    <transition event="poke"><assign location="seen" expr="1"/></transition>"#,
     );
     let header = header(&doc, &[], None);
+    let reasons = longest_reason(&header);
     assert!(
-        header.contains("#define PROBE_DATA_LEN_DECLARED 1u"),
-        "no input leaves the NUL alone:\n{header}"
+        header.contains(&format!("#define PROBE_DATA_LEN_DECLARED {}u", reasons + 1)),
+        "with no schema the slot holds the longest reason and a NUL:\n{header}"
     );
     assert!(
         header.contains("(docs/adr/0086, section 2.2); it receives none."),
         "the header says it receives no schema's event:\n{header}"
+    );
+}
+
+/// docs/adr/0086, section 8.6 (b): every reason a C11 machine raises comes
+/// from one table, each filled with the document's own text, and the longest
+/// is an input of the slot. A list named by 100 bytes makes the reason of an
+/// append to it when it is full the longest the machine raises, past every
+/// reason of the table such a machine raises that holds no hole.
+#[test]
+fn the_longest_reason_a_machine_raises_is_an_input_of_its_slot() {
+    let list = format!("v{}", "x".repeat(99));
+    let doc = format!(
+        r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="probe">
+  <datamodel>
+    <data id="{list}" sce:type="list&lt;uint8&gt;[2]" sce:direction="out"/>
+    <data id="errors" sce:type="uint32" expr="0" sce:direction="out"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="add" type="internal"><sce:append target="{list}" expr="1"/></transition>
+    <transition event="error.execution" type="internal">
+      <assign location="errors" expr="errors + 1"/>
+    </transition>
+  </state>
+</scxml>
+"#
+    );
+    let (header, source) = generated(&doc, &[], &[]);
+    let full = format!("<sce:append target='{list}'>: the list already holds its capacity of 2");
+    // The lowering writes the sentence of a value that fails too, which is
+    // longer by one byte; it is measured whether or not the C11 append keeps
+    // it, so the longest reason is one of the two.
+    let failed = format!("<sce:append target='{list}'>: an integer operation overflowed or failed");
+    assert!(
+        source.contains(&format!("\"{full}\"")),
+        "the append raises the lowering's sentence, through the table:\n{source}"
+    );
+    let longest = longest_reason(&header);
+    assert!(
+        longest == full.len() as u64 || longest == failed.len() as u64,
+        "the append's reason is the longest the machine raises, {} or {} bytes, not \
+         {longest}:\n{header}",
+        full.len(),
+        failed.len()
+    );
+    assert!(
+        header.contains(&format!("#define PROBE_DATA_LEN_DECLARED {}u", longest + 1)),
+        "the slot holds the longest reason and a NUL:\n{header}"
     );
 }
 
