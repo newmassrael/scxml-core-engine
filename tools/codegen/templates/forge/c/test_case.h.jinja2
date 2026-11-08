@@ -1,0 +1,37 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "c", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+/* SCE Forge: Auto-generated from Extended SCXML (sce:kind="test-case") */
+/* Runtime: {{ runtime_dep }} */
+/* Do not edit — regenerate from the source SCXML file. */
+
+#ifndef {{ guard }}
+#define {{ guard }}
+
+#include "sce/test/suite.h"
+{{ configuration_include }}
+
+/* The test case's name in the suite and in the test log (docs/SCE_TEST_PROFILE.md §11.7). */
+#define {{ name_macro }} {{ name_literal }}
+
+/* The storage the machines of the test case's components are made from: its configuration's,
+ * placed by the caller and zeroed. */
+typedef {{ configuration }}_machines_t {{ prefix }}_machines_t;
+
+/* The test case `{{ case_name }}` (docs/SCE_TEST_PROFILE.md §11.7) as the runner reads it: its name, its
+ * configuration and the machines of its components, made from `*machines`, and the module
+ * parameters those components read. */
+static inline sce_test_case_t {{ prefix }}_test_case({{ prefix }}_machines_t *machines) {
+    sce_test_case_t test_case;
+    test_case.name = {{ name_macro }};
+    test_case.configuration = {{ configuration }}_configuration();
+    test_case.machines = {{ configuration }}_machines(machines);
+    test_case.module_parameters = {{ configuration }}_module_parameters();
+    test_case.module_parameter_count = {{ configuration }}_module_parameter_count();
+    return test_case;
+}
+
+#endif  /* {{ guard }} */

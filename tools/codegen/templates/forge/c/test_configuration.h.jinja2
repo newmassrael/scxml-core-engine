@@ -1,0 +1,107 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "c", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+/* SCE Forge: Auto-generated from Extended SCXML (sce:kind="test-configuration") */
+/* Runtime: {{ runtime_dep }} */
+/* Do not edit — regenerate from the source SCXML file. */
+
+#ifndef {{ guard }}
+#define {{ guard }}
+
+#include <stddef.h>
+#include <string.h>
+
+#include "sce/test/test_case_run.h"
+{% for header in machine_headers %}
+#include "{{ header }}"
+{% endfor %}
+
+/* The test configuration `{{ configuration_name }}` (docs/SCE_TEST_PROFILE.md §11.6) as the run reads it:
+ * the MTC's component type and each PTC's, the ports and the timers each type declares, each
+ * `<sce:connect>` and each `<sce:map>`. Constant storage, which every run of it is lent. */
+static inline const sce_test_configuration_t *{{ prefix }}_configuration(void) {
+{% if ptcs %}
+    static const sce_test_ptc_t ptcs[] = { {{- ptcs | join(", ") -}} };
+{% endif %}
+{% if ports %}
+    static const sce_test_declared_t ports[] = { {{- ports | join(", ") -}} };
+{% endif %}
+{% if timers %}
+    static const sce_test_declared_t timers[] = { {{- timers | join(", ") -}} };
+{% endif %}
+{% if connections %}
+    static const sce_test_connection_t connections[] = { {{- connections | join(", ") -}} };
+{% endif %}
+{% if mappings %}
+    static const sce_test_mapping_t mappings[] = { {{- mappings | join(", ") -}} };
+{% endif %}
+    static const sce_test_configuration_t configuration = {
+        {{ mtc_type }},
+        {{ ("ptcs, " ~ (ptcs | length) ~ "u") if ptcs else "NULL, 0u" }},
+        {{ ("ports, " ~ (ports | length) ~ "u") if ports else "NULL, 0u" }},
+        {{ ("timers, " ~ (timers | length) ~ "u") if timers else "NULL, 0u" }},
+        {{ ("connections, " ~ (connections | length) ~ "u") if connections else "NULL, 0u" }},
+        {{ ("mappings, " ~ (mappings | length) ~ "u") if mappings else "NULL, 0u" }},
+    };
+    return &configuration;
+}
+
+/* The storage the machines of the configuration's components are made from
+ * (docs/SCE_TEST_PROFILE.md §12.3): for each component type, one component for each component of
+ * the configuration of that type, the most a run of it holds at once. Placed by the caller and
+ * zeroed, which leaves every component free, and lent to every run of the configuration, which
+ * hands each component back when it is removed or the run has ended. */
+typedef struct {{ prefix }}_machines_s {
+{% for declared in machines %}
+    {{ declared.component_type }} {{ declared.member }}[{{ declared.count }}];
+{% endfor %}
+} {{ prefix }}_machines_t;
+
+/* The machine of a component of the type `component_type`, made from the first component of that
+ * type in the storage `user_data` no run holds; NULL for a type the configuration does not name,
+ * which ends the run with `error` where it is created. */
+static inline sce_test_component_machine_t *{{ prefix }}_machine(void *user_data, const char *component_type) {
+    {{ prefix }}_machines_t *machines = ({{ prefix }}_machines_t *)user_data;
+{% for declared in machines %}
+    if (strcmp(component_type, {{ declared.name }}) == 0) {
+        for (size_t i = 0u; i < {{ declared.count }}u; ++i) {
+            sce_test_component_machine_t *made = {{ declared.make }}(&machines->{{ declared.member }}[i]);
+            if (made != NULL) {
+                return made;
+            }
+        }
+        return NULL;
+    }
+{% endfor %}
+    return NULL;
+}
+
+/* The factory of the machines of the configuration's components, over the storage `*machines`. */
+static inline sce_test_machine_factory_t {{ prefix }}_machines({{ prefix }}_machines_t *machines) {
+    sce_test_machine_factory_t factory;
+    factory.make = {{ prefix }}_machine;
+    factory.user_data = machines;
+    return factory;
+}
+
+/* How many module parameters the components of the configuration read (docs/SCE_TEST_PROFILE.md
+ * §11.5). */
+static inline size_t {{ prefix }}_module_parameter_count(void) {
+    return {{ module_parameters | length }}u;
+}
+
+/* The ids of the module parameters the components of the configuration read, each of which a suite
+ * that runs it gives a value; NULL for none. */
+static inline const char *const *{{ prefix }}_module_parameters(void) {
+{% if module_parameters %}
+    static const char *const ids[] = { {{- module_parameters | join(", ") -}} };
+    return ids;
+{% else %}
+    return NULL;
+{% endif %}
+}
+
+#endif  /* {{ guard }} */

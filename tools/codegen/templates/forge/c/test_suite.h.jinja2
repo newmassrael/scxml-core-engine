@@ -1,0 +1,79 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "c", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+/* SCE Forge: Auto-generated from Extended SCXML (sce:kind="test-suite") */
+/* Runtime: {{ runtime_dep }} */
+/* Do not edit — regenerate from the source SCXML file. */
+
+#ifndef {{ guard }}
+#define {{ guard }}
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <string.h>
+
+#include "sce/portability.h"
+#include "sce/test/suite.h"
+{% for inc in case_includes %}
+{{ inc }}
+{% endfor %}
+{% if parameters %}
+
+/* The suite's module parameters at their defaults fit the runtime's table of them. */
+SCE_STATIC_ASSERT({{ parameters | length }}u <= SCE_TEST_MAX_MODULE_PARAMETERS,
+                  "SCE_TEST_MAX_MODULE_PARAMETERS too small for the module parameters of the suite {{ suite_name | escape_c }}");
+{% endif %}
+{% for selection in selections %}
+
+/* Whether a world of the suite's features runs the test case `{{ selection.test_case }}` (docs/SCE_TEST_PROFILE.md
+ * §11.8): its `<sce:execute>`'s selection. */
+static inline bool {{ selection.function }}(const sce_test_features_t *world) {
+    return {{ selection.body }};
+}
+{% endfor %}
+
+/* The storage of the test suite `{{ suite_name }}`, which the caller places and which outlives every run of it:
+ * the suite as the runner reads it, its `<sce:execute>` entries and the machines of the components of
+ * each test case. */
+typedef struct {{ prefix }}_storage_s {
+    sce_test_suite_t suite;
+{% if executes %}
+    sce_test_execute_t executes[{{ executes | length }}];
+{% endif %}
+{% for case in cases %}
+    {{ case }}_machines_t {{ case }}_machines;
+{% endfor %}
+} {{ prefix }}_storage_t;
+
+/* The test suite `{{ suite_name }}` (docs/SCE_TEST_PROFILE.md §11.8) in `*storage`, as the runner reads it
+ * (`sce_test_run_suite`): each module parameter at its default, held as the JSON text of the saved
+ * value of its declared type, and each `<sce:execute>` in run order, with its test case, its guard
+ * and the selection that runs it in a world of the suite's features. The storage is cleared first,
+ * which leaves every component free. */
+static inline const sce_test_suite_t *{{ prefix }}_suite({{ prefix }}_storage_t *storage) {
+    memset(storage, 0, sizeof(*storage));
+    storage->suite.name = {{ name_literal }};
+    sce_test_module_parameters_init(&storage->suite.module_parameters);
+{% for parameter in parameters %}
+    (void)sce_test_module_parameters_set(&storage->suite.module_parameters, {{ parameter.id }}, {{ parameter.value }});
+{% endfor %}
+{% for execute in executes %}
+    storage->executes[{{ loop.index0 }}].test_case = {{ execute.test_case }}(&storage->{{ execute.machines }});
+    storage->executes[{{ loop.index0 }}].guarded = {{ "true" if execute.guarded else "false" }};
+    storage->executes[{{ loop.index0 }}].guard = {{ execute.guard }};
+    storage->executes[{{ loop.index0 }}].selection = {{ execute.selection }};
+{% endfor %}
+{% if executes %}
+    storage->suite.executes = storage->executes;
+{% else %}
+    storage->suite.executes = NULL;
+{% endif %}
+    storage->suite.execute_count = {{ executes | length }}u;
+    return &storage->suite;
+}
+
+#endif  /* {{ guard }} */

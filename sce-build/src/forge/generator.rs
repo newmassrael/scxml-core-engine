@@ -22,6 +22,7 @@ use crate::forge::model::*;
 use crate::generator::{self, GeneratedOutput};
 use std::path::Path;
 
+mod c11_test_tables;
 mod c11_test_template;
 mod cpp_source;
 mod cpp_test_tables;
@@ -32218,19 +32219,18 @@ pub fn generate_c11_with_imports_and_externs(
         ForgeDocument::TestTemplate(m) => {
             c11_test_template::render_test_template_c11(&env, m, imports)?
         }
-        // docs/SCE_TEST_PROFILE.md §11.9: the other kinds of the test profile
-        // are refused by name until their runtime lands here.
-        ForgeDocument::TestPortType(_)
-        | ForgeDocument::TestConfiguration(_)
-        | ForgeDocument::TestCase(_)
-        | ForgeDocument::TestSuite(_) => {
-            return Err(crate::forge::test_profile::document_not_generated(
-                doc.kind(),
-                doc.name(),
-                crate::forge::provenance::forge_doc_source_location(doc).cloned(),
-            )
-            .into())
+        // docs/SCE_TEST_PROFILE.md §12.6, slice 6
+        // (`codegen_matrix::TEST_SUITE_BACKENDS`): a port type writes no file,
+        // since the units of the components and of the configuration that read
+        // it hold what they need of it by name; a configuration, a test case and
+        // a suite are tables the profile's runtime reads, over storage the
+        // caller places.
+        ForgeDocument::TestPortType(_) => return Ok(GeneratedOutput::default()),
+        ForgeDocument::TestConfiguration(m) => {
+            c11_test_tables::render_test_configuration_c11(&env, m, imports)?
         }
+        ForgeDocument::TestCase(m) => c11_test_tables::render_test_case_c11(&env, m, imports)?,
+        ForgeDocument::TestSuite(m) => c11_test_tables::render_test_suite_c11(&env, m, imports)?,
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));
