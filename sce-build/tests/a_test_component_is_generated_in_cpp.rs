@@ -18,10 +18,8 @@
 
 use std::path::{Path, PathBuf};
 
-use sce_build::forge::codegen_matrix::TEST_COMPONENT_BACKENDS;
 use sce_build::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
 use sce_build::forge::error::{ForgeError, GenerateError, Located};
-use sce_build::forge::test_profile::NOT_GENERATED_YET;
 use sce_build::forge::union_check::NOT_LOWERED_YET;
 use sce_build::generator::Language;
 
@@ -374,27 +372,4 @@ fn a_component_whose_template_reaches_a_union_is_refused_on_cpp() {
     let detail = unsupported("order_watcher", Language::Cpp, err);
     assert!(detail.contains("`union:Payment`: "), "{detail}");
     assert!(detail.contains(NOT_LOWERED_YET), "{detail}");
-}
-
-/// Every backend that does not generate a test component refuses one by
-/// name, until the profile's runtime lands there; Rust's is held by
-/// `a_test_component_is_generated_in_rust.rs`, Kotlin's by
-/// `a_test_component_is_generated_in_kotlin.rs`, Go's by
-/// `a_test_component_is_generated_in_go.rs`, Python's by
-/// `a_test_component_is_generated_in_python.rs` and C11's by
-/// `a_test_component_is_generated_in_c11.rs`.
-#[test]
-fn every_other_backend_refuses_a_test_component_by_name() {
-    let path = runtime_dir().join("asker.scxml");
-    for &language in Language::ALL {
-        if TEST_COMPONENT_BACKENDS.contains(&language) {
-            continue;
-        }
-        let Err(err) = generate(&path, language) else {
-            panic!("a test component generated on {language:?}");
-        };
-        let detail = unsupported("asker", language, err);
-        assert!(detail.starts_with("test-component 'asker': "), "{detail}");
-        assert!(detail.contains(NOT_GENERATED_YET), "{detail}");
-    }
 }

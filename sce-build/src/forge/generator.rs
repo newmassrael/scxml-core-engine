@@ -7146,6 +7146,17 @@ fn swift_composed_payload(
     }
 }
 
+/// The struct the typed payload channel of the Swift machine `machine` holds
+/// `event`'s payload in ([`build_swift_event_payload`]): one name for the
+/// declaration and for every site that builds one, an adapter's argument and a
+/// test component's receive branch among them.
+pub(crate) fn swift_payload_struct(machine: &str, event: &str) -> String {
+    format!(
+        "{machine}{}Payload",
+        filters::to_event_variant(event.to_string())
+    )
+}
+
 /// Build the [`SwiftEventPayload`] for `model`: the channel carries the events whose
 /// typed payload a lowered expression reads (`payload_events`, from the static
 /// lowering), and is inactive when none does. An enum field is held in the machine's
@@ -7177,7 +7188,7 @@ pub fn build_swift_event_payload(
     for event in payload_events {
         let pascal = filters::to_event_variant(event.clone());
         let case = filters::to_swift_variant(event.clone());
-        let struct_name = format!("{machine}{pascal}Payload");
+        let struct_name = swift_payload_struct(&machine, event);
         let field = format!("pending{pascal}Payload");
         // The struct's members, the lift's reads, the inject seam's parameters,
         // what it runs before it raises and the carriers it raises, and the

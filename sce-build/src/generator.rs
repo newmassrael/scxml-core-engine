@@ -5128,6 +5128,13 @@ fn render_swift(env: &mut Environment, model: &SCXMLModel) -> Result<String, Gen
     // backend does, before the static lowering reads the rest of the document.
     let native =
         crate::forge::native_action::render(&mut model_lowered, &machine_name, Language::Swift);
+    // A Swift machine that declares `<sce:action>`s takes its host where its policy
+    // is constructed (`<Machine>Policy(actions:)`, `swift/state_machine.swift.jinja2`).
+    refuse_a_test_component_host(
+        model,
+        native.any,
+        "a parameter of the Swift policy's initializer",
+    )?;
     // SCE Accepted Subset §2.15: a `sce-static` document's every expression lowered
     // to Swift — its variables as properties of the policy. Nothing for any other
     // data model.
@@ -5184,6 +5191,14 @@ fn render_swift(env: &mut Environment, model: &SCXMLModel) -> Result<String, Gen
         event_payload_raise_seams => &payload.raise_seams,
         host_invoker_defs => &host_invokers,
         answer_schemas => answer_schemas_context(model, Language::Swift),
+        // docs/SCE_TEST_PROFILE.md §12.3: the doors a test component's machine
+        // reaches its runtime through, which the component the runtime drives
+        // registers and delivers the snapshot by, and the runtime's module, by the
+        // one name the lowering and a template's unit call it by.
+        test_port_processor => crate::test_component::TEST_PORT_PROCESSOR,
+        test_component_invoke_type => crate::test_component::TEST_COMPONENT_INVOKE_TYPE,
+        snapshot_event => crate::test_component::SNAPSHOT_EVENT,
+        test_runtime => crate::std_imports::SWIFT_TEST_RUNTIME_MODULE,
     };
     tmpl.render(ctx).map_err(render_error)
 }

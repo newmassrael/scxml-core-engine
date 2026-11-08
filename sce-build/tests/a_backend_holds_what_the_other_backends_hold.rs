@@ -301,11 +301,6 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
     (Language::Python, "forge kind `union`", Why::NotYet(UNION_NOT_YET)),
     (Language::C11, "forge kind `union`", Why::NotYet(UNION_NOT_YET)),
     (Language::Swift, "forge kind `union`", Why::NotYet(UNION_NOT_YET)),
-    // The test component (docs/SCE_TEST_PROFILE.md §12.6,
-    // `codegen_matrix::TEST_COMPONENT_BACKENDS`): its machine is driven by the
-    // profile's runtime, which lands in one backend at a time, C++ first, then
-    // Rust, Kotlin, Go, Python and C11.
-    (Language::Swift, "forge kind `test-component`", Why::NotYet(TEST_COMPONENT_NOT_YET)),
     // The tables of a test and the port type they read (docs/SCE_TEST_PROFILE.md
     // §12.6, `codegen_matrix::TEST_SUITE_BACKENDS`): the profile's runner, which
     // lands in one backend at a time, C++ first, then Rust, Kotlin, Go, Python
@@ -484,12 +479,6 @@ const UNION_NOT_YET: &str =
     "no union template and union field spelling for this backend yet: its dispatch refuses a \
      union document by name (`union_check::document_unlowered`) and its schema unit a union \
      field (`schema_unit_type::unit_type`); Rust and Kotlin lower both";
-
-/// A test component is generated one backend at a time (docs/SCE_TEST_PROFILE.md §12.1, §12.6).
-const TEST_COMPONENT_NOT_YET: &str =
-    "the test profile's runtime lands in C++ first and in the other backends one at a time: \
-     until it lands here the route that writes a machine refuses a test component by name \
-     (`test_profile::document_not_generated`)";
 
 /// The tables of a test are generated one backend at a time (docs/SCE_TEST_PROFILE.md §12.1,
 /// §12.6).

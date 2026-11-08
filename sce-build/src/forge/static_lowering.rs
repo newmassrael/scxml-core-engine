@@ -8849,8 +8849,9 @@ fn cpp_test_template_namespace(unit: &str) -> String {
 /// (`sce/include/test/Verdict.h`) and Rust's `sce_rust_runtime::test::Verdict`
 /// (`backends/rust/runtime/src/test/verdict.rs`) declare the same variants,
 /// Kotlin's, Python's and C11's the same names in upper case
-/// ([`upper_case_verdict`]), and Go's `testprofile.Verdict` the same names after
-/// the type's (`VerdictPass`).
+/// ([`upper_case_verdict`]), Go's `testprofile.Verdict` the same names after
+/// the type's (`VerdictPass`), and Swift's `SceTestProfile.Verdict` the same
+/// names in lower case ([`swift_verdict`]).
 fn runtime_verdict(verdict: crate::test_component::Verdict) -> &'static str {
     match verdict {
         crate::test_component::Verdict::Pass => "Pass",
@@ -15795,6 +15796,44 @@ pub fn lower_c11(
 /// is refused by name where the document is checked.
 pub struct SwiftTarget;
 
+/// How a guard or a statement of a test component's Swift machine reaches the
+/// component's runtime context (docs/SCE_TEST_PROFILE.md §12.3): the policy's
+/// accessor of the context the component binds before the machine starts
+/// (`swift/state_machine.swift.jinja2`), which stops the program where none is
+/// bound, as the Rust accessor panics. Prefixed as every member the policy keeps
+/// for itself beside a variable's `v<Name>` property is.
+const SWIFT_TEST_CONTEXT: &str = "self.sceTestContext";
+
+/// `text` as a Swift string literal.
+fn swift_text(text: &str) -> String {
+    format!("\"{}\"", filters::escape_swift(text.to_string()))
+}
+
+/// The declaration `name` (`Value`, `matches`, `value`) of the Swift unit of
+/// the test template named `unit`: a static member of the caseless enum the unit
+/// declares, a file of the machine's own module
+/// (`forge/swift/test_template.swift.jinja2`), named as every unit of the module
+/// is ([`crate::forge::generator::forge_import_identity`]), so the `matches` of
+/// two templates a machine uses never meet.
+fn swift_test_template(unit: &str, name: &str) -> String {
+    let identity = crate::forge::generator::forge_import_identity(
+        unit,
+        &Language::Swift,
+        false,
+        &crate::ForgeCompileOptions::default(),
+    );
+    format!("{}.{name}", identity.namespace)
+}
+
+/// The case of the profile runtime's `Verdict` a document's verdict is: Swift's
+/// `SceTestProfile.Verdict` declares the variants of [`runtime_verdict`] under
+/// the same names in lower case, written as an implicit member, which the type
+/// of the context's parameter resolves and no declaration of the machine's
+/// module can hide.
+fn swift_verdict(verdict: crate::test_component::Verdict) -> String {
+    format!(".{}", runtime_verdict(verdict).to_ascii_lowercase())
+}
+
 impl SwiftTarget {
     /// `parts` as the statements of one block, the empty ones left out — what runs
     /// on a failure may be nothing, when the document declares no `error.execution`
@@ -15822,6 +15861,9 @@ impl SwiftTarget {
                 // `native_action::render`; an argument that reads the event's data is
                 // refused before it (`first_swift_unlowered_host_argument`).
                 "native_action" => {}
+                // A test component's statements are calls on its runtime context
+                // (docs/SCE_TEST_PROFILE.md §12.3, [`StaticTarget::test_statement`]).
+                "sce_setverdict" | "sce_start_timer" | "sce_stop_timer" => {}
                 "send" => {
                     if let Some(what) = Self::unlowered_send(action) {
                         return Some(what);
@@ -16094,10 +16136,9 @@ impl StaticTarget for SwiftTarget {
         let held_record = |alias: &str, code: char| -> Option<String> {
             if code == 'p' {
                 let event = spec.payload_events.get(alias)?;
-                Some(format!(
-                    "{}{}Payload",
+                Some(crate::forge::generator::swift_payload_struct(
                     spec.machine,
-                    filters::to_event_variant(event.to_string())
+                    event,
                 ))
             } else {
                 Some(machine_record(alias))
@@ -17000,6 +17041,203 @@ impl StaticTarget for SwiftTarget {
     ) -> Option<String> {
         let wired = self.optional_map(value, present, wire)?;
         Some(format!("{wired} ?? WireValue.null"))
+    }
+    // The policy holds the component's runtime context, read through its accessor
+    // ([`SWIFT_TEST_CONTEXT`]), which the component the runtime drives binds before
+    // the machine starts (`swift/state_machine.swift.jinja2`). A receive branch
+    // with a template asks the runtime whether the snapshot's head is a value of
+    // the template's type under its record's event, and calls the template's
+    // `matches` on it in a closure written inside the call's parentheses, so the
+    // guard stands as one expression in the `if` it is joined into. The runtime's
+    // `receives` is named by its module, so no declaration of the machine's module
+    // can hide it.
+    fn snapshot_match(&self, branch: &SnapshotBranch, args: &[String]) -> Option<String> {
+        Some(match branch {
+            SnapshotBranch::Receive {
+                port,
+                template: None,
+            } => format!("{SWIFT_TEST_CONTEXT}.snapshotPresent({})", swift_text(port)),
+            SnapshotBranch::Receive {
+                port,
+                template: Some(template),
+            } => {
+                let value = swift_test_template(&template.unit, "Value");
+                let bound: String = args.iter().map(|arg| format!(", {arg}")).collect();
+                format!(
+                    "{}.receives({SWIFT_TEST_CONTEXT}, {}, {}, as: {value}.self, \
+                     {{ (sceMessage: {value}) -> Bool in {}(sceMessage{bound}) }})",
+                    crate::std_imports::SWIFT_TEST_RUNTIME_MODULE,
+                    swift_text(port),
+                    swift_text(&template.event),
+                    swift_test_template(&template.unit, "matches")
+                )
+            }
+            SnapshotBranch::Timeout { timer } => {
+                format!("{SWIFT_TEST_CONTEXT}.timedOut({})", swift_text(timer))
+            }
+            SnapshotBranch::Done { ptc } => {
+                format!("{SWIFT_TEST_CONTEXT}.done({})", swift_text(ptc))
+            }
+        })
+    }
+    // A message a receive branch's content reads is copied, field by field, into
+    // the property the machine's payload channel holds its record's event in,
+    // which the content reads `_event.data` through ([`Self::payload_accessor`]):
+    // the schema unit's struct (`<Stem>Payload`) and the machine's are two
+    // declarations of one record. The two hold a number, a `Bool`, a text, a byte
+    // string and an optional one of them in the same Swift types, each a value,
+    // so those are copied as they are. An enum is held in the machine's own enum,
+    // which takes the variant of the same declared name as the enum unit's value
+    // (`init?(declaredName:)`), an optional one where it is present
+    // (docs/adr/0055), as the payload channel lifts a delivery's
+    // (`forge::generator::build_swift_event_payload`): both enums are written
+    // from one enum document, so a name the one declares and the other does not
+    // is a defect of the build, which stops the program and is not read. So is a
+    // value of another type than the one the guard matched. A block of its own,
+    // so its locals stand beside none of the content's.
+    fn take_branch(
+        &self,
+        machine: &str,
+        branch: &SnapshotBranch,
+        payload: Option<&EntrySchema>,
+    ) -> Option<String> {
+        Some(match (branch, payload) {
+            (
+                SnapshotBranch::Receive {
+                    port,
+                    template: Some(template),
+                },
+                Some(schema),
+            ) => {
+                let copies = schema
+                    .fields
+                    .iter()
+                    .map(|f| {
+                        let read = format!(
+                            "sceValue.{}",
+                            crate::forge::generator::event_schema_field_ident(
+                                &f.id,
+                                Language::Swift
+                            )
+                        );
+                        let held = match f.sce_type.present_type() {
+                            SceType::Enum(reference) => {
+                                let ty = self.enum_type(machine, &reference.alias)?;
+                                let crossed = |value: &str| {
+                                    format!(
+                                        "{{ (sceName: String) -> {ty} in guard let sceCrossed = \
+                                         {ty}(declaredName: sceName) else {{ preconditionFailure(\
+                                         \"the machine's enum of `{}` declares every variant \
+                                         its unit's does, \\(sceName) among them\") }}; \
+                                         return sceCrossed }}({value}.declaredName)",
+                                        filters::escape_swift(f.id.clone())
+                                    )
+                                };
+                                match &f.sce_type {
+                                    EntryType::Optional { .. } => {
+                                        self.optional_map(&read, &ty, &crossed)?
+                                    }
+                                    EntryType::Scalar(_) => crossed(read.as_str()),
+                                }
+                            }
+                            _ => read,
+                        };
+                        Some((self.record_field(&f.id), held))
+                    })
+                    .collect::<Option<Vec<(String, String)>>>()?;
+                let record = self.record_value(
+                    &crate::forge::generator::swift_payload_struct(machine, &template.event),
+                    &copies,
+                );
+                let value = swift_test_template(&template.unit, "Value");
+                format!(
+                    "do {{ let sceMessage = {SWIFT_TEST_CONTEXT}.receive({}); \
+                     guard let sceValue = sceMessage.valueAs({value}.self) else {{ \
+                     preconditionFailure(\"a receive branch takes the message its guard \
+                     matched\") }}; {} = {record} }}",
+                    swift_text(port),
+                    self.payload_accessor(&template.event)
+                )
+            }
+            // The message is removed and not read: a receive any branch, or one
+            // whose content does not read it.
+            (SnapshotBranch::Receive { port, .. }, _) => {
+                format!("_ = {SWIFT_TEST_CONTEXT}.receive({})", swift_text(port))
+            }
+            (SnapshotBranch::Timeout { timer }, _) => {
+                format!("{SWIFT_TEST_CONTEXT}.timeout({})", swift_text(timer))
+            }
+            (SnapshotBranch::Done { ptc }, _) => {
+                format!("{SWIFT_TEST_CONTEXT}.doneTaken({})", swift_text(ptc))
+            }
+        })
+    }
+    // A duration is whole microseconds (§3.3), the runtime's `TestDuration`, an
+    // `Int64`: one past it has no value there. A verdict with no reason is set
+    // with the empty one, as the other runtimes set it.
+    fn test_statement(&self, statement: &TestStatement, reason: Option<&str>) -> Option<String> {
+        Some(match statement {
+            TestStatement::Setverdict { verdict, .. } => format!(
+                "{SWIFT_TEST_CONTEXT}.setverdict({}, {})",
+                swift_verdict(*verdict),
+                reason.unwrap_or("\"\"")
+            ),
+            TestStatement::StartTimer { timer, duration } => {
+                let micros =
+                    crate::forge::test_profile::duration_us(duration.as_deref()?.trim()).ok()?;
+                let micros = i64::try_from(micros).ok()?;
+                format!(
+                    "{SWIFT_TEST_CONTEXT}.startTimer({}, {micros})",
+                    swift_text(timer)
+                )
+            }
+            TestStatement::StopTimer { timer } => {
+                format!("{SWIFT_TEST_CONTEXT}.stopTimer({})", swift_text(timer))
+            }
+        })
+    }
+    // The label, a colon and the value as the engine's `<log>` shows it
+    // ([`Self::log`], `String(describing:)`): the text the other backends record,
+    // which an absent optional value shows as `null`, as they show it, where
+    // Swift would show `nil` and a present one wrapped (`Optional(7)`). The `??`
+    // is put in parentheses, since Swift's `+` binds tighter than it.
+    fn test_log(&self, label: &str, value: Option<&str>, ty: InferredType) -> Option<String> {
+        let shown = |value: &str| -> Option<String> {
+            if ty.is_optional() {
+                let described = self.optional_map(value, "", &|present| {
+                    format!("String(describing: {present})")
+                })?;
+                Some(format!("({described} ?? \"null\")"))
+            } else {
+                Some(format!("String(describing: {value})"))
+            }
+        };
+        Some(match value {
+            None => format!("{SWIFT_TEST_CONTEXT}.log({})", swift_text(label)),
+            Some(value) if label.is_empty() => {
+                format!("{SWIFT_TEST_CONTEXT}.log({})", shown(value)?)
+            }
+            Some(value) => format!(
+                "{SWIFT_TEST_CONTEXT}.log({} + {})",
+                swift_text(&format!("{label}: ")),
+                shown(value)?
+            ),
+        })
+    }
+    // The specific template's `value`, which the send hands its processor as the
+    // request's value (`HostSendRequest.value`, a `HostSendValue`,
+    // `swift/actions/send.swift.jinja2`).
+    fn test_message(&self, message: &TemplateRef, args: &[String]) -> Option<String> {
+        Some(format!(
+            "{}({})",
+            swift_test_template(&message.unit, "value"),
+            args.join(", ")
+        ))
+    }
+    // No line: every unit is a file of the machine's module, named by its enum
+    // ([`swift_test_template`]).
+    fn test_template_import(&self, _unit: &str) -> Option<String> {
+        Some(String::new())
     }
 }
 

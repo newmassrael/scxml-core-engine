@@ -21,8 +21,10 @@
    handed the request the document wrote, so the arm is the only delivery the element makes:
    delivering the event locally as well would show the document the act twice. Its target is
    passed through uninterpreted, a delay is a property of the send and not of the processor, and
-   the request is the one of this moment, its `_event.invokeid` included (SCE_MESH.md §10.7). #}
-{% macro host_send_arm(processor_type, event_name, target, content, params, send_id, delay) %}
+   the request is the one of this moment, its `_event.invokeid` included (SCE_MESH.md §10.7).
+   `value` is the message a test component's send carries as a value, and none for every other
+   send. #}
+{% macro host_send_arm(processor_type, event_name, target, content, params, send_id, delay, value) %}
                     // W3C SCXML 6.2.5: "{{ processor_type }}" is served by the host, which declared it to this
                     // build. The send is dispatched and not refused, and the whole of it is the
                     // host's: delivering the event locally as well would show the document the act
@@ -35,7 +37,16 @@
                         params: {{ params }},
                         sendID: {{ send_id }},
                         eventData: sendEventData,
+{% if value %}
+                        invokeID: engine.currentEventInvokeID,
+{# docs/SCE_TEST_PROFILE.md §12.3: a test component's message is the value of
+   its specific template, handed to the test-port processor as a value and
+   never as an encoding (docs/adr/0091, C2). Every other send leaves it nil and
+   carries `eventData`. #}
+                        value: HostSendValue({{ value }})
+{% else %}
                         invokeID: engine.currentEventInvokeID
+{% endif %}
                     )
 {% if delay %}
                     engine.scheduleHostSend(delay: {{ delay }}, request: sendRequest, sender: self.sessionID)
@@ -509,7 +520,7 @@
 {% set host_content = 'contentValue.formText' if action.native_content_value else '"' ~ (action.content | default('', true) | escape_swift) ~ '"' %}
 {% set host_params = 'sendForm' if sends_params else '[:]' %}
 {% if is_host %}
-{{ host_send_arm(action.send_type, event_name_swift, host_target, host_content, host_params, send_id_swift, delay_swift) }}
+{{ host_send_arm(action.send_type, event_name_swift, host_target, host_content, host_params, send_id_swift, delay_swift, action.native_message) }}
 {% elif (computed_target or routed_target) and not is_http %}
 {% if dynamic_mesh %}
                     // SCE_MESH.md §mesh-19: the evaluated target names a Mesh peer, which is not a local
@@ -517,7 +528,7 @@
                     // no router registered it is a send to a host processor nobody serves, one
                     // error.execution (`performHostSend`). Any other value is routed below.
                     if isMeshTarget(sendTarget) {
-{{ host_send_arm('sce:mesh', event_name_swift, host_target, host_content, host_params, send_id_swift, delay_swift) }}
+{{ host_send_arm('sce:mesh', event_name_swift, host_target, host_content, host_params, send_id_swift, delay_swift, none) }}
                     } else {
 {% endif %}
                     // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as

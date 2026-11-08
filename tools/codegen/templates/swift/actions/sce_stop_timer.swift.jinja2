@@ -1,0 +1,9 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# docs/SCE_TEST_PROFILE.md §4.7 (P7), §12.3: stop a test component's timer, a
+   call on the component's runtime context. Lowered ahead of the template by
+   `forge::static_lowering` and stored on `action.native_code`; stopping a
+   timer cannot fail. #}
+                // docs/SCE_TEST_PROFILE.md §4.7: <sce:stop-timer>
+{% include 'actions/_native_statement.swift.jinja2' %}
