@@ -1,0 +1,34 @@
+# Mutation cases for what a host's round does with an operation it holds and may not tell its
+# machine yet (docs/adr/0085, section 3.1, landing 4b): it asks the relay for what the operation
+# waits on, takes it in, and tells the machine every operation in causal order when the round ends,
+# however the relay ordered its feed or whatever it left out of it.
+#
+# Each case takes one of those away or weakens it, and the tests under study must turn red. A check
+# no test notices is a check nothing holds in place.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_round_repairs_what_a_relay_withholds_rust.cases`.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported INCONCLUSIVE with the
+# anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-relay --lib --test a_round_repairs_what_a_relay_withholds_and_tells_it_in_causal_order
+mutation_targets backends/rust/relay/src/client.rs
+mutation_oracles backends/rust/relay/tests/a_round_repairs_what_a_relay_withholds_and_tells_it_in_causal_order.rs
+
+mutation_case "A round asks the relay for nothing a held operation waits on" <<'PY'
+edit("backends/rust/relay/src/client.rs",
+     "            .find(|range| !fetch.asked.contains(range));",
+     "            .find(|_| false);")
+PY
+
+mutation_case "A round does not take in the operations it asked for" <<'PY'
+edit("backends/rust/relay/src/client.rs",
+     "            Response::Operations { operations } => {\n                for (event, data) in operations {\n                    take(",
+     "            Response::Operations { operations } => {\n                for (event, data) in operations.into_iter().take(0) {\n                    take(")
+PY
+
+mutation_case "A round tells its machine nothing of what it took in" <<'PY'
+edit("backends/rust/relay/src/client.rs",
+     "            round.events.extend(self.trust.deliver());",
+     "            let _ = self.trust.deliver();")
+PY
