@@ -741,8 +741,22 @@ typedef struct {{ csym_prefix }}{{ model.name }}_scheduled_entry {
     char host_processor_type[SCE_MAX_ID_LEN];
     char host_event_name[SCE_MAX_ID_LEN];
     char host_target[SCE_MAX_URI_LEN];
+{% if model.needs_script_engine %}
+    /* docs/adr/0086, section 8.5 (a): the request's content and its event
+       data are owned texts allocated through the engine's allocator, as the
+       entry's `data` is, since a script engine computes them and no type
+       bounds what it computes. NULL is the empty text; each `_size` is the
+       bytes allocated, its NUL included. The entry owns them until it comes
+       due, is cancelled or the machine is destroyed
+       (`scheduled_entry_release`). */
+    char *host_content;
+    size_t host_content_size;
+    char *host_event_data;
+    size_t host_event_data_size;
+{% else %}
     char host_content[{{ data_slot.name }}];
     char host_event_data[{{ data_slot.name }}];
+{% endif %}
     /* The invokeid current when the send executed (SCE_MESH.md
        §mesh-10.7), kept so the act performed at the deadline carries that
        one rather than whatever event is being processed then. */
@@ -753,7 +767,13 @@ typedef struct {{ csym_prefix }}{{ model.name }}_scheduled_entry {
        SCE_MAX_HOST_SEND_PARAMS: a bound the document proves is a bound
        nothing has to be tuned to. */
     char host_param_names[{{ model.delayed_host_send_max_params }}][SCE_MAX_ID_LEN];
+{% if model.needs_script_engine %}
+    /* Each pair's value, an owned text as `host_content` is. */
+    char *host_param_values[{{ model.delayed_host_send_max_params }}];
+    size_t host_param_value_sizes[{{ model.delayed_host_send_max_params }}];
+{% else %}
     char host_param_values[{{ model.delayed_host_send_max_params }}][{{ data_slot.name }}];
+{% endif %}
     uint8_t host_param_count;
 {% endif %}
 {% endif %}
