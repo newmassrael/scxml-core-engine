@@ -874,7 +874,9 @@ Each test fails when the rule it pins is removed; the landing checks each once a
    harness's enum are generated.
 
 ADR 0085 landing 4 is the first user of steps 1 to 5, and its landing 5 of step 7. (Steps 5 to 8 were numbered 4
-to 7 before the amendment of 2026-11-04 inserted step 4.)
+to 7 before the amendment of 2026-11-04 inserted step 4.) ADR 0085's amendment of 2026-11-08 applies this grammar to
+a CBOR codec's entry, a bounded list of records, in its landing 3a, for the Mesh envelope's causal context; section
+3.2's "the envelope does not change" stays true of the event fields this ADR adds.
 
 ## Consequences
 
