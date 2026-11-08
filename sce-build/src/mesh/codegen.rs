@@ -1208,20 +1208,33 @@ pub fn generate_mesh(
     emit(inputs)
 }
 
-/// The backends whose Mesh core carries the causal route (docs/adr/0085,
-/// section 3.2 and Landing order step 3). Rust is the reference;
-/// C++, Kotlin and Swift each join this list in the landing of their core.
-const CAUSAL_DELIVERY_LANGUAGES: &[Language] = &[Language::Rust];
+/// The backends whose Mesh core routes a causal binding (docs/adr/0085,
+/// section 3.2 and Landing order step 3). A backend joins the list in the
+/// landing that routes the binding through its core's causal layer and
+/// renders the group into its peer table: Rust first, the reference, whose
+/// layer (`backends/rust/mesh/src/causal.rs`) its router does not route to
+/// yet, then C++, Kotlin and Swift. Until then every backend refuses the
+/// binding rather than building it as a plain route.
+const CAUSAL_DELIVERY_LANGUAGES: &[Language] = &[];
 
-/// The `--lang` choices that build a causal binding, for the refusal's
-/// message: read from [`CAUSAL_DELIVERY_LANGUAGES`], so a core that lands
-/// is offered without a second edit.
-pub(crate) fn causal_delivery_carriers() -> String {
-    CAUSAL_DELIVERY_LANGUAGES
+/// The repair the refusal's message offers: the `--lang` choices that build
+/// a causal binding, read from [`CAUSAL_DELIVERY_LANGUAGES`] so a core that
+/// lands is offered without a second edit, or, while none does, the binding
+/// without the setting.
+pub(crate) fn causal_delivery_repair() -> String {
+    let carriers: Vec<String> = CAUSAL_DELIVERY_LANGUAGES
         .iter()
         .map(|language| format!("`--lang {}`", language.canonical_name()))
-        .collect::<Vec<_>>()
-        .join(" or ")
+        .collect();
+    if carriers.is_empty() {
+        "No backend's Mesh core routes it yet; bind the peer without `delivery: causal`."
+            .to_string()
+    } else {
+        format!(
+            "Generate this machine with {}, or bind the peer without `delivery: causal`.",
+            carriers.join(" or ")
+        )
+    }
 }
 
 /// A backend whose core does not carry the causal route refuses a causal
@@ -1636,15 +1649,17 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
             // (notifications), or Field (notifications).
             let has_receive = has_rpc || has_pubsub || has_field;
 
-            // `causal` is refused for C++ before this emitter runs
-            // (`refuse_causal_delivery_without_core`).
             let PeerPolicy {
-                causal: _,
+                causal,
                 needs_dedup,
                 needs_ordering,
                 buffers_outbound,
                 retry,
             } = peer_policy(t, desc);
+            debug_assert!(
+                causal.is_none(),
+                "refuse_causal_delivery_without_core refuses a causal binding before this emitter"
+            );
 
             TargetContext {
                 target: t.target.clone(),
@@ -2218,31 +2233,8 @@ struct HostPeerContext {
     /// invokeid of the request being answered. Sorted, from the pattern the
     /// build already resolved for each send.
     reply_events: Vec<String>,
-    /// docs/adr/0085, section 3.2: the peer is a causal group's route — the group's name and
-    /// its view of epoch 0 — or `None` for the per-source rules.
-    causal: Option<HostCausalContext>,
     /// How the link to the peer is opened — the core's `PeerLink`.
     link: HostLinkContext,
-}
-
-/// A causal binding's group as a host core reads it (docs/adr/0085, section
-/// 3.3): the view
-/// the deploy gives is epoch 0, the only view until view changes land.
-#[derive(Debug, Clone, serde::Serialize)]
-struct HostCausalContext {
-    name: String,
-    view: Vec<String>,
-    epoch: u64,
-}
-
-impl From<crate::mesh::deploy::CausalGroupConfig> for HostCausalContext {
-    fn from(group: crate::mesh::deploy::CausalGroupConfig) -> Self {
-        Self {
-            name: group.name,
-            view: group.view,
-            epoch: 0,
-        }
-    }
 }
 
 /// deploy.yaml's `outbound_buffer:` section as a host core reads it.
@@ -2402,6 +2394,10 @@ fn generate_host_mesh(
         .map(|t| {
             let desc = transport::lookup(t.state.transport_name()).expect("transport validated");
             let policy = peer_policy(t, desc);
+            debug_assert!(
+                policy.causal.is_none() || CAUSAL_DELIVERY_LANGUAGES.contains(&language),
+                "refuse_causal_delivery_without_core refuses a causal binding before this emitter"
+            );
             let link = match &t.state {
                 TransportState::Wss {
                     url: Some(url),
@@ -2450,7 +2446,6 @@ fn generate_host_mesh(
                     events.dedup();
                     events
                 },
-                causal: policy.causal.map(HostCausalContext::from),
                 link,
             }
         })
