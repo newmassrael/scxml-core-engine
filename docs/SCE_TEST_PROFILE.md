@@ -968,6 +968,42 @@ whether or not a saved state can hold its machine, so the component's session id
 name a component that declares `<sce:action>`, whose policy is constructed with a host the component is given
 nothing of, and one that uses a template whose type reaches a union, which Go does not lower (ADR 0092, section 7).
 
+Python generates `test-component` (§12.6, slice 6). The unit is the statechart machine the Python generator writes for
+any `sce-static` document, `<file>_sm.py`, lowered through the same doors by the same lowering and spelled for the
+Python runtime (`sce_runtime.testprofile`, which the machine imports as `_sce_testprofile`, under a leading
+underscore as its other imports of the runtime are, so it is never the alias of a template's module):
+
+- a branch's guard, the statement taking it, the statements of the profile and a `<log>` are calls on the component's
+  `ComponentContext`, which the machine's policy holds (`_sce_test_context`). A branch's guard is its `cond` and then
+  its match, joined by Python's `and`. A receive branch's match is `receives` over a `lambda` that calls its
+  template's `matches`, given the template's `Value`, which `receives` holds the snapshot's head to by `isinstance`.
+  Every declaration of a template's unit is named through its module under the alias `sce_<document>` every Python
+  unit imports a sibling module by, and the machine imports the module of each template it uses as a sibling
+  (`from . import <document> as sce_<document>`), as it imports an algorithm. A variable bound to a formal parameter
+  is handed over as the machine holds it; a variable of an enum crosses into the variant of the same declared name of
+  the enum unit's type, and an optional value of an enum is refused by name, as on the other backends;
+- a receive branch whose content reads the message copies it, field by field, into the payload attribute of the
+  policy the machine's channel holds its record's event in, which the content reads as `_event.data`. The machine and
+  the record's unit hold a number, a `bool`, a text, a byte string and an optional value of one in the same Python
+  types, which are copied as they are, and an enum in `IntEnum`s of their own, so an enum field takes the variant of
+  the machine's type that its declared name names (`declared_name`, read as a saved value of that type is,
+  `from_saved`), an optional one where it is present. Python so generates the message of a record with a text, a
+  byte string or an enum field that Rust refuses, as Kotlin and Go do. The statement raises, and reads nothing, where
+  the message it removes is not of the template's type, which the guard has already held it to;
+- a `<log>` records its label, a colon and its value as the engine's `<log>` shows it (`_sce_log_name`, then `str`);
+- a send hands the test-port processor the specific template's value (`value`) as `HostSendRequest.value`.
+
+Beside the policy the module declares `<Name>Component`, a `ComponentMachine` of the runtime: `start` builds the
+machine through the module's `create_engine`, under the session the component's name gives (`session_id`), sets the
+context on its policy, registers the test-port processor and the test-component invoker on the engine and starts it
+(`initialize`); `deliver_snapshot` sends the snapshot event (`send_event`), which runs the macrostep it starts;
+`terminated` is the engine's having reached a top-level `<final>` (`reached_final`). The class says
+`__test__ = False`, so pytest collects none, whatever the document's name makes of its own. The engine takes a session
+id it is given, or draws one, whether or not a saved state can hold its machine, so the component's session id needs
+no saved shape. Python refuses by name a component that declares `<sce:action>`, whose policy is constructed with a
+host the component is given nothing of; one that uses a template whose type reaches a union, which Python does not
+lower (ADR 0092, section 7); and, until it generates a suite's tables, a component that declares a module parameter.
+
 A module parameter (§11.5) is a variable of the machine declared with its type and no value of the document's: the
 static lowering, written once for every backend, lowers no initial value for it. Its value is the run's. Before
 `start` starts the machine it hands the machine the run's module parameters through the context
@@ -1255,4 +1291,7 @@ the equivalence law (order of work step 6).
    text is a sequence of code points, and the Python host send request carries a test-port send's value
    (`HostSendRequest.value`). Python generates templates, and the refusal of §11.9 is lifted for Python for
    `test-template`; Python lowers no union, so a template whose type reaches one stays refused there, as on C++ and
-   Go.
+   Go. Python generates test components next, through the doors of §12.3, and runs them through
+   `sce_runtime.testprofile.TestCaseRun`; the refusal is lifted for Python for `test-component`, but for a component
+   that declares a module parameter, whose value Python's suite tables give, for one that declares `<sce:action>`, and
+   for one whose template reaches a union.

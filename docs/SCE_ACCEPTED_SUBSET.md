@@ -558,7 +558,10 @@ parameter read from the run before the machine is built, copies such a message a
 does, and refuses with `generate/unsupported-feature` one that declares `<sce:action>` and
 one that uses a template whose type reaches a union, as C++ does; a component that uses a
 template is generated under `--go-module-prefix`, the module path its template packages
-are imported by. A backend that generates a component and not a suite's tables refuses
+are imported by. Python generates a test component too, through the same doors, copies
+such a message as Kotlin and Go do, and refuses with `generate/unsupported-feature` one
+that declares `<sce:action>` and one that uses a template whose type reaches a union.
+A backend that generates a component and not a suite's tables, Python among them, refuses
 one that declares a module parameter by name. On every such backend a variable of an enum
 bound to a template's parameter crosses into the enum unit's type, and one of an optional
 enum is refused by name. A module parameter whose type is not a scalar, `string[N]` or
