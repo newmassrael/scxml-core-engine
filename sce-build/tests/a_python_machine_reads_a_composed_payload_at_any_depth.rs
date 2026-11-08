@@ -29,9 +29,12 @@
 //! * A payload that holds a union stays refused by name on Python, which holds
 //!   no union yet (docs/adr/0092, section 7).
 
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use common::composed_lowering::refusing_or_skip;
 use sce_build::{compile_scxml_lang_typed, find_template_dir_for};
 use tempfile::tempdir;
 
@@ -392,8 +395,8 @@ fn run(
 }
 
 /// Pinned by `ComposedLowering::of` (`sce-build/src/forge/event_schema_check.rs`):
-/// Python takes the read, and a backend that does not lower it refuses it by
-/// its own name.
+/// Python takes the read, and each backend whose row does not read a composed
+/// payload, asked of the table, refuses it by its own name.
 #[test]
 fn python_takes_the_read_and_another_backend_refuses_it_by_name() {
     let (ok, out) = run(
@@ -404,19 +407,29 @@ fn python_takes_the_read_and_another_backend_refuses_it_by_name() {
         READER,
     );
     assert!(ok, "Python reads a composed payload:\n{out}");
-    let (ok, out) = run(
-        &["check", "-l", "c11"],
-        &fixtures(),
-        &SIBLINGS,
-        "batch_reader.scxml",
-        READER,
-    );
-    assert!(!ok, "C11 does not read a composed payload yet:\n{out}");
-    assert!(out.contains("generate/unsupported-feature"), "{out}");
-    assert!(
-        out.contains("a statechart's read of `_event.data` has no c11 lowering of its list"),
-        "{out}"
-    );
+    for language in refusing_or_skip(
+        |row| row.reads,
+        "python_takes_the_read_and_another_backend_refuses_it_by_name",
+    ) {
+        let (ok, out) = run(
+            &["check", "-l", language],
+            &fixtures(),
+            &SIBLINGS,
+            "batch_reader.scxml",
+            READER,
+        );
+        assert!(
+            !ok,
+            "{language} does not read a composed payload yet:\n{out}"
+        );
+        assert!(out.contains("generate/unsupported-feature"), "{out}");
+        assert!(
+            out.contains(&format!(
+                "a statechart's read of `_event.data` has no {language} lowering of its list"
+            )),
+            "{out}"
+        );
+    }
 }
 
 /// A reader of `shapes.sent` that tests the tag of the payload's `one`,

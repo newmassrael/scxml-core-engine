@@ -6,14 +6,17 @@
 //! schema the document imports for the event names a variable, a field of a
 //! record variable, or a part of the payload of the event the transition is
 //! on, and is accepted when the place's type fits the field's (section 5.1).
-//! The Rust, Kotlin, Go and Python backends write it by walking its type
+//! Each backend whose row of the one table of what is lowered sends a
+//! composed value (`ComposedLowering::of`) writes it by walking its type
 //! (section 5.3).
 //!
 //! # What is held
 //!
-//! * `check -l rust`, `check -l kotlin`, `check -l go` and `check -l python`
-//!   take `static_composed_send`, which forwards four lists and an optional
-//!   list of the payload and sends a list variable.
+//! * `check -l <backend>` takes `static_composed_send`, which forwards four
+//!   lists and an optional list of the payload and sends a list variable, for
+//!   each backend whose row sends a composed value, and every other backend
+//!   refuses it by its own name: the backends are asked of the table, never
+//!   listed here.
 //! * The Rust machine writes each value into the runtime's `ScriptValue` by
 //!   one case per constructor: a list as an `Array` of its elements, a record
 //!   as an `Object` of its fields, an absent value as `Null`, a 64-bit integer
@@ -29,9 +32,12 @@
 //!   written, naming the field, the schema that reads it and the place.
 //! * A value that names no place is refused.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use common::composed_lowering::checked_backends;
 use sce_build::{compile_scxml_lang_typed, find_template_dir_for};
 use tempfile::tempdir;
 
@@ -151,15 +157,29 @@ fn sender(data: &str, params: &str) -> String {
 
 /// Pinned by `ComposedLowering::of`'s `sends` and the gate's `<send>` arm
 /// (`sce-build/src/forge/event_schema_check.rs`) and by
-/// `Judge::composed_param` (`sce-build/src/forge/static_datamodel.rs`).
+/// `Judge::composed_param` (`sce-build/src/forge/static_datamodel.rs`): each
+/// backend whose row sends a composed value takes the fixture, and every other
+/// backend refuses it by its own name.
 #[test]
 fn each_backend_that_sends_takes_a_send_of_composed_values_that_fit() {
-    for language in ["rust", "kotlin", "go", "python", "cpp"] {
+    for (language, row) in checked_backends() {
         let (ok, out) = run_on(
             &["check", "-l", language],
             &fixtures().join("static_composed_send.scxml"),
         );
-        assert!(ok, "{language} sends a composed value that fits:\n{out}");
+        if row.sends {
+            assert!(ok, "{language} sends a composed value that fits:\n{out}");
+        } else {
+            assert!(!ok, "{language} sends no composed value yet:\n{out}");
+            assert!(
+                out.contains("generate/unsupported-feature"),
+                "{language}: {out}"
+            );
+            assert!(
+                out.contains(&format!("has no {language} lowering")),
+                "{language}: {out}"
+            );
+        }
     }
 }
 
@@ -306,12 +326,20 @@ fn a_backend_that_sends_none_refuses_the_send_by_name() {
         r#"<data id="kept" sce:type="list&lt;uint8&gt;[2]"/>"#,
         r#"<param name="late" expr="kept"/>"#,
     );
-    let (ok, out) = run(&["check", "-l", "c11"], &document);
-    assert!(!ok, "c11 sends no composed value yet:\n{out}");
-    assert!(out.contains("generate/unsupported-feature"), "c11: {out}");
-    assert!(out.contains("lowering of its list"), "c11: {out}");
-    for language in ["rust", "kotlin", "go", "python", "cpp"] {
+    for (language, row) in checked_backends() {
         let (ok, out) = run(&["check", "-l", language], &document);
-        assert!(ok, "{language} sends a list variable that fits:\n{out}");
+        if row.sends {
+            assert!(ok, "{language} sends a list variable that fits:\n{out}");
+        } else {
+            assert!(!ok, "{language} sends no composed value yet:\n{out}");
+            assert!(
+                out.contains("generate/unsupported-feature"),
+                "{language}: {out}"
+            );
+            assert!(
+                out.contains(&format!("has no {language} lowering of its list")),
+                "{language}: {out}"
+            );
+        }
     }
 }

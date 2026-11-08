@@ -20,16 +20,21 @@
 //!   target. Each use that reads the schema one entry per field is refused by
 //!   name with `generate/unsupported-feature`, naming the field, the type and
 //!   the position: a `<raise>` of the event on every target and a `<send>` of
-//!   it where no `<send>` of one is lowered (Rust sends one, section 5.3,
-//!   `a_statechart_sends_a_composed_value_by_its_name`), a variable that names
-//!   a record holding a composition at any depth, and a host-run record. So is
-//!   an algorithm that names such a record. A read of `_event.data` on a
-//!   transition taken on the event is lowered by Rust, Kotlin, Go and Python,
-//!   and refused by every other backend by its own name.
+//!   it where no `<send>` of one is lowered (a backend whose row sends one
+//!   lowers it, section 5.3, `a_statechart_sends_a_composed_value_by_its_name`),
+//!   a variable that names a record holding a composition at any depth, and a
+//!   host-run record. So is an algorithm that names such a record. A read of
+//!   `_event.data` on a transition taken on the event is lowered by each
+//!   backend whose row of the one table of what is lowered reads it
+//!   (`ComposedLowering::of`), and refused by every other backend by its own
+//!   name.
+
+mod common;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use common::composed_lowering::checked_backends;
 use sce_build::forge::diagnostic::ToDiagnostics;
 use sce_build::forge::error::{ForgeError, Located};
 use sce_build::forge::model::{ForgeDocument, SceType};
@@ -319,34 +324,37 @@ fn a_read_of_the_data_of_a_composed_schema_is_refused_by_name() {
       </if>
     </transition>"#,
     );
-    // Rust, Kotlin, Go, Python and C++ read a composed payload (docs/adr/0086,
-    // section 6), so the gate every backend passes lets the read through, and
-    // the backend that does not lower it refuses it by its own name where it is
-    // generated.
+    // Some backend reads a composed payload (docs/adr/0086, section 6), so the
+    // gate every backend passes lets the read through; each backend whose row
+    // reads it takes it, and each other backend refuses it by its own name
+    // where it is generated.
     for document in [guarded, nested] {
-        let out = refusal_of(&["check", "-l", "c11"], &document);
-        assert!(out.contains("the field `items`"), "c11: {out}");
-        assert!(
-            out.contains("a statechart's read of `_event.data`"),
-            "c11: {out}"
-        );
-        assert!(
-            out.contains("has no c11 lowering of its list"),
-            "c11: {out}"
-        );
-        assert!(
-            out.contains("list<record:Item>[batch_items=3]"),
-            "c11: {out}"
-        );
-        for language in ["rust", "kotlin", "go", "python", "cpp"] {
-            let (ok, out) = run(
-                &["check", "-l", language],
-                &[("batch_reader.scxml", &document)],
-                "batch_reader.scxml",
+        for (language, row) in checked_backends() {
+            if row.reads {
+                let (ok, out) = run(
+                    &["check", "-l", language],
+                    &[("batch_reader.scxml", &document)],
+                    "batch_reader.scxml",
+                );
+                assert!(
+                    ok,
+                    "{language} reads the payload of a composed schema:\n{out}"
+                );
+                continue;
+            }
+            let out = refusal_of(&["check", "-l", language], &document);
+            assert!(out.contains("the field `items`"), "{language}: {out}");
+            assert!(
+                out.contains("a statechart's read of `_event.data`"),
+                "{language}: {out}"
             );
             assert!(
-                ok,
-                "{language} reads the payload of a composed schema:\n{out}"
+                out.contains(&format!("has no {language} lowering of its list")),
+                "{language}: {out}"
+            );
+            assert!(
+                out.contains("list<record:Item>[batch_items=3]"),
+                "{language}: {out}"
             );
         }
     }
