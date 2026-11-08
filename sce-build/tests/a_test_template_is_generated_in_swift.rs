@@ -246,7 +246,9 @@ fn a_range_bound_at_the_limit_is_left_out_and_a_text_length_counts_characters() 
     holds_each(
         &example,
         &[
-            "\n    public typealias Value = JobCompletedPayload\n",
+            // A unit is named by its file's stem, so the record of the
+            // example `event-schema.scxml` is `EventSchemaPayload`.
+            "\n    public typealias Value = EventSchemaPayload\n",
             "\n        return value.elapsed_ms <= param_limit\n",
         ],
     );
