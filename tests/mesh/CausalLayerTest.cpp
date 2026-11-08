@@ -350,7 +350,7 @@ TEST(CausalLayerTest, ACopyWithoutItsJournalBeginsANewIncarnation) {
     std::set<std::vector<std::uint64_t>> dots;
     for (const Msg *m : {&c1, &c2, &next}) {
         const CausalEntry dot = own(*m);
-        dots.insert({dot.hi, dot.lo, dot.seq});
+        dots.insert(std::vector<std::uint64_t>{dot.hi, dot.lo, dot.seq});
     }
     EXPECT_EQ(dots.size(), 3u) << "no dot names two contents";
     EXPECT_EQ(own(next), replica(9).entry(1));

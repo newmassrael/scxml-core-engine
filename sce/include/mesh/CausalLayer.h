@@ -186,14 +186,14 @@ public:
         return CausalStart(false, fresh, {});
     }
 
-    /// The start of a copy whose journal gave `journal`, or none: a copy
+    /// The start of a copy whose journal gave `record`, or none: a copy
     /// restored from an older save, or set up again from its seed, has no
     /// journal record of its own, and begins under `fresh` instead. It never
     /// asks its peers for its number: the change with the highest one may be
     /// held only by a member that is offline.
-    [[nodiscard]] static CausalStart fromJournal(std::optional<CausalJournalRecord> journal, CausalReplica fresh) {
-        if (journal) {
-            return CausalStart::journal(std::move(*journal));
+    [[nodiscard]] static CausalStart fromJournal(std::optional<CausalJournalRecord> record, CausalReplica fresh) {
+        if (record) {
+            return journal(std::move(*record));
         }
         return newIncarnation(fresh);
     }
