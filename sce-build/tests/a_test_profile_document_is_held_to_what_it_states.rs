@@ -1222,8 +1222,9 @@ fn not_generated(kind: &str, language: Language, err: Located<ForgeError>) {
 /// `a_test_component_is_generated_in_kotlin.rs`,
 /// `a_test_component_is_generated_in_go.rs`) and the tables of a test
 /// (`a_test_suite_is_generated_in_cpp.rs`, `a_test_suite_is_generated_in_rust.rs`,
-/// `a_test_suite_is_generated_in_kotlin.rs`, `a_test_suite_is_generated_in_go.rs`);
-/// each example generates where its kind is generated. A Go machine imports
+/// `a_test_suite_is_generated_in_kotlin.rs`, `a_test_suite_is_generated_in_go.rs`),
+/// and Python a template (`a_test_template_is_generated_in_python.rs`); each
+/// example generates where its kind is generated. A Go machine imports
 /// the package of each template it uses under the run's module path, which
 /// the statechart entry read here is given by no option, so on Go the example
 /// component is refused for the path and generates where the path is given
@@ -1272,12 +1273,14 @@ fn a_document_of_the_profile_is_refused_by_name_where_its_kind_is_not_generated(
             // `a_test_template_is_generated_in_kotlin.rs`,
             // `a_test_suite_is_generated_in_kotlin.rs`,
             // `a_test_template_is_generated_in_go.rs`,
-            // `a_test_suite_is_generated_in_go.rs`); a port type writes no
-            // file.
+            // `a_test_suite_is_generated_in_go.rs`), and Python a template
+            // (`a_test_template_is_generated_in_python.rs`); a port type writes
+            // no file.
             let generated_here = matches!(
                 language,
                 Language::Rust | Language::Cpp | Language::Kotlin | Language::Go
-            );
+            ) || (language == Language::Python
+                && parsed == ForgeKind::TestTemplate);
             if generated_here {
                 assert_eq!(codegen_matrix::lookup(parsed, language), EmitOutcome::Emit);
                 let output =
