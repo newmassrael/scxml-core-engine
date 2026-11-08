@@ -572,14 +572,24 @@ today's list (parts over a route with no causal layer, the per-part recall) befo
      and every hand-over give the machine only operations whose context it has delivered, in a linear extension of
      the contexts; a held operation waits in the core, which asks the relay for what it lacks; nothing is skipped.
      The rule is the layer's and does not read the event kind, so it lands before the list moves, and the list's
-     tombstones are then redundant until 4c drops them. Tests: section 9.2's three tests of the core, and a world
-     test in which a relay that withholds a write gives its write-over first and the core holds the write-over
-     until the write arrives. The recorded scenario of the C ABI is recorded again, and the six lanes that replay
-     it (C, C++, Python, Go, Kotlin, Swift) replay it. Files: `backends/rust/trust/src/{message,chain,trust}.rs`,
-     `backends/rust/relay/src/client.rs`, `backends/rust/peer/src/lib.rs`,
+     tombstones are then redundant until 4c drops them. Tests: section 9.2's three tests of the core, and a
+     round over a relay that withholds a write from its feed and gives its write-over, in which the core holds
+     the write-over, asks for the write, and tells both in causal order. The recorded scenario of the C ABI is
+     recorded again, and the six lanes that replay it (C, C++, Python, Go, Kotlin, Swift) replay it. Files:
+     `backends/rust/trust/src/{message,trust}.rs`, `backends/rust/relay/src/client.rs`,
      `backends/rust/peer-capi/tests/fixtures/two_devices_and_a_relay.json`, the trust tests that pin bytes
      (`a_byte_format_does_not_drift.rs`), `docs/SCE_SHARED_LIST_TRUST.md`, `docs/SCE_SHARED_LIST_RELAY.md` section
-     6.
+     6. Decided while landing it (2026-11-09): the core tells its machine operations when a round ends, by the
+     delivered vector it keeps beside its operations and saves in its own text, and not as it takes each in; a
+     context entry naming what no machine is ever told (past a freeze, or past the last operation the
+     administrators accepted of a device that may write no more) is met once the machine was told the device up
+     to there, since the rule would otherwise hold an honest device's operations behind a frozen one for good; an
+     operation sealed under an epoch before the first one a host holds the key of, which a member that joined
+     later is given no history of, is passed over and told never, so what follows it in its chain is not held for
+     it (and is not told later should an older key come); a
+     context names neither its own author nor a device the log had not granted, and is refused otherwise; and an
+     operation the Mesh endpoint admits (`Admission`, a copy on a Mesh route) is not held by the core, since on a
+     causal binding the Mesh core's own layer delivers it (section 3.2).
    - **4c. The list at change units, on both layers.** After 4a, 4b and both prerequisites. The list of sections 1
      and 2: `record_list.change` sent on `#people` and taken whole, the effect without tombstones, digest, settle or
      hub relay, the hub flag of `record_list.join` retired, and the schemas section 2.1 lists retired. In the same
