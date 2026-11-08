@@ -20273,17 +20273,26 @@ fn enum_json(alias: &str, ctx: &crate::forge::types::TypeCtx<'_>, written: &str)
 }
 
 /// The most bytes of the JSON a value an expression computes is written as,
-/// crossing as `slot` ([`InferredType::wire_param_slot`]): a text at the
-/// escapes of its bound ([`crate::forge::text_bound`]), a number or a boolean
-/// at its type's `J`. `lowered` is the expression as the walk lowers it.
+/// crossing as `slot` ([`InferredType::wire_param_slot`]): a text or a byte
+/// string at the escapes of its bound ([`crate::forge::text_bound`]), a call's
+/// at the bound its callee declares, a number or a boolean at its type's `J`.
+/// `lowered` is the expression as the walk lowers it.
 fn scalar_json(
     slot: InferredType,
     lowered: &str,
     ctx: &crate::forge::types::TypeCtx<'_>,
     scope: &crate::forge::value_type::TypeScope,
 ) -> TextBound {
-    if slot == InferredType::Str {
-        return match crate::forge::text_bound::text_bound_of(lowered, ctx) {
+    // A text and a byte string are written as a JSON string of their bytes at
+    // their worst escapes (docs/adr/0086, section 2.1), each bounded by its own
+    // reading of the expression.
+    let length = match slot {
+        InferredType::Str => Some(crate::forge::text_bound::text_bound_of(lowered, ctx)),
+        InferredType::Bytes => Some(crate::forge::text_bound::byte_string_bound_of(lowered, ctx)),
+        _ => None,
+    };
+    if let Some(length) = length {
+        return match length {
             Ok(TextBound::Bounded(bytes)) => crate::forge::value_type::json_string_max_len(bytes)
                 .map_or_else(|why| unbounded_value(lowered, why), TextBound::Bounded),
             Ok(TextBound::Unbounded(why)) => TextBound::Unbounded(Unbounded {
