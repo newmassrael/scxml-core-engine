@@ -749,6 +749,38 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
    A test generates C11 machines that hold every kind of buffer and refuses any function-local array whose size
    names `_DATA_LEN`.
 
+   **(e) The scratch roles share storage by liveness, allocated as a compiler allocates registers (Accepted
+   2026-11-08, added by the owner).** One member per role (d) costs a slot per role; roles never live at once may
+   share one. The generator allocates them as Chaitin allocates registers ("Register allocation and spilling via
+   graph coloring", 1982): an interference graph over the roles, coloured, each colour one anonymous `union` of
+   `<sm>_scratch_t` that holds every role of that colour under the role's own name, sized by its largest role.
+   The analysis is `sce-build/src/forge/c11_scratch.rs`:
+   - *What counts as live.* A role is live in an activity: the stretch of the generated code from the statement
+     that writes it to its last read (a `<send>` from the evaluation of its payload to the send, a host-run
+     invocation's start from its first pair to the host's answer, a lift from its first field to the error it
+     raises). Every role an activity writes is taken as live through the whole activity, which over-approximates
+     each role's own range.
+   - *How reentrancy is modelled.* An activity contains another when the other can begin and end while the first
+     is in progress: a call it makes, or a function a host may call from inside a handler it calls. The pairs are
+     listed once, an edge in doubt included, and containment is their transitive closure. A host handler is one
+     activity, containing what a host may call from inside one (a typed raise, a typed completion, a raise by
+     name, a completion by token); a machine's own drive (`_step`, `_tick`, a restore) is not, since its owner
+     drives it at a macrostep boundary and not from inside one of its calls (docs/adr/0084). The drain of the inbox
+     `_raise_external` makes before it enqueues is an activity that writes no role: it applies inputs held in the
+     machine's own `inbox_taken`, and each raise it makes is a view the queue copies.
+   - *Interference.* Two roles interfere when an activity of one is an activity of the other, contains it, or is
+     contained by it; then some program point has both live. Activities neither of which contains the other run
+     one after the other.
+   - *Why it is sound.* The colouring is greedy in the fixed order of the roles: each takes the smallest colour no
+     earlier role it interferes with holds, so two interfering roles never share a colour, and two roles of one
+     colour never have a program point where both are live, given that the containment pairs over-approximate
+     what can run during an activity. The order makes the output reproducible, and the colours are at most one
+     more than the largest number of roles any role interferes with.
+
+   Tests: a unit test asks every interfering pair for different storage, and holds a colouring that merges two of
+   them as unsound; a test on the HTTP host machine asks for one union per colour and every role declared once
+   inside one; the test of (d) stays.
+
 ### 9. Signed values are deterministic CBOR
 
 1. **The rule.** From ADR 0085's one domain bump, `sce-trust/event/3`, the bytes a signature covers are the
@@ -1254,5 +1286,9 @@ answered:
   holds its canonical text or a refusal mark, a machine's own reasons and a child's sends are inputs of the slot,
   and the C11 queue takes the depth a document declares. (d), the owner's addition: every buffer sized by the
   slot is the machine's own storage, reused from step to step and lent as a view for a call, since a local of
-  the slot's size overflows a microcontroller's stack. The landing order within step 5: (d) with the first slice,
-  so it lands alone; then (b); then (a); then (c) and the retirement of `SCE_MAX_DATA_LEN` with its `#error`.
+  the slot's size overflows a microcontroller's stack. (e), decided the same day by the rule "cost no object; the
+  most long-term correct, textbook structure": the scratch roles share storage by liveness, as a compiler
+  allocates registers, a greedy colouring of their interference graph in a fixed order, proven sound. The landing
+  order within step 5: the first slice with (d), (e) and (b), which land together, since the first slice alone
+  would drop data that does not fit without a word; then (a); then (c) and the retirement of `SCE_MAX_DATA_LEN`
+  with its `#error`.
