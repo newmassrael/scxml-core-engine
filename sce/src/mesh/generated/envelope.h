@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d445777bd638d59bb235766496907e1278e8d6187af708d676fb6e02145c0dea
+// source-hash: f2f8682669670c7aaedbccb3102dd71d7b187eac29a32d3d20509a5bc070c12e
 // SCE-MAP: envelope.scxml:22 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec" sce:encoding="cbor")
@@ -17,6 +17,7 @@
 #include <utility>
 #include <vector>
 
+#include "causal_entry.h"
 #include "pattern_kind.h"
 #include "payload_codec.h"
 #include "rpc_status.h"
@@ -67,6 +68,10 @@ struct Envelope {
     std::optional<std::string> region_id{};
     /// Map key 18.
     std::optional<std::string> child_session_id{};
+    /// Map key 19.
+    std::optional<uint64_t> causal_epoch{};
+    /// Map key 20.
+    std::optional<std::vector<SCE::Generated::CausalEntry::CausalEntryPayload>> causal_vector{};
 
     /// Decode one map from `cursor`. On success the cursor advances past it;
     /// `std::nullopt` on any refusal, with the cursor left where it was.
@@ -119,6 +124,12 @@ struct Envelope {
             ++count;
         }
         if (child_session_id.has_value()) {
+            ++count;
+        }
+        if (causal_epoch.has_value()) {
+            ++count;
+        }
+        if (causal_vector.has_value()) {
             ++count;
         }
         if (auto e = cbor::write_map_head(w, count)) {
@@ -328,6 +339,32 @@ struct Envelope {
                 return e;
             }
         }
+        if (causal_epoch.has_value()) {
+            const auto &v = *causal_epoch;
+            if (auto e = cbor::write_uint(w, 19)) {
+                return e;
+            }
+            if (auto e = cbor::write_uint(w, static_cast<std::uint64_t>(v))) {
+                return e;
+            }
+        }
+        if (causal_vector.has_value()) {
+            const auto &v = *causal_vector;
+            if (auto e = cbor::write_uint(w, 20)) {
+                return e;
+            }
+            if (v.size() > 64) {
+                return ::SCE::Forge::CodecError::CborOutOfRange;
+            }
+            if (auto e = cbor::write_array_head(w, v.size())) {
+                return e;
+            }
+            for (const auto &record : v) {
+                if (auto e = encode_record_causal_entry(w, record)) {
+                    return e;
+                }
+            }
+        }
         return std::nullopt;
     }
 
@@ -366,6 +403,8 @@ private:
         std::optional<std::string> parallel_id;
         std::optional<std::string> region_id;
         std::optional<std::string> child_session_id;
+        std::optional<uint64_t> causal_epoch;
+        std::optional<std::vector<SCE::Generated::CausalEntry::CausalEntryPayload>> causal_vector;
         for (std::uint64_t i = 0; i < *count; ++i) {
             const auto key = cbor::read_uint(c);
             if (!key) {
@@ -603,6 +642,43 @@ private:
                 child_session_id = std::move(*v);
                 break;
             }
+            case 19: {
+                // A key given twice is not one map entry.
+                if (causal_epoch.has_value()) {
+                    return std::nullopt;
+                }
+                auto v = cbor::read_uint(c);
+                if (!v) {
+                    return std::nullopt;
+                }
+                causal_epoch = std::move(*v);
+                break;
+            }
+            case 20: {
+                // A key given twice is not one map entry.
+                if (causal_vector.has_value()) {
+                    return std::nullopt;
+                }
+                // A definite-length array within the list's counts, each item
+                // one record's map.
+                const auto len = cbor::read_array_len(c);
+                if (!len || *len > 64) {
+                    return std::nullopt;
+                }
+                std::optional<std::vector<SCE::Generated::CausalEntry::CausalEntryPayload>> v{std::in_place};
+                for (std::uint64_t n = 0; n < *len; ++n) {
+                    auto record = decode_record_causal_entry(c);
+                    if (!record) {
+                        return std::nullopt;
+                    }
+                    v->push_back(std::move(*record));
+                }
+                if (!v) {
+                    return std::nullopt;
+                }
+                causal_vector = std::move(*v);
+                break;
+            }
             default:
                 if (!cbor::skip(c)) {
                     return std::nullopt;
@@ -647,7 +723,108 @@ private:
         out.parallel_id = std::move(parallel_id);
         out.region_id = std::move(region_id);
         out.child_session_id = std::move(child_session_id);
+        out.causal_epoch = std::move(causal_epoch);
+        out.causal_vector = std::move(causal_vector);
         return out;
+    }
+
+    /// Read one record of the event schema `causal_entry` (`record:CausalEntry`)
+    /// from `c`, as a list of this map holds it (docs/adr/0085, Landing order
+    /// step 3a), into the payload type the schema's own unit declares: one CBOR
+    /// map of every field, each under its id as text (docs/adr/0086, section
+    /// 9.2). Its keys in any order, a key the schema does not declare skipped
+    /// whole; a key given twice, a field missing and a text or byte string past
+    /// its bound are `std::nullopt`.
+    static std::optional<SCE::Generated::CausalEntry::CausalEntryPayload>
+    decode_record_causal_entry(::SCE::Forge::SceCursor &c) {
+        namespace cbor = ::SCE::Forge::Cbor;
+        const auto count = cbor::read_map_len(c);
+        if (!count) {
+            return std::nullopt;
+        }
+        std::optional<uint64_t> held_hi;
+        std::optional<uint64_t> held_lo;
+        std::optional<uint64_t> held_seq;
+        for (std::uint64_t i = 0; i < *count; ++i) {
+            const auto key = cbor::read_text(c, std::nullopt);
+            if (!key) {
+                return std::nullopt;
+            }
+            if (*key == "hi") {
+                // A key given twice is not one map entry.
+                if (held_hi.has_value()) {
+                    return std::nullopt;
+                }
+                held_hi = cbor::read_uint(c);
+                if (!held_hi) {
+                    return std::nullopt;
+                }
+            } else if (*key == "lo") {
+                // A key given twice is not one map entry.
+                if (held_lo.has_value()) {
+                    return std::nullopt;
+                }
+                held_lo = cbor::read_uint(c);
+                if (!held_lo) {
+                    return std::nullopt;
+                }
+            } else if (*key == "seq") {
+                // A key given twice is not one map entry.
+                if (held_seq.has_value()) {
+                    return std::nullopt;
+                }
+                held_seq = cbor::read_uint(c);
+                if (!held_seq) {
+                    return std::nullopt;
+                }
+            } else if (!cbor::skip(c)) {
+                return std::nullopt;
+            }
+        }
+        if (!held_hi.has_value()) {
+            return std::nullopt;
+        }
+        if (!held_lo.has_value()) {
+            return std::nullopt;
+        }
+        if (!held_seq.has_value()) {
+            return std::nullopt;
+        }
+        SCE::Generated::CausalEntry::CausalEntryPayload record;
+        record.hi = std::move(*held_hi);
+        record.lo = std::move(*held_lo);
+        record.seq = std::move(*held_seq);
+        return record;
+    }
+
+    /// Write one record of `causal_entry` as one map of every field, the keys
+    /// in the order RFC 8949 §4.2.1 sorts their encodings: a shorter key first.
+    [[nodiscard]] static std::optional<::SCE::Forge::CodecError>
+    encode_record_causal_entry(::SCE::Forge::SceSink &w,
+                               const SCE::Generated::CausalEntry::CausalEntryPayload &record) noexcept {
+        namespace cbor = ::SCE::Forge::Cbor;
+        if (auto e = cbor::write_map_head(w, 3)) {
+            return e;
+        }
+        if (auto e = cbor::write_text(w, "hi")) {
+            return e;
+        }
+        if (auto e = cbor::write_uint(w, static_cast<std::uint64_t>(record.hi))) {
+            return e;
+        }
+        if (auto e = cbor::write_text(w, "lo")) {
+            return e;
+        }
+        if (auto e = cbor::write_uint(w, static_cast<std::uint64_t>(record.lo))) {
+            return e;
+        }
+        if (auto e = cbor::write_text(w, "seq")) {
+            return e;
+        }
+        if (auto e = cbor::write_uint(w, static_cast<std::uint64_t>(record.seq))) {
+            return e;
+        }
+        return std::nullopt;
     }
 };
 

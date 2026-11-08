@@ -7,6 +7,13 @@
 //! Each module is one document; they name one another as siblings
 //! (`super::envelope_id`), which is why they share this parent.
 
+pub mod causal_admission;
+pub mod causal_admit;
+pub mod causal_cut;
+pub mod causal_entry;
+pub mod causal_known;
+pub mod causal_lacks;
+pub mod causal_raise;
 pub mod dedup_admit;
 pub mod dedup_holds;
 pub mod envelope;

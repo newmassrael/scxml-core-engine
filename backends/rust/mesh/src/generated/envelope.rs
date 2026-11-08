@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d445777bd638d59bb235766496907e1278e8d6187af708d676fb6e02145c0dea
+// source-hash: f2f8682669670c7aaedbccb3102dd71d7b187eac29a32d3d20509a5bc070c12e
 #![doc = "SCE-MAP: envelope.scxml:22 :: _forge_body"]
 // SCE-MAP: envelope.scxml:22 :: _forge_body
 
@@ -18,9 +18,73 @@ use alloc::vec::Vec;
 #[cfg(feature = "alloc")]
 use sce_forge_runtime::codec::VecSink;
 
+use super::causal_entry;
 use super::pattern_kind;
 use super::payload_codec;
 use super::rpc_status;
+
+/// Read one record of the event schema `causal_entry` (`record:CausalEntry`)
+/// from `c`, as a list of this map holds it (docs/adr/0085, Landing order step
+/// 3a), into the payload type the schema's own unit declares: one CBOR map of
+/// every field, each under its id as text (docs/adr/0086, section 9.2). Its keys
+/// in any order, a key the schema does not declare skipped whole, a key given
+/// twice and a field missing refused, and a text or byte string past its bound
+/// refused.
+fn decode_record_causal_entry(
+    c: &mut SceCursor<'_>,
+) -> Result<causal_entry::CausalEntryPayload, CodecError> {
+    let count = cbor::read_map_len(c)?;
+    let mut held_hi: Option<u64> = None;
+    let mut held_lo: Option<u64> = None;
+    let mut held_seq: Option<u64> = None;
+    for _ in 0..count {
+        match cbor::read_text(c, None)? {
+            "hi" => {
+                // A key given twice is not one map entry.
+                if held_hi.is_some() {
+                    return Err(CodecError::CborMalformed);
+                }
+                held_hi = Some(cbor::read_uint(c)?);
+            }
+            "lo" => {
+                // A key given twice is not one map entry.
+                if held_lo.is_some() {
+                    return Err(CodecError::CborMalformed);
+                }
+                held_lo = Some(cbor::read_uint(c)?);
+            }
+            "seq" => {
+                // A key given twice is not one map entry.
+                if held_seq.is_some() {
+                    return Err(CodecError::CborMalformed);
+                }
+                held_seq = Some(cbor::read_uint(c)?);
+            }
+            _ => cbor::skip(c)?,
+        }
+    }
+    Ok(causal_entry::CausalEntryPayload {
+        hi: held_hi.ok_or(CodecError::CborRequiredKeyMissing)?,
+        lo: held_lo.ok_or(CodecError::CborRequiredKeyMissing)?,
+        seq: held_seq.ok_or(CodecError::CborRequiredKeyMissing)?,
+    })
+}
+
+/// Write one record of `causal_entry` as one map of every field, the keys in
+/// the order RFC 8949 §4.2.1 sorts their encodings: a shorter key first.
+fn encode_record_causal_entry<S: SceSink + ?Sized>(
+    w: &mut S,
+    record: &causal_entry::CausalEntryPayload,
+) -> Result<(), S::Error> {
+    cbor::write_map_head(w, 3)?;
+    cbor::write_text(w, "hi")?;
+    cbor::write_uint(w, record.hi)?;
+    cbor::write_text(w, "lo")?;
+    cbor::write_uint(w, record.lo)?;
+    cbor::write_text(w, "seq")?;
+    cbor::write_uint(w, record.seq)?;
+    Ok(())
+}
 
 /// One CBOR map (SCE_FORGE.md §4.6.1). Decode takes the keys in any order
 /// and skips one this codec does not declare; encode writes the entries
@@ -66,6 +130,11 @@ pub struct Envelope<'a> {
     pub region_id: Option<::sce_forge_runtime::codec::Text<'a, 262144>>,
     /// Map key 18.
     pub child_session_id: Option<::sce_forge_runtime::codec::Text<'a, 262144>>,
+    /// Map key 19.
+    pub causal_epoch: Option<u64>,
+    /// Map key 20.
+    pub causal_vector:
+        Option<::sce_forge_runtime::codec::BoundedList<causal_entry::CausalEntryPayload, 64>>,
 }
 
 /// What the codec's wire is written through, as every codec has: a map's value
@@ -105,6 +174,10 @@ impl<'a> Envelope<'a> {
         let mut parallel_id: Option<::sce_forge_runtime::codec::Text<'a, 262144>> = None;
         let mut region_id: Option<::sce_forge_runtime::codec::Text<'a, 262144>> = None;
         let mut child_session_id: Option<::sce_forge_runtime::codec::Text<'a, 262144>> = None;
+        let mut causal_epoch: Option<u64> = None;
+        let mut causal_vector: Option<
+            ::sce_forge_runtime::codec::BoundedList<causal_entry::CausalEntryPayload, 64>,
+        > = None;
         for _ in 0..count {
             match cbor::read_uint(&mut c)? {
                 0 => {
@@ -328,6 +401,35 @@ impl<'a> Envelope<'a> {
                         .ok_or(CodecError::CborOutOfRange)?,
                     );
                 }
+                19 => {
+                    // A key given twice is not one map entry.
+                    if causal_epoch.is_some() {
+                        return Err(CodecError::CborMalformed);
+                    }
+                    causal_epoch = Some(cbor::read_uint(&mut c)?);
+                }
+                20 => {
+                    // A key given twice is not one map entry.
+                    if causal_vector.is_some() {
+                        return Err(CodecError::CborMalformed);
+                    }
+                    causal_vector = Some({
+                        // A definite-length array within the list's counts,
+                        // each item one record's map.
+                        let len = cbor::read_array_len(&mut c)?;
+                        if len > 64 {
+                            return Err(CodecError::CborOutOfRange);
+                        }
+                        let mut list: ::sce_forge_runtime::codec::BoundedList<
+                            causal_entry::CausalEntryPayload,
+                            64,
+                        > = ::sce_forge_runtime::codec::BoundedList::new();
+                        for _ in 0..len {
+                            list.push(decode_record_causal_entry(&mut c)?)?;
+                        }
+                        list
+                    });
+                }
                 _ => cbor::skip(&mut c)?,
             }
         }
@@ -350,6 +452,8 @@ impl<'a> Envelope<'a> {
             parallel_id,
             region_id,
             child_session_id,
+            causal_epoch,
+            causal_vector,
         };
         // Only a map that decoded whole moves the cursor.
         *cursor = c;
@@ -744,6 +848,11 @@ pub struct EnvelopeOwned<S: EnvelopeStorage = ::sce_forge_runtime::codec::Defaul
             262144,
         >,
     >,
+    /// Map key 19.
+    pub causal_epoch: Option<u64>,
+    /// Map key 20.
+    pub causal_vector:
+        Option<::sce_forge_runtime::codec::BoundedList<causal_entry::CausalEntryPayload, 64>>,
 }
 
 #[allow(dead_code)]
@@ -804,6 +913,8 @@ impl<'a> Envelope<'a> {
                 .child_session_id
                 .map(|held| held.store::<S, EnvelopeChildSessionIdField>())
                 .transpose()?,
+            causal_epoch: self.causal_epoch,
+            causal_vector: self.causal_vector,
         })
     }
 
@@ -840,6 +951,10 @@ impl<S: EnvelopeStorage> EnvelopeOwned<S> {
             parallel_id: <Self as EnvelopeSource>::parallel_id(self),
             region_id: <Self as EnvelopeSource>::region_id(self),
             child_session_id: <Self as EnvelopeSource>::child_session_id(self),
+            causal_epoch: <Self as EnvelopeSource>::causal_epoch(self),
+            // A list of records is held by value in both forms, so the view
+            // takes a copy of it.
+            causal_vector: self.causal_vector.clone(),
         }
     }
 
@@ -918,6 +1033,12 @@ pub trait EnvelopeSource {
     fn region_id(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 262144>>;
     /// The entry with key 18.
     fn child_session_id(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 262144>>;
+    /// The entry with key 19.
+    fn causal_epoch(&self) -> Option<u64>;
+    /// The entry with key 20.
+    fn causal_vector(
+        &self,
+    ) -> Option<&::sce_forge_runtime::codec::BoundedList<causal_entry::CausalEntryPayload, 64>>;
 }
 
 impl<T: EnvelopeSource + ?Sized> EnvelopeSource for &T {
@@ -975,6 +1096,15 @@ impl<T: EnvelopeSource + ?Sized> EnvelopeSource for &T {
     fn child_session_id(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 262144>> {
         (**self).child_session_id()
     }
+    fn causal_epoch(&self) -> Option<u64> {
+        (**self).causal_epoch()
+    }
+    fn causal_vector(
+        &self,
+    ) -> Option<&::sce_forge_runtime::codec::BoundedList<causal_entry::CausalEntryPayload, 64>>
+    {
+        (**self).causal_vector()
+    }
 }
 
 impl<'a> EnvelopeSource for Envelope<'a> {
@@ -1031,6 +1161,15 @@ impl<'a> EnvelopeSource for Envelope<'a> {
     }
     fn child_session_id(&self) -> Option<::sce_forge_runtime::codec::Text<'_, 262144>> {
         self.child_session_id
+    }
+    fn causal_epoch(&self) -> Option<u64> {
+        self.causal_epoch
+    }
+    fn causal_vector(
+        &self,
+    ) -> Option<&::sce_forge_runtime::codec::BoundedList<causal_entry::CausalEntryPayload, 64>>
+    {
+        self.causal_vector.as_ref()
     }
 }
 
@@ -1107,6 +1246,15 @@ impl<S: EnvelopeStorage> EnvelopeSource for EnvelopeOwned<S> {
             .as_ref()
             .map(::sce_forge_runtime::codec::Bounded::as_text)
     }
+    fn causal_epoch(&self) -> Option<u64> {
+        self.causal_epoch
+    }
+    fn causal_vector(
+        &self,
+    ) -> Option<&::sce_forge_runtime::codec::BoundedList<causal_entry::CausalEntryPayload, 64>>
+    {
+        self.causal_vector.as_ref()
+    }
 }
 
 #[allow(dead_code)]
@@ -1163,6 +1311,12 @@ impl<'a> Envelope<'a> {
             count += 1;
         }
         if src.child_session_id().is_some() {
+            count += 1;
+        }
+        if src.causal_epoch().is_some() {
+            count += 1;
+        }
+        if src.causal_vector().is_some() {
             count += 1;
         }
         cbor::write_map_head(w, count)?;
@@ -1231,6 +1385,18 @@ impl<'a> Envelope<'a> {
         if let Some(v) = src.child_session_id() {
             cbor::write_uint(w, 18)?;
             cbor::write_text(w, v.into_inner())?;
+        }
+        if let Some(v) = src.causal_epoch() {
+            cbor::write_uint(w, 19)?;
+            cbor::write_uint(w, v)?;
+        }
+        if let Some(v) = src.causal_vector() {
+            cbor::write_uint(w, 20)?;
+            let len = v.as_slice().len();
+            cbor::write_array_head(w, ::sce_forge_runtime::codec::widen_usize(len))?;
+            for record in v.as_slice() {
+                encode_record_causal_entry(w, record)?;
+            }
         }
         Ok(())
     }
