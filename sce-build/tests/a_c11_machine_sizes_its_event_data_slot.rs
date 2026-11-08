@@ -329,6 +329,47 @@ fn slot_sized_locals(c: &str) -> Vec<String> {
     found
 }
 
+/// docs/adr/0086, section 8.5 (e): the HTTP host machine, whose slot holds the
+/// HTTP result's 123074 bytes, declares its scratch as one union per colour of
+/// its roles' interference graph, each role inside one of them under its own
+/// name, so the scratch costs the sum over colours and not over roles.
+#[test]
+fn the_http_host_machines_scratch_is_one_union_per_colour_not_one_member_per_role() {
+    let doc = std::fs::read_to_string(
+        repo_root().join("sce-build/tests/fixtures/static_datamodel/static_host_http.scxml"),
+    )
+    .expect("the HTTP host machine");
+    let (header, _) = generated(&doc, &[], &[]);
+    let start = header
+        .find("typedef struct static_host_http_scratch {")
+        .expect("the machine's scratch record");
+    let end = start
+        + header[start..]
+            .find("} static_host_http_scratch_t;")
+            .expect("the end of the scratch record");
+    let record = &header[start..end];
+    let unions = record.matches("    union {").count();
+    let layout = sce_build::forge::c11_scratch::layout();
+    let roles = sce_build::forge::c11_scratch::ROLES;
+    assert_eq!(unions, layout.len(), "one union per colour:\n{record}");
+    assert!(
+        layout.len() < roles.len(),
+        "the roles share storage: {} colours for {} roles",
+        layout.len(),
+        roles.len()
+    );
+    for role in roles {
+        let declared = record.matches(&format!("char {}[", role.name)).count();
+        assert_eq!(declared, 1, "`{}` is declared once:\n{record}", role.name);
+    }
+    let members = record.matches("        char ").count();
+    assert_eq!(
+        members,
+        roles.len(),
+        "every member of the record is a role inside a union:\n{record}"
+    );
+}
+
 /// The scanner reads a local array of the slot's size, and a local record that
 /// holds the slot, as what it refuses; and a pointer to either, a member of a
 /// struct and the slot's name inside a string or a comment as what it does
