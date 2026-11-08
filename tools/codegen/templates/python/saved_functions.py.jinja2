@@ -8,47 +8,11 @@
     tools/codegen/templates/go/state_machine.go.jinja2.
 #}
 
-{#- A variable's saved form, written from the policy `source`: a record's or an
-    enum's own (`to_saved` / `from_saved`, emitted with the type by the static
-    lowering), and every other type's by the runtime's `sce_saved` functions. -#}
-{% macro saved_write(field, source) -%}
-{%- if field.saved_kind == "optional" and (field.saved_elem == "enum" or field.saved_elem == "record") -%}
-sce_saved.saved_write_optional({{ source }}.{{ field.name }}, lambda v: v.to_saved())
-{%- elif field.saved_kind == "optional" -%}
-sce_saved.saved_write_optional({{ source }}.{{ field.name }}, sce_saved.saved_write_{{ field.saved_type }})
-{%- elif field.saved_kind == "record" or field.saved_kind == "enum" -%}
-{{ source }}.{{ field.name }}.to_saved()
-{%- elif field.saved_kind == "list" -%}
-sce_saved.saved_write_list({{ source }}.{{ field.name }}, sce_saved.saved_write_{{ field.saved_type }})
-{%- elif field.saved_kind == "record_list" -%}
-sce_saved.saved_write_list({{ source }}.{{ field.name }}, lambda r: r.to_saved())
-{%- else -%}
-sce_saved.saved_write_{{ field.saved_type }}({{ source }}.{{ field.name }})
-{%- endif -%}
-{%- endmacro %}
-{% macro saved_read(field, raw) -%}
-{%- if field.saved_kind == "optional" and (field.saved_elem == "enum" or field.saved_elem == "record") -%}
-sce_saved.saved_read_optional({{ raw }}, {{ field.id | py_string_literal }}, {{ field.saved_type }}.from_saved)
-{%- elif field.saved_kind == "optional" and field.saved_type == "bytes" -%}
-sce_saved.saved_read_optional({{ raw }}, {{ field.id | py_string_literal }}, sce_saved.saved_bounded_bytes({{ field.bound if field.bound is not none else 2147483647 }}))
-{%- elif field.saved_kind == "optional" and field.saved_type == "string" and field.bound is not none -%}
-sce_saved.saved_read_optional({{ raw }}, {{ field.id | py_string_literal }}, sce_saved.saved_bounded_string({{ field.bound }}))
-{%- elif field.saved_kind == "optional" -%}
-sce_saved.saved_read_optional({{ raw }}, {{ field.id | py_string_literal }}, sce_saved.saved_read_{{ field.saved_type }})
-{%- elif field.saved_kind == "record" or field.saved_kind == "enum" -%}
-{{ field.saved_type }}.from_saved({{ raw }}, {{ field.id | py_string_literal }})
-{%- elif field.saved_kind == "list" -%}
-sce_saved.saved_read_list({{ raw }}, {{ field.id | py_string_literal }}, {{ field.bound }}, sce_saved.saved_read_{{ field.saved_type }})
-{%- elif field.saved_kind == "record_list" -%}
-sce_saved.saved_read_list({{ raw }}, {{ field.id | py_string_literal }}, {{ field.bound }}, {{ field.saved_type }}.from_saved)
-{%- elif field.saved_type == "bytes" -%}
-sce_saved.saved_read_bytes({{ raw }}, {{ field.id | py_string_literal }}, {{ field.bound if field.bound is not none else 2147483647 }})
-{%- elif field.saved_type == "string" and field.bound is not none -%}
-sce_saved.saved_read_bounded_string({{ raw }}, {{ field.id | py_string_literal }}, {{ field.bound }})
-{%- else -%}
-sce_saved.saved_read_{{ field.saved_type }}({{ raw }}, {{ field.id | py_string_literal }})
-{%- endif -%}
-{%- endmacro %}
+{#- A variable's saved form, written from the policy `source` and read back:
+    the one spelling the module's every reader of a saved value shares, a test
+    component's read of its module parameters among them
+    (`_macros/python_saved_value.jinja2`). -#}
+{% import '_macros/python_saved_value.jinja2' as saved_value %}
 {% if static_saved_shape %}
 # ======================================================================
 # SCE Accepted Subset §2.15: saving this machine, restoring it
@@ -138,7 +102,7 @@ def _sce_read_variables(grown) -> Dict[str, Any]:
     with one bad variable restores none of them."""
     values: Dict[str, Any] = {}
 {% for field in static_fields %}
-    values[{{ field.name | py_string_literal }}] = {{ saved_read(field, 'grown.variable(' ~ (field.id | py_string_literal) ~ ')') }}
+    values[{{ field.name | py_string_literal }}] = {{ saved_value.read(field, 'grown.variable(' ~ (field.id | py_string_literal) ~ ')') }}
 {% endfor %}
     return values
 
@@ -158,7 +122,7 @@ def save_at(engine, wall_now_ms: int):
         raise sce_saved_state.StateRefusal("the engine is not one of {{ machine_name }}")
     variables: Dict[str, Any] = {}
 {% for field in static_fields %}
-    variables[{{ field.id | py_string_literal }}] = {{ saved_write(field, 'policy') }}
+    variables[{{ field.id | py_string_literal }}] = {{ saved_value.write(field, 'policy') }}
 {% endfor %}
 {% if model.invokes | scxml_family %}
     # docs/adr/0045: each running child, with its whole state.

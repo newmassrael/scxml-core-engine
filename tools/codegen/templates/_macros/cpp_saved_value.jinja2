@@ -8,8 +8,8 @@
     every other type's by the runtime's `SCE::Saved` functions
     (`sce/include/saved/SavedValues.h`), named for the `sce:type`. A value that may be
     absent is null or its present value as its own functions write it, an enum's and a
-    record's included (docs/adr/0055, section 4). The C++ twin of the
-    `saved_write` and `saved_read` macros of `python/saved_functions.py.jinja2`.
+    record's included (docs/adr/0055, section 4). The C++ twin of
+    `_macros/python_saved_value.jinja2`.
 #}
 
 {#- The variable `field`, held by the policy `source`, as the JSON value a saved state holds. -#}
