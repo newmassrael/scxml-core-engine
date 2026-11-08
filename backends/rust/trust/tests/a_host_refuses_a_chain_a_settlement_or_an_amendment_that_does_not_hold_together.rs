@@ -105,6 +105,7 @@ fn stamped(
         prev,
         log,
         log_hash,
+        context: Vec::new(),
     };
     let bytes = message::operation_bytes(&signing.message, &link);
     link.write_into(&mut value).unwrap();

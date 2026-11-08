@@ -173,6 +173,7 @@ fn clear_write_naming_the_tip(host: &Trust, signer: &Identity) -> String {
         prev: message::NO_OPERATION,
         log: next - 1,
         log_hash,
+        context: Vec::new(),
     };
     let bytes = message::operation_bytes(&signing.message, &link);
     link.write_into(&mut value).unwrap();

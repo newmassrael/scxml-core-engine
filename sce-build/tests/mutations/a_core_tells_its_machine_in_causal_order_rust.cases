@@ -1,0 +1,90 @@
+# Mutation cases for the rule by which a host of a shared list tells its machine operations
+# (docs/adr/0085, section 3.1, landing 4b): an operation is told when it is its device's next and
+# the machine was told every operation its signed causal context names; one past a gap, or whose
+# context is not met, is held; a context entry that names what no machine is ever told (past a
+# freeze) is met at the freeze; a context names neither its own author nor a device the log had not
+# granted; the context is signed; and what the machine was told survives the host's own text.
+#
+# Each case takes one of those away or weakens it, and the tests under study must turn red. A check
+# no test notices is a check nothing holds in place.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_core_tells_its_machine_in_causal_order_rust.cases`.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported INCONCLUSIVE with the
+# anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-trust --lib --test a_host_tells_its_machine_an_operation_only_after_what_it_follows --test a_byte_format_does_not_drift
+mutation_targets backends/rust/trust/src/trust.rs backends/rust/trust/src/message.rs
+mutation_oracles backends/rust/trust/tests/a_host_tells_its_machine_an_operation_only_after_what_it_follows.rs backends/rust/trust/tests/a_byte_format_does_not_drift.rs
+
+# ── The rule ───────────────────────────────────────────────────────────────────────────────────
+
+mutation_case "A host tells the next operation it holds of a device, past a gap" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "    let Some(held) = state.ops.get(&node).and_then(|chain| chain.at(next)) else {",
+     "    let Some(held) = state.ops.get(&node).and_then(|chain| chain.range(next, u64::MAX).next()) else {")
+PY
+
+mutation_case "A host tells an operation whose context its machine was not told" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "        .all(|(other, seq)| dependency_met(state, *other, *seq));",
+     "        .all(|_| true);")
+PY
+
+mutation_case "A context entry is met only by the number it names, and waits past a freeze for good" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "    told >= seq || told_ceiling(state, node).is_some_and(|top| top < seq && told >= top)",
+     "    told >= seq")
+PY
+
+mutation_case "A host says it lacks nothing a context names" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "                        want(*other, from, to);",
+     "                        let _ = (other, from, to);")
+PY
+
+mutation_case "A machine is told again what its own person signed" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "    *told = (*told).max(seq);\n    Ok(wire)",
+     "    let _ = (told, seq);\n    Ok(wire)")
+PY
+
+mutation_case "A restored host forgets what its machine was told" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "            if let (Some(node), Some(seq)) = (number(0), number(1)) {",
+     "            if let (Some(node), Some(seq), false) = (number(0), number(1), true) {")
+PY
+
+mutation_case "Forgetting what the machine was told keeps the vector" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "        self.state().delivered.clear();",
+     "        let _ = self.state();")
+PY
+
+# ── What a context may name ────────────────────────────────────────────────────────────────────
+
+mutation_case "A context may name its own author" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "        if *node == author {\n            return Err(format!(\"{event}: its context names its own author",
+     "        if false && *node == author {\n            return Err(format!(\"{event}: its context names its own author")
+PY
+
+mutation_case "A context may name a device the log never granted" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "        if state.log.era_for(*node, link.log).is_none() {",
+     "        if false && state.log.era_for(*node, link.log).is_none() {")
+PY
+
+# ── The context is signed ──────────────────────────────────────────────────────────────────────
+
+mutation_case "An operation is signed without its context" <<'PY'
+edit("backends/rust/trust/src/message.rs",
+     "    part(&mut bytes, &link.context.len().to_string());\n    for (node, seq) in &link.context {\n        part(&mut bytes, &node.to_string());\n        part(&mut bytes, &seq.to_string());\n    }\n",
+     "")
+PY
+
+mutation_case "A context is read whatever order its nodes are written in" <<'PY'
+edit("backends/rust/trust/src/message.rs",
+     "context.iter().all(|(_, seq)| *seq >= 1) && context.windows(2).all(|two| two[0].0 < two[1].0)",
+     "context.iter().all(|(_, seq)| *seq >= 1)")
+PY

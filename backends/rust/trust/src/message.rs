@@ -12,9 +12,11 @@
 //! An event a device sends is an **operation** of that device's chain: the event as it travels
 //! (its content sealed, when the list keeps it from the hub), the number it has among the
 //! device's operations (`seq`), the id of the one before it (`prev`), and the entry of the
-//! membership log it was made under (`mh`, and that entry's hash `mhh`). The device signs all of
-//! it ([`operation_bytes`]), so that an operation neither moves to another chain position, nor
-//! claims another entry of the log, nor leaves out what it follows.
+//! membership log it was made under (`mh`, and that entry's hash `mhh`), and its causal context,
+//! the highest operation of each other device its machine had been told (`cx`). The device signs
+//! all of it ([`operation_bytes`]), so that an operation neither moves to another chain position,
+//! nor claims another entry of the log, nor leaves out what it follows, in its chain or in
+//! another's: a relay cannot change the order a host tells its machine operations in.
 //!
 //! The events are those of the standard shared record list ([`LIST_DOCUMENT`], docs/adr/0042),
 //! and no others: a list an application builds on that part is secured without this crate
@@ -164,16 +166,19 @@ pub const SEQ_FIELD: &str = "seq";
 pub const PREV_FIELD: &str = "prev";
 pub const LOG_FIELD: &str = "mh";
 pub const LOG_HASH_FIELD: &str = "mhh";
+/// The key under which the operation's causal context travels ([`Link::context`]).
+pub const CONTEXT_FIELD: &str = "cx";
 
 /// The second: the events are the standard record list's, with the fields its second revision
 /// added. The first named the events of a test fixture by other names and fields, and a
 /// signature must not verify under two meanings.
 const DOMAIN: &str = "sce-trust/event/2";
-/// Still the first. An operation is this domain, the bytes of its event (which open with the
-/// event's own domain, above) and its link, in the form they always had: what an operation means
-/// moved only with what its event means, which the event's domain already separates, so a
-/// signature of an operation of the first meaning verifies under none of the second.
-const OPERATION_DOMAIN: &str = "sce-trust/operation/1";
+/// The second: an operation is this domain, the bytes of its event (which open with the event's
+/// own domain, above) and its link, and the link now holds the operation's causal context
+/// (docs/adr/0085, section 3.1), which the first did not. A signature of an operation of the first
+/// form verifies under none of the second, so no relay can strip a context, or give an operation
+/// signed without one as if it named nothing it follows.
+const OPERATION_DOMAIN: &str = "sce-trust/operation/2";
 
 /// The id an operation has before any: what the first operation of a chain names as `prev`.
 pub const NO_OPERATION: [u8; 32] = [0; 32];
@@ -249,8 +254,8 @@ pub fn write_stamp(data: &Value) -> Result<Vec<u8>, MessageError> {
 }
 
 /// Where an operation stands: its number among its device's operations, the id of the one before
-/// it, and the entry of the membership log it was made under.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// it, the entry of the membership log it was made under, and what it follows of other devices.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Link {
     /// The number of the operation in its device's chain, from 1.
     pub seq: u64,
@@ -259,6 +264,19 @@ pub struct Link {
     /// The position of the entry of the membership log it was made under, and that entry's hash.
     pub log: u64,
     pub log_hash: [u8; 32],
+    /// The operation's causal context (docs/adr/0085, section 3.1): for each other device whose
+    /// operations the author's machine had been told when the author signed it, that device's node
+    /// and the highest number told, lowest node first, each number at least 1. A host tells its
+    /// machine the operation only once it has told it every operation the context names. The
+    /// author's own column is not in it: the operation's own number says it follows the ones
+    /// before it in its chain.
+    pub context: Vec<(u64, u64)>,
+}
+
+/// Whether `context` is written as a context is: nodes rising, each named once, and every number
+/// at least 1.
+fn context_is_well_formed(context: &[(u64, u64)]) -> bool {
+    context.iter().all(|(_, seq)| *seq >= 1) && context.windows(2).all(|two| two[0].0 < two[1].0)
 }
 
 impl Link {
@@ -274,6 +292,20 @@ impl Link {
         object.insert(
             LOG_HASH_FIELD.to_string(),
             Value::String(encoding::encode(&self.log_hash)),
+        );
+        object.insert(
+            CONTEXT_FIELD.to_string(),
+            Value::Array(
+                self.context
+                    .iter()
+                    .map(|(node, seq)| {
+                        Value::Array(vec![
+                            Value::String(node.to_string()),
+                            Value::String(seq.to_string()),
+                        ])
+                    })
+                    .collect(),
+            ),
         );
         Some(())
     }
@@ -294,6 +326,23 @@ impl Link {
         let prev = text(PREV_FIELD)?;
         let log = text(LOG_FIELD)?;
         let log_hash = text(LOG_HASH_FIELD)?;
+        let context = match object.remove(CONTEXT_FIELD) {
+            Some(Value::Array(entries)) => entries
+                .iter()
+                .map(|entry| {
+                    let pair = entry.as_array().filter(|pair| pair.len() == 2)?;
+                    let number = |at: usize| pair[at].as_str()?.parse::<u64>().ok();
+                    Some((number(0)?, number(1)?))
+                })
+                .collect::<Option<Vec<(u64, u64)>>>()
+                .filter(|context| context_is_well_formed(context))
+                .ok_or_else(|| {
+                    format!(
+                        "its `{CONTEXT_FIELD}` is not a context (pairs of a node and a number, nodes rising, numbers from 1)"
+                    )
+                })?,
+            _ => return Err(format!("it carries no `{CONTEXT_FIELD}`")),
+        };
         let hash = |name: &str, value: &str| -> Result<[u8; 32], String> {
             encoding::decode(value)
                 .and_then(|bytes| bytes.try_into().ok())
@@ -308,13 +357,14 @@ impl Link {
                 .parse()
                 .map_err(|_| "its `mh` is not a number".to_string())?,
             log_hash: hash(LOG_HASH_FIELD, &log_hash)?,
+            context,
         })
     }
 }
 
 /// The bytes a device signs to make an event an operation of its chain: the event as it travels
 /// (`travelling`, which is [`Signing::message`] of the data that goes on the wire) and the
-/// link.
+/// link, its context last: how many entries it has, then each entry's node and number.
 pub fn operation_bytes(travelling: &[u8], link: &Link) -> Vec<u8> {
     let mut bytes = Vec::new();
     part(&mut bytes, OPERATION_DOMAIN);
@@ -324,6 +374,11 @@ pub fn operation_bytes(travelling: &[u8], link: &Link) -> Vec<u8> {
     part(&mut bytes, &encoding::encode(&link.prev));
     part(&mut bytes, &link.log.to_string());
     part(&mut bytes, &encoding::encode(&link.log_hash));
+    part(&mut bytes, &link.context.len().to_string());
+    for (node, seq) in &link.context {
+        part(&mut bytes, &node.to_string());
+        part(&mut bytes, &seq.to_string());
+    }
     bytes
 }
 
@@ -578,10 +633,12 @@ mod tests {
             prev: [3; 32],
             log: 4,
             log_hash: [5; 32],
+            context: vec![(2, 5), (9, 1)],
         };
         let mut data = write();
         link.write_into(&mut data).unwrap();
-        assert_eq!(Link::take_from(&mut data), Ok(link));
+        assert_eq!(data["cx"], json!([["2", "5"], ["9", "1"]]));
+        assert_eq!(Link::take_from(&mut data), Ok(link.clone()));
         assert_eq!(
             data,
             write(),
@@ -594,6 +651,42 @@ mod tests {
         assert!(Link::take_from(&mut bad).is_err());
     }
 
+    /// A context is read only as it is written: nodes rising, each once, numbers from 1. Any other
+    /// spelling would let two texts name one context, or name a column twice with two numbers.
+    #[test]
+    fn a_context_that_is_not_written_as_one_is_refused() {
+        let link = Link {
+            seq: 2,
+            prev: [3; 32],
+            log: 4,
+            log_hash: [5; 32],
+            context: Vec::new(),
+        };
+        for (context, why) in [
+            (json!([["3", "1"], ["2", "1"]]), "nodes falling"),
+            (json!([["2", "1"], ["2", "4"]]), "a node twice"),
+            (json!([["2", "0"]]), "a number of 0"),
+            (json!([["2"]]), "an entry without its number"),
+            (json!([[2, 1]]), "numbers not written as text"),
+            (json!("2:1"), "not a list"),
+        ] {
+            let mut data = write();
+            link.write_into(&mut data).unwrap();
+            data["cx"] = context;
+            assert!(Link::take_from(&mut data).is_err(), "{why}");
+        }
+        let mut none = write();
+        link.write_into(&mut none).unwrap();
+        none.as_object_mut().unwrap().remove("cx");
+        assert!(
+            Link::take_from(&mut none).is_err(),
+            "an operation carries its context, an empty one included"
+        );
+        let mut empty = write();
+        link.write_into(&mut empty).unwrap();
+        assert_eq!(Link::take_from(&mut empty), Ok(link));
+    }
+
     #[test]
     fn an_operation_is_signed_as_it_stands_in_its_chain() {
         let travelling = signed(WRITE_EVENT, &write()).message;
@@ -602,18 +695,41 @@ mod tests {
             prev: NO_OPERATION,
             log: 3,
             log_hash: [5; 32],
+            context: vec![(2, 4)],
         };
         let base = operation_bytes(&travelling, &link);
         for moved in [
-            Link { seq: 2, ..link },
+            Link {
+                seq: 2,
+                ..link.clone()
+            },
             Link {
                 prev: [1; 32],
-                ..link
+                ..link.clone()
             },
-            Link { log: 4, ..link },
+            Link {
+                log: 4,
+                ..link.clone()
+            },
             Link {
                 log_hash: [6; 32],
-                ..link
+                ..link.clone()
+            },
+            Link {
+                context: Vec::new(),
+                ..link.clone()
+            },
+            Link {
+                context: vec![(2, 5)],
+                ..link.clone()
+            },
+            Link {
+                context: vec![(3, 4)],
+                ..link.clone()
+            },
+            Link {
+                context: vec![(2, 4), (3, 1)],
+                ..link.clone()
             },
         ] {
             assert_ne!(operation_bytes(&travelling, &moved), base, "{moved:?}");
