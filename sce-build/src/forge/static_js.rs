@@ -1421,11 +1421,109 @@ fn document_edits(
     Ok(edits)
 }
 
+/// The events whose payload a document under a data model with a script engine
+/// reads through a schema: those of its typed guards and those an
+/// `<sce:action>` reads through its arguments, which every generated lane's
+/// typed channel lifts (docs/adr/0086, section 4.4).
+fn schema_read_events(model: &SCXMLModel) -> std::collections::BTreeSet<String> {
+    let mut events: std::collections::BTreeSet<String> =
+        crate::forge::event_schema_check::select_native_typed_guards(model)
+            .into_iter()
+            .map(|guard| guard.event)
+            .collect();
+    events.extend(crate::forge::native_action::argument_payload_events(model));
+    events
+}
+
+/// `text`, a document under another data model than `sce-static`, with the door
+/// of each event it reads through a schema installed (docs/adr/0086, sections
+/// 4.2 and 4.4). The rule is the type's, not the data model's: a delivery of
+/// such an event that does not fit its type is refused whole by every generated
+/// machine, and so by the Interpreter, which asks the door the library installs.
+/// Nothing else of the document changes, and a document that reads no payload
+/// through a schema is returned as it is.
+fn install_doors(text: &str, model: &SCXMLModel) -> Result<String, GenerateError> {
+    let doors = door_records(model, &schema_read_events(model))?;
+    let Some(first) = doors.first() else {
+        return Ok(text.to_string());
+    };
+    if model.datamodel != Datamodel::EcmaScript {
+        return Err(GenerateError::unsupported(format!(
+            "the payload of `{}` is read through its schema, and the `{}` data model has no \
+             script engine to hold its door",
+            first.event,
+            model.datamodel.as_str()
+        )));
+    }
+    if let Some(taken) = model
+        .variables
+        .iter()
+        .chain(
+            model
+                .states
+                .values()
+                .flat_map(|state| state.datamodel.iter()),
+        )
+        .find(|v| v.id == RUNTIME_GLOBAL || v.id == RUNTIME_DATA_ID)
+    {
+        return Err(GenerateError::unsupported(format!(
+            "<data id=\"{}\"> takes a name the lowering keeps for the library that holds the \
+             doors of the events read through a schema; rename the variable",
+            taken.id
+        )));
+    }
+    let document = roxmltree::Document::parse(text).map_err(|e| {
+        GenerateError::unsupported(format!(
+            "the document cannot be read again to be rewritten: {e}"
+        ))
+    })?;
+    let root = document.root_element();
+    let install = format!(
+        "<data id=\"{RUNTIME_DATA_ID}\" expr=\"{}\"/>",
+        xml_attribute_value(&installation_expression(&[], &doors))
+    );
+    // The library is installed by the first `<data>` of the document, so it is
+    // there before the first guard is evaluated; a document that declares none
+    // is given a `<datamodel>` that holds it.
+    let datamodel = root.children().find(|n| is_scxml_element(n, "datamodel"));
+    let edit = match datamodel {
+        Some(datamodel) => match datamodel.children().find(|n| is_scxml_element(n, "data")) {
+            Some(data) => Edit {
+                range: data.range().start..data.range().start,
+                text: format!("{install}\n    "),
+            },
+            None => Edit {
+                range: datamodel.range(),
+                text: format!("<datamodel>{install}</datamodel>"),
+            },
+        },
+        None => {
+            let at = root
+                .children()
+                .find(|n| n.is_element())
+                .map(|n| n.range().start)
+                .ok_or_else(|| {
+                    GenerateError::unsupported(
+                        "the <scxml> root holds no element to install the library before"
+                            .to_string(),
+                    )
+                })?;
+            Edit {
+                range: at..at,
+                text: format!("<datamodel>{install}</datamodel>\n  "),
+            }
+        }
+    };
+    apply(text, vec![edit])
+}
+
 /// `text`, a `sce-static` document, as the ECMAScript document that means the
 /// same to the Interpreter. `model` is `text` parsed — the places its
 /// expressions were written are places in `text` — and judged.
 ///
-/// A document under any other data model is returned as it is.
+/// A document under any other data model keeps its expressions as they are,
+/// and is given the door of each event it reads through a schema
+/// ([`install_doors`]).
 fn lower_parsed(
     text: &str,
     model: &SCXMLModel,
@@ -1434,7 +1532,7 @@ fn lower_parsed(
 ) -> Result<String, Located<ForgeError>> {
     let refuse = |error: GenerateError| Located::in_file(ForgeError::from(error), label);
     if model.datamodel != Datamodel::SceStatic {
-        return Ok(text.to_string());
+        return install_doors(text, model).map_err(refuse);
     }
     // A composed value no lowering holds yet is refused by name, by the one
     // place that decides it, before this lowering reads the model, as every
@@ -2352,7 +2450,8 @@ mod tests {
         assert_eq!(condition, "level < 255", "a guard the walk left as written");
     }
 
-    /// A document under another data model is not this lowering's to touch.
+    /// A document under another data model keeps its expressions, and one that
+    /// reads no payload through a schema has no door to install either.
     #[test]
     fn a_document_under_another_data_model_is_returned_as_it_is() {
         let ecmascript = COUNTER

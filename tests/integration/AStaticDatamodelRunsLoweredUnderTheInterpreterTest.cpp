@@ -1100,6 +1100,31 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, ADocumentUnderAnother
     EXPECT_EQ(document, lowered.document);
 }
 
+// The door holds wherever an event's type is known, whatever the data model
+// (docs/adr/0086, section 4.2, amended 2026-11-09): an `ecmascript` document whose
+// guard reads a payload through its schema is lowered with the door of that event
+// installed, and a delivery that does not fit is refused whole, with
+// error.execution in its place, as every generated machine refuses it.
+// `statechart_lifted` goes to `refused` on error.execution and to `done` on a
+// `job.completed` whose `elapsed_ms`, a `uint32`, is 0. A text in its place compares
+// false in the script engine and raises nothing, so only the door takes the
+// machine to `refused`.
+TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, AnEcmascriptDocumentRefusesADeliveryOutsideItsSchemaWhole) {
+    const Lowered lowered = lower(std::filesystem::path(SCE_PROJECT_ROOT) /
+                                  "sce-build/tests/fixtures/event_schema/statechart_lifted.scxml");
+    ASSERT_TRUE(lowered.ok) << lowered.refusal.dump();
+    EXPECT_NE(std::string::npos, lowered.document.find("SceStatic.door("))
+        << "the door of job.completed is not installed:\n"
+        << lowered.document;
+    const auto machine = std::make_shared<StateMachine>(*engine_);
+    const auto raiser = wire(*machine);
+    ASSERT_TRUE(machine->loadSCXMLFromString(lowered.document)) << "the Interpreter does not load the document";
+    ASSERT_TRUE(machine->start());
+    machine->processEvent("job.completed", R"({"elapsed_ms":"soon"})");
+    EXPECT_TRUE(settles(raiser, [&] { return machine->getCurrentState() == "refused"; }))
+        << "a delivery outside its schema was not refused whole; the machine stands in " << machine->getCurrentState();
+}
+
 // An `<invoke type="scxml">` hands its child the values its `<param>`s and
 // `namelist` name, each to the child's variable of the same name, and a variable
 // nothing hands a value to keeps the one its `<data>` gave it
