@@ -309,8 +309,7 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
     // The test component (docs/SCE_TEST_PROFILE.md §12.6,
     // `codegen_matrix::TEST_COMPONENT_BACKENDS`): its machine is driven by the
     // profile's runtime, which lands in one backend at a time, C++ first, then
-    // Rust, Kotlin and Go.
-    (Language::Python, "forge kind `test-component`", Why::NotYet(TEST_COMPONENT_NOT_YET)),
+    // Rust, Kotlin, Go and Python.
     (Language::C11, "forge kind `test-component`", Why::NotYet(TEST_COMPONENT_NOT_YET)),
     (Language::Swift, "forge kind `test-component`", Why::NotYet(TEST_COMPONENT_NOT_YET)),
     // The tables of a test and the port type they read (docs/SCE_TEST_PROFILE.md
