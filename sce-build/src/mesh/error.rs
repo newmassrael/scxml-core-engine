@@ -3324,9 +3324,8 @@ pub enum CodegenError {
     /// deployment reads as causal (docs/adr/0085, section 3.2).
     #[error(
         "machine '{machine}' binds `{target}` with `delivery: causal`, which the {backend} \
-         Mesh core does not carry yet (SCE_MESH.md §mesh-10.12). Generate this machine with \
-         {}, or bind the peer without `delivery: causal`.",
-        super::codegen::causal_delivery_carriers()
+         Mesh core does not route yet (SCE_MESH.md §mesh-10.12). {}",
+        super::codegen::causal_delivery_repair()
     )]
     CausalDeliveryUnsupported {
         machine: String,
