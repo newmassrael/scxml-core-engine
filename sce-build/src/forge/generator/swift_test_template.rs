@@ -123,6 +123,24 @@ pub(super) fn render_test_template_swift(
     l.render(env, "test_template", ctx)
 }
 
+/// The text `text` as a Swift string literal. The default a suite gives a
+/// module parameter of `string[N]` is written by it too (`swift_test_tables`).
+pub(super) fn swift_text_literal(text: &str) -> String {
+    format!("\"{}\"", filters::escape_swift(text.to_string()))
+}
+
+/// The byte string the hex literal `text` writes, two hex digits an octet, as
+/// the array literal of its octets; `None` for a literal that is no hex. The
+/// default a suite gives a module parameter of `bytes[N]` is written by it too
+/// (`swift_test_tables`).
+pub(super) fn swift_bytes_literal(text: &str) -> Option<String> {
+    let octets: Vec<String> = hex_octets(text)?
+        .into_iter()
+        .map(|pair| format!("0x{pair}"))
+        .collect();
+    Some(format!("[{}]", octets.join(", ")))
+}
+
 /// The name the generated `matches` and `value` take the formal parameter
 /// `id` by: `param_<id>`, so that no parameter's name is one the unit declares
 /// (`Value`, `value`, `matches`), the name `matches` gives the value it is
@@ -420,15 +438,8 @@ impl TemplateSpelling for SwiftSpelling {
             TypeOf::Scalar(scalar) if scalar.int_value_range().is_some() => {
                 integer_literal(Language::Swift, text).ok_or_else(refused)
             }
-            TypeOf::Text { .. } => Ok(format!("\"{}\"", filters::escape_swift(text.to_string()))),
-            TypeOf::Bytes { .. } => {
-                let octets: Vec<String> = hex_octets(text)
-                    .ok_or_else(refused)?
-                    .into_iter()
-                    .map(|pair| format!("0x{pair}"))
-                    .collect();
-                Ok(format!("[{}]", octets.join(", ")))
-            }
+            TypeOf::Text { .. } => Ok(swift_text_literal(text)),
+            TypeOf::Bytes { .. } => swift_bytes_literal(text).ok_or_else(refused),
             _ => Err(refused()),
         }
     }

@@ -367,10 +367,10 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
         // docs/SCE_TEST_PROFILE.md §12.6, slices 5 and 6: the tables of a
         // configuration, a test case and a suite, which the profile's runner
         // reads, land one backend at a time, C++ first, then Rust, Kotlin, Go,
-        // Python and C11; a port type, read by the units of the components and
-        // configurations that name it, lands with them. Which have landed is
-        // [`TEST_SUITE_BACKENDS`], the one list both this answer and
-        // [`awaits_runtime`] read.
+        // Python, C11 and Swift; a port type, read by the units of the
+        // components and configurations that name it, lands with them. Which
+        // have landed is [`TEST_SUITE_BACKENDS`], the one list both this answer
+        // and [`awaits_runtime`] read.
         ForgeKind::TestPortType
         | ForgeKind::TestConfiguration
         | ForgeKind::TestCase
@@ -431,9 +431,8 @@ pub const TEST_TEMPLATE_BACKENDS: &[Language] = &[
 /// ([`TEST_SUITE_BACKENDS`]) refuses a component that declares a module
 /// parameter by name, since the value is the suite's
 /// ([`crate::test_component::snapshot::lower`]); it reads one in the change
-/// that joins it to that list, as C++, Rust, Kotlin, Go, Python and C11 do.
-/// Swift generates a component and refuses one that declares a module
-/// parameter.
+/// that joins it to that list, as C++, Rust, Kotlin, Go, Python, C11 and Swift
+/// do.
 pub const TEST_COMPONENT_BACKENDS: &[Language] = &[
     Language::Rust,
     Language::Cpp,
@@ -466,6 +465,7 @@ pub const TEST_SUITE_BACKENDS: &[Language] = &[
     Language::Go,
     Language::Python,
     Language::C11,
+    Language::Swift,
 ];
 
 /// The backends whose broadcast-log template has landed (ADR 0062, "Order of
@@ -1193,48 +1193,30 @@ mod tests {
         }
     }
 
-    /// docs/SCE_TEST_PROFILE.md §11.9, §12.6: Rust, C++, Kotlin, Go, Python
-    /// and C11 generate every kind of the test profile and Swift a template
-    /// and a component, so every backend generates a template and a
-    /// component; every other pair of a backend and a kind of the profile,
-    /// Swift's, awaits the profile's runtime there, letting the document
-    /// through the matrix to the dispatch that refuses it by name.
+    /// docs/SCE_TEST_PROFILE.md §11.9, §12.6: every backend generates every
+    /// kind of the test profile, Swift the last to land the tables of a test,
+    /// so no pair of a backend and a kind of the profile awaits the profile's
+    /// runtime, and each lists every backend in [`Language::ALL`]'s order.
     #[test]
-    fn rust_cpp_kotlin_go_python_and_c11_emit_every_kind_swift_a_template_and_a_component() {
+    fn every_backend_emits_every_kind_of_the_test_profile() {
         assert_eq!(ForgeKind::TEST_PROFILE.len(), 6);
-        // In [`Language::ALL`]'s order.
-        let every_kind: &[Language] = &[
-            Language::Rust,
-            Language::Cpp,
-            Language::Kotlin,
-            Language::Go,
-            Language::Python,
-            Language::C11,
-        ];
-        // A template and a component land before the other kinds, on every
-        // backend.
         assert_eq!(TEST_TEMPLATE_BACKENDS, Language::ALL);
         assert_eq!(TEST_COMPONENT_BACKENDS, Language::ALL);
-        assert_eq!(TEST_SUITE_BACKENDS, every_kind);
+        assert_eq!(TEST_SUITE_BACKENDS, Language::ALL);
         for &kind in ForgeKind::TEST_PROFILE {
             assert!(kind.is_test_profile(), "{kind:?}");
             assert_eq!(kind_class(kind), KindClass::Generic, "{kind:?}");
-            let landed = if matches!(kind, ForgeKind::TestTemplate | ForgeKind::TestComponent) {
-                Language::ALL
-            } else {
-                every_kind
-            };
             for &lang in Language::ALL {
-                let want = if landed.contains(&lang) {
-                    EmitOutcome::Emit
-                } else {
-                    EmitOutcome::RuntimeMissing
-                };
-                assert_eq!(lookup(kind, lang), want, "{kind:?} on {lang:?}");
+                assert_eq!(
+                    lookup(kind, lang),
+                    EmitOutcome::Emit,
+                    "{kind:?} on {lang:?}"
+                );
+                assert!(!awaits_runtime(kind, lang), "{kind:?} on {lang:?}");
                 assert!(check(kind, lang).is_ok(), "{kind:?} on {lang:?}");
             }
             let emitted: Vec<Language> = emitting(kind).collect();
-            assert_eq!(emitted, landed, "{kind:?}");
+            assert_eq!(emitted, Language::ALL, "{kind:?}");
         }
         for list in [
             TEST_TEMPLATE_BACKENDS,

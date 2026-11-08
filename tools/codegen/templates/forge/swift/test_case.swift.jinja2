@@ -1,0 +1,31 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "swift", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="test-case")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+
+import {{ runtime }}
+
+{# The configuration's unit is a file of the same module, named by the enum it
+   declares, and every type of the runtime is named by its module, so no name
+   another unit declares can hide one of the runtime's. #}
+/// The test case `{{ case_name }}` (docs/SCE_TEST_PROFILE.md §11.7) as the runner reads it, the
+/// members of a caseless enum of the module as every unit's are.
+public enum {{ struct_name }} {
+    /// The test case's name in the suite and in the test log.
+    public static let name: String = {{ name_literal }}
+
+    /// The entry the runner reads: the test case's name, its configuration and the machines of its
+    /// components, and the module parameters those components read.
+    public static func testCase() -> {{ runtime }}.TestCase {
+        {{ runtime }}.TestCase(
+            name: Self.name,
+            configuration: {{ configuration }}.configuration(),
+            machines: { componentType in {{ configuration }}.machine(componentType) },
+            moduleParameters: {{ configuration }}.moduleParameters())
+    }
+}

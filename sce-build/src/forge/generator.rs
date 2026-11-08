@@ -39,6 +39,7 @@ mod rust_test_tables;
 mod rust_test_template;
 mod rust_view;
 mod swift_codec;
+mod swift_test_tables;
 mod swift_test_template;
 mod test_tables;
 mod test_template_walk;
@@ -31414,7 +31415,10 @@ pub fn generate_swift(
 /// written in part as well ([`render_broadcast_log_swift`]): for the elements
 /// whose codec the Swift codec writes, and refused by the construct for the rest.
 /// A test template is written whole (`codegen_matrix::TEST_TEMPLATE_BACKENDS`,
-/// [`swift_test_template`]), as on every other backend that lowers no union.
+/// [`swift_test_template`]), as on every other backend that lowers no union,
+/// and so are the tables of a test configuration, a test case and a suite
+/// (`codegen_matrix::TEST_SUITE_BACKENDS`, [`swift_test_tables`]); a test port
+/// type writes no file.
 pub fn generate_swift_with_imports(
     doc: &ForgeDocument,
     template_dir: &Path,
@@ -31517,19 +31521,16 @@ pub fn generate_swift_with_imports(
         // whose unit is not written among them, is refused by name where the unit
         // is spelled ([`swift_test_template`]).
         ForgeDocument::TestTemplate(_) => None,
-        // docs/SCE_TEST_PROFILE.md §11.9: the other kinds of the test profile
-        // are refused by name until their runtime lands here.
-        ForgeDocument::TestPortType(_)
-        | ForgeDocument::TestConfiguration(_)
+        // docs/SCE_TEST_PROFILE.md §12.6, slice 6
+        // (`codegen_matrix::TEST_SUITE_BACKENDS`): a port type writes no file,
+        // since the units of the components and of the configuration that read
+        // it hold what they need of it by name; a configuration, a test case and
+        // a suite are tables the profile's runtime reads, whose refusals are the
+        // rows every backend shares ([`swift_test_tables`]).
+        ForgeDocument::TestPortType(_) => return Ok(GeneratedOutput::default()),
+        ForgeDocument::TestConfiguration(_)
         | ForgeDocument::TestCase(_)
-        | ForgeDocument::TestSuite(_) => {
-            return Err(crate::forge::test_profile::document_not_generated(
-                doc.kind(),
-                doc.name(),
-                crate::forge::provenance::forge_doc_source_location(doc).cloned(),
-            )
-            .into())
-        }
+        | ForgeDocument::TestSuite(_) => None,
         _ => {
             return match crate::forge::codegen_matrix::lookup(doc.kind(), Language::Swift) {
                 crate::forge::codegen_matrix::EmitOutcome::Declaration => {
@@ -31574,6 +31575,13 @@ pub fn generate_swift_with_imports(
         ForgeDocument::TextTemplate(m) => render_text_template(&env, m, imports, Language::Swift)?,
         ForgeDocument::TestTemplate(m) => {
             swift_test_template::render_test_template_swift(&env, m, imports)?
+        }
+        ForgeDocument::TestConfiguration(m) => {
+            swift_test_tables::render_test_configuration_swift(&env, m, imports)?
+        }
+        ForgeDocument::TestCase(m) => swift_test_tables::render_test_case_swift(&env, m, imports)?,
+        ForgeDocument::TestSuite(m) => {
+            swift_test_tables::render_test_suite_swift(&env, m, imports)?
         }
         _ => unreachable!("every other kind returned above"),
     };

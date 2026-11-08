@@ -1,0 +1,52 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "swift", module_level=true, symbol_artifact=sce_artifact.forge_body) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="test-suite")
+// Runtime: {{ runtime_dep }}
+// Do not edit — regenerate from the source SCXML file.
+
+{# The runtime's `SavedValues` writes each default, and is imported where the
+   suite declares a module parameter, and nowhere else. #}
+{% if parameters %}
+import {{ saved_values_module }}
+{% endif %}
+import {{ runtime }}
+
+{# Each test case's unit is a file of the same module, named by the enum it
+   declares, and the feature model writes no unit, so no name another unit
+   declares can hide one of the runtime's, which are named by their module. #}
+/// The test suite `{{ suite_name }}` (docs/SCE_TEST_PROFILE.md §11.8) as the runner reads it
+/// (`{{ runtime }}.runSuite`), the member of a caseless enum of the module as every unit's are.
+public enum {{ struct_name }} {
+    /// The suite: each module parameter at its default, held as the saved value of its declared
+    /// type, and each `<sce:execute>` in run order, with its test case, its guard in microseconds
+    /// and the selection that runs it in a world of the suite's features.
+    public static func suite() -> {{ runtime }}.Suite {
+{% if parameters %}
+        var moduleParameters = {{ runtime }}.ModuleParameters()
+{% for parameter in parameters %}
+        moduleParameters.set({{ parameter.id }}, {{ parameter.value }})
+{% endfor %}
+{% else %}
+        let moduleParameters = {{ runtime }}.ModuleParameters()
+{% endif %}
+        return {{ runtime }}.Suite(
+            name: {{ name_literal }},
+            moduleParameters: moduleParameters,
+{% if executes %}
+            executes: [
+{% for execute in executes %}
+                {{ runtime }}.Execute(
+                    {{ execute.test_case }},
+                    guardAt: {{ execute.guard }},
+                    selection: {{ execute.selection }}),
+{% endfor %}
+            ])
+{% else %}
+            executes: [])
+{% endif %}
+    }
+}
