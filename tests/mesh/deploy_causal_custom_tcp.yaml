@@ -1,0 +1,18 @@
+# docs/adr/0085, section 3.2: the brake's `#motor` binding is the route of a
+# causal group over custom_tcp. Consumed by test_mesh_causal_injection.cpp,
+# which drives the generated router without opening a socket: the client
+# dials only on a send.
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: custom_tcp
+            connect: "127.0.0.1:55931"
+            delivery: causal
+            group: { name: pair, view: [ecu1/brake, ecu1/motor] }
+      motor:
+        source: motor.scxml

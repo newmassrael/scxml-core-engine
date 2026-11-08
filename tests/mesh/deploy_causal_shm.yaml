@@ -1,0 +1,18 @@
+# docs/adr/0085, section 3.2: the brake's `#motor` binding is the route of a
+# causal group over shm. Consumed by test_mesh_causal_injection.cpp, which
+# stands in for the motor: it writes the channel the motor's router would
+# create for its binding back (`/sce_motor_brake`) and reads the brake's
+# (`/sce_brake_motor`).
+version: "1.0"
+topology:
+  ecu1:
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: shm
+            delivery: causal
+            group: { name: pair, view: [ecu1/brake, ecu1/motor] }
+      motor:
+        source: motor.scxml
