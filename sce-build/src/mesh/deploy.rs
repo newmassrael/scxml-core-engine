@@ -2106,6 +2106,39 @@ impl OrderingRequirement {
     }
 }
 
+/// How the Mesh core delivers a binding's envelopes, beyond what the
+/// transport and the per-source rules give (docs/adr/0085, section 3.2).
+///
+/// `causal` is the only value: a binding without the key keeps the
+/// per-source rules, the dedup window and the sequence buffer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DeliveryMode {
+    /// The binding is a causal broadcast group: every change is delivered
+    /// once, and only after every change in its causal context.
+    Causal,
+}
+
+/// The most members a causal group's view holds: the bound of the
+/// envelope's `causal_vector` (key 20, `stdlib/mesh/envelope.scxml`), whose
+/// entries are one per replica of the view.
+pub const MAX_CAUSAL_VIEW: usize = 64;
+
+/// A causal binding's group (docs/adr/0085, sections 3.2 and 3.3): its name
+/// and its initial view, epoch 0. Each entry of `view` names one instance
+/// the deploy declares, as `<device>/<machine>`.
+///
+/// The key is `group:`, not `members:`, which keeps its one meaning (the
+/// members of a DDS or Zenoh pool).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CausalGroupConfig {
+    /// The group's name: every binding that names it declares one view.
+    pub name: String,
+    /// The initial view (epoch 0), in the order the deploy writes it.
+    pub view: Vec<String>,
+}
+
 /// Default `gap_timeout_ms` applied when a machine omits the `ordering:`
 /// section (SCE_MESH.md §mesh-10.6.1). 100 ms covers the Zenoh session-refresh
 /// window and the SOME/IP retransmit envelope at 1 kHz sender rates. This
@@ -3525,6 +3558,17 @@ pub struct BindingConfig {
     #[serde(default)]
     pub ordering: OrderingRequirement,
 
+    /// docs/adr/0085, section 3.2 — `delivery: causal` makes the binding a
+    /// causal broadcast group. Absent keeps the per-source rules.
+    /// `ordering:` beside it is refused (`mesh/deploy-delivery-conflict`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delivery: Option<DeliveryMode>,
+
+    /// docs/adr/0085, section 3.3 — the group a causal binding belongs to and
+    /// its initial view. Required with `delivery: causal`, refused without.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<CausalGroupConfig>,
+
     /// SCE Mesh §mesh-14.4 — bounded instance pool for a SOME/IP binding that
     /// carries a placeholder. vsomeip's
     /// `request_service(SERVICE, ANY_INSTANCE)` does not actually
@@ -3669,6 +3713,8 @@ const BINDING_TYPED_FIELDS: &[&str] = &[
     "events",
     "deadline_ms",
     "ordering",
+    "delivery",
+    "group",
     "instances",
     "members",
     "instance_from",
@@ -3775,6 +3821,7 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
     validate_pool_defaults(&cfg)?;
     validate_binding_field_names(&cfg)?;
     validate_dedup_window(&cfg)?;
+    validate_delivery(&cfg)?;
     validate_custom_tcp_socket(&cfg)?;
     validate_dds_qos(&cfg)?;
 
@@ -5773,6 +5820,181 @@ fn validate_dedup_window(cfg: &DeployConfig) -> Result<(), DeployError> {
         }
     }
     Ok(())
+}
+
+/// Hold every causal binding to the settings it subsumes and to the
+/// topology its view names (docs/adr/0085, sections 3.2 and 3.3). One delivery rule per binding: `ordering:` beside
+/// `delivery: causal` is refused, and so is a machine's `dedup:` section
+/// when every binding it would reach is causal, since it would read as
+/// configured and filter nothing. A causal binding names its group; the
+/// group's view names declared instances, holds this instance, and is the
+/// same on every binding that names the group, because epoch 0 is one view.
+///
+/// Walked in sorted order so the first reported conflict is stable.
+fn validate_delivery(cfg: &DeployConfig) -> Result<(), DeployError> {
+    use std::collections::BTreeMap;
+    let conflict = |machine: &str, target: &str, reason: String| DeployError::DeliveryConflict {
+        machine: machine.to_string(),
+        target: target.to_string(),
+        reason,
+    };
+    // The first declaration of each group, to hold every other to it.
+    let mut groups: BTreeMap<&str, (&[String], String)> = BTreeMap::new();
+    let devices: BTreeMap<&str, &DeviceConfig> =
+        cfg.topology.iter().map(|(n, d)| (n.as_str(), d)).collect();
+    for (device_name, device) in &devices {
+        let machines: BTreeMap<&str, &MachineConfig> = device
+            .machines
+            .iter()
+            .map(|(n, m)| (n.as_str(), m))
+            .collect();
+        for (machine_name, machine) in machines {
+            let this_instance = format!("{device_name}/{machine_name}");
+            let bindings: BTreeMap<&str, &BindingConfig> = machine
+                .bindings
+                .iter()
+                .map(|(t, b)| (t.as_str(), b))
+                .collect();
+            for (target, binding) in &bindings {
+                let target = *target;
+                match (binding.delivery, binding.group.as_ref()) {
+                    (None, None) => {}
+                    (None, Some(_)) => {
+                        return Err(conflict(
+                            machine_name,
+                            target,
+                            format!(
+                                "binding `{target}` declares `group:` without `delivery: causal`. \
+                                 A group is read only on a causal binding; add \
+                                 `delivery: causal` or remove `group:`."
+                            ),
+                        ));
+                    }
+                    (Some(DeliveryMode::Causal), None) => {
+                        return Err(conflict(
+                            machine_name,
+                            target,
+                            format!(
+                                "binding `{target}` declares `delivery: causal` without `group:`. \
+                                 A causal binding names its group and its initial view \
+                                 (`group: {{ name, view }}`)."
+                            ),
+                        ));
+                    }
+                    (Some(DeliveryMode::Causal), Some(group)) => {
+                        if !binding.ordering.is_none() {
+                            return Err(conflict(
+                                machine_name,
+                                target,
+                                format!(
+                                    "binding `{target}` declares `ordering: required` beside \
+                                     `delivery: causal`. A causal route delivers each change \
+                                     once and in causal order by its vectors, which subsumes \
+                                     per-source ordering; remove `ordering:` from the binding."
+                                ),
+                            ));
+                        }
+                        if let Some(reason) = causal_view_error(cfg, target, group, &this_instance)
+                        {
+                            return Err(conflict(machine_name, target, reason));
+                        }
+                        let here = format!("{this_instance} `{target}`");
+                        match groups.get(group.name.as_str()) {
+                            Some((view, first)) if *view != group.view.as_slice() => {
+                                return Err(conflict(
+                                    machine_name,
+                                    target,
+                                    format!(
+                                        "binding `{target}` declares the view {:?} for group \
+                                         '{}', and {first} declares {:?}. A group has one view \
+                                         at epoch 0; declare the same view on every binding \
+                                         that names it.",
+                                        group.view, group.name, view
+                                    ),
+                                ));
+                            }
+                            Some(_) => {}
+                            None => {
+                                groups.insert(group.name.as_str(), (group.view.as_slice(), here));
+                            }
+                        }
+                    }
+                }
+            }
+            let every_binding_causal = !bindings.is_empty()
+                && bindings
+                    .values()
+                    .all(|b| b.delivery == Some(DeliveryMode::Causal));
+            if machine.dedup.is_some() && machine.server.is_none() && every_binding_causal {
+                return Err(conflict(
+                    machine_name,
+                    "",
+                    "the `dedup:` section reaches no binding: every binding of the machine is \
+                     `delivery: causal`, whose vectors drop a duplicate exactly. Remove the \
+                     `dedup:` section."
+                        .to_string(),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Why a causal binding's group cannot be the view of epoch 0, or `None`:
+/// a name, at least one and at most [`MAX_CAUSAL_VIEW`] instances, each
+/// named once as `<device>/<machine>` of a declared instance, and this
+/// instance among them (every member sends to the route and reads it).
+fn causal_view_error(
+    cfg: &DeployConfig,
+    target: &str,
+    group: &CausalGroupConfig,
+    this_instance: &str,
+) -> Option<String> {
+    if group.name.is_empty() {
+        return Some(format!(
+            "binding `{target}` names a group with an empty `name:`."
+        ));
+    }
+    if group.view.is_empty() || group.view.len() > MAX_CAUSAL_VIEW {
+        return Some(format!(
+            "binding `{target}` declares a view of {} instances for group '{}'; a view holds \
+             1 to {MAX_CAUSAL_VIEW}, the bound of the envelope's causal vector.",
+            group.view.len(),
+            group.name
+        ));
+    }
+    let mut seen: Vec<&str> = Vec::with_capacity(group.view.len());
+    for entry in &group.view {
+        if seen.contains(&entry.as_str()) {
+            return Some(format!(
+                "binding `{target}` names '{entry}' twice in the view of group '{}'; each \
+                 instance is one member of the view.",
+                group.name
+            ));
+        }
+        seen.push(entry.as_str());
+        let declared = entry.split_once('/').is_some_and(|(device, machine)| {
+            cfg.topology
+                .get(device)
+                .is_some_and(|d| d.machines.contains_key(machine))
+        });
+        if !declared {
+            return Some(format!(
+                "binding `{target}` names '{entry}' in the view of group '{}', which is no \
+                 instance the deploy declares; name each member as `<device>/<machine>`.",
+                group.name
+            ));
+        }
+    }
+    if !seen.contains(&this_instance) {
+        return Some(format!(
+            "binding `{target}` declares a view of group '{}' that does not name \
+             '{this_instance}'; every member of the group sends to the route and reads it, \
+             so the view names this instance.",
+            group.name
+        ));
+    }
+    None
 }
 
 /// Walk every machine that declared an explicit `ordering:` section and
@@ -9366,6 +9588,131 @@ topology:
         }
         let at = yaml.replace(&over.to_string(), &u32::MAX.to_string());
         parse_deploy_str(&at).expect("the largest window a core can hold is accepted");
+    }
+
+    // ── delivery: causal (docs/adr/0085, section 3.2) ───────────────
+
+    /// Three copies of one list on three devices, each bound to the group
+    /// route `#people`; `extra` is spliced under the phone's binding and
+    /// `machine_extra` under the phone's machine.
+    fn causal_deploy(extra: &str, machine_extra: &str) -> String {
+        let mut yaml = String::from("version: \"1.0\"\ntopology:\n");
+        for device in ["phone", "laptop", "tablet"] {
+            yaml.push_str(&format!(
+                "  {device}:\n    machines:\n      list:\n        source: list.scxml\n"
+            ));
+            if device == "phone" {
+                yaml.push_str(machine_extra);
+            }
+            yaml.push_str(
+                "        bindings:\n          \"#people\":\n            transport: wss\n            \
+                 delivery: causal\n            group:\n              name: people\n              \
+                 view: [phone/list, laptop/list, tablet/list]\n",
+            );
+            if device == "phone" {
+                yaml.push_str(extra);
+            }
+        }
+        yaml
+    }
+
+    fn delivery_conflict(yaml: &str) -> (String, String) {
+        match parse_deploy_str(yaml) {
+            Err(DeployError::DeliveryConflict {
+                machine,
+                target,
+                reason,
+            }) => {
+                assert_eq!(machine, "list");
+                (target, reason)
+            }
+            other => panic!("expected DeliveryConflict, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_causal_binding_is_parsed_with_its_group_and_view() {
+        let cfg = parse_deploy_str(&causal_deploy("", "")).expect("parse");
+        let binding =
+            &cfg.topology["laptop"].machines["list"].bindings[&TargetId::new("#people").unwrap()];
+        assert_eq!(binding.delivery, Some(DeliveryMode::Causal));
+        let group = binding
+            .group
+            .as_ref()
+            .expect("a causal binding names its group");
+        assert_eq!(group.name, "people");
+        assert_eq!(group.view, ["phone/list", "laptop/list", "tablet/list"]);
+    }
+
+    #[test]
+    fn ordering_beside_causal_delivery_is_a_delivery_conflict() {
+        let (target, reason) =
+            delivery_conflict(&causal_deploy("            ordering: required\n", ""));
+        assert_eq!(target, "#people");
+        assert!(reason.contains("`ordering: required`"), "{reason}");
+        // `ordering: none` is the default spelled out, not a second rule.
+        parse_deploy_str(&causal_deploy("            ordering: none\n", ""))
+            .expect("the default ordering is no conflict");
+    }
+
+    #[test]
+    fn a_dedup_section_that_reaches_only_causal_bindings_is_a_delivery_conflict() {
+        let dedup = "        dedup:\n          window_size: 64\n";
+        let (target, reason) = delivery_conflict(&causal_deploy("", dedup));
+        assert_eq!(target, "");
+        assert!(reason.contains("`dedup:`"), "{reason}");
+        // A binding the window does reach keeps the section meaningful.
+        let plain = "          \"#cloud\":\n            transport: wss\n            \
+                     url: wss://cloud.example\n";
+        parse_deploy_str(&causal_deploy(plain, dedup))
+            .expect("a dedup section that reaches a plain binding is accepted");
+    }
+
+    #[test]
+    fn a_causal_binding_without_its_group_and_a_group_without_causal_are_refused() {
+        let yaml = causal_deploy("", "");
+        let without_group = yaml.replacen(
+            "            group:\n              name: people\n              \
+             view: [phone/list, laptop/list, tablet/list]\n",
+            "",
+            1,
+        );
+        let (_, reason) = delivery_conflict(&without_group);
+        assert!(reason.contains("without `group:`"), "{reason}");
+        let without_causal = yaml.replacen("            delivery: causal\n", "", 1);
+        let (_, reason) = delivery_conflict(&without_causal);
+        assert!(reason.contains("without `delivery: causal`"), "{reason}");
+    }
+
+    #[test]
+    fn a_view_must_name_declared_instances_once_and_this_one() {
+        let yaml = causal_deploy("", "");
+        let view = "[phone/list, laptop/list, tablet/list]";
+        for (bad, says) in [
+            ("[phone/list, laptop/list, phone/list]", "twice"),
+            ("[phone/list, laptop/list, watch/list]", "no instance"),
+            ("[phone/list, laptop/list, tablet]", "no instance"),
+            ("[laptop/list, tablet/list]", "does not name"),
+            ("[]", "1 to 64"),
+        ] {
+            let (_, reason) = delivery_conflict(&yaml.replacen(view, bad, 1));
+            assert!(reason.contains(says), "{bad}: {reason}");
+        }
+    }
+
+    #[test]
+    fn every_binding_of_a_group_declares_one_view() {
+        // The phone and the laptop reorder the view; the tablet keeps it, and
+        // is held to the laptop's (the first in sorted device order): a
+        // reordered view is another view.
+        let yaml = causal_deploy("", "");
+        let reordered = yaml.replacen(
+            "[phone/list, laptop/list, tablet/list]",
+            "[laptop/list, phone/list, tablet/list]",
+            2,
+        );
+        let (_, reason) = delivery_conflict(&reordered);
+        assert!(reason.contains("one view"), "{reason}");
     }
 
     #[test]

@@ -213,6 +213,7 @@ fn facts_for(target: &ResolvedTarget) -> Vec<Fact> {
         state,
         invoke_sites,
         ordering,
+        causal,
         responders,
         deadline_ms,
         retry,
@@ -234,6 +235,8 @@ fn facts_for(target: &ResolvedTarget) -> Vec<Fact> {
     push_list("subscribes", subscription_events, &mut facts);
     push_nested_list("invoke", invoke_sites, &mut facts);
     push_nested("ordering", ordering, &mut facts);
+    // Absent is the per-source rules, not a causal group (docs/adr/0085, section 3.2).
+    push_optional("causal", causal.as_ref(), &mut facts);
     push_list("responders", responders, &mut facts);
     // Absent is not a default: a request with no deadline of its own
     // waits for its reply indefinitely (§mesh-9.5).

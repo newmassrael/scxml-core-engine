@@ -922,6 +922,20 @@ pub enum DeployError {
     #[error("machine '{machine}': invalid `dedup:` section in deploy.yaml — {reason}")]
     InvalidDedupWindow { machine: String, reason: String },
 
+    /// A machine's delivery settings contradict one another or the
+    /// topology around a causal binding (docs/adr/0085, section 3.2):
+    /// `ordering:` beside `delivery: causal`, a `dedup:` section that
+    /// reaches only causal bindings, a causal binding without its
+    /// `group:` (or a `group:` on a binding that is not causal), or a
+    /// view that does not name the instances the deploy declares.
+    /// `target` is empty when the conflict is the machine's own section.
+    #[error("machine '{machine}': {reason}")]
+    DeliveryConflict {
+        machine: String,
+        target: String,
+        reason: String,
+    },
+
     /// A device's `transports.custom_tcp:` block declares a socket-layer
     /// value that would disable what it configures (SCE_MESH.md
     /// §mesh-16.8.3). custom_tcp is SCE's own implementation, so there
@@ -3302,6 +3316,23 @@ pub enum CodegenError {
         machine: String,
         feature: HostCoreGap,
     },
+
+    /// A binding with `delivery: causal` (docs/adr/0085, section 3.2) on a
+    /// backend whose Mesh core does not carry the causal route yet. Refused
+    /// by name rather than built as a plain route, which would deliver
+    /// duplicates, out of causal order and with gaps skipped while the
+    /// deployment reads as causal (docs/adr/0085, section 3.2).
+    #[error(
+        "machine '{machine}' binds `{target}` with `delivery: causal`, which the {backend} \
+         Mesh core does not carry yet (SCE_MESH.md §mesh-10.12). Generate this machine with \
+         {}, or bind the peer without `delivery: causal`.",
+        super::codegen::causal_delivery_carriers()
+    )]
+    CausalDeliveryUnsupported {
+        machine: String,
+        target: String,
+        backend: String,
+    },
 }
 
 /// What a [`CodegenError::HostCoreUnsupported`] refused: a deployment
@@ -3620,6 +3651,21 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             expected: None,
             fix: None,
             key_fragments: vec![machine.clone(), reason.clone()],
+        },
+        DeployError::DeliveryConflict {
+            machine,
+            target,
+            reason,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshDeployDeliveryConflict,
+            stage: Stage::MeshDeploy,
+            actual: Some(machine.clone()),
+            // Which of two settings gives way is the author's call
+            // (the causal route or the per-source rules it replaces),
+            // so no closed candidate set is carried.
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone(), target.clone(), reason.clone()],
         },
         DeployError::InvalidOrderingTimings { machine, reason } => DiagnosticPayload {
             code: DiagnosticCode::MeshDeployInvalidOrderingTimings,
@@ -5565,6 +5611,20 @@ fn codegen_fields(e: &CodegenError) -> DiagnosticPayload {
             expected: None,
             fix: None,
             key_fragments: vec![machine.clone(), feature.tag().to_string()],
+        },
+        CodegenError::CausalDeliveryUnsupported {
+            machine,
+            target,
+            backend,
+        } => DiagnosticPayload {
+            code: DiagnosticCode::MeshCodegenCausalDeliveryUnsupported,
+            stage: Stage::MeshCodegen,
+            actual: Some(target.clone()),
+            // Two repairs, as for a host-core gap: another backend, or a
+            // binding that is not causal. Neither is offered as the fix.
+            expected: None,
+            fix: None,
+            key_fragments: vec![machine.clone(), target.clone(), backend.clone()],
         },
     }
 }
