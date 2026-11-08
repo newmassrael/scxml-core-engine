@@ -9,8 +9,10 @@
   stamped to sort after everything it has seen (record_write).
 
   `text` is what a person typed: at most 32 bytes of UTF-8 as written, a bound a build
-  moves by giving the limit `shared_typed_text` another number, and the copy holds a
-  text past it to the same bound and refuses the change whole. A write carries more
+  moves by giving the limit `shared_typed_text` another number. The bound is the type's,
+  and is held where the edit is read: an edit whose text is past it is refused whole
+  there, with error.execution, and never reaches the copy (docs/adr/0086, section 4.4),
+  and a statechart cannot send one (docs/adr/0050). A write carries more
   (record_write), for what a host puts there in place of the text.
 
   `more`, added by the second revision, says that the change goes on: the edit is held
