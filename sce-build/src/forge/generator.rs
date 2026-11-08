@@ -8287,9 +8287,11 @@ struct PythonPayloadParts {
     /// Whether a field is optional, which the runtime's `OptionalOf` reads and
     /// its `write_optional` writes.
     optional: bool,
-    /// Whether the payload holds a composition, whose type names, writers and
-    /// check the module imports the runtime module for.
-    composed: bool,
+    /// Whether a field's type is named through the runtime module, which the
+    /// module imports for it: a composition, whose type names, writers and
+    /// check it calls, or a text or byte string, which the lift holds to its
+    /// bound by the runtime's `Text` and `Bytes` (docs/adr/0086, section 4.4).
+    module: bool,
 }
 
 /// [`PythonPayloadParts`] of a schema each field of which is one entry, the
@@ -8305,6 +8307,9 @@ fn python_entry_payload(schema: &EntrySchema, l: &LangCtx, class_name: &str) -> 
     // Whether a field is optional (docs/adr/0055), so the module names the
     // runtime's reader and writer of `null`.
     let mut uses_optional = false;
+    // Whether a text or byte-string field is read, so the module imports the
+    // runtime module whose `Text` and `Bytes` hold it to its bound.
+    let mut uses_module = false;
     // Constructor field annotations / inject params / call args. Fields are
     // the verbatim schema ids (matching the verbatim attribute emit of
     // `expr.rs::emit_python`) so the lowered guard's `<accessor>.<id>`
@@ -8377,12 +8382,22 @@ fn python_entry_payload(schema: &EntrySchema, l: &LangCtx, class_name: &str) -> 
         // exact in a double, and crosses as that text.
         let wide = matches!(present, SceType::Uint64 | SceType::Int64);
         uses_wide |= wide;
-        let declared = if single {
-            "_Single"
-        } else if wide {
-            "_Wide"
-        } else {
-            present_ty.as_str()
+        // A text and a byte string are held to their bound at the lift, the
+        // top level included (docs/adr/0086, section 4.4), by the runtime's
+        // names of the bounded types, which hold a text at any depth.
+        let module = crate::forge::composed_lowering::PYTHON_PAYLOAD;
+        let declared = match present {
+            SceType::String => {
+                uses_module = true;
+                format!("{module}.Text({})", lift_text_bound(f))
+            }
+            SceType::Bytes => {
+                uses_module = true;
+                format!("{module}.Bytes({})", lift_bytes_bound(f))
+            }
+            _ if single => "_Single".to_string(),
+            _ if wide => "_Wide".to_string(),
+            _ => present_ty.clone(),
         };
         if optional {
             lift_fields.push_str(&format!("(\"{}\", _OptionalOf({declared}){width}), ", f.id));
@@ -8418,7 +8433,7 @@ fn python_entry_payload(schema: &EntrySchema, l: &LangCtx, class_name: &str) -> 
         single: uses_single,
         wide: uses_wide,
         optional: uses_optional,
-        composed: false,
+        module: uses_module,
     }
 }
 
@@ -8520,7 +8535,7 @@ fn python_composed_payload(
         single: false,
         wide: false,
         optional: false,
-        composed: true,
+        module: true,
     }
 }
 
@@ -8610,9 +8625,10 @@ pub fn build_python_event_payload(
     // Whether a field is optional (docs/adr/0055), so the module names the
     // runtime's reader and writer of `null`.
     let mut uses_optional = false;
-    // Whether a payload holds a composition (docs/adr/0086), so the module
-    // names the runtime module whose type names, writers and check it calls.
-    let mut uses_composed = false;
+    // Whether a payload names a type through the runtime module, a composition
+    // or a bounded text or byte string (docs/adr/0086), so the module imports
+    // the runtime module whose type names, writers and check it calls.
+    let mut uses_module = false;
 
     let mut first = true;
     for event in &guarded_events {
@@ -8639,7 +8655,7 @@ pub fn build_python_event_payload(
             single,
             wide,
             optional,
-            composed,
+            module,
         } = match entry_schemas.get(event) {
             Some(schema) => python_entry_payload(schema, &l, &class_name),
             None => python_composed_payload(model, &machine, event, static_enums, &class_name),
@@ -8647,7 +8663,7 @@ pub fn build_python_event_payload(
         uses_single |= single;
         uses_wide |= wide;
         uses_optional |= optional;
-        uses_composed |= composed;
+        uses_module |= module;
         data_classes.push_str(&format!(
             "{decorator}\n\
 class {class_name}:\n    \
@@ -8729,8 +8745,9 @@ from sce_runtime.event_payload import write_optional as _write_optional\n"
     };
     // The module a composed payload's type names, writers and check are of,
     // under the alias the walks spell them through, and which each record the
-    // payload holds is checked by too (docs/adr/0086).
-    let composed_import = if uses_composed {
+    // payload holds is checked by too, and whose `Text` and `Bytes` a lift of
+    // a schema of entries holds a text and a byte string by (docs/adr/0086).
+    let composed_import = if uses_module {
         format!(
             "import sce_runtime.event_payload as {}\n",
             crate::forge::composed_lowering::PYTHON_PAYLOAD
@@ -45171,7 +45188,9 @@ mod tests {
         for lifted in [
             "(\"id\", int, 0, 4294967295), ",
             "(\"due\", _OptionalOf(_Wide), ",
-            "(\"title\", _OptionalOf(str)), ",
+            // A present text is held to its bound at the lift (docs/adr/0086,
+            // section 4.4), by the runtime's name of the bounded text.
+            "(\"title\", _OptionalOf(sce_event_payload.Text(16))), ",
             "(\"ratio\", _OptionalOf(_Single)), ",
         ] {
             assert!(
@@ -45180,6 +45199,13 @@ mod tests {
                 payload.populate
             );
         }
+        assert!(
+            payload
+                .defs
+                .contains("import sce_runtime.event_payload as sce_event_payload\n"),
+            "the module the bounded text is named through is imported:\n{}",
+            payload.defs
+        );
         for written in [
             "_write_optional(ratio, lambda sce_present: _as_single(sce_present))",
             "\"id\": id, ",
