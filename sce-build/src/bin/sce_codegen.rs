@@ -596,26 +596,28 @@ use sce_build::generator::Language;
 use sce_build::model::SCXMLModel;
 use sce_build::parser::SCXMLParser;
 
-/// Spec §synth-6.2.6 drift-header context bundled at `cmd_*` entry and
-/// threaded to every file-emitting helper: the header every file of the
-/// invocation carries — its `source_hash`, sha256 over `**/*.scxml` under
-/// `input_root` + optional `deploy.yaml` — and the set that hash covers.
+/// Spec §synth-6.2.6 drift-header context bundled where the documents a set
+/// of files is generated from are known, and threaded to every file-emitting
+/// helper: the header those files carry — the `source-hash` of the input
+/// closure of their documents and the `source:` lines naming them (ADR
+/// 0094) — and the files that closure read.
 ///
-/// Pre-computed once per CLI invocation so every write site through
-/// `write_drift_aware` / `write_if_changed_drift_aware` shares the
-/// same numbers; `sce-codegen verify` then recomputes from the same
-/// inputs and matches each generated file's embedded header.
+/// One context per document a run generates from (its machine, the in-line
+/// children it carries, its units), or per set for the files of a set; never
+/// one for a whole run of unrelated documents, whose files would then name
+/// each other's inputs. `sce-codegen verify` recomputes each file's closure
+/// from its `source:` lines.
 #[derive(Debug, Clone)]
 struct DriftContext {
     header: drift::DriftHeader,
-    /// The synth-6.2.6 source set that produced `header.source_hash`,
-    /// carried so `depfile_entry` can declare it.
+    /// The files the closure behind `header.source_hash` read, carried so
+    /// `depfile_entry` can declare them.
     ///
     /// Kept on the context rather than re-collected at the depfile call
-    /// site because the two would then be separate walks of the same
-    /// tree, free to disagree about what the header describes. A depfile
-    /// that names a different set than the hash covers is worse than one
-    /// that names none: it reports the artefact as watched.
+    /// site because the two would then be separate reads, free to disagree
+    /// about what the header describes. A depfile that names a different
+    /// set than the hash covers is worse than one that names none: it
+    /// reports the artefact as watched.
     sources: Vec<PathBuf>,
 }
 
@@ -645,38 +647,38 @@ fn drift_hash_failure(walked: &Path, err: drift::DriftHashError) -> CliError {
 }
 
 impl DriftContext {
-    /// Collects the source set and folds it to the header's `source-hash`.
-    ///
-    /// A walk that fails, or resolves to nothing, is refused rather than
-    /// embedded. The fold is total over the collected set, so an empty
-    /// walk still yields a well-formed sha256 (the empty-input digest)
-    /// that reads on the wire exactly like a successful hash — a header a
-    /// consumer cannot audit is worse than a refusal.
-    ///
-    /// Every document under an inferred root must be covered. An explicit
-    /// root instead names the canonical source set for staged derivatives;
-    /// callers then pass an empty slice. Empty source sets are always refused.
-    fn compute(input_root: &Path, deploy: Option<&Path>, must_cover: &[&Path]) -> Self {
-        let sources = drift::SourceSet::collect(input_root, deploy)
-            .unwrap_or_else(|e| cli_exit(drift_hash_failure(input_root, e)));
-        let uncovered = must_cover.iter().find(|input| !sources.covers(input));
-        if sources.is_empty() || uncovered.is_some() {
+    /// The context of the files generated from `documents`: the closure of
+    /// those documents ([`drift::InputClosure::of`]). A document that cannot
+    /// be read is refused rather than left out of its own closure: a header
+    /// that does not describe the document is worse than a refusal.
+    fn of_documents(documents: &[&Path], options: drift::ClosureOptions<'_>) -> Self {
+        let first = documents.first().copied().unwrap_or(Path::new("."));
+        let closure = drift::InputClosure::of(documents, options)
+            .unwrap_or_else(|e| cli_exit(drift_hash_failure(first, e)));
+        Self::of_closure(&closure)
+    }
+
+    /// The context of files generated from every document under `root`,
+    /// the set form ([`drift::InputClosure::of_directory`]). A directory
+    /// that holds no document is refused: its digest (the empty-input
+    /// sha256) would read on the wire exactly like a real one.
+    fn of_directory(root: &Path, options: drift::ClosureOptions<'_>) -> Self {
+        let closure = drift::InputClosure::of_directory(root, options)
+            .unwrap_or_else(|e| cli_exit(drift_hash_failure(root, e)));
+        if !closure.holds_a_document() {
             cli_exit(CliError::SourceHashInputUncovered {
-                input: uncovered
-                    .copied()
-                    .unwrap_or(input_root)
-                    .display()
-                    .to_string(),
-                root: sources.root().display().to_string(),
-                hashed: sources.len(),
+                input: root.display().to_string(),
+                root: root.display().to_string(),
+                hashed: 0,
             });
         }
+        Self::of_closure(&closure)
+    }
+
+    fn of_closure(closure: &drift::InputClosure) -> Self {
         Self {
-            header: drift::DriftHeader {
-                source_hash: sources.digest(),
-                seeds: Vec::new(),
-            },
-            sources: sources.contributing_paths(),
+            header: drift::DriftHeader::of(closure),
+            sources: closure.contributing_paths(),
         }
     }
 }
@@ -4052,11 +4054,13 @@ enum Commands {
     Verify {
         /// Generated output directory to verify (recursive).
         out_dir: String,
-        /// Input SCXML root used at codegen time. Required so the
-        /// `source-hash` recompute walks the same `**/*.scxml` set the
-        /// original codegen consumed.
-        #[arg(long)]
-        input_root: String,
+        /// A directory the documents the files were generated from lie
+        /// under; repeat it for a tree generated from several. Each file's
+        /// `source:` lines name its documents relative to a directory at or
+        /// below one of these, where `verify` finds them to recompute the
+        /// file's input closure.
+        #[arg(long, required = true)]
+        input_root: Vec<String>,
         /// Path to deploy.yaml if it was part of the original codegen
         /// input set. Optional — single-document codegen omits this.
         #[arg(long)]
@@ -5061,7 +5065,12 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
     // transition table or its transition function carries this digest, and
     // the compile is where those are generated.
     let all_documents: Vec<&Path> = scxml_refs.iter().chain(&forge_refs).copied().collect();
-    let drift_ctx = document_set_drift_context(input_root.as_deref(), deploy_path, &all_documents);
+    let drift_ctx = document_set_drift_context(
+        input_root.as_deref(),
+        deploy_path,
+        &include_dirs,
+        &all_documents,
+    );
 
     // The two options `check`'s document-set route accepts, since that
     // route names this subcommand as the producer it mirrors: a verdict
@@ -6169,25 +6178,23 @@ fn refuse_set_transition_functions(scxml_paths: &[PathBuf], error_format: ErrorF
 /// `orchestrate` stamps on every file it writes, and so the digest a
 /// declared transition table or function of the set carries.
 ///
-/// One computation for the two set routes, so the function `check` renders
-/// is rendered from the digest `orchestrate` would bind. The root is the
-/// one named, or else the directory of the first document, and an inferred
-/// root has to cover every document of the set.
+/// One computation for the set routes, so the function `check` renders is
+/// rendered from the digest `orchestrate` would bind. The set is compiled
+/// jointly (cross-document references are resolved across it), so every file
+/// of it covers the closure of every document of it (ADR 0094 section 4).
 fn document_set_drift_context(
     input_root: Option<&str>,
     deploy_path: Option<&str>,
+    include_dirs: &[PathBuf],
     documents: &[&Path],
 ) -> DriftContext {
-    let drift_input_root = input_root.map(PathBuf::from).unwrap_or_else(|| {
-        documents
-            .first()
-            .map(|p| containing_dir(p))
-            .unwrap_or_else(|| PathBuf::from("."))
-    });
-    DriftContext::compute(
-        &drift_input_root,
-        deploy_path.map(Path::new),
-        if input_root.is_some() { &[] } else { documents },
+    DriftContext::of_documents(
+        documents,
+        drift::ClosureOptions {
+            include_dirs,
+            input_root: input_root.map(Path::new),
+            deploy_yaml: deploy_path.map(Path::new),
+        },
     )
 }
 
@@ -6329,7 +6336,8 @@ fn cmd_check_document_set(args: CheckArgs, error_format: ErrorFormat) {
     // never needed.
     let source_hash = binds_a_digest.then(|| {
         let documents: Vec<&Path> = scxml_refs.iter().chain(&forge_refs).copied().collect();
-        document_set_drift_context(None, deploy.as_deref(), &documents)
+        let include_dirs: Vec<PathBuf> = include_dir.iter().map(PathBuf::from).collect();
+        document_set_drift_context(None, deploy.as_deref(), &include_dirs, &documents)
             .header
             .source_hex()
     });
@@ -7438,30 +7446,25 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
     });
     report.document_kind = sce_build::manifest::DocumentKind::of(&scxml_content);
 
-    // Spec §synth-6.2.6 drift context — input root defaults to the SCXML
-    // file's parent so the hash covers every `*.scxml` in that
-    // directory (the common-case test layout under
-    // `resources/<num>/`). The `--input-root` flag overrides the
-    // default for staged-input workflows (e.g. the donedata regen
-    // script copies its tracked fixture into a tmp dir but needs
-    // the embedded source-hash to reproduce against the tracked
-    // location, not the transient stage). Pre-computed once and
-    // threaded into every file write below so a single invocation's
-    // generated tree shares one source-hash.
+    // Where the document's children are staged from: the `--input-root`
+    // the caller names (a staged-input workflow copies its tracked fixture
+    // into a temporary directory and names the tracked one), or else the
+    // document's own directory.
     let drift_input_root: std::path::PathBuf = match input_root_override {
         Some(s) => std::path::PathBuf::from(s),
         None => containing_dir(Path::new(scxml_path)),
     };
-    let named_input = [Path::new(scxml_path)];
-    // Coverage is asserted only when the root was inferred above; an
-    // explicit `--input-root` is the caller declaring the source set.
-    let drift_ctx = DriftContext::compute(
-        &drift_input_root,
-        deploy_path.map(Path::new),
-        if input_root_override.is_none() {
-            &named_input
-        } else {
-            &[]
+    // Spec §synth-6.2.6 drift context (ADR 0094): the input closure of this
+    // document, which every file this invocation writes is generated from —
+    // its machine or unit, and the in-line children it carries. A staged copy
+    // hashes as the document under `--input-root` it stands for.
+    let closure_include_dirs: Vec<PathBuf> = include_dirs.iter().map(PathBuf::from).collect();
+    let drift_ctx = DriftContext::of_documents(
+        &[Path::new(scxml_path)],
+        drift::ClosureOptions {
+            include_dirs: &closure_include_dirs,
+            input_root: input_root_override.map(Path::new),
+            deploy_yaml: deploy_path.map(Path::new),
         },
     );
 
@@ -9171,23 +9174,14 @@ fn depfile_entry(inputs: DepfileInputs<'_>) -> DepfileEntry {
     // feedback report.
     deps.extend(preprocessor_deps.iter().cloned());
 
-    // The synth-6.2.6 source set behind the `source-hash` every emitted
+    // The synth-6.2.6 input closure behind the `source-hash` every emitted
     // file carries — taken from the `DriftContext` that computed the
-    // hash, not re-walked here.
-    //
-    // These are prerequisites for a different reason than everything
-    // else in this list, and that difference is why they were missing.
-    // The two families above are reachability families: files the render
-    // loaded, documents the compile imported. A source-set member need
-    // be none of those — the fold is over every `**/*.scxml` beneath the
-    // input root, so a document that is never parsed, never imported and
-    // never mentioned still moves the header. Measured on all six
-    // backends and both pipelines before this line existed: editing an
-    // unrelated sibling changed the `source-hash:` line while nothing
-    // declared it, so ninja reused an artefact whose embedded hash no
-    // longer described its inputs — precisely what `sce-codegen verify`
-    // rejects. Declaring the set is what keeps the freshness contract
-    // the spec puts on that header enforceable by the build.
+    // hash, not read again here. Every member moves the header, so a member
+    // left undeclared is an artefact ninja reuses with a header that no
+    // longer describes its inputs, which `sce-codegen verify` rejects.
+    // Since ADR 0094 the closure is what the generation reads, so a
+    // sibling the document never names is no longer declared, and its edit
+    // re-runs nothing.
     deps.extend(source_set.iter().cloned());
 
     deps.extend(language_template_files(template_dir, lang));
@@ -10383,11 +10377,6 @@ fn generate_w3c_unified(
         return;
     }
 
-    // Spec §synth-6.2.6 drift context — input root is the W3C resources
-    // tree; one hash pair covers every emitted parent SM + child SM
-    // + test harness across all 202 tests in this invocation.
-    let drift_ctx = DriftContext::compute(resources_dir, None, &[]);
-
     // Named for what it is read from. The line used to say "C++ test
     // registry" from when the registry was `tests/CMakeLists.txt` and
     // C++ was the only backend it scheduled; it is printed by every
@@ -10429,6 +10418,12 @@ fn generate_w3c_unified(
                 continue;
             }
         };
+        // Spec §synth-6.2.6 drift context (ADR 0094): every file of this
+        // test — its machine, its children's, its harness — is generated from
+        // its document, so each carries that document's closure, and an edit
+        // to one test moves the headers of no other.
+        let drift_ctx =
+            DriftContext::of_documents(&[scxml_path.as_path()], drift::ClosureOptions::default());
 
         if let Some(info) = registered.get(test_id.as_str()) {
             if !backend.serves_harness(&info.test_type) {
@@ -10717,7 +10712,11 @@ fn generate_w3c_unified(
             .cloned()
             .collect();
         all_ids.sort_by(|a, b| a.len().cmp(&b.len()).then_with(|| a.cmp(b)));
-        backend.finalize(&all_ids, &drift_ctx);
+        // The suite's index lists the tests that generated, and whether one
+        // generates depends on its document: the set form over the resources
+        // tree (ADR 0094 section 4).
+        let suite_ctx = DriftContext::of_directory(resources_dir, drift::ClosureOptions::default());
+        backend.finalize(&all_ids, &suite_ctx);
     }
 
     // A suite of the caller's own arrives buildable or it does not
@@ -12379,11 +12378,11 @@ fn cmd_manifest(dir: &str) {
 // build compiles cannot drift.
 
 /// `header` is `Some((input_root, deploy))` under `--header`. The hash is
-/// the one `generate` embeds for the same inputs, so it goes through the
-/// same [`DriftContext::compute`] and is refused on the same terms: a
-/// walk that fails or leaves the document uncovered is not a hash to
-/// publish. The hash covers the source set and not the selection, so the
-/// table of a variant carries the hash every build of the document does.
+/// the one `generate` embeds for the same document, the closure of the
+/// document ([`DriftContext::of_documents`]), refused on the same terms: a
+/// document that cannot be read is not a hash to publish. The hash covers the
+/// files and not the selection, so the table of a variant carries the hash
+/// every build of the document does.
 fn cmd_transition_table(
     scxml: &str,
     header: Option<(Option<&str>, Option<&str>)>,
@@ -12395,17 +12394,12 @@ fn cmd_transition_table(
         .parse_file(scxml)
         .unwrap_or_else(|e| error_format.emit_and_exit(&e, "SCXML parse error: "));
     let header = header.map(|(input_root, deploy)| {
-        let named_input = [Path::new(scxml)];
-        let root = input_root
-            .map(PathBuf::from)
-            .unwrap_or_else(|| containing_dir(Path::new(scxml)));
-        let ctx = DriftContext::compute(
-            &root,
-            deploy.map(Path::new),
-            if input_root.is_none() {
-                &named_input
-            } else {
-                &[]
+        let ctx = DriftContext::of_documents(
+            &[Path::new(scxml)],
+            drift::ClosureOptions {
+                include_dirs: &[],
+                input_root: input_root.map(Path::new),
+                deploy_yaml: deploy.map(Path::new),
             },
         );
         sce_build::transition_table::TransitionTableHeader::new(
@@ -14155,8 +14149,10 @@ fn cmd_generate_conformance(
     // `cmd_list_fixtures`'s resolution), so the embedded source-hash
     // covers exactly the SCXML inputs the harness asserts against. It
     // is the directory `render_harness` just read from, so the two
-    // cannot disagree about which fixtures the header describes.
-    let drift_ctx = DriftContext::compute(&resource_dir, None, &[]);
+    // cannot disagree about which fixtures the header describes. The harness
+    // is generated from every fixture of it, so it takes the set form
+    // (ADR 0094 section 4).
+    let drift_ctx = DriftContext::of_directory(&resource_dir, drift::ClosureOptions::default());
     write_drift_aware(&out_path, &rendered.source, &drift_ctx);
 
     // Same depfile contract the statechart and forge routes carry. This
@@ -14389,7 +14385,12 @@ fn cmd_deployment(
                 cli_exit(CliError::Usage { detail })
             }
         });
-    let drift = document_set_drift_context(None, Some(deploy_path), &document_refs);
+    let drift = document_set_drift_context(
+        None,
+        Some(deploy_path),
+        &options.include_dirs,
+        &document_refs,
+    );
     let dir = Path::new(output_dir);
     ensure_output_dir(dir).unwrap_or_else(|e| {
         cli_exit(CliError::CreateOutputDir {
@@ -14481,18 +14482,14 @@ fn cmd_payload_schema(
             source: e,
         })
     });
-    // The source set `generate` hashes for the same document.
-    let named_input = [Path::new(scxml_path)];
-    let root = input_root
-        .map(PathBuf::from)
-        .unwrap_or_else(|| containing_dir(Path::new(scxml_path)));
-    let drift_ctx = DriftContext::compute(
-        &root,
-        deploy.map(Path::new),
-        if input_root.is_none() {
-            &named_input
-        } else {
-            &[]
+    // The closure `generate` hashes for the same document.
+    let closure_include_dirs: Vec<PathBuf> = include_dirs.iter().map(PathBuf::from).collect();
+    let drift_ctx = DriftContext::of_documents(
+        &[Path::new(scxml_path)],
+        drift::ClosureOptions {
+            include_dirs: &closure_include_dirs,
+            input_root: input_root.map(Path::new),
+            deploy_yaml: deploy.map(Path::new),
         },
     );
     let doc_label = sce_build::DocumentLabel::for_input_path(scxml_path);
@@ -14815,27 +14812,37 @@ fn cmd_shape(
 // ── Subcommand: verify ─────────────────────────────────────────
 //
 // Spec §synth-6.2.6: were these files generated from the current inputs?
-// Recomputes the `source-hash` over the current source set and compares
-// each generated file's embedded header against it. First mismatch wins
-// (deterministic ordering via BTreeMap-sorted file walk) and exits
-// non-zero with `forge/source-hash-mismatch`.
+// Answered per file, without generating (ADR 0094 section 5): each file's
+// `source:` lines name the documents it was generated from, relative to a
+// directory at or below a given root; the input closure of those documents
+// is recomputed there and compared with the file's `source-hash`. A file of
+// an untouched document passes whatever else moved. First mismatch wins
+// (deterministic ordering via BTreeMap-sorted file walk) and exits non-zero
+// with `forge/source-hash-mismatch`, whose `expected` is the digest of that
+// file's own closure.
 //
 // Whether the files hold what the current generator produces from those
 // inputs is a different question, answered on content by
 // `--assert-unchanged`; no header value can answer it.
 
-fn cmd_verify(out_dir: &str, input_root: &str, deploy: Option<&str>, error_format: ErrorFormat) {
-    use sce_build::forge::drift::{compute_source_hash, parse_embedded_header, DriftHeader};
+fn cmd_verify(
+    out_dir: &str,
+    input_roots: &[String],
+    deploy: Option<&str>,
+    error_format: ErrorFormat,
+) {
+    use sce_build::forge::drift::parse_embedded_header;
 
     let out_path = Path::new(out_dir);
-    let input_path = Path::new(input_root);
-    let deploy_path = deploy.map(Path::new);
-
-    let expected = DriftHeader {
-        source_hash: compute_source_hash(input_path, deploy_path)
-            .unwrap_or_else(|e| cli_exit(drift_hash_failure(input_path, e))),
-        seeds: Vec::new(),
+    let roots: Vec<PathBuf> = input_roots.iter().map(PathBuf::from).collect();
+    let options = drift::ClosureOptions {
+        include_dirs: &[],
+        input_root: None,
+        deploy_yaml: deploy.map(Path::new),
     };
+    let documents = VerifyDocuments::under(&roots);
+    // One closure per seed list: the files of one document share it.
+    let mut recomputed: BTreeMap<Vec<String>, Vec<String>> = BTreeMap::new();
 
     let files = collect_generated_files(out_path);
     let mut headerless: Vec<std::path::PathBuf> = Vec::new();
@@ -14847,15 +14854,23 @@ fn cmd_verify(out_dir: &str, input_root: &str, deploy: Option<&str>, error_forma
             headerless.push(file.clone());
             continue;
         };
-        if embedded.source_hash_hex != expected.source_hex() {
-            error_format.emit_and_exit(
-                &CliError::VerifySourceHashMismatch {
-                    path: file.display().to_string(),
-                    expected_hex: expected.source_hex(),
-                    actual_hex: embedded.source_hash_hex,
-                },
-                "",
+        // A header of the shape before ADR 0094 names no document, so there
+        // is no closure to recompute: a tree that missed the migration does
+        // not pass.
+        if embedded.seeds.is_empty() {
+            verify_mismatch(
+                file,
+                "a header naming its documents on `source:` lines".to_string(),
+                embedded.source_hash_hex,
+                error_format,
             );
+        }
+        let candidates = recomputed
+            .entry(embedded.seeds.clone())
+            .or_insert_with(|| documents.closure_digests(&embedded.seeds, options));
+        if !candidates.contains(&embedded.source_hash_hex) {
+            let expected = candidates.first().cloned().unwrap_or_default();
+            verify_mismatch(file, expected, embedded.source_hash_hex, error_format);
         }
     }
     // Files without an SCE-GENERATED header are reported but do not
@@ -14870,6 +14885,127 @@ fn cmd_verify(out_dir: &str, input_root: &str, deploy: Option<&str>, error_forma
             headerless.len(),
             headerless[0].display()
         );
+    }
+}
+
+/// `verify`'s refusal of `path`, whose header states `actual_hex` where its
+/// closure's digest is `expected`.
+fn verify_mismatch(
+    path: &Path,
+    expected: String,
+    actual_hex: String,
+    error_format: ErrorFormat,
+) -> ! {
+    error_format.emit_and_exit(
+        &CliError::VerifySourceHashMismatch {
+            path: path.display().to_string(),
+            expected_hex: expected,
+            actual_hex,
+        },
+        "",
+    )
+}
+
+/// The documents `verify` finds a header's `source:` lines among: every file
+/// under the roots it is given.
+struct VerifyDocuments<'r> {
+    roots: &'r [PathBuf],
+    files: BTreeSet<PathBuf>,
+}
+
+impl<'r> VerifyDocuments<'r> {
+    fn under(roots: &'r [PathBuf]) -> Self {
+        let files = roots
+            .iter()
+            .flat_map(|root| drift::OnDisk.files_under(root))
+            .collect();
+        Self { roots, files }
+    }
+
+    /// The digest of the closure of `seeds`, as a header names them: one
+    /// per root for the set form (a file generated from every document of a
+    /// directory, which the root names), and otherwise the one closure of
+    /// the seeds found together in one directory at or below a root.
+    ///
+    /// A seed found nowhere, or in more than one place, cannot be
+    /// recomputed and is refused as `forge/source-hash-input-uncovered`.
+    fn closure_digests(&self, seeds: &[String], options: drift::ClosureOptions<'_>) -> Vec<String> {
+        let hex = |closure: drift::InputClosure| drift::DriftHeader::of(&closure).source_hex();
+        if seeds.iter().any(|seed| seed == drift::SET_FORM_SEED) {
+            return self
+                .roots
+                .iter()
+                .map(|root| {
+                    drift::InputClosure::of_directory(root, options)
+                        .map(hex)
+                        .unwrap_or_else(|e| cli_exit(drift_hash_failure(root, e)))
+                })
+                .collect();
+        }
+        let anchor = self.anchor_of(seeds);
+        let paths: Vec<PathBuf> = seeds
+            .iter()
+            .map(|seed| {
+                if sce_build::forge::stdlib::names_standard(Path::new(seed)) {
+                    PathBuf::from(seed)
+                } else {
+                    anchor.join(seed)
+                }
+            })
+            .collect();
+        let refs: Vec<&Path> = paths.iter().map(PathBuf::as_path).collect();
+        let closure = drift::InputClosure::of(&refs, options)
+            .unwrap_or_else(|e| cli_exit(drift_hash_failure(&anchor, e)));
+        vec![hex(closure)]
+    }
+
+    /// The one directory every seed on disk lies in at the path its key
+    /// spells; an empty path when every seed is a standard document.
+    fn anchor_of(&self, seeds: &[String]) -> PathBuf {
+        let on_disk: Vec<&Path> = seeds
+            .iter()
+            .map(|seed| Path::new(seed.as_str()))
+            .filter(|seed| !sce_build::forge::stdlib::names_standard(seed))
+            .collect();
+        let Some(first) = on_disk.first() else {
+            return PathBuf::new();
+        };
+        let depth = first.components().count();
+        let anchors: BTreeSet<PathBuf> = self
+            .files
+            .iter()
+            .filter(|file| file.ends_with(first))
+            .filter_map(|file| file.ancestors().nth(depth))
+            .filter(|dir| on_disk.iter().all(|seed| dir.join(seed).is_file()))
+            .map(Path::to_path_buf)
+            .collect();
+        let shown = self
+            .roots
+            .iter()
+            .map(|root| root.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        match anchors.len() {
+            1 => anchors.into_iter().next().unwrap_or_default(),
+            0 => cli_exit(CliError::SourceHashInputUncovered {
+                input: first.display().to_string(),
+                root: shown,
+                hashed: 0,
+            }),
+            _ => cli_exit(CliError::SourceHashInputUncovered {
+                input: format!(
+                    "{} (found under {})",
+                    first.display(),
+                    anchors
+                        .iter()
+                        .map(|dir| dir.display().to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+                root: shown,
+                hashed: anchors.len(),
+            }),
+        }
     }
 }
 
