@@ -3586,6 +3586,11 @@ pub enum DiagnosticCode {
     /// by name.
     #[serde(rename = "mesh/codegen-causal-delivery-unsupported")]
     MeshCodegenCausalDeliveryUnsupported,
+    /// A binding with `delivery: causal` on a transport the generated C++
+    /// router does not carry the causal route on (docs/adr/0085, section
+    /// 3.2). Refused by name, with the transports that carry it.
+    #[serde(rename = "mesh/codegen-causal-transport-unsupported")]
+    MeshCodegenCausalTransportUnsupported,
     // Mesh I/O
     #[serde(rename = "mesh/io")]
     MeshIo,
@@ -4466,6 +4471,7 @@ pub const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshCodegenPoolWithRpcClientUnsupported,
         MeshCodegenHostCoreUnsupported,
         MeshCodegenCausalDeliveryUnsupported,
+        MeshCodegenCausalTransportUnsupported,
         // Mesh Io
         MeshIo,
         // Forge generated-source drift detection (SCE Protocol-Synthesis RFC §synth-6.2.6)
@@ -5120,6 +5126,7 @@ impl DiagnosticCode {
             // ── Host Mesh Router (SCE_MESH.md §19) ───────────────
             MeshCodegenHostCoreUnsupported => Some("SCE Mesh §19"),
             MeshCodegenCausalDeliveryUnsupported => Some("SCE Mesh §10.12"),
+            MeshCodegenCausalTransportUnsupported => Some("SCE Mesh §10.12"),
 
             // ── Mesh sequence ordering (SCE_MESH.md §10.6) ──────
             MeshTopologyOrderingCannotBeGuaranteed => Some("SCE Mesh §10.6"),
@@ -6095,6 +6102,7 @@ impl DiagnosticCode {
             | MeshCodegenPoolWithRpcClientUnsupported
             | MeshCodegenHostCoreUnsupported
             | MeshCodegenCausalDeliveryUnsupported
+            | MeshCodegenCausalTransportUnsupported
             | MeshIo
             | ForgeSourceHashMismatch
             | ForgeSourceHashInputUncovered
@@ -6755,6 +6763,7 @@ impl DiagnosticCode {
             }
             MeshCodegenHostCoreUnsupported => "mesh/codegen-host-core-unsupported",
             MeshCodegenCausalDeliveryUnsupported => "mesh/codegen-causal-delivery-unsupported",
+            MeshCodegenCausalTransportUnsupported => "mesh/codegen-causal-transport-unsupported",
             MeshIo => "mesh/io",
             ForgeSourceHashMismatch => "forge/source-hash-mismatch",
             ForgeSourceHashInputUncovered => "forge/source-hash-input-uncovered",
@@ -19397,7 +19406,18 @@ mod tests {
                     backend: "kotlin".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:5fe95cdd48172816","code":"mesh/codegen-causal-delivery-unsupported","stage":"mesh-codegen","spec":"SCE Mesh §10.12","message":"machine 'list' binds `#people` with `delivery: causal`, which the kotlin Mesh core does not route yet (SCE_MESH.md §mesh-10.12). Generate this machine with `--lang rust`, or bind the peer without `delivery: causal`.","actual":"#people"}"#,
+                r#"{"v":1,"id":"fnv1a:5fe95cdd48172816","code":"mesh/codegen-causal-delivery-unsupported","stage":"mesh-codegen","spec":"SCE Mesh §10.12","message":"machine 'list' binds `#people` with `delivery: causal`, which the kotlin Mesh core does not route yet (SCE_MESH.md §mesh-10.12). Generate this machine with `--lang rust` or `--lang cpp`, or bind the peer without `delivery: causal`.","actual":"#people"}"#,
+            ),
+            (
+                "mesh/codegen-causal-transport-unsupported",
+                CodegenError::CausalTransportUnsupported {
+                    machine: "list".into(),
+                    target: "#people".into(),
+                    transport: "zenoh_keyexpr".into(),
+                    carriers: vec!["custom_tcp".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:771c416b8a826441","code":"mesh/codegen-causal-transport-unsupported","stage":"mesh-codegen","spec":"SCE Mesh §10.12","message":"machine 'list' binds `#people` with `delivery: causal` on transport 'zenoh_keyexpr', which the cpp Mesh core does not carry the causal route on (SCE_MESH.md §mesh-10.12). Bind the peer over `custom_tcp`, or bind it without `delivery: causal`.","expected":["custom_tcp"],"actual":"zenoh_keyexpr"}"#,
             ),
             (
                 "mesh/io",
@@ -21034,6 +21054,7 @@ mod tests {
             | MeshCodegenPoolWithRpcClientUnsupported
             | MeshCodegenHostCoreUnsupported
             | MeshCodegenCausalDeliveryUnsupported
+            | MeshCodegenCausalTransportUnsupported
             | MeshIo
             // ── §synth-6.2.6 generated-source drift (B9). Repair is the
             //    deterministic `sce-codegen <regen-command>` — no
@@ -21882,6 +21903,7 @@ mod tests {
                 | MeshCodegenPoolWithRpcClientUnsupported
                 | MeshCodegenHostCoreUnsupported
                 | MeshCodegenCausalDeliveryUnsupported
+                | MeshCodegenCausalTransportUnsupported
                 | MeshIo
                 // B9 §synth-6.2.6 generated-source drift detection
                 | ForgeSourceHashMismatch
@@ -22973,6 +22995,7 @@ pub fn anchor_carriage(code: DiagnosticCode, pipeline: Pipeline) -> AnchorCarria
             | MeshCodegenPoolWithRpcClientUnsupported
             | MeshCodegenHostCoreUnsupported
             | MeshCodegenCausalDeliveryUnsupported
+            | MeshCodegenCausalTransportUnsupported
             | MeshIo
             | ForgeSourceHashMismatch
             | ForgeSourceHashInputUncovered

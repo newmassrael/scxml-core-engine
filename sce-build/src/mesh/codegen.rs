@@ -481,6 +481,12 @@ struct TargetContext {
     /// Drives both the per-target `seq_counter` emission on the
     /// sender side and the receiver-side `admitOrdered` branch.
     needs_ordering: bool,
+    /// The causal group this binding is the route of (docs/adr/0085,
+    /// section 3.2), or `None` for the per-source rules. The template holds a
+    /// `SCE::Mesh::CausalRoute` for it, offers its sends there and takes the
+    /// envelopes of its peer there before dispatch; `needs_dedup` and
+    /// `needs_ordering` are false for it.
+    causal: Option<CausalGroupContext>,
     /// SCE_MESH.md §mesh-14.6 responder set — machine names (no leading
     /// `#`) whose RpcReply may retire a correlation entry for a request
     /// sent to this target. Carried verbatim from
@@ -1212,10 +1218,49 @@ pub fn generate_mesh(
 /// section 3.2 and Landing order step 3). A backend joins the list in the
 /// landing that routes the binding through its core's causal layer and
 /// renders the group into its peer table: Rust, the reference, whose router
-/// routes it to `backends/rust/mesh/src/causal.rs`, then C++, Kotlin and
-/// Swift. Until then a backend refuses the binding rather than building it
-/// as a plain route.
-const CAUSAL_DELIVERY_LANGUAGES: &[Language] = &[Language::Rust];
+/// routes it to `backends/rust/mesh/src/causal.rs`; C++, whose generated
+/// router routes it to `sce/include/mesh/CausalRoute.h` on the transports
+/// [`CPP_CAUSAL_TRANSPORTS`] names; then Kotlin and Swift. Until then a
+/// backend refuses the binding rather than building it as a plain route.
+const CAUSAL_DELIVERY_LANGUAGES: &[Language] = &[Language::Rust, Language::Cpp];
+
+/// The transports the generated C++ router carries a causal binding on
+/// (docs/adr/0085, section 3.2). A causal route sends its own control
+/// message (pattern 23) and answers a repair with the original envelopes, so
+/// its transport carries every pattern as it is, and every envelope of the
+/// binding's peer reaches the router's one inbound entry point, where the
+/// route takes it before dispatch. `custom_tcp` is that transport: a duplex
+/// stream that carries every pattern, read by one handler on both of its
+/// ends. A SOME/IP binding addresses each event by a configured method id, a
+/// Zenoh key carries the patterns of its put and get, and a local or shared
+/// memory target is read by the target's engine without its router, so a
+/// causal binding on any of them is refused by name rather than built to
+/// lose the control message.
+const CPP_CAUSAL_TRANSPORTS: &[&str] = &["custom_tcp"];
+
+/// A causal binding on a transport the generated C++ router does not carry
+/// the causal route on ([`CPP_CAUSAL_TRANSPORTS`]) is refused by name.
+fn refuse_cpp_causal_transport(
+    targets: &[ResolvedTarget],
+    machine: &str,
+) -> Result<(), CodegenError> {
+    let carried = |transport: &str| CPP_CAUSAL_TRANSPORTS.iter().any(|name| *name == transport);
+    match targets
+        .iter()
+        .find(|t| t.causal.is_some() && !carried(t.state.transport_name()))
+    {
+        Some(t) => Err(CodegenError::CausalTransportUnsupported {
+            machine: machine.to_string(),
+            target: t.target.as_str().to_string(),
+            transport: t.state.transport_name().to_string(),
+            carriers: CPP_CAUSAL_TRANSPORTS
+                .iter()
+                .map(|name| name.to_string())
+                .collect(),
+        }),
+        None => Ok(()),
+    }
+}
 
 /// The repair the refusal's message offers: the `--lang` choices that build
 /// a causal binding, read from [`CAUSAL_DELIVERY_LANGUAGES`] so a core that
@@ -1467,8 +1512,9 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
     let MeshCodegenInputs {
         machine_name,
         // The C++ router is emitted and named per document; the deploy
-        // key reaches it through the resolved targets and the topology.
-        deploy_machine_name: _,
+        // key reaches it through the resolved targets and the topology, and
+        // names the machine in a refusal, as every backend's refusal does.
+        deploy_machine_name,
         device_name,
         targets,
         server,
@@ -1501,6 +1547,7 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
     // what makes the §mesh-6.4 add-a-transport procedure enforceable: a
     // registry entry missing or half-finished is rejected before codegen.
     refuse_transports_not_served_by(targets, transport::ServiceKind::CppTemplate)?;
+    refuse_cpp_causal_transport(targets, deploy_machine_name)?;
 
     // Fail fast on event-name collisions: two SCXML events on the same
     // target that collapse to the same C++ constant suffix would emit
@@ -1656,10 +1703,6 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
                 buffers_outbound,
                 retry,
             } = peer_policy(t, desc);
-            debug_assert!(
-                causal.is_none(),
-                "refuse_causal_delivery_without_core refuses a causal binding before this emitter"
-            );
 
             TargetContext {
                 target: t.target.clone(),
@@ -1676,6 +1719,7 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
                 buffers_outbound,
                 needs_dedup,
                 needs_ordering,
+                causal: causal.map(CausalGroupContext::from),
                 responders: t.responders.clone(),
                 event_patterns,
                 subscription_event_ids,
@@ -1832,6 +1876,12 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
     // alongside any future server-side ordering schema, mirroring how
     // dedup is composed above.
     let has_ordered_binding = target_contexts.iter().any(|t| t.needs_ordering);
+
+    // docs/adr/0085, section 3.2: a causal binding's route, its host-facing
+    // surface (start, commit, verdicts, the vector's period) and the
+    // interception of its peer's envelopes before dispatch are emitted only
+    // when the machine has one.
+    let has_causal_binding = target_contexts.iter().any(|t| t.causal.is_some());
 
     // Pre-escape Zenoh session config into C++ string literals so the template
     // never constructs literals by string concatenation.
@@ -2155,6 +2205,7 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
         has_undeduped_transport => has_undeduped_transport,
         server_needs_dedup => server_needs_dedup,
         has_ordered_binding => has_ordered_binding,
+        has_causal_binding => has_causal_binding,
         machine_ordering => machine_ordering_ctx,
         machine_dedup => machine_dedup_ctx,
         machine_liveliness => machine_liveliness_ctx,
@@ -2236,21 +2287,22 @@ struct HostPeerContext {
     /// The causal group the peer is the route of, its view of epoch 0
     /// (docs/adr/0085, sections 3.2 and 3.3), or `None` for the per-source
     /// rules.
-    causal: Option<HostCausalContext>,
+    causal: Option<CausalGroupContext>,
     /// How the link to the peer is opened — the core's `PeerLink`.
     link: HostLinkContext,
 }
 
-/// A causal binding's group as a host core's peer table spells it: the view
-/// the deploy gives is epoch 0, the only view until view changes land.
+/// A causal binding's group as a core's template spells it, a host core's
+/// peer table and the generated C++ router alike: the view the deploy gives
+/// is epoch 0, the only view until view changes land.
 #[derive(Debug, Clone, serde::Serialize)]
-struct HostCausalContext {
+struct CausalGroupContext {
     name: String,
     view: Vec<String>,
     epoch: u64,
 }
 
-impl From<crate::mesh::deploy::CausalGroupConfig> for HostCausalContext {
+impl From<crate::mesh::deploy::CausalGroupConfig> for CausalGroupContext {
     fn from(group: crate::mesh::deploy::CausalGroupConfig) -> Self {
         Self {
             name: group.name,
@@ -2469,7 +2521,7 @@ fn generate_host_mesh(
                     events.dedup();
                     events
                 },
-                causal: policy.causal.map(HostCausalContext::from),
+                causal: policy.causal.map(CausalGroupContext::from),
                 link,
             }
         })

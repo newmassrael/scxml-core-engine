@@ -531,8 +531,8 @@ topology:
 fn a_backend_whose_core_has_no_causal_route_refuses_a_causal_binding_by_name() {
     // docs/adr/0085, section 3.2: until its core routes the causal binding, a
     // language refuses `delivery: causal` at build time rather than building
-    // the binding as a plain route, and offers the one that routes it.
-    for language in ["kotlin", "swift", "cpp"] {
+    // the binding as a plain route, and offers the ones that route it.
+    for language in ["kotlin", "swift"] {
         let dir = ScratchDir::new(&format!("mesh-causal-refused-{language}"));
         let scxml = dir.write("client.scxml", CLIENT_SCXML);
         dir.write("server.scxml", SERVER_SCXML);
@@ -553,10 +553,153 @@ fn a_backend_whose_core_has_no_causal_route_refuses_a_causal_binding_by_name() {
         let message = rec["message"].as_str().expect("message");
         assert!(
             message.contains(&format!("the {language} Mesh core"))
-                && message.contains("`--lang rust`"),
+                && message.contains("`--lang rust`")
+                && message.contains("`--lang cpp`"),
             "{language} record: {rec}"
         );
     }
+}
+
+/// [`CAUSAL_DEPLOY`]'s group over `binding`, the client's one binding to
+/// `#server`, with a custom_tcp listener on the server's device.
+fn causal_deploy_over(binding: &str) -> String {
+    format!(
+        r##"
+version: "1.0"
+topology:
+  phone:
+    machines:
+      client:
+        source: client.scxml
+        bindings:
+          "#server":
+            {binding}
+  cloud:
+    transports:
+      custom_tcp:
+        listen: "127.0.0.1:55999"
+    machines:
+      server: {{ source: server.scxml }}
+"##
+    )
+}
+
+/// The causal group of [`causal_deploy_over`], as the binding's own keys.
+const CAUSAL_GROUP_KEYS: &str = "delivery: causal\n            \
+     group: { name: people, view: [phone/client, cloud/server] }";
+
+#[test]
+fn the_cpp_router_routes_a_causal_binding_over_custom_tcp() {
+    // docs/adr/0085, section 3.2: the generated C++ router holds a causal
+    // route for the binding, with its group and view of epoch 0, offers the
+    // binding's sends there and takes the peer's envelopes there before
+    // dispatch; a binding that is not causal holds none. Red if the C++
+    // emitter drops the binding's group, or if the template ignores it.
+    let dir = ScratchDir::new("mesh-causal-cpp");
+    let scxml = dir.write("client.scxml", CLIENT_SCXML);
+    dir.write("server.scxml", SERVER_SCXML);
+    let binding =
+        format!("transport: custom_tcp\n            connect: \"127.0.0.1:55999\"\n            {CAUSAL_GROUP_KEYS}");
+    let deploy = dir.write("deploy.yaml", &causal_deploy_over(&binding));
+    let out = run_with_deploy_for("cpp", &scxml, &deploy, dir.path());
+    assert!(
+        out.status.success(),
+        "the C++ core routes a causal binding over custom_tcp; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let router = transport_header_under(dir.path());
+    for expected in [
+        "#include \"mesh/CausalRoute.h\"",
+        "SCE::Mesh::CausalRoute causal_server_{",
+        "SCE::Mesh::CausalGroup{\"people\", 0u, { \"phone/client\", \"cloud/server\" }}",
+        "return offerCausal(\"#server\", causal_server_,",
+        "if (env.source == \"server\") {",
+        "if (takeCausal(env, session_idx)) {",
+        "bool startCausal(",
+        "bool causalCommitted(",
+        "void causalTick(",
+    ] {
+        assert!(router.contains(expected), "missing `{expected}`:\n{router}");
+    }
+
+    let plain = ScratchDir::new("mesh-causal-cpp-plain");
+    let scxml = plain.write("client.scxml", CLIENT_SCXML);
+    plain.write("server.scxml", SERVER_SCXML);
+    let deploy = plain.write(
+        "deploy.yaml",
+        &causal_deploy_over("transport: custom_tcp\n            connect: \"127.0.0.1:55999\""),
+    );
+    let out = run_with_deploy_for("cpp", &scxml, &deploy, plain.path());
+    assert!(
+        out.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        !transport_header_under(plain.path()).contains("CausalRoute"),
+        "a plain binding holds no causal route"
+    );
+}
+
+#[test]
+fn the_cpp_router_refuses_a_causal_binding_on_a_transport_it_does_not_carry() {
+    // docs/adr/0085, section 3.2: the C++ causal route sends its own control
+    // message and answers a repair with the original envelopes, which a
+    // Zenoh key does not carry. The binding is refused by name, with the
+    // transports that carry it, rather than built to lose its vectors. Red
+    // if the refusal is removed, which builds a route whose gaps are never
+    // repaired.
+    let dir = ScratchDir::new("mesh-causal-cpp-zenoh");
+    let scxml = dir.write("client.scxml", CLIENT_SCXML);
+    dir.write("server.scxml", SERVER_SCXML);
+    let binding = format!("transport: zenoh_keyexpr\n            key: \"cal/server\"\n            {CAUSAL_GROUP_KEYS}");
+    let deploy = dir.write("deploy.yaml", &causal_deploy_over(&binding));
+    let out = run_with_deploy_for("cpp", &scxml, &deploy, dir.path());
+    assert!(
+        !out.status.success(),
+        "C++ must refuse a causal binding over zenoh_keyexpr"
+    );
+    let stderr = String::from_utf8(out.stderr).expect("stderr utf8");
+    let rec = sole_ndjson_record(&stderr);
+    assert_core_shape(&rec);
+    assert_eq!(
+        rec["code"], "mesh/codegen-causal-transport-unsupported",
+        "record: {rec}"
+    );
+    assert_eq!(rec["actual"], "zenoh_keyexpr", "record: {rec}");
+    assert_eq!(
+        rec["expected"],
+        serde_json::json!(["custom_tcp"]),
+        "record: {rec}"
+    );
+    let message = rec["message"].as_str().expect("message");
+    assert!(
+        message.contains("`#server`") && message.contains("`custom_tcp`"),
+        "record: {rec}"
+    );
+}
+
+/// The C++ router `sce-codegen generate --deploy` wrote under `dir`,
+/// wherever the generator put it.
+fn transport_header_under(dir: &std::path::Path) -> String {
+    fn find(dir: &std::path::Path) -> Option<PathBuf> {
+        for entry in std::fs::read_dir(dir).ok()?.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                if let Some(found) = find(&path) {
+                    return Some(found);
+                }
+            } else if path
+                .file_name()
+                .is_some_and(|name| name.to_string_lossy().ends_with("_transport.h"))
+            {
+                return Some(path);
+            }
+        }
+        None
+    }
+    let path = find(dir).expect("the C++ backend writes `<document>_transport.h`");
+    std::fs::read_to_string(path).expect("read the router")
 }
 
 #[test]
