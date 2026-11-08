@@ -56,7 +56,7 @@ const COMPONENTS: [(&str, &str); 5] = [
     ("asker", "Asker"),
     ("coordinator", "Coordinator"),
     ("answerer", "Answerer"),
-    ("keeper", "Keeper"),
+    ("ptc_keeper", "PtcKeeper"),
     ("idler", "Idler"),
 ];
 
@@ -325,7 +325,7 @@ fn taking_a_branch_removes_what_it_matched_before_its_content() {
         ),
         "{idler}"
     );
-    assert!(text("keeper").contains("self._sce_test_context.timeout(\"patience\")"));
+    assert!(text("ptc_keeper").contains("self._sce_test_context.timeout(\"patience\")"));
 }
 
 /// §11.5, §12.3: the statements are calls on the runtime context, a duration
@@ -359,7 +359,7 @@ fn the_statements_the_send_and_the_ptc_go_through_the_runtime() {
             "coordinator holds `{needle}`:\n{coordinator}"
         );
     }
-    assert!(text("keeper").contains("self._sce_test_context.start_timer(\"patience\", 10000)"));
+    assert!(text("ptc_keeper").contains("self._sce_test_context.start_timer(\"patience\", 10000)"));
     assert!(text("idler").contains(
         "self._sce_test_context.setverdict(_sce_testprofile.Verdict.INCONCLUSIVE, \"\")"
     ));
