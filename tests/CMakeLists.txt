@@ -121,7 +121,16 @@ function(apply_sce_test_policies target_name)
     # so a program states only what it adds, never another value of these.
     if(EMSCRIPTEN)
         if(SCE_WASM_THREADS)
-            target_link_options(${target_name} PRIVATE -sPTHREAD_POOL_SIZE=4)
+            # A thread's stack is carved from the heap, which is 4 GB less 128 MB
+            # and does not grow (WASM_INITIAL_MEMORY). Left unset, a thread's stack
+            # is the main thread's -sSTACK_SIZE below, 32 MB, so the 128 threads the
+            # engine inbox's contention test starts ask for 4 GB and the program
+            # aborts in pthread_create. 8 MB is the stack a native thread has by
+            # default, which is the stack every threaded test is written against;
+            # the 32 MB is for the main thread's deep recursion and belongs to it.
+            target_link_options(${target_name} PRIVATE
+                -sPTHREAD_POOL_SIZE=4
+                -sDEFAULT_PTHREAD_STACK_SIZE=8388608)
         endif()
         target_link_options(${target_name} PRIVATE
             -sEXIT_RUNTIME=1  # Exit immediately after main()
