@@ -334,6 +334,42 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
    it stands, the top level included, so one payload follows one rule (ADR 0077 section 2). SCE_FORGE.md section
    4.12's "judged against its bound only by the assignment" is amended.
 
+   **Amended 2026-11-09: the rule holds on every lane.** The walk over a composed type held every bound, but the
+   lift of a schema of entries (each field a scalar, a text, a byte string or an optional of one) held a text to no
+   bound on any lane, and a byte string to none but on Rust and C11, whose buffer is the bound. Each lane's lift now
+   reads a text and a byte string at the top level by the reader that reads one inside a composition, with the bound
+   its type declares (`lift_text_bound` and `lift_bytes_bound` in `sce-build/src/forge/generator.rs`), and a present
+   value of an optional text or byte string the same way:
+
+   | Lane | A text of `string[B]` | A byte string of `bytes[B]` |
+   |---|---|---|
+   | Rust | `PayloadFields::text(name, B)`, held by `PayloadValue::text_within`, which `text::<N>` calls | `PayloadFields::bytes::<B>`, the capacity of `SceBytes<B>` |
+   | Go | `PayloadText(fields, name, B)`, held by `PayloadValue.Text` | `PayloadBytes(fields, name, B)`, held by `PayloadValue.Bytes` |
+   | Kotlin | `Fields.string(name, B)`, held by `Value.string` | `Fields.bytes(name, B)`, held by `Value.bytes` |
+   | Python | `Text(B)` in the lift's field, read by `read_value` | `Bytes(B)`, read by `read_value` |
+   | C++ | `EventPayloadFields::value`, then `EventPayloadValue::readText(B, …)` | `EventPayloadValue::readBytes(B, …)` |
+   | C11 | `sce_payload_field`, then `sce_payload_value_text(…, B)` into a buffer of `B + 1` bytes | `sce_payload_value_bytes(…, B, …)` |
+   | Swift | `PayloadFields.text(_:bound:)`, held by `PayloadValue.text(bound:)` | `PayloadFields.bytes(_:capacity:)` |
+   | Interpreter | `SceStatic.field(_event.data, name, {string: B})` | `SceStatic.field(_event.data, name, {bytes: B})` |
+
+   A number was held to its width, and a list to both its counts and every bound inside it, on every lane already.
+   `scenarios/static_record_string.json` takes a label past its bound into a wider variable and
+   `scenarios/static_payload_bytes.json` measures a frame past its bound: each is refused whole on every lane that
+   replays them, and `scenarios/static_union.json` refuses a list short of its lower count, one past its bound and a
+   text past its bound inside a case. The composed payload of each lane's `a_composed_payload_is_read_at_any_depth`
+   test is refused whole for a nested text, a nested byte string, the top-level text and the top-level count.
+
+   The Interpreter reads a payload where an expression reads a field of it, not when the event is dequeued: each read
+   holds the field's bound, so the expression that reads a field past it fails and raises `error.execution`, but a
+   route that reads no such field runs, where a generated lane refuses the delivery before any transition. The
+   scenarios read the field past its bound once on the route taken, so every engine answers them alike; a read of the
+   whole delivery when the Interpreter dequeues it is the one difference left.
+
+   The shared record list (ADR 0046) follows: an edit whose text is past `shared_typed_text` is refused where it is
+   read, as every delivery outside its type is, and is no longer told as `textTooLong`, since the list's own check of
+   the text (`typed`, of the same bound) is reached by no delivery. A statechart cannot send one (ADR 0050), and a
+   host that does is answered `error.execution`; `scenarios/record_list_parent.json` states it.
+
 ### 5. Validation where a value is written
 
 1. **The relation "fits".** A value of type `S` may stand where `T` is expected when `S` fits `T`:
