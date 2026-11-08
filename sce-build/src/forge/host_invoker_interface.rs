@@ -1652,6 +1652,7 @@ bool {sm}_complete_{snake}({sm}_t *sm, uint64_t token, const {sm}_{snake}_result
                 ));
                 defs.push_str(&format!(
                     "bool {sm}_complete_{snake}({sm}_t *sm, uint64_t token, const {sm}_{snake}_result_t *result) {{\n    \
+/* sce-scratch-activity: result */\n    \
 /* docs/adr/0086, section 8.5 (d): written into the machine's scratch. */\n    \
 if (sm == NULL || !{sm}_{snake}_result_wire(result, sm->scratch.result, sizeof(sm->scratch.result))) {{\n        \
 return false;\n    }}\n    \
