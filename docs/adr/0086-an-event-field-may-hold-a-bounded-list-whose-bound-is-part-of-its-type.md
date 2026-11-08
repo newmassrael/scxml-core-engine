@@ -714,6 +714,20 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
    deleter), called by the owner once the event is applied. A poster in an interrupt handler hands static storage
    with a release that marks it free.
 
+   *As landed (step 5, the slice after the first).* A script machine's `<sm>_queued_event_t` holds `char *data`
+   and its `data_size`, and so does its scheduled entry. A host's or a send's event is copied once, into a text the
+   engine's allocator gives, when it is queued. A scheduled entry's text is moved into the queue when it comes due.
+   The drain frees the current event's text once `set_current_event` has handed it to the engine and every
+   autoforward child has been given it, before the transitions run. A `<cancel>` frees the entries it drops, and
+   `_destroy` frees every text the machine still holds before `lua_close`. Each free clears its holder, so a holder
+   freed twice frees nothing. `_owned_event_texts` reports how many texts the machine holds, and a C test counts
+   them after each act. The inbox's event and event-by-name inputs carry the poster's storage with an
+   `sce_inbox_release_fn` (`sce/inbox.h`), which is a deleter: it calls no function of the machine, so the
+   containment check does not take it as a host callback. The machine calls it once, after it applies the input or
+   at `_destroy` for an input still in the inbox. A host-run invocation's ending, a host's reply, the scratch roles
+   and a delayed host-served send's rows still hold the slot on a script machine. They are inputs of slice 4,
+   where the floor goes.
+
    **(b) The runtime's records that hold data by the knob.** Each takes the rule above by the lifetime of its data:
 
    | Record | Lifetime of its data | Recommended |
