@@ -135,6 +135,8 @@ static void take_back(const inbox_probe_inbox_input_t *input) {
         release_text(NULL, input->as.event.record.data);
     } else if (input->kind == INBOX_PROBE_INBOX_EXTERNAL_EVENT_BY_NAME) {
         release_text(NULL, input->as.by_name.event.data);
+    } else if (input->kind == INBOX_PROBE_INBOX_HOST_INVOKE_ENDING) {
+        release_text(NULL, input->as.ending.record.data);
     }
 }
 
@@ -161,7 +163,8 @@ static void ping_by_name(inbox_probe_inbox_input_t *input, const char *label) {
 }
 
 /* An ending of start `token` of `job`: a completion when `done`, a failure
-   otherwise, with `"<label>"` as `_event.data`. */
+   otherwise, with `"<label>"` as `_event.data`, in storage the caller hands
+   over with `release_text` (docs/adr/0086, section 8.6 (d)), as an event's. */
 static void ending(inbox_probe_inbox_input_t *input, uint64_t token, bool done, const char *label) {
     memset(input, 0, sizeof(*input));
     input->kind = INBOX_PROBE_INBOX_HOST_INVOKE_ENDING;
@@ -169,7 +172,9 @@ static void ending(inbox_probe_inbox_input_t *input, uint64_t token, bool done, 
     (void)snprintf(input->as.ending.record.invoke_id, sizeof(input->as.ending.record.invoke_id), "%s", JOB);
     input->as.ending.record.token = token;
     input->as.ending.record.done = done;
-    (void)snprintf(input->as.ending.data, sizeof(input->as.ending.data), "\"%s\"", label);
+    input->as.ending.record.data = handed_text(label);
+    input->as.ending.release = release_text;
+    input->as.ending.release_context = NULL;
 }
 
 /* What the machine holds in `taken`, into `out`; false when it cannot be read. */
@@ -638,27 +643,40 @@ static int a_posted_text_is_released_once_applied_or_at_destroy(void) {
         (void)fprintf(stderr, "FAIL: the inbox refused a post by name\n");
         bad = 1;
     }
+    /* docs/adr/0086, section 8.6 (d): an ending hands its data over as an
+       event does, and it is released the same way, once. */
+    ending(&input, host.last_start, true, "ended");
+    if (!post_from_another_thread(&sm, &input)) {
+        (void)fprintf(stderr, "FAIL: the inbox refused an ending\n");
+        bad = 1;
+    }
     if (atomic_load(&g_texts_released) != released_before) {
         (void)fprintf(stderr, "FAIL: a posted text was released before the owner applied it\n");
         bad = 1;
     }
     inbox_probe_step(&sm);
-    bad |= expect_taken("the posts were applied with their texts", &sm, "ping:applied;ping:named;");
-    if (atomic_load(&g_texts_released) != released_before + 2u) {
-        (void)fprintf(stderr, "FAIL: %u of the 2 applied posts' texts were released\n",
+    bad |= expect_taken("the posts were applied with their texts", &sm, "ping:applied;ping:named;done:ended;");
+    if (atomic_load(&g_texts_released) != released_before + 3u) {
+        (void)fprintf(stderr, "FAIL: %u of the 3 applied posts' texts were released\n",
                       atomic_load(&g_texts_released) - released_before);
         bad = 1;
     }
 
-    /* Posted, and never applied: the machine releases it as it is destroyed. */
+    /* Posted, and never applied: the machine releases each as it is
+       destroyed, an ending's as an event's. */
     ping(&input, "unread");
     if (!post_from_another_thread(&sm, &input)) {
         (void)fprintf(stderr, "FAIL: the inbox refused a post\n");
         bad = 1;
     }
+    ending(&input, host.last_start, false, "unread");
+    if (!post_from_another_thread(&sm, &input)) {
+        (void)fprintf(stderr, "FAIL: the inbox refused an ending\n");
+        bad = 1;
+    }
     inbox_probe_destroy(&sm);
-    if (atomic_load(&g_texts_handed) - handed_before != 3u || atomic_load(&g_texts_released) - released_before != 3u) {
-        (void)fprintf(stderr, "FAIL: of 3 texts handed over, %u were released\n",
+    if (atomic_load(&g_texts_handed) - handed_before != 5u || atomic_load(&g_texts_released) - released_before != 5u) {
+        (void)fprintf(stderr, "FAIL: of 5 texts handed over, %u were released\n",
                       atomic_load(&g_texts_released) - released_before);
         bad = 1;
     }
