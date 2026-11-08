@@ -23,6 +23,18 @@
 //! generated ([`scope`]). [`seal`] closes the book once every reason is
 //! emitted and answers the longest, which is an input of the slot.
 //!
+//! **A reason that quotes a value of the run.** Some reasons quote a text the
+//! machine only has when it runs: the sentence a reader of the runtime refused
+//! a payload with, the text a host refused an invocation with. Such a row
+//! holds a quote, `{v}`, beside its holes, and every quote carries a bound the
+//! build knows ([`Quote`]): a bound the runtime publishes for the sentences it
+//! answers with ([`Published`]), which the machine checks against the header
+//! it compiles with (`reason_bounds_checked`), or a bound the document's own
+//! text gives, which the C library holds by the precision it is spelled with.
+//! The reason is measured as its row's text plus each quote's bound, so the
+//! slot holds the longest it can be, and a value with no bound has no quote to
+//! carry it: it cannot reach a reason.
+//!
 //! **Why a book of the thread.** The lowerings reach the reasons through
 //! targets that are `'static` values shared by every document
 //! (`static_lowering::target_for`), and the templates through a function of
@@ -58,6 +70,18 @@ pub enum ReasonError {
     },
     /// The machine's slot was computed already ([`seal`]).
     Sealed(&'static str),
+    /// The site handed a number of quoted values other than the row's
+    /// quotes, or asked for a row that quotes as a plain literal.
+    Quotes {
+        row: &'static str,
+        wanted: usize,
+        given: usize,
+    },
+    /// A quote named a bound the runtime does not publish.
+    UnknownBound(String),
+    /// The reason quotes a bound of the runtime after the machine checked the
+    /// bounds it relies on ([`bounds_checked`]), so nothing would check it.
+    Unchecked(&'static str),
 }
 
 impl fmt::Display for ReasonError {
@@ -74,6 +98,21 @@ impl fmt::Display for ReasonError {
                 f,
                 "the reason `{row}` was emitted after the machine's slot was computed, so the \
                  slot would not hold it"
+            ),
+            ReasonError::Quotes { row, wanted, given } => write!(
+                f,
+                "the reason `{row}` quotes {wanted} value(s) of the run, and the site handed \
+                 {given}"
+            ),
+            ReasonError::UnknownBound(name) => write!(
+                f,
+                "no bound the C11 runtime publishes is named `{name}`, so a value quoted by it \
+                 has no bound the build knows"
+            ),
+            ReasonError::Unchecked(row) => write!(
+                f,
+                "the reason `{row}` quotes a bound of the runtime after the machine checked the \
+                 bounds it relies on, so nothing would check this one"
             ),
         }
     }
@@ -97,11 +136,122 @@ pub const ACTION_PAYLOAD_ABSENT: Reason = Reason {
     text: "<sce:action name='{0}'> needs the typed payload of '{1}', which this delivery did not carry",
 };
 
+/// The reason a host-run invocation's start raises when the host refused it:
+/// the host's own text, whole, which the host ABI bounds
+/// ([`HOST_INVOKE_REFUSAL`]).
+pub const HOST_INVOKE_REFUSED: Reason = Reason {
+    row: "host_invoke_refused",
+    text: "{v}",
+};
+
+/// A bound the C11 runtime publishes for the sentences it answers a machine
+/// with: the macro its header defines (`name`), the most bytes a sentence
+/// holds, and the name a template quotes it by (`key`). The build sizes a
+/// reason that quotes such a sentence by `max_len`, and the machine asserts
+/// that the header it compiles with publishes no more
+/// ([`template_bounds_checked`]), so a header that grew a longer sentence
+/// fails the machine's build rather than overflowing its slot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Published {
+    pub key: &'static str,
+    pub name: &'static str,
+    pub max_len: u64,
+}
+
+/// The longest sentence a reader of `sce/event_payload.h` refuses a payload
+/// with.
+pub const PAYLOAD_REFUSAL: Published = Published {
+    key: "payload_refusal",
+    name: "SCE_PAYLOAD_REFUSAL_MAX_LEN",
+    max_len: 120,
+};
+
+/// The longest sentence `sce/request_field.h` refuses a request field with,
+/// a payload reader's sentence included.
+pub const REQUEST_REFUSAL: Published = Published {
+    key: "request_refusal",
+    name: "SCE_REQUEST_REFUSAL_MAX_LEN",
+    max_len: 120,
+};
+
+/// The longest text a host may refuse a host-run invocation's start with
+/// (`sce/host_processor.h`): `sce_host_invoke_answer_refusal` refuses a longer
+/// one whole.
+pub const HOST_INVOKE_REFUSAL: Published = Published {
+    key: "host_invoke_refusal",
+    name: "SCE_HOST_INVOKE_REFUSAL_MAX_LEN",
+    max_len: 255,
+};
+
+/// Every bound the C11 runtime publishes for a sentence a reason quotes.
+pub const PUBLISHED: &[Published] = &[PAYLOAD_REFUSAL, REQUEST_REFUSAL, HOST_INVOKE_REFUSAL];
+
+/// The published bound a template quotes by `key`.
+pub fn published(key: &str) -> Result<Published, ReasonError> {
+    PUBLISHED
+        .iter()
+        .copied()
+        .find(|bound| bound.key == key)
+        .ok_or_else(|| ReasonError::UnknownBound(key.to_string()))
+}
+
+/// The bound of one value of the run a reason quotes (`{v}` in its row).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Quote {
+    /// A sentence of the runtime, at most the bound it publishes; spelled
+    /// `%s`, and checked by the machine against its header.
+    Published(Published),
+    /// A text the document bounds at `n` bytes (the longest of the names it
+    /// can be); spelled `%.<n>s`, so the C library holds the bound whatever
+    /// path reaches the reason, and no text the document drives is cut.
+    Within(u64),
+}
+
+impl Quote {
+    /// The most bytes the quoted value adds to the reason.
+    pub fn bound(self) -> u64 {
+        match self {
+            Quote::Published(bound) => bound.max_len,
+            Quote::Within(n) => n,
+        }
+    }
+
+    /// The `printf` conversion the value is written by.
+    fn conversion(self) -> String {
+        match self {
+            Quote::Published(_) => "%s".to_string(),
+            Quote::Within(n) => format!("%.{n}s"),
+        }
+    }
+}
+
 /// Every reason a C11 machine raises with an error, by the name its raise
 /// sites emit it by.
 pub const REASONS: &[Reason] = &[
     LOWERING,
     ACTION_PAYLOAD_ABSENT,
+    HOST_INVOKE_REFUSED,
+    // A typed payload's lift at the dequeue; `{0}` is the event, `{1}` the
+    // field, and the quote the payload reader's sentence.
+    Reason {
+        row: "lift_payload_refused",
+        text: "`{0}` payload: {v}",
+    },
+    Reason {
+        row: "lift_field_refused",
+        text: "`{0}` payload: '{1}' {v}",
+    },
+    // `{2}` is the enum's alias, and the quote the name the delivery gave.
+    Reason {
+        row: "lift_not_variant",
+        text: "`{0}` payload: '{1}' ({v}) is not a variant of {2}",
+    },
+    // A typed host-run request's field; the quote is the request reader's
+    // sentence.
+    Reason {
+        row: "invoke_param_request_field_refused",
+        text: "<invoke> <param name='{0}'> cannot be its request field: '{0}' {v}",
+    },
     // A `<param>` of any element; `{0}` is the element, `{1}` the param's name.
     Reason {
         row: "param_names_no_location",
@@ -496,21 +646,123 @@ impl Reason {
         Ok(out)
     }
 
+    /// How many values of the run the text quotes: its `{v}`s.
+    pub fn quotes(&self) -> usize {
+        self.text.matches(QUOTE).count()
+    }
+
     /// The C string literal of the text filled with `holes`, quotes included,
-    /// its length recorded in the book of the machine being generated.
+    /// its length recorded in the book of the machine being generated. A row
+    /// that quotes a value of the run is no literal ([`Self::format`]).
     pub fn literal(&self, holes: &[&str]) -> Result<String, ReasonError> {
+        self.check_quotes(0)?;
         let text = self.fill(holes)?;
         record(self.row, text.len())?;
         Ok(format!("\"{}\"", crate::filters::escape_c(text)))
     }
+
+    /// The C string literal of the `printf` format of the text: each hole
+    /// filled with `holes[N]` (a `%` of it doubled, so it is text and not a
+    /// conversion), and each quote, in order, the conversion of `quotes`'
+    /// bound. The reason is recorded at its longest, the text plus each
+    /// quote's bound, and a bound of the runtime as one the machine relies on.
+    pub fn format(&self, holes: &[&str], quotes: &[Quote]) -> Result<String, ReasonError> {
+        let (format, longest) = self.compose(holes, quotes)?;
+        self.hold_composed(quotes, longest)?;
+        Ok(format!("\"{}\"", crate::filters::escape_c(format)))
+    }
+
+    /// Record the reason as [`Self::format`] does, for a site that hands the
+    /// quoted value on as it is (a row whose text is one quote).
+    pub fn hold(&self, holes: &[&str], quotes: &[Quote]) -> Result<(), ReasonError> {
+        let (_, longest) = self.compose(holes, quotes)?;
+        self.hold_composed(quotes, longest)
+    }
+
+    fn check_quotes(&self, given: usize) -> Result<(), ReasonError> {
+        let wanted = self.quotes();
+        if given != wanted {
+            return Err(ReasonError::Quotes {
+                row: self.row,
+                wanted,
+                given,
+            });
+        }
+        Ok(())
+    }
+
+    /// The `printf` format of the text and the most bytes it writes, in one
+    /// pass over the row, so a hole's text that spells `{v}` stays text.
+    fn compose(&self, holes: &[&str], quotes: &[Quote]) -> Result<(String, usize), ReasonError> {
+        self.check_quotes(quotes.len())?;
+        let wanted = self.holes();
+        if holes.len() != wanted {
+            return Err(ReasonError::Holes {
+                row: self.row,
+                wanted,
+                given: holes.len(),
+            });
+        }
+        let mut format = String::with_capacity(self.text.len());
+        let mut longest = 0usize;
+        let mut quoted = quotes.iter();
+        let mut rest = self.text;
+        loop {
+            let Some(at) = rest.find('{') else {
+                format.push_str(&rest.replace('%', "%%"));
+                longest += rest.len();
+                break;
+            };
+            format.push_str(&rest[..at].replace('%', "%%"));
+            longest += at;
+            let after = &rest[at..];
+            let digit = after.as_bytes().get(1).copied();
+            if let Some(d) =
+                digit.filter(|d| d.is_ascii_digit() && after.as_bytes().get(2) == Some(&b'}'))
+            {
+                let hole = holes[usize::from(d - b'0')];
+                format.push_str(&hole.replace('%', "%%"));
+                longest += hole.len();
+                rest = &after[3..];
+            } else if let Some(tail) = after.strip_prefix(QUOTE) {
+                let quote = quoted
+                    .next()
+                    .expect("the quotes were counted against the row's");
+                format.push_str(&quote.conversion());
+                longest =
+                    longest.saturating_add(usize::try_from(quote.bound()).unwrap_or(usize::MAX));
+                rest = tail;
+            } else {
+                format.push('{');
+                longest += 1;
+                rest = &after[1..];
+            }
+        }
+        Ok((format, longest))
+    }
+
+    fn hold_composed(&self, quotes: &[Quote], longest: usize) -> Result<(), ReasonError> {
+        for quote in quotes {
+            if let Quote::Published(bound) = quote {
+                rely(self.row, *bound)?;
+            }
+        }
+        record(self.row, longest)
+    }
 }
 
+/// How a row's text spells a value of the run it quotes.
+const QUOTE: &str = "{v}";
+
 /// The longest reason the machine being generated has emitted so far, in
-/// bytes, and whether its slot was computed already.
-#[derive(Debug, Default, Clone, Copy)]
+/// bytes, whether its slot was computed already, the bounds of the runtime
+/// its reasons quote, and whether the machine has checked those already.
+#[derive(Debug, Default, Clone)]
 struct Book {
     longest: usize,
     sealed: bool,
+    relied: Vec<Published>,
+    checked: bool,
 }
 
 thread_local! {
@@ -528,6 +780,55 @@ fn record(row: &'static str, len: usize) -> Result<(), ReasonError> {
         // no slot to size.
         None => Ok(()),
     })
+}
+
+fn rely(row: &'static str, bound: Published) -> Result<(), ReasonError> {
+    BOOK.with(|book| match book.borrow_mut().as_mut() {
+        Some(book) if book.checked => Err(ReasonError::Unchecked(row)),
+        Some(book) => {
+            if !book.relied.contains(&bound) {
+                book.relied.push(bound);
+            }
+            Ok(())
+        }
+        None => Ok(()),
+    })
+}
+
+/// The bounds of the runtime the reasons of the machine being generated
+/// quote, each once, in a fixed order; the book is closed to another one, so
+/// a reason that quotes a bound after the check is refused
+/// ([`ReasonError::Unchecked`]). None outside a scope.
+pub fn bounds_checked() -> Vec<Published> {
+    BOOK.with(|book| match book.borrow_mut().as_mut() {
+        Some(book) => {
+            book.checked = true;
+            let mut relied = book.relied.clone();
+            relied.sort();
+            relied
+        }
+        None => Vec::new(),
+    })
+}
+
+/// The template function `reason_bounds_checked()`, called once at the end of
+/// a machine's source, after every reason it emits: one static assertion per
+/// bound of the runtime the machine's reasons quote, that the header the
+/// machine compiles with publishes no more than the bound its slot was sized
+/// by. Empty when its reasons quote none.
+pub fn template_bounds_checked() -> String {
+    bounds_checked()
+        .iter()
+        .map(|bound| {
+            format!(
+                "SCE_STATIC_ASSERT((size_t)({name}) <= (size_t){max}u,\n                  \
+                 \"{name} is past the {max} bytes this machine's slot of _event.data was sized \
+                 by: the runtime and the generator that wrote the machine disagree\");\n",
+                name = bound.name,
+                max = bound.max_len
+            )
+        })
+        .collect()
 }
 
 /// The book of one machine's generation on this thread, until the guard is
@@ -572,8 +873,48 @@ pub fn template_function(
     name: String,
     holes: minijinja::value::Rest<minijinja::Value>,
 ) -> Result<String, minijinja::Error> {
-    let refuse =
-        |message: String| minijinja::Error::new(minijinja::ErrorKind::InvalidOperation, message);
+    let texts = hole_texts(&name, &holes)?;
+    let filled: Vec<&str> = texts.iter().map(String::as_str).collect();
+    row(&name)
+        .and_then(|reason| reason.literal(&filled))
+        .map_err(|error| refuse(error.to_string()))
+}
+
+/// The template function `reason_format(row, quotes, holes...)`: the C string
+/// literal of the `printf` format of a row that quotes values of the run
+/// ([`Reason::format`]). Each entry of `quotes` is the name of a bound the
+/// runtime publishes ([`PUBLISHED`]) or a number of bytes the document bounds
+/// the value at ([`Quote::Within`]).
+pub fn template_format_function(
+    name: String,
+    quotes: Vec<minijinja::Value>,
+    holes: minijinja::value::Rest<minijinja::Value>,
+) -> Result<String, minijinja::Error> {
+    let texts = hole_texts(&name, &holes)?;
+    let filled: Vec<&str> = texts.iter().map(String::as_str).collect();
+    let mut bounds = Vec::with_capacity(quotes.len());
+    for quote in &quotes {
+        let bound = match (quote.as_str(), quote.as_usize()) {
+            (Some(key), _) => published(key).map(Quote::Published),
+            (None, Some(n)) => Ok(Quote::Within(n as u64)),
+            (None, None) => Err(ReasonError::UnknownBound(quote.to_string())),
+        };
+        bounds.push(bound.map_err(|error| refuse(error.to_string()))?);
+    }
+    row(&name)
+        .and_then(|reason| reason.format(&filled, &bounds))
+        .map_err(|error| refuse(error.to_string()))
+}
+
+fn refuse(message: String) -> minijinja::Error {
+    minijinja::Error::new(minijinja::ErrorKind::InvalidOperation, message)
+}
+
+/// The text of each hole a template hands the reason `name`.
+fn hole_texts(
+    name: &str,
+    holes: &minijinja::value::Rest<minijinja::Value>,
+) -> Result<Vec<String>, minijinja::Error> {
     let mut texts = Vec::with_capacity(holes.len());
     for hole in holes.iter() {
         if hole.is_undefined() || hole.is_none() {
@@ -586,10 +927,7 @@ pub fn template_function(
             None => hole.to_string(),
         });
     }
-    let filled: Vec<&str> = texts.iter().map(String::as_str).collect();
-    row(&name)
-        .and_then(|reason| reason.literal(&filled))
-        .map_err(|error| refuse(error.to_string()))
+    Ok(texts)
 }
 
 #[cfg(test)]
@@ -610,7 +948,10 @@ mod tests {
     fn every_brace_of_a_text_opens_a_hole_and_the_holes_are_numbered_from_zero() {
         for reason in REASONS {
             let holes: Vec<&str> = (0..reason.holes()).map(|_| "x").collect();
-            let filled = reason.fill(&holes).expect("the row fills");
+            let filled = reason
+                .fill(&holes)
+                .expect("the row fills")
+                .replace(QUOTE, "");
             assert!(
                 !filled.contains('{') && !filled.contains('}'),
                 "`{}` leaves a brace that opens no hole: {filled}",
@@ -677,5 +1018,180 @@ mod tests {
             assert_eq!(seal(), 26);
         }
         assert_eq!(seal(), 5, "the outer book holds the outer reason alone");
+    }
+
+    /// A reason that quotes a value of the run is measured at its text plus
+    /// each quote's bound, and spelled as a `printf` format whose holes are
+    /// text: a `%` a document wrote is doubled, and a hole that spells `{v}`
+    /// is no quote.
+    #[test]
+    fn a_quoting_reason_is_measured_at_its_text_plus_each_bound() {
+        let _scope = scope();
+        let reason = row("lift_field_refused").expect("the row");
+        assert_eq!(reason.quotes(), 1);
+        let format = reason
+            .format(&["a%b", "{v}"], &[Quote::Published(PAYLOAD_REFUSAL)])
+            .expect("two holes and one quote");
+        assert_eq!(format, "\"`a%%b` payload: '{v}' %s\"");
+        // "`a%b` payload: '{v}' " is 21 bytes, and the sentence at most 120.
+        assert_eq!(seal(), 21 + PAYLOAD_REFUSAL.max_len);
+
+        let _scope = scope();
+        let variant = row("lift_not_variant").expect("the row");
+        assert_eq!(
+            variant
+                .format(&["e", "f", "Mode"], &[Quote::Within(7)])
+                .expect("three holes and one quote"),
+            "\"`e` payload: 'f' (%.7s) is not a variant of Mode\""
+        );
+        assert_eq!(
+            seal(),
+            "`e` payload: 'f' () is not a variant of Mode".len() as u64 + 7
+        );
+    }
+
+    /// A quoting row is no plain literal, and a site that hands it a number
+    /// of quotes other than its own is refused.
+    #[test]
+    fn a_quoting_row_takes_exactly_its_quotes() {
+        let reason = row("lift_payload_refused").expect("the row");
+        assert_eq!(
+            reason.literal(&["e"]),
+            Err(ReasonError::Quotes {
+                row: "lift_payload_refused",
+                wanted: 1,
+                given: 0
+            })
+        );
+        assert_eq!(
+            reason.format(&["e"], &[]),
+            Err(ReasonError::Quotes {
+                row: "lift_payload_refused",
+                wanted: 1,
+                given: 0
+            })
+        );
+        assert!(matches!(
+            published("no_such_bound"),
+            Err(ReasonError::UnknownBound(_))
+        ));
+    }
+
+    /// Each bound of the runtime a machine's reasons quote is checked once,
+    /// and a quote of one after the check is refused.
+    #[test]
+    fn every_bound_a_reason_quotes_is_checked_once() {
+        let _scope = scope();
+        let field = row("lift_field_refused").expect("the row");
+        let whole = row("lift_payload_refused").expect("the row");
+        field
+            .format(&["e", "f"], &[Quote::Published(PAYLOAD_REFUSAL)])
+            .expect("a quote");
+        whole
+            .format(&["e"], &[Quote::Published(PAYLOAD_REFUSAL)])
+            .expect("a quote");
+        HOST_INVOKE_REFUSED
+            .hold(&[], &[Quote::Published(HOST_INVOKE_REFUSAL)])
+            .expect("a quote");
+        let checks = template_bounds_checked();
+        assert_eq!(checks.matches("SCE_STATIC_ASSERT").count(), 2, "{checks}");
+        assert!(checks.contains("(size_t)(SCE_PAYLOAD_REFUSAL_MAX_LEN) <= (size_t)120u"));
+        assert!(checks.contains("(size_t)(SCE_HOST_INVOKE_REFUSAL_MAX_LEN) <= (size_t)255u"));
+        assert_eq!(
+            whole.format(&["e"], &[Quote::Published(PAYLOAD_REFUSAL)]),
+            Err(ReasonError::Unchecked("lift_payload_refused"))
+        );
+    }
+
+    /// The value of `#define <name> <value>` in `header`, a further macro's
+    /// name resolved through the same header, the `u` suffix dropped.
+    fn defined(header: &str, name: &str) -> u64 {
+        let line = header
+            .lines()
+            .map(str::trim_start)
+            .find(|line| {
+                line.strip_prefix("#define ")
+                    .and_then(|rest| rest.split_whitespace().next())
+                    == Some(name)
+            })
+            .unwrap_or_else(|| panic!("the header defines {name}"));
+        let value = line
+            .split_whitespace()
+            .nth(2)
+            .unwrap_or_else(|| panic!("{name} has a value"));
+        match value.trim_end_matches('u').parse() {
+            Ok(number) => number,
+            Err(_) => defined(header, value),
+        }
+    }
+
+    /// Every C string literal in `text`, its adjacent pieces joined.
+    fn literal_texts(text: &str) -> String {
+        let mut out = String::new();
+        let mut inside = false;
+        let mut chars = text.chars();
+        while let Some(ch) = chars.next() {
+            match (inside, ch) {
+                (false, '"') => inside = true,
+                (true, '"') => inside = false,
+                (true, '\\') => out.extend(chars.next()),
+                (true, other) => out.push(other),
+                (false, _) => {}
+            }
+        }
+        out
+    }
+
+    /// The bound each header publishes is the one the build sizes by, and
+    /// every sentence the header can answer with fits it, so a reason that
+    /// quotes one is never longer than its measure.
+    #[test]
+    fn each_published_bound_is_the_headers_and_holds_its_sentences() {
+        const PAYLOAD: &str =
+            include_str!("../../../backends/c/runtime/include/sce/event_payload.h");
+        const REQUEST: &str =
+            include_str!("../../../backends/c/runtime/include/sce/request_field.h");
+        const HOST: &str = include_str!("../../../backends/c/runtime/include/sce/host_processor.h");
+        assert_eq!(
+            defined(PAYLOAD, PAYLOAD_REFUSAL.name),
+            PAYLOAD_REFUSAL.max_len
+        );
+        let request_header = format!("{PAYLOAD}\n{REQUEST}");
+        assert_eq!(
+            defined(&request_header, REQUEST_REFUSAL.name),
+            REQUEST_REFUSAL.max_len
+        );
+        assert_eq!(
+            defined(HOST, HOST_INVOKE_REFUSAL.name),
+            HOST_INVOKE_REFUSAL.max_len
+        );
+
+        let mut sentences = 0;
+        for piece in PAYLOAD
+            .split("static const char sce_payload_refuse_")
+            .skip(1)
+        {
+            let (name, rest) = piece.split_once("[]").expect("a sentence is an array");
+            let (value, _) = rest.split_once(';').expect("a sentence ends");
+            let sentence = literal_texts(value);
+            assert!(
+                sentence.len() as u64 <= PAYLOAD_REFUSAL.max_len,
+                "sce_payload_refuse_{name} is {} bytes, past {}",
+                sentence.len(),
+                PAYLOAD_REFUSAL.max_len
+            );
+            sentences += 1;
+        }
+        assert!(sentences >= 30, "the payload reader's sentences were read");
+        let mut own = 0;
+        for line in REQUEST
+            .lines()
+            .filter(|l| l.starts_with("#define SCE_REQUEST_REFUSE_"))
+        {
+            let sentence = literal_texts(line);
+            assert!(sentence.len() as u64 <= REQUEST_REFUSAL.max_len, "{line}");
+            own += usize::from(!sentence.is_empty());
+        }
+        assert!(own >= 4, "the request reader's own sentences were read");
     }
 }
