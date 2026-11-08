@@ -215,7 +215,9 @@ class Router(val machine: String, dedupWindow: UInt, gapTimeoutMs: Long) {
     fun startCausal(peer: String, start: CausalStart, room: Int, announceEveryMs: Long): RouterError? {
         val bound = peers[peer] ?: return RouterError.UnknownPeer(peer)
         val group = bound.config.causal ?: return RouterError.NotCausal(peer)
-        bound.causal = Causal(CausalLayer(group, start, room), announceEveryMs)
+        // §mesh-10.12, what a host does: the peer's layer begins from the
+        // incarnation the host read from the copy's journal, or a new one.
+        bound.causal =Causal(CausalLayer(group, start, room), announceEveryMs)
         return null
     }
 
@@ -506,6 +508,9 @@ class Router(val machine: String, dedupWindow: UInt, gapTimeoutMs: Long) {
      * `CAUSAL_VIEW_MISMATCH` and is not delivered (docs/adr/0085, section 3.2).
      */
     private fun receiveCausal(peerName: String, peer: Peer, bytes: ByteArray, nowMs: Long): Routed {
+        // §mesh-10.12: every envelope of a causal peer reaches its layer
+        // before the engine; a `causalVector` is a repair and a mark, and
+        // never reaches an engine.
         fun raise(signal: Signal) = Routed.Done(listOf(Effect.Raise(peerName, signal)))
         // The bytes are the envelope's CBOR (§mesh-7.5); nothing in them can
         // be trusted to name a source.

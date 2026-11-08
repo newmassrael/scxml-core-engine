@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
+// SCE-VERIFIES: mesh-10.12
+//
 // The tests of docs/adr/0085, section 9.2 for the C++ core's causal layer,
 // the same tests the Rust reference holds (backends/rust/mesh/src/causal.rs).
 // Each names the change to the rule, or to the layer, that turns it red; the

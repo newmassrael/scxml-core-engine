@@ -4,7 +4,7 @@
 // SCE Mesh CausalRules — the causal route's rule, as the C++ core calls it.
 //
 // The rule of a causal route is written once, as standard Mesh algorithms
-// (docs/adr/0085, sections 3 and 3.2; SCE_MESH.md, section 10.12), and
+// (docs/adr/0085, sections 3 and 3.2; SCE_MESH.md §mesh-10.12), and
 // generated for every language: whether a change is dropped, delivered or
 // held (sce:std/mesh/causal_admit), the merge of two vectors (causal_raise),
 // whether a vector lacks a change (causal_lacks) and the stable cut

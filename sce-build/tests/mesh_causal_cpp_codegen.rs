@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
+// SCE-VERIFIES: mesh-10.12
+//
 // The generated C++ router carries a causal binding on every transport it
 // serves (docs/adr/0085, section 3.2: the causal route is a layer of the Mesh
 // core above the transport). Each case drives `compile_mesh_transport` on a

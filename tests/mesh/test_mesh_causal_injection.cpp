@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
+// SCE-VERIFIES: mesh-10.12
+//
 // The causal route through the generated C++ router, once per transport
 // (docs/adr/0085, sections 3.2 and 9.2). One source, compiled against each
 // `deploy_causal_<transport>.yaml` fixture: the brake's `#motor` binding is
