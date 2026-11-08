@@ -24,7 +24,7 @@ use sce_rust_runtime::test::{
     ModuleParameters, SystemAdapter, TestCaseResult, TestCaseRun, Verdict,
 };
 use sce_rust_tests::integration::static_datamodel::{
-    answerer_sm, asker_sm, coordinator_sm, idler_sm, job_reply, job_request, keeper_sm,
+    answerer_sm, asker_sm, coordinator_sm, idler_sm, job_reply, job_request, ptc_keeper_sm,
 };
 
 type Request = job_request::JobRequestPayload;
@@ -43,7 +43,7 @@ fn machine_of(component_type: &str) -> Option<Box<dyn ComponentMachine>> {
         "asker" => Box::<asker_sm::AskerComponent>::default(),
         "coordinator" => Box::<coordinator_sm::CoordinatorComponent>::default(),
         "answerer" => Box::<answerer_sm::AnswererComponent>::default(),
-        "keeper" => Box::<keeper_sm::KeeperComponent>::default(),
+        "ptc_keeper" => Box::<ptc_keeper_sm::PtcKeeperComponent>::default(),
         "idler" => Box::<idler_sm::IdlerComponent>::default(),
         _ => return None,
     };
@@ -302,10 +302,10 @@ fn a_test_component_creates_a_ptc_exchanges_a_message_with_it_and_reads_its_done
 #[test]
 fn a_test_component_kills_a_ptc_on_leaving_the_state_that_invoked_it() {
     let configuration = Configuration {
-        mtc_type: "keeper".to_string(),
+        mtc_type: "ptc_keeper".to_string(),
         ptc_types: [("idler".to_string(), "idler".to_string())].into(),
         ports_of_type: [("idler".to_string(), strings(&["peer"]))].into(),
-        timers_of_type: [("keeper".to_string(), strings(&["patience", "linger"]))].into(),
+        timers_of_type: [("ptc_keeper".to_string(), strings(&["patience", "linger"]))].into(),
         ..Configuration::default()
     };
     let result = run(configuration, Box::new(Silent));

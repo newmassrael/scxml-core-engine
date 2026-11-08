@@ -144,7 +144,7 @@ fn a_configuration_is_its_table_its_machines_and_what_they_read() {
 
     let keeping = unit("keeping_configuration");
     for needle in [
-        "(\"keeper\".to_string(), vec![\"patience\".to_string(), \"linger\".to_string()]),",
+        "(\"ptc_keeper\".to_string(), vec![\"patience\".to_string(), \"linger\".to_string()]),",
         "(\"idler\".to_string(), vec![\"peer\".to_string()]),",
         "(::sce_rust_runtime::test::Endpoint::new(\"idler\", \"peer\"), \"quiet\".to_string()),",
     ] {
@@ -155,7 +155,7 @@ fn a_configuration_is_its_table_its_machines_and_what_they_read() {
     }
     let ports = between(&keeping, "ports_of_type:", "timers_of_type:");
     assert!(
-        !ports.contains("\"keeper\""),
+        !ports.contains("\"ptc_keeper\""),
         "a type that declares no port has no entry: {ports}"
     );
 }

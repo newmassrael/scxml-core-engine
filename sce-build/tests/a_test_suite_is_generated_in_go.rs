@@ -230,7 +230,7 @@ fn a_configuration_is_its_table_its_machines_and_what_they_read() {
 
     let keeping = unit("keeping_configuration");
     for needle in [
-        "\t\t\t\"keeper\": {\"patience\", \"linger\"},\n",
+        "\t\t\t\"ptc_keeper\": {\"patience\", \"linger\"},\n",
         "\t\t\t\"idler\": {\"peer\"},\n",
         "\t\t\t{Port: testprofile.Endpoint{Component: \"idler\", Port: \"peer\"}, SystemPort: \
          \"quiet\"},\n",
@@ -242,7 +242,7 @@ fn a_configuration_is_its_table_its_machines_and_what_they_read() {
     }
     let ports = between(&keeping, "PortsOfType:", "TimersOfType:");
     assert!(
-        !ports.contains("\"keeper\""),
+        !ports.contains("\"ptc_keeper\""),
         "a type that declares no port has no entry: {ports}"
     );
 }

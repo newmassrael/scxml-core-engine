@@ -209,7 +209,7 @@ TEST_PROFILE_IMPORTS+=(card_payment card_within voucher_payment voucher_is)
 # scripts/regen_static_datamodel_kotlin.sh).
 TEST_PROFILE_RUNTIME_DIR="$TEST_PROFILE_DIR/runtime"
 TEST_PROFILE_RUNTIME=(job_request job_reply request_of any_request reply_ok reply_of)
-TEST_COMPONENTS=(asker coordinator answerer keeper idler param_asker)
+TEST_COMPONENTS=(asker coordinator answerer ptc_keeper idler param_asker)
 # The tables of the suite a_test_suite_runs_through_its_runner_test.go runs through the
 # profile's runner (docs/SCE_TEST_PROFILE.md §11.6 to §11.8, §12.2), each a package of its
 # own: each configuration's unit imports the package of each component's machine, which is
