@@ -246,13 +246,14 @@ its changes and, for a member that has not written since, from a mark the layer 
       delivery: causal
       group:
         name: people
-        view: [phone/list, laptop/list, tablet/list]   # the initial view, epoch 0
+        view: [phone/phone_list, laptop/laptop_list, tablet/tablet_list]   # the initial view, epoch 0
   ```
 
   `group:` is the binding's own key. `members:` keeps its one meaning, the members of a DDS or Zenoh pool
   (`SCE_MESH.md` section 14.4), and is not read on a causal binding. Each entry of `view` names one instance the
-  deploy declares; the example's spelling `<device>/<machine>` shows the shape, and the landing fixes it within the
-  deploy grammar. Every member sends to the route and reads it.
+  deploy declares, as `<device>/<machine>`. A machine name is one entry of the whole deploy
+  (`mesh/deploy-duplicate-machine`), so the copies of one document are machines of their own, named apart, each
+  with the same `source:`. Every member sends to the route and reads it.
 - **The tag on the envelope.** The sending side stamps each envelope with the tag, as optional CBOR envelope entries,
   as `sequence_no` is (section 10.6.3): the author's replica identity, the number, the view's epoch, and the context
   as a bounded list of `(author, seq)` records in the envelope's own CBOR map. A CBOR codec entry holds a scalar

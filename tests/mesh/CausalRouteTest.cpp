@@ -44,7 +44,7 @@ namespace {
 /// A causal group of three, every copy one machine `list` on its own device;
 /// the binding is the group's route.
 CausalGroup people() {
-    return CausalGroup{"people", 0, {"phone/list", "laptop/list", "tablet/list"}};
+    return CausalGroup{"people", 0, {"phone/phone_list", "laptop/laptop_list", "tablet/tablet_list"}};
 }
 
 CausalReplica replica(std::uint8_t n) {

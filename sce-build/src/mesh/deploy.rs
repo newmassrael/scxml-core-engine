@@ -9737,23 +9737,30 @@ topology:
 
     // ── delivery: causal (docs/adr/0085, section 3.2) ───────────────
 
-    /// Three copies of one list on three devices, each bound to the group
-    /// route `#people`; `extra` is spliced under the phone's binding and
-    /// `machine_extra` under the phone's machine.
+    /// The view of `causal_deploy`'s group: each copy of the list as the
+    /// instance `<device>/<machine>` it is.
+    const CAUSAL_VIEW: &str = "[phone/phone_list, laptop/laptop_list, tablet/tablet_list]";
+
+    /// Three copies of one list document, one machine of each device, each
+    /// bound to the group route `#people`. A machine name is one entry of the
+    /// deploy (`validate_machine_name_uniqueness`), so each copy is a machine
+    /// of its own, `<device>_list`, started from the one `list.scxml`;
+    /// `extra` is spliced under the phone's binding and `machine_extra` under
+    /// the phone's machine.
     fn causal_deploy(extra: &str, machine_extra: &str) -> String {
         let mut yaml = String::from("version: \"1.0\"\ntopology:\n");
         for device in ["phone", "laptop", "tablet"] {
             yaml.push_str(&format!(
-                "  {device}:\n    machines:\n      list:\n        source: list.scxml\n"
+                "  {device}:\n    machines:\n      {device}_list:\n        source: list.scxml\n"
             ));
             if device == "phone" {
                 yaml.push_str(machine_extra);
             }
-            yaml.push_str(
+            yaml.push_str(&format!(
                 "        bindings:\n          \"#people\":\n            transport: wss\n            \
                  delivery: causal\n            group:\n              name: people\n              \
-                 view: [phone/list, laptop/list, tablet/list]\n",
-            );
+                 view: {CAUSAL_VIEW}\n"
+            ));
             if device == "phone" {
                 yaml.push_str(extra);
             }
@@ -9761,17 +9768,38 @@ topology:
         yaml
     }
 
-    fn delivery_conflict(yaml: &str) -> (String, String) {
+    /// The target and the reason of the delivery conflict `yaml` is refused
+    /// with, which names the machine `machine`.
+    fn delivery_conflict(yaml: &str, machine: &str) -> (String, String) {
         match parse_deploy_str(yaml) {
             Err(DeployError::DeliveryConflict {
-                machine,
+                machine: refused,
                 target,
                 reason,
             }) => {
-                assert_eq!(machine, "list");
+                assert_eq!(refused, machine);
                 (target, reason)
             }
             other => panic!("expected DeliveryConflict, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn copies_of_one_list_are_machines_of_their_own_and_not_one_machine_placed_thrice() {
+        // A machine name is global (the receiver lookup, `#X`, the generated
+        // namespace), so a group's copies are named apart, and a deploy that
+        // places one machine on each device is refused before its group is
+        // read. Red if the causal fixtures lean on a weakened uniqueness check.
+        let shared = causal_deploy("", "")
+            .replace("phone_list:", "list:")
+            .replace("laptop_list:", "list:")
+            .replace("tablet_list:", "list:");
+        match parse_deploy_str(&shared) {
+            Err(DeployError::DuplicateMachine { machine, devices }) => {
+                assert_eq!(machine, "list");
+                assert_eq!(devices, ["laptop", "phone", "tablet"]);
+            }
+            other => panic!("expected DuplicateMachine, got {other:?}"),
         }
     }
 
@@ -9872,21 +9900,30 @@ topology:
     #[test]
     fn a_causal_binding_is_parsed_with_its_group_and_view() {
         let cfg = parse_deploy_str(&causal_deploy("", "")).expect("parse");
-        let binding =
-            &cfg.topology["laptop"].machines["list"].bindings[&TargetId::new("#people").unwrap()];
+        let binding = &cfg.topology["laptop"].machines["laptop_list"].bindings
+            [&TargetId::new("#people").unwrap()];
         assert_eq!(binding.delivery, Some(DeliveryMode::Causal));
         let group = binding
             .group
             .as_ref()
             .expect("a causal binding names its group");
         assert_eq!(group.name, "people");
-        assert_eq!(group.view, ["phone/list", "laptop/list", "tablet/list"]);
+        assert_eq!(
+            group.view,
+            [
+                "phone/phone_list",
+                "laptop/laptop_list",
+                "tablet/tablet_list"
+            ]
+        );
     }
 
     #[test]
     fn ordering_beside_causal_delivery_is_a_delivery_conflict() {
-        let (target, reason) =
-            delivery_conflict(&causal_deploy("            ordering: required\n", ""));
+        let (target, reason) = delivery_conflict(
+            &causal_deploy("            ordering: required\n", ""),
+            "phone_list",
+        );
         assert_eq!(target, "#people");
         assert!(reason.contains("`ordering: required`"), "{reason}");
         // `ordering: none` is the default spelled out, not a second rule.
@@ -9897,7 +9934,7 @@ topology:
     #[test]
     fn a_dedup_section_that_reaches_only_causal_bindings_is_a_delivery_conflict() {
         let dedup = "        dedup:\n          window_size: 64\n";
-        let (target, reason) = delivery_conflict(&causal_deploy("", dedup));
+        let (target, reason) = delivery_conflict(&causal_deploy("", dedup), "phone_list");
         assert_eq!(target, "");
         assert!(reason.contains("`dedup:`"), "{reason}");
         // A binding the window does reach keeps the section meaningful.
@@ -9910,31 +9947,48 @@ topology:
     #[test]
     fn a_causal_binding_without_its_group_and_a_group_without_causal_are_refused() {
         let yaml = causal_deploy("", "");
+        // The phone's binding is the first in the text, so each edit is its.
         let without_group = yaml.replacen(
-            "            group:\n              name: people\n              \
-             view: [phone/list, laptop/list, tablet/list]\n",
+            &format!(
+                "            group:\n              name: people\n              \
+                 view: {CAUSAL_VIEW}\n"
+            ),
             "",
             1,
         );
-        let (_, reason) = delivery_conflict(&without_group);
+        let (_, reason) = delivery_conflict(&without_group, "phone_list");
         assert!(reason.contains("without `group:`"), "{reason}");
         let without_causal = yaml.replacen("            delivery: causal\n", "", 1);
-        let (_, reason) = delivery_conflict(&without_causal);
+        let (_, reason) = delivery_conflict(&without_causal, "phone_list");
         assert!(reason.contains("without `delivery: causal`"), "{reason}");
     }
 
     #[test]
     fn a_view_must_name_declared_instances_once_and_this_one() {
+        // Each bad view is the phone's, the first in the text.
         let yaml = causal_deploy("", "");
-        let view = "[phone/list, laptop/list, tablet/list]";
         for (bad, says) in [
-            ("[phone/list, laptop/list, phone/list]", "twice"),
-            ("[phone/list, laptop/list, watch/list]", "no instance"),
-            ("[phone/list, laptop/list, tablet]", "no instance"),
-            ("[laptop/list, tablet/list]", "does not name"),
+            (
+                "[phone/phone_list, laptop/laptop_list, phone/phone_list]",
+                "twice",
+            ),
+            (
+                "[phone/phone_list, laptop/laptop_list, watch/watch_list]",
+                "no instance",
+            ),
+            (
+                "[phone/phone_list, laptop/laptop_list, tablet]",
+                "no instance",
+            ),
+            // A machine the deploy declares, named on a device it is not on.
+            (
+                "[phone/phone_list, laptop/laptop_list, tablet/laptop_list]",
+                "no instance",
+            ),
+            ("[laptop/laptop_list, tablet/tablet_list]", "does not name"),
             ("[]", "1 to 64"),
         ] {
-            let (_, reason) = delivery_conflict(&yaml.replacen(view, bad, 1));
+            let (_, reason) = delivery_conflict(&yaml.replacen(CAUSAL_VIEW, bad, 1), "phone_list");
             assert!(reason.contains(says), "{bad}: {reason}");
         }
     }
@@ -9946,11 +10000,11 @@ topology:
         // reordered view is another view.
         let yaml = causal_deploy("", "");
         let reordered = yaml.replacen(
-            "[phone/list, laptop/list, tablet/list]",
-            "[laptop/list, phone/list, tablet/list]",
+            CAUSAL_VIEW,
+            "[laptop/laptop_list, phone/phone_list, tablet/tablet_list]",
             2,
         );
-        let (_, reason) = delivery_conflict(&reordered);
+        let (_, reason) = delivery_conflict(&reordered, "tablet_list");
         assert!(reason.contains("one view"), "{reason}");
     }
 

@@ -298,7 +298,7 @@ private final class Host {
                 responders: ["people"],
                 deadlineMs: nil,
                 replyEvents: [],
-                causal: CausalGroup(name: "people", epoch: 0, view: ["phone/list", "laptop/list"])
+                causal: CausalGroup(name: "people", epoch: 0, view: ["phone/phone_list", "laptop/laptop_list"])
             ))
         let endpoint = Endpoint(router: router, transport: transport, environment: environment)
         try endpoint.startCausal("people", start: .newIncarnation(causalReplica(1)), room: 1, announceEveryMs: 100)

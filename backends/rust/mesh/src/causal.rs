@@ -585,12 +585,16 @@ mod tests {
     const VIEW: CausalGroup = CausalGroup {
         name: "people",
         epoch: 0,
-        view: &["phone/list", "laptop/list", "tablet/list"],
+        view: &[
+            "phone/phone_list",
+            "laptop/laptop_list",
+            "tablet/tablet_list",
+        ],
     };
     const PAIR: CausalGroup = CausalGroup {
         name: "pair",
         epoch: 0,
-        view: &["phone/list", "laptop/list"],
+        view: &["phone/phone_list", "laptop/laptop_list"],
     };
 
     /// A message as the tests carry it: the tag it was sent with and a name.

@@ -20,7 +20,7 @@ private let people = PeerConfig(
     responders: ["people"],
     deadlineMs: nil,
     replyEvents: [],
-    causal: CausalGroup(name: "people", epoch: 0, view: ["phone/list", "laptop/list", "tablet/list"])
+    causal: CausalGroup(name: "people", epoch: 0, view: ["phone/phone_list", "laptop/laptop_list", "tablet/tablet_list"])
 )
 
 /// The copy of the list whose replica is `causalReplica(n)`, started.
