@@ -40,7 +40,7 @@ const COMPONENTS: [&str; 6] = [
     "asker",
     "coordinator",
     "answerer",
-    "keeper",
+    "ptc_keeper",
     "idler",
     "param_asker",
 ];
@@ -264,7 +264,7 @@ fn the_statements_the_send_and_the_ptc_go_through_the_runtime() {
     ] {
         assert!(coordinator.contains(needle), "coordinator holds `{needle}`");
     }
-    assert!(text("keeper")
+    assert!(text("ptc_keeper")
         .contains("this->testContext_->startTimer(\"patience\", ::SCE::Test::Duration{10000});"));
 }
 

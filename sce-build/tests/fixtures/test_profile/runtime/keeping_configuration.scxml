@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- docs/SCE_TEST_PROFILE.md §11.6: the keeper as the MTC and the idler it
+<!-- docs/SCE_TEST_PROFILE.md §11.6: ptc_keeper as the MTC and the idler it
      invokes as a PTC. The idler's port is mapped to a port of the system
      under test that never sends, since every port takes part in exactly one
      connect or map. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        version="1.0" sce:kind="test-configuration" name="keeping_configuration">
-  <sce:import kind="test-component" src="keeper.scxml" as="Keeper"/>
+  <sce:import kind="test-component" src="ptc_keeper.scxml" as="PtcKeeper"/>
   <sce:import kind="test-component" src="idler.scxml" as="Idler"/>
   <sce:import kind="test-port-type" src="exchange_port.scxml" as="ExchangePort"/>
-  <sce:mtc type="Keeper"/>
+  <sce:mtc type="PtcKeeper"/>
   <sce:ptc id="idler" type="Idler"/>
   <sce:system-port id="quiet" type="ExchangePort"/>
   <sce:map component="idler" port="peer" system-port="quiet"/>

@@ -28,7 +28,7 @@ import com.sce.generated.coordinator.CoordinatorComponent
 import com.sce.generated.idler.IdlerComponent
 import com.sce.generated.job_reply.JobReplyPayload
 import com.sce.generated.job_request.JobRequestPayload
-import com.sce.generated.keeper.KeeperComponent
+import com.sce.generated.ptc_keeper.PtcKeeperComponent
 import com.sce.runtime.test.ComponentMachine
 import com.sce.runtime.test.Configuration
 import com.sce.runtime.test.Duration
@@ -69,7 +69,7 @@ class ATestComponentRunsThroughItsDoorsTest {
         "asker" -> AskerComponent()
         "coordinator" -> CoordinatorComponent()
         "answerer" -> AnswererComponent()
-        "keeper" -> KeeperComponent()
+        "ptc_keeper" -> PtcKeeperComponent()
         "idler" -> IdlerComponent()
         else -> null
     }
@@ -255,10 +255,10 @@ class ATestComponentRunsThroughItsDoorsTest {
     @Test
     fun aTestComponentKillsAPtcOnLeavingTheStateThatInvokedIt() {
         val configuration = Configuration(
-            mtcType = "keeper",
+            mtcType = "ptc_keeper",
             ptcTypes = mapOf("idler" to "idler"),
             portsOfType = mapOf("idler" to listOf("peer")),
-            timersOfType = mapOf("keeper" to listOf("patience", "linger")),
+            timersOfType = mapOf("ptc_keeper" to listOf("patience", "linger")),
         )
         val result = run(configuration, Silent())
 

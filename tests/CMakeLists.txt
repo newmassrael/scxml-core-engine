@@ -807,7 +807,7 @@ foreach(_TEST_PROFILE_DOCUMENT job_request job_reply request_of any_request repl
         SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/test_profile/runtime/${_TEST_PROFILE_DOCUMENT}.scxml
     )
 endforeach()
-foreach(_TEST_COMPONENT asker coordinator answerer keeper idler param_asker)
+foreach(_TEST_COMPONENT asker coordinator answerer ptc_keeper idler param_asker)
     sce_add_state_machine(
         TARGET static_datamodel_generated_cpp_test
         SCXML_FILE ${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/test_profile/runtime/${_TEST_COMPONENT}.scxml

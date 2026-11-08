@@ -140,7 +140,7 @@ fn a_configuration_is_its_table_its_machines_and_what_they_read() {
 
     let keeping = unit("keeping_configuration", "KeepingConfiguration");
     for needle in [
-        "\"keeper\" to listOf(\"patience\", \"linger\"),",
+        "\"ptc_keeper\" to listOf(\"patience\", \"linger\"),",
         "\"idler\" to listOf(\"peer\"),",
         "com.sce.runtime.test.Endpoint(\"idler\", \"peer\") to \"quiet\",",
     ] {
@@ -151,7 +151,7 @@ fn a_configuration_is_its_table_its_machines_and_what_they_read() {
     }
     let ports = between(&keeping, "portsOfType =", "timersOfType =");
     assert!(
-        !ports.contains("\"keeper\""),
+        !ports.contains("\"ptc_keeper\""),
         "a type that declares no port has no entry: {ports}"
     );
 }
