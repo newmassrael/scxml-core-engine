@@ -1,0 +1,41 @@
+# docs/adr/0085, sections 3.2 and 3.3: the brake's `#motor` binding is a
+# causal SOME/IP pool over the instances [1, 2]. The view's motor serves
+# instance 2 (its `server:`), so the route's vector and its repairs go there,
+# while a change goes to the instance its `<param>` names. Consumed by
+# test_mesh_causal_injection.cpp (SCE_CAUSAL_SOMEIP_POOL), which drives the
+# generated router without starting the vsomeip application.
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      someip:
+        config: vsomeip_causal.json
+        application_name: brake_app
+    machines:
+      brake_causal_pool:
+        source: brake_causal_pool.scxml
+        bindings:
+          "#motor":
+            transport: someip
+            service: motor_control
+            protocol: udp
+            instances: [1, 2]
+            instance_from: unit
+            events:
+              "brake.activate":
+                method: activate
+              "mesh.causal_vector":
+                method: causal_vector
+            delivery: causal
+            group: { name: pair, view: [ecu1/brake_causal_pool, ecu1/motor] }
+      motor:
+        source: motor.scxml
+        server:
+          transport: someip
+          service: motor_control
+          instances: [2]
+          events:
+            "brake.activate":
+              method: activate
+            "mesh.causal_vector":
+              method: causal_vector

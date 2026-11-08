@@ -3636,10 +3636,15 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     # the engine; shm and local also read what the router releases. The
     # transports that need an SDK register beside their SDK's other tests.
     function(sce_mesh_causal_injection_test NAME)
-        cmake_parse_arguments(PARSE_ARGV 1 _MCI "" "KIND;DEFINE;RESOURCE_LOCK" "LIBS")
+        cmake_parse_arguments(PARSE_ARGV 1 _MCI "" "KIND;DEFINE;RESOURCE_LOCK" "LIBS;MACHINES")
         set(_OUT "${CMAKE_CURRENT_BINARY_DIR}/mesh_causal_${NAME}_generated")
+        # The sender and its local peer, unless the fixture names its own.
+        set(_MACHINES brake motor)
+        if(_MCI_MACHINES)
+            set(_MACHINES ${_MCI_MACHINES})
+        endif()
         sce_mesh_fixture_generations(_MCI_HEADERS
-            OUTPUT_DIR "${_OUT}" MACHINES brake motor
+            OUTPUT_DIR "${_OUT}" MACHINES ${_MACHINES}
             DEPLOY "${MESH_TEST_DIR}/deploy_causal_${NAME}.yaml"
             LABEL "Mesh causal (${NAME})")
         add_executable(mesh_causal_${NAME}_test
@@ -5660,6 +5665,10 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         # on the method `vsomeip_causal.json` declares for it; hermetic (the
         # application is created, never started).
         sce_mesh_causal_injection_test(someip KIND someip LIBS vsomeip3)
+        # The same over a SOME/IP pool: the vector goes to the instance the
+        # view's motor serves, a change to the instance its `<param>` names.
+        sce_mesh_causal_injection_test(someip_pool KIND someip LIBS vsomeip3
+            MACHINES brake_causal_pool DEFINE SCE_CAUSAL_SOMEIP_POOL)
 
         # ── Session C: SOME/IP multi-pattern compile verification ─────
         # Exercises all 4 SOME/IP capability categories (FireForget,
