@@ -31,4 +31,4 @@ classifiers = [
 ]
 
 [tool.setuptools]
-packages = ["sce_runtime", "sce_runtime.scripting"]
+packages = ["sce_runtime", "sce_runtime.scripting", "sce_runtime.testprofile"]
