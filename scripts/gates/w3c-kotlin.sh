@@ -937,7 +937,14 @@ sce_gate_step "committed tree unchanged after ${#KOTLIN_ENGINE_PAIRS[@]} engine/
 #   - its `-Xmx` and its GC log path are its own, and the Kotlin plugin reuses a
 #     daemon only when the JVM arguments match;
 #   - `runFilesPath` is a directory of its own, so no daemon started elsewhere
-#     can be found;
+#     can be found. It is a SYSTEM property, `-Dkotlin.daemon.options`: the
+#     Kotlin plugin reads the daemon's options from the JVM's system properties
+#     and reads only `kotlin.daemon.jvmargs` and the fallback strategy from
+#     Gradle properties, so given as `-P` it reached nothing, the probe looked in
+#     the default directory, found the daemon the rows had left there, which has
+#     at least the probe's heap and so counts as compatible, and compiled in it:
+#     no JVM started, no GC log was written, and the run was refused for it
+#     (hosted runs of this gate, 2026-11-07 on);
 #   - its GC log is removed before and must exist after: only a JVM started with
 #     this run's log path writes it. The same refusal covers the plugin falling
 #     back to compiling inside the Gradle daemon, which
@@ -993,7 +1000,7 @@ probe_status=0
 ./gradlew --console=plain :sce-kotlin-tests:compileKotlin --rerun --no-build-cache \
     "$GRADLE_OBSERVED" \
     "-Pkotlin.daemon.jvmargs=$PROBE_JVMARGS $PROBE_GC_FLAG" \
-    "-Pkotlin.daemon.options=runFilesPath=$PROBE_RUN_FILES,autoshutdownIdleSeconds=60" \
+    "-Dkotlin.daemon.options=runFilesPath=$PROBE_RUN_FILES,autoshutdownIdleSeconds=60" \
     -Pkotlin.daemon.useFallbackStrategy=false \
     >"$LOG/kotlin-headroom.log" 2>&1 || probe_status=$?
 stop_probe_daemon
