@@ -60,6 +60,26 @@ void every_head_is_written_in_its_shortest_form() {
     CHECK(written([](auto &w) { return cbor::write_bytes(w, Bytes({1, 2})); }) == Bytes({0x42, 1, 2}), "bytes");
     CHECK(written([](auto &w) { return cbor::write_bool(w, true); }) == Bytes({0xf5}), "true");
     CHECK(written([](auto &w) { return cbor::write_map_head(w, 2); }) == Bytes({0xa2}), "map head");
+    CHECK(written([](auto &w) { return cbor::write_array_head(w, 2); }) == Bytes({0x82}), "array head");
+    CHECK(written([](auto &w) { return cbor::write_array_head(w, 24); }) == Bytes({0x98, 0x18}), "array head 24");
+    // A record's key is written from a literal, as the generated codec writes it.
+    CHECK(written([](auto &w) { return cbor::write_text(w, "seq"); }) == Bytes({0x63, 's', 'e', 'q'}), "key");
+}
+
+void an_array_head_is_read_as_its_count_and_no_other_item_is() {
+    const Bytes three{0x83};
+    auto c = cursor_over(three);
+    CHECK(cbor::read_array_len(c) == std::optional<std::uint64_t>(3), "an array of three");
+    const Bytes wide{0x98, 0x18};
+    auto d = cursor_over(wide);
+    CHECK(cbor::read_array_len(d) == std::optional<std::uint64_t>(24), "an array of 24");
+    // An indefinite-length array, and a map where an array stands.
+    const Bytes indefinite{0x9f};
+    auto i = cursor_over(indefinite);
+    CHECK(!cbor::read_array_len(i).has_value(), "indefinite-length array");
+    const Bytes map{0xa1};
+    auto m = cursor_over(map);
+    CHECK(!cbor::read_array_len(m).has_value(), "a map is no array");
 }
 
 void a_head_is_read_in_any_valid_length() {
@@ -115,6 +135,7 @@ void an_unknown_value_is_skipped_whole_and_a_deep_one_refused() {
 int main() {
     every_head_is_written_in_its_shortest_form();
     a_head_is_read_in_any_valid_length();
+    an_array_head_is_read_as_its_count_and_no_other_item_is();
     what_the_codec_cannot_read_is_refused();
     an_unknown_value_is_skipped_whole_and_a_deep_one_refused();
     if (failures != 0) {

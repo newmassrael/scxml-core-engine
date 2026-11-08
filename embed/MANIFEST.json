@@ -3,7 +3,7 @@
   "embed_version": "9a037f1",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 571,
+  "symbol_count": 573,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -3310,6 +3310,12 @@
     {
       "header": "sce/forge/cbor.h",
       "kind": "function",
+      "name": "SCE::Forge::Cbor::read_array_len",
+      "signature": "std::optional<std::uint64_t> SCE::Forge::Cbor::read_array_len(SceCursor &) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
       "name": "SCE::Forge::Cbor::read_bool",
       "signature": "std::optional<bool> SCE::Forge::Cbor::read_bool(SceCursor &) noexcept"
     },
@@ -3360,6 +3366,12 @@
       "kind": "function",
       "name": "SCE::Forge::Cbor::skip",
       "signature": "bool SCE::Forge::Cbor::skip(SceCursor &) noexcept"
+    },
+    {
+      "header": "sce/forge/cbor.h",
+      "kind": "function",
+      "name": "SCE::Forge::Cbor::write_array_head",
+      "signature": "std::optional<CodecError> SCE::Forge::Cbor::write_array_head(SceSink &, std::uint64_t) noexcept"
     },
     {
       "header": "sce/forge/cbor.h",

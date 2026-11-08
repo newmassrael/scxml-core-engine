@@ -57,7 +57,7 @@ pub fn lowers_record_list(lang: Language) -> bool {
     match lang {
         Language::Rust => true,
         Language::Kotlin => true,
-        Language::Cpp => false,
+        Language::Cpp => true,
         Language::Go => true,
         Language::Python => true,
         Language::C11 => true,
@@ -751,11 +751,22 @@ fn render_cpp(
 ) -> Result<String, ForgeError> {
     let l = LangCtx::new(Language::Cpp, imports);
     // Owned values, as every C++ codec holds them: a text string is a
-    // `std::string` and a byte string a `std::vector<uint8_t>`.
-    let mut ctx = common_context(&l, m, imports, |e| l.type_name(leaf(e)).into_owned())?;
+    // `std::string` and a byte string a `std::vector<uint8_t>`. A list of
+    // records is a `std::vector` of the schema's payload, which carries no
+    // bound: the encode refuses a count past it.
+    let mut ctx = common_context(&l, m, imports, |e| match e.leaf_type() {
+        Some(present) => l.type_name(present).into_owned(),
+        None => format!("std::vector<{}>", record_type_of(&l, imports, e)),
+    })?;
+    // Each field of a record as the schema's C++ unit holds it: a text in a
+    // `std::string`, a byte string in a `std::vector<uint8_t>`.
+    insert_cbor_records(&l, m, imports, &mut ctx, &|ty| {
+        scalar_record_field_type(&l, ty)
+    })?;
     // docs/adr/0081 step 4: a map whose plan the C++ printer lowers is printed
     // from it, its entries presented through accessors and encoded over any
-    // source; any other keeps the template's struct whole.
+    // source, a list of records within its bound as a view of the schema's
+    // payload; any other keeps the template's struct whole.
     if let Some(printed) = crate::forge::generator::cpp_cbor_printed(m, imports) {
         ctx.insert("cpp_source".into(), printed.into());
     }
@@ -773,8 +784,8 @@ fn render_cpp(
                 l.codec_optional_of(&value_type)
             }
             .into();
-            entry["init"] = match leaf(e) {
-                SceType::Enum(r) if e.is_required() => l.enum_default_expr(&r.alias),
+            entry["init"] = match e.leaf_type() {
+                Some(SceType::Enum(r)) if e.is_required() => l.enum_default_expr(&r.alias),
                 _ => String::new(),
             }
             .into();

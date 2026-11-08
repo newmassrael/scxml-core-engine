@@ -4,7 +4,9 @@
 // sce_forge_runtime — the CBOR (RFC 8949) items a `sce:encoding="cbor"`
 // codec reads and writes (SCE_FORGE.md §4.6.1): one definite-length map
 // whose keys are small unsigned integers and whose values are unsigned
-// integers, booleans, text strings and byte strings.
+// integers, booleans, text strings and byte strings, or a definite-length
+// array of maps, each a record keyed by its fields' ids as text
+// (docs/adr/0086, section 9.2).
 //
 // Mirrors `backends/rust/forge-runtime/src/cbor.rs`, rule for rule. A
 // generated codec calls these; it spells no CBOR of its own.
@@ -40,6 +42,8 @@ inline constexpr std::uint8_t kMajorUnsigned = 0;
 inline constexpr std::uint8_t kMajorBytes = 2;
 /// Major type 3, a UTF-8 text string.
 inline constexpr std::uint8_t kMajorText = 3;
+/// Major type 4, an array.
+inline constexpr std::uint8_t kMajorArray = 4;
 /// Major type 5, a map.
 inline constexpr std::uint8_t kMajorMap = 5;
 /// Major type 7, simple values (`false` = 20, `true` = 21).
@@ -91,7 +95,7 @@ inline constexpr std::uint32_t kMaxSkipDepth = 16;
 }
 
 /// Write a text string, viewed where it lives: a `std::string` and a printed
-/// codec's `Text` alike.
+/// codec's `Text` alike, as an entry's value, or the key of a record's field.
 [[nodiscard]] inline std::optional<CodecError> write_text(SceSink &w, std::string_view value) noexcept {
     if (auto e = write_head(w, kMajorText, value.size())) {
         return e;
@@ -106,6 +110,12 @@ inline constexpr std::uint32_t kMaxSkipDepth = 16;
         return e;
     }
     return w.write_bytes(value.data(), value.size());
+}
+
+/// Write the head of a definite-length array of `items` items: a list of
+/// records an entry holds (docs/adr/0086, section 9.2).
+[[nodiscard]] inline std::optional<CodecError> write_array_head(SceSink &w, std::uint64_t items) noexcept {
+    return write_head(w, kMajorArray, items);
 }
 
 /// Write the head of a definite-length map of `entries` entries.
@@ -255,6 +265,12 @@ read_bytes(SceCursor &c, std::optional<std::uint64_t> max_size) noexcept {
         return std::nullopt;
     }
     return std::vector<std::uint8_t>(p, p + static_cast<std::size_t>(*len));
+}
+
+/// Read the head of a definite-length array: how many items follow. An
+/// indefinite length is refused, as a map's is.
+[[nodiscard]] inline std::optional<std::uint64_t> read_array_len(SceCursor &c) noexcept {
+    return detail::expect(c, kMajorArray);
 }
 
 /// Read the head of a definite-length map: how many entries follow.
