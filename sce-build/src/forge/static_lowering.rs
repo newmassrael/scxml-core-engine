@@ -2258,11 +2258,22 @@ pub trait StaticTarget {
     /// docs/SCE_TEST_PROFILE.md §4.2 (P2), §12.3: the guard of a branch whose
     /// lowered `cond` is `cond` and whose match on the round's snapshot is
     /// `matched` ([`Self::snapshot_match`]): the `cond` first, so a `cond` that
-    /// is false never asks the snapshot. C's `&&` by default, the conjunction
-    /// of every target whose guards are spelled as C's are; a target whose
-    /// conjunction is spelled otherwise answers its own.
-    fn cond_then_match(&self, cond: &str, matched: &str) -> String {
+    /// is false never asks the snapshot. `cond_fails` is whether the `cond` can
+    /// fail ([`crate::model::Transition::native_guard_fails`]), which a target
+    /// whose failing condition is the head of its `if` rather than an
+    /// expression ([`Self::receiving_condition`]) reads. C's `&&` by default,
+    /// the conjunction of every target whose guards are expressions spelled as
+    /// C's are; a target whose conjunction is spelled otherwise answers its own.
+    fn cond_then_match(&self, cond: &str, _cond_fails: bool, matched: &str) -> String {
         format!("({cond}) && ({matched})")
+    }
+    /// docs/SCE_TEST_PROFILE.md §12.3: the definitions the matches this target
+    /// has spelled ([`Self::snapshot_match`]) call, taken once the walk is done,
+    /// for a target that has no expression which binds a template's arguments
+    /// to its `match`: C, which has no closure, calls a function of its own
+    /// for each branch. Empty for every target whose match is one expression.
+    fn snapshot_match_defs(&self) -> Vec<String> {
+        Vec::new()
     }
     /// docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3: the statement taking
     /// `branch` runs before its content, which removes what the branch matched
@@ -2411,8 +2422,9 @@ fn kotlin_log_label(label: &str) -> String {
 
 /// The constant of the profile runtime's `Verdict` a document's verdict is, on
 /// a backend whose enum declares the variants of [`runtime_verdict`] under the
-/// same names in upper case: Kotlin's `com.sce.runtime.test.Verdict` and
-/// Python's `sce_runtime.testprofile.Verdict`.
+/// same names in upper case: Kotlin's `com.sce.runtime.test.Verdict`,
+/// Python's `sce_runtime.testprofile.Verdict` and C11's `sce_test_verdict_t`
+/// after its prefix (`SCE_TEST_VERDICT_PASS`, `sce/test/verdict.h`).
 fn upper_case_verdict(verdict: crate::test_component::Verdict) -> String {
     runtime_verdict(verdict).to_ascii_uppercase()
 }
@@ -7079,6 +7091,10 @@ pub fn lower(
             }
         }
     }
+    // docs/SCE_TEST_PROFILE.md §12.3: the functions the branches' matches call,
+    // for a target whose match binds a template's arguments in a function of
+    // its own rather than in the guard's expression.
+    adapter_defs.extend(target.snapshot_match_defs());
     // docs/SCE_TEST_PROFILE.md §12.3: the unit of each enum a template's
     // argument crosses into, and the unit of each template a branch matches
     // with or a send sends, whose `match` and `value` the machine calls.
@@ -8832,9 +8848,9 @@ fn cpp_test_template_namespace(unit: &str) -> String {
 /// name on every backend that runs a test component: C++'s `SCE::Test::Verdict`
 /// (`sce/include/test/Verdict.h`) and Rust's `sce_rust_runtime::test::Verdict`
 /// (`backends/rust/runtime/src/test/verdict.rs`) declare the same variants,
-/// Kotlin's and Python's the same names in upper case ([`upper_case_verdict`]),
-/// and Go's `testprofile.Verdict` the same names after the type's
-/// (`VerdictPass`).
+/// Kotlin's, Python's and C11's the same names in upper case
+/// ([`upper_case_verdict`]), and Go's `testprofile.Verdict` the same names after
+/// the type's (`VerdictPass`).
 fn runtime_verdict(verdict: crate::test_component::Verdict) -> &'static str {
     match verdict {
         crate::test_component::Verdict::Pass => "Pass",
@@ -12833,8 +12849,9 @@ impl StaticTarget for PythonTarget {
         })
     }
     // Python's conjunction is `and`, whose precedence below a comparison's is
-    // C's `&&`'s, so the parentheses are the ones C writes.
-    fn cond_then_match(&self, cond: &str, matched: &str) -> String {
+    // C's `&&`'s, so the parentheses are the ones C writes. A condition that
+    // can fail is an expression here as any other is.
+    fn cond_then_match(&self, cond: &str, _cond_fails: bool, matched: &str) -> String {
         format!("({cond}) and ({matched})")
     }
     // A message a receive branch's content reads is copied, field by field,
@@ -13217,6 +13234,17 @@ pub struct CTarget {
     /// holding one enum — whatever they call it — share one declaration in a
     /// program that includes both.
     enums: std::collections::BTreeMap<String, String>,
+    /// The symbol every name of the machine starts with, the suite prefix
+    /// included: what the machine's type is named by, which a function of its
+    /// own takes ([`Self::match_defs`]).
+    machine: String,
+    /// docs/SCE_TEST_PROFILE.md §12.3: the function each receive branch of a
+    /// test component with a template matches through, which binds the
+    /// template's arguments to its `match`, as C has no closure to bind them
+    /// in ([`StaticTarget::snapshot_match`]); taken by
+    /// [`StaticTarget::snapshot_match_defs`] once the walk is done. Each is
+    /// named by its place in this list.
+    match_defs: std::sync::Mutex<Vec<String>>,
 }
 
 /// What lowers the arguments of a host action ([`target_for`]): the one thing a
@@ -13226,7 +13254,11 @@ pub struct CTarget {
 static C_ARGUMENTS: CTarget = CTarget::arguments();
 
 impl CTarget {
-    fn new(stem: &str, held_enums: &std::collections::BTreeMap<String, EnumModel>) -> Self {
+    fn new(
+        stem: &str,
+        machine: &str,
+        held_enums: &std::collections::BTreeMap<String, EnumModel>,
+    ) -> Self {
         Self {
             stem: stem.to_string(),
             conditions: std::sync::atomic::AtomicU32::new(0),
@@ -13235,6 +13267,8 @@ impl CTarget {
                 .iter()
                 .map(|(alias, model)| (alias.clone(), model.name.clone()))
                 .collect(),
+            machine: machine.to_string(),
+            match_defs: std::sync::Mutex::new(Vec::new()),
         }
     }
 
@@ -13244,7 +13278,36 @@ impl CTarget {
             conditions: std::sync::atomic::AtomicU32::new(0),
             loops: std::sync::atomic::AtomicU32::new(0),
             enums: std::collections::BTreeMap::new(),
+            machine: String::new(),
+            match_defs: std::sync::Mutex::new(Vec::new()),
         }
+    }
+
+    /// docs/SCE_TEST_PROFILE.md §12.3: the defined function through which a
+    /// receive branch matches the value the snapshot saw with the template
+    /// `template`, given `args`, the template's arguments as the machine holds
+    /// them: the `sce_test_matches_fn` the runtime calls
+    /// (`sce_test_receives`, `sce/test/test_case_run.h`), handed the machine
+    /// as its closure, through which the arguments are read when the match is
+    /// asked. Its name, which the guard passes.
+    fn match_def(&self, template: &TemplateRef, args: &[String]) -> String {
+        let mut defs = self
+            .match_defs
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let name = format!("{}_test_matches_{}", self.machine, defs.len() + 1);
+        let unit = c_test_template(&template.unit);
+        let bound: String = args.iter().map(|arg| format!(", {arg}")).collect();
+        let machine = &self.machine;
+        defs.push(format!(
+            "/* docs/SCE_TEST_PROFILE.md §12.3: whether the value the snapshot saw matches the \
+             template\n   `{unit}`, given its arguments as this machine holds them now. */\n\
+             SCE_SM_FN static bool {name}(const void *value, const void *closure) {{\n    \
+             const {machine}_t *sm = (const {machine}_t *)closure;\n    \
+             (void)sm;\n    \
+             return {unit}_matches((const {unit}_value_t *)value{bound});\n}}"
+        ));
+        name
     }
 
     /// The type of the optional value of a record of the schema `alias` that the
@@ -13272,6 +13335,10 @@ impl CTarget {
                 // ([`crate::forge::native_action`]).
                 "assign" | "log" | "if" | "raise" | "native_action" | "sce_append"
                 | "sce_clear" | "foreach" | "cancel" | "sce_lift" | "sce_render" => {}
+                // A test component's statements are calls on its runtime
+                // context (docs/SCE_TEST_PROFILE.md §12.3,
+                // [`StaticTarget::test_statement`]).
+                "sce_setverdict" | "sce_start_timer" | "sce_stop_timer" => {}
                 // The pairs of a `<send>`'s `<param>`s are written as the JSON
                 // object of the event's data from the machine's own fields, as a
                 // `<donedata>`'s are, and for a processor the host serves also
@@ -14634,51 +14701,12 @@ impl StaticTarget for CTarget {
     fn assign_field(&self, target: &str, field: &str, value: &str) -> String {
         format!("{target}.{field} = {value};")
     }
-    // To stderr, as the machine's other `<log>` is. The value is widened to the
-    // type its conversion names, because C has no `fmt` that picks one: a
-    // signed integer to `long long`, an unsigned one to `unsigned long long`, a
-    // bool to its word. The label is an argument, not part of the format, so a
-    // `%` in it is text.
+    // To stderr, as the machine's other `<log>` is. The text is the one every
+    // log of this target writes ([`c_logged`]).
     fn log(&self, label: &str, value: &str, ty: InferredType) -> String {
-        // An optional value is logged as its present value, and as `null` where
-        // it is absent, as on every engine (docs/adr/0055, section 2).
-        if let InferredType::Optional(elem) = ty {
-            let held = format!("({value})");
-            let present = self.log(
-                label,
-                &crate::forge::expr::c_present_read(&held, ty),
-                elem.present(),
-            );
-            let absent = if label.is_empty() {
-                "(void)fprintf(stderr, \"null\\n\");".to_string()
-            } else {
-                format!(
-                    "(void)fprintf(stderr, \"%s: null\\n\", \"{}\");",
-                    filters::escape_c(label.to_string())
-                )
-            };
-            return format!("if ({held}.present) {{ {present} }} else {{ {absent} }}");
-        }
-        let (conversion, argument) = match ty {
-            InferredType::Bool => ("%s", format!("({value}) ? \"true\" : \"false\"")),
-            InferredType::Str => ("%s", value.to_string()),
-            InferredType::Int { signed: false, .. } => {
-                ("%llu", format!("(unsigned long long)({value})"))
-            }
-            InferredType::Float { .. } | InferredType::UntypedFloat => {
-                ("%g", format!("(double)({value})"))
-            }
-            // A signed integer, and an integer no context typed.
-            _ => ("%lld", format!("(long long)({value})")),
-        };
-        if label.is_empty() {
-            format!("(void)fprintf(stderr, \"{conversion}\\n\", {argument});")
-        } else {
-            format!(
-                "(void)fprintf(stderr, \"%s: {conversion}\\n\", \"{}\", {argument});",
-                filters::escape_c(label.to_string())
-            )
-        }
+        c_logged(label, value, ty, &|format, arguments| {
+            format!("(void)fprintf(stderr, \"{format}\\n\"{arguments});")
+        })
     }
     // The header's `sce_payload_lift` refuses what comes before a field is read,
     // and each field is read into a zeroed local record by the value reader of its
@@ -15214,6 +15242,316 @@ impl StaticTarget for CTarget {
             wire(&read)
         ))
     }
+    // The machine holds its copy of the component's runtime context
+    // ([`C_TEST_CONTEXT`]), which the component the runtime drives sets before
+    // the machine enters its initial configuration (`c/state_machine.c.jinja2`).
+    // A receive branch with a template asks the runtime whether the snapshot's
+    // head is a value of the template's type under its record's event and,
+    // through a function of the machine's own ([`CTarget::match_def`]), whether
+    // the template's `matches` holds of it given its arguments.
+    fn snapshot_match(&self, branch: &SnapshotBranch, args: &[String]) -> Option<String> {
+        Some(match branch {
+            SnapshotBranch::Receive {
+                port,
+                template: None,
+            } => format!(
+                "sce_test_context_snapshot_present({C_TEST_CONTEXT}, {})",
+                c_text(port)
+            ),
+            SnapshotBranch::Receive {
+                port,
+                template: Some(template),
+            } => {
+                let unit = c_test_template(&template.unit);
+                format!(
+                    "sce_test_receives({C_TEST_CONTEXT}, {}, {}, {unit}_value_type(), \
+                     sizeof({unit}_value_t), {}, sm)",
+                    c_text(port),
+                    c_text(&template.event),
+                    self.match_def(template, args)
+                )
+            }
+            SnapshotBranch::Timeout { timer } => {
+                format!(
+                    "sce_test_context_timed_out({C_TEST_CONTEXT}, {})",
+                    c_text(timer)
+                )
+            }
+            SnapshotBranch::Done { ptc } => {
+                format!("sce_test_context_done({C_TEST_CONTEXT}, {})", c_text(ptc))
+            }
+        })
+    }
+    // A condition that can fail is the head of its `if` here, `if (<verdict>)`
+    // ([`Self::receiving_condition`]), so the match is the `if` it opens, which
+    // the branch's block then follows: the `cond` is still asked first, and a
+    // `cond` that is false, or that failed, never asks the snapshot.
+    fn cond_then_match(&self, cond: &str, cond_fails: bool, matched: &str) -> String {
+        if cond_fails {
+            format!("{cond} if ({matched})")
+        } else {
+            format!("({cond}) && ({matched})")
+        }
+    }
+    fn snapshot_match_defs(&self) -> Vec<String> {
+        std::mem::take(
+            &mut *self
+                .match_defs
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        )
+    }
+    // The statements taking a branch stand first in the block of its content,
+    // so what they declare is in scope for the content and no longer. A receive
+    // branch removes the head of its port; one whose removal the run refuses
+    // ended the run with `error` (P13), and its content does not run. A message
+    // the content reads is copied, field by field, into the member of the
+    // machine's payload channel its record's event is held in, which the
+    // content reads `_event.data` through ([`Self::payload_accessor`]): the
+    // record's unit and the machine's channel are two declarations of one
+    // record. A number, a `bool`, an enum (the machine's type is the enum
+    // unit's, [`Self::enum_type`]) and an optional value of each, a text's
+    // among them, are held alike and assigned; a text is held by the unit in
+    // the buffer of its bound and by the channel as a pointer, so it is copied
+    // into the buffer the machine keeps for that field, whose size the build
+    // holds the bound to. A byte string the unit holds as a pointer with no
+    // length, so a message of a record with one is refused by name, as an
+    // optional one is. The guard matched the message the statement removes,
+    // so a value of another type is a defect of the runtime, which ends the
+    // block before the content reads anything.
+    fn take_branch(
+        &self,
+        _machine: &str,
+        branch: &SnapshotBranch,
+        payload: Option<&EntrySchema>,
+    ) -> Option<String> {
+        Some(match (branch, payload) {
+            (
+                SnapshotBranch::Receive {
+                    port,
+                    template: Some(template),
+                },
+                Some(schema),
+            ) => {
+                let unit = c_test_template(&template.unit);
+                let accessor = self.payload_accessor(&template.event);
+                let mut copies = String::new();
+                for f in &schema.fields {
+                    let id = &f.id;
+                    let read = format!(
+                        "{C_TEST_VALUE}->{}",
+                        crate::forge::generator::event_schema_field_ident(id, Language::C11)
+                    );
+                    match (&f.sce_type, f.sce_type.present_type()) {
+                        (_, SceType::Bytes) => return None,
+                        (EntryType::Scalar(_), SceType::String) => {
+                            let buffer = format!(
+                                "sm->{}",
+                                crate::forge::generator::c11_lifted_text(&template.event, id)
+                            );
+                            copies.push_str(&format!(
+                                " SCE_STATIC_ASSERT(sizeof({read}.data) <= sizeof({buffer}), \
+                                 \"the text `{id}` of `{event}` fits the buffer the machine \
+                                 keeps for it (SCE_MAX_DATA_LEN)\"); \
+                                 memcpy({buffer}, {read}.data, sizeof({read}.data)); \
+                                 {accessor}.{id} = {buffer};",
+                                event = filters::escape_c(template.event.clone())
+                            ));
+                        }
+                        _ => copies.push_str(&format!(" {accessor}.{id} = {read};")),
+                    }
+                }
+                format!(
+                    "sce_test_message_t {C_TEST_MESSAGE}; \
+                     if (!sce_test_context_receive({C_TEST_CONTEXT}, {}, &{C_TEST_MESSAGE})) \
+                     {{ return; }} \
+                     const {unit}_value_t *{C_TEST_VALUE} = (const {unit}_value_t *)\
+                     sce_test_message_value_as(&{C_TEST_MESSAGE}, {unit}_value_type(), \
+                     sizeof({unit}_value_t)); \
+                     if ({C_TEST_VALUE} == NULL) {{ return; }}{copies}",
+                    c_text(port)
+                )
+            }
+            (SnapshotBranch::Receive { port, .. }, _) => format!(
+                "if (!sce_test_context_receive({C_TEST_CONTEXT}, {}, NULL)) {{ return; }}",
+                c_text(port)
+            ),
+            (SnapshotBranch::Timeout { timer }, _) => format!(
+                "sce_test_context_timeout({C_TEST_CONTEXT}, {});",
+                c_text(timer)
+            ),
+            (SnapshotBranch::Done { ptc }, _) => format!(
+                "sce_test_context_done_taken({C_TEST_CONTEXT}, {});",
+                c_text(ptc)
+            ),
+        })
+    }
+    // A duration is whole microseconds (§3.3), the runtime's
+    // `sce_test_duration_t`, a signed 64-bit count: one past it has no value
+    // there. A verdict with no reason is set with the empty one, as the other
+    // runtimes set it.
+    fn test_statement(&self, statement: &TestStatement, reason: Option<&str>) -> Option<String> {
+        Some(match statement {
+            TestStatement::Setverdict { verdict, .. } => format!(
+                "sce_test_context_setverdict({C_TEST_CONTEXT}, SCE_TEST_VERDICT_{}, {});",
+                upper_case_verdict(*verdict),
+                reason.unwrap_or("\"\"")
+            ),
+            TestStatement::StartTimer { timer, duration } => {
+                let micros =
+                    crate::forge::test_profile::duration_us(duration.as_deref()?.trim()).ok()?;
+                let micros = i64::try_from(micros).ok()?;
+                format!(
+                    "sce_test_context_start_timer({C_TEST_CONTEXT}, {}, INT64_C({micros}));",
+                    c_text(timer)
+                )
+            }
+            TestStatement::StopTimer { timer } => format!(
+                "sce_test_context_stop_timer({C_TEST_CONTEXT}, {});",
+                c_text(timer)
+            ),
+        })
+    }
+    // The label, a colon and the value as the engine's `<log>` writes it
+    // ([`Self::log`], [`c_logged`]), written into a buffer one byte longer than
+    // a line of the test log holds, so a text the log cannot hold reaches the
+    // run whole enough to be refused there (`log_lost`) and is never cut here.
+    fn test_log(&self, label: &str, value: Option<&str>, ty: InferredType) -> Option<String> {
+        Some(match value {
+            None => format!("sce_test_context_log({C_TEST_CONTEXT}, {});", c_text(label)),
+            Some(value) => c_logged(label, value, ty, &|format, arguments| {
+                format!(
+                    "{{ char sce_log_[SCE_TEST_MAX_LOG_DETAIL + 1u]; \
+                     (void)snprintf(sce_log_, sizeof(sce_log_), \"{format}\"{arguments}); \
+                     sce_test_context_log({C_TEST_CONTEXT}, sce_log_); }}"
+                )
+            }),
+        })
+    }
+    // A variable's text is read as its buffer's text (`<field>.data`,
+    // [`Self::variable_ref`]), and the unit of a template takes the buffer
+    // itself, of the bound the parameter declares, which the argument's
+    // variable declares too (`test-profile/template-args`): the buffer is
+    // handed over. Every other value is taken as it is held.
+    fn template_argument(&self, value: &str, ty: InferredType) -> String {
+        match ty {
+            InferredType::Str => value.strip_suffix(".data").unwrap_or(value).to_string(),
+            _ => value.to_string(),
+        }
+    }
+    // C has no expression that holds a value behind the pointer a host value
+    // lends (`sce_host_value_t`), so the send's value is the statements that
+    // hold the specific template's `value` in a local of the block the request
+    // stands in and lend it to the request (`_host_req`), under the name every
+    // template of its type gives it (`<unit>_value_type`), which the run copies
+    // before the processor returns (`c/state_machine.c.jinja2`).
+    fn test_message(&self, message: &TemplateRef, args: &[String]) -> Option<String> {
+        let unit = c_test_template(&message.unit);
+        Some(format!(
+            "const {unit}_value_t {C_TEST_VALUE} = {unit}_value({}); \
+             _host_req.value = sce_host_value_of({unit}_value_type(), &{C_TEST_VALUE}, \
+             sizeof({C_TEST_VALUE}));",
+            args.join(", ")
+        ))
+    }
+    // The unit's header, included as the header of every unit a machine names is.
+    fn test_template_import(&self, unit: &str) -> Option<String> {
+        Some(c_test_template_identity(unit).include_stmt)
+    }
+}
+
+/// How a guard or a statement of a test component's C11 machine reaches the
+/// component's runtime context (docs/SCE_TEST_PROFILE.md §12.3): the machine's
+/// own copy of the handle the run started the component with, which the
+/// component the runtime drives sets before the machine enters its initial
+/// configuration (`c/state_machine.c.jinja2`). Every door of the runtime takes
+/// it by pointer.
+const C_TEST_CONTEXT: &str = "&sm->test_context";
+
+/// The local a receive branch's statement removes its message into, which
+/// stands in the block of the branch's content. Under the trailing underscore
+/// every name the generator declares beside an author's carries.
+const C_TEST_MESSAGE: &str = "sce_test_message_";
+
+/// The local that holds a test template's value: the message a receive branch
+/// took, as its record, and the value a send lends its request.
+const C_TEST_VALUE: &str = "sce_test_value_";
+
+/// `text` as a C string literal.
+fn c_text(text: &str) -> String {
+    format!("\"{}\"", filters::escape_c(text.to_string()))
+}
+
+/// How the C11 unit of the test template named `unit` is reached: its header,
+/// and the prefix every declaration of it carries
+/// ([`crate::forge::generator::forge_import_identity`]), as of every unit a
+/// machine names.
+fn c_test_template_identity(unit: &str) -> crate::forge::generator::ImportIdentity {
+    crate::forge::generator::forge_import_identity(
+        unit,
+        &Language::C11,
+        false,
+        &crate::ForgeCompileOptions::default(),
+    )
+}
+
+/// The prefix of every declaration of the C11 unit of the test template named
+/// `unit` (`<prefix>_value_t`, `<prefix>_value_type`, `<prefix>_matches`,
+/// `<prefix>_value`), which the unit's own template spells from the same name.
+fn c_test_template(unit: &str) -> String {
+    c_test_template_identity(unit).namespace
+}
+
+/// The C statement that writes `label` and `value`, of type `ty`, as the
+/// engine's `<log>` shows them, through `write`, handed the `printf` format and
+/// its arguments, each with the comma that leads it. The value is widened to
+/// the type its conversion names, because C has no `fmt` that picks one: a
+/// signed integer to `long long`, an unsigned one to `unsigned long long`, a
+/// bool to its word. The label is an argument, not part of the format, so a `%`
+/// in it is text. An optional value is written as its present value, and as
+/// `null` where it is absent, as on every engine (docs/adr/0055, section 2).
+/// One text for the engine's `<log>` and for a test component's
+/// ([`StaticTarget::test_log`]).
+fn c_logged(
+    label: &str,
+    value: &str,
+    ty: InferredType,
+    write: &dyn Fn(&str, &str) -> String,
+) -> String {
+    let labelled = |format: &str, arguments: &str| {
+        if label.is_empty() {
+            write(format, arguments)
+        } else {
+            write(
+                &format!("%s: {format}"),
+                &format!(", \"{}\"{arguments}", filters::escape_c(label.to_string())),
+            )
+        }
+    };
+    if let InferredType::Optional(elem) = ty {
+        let held = format!("({value})");
+        let present = c_logged(
+            label,
+            &crate::forge::expr::c_present_read(&held, ty),
+            elem.present(),
+            write,
+        );
+        let absent = labelled("null", "");
+        return format!("if ({held}.present) {{ {present} }} else {{ {absent} }}");
+    }
+    let (conversion, argument) = match ty {
+        InferredType::Bool => ("%s", format!("({value}) ? \"true\" : \"false\"")),
+        InferredType::Str => ("%s", value.to_string()),
+        InferredType::Int { signed: false, .. } => {
+            ("%llu", format!("(unsigned long long)({value})"))
+        }
+        InferredType::Float { .. } | InferredType::UntypedFloat => {
+            ("%g", format!("(double)({value})"))
+        }
+        // A signed integer, and an integer no context typed.
+        _ => ("%lld", format!("(long long)({value})")),
+    };
+    labelled(conversion, &format!(", {argument}"))
 }
 
 /// The line a C11 unit that holds an optional value (docs/adr/0055) includes the
@@ -15422,8 +15760,9 @@ pub fn lower_c11(
     csym_prefix: &str,
 ) -> Result<StaticLowering, GenerateError> {
     let stem = model.name.clone();
-    let target = CTarget::new(&stem, &model.held_enums());
-    lower(model, &format!("{csym_prefix}{stem}"), &target)
+    let machine = format!("{csym_prefix}{stem}");
+    let target = CTarget::new(&stem, &machine, &model.held_enums());
+    lower(model, &machine, &target)
 }
 
 /// Swift: a variable is a stored property of the machine's policy class, set by
@@ -17055,7 +17394,11 @@ fn lower_snapshot_branch(
     transition.native_guard = if transition.native_guard.is_empty() {
         matched
     } else {
-        target.cond_then_match(&transition.native_guard, &matched)
+        target.cond_then_match(
+            &transition.native_guard,
+            transition.native_guard_fails,
+            &matched,
+        )
     };
     // The guard is the lowered one from here on, whatever arm a template reads
     // a pure `In()` condition through.
@@ -17661,9 +18004,12 @@ fn lower_action(
                     return Err(unspelled());
                 }
                 rewrites.logs_a_value.set(true);
+                // A value that can fail is held in a local of its own type
+                // first, as the engine's `<log>` holds it (below), which a
+                // target that declares the local's type (C) reads.
                 (action.native_code, action.native_fails) = statement(
                     &value,
-                    InferredType::Unknown,
+                    ty,
                     &|v| target.test_log(&label, Some(v), ty).unwrap_or_default(),
                     "<log>".to_string(),
                 );

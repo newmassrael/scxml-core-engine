@@ -112,6 +112,13 @@
    is the deployment's, made at build time, and not the document's. */
 #include "sce/inbox.h"
 
+{% if model.test_component %}
+/* docs/SCE_TEST_PROFILE.md §12.2, §12.3: the runtime that drives a test
+   component, whose context this machine keeps and whose doors its component
+   below goes through (backends/c/runtime/include/sce/test/test_case_run.h). */
+#include "sce/test/test_case_run.h"
+
+{% endif %}
 {% if has_native_duties %}
 /* docs/adr/0038: `sce_action_realization_t`, the first member of the host table
    of a machine that states a duty
@@ -753,6 +760,16 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
        already perform an act, so a vtable written after `_init` would arrive
        one act too late (and `_init` zeroes the struct anyway). */
     {{ native_actions_interface }} actions;
+{% endif %}
+{% if model.test_component %}
+    /* docs/SCE_TEST_PROFILE.md §12.3: the runtime context of the test
+       component this machine is, which its branches' guards read the round's
+       snapshot through and its statements call: the handle the run starts the
+       component with, kept by value. Set by the component the runtime drives
+       ({{ csym_prefix }}{{ model.name }}_component_t) once `_init` has cleared
+       the struct and before the initial configuration is entered, since the
+       initial state's `<onentry>` may already start a timer or set a verdict. */
+    sce_test_component_context_t test_context;
 {% endif %}
 {% if host_duty_children.any %}
     /* docs/adr/0038: whether the caller initialised this machine through
@@ -2319,6 +2336,34 @@ bool {{ csym_prefix }}{{ model.name }}_resume({{ csym_prefix }}{{ model.name }}_
    has (`SCE_MAX_SESSION_ID_LEN`), in which case the session keeps the id it was given. */
 bool {{ csym_prefix }}{{ model.name }}_bind_session_id({{ csym_prefix }}{{ model.name }}_t *sm, const char *parent_id,
                                        const char *invoke_id);
+
+{% endif %}
+{% if model.test_component %}
+/* ── The test component the profile's runtime drives (docs/SCE_TEST_PROFILE.md §12.3) ── */
+
+/* The test component `{{ model.name }}` as the run drives it: the machine above, unchanged, reached only
+   through the doors the engine already has. The machine's sends on a port leave through the test-port
+   processor and its PTCs through the test-component invoker, both registered on its context when the
+   component starts (docs/adr/0084), and each round's snapshot is the one external event every branch
+   is a transition on. The run never reports a PTC's completion to the engine: a done branch reads it
+   from the snapshot, so the engine cancels every PTC it started when the invoking state is exited,
+   which is P9's kill. One thread; the engine's clock takes no part, since a component sends nothing
+   delayed.
+
+   The storage is the caller's, the factory of machines (`sce_test_machine_factory_t`): it hands the
+   run a component of this type through `_component_make`, and the run hands it back through the
+   component's `release` when its component is removed or its run has ended. Nothing is allocated. */
+typedef struct {{ csym_prefix }}{{ model.name }}_component {
+    /* What the run drives: the first member, so the run's pointer is the component's. */
+    sce_test_component_machine_t base;
+    {{ csym_prefix }}{{ model.name }}_t machine;
+    /* A run holds the component, from `_component_make` until the run hands it back. */
+    bool held;
+} {{ csym_prefix }}{{ model.name }}_component_t;
+
+/* The component in `*component` for a run to drive, the machine it starts with its context: NULL when
+   a run still holds it. A component storage of static duration starts out free. */
+sce_test_component_machine_t *{{ csym_prefix }}{{ model.name }}_component_make({{ csym_prefix }}{{ model.name }}_component_t *component);
 
 {% endif %}
 /* ── Compile-time invariants ──────────────────────────────────────── */

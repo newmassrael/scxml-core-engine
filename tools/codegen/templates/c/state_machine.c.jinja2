@@ -1175,9 +1175,17 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
                    processed now, carried back out as a W3C child's send to
                    its parent carries it (§scxml-6.4.1). */
                 _host_req.invoke_id = sm->current_event_invoke_id;
+{% if action.native_message %}
+                /* docs/SCE_TEST_PROFILE.md §12.3: a test component's message is
+                   the value of its specific template, held in this block and lent
+                   to the test-port processor as a value and never as an encoding
+                   (docs/adr/0091, C2), which the run copies before it returns. */
+                {{ action.native_message }}
+{% else %}
                 /* Only a test-port send carries a value (docs/SCE_TEST_PROFILE.md
                    §12.3); this one's data is `event_data`. */
                 _host_req.value = sce_host_value_none();
+{% endif %}
 {% set host_delay_ms = action.delay_ms if (action.delay_ms is defined and action.delay_ms is not none and action.delay_ms > 0) else 0 %}
 {% set host_perform = csym_prefix ~ model.name ~ ('_perform_basic_http' if basic_http else '_perform_host_send') %}
 {% if action.delayexpr or host_delay_ms > 0 %}
@@ -3497,12 +3505,15 @@ SCE_SM_FN static void execute_exit_actions({{ csym_prefix }}{{ model.name }}_t *
 
    When no transition in the SM carries a body, the entire dispatch
    collapses to a stub so we keep one canonical signature across
-   fixtures. #}
+   fixtures. A transition carries a body when the document wrote content,
+   and a branch of a test component always does: the statement taking it,
+   which runs before what the document wrote (`native_prelude`,
+   docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3). #}
 {% set any_transition_actions = namespace(value=False) %}
 {% for state_id, state in model.states | dictsort %}
 {% if state.transitions %}
 {% for trans in state.transitions %}
-{% if trans.actions %}
+{% if trans.actions or trans.native_prelude %}
 {% set any_transition_actions.value = True %}
 {% endif %}
 {% endfor %}
@@ -3518,17 +3529,27 @@ SCE_SM_FN static void execute_transition_actions({{ csym_prefix }}{{ model.name 
     (void)sm;
     switch (source) {
     {% for state_id, state in model.states | dictsort %}
-    {% set state_has_actions = state.transitions and (state.transitions | selectattr('actions') | list | length > 0) %}
+    {% set state_has_actions = state.transitions and ((state.transitions | selectattr('actions') | list | length > 0) or (state.transitions | selectattr('native_prelude') | list | length > 0)) %}
     {% if state_has_actions %}
     case {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | to_c11_upper_ident }}:
         switch (index) {
         {% for trans in state.transitions %}
-        {% if trans.actions %}
+        {% if trans.actions or trans.native_prelude %}
         case {{ trans.transition_index }}: {  {{- annot.annotation_comment(trans, "c", "            ") }}
 {% if trans.source_location %}
             {{ sce_map.source_marker(trans.source_location, "c", stmt_level=true, symbol_state=trans.symbol_state_path, symbol_artifact=trans.symbol_artifact) | trim }}
 {% endif %}
             /* W3C SCXML 3.13: transition body for `<transition{% if trans.event %} event="{{ trans.event }}"{% endif %}{% if trans.target %} target="{{ trans.target }}"{% endif %}>` */
+{#  docs/SCE_TEST_PROFILE.md §4.4 (P4 step 1), §12.3: taking a branch of a test
+    component removes what it matched on the round's snapshot before its
+    content runs, and a message the content reads is its `_event.data`, held
+    in the payload channel's member of its record's event from here on
+    (`Transition::native_prelude`). What it declares stands in this block,
+    beside the content, and a removal the run refused ends the block. #}
+{% if trans.native_prelude %}
+            /* docs/SCE_TEST_PROFILE.md §12.3: taking the branch (P4 step 1). */
+            {{ trans.native_prelude }}
+{% endif %}
 {% if trans.content_reads_payload %}
             /* SCE Accepted Subset §2.15: this content reads the event's typed payload, so
                it runs only for a delivery that carried one. One that did not, or whose
@@ -3729,7 +3750,10 @@ SCE_SM_FN static bool first_enabled_transition({{ csym_prefix }}{{ model.name }}
     case {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_id | to_c11_upper_ident }}:
         {% for trans in state.transitions %}
         {{ emit_transition_match_check(trans) }} {
-        {% if trans.cond %}
+        {# A guard lowered with no `cond` written is a branch of a test
+           component's match on the round's snapshot (docs/SCE_TEST_PROFILE.md
+           §12.3), which takes the native arm below. #}
+        {% if trans.cond or trans.native_guard %}
         {% set native_guard_expr = trans.native_guard %}
         {% if trans.is_pure_in_predicate %}
             /* W3C SCXML 3.13 + 5.9.2: cond="{{ trans.cond }}" pure
@@ -3744,6 +3768,12 @@ SCE_SM_FN static bool first_enabled_transition({{ csym_prefix }}{{ model.name }}
                 {{ emit_transition_body(trans) }}
             }
         {% elif native_guard_expr %}
+{% if trans.native_prelude %}
+            /* docs/SCE_TEST_PROFILE.md §12.3: a branch of the test component,
+               guarded by its cond and then its match on the round's snapshot,
+               which the cond, asked first, keeps from being asked when it is
+               false (P2). */
+{% else %}
             /* W3C SCXML 3.13 + NL→IR Item C1 Path A:
                cond="{{ trans.cond }}" reads a typed
                `_event.data.<field>` of an EventSchema-imported event —
@@ -3759,6 +3789,7 @@ SCE_SM_FN static bool first_enabled_transition({{ csym_prefix }}{{ model.name }}
                enumerator test. One that can fail is the head of this `if`: it
                evaluates the guard, and a guard that could not be evaluated is
                false and raises `error.execution` (§scxml-5.9.1). */
+{% endif %}
 {% if trans.native_guard_fails %}
             {{ native_guard_expr | to_in_predicate_c11(csym_prefix ~ model.name, model.history_states | list) }} {
 {% else %}
@@ -5613,20 +5644,13 @@ SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_init_construct({{ csym_p
     return true;
 }
 
-SCE_SM_FN static {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_impl({{ csym_prefix }}{{ model.name }}_t *sm{% if model.needs_event_scheduler %},
-                                                       sce_clock_t clock{% endif %}{% if model.needs_script_engine %},
-                                                       const char *basic_http_access_uri{% endif %}{% if model.host_processor_types %},
-                                                       const sce_host_processor_registry_t *host_processors{% endif %}{% if model.host_invoker_types %},
-                                                       const sce_host_invoker_registry_t *host_invokers{% endif %}{% if has_native_actions %},
-                                                       const {{ native_actions_interface }} *actions{% endif %}{% if takes_simulated_host %},
-                                                       bool accept_simulated{% endif %}) {
-    if (!{{ csym_prefix }}{{ model.name }}_init_construct(sm, false{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, basic_http_access_uri{% endif %}{% if model.host_processor_types %}, host_processors{% endif %}{% if model.host_invoker_types %}, host_invokers{% endif %}{% if has_native_actions %}, actions{% endif %}{% if takes_simulated_host %}, accept_simulated{% endif %})) {
-{% if has_native_actions %}
-        return false;
-{% else %}
-        return;
-{% endif %}
-    }
+/* The entry half of `_init`, once `_init_construct` has built the session: the
+   initial configuration entered and its first macrostep completed. Apart from
+   the construction so that what a session is given between the two — the
+   runtime context of a test component (docs/SCE_TEST_PROFILE.md §12.3), which
+   the construction's clearing of the struct would erase — is in place before
+   the first `<onentry>` runs. */
+SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_init_enter({{ csym_prefix }}{{ model.name }}_t *sm) {
 {% if model.needs_event_scheduler %}
     /* §scxml-3.13: entering the initial configuration is one turn, and the
        `<onentry>` handlers it runs arm their `<send delay>`s against one
@@ -5653,6 +5677,23 @@ SCE_SM_FN static {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_impl({{ cs
 {% if model.needs_event_scheduler %}
     end_turn(sm, _turn_opened);
 {% endif %}
+}
+
+SCE_SM_FN static {{ init_rc }} {{ csym_prefix }}{{ model.name }}_init_impl({{ csym_prefix }}{{ model.name }}_t *sm{% if model.needs_event_scheduler %},
+                                                       sce_clock_t clock{% endif %}{% if model.needs_script_engine %},
+                                                       const char *basic_http_access_uri{% endif %}{% if model.host_processor_types %},
+                                                       const sce_host_processor_registry_t *host_processors{% endif %}{% if model.host_invoker_types %},
+                                                       const sce_host_invoker_registry_t *host_invokers{% endif %}{% if has_native_actions %},
+                                                       const {{ native_actions_interface }} *actions{% endif %}{% if takes_simulated_host %},
+                                                       bool accept_simulated{% endif %}) {
+    if (!{{ csym_prefix }}{{ model.name }}_init_construct(sm, false{% if model.needs_event_scheduler %}, clock{% endif %}{% if model.needs_script_engine %}, basic_http_access_uri{% endif %}{% if model.host_processor_types %}, host_processors{% endif %}{% if model.host_invoker_types %}, host_invokers{% endif %}{% if has_native_actions %}, actions{% endif %}{% if takes_simulated_host %}, accept_simulated{% endif %})) {
+{% if has_native_actions %}
+        return false;
+{% else %}
+        return;
+{% endif %}
+    }
+    {{ csym_prefix }}{{ model.name }}_init_enter(sm);
 {% if has_native_actions %}
     return true;
 {% endif %}
@@ -7371,3 +7412,114 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_deliver_link_{{ link | to_snake
 /* ── SCE Accepted Subset 2.12: typed host-run invoke interface ── */
 {{ host_invoker_defs }}
 {%- endif %}
+{% if model.test_component %}
+{% set P = csym_prefix ~ model.name %}
+{% set sends_on_ports = test_port_processor in (model.host_processor_types or []) %}
+{% set creates_ptcs = test_component_invoke_type in (model.host_invoker_types or []) %}
+
+/* ── The test component the profile's runtime drives (docs/SCE_TEST_PROFILE.md §12.3) ── */
+/* See `{{ P }}_component_t` in the header for what it is and how the run holds it. The machine is
+   reached only through the doors the engine already has: a host processor, a host invoker and an
+   external event. */
+{% if sends_on_ports %}
+
+/* P6: a send on a port is appended to the queue of the port it is connected to, or handed to the
+   system adapter where it is mapped, the value copied before this returns. A test-port send always
+   carries its template's value (`forge::static_lowering`, `StaticTarget::test_message`). */
+SCE_SM_FN static void {{ P }}_component_send(void *user_data, const sce_host_send_request_t *request,
+                                             sce_host_send_response_list_t *out) {
+    const {{ P }}_t *sm = (const {{ P }}_t *)user_data;
+    (void)out;
+    sce_test_context_send(&sm->test_context, request->target, request->event_name, request->value);
+}
+{% endif %}
+{% if creates_ptcs %}
+
+/* P9: the start of a PTC's invocation creates and starts it, and its cancel removes it, whether it is
+   still running or already done. The PTC is the one the configuration declares under the invocation's
+   id; the run reports nothing back, since a done branch reads the PTC's end from the snapshot. */
+SCE_SM_FN static void {{ P }}_component_invoke(void *user_data, const sce_host_invoke_event_t *event,
+                                               sce_host_invoke_response_t *out) {
+    const {{ P }}_t *sm = (const {{ P }}_t *)user_data;
+    (void)out;
+    if (event->phase == SCE_HOST_INVOKE_START) {
+        sce_test_context_create(&sm->test_context, event->invoke_id);
+    } else {
+        sce_test_context_kill(&sm->test_context, event->invoke_id);
+    }
+}
+{% endif %}
+
+/* The component's machine starts: its doors are given to the construction, which keeps them before
+   the first `<onentry>` runs, and the context is set on the machine the construction has just
+   cleared, before the initial configuration is entered (`_init_enter`). */
+SCE_SM_FN static void {{ P }}_component_start(sce_test_component_machine_t *self,
+                                              const sce_test_component_context_t *context) {
+    {{ P }}_t *sm = &(({{ P }}_component_t *)(void *)self)->machine;
+{% if sends_on_ports %}
+    sce_host_processor_registry_t processors;
+    memset(&processors, 0, sizeof(processors));
+    /* A registry of its own, empty, holds the one type, whose name fits a type's slot
+       (`SCE_MAX_ID_LEN`, asserted below). */
+    (void)sce_host_registry_register(&processors, "{{ test_port_processor | escape_c }}", {{ P }}_component_send, sm);
+{% endif %}
+{% if creates_ptcs %}
+    sce_host_invoker_registry_t invokers;
+    memset(&invokers, 0, sizeof(invokers));
+    (void)sce_host_invoker_register(&invokers, "{{ test_component_invoke_type | escape_c }}", {{ P }}_component_invoke, sm);
+{% endif %}
+    (void){{ P }}_init_construct(sm, false{% if model.needs_event_scheduler %}, sce_clock_monotonic(){% endif %}{% if model.needs_script_engine %}, NULL{% endif %}{% if model.host_processor_types %}, {% if sends_on_ports %}&processors{% else %}NULL{% endif %}{% endif %}{% if model.host_invoker_types %}, {% if creates_ptcs %}&invokers{% else %}NULL{% endif %}{% endif %});
+    sm->test_context = *context;
+    {{ P }}_init_enter(sm);
+}
+
+/* §3.2 step 3: the round's snapshot, on which the machine takes the first branch whose guard holds
+   (P3) and completes its macrostep (P4), or takes none and discards the event (§7). */
+SCE_SM_FN static void {{ P }}_component_deliver_snapshot(sce_test_component_machine_t *self) {
+    {{ P }}_t *sm = &(({{ P }}_component_t *)(void *)self)->machine;
+    {{ P }}_event_with_meta_t snapshot;
+    memset(&snapshot, 0, sizeof(snapshot));
+    snapshot.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ snapshot_event | to_c11_upper_ident }};
+    {{ P }}_raise_external(sm, &snapshot);
+    {{ P }}_step(sm);
+}
+
+/* P10: the machine entered a top-level `<final>`. */
+SCE_SM_FN static bool {{ P }}_component_terminated(const sce_test_component_machine_t *self) {
+    return {{ P }}_is_in_final_state(&((const {{ P }}_component_t *)(const void *)self)->machine);
+}
+
+/* The run is done with the component: its machine is torn down, and the storage is free for the
+   factory to hand out again. */
+SCE_SM_FN static void {{ P }}_component_release(sce_test_component_machine_t *self) {
+    {{ P }}_component_t *component = ({{ P }}_component_t *)(void *)self;
+    {{ P }}_destroy(&component->machine);
+    component->held = false;
+}
+
+static const sce_test_component_machine_vtable_t {{ P }}_component_vtable = {
+    .start = {{ P }}_component_start,
+    .deliver_snapshot = {{ P }}_component_deliver_snapshot,
+    .terminated = {{ P }}_component_terminated,
+    .release = {{ P }}_component_release,
+};
+
+SCE_SM_FN sce_test_component_machine_t *{{ P }}_component_make({{ P }}_component_t *component) {
+    if (component == NULL || component->held) {
+        return NULL;
+    }
+    component->base.vtable = &{{ P }}_component_vtable;
+    component->held = true;
+    return &component->base;
+}
+{% if sends_on_ports %}
+
+SCE_STATIC_ASSERT(sizeof("{{ test_port_processor | escape_c }}") <= (size_t)SCE_MAX_ID_LEN,
+                  "SCE_MAX_ID_LEN too small for the type of the test-port processor");
+{% endif %}
+{% if creates_ptcs %}
+
+SCE_STATIC_ASSERT(sizeof("{{ test_component_invoke_type | escape_c }}") <= (size_t)SCE_MAX_ID_LEN,
+                  "SCE_MAX_ID_LEN too small for the type of the test-component invoker");
+{% endif %}
+{% endif %}

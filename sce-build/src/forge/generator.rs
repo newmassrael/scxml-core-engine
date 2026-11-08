@@ -5522,6 +5522,15 @@ fn c11_event_token(event: &str) -> String {
     event.replace(['.', '-'], "_")
 }
 
+/// The member of a C11 machine that holds the text of the field `id` of the
+/// payload of `event`, which the payload channel's field points into: where the
+/// lift reads a delivery's text ([`build_c11_event_payload`]), and where a test
+/// component's receive branch copies the text of the message it took
+/// (`StaticTarget::take_branch`).
+pub(crate) fn c11_lifted_text(event: &str, id: &str) -> String {
+    format!("lifted_{}_{id}", c11_event_token(event).to_lowercase())
+}
+
 /// The C11 spelling of a typed record as the JSON its event or completion
 /// carries: the bounded locals that quote its text fields, and the `snprintf`
 /// format and arguments that assemble the object. `receiver` is a pointer to
@@ -6019,19 +6028,20 @@ pub fn build_c11_event_payload(
                     // it, so a text past it is an assignment that fails inside
                     // the transition and not a payload refused before one.
                     let cap = "SCE_MAX_DATA_LEN";
+                    let lifted = c11_lifted_text(event, id);
                     lift_storage.push_str(&format!(
                         "    /* NL\u{2192}IR Item C1 Path A: where `{event}`'s lifted `{id}` lives \
 (the payload\n       field is a borrowed `const char *`). */\n    \
-char lifted_{member}_{id}[{cap}];\n"
+char {lifted}[{cap}];\n"
                     ));
                     field_reads.push_str(&format!(
                         "    _refusal = sce_payload_read_text(&_fields, \"{id}\", \
-sm->lifted_{member}_{id},\n                                     \
-sizeof(sm->lifted_{member}_{id}));\n    \
+sm->{lifted},\n                                     \
+sizeof(sm->{lifted}));\n    \
 if (_refusal != NULL) {{\n        \
 snprintf(_message, _message_cap, \"`{event}` payload: '{id}' %s\", _refusal);\n        \
 return false;\n    }}\n    \
-out->{id} = sm->lifted_{member}_{id};\n"
+out->{id} = sm->{lifted};\n"
                     ));
                     String::new()
                 }

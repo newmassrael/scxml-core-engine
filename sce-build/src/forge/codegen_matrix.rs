@@ -360,9 +360,9 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
         ForgeKind::TestTemplate => lists(TEST_TEMPLATE_BACKENDS, lang),
         // docs/SCE_TEST_PROFILE.md §12.6, slices 4 and 6: a test component's
         // machine, driven by the profile's runtime through the doors of §12.3,
-        // lands one backend at a time, C++ first, then Rust, Kotlin, Go and
-        // Python. Which have landed is [`TEST_COMPONENT_BACKENDS`], the one list
-        // both this answer and [`awaits_runtime`] read.
+        // lands one backend at a time, C++ first, then Rust, Kotlin, Go, Python
+        // and C11. Which have landed is [`TEST_COMPONENT_BACKENDS`], the one
+        // list both this answer and [`awaits_runtime`] read.
         ForgeKind::TestComponent => lists(TEST_COMPONENT_BACKENDS, lang),
         // docs/SCE_TEST_PROFILE.md §12.6, slices 5 and 6: the tables of a
         // configuration, a test case and a suite, which the profile's runner
@@ -430,13 +430,15 @@ pub const TEST_TEMPLATE_BACKENDS: &[Language] = &[
 /// ([`TEST_SUITE_BACKENDS`]) refuses a component that declares a module
 /// parameter by name, since the value is the suite's
 /// ([`crate::test_component::snapshot::lower`]); it reads one in the change
-/// that joins it to that list, as C++, Rust, Kotlin, Go and Python do.
+/// that joins it to that list, as C++, Rust, Kotlin, Go and Python do. C11
+/// generates a component and refuses one that declares a module parameter.
 pub const TEST_COMPONENT_BACKENDS: &[Language] = &[
     Language::Rust,
     Language::Cpp,
     Language::Kotlin,
     Language::Go,
     Language::Python,
+    Language::C11,
 ];
 
 /// The backends that run a test suite (docs/SCE_TEST_PROFILE.md §11.9,
@@ -1188,12 +1190,12 @@ mod tests {
     }
 
     /// docs/SCE_TEST_PROFILE.md §11.9, §12.6: Rust, C++, Kotlin, Go and
-    /// Python generate every kind of the test profile, C11 a template, and
-    /// every other pair of a backend and a kind of the profile awaits the
-    /// profile's runtime there, letting the document through the matrix to the
-    /// dispatch that refuses it by name.
+    /// Python generate every kind of the test profile, C11 a template and a
+    /// component, and every other pair of a backend and a kind of the profile
+    /// awaits the profile's runtime there, letting the document through the
+    /// matrix to the dispatch that refuses it by name.
     #[test]
-    fn rust_cpp_kotlin_go_and_python_emit_every_kind_c11_a_template_and_the_rest_await_it() {
+    fn rust_cpp_kotlin_go_python_emit_every_kind_c11_a_template_and_a_component() {
         assert_eq!(ForgeKind::TEST_PROFILE.len(), 6);
         // In [`Language::ALL`]'s order.
         let every_kind: &[Language] = &[
@@ -1203,9 +1205,9 @@ mod tests {
             Language::Go,
             Language::Python,
         ];
-        // A template lands before the other kinds, C11's in [`Language::ALL`]'s
-        // order.
-        let template: &[Language] = &[
+        // A template and a component land before the other kinds, C11's in
+        // [`Language::ALL`]'s order.
+        let template_and_component: &[Language] = &[
             Language::Rust,
             Language::Cpp,
             Language::Kotlin,
@@ -1213,14 +1215,14 @@ mod tests {
             Language::Python,
             Language::C11,
         ];
-        assert_eq!(TEST_TEMPLATE_BACKENDS, template);
-        assert_eq!(TEST_COMPONENT_BACKENDS, every_kind);
+        assert_eq!(TEST_TEMPLATE_BACKENDS, template_and_component);
+        assert_eq!(TEST_COMPONENT_BACKENDS, template_and_component);
         assert_eq!(TEST_SUITE_BACKENDS, every_kind);
         for &kind in ForgeKind::TEST_PROFILE {
             assert!(kind.is_test_profile(), "{kind:?}");
             assert_eq!(kind_class(kind), KindClass::Generic, "{kind:?}");
-            let landed = if kind == ForgeKind::TestTemplate {
-                template
+            let landed = if matches!(kind, ForgeKind::TestTemplate | ForgeKind::TestComponent) {
+                template_and_component
             } else {
                 every_kind
             };

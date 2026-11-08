@@ -4036,6 +4036,13 @@ fn render_c11(
         Language::C11,
         &csym_prefix,
     );
+    // A C11 machine that declares `<sce:action>`s takes its host where it is
+    // initialized (`<machine>_init_with_actions`, `c/state_machine.c.jinja2`).
+    refuse_a_test_component_host(
+        model,
+        native.any,
+        "the table of acts `<machine>_init_with_actions` takes",
+    )?;
     // The events whose typed payload a lowered expression reads are ones the
     // payload channel must carry, besides those a native action reads.
     let payload_events: std::collections::BTreeSet<String> = native
@@ -4209,6 +4216,12 @@ fn render_c11(
         static_imports => &static_lowering.imports,
         static_adapter_defs => static_lowering.adapter_defs.join("\n\n"),
         static_saved_shape => &static_saved_shape,
+        // docs/SCE_TEST_PROFILE.md §12.3: the doors a test component's machine
+        // reaches its runtime through, which the component the runtime drives
+        // registers and delivers the snapshot by.
+        test_port_processor => crate::test_component::TEST_PORT_PROCESSOR,
+        test_component_invoke_type => crate::test_component::TEST_COMPONENT_INVOKE_TYPE,
+        snapshot_event => crate::test_component::SNAPSHOT_EVENT,
     };
 
     let header_code = header_tmpl.render(header_ctx).map_err(render_error)?;

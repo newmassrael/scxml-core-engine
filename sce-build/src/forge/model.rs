@@ -568,9 +568,10 @@ impl ForgeKind {
             // statechart's, built on the SCE runtime as a statechart is; the
             // runtime that drives it (`sce/include/test/`,
             // `sce_rust_runtime::test` in Rust, `com.sce.runtime.test` in
-            // Kotlin, the package `testprofile` of `sce-go-runtime` in Go and
-            // `sce_runtime.testprofile` in Python) ships with SCE's runtime and
-            // is no forge tier. The tables of a
+            // Kotlin, the package `testprofile` of `sce-go-runtime` in Go,
+            // `sce_runtime.testprofile` in Python and `sce/test/` of the C11
+            // runtime) ships with SCE's runtime and is no forge tier. The
+            // tables of a
             // configuration, a test case and a suite (§12.2) name the machines
             // of the components they run, and the profile's runtime and runner.
             Self::TestComponent | Self::TestConfiguration | Self::TestCase | Self::TestSuite => {
