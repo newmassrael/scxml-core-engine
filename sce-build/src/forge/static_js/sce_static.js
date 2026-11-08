@@ -655,6 +655,41 @@
     return read;
   }
 
+  /* The door (docs/adr/0086, section 4.4). A generated machine lifts the payload
+     of an event it reads when it takes the event, before it selects a transition,
+     and refuses a delivery outside its type whole: error.execution is raised once,
+     and no guard or content that reads the payload runs for it. door() is handed,
+     for each event whose payload the document reads, the record its schema
+     declares ({record: {...}} with the defaults of the fields a later revision
+     added), and installs dequeued() as __sceDequeued, which the Interpreter calls
+     with _event each time it binds one, before it selects a transition. dequeued()
+     reads every field of the record as field() reads one, and answers the
+     sentence of the first refusal, which the Interpreter raises as
+     error.execution, or the empty text. admitted() answers whether the event
+     being processed was let in: every guard and content of the document that
+     reads the payload holds back on it, so a field past its bound refuses the
+     delivery even on a route that reads no such field. */
+  var doors = {};
+  var refusedNow = false;
+  function dequeued(event) {
+    refusedNow = false;
+    if (event === undefined || event === null || !Object.prototype.hasOwnProperty.call(doors, event.name)) {
+      return '';
+    }
+    var door = doors[event.name];
+    try {
+      Object.keys(door.record).forEach(function (id) {
+        var defaulted = door.defaults !== undefined && Object.prototype.hasOwnProperty.call(door.defaults, id);
+        field(event.data, id, door.record[id], defaulted ? door.defaults[id] : undefined);
+      });
+      return '';
+    } catch (refusal) {
+      refusedNow = true;
+      var why = refusal !== null && typeof refusal === 'object' && refusal.message !== undefined ? refusal.message : refusal;
+      return '`' + String(event.name) + '` payload: ' + String(why);
+    }
+  }
+
   /* What a type descriptor describes. A scalar is named by its type, an enum by
      the array of its names, and a composed type by an object with one key that
      names its constructor: {optional: T}, {list: T, max: B}, with min: M beside
@@ -971,6 +1006,13 @@
     U64: integer(false, 64),
     field: field,
     payload: payload,
+    door: function (name, record) {
+      doors[name] = record;
+      globalThis.__sceDequeued = dequeued;
+    },
+    admitted: function () {
+      return !refusedNow;
+    },
     lift: lift,
     parseText: parseText,
     otherwise: function (value, fallback) {
