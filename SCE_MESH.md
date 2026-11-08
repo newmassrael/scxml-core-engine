@@ -655,7 +655,7 @@ static dds_qos_t* make_motor_qos() {
 
 ### Mesh-core delivery settings
 
-A few per-binding settings are not the transport's but the Mesh core's, which realises them above any transport: `codec:`, `ordering:` (§10.6) and `receipt:` (§10.11). They sit on the binding beside `transport:`, not under `qos:`, and they are deployment choices for the same reason transport QoS is. `receipt:` chooses between the receipt a transport reports, with a loss across a restore reported as `error.communication` (the default), and durable receipt, where nothing the receiver was sent is lost across a crash; deadline-bound and loss-tolerant traffic keeps the first, traffic with no recovery of its own takes the second (ADR 0045; not parsed yet, §10.11 "Status"). `delivery: causal` (not built yet) makes a binding a causal broadcast group that names its group and initial view under `group:`: each envelope carries its author's dot and causal context, the receiver delivers every change once and only after every change it depends on, gaps are repaired by exchanging vectors and never skipped, `ordering:` is refused beside it and the dedup window is not applied to it (ADR 0085 sections 3.2 and 3.3; refused at build time until a language's Mesh core has landed it).
+A few per-binding settings are not the transport's but the Mesh core's, which realises them above any transport: `codec:`, `ordering:` (§10.6) and `receipt:` (§10.11). They sit on the binding beside `transport:`, not under `qos:`, and they are deployment choices for the same reason transport QoS is. `receipt:` chooses between the receipt a transport reports, with a loss across a restore reported as `error.communication` (the default), and durable receipt, where nothing the receiver was sent is lost across a crash; deadline-bound and loss-tolerant traffic keeps the first, traffic with no recovery of its own takes the second (ADR 0045; not parsed yet, §10.11 "Status"). `delivery: causal` makes a binding a causal broadcast group that names its group and initial view under `group:`: each envelope carries its author's dot and causal context, the receiver delivers every change once and only after every change it depends on, gaps are repaired by exchanging vectors and never skipped, `ordering:` is refused beside it and the dedup window is not applied to it (§10.12; ADR 0085 sections 3.2 and 3.3). The Rust core carries it; C++, Kotlin and Swift refuse it at build time, by name, until their cores land it.
 
 ### Build-Time Validation
 
@@ -1762,12 +1762,13 @@ W3C SCXML guarantees within a single instance: internal events are processed bef
 | FIFO per source | Same source, same transport | Transport implementation |
 | FIFO per source, cross-transport | Same source, different transports | **Not guaranteed** |
 | Total ordering across sources | Multiple sources | **Not guaranteed** |
+| Causal ordering across sources, each change once | Every member of a causal group (`delivery: causal`) | Mesh core (§10.12) |
 
 **Per-source FIFO** means: if Device A sends event1 then event2 to Device B over the same transport, Device B receives event1 before event2. This is a natural property of TCP-based transports (SOME/IP, gRPC) and can be enforced on UDP via sequence numbers.
 
 **Cross-transport ordering is not guaranteed**: if Device A sends event1 via SOME/IP and event2 via CAN to Device B, arrival order depends on transport latency. SCXML authors must not depend on cross-transport ordering.
 
-If causal ordering is required across transports, it must be implemented at the application level (e.g., explicit acknowledgment events in the SCXML design).
+Causal ordering is the Mesh core's on a binding that asks for it: under `delivery: causal` (§10.12) every member of the group receives each change exactly once, and only after every change its sender had delivered when it sent it, whichever sources they came from. The guarantee is per route: across two routes, or two transports, nothing orders one change after another, so a document that needs causality across them keeps the changes on one causal route.
 
 ### 10.2 Backpressure and Flow Control
 
@@ -2186,6 +2187,7 @@ Mesh distinguishes **document identity** from **session identity** on every enve
    - **`pending_rpcs_`** (SOME/IP `<send>` RpcRequest) — `unordered_map<correlation_id, reply-event-name>`. The generated client-side receive handler dispatches the matched reply to `sessions_[0]` because no session identity is threaded through the correlation key. Under a pool router this hard-codes cross-session reply misrouting for any `<send event="service.request.*">` pattern.
    
    The structural remedy for all three tables would key their state on a `(session_idx, key)` axis, but no in-tree product surface calls for pool + client-RPC coexistence today — §14.4 Phase 6 motivation scopes pool to server-side replication of the same SCXML document. `sce-build` rejects the combination at codegen via `MeshCodegenPoolWithRpcClientUnsupported` (two `kind` arms: `MeshRpc` for `<invoke>` sites, `SomeipRpcRequest` for SOME/IP `<send>` Request-Reply patterns) so the runtime never observes aliasing. When a concrete consumer arrives, the reject lifts alongside the correlation-key migration in one commit — spec-design and implementation move together.
+9. **A causal binding keys on the replica identity** — on a `delivery: causal` route (§10.12) the author of a change, and the column of every vector, is the **replica identity**: a 16-byte UUID v7 drawn when an incarnation of the copy begins and kept in the copy's journal beside the highest number it used. It is neither `source`, which names a kind of machine that may run more than once, nor `routing_id`, which a router draws at each construction and so changes at every restart while a replica's numbers continue (and which keeps its one role, the self-filter of invariant 2). It travels as the sender's own entry of `causal_vector` (key 20), so no key of its own is added. This is the second axis invariant 5 foresaw, taken for causal bindings only; every other binding keys on `source` as invariant 5 says.
 
 **Wire compatibility**: `routing_id` is an optional CBOR key. Decoders MUST skip unknown keys (per §13 canonical CBOR contract), so a sender backend that has not yet been migrated emits envelopes without key 15 and peers decode correctly. The self-filter invariant above ensures that during per-backend rollout, cross-backend echo paths remain functional — unmigrated peers' envelopes are correctly passed through.
 
@@ -2273,6 +2275,42 @@ Both exist because the domains this specification serves need both: deadline-bou
 - **With resends and readiness.** A held envelope is sent again, with its id, sequence number and data, after `retry_ms` without an acknowledgement and at once on each readiness edge of the link (§10.10). An admit while `window` envelopes are held is refused as `BACKPRESSURE_DROP` (§16.7 row 9): a send that was never accepted is told, and nothing accepted is dropped. The §10.10 age bound does not apply to a durable binding's envelopes. A peer that is gone is reported as `PEER_PARTITIONED`, and what is held for it stays held.
 
 **Which cores carry it.** The host cores of §19: `sce-rust-mesh` over `wss` and `zenoh_inbox`, `sce-kotlin-mesh` over `wss`. The build refuses a durable binding a machine's backend has no core for (the generated C++ `TransportRouter` until its own step lands) and one on a transport that cannot carry the acknowledgement back; a host that runs its own router is told by the manifest which bindings are durable. The build also refuses a durable binding without `persistence: checkpoint` at both ends, a `receipt:` machine block with no durable binding or a field below 1, and `persistence: checkpoint` on a machine whose document has no saved state. Each refusal is a diagnostic code of its own, added with the parser in step 6.
+
+### 10.12 Causal delivery
+
+**Status: the Rust core carries it** (`backends/rust/mesh/src/causal.rs`; ADR 0085, Landing order step 3b). C++, Kotlin and Swift refuse `delivery: causal` at build time, by name (`mesh/codegen-causal-delivery-unsupported`), until their cores land it (steps 3c to 3e); no build ignores the setting. Decided by ADR 0085, sections 3, 3.2, 3.3 and 4.2, which this section states as the Mesh core realises it.
+
+**What it is.** A binding with `delivery: causal` is a causal broadcast group: every member sends its changes to the route and reads the route, and every member delivers each change exactly once, and only after every change its sender had delivered when it sent it (Birman and Joseph, 1987; Birman, Schiper and Stephenson, 1991). This is the delivery an operation-based replicated object assumes of the layer below it, so a document built on one is given whole, causally ready changes, once each.
+
+**The settings.** The binding names its group and the group's initial view, epoch 0:
+
+```yaml
+bindings:
+  "#people":
+    transport: wss
+    delivery: causal
+    group:
+      name: people
+      view: [phone/list, laptop/list, tablet/list]
+```
+
+Each entry of `view` names one instance the deploy declares, `<device>/<machine>`; the view holds this instance, names each instance once, holds 1 to 64 of them (the bound of the envelope's vector), and is the same on every binding that names the group. `group:` is the binding's own key; `members:` keeps its one meaning (§14.4). One delivery rule per binding: a causal route's vectors drop a duplicate exactly and order causally, so its dedup window (§10.5) and sequence buffer (§10.6) are off (the build's `needs_dedup` and `needs_ordering` are false for it), `ordering:` beside `delivery: causal` is refused, and so is a machine's `dedup:` section when every binding it would reach is causal, which would read as configured and filter nothing. A `group:` without `delivery: causal`, a causal binding without `group:`, and a view that breaks its rules are refused too, all as `mesh/deploy-delivery-conflict`.
+
+**The author, the dot and the tag.** The author of a change is a replica: one incarnation of one member, identified by a 16-byte UUID v7 drawn when the incarnation begins and kept in the copy's journal (§10.9 invariant 9). A change's dot is `(replica, seq)`, `seq` its number among that replica's changes, from 1 with no gap. Every tagged envelope carries the view's epoch (key 19, `causal_epoch`) and a vector (key 20, `causal_vector`) of `{hi, lo, seq}` entries, the replica as its two big-endian halves: the sender's own entry first, which on a change is the change's dot, then the sender's delivered vector, the change's causal context. The vector is a bounded list of records in the envelope's own CBOR map (`sce:std/mesh/causal_entry`), at most one entry per replica of the view.
+
+**The rule.** For a copy whose delivered vector is `D`, a change tagged `(a, s)` with context `C` is dropped when `s <= D[a]`, delivered when `s = D[a] + 1` and `C[b] <= D[b]` for every other author `b` (and `D[a]` becomes `s`), and held otherwise until it is deliverable. Delivering a change delivers every held change that then follows. The rule is the standard algorithm `sce:std/mesh/causal_admit`; the merge of two vectors is `causal_raise`, whether a vector lacks a change `causal_lacks`, and the stable cut `causal_cut`, each generated for every language as the rules of §10.5 and §10.6 are.
+
+**The source's own change: offer and verdict.** The core answers a change its copy offers with `Accepted(dot)`, the dot it tagged the change with, or `Refused(reason)`: a log with no room left for a change not yet stable refuses it as `noRoomForHistory`, and a refused change takes no number. An accepted change counts as delivered at the source when it is tagged. The host records it with its dot in the copy's journal, and the core releases it to no peer before that record is committed (ADR 0093, section 1.3), so a crash between the tag and the commit loses a number no peer has seen.
+
+**Incarnations.** A restart reads the replica identity and the delivered vector, its own highest number among them, from the journal and continues after it. A copy that cannot know its highest number (restored from an older save, or set up again from its seed) begins a new incarnation with a new replica identity; it never asks its peers, since the change with the highest number may be held only by a member that is offline, and a number used twice would name two changes by one dot.
+
+**The view.** Membership is a numbered view `(epoch, members)`; the deploy gives epoch 0, the only view until view changes land (ADR 0085, Landing order step 7). Each member is held by one replica at a time, the first that presents itself for it. An envelope of another epoch, or by a replica the view does not hold (a second incarnation of a member, until step 7), is not delivered and is raised as §16.7 row 18, `CAUSAL_VIEW_MISMATCH`. A copy restored from an older save is therefore cut off from its group until view changes land, and its old incarnation's column holds the stable cut where it stopped; a deployment plans for that.
+
+**Repair, not skipping.** A causal route has no gap timeout: §10.6's fast-forward drops a gap, which would lose a change for good. Each member sends its `causalVector` (pattern 23: its epoch and its delivered vector, its own entry first) on a period and whenever a link comes back; a receiver answers it with every change of its log the vector lacks, as the original envelopes with their tags intact. The same message is the member's mark: the receiver records it as that member's latest known vector, so a member that has not written still moves the stable cut. It never reaches an engine.
+
+**Retention and the stable cut.** The core keeps every change it sent and every change it delivered until the stable cut passes it, to answer repairs, and drops it there. The cut is the pointwise minimum, over the members of the current view, of the latest delivered vector known from each: from the contexts of its changes, from its `causalVector`, and the copy's own for itself. A member not heard from holds its column of the cut at 0. A change the cut covers is delivered at every member, so no repair can ask for it.
+
+**What it does not do.** It orders within one route; nothing orders a change of one causal route after a change of another. Fragmentation of an envelope larger than a transport's frame is the transport's, below this layer (ADR 0085, section 5).
 
 ---
 
@@ -2494,6 +2532,9 @@ enum class PatternKind : uint16_t {
     InvokeError        = 20,
     // 21 Distributed parallel-final barrier (§16.5, Session E2).
     ParallelRegionDone = 21,
+    // 22 DurableReceipt (§10.11), not built yet.
+    // 23 The causal route's vector exchange and mark (§10.12).
+    CausalVector       = 23,
 };
 
 /// Payload codec discriminator. Wire-stable; do not reuse values.
@@ -2565,10 +2606,14 @@ CBOR map integer keys (wire-stable):
 | 16 | parallel_id | no | string — §16.5 wire-21 region routing; set together with key 17 |
 | 17 | region_id | no | string — §16.5 wire-21 region routing; set together with key 16 |
 | 18 | child_session_id | no | string — §9.6.2 wire-15/16/18 child session id `<parent machine>:<invoke id>`, an XML Nmtoken |
+| 19 | causal_epoch | no | uint64 — the view's epoch on a causal route; §10.12 |
+| 20 | causal_vector | no | array of at most 64 maps `{hi, lo, seq}` — the sender's own entry first, then its delivered vector; §10.12 |
 
 Unknown integer keys MUST be skipped by readers. New fields use unused integers; never reuse.
 
 Pattern value 22 is assigned to `DurableReceipt`, the acknowledgement of §10.11's durable receipt (receiver to sender, `sequence_no` the acknowledged mark, no other key). It enters `PatternKind` when §10.11 is built; until then no envelope carries it. On a durable binding key 14 is stamped on every envelope, not only on an ordered route. No key is added for either.
+
+Pattern value 23 is `CausalVector`, the one control message of a causal route (§10.12): keys 19 and 20 carry its sender's epoch and delivered vector, `type` is the empty text, `datacontenttype` `None` and `data` empty. It never reaches an engine; a core that carries no causal route drops it.
 
 **Low-overhead path (game/MMORPG)**: a deploy.yaml binding may declare `codec: typed` + `correlation: none` + omit `subject`/`reply_to`. The resulting envelope serializes to ~12-18 bytes (id + source + type + pattern + codec + data length + payload), comparable to bespoke binary protocols while remaining within CBOR.
 
@@ -3079,6 +3124,11 @@ topology:
             receipt: transport | durable # optional; default 'transport'. §10.11; a Mesh-core
                                          # key like `ordering:`, not a `qos:` one. NOT parsed
                                          # yet (ADR 0045 step 6).
+            delivery: causal             # optional; §10.12. A causal broadcast group; refused
+                                         # beside `ordering:`. Built on the Rust core only.
+            group:                       # required with `delivery: causal`, refused without
+              name: <group name>
+              view: [<device>/<machine>, ...]  # the initial view, epoch 0; 1 to 64 instances
             events:
               "<scxml event name>":
                 method: <name>           # someip: resolves to method_id
@@ -3979,6 +4029,7 @@ Runtime conditions that raise `error.communication`. Each condition pins a machi
 | 15 | An envelope held by the §10.10 `OutboundBuffer` waiting for peer readiness exceeded `outbound_buffer.max_age_ms` and was dropped instead of dispatched when readiness arrived. Orthogonal to row 9: that is a capacity bound observed at admit, this is an age bound observed at drain. Raised on the sending side. | `OUTBOUND_STALE_DROP` | `transport: string`, `target: string`, `age_ms: int`, `max_age_ms: int` |
 | 16 | A DDS notification reader whose deployment declared `transports.dds.qos.deadline_ms` went a full period with no sample. Distinct from row 8: the peer may be alive and merely publishing slower than declared, which is a different repair. Raised on the subscribing side, from the reader's `on_requested_deadline_missed` status. | `NOTIFICATION_DEADLINE_MISSED` | `transport: string`, `deadline_ms: int`, `missed_count: int` |
 | 17 | A machine was restored from a checkpoint (§10.11), and an envelope a peer source sent it after that checkpoint was durable may have been admitted and lost with the process, which neither side can know. Raised once per peer source in each restored session that holds state for it, in the first macrostep after the restore; not raised for a source whose every route to the machine has `receipt: durable`, which loses nothing, nor after a `clean` checkpoint. Specified by ADR 0045 and raised once the host cores checkpoint (its step 6). A document that keeps a shared state asks the source again. | `RESTORED` | `source: string` |
+| 18 | An envelope on a causal route (§10.12) is tagged with another epoch than the receiver's current view, or by a replica the view does not hold (until view changes land, a second incarnation of a member). It is not delivered, and the vector it carries is not recorded. Raised on the receiving side. | `CAUSAL_VIEW_MISMATCH` | `epoch: uint64` (the epoch it was tagged with), `replica: string` (its author's replica identity, 32 hex digits) |
 
 **Common fields (§10.7.1 baseline)**: `errorName: "communication"`, `reason: <one of above>`, `detail?: string`, `source?: string` (envelope `source` field for inbound conditions), `sendid?: string`, `envelope_id?: string`, `invoke_id?: string`. These are always available when relevant; the table above lists condition-specific additional fields.
 
