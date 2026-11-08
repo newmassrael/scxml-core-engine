@@ -104,6 +104,16 @@ SCE_STATIC_ASSERT(SCE_MAX_INBOX <= (1L << 15), "SCE_MAX_INBOX is larger than a 3
    something to apply. On an interrupt handler's post it runs in that handler. */
 typedef void (*sce_inbox_waker_fn)(void *context);
 
+/* What releases storage a poster handed over with an input (docs/adr/0086,
+   section 8.5 (a)): called by the owner once, with `context` and the storage,
+   after it applied the input or when it is destroyed with the input still
+   held. A move with its deleter: the poster keeps nothing of storage the inbox
+   took, and keeps all of it when the inbox refused the post. A poster in an
+   interrupt handler hands static storage with a release that marks it free.
+   A release is a deleter: it frees or marks free and calls no function of the
+   machine, which is in the middle of applying its inbox when it calls one. */
+typedef void (*sce_inbox_release_fn)(void *context, const char *text);
+
 /* The queue, the entries of its index rings, the count of refused posts and the
    waker. The slots the inputs are copied into are the machine's own array of its
    input type, passed to each call with the size of one. */

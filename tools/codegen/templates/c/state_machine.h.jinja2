@@ -485,26 +485,37 @@ typedef struct {{ csym_prefix }}{{ model.name }}_event_with_meta {
 {{ event_members('    const char *data;') }}
 } {{ csym_prefix }}{{ model.name }}_event_with_meta_t;
 
+{% if model.needs_script_engine %}
+/* An event a queue entry or the machine's current event owns: the members of
+   `_event_with_meta_t`, with the data an owned text (docs/adr/0086, section
+   8.5 (a)). This machine's data model is a script engine, whose values no type
+   bounds, so it has no fixed slot: each event's text is allocated through the
+   engine's own allocator (`lua_getallocf`) at the size of the text, moved from
+   one holder to the next and never copied in place, and freed once by the
+   holder that has it last. `data` is NULL for no data, and `data_size` is the
+   bytes allocated, its NUL included, which the allocator is handed back when
+   the text is freed. Private to the machine: only it allocates, moves and
+   frees one. */
+typedef struct {{ csym_prefix }}{{ model.name }}_queued_event {
+{{ event_members('    char *data;') }}
+    size_t data_size;
+} {{ csym_prefix }}{{ model.name }}_queued_event_t;
+{% else %}
 /* An event a queue entry, the inbox or the machine's current event owns: the
    members of `_event_with_meta_t`, with the data held in the machine's slot of
    `_event.data` (docs/adr/0086, section 8.1). */
 typedef struct {{ csym_prefix }}{{ model.name }}_queued_event {
 {{ event_members('    char data[' ~ data_slot.name ~ '];') }}
 } {{ csym_prefix }}{{ model.name }}_queued_event_t;
+{% endif %}
 
-/* Copy `src` into `dst`, which owns what it holds: false, and `dst` left as it
-   was, when the data does not fit the slot (docs/adr/0086, section 8.5 (b)). */
-SCE_C_UNUSED static inline bool {{ csym_prefix }}{{ model.name }}_event_keep(
+/* Copy every member of `src` but its data into `dst`: what each kind of entry
+   keeps of an event, whatever holds its data. */
+SCE_C_UNUSED static inline void {{ csym_prefix }}{{ model.name }}_event_keep_members(
         {{ csym_prefix }}{{ model.name }}_queued_event_t *dst,
         const {{ csym_prefix }}{{ model.name }}_event_with_meta_t *src) {
-    const char *data = src->data != NULL ? src->data : "";
-    const size_t len = strlen(data);
-    if (len >= sizeof(dst->data)) {
-        return false;
-    }
     dst->event = src->event;
     memcpy(dst->name, src->name, sizeof(dst->name));
-    memcpy(dst->data, data, len + 1u);
     dst->origin = src->origin;
     dst->from_session = src->from_session;
     memcpy(dst->send_id, src->send_id, sizeof(dst->send_id));
@@ -518,8 +529,24 @@ SCE_C_UNUSED static inline bool {{ csym_prefix }}{{ model.name }}_event_keep(
     dst->has_host_invoke_token = src->has_host_invoke_token;
     dst->host_invoke_token = src->host_invoke_token;
 {% endif %}
+}
+{% if not model.needs_script_engine %}
+
+/* Copy `src` into `dst`, which owns what it holds: false, and `dst` left as it
+   was, when the data does not fit the slot (docs/adr/0086, section 8.5 (b)). */
+SCE_C_UNUSED static inline bool {{ csym_prefix }}{{ model.name }}_event_keep(
+        {{ csym_prefix }}{{ model.name }}_queued_event_t *dst,
+        const {{ csym_prefix }}{{ model.name }}_event_with_meta_t *src) {
+    const char *data = src->data != NULL ? src->data : "";
+    const size_t len = strlen(data);
+    if (len >= sizeof(dst->data)) {
+        return false;
+    }
+    {{ csym_prefix }}{{ model.name }}_event_keep_members(dst, src);
+    memcpy(dst->data, data, len + 1u);
     return true;
 }
+{% endif %}
 
 /* The event `src` holds, handed on as a view of its data, valid while `src`
    holds it. */
@@ -528,7 +555,12 @@ SCE_C_UNUSED static inline {{ csym_prefix }}{{ model.name }}_event_with_meta_t {
     {{ csym_prefix }}{{ model.name }}_event_with_meta_t view;
     view.event = src->event;
     memcpy(view.name, src->name, sizeof(view.name));
+{% if model.needs_script_engine %}
+    /* An owned text, or none: every reader of a view reads a text. */
+    view.data = src->data != NULL ? src->data : "";
+{% else %}
     view.data = src->data;
+{% endif %}
     view.origin = src->origin;
     view.from_session = src->from_session;
     memcpy(view.send_id, src->send_id, sizeof(view.send_id));
@@ -620,19 +652,26 @@ typedef struct {{ csym_prefix }}{{ model.name }}_scheduled_entry {
     uint64_t fire_time_ms;
     {{ csym_prefix }}{{ model.name }}_event_t event;
     char send_id[SCE_MAX_ID_LEN];
-{% if model.needs_script_engine or model.has_delayed_send_payload %}
+{% if model.needs_script_engine %}
+    /* §scxml-5.10: the payload this entry's event carries, as the JSON its
+       data takes; NULL when the <send> carries none. An owned text allocated
+       through the engine's allocator, as a queued event's is (docs/adr/0086,
+       section 8.5 (a)): the entry owns it until it comes due, when it is
+       handed on and freed, or until a <cancel> or the machine's destroy frees
+       it. `data_size` is the bytes allocated, its NUL included. It used to be
+       a reference into the Lua registry, which means nothing outside the
+       engine that issued it (section 8.5 (a), a2). Mirrors cpp
+       `EventWithMetadata::data`. */
+    char *data;
+    size_t data_size;
+{% elif model.has_delayed_send_payload %}
     /* §scxml-5.10: the payload this entry's event carries, as the JSON
-       its `data[]` takes; empty when the <send> carries none. It used to be
-       a reference into the Lua registry, restored into a global the next
-       dequeue promoted — which any event dequeued first could take, and
-       which no saved state can hold, because a registry reference means
-       nothing outside the engine that issued it. Mirrors cpp
+       its `data[]` takes; empty when the <send> carries none. Mirrors cpp
        `EventWithMetadata::data`. Costs the machine's slot of `_event.data`
-       ({{ data_slot.name }}) per scheduled entry,
-       on a machine with a script engine, whose sends can evaluate a payload,
-       and on one whose document sends a delayed payload of its own fields
-       (`has_delayed_send_payload`, §scxml-6.2.4); no other machine has a
-       payload to hold. */
+       ({{ data_slot.name }}) per scheduled entry, on a machine whose
+       document sends a delayed payload of its own fields
+       (`has_delayed_send_payload`, §scxml-6.2.4); no other machine without
+       a script engine has a payload to hold. */
     char data[{{ data_slot.name }}];
 {% endif %}
     /* W3C SCXML 6.2.4 + C.1: where the entry delivers when it comes due —
@@ -804,6 +843,30 @@ typedef enum {{ csym_prefix }}{{ model.name }}_inbox_kind_e {
 typedef struct {{ csym_prefix }}{{ model.name }}_inbox_input {
     {{ csym_prefix }}{{ model.name }}_inbox_kind_t kind;
     union {
+{% if model.needs_script_engine %}
+        /* docs/adr/0086, section 8.5 (a): this machine's queue allocates
+           through its script engine, which a poster on another context must
+           not call, so a post hands over storage the poster allocated with the
+           function that releases it. `record.data` is that storage, NULL for
+           no data; once the input is applied, whether its event was queued or
+           refused, or once the machine is destroyed with the input still in
+           the inbox, the machine calls `release` with `release_context` and
+           the data, exactly once. `release` is NULL for data nobody frees, a
+           literal or storage that outlives the machine. A post the inbox
+           refuses hands nothing over, and the poster still owns its data. */
+        struct {
+            {{ csym_prefix }}{{ model.name }}_event_with_meta_t record;
+            sce_inbox_release_fn release;
+            void *release_context;
+        } event;
+        /* An event by name, with its data handed over as `event`'s is:
+           `event.data` is the poster's storage, released as above. */
+        struct {
+            sce_forwarded_event_t event;
+            sce_inbox_release_fn release;
+            void *release_context;
+        } by_name;
+{% else %}
         /* Owned, since a post crosses from another context (docs/adr/0086,
            section 8.5 (b)). */
         {{ csym_prefix }}{{ model.name }}_queued_event_t event;
@@ -814,6 +877,7 @@ typedef struct {{ csym_prefix }}{{ model.name }}_inbox_input {
             sce_forwarded_event_t event;
             char data[{{ data_slot.name }}];
         } by_name;
+{% endif %}
 {% if inbox_endings %}
         /* An ending, with its data held here, at the size of this machine's
            slot: `record.data` is not read, and the data is handed on as a view
@@ -1130,6 +1194,11 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
     {% endif %}
     {% if model.needs_script_engine %}
     lua_State *L;                                    /* W3C 5.10: ECMAScript datamodel */
+    /* docs/adr/0086, section 8.5 (a): how many event texts the machine holds,
+       allocated through `L`'s allocator and not yet freed, in its queues, its
+       current events and its scheduled entries. Read by
+       `_owned_event_texts`. */
+    uint32_t owned_event_texts;
     /* W3C SCXML C.2.3: inbound BasicHTTP endpoint serving this machine,
        declared by the deployment before `_init` through
        `_set_basic_http_access_uri`. The address belongs to whoever runs the
@@ -1810,13 +1879,33 @@ uint32_t {{ csym_prefix }}{{ model.name }}_discarded_external_events(const {{ cs
 bool {{ csym_prefix }}{{ model.name }}_last_discarded_event(const {{ csym_prefix }}{{ model.name }}_t *sm,
                             {{ csym_prefix }}{{ model.name }}_event_t *out);
 
+{% if model.needs_script_engine %}
+/* docs/adr/0086, section 8.5 (a): events refused whole because the script
+   engine's allocator could not give their data storage (one the machine
+   raised, sent or was handed), or because their data did not fit a buffer of
+   {{ data_slot.name }} the machine still holds it in (a host-run invocation's
+   completion). Each refusal is counted here and raised as
+   `error.execution` where the document declares it; none is cut or dropped
+   unseen. */
+{% else %}
 /* docs/adr/0086, section 8.5 (b): events refused whole because their data did
    not fit this machine's slot of `_event.data` ({{ data_slot.name }}): one the
    machine raised, sent or was handed, and a host-run invocation's completion
    whose data did not fit. Each refusal is counted here and raised as
    `error.execution` where the document declares it; none is cut or dropped
    unseen. */
+{% endif %}
 uint32_t {{ csym_prefix }}{{ model.name }}_refused_event_data(const {{ csym_prefix }}{{ model.name }}_t *sm);
+{% if model.needs_script_engine %}
+
+/* docs/adr/0086, section 8.5 (a): how many event texts the machine holds now,
+   each allocated through its script engine's allocator: one per queued event
+   that carries data, per current event that does, and per scheduled entry
+   that does. Every text is freed by the holder that has it last, so the count
+   falls back as events are dequeued and processed, as entries are cancelled,
+   and to zero at `_destroy`. */
+uint32_t {{ csym_prefix }}{{ model.name }}_owned_event_texts(const {{ csym_prefix }}{{ model.name }}_t *sm);
+{% endif %}
 
 /* The most recent event the count above refused. Returns false, leaving `*out`
    untouched, while that count is zero. */

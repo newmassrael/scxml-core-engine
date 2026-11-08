@@ -44,6 +44,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
@@ -98,12 +99,53 @@ static void boot(inbox_probe_t *sm, host_log_t *log) {
     inbox_probe_init_with_host_invokers(sm, &wiring);
 }
 
+/* docs/adr/0086, section 8.5 (a): `inbox_probe` has a script engine, whose
+   allocator a poster on another thread must not call, so a post hands over a
+   text the poster allocated with the function that releases it. Every text
+   handed over and every release is counted, so the run can ask that each was
+   released exactly once: a text the machine dropped reads as one handed and
+   never released, and one released twice as more releases than texts. */
+static atomic_uint g_texts_handed;
+static atomic_uint g_texts_released;
+
+static void release_text(void *context, const char *text) {
+    (void)context;
+    free((void *)(uintptr_t)text);
+    (void)atomic_fetch_add(&g_texts_released, 1u);
+}
+
+/* `"<label>"`, in storage the caller hands over with `release_text`. */
+static const char *handed_text(const char *label) {
+    char quoted[48];
+    (void)snprintf(quoted, sizeof(quoted), "\"%s\"", label);
+    const size_t size = strlen(quoted) + 1u;
+    char *text = (char *)malloc(size);
+    if (text == NULL) {
+        return NULL;
+    }
+    memcpy(text, quoted, size);
+    (void)atomic_fetch_add(&g_texts_handed, 1u);
+    return text;
+}
+
+/* Take back the text of `input`, a post the inbox refused, which the poster
+   therefore still owns. */
+static void take_back(const inbox_probe_inbox_input_t *input) {
+    if (input->kind == INBOX_PROBE_INBOX_EXTERNAL_EVENT) {
+        release_text(NULL, input->as.event.record.data);
+    } else if (input->kind == INBOX_PROBE_INBOX_EXTERNAL_EVENT_BY_NAME) {
+        release_text(NULL, input->as.by_name.event.data);
+    }
+}
+
 /* `ping` with `"<label>"` as its data, as the document's own event. */
 static void ping(inbox_probe_inbox_input_t *input, const char *label) {
     memset(input, 0, sizeof(*input));
     input->kind = INBOX_PROBE_INBOX_EXTERNAL_EVENT;
-    (void)inbox_probe_resolve_event_by_name("ping", &input->as.event.event);
-    (void)snprintf(input->as.event.data, sizeof(input->as.event.data), "\"%s\"", label);
+    (void)inbox_probe_resolve_event_by_name("ping", &input->as.event.record.event);
+    input->as.event.record.data = handed_text(label);
+    input->as.event.release = release_text;
+    input->as.event.release_context = NULL;
 }
 
 /* `ping` with `"<label>"` as its data, named by text, as a peer or a host that
@@ -112,8 +154,10 @@ static void ping_by_name(inbox_probe_inbox_input_t *input, const char *label) {
     memset(input, 0, sizeof(*input));
     input->kind = INBOX_PROBE_INBOX_EXTERNAL_EVENT_BY_NAME;
     (void)snprintf(input->as.by_name.event.name, sizeof(input->as.by_name.event.name), "%s", "ping");
-    (void)snprintf(input->as.by_name.data, sizeof(input->as.by_name.data), "\"%s\"", label);
+    input->as.by_name.event.data = handed_text(label);
     (void)snprintf(input->as.by_name.event.type, sizeof(input->as.by_name.event.type), "%s", "external");
+    input->as.by_name.release = release_text;
+    input->as.by_name.release_context = NULL;
 }
 
 /* An ending of start `token` of `job`: a completion when `done`, a failure
@@ -210,6 +254,11 @@ typedef struct {
     inbox_probe_inbox_input_t input;
     char recorded[48];
     bool is_ending;
+    /* Which producer made it, and its place, from which the replay makes the
+       same post again: the text the first was handed over with is the
+       machine's, released once it was applied. */
+    int producer;
+    int k;
 } post_t;
 
 /* What producer `producer` posts as its `k`th input: external events, typed and
@@ -220,6 +269,8 @@ static void post_of(int producer, int k, uint64_t token, post_t *out) {
     char label[32];
     (void)snprintf(label, sizeof(label), "p%d-%d", producer, k);
     out->is_ending = false;
+    out->producer = producer;
+    out->k = k;
     switch (k % 7) {
     case 3:
         ending(&out->input, token, true, label);
@@ -417,7 +468,9 @@ static int posts_from_many_threads_are_taken_as_a_single_threaded_replay_takes_t
        whenever the inbox is full. */
     boot(&replay, &replay_host);
     for (int i = 0; i < g_posted_count; i++) {
-        while (!inbox_probe_inbox_post(&replay, &g_posted[i].input)) {
+        post_t again;
+        post_of(g_posted[i].producer, g_posted[i].k, token, &again);
+        while (!inbox_probe_inbox_post(&replay, &again.input)) {
             inbox_probe_step(&replay);
         }
     }
@@ -529,6 +582,9 @@ static int a_full_inbox_refuses_a_post_and_reports_it(void) {
     if (post_from_another_thread(&sm, &input)) {
         (void)fprintf(stderr, "FAIL: a full inbox took a post\n");
         bad = 1;
+    } else {
+        /* Refused, so handed over to nobody: the poster still owns its text. */
+        take_back(&input);
     }
     if (inbox_probe_refused_inbox_posts(&sm) != 1u) {
         (void)fprintf(stderr, "FAIL: the refusal was counted %u times, want 1\n",
@@ -554,6 +610,58 @@ static int a_full_inbox_refuses_a_post_and_reports_it(void) {
         bad = 1;
     }
     inbox_probe_destroy(&sm);
+    return bad;
+}
+
+/* ── Storage a post hands over ─────────────────────────────────────── */
+
+/* docs/adr/0086, section 8.5 (a): the text a post hands over is released once
+   the input is applied, whether by the drain or, for an input the owner never
+   reached, by `_destroy`; never twice, and never while the machine may still
+   read it. */
+static int a_posted_text_is_released_once_applied_or_at_destroy(void) {
+    static inbox_probe_t sm;
+    host_log_t host;
+    inbox_probe_inbox_input_t input;
+    int bad = 0;
+
+    boot(&sm, &host);
+    const unsigned handed_before = atomic_load(&g_texts_handed);
+    const unsigned released_before = atomic_load(&g_texts_released);
+    ping(&input, "applied");
+    if (!post_from_another_thread(&sm, &input)) {
+        (void)fprintf(stderr, "FAIL: the inbox refused a post\n");
+        bad = 1;
+    }
+    ping_by_name(&input, "named");
+    if (!post_from_another_thread(&sm, &input)) {
+        (void)fprintf(stderr, "FAIL: the inbox refused a post by name\n");
+        bad = 1;
+    }
+    if (atomic_load(&g_texts_released) != released_before) {
+        (void)fprintf(stderr, "FAIL: a posted text was released before the owner applied it\n");
+        bad = 1;
+    }
+    inbox_probe_step(&sm);
+    bad |= expect_taken("the posts were applied with their texts", &sm, "ping:applied;ping:named;");
+    if (atomic_load(&g_texts_released) != released_before + 2u) {
+        (void)fprintf(stderr, "FAIL: %u of the 2 applied posts' texts were released\n",
+                      atomic_load(&g_texts_released) - released_before);
+        bad = 1;
+    }
+
+    /* Posted, and never applied: the machine releases it as it is destroyed. */
+    ping(&input, "unread");
+    if (!post_from_another_thread(&sm, &input)) {
+        (void)fprintf(stderr, "FAIL: the inbox refused a post\n");
+        bad = 1;
+    }
+    inbox_probe_destroy(&sm);
+    if (atomic_load(&g_texts_handed) - handed_before != 3u || atomic_load(&g_texts_released) - released_before != 3u) {
+        (void)fprintf(stderr, "FAIL: of 3 texts handed over, %u were released\n",
+                      atomic_load(&g_texts_released) - released_before);
+        bad = 1;
+    }
     return bad;
 }
 
@@ -849,10 +957,18 @@ int main(void) {
     bad |= posts_from_many_threads_are_taken_as_a_single_threaded_replay_takes_them();
     bad |= a_posted_ending_of_a_cancelled_or_restarted_start_is_refused_as_a_direct_one_is();
     bad |= a_full_inbox_refuses_a_post_and_reports_it();
+    bad |= a_posted_text_is_released_once_applied_or_at_destroy();
     bad |= a_post_made_before_the_owner_queues_its_own_event_is_taken_before_it();
     bad |= a_post_made_before_the_hosts_own_raise_is_taken_before_it();
     bad |= a_childs_ending_posted_before_its_parents_send_is_taken_before_it();
     bad |= a_post_names_a_session_of_the_tree_or_is_refused();
+    /* docs/adr/0086, section 8.5 (a): across every case, each text a post
+       handed over was released exactly once. */
+    if (atomic_load(&g_texts_handed) != atomic_load(&g_texts_released)) {
+        (void)fprintf(stderr, "FAIL: %u texts were handed over and %u released\n", atomic_load(&g_texts_handed),
+                      atomic_load(&g_texts_released));
+        bad = 1;
+    }
     if (bad == 0) {
         (void)printf("PASS: the inbox (SCE_INBOX_ATOMIC_RMW_WIDTH %d, SCE_MAX_INBOX %d)\n", SCE_INBOX_ATOMIC_RMW_WIDTH,
                      SCE_MAX_INBOX);
