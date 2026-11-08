@@ -15,16 +15,20 @@
 # leave a generator that still compiles:
 #
 #   the terminator is left out of the buffer;
-#   a string variable's declared capacity is not read, so nothing sizes it;
+#   a string variable's declared bound is not read, so nothing sizes it;
 #   a conditional is as long as its first branch only;
 #   an integer is as long as a `uint32` whatever its width;
 #   a chain is read one pair at a time, so each pair is a buffer of its own.
+#
+# The bound of each part is the one analysis of text bounds
+# (`sce-build/src/forge/text_bound.rs`, docs/adr/0086 section 8.6 (c)); the
+# buffer and the chain are the join's own (`sce-build/src/forge/expr.rs`).
 #
 # Anchors are literal slices of the source; an edit that moves one is reported
 # INCONCLUSIVE with the anchor quoted, never as a pass.
 
 mutation_tests -p sce-build --features cli --test a_static_datamodel_holds_every_variable_to_a_type
-mutation_targets sce-build/src/forge/expr.rs
+mutation_targets sce-build/src/forge/expr.rs sce-build/src/forge/text_bound.rs
 mutation_oracles sce-build/tests/a_static_datamodel_holds_every_variable_to_a_type.rs
 
 # ── The buffer holds what the parts hold ────────────────────────────
@@ -35,21 +39,26 @@ edit("sce-build/src/forge/expr.rs",
      "let capacity = bounds.iter().sum::<usize>();")
 PY
 
-mutation_case "a string variable's declared capacity is not read" <<'PY'
-edit("sce-build/src/forge/expr.rs",
-     "        ExprKind::Ident(name) => ctx.string_capacities.get(name.as_str()).copied(),\n",
-     "        ExprKind::Ident(_) => None,\n")
+# A variable's bound is read through its type and through the capacity its
+# name declares; both are taken away, so nothing sizes it.
+mutation_case "a string variable's declared bound is not read" <<'PY'
+edit("sce-build/src/forge/text_bound.rs",
+     "            return TextBound::Bounded(u64::from(max.max));\n",
+     "            let _ = max;\n")
+edit("sce-build/src/forge/text_bound.rs",
+     "    match ctx.string_capacities.get(path.as_str()) {\n",
+     "    match None::<&usize> {\n")
 PY
 
 mutation_case "a conditional is as long as its first branch only" <<'PY'
-edit("sce-build/src/forge/expr.rs",
-     "        } => Some(string_bound(consequent, ctx)?.max(string_bound(alternate, ctx)?)),\n",
-     "        } => {\n            let _ = alternate;\n            string_bound(consequent, ctx)\n        }\n")
+edit("sce-build/src/forge/text_bound.rs",
+     "        } => text_bound(consequent, ctx).larger(text_bound(alternate, ctx)),\n",
+     "        } => {\n            let _ = alternate;\n            text_bound(consequent, ctx)\n        }\n")
 PY
 
 mutation_case "an integer is as long as a uint32 whatever its width" <<'PY'
-edit("sce-build/src/forge/expr.rs",
-     "        InferredType::Int { signed: true, bits } => digits(usize::from(bits).saturating_sub(1)) + 1,\n",
+edit("sce-build/src/forge/text_bound.rs",
+     "        InferredType::Int { signed: true, bits } => digits(u64::from(bits).saturating_sub(1)) + 1,\n",
      "        InferredType::Int { signed: true, bits } => {\n            let _ = bits;\n            10\n        }\n")
 PY
 
