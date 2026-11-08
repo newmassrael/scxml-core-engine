@@ -8179,3 +8179,13 @@ SCE_STATIC_ASSERT(sizeof("{{ test_component_invoke_type | escape_c }}") <= (size
                   "SCE_MAX_ID_LEN too small for the type of the test-component invoker");
 {% endif %}
 {% endif %}
+{# docs/adr/0086, section 8.6 (b): last, after every reason the source emits.
+   A reason that quotes a sentence of the runtime is sized by the bound the
+   runtime publishes, and the machine checks that bound against the header it
+   compiles with. #}
+{% set bounds_checked = reason_bounds_checked() %}
+{% if bounds_checked %}
+
+/* ── docs/adr/0086, section 8.6 (b): the runtime's bounds the reasons quote ── */
+{{ bounds_checked }}
+{%- endif %}

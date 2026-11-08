@@ -423,6 +423,36 @@ static int a_refused_start_raises_error_execution_and_starts_nothing(void) {
     return bad;
 }
 
+// docs/adr/0086, section 8.6 (b): the host ABI bounds the reason a host refuses
+// a start with, so the machine's slot is sized to hold it. A reason of that many
+// bytes is taken whole into storage that has room for more; one byte more is
+// refused whole, never cut, though the storage could hold it.
+static int a_refusal_past_its_declared_bound_is_refused_whole(void) {
+    char storage[(size_t)SCE_HOST_INVOKE_REFUSAL_MAX_LEN * 2u];
+    char reason[(size_t)SCE_HOST_INVOKE_REFUSAL_MAX_LEN + 2u];
+    sce_host_invoke_response_t out;
+    int bad = 0;
+
+    memset(reason, 'r', sizeof(reason) - 2u);
+    reason[sizeof(reason) - 2u] = '\0';
+    memset(&out, 0, sizeof(out));
+    out.text = storage;
+    out.text_cap = sizeof(storage);
+    bad |= expect("refusal bound", "a reason at the bound was refused", sce_host_invoke_answer_refusal(&out, reason));
+    bad |= expect("refusal bound", "a reason at the bound was cut or set oversized",
+                  !out.oversized && out.refusal != NULL && strcmp(out.refusal, reason) == 0);
+
+    reason[sizeof(reason) - 2u] = 'r';
+    reason[sizeof(reason) - 1u] = '\0';
+    memset(&out, 0, sizeof(out));
+    out.text = storage;
+    out.text_cap = sizeof(storage);
+    bad |= expect("refusal bound", "a reason past the bound was taken", !sce_host_invoke_answer_refusal(&out, reason));
+    bad |= expect("refusal bound", "a reason past the bound was not refused whole",
+                  out.oversized && out.has_refusal && out.refusal != NULL && out.refusal[0] == '\0');
+    return bad;
+}
+
 // W3C SCXML 6.4: once the state has exited, what the cancelled process sends is
 // ignored. The host's reply arrives after the cancel and is refused.
 static int a_completion_after_the_cancel_is_refused(void) {
@@ -1117,6 +1147,7 @@ int main(void) {
     bad |= a_late_completion_is_accepted_exactly_once();
     bad |= a_failed_invocation_raises_error_invoke_once_with_its_origin();
     bad |= a_refused_start_raises_error_execution_and_starts_nothing();
+    bad |= a_refusal_past_its_declared_bound_is_refused_whole();
     bad |= a_completion_after_the_cancel_is_refused();
     bad |= a_restarted_invoke_refuses_the_first_runs_reply();
     bad |= a_done_invoke_raised_the_old_way_is_refused_and_counted();

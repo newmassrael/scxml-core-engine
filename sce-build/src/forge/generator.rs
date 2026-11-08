@@ -5942,6 +5942,33 @@ fn c11_payload_field_decl(l: &LangCtx, f: &EntryField) -> String {
     }
 }
 
+/// The statement that writes into the lift's `_message` the reason `row` of
+/// the machine's table, its holes `holes`, quoting `value`, a text of the run
+/// whose bound is `quote` (docs/adr/0086, section 8.6 (b)): the reason is
+/// measured for the slot at its row's text plus that bound.
+fn c11_lift_reason(
+    row: &str,
+    holes: &[&str],
+    quote: crate::forge::c11_reasons::Quote,
+    value: &str,
+) -> String {
+    let format = crate::forge::c11_reasons::row(row)
+        .and_then(|reason| reason.format(holes, &[quote]))
+        .expect("a lift emits its reasons, each a row of the table, before the slot is computed");
+    format!("snprintf(_message, _message_cap, {format}, {value});")
+}
+
+/// [`c11_lift_reason`] for the sentence a payload reader refused the field
+/// `id` of `event` with, `_refusal`, which `sce/event_payload.h` bounds.
+fn c11_lift_field_refused(event: &str, id: &str) -> String {
+    c11_lift_reason(
+        "lift_field_refused",
+        &[event, id],
+        crate::forge::c11_reasons::Quote::Published(crate::forge::c11_reasons::PAYLOAD_REFUSAL),
+        "_refusal",
+    )
+}
+
 /// The call that reads the payload field `id`, a number or a `bool` of the width
 /// `ty` declares, into `dest`: what the lift asks of `sce/event_payload.h`, which
 /// refuses a value its width cannot hold.
@@ -5993,15 +6020,23 @@ fn c11_payload_enum_read(
             v.ident
         ));
     }
+    let refused = c11_lift_field_refused(event, id);
+    // The name was read into a buffer of the longest name the enum declares,
+    // so the quote is bounded by that name's length.
+    let not_variant = c11_lift_reason(
+        "lift_not_variant",
+        &[event, id, alias],
+        crate::forge::c11_reasons::Quote::Within(longest as u64),
+        &format!("_name_{id}"),
+    );
     format!(
         "    {{\n        char _name_{id}[{}u];\n        \
 _refusal = sce_payload_read_text(&_fields, \"{id}\", _name_{id}, sizeof(_name_{id}));\n        \
 if (_refusal != NULL) {{\n            \
-snprintf(_message, _message_cap, \"`{event}` payload: '{id}' %s\", _refusal);\n            \
+{refused}\n            \
 return false;\n        }}\n        \
 {chain}{{\n            \
-snprintf(_message, _message_cap, \"`{event}` payload: '{id}' (%.32s) is not a variant of {alias}\",\n                     \
-_name_{id});\n            \
+{not_variant}\n            \
 return false;\n        }}\n    }}\n",
         longest + 1
     )
@@ -6022,10 +6057,11 @@ fn c11_optional_payload_read(
 ) -> String {
     let id = &f.id;
     let dest = format!("out->{id}.value");
+    let reason = c11_lift_field_refused(event, id);
     let refused = |read: &str| {
         format!(
             "            _refusal = {read};\n            if (_refusal != NULL) {{\n                \
-snprintf(_message, _message_cap, \"`{event}` payload: '{id}' %s\", _refusal);\n                \
+{reason}\n                \
 return false;\n            }}\n"
         )
     };
@@ -6063,7 +6099,7 @@ return false;\n            }}\n"
         "    {{\n        bool _present_{id} = false;\n        \
 _refusal = sce_payload_read_presence(&_fields, \"{id}\", &_present_{id});\n        \
 if (_refusal != NULL) {{\n            \
-snprintf(_message, _message_cap, \"`{event}` payload: '{id}' %s\", _refusal);\n            \
+{reason}\n            \
 return false;\n        }}\n        \
 out->{id}.present = _present_{id};\n        \
 if (_present_{id}) {{\n{present}        }}\n    }}\n"
@@ -6078,12 +6114,13 @@ if (_present_{id}) {{\n{present}        }}\n    }}\n"
 /// composition is (docs/adr/0086, section 4.4), as the C11 `<sce:lift>` reads a
 /// field. A refusal returns false with the sentence the caller raises.
 fn c11_field_value_read(id: &str, value_read: &str, event: &str, indent: &str) -> String {
+    let refused = c11_lift_field_refused(event, id);
     format!(
         "{indent}{{\n{indent}    const char *_value = NULL;\n{indent}    \
 _refusal = sce_payload_field(&_fields, \"{id}\", &_value);\n{indent}    \
 if (_refusal == NULL) {{\n{indent}        _refusal = {value_read};\n{indent}    }}\n{indent}}}\n\
 {indent}if (_refusal != NULL) {{\n{indent}    \
-snprintf(_message, _message_cap, \"`{event}` payload: '{id}' %s\", _refusal);\n{indent}    \
+{refused}\n{indent}    \
 return false;\n{indent}}}\n"
     )
 }
@@ -6262,9 +6299,10 @@ char {lifted}[{bound}u + 1u];\n"
                 scalar => c11_scalar_payload_read(scalar, id, &format!("out->{id}")),
             };
             if !read.is_empty() {
+                let refused = c11_lift_field_refused(event, id);
                 field_reads.push_str(&format!(
                     "    _refusal = {read};\n    if (_refusal != NULL) {{\n        \
-snprintf(_message, _message_cap, \"`{event}` payload: '{id}' %s\", _refusal);\n        \
+{refused}\n        \
 return false;\n    }}\n"
                 ));
             }
@@ -6283,6 +6321,12 @@ return false;\n    }}\n"
             ),
             None => "sce_payload_decode(_data, &_fields)".to_string(),
         };
+        let undecoded = c11_lift_reason(
+            "lift_payload_refused",
+            &[event],
+            crate::forge::c11_reasons::Quote::Published(crate::forge::c11_reasons::PAYLOAD_REFUSAL),
+            "_refusal",
+        );
         lift_readers.push_str(&format!(
             "/* Read `{event}`'s schema fields out of the data it carries. Answers false\n   \
 with the sentence the door takes `error.execution` on, in the delivery's place. */\n\
@@ -6291,7 +6335,7 @@ char *_message, size_t _message_cap) {{\n    \
 sce_payload_fields_t _fields;\n    \
 const char *_refusal = {decode};\n    \
 if (_refusal != NULL) {{\n        \
-snprintf(_message, _message_cap, \"`{event}` payload: %s\", _refusal);\n        \
+{undecoded}\n        \
 return false;\n    }}\n    (void)sm;\n{field_reads}    return true;\n}}\n\n"
         ));
         lift_arms.push_str(&format!(

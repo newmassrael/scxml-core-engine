@@ -172,7 +172,42 @@ fn the_slot_is_one_more_than_the_largest_schema_of_an_event_a_transition_takes()
 
 #[test]
 fn a_host_run_result_is_an_input_of_the_slot_though_no_transition_names_its_event() {
-    // 2 + ("id": 5 + 10) + ("note": 7 + 98) + 1 comma = 123
+    // 2 + ("id": 5 + 10) + ("note": 7 + 386) + 1 comma = 411, past the 255
+    // bytes of the host's refusal the machine also holds.
+    let schemas = [(
+        "answer",
+        schema(
+            "answer",
+            "answer.record",
+            &[("id", "uint32"), ("note", "string[64]")],
+        ),
+    )];
+    let doc = machine(
+        &[("answer", "Answer")],
+        r#"    <invoke type="x-app-host" id="ask" sce:result="Answer"/>
+    <transition event="done.invoke.ask"><assign location="seen" expr="1"/></transition>"#,
+    );
+    let header = header(&doc, &schemas, Some("x-app-host"));
+    assert!(
+        header.contains("#define PROBE_DATA_LEN_DECLARED 412u"),
+        "the slot holds the result's 411 bytes and a NUL:\n{header}"
+    );
+    assert!(
+        header.contains(
+            "`answer.record` (answer), which a host-run invocation completes with: 411 bytes"
+        ),
+        "the result is an input because the invocation completes with it:\n{header}"
+    );
+}
+
+/// docs/adr/0086, section 8.6 (b): a host may refuse a host-run invocation's
+/// start with a text of its own, which the machine raises whole. The host ABI
+/// bounds that text at 255 bytes, so a machine that runs a host-run invocation
+/// holds a reason of 255 bytes, and checks the bound against its header.
+#[test]
+fn a_host_refusal_is_a_reason_of_the_bound_the_host_abi_declares() {
+    // The result is 123 bytes (see the test above, with a note of 16), so the
+    // refusal's 255 bytes are what the slot holds.
     let schemas = [(
         "answer",
         schema(
@@ -186,16 +221,67 @@ fn a_host_run_result_is_an_input_of_the_slot_though_no_transition_names_its_even
         r#"    <invoke type="x-app-host" id="ask" sce:result="Answer"/>
     <transition event="done.invoke.ask"><assign location="seen" expr="1"/></transition>"#,
     );
-    let header = header(&doc, &schemas, Some("x-app-host"));
+    let (header, source) = generated(&doc, &schemas, &["--host-invoker", "x-app-host"]);
+    let longest = longest_reason(&header);
     assert!(
-        header.contains("#define PROBE_DATA_LEN_DECLARED 124u"),
-        "the slot holds the result's 123 bytes and a NUL:\n{header}"
+        longest >= 255,
+        "the host's refusal is a reason of up to 255 bytes:\n{header}"
     );
     assert!(
-        header.contains(
-            "`answer.record` (answer), which a host-run invocation completes with: 123 bytes"
+        header.contains(&format!("#define PROBE_DATA_LEN_DECLARED {}u", longest + 1)),
+        "the slot holds the refusal, past the result's 123 bytes:\n{header}"
+    );
+    assert!(
+        source.contains(
+            "SCE_STATIC_ASSERT((size_t)(SCE_HOST_INVOKE_REFUSAL_MAX_LEN) <= (size_t)255u,"
         ),
-        "the result is an input because the invocation completes with it:\n{header}"
+        "the machine checks the bound its slot was sized by:\n{source}"
+    );
+    let plain = machine(
+        &[],
+        r#"    <transition event="poke"><assign location="seen" expr="1"/></transition>"#,
+    );
+    let (_, plain_source) = generated(&plain, &[], &[]);
+    assert!(
+        !plain_source.contains("SCE_HOST_INVOKE_REFUSAL_MAX_LEN"),
+        "a machine that runs no host-run invocation relies on no refusal bound:\n{plain_source}"
+    );
+}
+
+/// docs/adr/0086, section 8.6 (b): the lift of a typed payload quotes the
+/// sentence a payload reader refused a field with. `sce/event_payload.h`
+/// publishes the longest such sentence, 120 bytes, so the reason is measured
+/// at its row's text plus 120, and the machine checks the bound.
+#[test]
+fn a_lift_reason_is_measured_at_its_text_plus_the_published_refusal_bound() {
+    let schemas = [("lifted", schema("lifted", "a.sent", &[("n", "uint8")]))];
+    let doc = r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="ecmascript" name="probe">
+  <sce:import kind="event-schema" src="lifted.scxml" as="Lifted"/>
+  <state id="idle">
+    <transition event="a.sent" cond="_event.data.n === 1" target="done"/>
+    <transition event="error.execution" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>
+"#;
+    let (header, source) = generated(doc, &schemas, &[]);
+    let text = "`a.sent` payload: 'n' ";
+    assert!(
+        source.contains(&format!(
+            "snprintf(_message, _message_cap, \"{text}%s\", _refusal);"
+        )),
+        "the lift writes the field's refusal through the table, quoting the sentence:\n{source}"
+    );
+    let measured = text.len() as u64 + 120;
+    assert!(
+        longest_reason(&header) >= measured,
+        "the lift's reason is measured at {measured} bytes:\n{header}"
+    );
+    assert!(
+        source.contains("SCE_STATIC_ASSERT((size_t)(SCE_PAYLOAD_REFUSAL_MAX_LEN) <= (size_t)120u,"),
+        "the machine checks the bound its slot was sized by:\n{source}"
     );
 }
 
