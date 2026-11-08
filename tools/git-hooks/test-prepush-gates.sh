@@ -26,6 +26,11 @@
 # fixture states that description as a file, as test-bx-land-refs.sh does, so no case asks a bx-fleet
 # this machine may carry, and refs/heads/main is gated whichever way the description reads.
 #
+# A landing counts no skip as a pass, in the gate library:
+#  14-18. a missing tool, or a skip of the gate, is 3 in a landing and the skip it was outside one
+#  19-21. a suite case that finds its tool missing is 3 in a landing; a suite's own failure is 1
+#  22. the runner exports SCE_GATE_LANDING for --landing
+#
 # Usage: tools/git-hooks/test-prepush-gates.sh   (no network, no build; a few seconds)
 
 set -euo pipefail
@@ -155,5 +160,68 @@ hook_case "12 PREPUSH_FULL on a main update plans --all --landing, status as is"
 hook_case "13 a genuine landing queue item asks for no gate" 0 \
     "" "refs/heads/topic $TIP refs/bx-land/main/items/0000000001-abc $Z" \
     BX="$WORK/bin/bx" PREPUSH_TEST_BX_RC=1
+
+# ── A landing counts no skip as a pass (scripts/gates/lib.sh) ────────────────────────────────────
+#
+# The skip sites of the gate library, sourced from this checkout and driven with a tool no machine
+# has. In a landing (SCE_GATE_LANDING, which `scripts/gate --landing` exports) a skip ends 3, could
+# not run, which bx reports as not measured; outside one it stays the skip it was. The mutant each
+# landing case turns red on is the old `exit 0`.
+LIB="$(cd "$HERE/../.." && pwd)/scripts/gates/lib.sh"
+ABSENT="no-such-tool-in-this-fixture-qq"
+cat >"$WORK/bin/suite-needs-a-tool" <<'STUB'
+#!/usr/bin/env bash
+# A suite whose case finds its tool missing: it skips, or fails naming the variable when told to.
+if [[ -n "${SCE_REQUIRE_TOOLS:-}" ]]; then
+    echo "case: tool not on PATH and SCE_REQUIRE_TOOLS is set"
+    exit 101
+fi
+echo "warning: case skipped"
+exit 0
+STUB
+cat >"$WORK/bin/suite-that-fails" <<'STUB'
+#!/usr/bin/env bash
+echo "case: assertion failed"
+exit 101
+STUB
+chmod +x "$WORK/bin/suite-needs-a-tool" "$WORK/bin/suite-that-fails"
+
+# lib_case <name> <want status> <shell text run after sourcing the library> [VAR=value...]
+lib_case() {
+    local name="$1" want_rc="$2" body="$3" rc=0
+    shift 3
+    env -u SCE_GATE_LANDING -u SCE_REQUIRE_TOOLS "$@" \
+        bash -c 'source "$1"; eval "$2"' _ "$LIB" "$body" >"$WORK/lib.out" 2>&1 || rc=$?
+    if [[ "$rc" == "$want_rc" ]]; then
+        pass "$name"
+    else
+        fail "$name" "exited $rc, want $want_rc; its output:"
+        sed 's/^/      /' "$WORK/lib.out"
+    fi
+}
+
+lib_case "14 in a landing, a missing tool is could not run (3), never a skip's 0" 3 \
+    "sce_gate_requires_tool $ABSENT some-package || exit 0" SCE_GATE_LANDING=1
+lib_case "15 outside a landing, the same missing tool is the skip it was (0)" 0 \
+    "sce_gate_requires_tool $ABSENT some-package || exit 0"
+lib_case "16 outside a landing, SCE_REQUIRE_TOOLS still makes it a failure (1)" 1 \
+    "sce_gate_requires_tool $ABSENT some-package || exit 0" SCE_REQUIRE_TOOLS=1
+lib_case "17 in a landing, a skip of the gate is could not run (3)" 3 \
+    "sce_gate_skip 'the thing is not here.'" SCE_GATE_LANDING=1
+lib_case "18 outside a landing, a skip of the gate is a skip (0)" 0 \
+    "sce_gate_skip 'the thing is not here.'"
+lib_case "19 in a landing, a suite case that finds its tool missing is could not run (3)" 3 \
+    "sce_gate_run_suite 'the suite' '$WORK/bin/suite-needs-a-tool'" SCE_GATE_LANDING=1
+lib_case "20 in a landing, a suite that fails on its own is the tree's failure (1)" 1 \
+    "sce_gate_run_suite 'the suite' '$WORK/bin/suite-that-fails'" SCE_GATE_LANDING=1
+lib_case "21 outside a landing, a suite case that skips passes as it always has (0)" 0 \
+    "sce_gate_run_suite 'the suite' '$WORK/bin/suite-needs-a-tool'"
+
+# The runner is what turns `--landing` into SCE_GATE_LANDING for every gate it starts.
+if grep -q '^    export SCE_GATE_LANDING=1$' "$HERE/../../scripts/gate"; then
+    pass "22 the runner exports SCE_GATE_LANDING for --landing"
+else
+    fail "22 the runner exports SCE_GATE_LANDING for --landing" "scripts/gate no longer exports it"
+fi
 
 exit "$fails"
