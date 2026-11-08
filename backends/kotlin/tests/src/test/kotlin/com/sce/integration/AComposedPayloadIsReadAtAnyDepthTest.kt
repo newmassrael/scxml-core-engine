@@ -26,6 +26,7 @@ import com.sce.integration.static_composed_payload.StaticComposedPayloadStateMac
 import com.sce.runtime.BoundExceeded
 import com.sce.runtime.EventMetadata
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -159,6 +160,31 @@ class AComposedPayloadIsReadAtAnyDepthTest {
             assertEquals(1u, sm.refusals, "error.execution reached the document once")
             assertEquals(0u, sm.itemCount, "none of the content ran")
             assertEquals(emptyList<UByte>(), sm.late, "nothing of the delivery was kept")
+        }
+    }
+
+    /**
+     * Every bound of the schema is held where the delivery is read (docs/adr/0086,
+     * section 4.4): a text and a byte string inside an element, the top-level text,
+     * and the count of the top-level list, each one past its bound in a delivery
+     * otherwise full, are refused whole.
+     */
+    @Test
+    fun everyBoundOfTheSchemaIsHeldWhereTheDeliveryIsRead() {
+        val full = batch(4)
+        val cases = listOf(
+            full.replaceFirst("\"label\":\"abcdefgh\"", "\"label\":\"abcdefghi\""),
+            full.replaceFirst("\"blob\":\"wxyz\"", "\"blob\":\"vwxyz\""),
+            full.replaceFirst("\"note\":\"abcd\"", "\"note\":\"abcde\""),
+            full.replaceFirst("\"items\":[", "\"items\":[${item(0, 1)},"),
+        )
+        for (delivery in cases) {
+            assertNotEquals(full, delivery, "the case changes the delivery")
+            delivered(delivery) { sm ->
+                assertEquals(1u, sm.refusals, "error.execution reached the document once: $delivery")
+                assertEquals(0u, sm.itemCount, "none of the content ran: $delivery")
+                assertEquals(emptyList<UByte>(), sm.late, "nothing of the delivery was kept: $delivery")
+            }
         }
     }
 }

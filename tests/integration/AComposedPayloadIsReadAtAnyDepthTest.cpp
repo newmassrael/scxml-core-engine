@@ -97,6 +97,39 @@ TEST(AComposedPayloadIsReadAtAnyDepthTest, AListPastItsBoundAtDepthTwoIsRefusedW
     EXPECT_TRUE(machine.late().empty()) << "nothing of the delivery was kept";
 }
 
+/// `full` with the first `from` written `to`.
+std::string replacedOnce(std::string full, const std::string &from, const std::string &to) {
+    const std::size_t at = full.find(from);
+    if (at != std::string::npos) {
+        full.replace(at, from.size(), to);
+    }
+    return full;
+}
+
+// Every bound of the schema is held where the delivery is read (docs/adr/0086, section
+// 4.4): a text and a byte string inside an element, the top-level text, and the count of
+// the top-level list, each one past its bound in a delivery otherwise full, are refused
+// whole.
+TEST(AComposedPayloadIsReadAtAnyDepthTest, EveryBoundOfTheSchemaIsHeldWhereTheDeliveryIsRead) {
+    const std::string full = batch(4);
+    const std::vector<std::string> cases = {
+        replacedOnce(full, "\"label\":\"abcdefgh\"", "\"label\":\"abcdefghi\""),
+        replacedOnce(full, "\"blob\":\"wxyz\"", "\"blob\":\"vwxyz\""),
+        replacedOnce(full, "\"note\":\"abcd\"", "\"note\":\"abcde\""),
+        replacedOnce(full, "\"items\":[", "\"items\":[" + item(0, 1) + ","),
+    };
+    for (const std::string &delivery : cases) {
+        ASSERT_NE(delivery, full) << "the case changes the delivery";
+        Machine machine;
+        machine.initialize();
+        machine.raiseExternal("batch.sent", delivery);
+        StaticScenario::settleRounds(machine);
+        EXPECT_EQ(machine.refusals(), 1u) << "error.execution reached the document once: " << delivery;
+        EXPECT_EQ(machine.item_count(), 0u) << "none of the content ran: " << delivery;
+        EXPECT_TRUE(machine.late().empty()) << "nothing of the delivery was kept: " << delivery;
+    }
+}
+
 TEST(AComposedPayloadIsReadAtAnyDepthTest, AValueAHostInjectsWithinItsBoundsIsReadAsAnyDelivery) {
     Machine machine;
     machine.initialize();
