@@ -461,7 +461,9 @@ const SCRIPTED: &str = r##"<?xml version="1.0"?>
 /// A `sce-static` machine whose typed buffers are written: a send's payload, a
 /// delayed send's, a host-served send's texts, a host-run invocation's request
 /// with a typed result, and the lift and inject seam of an event whose text its
-/// guard reads.
+/// guard reads. The invocation carries a deadline and the document answers
+/// error.execution, so its start writes the reason an unreadable deadline is
+/// raised with (the `reason` activity).
 fn typed_machine() -> String {
     r##"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
@@ -477,8 +479,12 @@ fn typed_machine() -> String {
       <send event="d" delay="1s"><param name="n" expr="count"/></send>
       <send event="h" type="x-sce-host"><param name="n" expr="count"/></send>
     </onentry>
-    <invoke type="x-app-host" id="ask" sce:result="Answer"><param name="n" expr="count"/></invoke>
+    <invoke type="x-app-host" id="ask" sce:result="Answer">
+      <param name="n" expr="count"/>
+      <param name="_sce_deadline_ms" expr="1000"/>
+    </invoke>
     <transition event="job.done" cond="_event.data.label === 'ok'"><assign location="count" expr="1"/></transition>
+    <transition event="error.execution"><assign location="count" expr="2"/></transition>
   </state>
 </scxml>
 "##
