@@ -369,13 +369,15 @@ fn the_http_host_machines_scratch_is_one_union_per_colour_not_one_member_per_rol
         repo_root().join("sce-build/tests/fixtures/static_datamodel/static_host_http.scxml"),
     )
     .expect("the HTTP host machine");
+    // A machine's C symbols are named after its file's stem, never its `name`
+    // attribute, and [`generated`] writes every document as `probe.scxml`.
     let (header, _) = generated(&doc, &[], &[]);
     let start = header
-        .find("typedef struct static_host_http_scratch {")
+        .find("typedef struct probe_scratch {")
         .expect("the machine's scratch record");
     let end = start
         + header[start..]
-            .find("} static_host_http_scratch_t;")
+            .find("} probe_scratch_t;")
             .expect("the end of the scratch record");
     let record = &header[start..end];
     let unions = record.matches("    union {").count();
@@ -476,7 +478,7 @@ fn typed_machine() -> String {
       <send event="h" type="x-sce-host"><param name="n" expr="count"/></send>
     </onentry>
     <invoke type="x-app-host" id="ask" sce:result="Answer"><param name="n" expr="count"/></invoke>
-    <transition event="job.done" cond="_event.data.label == 'ok'"><assign location="count" expr="1"/></transition>
+    <transition event="job.done" cond="_event.data.label === 'ok'"><assign location="count" expr="1"/></transition>
   </state>
 </scxml>
 "##
