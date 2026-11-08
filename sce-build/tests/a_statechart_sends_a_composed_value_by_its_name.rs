@@ -6,13 +6,14 @@
 //! schema the document imports for the event names a variable, a field of a
 //! record variable, or a part of the payload of the event the transition is
 //! on, and is accepted when the place's type fits the field's (section 5.1).
-//! The Rust and Kotlin backends write it by walking its type (section 5.3).
+//! The Rust, Kotlin, Go and Python backends write it by walking its type
+//! (section 5.3).
 //!
 //! # What is held
 //!
-//! * `check -l rust` and `check -l kotlin` take `static_composed_send`, which
-//!   forwards four lists and an optional list of the payload and sends a list
-//!   variable.
+//! * `check -l rust`, `check -l kotlin`, `check -l go` and `check -l python`
+//!   take `static_composed_send`, which forwards four lists and an optional
+//!   list of the payload and sends a list variable.
 //! * The Rust machine writes each value into the runtime's `ScriptValue` by
 //!   one case per constructor: a list as an `Array` of its elements, a record
 //!   as an `Object` of its fields, an absent value as `Null`, a 64-bit integer
@@ -21,6 +22,9 @@
 //! * The Kotlin machine writes each into the value its `<send>` holds params
 //!   in: a list as a `List`, a record as a `Map`, an absent value as `null`,
 //!   and each scalar as a scalar param crosses.
+//! * The Python machine writes each into the `ScriptValue` its `<send>` holds
+//!   params in, made of a `list`, a `dict` and `None`, each scalar as a scalar
+//!   param crosses.
 //! * A value whose type may not fit the field's is refused where it is
 //!   written, naming the field, the schema that reads it and the place.
 //! * A value that names no place is refused.
@@ -149,8 +153,8 @@ fn sender(data: &str, params: &str) -> String {
 /// (`sce-build/src/forge/event_schema_check.rs`) and by
 /// `Judge::composed_param` (`sce-build/src/forge/static_datamodel.rs`).
 #[test]
-fn rust_and_kotlin_take_a_send_of_composed_values_that_fit() {
-    for language in ["rust", "kotlin"] {
+fn each_backend_that_sends_takes_a_send_of_composed_values_that_fit() {
+    for language in ["rust", "kotlin", "go", "python"] {
         let (ok, out) = run_on(
             &["check", "-l", language],
             &fixtures().join("static_composed_send.scxml"),
@@ -184,6 +188,51 @@ fn each_value_is_written_by_walking_its_type_on_kotlin() {
             "putParam(sendPayload, \"maybe\", (pendingBatchSentPayload!!.maybe).map { ((it)?.let { (it).toLong() }) })",
             "putParam(sendPayload, \"spare\", ((pendingBatchSentPayload!!.spare)?.let { (it).map { (it).toLong() } }))",
             "putParam(sendPayload, \"late\", (vLate).map { (it).toLong() })",
+        ],
+    );
+}
+
+/// Pinned by `PythonComposed`'s writers under `PythonCarrier::Wire` and its
+/// `send_param` (`sce-build/src/forge/composed_lowering.rs`),
+/// `PythonTarget::composed_send_spelling` and `composed_wire_value`
+/// (`sce-build/src/forge/static_lowering.rs`): each part of the payload is
+/// written from the place it is read at into the plain value a Python `<send>`'s
+/// `ScriptValue` is made of, a list as a `list` and a record as a `dict`, which
+/// the runtime writes as the event's JSON.
+#[test]
+fn each_value_is_written_by_walking_its_type_on_python() {
+    let code = generated_sender(sce_build::generator::Language::Python, "_sm.py");
+    let put = "self._put_param(_data, _data_repeats, ";
+    let payload = "self._pending_batch_sent_payload";
+    holds(
+        &code,
+        &[
+            &format!(
+                "{put}\"items\", (_ScriptValue.of([{{\"id\": sce_element.id, \"amount\": \
+                 str(sce_element.amount), \"label\": sce_element.label, \"level\": \
+                 (sce_element.level).sce_name, \"due\": (lambda sce_element: None if \
+                 sce_element is None else str(sce_element))(sce_element.due), \"blob\": \
+                 (sce_element.blob).decode(\"latin-1\"), \"tags\": [sce_element for \
+                 sce_element in sce_element.tags]}} for sce_element in {payload}.items])).to_python())"
+            ),
+            &format!(
+                "{put}\"grid\", (_ScriptValue.of([[sce_element for sce_element in sce_element] \
+                 for sce_element in {payload}.grid])).to_python())"
+            ),
+            &format!(
+                "{put}\"levels\", (_ScriptValue.of([(sce_element).sce_name for sce_element in \
+                 {payload}.levels])).to_python())"
+            ),
+            &format!(
+                "{put}\"maybe\", (_ScriptValue.of([(lambda sce_element: None if sce_element is \
+                 None else sce_element)(sce_element) for sce_element in \
+                 {payload}.maybe])).to_python())"
+            ),
+            &format!(
+                "{put}\"spare\", (_ScriptValue.of((lambda sce_element: None if sce_element is \
+                 None else [sce_element for sce_element in sce_element])({payload}.spare))).to_python())"
+            ),
+            "(_ScriptValue.of([sce_element for sce_element in self.v_late])).to_python())",
         ],
     );
 }
@@ -257,7 +306,7 @@ fn a_backend_that_sends_none_refuses_the_send_by_name() {
         r#"<data id="kept" sce:type="list&lt;uint8&gt;[2]"/>"#,
         r#"<param name="late" expr="kept"/>"#,
     );
-    for language in ["cpp", "python", "c11"] {
+    for language in ["cpp", "c11"] {
         let (ok, out) = run(&["check", "-l", language], &document);
         assert!(!ok, "{language} sends no composed value yet:\n{out}");
         assert!(
@@ -266,7 +315,7 @@ fn a_backend_that_sends_none_refuses_the_send_by_name() {
         );
         assert!(out.contains("lowering of its list"), "{language}: {out}");
     }
-    for language in ["rust", "kotlin"] {
+    for language in ["rust", "kotlin", "go", "python"] {
         let (ok, out) = run(&["check", "-l", language], &document);
         assert!(ok, "{language} sends a list variable that fits:\n{out}");
     }

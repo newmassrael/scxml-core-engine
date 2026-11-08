@@ -12162,6 +12162,19 @@ impl StaticTarget for PythonTarget {
             carrier: crate::forge::composed_lowering::PythonCarrier::Json,
         }))
     }
+    // The walks of `composed_spelling`, each writer writing the plain value the
+    // `ScriptValue` every param of a `<send>` is held in (`wire_value`) is made
+    // of, which the runtime writes as one JSON object (docs/adr/0086, section
+    // 5.3).
+    fn composed_send_spelling<'a>(
+        &self,
+        machine: &'a str,
+    ) -> Option<Box<dyn crate::forge::composed_lowering::ComposedSpelling + 'a>> {
+        Some(Box::new(crate::forge::composed_lowering::PythonComposed {
+            machine,
+            carrier: crate::forge::composed_lowering::PythonCarrier::Wire,
+        }))
+    }
     // A frozen dataclass of the schema's fields in the schema's order, spelled
     // as the typed payload's are, because an expression reads a field by the
     // name the author wrote. Frozen, so a copy a host was handed cannot be
@@ -18998,14 +19011,18 @@ fn composed_wire_value(
     }
     let held = place_text(&path, ctx, renames, target, &*spelling).map_err(refused)?;
     let within = composed::within_of(&place.scope, &names.records).map_err(refused)?;
-    let wired = composed::writer(
-        &place.ty,
-        within.as_deref(),
-        &names.records,
-        &*spelling,
-        &composed::Held::place(held.clone()),
-    )
-    .map_err(refused)?;
+    // The value the target's send holds the param in, made of what the walk
+    // wrote ([`composed::ComposedSpelling::send_param`]).
+    let wired = spelling.send_param(
+        composed::writer(
+            &place.ty,
+            within.as_deref(),
+            &names.records,
+            &*spelling,
+            &composed::Held::place(held.clone()),
+        )
+        .map_err(refused)?,
+    );
     rewrites.note(written, param.spelling, &held);
     Ok(Some(wired))
 }

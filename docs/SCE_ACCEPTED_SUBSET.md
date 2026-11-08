@@ -5322,7 +5322,11 @@ the value its send holds each param in, a list as an `[]any`, a record as a
 `map[string]any` and an absent value as `nil`, each scalar as a scalar param
 crosses, which the runtime's `ScriptValueToJSON` writes as the event's JSON, keys
 ascending at every depth; a place read through an index is refused by name on Go
-too.
+too. The Python backend writes it as the plain value its send's `ScriptValue` is
+made of, a list as a `list`, a record as a `dict` and an absent value as `None`,
+each scalar as a scalar param crosses, which the runtime writes as the event's JSON,
+keys ascending at every depth; a place read through an index is refused by name on
+Python too.
 
 What no backend lowers yet is refused by name where the machine is generated, in
 the one gate every route asks first (`check` with or without a backend,
