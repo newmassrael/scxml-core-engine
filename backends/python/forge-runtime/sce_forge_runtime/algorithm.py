@@ -25,6 +25,7 @@ for a signed width), or the nearer bound when it lies past one. Neither raises.
 
 from __future__ import annotations
 
+import copy
 import dataclasses
 import enum
 import math
@@ -200,6 +201,19 @@ def copied(record):
     if record is None:
         return None
     return dataclasses.replace(record)
+
+
+def whole_copy(value):
+    """``value`` copied whole, sharing no list with it: what a place of a
+    ``sce-static`` machine takes when it takes a composed value whole, a list a
+    payload holds taken into a list variable among them (docs/adr/0086,
+    section 6.1). A list is the one value a machine writes into in place (an
+    append, a clear), so the list taken, and each list it holds at any depth,
+    is a new one, and nothing written into the place reaches the value it was
+    taken from, which may be a host's. A number, a text, a byte string and an
+    enum member are values nothing writes into, and come back as they are; a
+    record is copied with its fields."""
+    return copy.deepcopy(value)
 
 
 def to_f32(value: float) -> float:

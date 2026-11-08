@@ -436,7 +436,13 @@ def check_value(path: str, declared: Any, value: Any) -> None:
     """Hold a value a host built to its type at every depth, before anything
     reads it (docs/adr/0086, section 5.4): what a generated record's
     ``__post_init__`` runs over each field, through the same type names the
-    reader takes. Raises ``BoundError`` naming the path."""
+    reader takes. Raises ``BoundError`` naming the path.
+
+    A type that holds no bound of its own is passed over: a truth value, a
+    real, an enum type, and ``None``, which the generator names the element of
+    a list by where the element has nothing of its own to hold here (an enum
+    member, or a record, whose own class held its fields where it was made), so
+    that list is held to its counts alone."""
     if isinstance(declared, OptionalOf):
         if value is not None:
             check_value(path, declared.declared, value)

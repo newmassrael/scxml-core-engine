@@ -315,6 +315,22 @@ def test_a_list_written_short_of_its_lower_count_is_refused() -> None:
         check_value("items", ListOf(Whole(0, 255), 3, least=2), [1, 2, 3, 4])
 
 
+def test_a_list_of_elements_with_nothing_to_hold_is_held_to_its_counts_alone() -> None:
+    # The generator names the element `None` where it holds nothing of its own
+    # to check: a record, which its own class checked where it was made, or an
+    # enum member. Any element passes, and the counts are held.
+    check_value("items", ListOf(None, 2), [object(), _Tagged("x", [])])
+    check_value("levels", ListOf(None, 2), [_Level.LOW])
+    with pytest.raises(BoundError, match="^'items' holds 3 elements, past the 2 its type declares$"):
+        check_value("items", ListOf(None, 2), [object(), object(), object()])
+    with pytest.raises(BoundError, match="^'items' holds 0 elements, fewer than the 1 its type declares$"):
+        check_value("items", ListOf(None, 2, least=1), [])
+    # A truth value, a real and an enum type hold no bound of their own either.
+    check_value("on", bool, True)
+    check_value("x", float, 1e308)
+    check_value("level", _Level, _Level.HIGH)
+
+
 def test_a_record_value_names_its_missing_field_and_reads_its_later_fields_from_defaults() -> None:
     data = {"r": {"a": 1, "zz": [None]}, "s": 5}
     with pytest.raises(TypedPayloadError, match="^the event's data has no 'r/b'$"):
