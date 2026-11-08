@@ -25,7 +25,7 @@
 
 /* The suite's module parameters at their defaults fit the runtime's table of them. */
 SCE_STATIC_ASSERT({{ parameters | length }}u <= SCE_TEST_MAX_MODULE_PARAMETERS,
-                  "SCE_TEST_MAX_MODULE_PARAMETERS too small for the module parameters of the suite {{ suite_name | escape_c }}");
+                  "SCE_TEST_MAX_MODULE_PARAMETERS too small for the module parameters of this suite");
 {% endif %}
 {% for selection in selections %}
 
