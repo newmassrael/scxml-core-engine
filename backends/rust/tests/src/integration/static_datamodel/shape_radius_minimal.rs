@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 185d995fbef5e4650ae7c20d165e4a208237e26dd7d946178edb7b10ba93cc9e
-#![doc = "SCE-MAP: shape_radius.scxml:3 :: _forge_body"]
-// SCE-MAP: shape_radius.scxml:3 :: _forge_body
+// source-hash: d1761e5ce3c848ac60422dc2a65a21127a26aba980f944059bcd0ab0b5050c1f
+#![doc = "SCE-MAP: shape_radius_minimal.scxml:3 :: _forge_body"]
+// SCE-MAP: shape_radius_minimal.scxml:3 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="event-schema")
 // Runtime: none
@@ -21,13 +21,13 @@ pub const DATA_MAX_LEN: u64 = 16;
 /// The id of the payload's schema, `urn:sce:schema:<document>:<revision>`: the
 /// `$id` of `JSON_SCHEMA`.
 #[allow(dead_code)]
-pub const SCHEMA_ID: &str = "urn:sce:schema:shape_radius:1";
+pub const SCHEMA_ID: &str = "urn:sce:schema:shape_radius_minimal:1";
 /// The payload as a JSON Schema (2020-12): one spelling of each value, every
 /// bound as this build resolved it, a text's in UTF-8 bytes in `x-sce-max-bytes`.
 #[allow(dead_code)]
-pub const JSON_SCHEMA: &str = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:shape_radius:1\",\"x-sce-source-hash\":\"185d995fbef5e4650ae7c20d165e4a208237e26dd7d946178edb7b10ba93cc9e\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"radius\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":65535}},\"required\":[\"radius\"],\"additionalProperties\":false}";
+pub const JSON_SCHEMA: &str = "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"$id\":\"urn:sce:schema:shape_radius_minimal:1\",\"x-sce-source-hash\":\"d1761e5ce3c848ac60422dc2a65a21127a26aba980f944059bcd0ab0b5050c1f\",\"description\":\"x-sce-max-bytes bounds a text in UTF-8 bytes; maxLength counts characters\",\"type\":\"object\",\"properties\":{\"radius\":{\"type\":\"integer\",\"minimum\":0,\"maximum\":65535}},\"required\":[\"radius\"],\"additionalProperties\":false}";
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ShapeRadiusPayload {
+pub struct ShapeRadiusMinimalPayload {
     pub radius: u16,
 }
