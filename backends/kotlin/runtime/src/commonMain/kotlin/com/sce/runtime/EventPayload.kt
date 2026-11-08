@@ -524,11 +524,22 @@ object EventPayload {
 
         fun boolean(name: String): Boolean = field(name).boolean()
 
-        /** A text field, as the text it carries; [Value.string] holds it to its bound. */
+        /**
+         * The text a field carries, held to no bound: what an enum field's variant is
+         * named by, which its reader matches against the names its enum declares. A
+         * text field is read by the overload that takes its bound.
+         */
         fun string(name: String): String = field(name).name()
 
-        /** A byte-string field, held to no bound; [Value.bytes] holds it to its own. */
-        fun bytes(name: String): ByteArray = field(name).bytes(Int.MAX_VALUE)
+        /**
+         * A text field of at most [bound] UTF-8 bytes (docs/adr/0086, section 4.4):
+         * the top level of a payload is held to its bound by [Value.string], the
+         * reader a text at any depth is held by.
+         */
+        fun string(name: String, bound: Int): String = field(name).string(bound)
+
+        /** A byte-string field of at most [bound] bytes, held by [Value.bytes]. */
+        fun bytes(name: String, bound: Int): ByteArray = field(name).bytes(bound)
 
         /**
          * A field of `optional<T>` (docs/adr/0055, section 4): absent where the
