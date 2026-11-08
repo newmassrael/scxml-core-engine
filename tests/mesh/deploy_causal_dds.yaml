@@ -1,0 +1,21 @@
+# docs/adr/0085, section 3.2: the brake's `#motor` binding is the route of a
+# causal group over dds. Consumed by test_mesh_causal_injection.cpp, which
+# drives the generated router without joining the domain: the client is built
+# in init(), which the test does not call.
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      dds:
+        domain_id: 47
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: dds
+            topic: "SceCausalBrakeMotor"
+            delivery: causal
+            group: { name: pair, view: [ecu1/brake, ecu1/motor] }
+      motor:
+        source: motor.scxml

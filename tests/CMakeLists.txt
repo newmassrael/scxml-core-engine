@@ -3628,6 +3628,56 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
 
     add_test(NAME mesh_causal_route_verification COMMAND mesh_causal_route_test)
 
+    # ── The causal route through the generated router, per transport ──
+    # docs/adr/0085, section 3.2: one source, compiled against the router
+    # generated from `deploy_causal_<NAME>.yaml`, whose `#motor` binding is
+    # the route of a causal group over the transport KIND. Each transport's
+    # inbound entry point hands the peer's envelopes to the route before
+    # the engine; shm and local also read what the router releases. The
+    # transports that need an SDK register beside their SDK's other tests.
+    function(sce_mesh_causal_injection_test NAME)
+        cmake_parse_arguments(PARSE_ARGV 1 _MCI "" "KIND;DEFINE;RESOURCE_LOCK" "LIBS")
+        set(_OUT "${CMAKE_CURRENT_BINARY_DIR}/mesh_causal_${NAME}_generated")
+        sce_mesh_fixture_generations(_MCI_HEADERS
+            OUTPUT_DIR "${_OUT}" MACHINES brake motor
+            DEPLOY "${MESH_TEST_DIR}/deploy_causal_${NAME}.yaml"
+            LABEL "Mesh causal (${NAME})")
+        add_executable(mesh_causal_${NAME}_test
+            mesh/test_mesh_causal_injection.cpp
+            ${_MCI_HEADERS}
+        )
+        target_include_directories(mesh_causal_${NAME}_test
+            PRIVATE
+                ${CMAKE_SOURCE_DIR}/sce/include
+                "${_OUT}"
+                ${CMAKE_CURRENT_SOURCE_DIR}/mesh
+        )
+        target_link_libraries(mesh_causal_${NAME}_test
+            PRIVATE
+                sce_base
+                sce_mesh_common
+                ${_MCI_LIBS}
+                pthread
+        )
+        target_compile_definitions(mesh_causal_${NAME}_test
+            PRIVATE "SCE_CAUSAL_TRANSPORT_KIND=\"${_MCI_KIND}\"" ${_MCI_DEFINE})
+        target_compile_features(mesh_causal_${NAME}_test PRIVATE cxx_std_17)
+        apply_sce_test_policies(mesh_causal_${NAME}_test)
+        add_test(NAME mesh_causal_${NAME}_verification COMMAND mesh_causal_${NAME}_test)
+        set_tests_properties(mesh_causal_${NAME}_verification PROPERTIES TIMEOUT 10)
+        if(_MCI_RESOURCE_LOCK)
+            set_tests_properties(mesh_causal_${NAME}_verification PROPERTIES
+                RESOURCE_LOCK ${_MCI_RESOURCE_LOCK})
+        endif()
+    endfunction()
+
+    sce_mesh_causal_injection_test(custom_tcp KIND custom_tcp)
+    sce_mesh_causal_injection_test(local KIND local DEFINE SCE_CAUSAL_LOCAL)
+    # The brake's channel is `/sce_brake_motor`, which the shm runtime test
+    # also creates.
+    sce_mesh_causal_injection_test(shm KIND shm DEFINE SCE_CAUSAL_SHM
+        RESOURCE_LOCK sce_mesh_shm_brake_motor)
+
     # ── OutboundBuffer unit tests (SCE_MESH.md §10.10 + §16.7 row 9) ─
     # Pure unit tests on the per-target readiness-gated admit layer.
     # Sibling DedupRouter / OrderingBuffer tests cover their inbound
@@ -5606,6 +5656,11 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
 
         add_test(NAME mesh_someip_compile_verification COMMAND mesh_someip_compile_test)
 
+        # docs/adr/0085, section 3.2: the causal route over someip, the vector
+        # on the method `vsomeip_causal.json` declares for it; hermetic (the
+        # application is created, never started).
+        sce_mesh_causal_injection_test(someip KIND someip LIBS vsomeip3)
+
         # ── Session C: SOME/IP multi-pattern compile verification ─────
         # Exercises all 4 SOME/IP capability categories (FireForget,
         # RequestReply, PubSub, FieldAccess) on a single target. Validates
@@ -7278,6 +7333,10 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
             TIMEOUT 10
         )
 
+        # docs/adr/0085, section 3.2: the causal route over zenoh_keyexpr,
+        # hermetic (no session is opened).
+        sce_mesh_causal_injection_test(zenoh KIND zenoh_keyexpr LIBS zenohcxx::zenohc)
+
         # ── Session D: zenoh multi-pattern compile verification ──────
         # brake_zenoh_multi.scxml exercises all four zenoh capability
         # categories (FireForget/RpcRequest/EventSubscribe/FieldRead/
@@ -8224,6 +8283,11 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         set_tests_properties(mesh_dds_multipattern PROPERTIES
             TIMEOUT 90
         )
+
+        # docs/adr/0085, section 3.2: the causal route over dds, hermetic
+        # (init() is not called, so no participant joins the domain).
+        sce_mesh_causal_injection_test(dds KIND dds
+            LIBS sce_mesh_dds_types CycloneDDS-CXX::ddscxx)
 
         # ── DDS server response deadline (SCE Mesh §9.5) ──
         # The DDS arm of the deadline matrix. Sibling of the SOME/IP and

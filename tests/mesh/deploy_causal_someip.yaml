@@ -1,0 +1,29 @@
+# docs/adr/0085, section 3.2: the brake's `#motor` binding is the route of a
+# causal group over someip. The vector rides the method the service interface
+# declares under the reserved name `mesh.causal_vector` (vsomeip_causal.json).
+# Consumed by test_mesh_causal_injection.cpp, which drives the generated
+# router without starting the vsomeip application.
+version: "1.0"
+topology:
+  ecu1:
+    transports:
+      someip:
+        config: vsomeip_causal.json
+        application_name: brake_app
+    machines:
+      brake:
+        source: brake.scxml
+        bindings:
+          "#motor":
+            transport: someip
+            service: motor_control
+            protocol: udp
+            events:
+              "brake.activate":
+                method: activate
+              "mesh.causal_vector":
+                method: causal_vector
+            delivery: causal
+            group: { name: pair, view: [ecu1/brake, ecu1/motor] }
+      motor:
+        source: motor.scxml
