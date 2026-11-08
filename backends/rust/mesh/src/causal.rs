@@ -857,7 +857,7 @@ mod tests {
     struct Rng(u64);
 
     impl Rng {
-        fn next(&mut self) -> u64 {
+        fn step(&mut self) -> u64 {
             self.0 ^= self.0 << 13;
             self.0 ^= self.0 >> 7;
             self.0 ^= self.0 << 17;
@@ -865,11 +865,11 @@ mod tests {
         }
 
         fn below(&mut self, n: usize) -> usize {
-            (self.next() % n as u64) as usize
+            (self.step() % n as u64) as usize
         }
 
         fn chance(&mut self, percent: u64) -> bool {
-            self.next() % 100 < percent
+            self.step() % 100 < percent
         }
     }
 
