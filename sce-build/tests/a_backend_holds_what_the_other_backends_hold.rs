@@ -314,17 +314,14 @@ const ACCEPTED: &[(Language, &str, Why)] = &[
     (Language::Swift, "forge kind `test-component`", Why::NotYet(TEST_COMPONENT_NOT_YET)),
     // The tables of a test and the port type they read (docs/SCE_TEST_PROFILE.md
     // §12.6, `codegen_matrix::TEST_SUITE_BACKENDS`): the profile's runner, which
-    // lands in one backend at a time, C++ first, then Rust, Kotlin and Go.
-    (Language::Python, "forge kind `test-port-type`", Why::NotYet(TEST_SUITE_NOT_YET)),
+    // lands in one backend at a time, C++ first, then Rust, Kotlin, Go and
+    // Python.
     (Language::C11, "forge kind `test-port-type`", Why::NotYet(TEST_SUITE_NOT_YET)),
     (Language::Swift, "forge kind `test-port-type`", Why::NotYet(TEST_SUITE_NOT_YET)),
-    (Language::Python, "forge kind `test-configuration`", Why::NotYet(TEST_SUITE_NOT_YET)),
     (Language::C11, "forge kind `test-configuration`", Why::NotYet(TEST_SUITE_NOT_YET)),
     (Language::Swift, "forge kind `test-configuration`", Why::NotYet(TEST_SUITE_NOT_YET)),
-    (Language::Python, "forge kind `test-case`", Why::NotYet(TEST_SUITE_NOT_YET)),
     (Language::C11, "forge kind `test-case`", Why::NotYet(TEST_SUITE_NOT_YET)),
     (Language::Swift, "forge kind `test-case`", Why::NotYet(TEST_SUITE_NOT_YET)),
-    (Language::Python, "forge kind `test-suite`", Why::NotYet(TEST_SUITE_NOT_YET)),
     (Language::C11, "forge kind `test-suite`", Why::NotYet(TEST_SUITE_NOT_YET)),
     (Language::Swift, "forge kind `test-suite`", Why::NotYet(TEST_SUITE_NOT_YET)),
     // The CLI routes (cli_language.rs, `LanguageRoute::exclusion_reason`).
