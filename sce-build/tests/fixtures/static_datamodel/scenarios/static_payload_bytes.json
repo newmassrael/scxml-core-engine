@@ -67,6 +67,14 @@
 
     { "note": "nine bytes are past the eight the schema declares: the payload is refused whole where it is read, so the size is left as it was and error.execution is raised once, though the route writes none of the frame",
       "event": "framed.taken", "data": { "sensor": 50, "frame": "123456789" },
-      "expect": { "variables": { "size": 8, "held": "éÿ", "matches": 1, "misses": 2, "errors": 5 } } }
+      "expect": { "variables": { "size": 8, "held": "éÿ", "matches": 1, "misses": 2, "errors": 5 } } },
+
+    { "note": "a sensor of 40 to 49 counts a miss and reads nothing of the frame",
+      "event": "framed.taken", "data": { "sensor": 40, "frame": "abc" },
+      "expect": { "variables": { "matches": 1, "misses": 3, "errors": 5 } } },
+
+    { "note": "nine bytes on the route that reads none of the frame: the payload is refused whole where it is read, before any transition is selected, so no miss is counted and error.execution is raised once",
+      "event": "framed.taken", "data": { "sensor": 40, "frame": "123456789" },
+      "expect": { "variables": { "size": 8, "matches": 1, "misses": 3, "errors": 6 } } }
   ]
 }

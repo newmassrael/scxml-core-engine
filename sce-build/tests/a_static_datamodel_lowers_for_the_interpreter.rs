@@ -326,6 +326,69 @@ fn a_payload_text_and_byte_string_are_read_held_to_their_bound() {
     }
 }
 
+/// The Interpreter reads a delivery whole at its door, as every generated machine
+/// lifts it when it takes the event (docs/adr/0086, section 4.4): the library is
+/// installed with the record of each event whose payload the document reads, every
+/// guard that reads the payload is held to the event having been let in, and the
+/// content of a transition that reads it stands inside an `<if>` of the same, so a
+/// refused delivery runs none of it while the transition is taken as it is on the
+/// generated engines. `static_payload_bytes` reads `framed.taken`, a `uint8` and a
+/// `bytes[8]`.
+#[test]
+fn a_delivery_is_read_whole_at_the_interpreters_door() {
+    let out = lowered_fixture("static_payload_bytes");
+    let document = roxmltree::Document::parse(&out).expect("well-formed");
+    let scxml = |n: &roxmltree::Node<'_, '_>, name: &str| {
+        n.is_element()
+            && n.tag_name().name() == name
+            && n.tag_name().namespace() == Some("http://www.w3.org/2005/07/scxml")
+    };
+    let library = document
+        .descendants()
+        .find(|n| scxml(n, "data") && n.attribute("id") == Some("SceStaticInstalled"))
+        .and_then(|n| n.attribute("expr"))
+        .expect("the library is installed");
+    assert!(
+        library.contains(
+            "SceStatic.door(\"framed.taken\", {record: {'sensor': 'uint8', 'frame': {bytes: 8}}});"
+        ),
+        "the door of the event is installed with its record: {library}"
+    );
+    let transitions: Vec<roxmltree::Node<'_, '_>> = document
+        .descendants()
+        .filter(|n| scxml(n, "transition") && n.attribute("event") == Some("framed.taken"))
+        .collect();
+    assert!(
+        !transitions.is_empty(),
+        "the document takes framed.taken:\n{out}"
+    );
+    for transition in &transitions {
+        let guard = transition.attribute("cond");
+        if let Some(guard) = guard {
+            assert!(
+                guard.starts_with("SceStatic.admitted() && (") && guard.ends_with(')'),
+                "a guard that reads the payload is held to the door: {guard}"
+            );
+        } else {
+            // The one transition with no guard writes the record field by field.
+            let first = transition
+                .children()
+                .find(|n| n.is_element())
+                .expect("the content");
+            assert!(
+                scxml(&first, "if") && first.attribute("cond") == Some("SceStatic.admitted()"),
+                "content that reads the payload stands inside the door's <if>:\n{out}"
+            );
+        }
+    }
+    // A document whose payload no expression reads has no door to install.
+    let counter = lowered_fixture("static_counter");
+    assert!(
+        !counter.contains("SceStatic.door("),
+        "no door where no payload is read"
+    );
+}
+
 /// An algorithm the document imports travels in it: installed by the library's
 /// `<data>` under `SceStatic.algorithms`, and called by that name from the
 /// guard that calls it — the function a generated machine would have linked.
