@@ -246,8 +246,10 @@ public:
 
         // NL→IR Item C1 Path A: binding the typed `_event.data` view is NOT
         // done here. The bind can refuse — a payload that does not read as its
-        // schema — and §scxml-3.13's answer to that is `error.execution`, which
-        // only the engine can raise. `StaticExecutionEngine::bindTypedPayload`
+        // schema — and the answer to that is not §scxml-3.13's for a guard that
+        // cannot be evaluated: the delivery is refused whole, with an
+        // `error.execution` in its place (docs/adr/0086, section 4.2), which
+        // only the engine can take. `StaticExecutionEngine::bindTypedPayload`
         // owns both halves, beside its own call to this function.
     }
 

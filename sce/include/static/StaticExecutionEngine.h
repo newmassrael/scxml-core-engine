@@ -447,6 +447,21 @@ public:
             : event(e), data(d), origin(std::move(o)), sendId(s), type(t), invokeId(i), target(tgt) {}
     };
 
+private:
+    /// What a door made of a delivery just taken off a queue (docs/adr/0086,
+    /// section 4.2).
+    enum class Admission {
+        /// Its data fits its type, or the document reads none of it: it is taken.
+        Admitted,
+        /// It is refused whole, and the `error.execution` that carries the
+        /// refusal is bound and taken in its place.
+        InPlace,
+        /// It is refused whole, and the document declares no `error.execution`
+        /// to take in its place.
+        Refused
+    };
+
+public:
     // ── What another thread may post (docs/adr/0084) ─────────────────────
     //
     // The set is closed: it is the inputs that have a caller on another thread,
@@ -895,18 +910,34 @@ private:
         // what the host delivered and a `<finalize>` never runs for a child
         // event a transport relayed in this way.
         const Event event = eventWithMeta.event;
-        applyExternalEventPreamble(eventWithMeta);
+        std::optional<EventWithMetadata> inPlace;
+        const Admission admission = applyExternalEventPreamble(eventWithMeta, inPlace);
+        if (admission == Admission::Refused) {
+            return;
+        }
 
-        // The host's own event is the first of this invocation's budget: it is
-        // handled here, directly, and the loop that follows starts with one spent
-        // (ARCHITECTURE.md "External-Event Budget", rule 1).
-        const EventOutcome outcome = executeTransition(event, [this] { runMainEventLoop(1); });
-        // §scxml-3.1.2: this entry point takes an event straight from the host,
-        // so it is the same fact `processNextExternalEvent` records — unlike
-        // the Rust and Go engines, whose `process_event` enqueues and lets the
-        // dequeue do it. Recorded in both places so a host calling
-        // `processEvent` reads the same count on every backend.
-        recordEventOutcome(event, outcome);
+        EventOutcome outcome;
+        if (admission == Admission::InPlace) {
+            // The `error.execution` the door took in the refused delivery's
+            // place is answered as one off the internal queue is (docs/adr/0086,
+            // section 4.2), and the loop runs after it as after the host's own
+            // event, with one spent.
+            outcome = answerInPlace(inPlace->event);
+            if (outcome.selected) {
+                runMainEventLoop(1);
+            }
+        } else {
+            // The host's own event is the first of this invocation's budget: it is
+            // handled here, directly, and the loop that follows starts with one spent
+            // (ARCHITECTURE.md "External-Event Budget", rule 1).
+            outcome = executeTransition(event, [this] { runMainEventLoop(1); });
+            // §scxml-3.1.2: this entry point takes an event straight from the host,
+            // so it is the same fact `processNextExternalEvent` records — unlike
+            // the Rust and Go engines, whose `process_event` enqueues and lets the
+            // dequeue do it. Recorded in both places so a host calling
+            // `processEvent` reads the same count on every backend.
+            recordEventOutcome(event, outcome);
+        }
         const bool stateChanged = outcome.configurationChanged;
         // §scxml-6.4: Notify parent only when the machine has globally
         // terminated. `isInFinalState()` adds the parent-presence check to
@@ -2875,12 +2906,16 @@ protected:
         SCE::Core::EventProcessingAlgorithms::processInternalEventQueue(
             internalAdapter,
             [this](const EventWithMetadata &eventWithMeta) {
-                Event event = eventWithMeta.event;
                 currentEventInvokeId_ = eventWithMeta.invokeId;
                 currentEventFromExternalQueue_ = false;
-                SCE::Common::EventMetadataHelper::populatePolicyFromMetadata<StatePolicy, Event>(policy_,
-                                                                                                 eventWithMeta);
-                bindTypedPayload(eventWithMeta);
+                // The door binds it, or the `error.execution` taken in its place;
+                // a delivery refused with nothing to take in its place took no
+                // microstep and moved nothing (docs/adr/0086, section 4.2).
+                std::optional<EventWithMetadata> inPlace;
+                if (bindTypedPayload(eventWithMeta, inPlace) == Admission::Refused) {
+                    return true;
+                }
+                const Event event = inPlace ? inPlace->event : eventWithMeta.event;
 
                 SCE_LOG_DEBUG("AOT processInternalQueue: Processing internal event, currentState={}",
                               static_cast<int>(currentState_));
@@ -3003,12 +3038,21 @@ protected:
      * skipping `<finalize>` and autoforward, so an `autoforward` child saw
      * nothing a host delivered this way while the identical machine driven
      * through the queue forwarded it.
+     *
+     * The door comes first (docs/adr/0086, section 4.2): a delivery whose data
+     * does not fit its type is refused whole, and what the door made of it is
+     * answered. The `error.execution` it takes in the delivery's place, left
+     * in `inPlace`, is the engine's own error, so no `<finalize>` or
+     * autoforward runs for it.
      */
-    void applyExternalEventPreamble(const EventWithMetadata &eventWithMeta) {
+    Admission applyExternalEventPreamble(const EventWithMetadata &eventWithMeta,
+                                         std::optional<EventWithMetadata> &inPlace) {
         currentEventInvokeId_ = eventWithMeta.invokeId;
         currentEventFromExternalQueue_ = true;
-        SCE::Common::EventMetadataHelper::populatePolicyFromMetadata<StatePolicy, Event>(policy_, eventWithMeta);
-        bindTypedPayload(eventWithMeta);
+        const Admission admission = bindTypedPayload(eventWithMeta, inPlace);
+        if (admission != Admission::Admitted) {
+            return admission;
+        }
 
         // §scxml-6.5: Execute finalize BEFORE processing child events
         if constexpr (SCE::Core::HasFinalizeTrait<StatePolicy, EventWithMetadata,
@@ -3059,6 +3103,7 @@ protected:
             SCE_LOG_DEBUG("AOT applyExternalEventPreamble: Autoforwarding external event '{}'", forwarded.name);
             policy_.forwardToAutoforwardChildren(forwarded, *this);
         }
+        return Admission::Admitted;
     }
 
     /**
@@ -3106,9 +3151,18 @@ protected:
         macrostepTruncated_ = false;
         macrostepMicrostepsTaken_ = 0;
         {
-            Event event = eventWithMeta.event;
-            applyExternalEventPreamble(eventWithMeta);
-            recordEventOutcome(event, executeTransition(event));
+            const Event event = eventWithMeta.event;
+            std::optional<EventWithMetadata> inPlace;
+            switch (applyExternalEventPreamble(eventWithMeta, inPlace)) {
+            case Admission::Refused:
+                break;
+            case Admission::InPlace:
+                (void)answerInPlace(inPlace->event);
+                break;
+            case Admission::Admitted:
+                recordEventOutcome(event, executeTransition(event));
+                break;
+            }
         }
         return true;
     }
@@ -4942,34 +4996,69 @@ private:
     }
 
     /**
-     * @brief Bind the dequeued event's typed `_event.data` view (NL→IR Item C1 Path A)
+     * @brief The door of an event just taken off a queue (docs/adr/0086, section 4.2)
      *
-     * The generated policy's hook has two sources for that view. The type-erased
-     * carrier is filled by ONE producer, the generated `raise<Event>` inject
-     * seam; every other producer — `<send>` with `<param>`, an invoke forwarding
-     * either way, autoforward, BasicHTTP, mesh — fills `data`, so the fields are
-     * lifted out of that instead when no carrier arrived. That is what lets the
-     * same guard answer the same way whichever producer sent the event.
+     * Binds `delivery` as `_event` with its typed `_event.data` view (NL→IR Item
+     * C1 Path A). The generated policy's hook has two sources for that view. The
+     * type-erased carrier is filled by ONE producer, the generated
+     * `raise<Event>` inject seam; every other producer — `<send>` with
+     * `<param>`, an invoke forwarding either way, autoforward, BasicHTTP, mesh —
+     * fills `data`, so the fields are lifted out of that instead when no carrier
+     * arrived. That is what lets the same guard answer the same way whichever
+     * producer sent the event.
      *
-     * A payload that does not read as its schema is `error.execution` and a
-     * guard that does not fire — §scxml-3.13's answer for a guard that cannot be
-     * evaluated, and the one the script engine gives for the same guard on the
-     * same data. The raise lives here rather than in each generated policy so
-     * every machine answers alike; a document that declares no `error.execution`
-     * transition has nothing to answer with (§scxml-3.12.2) and the guard still
-     * does not fire.
+     * A delivery whose data does not read as its schema is refused whole: it is
+     * never offered to the configuration, and the `error.execution` that carries
+     * the refusal is bound in its place and left in `inPlace`, where a guard
+     * that cannot be evaluated is only false (§scxml-3.13). The verdict lives
+     * here rather than in each generated policy so every machine answers alike;
+     * a document that declares no `error.execution` transition has nothing to
+     * take in its place (§scxml-3.12.2), and the delivery is refused all the
+     * same.
      */
-    void bindTypedPayload(const EventWithMetadata &eventWithMeta) {
+    Admission bindTypedPayload(const EventWithMetadata &delivery, std::optional<EventWithMetadata> &inPlace) {
+        SCE::Common::EventMetadataHelper::populatePolicyFromMetadata<StatePolicy, Event>(policy_, delivery);
         if constexpr (SCE::Common::detail::has_populateTypedPayload<StatePolicy, EventWithMetadata>::value) {
-            const std::string refusal = policy_.populateTypedPayload(eventWithMeta);
+            const std::string refusal = policy_.populateTypedPayload(delivery);
             if (refusal.empty()) {
-                return;
+                return Admission::Admitted;
             }
-            if (auto errorEvent = policy_.getEventFromName("error.execution")) {
-                raise(EventWithMetadata(*errorEvent, std::string("`") + policy_.getEventName(eventWithMeta.event) +
-                                                         "` payload: " + refusal));
+            const auto errorEvent = policy_.getEventFromName("error.execution");
+            if (!errorEvent) {
+                return Admission::Refused;
             }
+            inPlace.emplace(*errorEvent,
+                            std::string("`") + policy_.getEventName(delivery.event) + "` payload: " + refusal);
+            // The engine's own error: it came off no queue a host or a child
+            // fills, and it carries no typed payload, so binding it clears the
+            // view the refused delivery left half read.
+            currentEventInvokeId_.clear();
+            currentEventFromExternalQueue_ = false;
+            SCE::Common::EventMetadataHelper::populatePolicyFromMetadata<StatePolicy, Event>(policy_, *inPlace);
+            (void)policy_.populateTypedPayload(*inPlace);
+            return Admission::InPlace;
+        } else {
+            (void)inPlace;
+            return Admission::Admitted;
         }
+    }
+
+    /**
+     * @brief Answer `error`, the `error.execution` a door took in a refused
+     *        external delivery's place, as one off the internal queue is
+     *
+     * An error raised while it is answered is a link in its chain, and one no
+     * transition matched is counted as unhandled (docs/adr/0086, section 4.2).
+     */
+    EventOutcome answerInPlace(Event error) {
+        handlingErrorEvent_ = true;
+        const EventOutcome outcome = executeTransition(error);
+        handlingErrorEvent_ = false;
+        recordInternalEventOutcome(error, outcome);
+        if (outcome.selected) {
+            ++macrostepMicrostepsTaken_;
+        }
+        return outcome;
     }
 
     /**
