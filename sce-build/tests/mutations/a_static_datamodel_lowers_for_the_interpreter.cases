@@ -49,8 +49,8 @@ PY
 # name it by, and the fixture that relays one leaves the replay.
 mutation_case "a payload's enum field has no wire name" <<'PY'
 edit("sce-build/src/forge/static_lowering.rs",
-     "                .or_else(|| composed_payloads.get(&transition.event).map(String::as_str));\n            rewrites.open_payload(schema);\n",
-     "                .or_else(|| composed_payloads.get(&transition.event).map(String::as_str));\n")
+     "                .or_else(|| composed_payloads.get(&trigger).map(String::as_str));\n            rewrites.open_payload(schema);\n",
+     "                .or_else(|| composed_payloads.get(&trigger).map(String::as_str));\n")
 PY
 
 # The pairs of a record named by a `<content expr>` are noted as rewrites of
