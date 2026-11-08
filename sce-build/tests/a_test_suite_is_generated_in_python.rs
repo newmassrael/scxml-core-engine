@@ -129,13 +129,18 @@ fn a_configuration_is_its_table_its_machines_and_what_they_read() {
             .to_string(),
         "    return None\n".to_string(),
         "def module_parameters() -> List[str]:".to_string(),
-        "    return [\"job\"]\n".to_string(),
     ] {
         assert!(
             asking.contains(&needle),
             "asking_configuration holds `{needle}`:\n{asking}"
         );
     }
+    // The last statement of the unit: a render ends without the newline the
+    // write adds (`generator::with_trailing_newline`).
+    assert!(
+        asking.ends_with("    return [\"job\"]"),
+        "asking_configuration ends with its module parameters:\n{asking}"
+    );
     let ports = between(&asking, "ports_of_type=", "timers_of_type=");
     assert!(
         ports.contains("            \"param_asker\": [\"sut\"],\n"),
@@ -541,7 +546,7 @@ fn the_kind_examples_generate_their_tables() {
         "test_configuration",
     );
     assert!(
-        configuration.contains("    return [\"limit\"]\n"),
+        configuration.ends_with("    return [\"limit\"]"),
         "{configuration}"
     );
     let component = machine_files(&examples.join("test-component.scxml"));
