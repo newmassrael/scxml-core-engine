@@ -340,19 +340,6 @@ func StaticSendTargetRestore(policy *StaticSendTargetPolicy, saved *sce.SavedSta
 	return StaticSendTargetRestoreAt(policy, saved, clock, sce.SavedWallClockMs())
 }
 
-// SetSessionID gives this session the id its host has for it, in place of the
-// one it drew: an XML Nmtoken, since another session addresses this one as
-// `#_scxml_<id>` and every child's id is this one's and the id the child was
-// started under (docs/adr/0045). Refused for anything else. Called before the
-// machine starts, since what it sends names it by the id it began with.
-func (p *StaticSendTargetPolicy) SetSessionID(id string) error {
-	if reason := sce.SessionIDRefusalOf(id); reason != "" {
-		return sce.Refuse(reason)
-	}
-	p.SessionID = id
-	return nil
-}
-
 // OwnSessionID is this session's id, `_sessionid`, which a saved state names it
 // by (sce.SavedPolicy).
 func (p *StaticSendTargetPolicy) OwnSessionID() string { return p.SessionID }
@@ -438,14 +425,30 @@ type StaticSendTargetPolicy struct {
 // NewStaticSendTargetPolicy creates a new policy with default values.
 func NewStaticSendTargetPolicy() StaticSendTargetPolicy {
 	return StaticSendTargetPolicy{
-		// docs/adr/0045: a session has an id, which a saved state names it by. A
-		// host that has one for it gives it with SetSessionID before it starts the
-		// machine; a child's is its parent's and the id it was started under.
+		// docs/adr/0045: a session has an id, which a saved state names it by and
+		// a peer addresses it by. A host that has one for it gives it with
+		// SetSessionID before it starts the machine; a child's is its parent's
+		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
 		vRoute: "#_internal",
 		vLanded: 0,
 		vRefused: 0,
 	}
+}
+
+// SetSessionID gives this session the id its host has for it, in place of the
+// one it drew: an XML Nmtoken, since another session addresses this one as
+// `#_scxml_<id>` and every child's id is this one's and the id the child was
+// started under (docs/adr/0045). Refused for anything else. Called before the
+// machine starts, since what it sends names it by the id it began with.
+// Declared whether or not a saved state can hold the machine: a root's id is
+// bound when the machine is created, whether or not it saves.
+func (p *StaticSendTargetPolicy) SetSessionID(id string) error {
+	if reason := sce.SessionIDRefusalOf(id); reason != "" {
+		return sce.Refuse(reason)
+	}
+	p.SessionID = id
+	return nil
 }
 
 // Landed reports what the published `landed` datamodel

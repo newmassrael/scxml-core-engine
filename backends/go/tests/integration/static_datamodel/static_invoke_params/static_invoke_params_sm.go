@@ -353,19 +353,6 @@ func StaticInvokeParamsRestore(policy *StaticInvokeParamsPolicy, saved *sce.Save
 	return StaticInvokeParamsRestoreAt(policy, saved, clock, sce.SavedWallClockMs())
 }
 
-// SetSessionID gives this session the id its host has for it, in place of the
-// one it drew: an XML Nmtoken, since another session addresses this one as
-// `#_scxml_<id>` and every child's id is this one's and the id the child was
-// started under (docs/adr/0045). Refused for anything else. Called before the
-// machine starts, since what it sends names it by the id it began with.
-func (p *StaticInvokeParamsPolicy) SetSessionID(id string) error {
-	if reason := sce.SessionIDRefusalOf(id); reason != "" {
-		return sce.Refuse(reason)
-	}
-	p.SessionID = id
-	return nil
-}
-
 // OwnSessionID is this session's id, `_sessionid`, which a saved state names it
 // by (sce.SavedPolicy).
 func (p *StaticInvokeParamsPolicy) OwnSessionID() string { return p.SessionID }
@@ -709,9 +696,10 @@ type StaticInvokeParamsPolicy struct {
 // NewStaticInvokeParamsPolicy creates a new policy with default values.
 func NewStaticInvokeParamsPolicy() StaticInvokeParamsPolicy {
 	return StaticInvokeParamsPolicy{
-		// docs/adr/0045: a session has an id, which a saved state names it by. A
-		// host that has one for it gives it with SetSessionID before it starts the
-		// machine; a child's is its parent's and the id it was started under.
+		// docs/adr/0045: a session has an id, which a saved state names it by and
+		// a peer addresses it by. A host that has one for it gives it with
+		// SetSessionID before it starts the machine; a child's is its parent's
+		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
 		vBase: 4,
 		vEnabled: true,
@@ -719,6 +707,21 @@ func NewStaticInvokeParamsPolicy() StaticInvokeParamsPolicy {
 		pendingInvokes: make([]sce.PendingInvoke[StaticInvokeParamsState], 0),
 		activeInvokes:  make(map[string]*sce.ChildSession),
 	}
+}
+
+// SetSessionID gives this session the id its host has for it, in place of the
+// one it drew: an XML Nmtoken, since another session addresses this one as
+// `#_scxml_<id>` and every child's id is this one's and the id the child was
+// started under (docs/adr/0045). Refused for anything else. Called before the
+// machine starts, since what it sends names it by the id it began with.
+// Declared whether or not a saved state can hold the machine: a root's id is
+// bound when the machine is created, whether or not it saves.
+func (p *StaticInvokeParamsPolicy) SetSessionID(id string) error {
+	if reason := sce.SessionIDRefusalOf(id); reason != "" {
+		return sce.Refuse(reason)
+	}
+	p.SessionID = id
+	return nil
 }
 
 // Completed reports what the published `completed` datamodel
