@@ -7,8 +7,11 @@
   Mesh core's causal route is written to the owner's answers Q1 to Q8 of that day (sections 3 and 3.2 rewritten,
   section 3.3 new, section 9.2, "Landing order", "Owner's answers"). The author of a dot is a replica, membership
   is a numbered view, a copy keeps its own highest number in its journal and begins a new incarnation when it cannot
-  know it, and landing 3 is split into a codec step and one step per Mesh core.
-- Date: 2026-11-03; amended 2026-11-08
+  know it, and landing 3 is split into a codec step and one step per Mesh core. Amended again on 2026-11-09, under
+  the same rule: landing 4 is split into lettered steps by what depends on what, the core's delivery by the rule and
+  its signing of a change move from landing 5 into landing 4, which cannot be green without them, and the
+  prerequisites landing 4 waits on in ADR 0086 are named ("Landing order", "Owner's answers").
+- Date: 2026-11-03; amended 2026-11-08 and 2026-11-09
 - Amends:
   - ADR 0046 sections 1 to 4, 6 and 7: a change of several operations is no longer parts held until whole; it is one
     message, and the list keeps no tombstones and no held parts;
@@ -531,8 +534,95 @@ today's list (parts over a route with no causal layer, the per-part recall) befo
 4. **The list at change units, with ADR 0083 step 2 reworked**: `record_list.change`, the effect-only list, the
    journal per change, recall and restore, the scenarios on seven lanes, the world tests over the causal route, the
    saved-shape pin, every generated tree regenerated. The branch `adr0083-l2-journal` is reworked into this landing.
-5. **The core** (ADR 0083 landing 3 at change units): one operation per change, `Link.context`, delivery by the rule,
-   stability and its mark, history in causal order, the fold of the second domain, `sce-trust/event/3` once, ABI 7.
+   Amended 2026-11-09 into lettered steps, as landing 3 was, so that landings 5 to 7 keep their numbers. Each step
+   leaves every lane green and no protocol half moved. The split follows two facts read from the tree at
+   `8de85a1ec8`:
+   - **The list and the core speak one wire.** The world tests through the core run the list itself
+     (`backends/rust/world/tests/common/devices.rs`: the machine's sends are given to `Peer::outbound`, and what a
+     round brings back is raised into it), and the trust layer signs `record_list.write` and
+     `record_list.supersede` (`backends/rust/trust/src/message.rs:34-38`). A list that sends `record_list.change`
+     while its core signs parts leaves those tests red; a core that signs both leaves two shapes of one fact alive
+     (section 1.4). The list's wire and the core's signing of a change are therefore one step (4c).
+   - **The effect without tombstones is correct only over causal delivery.** The core's relay may reorder and may
+     answer less than it holds (`Dishonesty` in the same file): a write-over given before the write it names leaves
+     that write live when it arrives, once no tombstone keeps it out. The core's delivery by the rule therefore
+     lands before the list loses its tombstones (4b), not after it in landing 5.
+
+   Two prerequisites are ADR 0086's own steps, and landing 4c waits on both:
+   - **Composed payloads on C11 and Swift** (ADR 0086 step 3, its C11 and Swift lanes). `ComposedLowering::of`
+     (`sce-build/src/forge/event_schema_check.rs:281`) lowers a read, a copy and a send of a composed payload on
+     Rust, Kotlin, Go, Python and C++ only, and C11 and Swift refuse such a statechart by name. The list reads
+     `_event.data.ops` and sends `ops`; it is built on C11 (`test_static_scalars.c`) and has a committed Swift tree.
+   - **C11's slot** (ADR 0086 step 5). C11's event slot is sized by hand at 256 bytes
+     (`backends/c/runtime/include/sce/types.h:76`), and the largest `record_list.change` of the list as written is
+     47,900 bytes (4a pins the number). Step 5 derives the slot from the machine's largest payload. It carries the
+     build-time refusal of section 5, and the C11 lane builds the list with `shared_parts` and `merge_text`
+     lowered.
+
+   The steps:
+   - **4a. The change's schemas and their sizes.** `record_op` and `record_change` (`record_list.change`), with
+     `ops` typed `list<record:Op>[1..shared_parts=64]`, so an empty change cannot be written on any wire (section
+     1.1). Nothing imports them yet and no protocol moves; a generated tree changes only in the generator's source
+     hash its header carries, since the standard library is part of that hash. Their sizes are pinned on
+     every backend that generates a schema unit, as the number section 5 says the build knows and ADR 0086 step 5
+     sizes C11's slot by. Files: `stdlib/shared/record_op.scxml`, `stdlib/shared/record_change.scxml`,
+     `sce-build/tests/a_change_of_the_shared_list_is_one_event_of_a_known_size.rs`.
+   - **4b. The core delivers by the rule** (section 3.1), over the operations it signs today: `Link.context`, the
+     core's delivered vector at signing, in the link's bytes (a new domain of the link); every round, the history
+     and every hand-over give the machine only operations whose context it has delivered, in a linear extension of
+     the contexts; a held operation waits in the core, which asks the relay for what it lacks; nothing is skipped.
+     The rule is the layer's and does not read the event kind, so it lands before the list moves, and the list's
+     tombstones are then redundant until 4c drops them. Tests: section 9.2's three tests of the core, and a world
+     test in which a relay that withholds a write gives its write-over first and the core holds the write-over
+     until the write arrives. The recorded scenario of the C ABI is recorded again, and the six lanes that replay
+     it (C, C++, Python, Go, Kotlin, Swift) replay it. Files: `backends/rust/trust/src/{message,chain,trust}.rs`,
+     `backends/rust/relay/src/client.rs`, `backends/rust/peer/src/lib.rs`,
+     `backends/rust/peer-capi/tests/fixtures/two_devices_and_a_relay.json`, the trust tests that pin bytes
+     (`a_byte_format_does_not_drift.rs`), `docs/SCE_SHARED_LIST_TRUST.md`, `docs/SCE_SHARED_LIST_RELAY.md` section
+     6.
+   - **4c. The list at change units, on both layers.** After 4a, 4b and both prerequisites. The list of sections 1
+     and 2: `record_list.change` sent on `#people` and taken whole, the effect without tombstones, digest, settle or
+     hub relay, the hub flag of `record_list.join` retired, and the schemas section 2.1 lists retired. In the same
+     step the trust layer signs one `record_list.change` as one operation under `sce-trust/event/3`, its
+     `operation_bytes` holding `ops` as section 6 says, and the core gives and takes `record_list.change`; the
+     shape of the events an outcome holds changes, so the ABI takes the next number by its version rule
+     (`docs/SCE_SHARED_LIST_PEER_ABI.md`, the paragraph on numbers). The scenarios move as section 8.5 says:
+     the parts steps of `record_list_change` and `record_list_retire` are rewritten as changes, the walk and settle
+     steps of `record_list_hub` and `record_list_person` leave the list (each property is held by landing 3's
+     tests of the Mesh core and 4b's of the core), and `record_list_concurrent_clears` and
+     `record_list_out_of_causal_order_is_not_given` (section 9.3) are new; all replay on the seven lanes. The world
+     tests: the devices of `common/devices.rs` on change units; the Mesh tests of the walk and the settle
+     (`a_resync_reaches_every_wall_time_and_every_field_number.rs`,
+     `a_copy_restored_from_an_old_save_is_repaired_by_resync.rs`,
+     `a_shared_calendar_forgets_what_its_copies_agree_on.rs`) moved onto a `delivery: causal` binding, with what
+     each held stated of the layer; `todo_peer` rebuilt (section 1.4). The saved-shape pin moves, a mutation
+     casefile holds `take`'s write-over without a tombstone, and every generated tree of the list is regenerated.
+     Files beyond those named: `stdlib/shared/record_list.scxml` and its schemas, `record_list_parent.scxml` and
+     `todo_peer.scxml` under `sce-build/tests/fixtures/static_datamodel`, the scenarios and their seven drivers
+     (section 8.4), the relay's, the peer's and the MLS crate's tests that build operations, and
+     `sce-build/tests/fixtures/standard_saved_shapes.json`.
+   - **4d. The journal per change, recall, restore and the verdict.** ADR 0083 step 2, reworked from
+     `adr0083-l2-journal` to change units (section 7), with ADR 0093 step 2 folded in as that ADR asks: `journal` on
+     `record_join` (default `true`), `command` on the three commands, `record_list.made` per change (the fields of
+     `record_change` and `command`), `record_list.closed`, the offer and its verdict with the four outcomes,
+     provisional changes, withdrawal, `record_list.raise`, `record_list.recall` and `record_list.restore` (section
+     4.4), and the own write-over's clock (ADR 0083 section 1.6). Every throwaway copy (the scenarios, the world
+     tests of 4c, the devices of `common/devices.rs` until landing 5 gives the core `Peer::made`) joins with
+     `journal: false`. Scenarios on seven lanes: `record_list_journal`, `record_list_recall`,
+     `record_list_restore` (section 9.3), and ADR 0093's `record_list_verdict`, `record_list_provisional` and
+     `record_list_raise`. The saved-shape pin moves again and every generated tree is regenerated. Files: the
+     schemas named, `stdlib/shared/record_list.scxml`, the scenarios and their drivers,
+     `docs/SCE_ACCEPTED_SUBSET.md` where it lists the list's events.
+   - **4e. The cross product in the world, over the causal route** (section 9.1, the Mesh half): three copies with
+     no core, each with a host journal that gives every `record_list.made` to its Mesh core's offer and gives the
+     verdict back, over every product section 9.1 names, the rebuild by recall and by restore included. Its
+     negative arm, kept for good as ADR 0093 step 1 keeps its own, runs the same schedules over a binding without
+     `delivery: causal`, and must end with copies that differ: that is the run against a rule with no causal
+     layer that section 9 asks for. Files: `backends/rust/world/tests/` (a new test and its harness in
+     `common/`).
+5. **The core** (ADR 0083 landing 3 at change units): the outbox, stability and its mark, history in causal order,
+   the fold of the second domain, the next ABI number. Amended 2026-11-09: one operation per change,
+   `sce-trust/event/3` and `Link.context` with delivery by the rule moved into landing 4 (steps 4b and 4c).
 6. **The hosts**, one landing each (ADR 0078); a host that pins SCE takes landings 4 and 5 together.
 7. **View changes on the Mesh route** (section 3.3.4, added 2026-11-08): join, leave and a member's new incarnation,
    on every core, with their tests. It may land after landing 4; until it does, a member restored from an older save
@@ -645,3 +735,33 @@ member not heard from holding its column of the cut at 0; the layer releasing an
 host's journal record is committed (section 3); landing 3's steps lettered so that landings 4 to 6 keep their
 numbers, and view changes as landing 7; and Q6 read for the Mesh route alone, a device with a core keeping ADR 0093
 section 4.1's wait for its own chain, which waits on the relay that every published link reached (section 3.3).
+
+Decided while splitting landing 4 (2026-11-09), under the same rule and open to the owner's review:
+
+- **The core's delivery by the rule and its signing of a change move into landing 4.** Landing 4 as written, with
+  the core left to landing 5, is red: the list's wire and the core's signing are one wire, and the effect without
+  tombstones needs the core to deliver causally ("Landing order", item 4). Taking the core with the list keeps
+  every step green and no protocol half moved. Landing 5 keeps its number and the rest of its work.
+- **No step of parallel change.** A core that signs both the parts and the change for a while, or a list that
+  takes `record_list.change` beside the parts, is the textbook migration between deployed parties, and here no
+  host pins main between landings 4 and 5 (landing 6). It would leave two shapes of one fact on main, which
+  section 1.4 refuses.
+- **The tombstones go in the step that moves the wire, not after it.** Keeping them while the list moves to
+  change units would keep the settle round that forgets them, whose messages are wire too.
+- **The prerequisites stay ADR 0086's steps.** Composed payloads on C11 and Swift and C11's derived slot are
+  properties of the toolchain (Owner's answers, 1), so this ADR names them and does not take them. Section 5's
+  build-time refusal is ADR 0086 step 5's derived slot. No second assertion is added here.
+- **A write's dot is carried once.** In `record_op` a write's `wallTime`, `counter` and `nodeId` are not read: a
+  write's dot is its change's stamp (ADR 0046 section 1), carried once in `record_change`, so no copy of it can
+  disagree with it. A sender writes 0 there. A union of a write and a write-over would say it in the type, and is
+  not used while unions are lowered on Rust alone (ADR 0092).
+- **`ops` holds at least one operation** (`[1..shared_parts=64]`, ADR 0086 section 15), so "an empty change is
+  never sent" (section 1.1) is a property of the type that every reader refuses (`tooFew`).
+- **An event new in this landing begins at revision 1.** `record_list.recall`, first shipped in step 4d, carries
+  ADR 0093's `provisional` in its first revision, not as a revision 2 of an event no build ever sent.
+- **The ABI number moves when an outcome's events change shape** (4c), by the ABI's own rule, and again when
+  landing 5 withholds what a host has not acknowledged. ADR 0083's "version 7" is read as the next number at that
+  landing.
+- **The world cross product keeps its negative arm** (4e). The check against "today's rule" that section 9 asks
+  for cannot be run on a tree that no longer holds that rule. A permanent arm over a binding with no causal layer
+  is a check that keeps running.
