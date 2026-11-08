@@ -7136,6 +7136,25 @@ scenario that a malformed delivery is part of reads every field it lacks, and
 reads the one that does not fit before it writes any, so that the engines
 answer it alike (`static_send_params`, `static_record_real32`).
 
+The data of an event whose schema holds a composed value (docs/adr/0086) is
+read whole, by the library's `payload` handed the descriptor of the schema's
+record, every bound at every depth in it: each field as `field` reads it, so a
+delivery outside its type is refused, at the first place that is not one, by
+any expression that reads any part of it, and none of the fields it holds is
+refused alone while another is read. A read at any depth is that value and the
+fields, elements and lengths after it; a `<foreach>` walks a list it holds, a
+list taken whole into a list variable is the value itself, and a `<send>` that
+names a composed value carries it as its `<param>` writes it, a 64-bit integer
+as the text of its digits. Its parts are walked into the data model, which holds
+no integer past 2^53 - 1, so one there is refused at its pointer as `outOfRange`,
+as a lift refuses it (docs/adr/0087, section 2.1), where a generated machine
+whose int64 holds it reads it. Of the differences above, the third stands in
+this form: the content of a transition that runs before its first read of the
+data runs for a delivery the read then refuses, where a generated machine
+refused the delivery before any of it ran, so the fixture that is held to a
+refusal reads the data in its transition's first statement
+(`static_composed_payload`).
+
 A list is an array and a record a plain object, and neither is changed in
 place: `<sce:append>` becomes the `<assign>` of the list written again with the
 value at its end, through the library, which throws for a full one — so nothing
