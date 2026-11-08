@@ -7422,13 +7422,35 @@ fn cpp_payload_reader(f: &EntryField, into: &str) -> String {
         | SceType::Int32 => "readInteger",
         SceType::Float32 | SceType::Float64 => "readFloating",
         SceType::Bool => "readBool",
-        SceType::String => "readString",
-        SceType::Bytes => "readBytes",
-        // An enum is read through its own statements ([`cpp_enum_lift`]),
-        // since it is lifted from a name and not read at a width.
-        SceType::Enum(_) => unreachable!("an enum field is lifted by `cpp_enum_lift`"),
+        // A text, a byte string and an enum are each read through statements of
+        // their own: a text and a byte string by [`cpp_bounded_lift`], held to
+        // their bound, and an enum by [`cpp_enum_lift`], lifted from a name.
+        SceType::String | SceType::Bytes | SceType::Enum(_) => unreachable!(
+            "a text, a byte string and an enum field are lifted by statements of their own"
+        ),
     };
     format!("fields.{call}(\"{id}\", {into})")
+}
+
+/// The statements that lift the text or byte-string field `f` into `into`, held
+/// to its bound where the delivery is read, the top level included
+/// (docs/adr/0086, section 4.4): the value the field's name holds, read by the
+/// value reader of its type with the bound the type declares, the reader a text
+/// or a byte string at any depth is read by
+/// ([`crate::forge::composed_lowering::CppComposed`]). A refusal is returned.
+fn cpp_bounded_lift(f: &EntryField, into: &str) -> String {
+    let (reader, bound) = match f.sce_type.present_type() {
+        SceType::String => ("readText", lift_text_bound(f)),
+        SceType::Bytes => ("readBytes", lift_bytes_bound(f)),
+        other => unreachable!("only a text or a byte string is held to a bound, not {other:?}"),
+    };
+    format!(
+        "            {{\n                ::SCE::Common::EventPayloadValue sceValue;\n                \
+refusal = fields.value(\"{id}\", sceValue);\n                \
+if (refusal.empty()) {{\n                    refusal = sceValue.{reader}({bound}u, {into});\n                }}\n                \
+if (!refusal.empty()) {{\n                    return refusal;\n                }}\n            }}\n",
+        id = f.id
+    )
 }
 
 /// The statements that lift the payload field `f` into `payload.<id>`: a
@@ -7449,6 +7471,7 @@ fn cpp_payload_field_lift(
             static_enum_of(static_enums, &r.alias),
             &r.alias,
         ),
+        SceType::String | SceType::Bytes => cpp_bounded_lift(f, into),
         _ => format!(
             "            refusal = {};\n            \
 if (!refusal.empty()) {{\n                return refusal;\n            }}\n",
