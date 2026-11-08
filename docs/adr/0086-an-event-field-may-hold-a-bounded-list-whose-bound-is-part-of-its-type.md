@@ -779,7 +779,12 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
 
    Tests: a unit test asks every interfering pair for different storage, and holds a colouring that merges two of
    them as unsound; a test on the HTTP host machine asks for one union per colour and every role declared once
-   inside one; the test of (d) stays.
+   inside one; the test of (d) stays. The containment pairs are checked against the code rather than trusted: the
+   generated C marks where each activity begins (`/* sce-scratch-activity: <name> */`, running to the end of the
+   block that holds the mark), and a test generates a corpus that runs every activity, reads the call graph of the
+   emitted functions, takes a call through a member of a struct (a function pointer) as a host callback, and takes
+   a host callback to contain what every public function that does not drive the machine can enter. Every
+   containment it observes must be in the closure of the pairs, so an edge the code exercises cannot be dropped.
 
 ### 9. Signed values are deterministic CBOR
 

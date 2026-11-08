@@ -492,3 +492,441 @@ fn no_function_of_a_c11_machine_holds_a_buffer_of_the_slot_on_its_stack() {
         }
     }
 }
+
+// ── docs/adr/0086, section 8.5 (e): the containment table, checked ──────────
+
+use sce_build::forge::c11_scratch::{self, Activity};
+
+/// A function the generated C defines: its name, whether a host may call it
+/// (it is not `static`), and its body as character offsets of the code.
+struct CFunction {
+    name: String,
+    public: bool,
+    body: (usize, usize),
+}
+
+/// Whether `c` may stand in a C identifier.
+fn ident_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '_'
+}
+
+/// Every function the code-only text `code` defines: a body is what a `{`
+/// opens at the top level after a `)`, the name the identifier before that
+/// `)`'s matching `(`, and the function public when the text since the last
+/// top-level `;` or `}` does not say `static`.
+fn c_functions(code: &[char]) -> Vec<CFunction> {
+    let mut found = Vec::new();
+    let mut depth = 0usize;
+    let mut signature_start = 0usize;
+    let mut last_significant: Option<usize> = None;
+    let mut open_at = 0usize;
+    let mut pending: Option<(String, bool)> = None;
+    for (at, &ch) in code.iter().enumerate() {
+        match ch {
+            '{' => {
+                if depth == 0 {
+                    pending = None;
+                    if let Some(close) = last_significant.filter(|&i| code[i] == ')') {
+                        let mut parens = 0i32;
+                        let mut open = close;
+                        loop {
+                            match code[open] {
+                                ')' => parens += 1,
+                                '(' => parens -= 1,
+                                _ => {}
+                            }
+                            if parens == 0 || open == 0 {
+                                break;
+                            }
+                            open -= 1;
+                        }
+                        let mut end = open;
+                        while end > 0 && code[end - 1].is_whitespace() {
+                            end -= 1;
+                        }
+                        let mut start = end;
+                        while start > 0 && ident_char(code[start - 1]) {
+                            start -= 1;
+                        }
+                        let name: String = code[start..end].iter().collect();
+                        let signature: String = code[signature_start..at].iter().collect();
+                        if !name.is_empty() {
+                            pending = Some((name, !signature.contains("static")));
+                            open_at = at;
+                        }
+                    }
+                }
+                depth += 1;
+            }
+            '}' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    if let Some((name, public)) = pending.take() {
+                        found.push(CFunction {
+                            name,
+                            public,
+                            body: (open_at, at),
+                        });
+                    }
+                    signature_start = at + 1;
+                }
+            }
+            ';' if depth == 0 => signature_start = at + 1,
+            _ => {}
+        }
+        if !ch.is_whitespace() {
+            last_significant = Some(at);
+        }
+    }
+    found
+}
+
+/// A call the code makes: the name it calls, or a call through a member of a
+/// struct (`x->f(`, `x.f(`), a function pointer, by the member's name.
+enum CCall {
+    Named(String),
+    Pointer(String),
+}
+
+/// Every call in `code[from..to]`.
+fn c_calls(code: &[char], from: usize, to: usize) -> Vec<CCall> {
+    const KEYWORDS: [&str; 6] = ["if", "while", "for", "switch", "sizeof", "return"];
+    let mut calls = Vec::new();
+    let mut at = from;
+    while at < to {
+        if ident_char(code[at]) && (at == 0 || !ident_char(code[at - 1])) {
+            let start = at;
+            while at < to && ident_char(code[at]) {
+                at += 1;
+            }
+            let name: String = code[start..at].iter().collect();
+            let mut after = at;
+            while after < to && code[after].is_whitespace() {
+                after += 1;
+            }
+            if after < to && code[after] == '(' && !KEYWORDS.contains(&name.as_str()) {
+                let member = (start >= 1 && code[start - 1] == '.')
+                    || (start >= 2 && code[start - 2] == '-' && code[start - 1] == '>');
+                calls.push(if member {
+                    CCall::Pointer(name)
+                } else {
+                    CCall::Named(name)
+                });
+            }
+        } else {
+            at += 1;
+        }
+    }
+    calls
+}
+
+/// Each activity the raw text `raw` marks (`/* sce-scratch-activity: <name> */`)
+/// with the span it runs over in the code: from its mark to the end of the
+/// block that holds the mark.
+fn c_marks(raw: &[char], code: &[char]) -> Vec<(Activity, usize, usize)> {
+    const MARK: &str = "/* sce-scratch-activity: ";
+    let text: String = raw.iter().collect();
+    let mut marks = Vec::new();
+    for (byte_at, _) in text.match_indices(MARK) {
+        let at = text[..byte_at].chars().count();
+        let name_start = at + MARK.chars().count();
+        let name: String = raw[name_start..]
+            .iter()
+            .take_while(|c| ident_char(**c))
+            .collect();
+        let activity = Activity::marked(&name)
+            .unwrap_or_else(|| panic!("`{name}` marks no activity of c11_scratch"));
+        let mut depth = 0i64;
+        let mut end = at;
+        while end < code.len() {
+            match code[end] {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth < 0 {
+                        break;
+                    }
+                }
+                _ => {}
+            }
+            end += 1;
+        }
+        marks.push((activity, at, end));
+    }
+    marks
+}
+
+/// The functions `from` reaches through the calls `callees` records, itself
+/// included, each by the name `by_name` holds it under.
+fn reached<'a>(
+    from: &str,
+    by_name: &std::collections::BTreeMap<&'a str, &CFunction>,
+    callees: &std::collections::BTreeMap<&'a str, std::collections::BTreeSet<&'a str>>,
+) -> std::collections::BTreeSet<&'a str> {
+    let mut seen: std::collections::BTreeSet<&'a str> = std::collections::BTreeSet::new();
+    let mut pending: Vec<&'a str> = match by_name.get_key_value(from) {
+        Some((name, _)) => vec![*name],
+        None => Vec::new(),
+    };
+    while let Some(at) = pending.pop() {
+        if seen.insert(at) {
+            if let Some(next) = callees.get(at) {
+                pending.extend(next.iter().copied());
+            }
+        }
+    }
+    seen
+}
+
+/// A call through a member that runs this machine's host code, which is a host
+/// callback; `parent_dispatch` runs the parent machine, whose scratch is its
+/// own, and is not one.
+fn is_host_callback(member: &str) -> bool {
+    member != "parent_dispatch"
+}
+
+/// The containments the generated C of one machine (`header` and `source`)
+/// shows, as `(outer, inner)`: inside the span of each marked activity, each
+/// activity a call there can enter, at any depth of the calls the machine's
+/// own functions make; and inside a host callback, each activity a function
+/// the host may call from a handler can enter, every public function that
+/// does not drive the machine (run a macrostep, start invocations, restore).
+fn observed_containments(
+    header: &str,
+    source: &str,
+) -> std::collections::BTreeSet<(Activity, Activity)> {
+    use std::collections::{BTreeMap, BTreeSet};
+    let raw: Vec<char> = format!("{header}\n{source}").chars().collect();
+    let code: Vec<char> = code_only(&raw.iter().collect::<String>()).chars().collect();
+    let functions = c_functions(&code);
+    let marks = c_marks(&raw, &code);
+    let by_name: BTreeMap<&str, &CFunction> =
+        functions.iter().map(|f| (f.name.as_str(), f)).collect();
+    // What each function calls by name, what it marks, and whether it calls
+    // host code.
+    let mut callees: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+    let mut marked: BTreeMap<&str, BTreeSet<Activity>> = BTreeMap::new();
+    let mut calls_host: BTreeSet<&str> = BTreeSet::new();
+    for f in &functions {
+        for call in c_calls(&code, f.body.0, f.body.1) {
+            match call {
+                CCall::Named(name) => {
+                    if let Some((callee, _)) = by_name.get_key_value(name.as_str()) {
+                        callees.entry(f.name.as_str()).or_default().insert(*callee);
+                    }
+                }
+                CCall::Pointer(member) => {
+                    if is_host_callback(&member) {
+                        calls_host.insert(f.name.as_str());
+                    }
+                }
+            }
+        }
+        for (activity, at, _) in &marks {
+            if *at > f.body.0 && *at < f.body.1 {
+                marked.entry(f.name.as_str()).or_default().insert(*activity);
+            }
+        }
+    }
+    let reach = |from: &str| reached(from, &by_name, &callees);
+    // A function that drives the machine: one that runs executable content,
+    // a macrostep, the start of invocations or a restore, which a host does
+    // not call from inside a handler (docs/adr/0084: its owner drives it at a
+    // macrostep boundary).
+    let drives = |name: &str| {
+        reach(name).iter().any(|f| {
+            f.contains("execute_")
+                || f.ends_with("microstep")
+                || f.ends_with("run_main_event_loop")
+                || f.ends_with("_saved_events")
+        })
+    };
+    let host_api: Vec<&str> = functions
+        .iter()
+        .filter(|f| f.public && !drives(&f.name))
+        .map(|f| f.name.as_str())
+        .collect();
+    // What a host callback can enter: what the functions a host may call can.
+    let mut callback_enters: BTreeSet<Activity> = BTreeSet::new();
+    for name in &host_api {
+        for f in reach(name) {
+            callback_enters.extend(marked.get(f).into_iter().flatten().copied());
+        }
+    }
+    // What a call of `name` can enter.
+    let enters = |name: &str| -> BTreeSet<Activity> {
+        let mut entered = BTreeSet::new();
+        for f in reach(name) {
+            entered.extend(marked.get(f).into_iter().flatten().copied());
+            if calls_host.contains(f) {
+                entered.insert(Activity::HostCallback);
+                entered.extend(callback_enters.iter().copied());
+            }
+        }
+        entered
+    };
+    let mut observed = BTreeSet::new();
+    for inner in &callback_enters {
+        if *inner != Activity::HostCallback {
+            observed.insert((Activity::HostCallback, *inner));
+        }
+    }
+    for (outer, from, to) in &marks {
+        let mut inside: BTreeSet<Activity> = BTreeSet::new();
+        for call in c_calls(&code, *from, *to) {
+            match call {
+                CCall::Named(name) => inside.extend(enters(&name)),
+                CCall::Pointer(member) => {
+                    if is_host_callback(&member) {
+                        inside.insert(Activity::HostCallback);
+                        inside.extend(callback_enters.iter().copied());
+                    }
+                }
+            }
+        }
+        for (nested, at, _) in &marks {
+            if at > from && at < to {
+                inside.insert(*nested);
+            }
+        }
+        for inner in inside {
+            if inner != *outer {
+                observed.insert((*outer, inner));
+            }
+        }
+    }
+    observed
+}
+
+/// A machine with a script engine whose child session sends to `#_parent`
+/// and ends with done data, which makes a BasicHTTP request, and which raises
+/// a compound final's done data from its engine.
+const CHILDREN: &str = r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="ecmascript" name="probe">
+  <datamodel><data id="v" expr="1"/></datamodel>
+  <state id="s">
+    <onentry>
+      <send event="p" type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
+            target="http://localhost:1/probe"><param name="a" expr="v"/></send>
+    </onentry>
+    <invoke type="scxml" id="kid">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="k"
+               datamodel="ecmascript" name="kid">
+          <state id="k">
+            <onentry><send target="#_parent" event="hello"/></onentry>
+            <transition target="kf"/>
+          </state>
+          <final id="kf"><donedata><param name="x" expr="1"/></donedata></final>
+        </scxml>
+      </content>
+    </invoke>
+    <transition event="hello" target="t"/>
+  </state>
+  <state id="t">
+    <state id="t1"><transition event="fin" target="tf"/></state>
+    <final id="tf"><donedata><param name="k" expr="v"/></donedata></final>
+  </state>
+</scxml>
+"##;
+
+/// Every containment the generated C of a corpus that runs every activity
+/// shows is one the table of containments states, through its transitive
+/// closure: the table the colouring rests on is checked against the code, not
+/// trusted (docs/adr/0086, section 8.5 (e)).
+#[test]
+fn every_containment_the_generated_code_shows_is_in_the_table() {
+    let hosts = [
+        "--host-processor",
+        "x-sce-host",
+        "--host-invoker",
+        "x-app-host",
+    ];
+    let typed_schemas = [
+        (
+            "answer",
+            schema(
+                "answer",
+                "answer.record",
+                &[("id", "uint32"), ("note", "string[16]")],
+            ),
+        ),
+        (
+            "label",
+            schema("label", "job.done", &[("label", "string[8]")]),
+        ),
+    ];
+    let mut seen_marks: std::collections::BTreeSet<Activity> = std::collections::BTreeSet::new();
+    let mut unstated = Vec::new();
+    for (kind, doc, schemas) in [
+        ("a script engine's", SCRIPTED.to_string(), &[][..]),
+        ("a typed", typed_machine(), &typed_schemas[..]),
+        ("a parent's", CHILDREN.to_string(), &[][..]),
+    ] {
+        let (header, source) = generated(&doc, schemas, &hosts);
+        let raw: Vec<char> = format!("{header}\n{source}").chars().collect();
+        let code: Vec<char> = code_only(&raw.iter().collect::<String>()).chars().collect();
+        seen_marks.extend(c_marks(&raw, &code).into_iter().map(|(a, _, _)| a));
+        for (outer, inner) in observed_containments(&header, &source) {
+            if !c11_scratch::contains(outer, inner) {
+                unstated.push(format!("{kind} machine: {outer:?} contains {inner:?}"));
+            }
+        }
+    }
+    assert!(
+        unstated.is_empty(),
+        "the generated code shows containments the table does not state:\n{}",
+        unstated.join("\n")
+    );
+    // The corpus runs the activities whose containments the table states, so a
+    // missing edge among them is seen.
+    for activity in [
+        Activity::Send,
+        Activity::InvokeStart,
+        Activity::HostReply,
+        Activity::HostAnswer,
+        Activity::Drain,
+        Activity::Seam,
+        Activity::Result,
+        Activity::Reply,
+        Activity::Lift,
+        Activity::Reason,
+    ] {
+        assert!(
+            seen_marks.contains(&activity),
+            "the corpus runs no {activity:?}, so its containments go unchecked"
+        );
+    }
+}
+
+/// The parse of the generated text finds functions, the calls in a span and
+/// the marks with their blocks, as the containment test reads them.
+#[test]
+fn the_parse_reads_functions_calls_and_marked_blocks() {
+    let c = "static int helper(int x) { return x; }\n\
+             int probe_api(void) {\n    \
+             /* sce-scratch-activity: seam */\n    \
+             helper(1);\n    \
+             sm->clock.now();\n\
+             }\n";
+    let raw: Vec<char> = c.chars().collect();
+    let code: Vec<char> = code_only(c).chars().collect();
+    let functions = c_functions(&code);
+    let names: Vec<(&str, bool)> = functions
+        .iter()
+        .map(|f| (f.name.as_str(), f.public))
+        .collect();
+    assert_eq!(names, vec![("helper", false), ("probe_api", true)]);
+    let marks = c_marks(&raw, &code);
+    assert_eq!(marks.len(), 1);
+    assert_eq!(marks[0].0, Activity::Seam);
+    let calls: Vec<String> = c_calls(&code, marks[0].1, marks[0].2)
+        .into_iter()
+        .map(|call| match call {
+            CCall::Named(name) => format!("named {name}"),
+            CCall::Pointer(name) => format!("pointer {name}"),
+        })
+        .collect();
+    assert_eq!(calls, vec!["named helper", "pointer now"]);
+}
