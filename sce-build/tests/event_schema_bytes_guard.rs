@@ -322,6 +322,23 @@ int main(void) {
         assert(sm.external_queue.count == 0);
         p.label = label;
     }
+    /* docs/adr/0086, section 8.5 (b): an event handed with data past the slot is
+       refused whole, and the refusal is counted, naming the event. */
+    {
+        static char past[BOUNDED_PAYLOAD_DATA_LEN + 1];
+        bounded_payload_event_with_meta_t meta = {0};
+        bounded_payload_event_t refused;
+        memset(past, 'x', sizeof(past) - 1u);
+        past[sizeof(past) - 1u] = 0;
+        meta.event = BOUNDED_PAYLOAD_EVENT_SAMPLE_RECEIVED;
+        meta.data = past;
+        bounded_payload_init(&sm);
+        assert(bounded_payload_refused_event_data(&sm) == 0u);
+        bounded_payload_raise_external(&sm, &meta);
+        assert(bounded_payload_refused_event_data(&sm) == 1u);
+        assert(bounded_payload_last_refused_event_data(&sm, &refused));
+        assert(refused == BOUNDED_PAYLOAD_EVENT_SAMPLE_RECEIVED);
+    }
     strcpy(label, "ready");
     bounded_payload_init(&sm);
     const unsigned char bytes[] = {0, 0x80, 0xff, '"', '\\'};
