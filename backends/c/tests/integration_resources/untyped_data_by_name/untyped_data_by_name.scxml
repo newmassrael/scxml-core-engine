@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/adr/0086, section 8.6 (c): the data of an event a host hands a
+     machine by name, which the machine's document declares no schema for, is
+     bounded by what the host ABI declares for it,
+     SCE_UNTYPED_EVENT_DATA_MAX_LEN. A machine with no script engine holds that
+     much in its slot, and refuses whole, counted and named, data past the slot.
+
+     The machine takes `note` twice. The driver hands it the first `note` with
+     data of exactly the ABI's bound, which the machine keeps and takes, and the
+     second with data one byte past its slot, which the machine refuses: the
+     machine stays where the first left it, and its count of refused data names
+     `note`.
+
+     A document of the C channel alone: the slot is C11's, and no other channel
+     holds an event's data in storage the build sizes.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" initial="idle" datamodel="sce-static"
+       name="untyped_data_by_name">
+  <state id="idle">
+    <transition event="note" target="heard"/>
+  </state>
+  <state id="heard">
+    <transition event="note" target="again"/>
+  </state>
+  <state id="again"/>
+</scxml>
