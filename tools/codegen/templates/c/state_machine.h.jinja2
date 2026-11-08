@@ -795,6 +795,12 @@ typedef struct {{ csym_prefix }}{{ model.name }}_scheduled_queue {
     {{ csym_prefix }}{{ model.name }}_scheduled_entry_t buf[SCE_MAX_SCHEDULED];
     uint8_t count;
 } {{ csym_prefix }}{{ model.name }}_scheduled_queue_t;
+
+/* The scheduled queue is counted and indexed in 8 bits, its own bound and not
+   the event queues' depth (`sce:capacity`), so a build that raises
+   SCE_MAX_SCHEDULED past that is refused here rather than wrapping. */
+SCE_STATIC_ASSERT(SCE_MAX_SCHEDULED >= 1 && SCE_MAX_SCHEDULED <= 255,
+                  "the scheduled queue holds at least one entry and is counted in 8 bits");
 {% endif %}
 
 {% if static_saved_shape and model.host_invoker_types %}
