@@ -493,6 +493,125 @@ fn no_function_of_a_c11_machine_holds_a_buffer_of_the_slot_on_its_stack() {
     }
 }
 
+// ── docs/adr/0086, section 8.5 (a): a script machine owns each event's text ──
+
+/// The text of the record `typedef struct <name> { ... } <name>_t;` of `header`.
+fn record<'a>(header: &'a str, name: &str) -> &'a str {
+    let start = header
+        .find(&format!("typedef struct {name} {{"))
+        .unwrap_or_else(|| panic!("the record `{name}`:\n{header}"));
+    let end = start
+        + header[start..]
+            .find(&format!("}} {name}_t;"))
+            .unwrap_or_else(|| panic!("the end of `{name}`:\n{header}"));
+    &header[start..end]
+}
+
+/// A machine whose data model is a script engine holds each event's data in a
+/// text its engine allocates, in its queued events and its scheduled entries,
+/// and no slot of `_event.data` there; a post to its inbox hands over storage
+/// with the function that releases it; and it frees every text it holds before
+/// it closes the engine whose allocator gave them. It has no saved state, so
+/// no text crosses a save.
+#[test]
+fn a_script_machine_holds_each_event_text_it_owns_and_frees_them_before_its_engine() {
+    let (header, source) = generated(
+        SCRIPTED,
+        &[],
+        &[
+            "--host-processor",
+            "x-sce-host",
+            "--host-invoker",
+            "x-app-host",
+        ],
+    );
+    let queued = record(&header, "probe_queued_event");
+    assert!(
+        queued.contains("    char *data;\n") && queued.contains("    size_t data_size;\n"),
+        "a queued event owns a text and knows its size:\n{queued}"
+    );
+    assert!(
+        !queued.contains("_DATA_LEN]"),
+        "a queued event holds no slot:\n{queued}"
+    );
+    let scheduled = record(&header, "probe_scheduled_entry");
+    assert!(
+        scheduled.contains("    char *data;\n") && !scheduled.contains("char data["),
+        "a scheduled entry owns a text and holds no slot for it:\n{scheduled}"
+    );
+    let input = record(&header, "probe_inbox_input");
+    assert_eq!(
+        input.matches("sce_inbox_release_fn release;").count(),
+        2,
+        "an event and an event by name each hand over the poster's storage:\n{input}"
+    );
+    assert!(
+        !header.contains("bool probe_save("),
+        "a script machine has no saved state:\n{header}"
+    );
+    assert!(
+        header.contains("uint32_t probe_owned_event_texts(const probe_t *sm);"),
+        "the machine says how many texts it holds:\n{header}"
+    );
+    let destroy = source
+        .find("SCE_SM_FN void probe_destroy(probe_t *sm) {")
+        .expect("the machine's destroy");
+    let body = &source[destroy..];
+    let freed = body
+        .find("release_owned_event_texts(sm);")
+        .expect("destroy frees the texts the machine holds");
+    let closed = body
+        .find("lua_close(sm->L);")
+        .expect("destroy closes the engine");
+    assert!(
+        freed < closed,
+        "every text is freed before the engine whose allocator gave it is closed"
+    );
+}
+
+/// A machine without a script engine keeps its event data in its slot, as
+/// section 8.1 sizes it, and hands nothing over through its inbox.
+#[test]
+fn a_typed_machine_keeps_its_event_data_in_its_slot() {
+    let typed_schemas = [
+        (
+            "answer",
+            schema(
+                "answer",
+                "answer.record",
+                &[("id", "uint32"), ("note", "string[16]")],
+            ),
+        ),
+        (
+            "label",
+            schema("label", "job.done", &[("label", "string[8]")]),
+        ),
+    ];
+    let (header, _) = generated(
+        &typed_machine(),
+        &typed_schemas,
+        &[
+            "--host-processor",
+            "x-sce-host",
+            "--host-invoker",
+            "x-app-host",
+        ],
+    );
+    let queued = record(&header, "probe_queued_event");
+    assert!(
+        queued.contains("    char data[PROBE_DATA_LEN];\n") && !queued.contains("char *data;"),
+        "a typed machine's queued event holds the slot:\n{queued}"
+    );
+    assert!(
+        !record(&header, "probe_inbox_input").contains("sce_inbox_release_fn"),
+        "a typed machine's inbox copies each post into its own slot"
+    );
+    assert!(
+        !header.contains("probe_owned_event_texts"),
+        "a typed machine allocates no text:\n{header}"
+    );
+}
+
 // ── docs/adr/0086, section 8.5 (e): the containment table, checked ──────────
 
 use sce_build::forge::c11_scratch::{self, Activity};
@@ -680,9 +799,11 @@ fn reached<'a>(
 
 /// A call through a member that runs this machine's host code, which is a host
 /// callback; `parent_dispatch` runs the parent machine, whose scratch is its
-/// own, and is not one.
+/// own, and is not one, and neither is `release`, the deleter a poster hands
+/// its storage over with, which by its contract (`sce_inbox_release_fn`,
+/// sce/inbox.h) calls no function of the machine.
 fn is_host_callback(member: &str) -> bool {
-    member != "parent_dispatch"
+    member != "parent_dispatch" && member != "release"
 }
 
 /// The containments the generated C of one machine (`header` and `source`)
