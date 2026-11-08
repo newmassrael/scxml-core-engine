@@ -136,7 +136,7 @@ fn holds(code: &str, lines: &[&str]) {
 /// Pinned by `GoComposed::record_type`, `GoComposed::list_type`,
 /// `GoComposed::optional_type`, `GoComposed::text_type`,
 /// `GoComposed::bytes_type` and `GoComposed::record_def`
-/// (`sce-build/src/forge/composed_lowering.rs`), by `go_composed_payload`
+/// (`sce-build/src/forge/composed_lowering/go.rs`), by `go_composed_payload`
 /// (`sce-build/src/forge/generator.rs`), and by the declaration of each record
 /// a payload names (`declare_composed_payload`,
 /// `sce-build/src/forge/static_lowering.rs`).
@@ -167,7 +167,7 @@ fn the_payload_is_held_in_the_machine_types_each_record_declared_once() {
 
 /// Pinned by `GoComposed::read_list`, `GoComposed::read_record`,
 /// `GoComposed::read_text`, `GoComposed::read_optional` and
-/// `GoComposed::read_scalar` (`sce-build/src/forge/composed_lowering.rs`), the
+/// `GoComposed::read_scalar` (`sce-build/src/forge/composed_lowering/go.rs`), the
 /// lift's statements `go_composed_payload` writes
 /// (`sce-build/src/forge/generator.rs`), and `composed_defaults_wire`
 /// (`sce-build/src/forge/schema_revision.rs`): each field read by one runtime
@@ -208,7 +208,7 @@ fn the_lift_reads_each_field_by_its_type_at_every_depth() {
 
 /// Pinned by `go_raise_checks` and `go_bound_check`, `GoComposed::write_list`,
 /// `GoComposed::write_record` and `GoComposed::write_optional`
-/// (`sce-build/src/forge/composed_lowering.rs`), and by the prelude and the
+/// (`sce-build/src/forge/composed_lowering/go.rs`), and by the prelude and the
 /// answer `go_composed_payload` gives the inject seam
 /// (`sce-build/src/forge/generator.rs`): the seam holds what a host hands it to
 /// every bound its type declares, at any depth, before it builds anything
@@ -279,8 +279,8 @@ fn the_reads_lower_at_any_depth() {
 }
 
 /// Pinned by `whole_list_copy` (`sce-build/src/forge/static_lowering.rs`),
-/// `copier` and `GoComposed::copy_whole`
-/// (`sce-build/src/forge/composed_lowering.rs`), and by `ComposedLowering::of`'s
+/// `copier` and `GoComposed::copy_whole` (`sce-build/src/forge/composed_lowering.rs`,
+/// `composed_lowering/go.rs`), and by `ComposedLowering::of`'s
 /// `copies`: a list a payload holds is taken whole into a list variable of a
 /// larger bound, one Go type, as a slice of its own, which the variable is
 /// appended to and emptied in place without reaching the payload's.
@@ -296,7 +296,7 @@ fn a_list_is_taken_whole_into_a_slice_of_its_own() {
 
 /// Pinned by `composed_wire_value` (`sce-build/src/forge/static_lowering.rs`),
 /// `GoTarget::composed_send_spelling` and the `GoCarrier::Wire` arms of
-/// `GoComposed`'s writers (`sce-build/src/forge/composed_lowering.rs`): each
+/// `GoComposed`'s writers (`sce-build/src/forge/composed_lowering/go.rs`): each
 /// composed field of the forwarded delivery is written by walking its type
 /// into the value a send holds its params in, which the runtime's
 /// `ScriptValueToJSON` writes as the event's JSON.

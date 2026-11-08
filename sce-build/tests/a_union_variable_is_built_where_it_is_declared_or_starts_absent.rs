@@ -181,7 +181,7 @@ const UNION: &str = "UnionVarsUnionShapeMinimalUnion";
 
 /// Pinned by `union_variable_field` and `RustComposed::union_value`
 /// (`sce-build/src/forge/static_lowering.rs`,
-/// `sce-build/src/forge/composed_lowering.rs`): the case its tag names,
+/// `sce-build/src/forge/composed_lowering/rust.rs`): the case its tag names,
 /// holding the record its other `<sce:set>`s build; an empty case alone; an
 /// optional one absent.
 #[test]

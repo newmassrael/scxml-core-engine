@@ -137,7 +137,7 @@ fn holds(code: &str, lines: &[&str]) {
 /// Pinned by `PythonComposed::record_type`, `PythonComposed::list_type`,
 /// `PythonComposed::optional_type`, `PythonComposed::text_type`,
 /// `PythonComposed::bytes_type` and `PythonComposed::record_def`
-/// (`sce-build/src/forge/composed_lowering.rs`), by `python_composed_payload`
+/// (`sce-build/src/forge/composed_lowering/python.rs`), by `python_composed_payload`
 /// (`sce-build/src/forge/generator.rs`), and by the declaration of each record a
 /// payload names (`declare_composed_payload`,
 /// `sce-build/src/forge/static_lowering.rs`).
@@ -165,7 +165,7 @@ fn the_payload_is_held_in_the_machine_types_each_record_declared_once() {
 }
 
 /// Pinned by `PythonComposed::field_checks` and `python_post_init`
-/// (`sce-build/src/forge/composed_lowering.rs`), the `class_body`
+/// (`sce-build/src/forge/composed_lowering/python.rs`), the `class_body`
 /// `python_composed_payload` gives the payload class
 /// (`sce-build/src/forge/generator.rs`) and the checks `declare_composed` hands
 /// each record (`sce-build/src/forge/static_lowering.rs`): a value a host makes,
@@ -338,8 +338,8 @@ fn the_reads_lower_at_any_depth() {
 }
 
 /// Pinned by `whole_list_copy` (`sce-build/src/forge/static_lowering.rs`),
-/// `copier` and `PythonComposed::copy_whole`
-/// (`sce-build/src/forge/composed_lowering.rs`), and by `ComposedLowering::of`'s
+/// `copier` and `PythonComposed::copy_whole` (`sce-build/src/forge/composed_lowering.rs`,
+/// `composed_lowering/python.rs`), and by `ComposedLowering::of`'s
 /// `copies`: a list a payload holds is taken whole into a list variable of a
 /// larger bound, one Python type, as a copy that shares no list with the
 /// payload, since the variable is written into in place.

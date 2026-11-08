@@ -95,7 +95,7 @@ const READER: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 
 /// The head of every reader the C++ machine writes: a lambda of the value it
 /// reads and the place it fills (`CppComposed`,
-/// `sce-build/src/forge/composed_lowering.rs`).
+/// `sce-build/src/forge/composed_lowering/cpp.rs`).
 const R: &str = "[&](const ::SCE::Common::EventPayloadValue &sceValue, auto &sceInto) -> \
                  ::SCE::Common::EventPayloadRefusal";
 
@@ -150,7 +150,7 @@ fn holds(code: &str, lines: &[&str]) {
 /// Pinned by `CppComposed::record_type`, `CppComposed::list_type`,
 /// `CppComposed::optional_type`, `CppComposed::text_type`,
 /// `CppComposed::bytes_type` and `CppComposed::record_def`
-/// (`sce-build/src/forge/composed_lowering.rs`), by `cpp_composed_payload`
+/// (`sce-build/src/forge/composed_lowering/cpp.rs`), by `cpp_composed_payload`
 /// (`sce-build/src/forge/generator.rs`), and by the declaration of each record
 /// a payload names (`declare_composed_payload`,
 /// `sce-build/src/forge/static_lowering.rs`).
@@ -180,7 +180,7 @@ fn the_payload_is_held_in_the_machine_types_each_record_declared_once() {
 /// Pinned by `CppComposed::read_list`, `CppComposed::read_record`,
 /// `CppComposed::read_text`, `CppComposed::read_optional`,
 /// `CppComposed::read_enum` and `CppComposed::read_scalar`
-/// (`sce-build/src/forge/composed_lowering.rs`), the lift's statements
+/// (`sce-build/src/forge/composed_lowering/cpp.rs`), the lift's statements
 /// `cpp_composed_payload` writes (`sce-build/src/forge/generator.rs`), and
 /// `composed_defaults_wire` (`sce-build/src/forge/schema_revision.rs`): each
 /// field read by one lambda per constructor into the payload, a text held to
@@ -241,7 +241,7 @@ fn the_lift_reads_each_field_by_its_type_at_every_depth() {
 
 /// Pinned by `cpp_raise_checks` and `cpp_bound_check`, `CppComposed::write_list`,
 /// `CppComposed::write_record` and `CppComposed::write_optional`
-/// (`sce-build/src/forge/composed_lowering.rs`), and by the prelude and the
+/// (`sce-build/src/forge/composed_lowering/cpp.rs`), and by the prelude and the
 /// answer `cpp_composed_payload` gives the inject seam
 /// (`sce-build/src/forge/generator.rs`): the seam holds what a host hands it to
 /// every bound its type declares, at any depth, before it builds anything
@@ -326,8 +326,8 @@ fn the_reads_lower_at_any_depth() {
 }
 
 /// Pinned by `whole_list_copy` (`sce-build/src/forge/static_lowering.rs`),
-/// `copier` and `CppComposed::copy_whole`
-/// (`sce-build/src/forge/composed_lowering.rs`), and by `ComposedLowering::of`'s
+/// `copier` and `CppComposed::copy_whole` (`sce-build/src/forge/composed_lowering.rs`,
+/// `composed_lowering/cpp.rs`), and by `ComposedLowering::of`'s
 /// `copies`: a list a payload holds is taken whole into a list variable of a
 /// larger bound, one C++ type, by the assignment, which copies the vector by
 /// value, so the variable is appended to and emptied in place without reaching
@@ -340,7 +340,7 @@ fn a_list_is_taken_whole_into_a_variable_as_a_copy_by_value() {
 
 /// Pinned by `composed_wire_value` (`sce-build/src/forge/static_lowering.rs`),
 /// `CppTarget::composed_send_spelling` and the `CppCarrier::Wire` arms of
-/// `CppComposed`'s writers (`sce-build/src/forge/composed_lowering.rs`): each
+/// `CppComposed`'s writers (`sce-build/src/forge/composed_lowering/cpp.rs`): each
 /// composed field of the forwarded delivery is written by walking its type
 /// into the `ScriptValue` a send holds its params in, which
 /// `EventDataHelper::buildEventDataJson` writes as the event's JSON.

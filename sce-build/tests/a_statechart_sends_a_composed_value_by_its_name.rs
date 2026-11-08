@@ -164,7 +164,7 @@ fn each_backend_that_sends_takes_a_send_of_composed_values_that_fit() {
 }
 
 /// Pinned by `KotlinComposed`'s writers under `KotlinCarrier::Wire`
-/// (`sce-build/src/forge/composed_lowering.rs`), `KotlinTarget::composed_send_spelling`
+/// (`sce-build/src/forge/composed_lowering/kotlin.rs`), `KotlinTarget::composed_send_spelling`
 /// and `composed_wire_value` (`sce-build/src/forge/static_lowering.rs`): each part
 /// of the payload is written from the place it is read at into the value a Kotlin
 /// `<send>` holds its params in, a list as a `List` and a record as a `Map`, which
@@ -193,7 +193,7 @@ fn each_value_is_written_by_walking_its_type_on_kotlin() {
 }
 
 /// Pinned by `PythonComposed`'s writers under `PythonCarrier::Wire` and its
-/// `send_param` (`sce-build/src/forge/composed_lowering.rs`),
+/// `send_param` (`sce-build/src/forge/composed_lowering/python.rs`),
 /// `PythonTarget::composed_send_spelling` and `composed_wire_value`
 /// (`sce-build/src/forge/static_lowering.rs`): each part of the payload is
 /// written from the place it is read at into the plain value a Python `<send>`'s
@@ -238,7 +238,7 @@ fn each_value_is_written_by_walking_its_type_on_python() {
 }
 
 /// Pinned by `RustComposed`'s writers under `RustCarrier::ScriptValue`
-/// (`sce-build/src/forge/composed_lowering.rs`) and by `composed_wire_value`
+/// (`sce-build/src/forge/composed_lowering/rust.rs`) and by `composed_wire_value`
 /// (`sce-build/src/forge/static_lowering.rs`): each part of the payload is
 /// written from the place it is read at, by one case per constructor.
 #[test]

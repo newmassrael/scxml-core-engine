@@ -128,7 +128,7 @@ fn holds(code: &str, lines: &[&str]) {
 
 /// Pinned by `KotlinComposed::record_type`, `KotlinComposed::list_type`,
 /// `KotlinComposed::optional_type`, `KotlinComposed::text_type` and
-/// `KotlinComposed::bytes_type` (`sce-build/src/forge/composed_lowering.rs`),
+/// `KotlinComposed::bytes_type` (`sce-build/src/forge/composed_lowering/kotlin.rs`),
 /// by `kotlin_composed_payload` (`sce-build/src/forge/generator.rs`), and by the
 /// declaration of each record a payload names (`declare_composed_payload`,
 /// `sce-build/src/forge/static_lowering.rs`).
@@ -155,7 +155,7 @@ fn the_payload_is_held_in_the_machine_types_each_record_declared_once() {
 }
 
 /// Pinned by `KotlinComposed::field_checks` and `kotlin_init_block`
-/// (`sce-build/src/forge/composed_lowering.rs`), the `class_body`
+/// (`sce-build/src/forge/composed_lowering/kotlin.rs`), the `class_body`
 /// `kotlin_composed_payload` gives the payload class
 /// (`sce-build/src/forge/generator.rs`) and the checks `declare_composed`
 /// hands each record (`sce-build/src/forge/static_lowering.rs`): a value a
@@ -304,8 +304,8 @@ fn the_reads_lower_at_any_depth() {
 }
 
 /// Pinned by `whole_list_copy` (`sce-build/src/forge/static_lowering.rs`),
-/// `copier` and `KotlinComposed::copy_whole`
-/// (`sce-build/src/forge/composed_lowering.rs`), and by `ComposedLowering::of`'s
+/// `copier` and `KotlinComposed::copy_whole` (`sce-build/src/forge/composed_lowering.rs`,
+/// `composed_lowering/kotlin.rs`), and by `ComposedLowering::of`'s
 /// `copies`: a list a payload holds is taken whole into a list variable of a
 /// larger bound, one Kotlin type, so the copy is the list itself.
 #[test]

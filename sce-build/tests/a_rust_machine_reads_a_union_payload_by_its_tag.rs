@@ -55,7 +55,7 @@ fn holds(code: &str, lines: &[&str]) {
 const UNION: &str = "StaticUnionUnionShapeUnion";
 
 /// Pinned by `RustComposed::union_type` and `RustComposed::union_def`
-/// (`sce-build/src/forge/composed_lowering.rs`) and by the declaration of each
+/// (`sce-build/src/forge/composed_lowering/rust.rs`) and by the declaration of each
 /// union a payload names (`declare_composed_payload`,
 /// `sce-build/src/forge/static_lowering.rs`).
 #[test]
@@ -106,7 +106,7 @@ fn the_lift_reads_the_tag_first_and_the_seam_writes_each_case() {
 }
 
 /// Pinned by `lower_union_reads` (`sce-build/src/forge/expr.rs`), by
-/// `rust_union_member` (`sce-build/src/forge/composed_lowering.rs`) and by the
+/// `rust_union_member` (`sce-build/src/forge/composed_lowering/rust.rs`) and by the
 /// union-aware `place_text` of a loop's list
 /// (`sce-build/src/forge/static_lowering.rs`).
 #[test]
@@ -137,7 +137,7 @@ fn each_read_is_spelled_by_the_cases_its_tests_leave() {
 
 /// Pinned by `union_field_place` and `whole_union_copy`
 /// (`sce-build/src/forge/static_lowering.rs`) and by
-/// `rust_union_member_place` (`sce-build/src/forge/composed_lowering.rs`): a
+/// `rust_union_member_place` (`sce-build/src/forge/composed_lowering/rust.rs`): a
 /// field of a union variable is written through the mutable proven read of the
 /// case its test proves, and an optional union variable takes the payload's
 /// union whole, a copy lifted into its present value (docs/adr/0092, section

@@ -129,7 +129,7 @@ fn struct_body<'c>(code: &'c str, header: &str) -> &'c str {
 
 /// Pinned by `RustComposed::record_type`, `RustComposed::list_type`,
 /// `RustComposed::optional_type`, `RustComposed::text_type` and
-/// `RustComposed::bytes_type` (`sce-build/src/forge/composed_lowering.rs`), and
+/// `RustComposed::bytes_type` (`sce-build/src/forge/composed_lowering/rust.rs`), and
 /// by the declaration of each record a payload names
 /// (`declare_composed_payload`, `sce-build/src/forge/static_lowering.rs`).
 #[test]
