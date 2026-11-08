@@ -88,9 +88,9 @@ PY
 # ── A send the host serves carries its pairs as text too ───────────
 
 # The text buffer stays passed to the writer, whose result is then discarded: with the
-# block dropped whole, `_host_param_texts` would be declared and unused.
+# block dropped whole, the value written would be unused.
 mutation_case "a send's param reaches the host as the event data alone" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     "                                                    sizeof(_host_param_texts[{{ loop.index0 }}]))) {",
-     "                                                    sizeof(_host_param_texts[{{ loop.index0 }}])) && false) {")
+     "                                                    SCE_SCRATCH_CAP(pairs[{{ loop.index0 }}]))) {",
+     "                                                    SCE_SCRATCH_CAP(pairs[{{ loop.index0 }}])) && false) {")
 PY

@@ -16,7 +16,10 @@
 //     apart from a text past fixed storage, so the machine raises the reason
 //     an allocation that failed is;
 //   * a list or a response of fixed storage is as it was: a text past its
-//     storage is refused and counted as past it, and a release frees nothing.
+//     storage is refused and counted as past it, and a release frees nothing;
+//   * a buffer of a script machine's scratch (`sce_grown_text_t`) grows to
+//     what it is asked to hold, by one block resized, never shrinks, is left
+//     as it was when the heap refuses, and is freed once by its release.
 //
 // The heap is the tests' counting allocator (`counting_alloc.h`), which counts
 // every block given and freed and every free of a block it does not hold.
@@ -164,6 +167,48 @@ static void a_response_of_fixed_storage_is_as_it_was(void) {
     CHECK(strcmp(out.refusal, "no") == 0, "a release leaves fixed storage as it is");
 }
 
+static void a_scratch_buffer_grows_to_what_it_is_asked_and_is_freed_once(void) {
+    counting_alloc_t heap;
+    sce_grown_text_t buf;
+    counting_alloc_init(&heap);
+    memset(&buf, 0, sizeof(buf));
+    CHECK(sce_grown_text_reserve(counting_alloc, &heap, &buf, 16u), "the first reserve grows the buffer");
+    CHECK(buf.data != NULL && buf.cap == 16u, "it holds 16 bytes, not %zu", buf.cap);
+    CHECK(heap.given == 1u, "one block given, not %u", (unsigned)heap.given);
+    CHECK(sce_grown_text_reserve(counting_alloc, &heap, &buf, 8u), "a smaller reserve is held already");
+    CHECK(buf.cap == 16u && heap.given == 1u, "a smaller reserve neither shrinks nor allocates");
+    CHECK(sce_grown_text_reserve(counting_alloc, &heap, &buf, 4000u), "a larger reserve grows it");
+    CHECK(buf.cap == 4000u && heap.given == 1u && heap.misfreed == 0u,
+          "the block is resized in place of a second one: cap %zu, %u given, %u misfreed", buf.cap,
+          (unsigned)heap.given, (unsigned)heap.misfreed);
+    memset(buf.data, 'x', 3999u);
+    buf.data[3999] = '\0';
+    CHECK(strlen(buf.data) == 3999u, "the grown buffer holds the whole text");
+    sce_grown_text_release(counting_alloc, &heap, &buf);
+    CHECK(buf.data == NULL && buf.cap == 0u, "a release clears the buffer");
+    CHECK(heap.freed == 1u && heap.outstanding == 0u, "the block is freed once");
+    sce_grown_text_release(counting_alloc, &heap, &buf);
+    CHECK(heap.freed == 1u && heap.misfreed == 0u, "a second release frees nothing");
+}
+
+static void a_scratch_buffer_the_heap_cannot_grow_is_left_as_it_was(void) {
+    counting_alloc_t heap;
+    sce_grown_text_t buf;
+    counting_alloc_init(&heap);
+    memset(&buf, 0, sizeof(buf));
+    CHECK(sce_grown_text_reserve(counting_alloc, &heap, &buf, 8u), "the first reserve grows the buffer");
+    memcpy(buf.data, "kept", 5u);
+    char *const before = buf.data;
+    heap.refuse_next = 1;
+    CHECK(!sce_grown_text_reserve(counting_alloc, &heap, &buf, 64u), "a reserve the heap refuses answers false");
+    CHECK(buf.data == before && buf.cap == 8u && strcmp(buf.data, "kept") == 0,
+          "the buffer is left as it was, never cut to a smaller size");
+    CHECK(!sce_grown_text_reserve(NULL, NULL, &buf, 64u), "a buffer with no allocator does not grow");
+    CHECK(sce_grown_text_reserve(NULL, NULL, &buf, 8u), "what it holds already needs no allocator");
+    sce_grown_text_release(counting_alloc, &heap, &buf);
+    CHECK(heap.given == heap.freed && heap.outstanding == 0u, "every block given is freed");
+}
+
 int main(void) {
     a_reply_of_any_length_grows_and_is_freed_once();
     a_reply_the_heap_cannot_hold_is_refused_whole();
@@ -171,6 +216,8 @@ int main(void) {
     an_answer_of_any_length_grows_and_is_freed_once();
     a_refusal_replaces_a_completion_and_the_heap_refusal_is_flagged();
     a_response_of_fixed_storage_is_as_it_was();
+    a_scratch_buffer_grows_to_what_it_is_asked_and_is_freed_once();
+    a_scratch_buffer_the_heap_cannot_grow_is_left_as_it_was();
     if (failures != 0) {
         (void)fprintf(stderr, "%d check(s) failed\n", failures);
         return 1;

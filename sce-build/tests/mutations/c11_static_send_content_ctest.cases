@@ -29,6 +29,6 @@ mutation_oracles backends/c/tests/integration/test_static_host_send.c
 
 mutation_case "the literal content is not copied into the event's data" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     "                    memcpy(_ed, _lit, sizeof(_lit));\n                }\n{% elif action.contentexpr %}",
-     "                    (void)_lit;\n                    _ed[0] = '\\0';\n                }\n{% elif action.contentexpr %}")
+     "                    _ed = _lit;\n                }\n{% elif action.contentexpr %}",
+     "                    (void)_lit;\n                    _ed = \"\";\n                }\n{% elif action.contentexpr %}")
 PY
