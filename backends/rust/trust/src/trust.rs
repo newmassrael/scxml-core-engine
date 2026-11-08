@@ -33,7 +33,7 @@
 //! One [`Trust`] is both halves of one host: it is cloned, and a clone is put in front of the
 //! machine as its [`Admission`] and another behind it as its [`Sealer`].
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use sce_rust_mesh::endpoint::{Admission, Sealer};
@@ -186,6 +186,15 @@ struct State {
     /// The events that arrive with no signature and make a copy forget, which this host does
     /// not take ([`UNSIGNED_REFUSED`], and [`Trust::allow_unsigned`]).
     unsigned_refused: Vec<String>,
+    /// What this host's machine has been told of each device, by its node: the highest number of
+    /// the device's chain told, every one below it told too (docs/adr/0085, section 3: the
+    /// delivered vector). The device's own column moves when its person signs, since the machine
+    /// made what it signs; every other column moves only by [`Trust::deliver`].
+    delivered: BTreeMap<u64, u64>,
+    /// The operations that hold but whose content this host cannot open, by node and number, with
+    /// the epoch each is sealed under: what [`Trust::deliver`] passes over without telling, when
+    /// the epoch is one before this host's first, of which a member is given no history.
+    unopened: BTreeMap<u64, BTreeMap<u64, u32>>,
 }
 
 impl State {
@@ -257,6 +266,8 @@ impl Trust {
                 epoch_keys: BTreeMap::new(),
                 keyed_by_a_group: false,
                 unsigned_refused: UNSIGNED_REFUSED.iter().map(|e| e.to_string()).collect(),
+                delivered: BTreeMap::new(),
+                unopened: BTreeMap::new(),
             })),
         }
     }
@@ -793,6 +804,111 @@ impl Trust {
         take(&mut state, event, data)
     }
 
+    /// The operations this host's machine is to be told now, each as the event and the data the
+    /// machine is told (the content opened), in the order it is to be told them: causal delivery
+    /// (docs/adr/0085, section 3; Birman, Schiper and Stephenson 1991). An operation of a device
+    /// whose machine was told up to `D` of it is told when it is the device's next, `D + 1`, and
+    /// the machine was told every operation its context names; one below the next was told
+    /// already and is not told again; one past the next, or whose context names an operation the
+    /// machine was not told, waits here until it is, and is never skipped ([`Self::lacking`] says
+    /// what to ask for). The order told is a linear extension of the contexts, whatever order the
+    /// operations were taken in.
+    ///
+    /// What lies at or past where a device's chain is frozen is told to no machine, and nor is what
+    /// the log puts past the last operation the administrators accepted of a device that may write
+    /// no more: a context that names such an operation is met once the machine was told the device
+    /// up to that point, since waiting for the rest would wait for good.
+    pub fn deliver(&self) -> Vec<(String, String)> {
+        let mut state = self.state();
+        let mut told = Vec::new();
+        loop {
+            let mut moved = false;
+            let nodes: BTreeSet<u64> = state
+                .ops
+                .keys()
+                .chain(state.unopened.keys())
+                .copied()
+                .collect();
+            for node in nodes {
+                while let Some(next) = next_deliverable(&state, node) {
+                    if let Next::Tell(event, text) = next {
+                        told.push((event.to_string(), text));
+                    }
+                    let column = state.delivered.entry(node).or_insert(0);
+                    *column += 1;
+                    moved = true;
+                }
+            }
+            if !moved {
+                return told;
+            }
+        }
+    }
+
+    /// The machine lost what it was told (it is built again, and every operation is to be told
+    /// again): the delivered vector starts over, its own column included, and the next
+    /// [`Self::deliver`] tells the machine every operation this host holds, in causal order.
+    pub fn forget_delivered(&self) {
+        self.state().delivered.clear();
+    }
+
+    /// What this host's machine has been told of each device: its node and the highest number
+    /// told, for every device it was told anything of, lowest node first.
+    pub fn delivered(&self) -> Vec<(u64, u64)> {
+        self.state()
+            .delivered
+            .iter()
+            .filter(|(_, seq)| **seq > 0)
+            .map(|(node, seq)| (*node, *seq))
+            .collect()
+    }
+
+    /// The operations this host does not hold that one it holds waits on before its machine may be
+    /// told it, as ranges (node, from, to) of a device's chain, lowest node first: the gap before a
+    /// device's next operation held, and what the context of each device's next operation names
+    /// that the host does not hold. What a host asks a relay for, so that an operation lost on its
+    /// way is repaired and never skipped (docs/adr/0085, section 3).
+    pub fn lacking(&self) -> Vec<(u64, u64, u64)> {
+        let state = self.state();
+        let mut wanted: BTreeMap<u64, (u64, u64)> = BTreeMap::new();
+        let mut want = |node: u64, from: u64, to: u64| {
+            if from <= to {
+                let range = wanted.entry(node).or_insert((from, to));
+                range.0 = range.0.min(from);
+                range.1 = range.1.max(to);
+            }
+        };
+        for (node, chain) in &state.ops {
+            let next = told_of(&state, *node) + 1;
+            if chain.frozen().is_some_and(|from| next >= from) {
+                continue;
+            }
+            match chain.at(next) {
+                // The next is held: what its context names that the host does not hold.
+                Some(held) => {
+                    for (other, seq) in &held.wire.link.context {
+                        if dependency_met(&state, *other, *seq) {
+                            continue;
+                        }
+                        let to = told_ceiling(&state, *other).map_or(*seq, |top| top.min(*seq));
+                        let from = first_not_held(&state, *other, told_of(&state, *other) + 1);
+                        want(*other, from, to);
+                    }
+                }
+                // The next is not held while a later one is: the gap before it.
+                None => {
+                    if let Some(later) = chain.range(next, u64::MAX).next() {
+                        want(*node, first_not_held(&state, *node, next), later.seq() - 1);
+                    }
+                }
+            }
+        }
+        wanted
+            .into_iter()
+            .map(|(node, (from, to))| (node, from, to))
+            .collect()
+    }
+
     /// How many entries the membership log this host holds has: the position the next one takes.
     pub fn log_len(&self) -> u64 {
         self.state().log.entries().len() as u64
@@ -1052,6 +1168,10 @@ impl Trust {
             "waiting": state.waiting.iter()
                 .map(|send| json!([send.event, send.data]))
                 .collect::<Vec<_>>(),
+            "delivered": state.delivered.iter()
+                .filter(|(_, seq)| **seq > 0)
+                .map(|(node, seq)| json!([node.to_string(), seq.to_string()]))
+                .collect::<Vec<_>>(),
         })
         .to_string()
     }
@@ -1121,6 +1241,21 @@ impl Trust {
             };
             if !state.waiting.iter().any(|held| held.is_the_same(&send)) {
                 state.waiting.push(send);
+            }
+        }
+        // What the machine was told, as it was when the text was written: the machine the host
+        // keeps beside this text was told that much. A text written before the host kept it holds
+        // none, and the next delivery tells the machine every operation held again, which the list
+        // takes in once each.
+        for row in rows("delivered") {
+            let number = |at: usize| {
+                row.get(at)
+                    .and_then(Value::as_str)
+                    .and_then(|text| text.parse::<u64>().ok())
+            };
+            if let (Some(node), Some(seq)) = (number(0), number(1)) {
+                let told = state.delivered.entry(node).or_insert(0);
+                *told = (*told).max(seq);
             }
         }
         kept
@@ -1389,6 +1524,111 @@ fn heads_of(state: &State) -> Vec<Head> {
 /// The highest number `n` such that `node`'s operations 1 to `n` are all told to the machine.
 fn contiguous(state: &State, node: u64) -> u64 {
     state.ops.get(&node).map_or(0, Chain::contiguous)
+}
+
+/// What this host's machine has been told of `node`: the highest number, 0 for nothing.
+fn told_of(state: &State, node: u64) -> u64 {
+    state.delivered.get(&node).copied().unwrap_or(0)
+}
+
+/// The highest number of `node`'s chain any machine may ever be told, when one is known: below
+/// where the chain is frozen, and no further than the last operation the administrators accepted
+/// of a device whose latest grant lets it write no more.
+fn told_ceiling(state: &State, node: u64) -> Option<u64> {
+    let frozen = state
+        .ops
+        .get(&node)
+        .and_then(Chain::frozen)
+        .map(|from| from.saturating_sub(1));
+    let cut = state
+        .log
+        .latest()
+        .find(|(granted, _)| *granted == node)
+        .and_then(|(_, era)| (era.role < WRITER).then_some(era.cutoff).flatten());
+    match (frozen, cut) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (one, other) => one.or(other),
+    }
+}
+
+/// Whether the machine was told what a context's entry for `node` at `seq` names: every operation
+/// of the device up to `seq`, or, when no machine will ever be told the device up to `seq`
+/// ([`told_ceiling`]), every operation of it any machine will be told.
+fn dependency_met(state: &State, node: u64, seq: u64) -> bool {
+    let told = told_of(state, node);
+    told >= seq || told_ceiling(state, node).is_some_and(|top| top < seq && told >= top)
+}
+
+/// The first number of `node`'s chain from `from` on that this host holds no operation at, an
+/// operation it holds and cannot open included: asking the relay for it again would bring the
+/// same.
+fn first_not_held(state: &State, node: u64, from: u64) -> u64 {
+    let unopened = state.unopened.get(&node);
+    let chain = state.ops.get(&node);
+    let mut next = from;
+    loop {
+        let held = chain.is_some_and(|chain| chain.range(next, next).next().is_some());
+        let sealed = unopened.is_some_and(|seqs| seqs.contains_key(&next));
+        if !held && !sealed {
+            return next;
+        }
+        next += 1;
+    }
+}
+
+/// What becomes of the operation of a device after the highest its machine was told.
+enum Next {
+    /// It is told: its event and the data the machine is told.
+    Tell(&'static str, String),
+    /// It is passed over and told never: it is sealed under an epoch before this host's first,
+    /// whose content this host was given no key of (`Trust::deliver`).
+    Pass,
+}
+
+/// What becomes of the operation of `node` at the number after the highest its machine was told
+/// (docs/adr/0085, section 3), when anything does: told when it is held and every operation its
+/// context names was told; passed over when it cannot be opened here and never will
+/// ([`never_opened`]); nothing, and it waits, otherwise. Never one past it.
+fn next_deliverable(state: &State, node: u64) -> Option<Next> {
+    let next = told_of(state, node) + 1;
+    let Some(held) = state.ops.get(&node).and_then(|chain| chain.at(next)) else {
+        let epoch = state.unopened.get(&node)?.get(&next)?;
+        return never_opened(state, *epoch).then_some(Next::Pass);
+    };
+    let met = held
+        .wire
+        .link
+        .context
+        .iter()
+        .all(|(other, seq)| dependency_met(state, *other, *seq));
+    if !met {
+        return None;
+    }
+    Some(Next::Tell(held.event, told_text(state, held)?))
+}
+
+/// Whether what is sealed under `epoch` is never opened by this host: an epoch before the first
+/// one it holds the key of, which a member is given no history of (`TakeError::NoKey`). Such an
+/// operation is never told to its machine, so what follows it in its chain is not held for it; a
+/// host that holds no key at all holds everything for the key it waits for.
+fn never_opened(state: &State, epoch: u32) -> bool {
+    state
+        .epoch_keys
+        .keys()
+        .next()
+        .is_some_and(|first| epoch < *first)
+}
+
+/// An operation held as the machine is told it: its event as its author made it, the content
+/// opened when this host keeps content from the hub, as [`Trust::take_operation`] tells it.
+fn told_text(state: &State, held: &Held) -> Option<String> {
+    let travelling: Value = serde_json::from_str(&held.wire.data).ok()?;
+    let visible = if held.event == WRITE_EVENT {
+        open_write(state, &travelling, held.wire.link.log).ok()?
+    } else {
+        travelling
+    };
+    Some(visible.to_string())
 }
 
 /// Whether `checkpoint` holds: it is for this list, names an entry of the log this host holds as
@@ -1679,7 +1919,14 @@ fn take(state: &mut State, event: &'static str, data: &str) -> Result<Taken, Tak
             })
         }
         Err(Refusal::NotReached(reason)) => Err(TakeError::NotReached(reason)),
-        Err(Refusal::NoKey(reason)) => Err(TakeError::NoKey(reason)),
+        Err(Refusal::NoKey { reason, epoch, at }) => {
+            // Its signature and its place hold, and only its content does not open here: kept, so
+            // that the machine's delivery knows what sealed it ([`Trust::deliver`]).
+            if let Some((node, seq)) = at {
+                state.unopened.entry(node).or_default().insert(seq, epoch);
+            }
+            Err(TakeError::NoKey(reason))
+        }
         Err(Refusal::Refused(reason)) => Err(TakeError::Refused(reason)),
     }
 }
@@ -1692,6 +1939,7 @@ fn hold_verified(
     verified: Verified,
     signature: [u8; 64],
 ) -> Placed {
+    let prev = verified.link.prev;
     let wire = Wire {
         data: verified.travelling.to_string(),
         link: verified.link,
@@ -1699,7 +1947,7 @@ fn hold_verified(
     };
     let held = Held {
         id: verified.id,
-        prev: verified.link.prev,
+        prev,
         stamp: verified.stamp,
         wid: verified.wid,
         key: verified.key,
@@ -1713,8 +1961,13 @@ fn hold_verified(
 enum Refusal {
     /// It names an entry of the log the host has not reached.
     NotReached(String),
-    /// It is sealed under an epoch whose key the host does not hold.
-    NoKey(String),
+    /// It is sealed under `epoch`, whose key the host does not hold; `at` is its author and its
+    /// number, once the operation is known to hold otherwise.
+    NoKey {
+        reason: String,
+        epoch: u32,
+        at: Option<(u64, u64)>,
+    },
     /// It does not hold: its reason.
     Refused(String),
 }
@@ -1819,6 +2072,23 @@ fn verify_operation(
     if link.seq == segment_start && link.prev != message::NO_OPERATION {
         return Err(format!("{event}: it begins a chain and names an operation before it").into());
     }
+    // A context names what its author's machine had been told of other devices: never the author's
+    // own column, which its number already orders, and only a device the log had granted by the
+    // entry the operation names, since the author held no more of the log than that when it was
+    // told the device's operations. A context naming a device no log granted would hold the
+    // operation, and everything after it, waiting for good.
+    for (node, _) in &link.context {
+        if *node == author {
+            return Err(format!("{event}: its context names its own author, node {author}").into());
+        }
+        if state.log.era_for(*node, link.log).is_none() {
+            return Err(format!(
+                "{event}: its context names node {node}, which the log had not granted by entry {}",
+                link.log
+            )
+            .into());
+        }
+    }
     // Nothing is judged here of how the operation stands among the others of its device (a number
     // two are signed at, a chain that does not follow itself, a stamp that goes back or repeats): that
     // is what the set of them says, whatever order they were given in ([`Chain`]), and an operation
@@ -1836,7 +2106,14 @@ fn verify_operation(
     };
 
     let visible = if event == WRITE_EVENT {
-        open_write(state, &value, link.log)?
+        open_write(state, &value, link.log).map_err(|refusal| match refusal {
+            Refusal::NoKey { reason, epoch, .. } => Refusal::NoKey {
+                reason,
+                epoch,
+                at: Some((author, link.seq)),
+            },
+            other => other,
+        })?
     } else {
         value.clone()
     };
@@ -1909,9 +2186,11 @@ fn open_write(state: &State, wire: &Value, entry: u64) -> Result<Value, Refusal>
                 // A key this host does not hold yet (the group's commit has not reached it) or never
                 // will (an epoch before it joined): the host asks again later, and does not take the
                 // write for one that cannot hold.
-                secrecy::OpenError::NoKey { epoch } => Refusal::NoKey(format!(
-                    "{WRITE_EVENT}: this host holds no key of epoch {epoch}"
-                )),
+                secrecy::OpenError::NoKey { epoch } => Refusal::NoKey {
+                    reason: format!("{WRITE_EVENT}: this host holds no key of epoch {epoch}"),
+                    epoch,
+                    at: None,
+                },
                 secrecy::OpenError::Corrupt => {
                     refused(format!("{WRITE_EVENT}: its content does not open"))
                 }
@@ -2011,11 +2290,22 @@ fn make_operation(
         Some(last) if last.seq() > floor => (last.seq() + 1, last.id),
         _ => (floor + 1, message::NO_OPERATION),
     };
+    // What the machine had been told of every other device when it made this: the operation is
+    // told to no machine before all of that (docs/adr/0085, section 3.1). A send that waited to be
+    // signed is given the context of when it is signed, which may name more than the machine had
+    // seen when it made it; that only orders more than it needs to, and is never unsafe.
+    let context = state
+        .delivered
+        .iter()
+        .filter(|(node, seq)| **node != author && **seq > 0)
+        .map(|(node, seq)| (*node, *seq))
+        .collect();
     let link = Link {
         seq,
         prev,
         log,
         log_hash,
+        context,
     };
     let signing = message::signing(&state.calendar, event, &travelling)
         .and_then(Result::ok)
@@ -2066,6 +2356,9 @@ fn make_operation(
         });
     }
     hold(state, author, held);
+    // The machine made what its person signs, so it is told none of it again.
+    let told = state.delivered.entry(author).or_insert(0);
+    *told = (*told).max(seq);
     Ok(wire)
 }
 

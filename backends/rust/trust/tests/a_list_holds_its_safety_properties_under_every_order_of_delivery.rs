@@ -99,6 +99,7 @@ fn forged_write(
         prev,
         log: next - 1,
         log_hash,
+        context: Vec::new(),
     };
     let bytes = message::operation_bytes(&signing.message, &link);
     link.write_into(&mut data).unwrap();
