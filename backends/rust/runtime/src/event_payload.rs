@@ -647,10 +647,13 @@ impl PayloadFields {
         self.field(name)?.truth()
     }
 
-    /// A text field, as the text it carries; [`PayloadValue::text`] holds a
-    /// text to the bound its type declares.
-    pub fn text(&self, name: &str) -> Result<crate::SceString, PayloadRefusal> {
-        self.field(name)?.name().map(crate::sce_string_from_str)
+    /// A text field of at most `bound` UTF-8 bytes (docs/adr/0086, section
+    /// 4.4), held to its bound by [`PayloadValue::text_within`], the reader a
+    /// text at any depth is held by: one past it is refused, and never cut.
+    pub fn text(&self, name: &str, bound: usize) -> Result<crate::SceString, PayloadRefusal> {
+        self.field(name)?
+            .text_within(bound)
+            .map(crate::sce_string_from_str)
     }
 
     /// A byte-string field at the capacity its schema declares
@@ -969,9 +972,20 @@ impl<'a> PayloadValue<'a> {
     /// A text of at most `N` UTF-8 bytes (docs/adr/0086, section 4.4): one past
     /// the bound is refused, at whatever depth it stands, and never cut.
     pub fn text<const N: usize>(&self) -> Result<sce_portable_bytes::SceString<N>, PayloadRefusal> {
-        let text = self.name()?;
+        let text = self.text_within(N)?;
         sce_portable_bytes::SceString::<N>::from_text(text)
             .map_err(|_| self.past_bytes(text.len(), N))
+    }
+
+    /// The text this value carries, of at most `bound` UTF-8 bytes: the one
+    /// check of a text's bound, which [`Self::text`] holds a text in a bounded
+    /// type by and [`PayloadFields::text`] a payload's own text field by.
+    pub fn text_within(&self, bound: usize) -> Result<&'a str, PayloadRefusal> {
+        let text = self.name()?;
+        if text.len() > bound {
+            return Err(self.past_bytes(text.len(), bound));
+        }
+        Ok(text)
     }
 
     /// A byte string of at most `N` bytes.
@@ -1696,7 +1710,7 @@ mod tests {
             .expect("a delivery of the first revision reads");
         assert_eq!(fields.unsigned::<u8>("level"), Ok(4));
         assert_eq!(
-            fields.text("layout").map(|s| s.to_string()),
+            fields.text("layout", 16).map(|s| s.to_string()),
             Ok("week".into())
         );
         assert_eq!(fields.unsigned64("count"), Ok(7));
@@ -1711,7 +1725,7 @@ mod tests {
         )
         .expect("a delivery of a later revision reads, an unknown field and all");
         assert_eq!(
-            fields.text("layout").map(|s| s.to_string()),
+            fields.text("layout", 16).map(|s| s.to_string()),
             Ok("day".into())
         );
         assert_eq!(fields.truth("urgent"), Ok(false));
@@ -1744,7 +1758,7 @@ mod tests {
         assert_eq!(fields.optional("due", |f| f.signed64("due")), Ok(None));
         assert_eq!(
             fields
-                .optional("title", |f| f.text("title"))
+                .optional("title", |f| f.text("title", 16))
                 .map(|t| t.map(|s| s.to_string())),
             Ok(Some("soon".to_string()))
         );
@@ -1827,6 +1841,42 @@ mod tests {
         let wide = PayloadFields::decode(r#"{"t": "éé"}"#).expect("reads");
         assert!(wide.field("t").and_then(|v| v.text::<3>()).is_err());
         assert!(wide.field("t").and_then(|v| v.text::<4>()).is_ok());
+    }
+
+    /// A payload's own text field, which a lift reads into the engine's text, is
+    /// held to its bound by the same check as a text at any depth (docs/adr/0086,
+    /// section 4.4): one past it is refused with its code, pointer and bound.
+    #[test]
+    fn a_text_field_of_a_payload_is_held_to_its_bound() {
+        let fields = PayloadFields::decode(r#"{"note": "abcde", "wide": "éé"}"#).expect("reads");
+        assert_eq!(
+            fields.text("note", 4),
+            Err(PayloadRefusal::new(
+                RefusalCode::TooLong,
+                "/note",
+                "'note' is 5 bytes, past the 4 its type declares"
+            )
+            .with_bound(4))
+        );
+        assert_eq!(
+            fields.text("note", 5).map(|s| s.to_string()),
+            Ok("abcde".to_string())
+        );
+        // The bound counts UTF-8 bytes, as a text's bound does at any depth.
+        assert_eq!(
+            fields.text("wide", 3).map_err(|r| r.code()),
+            Err(RefusalCode::TooLong)
+        );
+        assert_eq!(
+            fields.text("wide", 4).map(|s| s.to_string()),
+            Ok("éé".to_string())
+        );
+        // A text holding U+0000 is still refused, inside its bound.
+        let nul = PayloadFields::decode("{\"t\": \"a\\u0000\"}").expect("reads");
+        assert_eq!(
+            nul.text("t", 8).map_err(|r| r.code()),
+            Err(RefusalCode::NulInText)
+        );
     }
 
     #[test]
