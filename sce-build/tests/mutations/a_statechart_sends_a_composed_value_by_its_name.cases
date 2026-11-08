@@ -11,7 +11,7 @@
 # away and has to turn the suite red on its own.
 
 mutation_tests -p sce-build --features cli --test a_statechart_sends_a_composed_value_by_its_name
-mutation_targets sce-build/src/forge/static_datamodel.rs sce-build/src/forge/event_schema_check.rs sce-build/src/forge/composed_lowering.rs
+mutation_targets sce-build/src/forge/static_datamodel.rs sce-build/src/forge/event_schema_check.rs sce-build/src/forge/composed_lowering/rust.rs
 
 # A composed value is sent whatever its type: a list of three goes into a
 # field of two.
@@ -46,7 +46,7 @@ PY
 
 # A list is written as the JSON text where a ScriptValue is held.
 mutation_case "a sent list is written as JSON text" <<'PY'
-edit("sce-build/src/forge/composed_lowering.rs",
+edit("sce-build/src/forge/composed_lowering/rust.rs",
      r'''            RustCarrier::ScriptValue => format!(
                 "{RUST_SCRIPT_VALUE}::Array({}.iter().map(|h| {elem}).collect())",
                 held.text
