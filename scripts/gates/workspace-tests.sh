@@ -32,7 +32,40 @@
 # hook, so running the suite by hand meant remembering to start it, and
 # remembering to stop it afterwards.
 
+# What the suites run besides the workspace, prepared here so that a pass does
+# not depend on what the machine happened to build before. Until 2026-11-08 the
+# lane built these in steps of its own and the gate did not, so a machine that
+# had never built them skipped their cases with a warning and passed: the
+# Kotlin runtime jars (`forge_conformance` puts the forge one on `kotlinc -cp`,
+# the Kotlin smoke tests the other), the step server the world simulation
+# starts per Kotlin actor, and the two JVM programs that replay the group key
+# agreement and the peer core over their C ABIs. And the Python the suites
+# start is the repository's environment where there is one, as the lane's is
+# a Python with the runtime's Lua binding.
+#
+# A case that would still skip, for a tool the machine lacks, skips outside a
+# landing as it always has; in a landing `sce_gate_run_suite` runs the suites
+# under SCE_REQUIRE_TOOLS and reads such a miss as could not run (lib.sh, "A
+# landing counts no skip as a pass").
+
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+
+sce_gate_require_jdk "$SCE_REPO_ROOT/.github/workflows/rust-workspace-tests.yml"
+sce_gate_step "building the Kotlin runtime jars and the JVM programs the suites run"
+# One task list per line, so `hook_ci_parity` reads each task as the gate's.
+./gradlew --console=plain :sce-forge-runtime-kotlin:jvmJar :sce-kotlin-runtime:jvmJar \
+    || sce_gate_fail "the Kotlin runtime jars did not build"
+./gradlew --console=plain :sce-kotlin-world:installDist \
+    || sce_gate_fail "the Kotlin step server did not build"
+./gradlew --console=plain :sce-kotlin-mls-replay:installDist :sce-kotlin-peer-replay:installDist \
+    || sce_gate_fail "the Kotlin replays of the group key agreement and the peer core did not build"
+
+sce_gate_python
+sce_gate_python_requires_lupa "the workspace suite"
+if [ "$SCE_GATE_PYTHON" != python3 ]; then
+    PATH="$(dirname "$SCE_GATE_PYTHON"):$PATH"
+    export PATH
+fi
 
 sce_gate_http_fixture_server
 
@@ -69,8 +102,8 @@ esac
 product_line_sets() {
     local features
     for features in session-unicast session-unicast-accept; do
-        cargo test -p sce-feature-conformance --features "$features" ${FAIL_FAST+"${FAIL_FAST[@]}"} \
-            || sce_gate_fail "cargo test -p sce-feature-conformance --features $features"
+        sce_gate_run_suite "the feature conformance suite under $features" \
+            cargo test -p sce-feature-conformance --features "$features" ${FAIL_FAST+"${FAIL_FAST[@]}"}
     done
 }
 
@@ -104,12 +137,12 @@ if [[ -n "${SCE_WORKSPACE_SHARD:-}" ]]; then
     fi
     sce_gate_step "$told"
     if (( ${#selection[@]} )); then
-        cargo test --workspace --features cli,sce-rust-mesh/wss ${FAIL_FAST+"${FAIL_FAST[@]}"} "${selection[@]}" \
-            || sce_gate_fail "cargo test --workspace --features cli,sce-rust-mesh/wss (shard $SCE_WORKSPACE_SHARD)"
+        sce_gate_run_suite "the workspace suite, shard $SCE_WORKSPACE_SHARD" \
+            cargo test --workspace --features cli,sce-rust-mesh/wss ${FAIL_FAST+"${FAIL_FAST[@]}"} "${selection[@]}"
     fi
     if (( core )); then
-        cargo test --workspace --features cli,sce-rust-mesh/wss ${FAIL_FAST+"${FAIL_FAST[@]}"} --doc \
-            || sce_gate_fail "cargo test --workspace --features cli,sce-rust-mesh/wss --doc"
+        sce_gate_run_suite "the workspace doc tests" \
+            cargo test --workspace --features cli,sce-rust-mesh/wss ${FAIL_FAST+"${FAIL_FAST[@]}"} --doc
         cargo build --workspace --features cli,sce-rust-mesh/wss --examples \
             || sce_gate_fail "cargo build --workspace --features cli,sce-rust-mesh/wss --examples"
         product_line_sets
@@ -119,7 +152,7 @@ fi
 
 # `sce-rust-mesh/wss`: the WebSocket binding's tests open real sockets on
 # loopback, and they sit behind a non-default feature the sweep must ask for.
-cargo test --workspace --features cli,sce-rust-mesh/wss ${FAIL_FAST+"${FAIL_FAST[@]}"} \
-    || sce_gate_fail "cargo test --workspace --features cli,sce-rust-mesh/wss"
+sce_gate_run_suite "the workspace suite" \
+    cargo test --workspace --features cli,sce-rust-mesh/wss ${FAIL_FAST+"${FAIL_FAST[@]}"}
 
 product_line_sets
