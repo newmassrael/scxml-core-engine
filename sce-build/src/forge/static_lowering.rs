@@ -167,6 +167,12 @@ pub struct StaticLowering {
     /// `<assign>` that does it, a list or record `<data>` to the `<data>` that
     /// holds its initial value — for the same readers as [`Self::sites`].
     pub elements: Vec<LoweredElement>,
+    /// Whether the walk lowered a `<log>` that writes a value, to the engine's
+    /// log ([`StaticTarget::log`]) or to a test component's test log
+    /// ([`StaticTarget::test_log`]): what a target that shows the value
+    /// through a helper of the machine's own file declares the helper for,
+    /// whether or not the machine holds a variable.
+    pub logs_a_value: bool,
 }
 
 /// One element of the document, as the walk lowered it: which element, by an
@@ -6115,6 +6121,7 @@ pub fn lower(
         held_enums: held_enums.clone(),
         type_scope: crate::forge::value_path::statechart_scope(model),
         lifts: std::cell::Cell::new(false),
+        logs_a_value: std::cell::Cell::new(false),
         text_templates,
         document: model.name.clone(),
         test_component: model.test_component.is_some(),
@@ -7108,6 +7115,7 @@ pub fn lower(
         saved_shape,
         sites: rewrites.sites.into_inner(),
         elements: rewrites.elements.into_inner(),
+        logs_a_value: rewrites.logs_a_value.get(),
     })
 }
 
@@ -8470,6 +8478,10 @@ struct Rewrites<'m> {
     /// runtime's reader of a text ([`StaticTarget::lift_import`]). Set by the
     /// walk where it meets one, read once it is done.
     lifts: std::cell::Cell<bool>,
+    /// Whether the walk has lowered a `<log>` that writes a value
+    /// ([`StaticLowering::logs_a_value`]). Set by the walk where it meets
+    /// one, read once it is done.
+    logs_a_value: std::cell::Cell<bool>,
     /// The text templates the machine renders, by the alias it imports each
     /// under, each with its unit's `render` (docs/adr/0087, section 3.1).
     text_templates: BTreeMap<String, RenderUnit>,
@@ -17648,6 +17660,7 @@ fn lower_action(
                 if target.test_log(&label, Some(&value.text), ty).is_none() {
                     return Err(unspelled());
                 }
+                rewrites.logs_a_value.set(true);
                 (action.native_code, action.native_fails) = statement(
                     &value,
                     InferredType::Unknown,
@@ -17676,6 +17689,7 @@ fn lower_action(
                     action.expr, r.error
                 ))
             })?;
+            rewrites.logs_a_value.set(true);
             (action.native_code, action.native_fails) = statement(
                 &value,
                 ty,
