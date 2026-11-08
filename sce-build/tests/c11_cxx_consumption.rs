@@ -126,8 +126,12 @@ fn headers_in(dir: &Path) -> Vec<PathBuf> {
 /// directory fails instead of passing over an empty set.
 #[test]
 fn published_c_headers_compile_as_cxx17() {
+    // Each directory is read without descending, so the test profile's runtime
+    // (`sce/test/`), which a generated test component and the tables of a
+    // test include, is a root of its own.
     let roots = [
         core_include_dir().join("sce"),
+        core_include_dir().join("sce/test"),
         forge_include_dir().join("sce/forge"),
     ];
     let include_dirs = [core_include_dir(), forge_include_dir()];

@@ -4368,12 +4368,11 @@ set_tests_properties(c11_integration_a_test_template_matches_its_values PROPERTI
 # generated beside the units of the records and templates they name, and run
 # through `sce_test_case_run_t` against configurations and a system adapter
 # written by hand (integration/test_a_test_component_runs_through_its_doors.c,
-# the twin of the C++ ATestComponentRunsThroughItsDoorsTest). `param_asker` is
-# not among them: C11 refuses a component that declares a module parameter
-# until it generates a suite's tables. A component's machine runs on the
-# logical clock of its run, so the program links no platform clock, no script
-# engine and no HTTP client: a generation that came to require one fails the
-# configure.
+# the twin of the C++ ATestComponentRunsThroughItsDoorsTest). `param_asker`,
+# whose module parameter a suite gives, is generated with the suite below. A
+# component's machine runs on the logical clock of its run, so the program
+# links no platform clock, no script engine and no HTTP client: a generation
+# that came to require one fails the configure.
 set(_TC_FIXTURE_DIR "${_TP_FIXTURE_DIR}/runtime")
 set(_TC_HEADERS "")
 set(_TC_SOURCES "")
@@ -4411,6 +4410,60 @@ add_test(NAME c11_integration_a_test_component_runs_through_its_doors
     COMMAND sce_c_integration_a_test_component_runs_through_its_doors
 )
 set_tests_properties(c11_integration_a_test_component_runs_through_its_doors PROPERTIES
+    TIMEOUT 30
+    LABELS "integration;c11;aot"
+)
+
+# ─── test suites: docs/SCE_TEST_PROFILE.md §11.6 to §11.8, §12.4 ────
+#
+# The runtime's example suite, its test cases and their configurations, each
+# the header sce-codegen writes from its document, run end to end through
+# `sce_test_run_suite` against a system adapter written by hand
+# (integration/test_a_test_suite_runs_through_its_runner.c, the twin of the C++
+# ATestSuiteRunsEndToEndTest). Each configuration's header includes the
+# machines of its components, generated above for the component test and
+# `param_asker`, which reads the suite's module parameter, here; each test
+# case's header includes its configuration's, and the suite's its test cases'.
+# The port types and the feature model write no file. The component reads its
+# module parameter through the saved value readers, so `m` is linked, and
+# nothing else beyond what the components link.
+sce_c_integration_generation(_TS_param_asker "${_TC_FIXTURE_DIR}/param_asker.scxml"
+    INPUT_ROOT "${_TC_FIXTURE_DIR}")
+set(_TS_HEADERS ${_TC_HEADERS} ${_TS_param_asker_HEADERS})
+set(_TS_SOURCES ${_TC_SOURCES} ${_TS_param_asker_SOURCES})
+foreach(_TS_DOCUMENT asking_configuration serving_configuration keeping_configuration
+                     answers_the_job answers_before_the_guard serves_a_ptc keeps_a_ptc
+                     runtime_suite)
+    sce_c_integration_generation(_TS_${_TS_DOCUMENT} "${_TC_FIXTURE_DIR}/${_TS_DOCUMENT}.scxml"
+        INPUT_ROOT "${_TC_FIXTURE_DIR}")
+    list(APPEND _TS_HEADERS ${_TS_${_TS_DOCUMENT}_HEADERS})
+endforeach()
+
+add_executable(sce_c_integration_a_test_suite_runs_through_its_runner
+    integration/test_a_test_suite_runs_through_its_runner.c
+    ${_TS_SOURCES}
+    ${_TS_HEADERS}
+)
+target_include_directories(sce_c_integration_a_test_suite_runs_through_its_runner PRIVATE
+    "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
+    "${CMAKE_SOURCE_DIR}/backends/c/runtime/include"
+)
+sce_c_link_runtime(sce_c_integration_a_test_suite_runs_through_its_runner EXCLUDES lua dom http clock)
+target_link_libraries(sce_c_integration_a_test_suite_runs_through_its_runner PRIVATE m)
+target_compile_options(sce_c_integration_a_test_suite_runs_through_its_runner PRIVATE
+    -Wall -Wextra -Werror -Wpedantic
+    -Wconversion -Wsign-conversion -Wshadow -Wcast-align
+)
+set_target_properties(sce_c_integration_a_test_suite_runs_through_its_runner PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_integration_a_test_suite_runs_through_its_runner
+    COMMAND sce_c_integration_a_test_suite_runs_through_its_runner
+)
+set_tests_properties(c11_integration_a_test_suite_runs_through_its_runner PROPERTIES
     TIMEOUT 30
     LABELS "integration;c11;aot"
 )
