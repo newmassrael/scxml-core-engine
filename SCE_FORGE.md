@@ -1189,6 +1189,9 @@ declares; a lower count is, on every backend alike:
   a write a text whose buffer holds no terminator at its bound; the array holds
   `N` items, so what is refused is a `len` past `N`. `<NAME>_MAX_BYTES` counts
   each list at its bound.
+- Go: `[]<schema>.<Schema>Payload`, the functions unexported in the codec's
+  package and named for the codec; a refused read returns Rust's error
+  (`ErrCborOutOfRange`, `ErrCborMalformed`, `ErrCborRequiredKeyMissing`).
 
 Every other backend refuses such a codec by name until its template writes the
 array (`cbor_codec::lowers_record_list`), and a broadcast log over one is refused
