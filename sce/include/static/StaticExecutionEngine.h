@@ -913,6 +913,10 @@ private:
         std::optional<EventWithMetadata> inPlace;
         const Admission admission = applyExternalEventPreamble(eventWithMeta, inPlace);
         if (admission == Admission::Refused) {
+            // Nothing is taken in its place, and it is not dropped unseen: it is
+            // counted as a discarded external event, the hook every lane shares
+            // for an external event that moved nothing (docs/adr/0086, section 4.2).
+            recordEventOutcome(event, EventOutcome{});
             return;
         }
 
@@ -3155,6 +3159,9 @@ protected:
             std::optional<EventWithMetadata> inPlace;
             switch (applyExternalEventPreamble(eventWithMeta, inPlace)) {
             case Admission::Refused:
+                // Counted as a discarded external event (docs/adr/0086,
+                // section 4.2): nothing was taken in its place.
+                recordEventOutcome(event, EventOutcome{});
                 break;
             case Admission::InPlace:
                 (void)answerInPlace(inPlace->event);
