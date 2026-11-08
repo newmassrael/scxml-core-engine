@@ -5908,6 +5908,15 @@ impl SCXMLParser {
                     source_name,
                 );
                 self.parse_child_metadata(found.as_deref(), &named_at, &mut scxml_info.common)?;
+                // Read for its interface as a candidate is, so it is an input
+                // of this document's output as a candidate is: a recorded read
+                // (ADR 0094 section 1, rule 4), which a depfile declares, an
+                // action key (ADR 0097, `--reads`) holds and an input closure
+                // must hold.
+                if let Some(found) = found {
+                    self.preprocessor_deps
+                        .push(crate::confine::canonicalize(&found).unwrap_or(found));
+                }
             }
 
             return Ok(Some(Invoke::Scxml(scxml_info)));
