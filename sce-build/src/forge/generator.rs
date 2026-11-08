@@ -46086,6 +46086,177 @@ mod tests {
         }
     }
 
+    /// Every lane's lift of a schema of entries holds a text and a byte string
+    /// to the bound its type declares where the delivery is read, the top level
+    /// included, and a present optional text too (docs/adr/0086, section 4.4):
+    /// each reads the field by the reader of its type with that bound, the one a
+    /// text or byte string inside a composition is read by. A lift that reads
+    /// one held to no bound, or to a buffer the build sized, fails here.
+    #[test]
+    fn every_lift_holds_a_top_level_text_and_byte_string_to_their_bound() {
+        use crate::forge::model::{Direction, EventSchemaModel, SchemaField};
+        use crate::forge::value_type::{Bound, ValueType};
+        let field = |id: &str, sce_type: ValueType| SchemaField {
+            id: id.to_string(),
+            sce_type,
+            direction: Direction::In,
+            expr: None,
+            expr_spelling: None,
+            expr_splices: None,
+            quantity: None,
+            max_size: None,
+            limit: None,
+            default_covers: Vec::new(),
+            retain: None,
+            initial: None,
+            initial_spelling: None,
+            since: None,
+            optional_since: None,
+            default: None,
+            default_spelling: None,
+        };
+        let mut model = crate::model::SCXMLModel {
+            name: "labelled".to_string(),
+            ..Default::default()
+        };
+        model.imported_event_schemas.insert(
+            "labelled.taken".to_string(),
+            EventSchemaModel {
+                name: "schema_labelled".to_string(),
+                event_name: "labelled.taken".to_string(),
+                fields: vec![
+                    field("sensor", ValueType::Scalar(SceType::Uint8)),
+                    field("label", ValueType::Text { max: Bound::of(8) }),
+                    field("frame", ValueType::Bytes { max: Bound::of(8) }),
+                    field(
+                        "title",
+                        ValueType::Optional {
+                            elem: Box::new(ValueType::Text { max: Bound::of(16) }),
+                        },
+                    ),
+                ],
+                payload_none: false,
+                datamodel_markers: Vec::new(),
+                revision: None,
+                source_location: None,
+            },
+        );
+        let events: std::collections::BTreeSet<String> =
+            std::iter::once("labelled.taken".to_string()).collect();
+        let holds = |lane: &str, code: &str, needles: &[&str]| {
+            for needle in needles {
+                assert!(
+                    code.contains(needle),
+                    "{lane}: the lift holds `{needle}`:\n{code}"
+                );
+            }
+        };
+
+        let rust = build_rust_event_payload(&model, "Labelled", &events, "", "", false, &[]);
+        holds(
+            "Rust",
+            &rust.lift,
+            &[
+                "label: fields.text(\"label\", 8)?,",
+                "fields.optional(\"title\", |fields| Ok(fields.text(\"title\", 16)?))?",
+                "frame: fields.bytes(\"frame\")?,",
+            ],
+        );
+        // A byte string is held by the capacity of the type it is read into.
+        holds(
+            "Rust",
+            &rust.defs,
+            &["pub frame: ::sce_rust_runtime::SceBytes<8>,"],
+        );
+
+        let go = build_go_event_payload(&model, &events, &[]).lift;
+        holds(
+            "Go",
+            &go,
+            &[
+                "sce.PayloadText(",
+                "\"label\", 8)",
+                "sce.PayloadBytes(",
+                "\"frame\", 8)",
+                "\"title\", 16)",
+            ],
+        );
+        assert!(
+            !go.contains("sce.PayloadString("),
+            "Go: no text field is read held to no bound:\n{go}"
+        );
+
+        let kotlin = build_kotlin_event_payload(&model, &events, &[]).populate;
+        holds(
+            "Kotlin",
+            &kotlin,
+            &[
+                "fields.string(\"label\", 8)",
+                "fields.bytes(\"frame\", 8)",
+                "fields.string(\"title\", 16)",
+            ],
+        );
+
+        let python = build_python_event_payload(&model, &events, &[]);
+        holds(
+            "Python",
+            &python.populate,
+            &[
+                "(\"label\", sce_event_payload.Text(8)), ",
+                "(\"frame\", sce_event_payload.Bytes(8)), ",
+                "(\"title\", _OptionalOf(sce_event_payload.Text(16))), ",
+            ],
+        );
+        holds(
+            "Python",
+            &python.defs,
+            &["import sce_runtime.event_payload as sce_event_payload\n"],
+        );
+
+        let cpp = build_cpp_event_payload(&model, &events, &[]).policy_members;
+        holds(
+            "C++",
+            &cpp,
+            &[
+                "refusal = fields.value(\"label\", sceValue);",
+                "refusal = sceValue.readText(8u, payload.label);",
+                "refusal = sceValue.readBytes(8u, payload.frame);",
+                "refusal = sceValue.readText(16u, held);",
+            ],
+        );
+        assert!(!cpp.contains("fields.readString(\"label\""), "C++: {cpp}");
+
+        let c11 = build_c11_event_payload(&model, &events, "", &[]);
+        holds(
+            "C11",
+            &c11.lift_def,
+            &[
+                "_refusal = sce_payload_field(&_fields, \"label\", &_value);",
+                "_label, 8u);",
+                "_refusal = sce_payload_value_bytes(_value, out->frame, 8u, &out->frame_len);",
+                "_refusal = sce_payload_value_text(_value, out->title.value.data, 16u);",
+            ],
+        );
+        // The lifted text lives in a buffer of its bound and terminator.
+        holds("C11", &c11.lift_storage, &["_label[8u + 1u];"]);
+        assert!(
+            !c11.lift_storage.contains("SCE_MAX_DATA_LEN"),
+            "C11: {}",
+            c11.lift_storage
+        );
+
+        let swift = build_swift_event_payload(&model, &events, &[]).lift;
+        holds(
+            "Swift",
+            &swift,
+            &[
+                "try fields.text(\"label\", bound: 8)",
+                "try fields.bytes(\"frame\", capacity: 8)",
+                "try fields.text(\"title\", bound: 16)",
+            ],
+        );
+    }
+
     /// The package a Kotlin forge unit declares, the one its importers name
     /// and the directory `generate --with-imports` places it in are one rule
     /// (`kotlin_forge_package`): a forge Kotlin template reaches it through
