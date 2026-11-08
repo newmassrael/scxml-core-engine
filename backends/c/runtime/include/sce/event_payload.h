@@ -63,6 +63,7 @@
 #include <string.h>
 
 #include "sce/number_text.h"
+#include "sce/portability.h"
 #include "sce/types.h"
 
 #ifdef __cplusplus
@@ -165,6 +166,45 @@ SCE_C_UNUSED static const char sce_payload_refuse_too_deep[] =
 #define SCE_PAYLOAD_REFUSE_SHORT_COUNT sce_payload_refuse_short_count
 #define SCE_PAYLOAD_REFUSE_PAST_BOUND sce_payload_refuse_past_bound
 #define SCE_PAYLOAD_REFUSE_BAD_DEFAULTS sce_payload_refuse_bad_defaults
+
+/* The most bytes a sentence above holds, its NUL not counted (docs/adr/0086, section 8.6 (b)). A
+   generated machine quotes a refusal in the reason it raises, and the generator sizes the machine's
+   slot of `_event.data` by this number (`PAYLOAD_REFUSAL` in `sce-build/src/forge/c11_reasons.rs`),
+   which the machine asserts against the value it compiles with. Each sentence is held to it here, so
+   a longer one fails this header rather than a machine's slot. */
+#define SCE_PAYLOAD_REFUSAL_MAX_LEN 120u
+#define SCE_PAYLOAD_REFUSAL_FITS(sentence) (sizeof(sentence) - 1u <= (size_t)SCE_PAYLOAD_REFUSAL_MAX_LEN)
+SCE_STATIC_ASSERT(SCE_PAYLOAD_REFUSAL_FITS(sce_payload_refuse_no_data), "a refusal is past its bound");
+SCE_STATIC_ASSERT(SCE_PAYLOAD_REFUSAL_FITS(sce_payload_refuse_not_object), "a refusal is past its bound");
+SCE_STATIC_ASSERT(SCE_PAYLOAD_REFUSAL_FITS(sce_payload_refuse_not_object_nor_json), "a refusal is past its bound");
+SCE_STATIC_ASSERT(SCE_PAYLOAD_REFUSAL_FITS(sce_payload_refuse_not_json), "a refusal is past its bound");
+SCE_STATIC_ASSERT(SCE_PAYLOAD_REFUSAL_FITS(sce_payload_refuse_trailing), "a refusal is past its bound");
+SCE_STATIC_ASSERT(SCE_PAYLOAD_REFUSAL_FITS(sce_payload_refuse_missing), "a refusal is past its bound");
+SCE_STATIC_ASSERT(SCE_PAYLOAD_REFUSAL_FITS(sce_payload_refuse_not_number), "a refusal is past its bound");
+SCE_STATIC_ASSERT(SCE_PAYLOAD_REFUSAL_FITS(sce_payload_refuse_not_whole), "a refusal is past its bound");
+SCE_STATIC_ASSERT(SCE_PAYLOAD_REFUSAL_FITS(sce_payload_refuse_not_digits), "a refusal is past its bound");
+SCE_STATIC_ASSERT(SCE_PAYLOAD_REFUSAL_FITS(sce_payload_refuse_negative_zero), "a refusal is past its bound");
+SCE_STATIC_ASSERT(SCE_PAYLOAD_REFUSAL_FITS(sce_payload_refuse_past_2_53), "a refusal is past its bound");
+SCE_STATIC_ASSERT(SCE_PAYLOAD_REFUSAL_FITS(sce_payload_refuse_not_in_width), "a refusal is past its bound");
+SCE_STATIC_ASSERT(SCE_PAYLOAD_REFUSAL_FITS(sce_payload_refuse_below_zero), "a refusal is past its bound");
+SCE_STATIC_ASSERT(SCE_PAYLOAD_REFUSAL_FITS(sce_payload_refuse_wide_past_width), "a refusal is past its bound");
+SCE_STATIC_ASSERT(SCE_PAYLOAD_REFUSAL_FITS(sce_payload_refuse_not_truth), "a refusal is past its bound");
+SCE_STATIC_ASSERT(SCE_PAYLOAD_REFUSAL_FITS(sce_payload_refuse_not_text), "a refusal is past its bound");
+SCE_STATIC_ASSERT(SCE_PAYLOAD_REFUSAL_FITS(sce_payload_refuse_text_malformed), "a refusal is past its bound");
+SCE_STATIC_ASSERT(SCE_PAYLOAD_REFUSAL_FITS(sce_payload_refuse_too_long), "a refusal is past its bound");
+SCE_STATIC_ASSERT(SCE_PAYLOAD_REFUSAL_FITS(sce_payload_refuse_not_one_byte), "a refusal is past its bound");
+SCE_STATIC_ASSERT(SCE_PAYLOAD_REFUSAL_FITS(sce_payload_refuse_nul_in_text), "a refusal is past its bound");
+SCE_STATIC_ASSERT(SCE_PAYLOAD_REFUSAL_FITS(sce_payload_refuse_unknown_variant), "a refusal is past its bound");
+SCE_STATIC_ASSERT(SCE_PAYLOAD_REFUSAL_FITS(sce_payload_refuse_null), "a refusal is past its bound");
+SCE_STATIC_ASSERT(SCE_PAYLOAD_REFUSAL_FITS(sce_payload_refuse_not_list), "a refusal is past its bound");
+SCE_STATIC_ASSERT(SCE_PAYLOAD_REFUSAL_FITS(sce_payload_refuse_not_record), "a refusal is past its bound");
+SCE_STATIC_ASSERT(SCE_PAYLOAD_REFUSAL_FITS(sce_payload_refuse_not_union), "a refusal is past its bound");
+SCE_STATIC_ASSERT(SCE_PAYLOAD_REFUSAL_FITS(sce_payload_refuse_past_count), "a refusal is past its bound");
+SCE_STATIC_ASSERT(SCE_PAYLOAD_REFUSAL_FITS(sce_payload_refuse_short_count), "a refusal is past its bound");
+SCE_STATIC_ASSERT(SCE_PAYLOAD_REFUSAL_FITS(sce_payload_refuse_past_bound), "a refusal is past its bound");
+SCE_STATIC_ASSERT(SCE_PAYLOAD_REFUSAL_FITS(sce_payload_refuse_bad_defaults), "a refusal is past its bound");
+SCE_STATIC_ASSERT(SCE_PAYLOAD_REFUSAL_FITS(sce_payload_refuse_empty_text), "a refusal is past its bound");
+SCE_STATIC_ASSERT(SCE_PAYLOAD_REFUSAL_FITS(sce_payload_refuse_too_deep), "a refusal is past its bound");
 
 /* The class of `refusal`, a sentence a reader of this header answered, told by its
    storage; 0 for NULL, which is no refusal, and for any other text. */
