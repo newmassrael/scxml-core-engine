@@ -114,10 +114,12 @@ PY
 
 mutation_case "the c11 template records nothing for an unanswered error" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     """            sm->unhandled_error_events++;
+     """        else if (event_is_error(evt.event)) {
+            sm->unhandled_error_events++;
             sm->last_unhandled_error = evt.event;
             sm->has_unhandled_error = true;""",
-     """            sm->last_unhandled_error = evt.event;
+     """        else if (event_is_error(evt.event)) {
+            sm->last_unhandled_error = evt.event;
             sm->has_unhandled_error = true;""")
 PY
 
@@ -143,9 +145,13 @@ PY
 
 mutation_case "the c11 template counts the error but never names it" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     """            sm->last_unhandled_error = evt.event;
+     """        else if (event_is_error(evt.event)) {
+            sm->unhandled_error_events++;
+            sm->last_unhandled_error = evt.event;
             sm->has_unhandled_error = true;""",
-     """            sm->has_unhandled_error = false;""")
+     """        else if (event_is_error(evt.event)) {
+            sm->unhandled_error_events++;
+            sm->has_unhandled_error = false;""")
 PY
 
 # ── C11: the branch this rides on ──────────────────────────────────

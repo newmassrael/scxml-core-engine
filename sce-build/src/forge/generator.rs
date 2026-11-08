@@ -4955,8 +4955,9 @@ pub struct RustEventPayload {
     /// The `lift_event_payload` override body: for the event being dequeued,
     /// read its schema's fields out of `EventMetadata.data` — what every
     /// producer but the inject seam fills — and bind the typed view the native
-    /// guards read. A refusal is returned for the engine to raise as
-    /// `error.execution`. `""` when no typed channel is active.
+    /// guards read. A refusal is returned, on which the engine refuses the
+    /// delivery whole, with `error.execution` in its place (docs/adr/0086,
+    /// section 4.2). `""` when no typed channel is active.
     ///
     /// ⚠ `std` only, like the wire it reads: a `no_std` build has no
     /// `EventMetadata::data`, and no script engine whose answer this has to
@@ -5197,12 +5198,12 @@ pub trait {machine_name}Inject {{\n{trait_methods}}}\n\n\
 impl{policy_generics_decl} {machine_name}Inject for ::sce_rust_runtime::Engine<{machine_name}Policy{policy_generics_use}> {{\n{entry_fns}}}\n"
         )
     };
-    // ⚠ The lift's refusal is `error.execution` and a guard that does not fire,
-    // which is what the SCRIPT ENGINE answers for the same guard on the same
-    // data (§scxml-3.13, measured 2026-09-22). A native lowering that
-    // answered differently would make the optimisation observable. The raise
-    // itself is the engine's (`bind_lifted_payload`), so every machine answers
-    // alike; this only reports.
+    // A delivery the lift refuses is refused whole: the engine takes an
+    // `error.execution` that carries the refusal in its place, and selects no
+    // transition for it (docs/adr/0086, section 4.2), where a guard that cannot
+    // be evaluated is only false (§scxml-3.13). The verdict is the engine's
+    // (`bind_lifted_payload`), so every machine answers alike; this only
+    // reports.
     let lift = if lift_arms.is_empty() {
         String::new()
     } else {
@@ -6246,7 +6247,7 @@ return false;\n    }}\n"
         };
         lift_readers.push_str(&format!(
             "/* Read `{event}`'s schema fields out of the data it carries. Answers false\n   \
-with the sentence the caller raises as `error.execution`. */\n\
+with the sentence the door takes `error.execution` on, in the delivery's place. */\n\
 static bool {sm}_lift_{member}({sm}_t *sm, const char *_data, {struct_name} *out,\n                                \
 char *_message, size_t _message_cap) {{\n    \
 sce_payload_fields_t _fields;\n    \
@@ -6261,7 +6262,7 @@ return false;\n    }}\n    (void)sm;\n{field_reads}    return true;\n}}\n\n"
 if (!{sm}_lift_{member}(sm, evt->data, &_payload, _message, sizeof(_message))) {{\n            \
 break;\n        }}\n        \
 sm->pending_payload.tag = {tag_const};\n        \
-sm->pending_payload.as.{member} = _payload;\n        return;\n    }}\n"
+sm->pending_payload.as.{member} = _payload;\n        return {sm_upper}_DOOR_ADMITTED;\n    }}\n"
         ));
         structs.push_str(&format!(
             "typedef struct {name}_{member}_payload {{\n{field_lines}}} {struct_name};\n\n"
@@ -6327,35 +6328,46 @@ selects the live `as.<event>` member. The pop loop copies it into\n   \
 {structs}typedef enum {name}_payload_tag_e {{\n{tag_lines}\n}} {tag_type};\n\n\
 typedef struct {name}_payload {{\n    {tag_type} tag;\n    union {{\n{union_lines}    }} as;\n}} {union_type};\n"
     );
-    // ⚠ The lift's refusal is `error.execution` and a guard that does not fire,
-    // which is what the SCRIPT ENGINE answers for the same guard on the same
-    // data (§scxml-3.13, measured 2026-09-22). A native lowering that
-    // answered differently would make the optimisation observable. A document
-    // that declares no `error.execution` transition has nothing to answer with
-    // (§scxml-3.12.2) and the guard still does not fire, so the raise — and the
-    // message buffer it needs — are emitted only when the document has one.
+    // A delivery the lift refuses is refused whole (docs/adr/0086, section
+    // 4.2), where a guard that cannot be evaluated is only false
+    // (§scxml-3.13): the dequeued event is rewritten where it stands into the
+    // `error.execution` that carries the refusal, which the pop loop then
+    // answers in its place. A document that declares no `error.execution`
+    // transition has nothing to take in its place (§scxml-3.12.2): the
+    // delivery is refused all the same, and the message buffer goes unread.
     let report = if raises_error {
         format!(
-            "    if (_message[0] != '\\0') {{\n        \
-{sm}_raise_platform_error(sm, {sm_upper}_EVENT_ERROR_EXECUTION, _message);\n    }}\n"
+            "    memset(evt, 0, sizeof(*evt));\n    \
+evt->event = {sm_upper}_EVENT_ERROR_EXECUTION;\n    \
+sce_copy_bounded_data(evt->data, _message);\n    \
+sce_copy_bounded_n(evt->type, \"platform\", (size_t)SCE_MAX_EVENT_TYPE_LEN);\n    \
+return {sm_upper}_DOOR_IN_PLACE;\n"
         )
     } else {
-        "    (void)_message;\n".to_string()
+        format!("    (void)_message;\n    return {sm_upper}_DOOR_REFUSED;\n")
     };
     let lift_decl = format!(
-        "/* NL\u{2192}IR Item C1 Path A: bind the dequeued event's typed `_event.data` view\n   \
+        "/* What the door made of a delivery the pop loop dequeued (docs/adr/0086,\n   \
+section 4.2): admitted, refused whole and rewritten into the `error.execution`\n   \
+taken in its place, or refused with nothing to take in its place. */\n\
+typedef enum {sm}_door_e {{\n    \
+{sm_upper}_DOOR_ADMITTED,\n    {sm_upper}_DOOR_IN_PLACE,\n    {sm_upper}_DOOR_REFUSED\n\
+}} {sm}_door_t;\n\n\
+/* NL\u{2192}IR Item C1 Path A: bind the dequeued event's typed `_event.data` view\n   \
 from the data it carries, when no typed payload rode with it. */\n\
-static void {sm}_lift_payload({sm}_t *sm, const {sm}_event_with_meta_t *evt);\n"
+static {sm}_door_t {sm}_lift_payload({sm}_t *sm, {sm}_event_with_meta_t *evt);\n"
     );
     let lift_def = format!(
         "{lift_readers}\
-/* The dispatcher the pop loop calls: the typed payload the inject seam fills\n   \
-is one producer, and every other producer fills `data`, so an event that\n   \
-arrived without a payload has its fields read out of that instead. */\n\
-static void {sm}_lift_payload({sm}_t *sm, const {sm}_event_with_meta_t *evt) {{\n    \
+/* The door the pop loop asks: the typed payload the inject seam fills is one\n   \
+producer, and every other producer fills `data`, so an event that arrived\n   \
+without a payload has its fields read out of that instead. */\n\
+static {sm}_door_t {sm}_lift_payload({sm}_t *sm, {sm}_event_with_meta_t *evt) {{\n    \
 char _message[SCE_MAX_DATA_LEN];\n    _message[0] = '\\0';\n    \
-if (sm->pending_payload.tag != {name_upper}_PAYLOAD_NONE) {{\n        return;\n    }}\n    \
-switch (evt->event) {{\n{lift_arms}    default:\n        return;\n    }}\n{report}}}\n"
+if (sm->pending_payload.tag != {name_upper}_PAYLOAD_NONE) {{\n        \
+return {sm_upper}_DOOR_ADMITTED;\n    }}\n    \
+switch (evt->event) {{\n{lift_arms}    default:\n        return {sm_upper}_DOOR_ADMITTED;\n    }}\n\
+{report}}}\n"
     );
     C11EventPayload {
         defs,
@@ -6400,7 +6412,8 @@ pub struct GoEventPayload {
     /// The `LiftTypedPayload` body: for the event being dequeued, read its
     /// schema's fields out of `EventMetadata.Data` — what every producer but
     /// the inject seam fills — and bind the typed view the native guards read.
-    /// A refusal returns the error the engine raises as `error.execution`.
+    /// A refusal returns the error on which the engine refuses the delivery
+    /// whole, with `error.execution` in its place (docs/adr/0086, section 4.2).
     pub lift: String,
     pub clear: String,
     pub guard_writes: Vec<NativeGuardWrite>,
@@ -6969,12 +6982,11 @@ func {raise_fn}(e *sce.Engine[{machine}State, {machine}Event]{params}){result} {
     }
     populate.push_str("\t}\n");
 
-    // ⚠ The lift's refusal is `error.execution` and a guard that does not
-    // fire, which is what the SCRIPT ENGINE answers for the same guard on the
-    // same data (§scxml-3.13, measured 2026-09-22). A native lowering that
-    // answered differently would make the optimisation observable. The raise
-    // itself is the engine's (`liftTypedPayload`), so every machine answers
-    // alike; this only reports.
+    // A delivery the lift refuses is refused whole: the engine takes an
+    // `error.execution` that carries the refusal in its place, and selects no
+    // transition for it (docs/adr/0086, section 4.2), where a guard that cannot
+    // be evaluated is only false (§scxml-3.13). The verdict is the engine's
+    // (`liftTypedPayload`), so every machine answers alike; this only reports.
     let lift = format!(
         "\t// A typed carrier already bound the view, so the producer was the\n\
 \t// inject seam and there is nothing to read out of `Data`.\n\
@@ -7014,8 +7026,8 @@ pub struct SwiftEventPayload {
     /// The policy's `populateEventMetadata`, which binds a typed carrier.
     pub populate: String,
     /// The body of `liftTypedPayload`: what every producer but the inject seam fills
-    /// is read out of `EventMetadata.data`, and a refusal is thrown for the engine to
-    /// raise as `error.execution`.
+    /// is read out of `EventMetadata.data`, and a refusal is thrown, on which the engine
+    /// refuses the delivery whole, with `error.execution` in its place.
     pub lift: String,
     /// The policy's `clearEventMetadata`.
     pub clear: String,
@@ -7462,11 +7474,11 @@ pub fn build_swift_event_payload(
          \x20       }}\n\
          \x20   }}\n"
     );
-    // ⚠ The lift's refusal is `error.execution` and a guard that does not fire, which
-    // is what the SCRIPT ENGINE answers for the same guard on the same data
-    // (§scxml-3.13). A native lowering that answered differently would make the
-    // optimisation observable. The raise is the engine's (`liftPayload`), so every
-    // machine answers alike; this only reports.
+    // A delivery the lift refuses is refused whole: the engine takes an
+    // `error.execution` that carries the refusal in its place, and selects no
+    // transition for it (docs/adr/0086, section 4.2), where a guard that cannot be
+    // evaluated is only false (§scxml-3.13). The verdict is the engine's
+    // (`liftPayload`), so every machine answers alike; this only reports.
     let lift = format!(
         "    public func liftTypedPayload(event: {machine}Event, metadata: EventMetadata) throws {{\n\
          \x20       // A typed carrier already bound the view, so the producer was the inject\n\
@@ -7968,9 +7980,10 @@ pub fn build_cpp_event_payload(
     // ⚠ The hook takes the WHOLE dequeued event, not just the carrier: the
     // lift below needs the event's name to know which schema its data must
     // read as, and its `data` to read. It answers with a sentence — empty
-    // when the view was bound — which the engine raises as `error.execution`,
-    // the same answer the script engine gives for a guard it cannot evaluate
-    // (§scxml-3.13, measured 2026-09-22).
+    // when the view was bound — and the engine refuses the delivery whole on
+    // a sentence, taking an `error.execution` that carries it in the
+    // delivery's place (docs/adr/0086, section 4.2), where a guard that cannot
+    // be evaluated is only false (§scxml-3.13).
     let mut populate = String::from(
         "    // Bind this event's typed `_event.data` view: from the type-erased\n    \
 // carrier the inject seam fills, and otherwise by lifting the fields out of\n    \
@@ -8561,12 +8574,12 @@ data = {data}\n            \
         ));
     }
     populate.push_str(&when_arms);
-    // ⚠ The lift's refusal is `error.execution` and a guard that does not fire,
-    // which is what the SCRIPT ENGINE answers for the same guard on the same
-    // data (§scxml-3.13, measured 2026-09-22). A native lowering that
-    // answered differently would make the optimisation observable. The raise
-    // itself is the engine's (`bindTypedPayload`), which turns the refusal
-    // thrown here into the error event.
+    // A delivery the lift refuses is refused whole: the engine takes an
+    // `error.execution` that carries the refusal in its place, and selects no
+    // transition for it (docs/adr/0086, section 4.2), where a guard that cannot
+    // be evaluated is only false (§scxml-3.13). The verdict is the engine's
+    // (`bindTypedPayload`), which turns the refusal thrown here into that
+    // event.
     populate.push_str(
         "            else -> {\n                \
 // No typed carrier, so the producer was not the inject seam: read the\n                \
@@ -8605,16 +8618,17 @@ data = {data}\n            \
 ///
 /// Python is a GC/dynamic backend, so the carrier is the type-erased
 /// `EventMetadata.typed_payload: Any`; the generated policy's
-/// `set_current_event` override `isinstance`-checks it into a matching
+/// `lift_event_payload` override `isinstance`-checks it into a matching
 /// `_pending_<event>_payload` instance attribute (mirroring the Kotlin
 /// `populateTypedPayload` / the Go policy's type-switch). `None` is the
 /// "no payload" sentinel — the native guard's `… is not None and (…)`
 /// prefix is the tag check.
 ///
 /// `defs` is the module-level payload dataclasses; `init` is the
-/// `__init__` field-reset block; `populate` is the body prepended to the
-/// generated `set_current_event` (reset-to-None then an `isinstance`
-/// cascade over the carrier); `inject` are the module-level per-event
+/// `__init__` field-reset block; `populate` is the body of the generated
+/// `lift_event_payload`, the engine's door (reset-to-None, then an
+/// `isinstance` cascade over the carrier and the lift, answering the
+/// sentence of a refusal or `None`); `inject` are the module-level per-event
 /// `raise_<event>` seams; `guard_writes` carries the native guard
 /// expressions to attach to the matching transitions (see
 /// [`NativeGuardWrite`]) in place of the `self._guard(…)` script call.
@@ -9064,11 +9078,10 @@ name this class directly.\"\"\"\n\n{field_lines}{class_body}\n\n"
         let defaults_arg = defaults.map_or(String::new(), |defaults| {
             format!(", {}", filters::py_string_literal(defaults))
         });
-        // The typed carrier first, then the lift. ⚠ The lift's refusal is
-        // `error.execution` and a guard that does not fire, which is what the
-        // SCRIPT ENGINE answers for the same guard on the same data (W3C SCXML
-        // 3.13, measured 2026-09-22). A native lowering that answered
-        // differently would make the optimisation observable.
+        // The typed carrier first, then the lift. A refusal is answered as the
+        // sentence the engine refuses the delivery whole on, taking an
+        // `error.execution` that carries it in the delivery's place
+        // (docs/adr/0086, section 4.2).
         populate.push_str(&format!(
             "        {kw} isinstance(_tp, {class_name}):\n            \
 self._pending_{snake}_payload = _tp\n        \
@@ -9077,10 +9090,7 @@ try:\n                \
 self._pending_{snake}_payload = {class_name}(*_lift_typed_payload(\n                    \
 metadata.data, ({lift_fields}){defaults_arg}))\n            \
 except _TypedPayloadError as _exc:\n                \
-_engine = getattr(self, \"_engine_ref\", None)\n                \
-if _engine is not None:\n                    \
-self._raise_error_execution(\n                        \
-_engine, \"`{event}` payload: \" + str(_exc))\n"
+return \"`{event}` payload: \" + str(_exc)\n"
         ));
         // A host-run invocation's completion has a typed payload and no
         // inject seam: the engine takes one only through `complete_host_invoke`.
@@ -9108,6 +9118,10 @@ typed_payload={typed_payload},\n            \
 data={data},\n        ),\n    )\n\n\n"
         ));
     }
+
+    // Admitted: the view is bound, or the event carries no payload this
+    // document reads.
+    populate.push_str("        return None\n");
 
     let single_import = if uses_single {
         "from sce_runtime.event_payload import Single as _Single\n\
