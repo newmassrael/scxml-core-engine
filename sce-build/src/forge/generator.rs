@@ -5137,6 +5137,32 @@ struct RustPayloadParts {
     derives: &'static str,
 }
 
+/// The bound, in UTF-8 bytes, a lift holds the text field `f` of a payload to
+/// where the delivery is read (docs/adr/0086, section 4.4): the bound its type
+/// declares, after `--limit`. Every lane's lift of a schema of entries reads it
+/// here, as the walk over a composed type reads
+/// [`crate::forge::value_type::ValueType::Text`]'s, so a
+/// text is held to one bound at the top level and at any depth.
+///
+/// Every text of an event schema states its bound (section 1.4); one that does
+/// not is refused where the schema is read, before any lift is written.
+pub(crate) fn lift_text_bound(f: &EntryField) -> u32 {
+    f.max_size.unwrap_or_else(|| {
+        panic!(
+            "the text field `{}` reached a lift with no bound; a text with none is refused \
+             where its schema is read (docs/adr/0086, section 1.4)",
+            f.id
+        )
+    })
+}
+
+/// The bound, in bytes, a lift holds the byte-string field `f` of a payload to
+/// where the delivery is read (docs/adr/0086, section 4.4): the capacity its
+/// type declares, which is the capacity every lane holds the field in.
+pub(crate) fn lift_bytes_bound(f: &EntryField) -> u32 {
+    crate::forge::limits::resolve_bytes_max(f.max_size)
+}
+
 /// [`RustPayloadParts`] of a schema each field of which is one entry: each
 /// field read by the reader of its declared type.
 fn rust_entry_payload(
@@ -5174,7 +5200,11 @@ fn rust_entry_payload(
             SceType::Float32 => format!("fields.float32(\"{}\")?", f.id),
             SceType::Float64 => format!("fields.float64(\"{}\")?", f.id),
             SceType::Bool => format!("fields.truth(\"{}\")?", f.id),
-            SceType::String => format!("fields.text(\"{}\")?", f.id),
+            // A text is held to its bound at the lift, the top level included
+            // (docs/adr/0086, section 4.4), by the check a text at any depth is
+            // held by; a byte string by the capacity of its type, which is its
+            // bound ([`rust_record_present_type`]).
+            SceType::String => format!("fields.text(\"{}\", {})?", f.id, lift_text_bound(f)),
             SceType::Bytes => format!("fields.bytes(\"{}\")?", f.id),
             SceType::Enum(r) => rust_enum_lift(static_enums, &r.alias, &f.id),
         };
@@ -5370,8 +5400,10 @@ fn rust_enum_lift(
             )
         })
         .collect();
+    // A variant is read by its name, which the enum's names bound; a text field's
+    // own bound is held by [`lift_text_bound`].
     format!(
-        "match fields.text(\"{field}\")?.as_str() {{ {arms}other => return \
+        "match fields.field(\"{field}\")?.name()? {{ {arms}other => return \
          Err(fields.unknown_variant(\"{field}\", other, \"{alias}\")) }}"
     )
 }
