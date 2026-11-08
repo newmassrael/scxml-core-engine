@@ -9,8 +9,8 @@
   delivery is what the first held, and the second delivery fits its schema
   (`refusals` stays 0).
 
-  The Rust, Kotlin and Go backends lower it; every other backend refuses the
-  read and the send by its own name until it lowers them (section 7.3). Rust
+  The Rust, Kotlin, Go and Python backends lower it; every other backend refuses
+  the read and the send by its own name until it lowers them (section 7.3). Rust
   compile+run gate: scripts/regen_static_datamodel_rust.sh commits the generated
   machine, and backends/rust/tests/tests/a_composed_value_is_sent_by_its_name.rs
   drives it. Kotlin compile+run gate: scripts/regen_static_datamodel_kotlin.sh
@@ -18,7 +18,10 @@
   backends/kotlin/tests/src/test/kotlin/com/sce/integration/ drives it. Go
   compile+run gate: scripts/regen_static_datamodel_go.sh commits the generated
   machine, and a_composed_value_is_sent_by_its_name_test.go under
-  backends/go/tests/integration/static_datamodel/ drives it.
+  backends/go/tests/integration/static_datamodel/ drives it. Python run gate:
+  scripts/regen_static_datamodel_python.sh generates the machine, and
+  test_a_composed_value_is_sent_by_its_name.py under
+  backends/python/tests/integration/static_datamodel/ drives it.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"

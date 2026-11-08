@@ -8,8 +8,8 @@
   that may be absent, and takes the list `late` whole into a list of a larger
   bound. Every out variable is what a host reads back of the delivery.
 
-  The Rust, Kotlin and Go backends lower it; every other backend refuses the
-  read by its own name until it lowers one (section 7.3). Rust compile+run gate:
+  The Rust, Kotlin, Go and Python backends lower it; every other backend refuses
+  the read by its own name until it lowers one (section 7.3). Rust compile+run gate:
   scripts/regen_static_datamodel_rust.sh commits the generated machine, and
   backends/rust/tests/tests/a_composed_payload_is_read_at_any_depth.rs drives it.
   Kotlin compile+run gate: scripts/regen_static_datamodel_kotlin.sh commits the
@@ -17,7 +17,10 @@
   backends/kotlin/tests/src/test/kotlin/com/sce/integration/ drives it. Go
   compile+run gate: scripts/regen_static_datamodel_go.sh commits the generated
   machine, and a_composed_payload_is_read_at_any_depth_test.go under
-  backends/go/tests/integration/static_datamodel/ drives it.
+  backends/go/tests/integration/static_datamodel/ drives it. Python run gate:
+  scripts/regen_static_datamodel_python.sh generates the machine, and
+  test_a_composed_payload_is_read_at_any_depth.py under
+  backends/python/tests/integration/static_datamodel/ drives it.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
