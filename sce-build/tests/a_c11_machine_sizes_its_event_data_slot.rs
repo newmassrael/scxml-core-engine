@@ -71,10 +71,15 @@ fn machine(imports: &[(&str, &str)], body: &str) -> String {
     )
 }
 
-/// The header and the source `sce-codegen generate -l c11` writes for the
-/// machine `doc`, named `probe`, with each of `schemas` (its file stem with its
-/// text) beside it, and `flags` after the language (the host's declared types).
-fn generated(doc: &str, schemas: &[(&str, String)], flags: &[&str]) -> (String, String) {
+/// What `sce-codegen generate -l c11` answers for the machine `doc`, named
+/// `probe`, with each of `schemas` (its file stem with its text) beside it, and
+/// `flags` after the language (the host's declared types): the run's output
+/// and the directory it wrote into.
+fn run_codegen(
+    doc: &str,
+    schemas: &[(&str, String)],
+    flags: &[&str],
+) -> (std::process::Output, tempfile::TempDir) {
     let dir = tempdir().expect("tempdir");
     for (stem, text) in schemas {
         std::fs::write(dir.path().join(format!("{stem}.scxml")), text).expect("write a schema");
@@ -93,6 +98,13 @@ fn generated(doc: &str, schemas: &[(&str, String)], flags: &[&str]) -> (String, 
         .arg(out_dir.path())
         .output()
         .expect("invoke sce-codegen");
+    (out, out_dir)
+}
+
+/// The header and the source `sce-codegen generate -l c11` writes for the
+/// machine `doc` ([`run_codegen`]), which must generate.
+fn generated(doc: &str, schemas: &[(&str, String)], flags: &[&str]) -> (String, String) {
+    let (out, out_dir) = run_codegen(doc, schemas, flags);
     assert!(
         out.status.success(),
         "the machine generates for C11:\n{}{}",
@@ -363,6 +375,162 @@ fn the_longest_reason_a_machine_raises_is_an_input_of_its_slot() {
     assert!(
         header.contains(&format!("#define PROBE_DATA_LEN_DECLARED {}u", longest + 1)),
         "the slot holds the longest reason and a NUL:\n{header}"
+    );
+}
+
+// ── docs/adr/0086, section 8.6 (c): the data a machine sends is sized ──────
+
+/// A `sce-static` machine that holds a text of 300 bytes and sends itself an
+/// event whose one param, `text`, is the value `param`.
+fn sending(param: &str) -> String {
+    format!(
+        r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="idle" datamodel="sce-static" name="probe">
+  <datamodel>
+    <data id="seen" sce:type="uint8" expr="0" sce:direction="out"/>
+    <data id="label" sce:type="string[300]" expr="'a'" sce:direction="out"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="poke"><send event="told"><param name="text" expr="{param}"/></send></transition>
+    <transition event="told"><assign location="seen" expr="1"/></transition>
+  </state>
+</scxml>
+"#
+    )
+}
+
+/// The data a send writes is an input of the slot, measured by the bound of
+/// each value it carries: a typed place at its type's `J`, and a concatenation
+/// of the place and a literal at the escapes of the sum of their texts. The
+/// payload is `{"text":<value>}`, the braces 2 and the key with its colon 7: a
+/// text of 300 bytes is 2 + 6 * 300 = 1802 bytes of JSON, so the payload 1811;
+/// `label + '!'` is a text of 301 bytes, 2 + 6 * 301 = 1808, so 1817. Either is
+/// past every reason such a machine raises.
+#[test]
+fn a_send_of_a_typed_place_and_a_literal_grows_the_slot_by_their_sum() {
+    let (place, _) = generated(&sending("label"), &[], &[]);
+    assert!(
+        place.contains("measured by the bound of each value it\n   carries: 1811 bytes."),
+        "the place is measured at its type's J:\n{place}"
+    );
+    assert!(
+        place.contains("#define PROBE_DATA_LEN_DECLARED 1812u"),
+        "the slot holds the send's 1811 bytes and a NUL:\n{place}"
+    );
+    let (joined, _) = generated(&sending("label + '!'"), &[], &[]);
+    assert!(
+        joined.contains("measured by the bound of each value it\n   carries: 1817 bytes."),
+        "the join is measured at the sum of its parts' texts:\n{joined}"
+    );
+    assert!(
+        joined.contains("#define PROBE_DATA_LEN_DECLARED 1818u"),
+        "the slot grows by the literal's byte, six bytes of JSON at its worst:\n{joined}"
+    );
+    assert!(
+        joined.contains("#define PROBE_DATA_LEN_TO_PARENT 0u"),
+        "a machine that sends nothing to a parent hands it nothing:\n{joined}"
+    );
+}
+
+/// A host-run invocation's deadline is quoted whole by the reason a deadline
+/// the machine cannot read is raised with, so its text needs a bound. A
+/// literal has one; a value the script engine computes has none, and the
+/// machine is refused by name rather than sized by a guess.
+#[test]
+fn a_c11_deadline_whose_text_has_no_bound_is_refused_by_name() {
+    let invoking = |deadline: &str| {
+        format!(
+            r#"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="ecmascript" name="probe">
+  <datamodel><data id="wait" expr="5000"/></datamodel>
+  <state id="s">
+    <invoke type="x-app-host" id="ask"><param name="_sce_deadline_ms" expr="{deadline}"/></invoke>
+    <transition event="error.execution" target="f"/>
+  </state>
+  <final id="f"/>
+</scxml>
+"#
+        )
+    };
+    let flags = ["--host-invoker", "x-app-host"];
+    let (_, source) = generated(&invoking("'soon'"), &[], &flags);
+    // The type `x-app-host` is 10 bytes, the id `ask` 3, the literal `soon` 4.
+    assert!(
+        source.contains(
+            "\"<invoke type='%.10s' id='%.3s'>: _sce_deadline_ms='%.4s' is not a whole number of \
+             milliseconds\""
+        ),
+        "the reason quotes each text at the bound the build knows of it:\n{source}"
+    );
+    let (out, _) = run_codegen(&invoking("wait"), &[], &flags);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "a deadline the script engine computes has no bound to size the reason by:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("<param name=\\\"_sce_deadline_ms\\\" expr=\\\"wait\\\">")
+            || stderr.contains("<param name=\"_sce_deadline_ms\" expr=\"wait\">"),
+        "the refusal names the param:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("`wait`") && stderr.contains("8.6 (c)"),
+        "the refusal names the expression that has no bound, and why:\n{stderr}"
+    );
+}
+
+/// A child session publishes what it hands its parent, its sends to
+/// `#_parent`, and the parent's slot holds the largest each child publishes.
+/// The child sends `{"greeting":"hi"}`, 17 bytes, every pair a literal.
+#[test]
+fn a_parents_slot_holds_what_each_child_hands_it() {
+    let doc = r##"<?xml version="1.0"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="ecmascript" name="probe">
+  <state id="s">
+    <invoke type="scxml" id="kid">
+      <content>
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="k"
+               datamodel="ecmascript" name="kid">
+          <state id="k">
+            <onentry><send target="#_parent" event="hello"><param name="greeting" expr="'hi'"/></send></onentry>
+          </state>
+        </scxml>
+      </content>
+    </invoke>
+    <transition event="hello" target="f"/>
+  </state>
+  <final id="f"/>
+</scxml>
+"##;
+    let (out, out_dir) = run_codegen(doc, &[], &[]);
+    assert!(
+        out.status.success(),
+        "the machine generates for C11:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let parent = std::fs::read_to_string(out_dir.path().join("probe_sm.h")).expect("the parent");
+    let child_stem = parent
+        .lines()
+        .filter_map(|line| line.strip_prefix("#include \""))
+        .filter_map(|rest| rest.strip_suffix("_sm.h\""))
+        .find(|stem| *stem != "probe")
+        .unwrap_or_else(|| panic!("the parent includes its child's header:\n{parent}"))
+        .to_string();
+    let child = std::fs::read_to_string(out_dir.path().join(format!("{child_stem}_sm.h")))
+        .expect("the child's header, written by the run that writes its parent");
+    let published = format!("{}_DATA_LEN_TO_PARENT", child_stem.to_uppercase());
+    assert!(
+        child.contains(&format!("#define {published} 17u")),
+        "the child publishes the 17 bytes it sends its parent:\n{child}"
+    );
+    assert!(
+        parent.contains(&format!(
+            "#define PROBE_DATA_LEN PROBE_DATA_LEN_LARGER(PROBE_DATA_LEN_OWN, {published})"
+        )),
+        "the parent's slot holds what its child publishes:\n{parent}"
     );
 }
 

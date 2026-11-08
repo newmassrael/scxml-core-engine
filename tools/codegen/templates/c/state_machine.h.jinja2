@@ -416,14 +416,45 @@ const sce_answer_schema_t *{{ csym_prefix }}{{ model.name }}_answer_schemas(void
    raises is an input too: {{ data_slot.reasons }} bytes. A reason that quotes a
    text of the run counts that text at the bound it has: a sentence of the
    runtime at the bound its header publishes, which the source checks.
+   docs/adr/0086, section 8.6 (c): the largest data a send of the machine or its
+   done data writes is an input too, measured by the bound of each value it
+   carries: {{ data_slot.sent }} bytes. What the machine hands a parent, its sends
+   to #_parent and its done data, is published below for the parent's slot:
+   {{ data_slot.to_parent }} bytes; and the slot holds what each child it invokes
+   publishes.
    An input no declaration sizes yet is held to SCE_MAX_DATA_LEN, which the slot
-   is never smaller than: the data a host hands an event by name, a host's reply,
-   a child session's data and a deadline the host cannot read{% if model.needs_script_engine %}, and
+   is never smaller than: the data a host hands an event by name, a host's reply
+   and the data a child's script engine computes{% if model.needs_script_engine %}, and
    every value the script engine computes, which no type bounds{% endif %}. */
 #define {{ data_slot.name }}_DECLARED {{ data_slot.declared }}u
+#define {{ data_slot.name }}_TO_PARENT {{ data_slot.to_parent }}u
+{# docs/adr/0086, section 8.6 (c): each child whose header is included above
+   publishes what it hands its parent, and the slot holds the largest of them. #}
+{% set slot_children = namespace(names=[]) %}
+{% for invoke_info in model.invokes | scxml %}
+{% set slot_children.names = slot_children.names + [(csym_prefix | upper) ~ (invoke_info.child_name | upper) ~ '_DATA_LEN_TO_PARENT'] %}
+{% endfor %}
+{% for invoke_info in model.invokes | hybrid %}
+{% if invoke_info.candidates %}
+{% for candidate in invoke_info.candidates %}
+{% set slot_children.names = slot_children.names + [(csym_prefix | upper) ~ (candidate.stem | upper) ~ '_DATA_LEN_TO_PARENT'] %}
+{% endfor %}
+{% else %}
+{% set slot_children.names = slot_children.names + [(csym_prefix | upper) ~ (invoke_info.child_name | upper) ~ '_DATA_LEN_TO_PARENT'] %}
+{% endif %}
+{% endfor %}
+{% if slot_children.names %}
+#define {{ data_slot.name }}_LARGER(a, b) ((size_t)(a) > (size_t)(b) ? (size_t)(a) : (size_t)(b))
+#define {{ data_slot.name }}_OWN                                                               \
+    ((size_t){{ data_slot.name }}_DECLARED > (size_t)(SCE_MAX_DATA_LEN) ? (size_t){{ data_slot.name }}_DECLARED \
+                                                                      : (size_t)(SCE_MAX_DATA_LEN))
+#define {{ data_slot.name }} {% for child in slot_children.names %}{{ data_slot.name }}_LARGER({% endfor %}{{ data_slot.name }}_OWN{% for child in slot_children.names %}, {{ child }}){% endfor %}
+
+{% else %}
 #define {{ data_slot.name }}                                                                   \
     ((size_t){{ data_slot.name }}_DECLARED > (size_t)(SCE_MAX_DATA_LEN) ? (size_t){{ data_slot.name }}_DECLARED \
                                                                       : (size_t)(SCE_MAX_DATA_LEN))
+{% endif %}
 
 /* ── W3C SCXML 5.10: Event with metadata ──────────────────────────── */
 {# Mirrors `StaticExecutionEngine<P>::EventWithMetadata` (sce/include/static).
