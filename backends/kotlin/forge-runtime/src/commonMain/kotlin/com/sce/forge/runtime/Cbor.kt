@@ -7,7 +7,8 @@ package com.sce.forge.runtime
  * The CBOR (RFC 8949) items a `sce:encoding="cbor"` codec reads and writes
  * (SCE_FORGE.md §4.6.1): one definite-length map whose keys are small unsigned
  * integers and whose values are unsigned integers, booleans, text strings and
- * byte strings.
+ * byte strings, or a definite-length array of maps, each a record keyed by its
+ * fields' ids as text (docs/adr/0086, section 9.2).
  *
  * A generated codec calls these and spells no CBOR of its own. **Writing** is
  * deterministic (RFC 8949 §4.2.1: every head in its shortest form), so this
@@ -22,6 +23,7 @@ object Cbor {
     const val MAJOR_UNSIGNED = 0
     const val MAJOR_BYTES = 2
     const val MAJOR_TEXT = 3
+    const val MAJOR_ARRAY = 4
     const val MAJOR_MAP = 5
     const val MAJOR_SIMPLE = 7
 
@@ -68,6 +70,9 @@ object Cbor {
 
     fun writeBytes(w: SceSink, value: ByteArray): CodecError? =
         writeHead(w, MAJOR_BYTES, value.size.toULong()) ?: w.writeBytes(value)
+
+    /** The head of a definite-length array of [items] items: a list of records an entry holds. */
+    fun writeArrayHead(w: SceSink, items: ULong): CodecError? = writeHead(w, MAJOR_ARRAY, items)
 
     fun writeMapHead(w: SceSink, entries: ULong): CodecError? = writeHead(w, MAJOR_MAP, entries)
 
@@ -156,6 +161,9 @@ object Cbor {
         if (len != length.toULong()) return refuse(CodecError.CborWrongLength)
         return readPayload(c, len)
     }
+
+    /** The head of a definite-length array: how many items follow. An indefinite length is refused, as a map's is. */
+    fun readArrayLen(c: SceCursor): ULong? = expect(c, MAJOR_ARRAY)
 
     /** The head of a definite-length map: how many entries follow. */
     fun readMapLen(c: SceCursor): ULong? = expect(c, MAJOR_MAP)
