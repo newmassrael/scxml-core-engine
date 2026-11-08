@@ -67,7 +67,7 @@ PY
 mutation_case "the drain swallows the event it refused" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
      "            record_truncated_event_chain(sm, sm->external_queue.buf[sm->external_queue.head].event, true);\n            break;",
-     "            record_truncated_event_chain(sm, sm->external_queue.buf[sm->external_queue.head].event, true);\n            sm->external_queue.head = (uint16_t)((sm->external_queue.head + 1u) % (uint16_t)SCE_MAX_EVENTS);\n            sm->external_queue.count = (uint16_t)(sm->external_queue.count - 1u);\n            break;")
+     "            record_truncated_event_chain(sm, sm->external_queue.buf[sm->external_queue.head].event, true);\n            event_queue_drop(sm, &sm->external_queue);\n            break;")
 PY
 
 # ── The cut is said ─────────────────────────────────────────────────
