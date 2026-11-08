@@ -70,6 +70,13 @@ typedef enum sce_queue_push_status {
     SCE_QUEUE_PUSH_OUT_OF_MEMORY = 2
 } sce_queue_push_status_t;
 
+/* What a push that writes its element in place calls, with the slot the queue
+ * holds for the element (`element_size` bytes) and the caller's `context`: the
+ * element is written where it is kept, never assembled on the caller's stack
+ * first, which a context with a small stack, an interrupt handler's, has no
+ * room for when the element is large (docs/adr/0086, section 8.5 (d)). */
+typedef void (*sce_queue_slot_writer_fn)(void *slot, const void *context);
+
 /* How many operations a participant may be delayed between reading an entry and
  * acting on it before it could be misled: 2^(w-2) for an entry word of w bits,
  * independent of the capacity (RFC §synth-5-P, Counter width). */

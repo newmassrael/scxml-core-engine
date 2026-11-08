@@ -3271,7 +3271,7 @@ fn a_delayed_send_carries_its_params_through_the_scheduled_entry_of_a_c_machine_
         "the payload is copied onto the entry when it is scheduled:\n{source}"
     );
     assert!(
-        source.contains("memcpy(evt.data, ready.data, sizeof(evt.data));"),
+        source.contains("evt.data = ready->data;"),
         "the drain raises the event with the payload it was sent with:\n{source}"
     );
     assert!(
@@ -3316,7 +3316,7 @@ fn a_c_machine_whose_delayed_sends_carry_nothing_keeps_its_scheduled_entry_free_
             "a send with nothing to carry needs no payload on the entry:\n{header}"
         );
         assert!(
-            !source.contains("memcpy(evt.data, ready.data, sizeof(evt.data));"),
+            !source.contains("evt.data = ready->data;"),
             "nothing is restored onto the event it raises:\n{source}"
         );
     }

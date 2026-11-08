@@ -70,8 +70,11 @@
    it chose), `stem` names its machine and `slot` is its struct. #}
 {% macro lift_child_done_data(child, stem, slot, evt, csym_prefix) %}
 {% if child.child_ends_with_done_data %}
-                /* §scxml-6.4: the done data of the final the child ended at. */
-                {{ csym_prefix }}{{ stem }}_done_data_wire(&{{ slot }}, ({{ evt }}).data, sizeof(({{ evt }}).data));
+                /* §scxml-6.4: the done data of the final the child ended at,
+                   written into this machine's scratch and handed on as a view
+                   the queue copies (docs/adr/0086, section 8.5 (d)). */
+                {{ csym_prefix }}{{ stem }}_done_data_wire(&{{ slot }}, sm->scratch.done, sizeof(sm->scratch.done));
+                ({{ evt }}).data = sm->scratch.done;
 {% endif %}
 {% endmacro %}
 
@@ -306,7 +309,9 @@ static void {{ csym_prefix }}{{ model.name }}_dispatch_external_by_name(void *op
        skips the load — same observable as cpp `EventWithMetadata{event,
        data=""}` in the no-param send-to-parent shape. */
     if (event_data != NULL && event_data[0] != '\0') {
-        sce_copy_bounded_n(evt.data, event_data, sizeof(evt.data));
+        /* A view of the child's data, valid for this call; the queue copies
+           it (docs/adr/0086, section 8.5 (a)). */
+        evt.data = event_data;
     }
     /* §scxml-3.12.1 + §scxml-5.10: the child names the event, and its names are
        not this machine's, so one this document does not write reaches it as the
@@ -438,11 +443,13 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                 }
             }
 {% endif %}
-{% for attr, buf, cap, expr in [('src', '_host_inv_src', 'SCE_MAX_URI_LEN', invoke_info.srcexpr), ('content', '_host_inv_content', data_slot.name, invoke_info.contentexpr)] %}
+{# The `src` is a URI's length, held here; the content is an event's size, held
+   in the machine's scratch (docs/adr/0086, section 8.5 (d)). #}
+{% for attr, buf, decl, size, expr in [('src', '_host_inv_src', 'char _host_inv_src[SCE_MAX_URI_LEN];', 'sizeof(_host_inv_src)', invoke_info.srcexpr), ('content', '_host_inv_content', 'char *const _host_inv_content = sm->scratch.invoke_content;', 'sizeof(sm->scratch.invoke_content)', invoke_info.contentexpr)] %}
 {% if expr %}
-            char {{ buf }}[{{ cap }}];
+            {{ decl }}
             bool {{ buf }}_ok = false;
-{{ se.lua_eval_to_wire_string(expr, buf, 'sizeof(' ~ buf ~ ')', buf ~ '_ok') }}
+{{ se.lua_eval_to_wire_string(expr, buf, size, buf ~ '_ok') }}
             if (!{{ buf }}_ok) {
 {% if 'error.execution' in model.events %}
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
@@ -465,10 +472,14 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
 {% if record_pairs %}
             (void)luaL_dostring(sm->L, "_sce_invoke_pairs = {}");
 {% endif %}
+{# docs/adr/0086, section 8.5 (d): each pair's text is a row of the machine's
+   scratch, the namelist's first and the params' after them, so no two pairs of
+   one invocation share a row. #}
+{% set host_nl_count = host_namelist | length %}
 {% for var_name in host_namelist %}
-            char _host_inv_nl_value_{{ loop.index0 }}[{{ data_slot.name }}];
+            char *const _host_inv_nl_value_{{ loop.index0 }} = sm->scratch.pairs[{{ loop.index0 }}];
             bool _host_inv_nl_ok_{{ loop.index0 }} = false;
-{{ se.lua_namelist_var_to_wire_string(var_name, '_host_inv_nl_value_' ~ loop.index0, 'sizeof(_host_inv_nl_value_' ~ loop.index0 ~ ')', '_host_inv_nl_ok_' ~ loop.index0, var_name if record_pairs else none) }}
+{{ se.lua_namelist_var_to_wire_string(var_name, '_host_inv_nl_value_' ~ loop.index0, 'sizeof(sm->scratch.pairs[' ~ loop.index0 ~ '])', '_host_inv_nl_ok_' ~ loop.index0, var_name if record_pairs else none) }}
             if (!_host_inv_nl_ok_{{ loop.index0 }}) {
                 /* W3C SCXML 5.9.2: a namelist item that names no readable
                    location is an error, and the invocation does not start. */
@@ -492,12 +503,14 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                are rendered from the one typed value. §scxml-5.7.1: a value that
                cannot be computed is reported and its pair left out, and the
                invocation still starts with the others. */
-            char _host_inv_event_data[{{ data_slot.name }}];
+            /* docs/adr/0086, section 8.5 (d): the request's data and each
+               pair's text are the machine's scratch, never this stack. */
+            char *const _host_inv_event_data = sm->scratch.request;
             _host_inv_event_data[0] = '\0';
 {% if payload_params %}
-            char _host_inv_texts[{{ invoke_info.params | length }}][{{ data_slot.name }}];
+            char (*const _host_inv_texts)[{{ data_slot.name }}] = sm->scratch.pairs + {{ host_nl_count }};
             sce_forge_wire_t _host_inv_wire;
-            sce_forge_wire_begin(&_host_inv_wire, _host_inv_event_data, sizeof(_host_inv_event_data));
+            sce_forge_wire_begin(&_host_inv_wire, _host_inv_event_data, sizeof(sm->scratch.request));
 {% endif %}
 {# Ascending by the name's UTF-8 bytes, as on every engine (ARCHITECTURE.md,
    "JSON Object Key Order"): a pair left out leaves the order of the others as
@@ -576,13 +589,14 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                time, so it passes as written. */
 {% for param in invoke_info.params %}
 {% if param.name in request_checks and not param.is_static_literal %}
-            char _host_inv_typed_{{ loop.index0 }}[{{ data_slot.name }}];
+{% set host_row = host_nl_count + loop.index0 %}
+            char *const _host_inv_typed_{{ loop.index0 }} = sm->scratch.pairs[{{ host_row }}];
             const char *_host_inv_refusal_{{ loop.index0 }} = NULL;
-{{ se.lua_eval_to_request_field(param.expr or param.location, request_checks[param.name], '_host_inv_typed_' ~ loop.index0, 'sizeof(_host_inv_typed_' ~ loop.index0 ~ ')', '_host_inv_refusal_' ~ loop.index0, param.name if (record_pairs and not param.envelope_metadata) else none) }}
+{{ se.lua_eval_to_request_field(param.expr or param.location, request_checks[param.name], '_host_inv_typed_' ~ loop.index0, 'sizeof(sm->scratch.pairs[' ~ host_row ~ '])', '_host_inv_refusal_' ~ loop.index0, param.name if (record_pairs and not param.envelope_metadata) else none) }}
             if (_host_inv_refusal_{{ loop.index0 }} != NULL) {
 {% if 'error.execution' in model.events %}
-                char _host_inv_message[{{ data_slot.name }}];
-                snprintf(_host_inv_message, sizeof(_host_inv_message),
+                char *const _host_inv_message = sm->scratch.message;
+                snprintf(_host_inv_message, sizeof(sm->scratch.message),
                          "<invoke> <param name='{{ param.name | escape_c }}'> cannot be its request field: '{{ param.name | escape_c }}' %s",
                          _host_inv_refusal_{{ loop.index0 }});
                 {{ csym_prefix }}{{ model.name }}_raise_platform_error(
@@ -594,16 +608,17 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
             _host_inv_params[_host_inv_param_count].value = _host_inv_typed_{{ loop.index0 }};
             _host_inv_param_count++;
 {% else %}
-{{ param_macros.collect_host_params_into([param], model, csym_prefix, '_host_inv_params', '_host_inv_param_count', '_host_inv_param_' ~ loop.index0, '<invoke>', '            ', '', record_pairs) -}}
+{{ param_macros.collect_host_params_into([param], model, csym_prefix, '_host_inv_params', '_host_inv_param_count', '_host_inv_param_' ~ loop.index0, '<invoke>', '            ', '', record_pairs, host_nl_count + loop.index0) -}}
 {% endif %}
 {% endfor %}
 {% else %}
-{{ param_macros.collect_host_params_into(invoke_info.params, model, csym_prefix, '_host_inv_params', '_host_inv_param_count', '_host_inv_param', '<invoke>', '            ', '', record_pairs) -}}
+{{ param_macros.collect_host_params_into(invoke_info.params, model, csym_prefix, '_host_inv_params', '_host_inv_param_count', '_host_inv_param', '<invoke>', '            ', '', record_pairs, host_nl_count) -}}
 {% endif %}
 {% if static_datamodel %}
 {# The event data was written with the params above. #}
 {% elif record_pairs %}
-            char _host_inv_event_data[{{ data_slot.name }}];
+            /* docs/adr/0086, section 8.5 (d): the machine's scratch. */
+            char *const _host_inv_event_data = sm->scratch.request;
             _host_inv_event_data[0] = '\0';
             if (luaL_dostring(sm->L,
                 "local p = _sce_invoke_pairs or {}; _sce_invoke_pairs = nil; "
@@ -611,7 +626,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                 "return JSON.stringify(_scxml_params(table.unpack(p)))") == 0) {
                 size_t _host_inv_ed_len = 0u;
                 const char *_host_inv_ed = lua_tolstring(sm->L, -1, &_host_inv_ed_len);
-                if (_host_inv_ed == NULL || _host_inv_ed_len >= sizeof(_host_inv_event_data)) {
+                if (_host_inv_ed == NULL || _host_inv_ed_len >= sizeof(sm->scratch.request)) {
                     /* Truncated JSON does not parse, so it would arrive as some
                        other value: an argument this platform cannot marshal is
                        one the invocation cannot start with (W3C SCXML 6.4.1). */

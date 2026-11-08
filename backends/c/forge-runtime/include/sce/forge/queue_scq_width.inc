@@ -435,6 +435,23 @@ static inline sce_queue_push_status_t SCE_QSCQ_NAME(try_push)(SCE_QSCQ_NAME(t) *
     return SCE_QUEUE_PUSH_OK;
 }
 
+/* `try_push`, with the element written in place: `write` is called with the
+ * slot and `context` while no other participant holds the slot, and the slot is
+ * handed on once it returns. Lock-free as `try_push` is. */
+static inline sce_queue_push_status_t SCE_QSCQ_NAME(try_push_with)(SCE_QSCQ_NAME(t) * q, unsigned char *slots,
+                                                                   size_t element_size, sce_queue_slot_writer_fn write,
+                                                                   const void *context) {
+    SCE_QSCQ_WORD index;
+    if (!SCE_QSCQ_NAME(dequeue)(&q->free_ring, &index)) {
+        return SCE_QUEUE_PUSH_FULL;
+    }
+    /* The index came off the free ring, so no other participant holds this slot
+     * until the enqueue below hands it on. */
+    write(slots + (size_t)index * element_size, context);
+    (void)SCE_QSCQ_NAME(enqueue)(&q->allocated, index);
+    return SCE_QUEUE_PUSH_OK;
+}
+
 #if SCE_QSCQ_CLOSABLE
 /* Takes `*value` into the queue and returns nonzero, or returns zero and leaves
  * the value with the caller: when the queue has no free slot it is closed, and

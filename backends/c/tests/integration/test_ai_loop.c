@@ -147,7 +147,8 @@ static void step_with_data(ai_loop_t *sm, ai_loop_event_t event, const char *dat
     ai_loop_event_with_meta_t evt;
     memset(&evt, 0, sizeof(evt));
     evt.event = event;
-    (void)snprintf(evt.data, sizeof(evt.data), "%s", data);
+    /* A view of the data, which the machine's queue copies. */
+    evt.data = data;
     ai_loop_raise_external(sm, &evt);
     ai_loop_step(sm);
 }
