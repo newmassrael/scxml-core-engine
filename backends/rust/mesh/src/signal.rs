@@ -69,6 +69,15 @@ pub enum Signal {
     /// forgotten, as a cancel forgets it (§mesh-9.5), since no reply can
     /// arrive on a link that is gone.
     InvokeChildLost { invoke_id: String, target: String },
+    /// CAUSAL_VIEW_MISMATCH (row 18): an envelope from `source` on a causal
+    /// route was tagged with `epoch`, another than the receiver's view, or by
+    /// the replica `replica` (RFC 4122 text) the view does not hold
+    /// (docs/adr/0085, section 3.2). It was not delivered.
+    CausalViewMismatch {
+        source: String,
+        epoch: u64,
+        replica: String,
+    },
 }
 
 /// The deployment binding a row is observed on: the peer it names and the
@@ -95,6 +104,7 @@ impl Signal {
             Signal::DeliveryExhausted { .. } => "DELIVERY_EXHAUSTED",
             Signal::RpcReplyFromUndeclaredPeer { .. } => "RPC_REPLY_FROM_UNDECLARED_PEER",
             Signal::InvokeChildLost { .. } => "INVOKE_CHILD_LOST",
+            Signal::CausalViewMismatch { .. } => "CAUSAL_VIEW_MISMATCH",
         }
     }
 
@@ -117,9 +127,8 @@ impl Signal {
             Signal::OrderingGap { source, .. }
             | Signal::DedupWindowOverflow { source, .. }
             | Signal::MissingSequence { source }
-            | Signal::RpcReplyFromUndeclaredPeer { source, .. } => {
-                (Some(source.as_str()), false, false)
-            }
+            | Signal::RpcReplyFromUndeclaredPeer { source, .. }
+            | Signal::CausalViewMismatch { source, .. } => (Some(source.as_str()), false, false),
             Signal::EnvelopeCorrupt { source, .. } => (source.as_deref(), false, true),
             Signal::BackpressureDrop { .. }
             | Signal::OutboundStaleDrop { .. }
@@ -180,6 +189,12 @@ impl Signal {
             Signal::InvokeChildLost { invoke_id, target } => {
                 json.string("invoke_id", invoke_id);
                 json.string("target", target);
+            }
+            // Row 18's columns: `source`, then the epoch the envelope was
+            // tagged with and the replica that tagged it.
+            Signal::CausalViewMismatch { epoch, replica, .. } => {
+                json.number("epoch", *epoch);
+                json.string("replica", replica);
             }
             Signal::MissingSequence { .. } | Signal::TransportUnavailable => {}
         }

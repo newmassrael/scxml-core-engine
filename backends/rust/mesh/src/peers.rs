@@ -100,6 +100,7 @@ mod tests {
                 responders: &["cloud"],
                 deadline_ms: None,
                 reply_events: &[],
+                causal: None,
             },
             link: PeerLink::WssDial {
                 url: "wss://cal.example",
@@ -137,6 +138,7 @@ mod tests {
                 responders: &["phone"],
                 deadline_ms: None,
                 reply_events: &[],
+                causal: None,
             },
             link: PeerLink::ZenohInbox,
         }],

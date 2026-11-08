@@ -531,9 +531,8 @@ topology:
 fn a_backend_whose_core_has_no_causal_route_refuses_a_causal_binding_by_name() {
     // docs/adr/0085, section 3.2: until its core routes the causal binding, a
     // language refuses `delivery: causal` at build time rather than building
-    // the binding as a plain route. Rust holds the layer and its router does
-    // not route to it yet, so it refuses too.
-    for language in ["rust", "kotlin", "swift", "cpp"] {
+    // the binding as a plain route, and offers the one that routes it.
+    for language in ["kotlin", "swift", "cpp"] {
         let dir = ScratchDir::new(&format!("mesh-causal-refused-{language}"));
         let scxml = dir.write("client.scxml", CLIENT_SCXML);
         dir.write("server.scxml", SERVER_SCXML);
@@ -554,10 +553,61 @@ fn a_backend_whose_core_has_no_causal_route_refuses_a_causal_binding_by_name() {
         let message = rec["message"].as_str().expect("message");
         assert!(
             message.contains(&format!("the {language} Mesh core"))
-                && message.contains("bind the peer without `delivery: causal`"),
+                && message.contains("`--lang rust`"),
             "{language} record: {rec}"
         );
     }
+}
+
+#[test]
+fn the_rust_peer_table_carries_a_causal_bindings_group() {
+    // docs/adr/0085, section 3.2: the Rust router routes a causal binding to
+    // its causal layer, so the peer table carries the group and its view of
+    // epoch 0, and a binding that is not causal carries none. Red if the
+    // build's peer policy ignores `delivery:`.
+    let dir = ScratchDir::new("mesh-causal-rust");
+    let scxml = dir.write("client.scxml", CLIENT_SCXML);
+    dir.write("server.scxml", SERVER_SCXML);
+    let deploy = dir.write("deploy.yaml", CAUSAL_DEPLOY);
+    let out = run_with_deploy_for("rust", &scxml, &deploy, dir.path());
+    assert!(
+        out.status.success(),
+        "the Rust core routes a causal binding; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let table = peer_table_under(dir.path());
+    assert!(
+        table.contains("causal: Some(sce_rust_mesh::causal::CausalGroup {")
+            && table.contains("name: \"people\",")
+            && table.contains("epoch: 0,")
+            && table.contains("view: &[\"phone/client\", \"cloud/server\"],"),
+        "the peer carries its group:\n{table}"
+    );
+    // The causal route replaces the duplicate window for the binding.
+    assert!(table.contains("dedup: false,"), "{table}");
+
+    let plain = ScratchDir::new("mesh-causal-rust-plain");
+    let scxml = plain.write("client.scxml", CLIENT_SCXML);
+    plain.write("server.scxml", SERVER_SCXML);
+    let deploy = plain.write(
+        "deploy.yaml",
+        &CAUSAL_DEPLOY
+            .replace("            delivery: causal\n", "")
+            .replace(
+                "            group: { name: people, view: [phone/client, cloud/server] }\n",
+                "",
+            ),
+    );
+    let out = run_with_deploy_for("rust", &scxml, &deploy, plain.path());
+    assert!(
+        out.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        peer_table_under(plain.path()).contains("causal: None,"),
+        "a plain binding carries no group"
+    );
 }
 
 /// The Rust peer table `sce-codegen generate --deploy` wrote under `dir`,

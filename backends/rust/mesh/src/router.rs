@@ -25,6 +25,10 @@ use sce_forge_runtime::algorithm::AlgorithmError;
 use sce_forge_runtime::codec::{Bounded, CodecError, Entries, SceCursor};
 use sce_rust_runtime::{HostInvokeRequest, HostSendRequest};
 
+use crate::causal::{
+    envelope_tag, stamp, CausalGroup, CausalLayer, Dot, OfferError, Refusal, Rejected, Replica,
+    Start, Verdict,
+};
 use crate::generated::envelope::Envelope;
 use crate::generated::pattern_kind::PatternKind;
 use crate::generated::payload_codec::PayloadCodec;
@@ -64,6 +68,11 @@ pub struct PeerConfig {
     /// invokeid of the request being handled, which is how the requester
     /// matches it (§mesh-10.7); every other send is `FireForget`.
     pub reply_events: &'static [&'static str],
+    /// The causal group this binding is the route of (docs/adr/0085, section
+    /// 3.2), or `None` for the per-source rules. A causal peer's changes go
+    /// through its causal layer ([`Router::start_causal`]), which then
+    /// replaces the duplicate window and the sequence buffer for it.
+    pub causal: Option<CausalGroup>,
 }
 
 /// One thing the host must do.
@@ -109,6 +118,19 @@ pub enum Effect {
         data: String,
         source: Option<String>,
     },
+    /// A change the document sent to the causal peer `peer` was accepted and
+    /// tagged with `dot` (docs/adr/0085, section 3, "offer and verdict"). The
+    /// host records it with its dot in the copy's journal, then calls
+    /// [`Router::committed`]; nothing of it leaves before.
+    Accepted { peer: String, dot: Dot },
+    /// A change the document sent to the causal peer `peer` was refused: it
+    /// took no number and no copy takes it in. The host tells the copy, which
+    /// tells `noRoomForHistory`.
+    Refused { peer: String, refusal: Refusal },
+    /// The causal peer `peer` is owed this copy's `causalVector`, its link
+    /// having come back or its period having passed. The host draws an
+    /// envelope id and calls [`Router::announce`].
+    AnnounceDue { peer: String },
 }
 
 /// What became of a request [`Router::invoke`] was handed.
@@ -128,6 +150,15 @@ struct Peer {
     outbound: Outbound,
     config: PeerConfig,
     next_sequence: u64,
+    /// The causal layer of a causal peer, once the host started it.
+    causal: Option<Causal>,
+}
+
+/// A causal peer's layer and when it last announced its vector.
+struct Causal {
+    layer: CausalLayer<Vec<u8>>,
+    announce_every_ms: i64,
+    announced_ms: Option<i64>,
 }
 
 /// One machine's Mesh endpoint.
@@ -158,8 +189,97 @@ impl Router {
                 outbound: Outbound::new(config.buffer),
                 config,
                 next_sequence: 1,
+                causal: None,
             },
         );
+    }
+
+    /// Start the causal layer of the causal peer `peer` (docs/adr/0085,
+    /// sections 3.2 and 3.3): `start` is the incarnation the host read from
+    /// the copy's journal, or a new one; `room` the most changes the layer
+    /// may hold not yet stable; `announce_every_ms` the period of its
+    /// `causalVector`. A send to a causal peer before this is refused.
+    pub fn start_causal(
+        &mut self,
+        peer: &str,
+        start: Start,
+        room: usize,
+        announce_every_ms: i64,
+    ) -> Result<(), RouterError> {
+        let bound = self
+            .peers
+            .get_mut(peer)
+            .ok_or_else(|| RouterError::UnknownPeer(peer.to_string()))?;
+        let group = bound
+            .config
+            .causal
+            .ok_or_else(|| RouterError::NotCausal(peer.to_string()))?;
+        bound.causal = Some(Causal {
+            layer: CausalLayer::new(group, start, room),
+            announce_every_ms,
+            announced_ms: None,
+        });
+        Ok(())
+    }
+
+    /// The causal layer of `peer`, for the host to read (its replica, its
+    /// delivered vector, what it holds).
+    pub fn causal_layer(&self, peer: &str) -> Option<&CausalLayer<Vec<u8>>> {
+        self.peers
+            .get(peer)
+            .and_then(|bound| bound.causal.as_ref())
+            .map(|causal| &causal.layer)
+    }
+
+    /// The host committed the journal record of `dot`, a change of the causal
+    /// peer `peer`: what it releases goes to that peer's send half.
+    pub fn committed(
+        &mut self,
+        peer: &str,
+        dot: Dot,
+        now_ms: i64,
+    ) -> Result<Vec<Effect>, RouterError> {
+        let bound = self
+            .peers
+            .get_mut(peer)
+            .ok_or_else(|| RouterError::UnknownPeer(peer.to_string()))?;
+        let released = causal_of(peer, bound)?.layer.committed(dot);
+        let mut effects = Vec::new();
+        for bytes in released {
+            effects.extend(dispatch(peer, bound, bytes, now_ms));
+        }
+        Ok(effects)
+    }
+
+    /// Send this copy's `causalVector` to the causal peer `peer` (pattern 23:
+    /// the epoch and its delivered vector, keys 19 and 20). `id` is the
+    /// envelope id the host drew.
+    pub fn announce(
+        &mut self,
+        peer: &str,
+        id: [u8; 16],
+        now_ms: i64,
+    ) -> Result<Vec<Effect>, RouterError> {
+        let machine = within(self.machine.as_str())?;
+        let bound = self
+            .peers
+            .get_mut(peer)
+            .ok_or_else(|| RouterError::UnknownPeer(peer.to_string()))?;
+        let causal = causal_of(peer, bound)?;
+        let tag = causal.layer.summary();
+        causal.announced_ms = Some(now_ms);
+        let envelope = Envelope {
+            id: (&id).into(),
+            source: machine,
+            event_type: within("")?,
+            pattern: PatternKind::CausalVector,
+            datacontenttype: PayloadCodec::None,
+            ..Envelope::new()
+        };
+        let bytes = stamp(envelope, &tag)
+            .map_err(|_| RouterError::Encode(CodecError::CborOutOfRange))?
+            .encode_to_vec();
+        Ok(dispatch(peer, bound, bytes, now_ms))
     }
 
     /// Perform a `<send target="#peer">` the engine handed the host. `id` is
@@ -217,6 +337,9 @@ impl Router {
             rpc_status: reply.then_some(RpcStatus::Ok),
             ..Envelope::new()
         };
+        if peer.config.causal.is_some() {
+            return offer(peer_name, peer, envelope);
+        }
         transmit(peer_name, peer, envelope, now_ms)
     }
 
@@ -318,6 +441,14 @@ impl Router {
             peer: Some(peer.to_string()),
             signal,
         }));
+        // docs/adr/0085, section 3.2: a link that comes back carries this
+        // copy's vector at once, so what was lost while it was down is
+        // repaired without waiting for the period.
+        if bound.causal.is_some() {
+            effects.push(Effect::AnnounceDue {
+                peer: peer.to_string(),
+            });
+        }
         Ok(effects)
     }
 
@@ -407,12 +538,15 @@ impl Router {
         bytes: Vec<u8>,
         now_ms: i64,
     ) -> Result<Vec<Effect>, RouterError> {
-        let delivery = self
+        let config = self
             .peers
             .get(peer)
             .ok_or_else(|| RouterError::UnknownPeer(peer.to_string()))?
-            .config
-            .delivery;
+            .config;
+        if config.causal.is_some() {
+            return self.receive_causal(peer, bytes, now_ms);
+        }
+        let delivery = config.delivery;
         let raise = |signal| {
             Ok(alloc::vec![Effect::Raise {
                 peer: Some(peer.to_string()),
@@ -470,6 +604,107 @@ impl Router {
                     source: None,
                 }),
         );
+        // docs/adr/0085, section 3.2: each causal peer is owed this copy's
+        // vector on its period, which repairs a loss no link edge reports.
+        for (name, bound) in &self.peers {
+            if let Some(causal) = &bound.causal {
+                let due = match causal.announced_ms {
+                    None => true,
+                    Some(at) => now_ms.saturating_sub(at) >= causal.announce_every_ms,
+                };
+                if due {
+                    effects.push(Effect::AnnounceDue { peer: name.clone() });
+                }
+            }
+        }
+        Ok(effects)
+    }
+
+    /// Envelope `bytes` the causal peer `peer` delivered: a change goes
+    /// through the causal layer, which delivers it with whatever it releases,
+    /// holds it or drops it; a `causalVector` is recorded as its sender's mark
+    /// and answered with every change of the log it lacks. An envelope of
+    /// another epoch, or by a replica the view does not hold, is raised as
+    /// `CAUSAL_VIEW_MISMATCH` and is not delivered (docs/adr/0085, section
+    /// 3.2).
+    fn receive_causal(
+        &mut self,
+        peer: &str,
+        bytes: Vec<u8>,
+        now_ms: i64,
+    ) -> Result<Vec<Effect>, RouterError> {
+        let raise = |signal| {
+            Ok(alloc::vec![Effect::Raise {
+                peer: Some(peer.to_string()),
+                signal,
+            }])
+        };
+        let (source, pattern, tag) = match Envelope::decode(&mut SceCursor::new(&bytes)) {
+            Ok(envelope) => (
+                envelope.source.to_string(),
+                envelope.pattern,
+                envelope_tag(&envelope),
+            ),
+            Err(_) => {
+                return raise(Signal::EnvelopeCorrupt {
+                    source: None,
+                    codec: "cbor",
+                })
+            }
+        };
+        let tag = match tag {
+            Ok(Some(tag)) => tag,
+            // An envelope on a causal route carries its tag; one without it,
+            // or with half of it, cannot be placed, and is not delivered.
+            Ok(None) | Err(_) => {
+                return raise(Signal::EnvelopeCorrupt {
+                    source: Some(source),
+                    codec: "cbor",
+                })
+            }
+        };
+        let bound = self
+            .peers
+            .get_mut(peer)
+            .ok_or_else(|| RouterError::UnknownPeer(peer.to_string()))?;
+        let layer = &mut causal_of(peer, bound)?.layer;
+        let taken = if pattern == PatternKind::CausalVector {
+            layer
+                .receive_summary(&tag)
+                .map(|answer| (Vec::new(), answer))
+        } else {
+            layer
+                .receive(&tag, bytes)
+                .map(|delivered| (delivered, Vec::new()))
+        };
+        let (delivered, answer) = match taken {
+            Ok(taken) => taken,
+            Err(Rejected::OtherEpoch { epoch }) => {
+                let replica = tag.vector.first().map(Replica::of);
+                return raise(view_mismatch(source, epoch, replica));
+            }
+            Err(Rejected::NotInView { replica }) => {
+                return raise(view_mismatch(source, tag.epoch, Some(replica)));
+            }
+            Err(Rejected::Malformed) => {
+                return raise(Signal::EnvelopeCorrupt {
+                    source: Some(source),
+                    codec: "cbor",
+                })
+            }
+            Err(Rejected::Rule(error)) => return Err(RouterError::Rule(error)),
+        };
+        let mut effects = Vec::new();
+        for bytes in answer {
+            effects.extend(dispatch(peer, bound, bytes, now_ms));
+        }
+        for bytes in delivered {
+            // These bytes decoded on arrival, and decoding is a function of
+            // the bytes alone.
+            if let Ok(envelope) = Envelope::decode(&mut SceCursor::new(&bytes)) {
+                effects.push(deliver(&envelope, Some(peer)));
+            }
+        }
         Ok(effects)
     }
 
@@ -605,6 +840,12 @@ pub enum RouterError {
     /// rule's list carries. `peer` is the binding that delivered the one
     /// that overflowed; a tick, which delivers nothing, cannot name one.
     HoldFull { peer: Option<String> },
+    /// The host asked for the causal layer of a peer whose binding is not
+    /// causal.
+    NotCausal(String),
+    /// A causal peer was used before the host started its causal layer
+    /// ([`Router::start_causal`]).
+    CausalNotStarted(String),
     /// The envelope could not be written within the bounds its document
     /// declares — an event whose data is longer than an envelope carries.
     Encode(CodecError),
@@ -653,7 +894,12 @@ fn transmit(
     if peer.config.stamp_sequence {
         peer.next_sequence = peer.next_sequence.wrapping_add(1);
     }
-    Ok(match peer.outbound.admit(bytes, now_ms) {
+    Ok(dispatch(peer_name, peer, bytes, now_ms))
+}
+
+/// Hand written envelope `bytes` to `peer`'s send half.
+fn dispatch(peer_name: &str, peer: &mut Peer, bytes: Vec<u8>, now_ms: i64) -> Vec<Effect> {
+    match peer.outbound.admit(bytes, now_ms) {
         Admitted::Send(bytes) => alloc::vec![Effect::Transmit {
             peer: peer_name.to_string(),
             bytes,
@@ -663,7 +909,60 @@ fn transmit(
             peer: Some(peer_name.to_string()),
             signal,
         }],
-    })
+    }
+}
+
+/// Offer `envelope` to the causal layer of `peer` (docs/adr/0085, section 3,
+/// "offer and verdict"): the verdict is the host's to act on, and nothing
+/// leaves before the host commits an accepted change's journal record.
+fn offer(
+    peer_name: &str,
+    peer: &mut Peer,
+    envelope: Envelope<'_>,
+) -> Result<Vec<Effect>, RouterError> {
+    let layer = &mut causal_of(peer_name, peer)?.layer;
+    let verdict = layer
+        .offer(|tag| {
+            stamp(envelope, tag)
+                .map(|stamped| stamped.encode_to_vec())
+                .map_err(|_| RouterError::Encode(CodecError::CborOutOfRange))
+        })
+        .map_err(|error| match error {
+            OfferError::Build(error) => error,
+            OfferError::Rule(error) => RouterError::Rule(error),
+        })?;
+    Ok(alloc::vec![match verdict {
+        Verdict::Accepted(dot) => Effect::Accepted {
+            peer: peer_name.to_string(),
+            dot,
+        },
+        Verdict::Refused(refusal) => Effect::Refused {
+            peer: peer_name.to_string(),
+            refusal,
+        },
+    }])
+}
+
+/// The started causal layer of the causal peer `peer_name`.
+fn causal_of<'a>(peer_name: &str, peer: &'a mut Peer) -> Result<&'a mut Causal, RouterError> {
+    if peer.config.causal.is_none() {
+        return Err(RouterError::NotCausal(peer_name.to_string()));
+    }
+    peer.causal
+        .as_mut()
+        .ok_or_else(|| RouterError::CausalNotStarted(peer_name.to_string()))
+}
+
+/// The row an envelope of another epoch, or of a replica the view does not
+/// hold, raises.
+fn view_mismatch(source: String, epoch: u64, replica: Option<Replica>) -> Signal {
+    Signal::CausalViewMismatch {
+        source,
+        epoch,
+        replica: replica
+            .map(|replica| rpc::uuid_text(&replica.0))
+            .unwrap_or_default(),
+    }
 }
 
 /// The codec a payload of the sending engine's own `_event.data` text
@@ -756,6 +1055,7 @@ mod tests {
         responders: &["hmi"],
         deadline_ms: None,
         reply_events: &[],
+        causal: None,
     };
 
     const UNORDERED: PeerConfig = PeerConfig {
@@ -1501,5 +1801,345 @@ mod tests {
             ecu.invoke(&request, WIRE, [1; 16], 0, 0),
             Err(RouterError::MissingParam(MESH_EVENT_PARAM))
         );
+    }
+
+    // ── The causal route (docs/adr/0085, sections 3.2 and 9.2) ─────────
+
+    /// A causal group of three, every copy one machine `list` on its own
+    /// device; the binding `#people` is the group's route. Unbuffered, so a
+    /// release is transmitted at once.
+    const PEOPLE: PeerConfig = PeerConfig {
+        transport: "wss",
+        buffer: None,
+        retry: None,
+        stamp_sequence: false,
+        delivery: Delivery {
+            dedup: false,
+            ordered: false,
+        },
+        responders: &["people"],
+        deadline_ms: None,
+        reply_events: &[],
+        causal: Some(CausalGroup {
+            name: "people",
+            epoch: 0,
+            view: &["phone/list", "laptop/list", "tablet/list"],
+        }),
+    };
+
+    /// The copy of the list whose replica is `[n; 16]`, started.
+    fn copy(n: u8) -> Router {
+        let mut router = Router::new("list", 8, 50).unwrap();
+        router.add_peer("people", PEOPLE);
+        router
+            .start_causal("people", Start::NewIncarnation(Replica([n; 16])), 64, 100)
+            .expect("a causal peer starts");
+        router
+    }
+
+    /// The single dot an offer was accepted with.
+    fn accepted(effects: Result<Vec<Effect>, RouterError>) -> Dot {
+        match effects.unwrap().as_slice() {
+            [Effect::Accepted { peer, dot }] if peer == "people" => *dot,
+            other => panic!("expected one accepted change, got {other:?}"),
+        }
+    }
+
+    fn sent(effects: Result<Vec<Effect>, RouterError>) -> Vec<Vec<u8>> {
+        effects
+            .unwrap()
+            .into_iter()
+            .map(|effect| match effect {
+                Effect::Transmit { peer, bytes } if peer == "people" => bytes,
+                other => panic!("expected only transmissions, got {other:?}"),
+            })
+            .collect()
+    }
+
+    /// Write-ahead. Red if the router transmits a causal change when the
+    /// layer tags it: the send then leaves before the journal commit.
+    #[test]
+    fn a_causal_send_leaves_only_once_its_journal_record_is_committed() {
+        let mut phone = copy(1);
+        let mut laptop = copy(2);
+        let dot = accepted(phone.send(&request("#people", "edit", r#"{"n":1}"#), [9; 16], 0));
+        assert_eq!(dot.seq, 1);
+        let released = sent(phone.committed("people", dot, 0));
+        assert_eq!(released.len(), 1);
+        assert_eq!(
+            events(&laptop.receive("people", released[0].clone(), 0).unwrap()),
+            ["edit"]
+        );
+        // The same change again is dropped by its dot, not delivered twice.
+        assert!(laptop
+            .receive("people", released[0].clone(), 0)
+            .unwrap()
+            .is_empty());
+    }
+
+    /// A causal peer the host has not started is the host's error, and so is
+    /// starting a peer that is not causal.
+    #[test]
+    fn a_causal_peer_is_used_only_once_started() {
+        let mut router = Router::new("list", 8, 50).unwrap();
+        router.add_peer("people", PEOPLE);
+        router.add_peer("hmi", UNORDERED);
+        assert_eq!(
+            router.send(&request("#people", "edit", ""), [1; 16], 0),
+            Err(RouterError::CausalNotStarted("people".to_string()))
+        );
+        assert_eq!(
+            router.start_causal("hmi", Start::NewIncarnation(Replica([1; 16])), 8, 100),
+            Err(RouterError::NotCausal("hmi".to_string()))
+        );
+    }
+
+    /// Repair, on a link that comes back. Red if a peer that becomes ready
+    /// asks for no vector: the lost change then waits for the period.
+    #[test]
+    fn a_link_that_comes_back_sends_a_vector_and_repairs_what_was_lost() {
+        let mut phone = copy(1);
+        let mut laptop = copy(2);
+        let dot = accepted(phone.send(&request("#people", "edit", ""), [9; 16], 0));
+        let _lost = sent(phone.committed("people", dot, 0));
+        let effects = laptop.peer_ready("people", 10).unwrap();
+        assert!(
+            effects
+                .iter()
+                .any(|e| matches!(e, Effect::AnnounceDue { peer } if peer == "people")),
+            "{effects:?}"
+        );
+        let vector = sent(laptop.announce("people", [3; 16], 10));
+        assert_eq!(vector.len(), 1);
+        let answer = sent(phone.receive("people", vector[0].clone(), 10));
+        assert_eq!(answer.len(), 1);
+        assert_eq!(
+            events(&laptop.receive("people", answer[0].clone(), 10).unwrap()),
+            ["edit"]
+        );
+    }
+
+    /// The period. Red if the tick never asks for a vector: a member that
+    /// lost a change and whose links never drop is then never repaired.
+    #[test]
+    fn a_causal_peer_is_owed_a_vector_on_its_period() {
+        let mut phone = copy(1);
+        let due = |effects: Vec<Effect>| {
+            effects
+                .iter()
+                .any(|e| matches!(e, Effect::AnnounceDue { peer } if peer == "people"))
+        };
+        assert!(due(phone.tick(0).unwrap()));
+        let _ = phone.announce("people", [3; 16], 0).unwrap();
+        assert!(!due(phone.tick(99).unwrap()));
+        assert!(due(phone.tick(100).unwrap()));
+    }
+
+    /// The view. Red if the epoch check is removed: a change tagged with
+    /// another epoch is then delivered rather than raised as row 18.
+    #[test]
+    fn a_change_of_another_view_is_raised_and_not_delivered() {
+        let mut laptop = copy(2);
+        let envelope = Envelope {
+            id: (&[5u8; 16]).into(),
+            source: within("list").unwrap(),
+            event_type: within("edit").unwrap(),
+            pattern: PatternKind::FireForget,
+            datacontenttype: PayloadCodec::None,
+            ..Envelope::new()
+        };
+        let tag = crate::causal::Tag {
+            epoch: 1,
+            vector: alloc::vec![Replica([1; 16]).entry(1)],
+        };
+        let bytes = stamp(envelope, &tag).unwrap().encode_to_vec();
+        let effects = laptop.receive("people", bytes, 0).unwrap();
+        assert_eq!(
+            effects,
+            alloc::vec![Effect::Raise {
+                peer: Some("people".to_string()),
+                signal: Signal::CausalViewMismatch {
+                    source: "list".to_string(),
+                    epoch: 1,
+                    replica: rpc::uuid_text(&[1; 16]),
+                },
+            }]
+        );
+    }
+
+    /// A small deterministic generator for the world below.
+    struct Rng(u64);
+
+    impl Rng {
+        fn step(&mut self) -> u64 {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 7;
+            self.0 ^= self.0 << 17;
+            self.0
+        }
+
+        fn below(&mut self, n: usize) -> usize {
+            (self.step() % n as u64) as usize
+        }
+
+        fn chance(&mut self, percent: u64) -> bool {
+            self.step() % 100 < percent
+        }
+    }
+
+    /// Three copies of the list, the bytes in flight to each, and what each
+    /// has taken in: per author, how many of its changes.
+    struct World {
+        copies: Vec<Router>,
+        wire: Vec<(usize, Vec<u8>)>,
+        seen: [[u32; 3]; 3],
+        rng: Rng,
+        now: i64,
+        lossy: bool,
+    }
+
+    impl World {
+        /// Act on what copy `at` was told to do, as its host would.
+        fn act(&mut self, at: usize, effects: Result<Vec<Effect>, RouterError>) {
+            for effect in effects.expect("the router accepts what the world gives it") {
+                match effect {
+                    Effect::Transmit { bytes, .. } => {
+                        for to in (0..3).filter(|&to| to != at) {
+                            if self.lossy && self.rng.chance(30) {
+                                continue;
+                            }
+                            if self.lossy && self.rng.chance(10) {
+                                self.wire.push((to, bytes.clone()));
+                            }
+                            self.wire.push((to, bytes.clone()));
+                        }
+                    }
+                    Effect::Accepted { peer, dot } => {
+                        let released = self.copies[at].committed(&peer, dot, self.now);
+                        self.act(at, released);
+                    }
+                    Effect::AnnounceDue { peer } => {
+                        let id = [self.rng.step() as u8; 16];
+                        let announced = self.copies[at].announce(&peer, id, self.now);
+                        self.act(at, announced);
+                    }
+                    Effect::Deliver { data, .. } => self.take(at, &data),
+                    other => panic!("copy {at}: unexpected {other:?}"),
+                }
+            }
+        }
+
+        /// Copy `at` takes in the change `data` names: `<author> <n> <seen
+        /// of author 0> <of 1> <of 2>`, what its author had taken in when it
+        /// made it. It must be the author's next change, and everything its
+        /// author had taken in must be taken in here already.
+        fn take(&mut self, at: usize, data: &str) {
+            let fields: Vec<u32> = data
+                .split(' ')
+                .map(|field| field.parse().expect("a number"))
+                .collect();
+            let author = fields[0] as usize;
+            assert_eq!(
+                fields[1],
+                self.seen[at][author] + 1,
+                "copy {at} takes in {data} once and skips no gap"
+            );
+            for other in (0..3).filter(|&other| other != author) {
+                assert!(
+                    self.seen[at][other] >= fields[2 + other],
+                    "copy {at} takes in {data} before a change it depends on"
+                );
+            }
+            self.seen[at][author] = fields[1];
+        }
+
+        /// Copy `at` makes its next change.
+        fn make(&mut self, at: usize) {
+            let n = self.seen[at][at] + 1;
+            let [a, b, c] = self.seen[at];
+            let data = alloc::format!("{at} {n} {a} {b} {c}");
+            self.seen[at][at] = n;
+            let id = [self.rng.step() as u8; 16];
+            let effects = self.copies[at].send(&request("#people", "edit", &data), id, self.now);
+            self.act(at, effects);
+        }
+
+        fn deliver_one(&mut self) {
+            let index = self.rng.below(self.wire.len());
+            let (to, bytes) = self.wire.remove(index);
+            let effects = self.copies[to].receive("people", bytes, self.now);
+            self.act(to, effects);
+        }
+    }
+
+    /// The world. Three copies on links that lose, duplicate and reorder take
+    /// in every change exactly once, in an order that is a linear extension
+    /// of what each change's author had taken in, with no gap skipped, and
+    /// their logs drop to the stable cut once the links are quiet. Red if the
+    /// hold branch delivers, or if repair is removed (a lost change then
+    /// never arrives).
+    #[test]
+    fn three_copies_through_their_routers_take_in_every_change_once_in_causal_order() {
+        const CHANGES_EACH: u32 = 15;
+        for seed in [0x0BAD_5EED_u64, 0x0CA5_CADE, 0x00C0_FFEE] {
+            let mut world = World {
+                copies: (1..=3u8).map(copy).collect(),
+                wire: Vec::new(),
+                seen: [[0; 3]; 3],
+                rng: Rng(seed),
+                now: 0,
+                lossy: true,
+            };
+            while world
+                .seen
+                .iter()
+                .enumerate()
+                .any(|(at, s)| s[at] < CHANGES_EACH)
+                || !world.wire.is_empty()
+            {
+                world.now += 1;
+                match world.rng.below(10) {
+                    0..=2 => {
+                        let at = world.rng.below(3);
+                        if world.seen[at][at] < CHANGES_EACH {
+                            world.make(at);
+                        }
+                    }
+                    3 => {
+                        let at = world.rng.below(3);
+                        let now = world.now;
+                        let ticked = world.copies[at].tick(now);
+                        world.act(at, ticked);
+                    }
+                    _ => {
+                        if !world.wire.is_empty() {
+                            world.deliver_one();
+                        }
+                    }
+                }
+            }
+            world.lossy = false;
+            for _ in 0..20 {
+                world.now += 1;
+                for at in [0, 1, 2] {
+                    let id = [world.rng.step() as u8; 16];
+                    let now = world.now;
+                    let announced = world.copies[at].announce("people", id, now);
+                    world.act(at, announced);
+                }
+                while !world.wire.is_empty() {
+                    world.deliver_one();
+                }
+            }
+            for (at, (seen, router)) in world.seen.iter().zip(&world.copies).enumerate() {
+                assert_eq!(
+                    *seen, [CHANGES_EACH; 3],
+                    "seed {seed:#x}: copy {at} takes in every change"
+                );
+                let layer = router.causal_layer("people").unwrap();
+                assert_eq!(layer.held_len(), 0, "seed {seed:#x}: nothing held");
+                assert_eq!(layer.log_len(), 0, "seed {seed:#x}: the log is at the cut");
+            }
+        }
     }
 }

@@ -42,6 +42,7 @@ pub fn soft_peer() -> PeerConfig {
         responders: &[],
         deadline_ms: None,
         reply_events: &[],
+        causal: None,
     }
 }
 
