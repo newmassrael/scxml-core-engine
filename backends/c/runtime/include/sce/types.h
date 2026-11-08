@@ -77,6 +77,19 @@
 #define SCE_MAX_DATA_LEN 256
 #endif
 
+// The most bytes, its NUL not counted, of the data an event may carry into a
+// machine with no script engine when the machine's document declares no
+// schema for the event (docs/adr/0086, section 8.6 (c)): an event a host hands
+// it by name (`_raise_external_forwarded`, the inbox, a host-served send's
+// replies, a Mesh raise) and the end of a host-run invocation that declares no
+// result. Nothing in the document bounds such data, so the host ABI does: the
+// generator sizes every such machine's slot of `_event.data` to hold it, and
+// the machine asserts this number against what it was sized by. Data past the
+// machine's slot is refused whole, counted and raised, and never cut. An event
+// whose data is longer is declared by an event schema, whose largest payload
+// sizes the slot instead. Not a setting: a host that needs more declares it.
+#define SCE_UNTYPED_EVENT_DATA_MAX_LEN 255u
+
 // §scxml-5.10 _event.type — bounded by the spec's enumerated values
 // ("internal", "external", "platform"). 16 bytes leaves headroom for any
 // future additions without requiring a per-fixture override.
