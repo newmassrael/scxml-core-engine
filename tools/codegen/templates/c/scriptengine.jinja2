@@ -891,7 +891,7 @@
    once for every C11 machine. `out_refusal` is NULL when the value fits, else
    the sentence the caller raises. #}
 {% macro lua_eval_to_request_field(expr, field_type, out_buf, out_cap, out_refusal, record_as=none) %}
-    {{ out_refusal }} = "could not be evaluated";
+    {{ out_refusal }} = SCE_REQUEST_REFUSE_UNEVALUATED;
 {% if record_as %}
     if (luaL_dostring(sm->L,
         "local v = ({{ expr | to_lua_expr | escape_c }})\n"
