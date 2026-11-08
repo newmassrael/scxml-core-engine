@@ -25,9 +25,10 @@
 //
 // The file is BYTE-IDENTICAL across all 6 backends —
 // the symbol table is BTreeMap-sorted so iteration order is
-// deterministic, and `source_hash` delegates to
-// `forge::drift::compute_source_hash` so the value is provably equal
-// to the §synth-6.2.6 header. The runtime-level reverse-lookup
+// deterministic, and `source_hash` is taken from the header the caller's
+// `DriftContext` stamps (the input closure of the machine's document,
+// `forge::drift::InputClosure`), so the value is provably equal to the
+// §synth-6.2.6 header. The runtime-level reverse-lookup
 // (`sce-codegen addr2sce`) keys off this JSON.
 
 #[cfg(test)]

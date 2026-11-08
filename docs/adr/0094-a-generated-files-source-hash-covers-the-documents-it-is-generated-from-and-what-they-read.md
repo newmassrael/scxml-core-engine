@@ -454,6 +454,14 @@ documents, so a root covers nothing), and `committed_generated_files_carry_the_c
    Expected: the fixture's own units and in-line children in each tree, and the units of the documents that import
    or start it.
 
+Where the landing stands (2026-11-08): steps 1 and 2 and the documents of step 2 are written, with tests 1 to 8, 12,
+13, 15 and 16 (16 for the Rust `static_datamodel` tree and the trees `verify` already held); test 10 is the existing
+`a_hand_edit_fails_the_run_is_named_and_survives_it`. Not yet written: test 9, test 14 through `generate-w3c` (the
+set form is held at the library by `the_set_form_covers_its_directory_and_what_its_documents_reach`), the sibling
+cases of test 11 and test 17. Owner's answer 2 is not implemented: a child document a run writes is still seeded by
+its own bytes, which is sound but gives `verify` no document under a root to find; seeding it by the authored
+document needs the written child to record it. The regeneration of every committed tree is the main session's.
+
 ## Consequences
 
 - An edit to a document re-stamps the files whose closure holds it, in every tree, and no other file. A landing's

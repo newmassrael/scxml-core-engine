@@ -3245,10 +3245,11 @@ to its SCXML origin in a single structured file. Schema:
 `wcet_us` is present iff the source declares `<sce:wcet-bound>`
 (§5.A). The sourcemap travels alongside the generated library and
 is checked into version control with `out/`-equivalent provenance —
-never edited manually. Its `source_hash` MUST match the
-corresponding generated file's §6.2.6 header hash; mismatch is a
-build error. Like that header, it carries no template or generator
-hash (§6.2.6).
+never edited manually. Its `source_hash` is the §6.2.6 `source-hash`
+of the machines it maps when they share one, and otherwise the sha256 of
+their distinct hashes, sorted, one per line; a mismatch is a build
+error. Like that header, it carries no template or generator hash
+(§6.2.6).
 
 **Tooling — `addr2sce`.**
 
@@ -4151,15 +4152,30 @@ carries a header of the form:
 
 ```
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: <sha256 of sorted input SCXML + deploy.yaml>
+// source-hash: <sha256 of the file's input closure>
+// source: <document the file is generated from>
 ```
 
+The input closure of a set of documents is the smallest set of files
+that holds them and every file the generation of any member reads: its
+`<xi:include>` targets, its `<sce:use>` fragments, its `<sce:import>`
+targets, the documents its `<invoke>`s start by `src` or name in
+`sce:candidates`, and the standard documents it imports or starts; with
+`deploy.yaml` when the run is given one, and the limits the build runs
+under when any is moved. Each member is keyed by its path relative to the
+deepest directory that holds the documents and hashed by its raw bytes,
+and the entries are folded in key order. A file names each document it
+is generated from on a `source:` line; a file generated from every
+document of a directory names it as `./`, and its closure is the union
+of theirs (ADR 0094).
+
 The header states facts about the file's own inputs and none that can
-change while the file does not: no timestamp, no template or generator
-hash (both retired 2026-09). A run names its `generator` on its stdout
-manifest. Drift is judged on content: `--assert-unchanged` writes
-nothing and names each file on disk the generation would change;
-`verify` recomputes the `source-hash` alone; CI regenerates and diffs.
+change while the file does not: no other document, no timestamp, no
+template or generator hash (both retired 2026-09). A run names its
+`generator` on its stdout manifest. Drift is judged on content:
+`--assert-unchanged` writes nothing and names each file on disk the
+generation would change; `verify` recomputes each file's closure from its
+`source:` lines, without generating; CI regenerates and diffs.
 
 The policy: **manual edits to `out/` are forbidden**. When
 generated code falls short, the path forward is an SCE RFC (or

@@ -4,23 +4,35 @@
 //! Generated-source drift detection per spec §synth-6.2.6
 //! (`docs/spec/synth/rfc-sce-protocol-synthesis.md`).
 //!
-//! Every emitted file carries a 2-line header:
+//! Every emitted file carries a header:
 //!
 //! ```text
 //! // SCE-GENERATED — DO NOT EDIT
-//! // source-hash: <sha256 of sorted input SCXML + deploy.yaml>
+//! // source-hash: <sha256 of the file's input closure>
+//! // source: <document the file is generated from>
 //! ```
 //!
 //! The header states a fact about the file's own inputs and nothing that can
-//! change while the file does not. Drift is judged on content:
+//! change while the file does not. Its digest is the input closure of the
+//! documents the file is generated from ([`InputClosure`], ADR 0094): those
+//! documents and every file their generation reads, never a document it does
+//! not read. The `source:` lines name the documents, one per line, so the
+//! closure can be recomputed from the file alone. Drift is judged on content:
 //! `sce-codegen … --assert-unchanged` runs the generation in memory and names
 //! every file on disk that is not as it would leave it (see
 //! [`GeneratedTree`]). `sce-codegen verify <out-dir>` is the narrower check
-//! that needs no generation: it recomputes the `source-hash` and compares it
-//! with the embedded value, firing `forge/source-hash-mismatch`.
+//! that needs no generation: it recomputes each file's closure and compares
+//! its digest with the embedded value, firing `forge/source-hash-mismatch`.
 //!
 //! ## What the header does not carry
 //!
+//! - Another document. Until ADR 0094 the digest covered every `**/*.scxml`
+//!   under the input root, which for the `static_datamodel` trees was one
+//!   fixture directory: an edit to any fixture re-stamped 753 committed
+//!   files whose content did not change, and an import outside the root or a
+//!   fragment that is not `.scxml` moved output without moving the header.
+//!   The directory walk ([`SourceSet`]) stays as the start of the set form,
+//!   for a file really generated from every document of a directory.
 //! - A template or generator hash. Until 2026-09 it carried a
 //!   `template-hash` over the template tree and `Cargo.lock`, which was
 //!   wrong in both directions: an edit to the lock or to any template
@@ -47,9 +59,10 @@
 //! - Hash shape: BTreeMap<PathBuf, sha256(content)> 2-level hash.
 //!   Deterministic via BTreeMap iteration order; sub-file drift localization
 //!   debugging-friendly because each file's individual digest is recoverable.
-//! - Source set = recursive `**/*.scxml` from input root +
-//!   optional `deploy.yaml` raw bytes (pre-XInclude). XInclude expansion is
-//!   NOT applied — raw on-disk bytes drive the hash.
+//! - Input closure = the seeds and what their generation reads
+//!   ([`crate::import_closure::reads`]), optional `deploy.yaml`, and the
+//!   limits, each by its raw bytes (pre-XInclude). XInclude expansion is NOT
+//!   applied to the bytes hashed — raw on-disk bytes drive the hash.
 
 use crate::generator_witness::{hash_btreemap, hex_encode, sha256_bytes};
 use std::collections::{BTreeMap, BTreeSet};
