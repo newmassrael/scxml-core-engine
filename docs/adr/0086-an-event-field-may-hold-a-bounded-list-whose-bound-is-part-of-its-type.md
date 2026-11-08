@@ -878,12 +878,37 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
    refusal and a host's refusal are so sized; a deadline the host cannot read quotes the deadline's text, whose
    bound is the text expression's, and lands with (c).
 
-   **(c) Bounds for text expressions.** A text-valued expression carries a bound in type inference:
-   `InferredType::Str` gains its bound. The bound comes from a typed place (a variable or field of
-   `string[B]`), a literal's length, or a composition (a concatenation is the sum of its parts' bounds, a
-   choice the larger of its branches). The size calculus then computes the size of every literal send, typed
-   param, donedata and child send to `#_parent` (c3) as one more input of the slot. An expression whose bound
-   cannot be computed is refused by name on C11, never sized by a guess.
+   **(c) Bounds for text expressions (amended 2026-11-09, the owner's standing rule).** A text-valued
+   expression's bound is computed by an analysis of its own beside type inference, not carried in the type:
+   abstract interpretation with a second abstract domain, the lengths, over the same expression tree and the
+   same environment the inference reads. `InferredType` stays the type it is, `Copy` and `Eq`, and two
+   expressions of one type are of one type whatever their bounds. `sce-build/src/forge/text_bound.rs`
+   computes `text_bound(expr, env)`, the most bytes of the text the expression denotes: `Bounded(n)`, or
+   `Unbounded` with its reason, which names the subexpression that has none. The rules follow the lattice of
+   lengths:
+   - a typed place (a variable, a record's field, a field of `_event.data`, a loop's item) takes the `B` of
+     its `string[B]`, from `sce:capacity`, `sce:max-size` or the bracket;
+   - a string literal takes the bytes of the text it denotes, its escapes read;
+   - a concatenation takes the saturating sum of its operands', a conditional the larger of its branches';
+   - a number or a boolean read as text takes the longest text of its type, from one table (20 for an
+     `int64`, 25 for a real, 5 for a boolean);
+   - anything else is `Unbounded`, with the reason.
+
+   The analysis is one for every lane, and the C11 join of strings (`SCE_FORGE_CONCAT`) sizes its buffer by
+   it. The C11 size calculus is its first consumer: every `<send>` a `sce-static` machine lowers, whatever
+   it targets, and every `<donedata>`, is measured as the JSON it writes (a place at its type's `J`, a text
+   at the escapes of section 2.1 over its bound, a param's name and its grouping as the writer spells them),
+   and the largest is an input of the slot; a literal payload of any other machine is measured the same
+   way. A child's share of that, its sends to `#_parent` and its done data, is published by its header as
+   `<SM>_DATA_LEN_TO_PARENT`, and its parent's slot holds the largest of its children's (c3). The deadline
+   of a host-run invocation is quoted by its reason at the bound of its expression. An expression the
+   calculus needs whose bound is `Unbounded` is refused by name on C11, never sized by a guess.
+
+   *Why not a field of the type.* `InferredType::Str(bound)` with an equality that ignores the bound was
+   proposed and rejected: type identity and the abstraction of a value are separate domains, and an equality
+   that ignores a field is a false equality, which every comparison of types would then rely on (119 sites
+   name `InferredType::Str`). The textbook keeps a value's abstraction beside its type, as an interval
+   analysis keeps a number's range beside its width.
 
    **(d) Growable buffers for script machines.** On a machine with a script engine, the remaining buffers of
    event data grow in the engine's heap, through the machine's allocator, each with one owner: the scratch
