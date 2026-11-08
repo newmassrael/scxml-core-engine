@@ -73,17 +73,28 @@ impl Fixture {
     /// and whose `#motor` binding carries `binding` (each line indented for
     /// the binding's map), or the build's refusal as text.
     fn router(&self, transports: &str, binding: &str) -> Result<String, String> {
+        self.router_with(BRAKE_SCXML, transports, binding, "")
+    }
+
+    /// [`Self::router`] for the brake document `brake`, with `motor` added
+    /// to the motor's machine entry (each line indented for it).
+    fn router_with(
+        &self,
+        brake: &str,
+        transports: &str,
+        binding: &str,
+        motor: &str,
+    ) -> Result<String, String> {
         let deploy = format!(
             "version: \"1.0\"\ntopology:\n  ecu1:\n{transports}    machines:\n      brake:\n        \
              source: brake.scxml\n        bindings:\n          \"#motor\":\n{binding}{CAUSAL_KEYS}      \
-             motor:\n        source: motor.scxml\n"
+             motor:\n        source: motor.scxml\n{motor}"
         );
         let deploy_path = self.dir.join("deploy.yaml");
         fs::write(&deploy_path, deploy).expect("write deploy.yaml");
+        fs::write(self.dir.join("brake.scxml"), brake).expect("write brake");
         let mut parser = sce_build::parser::SCXMLParser::new();
-        let mut model = parser
-            .parse_string(BRAKE_SCXML, "brake")
-            .expect("parse brake");
+        let mut model = parser.parse_string(brake, "brake").expect("parse brake");
         let result = sce_build::compile_mesh_transport(&mut model, &deploy_path, Language::Cpp)
             .map_err(|error| error.to_string())?;
         Ok(result
@@ -224,4 +235,68 @@ fn a_causal_binding_over_someip_sends_its_vector_on_the_method_it_declares() {
         )
         .expect_err("a causal SOME/IP binding without its vector's method is refused");
     assert!(refused.contains("mesh.causal_vector"), "{refused}");
+}
+
+/// The brake as a pool sender: its change names the motor's instance in the
+/// `<param>` the binding's `instance_from:` reads.
+const BRAKE_POOL_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" name="brake" initial="idle">
+  <state id="idle">
+    <transition event="start" target="idle">
+      <send target="#motor" event="service.fire_forget.activate">
+        <param name="unit" expr="2"/>
+      </send>
+    </transition>
+  </state>
+</scxml>
+"##;
+
+#[test]
+fn a_causal_someip_pool_binding_sends_its_vector_to_each_members_instance() {
+    // docs/adr/0085, sections 3.2 and 3.3: a pool binding addresses a change
+    // to the instance its `<param>` names, and the route's vector and its
+    // repairs, which no document sends, to the instance of every view member
+    // the pool reaches, as the deploy places it. Red if the member's
+    // instance is dropped from the router, which leaves the vector to the
+    // `<param>` lookup it cannot satisfy.
+    let fx = Fixture::new("someip_pool");
+    let transports = "    transports:\n      someip:\n        config: vsomeip.json\n        \
+                      application_name: brake_app\n";
+    let binding = "            transport: someip\n            service: motor_control\n            \
+                   instances: [1, 2]\n            instance_from: unit\n            \
+                   events:\n              \"service.fire_forget.activate\":\n                \
+                   method: activate\n              \"mesh.causal_vector\":\n                \
+                   method: causal_vector\n";
+    let server = |instances: &str| {
+        format!(
+            "        server:\n          transport: someip\n          service: motor_control\n          \
+             instances: {instances}\n          events:\n            \
+             \"service.fire_forget.activate\":\n              method: activate\n            \
+             \"mesh.causal_vector\":\n              method: causal_vector\n"
+        )
+    };
+    let router = fx
+        .router_with(BRAKE_POOL_SCXML, transports, binding, &server("[2]"))
+        .expect("C++ routes a causal SOME/IP pool binding whose member serves one instance");
+    assert_routes_through_the_causal_route(&router);
+    for expected in [
+        "std::size_t sendCausalToPeers(",
+        "//   ecu1/motor -> instance 2",
+        "std::array<vsomeip::instance_t, 1> CAUSAL_POOL_INSTANCES_MOTOR = {\n    2",
+        "for (const vsomeip::instance_t instance : CAUSAL_POOL_INSTANCES_MOTOR) {",
+        "(void)sendCausalToPeers(target, answer);",
+        "(void)sendCausalToPeers(\"#motor\", *vector);",
+    ] {
+        assert!(router.contains(expected), "missing `{expected}`:\n{router}");
+    }
+
+    // A member serving two instances of the pool cannot be told apart.
+    let refused = fx
+        .router_with(BRAKE_POOL_SCXML, transports, binding, &server("[1, 2]"))
+        .expect_err("a member serving two pool instances is refused");
+    assert!(
+        refused.contains("cannot tell which one is the member"),
+        "{refused}"
+    );
 }

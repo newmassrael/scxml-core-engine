@@ -5903,6 +5903,9 @@ fn validate_delivery(cfg: &DeployConfig) -> Result<(), DeployError> {
                         {
                             return Err(conflict(machine_name, target, reason));
                         }
+                        if let Err(reason) = causal_pool_members(cfg, target, binding) {
+                            return Err(conflict(machine_name, target, reason));
+                        }
                         let here = format!("{this_instance} `{target}`");
                         match groups.get(group.name.as_str()) {
                             Some((view, first)) if *view != group.view.as_slice() => {
@@ -5943,6 +5946,99 @@ fn validate_delivery(cfg: &DeployConfig) -> Result<(), DeployError> {
         }
     }
     Ok(())
+}
+
+/// One member of a causal group that a causal SOME/IP pool binding reaches,
+/// and the pool instance that member is.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct CausalPoolMember {
+    /// The member as the view names it, `<device>/<machine>`.
+    pub member: String,
+    /// The SOME/IP instance id the member serves.
+    pub instance: u16,
+}
+
+/// The view members a causal SOME/IP pool binding (`instances:` with
+/// `instance_from:`) reaches, each with its pool instance, in the view's
+/// order; empty for any other binding.
+///
+/// A pool binding addresses each message to one instance, chosen by the
+/// document's `<param>` for a change. A causal route also sends what no
+/// document sends: its vector, to every member of the view, and a repair
+/// (docs/adr/0085, sections 3.2 and 3.3). The view names members as
+/// `<device>/<machine>`, so the deploy tells which instance a member is by
+/// what that machine serves on that device: a `server:` over SOME/IP with
+/// exactly one instance, one of the binding's `instances:`. A member the
+/// deploy cannot place so is the reason returned, and the deploy is refused.
+/// View members of another machine than the target are not in the pool.
+pub fn causal_pool_members(
+    cfg: &DeployConfig,
+    target: &str,
+    binding: &BindingConfig,
+) -> Result<Vec<CausalPoolMember>, String> {
+    let (Some(group), Some(pool)) = (binding.group.as_ref(), binding.instances.as_ref()) else {
+        return Ok(Vec::new());
+    };
+    if binding.delivery != Some(DeliveryMode::Causal) || binding.transport != "someip" {
+        return Ok(Vec::new());
+    }
+    let peer = target.trim_start_matches('#');
+    let mut members = Vec::new();
+    for member in &group.view {
+        let Some((device_name, machine_name)) = member.split_once('/') else {
+            continue;
+        };
+        if machine_name != peer {
+            continue;
+        }
+        let served = cfg
+            .topology
+            .get(device_name)
+            .and_then(|device| device.machines.get(machine_name))
+            .and_then(|machine| machine.server.as_ref())
+            .filter(|server| server.transport == "someip")
+            .and_then(|server| server.instances.as_deref());
+        match served {
+            Some([instance]) if pool.contains(instance) => members.push(CausalPoolMember {
+                member: member.clone(),
+                instance: *instance,
+            }),
+            Some([instance]) => {
+                return Err(format!(
+                    "binding `{target}` is a causal SOME/IP pool over the instances {pool:?}, and \
+                     the view member '{member}' serves instance {instance}, which the pool does \
+                     not hold. Add {instance} to the binding's `instances:` or serve one of \
+                     them on '{member}'."
+                ));
+            }
+            Some(many) => {
+                return Err(format!(
+                    "binding `{target}` is a causal SOME/IP pool, and the view member '{member}' \
+                     serves the {} instances {many:?}, so the deploy cannot tell which one is the \
+                     member. A causal route sends its vector to every member's instance; serve \
+                     exactly one instance on '{member}' (`server: {{ instances: [<id>] }}`).",
+                    many.len()
+                ));
+            }
+            None => {
+                return Err(format!(
+                    "binding `{target}` is a causal SOME/IP pool, and the view member '{member}' \
+                     declares no SOME/IP `server:` with its instance, so the deploy cannot tell \
+                     which instance of the pool it is. A causal route sends its vector to every \
+                     member's instance; declare `server: {{ transport: someip, instances: [<id>] \
+                     }}` for '{member}'."
+                ));
+            }
+        }
+    }
+    if members.is_empty() {
+        return Err(format!(
+            "binding `{target}` is a causal SOME/IP pool, and its group's view names no \
+             instance of '{peer}', so the route has no member to send its vector to. Name the \
+             members of the pool in the view as `<device>/{peer}`."
+        ));
+    }
+    Ok(members)
 }
 
 /// Why a causal shm binding and its peer's causal binding back cannot share
@@ -9708,6 +9804,65 @@ topology:
                 assert!(reason.contains("`shm_arena_bytes`"), "{reason}");
             }
             other => panic!("expected DeliveryConflict, got {other:?}"),
+        }
+    }
+
+    /// The brake's causal SOME/IP pool binding to the motor, whose machine on
+    /// ecu2 serves `server` (a YAML value or nothing).
+    fn causal_someip_pool(server: &str) -> String {
+        format!(
+            "version: \"1.0\"\ntopology:\n  ecu1:\n    machines:\n      brake:\n        \
+             source: brake.scxml\n        bindings:\n          \"#motor\":\n            \
+             transport: someip\n            service: motor_control\n            \
+             instances: [1, 2]\n            instance_from: unit\n            \
+             delivery: causal\n            group: {{ name: pair, view: [ecu1/brake, ecu2/motor] }}\n  \
+             ecu2:\n    machines:\n      motor:\n        source: motor.scxml\n{server}"
+        )
+    }
+
+    #[test]
+    fn a_causal_someip_pool_binding_places_each_member_on_its_instance() {
+        // docs/adr/0085, sections 3.2 and 3.3: the route's vector goes to the
+        // instance of every view member the pool reaches, which is the one
+        // instance the member's machine serves. Red if a member serving
+        // several instances, or none, is placed anyway, or if a member is
+        // placed on another instance than the one it serves.
+        let one = causal_someip_pool(
+            "        server: { transport: someip, service: motor_control, instances: [2] }\n",
+        );
+        let cfg = parse_deploy_str(&one).expect("a member serving one pool instance");
+        let binding =
+            &cfg.topology["ecu1"].machines["brake"].bindings[&TargetId::new("#motor").unwrap()];
+        assert_eq!(
+            causal_pool_members(&cfg, "#motor", binding),
+            Ok(vec![CausalPoolMember {
+                member: "ecu2/motor".to_string(),
+                instance: 2,
+            }])
+        );
+        for (server, says) in [
+            (
+                "        server: { transport: someip, service: motor_control, instances: [1, 2] }\n",
+                "cannot tell which one is the member",
+            ),
+            ("", "declares no SOME/IP `server:`"),
+            (
+                "        server: { transport: someip, service: motor_control, instances: [7] }\n",
+                "which the pool does not hold",
+            ),
+        ] {
+            match parse_deploy_str(&causal_someip_pool(server)) {
+                Err(DeployError::DeliveryConflict {
+                    machine,
+                    target,
+                    reason,
+                }) => {
+                    assert_eq!(machine, "brake");
+                    assert_eq!(target, "#motor");
+                    assert!(reason.contains(says), "{reason}");
+                }
+                other => panic!("expected DeliveryConflict for {server:?}, got {other:?}"),
+            }
         }
     }
 
