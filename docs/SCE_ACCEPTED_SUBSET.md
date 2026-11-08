@@ -540,8 +540,8 @@ generation refuses one by name (`generate/unsupported-feature`). C++ generates a
 (`docs/SCE_TEST_PROFILE.md` §11.9), and refuses one whose type reaches a union at any
 depth by the union's own refusal (`generate/unsupported-feature`). Rust and Kotlin
 generate a template too, one whose type reaches a union among them, a `union-match`
-holding where the union is in the case its `variant` names. Go generates a template
-too, and refuses one whose type reaches a union as C++ does. C++ generates a test
+holding where the union is in the case its `variant` names. Go and Python generate a
+template too, and refuse one whose type reaches a union as C++ does. C++ generates a test
 component, its machine driven by the profile's runtime through the doors of
 `docs/SCE_TEST_PROFILE.md` §12.3, each module parameter read from the run before the
 machine starts, and refuses, with `generate/unsupported-feature`, one that uses a template
