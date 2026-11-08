@@ -42,8 +42,8 @@ PY
 
 mutation_case "an internal computed name is looked up in the exact table again" <<'PY'
 edit("tools/codegen/templates/python/actions/send.py.jinja2",
-     "{{ indent }}_evt = self.resolve_event_by_name(_evt_name)\n{{ indent }}if _evt is not None:\n{% if has_payload %}\n{{ indent }}    engine.raise_internal(_evt, EventMetadata(data=_data, name=",
-     "{{ indent }}_evt = self.get_event_from_name(_evt_name)\n{{ indent }}if _evt is not None:\n{% if has_payload %}\n{{ indent }}    engine.raise_internal(_evt, EventMetadata(data=_data, name=")
+     "{{ indent }}_evt = self.resolve_event_by_name(_evt_name)\n{{ indent }}if _evt is not None:\n{{ indent }}    engine.raise_internal(_evt, EventMetadata(data=_data, name=",
+     "{{ indent }}_evt = self.get_event_from_name(_evt_name)\n{{ indent }}if _evt is not None:\n{{ indent }}    engine.raise_internal(_evt, EventMetadata(data=_data, name=")
 PY
 
 mutation_case "an immediate external send does not carry the name it was sent under" <<'PY'

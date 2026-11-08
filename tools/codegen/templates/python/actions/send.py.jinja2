@@ -435,13 +435,14 @@
 {{ indent }}engine.schedule_routed_send({{ machine_name }}Event.{{ action.event | to_python_const }}, {{ delay_py }}, _sid, _data, "internal")
 {% endif %}
 {% elif dyn_event %}
+{# §scxml-5.10: one statement for a send with a payload and one without. `_data`
+   is assigned on every path above, the empty string when the send names no
+   payload, which is also what `EventMetadata.data` holds when it is not given,
+   so a second statement leaving `data` out would only be a site of its own that
+   the documents reach instead of this one. #}
 {{ indent }}_evt = self.resolve_event_by_name(_evt_name)
 {{ indent }}if _evt is not None:
-{% if has_payload %}
 {{ indent }}    engine.raise_internal(_evt, EventMetadata(data=_data, name=engine.arrival_name_of(_evt, _evt_name)))
-{% else %}
-{{ indent }}    engine.raise_internal(_evt, EventMetadata(name=engine.arrival_name_of(_evt, _evt_name)))
-{% endif %}
 {% elif has_payload %}
 {{ indent }}engine.raise_internal({{ machine_name }}Event.{{ action.event | to_python_const }}, EventMetadata(data=_data))
 {% else %}
