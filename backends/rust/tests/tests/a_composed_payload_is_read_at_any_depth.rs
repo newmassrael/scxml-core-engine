@@ -102,3 +102,43 @@ fn the_refusal_names_the_path_to_the_place() {
         "'items/1/tags' holds 5 elements, past the 4 its type declares"
     );
 }
+
+/// Every bound of the schema is held where the delivery is read (docs/adr/0086,
+/// section 4.4): a text and a byte string inside an element, the top-level text,
+/// and the count of the top-level list, each one past its bound in a delivery
+/// otherwise full, refused whole with the path to the place.
+#[test]
+fn every_bound_of_the_schema_is_held_where_the_delivery_is_read() {
+    let full = batch(4);
+    let cases = [
+        (
+            full.replacen("\"label\":\"abcdefgh\"", "\"label\":\"abcdefghi\"", 1),
+            "'items/0/label' is 9 bytes, past the 8 its type declares",
+        ),
+        (
+            full.replacen("\"blob\":\"wxyz\"", "\"blob\":\"vwxyz\"", 1),
+            "'items/0/blob' is 5 bytes, past the 4 its type declares",
+        ),
+        (
+            full.replacen("\"note\":\"abcd\"", "\"note\":\"abcde\"", 1),
+            "'note' is 5 bytes, past the 4 its type declares",
+        ),
+        (
+            full.replacen("\"items\":[", &format!("\"items\":[{},", item(0, 1)), 1),
+            "'items' holds 4 elements, past the 3 its type declares",
+        ),
+    ];
+    for (delivery, reason) in &cases {
+        assert_ne!(delivery, &full, "the case changes the delivery: {reason}");
+        let mut policy = StaticComposedPayloadPolicy::new();
+        let refusal = policy
+            .lift_event_payload(StaticComposedPayloadEvent::BatchSent, delivery)
+            .expect_err(reason);
+        assert_eq!(refusal.reason(), *reason);
+        // Refused whole: the machine runs none of the content.
+        let mut engine = machine();
+        deliver(&mut engine, delivery);
+        assert_eq!(engine.policy().refusals(), 1, "{reason}");
+        assert_eq!(engine.policy().item_count(), 0, "{reason}");
+    }
+}
