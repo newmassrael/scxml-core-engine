@@ -4198,6 +4198,27 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise_external_forwarded({{ csy
 
 {% if model.needs_event_scheduler %}
 /* ── W3C SCXML 6.2: Delayed-send queue helpers ────────────────────── */
+{% if model.needs_script_engine %}
+
+/* docs/adr/0086, section 8.5 (a): free every text the scheduled entry `entry`
+   owns and clear it, the one rule each holder that drops or empties an entry
+   follows: the payload its event carries{% if model.has_delayed_host_send %}, and a delayed host-served send's
+   content, event data and pair values{% endif %}. A holder already
+   released frees nothing. */
+SCE_SM_FN static void scheduled_entry_release({{ csym_prefix }}{{ model.name }}_t *sm,
+                                              {{ csym_prefix }}{{ model.name }}_scheduled_entry_t *entry) {
+    event_text_free(sm, &entry->data, &entry->data_size);
+{% if model.has_delayed_host_send %}
+    event_text_free(sm, &entry->host_content, &entry->host_content_size);
+    event_text_free(sm, &entry->host_event_data, &entry->host_event_data_size);
+{% if model.delayed_host_send_max_params > 0 %}
+    for (uint8_t _p = 0u; _p < (uint8_t){{ model.delayed_host_send_max_params }}; ++_p) {
+        event_text_free(sm, &entry->host_param_values[_p], &entry->host_param_value_sizes[_p]);
+    }
+{% endif %}
+{% endif %}
+}
+{% endif %}
 
 {# Sorted insert keyed on `fire_time_ms`. cpp `SchedulerQueueCore` uses a
    `std::map` whose ordering key is `(fireTime, sequenceNum)`; the C11
@@ -4335,17 +4356,52 @@ SCE_SM_FN static SCE_C_UNUSED void scheduled_push_routed({{ csym_prefix }}{{ mod
    document computed here — and most of them are stack arrays inside the
    `<send>` block, which is gone long before the deadline.
 
+{% if model.needs_script_engine %}
+   The content, the event data and each pair's value are texts the script
+   engine computed, which no type bounds, so each is copied into storage the
+   engine's allocator gives and is never cut (docs/adr/0086, section 8.5 (a)).
+   An identifier or the target too long for its slot is truncated, matching
+   `sce_copy_bounded_id`'s contract everywhere else in this file. */
+{% else %}
    A field too long for its slot is truncated rather than dropped, matching
    `sce_copy_bounded_id`'s contract everywhere else in this file; the
    bounds are SCE_MAX_ID_LEN / SCE_MAX_URI_LEN / {{ data_slot.name }}, the same
-   ones every other carried string in the generated machine uses. */
+   ones every other carried string in the generated machine uses. The
+   content, the event data and each pair's value were written into the
+   machine's scratch of that same size, so they are never cut here. */
+{% endif %}
 SCE_SM_FN static SCE_C_UNUSED void scheduled_push_host({{ csym_prefix }}{{ model.name }}_t *sm,
                            uint64_t fire_time_ms,
                            const char *send_id,
                            const sce_host_send_request_t *request) {
+{% if model.needs_script_engine %}
+    /* docs/adr/0086, section 8.5 (a): the texts a script engine computed are
+       copied into storage its allocator gives before a place is reserved, in
+       an entry of their own, so a send the allocator cannot hold is refused
+       whole and raises error.execution, and a full queue frees what was taken.
+       Nothing is cut. */
+    {{ csym_prefix }}{{ model.name }}_scheduled_entry_t taken;
+    memset(&taken, 0, sizeof(taken));
+    bool held = event_text_take(sm, request->content, &taken.host_content, &taken.host_content_size) &&
+                event_text_take(sm, request->event_data, &taken.host_event_data, &taken.host_event_data_size);
+{% if model.delayed_host_send_max_params > 0 %}
+    for (int _p = 0; held && _p < request->param_count && _p < {{ model.delayed_host_send_max_params }}; ++_p) {
+        held = event_text_take(sm, request->params[_p].value, &taken.host_param_values[_p],
+                               &taken.host_param_value_sizes[_p]);
+    }
+{% endif %}
+    if (!held) {
+        scheduled_entry_release(sm, &taken);
+        refuse_event_data(sm, NULL);
+        return;
+    }
+{% endif %}
     {{ csym_prefix }}{{ model.name }}_scheduled_entry_t *slot = scheduled_reserve(
         sm, fire_time_ms, "the scheduled-send queue is full, so this <send delay> was dropped");
     if (slot == NULL) {
+{% if model.needs_script_engine %}
+        scheduled_entry_release(sm, &taken);
+{% endif %}
         return;
     }
     slot->event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE;
@@ -4354,15 +4410,28 @@ SCE_SM_FN static SCE_C_UNUSED void scheduled_push_host({{ csym_prefix }}{{ model
     sce_copy_bounded_id(slot->host_processor_type, request->processor_type);
     sce_copy_bounded_id(slot->host_event_name, request->event_name);
     sce_copy_bounded_n(slot->host_target, request->target, sizeof(slot->host_target));
+{% if model.needs_script_engine %}
+    /* Moved from `taken`, which keeps nothing. */
+    slot->host_content = taken.host_content;
+    slot->host_content_size = taken.host_content_size;
+    slot->host_event_data = taken.host_event_data;
+    slot->host_event_data_size = taken.host_event_data_size;
+{% else %}
     sce_copy_bounded_n(slot->host_content, request->content, sizeof(slot->host_content));
     sce_copy_bounded_n(slot->host_event_data, request->event_data, sizeof(slot->host_event_data));
+{% endif %}
     sce_copy_bounded_id(slot->host_invoke_id, request->invoke_id);
 {% if model.delayed_host_send_max_params > 0 %}
     slot->host_param_count = 0;
     for (int _p = 0; _p < request->param_count && _p < {{ model.delayed_host_send_max_params }}; ++_p) {
         sce_copy_bounded_id(slot->host_param_names[_p], request->params[_p].name);
+{% if model.needs_script_engine %}
+        slot->host_param_values[_p] = taken.host_param_values[_p];
+        slot->host_param_value_sizes[_p] = taken.host_param_value_sizes[_p];
+{% else %}
         sce_copy_bounded_n(slot->host_param_values[_p], request->params[_p].value,
                            sizeof(slot->host_param_values[_p]));
+{% endif %}
         slot->host_param_count++;
     }
 {% endif %}
@@ -4386,8 +4455,8 @@ SCE_SM_FN static bool scheduled_pop_ready({{ csym_prefix }}{{ model.name }}_t *s
 
 {% if model.needs_script_engine %}
     /* docs/adr/0086, section 8.5 (a): `out` is the machine's, and what it held
-       was handed on when it was delivered; the entry moves its text into it. */
-    event_text_free(sm, &out->data, &out->data_size);
+       was handed on when it was delivered; the entry moves its texts into it. */
+    scheduled_entry_release(sm, out);
 {% endif %}
     *out = sm->scheduled_queue.buf[0];
     for (uint8_t k = 1; k < sm->scheduled_queue.count; ++k) {
@@ -4428,9 +4497,9 @@ SCE_SM_FN static SCE_C_UNUSED void scheduled_cancel({{ csym_prefix }}{{ model.na
             pos++;
 {% if model.needs_script_engine %}
         } else {
-            /* docs/adr/0086, section 8.5 (a): a cancelled entry's text is
+            /* docs/adr/0086, section 8.5 (a): a cancelled entry's texts are
                freed here, before a later entry is moved over it. */
-            event_text_free(sm, &sm->scheduled_queue.buf[i].data, &sm->scheduled_queue.buf[i].data_size);
+            scheduled_entry_release(sm, &sm->scheduled_queue.buf[i]);
 {% endif %}
         }
     }
@@ -5522,16 +5591,29 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
             sce_host_send_param_t _ready_params[{{ model.delayed_host_send_max_params }}];
             for (uint8_t _p = 0; _p < ready->host_param_count; ++_p) {
                 _ready_params[_p].name = ready->host_param_names[_p];
+{% if model.needs_script_engine %}
+                /* An owned text, or none: a request carries a text. */
+                _ready_params[_p].value = ready->host_param_values[_p] != NULL ? ready->host_param_values[_p] : "";
+{% else %}
                 _ready_params[_p].value = ready->host_param_values[_p];
+{% endif %}
             }
 {% endif %}
             sce_host_send_request_t _ready_req;
             _ready_req.processor_type = ready->host_processor_type;
             _ready_req.event_name = ready->host_event_name;
             _ready_req.target = ready->host_target;
+{% if model.needs_script_engine %}
+            _ready_req.content = ready->host_content != NULL ? ready->host_content : "";
+{% else %}
             _ready_req.content = ready->host_content;
+{% endif %}
             _ready_req.send_id = ready->send_id;
+{% if model.needs_script_engine %}
+            _ready_req.event_data = ready->host_event_data != NULL ? ready->host_event_data : "";
+{% else %}
             _ready_req.event_data = ready->host_event_data;
+{% endif %}
             _ready_req.invoke_id = ready->host_invoke_id;
             /* A delayed send carries no value: a test-port send has none of
                a delay (docs/SCE_TEST_PROFILE.md, P6). */
@@ -5702,7 +5784,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.
        to a queue that took its text or as a view the receiver copied, so what
        it still holds is freed here and the machine keeps no text past the
        tick that delivered it. */
-    event_text_free(sm, &ready->data, &ready->data_size);
+    scheduled_entry_release(sm, ready);
 {% endif %}
 
     {{ csym_prefix }}{{ model.name }}_step(sm);
@@ -6392,7 +6474,7 @@ SCE_SM_FN static void drop_host_invoke_deadline({{ csym_prefix }}{{ model.name }
             /* A deadline carries no data; freeing what it holds keeps every
                dropped entry's text freed by one rule (docs/adr/0086, section
                8.5 (a)). */
-            event_text_free(sm, &sm->scheduled_queue.buf[i].data, &sm->scheduled_queue.buf[i].data_size);
+            scheduled_entry_release(sm, &sm->scheduled_queue.buf[i]);
 {% endif %}
         }
     }
@@ -7682,10 +7764,10 @@ SCE_SM_FN static void release_owned_event_texts({{ csym_prefix }}{{ model.name }
     event_text_free(sm, &sm->current_external.data, &sm->current_external.data_size);
 {% if model.needs_event_scheduler %}
     for (uint8_t i = 0u; i < sm->scheduled_queue.count; ++i) {
-        event_text_free(sm, &sm->scheduled_queue.buf[i].data, &sm->scheduled_queue.buf[i].data_size);
+        scheduled_entry_release(sm, &sm->scheduled_queue.buf[i]);
     }
     sm->scheduled_queue.count = 0u;
-    event_text_free(sm, &sm->ready_entry.data, &sm->ready_entry.data_size);
+    scheduled_entry_release(sm, &sm->ready_entry);
 {% endif %}
 #if SCE_MAX_INBOX > 0
     while (sce_inbox_take(&sm->inbox, (unsigned char *)sm->inbox_slots, sizeof(sm->inbox_slots[0]),
