@@ -2536,12 +2536,33 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
    docs/adr/0086, section 8.5 (a): the entry owns a copy of the event's data,
    and an event whose data does not fit the slot is refused as a full queue
    refuses one, never cut. #}
-SCE_SM_FN static void event_queue_push({{ csym_prefix }}{{ model.name }}_event_queue_t *q,
+/* docs/adr/0086, section 8.5 (b): an event whose data does not fit the slot is
+   refused whole and never silently: counted (`_refused_event_data`), and raised
+   as error.execution where the document declares it, whose reason is a literal
+   that fits any slot. `event` is the event refused, NULL for one whose name
+   names none of this machine's events. */
+SCE_SM_FN static void refuse_event_data({{ csym_prefix }}{{ model.name }}_t *sm,
+                                        const {{ csym_prefix }}{{ model.name }}_event_t *event) {
+    sm->refused_event_data++;
+    if (event != NULL) {
+        sm->last_refused_event_data = *event;
+        sm->has_refused_event_data = true;
+    }
+{% if 'error.execution' in model.events %}
+    {{ csym_prefix }}{{ model.name }}_raise_platform_error(
+        sm, {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION,
+        "an event's data does not fit this machine's slot of _event.data, so the event was refused");
+{% endif %}
+}
+
+SCE_SM_FN static void event_queue_push({{ csym_prefix }}{{ model.name }}_t *sm,
+                             {{ csym_prefix }}{{ model.name }}_event_queue_t *q,
                              const {{ csym_prefix }}{{ model.name }}_event_with_meta_t *evt) {
     if (q->count >= (uint16_t)SCE_MAX_EVENTS) {
         return;
     }
     if (!{{ csym_prefix }}{{ model.name }}_event_keep(&q->buf[q->tail], evt)) {
+        refuse_event_data(sm, &evt->event);
         return;
     }
     q->tail = (uint16_t)((q->tail + 1u) % (uint16_t)SCE_MAX_EVENTS);
@@ -3899,7 +3920,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise({{ csym_prefix }}{{ model
         }
     }
 {% endif %}
-    event_queue_push(&sm->internal_queue, evt);
+    event_queue_push(sm, &sm->internal_queue, evt);
 }
 
 SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise_external({{ csym_prefix }}{{ model.name }}_t *sm,
@@ -3924,7 +3945,7 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_raise_external({{ csym_prefix }
        a push. `_raise` does not drain: the internal queue is the running
        macrostep's own, and arrival order is the external queue's. */
     drain_inbox(sm);
-    event_queue_push(&sm->external_queue, evt);
+    event_queue_push(sm, &sm->external_queue, evt);
 }
 
 {% if event_payload_active %}
@@ -6450,8 +6471,12 @@ SCE_SM_FN static bool end_host_invoke({{ csym_prefix }}{{ model.name }}_t *sm, c
         return false;
     }
     /* docs/adr/0086, section 8.5 (b): data the machine's slot cannot hold is
-       refused whole, before the invocation is ended, rather than cut. */
+       refused whole, before the invocation is ended, rather than cut: counted
+       and raised as error.execution (`refuse_event_data`), and the host is told
+       by the false it is answered. The invocation runs on, so a host may end it
+       again with data that fits. */
     if (data != NULL && strlen(data) >= sizeof(sm->current_external.data)) {
+        refuse_event_data(sm, NULL);
         return false;
     }
     if (!sce_host_invocation_take_token(&sm->started_host_invokes, processor_type, invoke_id, token)) {
@@ -6550,6 +6575,22 @@ SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_last_discarded_event(const {{ c
         return false;
     }
     *out = sm->last_discarded_event;
+    return true;
+}
+
+/* docs/adr/0086, section 8.5 (b): events refused whole because their data did
+   not fit the slot. */
+SCE_SM_FN uint32_t {{ csym_prefix }}{{ model.name }}_refused_event_data(const {{ csym_prefix }}{{ model.name }}_t *sm) {
+    return (sm == NULL) ? 0u : sm->refused_event_data;
+}
+
+/* Which event the count above last recorded. */
+SCE_SM_FN bool {{ csym_prefix }}{{ model.name }}_last_refused_event_data(const {{ csym_prefix }}{{ model.name }}_t *sm,
+                            {{ csym_prefix }}{{ model.name }}_event_t *out) {
+    if (sm == NULL || out == NULL || !sm->has_refused_event_data) {
+        return false;
+    }
+    *out = sm->last_refused_event_data;
     return true;
 }
 
