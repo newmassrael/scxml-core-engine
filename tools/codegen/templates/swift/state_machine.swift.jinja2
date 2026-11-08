@@ -4,6 +4,7 @@
 {% include 'license_header.swift.jinja2' %}
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
 {%- import '_macros/swift_entry_target.jinja2' as et %}
+{%- from '_macros/swift_saved_value.jinja2' import saved_present %}
 
 // Generated Swift state machine for `{{ model.name }}`.
 //
@@ -271,6 +272,26 @@ public final class {{ machine_name }}Policy: InvocablePolicy {
         }
         return context
     }
+{% if model.test_component.module_parameters %}
+{% set parameter_fields = static_fields | selectattr('module_parameter') | list %}
+
+    /// docs/SCE_TEST_PROFILE.md §11.5, §11.8: each module parameter takes the value the suite
+    /// gives it, read as a saved value of its declared type is read back (`SavedValues`), before
+    /// the machine is built. Called by the component the profile's runtime drives
+    /// (`{{ machine_name }}Component`). Every value is read before any is written, so a refused
+    /// read leaves every variable as it was.
+    ///
+    /// - Throws: `StateRefusal` naming the module parameter whose value is not given, not of its
+    ///   type or past its bound; nothing is converted.
+    fileprivate func sceAcceptModuleParameters(_ given: {{ test_runtime }}.ModuleParameters) throws {
+{% for field in parameter_fields %}
+        let value{{ loop.index0 }} = {{ saved_present(field.saved_type, 'enum' if field.saved_kind == 'enum' else 'scalar', 'try given.of("' ~ (field.id | escape_swift) ~ '")', '"' ~ (field.id | escape_swift) ~ '"', field.bound) }}
+{% endfor %}
+{% for field in parameter_fields %}
+        {{ field.name }} = value{{ loop.index0 }}
+{% endfor %}
+    }
+{% endif %}
 {% endif %}
 {% if has_native_actions %}
 
@@ -297,9 +318,19 @@ public final class {{ machine_name }}Policy: InvocablePolicy {
 {# Module-internal, not private: no host outside the module reads a variable that is
    not published, and a test of the machine (`@testable import`) reads them all, as
    the Go driver reads an unexported field. #}
+{# docs/SCE_TEST_PROFILE.md §11.5: a module parameter has no initial value of
+   its document's; the component reads the run's value into it before the
+   machine is built, so it starts at a value nothing reads
+   (`module_parameter_starts`: its type's zero, or an enum's first variant). #}
 {% for field in static_fields %}
+{% if field.module_parameter %}
+    /// docs/SCE_TEST_PROFILE.md §11.5: the module parameter `{{ field.id }}`, which takes the suite's value
+    /// before the machine is built{% if field.published %}, published (`sce:direction="out"`){% endif %}.
+    var {{ field.name }}: {{ field.ty }} = {{ module_parameter_starts[field.id] }}
+{% else %}
     /// W3C SCXML 5.2: the `{{ field.id }}` datamodel variable{% if field.published %}, published (`sce:direction="out"`){% endif %}.
     var {{ field.name }}: {{ field.ty }} = {{ field.init }}
+{% endif %}
 {% endfor %}
 {% for field in static_published %}
 {% if field.reader %}
@@ -721,6 +752,15 @@ public final class {{ machine_name }}Component: {{ test_runtime }}.ComponentMach
             preconditionFailure("a test component's name is an XML Name, which names a session: \(error)")
         }
         policy.sceTestContextBound = context
+{% if model.test_component.module_parameters %}
+        // §11.5, §11.8: the module parameters take the suite's values before the machine is
+        // built. Without one, or with one not of its type, the run ends in error (P13), and the
+        // machine is not started on a value made up in its place: none is built, so the
+        // component delivers nothing.
+        guard context.readModuleParameters({ given in try policy.sceAcceptModuleParameters(given) }) else {
+            return
+        }
+{% endif %}
         let machine = Engine(policy: policy)
         do {
             // P6: a send on a port is appended to the queue of the port it is

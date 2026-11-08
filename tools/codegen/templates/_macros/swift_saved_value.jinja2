@@ -1,0 +1,27 @@
+{# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{#
+    A present value's saved form (SCE Accepted Subset §2.15, docs/adr/0045), as a Swift machine
+    reads it back (`SavedValues` of the runtime). One text for a machine's `readSavedVariables`
+    (`swift/saved_state.swift.jinja2`) and for a test component's read of its module parameters
+    (`swift/state_machine.swift.jinja2`, docs/SCE_TEST_PROFILE.md §11.5), which reads a value as a
+    restored variable of its type is read. The Swift twin of `_macros/c_saved_value.jinja2`.
+#}
+
+{#- A present value read as its type says: an enum by its own type, a record by its own `fromSaved`, a byte
+   string and a text held to the bound the machine keeps them to, anything else by the function its
+   `sce:type` names. `shape` is `enum`, `record` or `scalar`. #}
+{%- macro saved_present(type, shape, value, what, bound) -%}
+{%- if shape == 'enum' -%}
+try SavedValues.enumeration({{ value }}, {{ what }}, as: {{ type }}.self)
+{%- elif shape == 'record' -%}
+try {{ type }}.fromSaved({{ value }}, {{ what }})
+{%- elif type == 'bytes' -%}
+try SavedValues.bytes({{ value }}, {{ what }}{% if bound is not none %}, capacity: {{ bound }}{% endif %})
+{%- elif type == 'string' -%}
+try SavedValues.string({{ value }}, {{ what }}{% if bound is not none %}, capacity: {{ bound }}{% endif %})
+{%- else -%}
+try SavedValues.{{ type }}({{ value }}, {{ what }})
+{%- endif -%}
+{%- endmacro %}

@@ -34414,7 +34414,7 @@ fn kotlin_default(ty: &SceType) -> &'static str {
 /// has no entry. One walk for every backend whose template declares the slot
 /// with a value ([`kotlin_module_parameter_starts`],
 /// [`go_module_parameter_starts`], [`python_module_parameter_starts`],
-/// [`c11_module_parameter_starts`]).
+/// [`c11_module_parameter_starts`], [`swift_module_parameter_starts`]).
 ///
 /// Refused by name where a module parameter is of no type the lowering
 /// declares, which a lowering that held it to a scalar type cannot reach, and
@@ -34524,6 +34524,22 @@ pub(crate) fn c11_module_parameter_starts(
             _ => Some("0".to_string()),
         },
         |_, first| first.ident.clone(),
+    )
+}
+
+/// [`module_parameter_starts`] of the Swift machine `lowering`: a scalar at
+/// [`swift_zero_value`], a text and a byte string at the empty value whatever
+/// their bound, since the machine holds each in the type a value of any length
+/// is held in, and an enum at its first variant, a case of the machine's enum
+/// named through its type.
+pub(crate) fn swift_module_parameter_starts(
+    lowering: &crate::forge::static_lowering::StaticLowering,
+) -> Result<std::collections::BTreeMap<String, String>, GenerateError> {
+    module_parameter_starts(
+        lowering,
+        "Swift",
+        |ty, _| Some(swift_zero_value(ty).to_string()),
+        |declared, first| format!("{}.{}", declared.ty, first.ident),
     )
 }
 

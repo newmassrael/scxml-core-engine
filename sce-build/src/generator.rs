@@ -5140,6 +5140,10 @@ fn render_swift(env: &mut Environment, model: &SCXMLModel) -> Result<String, Gen
     // data model.
     let static_lowering =
         crate::forge::static_lowering::lower_swift(&mut model_lowered, &machine_name)?;
+    // docs/SCE_TEST_PROFILE.md §11.5: what each module parameter of a test
+    // component starts at before the component reads the suite's value into it.
+    let module_parameter_starts =
+        crate::forge::generator::swift_module_parameter_starts(&static_lowering)?;
     let static_published: Vec<&crate::forge::static_lowering::StaticField> = static_lowering
         .fields
         .iter()
@@ -5182,6 +5186,7 @@ fn render_swift(env: &mut Environment, model: &SCXMLModel) -> Result<String, Gen
         // The shape a saved state of this machine is bound to, for a machine the Swift runtime
         // saves; absent for one it does not yet, which is generated without the save API.
         static_saved_shape => swift_saved_shape(model, &static_lowering),
+        module_parameter_starts => &module_parameter_starts,
         event_payload_active => payload.active,
         event_payload_defs => &payload.defs,
         event_payload_policy_fields => &payload.policy_fields,

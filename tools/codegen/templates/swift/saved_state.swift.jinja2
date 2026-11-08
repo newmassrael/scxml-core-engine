@@ -37,22 +37,9 @@ SavedValues.list({{ field.name }}) { SavedValues.of($0) }
 SavedValues.of({{ field.name }})
 {%- endif -%}
 {%- endmacro %}
-{#- A present value read as its type says: an enum by its own type, a record by its own `fromSaved`, a byte
-   string and a text held to the bound the machine keeps them to, anything else by the function its
-   `sce:type` names. `shape` is `enum`, `record` or `scalar`. #}
-{%- macro saved_present(type, shape, value, what, bound) -%}
-{%- if shape == 'enum' -%}
-try SavedValues.enumeration({{ value }}, {{ what }}, as: {{ type }}.self)
-{%- elif shape == 'record' -%}
-try {{ type }}.fromSaved({{ value }}, {{ what }})
-{%- elif type == 'bytes' -%}
-try SavedValues.bytes({{ value }}, {{ what }}{% if bound is not none %}, capacity: {{ bound }}{% endif %})
-{%- elif type == 'string' -%}
-try SavedValues.string({{ value }}, {{ what }}{% if bound is not none %}, capacity: {{ bound }}{% endif %})
-{%- else -%}
-try SavedValues.{{ type }}({{ value }}, {{ what }})
-{%- endif -%}
-{%- endmacro %}
+{#- A present value's saved form, one text with a test component's read of its module parameters
+   (`swift/state_machine.swift.jinja2`). #}
+{%- from '_macros/swift_saved_value.jinja2' import saved_present %}
 {%- macro saved_read(field) -%}
 {%- set value -%}try saved.variable("{{ field.id | escape_swift }}"){%- endset -%}
 {%- set what -%}"{{ field.id | escape_swift }}"{%- endset -%}
