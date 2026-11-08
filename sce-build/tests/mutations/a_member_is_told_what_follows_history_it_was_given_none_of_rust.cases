@@ -1,0 +1,29 @@
+# Mutation cases for what causal delivery does with an operation a host can never open
+# (docs/adr/0085, section 3.1, landing 4b): a member that joins a list keyed by a group is given no
+# key of the epochs before it joined, so its host passes over each operation sealed under one of
+# them, tells its machine none of them, and tells it what the same devices wrote in its own epochs,
+# which follows them in their chains.
+#
+# Each case takes that away or weakens it, and the tests under study must turn red. A check no test
+# notices is a check nothing holds in place.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_member_is_told_what_follows_history_it_was_given_none_of_rust.cases`.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported INCONCLUSIVE with the
+# anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-world --test a_shared_list_keys_its_content_with_mls_through_a_relay
+mutation_targets backends/rust/trust/src/trust.rs
+mutation_oracles backends/rust/world/tests/a_shared_list_keys_its_content_with_mls_through_a_relay.rs
+
+mutation_case "A host holds a device's operations behind one sealed before it joined" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "        .is_some_and(|first| epoch < *first)",
+     "        .is_some_and(|_| false)")
+PY
+
+mutation_case "A host keeps no record of what it could not open" <<'PY'
+edit("backends/rust/trust/src/trust.rs",
+     "                state.unopened.entry(node).or_default().insert(seq, epoch);",
+     "                let _ = (node, seq, epoch);")
+PY
