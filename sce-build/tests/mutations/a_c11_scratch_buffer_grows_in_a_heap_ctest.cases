@@ -1,0 +1,52 @@
+# Mutation cases for "a buffer of a C11 script machine's scratch grows in a
+# heap to what it is asked to hold, and is freed once" (docs/adr/0086,
+# section 8.6 (d)).
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_c11_scratch_buffer_grows_in_a_heap_ctest.cases`.
+#
+# `sce_grown_text_reserve` grows a `sce_grown_text_t` through an allocator of
+# the shape of `lua_Alloc` to the bytes a writer asks for, by one block
+# resized, never shrinking it and leaving it as it was when the heap refuses;
+# `sce_grown_text_release` frees it once and clears it. A request field's
+# text is held to `sce_request_field_wire_size`, the most bytes its spelling
+# takes. `c11_unit_host_answer_heap` asks the buffer for each of these under
+# the tests' counting allocator, and `c11_integration_host_invoker` asks the
+# size for the longest spelling of each kind of value. The mutants take one
+# decision away each:
+#
+#   a reserve never records the size it grew to;
+#   a refused growth empties the buffer it was asked to grow;
+#   a release leaves the buffer holding the block it freed;
+#   a number's longest spelling is taken for shorter than it is.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_ctest --test-dir build -R '^(c11_unit_host_answer_heap|c11_integration_host_invoker)$'
+mutation_targets backends/c/runtime/include/sce/types.h backends/c/runtime/include/sce/request_field.h
+mutation_oracles backends/c/tests/unit/host_answer_heap_test.c backends/c/tests/integration/test_host_invoker.c
+
+mutation_case "a reserve never records the size it grew to" <<'PY'
+edit("backends/c/runtime/include/sce/types.h",
+     "    buf->data = grown;\n    buf->cap = need;\n    return true;\n",
+     "    buf->data = grown;\n    return true;\n")
+PY
+
+mutation_case "a refused growth empties the buffer it was asked to grow" <<'PY'
+edit("backends/c/runtime/include/sce/types.h",
+     "    if (grown == NULL) {\n        return false;\n    }\n    buf->data = grown;\n",
+     "    if (grown == NULL) {\n        buf->data = NULL;\n        buf->cap = 0u;\n        return false;\n    }\n    buf->data = grown;\n")
+PY
+
+mutation_case "a release leaves the buffer holding the block it freed" <<'PY'
+edit("backends/c/runtime/include/sce/types.h",
+     "        (void)alloc(context, buf->data, buf->cap, 0u);\n    }\n    buf->data = NULL;\n    buf->cap = 0u;\n",
+     "        (void)alloc(context, buf->data, buf->cap, 0u);\n    }\n")
+PY
+
+mutation_case "a number's longest spelling is taken for shorter than it is" <<'PY'
+edit("backends/c/runtime/include/sce/request_field.h",
+     "#define SCE_REQUEST_SCALAR_TEXT_MAX_LEN 24u\n",
+     "#define SCE_REQUEST_SCALAR_TEXT_MAX_LEN 16u\n")
+PY

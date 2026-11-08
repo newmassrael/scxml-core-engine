@@ -6384,7 +6384,7 @@ return false;\n    }}\n    (void)sm;\n{field_reads}    return true;\n}}\n\n"
         lift_arms.push_str(&format!(
             "    case {event_const}: {{\n        \
 {struct_name} _payload;\n        memset(&_payload, 0, sizeof(_payload));\n        \
-if (!{sm}_lift_{member}(sm, evt->data, &_payload, _message, sizeof(sm->scratch.message))) {{\n            \
+if (!{sm}_lift_{member}(sm, evt->data, &_payload, _message, SCE_SCRATCH_CAP(message))) {{\n            \
 break;\n        }}\n        \
 sm->pending_payload.tag = {tag_const};\n        \
 sm->pending_payload.as.{member} = _payload;\n        return {sm_upper}_DOOR_ADMITTED;\n    }}\n"
@@ -6494,6 +6494,14 @@ typedef enum {sm}_door_e {{\n    \
 from the data it carries, when no typed payload rode with it. */\n\
 static {sm}_door_t {sm}_lift_payload({sm}_t *sm, {sm}_event_with_meta_t *evt);\n"
     );
+    // docs/adr/0086, section 8.6 (d): the reason is written into the scratch's
+    // `message`, which holds the longest reason the machine raises once it is
+    // reserved (`<SM>_DATA_LEN_REASONS`): a fixed slot that holds it already
+    // on a machine without a script engine, a buffer the engine's heap grows
+    // on one with, whose refusal is counted and, where the document declares
+    // `error.execution`, raised (`refuse_event_data`). A delivery whose
+    // reason has nowhere to be written is not read, so the door refuses it
+    // whole (section 4.2).
     let lift_def = format!(
         "{lift_readers}\
 /* The door the pop loop asks: the typed payload the inject seam fills is one\n   \
@@ -6501,9 +6509,11 @@ producer, and every other producer fills `data`, so an event that arrived\n   \
 without a payload has its fields read out of that instead. */\n\
 static {sm}_door_t {sm}_lift_payload({sm}_t *sm, {sm}_event_with_meta_t *evt) {{\n    \
 /* sce-scratch-activity: lift */\n    \
-char *const _message = sm->scratch.message;\n    _message[0] = '\\0';\n    \
 if (sm->pending_payload.tag != {name_upper}_PAYLOAD_NONE) {{\n        \
 return {sm_upper}_DOOR_ADMITTED;\n    }}\n    \
+if (!SCE_SCRATCH_RESERVE(message, {data_len}_REASONS)) {{\n        \
+refuse_event_data(sm, NULL);\n        return {sm_upper}_DOOR_REFUSED;\n    }}\n    \
+char *const _message = SCE_SCRATCH_BUF(message);\n    _message[0] = '\\0';\n    \
 switch (evt->event) {{\n{lift_arms}    default:\n        return {sm_upper}_DOOR_ADMITTED;\n    }}\n\
 {report}}}\n"
     );
@@ -6599,6 +6609,11 @@ pub struct C11DataSlot {
     /// The machine's scratch, one union per colour of its roles' interference
     /// graph (docs/adr/0086, section 8.5 (e); [`crate::forge::c11_scratch`]).
     pub scratch: Vec<crate::forge::c11_scratch::ScratchColour>,
+    /// The roles of its scratch a machine whose data model is a script engine
+    /// grows in its engine's heap, each a buffer of its own outside every
+    /// colour; empty for any other machine (docs/adr/0086, section 8.6 (d);
+    /// [`crate::forge::c11_scratch::grown_roles`]).
+    pub grown: Vec<crate::forge::c11_scratch::ScratchRole>,
 }
 
 impl C11DataSlot {
@@ -6691,6 +6706,10 @@ pub fn c11_data_slot(
             data_max_len,
         });
     }
+    let holder = crate::forge::c11_scratch::Holder {
+        host_sends: !model.host_processor_types.is_empty(),
+        script_engine: model.needs_script_engine,
+    };
     let mut slot = C11DataSlot {
         name: c11_data_len(csym_prefix, &model.name),
         inputs,
@@ -6700,10 +6719,8 @@ pub fn c11_data_slot(
         deadline_quotes: Vec::new(),
         declared: 1,
         pairs: c11_scratch_pairs(model),
-        scratch: crate::forge::c11_scratch::layout(crate::forge::c11_scratch::Holder {
-            host_sends: !model.host_processor_types.is_empty(),
-            script_engine: model.needs_script_engine,
-        }),
+        scratch: crate::forge::c11_scratch::layout(holder),
+        grown: crate::forge::c11_scratch::grown_roles(holder),
     };
     slot.hold_reasons(0);
     Ok(slot)

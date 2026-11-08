@@ -26,7 +26,7 @@ mutation_oracles backends/c/tests/integration/test_static_send_http.c sce-build/
 
 mutation_case "a pair's text is written empty" <<'PY'
 edit("tools/codegen/templates/c/state_machine.c.jinja2",
-     "                                _host_params[_host_param_count].value = _host_param_texts[{{ loop.index0 }}];",
+     "                                _host_params[_host_param_count].value = SCE_SCRATCH_BUF(pairs[{{ loop.index0 }}]);",
      "                                _host_params[_host_param_count].value = \"\";")
 PY
 

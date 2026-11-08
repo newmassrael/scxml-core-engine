@@ -1175,6 +1175,111 @@ fn a_typed_machine_keeps_its_event_data_in_its_slot() {
     );
 }
 
+/// docs/adr/0086, section 8.6 (d): a machine whose data model is a script
+/// engine holds each role its engine's values are written into as a buffer of
+/// its own that grows in the engine's heap, reaches it only through the
+/// scratch's accessors, and frees it before the engine is closed: no site of
+/// the generated code sizes such a role by a slot (`sizeof(sm->scratch.<role>`
+/// would be a pointer's size once the role is a buffer), and no text is copied
+/// into one cut. A typed machine keeps every role in fixed storage, reached
+/// through the same accessors spelled over it.
+#[test]
+fn a_script_machine_grows_its_scratch_and_sizes_no_grown_role_by_a_slot() {
+    let hosts = [
+        "--host-processor",
+        "x-sce-host",
+        "--host-invoker",
+        "x-app-host",
+    ];
+    let scripted = generated(SCRIPTED, &[], &hosts);
+    let children = generated(CHILDREN, &[], &hosts);
+    for (header, source) in [&scripted, &children] {
+        let scratch = record(header, "probe_scratch");
+        for role in c11_scratch::GROWN_IN_THE_SCRATCH {
+            for (file, text) in [("header", header), ("source", source)] {
+                assert!(
+                    !text.contains(&format!("sizeof(sm->scratch.{role}")),
+                    "the {file} sizes the grown role `{role}` by a slot:\n{text}"
+                );
+            }
+            assert!(
+                scratch.contains(&format!("    sce_grown_text_t {role}")),
+                "`{role}` is a buffer of its own that grows:\n{scratch}"
+            );
+        }
+        assert!(
+            source.contains(
+                "#define SCE_SCRATCH_RESERVE(role, need) scratch_reserve(sm, &sm->scratch.role, \
+                 (size_t)(need))"
+            ),
+            "a reserve grows the buffer through the engine's allocator:\n{source}"
+        );
+        assert!(
+            source.contains("lua_getallocf(sm->L, &alloc_context);"),
+            "the scratch grows in the engine's own heap:\n{source}"
+        );
+        let release = source
+            .find("SCE_SM_FN static void release_owned_event_texts(")
+            .expect("the machine frees what it holds");
+        let release_end = release
+            + source[release..]
+                .find("\n}\n")
+                .expect("the end of the release");
+        assert!(
+            source[release..release_end].contains("release_scratch(sm);"),
+            "the scratch is freed with every text, before the engine is closed:\n{source}"
+        );
+        assert!(
+            !source.contains("sce_copy_bounded_n(_host_param_values"),
+            "no pair's text is cut into a row:\n{source}"
+        );
+    }
+    assert!(
+        scripted
+            .1
+            .contains("if (!SCE_SCRATCH_RESERVE(payload, _jl + 1u)) {"),
+        "a send's payload grows to the text its engine computed:\n{}",
+        scripted.1
+    );
+    assert!(
+        !record(&scripted.0, "probe_scratch").contains("char payload["),
+        "a script machine's payload is no slot"
+    );
+    assert!(
+        children.1.contains(", NULL, 0u);")
+            && children
+                .1
+                .contains("if (SCE_SCRATCH_RESERVE(done, _done_whole + 1u)) {"),
+        "a child's done data is measured, and the scratch grown to it:\n{}",
+        children.1
+    );
+    let typed_schemas = [
+        (
+            "answer",
+            schema(
+                "answer",
+                "answer.record",
+                &[("id", "uint32"), ("note", "string[16]")],
+            ),
+        ),
+        (
+            "label",
+            schema("label", "job.done", &[("label", "string[8]")]),
+        ),
+    ];
+    let (typed_header, typed_source) = generated(&typed_machine(), &typed_schemas, &hosts);
+    assert!(
+        !record(&typed_header, "probe_scratch").contains("sce_grown_text_t"),
+        "a typed machine grows nothing"
+    );
+    assert!(
+        typed_source.contains(
+            "#define SCE_SCRATCH_RESERVE(role, need) ((size_t)(need) <= sizeof(sm->scratch.role))"
+        ),
+        "a typed machine's reserve asks whether the text fits its slot:\n{typed_source}"
+    );
+}
+
 // ── docs/adr/0086, section 8.5 (e): the containment table, checked ──────────
 
 use sce_build::forge::c11_scratch::{self, Activity};
