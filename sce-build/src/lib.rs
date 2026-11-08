@@ -992,8 +992,8 @@ pub fn transition_function_from_string(
 }
 
 /// Give `model` what its declarations need from the run that generates it:
-/// the digest of the source set that run read (its `source-hash`), which a
-/// document cannot hold. The transition table (SCE Accepted Subset §2.20) and
+/// the digest of the document's input closure (its `source-hash`, ADR 0094),
+/// which a document cannot hold. The transition table (SCE Accepted Subset §2.20) and
 /// the transition function (§2.21) each carry it as a value, so a header that
 /// names a hash names the table and the function that came with it.
 ///

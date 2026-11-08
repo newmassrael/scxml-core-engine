@@ -43,7 +43,8 @@ Every emitted source file starts with the §synth-6.2.6 drift header:
 
 ```
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: <sha256 over the input source set>
+// source-hash: <sha256 of the file's input closure>
+// source: <document the file is generated from>
 ```
 
 followed by a license block carrying `// From: <input path>`.
@@ -138,28 +139,49 @@ directory. Two shapes are available:
 
 ## 5. `source-hash` — what is actually hashed
 
-The source set is **every `*.scxml` under an input root**, recursively,
-plus `deploy.yaml` when one is passed. Not just the document you named.
+The hash is over the **input closure of the document you named**
+(ADR 0094): the document, and every file its generation reads, followed
+transitively — its `<xi:include>` targets and `<sce:use>` fragments,
+whatever their extension; its `<sce:import>` targets, local or standard;
+the documents its `<invoke>`s start by `src` or name in `sce:candidates`;
+the standard documents it starts — plus `deploy.yaml` when one is passed,
+and the limits when the build moves any. Not its neighbours.
 
-The root defaults to the parent directory of the input document. Override
-it with `--input-root`:
+Each file is keyed by its path relative to the directory of the document
+(for a set of documents, the deepest directory holding them all) and hashed
+by its raw bytes. So:
+
+- **The hash ignores neighbours.** Adding or editing an unrelated `.scxml`
+  beside your input changes nothing; a sandbox holding one declared input
+  and a source tree holding five give the same hash for the same document.
+- **The hash does not depend on where the tree sits.** Moving the checkout,
+  or running from another directory, changes nothing.
+- **A staged copy hashes as its original.** Generating from a copy of a
+  document outside the tracked tree, with `--input-root` naming the tracked
+  directory that holds a document of the same name, gives the header a
+  generation of the tracked document gives:
 
 ```bash
 sce-codegen generate stage/machine.scxml --input-root src/scxml -o out/ -l cpp
 ```
 
-Two consequences worth planning around:
-
-- **The hash is sensitive to neighbours.** Adding an unrelated `.scxml`
-  beside your input changes the embedded `source-hash`. If your build
-  generates from a sandbox holding one declared input while a developer
-  generates from a source tree holding five, the two produce different
-  hashes for the same document. Pass `--input-root` explicitly on both
-  paths so they agree.
+  Otherwise `--input-root` only says where candidates and `src` children
+  are looked for first.
 - **Symlinked inputs are followed.** Build sandboxes (Bazel execroot, Nix,
   staged CMake inputs) materialise declared inputs as links into the real
   tree; those are resolved and hashed as the files they point at.
-  Symlinked directories are followed too.
+
+The header's `source:` lines name the document (or documents) the hash is
+a closure of, so `verify` can recompute it from the file alone (§8).
+
+### Files generated from a whole directory
+
+A file generated from every document of a directory — the Rust W3C suite's
+index of the tests that generated, a conformance harness over its fixture
+directory — names the directory as `source: ./`, and its closure is every
+`*.scxml` under that directory plus whatever those documents reach outside
+it. Only this set form walks a directory, so the rules below apply to it:
+
 - **A directory reachable under several names contributes under each of
   them.** The set is keyed by root-relative path, so two links naming one
   directory are two sets of paths, not a duplicate to collapse. Removing
@@ -180,29 +202,15 @@ Two consequences worth planning around:
 
 ### The empty-set refusal
 
-The fold is total over whatever the walk collected, so a walk that
-collected *nothing* still produces a well-formed 64-hex digest — sha256 of
-the empty input, `e3b0c442…`. On the wire that is indistinguishable from a
-successful hash, which makes the header unauditable rather than merely
-wrong.
-
-`sce-codegen` therefore refuses to emit rather than embed it:
-
-```
-forge/source-hash-input-uncovered
-src/scxml/m.scxml: §6.2.6 source-hash would not describe it —
-0 file(s) collected from src/scxml; pass --input-root <DIR> containing the input
-```
-
-Exit code 20; nothing is written. Two ways to trigger it:
-
-- the collected set is empty — always refused;
-- the root was *inferred* from the input's own location, yet the input is
-  absent from the set. A root you named with `--input-root` is treated as
-  an assertion about where the sources live, not an inference to
-  second-guess, so generating from a staged derivative of a tracked source
-  is allowed (this repository's fixture regen scripts rely on it). The
-  empty-set floor still applies.
+The fold is total over whatever was collected, so a set form over a
+directory that holds *no* document still produces a well-formed 64-hex
+digest — sha256 of the empty input, `e3b0c442…`. On the wire that is
+indistinguishable from a successful hash, which makes the header
+unauditable rather than merely wrong. `sce-codegen` refuses to emit rather
+than embed it, with `forge/source-hash-input-uncovered`, exit code 20, and
+writes nothing. A document's own closure always holds the document, so a
+generation from one document cannot reach this refusal; a document that
+cannot be read is refused as unreadable.
 
 ### The enumeration ceiling
 
@@ -304,12 +312,11 @@ on its bytes (§8) rather than trusted from the binary's identity.
 
 ---
 
-For `orchestrate`, the inferred root is the first input's parent directory.
-Every `--scxml` and `--forge` input must be covered by that root; otherwise
-code generation refuses with `forge/source-hash-input-uncovered`. For a
-batch spanning directories, pass `--input-root` naming their shared source
-root, and use the same root for `verify`. An explicit root also supports
-staged derivatives, with the same nonempty-source requirement as `generate`.
+For `orchestrate`, the set is compiled jointly, so every file it writes
+carries the closure of every `--scxml` and `--forge` document of the set,
+and names each on a `source:` line relative to the deepest directory that
+holds them all. A batch spanning directories needs no `--input-root`; give
+`verify` a root at or above that directory.
 
 ## 8. Verifying after the fact
 
@@ -345,19 +352,26 @@ whole pipeline and diffing, which is what `scripts/gate regen-reproduces`
 does.
 
 ```bash
-sce-codegen verify generated/ --input-root src/scxml
+sce-codegen verify generated/ --input-root src/scxml [--input-root more/scxml]
 ```
 
-Recomputes the `source-hash` from the current source set and compares it
-against the value embedded in each file: were these files generated from
-these inputs? Mismatch is `forge/source-hash-mismatch`, exit 20. It needs no
-generation, and it reads headers, not content, so a hand edit, a changed
+For each file, finds the documents its `source:` lines name in one
+directory at or below a given root, recomputes their input closure and
+compares its digest with the value embedded in the file: was this file
+generated from the current inputs? A file of a document nothing touched
+passes whatever else moved. Mismatch is `forge/source-hash-mismatch`, exit
+20, with the file's own recomputed digest as `expected`; a header naming no
+`source:` document is refused the same way, and a document found under no
+root, or under two places, is `forge/source-hash-input-uncovered`. It needs
+no generation, and it reads headers, not content, so a hand edit, a changed
 template or a changed generator passes it — use `--assert-unchanged` above
 where that matters.
 
 *Tests:* `generation_can_assert_its_output_unchanged`
 (`sce-build/tests/generation_can_assert_its_output_unchanged.rs`);
-`verify_passes_on_clean_round_trip`, `verify_fails_when_source_drifts`
+`verify_passes_on_clean_round_trip`, `verify_fails_when_source_drifts`,
+`verify_refuses_exactly_the_files_whose_closure_moved`,
+`editing_one_document_moves_no_header_whose_closure_excludes_it`
 (`sce-build/tests/b9_drift_detection.rs`).
 
 ---
