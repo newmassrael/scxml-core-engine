@@ -90,6 +90,10 @@ from sce_runtime import AnswerSchema as _AnswerSchema
 # script engine's `set_current_event` takes and a saved state holds.
 from sce_runtime.event import event_data_text as _coerce_event_data_str
 from sce_runtime import session_id as _sce_session_id
+# W3C SCXML 6.2 and C.2: the pairs a `<send>` evaluated, a repeated name told from a
+# value that is itself a list, and their rendering as the text a form carries.
+from sce_runtime.send_params import put_param as _sce_put_param
+from sce_runtime.send_params import wire_params_from_payload as _sce_wire_params_from_payload
 from sce_runtime.scripting import (
     LuaScriptEngine as _LuaScriptEngine,
     ScriptError as _ScriptError,

@@ -438,44 +438,24 @@
 
     def _wire_params_from_payload(self, marshalled):
         """The rendering half of the above: an evaluated `<send>` payload
-        as W3C SCXML C.2 form parameters.
+        as W3C SCXML C.2 form parameters (`sce_runtime.send_params`).
 
         A repeated name keeps every value, in document order — a form
-        parameter may repeat where a JSON key may not, which is why the
-        payload's list form is unwrapped here rather than stringified. A
-        payload that is not a name/value mapping (a `<content>` body, or
-        the empty string a `<send>` with no arguments returns) carries no
-        form parameters at all."""
-        if not isinstance(marshalled, dict):
-            return {}
-        result = {}
-        for name, value in marshalled.items():
-            values = value if isinstance(value, list) else [value]
-            # `str(...)` spelled these in Python — `True` where every other
-            # channel writes `true`, `[1, 2]` where the wire form is `[1,2]`.
-            # The rendering is the value's, not the sender's language's.
-            result[name] = [
-                _ScriptValue.of(item).to_wire_string() for item in values
-            ]
-        return result
+        parameter may repeat where a JSON key may not — and any other value
+        is one parameter whatever it holds: a list or a record crosses as
+        its JSON text, as the event carries it, and not as one parameter per
+        element. A payload that is not a name/value mapping carries no form
+        parameters at all."""
+        return _sce_wire_params_from_payload(marshalled)
 
     @staticmethod
     def _put_param(marshalled: dict, repeats: dict, name: str, value) -> None:
         """W3C SCXML 6.2: a `<param>` name may repeat, and test178 in the IRP
         requires both pairs to be delivered. A dict cannot hold one key twice,
-        so the second occurrence turns the entry into a list in document
-        order — the same normal form `_scxml_params` gives the Lua-literal
-        backends. Writing straight into the dict silently dropped every value
-        but the last. `repeats` counts the occurrences so far, because a value
-        that is itself a list cannot say whether it was one."""
-        count = repeats.get(name, 0) + 1
-        repeats[name] = count
-        if count == 1:
-            marshalled[name] = value
-        elif count == 2:
-            marshalled[name] = [marshalled[name], value]
-        else:
-            marshalled[name].append(value)
+        so the second occurrence holds the values in document order, as the
+        runtime's `RepeatedParam`, which is how a repeated name is told from
+        a value that is itself a list (`sce_runtime.send_params`)."""
+        _sce_put_param(marshalled, repeats, name, value)
 
     def _host_invoke_request_data(self, engine, params_specs, namelist: str, metadata):
         """W3C SCXML 6.4.1: what a host-run `<invoke>` hands its host — the
