@@ -167,6 +167,14 @@ sce-codegen generate stage/machine.scxml --input-root src/scxml -o out/ -l cpp
 
   Otherwise `--input-root` only says where candidates and `src` children
   are looked for first.
+- **A child document a run writes hashes as the document it came from.**
+  The document of an in-line child that a run writes into `-o` (and a Mesh
+  partition's run, or a staging script, generates from) records its origin
+  in a processing instruction on its first line,
+  `<?sce-origin document="parent.scxml"?>`. Generating from it with
+  `--input-root` naming the directory that holds that document (or with it
+  beside the child) stamps the child's files with that document's closure
+  and names it on their `source:` line.
 - **Symlinked inputs are followed.** Build sandboxes (Bazel execroot, Nix,
   staged CMake inputs) materialise declared inputs as links into the real
   tree; those are resolved and hashed as the files they point at.
