@@ -34539,7 +34539,8 @@ pub(crate) fn c11_module_parameter_starts(
 /// [`swift_zero_value`], a text and a byte string at the empty value whatever
 /// their bound, since the machine holds each in the type a value of any length
 /// is held in, and an enum at its first variant, a case of the machine's enum
-/// named through its type.
+/// named through its type: the variant's identifier is already that reference
+/// ([`crate::forge::enum_naming::variant_ref`]), as on Go.
 pub(crate) fn swift_module_parameter_starts(
     lowering: &crate::forge::static_lowering::StaticLowering,
 ) -> Result<std::collections::BTreeMap<String, String>, GenerateError> {
@@ -34547,7 +34548,7 @@ pub(crate) fn swift_module_parameter_starts(
         lowering,
         "Swift",
         |ty, _| Some(swift_zero_value(ty).to_string()),
-        |declared, first| format!("{}.{}", declared.ty, first.ident),
+        |_, first| first.ident.clone(),
     )
 }
 
