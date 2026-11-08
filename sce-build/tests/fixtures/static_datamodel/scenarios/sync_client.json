@@ -99,6 +99,20 @@
       "event": "sync.start", "data": { "byToken": false },
       "expect": { "state": "deleting", "variables": { "outcome": 0 } } },
     { "event": "sync.response", "data": { "kind": 4, "status": 100, "create": false, "davError": false, "now": 1000, "retryAfter": 0 },
-      "expect": { "state": "idle", "variables": { "refusals": 3, "outcome": 0, "retryAt": 4600 } } }
+      "expect": { "state": "idle", "variables": { "refusals": 3, "outcome": 0, "retryAt": 4600 } } },
+
+    { "note": "run 9: a page that does not fit its schema is refused whole where it is read (docs/adr/0086, section 4.2)",
+      "event": "sync.start", "data": { "byToken": false },
+      "expect": { "state": "deleting", "variables": { "pages": 0 } } },
+    { "event": "sync.phase.done",
+      "expect": { "state": "uploading" } },
+    { "event": "sync.phase.done",
+      "expect": { "state": "listing" } },
+    { "note": "a number where the schema declares a truth value: the delivery is not taken, so the last-page transition, which reads nothing of the payload, does not run and the listing goes on; error.execution is answered in its place and counted",
+      "event": "sync.page", "data": { "more": 1 },
+      "expect": { "state": "listing", "variables": { "pages": 0, "refusals": 4 } } },
+    { "note": "the page that fits ends the run as any last page does",
+      "event": "sync.page", "data": { "more": false },
+      "expect": { "state": "idle", "variables": { "pages": 1, "fullListing": false, "refusals": 4 } } }
   ]
 }
