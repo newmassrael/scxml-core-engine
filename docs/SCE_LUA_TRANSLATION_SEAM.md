@@ -1900,7 +1900,7 @@ cache already covers.
   counted. Re-derive with `scripts/measure-scope-obligation.sh`.
 - **The error channel** — ~~unmeasured~~ **settled 2026-08-29, and without a
   benchmark, exactly as this bullet predicted. See "The error channel, counted"
-  below.** 23 codes against 0. ⚠ The OWNERSHIP half of this bullet is still
+  below.** 24 codes against 0. ⚠ The OWNERSHIP half of this bullet is still
   open and is stated at the end of that section.
 - ~~**The size of what a C++ consumer takes on.**~~ **Re-priced 2026-08-29 as
   a SWAP, and the first version had the wrong SHAPE rather than a wrong
@@ -2134,7 +2134,7 @@ someone has read the warning.
 |---|---|---|---|---|---|
 | `per-call-cost` | CLOSED | measurement | 577ns against 1085ns cold — parsing is **1.88x faster**; the rewriter's whole advantage is a memo worth **89x**. ⚠ RETIRED: the second side of this comparison was deleted with the rewriter, so the number cannot be re-measured in this tree — the pinned commit still holds the probe and the subject, and the check requires both | `retired-measurement:da7c6daf92185ce43bf5b45ec171aa43004e4328` | `scripts/measure-lowering-per-call.sh` |
 | `scope-obligation` | CLOSED | measurement | **301** of 1120 sites diverge with no scope; **298** of them are discharged by `<data id>` alone, before anything runs; residue **3**, named rather than counted | `census:ScopeObligation` | `scripts/measure-scope-obligation.sh` |
-| `error-channel` | CLOSED | counting | **23** distinguishable failures against **0** — so the FFI carries a code plus a string, and the code already exists (re-derived 2026-09-21: `UnknownEnumVariant`, then `MemberOfNonRecord`, then `UnknownMember` joined both counts together; 2026-09-24: `TypeMismatch` and `ArgumentCount` did the same, then `LiteralOutOfRange`; 2026-10-22: `OptionalReadUnproven`; 2026-11-04: `UnsupportedStringEscape`) | `derive:expression-alphabet=23` | `sce-build/src/forge/diagnostic.rs` |
+| `error-channel` | CLOSED | counting | **24** distinguishable failures against **0** — so the FFI carries a code plus a string, and the code already exists (re-derived 2026-09-21: `UnknownEnumVariant`, then `MemberOfNonRecord`, then `UnknownMember` joined both counts together; 2026-09-24: `TypeMismatch` and `ArgumentCount` did the same, then `LiteralOutOfRange`; 2026-10-22: `OptionalReadUnproven`; 2026-11-04: `UnsupportedStringEscape`; 2026-11-08: `UnionReadUnproven`) | `derive:expression-alphabet=24` | `sce-build/src/forge/diagnostic.rs` |
 | `swap-net-footprint` | CLOSED | measurement | the link is a SWAP, not an addition: **+223.7 KB** in, **−76.0 KB** out ⇒ **net +147.8 KB**, so pricing it as an addition overstates by **34%**. The rewriter's **2262** tracked lines have now LEFT — the OUT half was actually paid. ⚠ RETIRED: the object this weighed no longer exists in the tree, so the number is re-derivable only at the pinned commit, which the check requires to still hold it | `retired-measurement:da7c6daf92185ce43bf5b45ec171aa43004e4328` | `scripts/measure-lowering-footprint.sh` |
 | `scope-answer` | CLOSED | measurement | **0** sites diverge once the caller has read every `<data id>` AND every document-level `<script>` — both readable before the first macrostep — so the surface needs `declare` + `declare_chunk` and NO execution-time scope | `derive:scope-ladder=LoadTime` | `sce-build/src/ecmascript/scope.rs` |
 | `link-beside-lua` | CLOSED | decision | the owner chose to LINK, beside `SCE_ENABLE_LUA`, and retire the rewriter. Priced on the shape chosen: a staticlib costs **474.6 KB** of stripped image, not the **223.7 KB** the cdylib delta reported — that baseline already held Rust's runtime and a C++ image does not | `decision:linked-beside-lua` | `sce/CMakeLists.txt` |
@@ -2228,8 +2228,8 @@ grep -o 'createError([^;]*' sce/src/scripting/LuaEngine.cpp | sort -u
 
 | | build-time frontend | run-time rewriter |
 |---|---|---|
-| failure kinds distinguishable at the boundary | **23** `ExprError` variants | **0** |
-| machine-readable code | **23** distinct `DiagnosticCode`s, one per variant | none — `ScriptResult` is `bool` + `std::string` |
+| failure kinds distinguishable at the boundary | **24** `ExprError` variants | **0** |
+| machine-readable code | **24** distinct `DiagnosticCode`s, one per variant | none — `ScriptResult` is `bool` + `std::string` |
 | structured repair data | `available` / `members` / `candidates` / `arguments`, driving `Fix::ReplaceOneOf` and `Fix::ReplaceWith` | none |
 | author-facing message shapes | one per variant, `#[error(...)]` | 4 authored (`ReferenceError: …`, `Session not found: …`, `Syntax error: …`, `Unknown Lua error`) plus raw Lua strings passed through |
 
@@ -2245,12 +2245,12 @@ reached it through the shared expression pipeline; that split is the day's
 measurement and is not re-derived.
 
 **The question this bullet posed is answered: the frontend's alphabet is
-strictly richer — 23 codes against 0 — so the FFI must carry a code plus a
+strictly richer — 24 codes against 0 — so the FFI must carry a code plus a
 string, not a boolean.**
 
 ⚠ **And the code does not have to be invented.** `payload_for` already maps
 every `ExprError` variant to its own `DiagnosticCode`, the mapping is a
-bijection onto the enum's 23-member `expression/` family, and those spellings
+bijection onto the enum's 24-member `expression/` family, and those spellings
 are already wire-visible and pinned by `schemas/sce-diagnostic.v1.schema.json`.
 A C surface should carry THAT code rather than a private enum of its own — the
 alternative is a second alphabet for the same failures, which is the shape
