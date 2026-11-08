@@ -3580,6 +3580,35 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
 
     add_test(NAME mesh_ordering_buffer_verification COMMAND mesh_ordering_buffer_test)
 
+    # ── CausalLayer unit tests (docs/adr/0085, section 9.2) ───────
+    # One copy's side of a causal broadcast group, the tests of section
+    # 9.2 the Rust core holds: drop, deliver, the two holds, no gap
+    # timeout, repair, the cut, the mark, retention, the verdict,
+    # write-ahead, incarnation and the view. Every decision is the rule
+    # generated from sce:std/mesh, reached through CausalRules.cpp in
+    # sce_mesh_common.
+    add_executable(mesh_causal_layer_test
+        mesh/CausalLayerTest.cpp
+    )
+
+    target_include_directories(mesh_causal_layer_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/sce/include
+    )
+
+    target_link_libraries(mesh_causal_layer_test
+        PRIVATE
+            sce_mesh_common
+            GTest::gtest_main
+            pthread
+    )
+
+    target_compile_features(mesh_causal_layer_test PRIVATE cxx_std_17)
+
+    apply_sce_test_policies(mesh_causal_layer_test)
+
+    add_test(NAME mesh_causal_layer_verification COMMAND mesh_causal_layer_test)
+
     # ── OutboundBuffer unit tests (SCE_MESH.md §10.10 + §16.7 row 9) ─
     # Pure unit tests on the per-target readiness-gated admit layer.
     # Sibling DedupRouter / OrderingBuffer tests cover their inbound

@@ -125,18 +125,21 @@ target_link_libraries(sce_core INTERFACE sce_forge_runtime)
 # sce_mesh_common: Mesh transport abstractions + wire envelope (optional)
 # ============================================================================
 # Headers: SchedulerConcepts, EventQueueBridge, ShmChannel, PatternKind,
-#          PayloadCodec, RpcStatus, MeshEnvelope, MeshEnvelopeCodec.
+#          PayloadCodec, RpcStatus, MeshEnvelope, MeshEnvelopeCodec,
+#          CausalEntry, CausalRules, CausalLayer.
 # Compiled: MeshEnvelopeCodec.cpp — the envelope's CBOR through the codec
 # generated from sce:std/mesh/envelope.scxml (src/mesh/generated/, committed
 # so a C++ consumer needs no Rust toolchain), whose CBOR items are the C++
-# forge runtime's header-only sce/forge/cbor.h: a private include, since no
-# public header names a generated type.
-# STATIC (not INTERFACE) because MeshEnvelopeCodec.cpp is a compiled
-# unit; consumers (generated transport routing, mesh integration tests) link
-# the static target.
+# forge runtime's header-only sce/forge/cbor.h; CausalRules.cpp — the causal
+# route's rule through the algorithms generated from sce:std/mesh beside it.
+# Both are a private include, since no public header names a generated type.
+# STATIC (not INTERFACE) because both are compiled units; consumers
+# (generated transport routing, mesh integration tests) link the static
+# target.
 if(SCE_ENABLE_MESH)
     add_library(sce_mesh_common STATIC
         src/mesh/MeshEnvelopeCodec.cpp
+        src/mesh/CausalRules.cpp
     )
 
     target_include_directories(sce_mesh_common
