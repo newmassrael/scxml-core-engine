@@ -155,13 +155,13 @@ PY
 
 mutation_case "an entry too large for its slot is truncated" <<'PY'
 edit("backends/c/runtime/include/sce/host_processor.h",
-     """    if (data[0] != '\\0' && (text == NULL || !sce_copy_text_whole(text, out->text_cap, data))) {
-        out->refused++;
-        return false;
-    }""",
-     """    if (data[0] != '\\0' && text != NULL) {
-        sce_copy_bounded_n(text, data, out->text_cap);
-    }""")
+     """        if (data[0] != '\\0' && (text == NULL || !sce_copy_text_whole(text, out->text_cap, data))) {
+            out->refused++;
+            return false;
+        }""",
+     """        if (data[0] != '\\0' && text != NULL) {
+            sce_copy_bounded_n(text, data, out->text_cap);
+        }""")
 PY
 
 # ── One type grows two servers ──────────────────────────────────────
