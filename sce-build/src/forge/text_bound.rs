@@ -22,8 +22,15 @@
 //!   and `d`'s;
 //! - a number or a boolean, read as text, takes the longest text of its type
 //!   ([`longest_text`], the one table);
+//! - a call takes the bound its callee's signature states on what it returns
+//!   (an algorithm's `string[N]`, a helper's `returns-max-size`); a call
+//!   whose callee states none has none;
 //! - anything else has no bound, and says why, naming the subexpression that
 //!   has none.
+//!
+//! A byte string an expression computes is bounded by the same reading of
+//! places and calls ([`byte_string_bound_of`]): its length is its bytes, as a
+//! text's is.
 //!
 //! One analysis for every lane. The C11 join of strings sizes its buffer by it
 //! ([`crate::forge::expr`]), and the C11 size calculus measures the data a
@@ -195,10 +202,7 @@ fn text_of_a_string(node: &TypedExpr, ctx: &TypeCtx<'_>) -> TextBound {
             left,
             right,
         } => present_text_bound(left, ctx).larger(text_bound(right, ctx)),
-        ExprKind::Call { .. } => TextBound::Unbounded(Unbounded::at(
-            node,
-            "is a call, and the text it answers has no bound its signature declares",
-        )),
+        ExprKind::Call { callee, .. } => call_bound(node, callee, ctx),
         _ => TextBound::Unbounded(Unbounded::at(
             node,
             "is a text computed by an operation the bound of whose text is not known",
@@ -212,6 +216,10 @@ fn text_of_a_string(node: &TypedExpr, ctx: &TypeCtx<'_>) -> TextBound {
 fn present_text_bound(node: &TypedExpr, ctx: &TypeCtx<'_>) -> TextBound {
     if !matches!(node.ty, InferredType::Optional(_)) {
         return text_bound(node, ctx);
+    }
+    // A call's present text is bounded by what its callee returns.
+    if let ExprKind::Call { callee, .. } = &node.kind {
+        return call_bound(node, callee, ctx);
     }
     let held = expr::place_path(node).and_then(|path| ctx.value_of(&path));
     if let Some(place) = held {
@@ -246,6 +254,75 @@ fn place_bound(node: &TypedExpr, ctx: &TypeCtx<'_>) -> TextBound {
              `string[B]`)",
         )),
     }
+}
+
+/// The bound of the text or byte string the call `node` answers, `callee` its
+/// callee: the bound its signature states on what it returns
+/// ([`crate::forge::types::FuncSig::ret_bound`]), read by the two spellings a
+/// signature is resolved by, a bare name and `object.method`. A call whose
+/// callee declares no such bound, or that this context does not register, has
+/// none.
+fn call_bound(node: &TypedExpr, callee: &TypedExpr, ctx: &TypeCtx<'_>) -> TextBound {
+    let declared = match &callee.kind {
+        ExprKind::Ident(name) => ctx.lookup_func(name).and_then(|sig| sig.ret_bound),
+        ExprKind::Member { object, property } => match &object.kind {
+            ExprKind::Ident(object) => ctx
+                .lookup_member_func(object, property)
+                .and_then(|sig| sig.ret_bound),
+            _ => None,
+        },
+        _ => None,
+    };
+    match declared {
+        Some(bytes) => TextBound::Bounded(bytes),
+        None => TextBound::Unbounded(Unbounded::at(
+            node,
+            "is a call whose callee declares no bound on what it returns",
+        )),
+    }
+}
+
+/// The most bytes of the byte string `node` denotes, its every node typed by
+/// [`crate::forge::expr`]'s inference against `ctx`: a place's `B` of its
+/// `bytes[B]`, a call's bound its callee declares on what it returns, and the
+/// larger of a conditional's branches. Anything else has no bound, and says
+/// why (docs/adr/0086, section 8.6 (c)).
+fn byte_string_bound(node: &TypedExpr, ctx: &TypeCtx<'_>) -> TextBound {
+    if node.ty != InferredType::Bytes {
+        return TextBound::Unbounded(Unbounded::at(
+            node,
+            format!("is {}, which is not a byte string", node.ty.describe()),
+        ));
+    }
+    match &node.kind {
+        ExprKind::Ident(_) | ExprKind::Member { .. } | ExprKind::Index { .. } => {
+            let held = expr::place_path(node).and_then(|path| ctx.value_of(&path));
+            match held.map(|place| place.ty) {
+                Some(ValueType::Bytes { max }) => TextBound::Bounded(u64::from(max.max)),
+                _ => TextBound::Unbounded(Unbounded::at(
+                    node,
+                    "is a byte string whose place declares no bound (`bytes[B]`)",
+                )),
+            }
+        }
+        ExprKind::Call { callee, .. } => call_bound(node, callee, ctx),
+        ExprKind::Conditional {
+            consequent,
+            alternate,
+            ..
+        } => byte_string_bound(consequent, ctx).larger(byte_string_bound(alternate, ctx)),
+        _ => TextBound::Unbounded(Unbounded::at(
+            node,
+            "is a byte string computed by an operation the bound of whose length is not known",
+        )),
+    }
+}
+
+/// [`byte_string_bound`] of the expression `written`, read against `ctx` as
+/// [`text_bound_of`] reads it.
+pub fn byte_string_bound_of(written: &str, ctx: &TypeCtx<'_>) -> Result<TextBound, Refusal> {
+    let tree = expr::resolve(written, ctx)?;
+    Ok(byte_string_bound(&tree, ctx))
 }
 
 /// The bound of the text the expression `written` denotes, read against
@@ -446,6 +523,91 @@ mod tests {
         // side it stands on.
         assert!(bound("loose + 'x'").bounded().is_none());
         assert!(bound("on ? 'x' : loose").bounded().is_none());
+    }
+
+    /// [`ctx`] with `Label(n)`, which returns a text of 40 bytes by its
+    /// signature, `Free(n)`, a text whose bound its signature states nowhere,
+    /// `Maybe()`, an optional text of 9 bytes, `Frame()`, a byte string of 16
+    /// bytes, `Raw()`, a byte string no signature bounds, and `blob`, a byte
+    /// string of 24 bytes by its type.
+    fn calling_ctx() -> TypeCtx<'static> {
+        use crate::forge::model::SceType;
+        use crate::forge::types::{FuncSig, OptionalElem};
+        let int32 = InferredType::Int {
+            signed: true,
+            bits: 32,
+        };
+        let mut ctx = ctx();
+        ctx.insert_func(
+            "Label",
+            FuncSig {
+                ret_bound: Some(40),
+                ..FuncSig::new(vec![int32], InferredType::Str)
+            },
+        );
+        ctx.insert_func("Free", FuncSig::new(vec![int32], InferredType::Str));
+        ctx.insert_func(
+            "Maybe",
+            FuncSig {
+                ret_bound: Some(9),
+                ..FuncSig::new(
+                    Vec::new(),
+                    InferredType::Optional(OptionalElem::of(&SceType::String)),
+                )
+            },
+        );
+        ctx.insert_func(
+            "Frame",
+            FuncSig {
+                ret_bound: Some(16),
+                ..FuncSig::new(Vec::new(), InferredType::Bytes)
+            },
+        );
+        ctx.insert_func("Raw", FuncSig::new(Vec::new(), InferredType::Bytes));
+        ctx.insert_var("blob", InferredType::Bytes);
+        ctx.insert_value("blob", Place::of(ValueType::Bytes { max: Bound::of(24) }));
+        ctx
+    }
+
+    #[test]
+    fn a_call_takes_the_bound_its_callee_declares_on_what_it_returns() {
+        let ctx = calling_ctx();
+        let at = |written: &str| text_bound_of(written, &ctx).expect("the expression resolves");
+        assert_eq!(at("Label(1)"), TextBound::Bounded(40));
+        // 40 + 2: a call is an operand as any bounded text is.
+        assert_eq!(at("Label(1) + 'ms'"), TextBound::Bounded(42));
+        // The present text of an optional one, beside its default.
+        assert_eq!(at("Maybe() ?? 'x'"), TextBound::Bounded(9));
+        assert_eq!(at("Maybe() ?? note"), TextBound::Bounded(12));
+    }
+
+    #[test]
+    fn a_call_whose_callee_declares_no_bound_has_none() {
+        let ctx = calling_ctx();
+        let written = "name + Free(1)";
+        let TextBound::Unbounded(why) = text_bound_of(written, &ctx).expect("resolves") else {
+            panic!("a call with no declared result has no bound");
+        };
+        assert_eq!(why.subexpression(written), "Free(1)");
+        assert!(
+            why.describe(written).contains("declares no bound"),
+            "{}",
+            why.describe(written)
+        );
+    }
+
+    #[test]
+    fn a_computed_byte_string_takes_its_declared_capacity() {
+        let ctx = calling_ctx();
+        let at =
+            |written: &str| byte_string_bound_of(written, &ctx).expect("the expression resolves");
+        assert_eq!(at("Frame()"), TextBound::Bounded(16));
+        assert_eq!(at("blob"), TextBound::Bounded(24));
+        assert_eq!(at("on ? Frame() : blob"), TextBound::Bounded(24));
+        assert!(at("Raw()").bounded().is_none());
+        assert!(at("on ? Raw() : blob").bounded().is_none());
+        // A text is no byte string, whatever bounds it.
+        assert!(at("name").bounded().is_none());
     }
 
     #[test]

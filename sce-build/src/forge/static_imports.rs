@@ -21,8 +21,8 @@ use std::path::Path;
 use crate::forge::error::{ForgeError, ImportError, Located};
 use crate::forge::generator::StatelessFunction;
 use crate::forge::model::{
-    AlgorithmModel, AlgorithmValueType, CodecModel, EntryType, EnumRef, ForgeDocument, ForgeField,
-    ForgeImport, ForgeKind, OutOfBounds, ParsedForge, SceType,
+    AlgorithmModel, AlgorithmSignature, AlgorithmValueType, CodecModel, EntryType, EnumRef,
+    ForgeDocument, ForgeField, ForgeImport, ForgeKind, OutOfBounds, ParsedForge, SceType,
 };
 use crate::forge::type_ctx::{CalleeKind, StaticCallee, StaticSlot, StaticValueSignature};
 use crate::forge::types::{CallReading, RecordId};
@@ -553,6 +553,25 @@ fn value_signature(
     }))
 }
 
+/// The bound `signature` states on the text or byte string it returns, the
+/// present value's for an optional one (docs/adr/0086, section 8.6 (c)): what
+/// the text of a call of the algorithm is bounded by. `None` for a return of
+/// any other type, a list among them, whose bound counts elements, and for
+/// none.
+fn returned_length(signature: &AlgorithmSignature) -> Option<u32> {
+    let present = match signature.return_type.as_ref()? {
+        AlgorithmValueType::Optional { elem } => elem.as_ref(),
+        returned => returned,
+    };
+    if !matches!(
+        present,
+        AlgorithmValueType::Text { .. } | AlgorithmValueType::Bytes { .. }
+    ) {
+        return None;
+    }
+    signature.returns_max_size()
+}
+
 /// The kinds a `sce-static` statechart calls as `Alias(args)` (docs/adr/0048): the
 /// algorithm, and the kinds that are functions of their inputs — a transform, a
 /// condition, a lookup, an interpolation and a validator. Every other kind keeps
@@ -694,6 +713,7 @@ pub(crate) fn resolve(
             reading: CallReading::Value,
             params: signature.params,
             ret: signature.ret,
+            ret_bound: returned_length(&algorithm.signature),
             host_only,
             may_fail: signature.may_fail,
             // A list of numbers returned by an algorithm that takes a value of an enum
@@ -923,6 +943,9 @@ fn function_callee(
         reading,
         params,
         ret: Some(ret),
+        // Its output is a number, a truth value or a value of an enum: a text
+        // or byte string output is refused above.
+        ret_bound: None,
         host_only: None,
         may_fail,
         line: import.line,
@@ -937,4 +960,56 @@ fn function_callee(
             &|_| None,
         ),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::forge::value_type::Bound;
+
+    fn returning(return_type: Option<AlgorithmValueType>) -> AlgorithmSignature {
+        AlgorithmSignature {
+            params: Vec::new(),
+            return_type,
+            may_fail: false,
+        }
+    }
+
+    #[test]
+    fn a_call_is_bounded_by_the_text_or_byte_string_its_algorithm_returns() {
+        let text = AlgorithmValueType::Text {
+            max: Some(Bound::of(40)),
+        };
+        assert_eq!(returned_length(&returning(Some(text.clone()))), Some(40));
+        assert_eq!(
+            returned_length(&returning(Some(AlgorithmValueType::Bytes {
+                max: Some(Bound::of(16)),
+            }))),
+            Some(16)
+        );
+        // The present value of an optional text is bounded as the text is.
+        assert_eq!(
+            returned_length(&returning(Some(AlgorithmValueType::Optional {
+                elem: Box::new(text),
+            }))),
+            Some(40)
+        );
+    }
+
+    #[test]
+    fn a_return_of_no_length_or_a_list_bounds_no_text() {
+        assert_eq!(
+            returned_length(&returning(Some(AlgorithmValueType::Scalar(SceType::Int32)))),
+            None
+        );
+        // A list's bound counts its elements, not the bytes of a text.
+        assert_eq!(
+            returned_length(&returning(Some(AlgorithmValueType::List {
+                elem: Box::new(AlgorithmValueType::Scalar(SceType::Uint8)),
+                max: Some(Bound::of(8)),
+            }))),
+            None
+        );
+        assert_eq!(returned_length(&returning(None)), None);
+    }
 }

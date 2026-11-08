@@ -12,7 +12,9 @@
 # that comes out short is a buffer a run can overflow. The unit tests of the
 # module ask each rule for its number. Each case breaks one rule: a
 # concatenation is as long as its longer operand, a choice as long as its
-# shorter branch, a literal as long as its characters rather than its bytes.
+# shorter branch, a literal as long as its characters rather than its bytes, a
+# call takes nothing from the bound its callee declares, and a choice of byte
+# strings is as long as its two branches together.
 
 mutation_tests -p sce-build --lib forge::text_bound
 mutation_targets sce-build/src/forge/text_bound.rs
@@ -34,4 +36,16 @@ mutation_case "a literal is as long as its characters, not its bytes" <<'PY'
 edit("sce-build/src/forge/text_bound.rs",
      "        ExprKind::StringLit { value } => TextBound::Bounded(value.len() as u64),\n",
      "        ExprKind::StringLit { value } => TextBound::Bounded(value.chars().count() as u64),\n")
+PY
+
+mutation_case "a call takes nothing from the bound its callee declares" <<'PY'
+edit("sce-build/src/forge/text_bound.rs",
+     "        Some(bytes) => TextBound::Bounded(bytes),\n",
+     "        Some(_) => TextBound::Unbounded(Unbounded::at(node, \"\")),\n")
+PY
+
+mutation_case "a choice of byte strings is as long as its two branches together" <<'PY'
+edit("sce-build/src/forge/text_bound.rs",
+     "        } => byte_string_bound(consequent, ctx).larger(byte_string_bound(alternate, ctx)),\n",
+     "        } => byte_string_bound(consequent, ctx).plus(byte_string_bound(alternate, ctx)),\n")
 PY
