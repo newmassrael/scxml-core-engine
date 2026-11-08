@@ -1157,9 +1157,20 @@ engine on it, registers the test-port processor and the test-component invoker o
 `terminated` is the engine's having entered a top-level `<final>` (`isInFinalState`). Every Swift policy draws a
 session id and declares `setSessionID`, whether or not a saved state can hold its machine, so the component's
 session id needs no saved shape. Swift refuses by name a component that declares `<sce:action>`, whose policy is
-initialized with a host the component is given nothing of; one that uses a template whose type reaches a union,
-which Swift does not lower (ADR 0092, section 7); and, until it generates a suite's tables, a component that declares
-a module parameter.
+initialized with a host the component is given nothing of, and one that uses a template whose type reaches a union,
+which Swift does not lower (ADR 0092, section 7).
+
+A Swift component reads a module parameter as the other backends' do. The policy's property is declared at its type's
+zero, a text and a byte string at the empty value whatever their bound, since the policy holds each in a type of any
+length, or for an enum at the variant its document declares first, named through the machine's enum type, none of
+which anything reads; the starts are the one walk the other backends' are
+(`forge::generator::swift_module_parameter_starts`). The machine's enum type declares its saved form
+(`SavedEnumeration`) with the type, whether or not the machine saves. Then `start`, after it binds the context on the
+policy and before it builds the engine, calls `ComponentContext.readModuleParameters` with the policy's
+`sceAcceptModuleParameters`, which reads every module parameter from the run's values by the reader a restore reads a
+variable of its type by (`SavedValues`, a text and a byte string held to their bounds, `SavedValues.enumeration` for an
+enum; the one spelling `_macros/swift_saved_value.jinja2` gives the saved state's restore too) before it writes any. A
+refused read ends the run with `error` and leaves the engine unbuilt, so the component delivers nothing.
 
 A module parameter (§11.5) is a variable of the machine declared with its type and no value of the document's: the
 static lowering, written once for every backend, lowers no initial value for it. Its value is the run's. Before
@@ -1211,8 +1222,7 @@ enum; the one spelling `_macros/python_saved_value.jinja2` gives the saved funct
 refused read ends the run with `error` and leaves the machine unstarted, and the component one that has not started.
 
 A backend that generates a component and not the suite's tables refuses a component that declares a module parameter
-by name (`test_component::snapshot::lower`), since its value is the suite's; C++, Rust, Kotlin, Go and Python
-generate both.
+by name (`test_component::snapshot::lower`), since its value is the suite's; every backend generates both.
 
 C++ generates `test-configuration`, `test-case` and `test-suite`, and writes no file for `test-port-type` (§12.6,
 slice 5; `codegen_matrix::TEST_SUITE_BACKENDS`): the units of the components and configurations that read a port
@@ -1355,9 +1365,33 @@ Nothing is allocated, and the storage a run needs is the caller's:
 
 The runner `sce_test_run_suite` runs the test cases a world selects (§12.4), in one run the caller places.
 
+Swift generates `test-configuration`, `test-case` and `test-suite`, and writes no file for `test-port-type` (§12.6,
+slice 6). Each table is a file `<Name>.swift`, named by the document's file as every forge unit is, over the profile's
+runtime (`SceTestProfile`). Every unit of a run is a file of one module, so each table declares its members in a
+caseless enum named by its document, as a template's unit does, and names what it reads bare, as the module declares
+it: a configuration each component's class, `<Machine>Component`, which its machine's file declares, a test case its
+configuration's enum and a suite its test cases'. Each type and function of the runtime is named by its module
+(`SceTestProfile.Configuration`), which the table imports, so no enum of the module (a document named `test_case`
+declares `TestCase`) hides one of the runtime's:
+
+- a configuration declares `configuration()`, the `Configuration` the runtime reads, every field written and an empty
+  table as empty; `machine(_:)`, which makes the `<Machine>Component` of each type and nil for another; and
+  `moduleParameters()`, the ids its components read;
+- a test case declares `name` and `testCase()`, the `TestCase` of its name, its configuration's tables, a factory of
+  machines that calls its configuration's `machine`, and the module parameters they read;
+- a suite declares `suite()`, the `Suite` of its module parameters at their defaults, each the saved value of its
+  declared type (a number, a `bool`, a text and a byte string by `SavedValues.of` of a literal of the type, a number's
+  and a byte string's coerced to it so the writer of that type is the one called, which writes a 64-bit integer as its
+  text and a byte string as its Latin-1 text; an enum's variant by the name its document declares, written as a text
+  is), which imports the SCE runtime (`SceRuntime`) where a module parameter is declared, and of its `<sce:execute>`
+  entries in run order, each with its test case, its guard in microseconds or `nil`, and its selection as a closure
+  over the world's features, whose body stands bare as Rust's closure's does.
+
+The runner `SceTestProfile.runSuite` runs the test cases a world selects (§12.4).
+
 Which rows each table holds, in which order, and what is refused is decided once for every backend
 (`forge::generator::test_tables`); a backend spells them. The runner `sce_runtime.testprofile.run_suite` runs the
-test cases a world selects (§12.4). Every kind stays refused on the other backends until their slices land.
+test cases a world selects (§12.4). Every backend generates every kind of the profile.
 
 ### 11.10 The rules under feature derivation
 
@@ -1559,5 +1593,8 @@ the equivalence law (order of work step 6).
    there, as on C++, Go, Python and C11, and so does one that holds a record or an enum whose own Swift unit is not
    written. Swift generates test components next, through the doors of §12.3, and runs them through
    `SceTestProfile.TestCaseRun`; the refusal is lifted for Swift for `test-component`, but for a component that
-   declares a module parameter, whose value Swift's suite tables are to give, for one that declares `<sce:action>`,
-   and for one whose template reaches a union.
+   declares `<sce:action>` and for one whose template reaches a union. Swift then generates the configuration, case
+   and suite tables over the same rows, each the members of an enum named by its document in the one module every
+   unit of a run is a file of, and runs the examples end to end through `SceTestProfile.runSuite`; the refusal is
+   lifted for Swift for the remaining kinds, and for a component's module parameter. Every backend now generates
+   every kind of the profile.

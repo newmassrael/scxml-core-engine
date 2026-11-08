@@ -577,22 +577,24 @@ into its initial configuration, copies a number, a `bool`, a text, an enum and a
 value of each of such a message, and refuses with `generate/unsupported-feature` one whose
 branch reads a message with a byte string, one that declares `<sce:action>` and one that
 uses a template whose type reaches a union. Swift generates a test component too, through
-the same doors, so every backend generates one; it copies such a message as Kotlin, Go and
-Python do, and refuses with `generate/unsupported-feature` one that declares
-`<sce:action>` and one that uses a template whose type reaches a union. A backend that
-generates a component and not a suite's tables, Swift among them, refuses one that
-declares a module parameter by name. On every such backend a variable of an enum bound to a template's
+the same doors, so every backend generates one, each module parameter read from the run
+before the engine is built; it copies such a message as Kotlin, Go and Python do, and
+refuses with `generate/unsupported-feature` one that declares `<sce:action>` and one that
+uses a template whose type reaches a union. A backend that generated a component and not
+a suite's tables would refuse one that declares a module parameter by name; none does. On
+every such backend a variable of an enum bound to a template's
 parameter crosses into the enum unit's type, and one of an optional enum is refused by
 name. A module parameter whose type is not a scalar, `string[N]` or `bytes[N]` is refused
-by name (`generate/unsupported-feature`) on every backend. C++, Rust, Kotlin, Go, Python
-and C11 generate the tables of a test configuration, a test case and a suite, and write no
-file for a port type (§11.9, §12.6, slices 5 and 6); each refuses a suite whose guard is
-past the microseconds the runtime's clock counts to. Go's tables import what they read
-below `--go-module-prefix`, a component's machine from the directory of its name, and are
+by name (`generate/unsupported-feature`) on every backend. Every backend generates the
+tables of a test configuration, a test case and a suite, and writes no file for a port
+type (§11.9, §12.6, slices 5 and 6); each refuses a suite whose guard is past the
+microseconds the runtime's clock counts to. Go's tables import what they read below
+`--go-module-prefix`, a component's machine from the directory of its name, and are
 refused by name without one; Python's import what they read as sibling modules, a
 component's machine as `<machine>_sm`; C11's include what they read by its header and
-make every machine from storage the caller places. Every other pair of a backend and a
-kind of the profile is refused by name.
+make every machine from storage the caller places; Swift's are the members of an enum
+named by the document, and name what they read bare, as the one module of a run declares
+it.
 
 A port type, a configuration, a test case and a suite are then held to the rules their
 imports decide (`docs/SCE_TEST_PROFILE.md` §11.3, §11.6 to §11.8), and a document a
