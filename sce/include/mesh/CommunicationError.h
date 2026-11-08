@@ -152,6 +152,12 @@ enum class ReasonCode : std::uint8_t {
     /// checkpoint (its step 6); the vocabulary carries it from the day the
     /// catalog does, so a document can already name it in a transition.
     Restored,
+    /// §mesh-16.7 row 18 — wire `"CAUSAL_VIEW_MISMATCH"`. An envelope on a
+    /// causal route tagged with another epoch than the receiver's view, or by a
+    /// replica the view does not hold. The C++ core carries no causal route yet
+    /// (the build refuses `delivery: causal` for C++); the vocabulary carries
+    /// the reason from the day the catalog does.
+    CausalViewMismatch,
 };
 
 /// Canonical mapping table — single source of truth for both JSON
@@ -159,7 +165,7 @@ enum class ReasonCode : std::uint8_t {
 /// `SCE_MESH.md` §mesh-16.7. Adding a §mesh-16.7 row requires extending
 /// this table; the cross-doc test fails the build if the table and
 /// the markdown catalog diverge.
-inline constexpr std::array<std::pair<ReasonCode, std::string_view>, 17> kReasonCodeTable = {{
+inline constexpr std::array<std::pair<ReasonCode, std::string_view>, 18> kReasonCodeTable = {{
     {ReasonCode::TransportUnavailable, "TRANSPORT_UNAVAILABLE"},
     {ReasonCode::SendFailed, "SEND_FAILED"},
     {ReasonCode::DeliveryExhausted, "DELIVERY_EXHAUSTED"},
@@ -177,6 +183,7 @@ inline constexpr std::array<std::pair<ReasonCode, std::string_view>, 17> kReason
     {ReasonCode::OutboundStaleDrop, "OUTBOUND_STALE_DROP"},
     {ReasonCode::NotificationDeadlineMissed, "NOTIFICATION_DEADLINE_MISSED"},
     {ReasonCode::Restored, "RESTORED"},
+    {ReasonCode::CausalViewMismatch, "CAUSAL_VIEW_MISMATCH"},
 }};
 
 /// Map a `ReasonCode` to its canonical wire string. Linear lookup
