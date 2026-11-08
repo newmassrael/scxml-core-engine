@@ -1080,9 +1080,18 @@ configuration (`<machine>_init_enter`, the entry half of `_init`), so the first 
 having entered a top-level `<final>`. A C11 root draws its own session id, `<name>_session_<n>`, and takes none from
 its host (docs/SCE_ACCEPTED_SUBSET.md, "What C11 does otherwise"), so the component does not name its machine's
 session after the component, as the other backends' components do. C11 refuses by name a component that declares
-`<sce:action>`, whose machine is initialized with a table of acts the component is given nothing of; one that uses a
-template whose type reaches a union, which C11 does not lower (ADR 0092, section 7); and, until it generates a
-suite's tables, a component that declares a module parameter.
+`<sce:action>`, whose machine is initialized with a table of acts the component is given nothing of, and one that
+uses a template whose type reaches a union, which C11 does not lower (ADR 0092, section 7).
+
+A C11 component reads a module parameter as the other backends' do. The machine's construction starts the member at
+its type's zero, or for an enum at the variant its document declares first, a compound literal of the buffer's own
+type for a text or a byte string of a bound, none of which anything reads. `start` sets the context on the machine
+the construction has cleared and hands the run's module parameters to `<machine>_component_accept_module_parameters`
+through `sce_test_context_read_module_parameters`, which reads every value into a local of the member's type by the
+reader a restored variable of that type is read by (`sce/saved_values.h`, an enum's `<type>_saved_read` emitted with
+the type whether or not the machine saves) and only then writes them all; a value not given, not of the type or past
+its bound ends the run with `error`, and the initial configuration is not entered. A text or a byte string the
+machine holds in no buffer of a bound has no place a value is read into, and is refused by name.
 
 A module parameter (§11.5) is a variable of the machine declared with its type and no value of the document's: the
 static lowering, written once for every backend, lowers no initial value for it. Its value is the run's. Before
@@ -1248,6 +1257,35 @@ with a leading underscore, which no sibling's alias and no declaration of a tabl
   `<sce:execute>` entries in run order, each with its test case, its guard in microseconds or `None`, and its
   selection as a `lambda` over the world's features in Python's `and` and `or`, whose body stands bare as Rust's
   closure's does, every join inside it in parentheses.
+
+C11 generates `test-configuration`, `test-case` and `test-suite`, and writes no file for `test-port-type` (§12.6,
+slice 6). Each table is a header `<file>.h`, named by the document's file as every forge unit is, over the profile's
+runtime (`sce/test/test_case_run.h`, `sce/test/suite.h`); it is header-only (`static inline`), C has no namespace,
+so each declaration carries the document's name, and a table includes the header of each unit it reads: a test
+case its configuration's, a suite its test cases', and a configuration each component's machine, `<machine>_sm.h`.
+Nothing is allocated, and the storage a run needs is the caller's:
+
+- a configuration declares `<name>_configuration()`, the `sce_test_configuration_t` the runtime reads, constant
+  storage each of whose tables is absent (`NULL`, `0`) where the configuration has none; `<name>_machines_t`, the
+  storage of its components' machines, an array of `<machine>_component_t` for each component type, as long as the
+  configuration has components of that type, which is the most a run of it holds at once; `<name>_machines()`, the
+  `sce_test_machine_factory_t` over that storage, which makes a machine of a type from the first of its components
+  no run holds and none of a type the configuration does not name; and `<name>_module_parameters()` and
+  `<name>_module_parameter_count()`, the ids its components read;
+- a test case declares `<NAME>_NAME`, its name, `<name>_machines_t`, its configuration's storage, and
+  `<name>_test_case(machines)`, the `sce_test_case_t` of its name, its configuration's tables, the factory of
+  machines over the storage it is handed, and the module parameters they read;
+- a suite declares `<name>_storage_t`, which the caller places and which outlives every run of the suite: the
+  `sce_test_suite_t`, its `<sce:execute>` entries and the storage of the machines of each of its test cases; and
+  `<name>_suite(storage)`, which clears the storage, so every component starts free, and answers the suite in it:
+  each module parameter at its default, the compact JSON text of the saved value of its declared type (a number
+  narrower than 64 bits and a `bool` as the value they are, a 64-bit integer as its text, a text as itself, a byte
+  string as its Latin-1 text, an enum's variant by the name its document declares), within
+  `SCE_TEST_MAX_MODULE_PARAMETERS`, which the header asserts at compile time; and each entry in run order, with its
+  test case, its guard in microseconds and its selection as a function of its own, `<name>_selects_<n>`, over the
+  world's features, whose returned expression stands bare as Rust's closure's body does.
+
+The runner `sce_test_run_suite` runs the test cases a world selects (§12.4), in one run the caller places.
 
 Which rows each table holds, in which order, and what is refused is decided once for every backend
 (`forge::generator::test_tables`); a backend spells them. The runner `sce_runtime.testprofile.run_suite` runs the
@@ -1435,6 +1473,9 @@ the equivalence law (order of work step 6).
    refused there, as on C++, Go and Python, and so does one over a byte string of one entry, which its event schema
    unit holds as a pointer with no length. C11 generates test components next, through the doors of §12.3, each in
    storage its factory owns, and runs them through `sce_test_case_run_t`; the refusal is lifted for C11 for
-   `test-component`, but for a component that declares a module parameter, whose value C11's suite tables are to
-   give, for one that declares `<sce:action>`, for one whose template reaches a union, and for a receive branch
-   whose content reads a message of a record with a byte string of one entry.
+   `test-component`, but for a component that declares `<sce:action>`, for one whose template reaches a union, and
+   for a receive branch whose content reads a message of a record with a byte string of one entry. C11 then
+   generates the configuration, case and suite tables over the same rows, each including what it reads by its
+   header and making every machine from storage the caller places, and runs the examples end to end through
+   `sce_test_run_suite`; the refusal is lifted for C11 for the remaining kinds, and for a component's module
+   parameter.
