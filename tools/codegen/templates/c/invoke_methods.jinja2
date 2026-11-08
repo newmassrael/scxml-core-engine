@@ -306,8 +306,7 @@ static void {{ csym_prefix }}{{ model.name }}_dispatch_external_by_name(void *op
        skips the load — same observable as cpp `EventWithMetadata{event,
        data=""}` in the no-param send-to-parent shape. */
     if (event_data != NULL && event_data[0] != '\0') {
-        strncpy(evt.data, event_data, (size_t)SCE_MAX_DATA_LEN - 1u);
-        evt.data[(size_t)SCE_MAX_DATA_LEN - 1u] = '\0';
+        sce_copy_bounded_n(evt.data, event_data, sizeof(evt.data));
     }
     /* §scxml-3.12.1 + §scxml-5.10: the child names the event, and its names are
        not this machine's, so one this document does not write reaches it as the
@@ -439,7 +438,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                 }
             }
 {% endif %}
-{% for attr, buf, cap, expr in [('src', '_host_inv_src', 'SCE_MAX_URI_LEN', invoke_info.srcexpr), ('content', '_host_inv_content', 'SCE_MAX_DATA_LEN', invoke_info.contentexpr)] %}
+{% for attr, buf, cap, expr in [('src', '_host_inv_src', 'SCE_MAX_URI_LEN', invoke_info.srcexpr), ('content', '_host_inv_content', data_slot.name, invoke_info.contentexpr)] %}
 {% if expr %}
             char {{ buf }}[{{ cap }}];
             bool {{ buf }}_ok = false;
@@ -467,7 +466,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
             (void)luaL_dostring(sm->L, "_sce_invoke_pairs = {}");
 {% endif %}
 {% for var_name in host_namelist %}
-            char _host_inv_nl_value_{{ loop.index0 }}[SCE_MAX_DATA_LEN];
+            char _host_inv_nl_value_{{ loop.index0 }}[{{ data_slot.name }}];
             bool _host_inv_nl_ok_{{ loop.index0 }} = false;
 {{ se.lua_namelist_var_to_wire_string(var_name, '_host_inv_nl_value_' ~ loop.index0, 'sizeof(_host_inv_nl_value_' ~ loop.index0 ~ ')', '_host_inv_nl_ok_' ~ loop.index0, var_name if record_pairs else none) }}
             if (!_host_inv_nl_ok_{{ loop.index0 }}) {
@@ -493,10 +492,10 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                are rendered from the one typed value. §scxml-5.7.1: a value that
                cannot be computed is reported and its pair left out, and the
                invocation still starts with the others. */
-            char _host_inv_event_data[SCE_MAX_DATA_LEN];
+            char _host_inv_event_data[{{ data_slot.name }}];
             _host_inv_event_data[0] = '\0';
 {% if payload_params %}
-            char _host_inv_texts[{{ invoke_info.params | length }}][SCE_MAX_DATA_LEN];
+            char _host_inv_texts[{{ invoke_info.params | length }}][{{ data_slot.name }}];
             sce_forge_wire_t _host_inv_wire;
             sce_forge_wire_begin(&_host_inv_wire, _host_inv_event_data, sizeof(_host_inv_event_data));
 {% endif %}
@@ -577,12 +576,12 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
                time, so it passes as written. */
 {% for param in invoke_info.params %}
 {% if param.name in request_checks and not param.is_static_literal %}
-            char _host_inv_typed_{{ loop.index0 }}[SCE_MAX_DATA_LEN];
+            char _host_inv_typed_{{ loop.index0 }}[{{ data_slot.name }}];
             const char *_host_inv_refusal_{{ loop.index0 }} = NULL;
 {{ se.lua_eval_to_request_field(param.expr or param.location, request_checks[param.name], '_host_inv_typed_' ~ loop.index0, 'sizeof(_host_inv_typed_' ~ loop.index0 ~ ')', '_host_inv_refusal_' ~ loop.index0, param.name if (record_pairs and not param.envelope_metadata) else none) }}
             if (_host_inv_refusal_{{ loop.index0 }} != NULL) {
 {% if 'error.execution' in model.events %}
-                char _host_inv_message[SCE_MAX_DATA_LEN];
+                char _host_inv_message[{{ data_slot.name }}];
                 snprintf(_host_inv_message, sizeof(_host_inv_message),
                          "<invoke> <param name='{{ param.name | escape_c }}'> cannot be its request field: '{{ param.name | escape_c }}' %s",
                          _host_inv_refusal_{{ loop.index0 }});
@@ -604,7 +603,7 @@ static void {{ csym_prefix }}{{ model.name }}_execute_pending_invokes({{ csym_pr
 {% if static_datamodel %}
 {# The event data was written with the params above. #}
 {% elif record_pairs %}
-            char _host_inv_event_data[SCE_MAX_DATA_LEN];
+            char _host_inv_event_data[{{ data_slot.name }}];
             _host_inv_event_data[0] = '\0';
             if (luaL_dostring(sm->L,
                 "local p = _sce_invoke_pairs or {}; _sce_invoke_pairs = nil; "

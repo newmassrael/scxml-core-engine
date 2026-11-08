@@ -400,6 +400,26 @@ const sce_answer_schema_t *{{ csym_prefix }}{{ model.name }}_answer_schemas(void
 /* ── W3C SCXML G.7: `<sce:action>` host dispatch ───────────────────── */
 {{ native_actions_defs }}
 {% endif %}
+/* ── docs/adr/0086, section 8.1: the slot of `_event.data` ─────────── */
+/* The bytes, its NUL included, of every place this machine holds an event's
+   data in and of every buffer it writes such data into: the largest data an
+   input of the machine carries. The build sizes each event of a schema the
+   statechart imports that the machine receives, at its schema's DATA_MAX_LEN
+   (docs/adr/0086, section 2.2){% if data_slot.inputs %}:
+{% for input in data_slot.inputs %}
+     `{{ input.event }}` ({{ input.schema }}), which {% if input.arrival == 'host_result' %}a host-run invocation completes with{% else %}a transition takes{% endif %}: {{ input.data_max_len }} bytes
+{% endfor %}
+{% else %}; it receives none.
+{% endif %}
+   An input no declaration sizes yet is held to SCE_MAX_DATA_LEN, which the slot
+   is never smaller than: the data a host hands an event by name, a host's reply,
+   a child session's data and an error's reason{% if model.needs_script_engine %}, and every value the
+   script engine computes, which no type bounds{% endif %}. */
+#define {{ data_slot.name }}_DECLARED {{ data_slot.declared }}u
+#define {{ data_slot.name }}                                                                   \
+    ((size_t){{ data_slot.name }}_DECLARED > (size_t)(SCE_MAX_DATA_LEN) ? (size_t){{ data_slot.name }}_DECLARED \
+                                                                      : (size_t)(SCE_MAX_DATA_LEN))
+
 /* ── W3C SCXML 5.10: Event with metadata ──────────────────────────── */
 {# Mirrors `StaticExecutionEngine<P>::EventWithMetadata` (sce/include/static).
    Strings are bounded char arrays sized via `sce/types.h` so the entire
@@ -413,7 +433,7 @@ typedef struct {{ csym_prefix }}{{ model.name }}_event_with_meta {
        through a prefix; empty means the member's own name IS the name, which is
        every event the document itself raises or sends. */
     char name[SCE_MAX_ID_LEN];
-    char data[SCE_MAX_DATA_LEN];
+    char data[{{ data_slot.name }}];
     /* §scxml-5.10.1: `_event.origin` and `_event.origintype`, the one pair the
        delivering processor wrote where it built the event (docs/adr/0090,
        `sce_event_origin_t` in `sce/types.h`); none, both empty, for an event
@@ -511,12 +531,13 @@ typedef struct {{ csym_prefix }}{{ model.name }}_scheduled_entry {
        dequeue promoted — which any event dequeued first could take, and
        which no saved state can hold, because a registry reference means
        nothing outside the engine that issued it. Mirrors cpp
-       `EventWithMetadata::data`. Costs SCE_MAX_DATA_LEN per scheduled slot,
+       `EventWithMetadata::data`. Costs the machine's slot of `_event.data`
+       ({{ data_slot.name }}) per scheduled entry,
        on a machine with a script engine, whose sends can evaluate a payload,
        and on one whose document sends a delayed payload of its own fields
        (`has_delayed_send_payload`, §scxml-6.2.4); no other machine has a
        payload to hold. */
-    char data[SCE_MAX_DATA_LEN];
+    char data[{{ data_slot.name }}];
 {% endif %}
     /* W3C SCXML 6.2.4 + C.1: where the entry delivers when it comes due —
        the target its `<send>` resolved when it was performed. A delay
@@ -572,8 +593,8 @@ typedef struct {{ csym_prefix }}{{ model.name }}_scheduled_entry {
     char host_processor_type[SCE_MAX_ID_LEN];
     char host_event_name[SCE_MAX_ID_LEN];
     char host_target[SCE_MAX_URI_LEN];
-    char host_content[SCE_MAX_DATA_LEN];
-    char host_event_data[SCE_MAX_DATA_LEN];
+    char host_content[{{ data_slot.name }}];
+    char host_event_data[{{ data_slot.name }}];
     /* The invokeid current when the send executed (SCE_MESH.md
        §mesh-10.7), kept so the act performed at the deadline carries that
        one rather than whatever event is being processed then. */
@@ -584,7 +605,7 @@ typedef struct {{ csym_prefix }}{{ model.name }}_scheduled_entry {
        SCE_MAX_HOST_SEND_PARAMS: a bound the document proves is a bound
        nothing has to be tuned to. */
     char host_param_names[{{ model.delayed_host_send_max_params }}][SCE_MAX_ID_LEN];
-    char host_param_values[{{ model.delayed_host_send_max_params }}][SCE_MAX_DATA_LEN];
+    char host_param_values[{{ model.delayed_host_send_max_params }}][{{ data_slot.name }}];
     uint8_t host_param_count;
 {% endif %}
 {% endif %}
@@ -623,11 +644,11 @@ typedef struct {{ csym_prefix }}{{ model.name }}_host_request {
     char processor_type[SCE_MAX_ID_LEN];
     char invoke_id[SCE_MAX_ID_LEN];
     char src[SCE_MAX_URI_LEN];
-    char content[SCE_MAX_DATA_LEN];
-    char event_data[SCE_MAX_DATA_LEN];
+    char content[{{ data_slot.name }}];
+    char event_data[{{ data_slot.name }}];
     uint8_t param_count;
     char param_names[{{ host_request_cap.n }}][SCE_MAX_ID_LEN];
-    char param_values[{{ host_request_cap.n }}][SCE_MAX_DATA_LEN];
+    char param_values[{{ host_request_cap.n }}][{{ data_slot.name }}];
 } {{ csym_prefix }}{{ model.name }}_host_request_t;
 
 /* An invocation a restore re-armed: its request, and when its deadline comes due (`deadline` is
@@ -803,7 +824,7 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
        its pairs, or the wire text of an inline `<content>` finished at build
        time — what a host or a parent reads through `_done_data`, and a compound
        final's done event is built from. Empty until then. */
-    char done_data[SCE_MAX_DATA_LEN];
+    char done_data[{{ data_slot.name }}];
 {% endif %}
     {{ csym_prefix }}{{ model.name }}_event_queue_t internal_queue;   /* W3C 3.12.1: high-priority FIFO */
     {{ csym_prefix }}{{ model.name }}_event_queue_t external_queue;   /* W3C 3.12.1: low-priority FIFO  */
@@ -1886,7 +1907,7 @@ SCE_C_UNUSED static inline void {{ csym_prefix }}{{ model.name }}_raise_platform
     {{ csym_prefix }}{{ model.name }}_event_with_meta_t _pe;
     memset(&_pe, 0, sizeof(_pe));
     _pe.event = event;
-    sce_copy_bounded_data(_pe.data, message);
+    sce_copy_bounded_n(_pe.data, message, sizeof(_pe.data));
     sce_copy_bounded_n(_pe.type, "platform", (size_t)SCE_MAX_EVENT_TYPE_LEN);
     sce_copy_bounded_id(_pe.send_id, send_id);
     {{ csym_prefix }}{{ model.name }}_raise(sm, &_pe);

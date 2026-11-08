@@ -3260,12 +3260,14 @@ fn a_delayed_send_carries_its_params_through_the_scheduled_entry_of_a_c_machine_
         !source.contains("a combination of attributes this backend cannot emit"),
         "the delayed send is emitted, not refused when it runs:\n{source}"
     );
+    // docs/adr/0086, section 8.1: the entry's room is the machine's slot of
+    // `_event.data`, and the copy onto it is bounded by that room.
     assert!(
-        header.contains("char data[SCE_MAX_DATA_LEN];\n    /* W3C SCXML 6.2.4 + C.1: where"),
-        "the scheduled entry holds the payload:\n{header}"
+        header.contains("_DATA_LEN];\n    /* W3C SCXML 6.2.4 + C.1: where"),
+        "the scheduled entry holds the payload in the machine's slot:\n{header}"
     );
     assert!(
-        source.contains("sce_copy_bounded_data(slot->data, payload_json);"),
+        source.contains("sce_copy_bounded_n(slot->data, payload_json, sizeof(slot->data));"),
         "the payload is copied onto the entry when it is scheduled:\n{source}"
     );
     assert!(
@@ -3284,7 +3286,8 @@ fn a_delayed_send_carries_its_params_through_the_scheduled_entry_of_a_c_machine_
 
 #[test]
 fn a_c_machine_whose_delayed_sends_carry_nothing_keeps_its_scheduled_entry_free_of_a_payload() {
-    // The room for a payload costs SCE_MAX_DATA_LEN per queued send, so a
+    // The room for a payload costs the machine's slot of `_event.data` per
+    // queued send (docs/adr/0086, section 8.1), so a
     // machine pays it only when its document sends a delayed payload: an
     // undelayed send with params, and a delayed one with none, leave it out.
     for states in [
@@ -3309,7 +3312,7 @@ fn a_c_machine_whose_delayed_sends_carry_nothing_keeps_its_scheduled_entry_free_
         let header = generated_with_extension(out_dir.path(), "h");
         let source = generated_with_extension(out_dir.path(), "c");
         assert!(
-            !header.contains("char data[SCE_MAX_DATA_LEN];\n    /* W3C SCXML 6.2.4 + C.1: where"),
+            !header.contains("_DATA_LEN];\n    /* W3C SCXML 6.2.4 + C.1: where"),
             "a send with nothing to carry needs no payload on the entry:\n{header}"
         );
         assert!(
