@@ -307,11 +307,33 @@ pub const ROLES: &[Role] = &[
     },
 ];
 
-/// Whether a machine holds the role `role`: every role but `replies`, which a
-/// machine holds when it serves a host-served send, `host_sends`, whose header
-/// then names the bound of its rows.
-pub fn held(role: &Role, host_sends: bool) -> bool {
-    role.rows != Rows::Responses || host_sends
+/// What decides which roles a machine holds ([`held`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Holder {
+    /// The machine serves a host-served send, whose header then names the
+    /// bound of the rows of its replies.
+    pub host_sends: bool,
+    /// The machine's data model is a script engine, whose host answers grow in
+    /// the engine's heap (docs/adr/0086, section 8.6 (d)).
+    pub script_engine: bool,
+}
+
+/// The roles whose data grows in the engine's heap on a machine whose data
+/// model is a script engine, and which such a machine therefore does not hold
+/// in its scratch (docs/adr/0086, section 8.6 (d)): a host's replies and a
+/// host-run invocation's answer, which the runtime's writers copy into texts of
+/// their own size there.
+pub const GROWN_ON_A_SCRIPT_ENGINE: &[&str] = &["answer", "replies"];
+
+/// Whether a machine `holder` describes holds the role `role`: every role but
+/// `replies`, which a machine holds when it serves a host-served send, and but
+/// the roles a machine whose data model is a script engine grows in its heap
+/// ([`GROWN_ON_A_SCRIPT_ENGINE`]).
+pub fn held(role: &Role, holder: Holder) -> bool {
+    if holder.script_engine && GROWN_ON_A_SCRIPT_ENGINE.contains(&role.name) {
+        return false;
+    }
+    role.rows != Rows::Responses || holder.host_sends
 }
 
 /// Whether `inner` can run while `outer` is in progress: `outer` contains it,
@@ -381,13 +403,13 @@ pub struct ScratchColour {
 }
 
 /// The scratch of a machine that holds the roles [`held`] answers for
-/// `host_sends`, as its header declares it: one union per colour of those
-/// roles, in the order of the colours.
-pub fn layout(host_sends: bool) -> Vec<ScratchColour> {
+/// `holder`, as its header declares it: one union per colour of those roles,
+/// in the order of the colours.
+pub fn layout(holder: Holder) -> Vec<ScratchColour> {
     let roles: Vec<Role> = ROLES
         .iter()
         .copied()
-        .filter(|role| held(role, host_sends))
+        .filter(|role| held(role, holder))
         .collect();
     let colours = colours_of(&roles);
     let count = colours.iter().copied().max().map_or(0, |top| top + 1);
@@ -482,16 +504,44 @@ mod tests {
     #[test]
     fn the_layout_holds_every_role_once_in_fewer_colours_than_roles() {
         for host_sends in [true, false] {
-            let layout = layout(host_sends);
-            let names: Vec<&str> = layout
-                .iter()
-                .flat_map(|colour| colour.roles.iter().map(|role| role.name))
-                .collect();
-            let expected = ROLES.iter().filter(|role| held(role, host_sends)).count();
-            assert_eq!(names.len(), expected);
-            assert!(layout.len() < expected);
-            assert!(layout.iter().all(|colour| !colour.roles.is_empty()));
-            assert_eq!(names.contains(&"replies"), host_sends);
+            for script_engine in [true, false] {
+                let holder = Holder {
+                    host_sends,
+                    script_engine,
+                };
+                let layout = layout(holder);
+                let names: Vec<&str> = layout
+                    .iter()
+                    .flat_map(|colour| colour.roles.iter().map(|role| role.name))
+                    .collect();
+                let expected = ROLES.iter().filter(|role| held(role, holder)).count();
+                assert_eq!(names.len(), expected);
+                assert!(layout.len() < expected);
+                assert!(layout.iter().all(|colour| !colour.roles.is_empty()));
+                assert_eq!(names.contains(&"replies"), host_sends && !script_engine);
+            }
         }
+    }
+
+    /// A machine whose data model is a script engine grows a host's replies
+    /// and a host-run invocation's answer in its heap, so its scratch holds
+    /// neither; every other machine holds the answer, and the replies where it
+    /// serves a host-served send.
+    #[test]
+    fn a_script_machine_holds_no_role_its_heap_grows() {
+        let role = |name: &str| ROLES.iter().find(|r| r.name == name).expect("a role");
+        let scripted = Holder {
+            host_sends: true,
+            script_engine: true,
+        };
+        let typed = Holder {
+            host_sends: true,
+            script_engine: false,
+        };
+        assert!(!held(role("answer"), scripted));
+        assert!(!held(role("replies"), scripted));
+        assert!(held(role("payload"), scripted));
+        assert!(held(role("answer"), typed));
+        assert!(held(role("replies"), typed));
     }
 }
