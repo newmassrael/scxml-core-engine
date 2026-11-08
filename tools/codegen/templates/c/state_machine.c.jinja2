@@ -900,6 +900,7 @@ SCE_SM_FN static void {{ csym_prefix }}{{ model.name }}_perform_basic_http({{ cs
            against this machine's known event set, and leaves the name it arrived
            under in `_http_evt.name` (§scxml-5.10). */
         if ({{ csym_prefix }}{{ model.name }}_arrive(_http_json.event_name, _http_json.event_name_len, &_http_evt.event, _http_evt.name)) {
+            /* sce-scratch-activity: reply */
             bool _http_data_fits = true;
 {% if model.needs_script_engine %}
             /* W3C SCXML C.2: the reply's `data` rides on the event it arrived
@@ -987,6 +988,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
 {% endif %}
         return;
     }
+    /* sce-scratch-activity: host_reply */
     sce_host_send_response_list_t _replies;
     memset(&_replies, 0, sizeof(_replies));
     /* docs/adr/0086, section 8.5 (b): the replies' data is copied into the
@@ -2177,6 +2179,7 @@ SCE_SM_FN static SCE_C_UNUSED void {{ csym_prefix }}{{ model.name }}_perform_hos
 {% elif action.type == 'send' %}
         {
             /* W3C SCXML 6.2: <send{% if action.event %} event="{{ action.event }}"{% endif %}{% if action.eventexpr %} eventexpr="{{ action.eventexpr }}"{% endif %}{% if action.target %} target="{{ action.target }}"{% endif %}{% if action.delay %} delay="{{ action.delay }}"{% endif %}> */
+            /* sce-scratch-activity: send */
 {% if action.native_idlocation %}
             /* W3C SCXML 6.2.4: under `datamodel="sce-static"` the machine
                generates the id and writes it to the variable `idlocation`
@@ -3426,6 +3429,7 @@ SCE_SM_FN static void execute_entry_actions({{ csym_prefix }}{{ model.name }}_t 
                read queues error.execution ahead of done.state (§scxml-5.7), and
                that error took the data. The stash is cleared so nothing dequeued
                before this event can read it. */
+            /* sce-scratch-activity: done_state */
             sm->scratch.done[0] = '\0';
             {{ se.lua_donedata_wire_into('sm->L', 'sm->scratch.done', 'sizeof(sm->scratch.done)') }}
             (void)luaL_dostring(sm->L, "_sce_donedata = nil");
@@ -6287,6 +6291,7 @@ SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_perform_host_invoke({{ c
     param_count = kept;
     if (unreadable != NULL) {
 {% if 'error.execution' in model.events %}
+        /* sce-scratch-activity: reason */
         /* docs/adr/0086, section 8.5 (d): the machine's scratch. */
         char *const message = sm->scratch.message;
         (void)snprintf(message, sizeof(sm->scratch.message),
@@ -6312,6 +6317,7 @@ SCE_SM_FN static bool {{ csym_prefix }}{{ model.name }}_perform_host_invoke({{ c
     }
 {% endif %}
     memset(&out, 0, sizeof(out));
+    /* sce-scratch-activity: host_answer */
     /* docs/adr/0086, section 8.5 (b): the host's answer is copied into the
        machine's own scratch, and one that does not fit is refused there and
        raised here. */
@@ -6355,6 +6361,7 @@ SCE_SM_FN static void raise_host_invoke_failure({{ csym_prefix }}{{ model.name }
     const size_t prefix_len = sizeof(SCE_ERROR_INVOKE_PREFIX) - 1u;
     const size_t id_len = strlen(invoke_id);
     {{ csym_prefix }}{{ model.name }}_event_with_meta_t raised;
+    /* sce-scratch-activity: failure */
     memset(&raised, 0, sizeof(raised));
     if (prefix_len + id_len >= sizeof(name)) {
         return;
@@ -6388,6 +6395,7 @@ SCE_SM_FN static void start_restored_host_invokes({{ csym_prefix }}{{ model.name
         return;
     }
     sm->restored_host_invoke_count = 0u;
+    /* sce-scratch-activity: restart */
     for (uint8_t i = 0u; i < owed; ++i) {
         {{ csym_prefix }}{{ model.name }}_restored_host_t *restored = &sm->restored_host_invokes[i];
         {{ csym_prefix }}{{ model.name }}_host_request_t *request = &restored->request;
@@ -7239,6 +7247,7 @@ SCE_SM_FN static void drain_inbox({{ csym_prefix }}{{ model.name }}_t *sm) {
     if (sm->draining_inbox) {
         return;
     }
+    /* sce-scratch-activity: drain */
     sm->draining_inbox = true;
     while (applied < (uint32_t)SCE_MAX_INBOX && sm->external_queue.count < (uint16_t)SCE_MAX_EVENTS &&
            sce_inbox_take(&sm->inbox, (unsigned char *)sm->inbox_slots, sizeof(sm->inbox_slots[0]), input)) {
