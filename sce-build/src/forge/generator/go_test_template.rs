@@ -266,6 +266,15 @@ impl CanonicalSpelling for GoCanonical {
         )
     }
 
+    /// JSON `null` where the element is absent, which the list keeps in its
+    /// place; its value read as a field's is otherwise.
+    fn optional_element(&self, element: &GoCanonicalAt, _binding: &str, written: String) -> String {
+        format!(
+            "{CANONICAL}.OptionalElement({}.IsPresent(), func() any {{ return {written} }})",
+            element.expr
+        )
+    }
+
     fn record(&self, fields: Vec<(String, String)>) -> String {
         let fields: Vec<String> = fields
             .into_iter()

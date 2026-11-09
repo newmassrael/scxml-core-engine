@@ -672,6 +672,15 @@ fn a_parameter_that_may_be_absent_is_compared_by_its_two_parts() {
             "{ .tags = { .len = 2u, .items = { { .present = param_tag.present, \
              .value = param_tag.value }, { .present = param_tag.present, \
              .value = param_tag.value } } } }",
+            // An element of the list is written in the test log behind its
+            // `present` as a field is, and `null` in its place where it holds
+            // no value, since the array names it by its position.
+            "    sce_jcs_key(jcs, \"tags\");\n    sce_jcs_begin_array(jcs);\n    \
+             for (uint32_t sce_item_0 = 0u; sce_item_0 < (*value).tags.len; ++sce_item_0) {\n        \
+             if ((*value).tags.items[sce_item_0].present) {\n            \
+             SCE_TEST_CANONICAL_INTEGER(jcs, (*value).tags.items[sce_item_0].value);\n        \
+             } else {\n            sce_test_canonical_absent_element(jcs);\n        }\n    }\n    \
+             sce_jcs_end_array(jcs);\n",
         ],
     );
 }

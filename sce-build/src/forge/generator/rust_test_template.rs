@@ -225,6 +225,16 @@ impl CanonicalSpelling for RustCanonical {
         format!("{}.as_ref().map(|{binding}| {written})", field.base)
     }
 
+    /// The element's value read as a field's is, which the runtime's
+    /// `optional_element` writes, or `null` where it holds none. The element
+    /// is bound by reference, so `as_ref` reads it through the binding.
+    fn optional_element(&self, element: &Canonical, binding: &str, written: String) -> String {
+        format!(
+            "{CANONICAL}::optional_element({}.as_ref().map(|{binding}| {written}))",
+            element.base
+        )
+    }
+
     fn record(&self, fields: Vec<(String, String)>) -> String {
         let fields: Vec<String> = fields
             .into_iter()

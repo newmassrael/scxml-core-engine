@@ -218,6 +218,15 @@ impl CanonicalSpelling for KotlinCanonical {
         format!("{}?.let {{ {binding} -> {written} }}", field.expr)
     }
 
+    /// The element's value through a lambda, or JSON `null` where it holds
+    /// none, which the list keeps in its place.
+    fn optional_element(&self, element: &CanonicalAt, binding: &str, written: String) -> String {
+        format!(
+            "{CANONICAL}.optionalElement({}) {{ {binding} -> {written} }}",
+            element.expr
+        )
+    }
+
     fn record(&self, fields: Vec<(String, String)>) -> String {
         let fields: Vec<String> = fields
             .into_iter()
