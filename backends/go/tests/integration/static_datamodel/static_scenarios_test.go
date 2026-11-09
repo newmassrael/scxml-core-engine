@@ -405,23 +405,6 @@ func orsetEntriesJSON[R orsetEntryRecord](entries []R) any {
 	return out
 }
 
-// merkleNodeRecord is a `record:Node` (sce:std/merge/merkle_node) as a host reads it: one
-// node of a digest, by its depth and prefix, and the hash of the changes under it.
-type merkleNodeRecord interface {
-	Depth() uint8
-	Prefix() uint64
-	Hash() uint32
-}
-
-// merkleNodesJSON is a list of such nodes, in order.
-func merkleNodesJSON[R merkleNodeRecord](nodes []R) any {
-	out := make([]any, len(nodes))
-	for i, node := range nodes {
-		out[i] = map[string]any{"depth": node.Depth(), "prefix": digits(node.Prefix()), "hash": node.Hash()}
-	}
-	return out
-}
-
 // todoValueRecord is a `record:Value` (sce:std/merge/mv_value) as a host reads it: which
 // to-do, which field of it, the number and the text the field holds, and the
 // stamp of the write that put them there.
@@ -2431,18 +2414,12 @@ func todoCopy() machine {
 	policy.SessionID = sce.GenerateSessionID()
 	return drive[todo_peer.TodoPeerState, todo_peer.TodoPeerEvent](&policy, map[string]func() any{
 		"node":       func() any { return digits(policy.Node()) },
-		"hub":        func() any { return policy.Hub() },
 		"clock":      func() any { return hlcJSON(policy.Clock()) },
 		"adds":       func() any { return orsetEntriesJSON(policy.Adds()) },
-		"tombstones": func() any { return orsetEntriesJSON(policy.Tombstones()) },
 		"values":     func() any { return todoValuesJSON(policy.Values()) },
-		"digest":     func() any { return merkleNodesJSON(policy.Digest()) },
 		"refusals":   func() any { return policy.Refusals() },
 		"agenda":     func() any { return occurrencesJSON(policy.Agenda()) },
 		"agendaNext": func() any { return policy.AgendaNext() },
-		"floor":      func() any { return signedDigits(policy.Floor()) },
-		"stale":      func() any { return policy.Stale() },
-		"late":       func() any { return policy.Late() },
 		"full":       func() any { return policy.Full() },
 		"denied":     func() any { return policy.Denied() },
 	})
@@ -2451,13 +2428,13 @@ func todoCopy() machine {
 // A copy of a shared to-do list is replayed through the afternoon the world
 // simulation ran it through, as each of the three that took part saw it: every
 // event it was given, what it held after each, and what it sent its peers. The
-// to-dos it knows are an observed-remove set (`adds` and `tombstones`), each
-// field of one is a value record kept by its stamp, and the stamps are 64-bit and
-// cross as their digits.
+// to-dos it knows are an observed-remove set (`adds`), each field of one is a
+// value record kept by its stamp, and the stamps are 64-bit and cross as their
+// digits.
 func TestACopyOfASharedTodoListIsReplayedAsEachPeerSawIt(t *testing.T) {
 	t.Run("alice", func(t *testing.T) { replay(t, "todo_peer_alice", todoCopy()) })
 	t.Run("bob", func(t *testing.T) { replay(t, "todo_peer_bob", todoCopy()) })
-	t.Run("the hub", func(t *testing.T) { replay(t, "todo_peer_server", todoCopy()) })
+	t.Run("carol", func(t *testing.T) { replay(t, "todo_peer_carol", todoCopy()) })
 }
 
 // recordListCopy is one copy of the standard shared record list

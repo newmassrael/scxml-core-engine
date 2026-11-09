@@ -853,7 +853,7 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, TheInterpreterDoesWha
     // ... and the copies of a shared list and a shared sheet, composed of the standard
     // merge rules: each holds lists of records with 64-bit fields and sends to its
     // Mesh peers, which its scenario states step by step.
-    for (const char *copy : {"todo_peer_alice", "todo_peer_bob", "todo_peer_server", "sheet_peer_alice",
+    for (const char *copy : {"todo_peer_alice", "todo_peer_bob", "todo_peer_carol", "sheet_peer_alice",
                              "sheet_peer_bob", "sheet_peer_server"}) {
         EXPECT_NE(std::find(replayed.begin(), replayed.end(), copy), replayed.end())
             << copy << " was not replayed: a copy that merges with the standard rules has no lowering for the "
@@ -1995,9 +1995,9 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, ARefusedComposedDeliv
 // SCE_MESH.md, Errors: a send to a peer from a machine whose host registered no Mesh
 // router is a configuration fault of the host and raises error.execution, as it does
 // on every other backend. It is not an event the sender takes from itself:
-// `todo_peer` takes what a peer sends it as a write to its own list, so an event that
-// came back would be the peer's, and the one the machine sent itself over
-// `#_internal` is the only write it holds.
+// `todo_peer` takes what a peer sends it as a change to its own list, so an event that
+// came back would be the peer's, and the change the machine took in over `#_internal`
+// is the only one it holds.
 TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, ASendToAMeshPeerWithNoRouterRegisteredIsErrorExecution) {
     const Lowered lowered = lower(kFixtures / "todo_peer.scxml");
     ASSERT_TRUE(lowered.ok) << lowered.refusal.dump();
@@ -2005,10 +2005,10 @@ TEST_F(AStaticDatamodelRunsLoweredUnderTheInterpreterTest, ASendToAMeshPeerWithN
     const auto raiser = wire(*machine);
     ASSERT_TRUE(machine->loadSCXMLFromString(lowered.document)) << "the Interpreter does not load the document";
     ASSERT_TRUE(machine->start());
-    machine->processEvent("todo.join", R"({"node":"1","hub":false})");
+    machine->processEvent("todo.join", R"({"node":"1"})");
     machine->processEvent("todo.edit", R"({"id":7,"field":1,"value":"0","text":"buy milk","now":"0"})");
     EXPECT_TRUE(settles(raiser, [&] { return variable(*machine, "refusals") == 1; }))
-        << "the send to #server was not refused as error.execution, once";
+        << "the send to #people was not refused as error.execution, once";
 }
 
 // SCE_MESH.md, Child Sessions in Mesh (docs/adr/0043): a child session is built with
