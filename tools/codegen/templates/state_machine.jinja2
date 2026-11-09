@@ -1706,13 +1706,15 @@ public:
         // its record type and the writer of its canonical form in the test log
         // (`forge::static_lowering`, `StaticTarget::test_message`), which
         // std::any_cast refuses to read as anything else.
-        machine_.registerEventProcessor(
-            "{{ test_port_processor | escape_cpp }}", [&context](const ::SCE::HostSendRequest& request) {
-                context.send(request.target,
-                             ::SCE::Test::Message{request.eventName,
-                                                  ::std::any_cast<::SCE::Test::MessageValue>(request.value)});
-                return ::std::vector<::SCE::HostSendResponse>{};
-            });
+        machine_.registerEventProcessor("{{ test_port_processor | escape_cpp }}",
+                                        [&context](const ::SCE::HostSendRequest& request) {
+                                            context.send(request.target,
+                                                         ::SCE::Test::Message{
+                                                             request.eventName,
+                                                             ::std::any_cast<::SCE::Test::MessageValue>(
+                                                                 request.value)});
+                                            return ::std::vector<::SCE::HostSendResponse>{};
+                                        });
         // P9: the start of a PTC's invocation creates and starts it, and its
         // cancel removes it, whether it is still running or already done.
         machine_.registerInvoker(
