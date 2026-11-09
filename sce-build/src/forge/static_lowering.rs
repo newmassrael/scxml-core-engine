@@ -15368,11 +15368,13 @@ impl StaticTarget for CTarget {
     // among them, are held alike and assigned; a text is held by the unit in
     // the buffer of its bound and by the channel as a pointer, so it is copied
     // into the buffer the machine keeps for that field, whose size the build
-    // holds the bound to. A byte string the unit holds as a pointer with no
-    // length, so a message of a record with one is refused by name, as an
-    // optional one is. The guard matched the message the statement removes,
-    // so a value of another type is a defect of the runtime, which ends the
-    // block before the content reads anything.
+    // holds the bound to. A byte string is held by the unit in the buffer of
+    // its bound beside its length and by the channel in an array of the same
+    // capacity beside its `_len`, so its bytes and its length are copied, the
+    // build holding the capacities alike. An optional byte string, which the
+    // unit does not hold, is refused by name. The guard matched the message the
+    // statement removes, so a value of another type is a defect of the
+    // runtime, which ends the block before the content reads anything.
     fn take_branch(
         &self,
         _machine: &str,
@@ -15397,6 +15399,16 @@ impl StaticTarget for CTarget {
                         crate::forge::generator::event_schema_field_ident(id, Language::C11)
                     );
                     match (&f.sce_type, f.sce_type.present_type()) {
+                        (EntryType::Scalar(_), SceType::Bytes) => {
+                            copies.push_str(&format!(
+                                " SCE_STATIC_ASSERT(sizeof({read}.data) <= sizeof({accessor}.{id}), \
+                                 \"the bytes `{id}` of `{event}` fit the array the machine's \
+                                 channel keeps for them\"); \
+                                 memcpy({accessor}.{id}, {read}.data, {read}.len); \
+                                 {accessor}.{id}_len = {read}.len;",
+                                event = filters::escape_c(template.event.clone())
+                            ));
+                        }
                         (_, SceType::Bytes) => return None,
                         (EntryType::Scalar(_), SceType::String) => {
                             let buffer = format!(
