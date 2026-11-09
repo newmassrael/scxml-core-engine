@@ -36,17 +36,32 @@
 //! byte string a parameter gives is held as given for the same reason. A
 //! length restriction on a text counts its characters, Unicode code points,
 //! through the profile's runtime ([`text_length_call`]): a Swift `String`'s
-//! `count` counts grapheme clusters, which is another number. Swift lowers no
-//! union ([`crate::forge::codegen_matrix::UNION_BACKENDS`]), so a template
-//! whose type reaches one is refused by the walk before anything is spelled.
+//! `count` counts grapheme clusters, which is another number.
+//!
+//! A union is the enum its document's unit declares, bare, one case per
+//! variant of the tag's enum, named as that enum's Swift declaration names the
+//! variant ([`swift_case_ident`]), holding the case's record or nothing. A case
+//! is tested through the union's `kind`, the value of the tag's enum the case
+//! is for, written as every enum literal is (`value.kind == ShapeKind.circle`),
+//! and the record of a case that holds one is read through the case's proven
+//! read ([`swift_case_read`]) only after that test, bound by the closure of
+//! `Optional`'s `map` as a present value is bound. A union's value is the case
+//! through its enum (`UnionShapeMinimal.circle(...)`), never a bare case,
+//! which an optional position reads as `Optional`'s own case where the two
+//! share a name (`.none`). Until Swift lowers a union
+//! ([`crate::forge::codegen_matrix::UNION_BACKENDS`]), a template whose type
+//! reaches one is refused by the walk before anything is spelled.
 
 use super::test_template_walk::{
     hex_octets, integer_literal, negate, CaseTest, Held, JoinSpelling, Op, Position, Stands,
     TemplateFunction, TemplateSpelling, TemplateWalk, Use,
 };
 use super::*;
+use crate::forge::composed_lowering::{swift_case_ident, swift_case_read, SWIFT_UNION_KIND};
 use crate::forge::schema_unit_type::{unit_type, C11Declarations, UnitNames};
-use crate::forge::value_type::{ScopedRecord, ScopedUnion, TypeOf, TypeScope, ValueType};
+use crate::forge::value_type::{
+    ScopedEnum, ScopedRecord, ScopedUnion, TypeOf, TypeScope, ValueType,
+};
 use crate::generator::Language;
 use crate::std_imports::SWIFT_TEST_RUNTIME_MODULE;
 
@@ -150,6 +165,49 @@ fn swift_parameter(id: &str) -> String {
     format!("param_{id}")
 }
 
+/// The enum the unit of the union `union` declares, named bare by its
+/// document, as every unit of the one module is ([`forge_import_identity`]).
+fn swift_union_type(union: &ScopedUnion) -> String {
+    forge_import_identity(
+        &union.name,
+        &Language::Swift,
+        false,
+        &crate::ForgeCompileOptions::default(),
+    )
+    .type_name
+}
+
+/// The enum the tag of the union `union` is a value of. A union is read with
+/// its tag's enum in its own scope (`import_source::union_in_scope`), so every
+/// union a walk is handed holds it.
+fn swift_tag_enum(union: &ScopedUnion) -> &ScopedEnum {
+    union.scope.enums.get(&union.tag_enum).unwrap_or_else(|| {
+        panic!(
+            "the union `{}` is read without its tag's enum `{}`",
+            union.name, union.tag_enum
+        )
+    })
+}
+
+/// The identifier of the case `variant` of the union `union` in its enum: the
+/// variant as the Swift declaration of the tag's enum names it.
+fn swift_union_case(union: &ScopedUnion, variant: &str) -> String {
+    swift_case_ident(&swift_tag_enum(union).name, variant)
+}
+
+/// The value of the tag's enum the case `variant` of the union `union` is for,
+/// through the enum's type, as every enum literal is written
+/// ([`crate::forge::enum_naming::variant_ref`]).
+fn swift_union_kind(union: &ScopedUnion, variant: &str) -> String {
+    let tag = swift_tag_enum(union);
+    crate::forge::enum_naming::variant_ref(
+        Language::Swift,
+        &enum_qualified_type(&tag.name, Language::Swift),
+        &tag.name,
+        variant,
+    )
+}
+
 /// Refuse the template where its type or a parameter's holds, at any depth, a
 /// record or an enum whose document's Swift unit is not written: the unit
 /// would name a type nothing declares. Each is refused by what that unit's own
@@ -242,9 +300,10 @@ impl UnitNames for SwiftNames<'_> {
             .get(alias)
             .map(|record| event_schema_payload_type(&record.name, Language::Swift))
     }
-    // Swift lowers no union: `unit_type` refuses one by name before it asks.
-    fn union(&self, _alias: &str) -> Option<String> {
-        None
+    // Asked once `unit_type` spells a union on Swift, which until then refuses
+    // one by name before it asks.
+    fn union(&self, alias: &str) -> Option<String> {
+        self.scope.unions.get(alias).map(swift_union_type)
     }
     // No Swift type is named by a mangled composition.
     fn enum_mangle(&self, alias: &str) -> String {
@@ -327,21 +386,47 @@ impl JoinSpelling for SwiftSpelling {
         )
     }
 
-    /// Never asked: Swift lowers no union, and the walk refuses a
-    /// `union-match` on a backend that lowers none before it builds the test of
-    /// a case (`TemplateWalk::union_case`).
+    /// The union's `kind` compared with the value of the tag's enum the case
+    /// is for, and, where the case's matcher reads its record, the record the
+    /// case's proven read answers, bound by the closure of `Optional`'s `map`
+    /// and read only once the test of the kind holds, since `&&` reads its
+    /// right operand only then. The `??` that unwraps the `map`'s answer binds
+    /// tighter than `&&`, and is put in parentheses so the two reads stand
+    /// apart. Negated, the comparison of the kind is the one that holds where
+    /// it does not, and the test of the record is negated whole, as `!` binds
+    /// it only in parentheses.
     fn case_test(
         &self,
-        _at: &SwiftAt,
+        at: &SwiftAt,
         union: &ScopedUnion,
-        _variant: &str,
-        _record: CaseTest<'_, '_, SwiftAt>,
-        _negated: bool,
+        variant: &str,
+        record: CaseTest<'_, '_, SwiftAt>,
+        negated: bool,
     ) -> String {
-        unreachable!(
-            "the walk refuses the union `{}` on Swift before it asks for the test of a case",
-            union.name
-        )
+        let kind = swift_union_kind(union, variant);
+        match record {
+            CaseTest::Empty | CaseTest::AnyRecord => format!(
+                "{}.{SWIFT_UNION_KIND} {} {kind}",
+                at.expr,
+                Op::Eq.spelled(negated)
+            ),
+            CaseTest::Holds { inner, then } => {
+                let test = format!(
+                    "{}.{SWIFT_UNION_KIND} == {kind} && (Optional({}.{}).map {{ {} -> Bool in {} \
+                     }} ?? false)",
+                    at.expr,
+                    at.expr,
+                    swift_case_read(variant),
+                    inner.binding(),
+                    self.join(then, false, Stands::Whole)
+                );
+                if negated {
+                    format!("!({test})")
+                } else {
+                    test
+                }
+            }
+        }
     }
 }
 
@@ -391,6 +476,18 @@ impl TemplateSpelling for SwiftSpelling {
             bound: None,
             depth: at.depth,
         }
+    }
+
+    /// The parameter of the closure the case's proven read is handed to
+    /// ([`JoinSpelling::case_test`]), numbered by how many closures it stands
+    /// inside, as a present value's is.
+    fn case(&self, at: &SwiftAt, _union: &ScopedUnion, _variant: &str) -> Result<SwiftAt, String> {
+        let name = format!("case_{}", at.depth);
+        Ok(SwiftAt {
+            expr: name.clone(),
+            bound: Some(name),
+            depth: at.depth + 1,
+        })
     }
 
     /// The parameter as it is: every value Swift holds a template's type in,
@@ -507,5 +604,210 @@ impl TemplateSpelling for SwiftSpelling {
     /// The array of the elements, its element type read from where it stands.
     fn list_value(&self, _at: &Position<'_, SwiftAt>, elements: Vec<String>) -> String {
         format!("[{}]", elements.join(", "))
+    }
+
+    /// The case through the union's enum, holding its record where it holds
+    /// one: named by the enum, since a bare case at an optional position is
+    /// read as `Optional`'s own case where the two share a name (`.none`).
+    fn case_value(
+        &self,
+        _at: &Position<'_, SwiftAt>,
+        union: &ScopedUnion,
+        variant: &str,
+        record: Option<String>,
+    ) -> Result<String, String> {
+        let case = format!(
+            "{}.{}",
+            swift_union_type(union),
+            swift_union_case(union, variant)
+        );
+        Ok(match record {
+            Some(record) => format!("{case}({record})"),
+            None => case,
+        })
+    }
+}
+
+/// The Swift arm of a template over a union, walked by a spelling that lowers
+/// a union ([`super::test_template_walk::LowersUnions`]): no generation
+/// reaches it until Swift lowers a union
+/// ([`crate::forge::codegen_matrix::UNION_BACKENDS`]), since the walk refuses
+/// the template first (`TemplateWalk::refuse_unlowered_unions`), so the arm is
+/// held to the spelling of the union unit before that unit is written.
+#[cfg(test)]
+mod tests {
+    use super::super::test_template_walk::LowersUnions;
+    use super::*;
+    use std::path::{Path, PathBuf};
+
+    /// The directory of the test profile's documents.
+    fn profile_dir() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/test_profile")
+    }
+
+    /// The test template `content` and its imports, read relative to
+    /// `base_dir` for Swift as `compile_forge_file` reads them.
+    fn read(content: &str, base_dir: &Path) -> (TestTemplateModel, Vec<ImportContext>) {
+        let label = crate::DocumentLabel::symmetric("template");
+        let parsed = crate::forge::parser::parse_forge_with_imports(content, label)
+            .unwrap_or_else(|e| panic!("the template parses: {e:?}"))
+            .expect("a forge document");
+        let options = crate::ForgeCompileOptions::default();
+        let mut imports =
+            crate::forge::generator::resolve_imports(&parsed.imports, &Language::Swift, &options)
+                .unwrap_or_else(|e| panic!("the imports resolve: {e:?}"));
+        crate::validate_and_enrich_imports(
+            &mut imports,
+            &parsed.imports,
+            base_dir,
+            &Language::Swift,
+            &options,
+            label.diagnostic_label,
+        )
+        .unwrap_or_else(|e| panic!("the imports are read: {e:?}"));
+        let crate::forge::model::ForgeDocument::TestTemplate(m) = parsed.document else {
+            panic!("a test template");
+        };
+        (m, imports)
+    }
+
+    /// What the test template `content` matches on Swift, and the value it
+    /// sends where it is specific.
+    fn walked(content: &str, base_dir: &Path) -> (String, Option<String>) {
+        let (m, imports) = read(content, base_dir);
+        let scope = import_type_scope(&imports);
+        let spelling = LowersUnions(SwiftSpelling);
+        let walk = TemplateWalk {
+            template: &m,
+            imports: &imports,
+            spelling: &spelling,
+        };
+        let root = walk.root(&scope);
+        let held = walk
+            .matches(&m.matcher, &root)
+            .unwrap_or_else(|e| panic!("the template is walked: {e:?}"));
+        let value = walk.specific().then(|| {
+            walk.value(&m.matcher, &root)
+                .unwrap_or_else(|e| panic!("the template has a value: {e:?}"))
+        });
+        (spelling.join(&held, false, Stands::Whole), value)
+    }
+
+    /// The fixture `<name>.scxml` of `dir`, walked as [`walked`] walks it.
+    fn walked_fixture(dir: &Path, name: &str) -> (String, Option<String>) {
+        let path = dir.join(format!("{name}.scxml"));
+        let loaded = crate::load_forge_source(&path, &[])
+            .unwrap_or_else(|e| panic!("{name} is read: {e:?}"));
+        walked(loaded.text(), dir)
+    }
+
+    /// A template of the profile's directory over the union of the union
+    /// kind's fixtures (`union_shape_minimal`: `dot`, empty, `circle` of a
+    /// `radius`, `rect`), holding `matcher`.
+    fn over_shape(name: &str, matcher: &str) -> String {
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="{name}"
+       sce:type="union:Shape">
+  <sce:import kind="union" src="../union/union_shape_minimal.scxml" as="Shape"/>
+  {matcher}
+</scxml>
+"#
+        )
+    }
+
+    /// The case `circle` whose record's radius is 3.
+    const CIRCLE_OF_THREE: &str = r#"<sce:union-match variant="circle">
+    <sce:record-match>
+      <sce:specific field="radius" value="3"/>
+    </sce:record-match>
+  </sce:union-match>"#;
+
+    /// The test of the case `circle` whose radius is 3, as the union's `kind`
+    /// and the proven read of the case bound by `map`.
+    const CIRCLE_OF_THREE_TEST: &str = "value.kind == ShapeKind.circle && \
+         (Optional(value.provenCircle).map { case_0 -> Bool in case_0.radius == 3 } ?? false)";
+
+    /// A case whose matcher reads nothing of its record is the test of the
+    /// union's `kind` alone, the value of the tag's enum named through its
+    /// type; a template that is not specific has no value.
+    #[test]
+    fn a_case_is_tested_by_the_kind_of_the_union() {
+        let (matched, value) = walked_fixture(&profile_dir(), "shape_is_circle");
+        assert_eq!(matched, "value.kind == ShapeKind.circle");
+        assert_eq!(value, None);
+    }
+
+    /// A case's record is read through its proven read only once the test of
+    /// the kind holds, bound by the closure of `map`, and an empty case is the
+    /// test of the kind alone: a union field of a record, between the other
+    /// cases of a value list.
+    #[test]
+    fn a_case_record_is_read_through_its_proven_read_after_the_kind() {
+        let (matched, _) = walked_fixture(&profile_dir().join("imports"), "order_placed_match");
+        assert!(
+            matched.contains(
+                "(value.payment.kind == PaymentKind.card && \
+                 (Optional(value.payment.provenCard).map { case_0 -> Bool in \
+                 SceTestProfile.textLength(case_0.last4) >= 4 && case_0.amount >= 1 } ?? false) \
+                 || value.payment.kind == PaymentKind.cash)"
+            ),
+            "{matched}"
+        );
+    }
+
+    /// A specific template's union value is the case through the union's
+    /// enum, holding its record's value, or the case alone for an empty one.
+    #[test]
+    fn a_specific_union_value_is_its_case_through_the_unions_enum() {
+        let (matched, value) = walked(
+            &over_shape("circle_of_three", CIRCLE_OF_THREE),
+            &profile_dir(),
+        );
+        assert_eq!(matched, CIRCLE_OF_THREE_TEST);
+        assert_eq!(
+            value.as_deref(),
+            Some("UnionShapeMinimal.circle(ShapeRadiusMinimalPayload(radius: 3))")
+        );
+        let (matched, value) = walked(
+            &over_shape("a_dot", r#"<sce:union-match variant="dot"/>"#),
+            &profile_dir(),
+        );
+        assert_eq!(matched, "value.kind == ShapeKind.dot");
+        assert_eq!(value.as_deref(), Some("UnionShapeMinimal.dot"));
+    }
+
+    /// A complement of cases is the conjunction of the tests that do not
+    /// hold: an empty case's kind compared by `!=`, and the test of a case
+    /// whose record is read negated whole.
+    #[test]
+    fn a_complement_of_cases_negates_each_test() {
+        let complement = format!(
+            "<sce:complement>\n  <sce:union-match variant=\"dot\"/>\n  {CIRCLE_OF_THREE}\n  \
+             </sce:complement>"
+        );
+        let (matched, value) = walked(&over_shape("no_dot_nor_three", &complement), &profile_dir());
+        assert_eq!(
+            matched,
+            format!("value.kind != ShapeKind.dot && !({CIRCLE_OF_THREE_TEST})")
+        );
+        assert_eq!(value, None);
+    }
+
+    /// The type a template's unit holds a union in is the enum the union's
+    /// unit declares, bare; an alias the template reads no union by names
+    /// none.
+    #[test]
+    fn a_union_is_named_by_the_enum_of_its_unit() {
+        let (_, imports) = read(
+            &over_shape("a_dot", r#"<sce:union-match variant="dot"/>"#),
+            &profile_dir(),
+        );
+        let scope = import_type_scope(&imports);
+        let names = SwiftNames { scope: &scope };
+        assert_eq!(names.union("Shape").as_deref(), Some("UnionShapeMinimal"));
+        assert_eq!(names.union("Other"), None);
     }
 }

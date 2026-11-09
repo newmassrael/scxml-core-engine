@@ -66,6 +66,31 @@ const SWIFT_ELEMENT_BINDING: &str = "sceElement";
 /// The name a Swift copy binds an element or a present value to.
 const SWIFT_COPY_BINDING: &str = "sceCopied";
 
+/// The computed property of a union's Swift enum that answers the value of the
+/// tag's enum its case is for (docs/adr/0092, section 7, the Swift row).
+pub(crate) const SWIFT_UNION_KIND: &str = "kind";
+
+/// The identifier of the case `variant` of a union's Swift enum: the variant as
+/// the Swift declaration of the tag's enum, the document `tag_document`, spells
+/// it ([`crate::forge::enum_naming::variant_ident`]), so the case and the value
+/// of the tag it is for are one name.
+pub(crate) fn swift_case_ident(tag_document: &str, variant: &str) -> String {
+    crate::forge::enum_naming::variant_ident(
+        crate::generator::Language::Swift,
+        tag_document,
+        variant,
+    )
+}
+
+/// The read of the record of the case `variant` where a test proved it, on a
+/// union's Swift enum (the unit's and the machine's alike).
+pub(crate) fn swift_case_read(variant: &str) -> String {
+    format!(
+        "proven{}",
+        crate::filters::to_pascal_case(variant.to_string())
+    )
+}
+
 /// Why a Swift walk meets no union: the one decision of what is lowered
 /// refuses a union on Swift before any walk reaches one
 /// ([`crate::forge::event_schema_check::ComposedLowering::unions`]).
@@ -561,10 +586,7 @@ impl ComposedSpelling for SwiftComposed<'_> {
         None
     }
     fn union_case_read(&self, variant: &str) -> String {
-        format!(
-            "proven{}",
-            crate::filters::to_pascal_case(variant.to_string())
-        )
+        swift_case_read(variant)
     }
     fn union_shared_read(&self, field: &str) -> String {
         format!(

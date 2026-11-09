@@ -1187,3 +1187,128 @@ impl<B: TemplateSpelling> TemplateWalk<'_, B> {
         })
     }
 }
+
+/// A backend's spelling that lowers a union whatever
+/// `codegen_matrix::UNION_BACKENDS` says, and spells everything else as the
+/// backend does: what a backend's union arm is tested through before the
+/// backend joins the list, which it joins once the union unit that arm names
+/// is written.
+#[cfg(test)]
+pub(super) struct LowersUnions<S>(pub(super) S);
+
+#[cfg(test)]
+impl<S: TemplateSpelling> TemplateSpelling for LowersUnions<S> {
+    type At = S::At;
+
+    fn language(&self) -> Language {
+        self.0.language()
+    }
+    fn lowers_unions(&self) -> bool {
+        true
+    }
+    fn root(&self) -> Self::At {
+        self.0.root()
+    }
+    fn present(&self, at: &Self::At) -> Self::At {
+        self.0.present(at)
+    }
+    fn element(&self, at: &Self::At, index: usize) -> Self::At {
+        self.0.element(at, index)
+    }
+    fn field(&self, at: &Self::At, record: &ScopedRecord, id: &str, ty: &ValueType) -> Self::At {
+        self.0.field(at, record, id, ty)
+    }
+    fn case(&self, at: &Self::At, union: &ScopedUnion, variant: &str) -> Result<Self::At, String> {
+        self.0.case(at, union, variant)
+    }
+    fn parameter(
+        &self,
+        name: &str,
+        ty: &ValueType,
+        at: &Position<'_, Self::At>,
+        purpose: Use,
+    ) -> String {
+        self.0.parameter(name, ty, at, purpose)
+    }
+    fn literal(
+        &self,
+        text: &str,
+        at: &Position<'_, Self::At>,
+        purpose: Use,
+    ) -> Result<String, String> {
+        self.0.literal(text, at, purpose)
+    }
+    fn call(
+        &self,
+        import: &ImportContext,
+        function: TemplateFunction,
+        first: Option<&Self::At>,
+        args: &[String],
+    ) -> String {
+        self.0.call(import, function, first, args)
+    }
+    fn absent(&self, at: &Position<'_, Self::At>) -> String {
+        self.0.absent(at)
+    }
+    fn present_value(&self, at: &Position<'_, Self::At>, value: String) -> String {
+        self.0.present_value(at, value)
+    }
+    fn record_value(
+        &self,
+        at: &Position<'_, Self::At>,
+        record: &ScopedRecord,
+        fields: Vec<(String, String)>,
+    ) -> String {
+        self.0.record_value(at, record, fields)
+    }
+    fn list_value(&self, at: &Position<'_, Self::At>, elements: Vec<String>) -> String {
+        self.0.list_value(at, elements)
+    }
+    fn case_value(
+        &self,
+        at: &Position<'_, Self::At>,
+        union: &ScopedUnion,
+        variant: &str,
+        record: Option<String>,
+    ) -> Result<String, String> {
+        self.0.case_value(at, union, variant, record)
+    }
+}
+
+#[cfg(test)]
+impl<S: JoinSpelling> JoinSpelling for LowersUnions<S> {
+    fn connectives(&self) -> Connectives {
+        self.0.connectives()
+    }
+    fn compare(&self, at: &Position<'_, Self::At>, op: Op, negated: bool, rhs: &str) -> String {
+        self.0.compare(at, op, negated, rhs)
+    }
+    fn count(&self, at: &Position<'_, Self::At>, op: Op, negated: bool, n: u32) -> String {
+        self.0.count(at, op, negated, n)
+    }
+    fn absence(&self, at: &Self::At, negated: bool) -> String {
+        self.0.absence(at, negated)
+    }
+    fn bound_optional(
+        &self,
+        at: &Self::At,
+        inner: &Self::At,
+        then: &Held<'_, Self::At>,
+        absent_holds: bool,
+        negated: bool,
+        stands: Stands,
+    ) -> String {
+        self.0
+            .bound_optional(at, inner, then, absent_holds, negated, stands)
+    }
+    fn case_test(
+        &self,
+        at: &Self::At,
+        union: &ScopedUnion,
+        variant: &str,
+        record: CaseTest<'_, '_, Self::At>,
+        negated: bool,
+    ) -> String {
+        self.0.case_test(at, union, variant, record, negated)
+    }
+}

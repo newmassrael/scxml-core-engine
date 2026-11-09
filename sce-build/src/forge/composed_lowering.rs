@@ -74,7 +74,7 @@ pub(crate) use rust::{
     rust_bounded_list, rust_bytes_type, rust_case_ident, rust_case_read, rust_text_type,
     rust_union_member, rust_union_tag_method, RUST_EMPTY_LIST, RUST_PORTABLE,
 };
-pub(crate) use swift::swift_raise_checks;
+pub(crate) use swift::{swift_case_ident, swift_case_read, swift_raise_checks, SWIFT_UNION_KIND};
 
 /// An enum as a machine holds it: the name the statechart holds it by, the
 /// type it is declared as, and each variant's declared name with the

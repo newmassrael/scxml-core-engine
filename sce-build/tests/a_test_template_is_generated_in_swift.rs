@@ -304,7 +304,8 @@ fn refused(path: &Path) -> String {
 
 /// A template whose type reaches a union, in itself or below a field, is
 /// refused on Swift by the union's own refusal, which a schema unit's union
-/// field is refused by: Swift lowers no union.
+/// field is refused by: Swift lowers no union. What the unit spells once it
+/// does is held by the tests of `forge::generator::swift_test_template`.
 #[test]
 fn a_template_that_reaches_a_union_is_refused_on_swift() {
     for (path, alias) in [
