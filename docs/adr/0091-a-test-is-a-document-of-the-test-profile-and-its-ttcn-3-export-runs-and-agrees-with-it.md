@@ -422,12 +422,21 @@ traces are those a generator would also produce.
    semantics, defaults, timers, components. Every row of §2 cites the TTCN-3 clause it adopts. §5's change to
    Appendix D is written as a change to named steps of W3C SCXML Appendix D. Each item of §2.1 is marked out by
    design or deferred. The equivalence theorem of §1 is stated over these semantics before any exporter code exists.
+   Done in `docs/SCE_TEST_PROFILE.md` §1 to §10.
 2. Write the schemas for the new kinds and elements. Extend the parser, model and validator. Add the refusals of §3 with
    their diagnostics and acceptance-doc rows, and classify each rule under feature derivation.
+   Done in `docs/SCE_TEST_PROFILE.md` §11, `schemas/sce-forge-ext.xsd`, the six `test-` forge kinds
+   (`sce-build/src/forge/test_profile.rs`, `test_profile_assembly.rs`, `test_template_check.rs`,
+   `sce-build/src/test_component/`), and the `test-profile/` rows of `docs/SCE_ACCEPTED_SUBSET.md`; each rule is
+   classified under feature derivation in `docs/SCE_TEST_PROFILE.md` §11.10.
 3. Build the native test runtime in one backend first (the one the existing corpus uses), then in the others case by
    case.
+   Done in the seven native runtimes of `docs/SCE_TEST_PROFILE.md` §12.2, C++ first (§12.1), every backend
+   generating every kind of the profile (§11.9, §12.6).
 4. Build the exporter, deterministic, with the types module and its structural manifest (C2), the correspondence
    witness, and the separate validator that checks it (answer 12).
+   Done in `sce-build/src/ttcn3_export` (`sce-codegen export-ttcn3`, `docs/SCE_TEST_PROFILE.md` §9.5) and
+   `sce-ttcn3-validator` (§9.4).
 5. Build the reference adapter set, its Titan binding and the conformance lane (C1, §7). Contribute the logical
    clock of answer 3 to Eclipse Titan, and build the lane's Titan from a pinned release with that change until a
    release contains it. Settle the licence question of answer 1 before the binding is written.
@@ -441,6 +450,10 @@ traces are those a generator would also produce.
    the Main Controller patch; D3, the reference adapters and codecs; D4, the binding and the logger; D5, the lane
    and C3.
 6. Add the equivalence law over the corpus (C3), with the canonical log's schema and its `SCE_WIRE_CONTRACTS.md` row.
+   Done in part: the canonical log (`docs/SCE_TEST_PROFILE.md` §12.5, `schemas/sce-test-log.v1.schema.json`) and its
+   `SCE_WIRE_CONTRACTS.md` row, written by all seven native runtimes and held on each to one expected log,
+   `sce-build/tests/fixtures/test_profile/runtime/expected_logs/answers_the_job.json`. The C3 lane, which compares
+   that log with the TTCN-3 run's, waits on step 5.
 7. Write migration guidance for consumers' existing test documents. Done in `docs/SCE_TEST_PROFILE_MIGRATION.md`.
 
 ## Questions (answered below)
