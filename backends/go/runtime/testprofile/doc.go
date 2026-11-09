@@ -10,7 +10,11 @@
 // through its ComponentContext, which it keeps from ComponentMachine.Start on;
 // a configuration as a Configuration and a MachineFactory; a test case and a
 // suite as a TestCase and a Suite, which RunSuite runs. A template's length
-// restriction on a text counts it with TextLength. The algorithm is the one the
+// restriction on a text counts it with TextLength. A run's test log (§12.5) is
+// its TestCaseResult.Records, written in its one canonical text by
+// TestCaseResult.CanonicalLog; a message's value reaches it in the canonical
+// form package canonical spells, which the generated unit of a template over a
+// record writes (`<template>.Canonical`). The algorithm is the one the
 // document specifies and the C++ runtime (`sce/include/test/`), the Rust one
 // (`sce_rust_runtime::test`) and the Kotlin one (`com.sce.runtime.test`)
 // implement, type for type. When this package and the Rust one diverge, Rust
