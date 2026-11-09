@@ -27,8 +27,12 @@ static_assert(__cplusplus == 201703L, "SCE raised its consumer above C++17");
 #endif
 
 int main() {
-    SCE::Generated::probe_generated::probe_generated machine;
-    machine.initialize();
+    using Machine = SCE::Generated::probe_generated::probe_generated;
+    Machine machine;
+    // A `datamodel="sce-static"` machine has no script session whose failure
+    // could refuse its start (docs/adr/0096), so the start answers nothing.
+    static_assert(!Machine::START_MAY_BE_REFUSED, "a sce-static machine's start cannot be refused");
+    static_cast<void>(machine.initialize());
     machine.step();
 
     // 250 + 3 is 253; 253 + 3 does not fit a uint8, so the second assignment is

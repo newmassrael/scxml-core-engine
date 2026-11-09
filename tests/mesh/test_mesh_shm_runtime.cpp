@@ -16,6 +16,7 @@
 
 #include "brake_sm.h"
 #include "brake_transport.h"
+#include "common/TestScriptEngine.h"
 #include "motor_sm.h"
 
 #include "mesh/ShmChannel.h"
@@ -50,7 +51,7 @@ int runReceiver() {
         }
 
         SCE::Generated::motor::motor motor;
-        motor.initialize();
+        ::SCE::Test::start_or_abort(motor);
 
         for (int drain = 0; drain < DRAIN_RETRIES; ++drain) {
             // drain() posts events to the engine's inbox but does NOT step
@@ -94,7 +95,7 @@ int main() {
     // shm_unlink on the parent side can race ahead of a slow-to-schedule
     // child's shm_open and cause a flaky ENOENT → OPEN_RETRIES timeout.
     SCE::Generated::brake::brake brake;
-    brake.initialize();
+    ::SCE::Test::start_or_abort(brake);
 
     // Session-first ctor injection: brake (hosted session 0) is bound
     // at construction.

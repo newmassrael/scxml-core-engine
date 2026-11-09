@@ -53,7 +53,7 @@ TEST(AHostNamesItsOriginInItsOwnTermsAotTest, AHostNamesItsOriginInItsOwnTerms) 
         sm.setScriptEngine(std::shared_ptr<::SCE::IScriptEngine>(&::SCE::ScriptEngineProvider::getScriptEngine(),
                                                                  [](::SCE::IScriptEngine *) {}));
     }
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
     sm.step();
     ASSERT_EQ(tokens.size(), 1u) << "the host was not asked to run `job` once";
 

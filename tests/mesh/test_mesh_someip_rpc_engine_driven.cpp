@@ -50,6 +50,7 @@
 
 #include "brake_someip_multi_sm.h"
 #include "brake_someip_multi_transport.h"
+#include "common/TestScriptEngine.h"
 #include "motor_someip_multi_sm.h"
 #include "motor_someip_multi_transport.h"
 
@@ -84,7 +85,7 @@ int run_test() {
     // starts delivering; otherwise a racing request could land on an
     // engine that has not executed initial-state entry actions.
     Motor motor;
-    motor.initialize();
+    ::SCE::Test::start_or_abort(motor);
     MotorRouterT motor_router({&motor});
     MESH_TEST_REQUIRE(motor_router.init(), "motor router init failed");
 

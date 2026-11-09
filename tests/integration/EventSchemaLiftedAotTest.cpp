@@ -48,7 +48,7 @@ void deliverData(Machine &sm, const std::string &data) {
 
 TEST(EventSchemaLiftedAotTest, APayloadOnTheDataWireFiresTheSameGuard) {
     Machine sm;
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
 
     deliverData(sm, R"({"elapsed_ms": 0})");
 
@@ -59,7 +59,7 @@ TEST(EventSchemaLiftedAotTest, APayloadOnTheDataWireFiresTheSameGuard) {
 
 TEST(EventSchemaLiftedAotTest, TheInjectSeamStillFiresItsOwnGuard) {
     Machine sm;
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
 
     sm.raiseJobCompleted(0u);
     sm.step();
@@ -70,7 +70,7 @@ TEST(EventSchemaLiftedAotTest, TheInjectSeamStillFiresItsOwnGuard) {
 
 TEST(EventSchemaLiftedAotTest, AValueOfAnotherTypeIsRefusedAsTheScriptEngineRefusesIt) {
     Machine sm;
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
 
     deliverData(sm, R"({"elapsed_ms": "nought"})");
 
@@ -81,7 +81,7 @@ TEST(EventSchemaLiftedAotTest, AValueOfAnotherTypeIsRefusedAsTheScriptEngineRefu
 
 TEST(EventSchemaLiftedAotTest, AnEventWithNoDataIsRefusedTheSameWay) {
     Machine sm;
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
 
     deliverData(sm, "");
 
@@ -92,7 +92,7 @@ TEST(EventSchemaLiftedAotTest, AnEventWithNoDataIsRefusedTheSameWay) {
 
 TEST(EventSchemaLiftedAotTest, AFieldTheDataDoesNotNameIsRefused) {
     Machine sm;
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
 
     deliverData(sm, R"({"other": 0})");
 
@@ -102,7 +102,7 @@ TEST(EventSchemaLiftedAotTest, AFieldTheDataDoesNotNameIsRefused) {
 
 TEST(EventSchemaLiftedAotTest, APayloadTheGuardRejectsIsNotAnError) {
     Machine sm;
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
 
     // The payload reads perfectly; the comparison is simply false. Nothing
     // failed, so nothing is raised — the machine waits.

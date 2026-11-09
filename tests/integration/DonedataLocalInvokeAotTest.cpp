@@ -39,7 +39,7 @@ TEST(DonedataLocalInvokeAotTest, ParentObservesDonedataOnDoneInvoke) {
                                                                  [](::SCE::IScriptEngine *) {}));
     }
 
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
     // Two sequential invokes (inv_param then inv_content) need more than
     // one macrostep to drive the parent to Pass; `initialize()` runs only
     // the first. `runUntilCompletion` drains the remaining invoke macrosteps.

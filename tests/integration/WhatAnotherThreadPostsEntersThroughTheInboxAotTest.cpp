@@ -111,7 +111,7 @@ struct Host {
 void boot(Machine &sm) {
     sm.setScriptEngine(std::shared_ptr<SCE::IScriptEngine>(&SCE::ScriptEngineProvider::getScriptEngine(),
                                                            [](SCE::IScriptEngine *) {}));
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
     sm.step();
 }
 
@@ -559,7 +559,7 @@ TEST_F(WhatAnotherThreadPostsEntersThroughTheInbox, AChildsEndingPostedBeforeIts
     EndingOrderHost host;
     OrderTree tree(host);
     host.serve(tree);
-    tree.initialize();
+    EXPECT_EQ(tree.initialize(), std::nullopt);
     for (int round = 0; round < 8 && host.starts.empty(); ++round) {
         tree.tick();
     }
@@ -589,7 +589,7 @@ TEST_F(WhatAnotherThreadPostsEntersThroughTheInbox, AnEndingHeldForAChildItsPare
     EndingOrderHost host;
     OrderTree tree(host);
     host.serve(tree);
-    tree.initialize();
+    EXPECT_EQ(tree.initialize(), std::nullopt);
     for (int round = 0; round < 8 && host.starts.empty(); ++round) {
         tree.tick();
     }

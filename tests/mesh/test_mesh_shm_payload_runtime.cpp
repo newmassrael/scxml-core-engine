@@ -59,7 +59,7 @@ int runReceiver() {
 
         SCE::Generated::motor_payload::motor_payload motor;
         SCE::Test::inject_build_engine(motor);
-        motor.initialize();
+        ::SCE::Test::start_or_abort(motor);
 
         for (int drain = 0; drain < DRAIN_RETRIES; ++drain) {
             std::size_t drained = channel.drain<SCE::Generated::motor_payload::motor_payloadPolicy>(motor);
@@ -99,7 +99,7 @@ int main() {
 
     SCE::Generated::brake_payload::brake_payload brake;
     SCE::Test::inject_build_engine(brake);
-    brake.initialize();
+    ::SCE::Test::start_or_abort(brake);
 
     using BrakeEngine = SCE::Generated::brake_payload::brake_payload;
     SCE::Generated::brake_payload::TransportRouter<BrakeEngine> router({&brake});

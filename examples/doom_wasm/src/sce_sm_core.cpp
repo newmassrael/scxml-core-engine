@@ -148,10 +148,10 @@ static std::unique_ptr<WeaponSM> g_weapon_sm;
 
 void sce_sm_reset_player_weapon(void) {
     g_player_sm = std::make_unique<PlayerSM>(g_player_callbacks);
-    g_player_sm->initialize();
+    static_cast<void>(g_player_sm->initialize());
 
     g_weapon_sm = std::make_unique<WeaponSM>(g_weapon_callbacks);
-    g_weapon_sm->initialize();
+    static_cast<void>(g_weapon_sm->initialize());
 }
 
 // ============================================
@@ -163,9 +163,13 @@ void sce_sm_core_init(void) {
     g_player_sm = std::make_unique<PlayerSM>(g_player_callbacks);
     g_weapon_sm = std::make_unique<WeaponSM>(g_weapon_callbacks);
 
-    g_game_sm->initialize();
-    g_player_sm->initialize();
-    g_weapon_sm->initialize();
+    // A null datamodel has no script session whose failure could refuse a
+    // start (docs/adr/0096), so each start answers nothing.
+    static_assert(!GameSM::START_MAY_BE_REFUSED && !PlayerSM::START_MAY_BE_REFUSED && !WeaponSM::START_MAY_BE_REFUSED,
+                  "a null-datamodel machine's start cannot be refused");
+    static_cast<void>(g_game_sm->initialize());
+    static_cast<void>(g_player_sm->initialize());
+    static_cast<void>(g_weapon_sm->initialize());
 }
 
 // ============================================

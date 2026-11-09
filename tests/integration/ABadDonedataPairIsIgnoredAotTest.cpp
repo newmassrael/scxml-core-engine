@@ -49,7 +49,7 @@ TEST(ABadDonedataPairIsIgnoredAotTest, TheBadPairsAreDroppedAndTheDoneEventsStil
                                                                  [](::SCE::IScriptEngine *) {}));
     }
     // The run needs nothing from the host.
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
 
     EXPECT_EQ(sm.terminalState(), SM::State::Done)
         << "done.state.p must still arrive and carry the run to `done`. " << describe(sm);

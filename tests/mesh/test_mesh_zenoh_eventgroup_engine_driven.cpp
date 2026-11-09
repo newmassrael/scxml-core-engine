@@ -26,6 +26,7 @@
 //
 // Motor uses the real SM driven by a step() pump (Session I pattern).
 
+#include "common/TestScriptEngine.h"
 #include "motor_zenoh_multi_sm.h"
 #include "motor_zenoh_multi_transport.h"
 
@@ -55,7 +56,7 @@ int run_test() {
 
     // Bring up the real SM first.
     Motor motor;
-    motor.initialize();
+    ::SCE::Test::start_or_abort(motor);
 
     MotorRouterT motor_router({&motor});
     MESH_TEST_REQUIRE(motor_router.init(), "motor_router.init() failed");

@@ -38,8 +38,8 @@ int main() {
 
     SCE::Test::inject_build_engine(brake);
     SCE::Test::inject_build_engine(motor);
-    brake.initialize();
-    motor.initialize();
+    ::SCE::Test::start_or_abort(brake);
+    ::SCE::Test::start_or_abort(motor);
 
     brake.processEvent(SCE::Generated::brake_invoke::Event::Go);
 

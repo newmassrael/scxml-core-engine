@@ -44,7 +44,7 @@ TEST(ADelayedHttpSendIsPostedWhenDueAotTest, ADelayedHttpSendIsPostedWhenDue) {
     // The host stands in for the HTTP transport: it keeps what it was handed.
     std::vector<SCE::Static::HttpSendRequest> posted;
     sm.setHttpSendCallback([&posted](const SCE::Static::HttpSendRequest &request) { posted.push_back(request); });
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
 
     // A zero wait, written or evaluated, is no deferral: the POST is made
     // before initialize() returns, with no tick to bring it out.

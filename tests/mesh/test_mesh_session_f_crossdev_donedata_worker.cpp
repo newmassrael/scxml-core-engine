@@ -53,7 +53,7 @@ int main() {
 
     ParamWorker w_param;
     SCE::Test::inject_build_engine(w_param);
-    w_param.initialize();
+    ::SCE::Test::start_or_abort(w_param);
     SCE::Generated::worker_session_f_donedata_param::TransportRouter<ParamWorker> r_param({&w_param});
     if (!r_param.init()) {
         std::fprintf(stderr, "worker: param router init() failed\n");
@@ -67,7 +67,7 @@ int main() {
 
     ContentWorker w_content;
     SCE::Test::inject_build_engine(w_content);
-    w_content.initialize();
+    ::SCE::Test::start_or_abort(w_content);
     SCE::Generated::worker_session_f_donedata_content::TransportRouter<ContentWorker> r_content({&w_content});
     if (!r_content.init()) {
         std::fprintf(stderr, "worker: content router init() failed\n");
@@ -81,7 +81,7 @@ int main() {
 
     NestedWorker w_nested;
     SCE::Test::inject_build_engine(w_nested);
-    w_nested.initialize();
+    ::SCE::Test::start_or_abort(w_nested);
     SCE::Generated::worker_session_f_donedata_nested::TransportRouter<NestedWorker> r_nested({&w_nested});
     if (!r_nested.init()) {
         std::fprintf(stderr, "worker: nested router init() failed\n");

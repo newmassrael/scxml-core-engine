@@ -69,7 +69,10 @@ int main() {
     Harness harness;
     host::serve(harness, reference);
     harness.setClock(std::make_shared<SCE::ManualClock>(0));
-    harness.initialize();
+    // A `datamodel="sce-static"` machine has no script session whose failure
+    // could refuse its start (docs/adr/0096), so the start answers nothing.
+    static_assert(!Harness::START_MAY_BE_REFUSED, "a sce-static machine's start cannot be refused");
+    static_cast<void>(harness.initialize());
     // A run makes its calls and takes each completion within one event, a call a round.
     const auto settle = [&harness]() {
         for (int round = 0; round < 8; ++round) {

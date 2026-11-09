@@ -88,7 +88,7 @@ protected:
     static void boot(Machine &sm) {
         sm.setScriptEngine(std::shared_ptr<SCE::IScriptEngine>(&SCE::ScriptEngineProvider::getScriptEngine(),
                                                                [](SCE::IScriptEngine *) {}));
-        sm.initialize();
+        EXPECT_EQ(sm.initialize(), std::nullopt);
         sm.step();
     }
 };

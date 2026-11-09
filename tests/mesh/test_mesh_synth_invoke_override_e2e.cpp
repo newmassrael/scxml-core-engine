@@ -27,6 +27,7 @@
 // Closes §16.9 F exit criterion #4: "Inline `<content>` synthesized
 // child executes on a different partition."
 
+#include "common/TestScriptEngine.h"
 #include "parent_synth_inline__sce_synth_invoke__remote_inv_sm.h"
 #include "parent_synth_inline__sce_synth_invoke__remote_inv_transport.h"
 #include "parent_synth_inline_sm.h"
@@ -44,7 +45,7 @@ int main() {
     using SynthEngine = SCE::Generated::parent_synth_inline__sce_synth_invoke__remote_inv::
         parent_synth_inline__sce_synth_invoke__remote_inv;
     SynthEngine synth;
-    synth.initialize();
+    ::SCE::Test::start_or_abort(synth);
     SCE::Generated::parent_synth_inline__sce_synth_invoke__remote_inv::TransportRouter<SynthEngine> synth_router(
         {&synth});
 
@@ -56,7 +57,7 @@ int main() {
     // `initialize()` enters `waiting`, the remote-invoke onentry calls
     // `engine.performScxmlInvokeStart("parent_synth_inline__sce_synth_invoke__remote_inv", ...)`
     // which publishes wire-14 on the p2c channel.
-    parent.initialize();
+    ::SCE::Test::start_or_abort(parent);
 
     using State = SCE::Generated::parent_synth_inline::State;
     using clock = std::chrono::steady_clock;

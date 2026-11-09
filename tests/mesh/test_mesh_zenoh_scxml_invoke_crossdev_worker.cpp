@@ -19,6 +19,7 @@
 // child, and publishes wire-15 InvokeStarted + wire-18 InvokeDone on
 // the worker's Publisher.
 
+#include "common/TestScriptEngine.h"
 #include "scxml_invoke_zenoh_crossdev_worker_sm.h"
 #include "scxml_invoke_zenoh_crossdev_worker_transport.h"
 
@@ -41,7 +42,7 @@ int main() {
 
     using WorkerEngine = SCE::Generated::scxml_invoke_zenoh_crossdev_worker::scxml_invoke_zenoh_crossdev_worker;
     WorkerEngine worker;
-    worker.initialize();
+    ::SCE::Test::start_or_abort(worker);
     SCE::Generated::scxml_invoke_zenoh_crossdev_worker::TransportRouter<WorkerEngine> worker_router({&worker});
     if (!worker_router.init()) {
         std::fprintf(stderr, "FAIL: worker_router.init() returned false\n");

@@ -77,7 +77,7 @@ TEST(HostEventReachesTheChildAotTest, AnEventTheHostHandsOverReachesTheAutoforwa
                                                                  [](::SCE::IScriptEngine *) {}));
     }
 
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
     driveToArmed(sm);
     ASSERT_EQ(sm.getCurrentState(), State::Armed)
         << "the probe child never sent `ready`, so the fixture never reached the state where a "

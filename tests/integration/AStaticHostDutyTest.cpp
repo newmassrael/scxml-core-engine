@@ -62,7 +62,7 @@ TEST(AStaticHostDutyTest, AHostThatPerformsTheDutiesIsAcceptedWithoutAnOptIn) {
     DutyHost host(::SCE::ActionRealization::Performs);
 
     Machine machine(host);
-    machine.initialize();
+    EXPECT_EQ(machine.initialize(), std::nullopt);
     EXPECT_EQ(host.take(), json::array()) << "`idle` calls nothing on the host";
 
     machine.raiseExternal("engage");
@@ -138,7 +138,7 @@ TEST(AStaticHostDutyTest, TheOptInOfAParentCoversTheChildItBuildsWithItsHost) {
 
     const auto start = [](Machine &machine) {
         machine.setClock(std::make_shared<SCE::ManualClock>(0));
-        machine.initialize();
+        EXPECT_EQ(machine.initialize(), std::nullopt);
         ::SCE::Tests::StaticScenario::settleRounds(machine);
     };
 

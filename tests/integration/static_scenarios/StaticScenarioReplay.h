@@ -206,7 +206,11 @@ public:
     /// names (`advance_ms`) and not the time the test happened to take.
     explicit Replay(bool routed) : machine_(hosts_.make()), routed_(routed) {
         prepare();
-        machine_->initialize();
+        // A `datamodel="sce-static"` machine has no script session whose
+        // failure could refuse its start (docs/adr/0096), so the start answers
+        // nothing.
+        static_assert(!Machine::START_MAY_BE_REFUSED, "a sce-static machine's start cannot be refused");
+        static_cast<void>(machine_->initialize());
         // A machine that starts a child session in its first state has that child
         // running, and maybe ended, before any event arrives; it is read as the events
         // leave it, after the rounds that take.

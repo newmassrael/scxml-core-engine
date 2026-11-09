@@ -60,7 +60,7 @@ TEST(XmlDataIsADomTreeAotTest, ADataElementsXmlIsADomTreeTheDocumentCanWalk) {
 
     // Every transition is eventless, so initialization runs the machine to its
     // verdict; no event is needed to ask the question.
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
 
     EXPECT_FALSE(endedIn(sm, SM::State::NotADocument))
         << "the variable did not hold a document: `doc.nodeType === 9`, `doc.nodeName === "

@@ -77,7 +77,7 @@ protected:
 
     static void boot(Machine &sm, const std::shared_ptr<SCE::ManualClock> &c) {
         sm.setClock(c);
-        sm.initialize();
+        EXPECT_EQ(sm.initialize(), std::nullopt);
     }
 };
 

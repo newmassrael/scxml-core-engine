@@ -51,7 +51,7 @@ TEST(EventTypeNamesItsQueueAotTest, EachEventIsTypedByTheQueueItWasTakenFrom) {
                                                                  [](::SCE::IScriptEngine *) {}));
     }
     // The document queues its own events; the run needs nothing from the host.
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
 
     EXPECT_EQ(sm.terminalState(), SM::State::Done) << "`ext` must carry the run to `done`. " << describe(sm);
     EXPECT_EQ(sm.intCode(), std::optional<int64_t>(1))

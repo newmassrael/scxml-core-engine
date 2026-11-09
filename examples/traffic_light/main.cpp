@@ -15,7 +15,10 @@ int main() {
     {
         SCE::Wrappers::AutoProcessStateMachine<traffic_light> light;
 
-        light.initialize();
+        if (const auto refused = light.initialize()) {
+            std::cerr << "The state machine did not start: " << refused->describe() << "\n";
+            return 1;
+        }
         std::cout << "  Initial: " << (light.getCurrentState() == State::Red ? "Red" : "Other") << "\n";
 
         light.processEvent(Event::Timer);  // Auto-processes!
@@ -35,7 +38,10 @@ int main() {
     {
         traffic_light light;
 
-        light.initialize();
+        if (const auto refused = light.initialize()) {
+            std::cerr << "The state machine did not start: " << refused->describe() << "\n";
+            return 1;
+        }
         std::cout << "  Initial: " << (light.getCurrentState() == State::Red ? "Red" : "Other") << "\n";
 
         light.raiseExternal(Event::Timer);

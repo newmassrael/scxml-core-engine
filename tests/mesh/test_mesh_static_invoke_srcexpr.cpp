@@ -17,6 +17,7 @@
 
 #include "brake_static_srcexpr_sm.h"
 #include "brake_static_srcexpr_transport.h"
+#include "common/TestScriptEngine.h"
 #include "motor_static_srcexpr_sm.h"
 
 #include "mesh/MeshEnvelope.h"
@@ -47,7 +48,7 @@ struct Harness {
             sent.push_back(env);
             return true;
         });
-        brake.initialize();
+        ::SCE::Test::start_or_abort(brake);
         brake.step();
     }
 

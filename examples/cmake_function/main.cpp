@@ -20,7 +20,10 @@ int main() {
     {
         SCE::Wrappers::AutoProcessStateMachine<simple_light> light;
 
-        light.initialize();
+        if (const auto refused = light.initialize()) {
+            std::cerr << "The state machine did not start: " << refused->describe() << "\n";
+            return 1;
+        }
         std::cout << "  Initial state: " << (light.getCurrentState() == State::Off ? "OFF" : "ON") << "\n";
 
         light.processEvent(Event::Switch_on);
@@ -37,7 +40,10 @@ int main() {
     {
         simple_light light;
 
-        light.initialize();
+        if (const auto refused = light.initialize()) {
+            std::cerr << "The state machine did not start: " << refused->describe() << "\n";
+            return 1;
+        }
         std::cout << "  Initial state: " << (light.getCurrentState() == State::Off ? "OFF" : "ON") << "\n";
 
         light.raiseExternal(Event::Switch_on);

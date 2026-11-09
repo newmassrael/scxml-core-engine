@@ -58,7 +58,7 @@ TEST(EventDataArrivesAsSentAotTest, AHostsJsonPayloadIsAddressableAndItsTextStay
                                                                  [](::SCE::IScriptEngine *) {}));
     }
 
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
 
     ASSERT_TRUE(isActive(sm, SM::State::Waiting))
         << "the fixture is supposed to start in `waiting`, so nothing below is testing what it "

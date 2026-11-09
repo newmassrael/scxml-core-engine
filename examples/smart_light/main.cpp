@@ -14,7 +14,11 @@ int main() {
 
     // Create state machine with Named Context dependency injection
     smart_light light(hardware);
-    light.initialize();
+    // A machine whose script session cannot be established is not started.
+    if (const auto refused = light.initialize()) {
+        std::cerr << "The state machine did not start: " << refused->describe() << "\n";
+        return 1;
+    }
     std::cout << "State machine initialized\n\n";
 
     // Test 1: OFF → ON

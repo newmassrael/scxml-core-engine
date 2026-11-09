@@ -66,7 +66,7 @@ Item hostItem(std::uint32_t id, int tags) {
 
 TEST(AComposedPayloadIsReadAtAnyDepthTest, AFullDeliveryIsReadAtEveryDepth) {
     Machine machine;
-    machine.initialize();
+    EXPECT_EQ(machine.initialize(), std::nullopt);
     machine.raiseExternal("batch.sent", batch(4));
     StaticScenario::settleRounds(machine);
     EXPECT_EQ(machine.refusals(), 0u) << "a delivery of its type is no error";
@@ -89,7 +89,7 @@ TEST(AComposedPayloadIsReadAtAnyDepthTest, AFullDeliveryIsReadAtEveryDepth) {
 
 TEST(AComposedPayloadIsReadAtAnyDepthTest, AListPastItsBoundAtDepthTwoIsRefusedWhole) {
     Machine machine;
-    machine.initialize();
+    EXPECT_EQ(machine.initialize(), std::nullopt);
     machine.raiseExternal("batch.sent", batch(5));
     StaticScenario::settleRounds(machine);
     EXPECT_EQ(machine.refusals(), 1u) << "error.execution reached the document once";
@@ -121,7 +121,7 @@ TEST(AComposedPayloadIsReadAtAnyDepthTest, EveryBoundOfTheSchemaIsHeldWhereTheDe
     for (const std::string &delivery : cases) {
         ASSERT_NE(delivery, full) << "the case changes the delivery";
         Machine machine;
-        machine.initialize();
+        EXPECT_EQ(machine.initialize(), std::nullopt);
         machine.raiseExternal("batch.sent", delivery);
         StaticScenario::settleRounds(machine);
         EXPECT_EQ(machine.refusals(), 1u) << "error.execution reached the document once: " << delivery;
@@ -132,7 +132,7 @@ TEST(AComposedPayloadIsReadAtAnyDepthTest, EveryBoundOfTheSchemaIsHeldWhereTheDe
 
 TEST(AComposedPayloadIsReadAtAnyDepthTest, AValueAHostInjectsWithinItsBoundsIsReadAsAnyDelivery) {
     Machine machine;
-    machine.initialize();
+    EXPECT_EQ(machine.initialize(), std::nullopt);
     std::vector<std::uint8_t> late{5, 6};
     const std::string refused =
         machine.raiseBatchSent(std::vector<Item>{hostItem(4, 2)}, std::vector<std::vector<std::uint8_t>>{{1, 2}},
@@ -158,7 +158,7 @@ TEST(AComposedPayloadIsReadAtAnyDepthTest, AListAHostInjectsOnePastItsBoundIsRef
     // `late` is a list<uint8>[2]: three elements are no value of its type, and the seam
     // answers the refusal before anything is sent.
     Machine machine;
-    machine.initialize();
+    EXPECT_EQ(machine.initialize(), std::nullopt);
     const std::string refused = machine.raiseBatchSent(std::vector<Item>{hostItem(4, 2)}, {}, {}, {}, std::nullopt,
                                                        "ab", std::vector<std::uint8_t>{5, 6, 7});
     EXPECT_EQ(refused, "'late' holds 3 elements, past the 2 its type declares");
@@ -172,7 +172,7 @@ TEST(AComposedPayloadIsReadAtAnyDepthTest, ARecordAHostBuildsOnePastAnInnerBound
     // `tags` is a list<string[8]>[4] inside each item: an item of five is refused at the
     // path of the list inside the element, and a tag of nine bytes at the path of the tag.
     Machine machine;
-    machine.initialize();
+    EXPECT_EQ(machine.initialize(), std::nullopt);
     EXPECT_EQ(machine.raiseBatchSent(std::vector<Item>{hostItem(1, 5)}, {}, {}, {}, std::nullopt, "ab", {}),
               "'items/0/tags' holds 5 elements, past the 4 its type declares");
     Item nine = hostItem(1, 0);

@@ -45,7 +45,7 @@ TEST(ABadSendArgumentDiscardsItsMessageAotTest, EachBadArgumentDiscardsItsMessag
         sm.setScriptEngine(std::shared_ptr<::SCE::IScriptEngine>(&::SCE::ScriptEngineProvider::getScriptEngine(),
                                                                  [](::SCE::IScriptEngine *) {}));
     }
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
     sm.advanceTimeMs(60000);
     sm.processEvent(SM::Event::Finish);
 

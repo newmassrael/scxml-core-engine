@@ -276,7 +276,10 @@ void sce_enemy_spawn(void *mobj, const char *type_name) {
     g_enemies[slot].enemy.type_name = type_name;
 
     g_enemies[slot].sm = std::make_unique<EnemySM>(g_enemies[slot].enemy);
-    g_enemies[slot].sm->initialize();
+    // A null datamodel has no script session whose failure could refuse the
+    // start (docs/adr/0096), so the start answers nothing.
+    static_assert(!EnemySM::START_MAY_BE_REFUSED, "a null-datamodel machine's start cannot be refused");
+    static_cast<void>(g_enemies[slot].sm->initialize());
 
     g_enemy_slot_map[mobj] = slot;
     g_enemy_count++;

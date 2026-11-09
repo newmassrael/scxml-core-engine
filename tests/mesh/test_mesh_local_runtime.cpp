@@ -17,6 +17,7 @@
 
 #include "brake_sm.h"
 #include "brake_transport.h"
+#include "common/TestScriptEngine.h"
 #include "motor_sm.h"
 
 #include <cstdio>
@@ -32,8 +33,8 @@ int main() {
     using MotorEngine = SCE::Generated::motor::motor;
     SCE::Generated::brake::TransportRouter<BrakeEngine, MotorEngine> router({&brake}, motor);
 
-    brake.initialize();
-    motor.initialize();
+    ::SCE::Test::start_or_abort(brake);
+    ::SCE::Test::start_or_abort(motor);
 
     if (motor.getCurrentState() != SCE::Generated::motor::State::Running) {
         std::printf("FAIL: motor did not enter 'running' on initialize (state=%d)\n",

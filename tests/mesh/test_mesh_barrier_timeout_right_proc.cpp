@@ -20,6 +20,7 @@
 //              wire-21 envelope, then holds the channel alive briefly
 //              so the Root can drain it.
 
+#include "common/TestScriptEngine.h"
 #include "motor_partition_sm.h"
 #include "motor_partition_transport.h"
 
@@ -45,7 +46,7 @@ int main(int argc, char *argv[]) {
     }
 
     gen::motor_partition sm;
-    sm.initialize();
+    ::SCE::Test::start_or_abort(sm);
 
     using Router = gen::TransportRouter<gen::motor_partition>;
     Router router({&sm});

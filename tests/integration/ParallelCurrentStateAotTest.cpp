@@ -66,7 +66,7 @@ std::string describe(Machine &sm) {
 
 TEST(ParallelCurrentStateAotTest, CurrentStateIsAtomicAfterACompoundTarget) {
     Machine sm;
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
 
     sm.processEvent(Machine::Event::Go);
 
@@ -85,7 +85,7 @@ TEST(ParallelCurrentStateAotTest, CurrentStateIsAtomicAfterACompoundTarget) {
 
 TEST(ParallelCurrentStateAotTest, SettlingCurrentStateDoesNotDisturbTheOtherRegion) {
     Machine sm;
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
 
     sm.processEvent(Machine::Event::Go);
 
@@ -99,7 +99,7 @@ TEST(ParallelCurrentStateAotTest, SettlingCurrentStateDoesNotDisturbTheOtherRegi
 
 TEST(ParallelCurrentStateAotTest, ALeafTargetIsLeftAlone) {
     Machine sm;
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
 
     sm.processEvent(Machine::Event::Go);
     sm.processEvent(Machine::Event::Step);

@@ -49,7 +49,10 @@ int main() {
     // Initialize state machine
     std::cout << "[Init] Initializing state machine..." << std::endl;
     try {
-        sm.initialize();
+        if (const auto refused = sm.initialize()) {
+            std::cerr << "ERROR: State machine did not start: " << refused->describe() << std::endl;
+            return 1;
+        }
     } catch (const std::exception &e) {
         std::cerr << "ERROR: State machine initialization failed: " << e.what() << std::endl;
         return 1;

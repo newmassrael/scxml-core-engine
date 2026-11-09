@@ -34,7 +34,7 @@ TEST(AutoforwardDequeuePointAotTest, AnExternalEventIsForwardedAtTheDequeueNotTh
                                                                  [](::SCE::IScriptEngine *) {}));
     }
 
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
     const bool reachedFinal = sm.runUntilCompletion(std::chrono::seconds(3));
 
     EXPECT_TRUE(reachedFinal) << "parent did not reach a final state within timeout — the probe child "

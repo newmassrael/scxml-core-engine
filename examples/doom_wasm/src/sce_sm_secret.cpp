@@ -156,7 +156,10 @@ static void process_bfs_result(void) {
 
 void sce_sm_secret_init(void) {
     g_secret_sm = std::make_unique<SecretSM>(g_secret_callbacks);
-    g_secret_sm->initialize();
+    // A null datamodel has no script session whose failure could refuse the
+    // start (docs/adr/0096), so the start answers nothing.
+    static_assert(!SecretSM::START_MAY_BE_REFUSED, "a null-datamodel machine's start cannot be refused");
+    static_cast<void>(g_secret_sm->initialize());
 }
 
 // ============================================

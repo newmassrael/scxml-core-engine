@@ -82,7 +82,7 @@ TEST_F(NativeActionAotTest, NativeActionDispatchesTypedPayloadToHostInterface) {
     // after construction would arrive one act too late. That is a compile-time
     // fact here rather than a comment.
     Machine sm(host);
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
 
     EXPECT_EQ(sm.getCurrentState(), State::Idle);
     // `<onentry>` of the initial state fires on entry — the engine-free
@@ -127,7 +127,7 @@ TEST_F(NativeActionAotTest, NativeActionDispatchesTypedPayloadToHostInterface) {
 TEST_F(NativeActionAotTest, NativeActionDoesNotFireWithoutItsTypedPayload) {
     Recorder host;
     Machine sm(host);
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
 
     // Raised as a bare enum: no `typedPayload` rides with it, which is exactly
     // what a host reaching past the generated `raiseFragmentReceived` seam
@@ -154,7 +154,7 @@ TEST_F(NativeActionAotTest, NativeActionDoesNotFireWithoutItsTypedPayload) {
 TEST_F(NativeActionAotTest, NativeActionAnswersADocumentRaisedEventWithErrorExecution) {
     Recorder host;
     Machine sm(host);
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
 
     sm.raiseExternal(Event::Selftest);
     sm.step();

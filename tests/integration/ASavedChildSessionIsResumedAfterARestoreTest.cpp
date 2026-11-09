@@ -61,7 +61,7 @@ std::unique_ptr<Machine> fresh() {
 std::unique_ptr<Machine> started() {
     auto machine = fresh();
     machine->bindSessionId("fixture-root");
-    machine->initialize();
+    EXPECT_EQ(machine->initialize(), std::nullopt);
     for (int round = 0; round < 3; ++round) {
         machine->tick();
     }

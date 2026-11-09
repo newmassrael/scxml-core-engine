@@ -53,7 +53,7 @@ int main() {
     using WorkerEngine = SCE::Generated::scxml_invoke_someip_worker::scxml_invoke_someip_worker;
     WorkerEngine worker;
     SCE::Test::inject_build_engine(worker);
-    worker.initialize();
+    ::SCE::Test::start_or_abort(worker);
     SCE::Generated::scxml_invoke_someip_worker::TransportRouter<WorkerEngine> worker_router({&worker});
     if (!worker_router.init()) {
         std::fprintf(stderr, "FAIL: worker_router.init() returned false\n");
@@ -79,7 +79,7 @@ int main() {
     // `isFinal()==true` at the end of `initialize()`, and publishes
     // wire-15 + wire-18 in a single tick.
     SCE::Test::inject_build_engine(parent);
-    parent.initialize();
+    ::SCE::Test::start_or_abort(parent);
 
     using State = SCE::Generated::scxml_invoke_someip_parent::State;
     using clock = std::chrono::steady_clock;

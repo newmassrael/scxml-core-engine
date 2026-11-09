@@ -41,7 +41,7 @@ TEST(AnErrorInsideAForeachEndsItsBlockAotTest, TheErrorEndsTheBlockAndIsTheOnlyO
         sm.setScriptEngine(std::shared_ptr<::SCE::IScriptEngine>(&::SCE::ScriptEngineProvider::getScriptEngine(),
                                                                  [](::SCE::IScriptEngine *) {}));
     }
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
     sm.processEvent(SM::Event::Go);
     sm.processEvent(SM::Event::T);
     sm.processEvent(SM::Event::Finish);

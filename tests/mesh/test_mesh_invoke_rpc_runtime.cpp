@@ -50,8 +50,8 @@ int main() {
 
     SCE::Test::inject_build_engine(brake);
     SCE::Test::inject_build_engine(motor);
-    brake.initialize();
-    motor.initialize();
+    ::SCE::Test::start_or_abort(brake);
+    ::SCE::Test::start_or_abort(motor);
 
     if (motor.getCurrentState() != SCE::Generated::motor_invoke::State::Ready) {
         std::printf("FAIL: motor did not enter Ready on initialize (state=%d)\n",

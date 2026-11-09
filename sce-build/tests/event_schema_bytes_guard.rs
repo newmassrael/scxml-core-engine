@@ -163,12 +163,14 @@ fn cpp_bytes_guard_compiles_and_runs() {
 #include <cstdio>
 using SM = ::SCE::Generated::statechart_bytes::statechart_bytes;
 int main() {
-    SM sm; sm.initialize();
+    SM sm;
+    if (sm.initialize()) { std::puts("FAIL start"); return 4; }
     if (sm.getCurrentState() != SM::State::Waiting) { std::puts("FAIL initial"); return 1; }
     sm.raiseSignalReceived(std::vector<uint8_t>{0x61, 0x63, 0x6b}); // "ack" -> guard matches
     sm.step();
     if (sm.getCurrentState() != SM::State::Done) { std::puts("FAIL match"); return 2; }
-    SM sm2; sm2.initialize();
+    SM sm2;
+    if (sm2.initialize()) { std::puts("FAIL start"); return 4; }
     sm2.raiseSignalReceived(std::vector<uint8_t>{0x6e, 0x6f}); // "no" -> guard rejects
     sm2.step();
     if (sm2.getCurrentState() != SM::State::Waiting) { std::puts("FAIL non-match"); return 3; }

@@ -52,6 +52,7 @@
 
 #include "brake_someip_unsub_sm.h"
 #include "brake_someip_unsub_transport.h"
+#include "common/TestScriptEngine.h"
 #include "motor_someip_unsub_sm.h"
 #include "motor_someip_unsub_transport.h"
 
@@ -146,7 +147,7 @@ int run_test() {
     // rather than duplicating explicit `shutdown()` at each return
     // site.
     Motor motor;
-    motor.initialize();
+    ::SCE::Test::start_or_abort(motor);
     MotorRouterT motor_router({&motor});
     MESH_TEST_REQUIRE(motor_router.init(), "motor router init failed");
 

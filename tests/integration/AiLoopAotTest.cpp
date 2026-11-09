@@ -113,7 +113,7 @@ protected:
                                   [](const SCE::HostSendRequest &) { return std::vector<SCE::HostSendResponse>{}; });
         sm.setScriptEngine(std::shared_ptr<SCE::IScriptEngine>(&SCE::ScriptEngineProvider::getScriptEngine(),
                                                                [](SCE::IScriptEngine *) {}));
-        sm.initialize();
+        EXPECT_EQ(sm.initialize(), std::nullopt);
     }
 
     /// A run whose first prompt has been sent — where most scenarios start.
@@ -818,7 +818,7 @@ TEST_F(AiLoopAotTest, TheDocumentDeclaresItsActsToTheHost) {
     });
     sm.setScriptEngine(std::shared_ptr<SCE::IScriptEngine>(&SCE::ScriptEngineProvider::getScriptEngine(),
                                                            [](SCE::IScriptEngine *) {}));
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
 
     ASSERT_FALSE(seen.empty()) << "entering `priming` asked the host for nothing at all";
     EXPECT_EQ(seen.front().first, "prompt.start") << "entering `priming` did not ask the host to prompt";
@@ -910,7 +910,7 @@ TEST_F(AiLoopAotTest, ARunJournalledAsNamesResumesWhereItStopped) {
     ASSERT_EQ(verdict, SCE::Core::ConfigurationRejection::None)
         << "a configuration this document published is one it can be put back into, but enterAt "
            "refused: "
-        << SCE::Core::configurationRejectionText(verdict);
+        << verdict.describe();
 
     EXPECT_EQ(active(resumed), configuration)
         << "the machine came back somewhere other than where the journal said it was: " << describe(resumed);

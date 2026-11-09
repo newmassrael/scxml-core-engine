@@ -54,7 +54,7 @@ int main() {
     using WorkerEngine = SCE::Generated::worker_session_f_wired::worker_session_f_wired;
     WorkerEngine worker;
     SCE::Test::inject_build_engine(worker);
-    worker.initialize();
+    ::SCE::Test::start_or_abort(worker);
     SCE::Generated::worker_session_f_wired::TransportRouter<WorkerEngine> router({&worker});
     if (!router.init()) {
         std::fprintf(stderr, "worker: TransportRouter::init() returned false\n");

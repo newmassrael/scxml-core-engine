@@ -92,14 +92,17 @@ static std::unique_ptr<AimSM> g_aim_sm;
 
 void sce_sm_aim_init(void) {
     g_aim_sm = std::make_unique<AimSM>(g_aim_callbacks);
-    g_aim_sm->initialize();
+    // A null datamodel has no script session whose failure could refuse the
+    // start (docs/adr/0096), so the start answers nothing.
+    static_assert(!AimSM::START_MAY_BE_REFUSED, "a null-datamodel machine's start cannot be refused");
+    static_cast<void>(g_aim_sm->initialize());
     g_aim_assist_enabled = false;
 }
 
 void sce_sm_aim_reset(void) {
     // Recreate SM to return to disabled state (initialize doesn't reset currentState)
     g_aim_sm = std::make_unique<AimSM>(g_aim_callbacks);
-    g_aim_sm->initialize();
+    static_cast<void>(g_aim_sm->initialize());
     g_aim_assist_enabled = false;
     // onDisabled callback calls SCE_AimAssistClearTarget → g_aim_target = NULL
 }

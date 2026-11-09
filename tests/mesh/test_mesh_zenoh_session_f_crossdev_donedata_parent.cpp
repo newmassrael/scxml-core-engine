@@ -21,6 +21,7 @@
 // here the parent's own listen socket IS the rendezvous point and the
 // worker's connect-retry handles a worker-comes-up-first race.
 
+#include "common/TestScriptEngine.h"
 #include "parent_session_f_donedata_sm.h"
 #include "parent_session_f_donedata_transport.h"
 
@@ -50,7 +51,7 @@ int main() {
     // O(1) per peer, not O(N) per declaration).
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
-    parent.initialize();
+    ::SCE::Test::start_or_abort(parent);
 
     using State = SCE::Generated::parent_session_f_donedata::State;
     using clock = std::chrono::steady_clock;

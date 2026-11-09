@@ -40,7 +40,7 @@ TEST(WildcardInDocumentOrderAotTest, AWildcardKeepsItsGuardAndItsType) {
                                                                  [](::SCE::IScriptEngine *) {}));
     }
 
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
     const bool completed = sm.runUntilCompletion(std::chrono::seconds(3));
 
     EXPECT_TRUE(completed) << "the machine never reached a final state; resting in GuardedFrom or SealedFrom "

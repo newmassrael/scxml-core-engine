@@ -43,7 +43,7 @@ protected:
     }
 
     void SetUp() override {
-        machine.initialize();
+        EXPECT_EQ(machine.initialize(), std::nullopt);
         settle();
     }
 
@@ -71,7 +71,7 @@ TEST_F(AStaticChildIsHandedItsParams, AChildHandedNothingKeepsTheValuesItsDataGa
 // starts with the 'ab' it ends on: 1 + 10 + 100, and two errors.
 TEST(AStaticChildSessionTest, AStringHandedToAChildIsHeldToTheChildsBound) {
     G::static_invoke_string::static_invoke_string machine;
-    machine.initialize();
+    EXPECT_EQ(machine.initialize(), std::nullopt);
     for (int i = 0; i < 5; ++i) {
         machine.tick();
     }
@@ -93,7 +93,7 @@ protected:
     using Machine = G::static_invoke_hybrid::static_invoke_hybrid;
 
     void SetUp() override {
-        machine.initialize();
+        EXPECT_EQ(machine.initialize(), std::nullopt);
         for (int i = 0; i < 40; ++i) {
             machine.tick();
         }
@@ -124,7 +124,7 @@ TEST_F(AStaticHybridInvokeStartsTheCandidateItsValueNames, AValueNamingNoDeclare
 // it.
 TEST(AStaticChildSessionTest, AHybridInvokeOfADocumentWithNoErrorEventStartsItsCandidate) {
     G::static_invoke_hybrid_saved::static_invoke_hybrid_saved machine;
-    machine.initialize();
+    EXPECT_EQ(machine.initialize(), std::nullopt);
     for (int i = 0; i < 5; ++i) {
         machine.tick();
     }

@@ -23,6 +23,7 @@
 
 #include "brake_sm.h"
 #include "brake_transport.h"
+#include "common/TestScriptEngine.h"
 #include "motor_sm.h"
 #include "motor_transport.h"
 
@@ -264,8 +265,8 @@ int main() {
             return 1;
         }
 
-        brake.initialize();
-        motor.initialize();
+        ::SCE::Test::start_or_abort(brake);
+        ::SCE::Test::start_or_abort(motor);
 
         if (motor.getCurrentState() != SCE::Generated::motor::State::Running) {
             std::fprintf(stderr, "FAIL: motor did not enter 'running' on initialize (state=%d)\n",

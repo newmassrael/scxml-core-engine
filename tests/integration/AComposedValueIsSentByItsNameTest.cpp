@@ -45,7 +45,7 @@ std::string item(int id, int tags) {
 
 TEST(AComposedValueIsSentByItsNameTest, ADeliveryForwardedByItsNamesComesBackWhole) {
     Machine machine;
-    machine.initialize();
+    EXPECT_EQ(machine.initialize(), std::nullopt);
     // Every list full, an element of `maybe` absent and `spare` present.
     machine.raiseExternal("batch.sent", "{\"items\":[" + item(1, 4) + "," + item(2, 3) + "," + item(3, 4) +
                                             "],\"grid\":[[1,2],[3,4]],\"levels\":[\"low\",\"critical\"],"

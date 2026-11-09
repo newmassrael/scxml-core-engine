@@ -71,7 +71,7 @@ TEST(ParallelSelfTransitionKeepsItsLeafAotTest, TheSelfTransitionedRegionAnswers
                                                                  [](::SCE::IScriptEngine *) {}));
     }
 
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
 
     ASSERT_TRUE(isActive(sm, SM::State::Within))
         << "the fixture is supposed to start with the self-transitioning region in `within`; it "

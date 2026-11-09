@@ -43,7 +43,7 @@ int main() {
     using WorkerEngine = SCE::Generated::worker_session_f_peer_drop::worker_session_f_peer_drop;
     WorkerEngine worker;
     SCE::Test::inject_build_engine(worker);
-    worker.initialize();
+    ::SCE::Test::start_or_abort(worker);
     SCE::Generated::worker_session_f_peer_drop::TransportRouter<WorkerEngine> worker_router({&worker});
 
     using ParentEngine = SCE::Generated::parent_session_f_peer_drop::parent_session_f_peer_drop;
@@ -51,7 +51,7 @@ int main() {
     SCE::Generated::parent_session_f_peer_drop::TransportRouter<ParentEngine> parent_router({&parent});
 
     SCE::Test::inject_build_engine(parent);
-    parent.initialize();
+    ::SCE::Test::start_or_abort(parent);
 
     using ParentState = SCE::Generated::parent_session_f_peer_drop::State;
 

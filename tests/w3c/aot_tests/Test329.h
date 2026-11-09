@@ -37,7 +37,11 @@ struct Test329 : public AotTestBase {
         }
 
         SCE_LOG_DEBUG("Test329 Debug: Before initialize");
-        sm.initialize();
+        // docs/adr/0096: a refused start entered nothing, so the test fails.
+        if (const auto refused = sm.initialize()) {
+            SCE_LOG_ERROR("Test329: the machine did not start: {}", refused->describe());
+            return false;
+        }
         SCE_LOG_DEBUG("Test329 Debug: After initialize");
 
         bool isInFinal = sm.isInFinalState();

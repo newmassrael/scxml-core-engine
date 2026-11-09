@@ -44,7 +44,7 @@ TEST(AChildReplyArrivesWithoutATickAotTest, TheChildsReplyArrivesBeforeTheHostsN
         sm.setScriptEngine(std::shared_ptr<::SCE::IScriptEngine>(&::SCE::ScriptEngineProvider::getScriptEngine(),
                                                                  [](::SCE::IScriptEngine *) {}));
     }
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
     sm.processEvent(SM::Event::Finish);
 
     EXPECT_EQ(sm.terminalState(), SM::State::Done) << "`finish` must carry the run to `done`. " << describe(sm);

@@ -45,7 +45,11 @@ struct Test417_Worker : public PartitionBase {
         // `sm.sendParallelRegionDone("s1p1", "s1p12", donedata)`, which
         // dispatches through the installed callback to the wire-21
         // shm segment.
-        sm.initialize();
+        // docs/adr/0096: a refused start entered nothing, so the run fails.
+        if (const auto refused = sm.initialize()) {
+            std::fprintf(stderr, "Test417 worker: the machine did not start: %s\n", refused->describe().c_str());
+            return 1;
+        }
 
         // Hold the shm segment open briefly so the Root reader can
         // drain before `router` goes out of scope and unlinks. Mirrors

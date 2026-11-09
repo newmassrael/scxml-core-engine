@@ -27,9 +27,12 @@ public:
 
     MockStateMachine() : currentState_(State::Idle), initialized_(false), eventCount_(0) {}
 
-    void initialize() {
+    // The start a generated machine has (docs/adr/0096); this one has no script
+    // session to refuse it for.
+    std::optional<SCE::ScriptSessionFailure> initialize() {
         initialized_ = true;
         currentState_ = State::Idle;
+        return std::nullopt;
     }
 
     void raiseExternal(Event event) {
@@ -150,7 +153,7 @@ TEST_F(AsyncStateMachineTest, ConstructWithNullDispatcher) {
 
 TEST_F(AsyncStateMachineTest, Initialize) {
     AsyncStateMachine<MockStateMachine, MockStateMachine::Event> sm(dispatcher_);
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
 
     EXPECT_EQ(sm.getCurrentState(), MockStateMachine::State::Idle);
 }
@@ -159,14 +162,14 @@ TEST_F(AsyncStateMachineTest, Initialize) {
 
 TEST_F(AsyncStateMachineTest, PostEventWithoutStartingDispatcher) {
     AsyncStateMachine<MockStateMachine, MockStateMachine::Event> sm(dispatcher_);
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
 
     EXPECT_THROW(sm.postEvent(MockStateMachine::Event::Start), std::runtime_error);
 }
 
 TEST_F(AsyncStateMachineTest, PostEventWithDispatcherRunning) {
     AsyncStateMachine<MockStateMachine, MockStateMachine::Event> sm(dispatcher_);
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
 
     startEventLoop();
 
@@ -184,7 +187,7 @@ TEST_F(AsyncStateMachineTest, PostEventWithDispatcherRunning) {
 
 TEST_F(AsyncStateMachineTest, PostEventWithData) {
     AsyncStateMachine<MockStateMachine, MockStateMachine::Event> sm(dispatcher_);
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
 
     startEventLoop();
 
@@ -203,7 +206,7 @@ TEST_F(AsyncStateMachineTest, PostEventWithData) {
 
 TEST_F(AsyncStateMachineTest, PostMultipleEvents) {
     AsyncStateMachine<MockStateMachine, MockStateMachine::Event> sm(dispatcher_);
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
 
     startEventLoop();
 
@@ -225,7 +228,7 @@ TEST_F(AsyncStateMachineTest, PostMultipleEvents) {
 
 TEST_F(AsyncStateMachineTest, ConcurrentEventPosting) {
     AsyncStateMachine<MockStateMachine, MockStateMachine::Event> sm(dispatcher_);
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
 
     startEventLoop();
 
@@ -257,7 +260,7 @@ TEST_F(AsyncStateMachineTest, ConcurrentEventPosting) {
 
 TEST_F(AsyncStateMachineTest, ConcurrentEventPostingWithData) {
     AsyncStateMachine<MockStateMachine, MockStateMachine::Event> sm(dispatcher_);
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
 
     startEventLoop();
 
@@ -289,7 +292,7 @@ TEST_F(AsyncStateMachineTest, ConcurrentEventPostingWithData) {
 
 TEST_F(AsyncStateMachineTest, GetCurrentStateWhenStopped) {
     AsyncStateMachine<MockStateMachine, MockStateMachine::Event> sm(dispatcher_);
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
 
     // Safe to query when dispatcher not running
     EXPECT_EQ(sm.getCurrentState(), MockStateMachine::State::Idle);
@@ -297,7 +300,7 @@ TEST_F(AsyncStateMachineTest, GetCurrentStateWhenStopped) {
 
 TEST_F(AsyncStateMachineTest, IsInFinalStateWhenStopped) {
     AsyncStateMachine<MockStateMachine, MockStateMachine::Event> sm(dispatcher_);
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
 
     // Safe to query when dispatcher not running
     EXPECT_FALSE(sm.isInFinalState());
@@ -305,7 +308,7 @@ TEST_F(AsyncStateMachineTest, IsInFinalStateWhenStopped) {
 
 TEST_F(AsyncStateMachineTest, GetStateMachineReference) {
     AsyncStateMachine<MockStateMachine, MockStateMachine::Event> sm(dispatcher_);
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
 
     // Get reference to underlying state machine
     MockStateMachine &underlyingSM = sm.getStateMachine();
@@ -314,7 +317,7 @@ TEST_F(AsyncStateMachineTest, GetStateMachineReference) {
 
 TEST_F(AsyncStateMachineTest, GetConstStateMachineReference) {
     AsyncStateMachine<MockStateMachine, MockStateMachine::Event> sm(dispatcher_);
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
 
     // Get const reference
     const MockStateMachine &underlyingSM = sm.getStateMachine();
@@ -332,7 +335,7 @@ TEST_F(AsyncStateMachineTest, GetDispatcher) {
 
 TEST_F(AsyncStateMachineTest, DispatcherLifecycle) {
     AsyncStateMachine<MockStateMachine, MockStateMachine::Event> sm(dispatcher_);
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
 
     // Start
     startEventLoop();
@@ -360,7 +363,7 @@ TEST_F(AsyncStateMachineTest, DispatcherLifecycle) {
 
 TEST_F(AsyncStateMachineTest, CompleteStateMachineExecution) {
     AsyncStateMachine<MockStateMachine, MockStateMachine::Event> sm(dispatcher_);
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
 
     startEventLoop();
 
@@ -382,7 +385,7 @@ TEST_F(AsyncStateMachineTest, CompleteStateMachineExecution) {
 
 TEST_F(AsyncStateMachineTest, EventOrderingPreserved) {
     AsyncStateMachine<MockStateMachine, MockStateMachine::Event> sm(dispatcher_);
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
 
     startEventLoop();
 

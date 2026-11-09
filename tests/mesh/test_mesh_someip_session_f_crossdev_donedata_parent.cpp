@@ -21,6 +21,7 @@
 //   TransportRouter::init() so vsomeip's app factory loads the parent
 //   config. Same pattern as 5b lifecycle.
 
+#include "common/TestScriptEngine.h"
 #include "parent_session_f_donedata_sm.h"
 #include "parent_session_f_donedata_transport.h"
 
@@ -65,7 +66,7 @@ int main() {
     // the same budget covers all three.
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
-    parent.initialize();
+    ::SCE::Test::start_or_abort(parent);
 
     using State = SCE::Generated::parent_session_f_donedata::State;
     using clock = std::chrono::steady_clock;

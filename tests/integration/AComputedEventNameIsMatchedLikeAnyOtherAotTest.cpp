@@ -41,7 +41,7 @@ TEST(AComputedEventNameIsMatchedLikeAnyOtherAotTest, AComputedNameIsMatchedByTok
                                                                  [](::SCE::IScriptEngine *) {}));
     }
 
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
     const bool reachedFinal = sm.runUntilCompletion(std::chrono::seconds(3));
 
     EXPECT_TRUE(reachedFinal) << "the machine did not reach a final state within timeout — a computed name was "
@@ -68,7 +68,7 @@ std::vector<ComputedNameSM::TransitionTaken> runObserved(bool clear, bool &reach
     if (clear) {
         sm.setTransitionObserver({});
     }
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
     reachedPass = sm.runUntilCompletion(std::chrono::seconds(3)) && sm.terminalState() == ComputedNameSM::State::Pass;
     return seen;
 }

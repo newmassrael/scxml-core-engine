@@ -40,7 +40,7 @@ TEST(AHybridInvokeCarriesItsArgumentsAotTest, EachArgumentReachesOnlyTheChildTha
         sm.setScriptEngine(std::shared_ptr<::SCE::IScriptEngine>(&::SCE::ScriptEngineProvider::getScriptEngine(),
                                                                  [](::SCE::IScriptEngine *) {}));
     }
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
     const bool completed = sm.runUntilCompletion(std::chrono::seconds(3));
 
     EXPECT_TRUE(completed) << "the machine never completed; `refusedPhase` parks when its invoke raised nothing";

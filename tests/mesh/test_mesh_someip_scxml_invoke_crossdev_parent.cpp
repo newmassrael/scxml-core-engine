@@ -17,6 +17,7 @@
 //   VSOMEIP_CONFIG_PATH and we setenv() it before TransportRouter::init()
 //   so the call into vsomeip's app factory loads the parent config.
 
+#include "common/TestScriptEngine.h"
 #include "scxml_invoke_someip_crossdev_parent_sm.h"
 #include "scxml_invoke_someip_crossdev_parent_transport.h"
 
@@ -62,7 +63,7 @@ int main() {
     // same physics whether the routers share a process or share a wire.
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
-    parent.initialize();
+    ::SCE::Test::start_or_abort(parent);
 
     using State = SCE::Generated::scxml_invoke_someip_crossdev_parent::State;
     using clock = std::chrono::steady_clock;

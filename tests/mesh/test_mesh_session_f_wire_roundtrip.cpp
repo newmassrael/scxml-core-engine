@@ -38,7 +38,7 @@ int main() {
     using WorkerEngine = SCE::Generated::worker_session_f_wired::worker_session_f_wired;
     WorkerEngine worker;
     SCE::Test::inject_build_engine(worker);
-    worker.initialize();
+    ::SCE::Test::start_or_abort(worker);
     SCE::Generated::worker_session_f_wired::TransportRouter<WorkerEngine> worker_router({&worker});
 
     using ParentEngine = SCE::Generated::parent_session_f_wired::parent_session_f_wired;
@@ -50,7 +50,7 @@ int main() {
     // `engine.performScxmlInvokeStart("worker_session_f_wired", ...)`
     // which publishes wire-14 on the `p2c_to_worker_session_f_wired_` channel.
     SCE::Test::inject_build_engine(parent);
-    parent.initialize();
+    ::SCE::Test::start_or_abort(parent);
 
     using State = SCE::Generated::parent_session_f_wired::State;
     using clock = std::chrono::steady_clock;

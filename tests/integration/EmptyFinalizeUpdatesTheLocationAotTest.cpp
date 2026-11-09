@@ -45,7 +45,7 @@ TEST(EmptyFinalizeUpdatesTheLocationAotTest, AnEmptyFinalizeUpdatesTheLocationAn
                                                                  [](::SCE::IScriptEngine *) {}));
     }
 
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
     // Two 3s timeouts back to back; the budget outlasts both so a silent child
     // reaches its own verdict state instead of reading as a hang.
     const bool reachedFinal = sm.runUntilCompletion(std::chrono::seconds(20));

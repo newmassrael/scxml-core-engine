@@ -144,7 +144,7 @@ int run_test() {
 
     Sender sender;
     SCE::Test::inject_build_engine(sender);
-    sender.initialize();
+    ::SCE::Test::start_or_abort(sender);
 
     sender_gen::TransportRouter<Sender> router({&sender});
     MESH_TEST_REQUIRE(router.init(), "sender router init failed");

@@ -42,7 +42,12 @@ public:
             sm.setScriptEngine(::std::shared_ptr<::SCE::IScriptEngine>(&::SCE::ScriptEngineProvider::getScriptEngine(),
                                                                        [](::SCE::IScriptEngine *) {}));
         }
-        sm.initialize();
+        // docs/adr/0096: a refused start entered nothing and established no
+        // session, so the test fails with nothing to clean up.
+        if (const auto refused = sm.initialize()) {
+            SCE_LOG_ERROR("AOT test: the machine did not start: {}", refused->describe());
+            return false;
+        }
 
         // W3C SCXML 6.2: Use runUntilCompletion() for automatic event scheduler polling
         bool completed = sm.runUntilCompletion(getTimeout());

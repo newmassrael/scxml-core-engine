@@ -40,7 +40,7 @@ TEST(ASelfSentEventNamesItsOriginAotTest, ASelfSentEventNamesItsOrigin) {
         sm.setScriptEngine(std::shared_ptr<::SCE::IScriptEngine>(&::SCE::ScriptEngineProvider::getScriptEngine(),
                                                                  [](::SCE::IScriptEngine *) {}));
     }
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
     sm.advanceTimeMs(1000);
 
     EXPECT_EQ(sm.terminalState(), SM::State::Done) << "the run must end in `done`";

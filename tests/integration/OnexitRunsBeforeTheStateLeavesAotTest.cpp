@@ -57,7 +57,7 @@ TEST(OnexitRunsBeforeTheStateLeavesAotTest, AStateIsStillActiveWhileItsOwnOnexit
                                                                  [](::SCE::IScriptEngine *) {}));
     }
 
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
     ASSERT_EQ(sm.getCurrentState(), SM::State::Inner)
         << "the run has to start inside `inner`. active: " << describe(sm);
 

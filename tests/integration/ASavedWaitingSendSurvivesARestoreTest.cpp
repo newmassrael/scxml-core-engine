@@ -88,7 +88,7 @@ template <typename Machine> void send(Machine &machine, const std::string &name)
 std::unique_ptr<SendId> armed() {
     auto machine = fresh<SendId>();
     machine->bindSessionId(kRoot);
-    machine->initialize();
+    EXPECT_EQ(machine->initialize(), std::nullopt);
     send(*machine, "arm");
     return machine;
 }
@@ -175,7 +175,7 @@ std::unique_ptr<HostSend> waiting() {
     machine->bindSessionId(kRoot);
     machine->registerEventProcessor(
         kDeclaredType, [](const ::SCE::HostSendRequest &) { return std::vector<::SCE::HostSendResponse>{}; });
-    machine->initialize();
+    EXPECT_EQ(machine->initialize(), std::nullopt);
     send(*machine, "start");
     send(*machine, "bump");
     machine->advanceTimeMs(100);

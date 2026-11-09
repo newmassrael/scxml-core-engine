@@ -34,7 +34,7 @@ TEST(ParallelDoneStateIsDeliveredAotTest, CompletionCarriesTheMachineToATopLevel
     using SM = SCE::Generated::parallel_done_state_is_delivered::parallel_done_state_is_delivered;
 
     SM sm;
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
 
     const auto active = [&sm](SM::State state) {
         const auto states = sm.getPolicy().getActiveStates();

@@ -40,6 +40,7 @@
 //   - harness declares a different literal key (proves substitution ran)
 //   - reply env.invoke_id is not propagated back → deadline-only path
 
+#include "common/TestScriptEngine.h"
 #include "pool_zenoh_client_sm.h"
 #include "pool_zenoh_client_transport.h"
 
@@ -128,7 +129,7 @@ int run_test() {
     // be accepting, otherwise the 1-second handshake wait below
     // cannot be trusted to converge.
     Client client;
-    client.initialize();
+    ::SCE::Test::start_or_abort(client);
 
     ClientRouterT client_router({&client});
     MESH_TEST_REQUIRE(client_router.init(), "client_router.init() failed");

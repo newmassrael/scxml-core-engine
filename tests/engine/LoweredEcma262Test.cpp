@@ -355,7 +355,7 @@ template <typename SM> json runMachine(const char *label) {
     // the same aliasing shape `SimpleAotTest` uses.
     machine.setScriptEngine(std::shared_ptr<::SCE::IScriptEngine>(&::SCE::ScriptEngineProvider::getScriptEngine(),
                                                                   [](::SCE::IScriptEngine *) {}));
-    machine.initialize();
+    EXPECT_EQ(machine.initialize(), std::nullopt);
 
     if (!machine.isInFinalState()) {
         ADD_FAILURE() << label

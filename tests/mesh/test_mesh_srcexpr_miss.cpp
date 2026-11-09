@@ -51,7 +51,7 @@ int main() {
     Router router({&machine}, phantom_peer);
 
     SCE::Test::inject_build_engine(machine);
-    machine.initialize();
+    ::SCE::Test::start_or_abort(machine);
 
     // probe.go drives idle → calling_miss. The calling_miss entry
     // evaluates the srcexpr, calls performMeshInvoke on #ghost_target,

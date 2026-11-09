@@ -43,7 +43,7 @@ TEST(AStaticHostIsHandedTypedValuesTest, AHostActionTakesTypedDatamodelArguments
     } host;
 
     Hc::static_host_call machine(host);
-    machine.initialize();
+    EXPECT_EQ(machine.initialize(), std::nullopt);
     for (int i = 0; i < 4; ++i) {
         machine.raiseExternal("retry");
         machine.step();
@@ -73,7 +73,7 @@ TEST(AStaticHostIsHandedTypedValuesTest, AHostActionTakesAnArgumentThatMayBeAbse
     } host;
 
     Hc::static_host_call machine(host);
-    machine.initialize();
+    EXPECT_EQ(machine.initialize(), std::nullopt);
     for (const char *event : {"plan", "escalate", "unplan"}) {
         machine.raiseExternal(event);
         machine.step();
@@ -95,7 +95,7 @@ TEST(AStaticHostIsHandedTypedValuesTest, AnArgumentThatOverflowsStopsTheCallAndR
     } host;
 
     Hc::static_host_call_arguments machine(host);
-    machine.initialize();
+    EXPECT_EQ(machine.initialize(), std::nullopt);
 
     machine.raiseExternal("fine");
     machine.step();

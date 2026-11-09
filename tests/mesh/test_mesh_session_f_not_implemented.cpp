@@ -31,7 +31,7 @@
 int main() {
     SCE::Generated::parent_session_f::parent_session_f sm;
     SCE::Test::inject_build_engine(sm);
-    sm.initialize();
+    ::SCE::Test::start_or_abort(sm);
 
     using State = SCE::Generated::parent_session_f::State;
     if (sm.terminalState() != State::Pass) {

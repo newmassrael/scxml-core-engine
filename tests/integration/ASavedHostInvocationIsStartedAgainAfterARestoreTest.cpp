@@ -116,7 +116,7 @@ std::unique_ptr<Machine> working(Host &host) {
     auto machine = fresh();
     machine->bindSessionId("fixture-root");
     host.registerOn(*machine);
-    machine->initialize();
+    EXPECT_EQ(machine->initialize(), std::nullopt);
     machine->raiseExternal("start");
     machine->advanceTimeMs(0);
     return machine;

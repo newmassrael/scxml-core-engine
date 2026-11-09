@@ -51,6 +51,7 @@
 //      `shutdown()` as a whole. The arm itself is §2's job.
 
 #include "brake_dds_machine_lifetime_subscribe_transport.h"
+#include "common/TestScriptEngine.h"
 #include "motor_dds_machine_lifetime_subscribe_sm.h"
 #include "motor_dds_machine_lifetime_subscribe_transport.h"
 
@@ -113,7 +114,7 @@ int run_test() {
     // Motor first: the publisher has to be discoverable before either
     // subscriber's reader can match it.
     MotorSm motor;
-    motor.initialize();
+    ::SCE::Test::start_or_abort(motor);
     motor_gen::TransportRouter<MotorSm> motor_router({&motor});
     MESH_TEST_REQUIRE(motor_router.init(), "motor router init failed");
 

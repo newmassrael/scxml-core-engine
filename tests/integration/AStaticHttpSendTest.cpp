@@ -30,7 +30,7 @@ struct HttpHarness {
 
     HttpHarness() {
         sm.setHttpSendCallback([this](const SCE::Static::HttpSendRequest &request) { posted.push_back(request); });
-        sm.initialize();
+        EXPECT_EQ(sm.initialize(), std::nullopt);
         sm.step();
     }
 

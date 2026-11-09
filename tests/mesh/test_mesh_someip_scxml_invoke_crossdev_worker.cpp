@@ -19,6 +19,7 @@
 //   setenv() before init() guarantees vsomeip's app factory picks up the
 //   right config when ctest launches this binary via `ip netns exec`.
 
+#include "common/TestScriptEngine.h"
 #include "scxml_invoke_someip_crossdev_worker_sm.h"
 #include "scxml_invoke_someip_crossdev_worker_transport.h"
 
@@ -54,7 +55,7 @@ int main() {
 
     using WorkerEngine = SCE::Generated::scxml_invoke_someip_crossdev_worker::scxml_invoke_someip_crossdev_worker;
     WorkerEngine worker;
-    worker.initialize();
+    ::SCE::Test::start_or_abort(worker);
     SCE::Generated::scxml_invoke_someip_crossdev_worker::TransportRouter<WorkerEngine> worker_router({&worker});
     if (!worker_router.init()) {
         std::fprintf(stderr, "FAIL: worker_router.init() returned false\n");

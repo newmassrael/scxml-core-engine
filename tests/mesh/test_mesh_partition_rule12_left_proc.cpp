@@ -19,6 +19,7 @@
 // driver process treats any non-zero exit as a hard failure and prints
 // the captured stderr.
 
+#include "common/TestScriptEngine.h"
 #include "motor_partition_sm.h"
 #include "motor_partition_transport.h"
 
@@ -41,7 +42,7 @@ constexpr auto POLL_INTERVAL = std::chrono::milliseconds(10);
 
 int main() {
     gen::motor_partition sm;
-    sm.initialize();
+    ::SCE::Test::start_or_abort(sm);
 
     using Router = gen::TransportRouter<gen::motor_partition>;
     Router router({&sm});

@@ -26,7 +26,7 @@ int main() {
     using WorkerEngine = SCE::Generated::worker_session_f_cancel::worker_session_f_cancel;
     WorkerEngine worker;
     SCE::Test::inject_build_engine(worker);
-    worker.initialize();
+    ::SCE::Test::start_or_abort(worker);
     SCE::Generated::worker_session_f_cancel::TransportRouter<WorkerEngine> worker_router({&worker});
 
     using ParentEngine = SCE::Generated::parent_session_f_cancel::parent_session_f_cancel;
@@ -34,7 +34,7 @@ int main() {
     SCE::Generated::parent_session_f_cancel::TransportRouter<ParentEngine> parent_router({&parent});
 
     SCE::Test::inject_build_engine(parent);
-    parent.initialize();
+    ::SCE::Test::start_or_abort(parent);
 
     using ParentState = SCE::Generated::parent_session_f_cancel::State;
     using ParentEvent = SCE::Generated::parent_session_f_cancel::Event;

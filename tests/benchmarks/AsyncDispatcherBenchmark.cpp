@@ -25,9 +25,12 @@ public:
 
     BenchStateMachine() : state_(State::Idle), eventCount_(0) {}
 
-    void initialize() {
+    // The start a generated machine has (docs/adr/0096); this one has no script
+    // session to refuse it for.
+    std::optional<SCE::ScriptSessionFailure> initialize() {
         state_ = State::Idle;
         eventCount_ = 0;
+        return std::nullopt;
     }
 
     void raiseExternal(Event event) {
@@ -104,7 +107,10 @@ bool waitForQueueDrain(const std::shared_ptr<StdThreadDispatcher> &dispatcher, i
 static void BM_AsyncDispatcher_SingleThreadThroughput(benchmark::State &state) {
     auto dispatcher = StdThreadDispatcher::create();
     AsyncStateMachine<BenchStateMachine, BenchStateMachine::Event> sm(dispatcher);
-    sm.initialize();
+    if (sm.initialize()) {
+        state.SkipWithError("the machine did not start");
+        return;
+    }
 
     dispatcher->start();
     std::thread eventLoop([&]() { dispatcher->run(); });
@@ -132,7 +138,10 @@ BENCHMARK(BM_AsyncDispatcher_SingleThreadThroughput)->Unit(benchmark::kMicroseco
 static void BM_AsyncDispatcher_MultiThreadThroughput(benchmark::State &state) {
     auto dispatcher = StdThreadDispatcher::create();
     AsyncStateMachine<BenchStateMachine, BenchStateMachine::Event> sm(dispatcher);
-    sm.initialize();
+    if (sm.initialize()) {
+        state.SkipWithError("the machine did not start");
+        return;
+    }
 
     dispatcher->start();
     std::thread eventLoop([&]() { dispatcher->run(); });
@@ -241,7 +250,10 @@ static void BM_AsyncStateMachine_Initialization(benchmark::State &state) {
 
     for (auto _ : state) {
         AsyncStateMachine<BenchStateMachine, BenchStateMachine::Event> sm(dispatcher);
-        sm.initialize();
+        if (sm.initialize()) {
+            state.SkipWithError("the machine did not start");
+            break;
+        }
         benchmark::DoNotOptimize(sm);
     }
 }
@@ -256,7 +268,10 @@ BENCHMARK(BM_AsyncStateMachine_Initialization)->Unit(benchmark::kNanosecond);
 static void BM_AsyncStateMachine_PostEventOverhead(benchmark::State &state) {
     auto dispatcher = StdThreadDispatcher::create();
     AsyncStateMachine<BenchStateMachine, BenchStateMachine::Event> sm(dispatcher);
-    sm.initialize();
+    if (sm.initialize()) {
+        state.SkipWithError("the machine did not start");
+        return;
+    }
 
     dispatcher->start();
     std::thread eventLoop([&]() { dispatcher->run(); });
@@ -288,7 +303,10 @@ BENCHMARK(BM_AsyncStateMachine_PostEventOverhead)->Unit(benchmark::kNanosecond);
 static void BM_AsyncDispatcher_ConcurrentPosting(benchmark::State &state) {
     auto dispatcher = StdThreadDispatcher::create();
     AsyncStateMachine<BenchStateMachine, BenchStateMachine::Event> sm(dispatcher);
-    sm.initialize();
+    if (sm.initialize()) {
+        state.SkipWithError("the machine did not start");
+        return;
+    }
 
     dispatcher->start();
     std::thread eventLoop([&]() { dispatcher->run(); });
@@ -362,7 +380,10 @@ BENCHMARK(BM_AsyncDispatcher_EmptyEventLoop)->Unit(benchmark::kMillisecond)->Ite
 static void BM_AsyncDispatcher_BatchProcessing(benchmark::State &state) {
     auto dispatcher = StdThreadDispatcher::create();
     AsyncStateMachine<BenchStateMachine, BenchStateMachine::Event> sm(dispatcher);
-    sm.initialize();
+    if (sm.initialize()) {
+        state.SkipWithError("the machine did not start");
+        return;
+    }
 
     dispatcher->start();
     std::thread eventLoop([&]() { dispatcher->run(); });

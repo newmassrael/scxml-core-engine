@@ -63,7 +63,7 @@ TEST(CrossdevDonedata, ThreeShapesSurviveWire18OverCustomTcp) {
                                                "ctest holding the RESOURCE_LOCK?)";
 
     SCE::Test::inject_build_engine(parent);
-    parent.initialize();
+    EXPECT_EQ(parent.initialize(), std::nullopt);
 
     using clock = std::chrono::steady_clock;
     const auto deadline = clock::now() + std::chrono::seconds(10);

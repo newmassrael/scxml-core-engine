@@ -27,7 +27,11 @@ int main() {
     SCE::Generated::traffic_light::traffic_light sm;
 
     // Initialize the state machine (enters initial state)
-    sm.initialize();
+    // A machine whose script session cannot be established is not started.
+    if (const auto refused = sm.initialize()) {
+        std::cerr << "The state machine did not start: " << refused->describe() << std::endl;
+        return 1;
+    }
 
     std::cout << "Initial state: " << sm.getCurrentStateString() << std::endl;
     std::cout << std::endl;

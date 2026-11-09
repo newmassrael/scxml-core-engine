@@ -48,7 +48,7 @@ std::unique_ptr<SM> started() {
                                                                   [](::SCE::IScriptEngine *) {}));
     }
     sm->setClock(std::make_shared<SCE::ManualClock>(0));
-    sm->initialize();
+    EXPECT_EQ(sm->initialize(), std::nullopt);
     return sm;
 }
 

@@ -60,7 +60,11 @@ struct Test417_Main : public PartitionBase {
         // here; we pump the scheduler via `tick()` below so the
         // timer can fire and drive `<final id="fail">` if the remote
         // partition never reports.
-        sm.initialize();
+        // docs/adr/0096: a refused start entered nothing, so the run fails.
+        if (const auto refused = sm.initialize()) {
+            std::fprintf(stderr, "Test417 main: the machine did not start: %s\n", refused->describe().c_str());
+            return 1;
+        }
 
         // Bounded wait for the NonRoot's wire-21 envelope. The
         // deadline is ~3 s at 10 ms polls — the test's own timeout is

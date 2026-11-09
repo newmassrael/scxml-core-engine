@@ -41,7 +41,7 @@ TEST(CancellingAnInvokeRaisesNothingAotTest, LeavingTheInvokingStateRaisesNoCanc
         sm.setScriptEngine(std::shared_ptr<::SCE::IScriptEngine>(&::SCE::ScriptEngineProvider::getScriptEngine(),
                                                                  [](::SCE::IScriptEngine *) {}));
     }
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
     ASSERT_EQ(sm.getCurrentState(), SM::State::P) << "the run has to start in `p`, with its child invoked";
 
     sm.processEvent(SM::Event::Leave);

@@ -29,6 +29,7 @@
 
 #include "brake_tcp_multi_sm.h"
 #include "brake_tcp_multi_transport.h"
+#include "common/TestScriptEngine.h"
 #include "motor_tcp_multi_sm.h"
 #include "motor_tcp_multi_transport.h"
 
@@ -145,8 +146,8 @@ int main() {
             std::fprintf(stderr, "FAIL: motor router init() failed (listen bind?)\n");
             return 1;
         }
-        brake.initialize();
-        motor.initialize();
+        ::SCE::Test::start_or_abort(brake);
+        ::SCE::Test::start_or_abort(motor);
 
         // brake.press → onentry fires all five sends on one connection.
         brake.processEvent(SCE::Generated::brake_tcp_multi::Event::Brake_press);
@@ -188,7 +189,7 @@ int main() {
             std::fprintf(stderr, "FAIL: motor router init() failed on re-bind\n");
             return 4;
         }
-        motor.initialize();
+        ::SCE::Test::start_or_abort(motor);
 
         Inbox status_inbox;
         auto status_peer = std::make_unique<SCE::Mesh::CustomTcp::Client>(

@@ -58,7 +58,7 @@ TEST(ParallelRegionsTakeOwnTransitionsAotTest, EveryRegionTakesItsOwnTransition)
                                                                  [](::SCE::IScriptEngine *) {}));
     }
 
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
 
     ASSERT_TRUE(isActive(sm, SM::State::Working))
         << "the fixture is supposed to start with the deeper region in `working`; it did not, "

@@ -24,6 +24,7 @@
 
 #include "brake_dds_multi_sm.h"
 #include "brake_dds_multi_transport.h"
+#include "common/TestScriptEngine.h"
 #include "motor_dds_multi_sm.h"
 #include "motor_dds_multi_transport.h"
 
@@ -49,7 +50,7 @@ int run_test() {
     // Motor first: the server has to be discoverable before brake's
     // request writer can match anything.
     Motor motor;
-    motor.initialize();
+    ::SCE::Test::start_or_abort(motor);
     motor_gen::TransportRouter<Motor> motor_router({&motor});
     MESH_TEST_REQUIRE(motor_router.init(), "motor router init failed");
 

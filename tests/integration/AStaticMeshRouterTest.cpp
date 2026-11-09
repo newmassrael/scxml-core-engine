@@ -34,7 +34,7 @@ TEST(AStaticMeshRouterTest, AChildGivenNoMeshRouterHasItsSendRefused) {
         ++parentSends;
         return true;
     });
-    machine.initialize();
+    EXPECT_EQ(machine.initialize(), std::nullopt);
     ::SCE::Tests::StaticScenario::settleRounds(machine);
     EXPECT_EQ(machine.refusals(), 1u) << "the child ended on its refused greeting, and the machine counted it";
     EXPECT_EQ(parentSends, 0) << "a child's send fell back to the machine's router";
@@ -47,7 +47,7 @@ TEST(AStaticMeshRouterTest, AChildGivenNoMeshRouterHasItsSendRefused) {
 // machine sent itself over `#_internal` is the only write it holds.
 TEST(AStaticMeshRouterTest, ASendToAMeshPeerWithNoRouterRegisteredIsErrorExecution) {
     G::todo_peer::todo_peer machine;
-    machine.initialize();
+    EXPECT_EQ(machine.initialize(), std::nullopt);
     machine.raiseExternal("todo.join", R"({"node":"1","hub":false})");
     machine.raiseExternal("todo.edit", R"({"id":7,"field":1,"value":"0","text":"buy milk","now":"0"})");
     machine.step();

@@ -67,7 +67,7 @@ class AChildIsGivenItsHostByItsParent : public ::testing::Test {
 protected:
     void SetUp() override {
         machine = std::make_unique<G::static_child_host::static_child_host>(host);
-        machine->initialize();
+        EXPECT_EQ(machine->initialize(), std::nullopt);
         settle();
     }
 
@@ -164,7 +164,7 @@ TEST(AChildIsGivenItsHostByItsParentHybrid, ACandidateIsGivenTheHostAnsweredForI
             machine.tick();
         }
     };
-    machine.initialize();
+    EXPECT_EQ(machine.initialize(), std::nullopt);
     settle();
 
     ASSERT_EQ(host.asked, (Calls{"first"}));

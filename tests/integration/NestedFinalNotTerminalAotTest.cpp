@@ -41,7 +41,7 @@ TEST(NestedFinalNotTerminalAotTest, ANestedFinalDoesNotEndTheSession) {
                                                                  [](::SCE::IScriptEngine *) {}));
     }
 
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
 
     ASSERT_EQ(sm.getCurrentState(), SM::State::PhaseDone)
         << "the fixture is supposed to come to rest in the nested `<final>`; it did not, "

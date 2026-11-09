@@ -171,7 +171,13 @@ public:
             }
         });
 
-        sm.initialize();
+        // docs/adr/0096: a machine whose script session cannot be established
+        // is not started, so there is nothing to drive; the server is still
+        // stopped below before the test fails.
+        const auto refused = sm.initialize();
+        if (refused) {
+            SCE_LOG_ERROR("HttpAotTest {}: the machine did not start: {}", TestNum, refused->describe());
+        }
         SCE_LOG_DEBUG("HttpAotTest {}: State machine initialized, starting event loop", TestNum);
 
         // W3C SCXML C.2: drive the machine until a final state or the timeout.
@@ -179,7 +185,7 @@ public:
         constexpr auto timeout = std::chrono::seconds(5);
         bool timedOut = false;
 
-        while (!sm.isInFinalState()) {
+        while (!refused && !sm.isInFinalState()) {
             auto elapsed = std::chrono::steady_clock::now() - startTime;
             if (elapsed > timeout) {
                 SCE_LOG_ERROR("HttpAotTest {}: Timeout waiting for final state (elapsed: {}ms)", TestNum,
@@ -200,7 +206,7 @@ public:
         httpServer.stop();
         SCE_LOG_DEBUG("HttpAotTest {}: HTTP server stopped", TestNum);
 #endif
-        if (timedOut) {
+        if (refused || timedOut) {
             return false;
         }
 

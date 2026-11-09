@@ -41,7 +41,7 @@ int main() {
     using WorkerEngine = SCE::Generated::worker_session_f_eventful::worker_session_f_eventful;
     WorkerEngine worker;
     SCE::Test::inject_build_engine(worker);
-    worker.initialize();
+    ::SCE::Test::start_or_abort(worker);
     SCE::Generated::worker_session_f_eventful::TransportRouter<WorkerEngine> worker_router({&worker});
 
     using ParentEngine = SCE::Generated::parent_session_f_eventful::parent_session_f_eventful;
@@ -51,7 +51,7 @@ int main() {
     // Parent ctor installed wire-14/17/19 send callbacks and the Lua
     // script engine initialiser runs on the first datamodel touch.
     SCE::Test::inject_build_engine(parent);
-    parent.initialize();
+    ::SCE::Test::start_or_abort(parent);
 
     using State = SCE::Generated::parent_session_f_eventful::State;
     using clock = std::chrono::steady_clock;

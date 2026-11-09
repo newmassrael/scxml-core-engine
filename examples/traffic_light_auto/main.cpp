@@ -34,7 +34,12 @@ int main() {
 
     // Wrap generated state machine
     AsyncStateMachine<traffic_light, Event> light(dispatcher);
-    light.initialize();
+    if (const auto refused = light.initialize()) {
+        std::cerr << "The state machine did not start: " << refused->describe() << "\n";
+        dispatcher->stop();
+        eventLoop.join();
+        return 1;
+    }
 
     std::cout << "State machine initialized\n";
     std::cout << "Starting automatic timer test (3 seconds each state)\n\n";

@@ -35,6 +35,7 @@
 
 #include "brake_zenoh_on_drop_sm.h"
 #include "brake_zenoh_on_drop_transport.h"
+#include "common/TestScriptEngine.h"
 
 #include "ZenohTestUtils.h"
 
@@ -82,7 +83,7 @@ int scenario_no_peer() {
         return 1;
     }
 
-    brake.initialize();
+    ::SCE::Test::start_or_abort(brake);
 
     const auto start = std::chrono::steady_clock::now();
     brake.processEvent(BrakeEvent::Go);
@@ -136,7 +137,7 @@ int scenario_peer_silent() {
         return 1;
     }
 
-    brake.initialize();
+    ::SCE::Test::start_or_abort(brake);
 
     // Raw peer connects into brake's listen. Must happen AFTER
     // brake_router.init() so the TCP listener is up; otherwise the

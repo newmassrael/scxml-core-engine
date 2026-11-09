@@ -49,7 +49,7 @@ TEST(ParallelCompletionRaisesDoneStateAotTest, EveryRegionFinalCompletesTheParal
                   "the parallel's done.state event must be declared, not only raised");
 
     SM sm;
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
 
     const auto active = [&sm](SM::State state) {
         const auto states = sm.getPolicy().getActiveStates();

@@ -85,7 +85,7 @@ protected:
     void SetUp() override {
         host = std::make_shared<LookupHost>();
         sm.registerXSceHostInvoker(host);
-        sm.initialize();
+        EXPECT_EQ(sm.initialize(), std::nullopt);
         sm.step();
         sm.raiseExternal("ask");
         sm.step();

@@ -212,7 +212,10 @@ void sce_sm_combo_on_kill(void) {
 
 void sce_sm_combo_init(void) {
     g_combo_sm = std::make_unique<ComboSM>(g_combo_callbacks, g_berserk_callbacks);
-    g_combo_sm->initialize();
+    // A null datamodel has no script session whose failure could refuse the
+    // start (docs/adr/0096), so the start answers nothing.
+    static_assert(!ComboSM::START_MAY_BE_REFUSED, "a null-datamodel machine's start cannot be refused");
+    static_cast<void>(g_combo_sm->initialize());
 
     g_timer.cancel();
     g_timer_pause_ui_sent = false;
@@ -376,7 +379,7 @@ void sce_combo_reset(void) {
         g_timer_pause_ui_sent = false;
 
         g_combo_sm = std::make_unique<ComboSM>(g_combo_callbacks, g_berserk_callbacks);
-        g_combo_sm->initialize();
+        static_cast<void>(g_combo_sm->initialize());
 
         g_combo_count = 0;
         g_berserk_intensity = 0;

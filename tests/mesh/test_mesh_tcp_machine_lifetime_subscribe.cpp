@@ -49,6 +49,7 @@
 //      make the subscription itself dead weight.
 
 #include "brake_tcp_machine_lifetime_subscribe_transport.h"
+#include "common/TestScriptEngine.h"
 #include "motor_tcp_machine_lifetime_subscribe_sm.h"
 #include "motor_tcp_machine_lifetime_subscribe_transport.h"
 
@@ -232,7 +233,7 @@ int engine_e2e_and_unsubscribed_peer() {
     MotorSm motor;
     MotorRouter motor_router({&motor});
     MESH_TEST_REQUIRE(motor_router.init(), "motor router.init() failed (listen bind?)");
-    motor.initialize();
+    ::SCE::Test::start_or_abort(motor);
 
     // A peer that connects and stays silent. It shares the fan-out path
     // with brake and differs on exactly one axis: it never subscribed.

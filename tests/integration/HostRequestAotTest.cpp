@@ -103,7 +103,7 @@ TEST_F(HostRequestAotTest, TheGeneratedEngineHandsTheHostTheRequestsTheTableGive
     // state is entered.
     sm.setScriptEngine(std::shared_ptr<SCE::IScriptEngine>(&SCE::ScriptEngineProvider::getScriptEngine(),
                                                            [](SCE::IScriptEngine *) {}));
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
     sm.step();
 
     expectTheRowsOf("statechart_host_request.scxml", 5u, sends, starts);
@@ -122,7 +122,7 @@ TEST_F(HostRequestAotTest, UnderTheNullDataModelTheGeneratedEngineHandsTheHostTh
     });
     sm.setScriptEngine(std::shared_ptr<SCE::IScriptEngine>(&SCE::ScriptEngineProvider::getScriptEngine(),
                                                            [](SCE::IScriptEngine *) {}));
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
     sm.step();
 
     expectTheRowsOf("statechart_host_request_null.scxml", 1u, sends, {});

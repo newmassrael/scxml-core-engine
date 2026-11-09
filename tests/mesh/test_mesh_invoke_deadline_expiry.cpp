@@ -45,8 +45,8 @@ int main() {
 
     SCE::Test::inject_build_engine(brake);
     SCE::Test::inject_build_engine(motor);
-    brake.initialize();
-    motor.initialize();
+    ::SCE::Test::start_or_abort(brake);
+    ::SCE::Test::start_or_abort(motor);
 
     // Drive brake into Computing. The mesh-rpc invoke arms a 50ms
     // deadline and sends the RpcRequest to motor's external queue.

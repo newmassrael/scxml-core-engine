@@ -53,7 +53,7 @@ std::unique_ptr<SM> started() {
         sm->setScriptEngine(std::shared_ptr<::SCE::IScriptEngine>(&::SCE::ScriptEngineProvider::getScriptEngine(),
                                                                   [](::SCE::IScriptEngine *) {}));
     }
-    sm->initialize();
+    EXPECT_EQ(sm->initialize(), std::nullopt);
     return sm;
 }
 
@@ -191,7 +191,7 @@ std::unique_ptr<SM> startedOn(const std::shared_ptr<::SCE::ISceClock> &clock) {
                                                                   [](::SCE::IScriptEngine *) {}));
     }
     sm->setClock(clock);
-    sm->initialize();
+    EXPECT_EQ(sm->initialize(), std::nullopt);
     return sm;
 }
 

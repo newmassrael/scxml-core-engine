@@ -52,7 +52,7 @@ TEST(ASendReachesOnlyWhatItsTargetNamesAotTest, ASendReachesOnlyWhatItsTargetNam
         sm.setScriptEngine(std::shared_ptr<::SCE::IScriptEngine>(&::SCE::ScriptEngineProvider::getScriptEngine(),
                                                                  [](::SCE::IScriptEngine *) {}));
     }
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
     EXPECT_TRUE(sm.runUntilCompletion(std::chrono::seconds(3))) << "the machine never completed";
 
     EXPECT_EQ(sm.terminalState(), SM::State::Done) << "the run must end in `done`";

@@ -102,14 +102,14 @@ protected:
 }  // namespace
 
 TEST_F(StaticCodegenIntegrationTest, InitialEntryRunsTheInitialStatesOnentry) {
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
 
     EXPECT_EQ(log, (Log{"onEnterIdle"}));
     EXPECT_EQ(sm.getCurrentState(), G::State::Idle);
 }
 
 TEST_F(StaticCodegenIntegrationTest, AGuardThatHoldsTakesTheTransition) {
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
     log.clear();
     climate.coolDecision = true;
 
@@ -120,7 +120,7 @@ TEST_F(StaticCodegenIntegrationTest, AGuardThatHoldsTakesTheTransition) {
 }
 
 TEST_F(StaticCodegenIntegrationTest, AGuardThatFailsLeavesTheMachineWhereItWas) {
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
     log.clear();
     climate.coolDecision = false;
 
@@ -131,7 +131,7 @@ TEST_F(StaticCodegenIntegrationTest, AGuardThatFailsLeavesTheMachineWhereItWas) 
 }
 
 TEST_F(StaticCodegenIntegrationTest, EffectsRunExitThenTransitionThenEntry) {
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
     climate.coolDecision = true;
     send(G::Event::Temp_high);
     log.clear();
@@ -143,7 +143,7 @@ TEST_F(StaticCodegenIntegrationTest, EffectsRunExitThenTransitionThenEntry) {
 }
 
 TEST_F(StaticCodegenIntegrationTest, AnEventNoTransitionNamesAsksNothing) {
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
     log.clear();
 
     send(G::Event::Temp_normal);

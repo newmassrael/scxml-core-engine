@@ -40,7 +40,7 @@ TEST(InvokeCandidateSelectsTheChildAotTest, TheEvaluatedValueSelectsWhichCandida
                                                                  [](::SCE::IScriptEngine *) {}));
     }
 
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
     const bool completed = sm.runUntilCompletion(std::chrono::seconds(3));
 
     EXPECT_TRUE(completed) << "the machine never completed. Parking means no child spoke: a stub "

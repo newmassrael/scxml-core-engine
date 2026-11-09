@@ -64,7 +64,7 @@ TEST(CrossdevLifecycle, WireDoneRoundTripLandsOverCustomTcp) {
     // overridden `p2c_to_worker_session_f_wired_` Client, which dials
     // the worker's ephemeral endpoint.
     SCE::Test::inject_build_engine(parent);
-    parent.initialize();
+    EXPECT_EQ(parent.initialize(), std::nullopt);
 
     using clock = std::chrono::steady_clock;
     const auto deadline = clock::now() + std::chrono::seconds(5);

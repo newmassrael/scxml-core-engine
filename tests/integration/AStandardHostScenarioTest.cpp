@@ -62,7 +62,7 @@ void replayScenario(const std::string &stem, const std::string &machineName,
     Machine machine;
     host::serve(machine, rig.host);
     machine.setClock(std::make_shared<SCE::ManualClock>(0));
-    machine.initialize();
+    EXPECT_EQ(machine.initialize(), std::nullopt);
     const auto settle = [&machine]() {
         if constexpr (::SCE::Core::NeedsEventSchedulerTrait<typename Machine::PolicyType>::value) {
             for (int round = 0; round < kSettleTicks; ++round) {
@@ -210,7 +210,7 @@ void runSequence(const json &table, const std::vector<size_t> &sequence) {
     ModelMachine machine;
     host::serve(machine, reference);
     machine.setClock(std::make_shared<SCE::ManualClock>(0));
-    machine.initialize();
+    EXPECT_EQ(machine.initialize(), std::nullopt);
     const auto settle = [&machine]() {
         for (int round = 0; round < kSettleTicks; ++round) {
             machine.tick();
@@ -391,7 +391,7 @@ HarnessRun runHarness(const json &table, const std::vector<size_t> &sequence) {
     machine.setTransitionObserver([&run](const HarnessMachine::TransitionTaken &taken) { run.rows.push_back(taken); });
     host::serve(machine, reference);
     machine.setClock(std::make_shared<SCE::ManualClock>(0));
-    machine.initialize();
+    EXPECT_EQ(machine.initialize(), std::nullopt);
     const auto settle = [&machine]() {
         for (int round = 0; round < kHarnessSettleTicks; ++round) {
             machine.tick();

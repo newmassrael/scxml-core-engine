@@ -57,7 +57,7 @@ protected:
             }
             return std::optional<SCE::HostInvokeResponse>();
         });
-        sm.initialize();
+        EXPECT_EQ(sm.initialize(), std::nullopt);
         sm.step();
     }
 

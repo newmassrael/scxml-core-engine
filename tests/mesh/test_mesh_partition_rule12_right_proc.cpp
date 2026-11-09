@@ -17,6 +17,7 @@
 // the Root has time to drain it; without that grace period the
 // shm_unlink on dtor could race ahead of the slow-to-schedule reader.
 
+#include "common/TestScriptEngine.h"
 #include "motor_partition_sm.h"
 #include "motor_partition_transport.h"
 
@@ -28,7 +29,7 @@ namespace gen = SCE::Generated::motor_partition::P_motor_right;
 
 int main() {
     gen::motor_partition sm;
-    sm.initialize();
+    ::SCE::Test::start_or_abort(sm);
 
     // The TransportRouter ctor opens the outbound shm channel
     // (`Mode::Create`) and installs the wire-21 callback on the SM.

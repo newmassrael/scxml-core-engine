@@ -44,7 +44,7 @@ TEST(InvokeParamErrorStartsTheChildAotTest, AnInvokeParamThatWillNotEvaluateCost
                                                                  [](::SCE::IScriptEngine *) {}));
     }
 
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
     // The fixture's own `timeout` is a 3s delayed `<send>`, so the budget has
     // to outlast it or a never-started child reads as a hang rather than as
     // `FailInvokeNotStarted`.

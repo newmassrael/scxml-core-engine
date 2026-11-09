@@ -90,8 +90,8 @@ template <typename Pair> int roundTrip() {
     // script engine takes none.
     SCE::Test::inject_build_engine(brake);
     SCE::Test::inject_build_engine(motor);
-    brake.initialize();
-    motor.initialize();
+    ::SCE::Test::start_or_abort(brake);
+    ::SCE::Test::start_or_abort(motor);
 
     brake.processEvent(Pair::BrakeEvent::Go);
     if (brake.getCurrentState() != BrakeState::Computing) {

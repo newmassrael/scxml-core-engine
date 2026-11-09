@@ -20,6 +20,7 @@
 //
 // Exits 0 on success; non-zero on timeout or state mismatch.
 
+#include "common/TestScriptEngine.h"
 #include "motor_partition_sm.h"
 #include "motor_partition_transport.h"
 
@@ -57,7 +58,7 @@ int main(int argc, char *argv[]) {
     }
 
     gen::motor_partition sm;
-    sm.initialize();
+    ::SCE::Test::start_or_abort(sm);
 
     using Router = gen::TransportRouter<gen::motor_partition>;
     Router router({&sm});

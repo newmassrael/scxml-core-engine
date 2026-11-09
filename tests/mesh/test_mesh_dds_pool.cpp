@@ -36,6 +36,7 @@
 //      drops with no error, which is exactly the silent-loss failure
 //      the bounded shape exists to prevent.
 
+#include "common/TestScriptEngine.h"
 #include "pool_sender_dds_sm.h"
 #include "pool_sender_dds_transport.h"
 
@@ -137,7 +138,7 @@ int run_test() {
     // enter. §1-§3 call `route_send` on it directly, which is engine
     // agnostic, so one sender serves both.
     sender_gen::pool_sender_dds sender;
-    sender.initialize();
+    ::SCE::Test::start_or_abort(sender);
 
     sender_gen::TransportRouter<sender_gen::pool_sender_dds> router({&sender});
     MESH_TEST_REQUIRE(router.init(), "sender router init failed — the pool endpoints were not built");

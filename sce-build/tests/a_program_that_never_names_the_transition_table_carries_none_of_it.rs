@@ -320,7 +320,9 @@ fn a_cpp_unit_that_never_names_the_table_compiles_none_of_it() {
              using Machine = SCE::Generated::{STEM}::{STEM};\n\n\
              int main() {{\n\
              \x20   Machine sm;\n\
-             \x20   sm.initialize();\n\
+             \x20   if (sm.initialize()) {{\n\
+             \x20       return 2;\n\
+             \x20   }}\n\
              \x20   sm.processEvent(Machine::Event::{event});\n\
              \x20   return sm.isInFinalState() ? 0 : 1;\n\
              }}\n"

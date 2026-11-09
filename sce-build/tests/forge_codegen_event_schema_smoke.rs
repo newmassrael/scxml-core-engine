@@ -1977,12 +1977,14 @@ fn statechart_native_lowering_cpp_compiles_and_runs() {
 #include <cstdio>
 using SM = ::SCE::Generated::statechart_minimal::statechart_minimal;
 int main() {
-    SM sm; sm.initialize();
+    SM sm;
+    if (sm.initialize()) { std::puts("FAIL start"); return 4; }
     if (sm.getCurrentState() != SM::State::Waiting) { std::puts("FAIL initial"); return 1; }
     sm.raiseJobCompleted(0);   // elapsed_ms == 0 satisfies the native typed guard
     sm.step();
     if (sm.getCurrentState() != SM::State::Done) { std::puts("FAIL fire"); return 2; }
-    SM sm2; sm2.initialize();
+    SM sm2;
+    if (sm2.initialize()) { std::puts("FAIL start"); return 4; }
     sm2.raiseJobCompleted(5);  // guard rejects -> stays put
     sm2.step();
     if (sm2.getCurrentState() != SM::State::Waiting) { std::puts("FAIL miss"); return 3; }

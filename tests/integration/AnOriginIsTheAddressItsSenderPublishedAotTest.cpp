@@ -44,7 +44,7 @@ TEST(AnOriginIsTheAddressItsSenderPublishedAotTest, AnOriginIsTheAddressItsSende
         sm.setScriptEngine(std::shared_ptr<::SCE::IScriptEngine>(&::SCE::ScriptEngineProvider::getScriptEngine(),
                                                                  [](::SCE::IScriptEngine *) {}));
     }
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
     const bool reachedFinal = sm.runUntilCompletion(std::chrono::seconds(3));
 
     EXPECT_TRUE(reachedFinal) << "the run did not reach a final state; it waits where a reply reached nobody";

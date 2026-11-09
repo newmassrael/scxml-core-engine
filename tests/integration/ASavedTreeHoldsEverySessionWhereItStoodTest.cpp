@@ -106,7 +106,7 @@ std::unique_ptr<Machine> started(Starts &starts) {
     auto machine = fresh();
     machine->bindSessionId(kRoot);
     starts.serve(*machine);
-    machine->initialize();
+    EXPECT_EQ(machine->initialize(), std::nullopt);
     drive(*machine);
     return machine;
 }

@@ -50,7 +50,7 @@ TEST(AnEventNoProcessorDeliveredHasNoOriginAotTest, AnEventNoProcessorDeliveredH
         sm.setScriptEngine(std::shared_ptr<::SCE::IScriptEngine>(&::SCE::ScriptEngineProvider::getScriptEngine(),
                                                                  [](::SCE::IScriptEngine *) {}));
     }
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
     sm.step();
 
     // The host raises an event of its own, naming no origin.

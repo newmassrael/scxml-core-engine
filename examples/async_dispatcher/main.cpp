@@ -24,7 +24,11 @@ int main() {
 
     // Create async state machine wrapper
     AsyncStateMachine<traffic_light, Event> light(dispatcher);
-    light.initialize();
+    if (const auto refused = light.initialize()) {
+        std::cerr << "The state machine did not start: " << refused->describe() << "\n";
+        dispatcher->stop();
+        return 1;
+    }
 
     std::cout << "✓ State machine initialized" << "\n";
     std::cout << "  Initial state: ";

@@ -43,7 +43,7 @@ TEST(ADelayIsACss2TimeAotTest, EachDelayIsReadAsOneCss2Time) {
         sm.setScriptEngine(std::shared_ptr<::SCE::IScriptEngine>(&::SCE::ScriptEngineProvider::getScriptEngine(),
                                                                  [](::SCE::IScriptEngine *) {}));
     }
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
     sm.advanceTimeMs(60000);
 
     EXPECT_EQ(sm.terminalState(), SM::State::Done) << "`a` must carry the run to `done`";

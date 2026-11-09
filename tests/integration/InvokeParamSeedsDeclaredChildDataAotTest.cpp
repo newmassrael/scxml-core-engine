@@ -44,7 +44,7 @@ TEST(InvokeParamSeedsDeclaredChildDataAotTest, InvokeParamCarriesTheInvokingSess
                                                                  [](::SCE::IScriptEngine *) {}));
     }
 
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
     // Four sequential invokes, each answering in its own macrostep.
     const bool reachedFinal = sm.runUntilCompletion(std::chrono::seconds(3));
 

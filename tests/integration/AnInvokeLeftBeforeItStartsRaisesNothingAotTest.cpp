@@ -42,7 +42,7 @@ TEST(AnInvokeLeftBeforeItStartsRaisesNothingAotTest, TheLeftStatesInvokeIsNeverA
         sm.setScriptEngine(std::shared_ptr<::SCE::IScriptEngine>(&::SCE::ScriptEngineProvider::getScriptEngine(),
                                                                  [](::SCE::IScriptEngine *) {}));
     }
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
     ASSERT_EQ(sm.getCurrentState(), SM::State::S1)
         << "`s0` leaves on an eventless transition within the first macrostep";
 

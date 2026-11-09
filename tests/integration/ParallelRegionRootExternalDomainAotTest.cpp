@@ -70,7 +70,7 @@ std::string describe(Machine &sm) {
 // says the preemption that a document-root domain implies did not happen.
 TEST(ParallelRegionRootExternalDomainAotTest, AnExternalRegionRootTransitionExitsEveryRegion) {
     Machine sm;
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
 
     ASSERT_TRUE(holds(sm, Machine::State::Working)) << "precondition; active: " << describe(sm);
     ASSERT_TRUE(holds(sm, Machine::State::Alive)) << "precondition; active: " << describe(sm);
@@ -99,7 +99,7 @@ TEST(ParallelRegionRootExternalDomainAotTest, AnExternalRegionRootTransitionExit
 // engine that sent EVERY region-root transition to the document root.
 TEST(ParallelRegionRootExternalDomainAotTest, AnInternalRegionRootTransitionLeavesTheOtherRegion) {
     Machine sm;
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
 
     sm.processEvent(Machine::Event::Hold);
 

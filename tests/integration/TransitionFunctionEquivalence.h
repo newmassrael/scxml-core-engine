@@ -90,7 +90,7 @@ template <typename SM> EngineProbe aotProbe(std::unique_ptr<SM> &machine) {
             machine->setScriptEngine(std::shared_ptr<::SCE::IScriptEngine>(
                 &::SCE::ScriptEngineProvider::getScriptEngine(), [](::SCE::IScriptEngine *) {}));
         }
-        machine->initialize();
+        EXPECT_EQ(machine->initialize(), std::nullopt);
     };
     probe.send = [&machine](const std::string &name) {
         if (const auto event = SM::PolicyType::getEventFromName(name)) {

@@ -161,7 +161,12 @@ private:
 void boot(Machine &machine) {
     machine.setScriptEngine(std::shared_ptr<SCE::IScriptEngine>(&SCE::ScriptEngineProvider::getScriptEngine(),
                                                                 [](SCE::IScriptEngine *) {}));
-    machine.initialize();
+    // A machine whose script session cannot be established is not started
+    // (docs/adr/0096); the example has nothing to run without it.
+    if (const auto refused = machine.initialize()) {
+        std::cerr << "The machine did not start: " << refused->describe() << "\n";
+        std::exit(EXIT_FAILURE);
+    }
 }
 
 class LoopHost {

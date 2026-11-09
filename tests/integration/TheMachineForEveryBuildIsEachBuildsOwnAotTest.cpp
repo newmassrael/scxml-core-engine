@@ -103,7 +103,7 @@ template <typename Machine, typename Actions> Observation observe(const std::vec
     Observation seen;
     Host<Actions> host(seen.calls);
     Machine sm(host);
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
     for (const std::string &name : run) {
         const auto event = sm.resolveEventByName(name);
         if (!event) {
@@ -201,7 +201,7 @@ template <typename Machine, typename Actions> SCE::Saved::SavedState savedAtStar
     Machine sm(host);
     sm.setClock(std::make_shared<::SCE::ManualClock>(0));
     sm.bindSessionId("fixture-root");
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
     return sm.saveAt(kSavedAtMs);
 }
 

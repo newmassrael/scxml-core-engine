@@ -66,7 +66,7 @@ TEST(AncestorEntryIsNotDefaultEntryAotTest, AnAncestorEnteredOnTheWayToATargetTa
                                                                  [](::SCE::IScriptEngine *) {}));
     }
 
-    sm.initialize();
+    EXPECT_EQ(sm.initialize(), std::nullopt);
 
     ASSERT_TRUE(isActive(sm, SM::State::Away))
         << "the run has to start OUTSIDE the `<parallel>` for the first pass to be testing "

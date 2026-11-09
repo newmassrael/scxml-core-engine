@@ -19,7 +19,10 @@ struct Test178 : public AotTestBase {
     bool run() override {
         SCE::Generated::test178::test178 sm;
         SCE::Test::inject_build_engine(sm);
-        sm.initialize();
+        // docs/adr/0096: a refused start entered nothing, so the test fails.
+        if (sm.initialize()) {
+            return false;
+        }
         return sm.terminalState() == SCE::Generated::test178::State::Final;
     }
 

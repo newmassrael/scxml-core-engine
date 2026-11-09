@@ -86,7 +86,7 @@ ArmResult run_arm(const std::string &source_name, bool use_captured_invoke_id) {
     });
 
     SCE::Test::inject_build_engine(brake);
-    brake.initialize();
+    ::SCE::Test::start_or_abort(brake);
     brake.processEvent(SCE::Generated::brake_invoke::Event::Go);
 
     if (brake.getCurrentState() != BrakeState::Computing || !captured.has_value()) {

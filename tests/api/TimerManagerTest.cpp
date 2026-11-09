@@ -47,7 +47,7 @@ protected:
         SCE::Test::inject_build_engine(*sm_);
 
         // Initialize state machine
-        sm_->initialize();
+        ASSERT_EQ(sm_->initialize(), std::nullopt);
 
         // Start in running state for timer tests
         sm_->raiseExternal(Event::Start);

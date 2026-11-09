@@ -176,7 +176,7 @@ TEST(SchedulerDriving, AbsentConstantReadsAsNoRequirement) {
 
 TEST(SchedulerDriving, StepsBeforeAnyTickAreCounted) {
     SchedulerDrivenEngine engine;
-    engine.initialize();
+    EXPECT_EQ(engine.initialize(), std::nullopt);
     EXPECT_EQ(engine.unattendedSchedulerSteps(), 0u) << "nothing has been stepped yet";
 
     engine.step();
@@ -189,7 +189,7 @@ TEST(SchedulerDriving, StepsBeforeAnyTickAreCounted) {
 
 TEST(SchedulerDriving, AHostThatTicksIsNotAccused) {
     SchedulerDrivenEngine engine;
-    engine.initialize();
+    EXPECT_EQ(engine.initialize(), std::nullopt);
     engine.step();
     ASSERT_EQ(engine.unattendedSchedulerSteps(), 1u);
 
@@ -205,7 +205,7 @@ TEST(SchedulerDriving, AHostThatTicksIsNotAccused) {
 
 TEST(SchedulerDriving, AMachineWithNoDelayedSendIsNeverCounted) {
     PlainEngine engine;
-    engine.initialize();
+    EXPECT_EQ(engine.initialize(), std::nullopt);
     for (int i = 0; i < 32; ++i) {
         engine.step();
     }
@@ -215,7 +215,7 @@ TEST(SchedulerDriving, AMachineWithNoDelayedSendIsNeverCounted) {
 
 TEST(SchedulerDriving, ALegacyPolicyIsNeverCounted) {
     LegacyEngine engine;
-    engine.initialize();
+    EXPECT_EQ(engine.initialize(), std::nullopt);
     for (int i = 0; i < 32; ++i) {
         engine.step();
     }
