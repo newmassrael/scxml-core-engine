@@ -7560,6 +7560,13 @@ pub enum TestMatcherForm {
         lower: Option<TestValue>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         upper: Option<TestValue>,
+        /// Source line of the `<sce:lower>`, where a refusal of the bound
+        /// stands.
+        #[serde(skip, default)]
+        lower_line: Option<u32>,
+        /// Source line of the `<sce:upper>`.
+        #[serde(skip, default)]
+        upper_line: Option<u32>,
     },
     /// `<sce:omit/>`: the optional field is absent.
     Omit,

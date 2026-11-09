@@ -610,6 +610,8 @@ mod tests {
         let range = TestMatcherForm::ValueRange {
             lower: None,
             upper: None,
+            lower_line: None,
+            upper_line: None,
         };
         assert!(matcher_admitted(&range, &uint8).is_ok());
         assert!(matcher_admitted(&range, &optional).is_ok());

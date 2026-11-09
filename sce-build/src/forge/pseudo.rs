@@ -2194,7 +2194,7 @@ fn render_test_matcher(m: &TestMatcher, out: &mut Out<'_>) {
         TestMatcherForm::UnionMatch { variant, .. } => {
             let _ = write!(words, " variant {}", text(variant));
         }
-        TestMatcherForm::ValueRange { lower, upper } => {
+        TestMatcherForm::ValueRange { lower, upper, .. } => {
             if let Some(lower) = lower {
                 let _ = write!(words, " lower {}", test_value_words(lower));
             }

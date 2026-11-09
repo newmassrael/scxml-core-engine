@@ -15,6 +15,8 @@
 //! each named for what it refuses. Each of them parses: what refuses it is the
 //! check that reads its imports.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 
 use sce_build::forge::codegen_matrix::{TEST_TEMPLATE_BACKENDS, UNION_BACKENDS};
@@ -328,6 +330,15 @@ fn each_rule_the_imports_decide_is_refused_with_its_own_code() {
         if line.is_none() {
             wrong.push(format!("{name}: placed on no line"));
         }
+        // SCE_ERROR_CONTRACT.md §3.1.1: the value a record names is on the
+        // line it is placed on, as the document spells it.
+        if let Some(got) = got_actual.as_deref() {
+            let text = read(&imports_dir().join(name));
+            let row = line.map(|row| row as usize);
+            if let Err(why) = common::wire_site::locate(&text, row, got) {
+                wrong.push(format!("{name}: actual {got:?} is not found: {why}"));
+            }
+        }
     }
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }
@@ -367,6 +378,18 @@ fn a_field_set_refusal_stands_on_the_line_that_holds_it() {
     let missing =
         checked_in(&imports_dir(), "refused_line_field_missing.scxml").expect_err("refused");
     assert_eq!(missing.location.line, Some(9));
+}
+
+/// A bound of a range that the imported field's type refuses stands on the
+/// bound's own element, which writes it, not on the range around it.
+#[test]
+fn a_range_bound_refusal_stands_on_the_bound() {
+    let bound = checked_in(
+        &imports_dir(),
+        "refused_line_range_bound_out_of_range.scxml",
+    )
+    .expect_err("refused");
+    assert_eq!(bound.location.line, Some(12), "{bound:?}");
 }
 
 /// docs/SCE_TEST_PROFILE.md §6.2: a template is specific when its own

@@ -2011,13 +2011,24 @@ fn parse_test_template(
         )
     })?;
     let template_type = read_profile_type(root, doc, root_element, "sce:type", &type_text)?;
+    // `actual` is the `sce:type` as the document spells it
+    // (`list&lt;float32&gt;[2]`), the token its line holds; a value written
+    // over several lines is no such token, and the record reports none.
     let float_refusal = |node: &roxmltree::Node, ty: &ValueType, of: &str| {
+        let written = AttributeSpelling::of(node, Some(SCE_NAMESPACE), "type")
+            .and_then(|spelling| {
+                spelling
+                    .value()
+                    .and_then(|value| value.on_one_row())
+                    .map(str::to_string)
+            })
+            .unwrap_or_default();
         test_profile_refusal(
             node,
             label,
             kind,
             TestProfileRule::TemplateFloat,
-            &ty.to_string(),
+            &written,
             format!(
                 "{of} {ty} holds a float, which the test profile leaves out \
                  (docs/SCE_TEST_PROFILE.md §8.1)"
@@ -2354,12 +2365,16 @@ impl MatcherReader<'_> {
             },
             "record-match" => {
                 let fields = children(MatcherPlace::RecordField, None)?;
+                // A field named twice is refused on the matcher that names
+                // it the second time, whose `field` holds the name.
+                let field_nodes: Vec<roxmltree::Node> =
+                    sce_children_among(node, MATCHER_ELEMENTS).collect();
                 let mut seen: Vec<&str> = Vec::new();
-                for field in &fields {
+                for (field, field_node) in fields.iter().zip(&field_nodes) {
                     let name = field.field.as_deref().unwrap_or_default();
                     if seen.contains(&name) {
                         return Err(located(
-                            node,
+                            field_node,
                             doc,
                             ValidationError::DuplicateId {
                                 kind: ForgeKind::TestTemplate,
@@ -2427,13 +2442,18 @@ impl MatcherReader<'_> {
                         &TestMatcherForm::ValueRange {
                             lower: None,
                             upper: None,
+                            lower_line: None,
+                            upper_line: None,
                         },
                         ty,
                     )
                     .is_ok()
                 });
-                let mut lower: Option<TestValue> = None;
-                let mut upper: Option<TestValue> = None;
+                // Each bound with the line of its element, where a refusal
+                // of the bound that the imports decide stands
+                // (`crate::forge::test_template_check`).
+                let mut lower: (Option<TestValue>, Option<u32>) = (None, None);
+                let mut upper: (Option<TestValue>, Option<u32>) = (None, None);
                 for bound in sce_children_among(node, &["lower", "upper"]) {
                     let local = bound.tag_name().name();
                     let bound_element = format!("<sce:{local}>");
@@ -2442,7 +2462,7 @@ impl MatcherReader<'_> {
                     } else {
                         &mut upper
                     };
-                    if slot.is_some() {
+                    if slot.0.is_some() {
                         return Err(located(
                             &bound,
                             doc,
@@ -2462,9 +2482,14 @@ impl MatcherReader<'_> {
                         &same_spelling,
                     )
                     .map_err(|refusal| self.refused(&bound, refusal))?;
-                    *slot = Some(value);
+                    *slot = (Some(value), Some(row_of(&bound)));
                 }
-                TestMatcherForm::ValueRange { lower, upper }
+                TestMatcherForm::ValueRange {
+                    lower: lower.0,
+                    upper: upper.0,
+                    lower_line: lower.1,
+                    upper_line: upper.1,
+                }
             }
             "template-ref" => {
                 let template = required_name(node, doc, element, "template")?;

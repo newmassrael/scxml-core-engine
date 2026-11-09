@@ -14,6 +14,8 @@
 //! arguments, the port and the specificity of a template it uses, the PTC it
 //! invokes); the declaration kinds' are not this file's.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 
 use sce_build::forge::codegen_matrix::{self, EmitOutcome, KindClass};
@@ -144,11 +146,15 @@ fn a_template_reads_as_its_type_its_parameters_and_its_matcher_tree() {
         &items[0].form,
         TestMatcherForm::Specific { value: TestValue::Value(v) } if v == "1"
     ));
+    // Each bound keeps the line of its own element, where a refusal of it
+    // stands.
     assert!(matches!(
         &items[1].form,
         TestMatcherForm::ValueRange {
             lower: Some(TestValue::Value(lower)),
             upper: Some(TestValue::Param(upper)),
+            lower_line: Some(17),
+            upper_line: Some(18),
         } if lower == "10" && upper == "limit"
     ));
     let TestMatcherForm::TemplateRef {
@@ -283,10 +289,11 @@ const REFUSALS: &[(&str, DiagnosticCode, Option<&str>)] = &[
         DiagnosticCode::ValidationMissingAttribute,
         None,
     ),
+    // The type as the document spells it, which its line holds.
     (
         "refused_template_float.scxml",
         DiagnosticCode::TestProfileTemplateFloat,
-        Some("list<float32>[2]"),
+        Some("list&lt;float32&gt;[2]"),
     ),
     (
         "refused_template_two_matchers.scxml",
@@ -553,6 +560,14 @@ fn each_rule_one_document_states_is_refused_with_its_own_code() {
         if line.is_none() {
             wrong.push(format!("{name}: placed on no line"));
         }
+        // SCE_ERROR_CONTRACT.md §3.1.1: the value a record names is on the
+        // line it is placed on, as the document spells it.
+        if let Some(got) = got_actual.as_deref() {
+            let row = line.map(|row| row as usize);
+            if let Err(why) = common::wire_site::locate(&text, row, got) {
+                wrong.push(format!("{name}: actual {got:?} is not found: {why}"));
+            }
+        }
     }
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }
@@ -626,6 +641,16 @@ fn a_count_of_children_is_no_actual() {
             diagnostic.message
         );
     }
+}
+
+/// A field named twice in a record-match is refused on the matcher that
+/// names it the second time, not on the record-match around it.
+#[test]
+fn a_field_named_twice_is_refused_on_its_second_matcher() {
+    let name = "refused_template_field_twice.scxml";
+    let text = read(&fixture(name));
+    let err = parse_forge_with_imports(&text, label(name)).expect_err("refused");
+    assert_eq!(err.location.line, Some(11), "{err:?}");
 }
 
 /// A refusal is placed on the row of the value it names.

@@ -413,8 +413,18 @@ impl Checker<'_> {
             TestMatcherForm::ValueList { items } | TestMatcherForm::Complement { items } => items
                 .iter()
                 .try_for_each(|item| self.matcher(item, ty, scope)),
-            TestMatcherForm::ValueRange { lower, upper } => {
-                for (bound, element) in [(lower, "<sce:lower>"), (upper, "<sce:upper>")] {
+            TestMatcherForm::ValueRange {
+                lower,
+                upper,
+                lower_line,
+                upper_line,
+            } => {
+                // A bound is refused on its own element, the line that
+                // writes the literal or the parameter it names.
+                for (bound, bound_line, element) in [
+                    (lower, *lower_line, "<sce:lower>"),
+                    (upper, *upper_line, "<sce:upper>"),
+                ] {
                     if let Some(value) = bound {
                         test_profile::check_range_bound(
                             element,
@@ -423,7 +433,7 @@ impl Checker<'_> {
                             parameters,
                             &same,
                         )
-                        .map_err(|refusal| self.refused(line, refusal))?;
+                        .map_err(|refusal| self.refused(bound_line.or(line), refusal))?;
                     }
                 }
                 Ok(())

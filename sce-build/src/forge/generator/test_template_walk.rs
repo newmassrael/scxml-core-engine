@@ -960,7 +960,7 @@ impl<B: TemplateSpelling> TemplateWalk<'_, B> {
                     .map(|item| self.matches(item, at))
                     .collect::<Result<_, _>>()?,
             ))),
-            TestMatcherForm::ValueRange { lower, upper } => {
+            TestMatcherForm::ValueRange { lower, upper, .. } => {
                 let range = match &at.ty {
                     TypeOf::Scalar(scalar) => scalar.int_value_range(),
                     _ => None,
