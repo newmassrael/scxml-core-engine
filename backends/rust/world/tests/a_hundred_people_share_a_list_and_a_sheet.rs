@@ -1,17 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// A hundred people on one hub, with the shared to-do list (`todo_peer.scxml`) and the
-// shared sheet (`sheet_peer.scxml`). The small tests of each ask whether two people and
-// the hub end with the same thing after an afternoon of edits at random times over links
-// that delay, reorder and repeat; this asks it of a hundred, where the hub passes every
-// write on to all the others by a topic (tests/common/crowd.rs) and a field is written
-// by several people before any of them has seen the others.
+// Many people sharing the to-do list (`todo_peer.scxml`) and the sheet (`sheet_peer.scxml`).
+// The small tests of each ask whether three copies end with the same thing after an afternoon
+// of edits at random times over links that delay, reorder and repeat; this asks it of a
+// crowd, where a field is written by several people before any of them has seen the others.
 //
-// The equalities are the small tests': every copy holds what the hub holds, and what
-// the hub holds is what an oracle says, which reads the writes the network carried to
-// the hub and no copy. The links lose nothing, since what the hub publishes to a topic
-// is not sent again: a link that is cut and restored is the small tests' to ask.
+// The list's crowd is one causal group of as many members as a view holds, 64 (the bound of
+// the vector an envelope carries, docs/adr/0085 section 3.2): every copy sends to the group
+// and reads it, and the layer below the list delivers each change to every copy once. The
+// sheet's is a hundred people on one hub, which passes every write on to all the others by a
+// topic (tests/common/crowd.rs).
+//
+// The equalities are the small tests': every copy holds what the first holds, and that is
+// what an oracle says, which reads the changes the network carried and no copy.
 
 mod common;
 
@@ -19,10 +21,14 @@ use common::crowd::*;
 use common::*;
 use sce_rust_world::{Outcome, Rng, World};
 
-const PEOPLE: usize = 100;
+/// The sheet's crowd.
+const HUNDRED: usize = 100;
 
-/// The seeds of the afternoons run. A hundred copies each take every write, so a few
-/// afternoons are as many as a debug build runs in a few seconds.
+/// The list's crowd: as many as a causal group's view holds.
+const MEMBERS: usize = VIEW_BOUND;
+
+/// The seeds of the afternoons run. Every copy takes every write, so a few afternoons are as
+/// many as a debug build runs in a few seconds.
 const SEEDS: std::ops::Range<u64> = 0..6;
 
 fn one_of<'a, T>(rng: &mut Rng, items: &'a [T]) -> &'a T {
@@ -39,13 +45,21 @@ fn make_links_rough(world: &mut World, names: &[String]) {
     }
 }
 
+/// The same between every two members of a group.
+fn make_group_links_rough(world: &mut World, names: &[String]) {
+    let copies: Vec<&str> = names.iter().map(String::as_str).collect();
+    for (a, b) in links_of(&copies) {
+        world.jitter(a, b, 40);
+        world.reorder(a, b);
+        world.degrade(a, b, 0, 20);
+    }
+}
+
 fn todo_crowd(seed: u64, names: &[String]) -> World {
-    let mut world = crowd_world(seed, names, 5, TodoPeer::new, "todo.join", |node, hub| {
-        format!(r#"{{"node":"{node}","hub":{hub}}}"#)
+    let mut world = crowd_group_world(seed, names, 5, TodoPeer::new, "todo.join", |node| {
+        format!(r#"{{"node":"{node}"}}"#)
     });
-    // The copies take the join the host gave them before anything is written.
-    assert_eq!(world.run_until_quiet(1), Outcome::Quiet, "seed {seed}");
-    make_links_rough(&mut world, names);
+    make_group_links_rough(&mut world, names);
     world
 }
 
@@ -58,15 +72,20 @@ fn sheet_crowd(seed: u64, names: &[String]) -> World {
     world
 }
 
-/// A hundred people settle an instant when each of them has answered the hub, over links
-/// that delay, reorder and repeat: every copy then forgets up to it. The hub does not keep
-/// a list of its readers, so the host says how many there are; one more than there are
-/// leaves the round open, and nothing is forgotten.
+/// A crowd forgets a change once every member has said it holds it, over links that delay,
+/// reorder and repeat, and not before: while one member is away, every other keeps what it
+/// may be asked for, and once it is back every log is empty.
 #[test]
-fn a_hundred_people_settle_an_instant_when_every_one_has_answered() {
-    let names = crowd(PEOPLE);
+fn a_crowd_forgets_a_change_once_every_member_holds_it() {
+    let names = crowd(MEMBERS);
     let mut world = todo_crowd(7, &names);
     let mut rng = Rng::new(7);
+    let logs = |world: &mut World| -> Vec<usize> {
+        names
+            .iter()
+            .map(|who| world.causal_layer(who, PEOPLE).expect("a layer").log_len())
+            .collect()
+    };
     for round in 0..3 {
         for who in &names {
             let id = 1 + rng.below(6);
@@ -83,59 +102,43 @@ fn a_hundred_people_settle_an_instant_when_every_one_has_answered() {
             Outcome::Quiet,
             "round {round}"
         );
+        assert!(
+            logs(&mut world).iter().all(|kept| *kept == 0),
+            "round {round}"
+        );
         world.advance_ms(60_000);
     }
-    let floors = |world: &mut World| -> Vec<i128> {
-        names
-            .iter()
-            .chain(std::iter::once(&HUB.to_string()))
-            .map(|who| whole(&todo_variables_of(world, who)["floor"]))
-            .collect()
-    };
-    let settle = |world: &mut World, before: i64, members: usize| {
-        world.raise(
-            HUB,
-            "todo.settle",
-            &format!(r#"{{"before":"{before}","members":{members}}}"#),
-        );
-        assert_eq!(world.run_until_quiet(600_000), Outcome::Quiet);
-    };
 
-    // One more copy than there are never answers: nothing is settled, anywhere.
-    let first = world.now_ms() - 1;
-    settle(&mut world, first, PEOPLE + 1);
-    assert!(floors(&mut world).iter().all(|floor| *floor == 0));
-
-    // As many as there are: every copy, the hub's among them, forgets up to the instant.
-    settle(&mut world, first, PEOPLE);
-    assert!(
-        floors(&mut world)
-            .iter()
-            .all(|floor| *floor == i128::from(first)),
-        "a copy did not settle the instant"
-    );
-    for who in &names {
-        let variables = todo_variables_of(&mut world, who);
-        assert_eq!(
-            variables["stale"],
-            serde_json::json!(false),
-            "{who} is stale"
-        );
-        assert_eq!(
-            whole(&variables["late"]),
-            0,
-            "{who} refused a write as late"
-        );
+    // One member is away: the others keep what it has not said it holds.
+    let away = names[MEMBERS - 1].clone();
+    for who in &names[..MEMBERS - 1] {
+        world.degrade(&away, who, 100, 0);
     }
+    for who in &names[..MEMBERS - 1] {
+        todo_set(&mut world, who, 1 + rng.below(6), DONE, 1);
+    }
+    world.advance_ms(10_000);
+    let kept = logs(&mut world);
+    assert!(
+        kept[..MEMBERS - 1].iter().all(|kept| *kept >= MEMBERS - 1),
+        "a copy forgot what {away} has not said it holds: {kept:?}"
+    );
+
+    for who in &names[..MEMBERS - 1] {
+        world.degrade(&away, who, 0, 20);
+    }
+    assert_eq!(world.run_until_quiet(600_000), Outcome::Quiet);
+    assert!(logs(&mut world).iter().all(|kept| *kept == 0));
+    let list = agreed_todos_among(&mut world, &names);
+    assert_eq!(list, todo_oracle(&world));
     assert!(world.host_errors().is_empty());
 }
 
-/// An afternoon of changes to a few to-dos by people chosen at random, at random times:
-/// every copy ends with the list the hub holds, which is the one the oracle says, and
-/// a field two people wrote in the same instant, neither having seen the other's, holds
-/// both values everywhere.
+/// An afternoon of changes to a few to-dos by members chosen at random, at random times:
+/// every copy ends with one list, which is the one the oracle says, and a field two people
+/// wrote in the same instant, neither having seen the other's, holds both values everywhere.
 #[test]
-fn a_hundred_people_changing_a_list_at_random_times_end_with_one_list() {
+fn a_crowd_changing_a_list_at_random_times_ends_with_one_list() {
     const TITLES: [&str; 6] = [
         "milk",
         "post office",
@@ -145,7 +148,7 @@ fn a_hundred_people_changing_a_list_at_random_times_end_with_one_list() {
         "abcdefghijklmnopqrstuvwxyz012345",
     ];
     const EDITS: usize = 110;
-    let people = crowd(PEOPLE);
+    let people = crowd(MEMBERS);
     for seed in SEEDS {
         let mut rng = Rng::new(seed);
         let mut world = todo_crowd(seed, &people);
@@ -186,7 +189,7 @@ fn a_hundred_people_changing_a_list_at_random_times_end_with_one_list() {
 
         // A copy that refused a write is the first thing to say, before the copies are
         // compared: a list that differs because a block failed is not a merge fault.
-        for who in people.iter().map(String::as_str).chain([HUB]) {
+        for who in people.iter().map(String::as_str) {
             assert_eq!(
                 todo_variables_of(&mut world, who)["refusals"],
                 0,
@@ -199,8 +202,8 @@ fn a_hundred_people_changing_a_list_at_random_times_end_with_one_list() {
 
         // Then two people retitle one to-do in the same instant, neither having seen
         // the other's: the title keeps both, on every copy of the crowd.
-        let first = one_of(&mut rng, &people[..PEOPLE / 2]);
-        let second = one_of(&mut rng, &people[PEOPLE / 2..]);
+        let first = one_of(&mut rng, &people[..MEMBERS / 2]);
+        let second = one_of(&mut rng, &people[MEMBERS / 2..]);
         todo_title(&mut world, first, 1, "tea");
         todo_title(&mut world, second, 1, "coffee");
         assert_eq!(
@@ -233,7 +236,7 @@ fn a_hundred_people_changing_a_list_at_random_times_end_with_one_list() {
 fn a_hundred_copies_of_a_sheet_a_hundred_people_type_into_end_with_one_sheet() {
     const EDITS: usize = 150;
     let numbers = [i64::MIN, -3, -1, 0, 0, 1, 2, 3, 100, i64::MAX];
-    let people = crowd(PEOPLE);
+    let people = crowd(HUNDRED);
     let writers = &people[..];
     for seed in SEEDS {
         let mut rng = Rng::new(seed);

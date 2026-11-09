@@ -21,7 +21,7 @@ use std::collections::BTreeMap;
 use sce_rust_world::World;
 use serde_json::Value;
 
-use super::{agreed_todos, todo_set, todo_variables_of, whole, Field};
+use super::{agreed_todos, todo_set, todo_variables_of, whole, Field, COPIES};
 
 /// The fields of a scheduled to-do, by the numbers the host gives them
 /// (`event_agenda.scxml`).
@@ -864,21 +864,22 @@ pub fn agreed_page(
     to: i64,
     skip: u32,
 ) -> Page {
-    let server = agenda_page(world, "server", id, from, to, skip);
-    for who in ["alice", "bob"] {
+    let first = agenda_page(world, COPIES[0], id, from, to, skip);
+    for who in &COPIES[1..] {
         assert_eq!(
             agenda_page(world, who, id, from, to, skip),
-            server,
-            "{who} and the hub show different agendas for to-do {id}"
+            first,
+            "{who} and {} show different agendas for to-do {id}",
+            COPIES[0]
         );
     }
     let list = agreed_todos(world);
     assert_eq!(
-        server,
+        first,
         expand(id, &schedule_in(&list, id), zones, from, to, skip),
         "the agenda of to-do {id} is not what its schedule says"
     );
-    server
+    first
 }
 
 /// Tell a copy's host its time zone `number` (1 to 4): its transitions, one to a message.
@@ -896,7 +897,7 @@ pub fn set_zone(world: &mut World, who: &str, number: u64, zone: &Zone) {
 /// Every copy's host has the same time zone under `number`: the one a group of people
 /// share.
 pub fn set_zone_everywhere(world: &mut World, number: u64, zone: &Zone) {
-    for who in ["alice", "bob", "server"] {
+    for who in COPIES {
         set_zone(world, who, number, zone);
     }
     world.run_until_quiet(10);

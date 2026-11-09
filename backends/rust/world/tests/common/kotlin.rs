@@ -83,8 +83,8 @@ pub fn step_server_for(machine: &str) -> Option<ExternalCommand> {
     )
 }
 
-/// The actors of the to-do list.
-pub const ACTORS: [&str; 3] = ["alice", "bob", "server"];
+/// The actors of the to-do list: its three copies.
+pub const ACTORS: [&str; 3] = super::COPIES;
 
 /// Every way of making some of the three actors Kotlin machines and the rest Rust, but
 /// none and not all of them being Rust: seven, the permutations a test that is about
@@ -92,11 +92,11 @@ pub const ACTORS: [&str; 3] = ["alice", "bob", "server"];
 pub const MIXES: [&[&str]; 7] = [
     &["alice"],
     &["bob"],
-    &["server"],
+    &["carol"],
     &["alice", "bob"],
-    &["alice", "server"],
-    &["bob", "server"],
-    &["alice", "bob", "server"],
+    &["alice", "carol"],
+    &["bob", "carol"],
+    &["alice", "bob", "carol"],
 ];
 
 /// The processes that run Kotlin machines, one per actor that a test makes Kotlin in some
@@ -162,9 +162,9 @@ pub struct Mix<'a> {
 }
 
 impl Mix<'_> {
-    /// The world of the to-do list in this mix: `alice`, `bob` and the hub `server`, each
-    /// `latency_ms` from the hub. Two worlds of one cast must not run at once, as they
-    /// would share the processes.
+    /// The world of the to-do list in this mix: `alice`, `bob` and `carol`, every two
+    /// `latency_ms` apart, the members of one causal group. Two worlds of one cast must not
+    /// run at once, as they would share the processes.
     pub fn world(&self, seed: u64, latency_ms: i64) -> World {
         todo_world_of(seed, latency_ms, |world, who, router| {
             if self.is_kotlin(who) {
@@ -236,10 +236,10 @@ impl Mix<'_> {
             }
         };
         format!(
-            "alice {}, bob {}, hub {}",
+            "alice {}, bob {}, carol {}",
             language("alice"),
             language("bob"),
-            language("server")
+            language("carol")
         )
     }
 }

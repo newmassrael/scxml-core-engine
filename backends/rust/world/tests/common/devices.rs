@@ -50,7 +50,7 @@ use serde_json::{json, Value};
 
 use super::kotlin::step_server_for;
 use super::{
-    record_edit_at, record_person, record_variables_of, records_of, Field, RecordList, DUE, TITLE,
+    record_copy, record_edit_at, record_variables_of, records_of, Field, RecordList, DUE, TITLE,
 };
 
 /// The list every device holds.
@@ -772,8 +772,8 @@ impl Devices {
         let mut devices = Vec::new();
         for (name, node, core) in cores {
             match &core {
-                Core::Rust(_) => world.add(name, RecordList::new(), record_person(name)),
-                Core::Kotlin(machine) => world.add_external(name, machine, record_person(name)),
+                Core::Rust(_) => world.add(name, RecordList::new(), record_copy(name)),
+                Core::Kotlin(machine) => world.add_external(name, machine, record_copy(name)),
             }
             let sent = Sends::default();
             world.set_sealer(name, Box::new(ToTheCore(sent.clone())));
