@@ -25,7 +25,7 @@ use sce_rust_runtime::test::{
     SystemAdapter, Verdict,
 };
 use sce_rust_tests::integration::static_datamodel::{
-    answers_the_job, asking_configuration, job_reply, job_request, runtime_suite,
+    answers_the_job, asking_configuration, job_reply, job_request, reply_ok, runtime_suite,
 };
 
 type Request = job_request::JobRequestPayload;
@@ -64,9 +64,11 @@ impl SystemAdapter for Responder {
             job: request.job,
             code: self.code,
         };
+        // The reply's canonical form in the test log is the one the unit of a
+        // template over its record writes.
         self.pending.push((
             now + ANSWER_DELAY,
-            Message::new(job_reply::EVENT_NAME, reply),
+            Message::new(job_reply::EVENT_NAME, reply, reply_ok::canonical),
         ));
     }
 
@@ -204,6 +206,39 @@ fn fails_a_job_the_system_under_test_answers_with_a_failure() {
         "time advances to the timer's instant"
     );
     assert!(logged(&results[0], LogKind::Timeout));
+}
+
+/// docs/SCE_TEST_PROFILE.md §12.5: the test log of a generated test case, in
+/// its one canonical text. The request the component sends carries the value
+/// its template's unit writes, the job of the suite's module parameter; the
+/// reply arrives at 500 and is taken in that round, which stops the timer,
+/// passes and ends the MTC.
+#[test]
+fn a_generated_test_case_writes_its_test_log() {
+    let requested = Requested::default();
+    let results = run(&[], 0, &requested, &ModuleParameters::default());
+    assert_eq!(names(&results), ["answers_the_job"]);
+    assert_eq!(
+        results[0].canonical_log("runtime_suite"),
+        concat!(
+            "{\"records\":[",
+            "{\"at\":\"0\",\"kind\":\"test-case-started\"},",
+            "{\"at\":\"0\",\"component\":\"mtc\",\"kind\":\"component-created\",",
+            "\"type\":\"param_asker\"},",
+            "{\"at\":\"0\",\"component\":\"mtc\",\"kind\":\"message-sent\",\"port\":\"sut\",",
+            "\"value\":{\"job\":\"7\"}},",
+            "{\"at\":\"0\",\"component\":\"mtc\",\"duration_us\":\"1000000\",",
+            "\"kind\":\"timer-started\",\"timer\":\"deadline\"},",
+            "{\"at\":\"500\",\"component\":\"mtc\",\"kind\":\"message-received\",\"port\":\"sut\",",
+            "\"value\":{\"code\":\"0\",\"job\":\"7\"}},",
+            "{\"at\":\"500\",\"component\":\"mtc\",\"kind\":\"timer-stopped\",\"timer\":\"deadline\"},",
+            "{\"at\":\"500\",\"component\":\"mtc\",\"kind\":\"verdict-set\",\"verdict\":\"pass\"},",
+            "{\"at\":\"500\",\"component\":\"mtc\",\"kind\":\"component-done\",\"verdict\":\"pass\"},",
+            "{\"at\":\"500\",\"kind\":\"test-case-ended\",\"verdict\":\"pass\"}",
+            "],\"schema\":\"sce-test-log.v1\",\"suite\":\"runtime_suite\",",
+            "\"test_case\":\"answers_the_job\",\"verdict\":\"pass\"}",
+        )
+    );
 }
 
 /// §11.8: a world runs the test cases whose selection it satisfies, in the

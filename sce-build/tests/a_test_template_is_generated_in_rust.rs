@@ -267,3 +267,70 @@ fn a_union_is_matched_by_the_variant_of_its_case() {
         ],
     );
 }
+
+/// The runtime's writers of the canonical form of a value in the test log.
+const CANONICAL: &str = "::sce_rust_runtime::test::canonical";
+
+/// docs/SCE_TEST_PROFILE.md §12.5: a template over a record, the type of a
+/// message, writes its value's canonical form in the test log by the types the
+/// schema declares, each field by its declared id, an optional one absent where
+/// it is; a template over another type writes none.
+#[test]
+fn a_template_over_a_record_writes_its_values_canonical_form() {
+    for (path, name, _) in templates() {
+        let text = unit(&path, name);
+        let over_record = !matches!(
+            name,
+            "elapsed_at_most" | "shape_is_circle" | "quantity_at_most" | "quantity_two"
+        );
+        assert_eq!(
+            text.contains("pub fn canonical(value: &Value) -> ::sce_rust_runtime::json::Value {"),
+            over_record,
+            "{name}: the canonical form is written exactly for a template over a record:\n{text}"
+        );
+    }
+    let report = unit_of(&profile_dir(), "job_report");
+    let c = CANONICAL;
+    let written = format!(
+        "{c}::record([(\"elapsed_ms\", Some({c}::integer(value.elapsed_ms))), \
+         (\"note\", value.note.as_ref().map(|present_0| {c}::text(present_0.as_str()))), \
+         (\"codes\", Some({c}::list(value.codes.as_slice().iter().map(|item_0| \
+         {c}::integer(*item_0))))), \
+         (\"tag\", value.tag.as_ref().map(|present_0| {c}::integer(*present_0))), \
+         (\"retry\", value.retry.as_ref().map(|present_0| {c}::integer(*present_0))), \
+         (\"count\", Some({c}::integer(value.count)))])"
+    );
+    holds_each(&report, &[written.as_str()]);
+}
+
+/// The canonical form of a record that holds a list of records, an enum, a
+/// nested record and a union: each element's fields read through its binding,
+/// an enum and a case by their declared names, a byte string as its octets.
+#[test]
+fn a_records_canonical_form_reaches_every_type_it_holds() {
+    let placed = unit_of(&imports_dir(), "order_placed_match");
+    let c = CANONICAL;
+    let payment = "super::order_payment::OrderPayment";
+    let lines = format!(
+        "(\"lines\", Some({c}::list(value.lines.as_slice().iter().map(|item_0| \
+         {c}::record([(\"sku\", Some({c}::text(item_0.sku.as_str()))), \
+         (\"quantity\", Some({c}::integer(item_0.quantity))), \
+         (\"color\", Some({c}::enumerated(item_0.color.declared_name())))])))))"
+    );
+    let customer = format!(
+        "(\"customer\", Some({c}::record([(\"full_name\", \
+         Some({c}::text(value.customer.full_name.as_str()))), \
+         (\"vip\", Some({c}::boolean(value.customer.vip)))])))"
+    );
+    let paid = format!(
+        "(\"payment\", Some(match &value.payment {{ \
+         {payment}::Card(case_0) => {c}::union_case(\"card\", \
+         Some({c}::record([(\"last4\", Some({c}::text(case_0.last4.as_str()))), \
+         (\"amount\", Some({c}::integer(case_0.amount)))]))), \
+         {payment}::Cash => {c}::union_case(\"cash\", None), \
+         {payment}::Voucher(case_0) => {c}::union_case(\"voucher\", \
+         Some({c}::record([(\"voucher_code\", \
+         Some({c}::bytes(case_0.voucher_code.as_slice())))]))) }}))"
+    );
+    holds_each(&placed, &[lines.as_str(), customer.as_str(), paid.as_str()]);
+}

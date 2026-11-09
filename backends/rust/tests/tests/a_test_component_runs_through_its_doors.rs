@@ -25,6 +25,7 @@ use sce_rust_runtime::test::{
 };
 use sce_rust_tests::integration::static_datamodel::{
     answerer_sm, asker_sm, coordinator_sm, idler_sm, job_reply, job_request, ptc_keeper_sm,
+    reply_ok,
 };
 
 type Request = job_request::JobRequestPayload;
@@ -100,9 +101,11 @@ impl SystemAdapter for Responder {
             job: self.job.unwrap_or(request.job),
             code: self.code,
         };
+        // The reply's canonical form in the test log is the one the unit of a
+        // template over its record writes.
         self.pending.push((
             now + ANSWER_DELAY,
-            Message::new(job_reply::EVENT_NAME, reply),
+            Message::new(job_reply::EVENT_NAME, reply, reply_ok::canonical),
         ));
     }
 

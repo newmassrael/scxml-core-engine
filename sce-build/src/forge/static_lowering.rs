@@ -5045,12 +5045,15 @@ impl StaticTarget for RustTarget {
             }
         })
     }
-    // The specific template's `value`, which the send hands its processor as the
-    // request's value (`HostSendRequest::value`, `rust/actions/send.rs.jinja2`).
+    // The specific template's `value`, with the unit's writer of its canonical
+    // form in the test log (docs/SCE_TEST_PROFILE.md §12.5), which the send hands
+    // its processor as the request's value (`HostSendRequest::value`,
+    // `rust/actions/send.rs.jinja2`). A sent template is over the record of a
+    // message, so its unit writes the form (`forge/rust/test_template.rs.jinja2`).
     fn test_message(&self, message: &TemplateRef, args: &[String]) -> Option<String> {
+        let unit = rust_test_template_module(&message.unit);
         Some(format!(
-            "{}::value({})",
-            rust_test_template_module(&message.unit),
+            "{RUST_TEST_RUNTIME}::message_value({unit}::value({}), {unit}::canonical)",
             args.join(", ")
         ))
     }

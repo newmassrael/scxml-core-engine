@@ -86,6 +86,15 @@ pub(super) fn render_test_template_rust(
     } else {
         None
     };
+    // A message is a record of an event schema (§11.3), so only a template over
+    // one writes a message's canonical form.
+    let canonical_expr = match &m.template_type {
+        TypeOf::Record { .. } => Some(
+            canonical_value(&m.template_type, &Canonical::root(), &scope)
+                .map_err(|why| walk.refused(why))?,
+        ),
+        _ => None,
+    };
 
     let mut ctx = l.base_context(&m.name);
     ctx.insert("template_name".into(), m.name.clone().into());
@@ -94,7 +103,192 @@ pub(super) fn render_test_template_rust(
     ctx.insert("parameters".into(), serde_json::Value::Array(parameters));
     ctx.insert("match_expr".into(), match_expr.into());
     ctx.insert("value_expr".into(), serde_json::json!(value_expr));
+    ctx.insert("canonical_expr".into(), serde_json::json!(canonical_expr));
     l.render(env, "test_template", ctx)
+}
+
+/// The writers of the canonical form of a value in the test log, in the
+/// profile's Rust runtime (`backends/rust/runtime/src/test/canonical.rs`).
+const CANONICAL: &str = "::sce_rust_runtime::test::canonical";
+
+/// A value the canonical writer reads, in Rust.
+struct Canonical {
+    /// What names the value: `value`, a binding, or a field of either.
+    base: String,
+    /// Whether `base` is a reference to the value rather than the value.
+    by_ref: bool,
+    /// How many bindings the value stands inside: the next one's number.
+    depth: usize,
+}
+
+impl Canonical {
+    /// `canonical`'s parameter `value`, a `&Value`.
+    fn root() -> Self {
+        Canonical {
+            base: "value".to_string(),
+            by_ref: true,
+            depth: 0,
+        }
+    }
+
+    /// The value itself, for a type that is `Copy`.
+    fn copied(&self) -> String {
+        if self.by_ref {
+            format!("*{}", self.base)
+        } else {
+            self.base.clone()
+        }
+    }
+
+    /// A reference to the value.
+    fn borrowed(&self) -> String {
+        if self.by_ref {
+            self.base.clone()
+        } else {
+            format!("&{}", self.base)
+        }
+    }
+
+    /// The field `id` of the record the value is.
+    fn field(&self, id: &str) -> Self {
+        Canonical {
+            base: format!(
+                "{}.{}",
+                self.base,
+                event_schema_field_ident(id, Language::Rust)
+            ),
+            by_ref: false,
+            depth: self.depth,
+        }
+    }
+
+    /// The name a closure or a pattern binds a value inside this one to, by
+    /// reference, and the value it binds.
+    fn bound(&self, prefix: &str) -> (String, Self) {
+        let name = format!("{prefix}_{}", self.depth);
+        let value = Canonical {
+            base: name.clone(),
+            by_ref: true,
+            depth: self.depth + 1,
+        };
+        (name, value)
+    }
+}
+
+/// The Rust expression that writes the value `at`, of the type `ty` read in
+/// `scope`, in the canonical form of the test log (docs/SCE_TEST_PROFILE.md
+/// §12.5): a `::sce_rust_runtime::json::Value`. The form is the SCE type's,
+/// never the Rust type's, since a byte string and a list of `uint8` are one
+/// Rust type and take two forms. Each record and union is read in the scope
+/// of its own document, as the walk of its matcher reads it.
+fn canonical_value(ty: &ValueType, at: &Canonical, scope: &TypeScope) -> Result<String, String> {
+    Ok(match ty {
+        TypeOf::Scalar(SceType::Bool) => format!("{CANONICAL}::boolean({})", at.copied()),
+        TypeOf::Scalar(SceType::Enum(reference)) => {
+            let declared = scope.enums.get(&reference.alias).ok_or_else(|| {
+                format!(
+                    "`enum:{}` names no enum the document imports",
+                    reference.alias
+                )
+            })?;
+            if declared.strict {
+                format!("{CANONICAL}::enumerated({}.declared_name())", at.base)
+            } else {
+                format!(
+                    "{CANONICAL}::open_enumerated({0}.declared_name(), {0}.to_underlying())",
+                    at.base
+                )
+            }
+        }
+        TypeOf::Scalar(scalar) if scalar.int_value_range().is_some() => {
+            format!("{CANONICAL}::integer({})", at.copied())
+        }
+        TypeOf::Scalar(_) => return Err(format!("a value of {ty} has no form in the test log")),
+        TypeOf::Text { .. } => format!("{CANONICAL}::text({}.as_str())", at.base),
+        TypeOf::Bytes { .. } => format!("{CANONICAL}::bytes({}.as_slice())", at.base),
+        TypeOf::Optional { .. } => {
+            return Err(format!(
+                "a value of {ty} has a form in the test log only as a field of a record, \
+                 which omits it where it is absent"
+            ))
+        }
+        TypeOf::List { elem, .. } => {
+            let (name, element) = at.bound("item");
+            format!(
+                "{CANONICAL}::list({}.as_slice().iter().map(|{name}| {}))",
+                at.base,
+                canonical_value(elem, &element, scope)?
+            )
+        }
+        TypeOf::Record { alias } => {
+            let record = scope
+                .records
+                .get(alias)
+                .ok_or_else(|| format!("`record:{alias}` names no record the document imports"))?;
+            let fields = record
+                .fields
+                .iter()
+                .map(|(id, field_type)| {
+                    let field = at.field(id);
+                    let value = match field_type {
+                        TypeOf::Optional { elem } => {
+                            let (name, present) = field.bound("present");
+                            format!(
+                                "{}.as_ref().map(|{name}| {})",
+                                field.base,
+                                canonical_value(elem, &present, &record.scope)?
+                            )
+                        }
+                        other => {
+                            format!("Some({})", canonical_value(other, &field, &record.scope)?)
+                        }
+                    };
+                    Ok(format!(
+                        "(\"{}\", {value})",
+                        filters::escape_rust(id.to_string())
+                    ))
+                })
+                .collect::<Result<Vec<String>, String>>()?;
+            format!("{CANONICAL}::record([{}])", fields.join(", "))
+        }
+        TypeOf::Union { alias } => {
+            let union = scope
+                .unions
+                .get(alias)
+                .ok_or_else(|| format!("`union:{alias}` names no union the document imports"))?;
+            let union_type = rust_union_type(union);
+            let arms = union
+                .cases
+                .iter()
+                .map(|case| {
+                    let variant = &case.variant.name;
+                    let pattern = format!(
+                        "{union_type}::{}",
+                        crate::forge::composed_lowering::rust_case_ident(variant)
+                    );
+                    let name = filters::escape_rust(variant.to_string());
+                    Ok(match &case.record {
+                        Some(record) => {
+                            let (binding, held) = at.bound("case");
+                            let written = canonical_value(
+                                &TypeOf::Record {
+                                    alias: record.clone(),
+                                },
+                                &held,
+                                &union.scope,
+                            )?;
+                            format!(
+                                "{pattern}({binding}) => {CANONICAL}::union_case(\"{name}\", \
+                                 Some({written}))"
+                            )
+                        }
+                        None => format!("{pattern} => {CANONICAL}::union_case(\"{name}\", None)"),
+                    })
+                })
+                .collect::<Result<Vec<String>, String>>()?;
+            format!("match {} {{ {} }}", at.borrowed(), arms.join(", "))
+        }
+    })
 }
 
 /// The name the generated `matches` and `value` take the formal parameter

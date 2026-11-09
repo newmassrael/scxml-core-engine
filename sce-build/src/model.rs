@@ -768,8 +768,9 @@ pub struct Action {
     pub test_message: Option<crate::test_component::snapshot::TemplateRef>,
     /// Codegen-internal: the value of [`Self::test_message`] in the rendering
     /// backend's own code — the specific template's value, given the variables
-    /// bound to its parameters — which the send hands its processor as the
-    /// request's value (docs/SCE_TEST_PROFILE.md §12.3). Written by
+    /// bound to its parameters, and on Rust the writer of its canonical form in
+    /// the test log beside it (§12.5) — which the send hands its processor as
+    /// the request's value (docs/SCE_TEST_PROFILE.md §12.3). Written by
     /// `forge::static_lowering`. Transient and outside the AST contract, as
     /// [`Self::native_code`] is.
     #[serde(default, skip_serializing_if = "String::is_empty")]

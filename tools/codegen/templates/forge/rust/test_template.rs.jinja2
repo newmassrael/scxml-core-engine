@@ -38,3 +38,16 @@ pub fn value({% for p in parameters %}{{ p.name }}: {{ p.ty }}{% if not loop.las
     {{ value_expr }}
 }
 {% endif %}
+{# Only a template over a record, the type of a message, writes the canonical
+   form of a message's value. #}
+{% if canonical_expr %}
+
+/// `value` in the canonical form of the test log (docs/SCE_TEST_PROFILE.md §12.5): each
+/// integer as the text of its digits, a byte string in upper-case hex, an enum and a case
+/// of a union by their declared names, an absent field omitted. A send of this template
+/// carries it beside the value it sends (`sce_rust_runtime::test::message_value`).
+#[allow(dead_code)]
+pub fn canonical(value: &Value) -> ::sce_rust_runtime::json::Value {
+    {{ canonical_expr }}
+}
+{% endif %}
