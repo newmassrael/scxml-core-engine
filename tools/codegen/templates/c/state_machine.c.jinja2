@@ -125,6 +125,17 @@
                         _host_param_count++;
 {% endif %}
                     }
+{% elif param.native_writes %}
+                    {
+                        /* docs/adr/0086, section 5.3: a composed value, written part
+                           by part where its pair stands by the statements the walk
+                           over its type spells (`Param::native_writes`). The build
+                           proved it fits the field, so nothing of it fails; a part
+                           past a bound refuses the whole payload, never cuts it. */
+                        sce_forge_wire_t *const sce_wire = &sce_wire_;
+                        sce_forge_wire_pair_key(sce_wire, "\"{{ param.name | escape_json_string | escape_c }}\"");
+{{ param.native_value }}
+                    }
 {% elif param.native_value %}
                     {
                         sce_forge_algorithm_failure_t sce_failure_ = {0};
