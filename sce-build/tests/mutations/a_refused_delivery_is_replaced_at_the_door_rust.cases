@@ -29,7 +29,7 @@ mutation_oracles backends/rust/tests/tests/static_scenarios.rs sce-build/tests/f
 
 mutation_case "the refused delivery is taken after all" <<'PY'
 edit("backends/rust/runtime/src/engine.rs",
-     "                Admission::Replaced { error, refusal } => {\n                    return Some(self.bind_in_place(error, &refusal));\n                }\n",
+     "                Admission::Replaced { error, refusal } => {\n                    return self.bind_in_place(error, &refusal);\n                }\n",
      "                Admission::Replaced { .. } => {}\n")
 PY
 
