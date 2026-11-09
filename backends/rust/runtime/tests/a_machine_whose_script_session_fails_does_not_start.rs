@@ -117,8 +117,8 @@ impl StatePolicy for SessionPolicy {
         ],
         histories: &[],
         transitions: &[
-            // x1: go -> x2
-            TransitionRow::new(Some(StateId(1)), Target::state(StateId(2)), false, false),
+            // x1: go -> x2, with executable content, which the policy counts
+            TransitionRow::new(Some(StateId(1)), Target::state(StateId(2)), false, true),
             // root's initial: x1
             TransitionRow::new(Some(StateId(0)), Target::state(StateId(1)), false, false),
             // the document's initial: root
