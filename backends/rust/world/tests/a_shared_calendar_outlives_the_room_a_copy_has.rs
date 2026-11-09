@@ -1,31 +1,29 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// A shared schedule that is written to for longer than a copy has room for. A copy keeps,
-// for every field of every to-do, the values nobody has written over, and for the
-// changes themselves an observed-remove set: every write is an add, and a write written
-// over is a tombstone that takes its add out, and merging never drops a tombstone. Left
-// alone, a copy that is written to for long enough passes the bound of its lists (1024
-// entries) and refuses the next write: the room a copy has is not the schedule it holds,
-// it is every write it has ever seen written over.
+// A shared schedule that is written to for longer than a copy has room for. A copy keeps, for
+// every field of every to-do, the values nobody has written over, and nothing else: a write is
+// an add, and a write-over takes the add it names out, and keeps nothing of itself, since the
+// layer below the list delivers a write-over after the write it names and delivers no write
+// twice (docs/adr/0085, section 2.2). So the room a copy has is the schedule it holds, and not
+// every write it has seen written over: a copy that kept a tombstone for each write-over passed
+// the bound of its lists (1024 entries) within two hundred afternoons, and needed the host to
+// tell it when it might forget.
 //
-// What lets a copy forget is the difference the observed-remove set already is
-// (`orset_live`): once every copy has taken in a tombstone, the tombstone can go and the
-// set's value is the same. The host says so with `todo.compact`, an instant up to which
-// everything is settled everywhere, and each copy drops the tombstones stamped at or
-// before it, and takes them out of its digest.
+// What does grow is the layer's log, which keeps each change until every copy holds it, and
+// forgets it at the stable cut by itself. Its room is the deployment's: a change offered past
+// it is refused by the layer (docs/adr/0085, section 3, "offer and verdict").
 //
-// What is asked here is that a calendar written to for a year of afternoons, far past the
-// bound, never refuses a write when it is compacted now and then; that the copies still
-// agree and still show what the schedule says; that the digest is still the digest of what
-// each copy holds (a copy that finds a difference with the walk of `todo.resync` finds
-// none where there is none); and, as the control, that the same writes without compacting
-// do pass the bound, so that the compaction is what is being tested.
+// What is asked here is that a calendar written to for two hundred afternoons, far past what a
+// list of tombstones held, never refuses a write and holds only what is current; that the copies
+// still agree and still show what the schedule says, and two values written at once both stay;
+// and that a layer given less room than its copies leave unstable refuses what passes it.
 
 mod common;
 
 use common::calendar::*;
 use common::*;
+use sce_rust_mesh::causal::Start;
 use sce_rust_world::{Outcome, World};
 
 fn quiet(world: &mut World) {
@@ -33,7 +31,7 @@ fn quiet(world: &mut World) {
 }
 
 fn refusals(world: &mut World) -> Vec<u64> {
-    ["alice", "bob", "server"]
+    COPIES
         .iter()
         .map(|who| whole(&todo_variables_of(world, who)["refusals"]) as u64)
         .collect()
@@ -46,18 +44,10 @@ fn held(world: &mut World, who: &str, list: &str) -> usize {
         .len()
 }
 
-/// Every copy settles what is stamped at or before `before`.
-fn compact_everywhere(world: &mut World, before: i64) {
-    for who in ["alice", "bob", "server"] {
-        world.raise(who, "todo.compact", &format!(r#"{{"before":"{before}"}}"#));
-    }
-    quiet(world);
-}
-
-/// A day of the calendar: both people move and retitle a few events, and then the
-/// network settles. `day` is the number of the afternoon.
+/// A day of the calendar: the people move and retitle a few events, and then the network
+/// settles. `day` is the number of the afternoon.
 fn an_afternoon(world: &mut World, day: i64) {
-    for (who, id) in [("alice", 1), ("bob", 2), ("alice", 3), ("bob", 1)] {
+    for (who, id) in [("alice", 1), ("bob", 2), ("carol", 3), ("bob", 1)] {
         let start = instant(2026, 3, 1 + (day % 28), 8 + id as i64, 0);
         todo_set(world, who, id, START, start);
         todo_set(world, who, id, LENGTH, HOUR_MS * (1 + day % 3));
@@ -66,11 +56,8 @@ fn an_afternoon(world: &mut World, day: i64) {
     world.advance_ms(60_000);
 }
 
-/// Without compacting, the same calendar passes the bound: the copies refuse a write,
-/// which is the limit the compaction lifts.
-#[test]
-fn without_compacting_a_copy_runs_out_of_room() {
-    let mut world = todo_world(1, 20);
+fn a_calendar(seed: u64) -> World {
+    let mut world = todo_world(seed, 20);
     for id in 1..=3 {
         schedule_todo(
             &mut world,
@@ -80,54 +67,39 @@ fn without_compacting_a_copy_runs_out_of_room() {
         );
     }
     quiet(&mut world);
-    // Eight writes an afternoon, and every one writes over another and leaves a tombstone
-    // that stays: 200 afternoons are more than the 1024 entries the lists hold.
-    for day in 0..200 {
-        an_afternoon(&mut world, day);
-    }
-    assert!(
-        refusals(&mut world).iter().any(|n| *n > 0),
-        "a copy that is never compacted refuses a write once every change it has taken in \
-         is more than its lists hold"
-    );
+    world
 }
 
-/// A year of afternoons, 120 of them, with the copies told every tenth that everything
-/// up to a minute ago is settled: no copy refuses a write, the lists stay small, the
-/// copies agree, and the agenda is the one the schedule says.
+/// Two hundred afternoons, eight writes each and every one writing over another, which a list
+/// that kept a tombstone for each write-over could not hold: no copy refuses a write, each holds
+/// one add for each value it keeps and no more, the copies agree, the agenda is the one the
+/// schedule says, and every layer's log is empty once the copies rest. Red if a write-over
+/// leaves its add in `adds`: the adds then grow with every write-over until a write is refused.
 #[test]
-fn a_calendar_compacted_now_and_then_never_refuses_a_write() {
-    let mut world = todo_world(1, 20);
-    for id in 1..=3 {
-        schedule_todo(
-            &mut world,
-            "alice",
-            id,
-            &Plan::once(instant(2026, 3, 1, 9, 0), HOUR_MS).repeating(DAILY, 1),
-        );
-    }
-    quiet(&mut world);
-    let mut most_tombstones = 0;
-    for day in 0..120 {
+fn a_calendar_written_to_for_long_holds_only_what_is_current() {
+    let mut world = a_calendar(1);
+    let mut most_adds = 0;
+    for day in 0..200 {
         an_afternoon(&mut world, day);
-        if day % 10 == 9 {
-            let before = world.now_ms() - 1;
-            compact_everywhere(&mut world, before);
-            most_tombstones = most_tombstones.max(held(&mut world, "server", "tombstones"));
-        }
+        most_adds = most_adds.max(held(&mut world, "carol", "adds"));
     }
     assert_eq!(
         refusals(&mut world),
         [0, 0, 0],
         "a write was refused for want of room"
     );
+    for who in COPIES {
+        assert_eq!(
+            held(&mut world, who, "adds"),
+            held(&mut world, who, "values"),
+            "{who} keeps an add for a value it no longer holds"
+        );
+    }
     assert!(
-        most_tombstones < 200,
-        "after being compacted a copy holds {most_tombstones} tombstones, which is not what \
-         is current"
+        most_adds < 100,
+        "a copy held {most_adds} adds, which is not what is current"
     );
 
-    // The copies agree on the list, and each agenda is the schedule's.
     let list = agreed_todos(&mut world);
     assert!(list.len() >= 3 * 2);
     for id in 1..=3 {
@@ -138,13 +110,15 @@ fn a_calendar_compacted_now_and_then_never_refuses_a_write() {
             instant(2026, 5, 1, 0, 0),
         );
     }
+    assert_layers_rest(&mut world, &COPIES, "after two hundred afternoons");
     assert!(world.host_errors().is_empty());
 }
 
-/// Compacting changes what a copy holds and not what it shows: the values, the agendas and
-/// what the network says the list is stay as they were.
+/// Forgetting is the layer's, and changes no value a register holds: two people write one
+/// field at once, both values stay, and once every layer has forgotten every change the
+/// values and the agendas are what they were.
 #[test]
-fn compacting_changes_no_value_a_register_holds() {
+fn forgetting_changes_no_value_a_register_holds() {
     let mut world = todo_world(2, 20);
     schedule_todo(
         &mut world,
@@ -156,85 +130,64 @@ fn compacting_changes_no_value_a_register_holds() {
     for day in 0..12 {
         an_afternoon(&mut world, day);
     }
-    // Two people write one field at once: both values stay, and neither is settled away.
+    // Two people write one field at once: both values stay, and neither is forgotten.
     todo_set(&mut world, "alice", 2, START, instant(2026, 4, 1, 10, 0));
     todo_set(&mut world, "bob", 2, START, instant(2026, 4, 2, 10, 0));
+    world.advance_ms(1);
+    let kept: usize = COPIES
+        .iter()
+        .map(|who| world.causal_layer(who, PEOPLE).expect("a layer").log_len())
+        .sum();
+    assert!(
+        kept > 0,
+        "no layer kept the two changes while they were on their way"
+    );
     quiet(&mut world);
 
-    let before_list = agreed_todos(&mut world);
-    let before_tombstones = held(&mut world, "server", "tombstones");
-    let (from, to) = (instant(2026, 3, 1, 0, 0), instant(2026, 6, 1, 0, 0));
-    let agendas: Vec<_> = (1..=3)
-        .map(|id| agreed_agenda(&mut world, id, from, to))
-        .collect();
-
-    let now = world.now_ms();
-    compact_everywhere(&mut world, now);
-
-    assert_eq!(agreed_todos(&mut world), before_list);
-    let agendas_after: Vec<_> = (1..=3)
-        .map(|id| agreed_agenda(&mut world, id, from, to))
-        .collect();
-    assert_eq!(agendas_after, agendas);
-    assert!(
-        held(&mut world, "server", "tombstones") < before_tombstones,
-        "the tombstones of values that were written over are gone"
-    );
+    assert_layers_rest(&mut world, &COPIES, "after the two writes");
+    let list = agreed_todos(&mut world);
     assert_eq!(
-        before_list[&(2, START)].live.len(),
+        list[&(2, START)].live.len(),
         2,
         "the two values written at once are both still there"
     );
+    assert_eq!(list, todo_oracle(&world));
+    let (from, to) = (instant(2026, 3, 1, 0, 0), instant(2026, 6, 1, 0, 0));
+    for id in 1..=3 {
+        agreed_agenda(&mut world, id, from, to);
+    }
     assert_eq!(refusals(&mut world), [0, 0, 0]);
 }
 
-/// The digest is still the digest of what a copy holds after it forgets: copies that were
-/// compacted by the same instant agree on it, so that a resync between them walks to
-/// nothing, and a copy that was not (it had no link when the others settled) is found
-/// different and is repaired by the walk, without the settled changes coming back to
-/// life.
+/// The room for the changes not yet stable is the layer's: a layer given room for two, whose
+/// copy is cut off so that nothing it makes becomes stable, refuses the third change it is
+/// offered, takes no number for it, and its host is told.
 #[test]
-fn copies_settled_alike_still_agree_on_their_digest() {
+fn a_layer_refuses_a_change_past_its_room() {
     let mut world = todo_world(3, 20);
-    schedule_todo(
-        &mut world,
+    world.start_causal(
         "alice",
+        PEOPLE,
+        Start::NewIncarnation(replica_of("alice", 0)),
+        2,
+        VECTOR_EVERY_MS,
+    );
+    world.partition("alice", "bob");
+    world.partition("alice", "carol");
+    for id in 1..=3 {
+        todo_set(&mut world, "alice", id, DUE, id as i64);
+        world.advance_ms(10);
+    }
+    let errors = world.host_errors();
+    assert_eq!(
+        errors
+            .iter()
+            .filter(|error| error.contains("NoRoomForHistory"))
+            .count(),
         1,
-        &Plan::once(instant(2026, 3, 1, 9, 0), HOUR_MS).repeating(DAILY, 1),
+        "{errors:?}"
     );
-    quiet(&mut world);
-    for day in 0..20 {
-        an_afternoon(&mut world, day);
-    }
-    let now = world.now_ms();
-    compact_everywhere(&mut world, now);
-    let digests: Vec<_> = ["alice", "bob", "server"]
-        .iter()
-        .map(|who| todo_variables_of(&mut world, who)["digest"].clone())
-        .collect();
-    assert_eq!(digests[0], digests[2], "alice and the hub hold one digest");
-    assert_eq!(digests[1], digests[2], "bob and the hub hold one digest");
-
-    // A resync between copies that agree sends nothing a write could be made of.
-    let walked_before = sent_to_the_hub(&world)
-        .iter()
-        .filter(|(event, _)| event == "todo.node")
-        .count();
-    for who in ["alice", "server", "bob"] {
-        world.raise(who, "todo.resync", "");
-        quiet(&mut world);
-    }
-    let walked = sent_to_the_hub(&world)
-        .iter()
-        .filter(|(event, _)| event == "todo.node")
-        .count()
-        - walked_before;
-    let list = agreed_todos(&mut world);
-    assert!(!list.is_empty());
-    assert_eq!(refusals(&mut world), [0, 0, 0]);
-    assert!(
-        walked < 40,
-        "copies that agree walked {walked} messages: the digest of a compacted copy is not \
-         the digest of what it holds"
-    );
+    let layer = world.causal_layer("alice", PEOPLE).expect("a layer");
+    assert_eq!(layer.own_seq(), 2, "the refused change took a number");
+    assert_eq!(layer.log_len(), 2);
 }

@@ -32,7 +32,7 @@ use common::calendar::{
     schedule_todo, seoul, set_zone_everywhere, Plan, Zones, DAILY, FRI, HOUR_MS, MON, MONTHLY,
     START, SUN, THU, TUE, UNTIL, WED, WEEKLY, YEARLY,
 };
-use common::resync::{MINUTE, OLD_LIMIT_MINUTES};
+use common::repair::{lose_everything, MINUTE, OLD_LIMIT_MINUTES};
 use common::*;
 use sce_rust_runtime::{Engine, StatePolicy};
 use sce_rust_scenarios::integration::static_datamodel::record_list_sm::{
@@ -44,18 +44,12 @@ use serde_json::{json, Map, Value};
 /// The variables a copy of the to-do list publishes (`sce:direction="out"`).
 const TODO_PUBLISHED: &[&str] = &[
     "node",
-    "hub",
     "clock",
     "adds",
-    "tombstones",
     "values",
-    "digest",
     "refusals",
     "agenda",
     "agendaNext",
-    "floor",
-    "stale",
-    "late",
     "full",
     "denied",
 ];
@@ -63,19 +57,7 @@ const TODO_PUBLISHED: &[&str] = &[
 /// The variables a copy of the standard shared record list publishes that the to-do
 /// list publishes too: every one of them but the schedule's.
 const RECORD_LIST_PUBLISHED: &[&str] = &[
-    "node",
-    "hub",
-    "clock",
-    "adds",
-    "tombstones",
-    "values",
-    "digest",
-    "refusals",
-    "floor",
-    "stale",
-    "late",
-    "full",
-    "denied",
+    "node", "clock", "adds", "values", "refusals", "full", "denied",
 ];
 
 /// The events of the to-do list that are its schedule and its host's time zones, which
@@ -172,8 +154,9 @@ fn scenario_text(machine: &str, about: &str, steps: &[Value]) -> String {
     text
 }
 
-/// An event of the to-do list by the name the standard shared record list gives it
-/// (`todo.write` is `record_list.write`); any other name as it is.
+/// A command of the to-do list by the name the standard shared record list gives it
+/// (`todo.edit` is `record_list.edit`); any other name as it is. The to-do list's changes
+/// are the standard list's already (`record_list.change`, docs/adr/0085 section 1.4).
 fn record_list_name(name: &str) -> String {
     match name.strip_prefix("todo.") {
         Some(verb) => format!("record_list.{verb}"),
@@ -181,29 +164,14 @@ fn record_list_name(name: &str) -> String {
     }
 }
 
-/// A peer the to-do list sends to by the route the standard shared record list sends
-/// by: the hub (`#server`) is `#hub`, and each person's copy (`#alice`, `#bob`) is
-/// `#people`, which every person's copy is reached by at once.
-fn record_list_route(target: &str) -> &str {
-    match target {
-        "#server" => "#hub",
-        "#alice" | "#bob" => "#people",
-        other => other,
-    }
-}
-
 /// A copy's record of the to-do afternoon as a scenario of the standard shared record
 /// list (sce:std/shared/record_list.scxml, docs/adr/0042), which is the to-do list
 /// without its schedule: the steps of the schedule and of the host's time zones are
-/// left out, as they change nothing the list holds and publishes, and every event, the
-/// one a step is given and each one it sends, is named as the standard part names it.
-/// The list sends by the routes a deployment binds and not to peers it names, so a send
-/// goes by its route, and where the to-do hub sent one change to each person in turn
-/// the list sends it once to them all: the same send twice over is once. A list started
-/// by a host, as the world starts each copy, tells no parent anything, so a step holds
-/// exactly what the to-do list's did, but for the one thing the list does that the to-do
-/// list does not: an edit that wrote over values it had seen is one change of several
-/// operations, sent as one unit (docs/adr/0046, [`as_one_change`]).
+/// left out, as they change nothing the list holds and publishes, and every command a
+/// step is given is named as the standard part names it. The changes it is given and the
+/// ones it sends are the standard list's own, `record_list.change` to `#people`, so a step
+/// holds exactly what the to-do list's did: a list started by a host, as the world starts
+/// each copy, tells no parent anything.
 fn record_list_scenario(about: &str, record: &[Taken]) -> String {
     let steps: Vec<Value> = record
         .iter()
@@ -233,70 +201,19 @@ fn record_list_scenario(about: &str, record: &[Taken]) -> String {
                 }
                 step["event"] = json!(named);
             }
-            let edit = step["event"] == "record_list.edit";
-            if let Some(sent) = step["expect"]["sent"].as_array_mut() {
-                for entry in sent.iter_mut() {
-                    let named =
-                        record_list_name(entry["event"].as_str().expect("a send names its event"));
-                    entry["event"] = json!(named);
-                    let route =
-                        record_list_route(entry["target"].as_str().expect("a send names its peer"))
-                            .to_string();
-                    entry["target"] = json!(route);
-                }
-                sent.dedup();
-                if edit {
-                    as_one_change(sent);
+            if let Some(sent) = step["expect"]["sent"].as_array() {
+                for entry in sent {
+                    assert_eq!(
+                        (&entry["target"], &entry["event"]),
+                        (&json!("#people"), &json!("record_list.change")),
+                        "a copy of the to-do list sends nothing but a change to its group"
+                    );
                 }
             }
             step
         })
         .collect();
     scenario_text("sce:std/shared/record_list", about, &steps)
-}
-
-/// The messages of a to-do edit as the standard list sends them. The to-do list sends
-/// each write-over and the write of an edit alone; the standard list sends a change of
-/// more than one operation as one unit (docs/adr/0046, section 3): every message carries
-/// how many operations the change has (`parts`), and a write-over the change's stamp
-/// (`atWallTime`, `atCounter`), which is the stamp of the change's write. An edit that
-/// wrote over nothing is one write, sent as the to-do list sends it.
-fn as_one_change(sent: &mut [Value]) {
-    let operations: Vec<usize> = sent
-        .iter()
-        .enumerate()
-        .filter(|(_, entry)| {
-            matches!(
-                entry["event"].as_str(),
-                Some("record_list.write" | "record_list.supersede")
-            )
-        })
-        .map(|(at, _)| at)
-        .collect();
-    if operations.len() < 2 {
-        return;
-    }
-    let (wall_time, counter) = sent
-        .iter()
-        .find(|entry| entry["event"] == "record_list.write")
-        .map(|entry| {
-            (
-                entry["data"]["wallTime"].clone(),
-                entry["data"]["counter"].clone(),
-            )
-        })
-        .expect("an edit's change ends in its write");
-    for &at in &operations {
-        let supersede = sent[at]["event"] == "record_list.supersede";
-        let data = sent[at]["data"]
-            .as_object_mut()
-            .expect("a change's message carries data");
-        data.insert("parts".into(), json!(operations.len()));
-        if supersede {
-            data.insert("atWallTime".into(), wall_time.clone());
-            data.insert("atCounter".into(), counter.clone());
-        }
-    }
 }
 
 /// Hold the committed scenario `name` to `text`, or write it when the run is asked to.
@@ -327,70 +244,69 @@ fn about(what: &str, who: &str) -> String {
 
 /// An afternoon of the shared to-do list: changes to different fields of one to-do at
 /// once, two titles written at the same instant, a title past what a title holds,
-/// changes made while a link is down, and a to-do removed by one while the other
-/// renames it; then changes a link dropped for good, found again by the copies telling
-/// each other their link is back (`todo.resync`).
+/// changes made while a copy is cut off, and a to-do removed by one while another
+/// renames it; then changes alice's links dropped for good, found again by the layer below
+/// the list, which delivers each to every copy once and after what it follows
+/// (docs/adr/0085, section 3.2). What a copy's record holds is the changes as its layer
+/// gave them, in the order it gave them.
 fn todo_afternoon() -> World {
     let mut world = recorded_todo_world(11, 20);
     todo_title(&mut world, "alice", 7, "buy milk");
-    assert_eq!(world.run_until_quiet(10_000), Outcome::Quiet);
+    assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
 
     todo_title(&mut world, "alice", 7, "buy oat milk");
     todo_set(&mut world, "bob", 7, DONE, 1);
-    todo_set(&mut world, "bob", 7, DUE, 20_000);
-    assert_eq!(world.run_until_quiet(10_000), Outcome::Quiet);
+    todo_set(&mut world, "carol", 7, DUE, 20_000);
+    assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
 
     todo_title(&mut world, "alice", 3, "call dentist");
     todo_title(&mut world, "bob", 3, "call the dentist");
-    assert_eq!(world.run_until_quiet(10_000), Outcome::Quiet);
+    assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
 
     // 33 bytes: one past what a title holds. Refused whole, and nothing sent.
     todo_title(&mut world, "bob", 4, "a title that is one byte too long");
     // Text that is more than one byte to a character.
     todo_title(&mut world, "alice", 5, "caf\u{e9} at 3");
-    assert_eq!(world.run_until_quiet(10_000), Outcome::Quiet);
+    assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
 
-    world.partition("alice", "server");
+    world.partition("alice", "bob");
+    world.partition("alice", "carol");
     world.advance_ms(50);
     todo_set(&mut world, "alice", 5, DUE, 20_001);
     todo_set(&mut world, "bob", 5, REMOVED, 1);
     world.advance_ms(300);
     todo_title(&mut world, "alice", 5, "tea at 4");
     world.advance_ms(300);
-    world.heal("alice", "server");
+    world.heal("alice", "bob");
+    world.heal("alice", "carol");
     assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
 
-    // Two minutes later alice's link drops what it carries without a word, in both
-    // directions, so the hub and bob never get what alice writes and alice never gets
-    // what bob writes: changes lost for good, which no retry repairs.
+    // Two minutes later alice's links drop what they carry without a word, in both
+    // directions, so the others never get what alice writes and alice never gets what
+    // they write: changes lost for good, which no retry repairs, and which the layers find
+    // again once the links carry, by the vectors they send on their period.
     world.advance_ms(120_000);
-    world.degrade("alice", "server", 100, 0);
+    lose_everything(&mut world, "alice", true);
     todo_set(&mut world, "alice", 7, DUE, 20_002);
     todo_title(&mut world, "alice", 3, "call Dr Han");
     world.advance_ms(60_000);
-    todo_set(&mut world, "bob", 5, DONE, 1);
+    todo_set(&mut world, "carol", 5, DONE, 1);
     todo_title(&mut world, "bob", 3, "call the clinic");
+    world.advance_ms(60_000);
+    lose_everything(&mut world, "alice", false);
     assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
-    world.degrade("alice", "server", 0, 0);
-
-    // The link is back: each copy tells its peers, in turn, to look for where they differ.
-    for who in ["alice", "server", "bob"] {
-        world.raise(who, "todo.resync", "");
-        assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
-    }
 
     // Years on, past 3^16 minutes (2051-11-05T13:21Z, where the first form of the
     // digest's key ran out): changes made in the last minute before it and the first
     // after, in 2100 and far beyond (under 2^53 milliseconds, which the Interpreter's
-    // integers hold), to to-dos and fields numbered as a long list numbers them; then a
-    // link that drops what two more changes send, found again by the walk down all
-    // thirty levels of the digest.
+    // integers hold), to to-dos and fields numbered as a long list numbers them; then
+    // links that drop what two more changes send, found again by the layers.
     let boundary = OLD_LIMIT_MINUTES * MINUTE;
     todo_edit_at(&mut world, "bob", 70_000, 300, 5, "", boundary - 1);
     todo_edit_at(&mut world, "alice", 70_000, 300, 6, "", boundary);
-    todo_edit_at(&mut world, "bob", 70_000, 4096, 2, "", 4_102_444_800_000);
+    todo_edit_at(&mut world, "carol", 70_000, 4096, 2, "", 4_102_444_800_000);
     assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
-    world.degrade("alice", "server", 100, 0);
+    lose_everything(&mut world, "alice", true);
     todo_edit_at(
         &mut world,
         "alice",
@@ -419,19 +335,16 @@ fn todo_afternoon() -> World {
         "",
         4_500_000_000_120_000,
     );
+    world.advance_ms(60_000);
+    lose_everything(&mut world, "alice", false);
     assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
-    world.degrade("alice", "server", 0, 0);
-    for who in ["alice", "server", "bob"] {
-        world.raise(who, "todo.resync", "");
-        assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
-    }
 
     // Events: to-dos with a start, a length and a repetition, one that alice and bob move
     // at the same moment; each copy is then asked what is scheduled in a window, and the
     // agenda it shows is a step of its record like any other. A copy holds 128 values
     // (mv_value_keep), a schedule a handful each, so this afternoon schedules a few events
     // and no copy refuses a write for want of room: it is checked at the end.
-    let refused_before: Vec<Value> = ["alice", "bob", "server"]
+    let refused_before: Vec<Value> = COPIES
         .iter()
         .map(|who| todo_variables_of(&mut world, who)["refusals"].clone())
         .collect();
@@ -579,20 +492,7 @@ fn todo_afternoon() -> World {
     assert_eq!(first.next, 64);
     agreed_page(&mut world, &none, 38, from, to, first.next);
 
-    // Then everything stamped so far is settled everywhere, and each copy forgets what a
-    // register no longer needs: the tombstones up to now go, with the adds they name, and
-    // leave the digest. Nothing a register holds changes, and an agenda is as it was.
-    let before = world.now_ms();
-    let agenda_before = agreed_agenda_in(&mut world, &none, 31, from, to);
-    for who in ["alice", "bob", "server"] {
-        world.raise(who, "todo.compact", &format!(r#"{{"before":"{before}"}}"#));
-    }
-    assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
-    assert_eq!(
-        agreed_agenda_in(&mut world, &none, 31, from, to),
-        agenda_before
-    );
-    let refused_after: Vec<Value> = ["alice", "bob", "server"]
+    let refused_after: Vec<Value> = COPIES
         .iter()
         .map(|who| todo_variables_of(&mut world, who)["refusals"].clone())
         .collect();
@@ -601,32 +501,14 @@ fn todo_afternoon() -> World {
         "a copy refused a schedule it had no room for"
     );
 
-    // Then the copies settle by themselves: a to-do is written over twice more, and the
-    // host asks the hub to settle the minute before. The hub asks each person what it
-    // holds up to it, both answer with the hash of the same changes, and the hub tells
-    // every copy to forget; each moves its floor to the instant.
+    // Then a to-do is written over twice more, by turns, and every copy's layer forgets
+    // each change once every copy holds it: nothing a copy holds moves when it does.
     world.advance_ms(60_000);
-    for (who, due) in [("alice", 31_000), ("bob", 32_000), ("alice", 33_000)] {
+    for (who, due) in [("alice", 31_000), ("bob", 32_000), ("carol", 33_000)] {
         todo_set(&mut world, who, 9_000, DUE, due);
+        assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
     }
-    assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
-    world.advance_ms(60_000);
-    let settled = world.now_ms() - 1;
-    world.raise(
-        "server",
-        "todo.settle",
-        &format!(r#"{{"before":"{settled}","members":2}}"#),
-    );
-    assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
-    for who in ["alice", "bob", "server"] {
-        let variables = todo_variables_of(&mut world, who);
-        assert_eq!(
-            whole(&variables["floor"]),
-            i128::from(settled),
-            "{who} did not forget up to the instant"
-        );
-        assert_eq!(variables["stale"], json!(false));
-    }
+    assert_layers_rest(&mut world, &COPIES, "the end of the afternoon");
     world
 }
 
@@ -656,10 +538,12 @@ fn an_afternoon_of_the_shared_todo_list_is_three_scenarios() {
         !list.contains_key(&(4, TITLE)),
         "the long title was refused"
     );
+    assert_eq!(list[&(9_000, DUE)].value, 33_000);
+    assert_eq!(list[&(9_000, DUE)].live.len(), 1);
     assert_eq!(todo_variables_of(&mut world, "bob")["refusals"], json!(1));
     assert!(world.host_errors().is_empty());
 
-    for who in ["alice", "bob", "server"] {
+    for who in COPIES {
         let record = world.record_of::<TodoPeer>(who);
         assert!(
             record.len() > 5,
@@ -678,14 +562,15 @@ fn an_afternoon_of_the_shared_todo_list_is_three_scenarios() {
         // The same afternoon is what a copy of the standard shared record list does,
         // which is this list without its schedule (docs/adr/0042): it is replayed on
         // the standard part's committed Rust machine here, in this process, so the two
-        // copies of the protocol are held to one run until the to-do list is built on
-        // the standard part, the one thing the standard part does that the to-do list
-        // does not mapped by `as_one_change` (docs/adr/0046). It is written to no file:
-        // the scenarios every backend replays of the standard part are its own, short
-        // and written by hand (`record_list_person`, `record_list_hub`).
+        // copies of the list's effect are held to one run until the to-do list invokes
+        // the standard part (docs/adr/0042, step 2). They speak one wire already: the
+        // to-do list sends and takes the standard list's own change (`record_list.change`,
+        // docs/adr/0085 section 1.4). It is written to no file: the scenarios every
+        // backend replays of the standard part are its own, short and written by hand
+        // (`record_list_person` among them).
         let derived = record_list_scenario(
             &format!(
-                "{} The steps of the schedule and of the host's time zones are left out, which change nothing the standard shared record list (sce:std/shared/record_list.scxml) holds, every event is named as that list names it, and every send goes by its route.",
+                "{} The steps of the schedule and of the host's time zones are left out, which change nothing the standard shared record list (sce:std/shared/record_list.scxml) holds, and every command is named as that list names it.",
                 about("An afternoon of a shared to-do list", who)
             ),
             &record,

@@ -24,7 +24,7 @@ fn starts(agenda: &[Occurrence]) -> Vec<i64> {
 }
 
 fn quiet(world: &mut sce_rust_world::World) {
-    assert_eq!(world.run_until_quiet(10_000), Outcome::Quiet);
+    assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
 }
 
 /// The occurrences the copies agree on for `plan`, in the window `[from, to)` of whole days.
@@ -478,7 +478,7 @@ fn random_rules_are_expanded_as_the_second_expansion_expands_them() {
             world.run_until_quiet(rng.below(30) as i64 + 1);
         }
         assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet, "seed {seed}");
-        for who in ["alice", "bob", "server"] {
+        for who in COPIES {
             assert_eq!(
                 todo_variables_of(&mut world, who)["refusals"],
                 0,
