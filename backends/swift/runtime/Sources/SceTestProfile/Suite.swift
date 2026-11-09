@@ -89,12 +89,18 @@ public struct Suite {
 public struct CaseResult: Equatable, Sendable {
     /// The test case's name.
     public var testCase: String
-    /// Its verdict and log.
+    /// Its verdict and logs.
     public var result: TestCaseResult
 
     public init(testCase: String, result: TestCaseResult) {
         self.testCase = testCase
         self.result = result
+    }
+
+    /// The test log of this run of the test case in the suite `suite`, in its one canonical text
+    /// (`TestCaseResult.canonicalLog`).
+    public func canonicalLog(suite: String) -> String {
+        result.canonicalLog(suite: suite, testCase: testCase)
     }
 }
 
@@ -109,13 +115,18 @@ public struct OverrideRefusal: Error, Equatable, Sendable {
     }
 }
 
-/// P13: the test case cannot start, so it ends at once with `error`.
+/// P13: the test case cannot start, so it ends at once with `error`. No component was created, so the
+/// test log holds its start and its end alone.
 private func refused(_ testCase: String, _ why: String) -> CaseResult {
     CaseResult(
         testCase: testCase,
         result: TestCaseResult(
             verdict: .error, endedAt: 0,
-            log: [LogRecord(at: 0, component: mtcName, kind: .error, detail: why)]))
+            log: [LogRecord(at: 0, component: mtcName, kind: .error, detail: why)],
+            records: [
+                TestLogRecord(at: 0, event: .testCaseStarted),
+                TestLogRecord(at: 0, event: .testCaseEnded(verdict: .error)),
+            ]))
 }
 
 /// Runs the test cases of `suite` that `world` selects (P11).

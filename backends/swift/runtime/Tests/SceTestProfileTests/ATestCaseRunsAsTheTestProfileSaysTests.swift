@@ -86,10 +86,12 @@ private final class Machines {
 }
 
 /// A value of no record, which a message whose value no test reads carries.
-private struct Blank: Sendable {}
+private struct Blank: Equatable, Sendable {}
 
+/// A message of the record `event` that holds no field: `{}` in the test log, of the record type
+/// `empty`.
 private func message(_ event: String) -> Message {
-    Message(event: event, value: Blank())
+    Message.of(event: event, value: Blank(), typeName: "empty", canonical: { _ in Canonical.record() })
 }
 
 /// One input of a trace, or one send the adapter was handed.
@@ -287,11 +289,16 @@ private final class FourInputs: SystemAdapter {
             return []
         }
         given = true
+        func number(_ event: String, _ n: Int) -> Message {
+            Message.of(event: event, value: n, typeName: "number", canonical: { Canonical.integer($0) })
+        }
         return [
-            SystemInput(systemPort: "sut", message: Message(event: "number", value: "7")),
-            SystemInput(systemPort: "sut", message: Message(event: "other", value: 7)),
-            SystemInput(systemPort: "sut", message: Message(event: "number", value: 6)),
-            SystemInput(systemPort: "sut", message: Message(event: "number", value: 7)),
+            SystemInput(
+                systemPort: "sut",
+                message: Message.of(event: "number", value: "7", typeName: "text", canonical: { Canonical.text($0) })),
+            SystemInput(systemPort: "sut", message: number("other", 7)),
+            SystemInput(systemPort: "sut", message: number("number", 6)),
+            SystemInput(systemPort: "sut", message: number("number", 7)),
         ]
     }
 }
@@ -732,14 +739,14 @@ struct TheSharedHandleTests {
 }
 
 /// The test-port processor, of the type `Engine.registerEventProcessor` takes a handler of: a send (P6)
-/// carries the template's value, which the run appends to the connected port, or hands the system
-/// adapter.
+/// carries the template's value with its type's name and the writer of its canonical form, which the run
+/// appends to the connected port, or hands the system adapter.
 private func testPortProcessor(_ context: ComponentContext) -> HostSendHandler {
     { request in
-        guard let value = request.value else {
-            fatalError("a test-port send carries its template's value")
+        guard let value = request.value?.value as? any TestValue else {
+            fatalError("a test-port send carries its template's value, with its type's name and writer")
         }
-        context.send(request.target, Message(event: request.eventName, value: value.value))
+        context.send(request.target, Message(event: request.eventName, value: value))
         return []
     }
 }
@@ -769,6 +776,11 @@ private struct Ping: Equatable, Sendable {
     let n: Int
 }
 
+/// A `Ping` in the canonical form of the test log, as the unit of a template over its record writes it.
+private func pingCanonical(_ ping: Ping) -> JSONValue {
+    Canonical.record(("n", Canonical.integer(ping.n)))
+}
+
 /// An MTC wired as a generated one is: its start makes the two processors, each holding its context,
 /// and it reaches the doors of the run only through them. Entering its state invokes `echo` and sends
 /// it a `Ping`; a timeout leaves the state, which cancels the invoke.
@@ -783,7 +795,8 @@ private final class DoorsTester: ComponentMachine {
         _ = invokes(.start(HostInvokeRequest(processorType: testComponent, invokeID: "echo")))
         _ = sends(
             HostSendRequest(
-                processorType: testPort, eventName: "ping", target: "p", value: HostSendValue(Ping(n: 3))))
+                processorType: testPort, eventName: "ping", target: "p",
+                value: HostSendValue(messageValue(Ping(n: 3), "ping", { pingCanonical($0) }))))
         context.startTimer("reply", 10)
         invoker = invokes
         self.context = context
@@ -848,5 +861,163 @@ struct TheDoorsTests {
         #expect(result.log[killed].at == 10, "the cancel came at the timeout")
         #expect(killed < verdict, "the cancel removed the PTC, not the end")
         #expect(logged(result, "echo", .verdict))
+        // §12.5: the request carried the value with its type's name and the writer of its canonical
+        // form, which the test log records.
+        let sentRecord = TestLogRecord(
+            at: 0,
+            event: .messageSent(
+                component: "mtc", port: "p", messageType: "ping",
+                value: Canonical.record(("n", Canonical.integer(3)))))
+        #expect(result.records.contains(sentRecord), "\(result.records)")
+    }
+}
+
+/// An MTC and its echo, joined `p` to `q`; the MTC has two timers.
+private func pinging() -> Configuration {
+    Configuration(
+        mtcType: "Tester",
+        ptcTypes: ["echo": "Echo"],
+        portsOfType: byType(("Tester", "p"), ("Echo", "q")),
+        timersOfType: byType(("Tester", "t"), ("Tester", "s")),
+        connections: [Connection(Endpoint(component: "mtc", port: "p"), Endpoint(component: "echo", port: "q"))])
+}
+
+/// The ping's value, a record of one number of the record type `ping`, as the unit of a template over
+/// it writes it.
+private func ping(_ n: UInt32) -> Message {
+    Message.of(event: "ping", value: n, typeName: "ping", canonical: { Canonical.record(("n", Canonical.integer($0))) })
+}
+
+/// The MTC creates the echo, pings it, starts two timers and logs; at the first timer's timeout it stops
+/// the second, and the first again, which no longer runs, and passes. The echo takes the ping, passes
+/// with a reason, and terminates.
+private func pingingMachines() -> Machines {
+    Machines()
+        .with(
+            "Tester",
+            (
+                { context, _ in
+                    context.create("echo")
+                    context.send("p", ping(3))
+                    context.startTimer("t", 10)
+                    context.startTimer("s", 20)
+                    context.log("asked \"echo\"")
+                },
+                { context, me in
+                    if context.timedOut("t") {
+                        context.timeout("t")
+                        context.stopTimer("s")
+                        context.stopTimer("t")
+                        context.setverdict(.pass)
+                        me.end()
+                    }
+                }
+            ))
+        .with(
+            "Echo",
+            (
+                idle(),
+                { context, me in
+                    if context.snapshotPresent("q") {
+                        _ = context.receive("q")
+                        context.setverdict(.pass, "pinged")
+                        me.end()
+                    }
+                }
+            ))
+}
+
+/// A suite of the one test case `testCase`.
+private func suiteOf(_ testCase: TestCase) -> Suite {
+    Suite(name: "logged_suite", executes: [Execute(testCase)])
+}
+
+/// The test case of the pinging configuration and machines.
+private func pingsTheEcho(_ name: String) -> TestCase {
+    TestCase(name: name, configuration: pinging(), machines: pingingMachines().factory())
+}
+
+/// The bytes of `text`, which two logs agree by: Swift's `==` on a `String` holds two canonically
+/// equivalent texts equal.
+private func utf8(_ text: String) -> [UInt8] {
+    Array(text.utf8)
+}
+
+/// The test log (docs/SCE_TEST_PROFILE.md §12.5; docs/adr/0091, C3): each record written where the
+/// semantics places its event, in the order the rounds produce them, and the whole log in its one
+/// canonical text, the bytes the Rust runtime's twin cases (`the_test_log`) and the Kotlin
+/// `TheTestLogTest` expect.
+struct TheTestLogTests {
+    /// P4, P6, P7, P8, P9, P10, P12, P14: the whole log of a run through the suite's runner. The echo's
+    /// work comes in the round after the MTC's start, at NOW = 0, the timeout at 10; the stop of a timer
+    /// that no longer runs, and the removal of the terminated echo when the MTC ends, write no record.
+    @Test func aRunWritesEachRecordWhereItsEventHappens() throws {
+        let suite = suiteOf(pingsTheEcho("pings_the_echo"))
+        let results = try runSuite(suite, world: [], adapters: { _ in TraceAdapter() })
+        #expect(results.count == 1)
+        let expected = [
+            "{\"records\":[",
+            "{\"at\":\"0\",\"kind\":\"test-case-started\"},",
+            "{\"at\":\"0\",\"component\":\"mtc\",\"kind\":\"component-created\",\"type\":\"Tester\"},",
+            "{\"at\":\"0\",\"component\":\"echo\",\"kind\":\"component-created\",\"type\":\"Echo\"},",
+            "{\"at\":\"0\",\"component\":\"mtc\",\"kind\":\"message-sent\",\"port\":\"p\",",
+            "\"type\":\"ping\",\"value\":{\"n\":\"3\"}},",
+            "{\"at\":\"0\",\"component\":\"mtc\",\"duration_us\":\"10\",\"kind\":\"timer-started\",",
+            "\"timer\":\"t\"},",
+            "{\"at\":\"0\",\"component\":\"mtc\",\"duration_us\":\"20\",\"kind\":\"timer-started\",",
+            "\"timer\":\"s\"},",
+            "{\"at\":\"0\",\"component\":\"mtc\",\"kind\":\"log\",\"text\":\"asked \\\"echo\\\"\"},",
+            "{\"at\":\"0\",\"component\":\"echo\",\"kind\":\"message-received\",\"port\":\"q\",",
+            "\"type\":\"ping\",\"value\":{\"n\":\"3\"}},",
+            "{\"at\":\"0\",\"component\":\"echo\",\"kind\":\"verdict-set\",\"reason\":\"pinged\",",
+            "\"verdict\":\"pass\"},",
+            "{\"at\":\"0\",\"component\":\"echo\",\"kind\":\"component-done\",\"verdict\":\"pass\"},",
+            "{\"at\":\"10\",\"component\":\"mtc\",\"kind\":\"timer-timed-out\",\"timer\":\"t\"},",
+            "{\"at\":\"10\",\"component\":\"mtc\",\"kind\":\"timer-stopped\",\"timer\":\"s\"},",
+            "{\"at\":\"10\",\"component\":\"mtc\",\"kind\":\"verdict-set\",\"verdict\":\"pass\"},",
+            "{\"at\":\"10\",\"component\":\"mtc\",\"kind\":\"component-done\",\"verdict\":\"pass\"},",
+            "{\"at\":\"10\",\"kind\":\"test-case-ended\",\"verdict\":\"pass\"}",
+            "],\"schema\":\"sce-test-log.v1\",\"suite\":\"logged_suite\",",
+            "\"test_case\":\"pings_the_echo\",\"verdict\":\"pass\"}",
+        ].joined()
+        let only = try #require(results.first)
+        let log = only.canonicalLog(suite: suite.name)
+        #expect(utf8(log) == utf8(expected), "\(log)")
+    }
+
+    /// P13: an error the runtime sets is a verdict without the runtime's own reason, which another
+    /// runtime would not write alike.
+    @Test func anErrorTheRuntimeSetsIsLoggedWithoutItsCause() {
+        let machines = Machines().with("Waiter", (idle(), idle()))
+        let result = runCase(lone("Waiter"), machines, TraceAdapter(), guardAt: 7)
+        #expect(result.verdict == .error)
+        let expected = [
+            "{\"records\":[",
+            "{\"at\":\"0\",\"kind\":\"test-case-started\"},",
+            "{\"at\":\"0\",\"component\":\"mtc\",\"kind\":\"component-created\",\"type\":\"Waiter\"},",
+            "{\"at\":\"7\",\"component\":\"mtc\",\"kind\":\"verdict-set\",\"verdict\":\"error\"},",
+            "{\"at\":\"7\",\"kind\":\"test-case-ended\",\"verdict\":\"error\"}",
+            "],\"schema\":\"sce-test-log.v1\",\"suite\":\"logged_suite\",",
+            "\"test_case\":\"waits\",\"verdict\":\"error\"}",
+        ].joined()
+        let log = result.canonicalLog(suite: "logged_suite", testCase: "waits")
+        #expect(utf8(log) == utf8(expected), "\(log)")
+    }
+
+    /// P13: a test case that cannot start, for want of an adapter, logs its start and its end alone,
+    /// since no component was created.
+    @Test func aTestCaseThatCannotStartLogsItsStartAndEnd() throws {
+        let suite = suiteOf(pingsTheEcho("unplayed"))
+        let results = try runSuite(suite, world: [], adapters: { _ in nil })
+        let expected = [
+            "{\"records\":[",
+            "{\"at\":\"0\",\"kind\":\"test-case-started\"},",
+            "{\"at\":\"0\",\"kind\":\"test-case-ended\",\"verdict\":\"error\"}",
+            "],\"schema\":\"sce-test-log.v1\",\"suite\":\"logged_suite\",",
+            "\"test_case\":\"unplayed\",\"verdict\":\"error\"}",
+        ].joined()
+        let only = try #require(results.first)
+        let log = only.canonicalLog(suite: suite.name)
+        #expect(utf8(log) == utf8(expected), "\(log)")
     }
 }

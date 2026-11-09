@@ -6,7 +6,9 @@
 // Two things read JSON here: an event's `_event.data` lifted to its typed payload
 // (`EventPayload.swift`) and a machine's saved state read back. One reader serves
 // both, so a text one accepts and the other refuses cannot exist; one writer
-// serves the saved state and the inject seam's `data`.
+// serves the saved state and the inject seam's `data`. The test profile's test log
+// is written in the JSON Canonicalization Scheme by `writeCanonicalJSON`, over the
+// same escaping (docs/SCE_TEST_PROFILE.md §12.5).
 //
 // A number keeps the spelling it was written in (`JSONValue.number`), so a whole
 // number stays exact until the one who reads it chooses its width: a 64-bit value
@@ -131,6 +133,101 @@ private func writeJSON(_ value: JSONValue, into out: inout String) {
         }
         out += "}"
     }
+}
+
+/// Why a value has no form in the JSON Canonicalization Scheme (`writeCanonicalJSON`).
+public struct NotCanonical: Error, Equatable, CustomStringConvertible {
+    /// Why.
+    public let reason: String
+
+    public init(_ reason: String) {
+        self.reason = reason
+    }
+
+    public var description: String {
+        reason
+    }
+}
+
+/// `value` in the JSON Canonicalization Scheme (RFC 8785): no whitespace, the members of each object
+/// sorted by their names as sequences of UTF-16 code units (section 3.2.3), each text in the one form
+/// every engine writes (`quoteJSON`, which is ECMAScript's `JSON.stringify` of a text: section
+/// 3.2.2.2), and each number as ECMAScript spells the double it reads as (`numberText`, section
+/// 3.2.2.3). Two values equal under the scheme are then written as the same bytes, whatever order their
+/// members were built in.
+///
+/// The order is not Swift's `String` order, which compares by canonical equivalence and by Unicode
+/// scalars: two names are compared by their `utf16` views, unit by unit, and two names are the same
+/// name only where those units are the same.
+///
+/// Refused, naming why: a number in no JSON spelling, one past the range of a double, which the scheme
+/// has no spelling for, and an object that names one member twice, which has no single meaning
+/// (section 3.1).
+///
+/// Cross-language siblings: `sce_rust_runtime::json::write_canonical` (Rust), `Json.writeJcs`
+/// (Kotlin).
+public func writeCanonicalJSON(_ value: JSONValue) throws(NotCanonical) -> String {
+    var out = ""
+    try writeCanonicalJSON(value, into: &out)
+    return out
+}
+
+private func writeCanonicalJSON(_ value: JSONValue, into out: inout String) throws(NotCanonical) {
+    switch value {
+    case .null:
+        out += "null"
+    case .bool(let b):
+        out += b ? "true" : "false"
+    case .number(let spelling):
+        guard isJSONNumber(spelling) else {
+            throw NotCanonical("'\(spelling)' is not a number")
+        }
+        guard let number = Double(spelling), number.isFinite else {
+            throw NotCanonical(
+                "the number \(spelling) is past the range of a double, which RFC 8785 writes every number as")
+        }
+        out += numberText(number)
+    case .text(let s):
+        out += quoteJSON(s)
+    case .array(let items):
+        out += "["
+        for (i, item) in items.enumerated() {
+            if i > 0 {
+                out += ","
+            }
+            try writeCanonicalJSON(item, into: &out)
+        }
+        out += "]"
+    case .object(let members):
+        let sorted = members.sorted { $0.key.utf16.lexicographicallyPrecedes($1.key.utf16) }
+        for (left, right) in zip(sorted, sorted.dropFirst()) where left.key.utf16.elementsEqual(right.key.utf16) {
+            throw NotCanonical("the member \"\(left.key)\" appears twice")
+        }
+        out += "{"
+        for (i, member) in sorted.enumerated() {
+            if i > 0 {
+                out += ","
+            }
+            out += quoteJSON(member.key)
+            out += ":"
+            try writeCanonicalJSON(member.value, into: &out)
+        }
+        out += "}"
+    }
+}
+
+/// Whether `spelling` is one number in RFC 8259's grammar (section 6), whole, with no whitespace
+/// around it: the grammar `parseJSON` reads a number by. `Double`'s own reader takes more, a hex
+/// float and `nan` among it, which no JSON text holds.
+private func isJSONNumber(_ spelling: String) -> Bool {
+    var reader = JSONReader(bytes: Array(spelling.utf8))
+    guard let first = reader.bytes.first, first == UInt8(ascii: "-") || (0x30...0x39).contains(first) else {
+        return false
+    }
+    guard (try? reader.readNumber()) != nil else {
+        return false
+    }
+    return reader.atEnd
 }
 
 /// The JSON spelling of one text: escaped and quoted.

@@ -99,8 +99,10 @@ public struct HostSendRequest: Sendable, Equatable {
 
     /// The message as the value the generated code holds, for a processor whose messages are values
     /// and never encodings: the test profile's test-port processor, whose send carries its specific
-    /// template's value (docs/SCE_TEST_PROFILE.md §12.3; docs/adr/0091, C2). Nil for every other
-    /// send, whose data is `eventData`, so a send site that names no value is unchanged.
+    /// template's value (docs/SCE_TEST_PROFILE.md §12.3; docs/adr/0091, C2), with the name of its
+    /// record type and the writer of its canonical form in the test log (§12.5,
+    /// `SceTestProfile.messageValue`). Nil for every other send, whose data is `eventData`, so a send
+    /// site that names no value is unchanged.
     ///
     /// A saved state does not carry it: a test-port send has no delay (the test profile's P6), so none
     /// is pending when a machine is saved, and a save that finds one waiting refuses by name rather

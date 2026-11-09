@@ -118,7 +118,9 @@ public struct Configuration: Equatable, Sendable {
     }
 }
 
-/// What the test log records of a run (§12.5).
+/// What a line of the run's log records (§12.5): the run as a reader follows it, with the removals of
+/// PTCs and the cause of an `error` in the runtime's words. The test log, which two runtimes compare, is
+/// `TestCaseResult.records`.
 public enum LogKind: String, Sendable {
     /// The MTC was created and started.
     case start = "Start"
@@ -142,7 +144,7 @@ public enum LogKind: String, Sendable {
     case error = "Error"
 }
 
-/// One line of the test log.
+/// One line of the run's log.
 public struct LogRecord: Equatable, Sendable {
     /// `NOW` when it was recorded.
     public var at: TestInstant
@@ -162,19 +164,34 @@ public struct LogRecord: Equatable, Sendable {
     }
 }
 
-/// The outcome of one test case: its verdict, the instant it ended at, and its log.
+/// The outcome of one test case: its verdict, the instant it ended at, the lines of its log, and its
+/// test log.
 public struct TestCaseResult: Equatable, Sendable {
     /// The test case verdict (P14).
     public var verdict: Verdict
     /// `NOW` when the run ended.
     public var endedAt: TestInstant
-    /// The test log.
+    /// The lines of the run's log, for a reader.
     public var log: [LogRecord]
+    /// The test log (docs/adr/0091, C3): the records of TCI's test logging interface, in the order the
+    /// run produced them, which `canonicalLog` writes.
+    public var records: [TestLogRecord]
 
-    public init(verdict: Verdict, endedAt: TestInstant, log: [LogRecord]) {
+    public init(verdict: Verdict, endedAt: TestInstant, log: [LogRecord], records: [TestLogRecord] = []) {
         self.verdict = verdict
         self.endedAt = endedAt
         self.log = log
+        self.records = records
+    }
+
+    /// The test log of this run of the test case `testCase` of the suite `suite`, in its one canonical
+    /// text: the JSON Canonicalization Scheme of `schema`, `suite`, `test_case`, `verdict` and `records`,
+    /// each record in the order the run produced it.
+    ///
+    /// A message's value that is not in the canonical form (`TestValue.canonical`), which no writer of
+    /// `Canonical` builds, stops the program.
+    public func canonicalLog(suite: String, testCase: String) -> String {
+        writeTestLog(suite, testCase, verdict, records)
     }
 }
 
@@ -292,6 +309,7 @@ final class RunState {
     /// A dynamic error ended the run (P13).
     private var failed = false
     private var log: [LogRecord] = []
+    private var records: [TestLogRecord] = []
 
     /// A step of the run is inside the state (`access`).
     private var held = false
@@ -405,6 +423,7 @@ final class RunState {
             return
         }
         entity.terminated = true
+        trace(.componentDone(component: name, verdict: entity.state.verdict))
         if name == mtcName {
             mtcTerminated = true
             return
@@ -433,7 +452,8 @@ final class RunState {
         }
         entities.removeAll()
         order.removeAll()
-        return TestCaseResult(verdict: verdict, endedAt: now, log: log)
+        trace(.testCaseEnded(verdict: verdict))
+        return TestCaseResult(verdict: verdict, endedAt: now, log: log, records: records)
     }
 
     // MARK: Entities (§2.1, P9)
@@ -452,6 +472,7 @@ final class RunState {
         entities[name] = Entity(serial: created, state: state)
         order.append(name)
         record(name, name == mtcName ? .start : .create, componentType)
+        trace(.componentCreated(component: name, componentType: componentType))
         return created
     }
 
@@ -496,6 +517,9 @@ final class RunState {
 
     func send(_ sender: String, _ port: String, _ message: Message) {
         record(sender, .send, "\(port) \(message.event)")
+        trace(
+            .messageSent(
+                component: sender, port: port, messageType: message.typeName, value: message.canonicalValue()))
         let peer = configuration.connections.lazy.compactMap { connection -> Endpoint? in
             if connection.a.names(sender, port) {
                 return connection.b
@@ -549,6 +573,9 @@ final class RunState {
         }
         let message = queue.removeHead()
         record(name, .receive, "\(port) \(message.event)")
+        trace(
+            .messageReceived(
+                component: name, port: port, messageType: message.typeName, value: message.canonicalValue()))
         return message
     }
 
@@ -560,6 +587,7 @@ final class RunState {
         }
         binding.timeoutTaken()
         record(name, .timeout, timer)
+        trace(.timerTimedOut(component: name, timer: timer))
     }
 
     func setverdict(_ name: String, _ serial: Int64, _ verdict: Verdict, _ reason: String) {
@@ -567,18 +595,26 @@ final class RunState {
         owner.verdict = worse(owner.verdict, verdict)
         let detail = reason.isEmpty ? verdict.spelling : "\(verdict.spelling) \(reason)"
         record(name, .verdict, detail)
+        trace(.verdictSet(component: name, verdict: verdict, reason: reason.isEmpty ? nil : reason))
     }
 
     // MARK: The verdict and the log (§5, §12.5)
 
-    /// A dynamic error (P13): the run ends with `error`.
+    /// A dynamic error (P13): the run ends with `error`. The test log records the verdict without `why`,
+    /// which is this runtime's own prose.
     func fail(_ component: String, _ why: String) {
         failed = true
         record(component, .error, why)
+        trace(.verdictSet(component: component, verdict: .error, reason: nil))
     }
 
     func record(_ component: String, _ kind: LogKind, _ detail: String) {
         log.append(LogRecord(at: now, component: component, kind: kind, detail: detail))
+    }
+
+    /// A record of the test log, at `NOW`.
+    func trace(_ event: TestLogEvent) {
+        records.append(TestLogRecord(at: now, event: event))
     }
 }
 
@@ -719,17 +755,29 @@ public final class ComponentContext: CustomStringConvertible {
     public func startTimer(_ timer: String, _ duration: TestDuration) {
         access { state in
             state.component(name, serial).timer(timer).start(now: state.now, duration: duration)
+            state.trace(.timerStarted(component: name, timer: timer, duration: duration))
         }
     }
 
-    /// `<sce:stop-timer>` (P7).
+    /// `<sce:stop-timer>` (P7). The test log records the stop of a running timer; the stop of one that is
+    /// not running changes nothing.
     public func stopTimer(_ timer: String) {
-        access { state in state.component(name, serial).timer(timer).stop() }
+        access { state in
+            let binding = state.component(name, serial).timer(timer)
+            let running = binding.status == .running
+            binding.stop()
+            if running {
+                state.trace(.timerStopped(component: name, timer: timer))
+            }
+        }
     }
 
     /// A `<log>` (P8): recorded in the test log with `NOW` and the component.
     public func log(_ text: String) {
-        access { state in state.record(name, .log, text) }
+        access { state in
+            state.record(name, .log, text)
+            state.trace(.log(component: name, text: text))
+        }
     }
 
     // MARK: Doors (§12.3)
@@ -824,8 +872,9 @@ public struct TestCaseRun: ~Copyable {
             moduleParameters: moduleParameters)
     }
 
-    /// Runs the test case to its end and answers its verdict and log.
+    /// Runs the test case to its end and answers its verdict and logs.
     public consuming func run() -> TestCaseResult {
+        state.access(mtcName) { $0.trace(.testCaseStarted) }
         createEntity(state, mtcName, state.configuration.mtcType)
         while !state.access(mtcName, { $0.ended() }) {
             runRound(state)
