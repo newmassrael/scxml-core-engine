@@ -240,6 +240,13 @@ tasks.test {
         .withPropertyName("savedStateSchema")
         .withPathSensitivity(PathSensitivity.RELATIVE)
 
+    // Same reason, same failure mode. `ATestSuiteRunsThroughItsRunnerTest` holds the
+    // generated suite's test log to the bytes the Rust and C++ runs are held to too
+    // (docs/SCE_TEST_PROFILE.md §12.5), read at RUN time from this directory.
+    inputs.dir(File(rootDir, "sce-build/tests/fixtures/test_profile/runtime/expected_logs"))
+        .withPropertyName("sharedExpectedTestLogs")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+
     // Same reason, same failure mode. `JvmLongTextTest` reads the two documents
     // its machines were generated from, at RUN time, as the texts each machine must
     // hand back; a document edited with its machine left stale must turn it red.
