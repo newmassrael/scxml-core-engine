@@ -113,7 +113,8 @@ typedef struct sce_test_adapter_factory_s {
 } sce_test_adapter_factory_t;
 
 /** What the runner reports of one test case it ran: its name and its result,
- *  valid for the call. */
+ *  valid for the call, in which its test log is written
+ *  (`sce_test_case_result_canonical_log`, given the suite's `name`). */
 typedef void (*sce_test_case_result_fn)(void *user_data, const char *test_case, const sce_test_case_result_t *result);
 
 /** An override of a module parameter the suite does not declare: the caller's
@@ -123,7 +124,8 @@ typedef struct sce_test_override_refusal_s {
 } sce_test_override_refusal_t;
 
 /* P13: the test case cannot start, so it ends at once with `error`, the reason
-   its log's one line. */
+   its log's one line. No component was created, so its test log holds its start
+   and its end alone. */
 static inline const sce_test_case_result_t *sce_test_suite_refused_(sce_test_case_run_t *run, const char *format, ...) {
     va_list args;
     memset(&run->result, 0, sizeof(run->result));
@@ -132,6 +134,8 @@ static inline const sce_test_case_result_t *sce_test_suite_refused_(sce_test_cas
     va_start(args, format);
     sce_test_run_vrecord_(run, SCE_TEST_MTC_NAME, SCE_TEST_LOG_ERROR, format, args);
     va_end(args);
+    sce_test_trace_started(&run->result.trace, run->now);
+    sce_test_trace_ended(&run->result.trace, run->now, SCE_TEST_VERDICT_ERROR);
     return &run->result;
 }
 

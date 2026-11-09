@@ -230,9 +230,12 @@ fn each_component_is_its_machine_and_the_component_the_runtime_drives() {
                 at(start, &serves) < constructed,
                 "{name}: the test-port processor is given to the construction"
             );
+            // The request lends one `sce_test_message_value_t`, the value with
+            // the record type the test log names and writes it by.
             assert!(source.contains(
                 "    sce_test_context_send(&sm->test_context, request->target, \
-                 request->event_name, request->value);\n"
+                 request->event_name,\n                          \
+                 sce_test_message_value_carried(request->value));\n"
             ));
         }
         if creates {
@@ -464,7 +467,8 @@ fn taking_a_branch_removes_what_it_matched_before_its_content() {
 /// §11.5, §12.3: the statements are calls on the runtime context, a duration
 /// in whole microseconds and a timer's own where the statement writes none;
 /// a send names its record's event and lends its specific template's value to
-/// the test-port processor, under the name of its record's type; a PTC is
+/// the test-port processor, under the name of its record's type and with the
+/// record type the test log names and writes it by (§12.5); a PTC is
 /// started through the host invoker.
 #[test]
 fn the_statements_the_send_and_the_ptc_go_through_the_runtime() {
@@ -478,8 +482,10 @@ fn the_statements_the_send_and_the_ptc_go_through_the_runtime() {
         "_host_req.event_name = \"job.request\";",
         "_host_req.target = \"sut\";",
         "const request_of_value_t sce_test_sent_ = request_of_value(sm->policy.v_job); \
-         _host_req.value = sce_host_value_of(request_of_value_type(), &sce_test_sent_, \
-         sizeof(sce_test_sent_));",
+         const sce_test_message_value_t sce_test_sent_message_ = sce_test_message_value(\
+         sce_host_value_of(request_of_value_type(), &sce_test_sent_, sizeof(sce_test_sent_)), \
+         request_of_record_type()); \
+         _host_req.value = sce_test_message_value_lent(&sce_test_sent_message_);",
     ] {
         assert!(asker.contains(needle), "asker holds `{needle}`:\n{asker}");
     }

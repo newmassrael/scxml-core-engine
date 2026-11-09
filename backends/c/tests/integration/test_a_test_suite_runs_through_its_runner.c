@@ -31,7 +31,12 @@
 #include "asking_configuration.h"
 #include "job_reply.h"
 #include "job_request.h"
+#include "reply_ok.h"
 #include "runtime_suite.h"
+
+#ifndef SCE_PROJECT_ROOT
+#error "SCE_PROJECT_ROOT names the repository's root, which the shared test log is read from; the build defines it"
+#endif
 
 static int failures = 0;
 
@@ -98,8 +103,11 @@ static void responder_send(sce_test_system_adapter_t *adapter, const char *syste
     reply.job = request->job;
     reply.code = self->code;
     const size_t slot = self->pending_count++;
-    CHECK(sce_test_message_set(&self->pending[slot], JOB_REPLY_EVENT_NAME, SCE_HOST_VALUE(JobReplyPayload_t, &reply)) ==
-              SCE_TEST_MESSAGE_HELD,
+    // The reply's record type in the test log is the one the unit of a
+    // template over its record gives.
+    CHECK(sce_test_message_set(&self->pending[slot], JOB_REPLY_EVENT_NAME,
+                               sce_test_message_value(SCE_HOST_VALUE(JobReplyPayload_t, &reply),
+                                                      reply_ok_record_type())) == SCE_TEST_MESSAGE_HELD,
           "the reply fits a message");
     self->pending_at[slot] = now + ANSWER_DELAY;
 }
@@ -166,16 +174,25 @@ static sce_test_adapter_factory_t responders_answering(responders_t *storage, ui
 
 // ── The results the runner reports ──────────────────────────────────────
 
-// What the checks read of one test case's result, kept as the runner reports it.
+// How many bytes the test log of one test case of the suite takes, kept.
+#define MAX_TEST_LOG 2048u
+
+// What the checks read of one test case's result, kept as the runner reports it:
+// its test log is written in the call that reports it, while the result lives.
 typedef struct case_result_s {
     const char *test_case;
     sce_test_verdict_t verdict;
     sce_test_instant_t ended_at;
     bool logged_error;
     bool logged_timeout;
+    sce_test_trace_written_t written;
+    char test_log[MAX_TEST_LOG];
+    size_t test_log_len;
 } case_result_t;
 
 typedef struct results_s {
+    // The suite's name, which each test log names.
+    const char *suite;
     case_result_t of[MAX_CASES];
     size_t count;
 } results_t;
@@ -201,6 +218,8 @@ static void keep(void *user_data, const char *test_case, const sce_test_case_res
     kept->ended_at = result->ended_at;
     kept->logged_error = logged(result, SCE_TEST_LOG_ERROR);
     kept->logged_timeout = logged(result, SCE_TEST_LOG_TIMEOUT);
+    kept->written = sce_test_case_result_canonical_log(result, results->suite, test_case, kept->test_log,
+                                                       sizeof(kept->test_log), &kept->test_log_len);
 }
 
 // ── The run ─────────────────────────────────────────────────────────────
@@ -218,8 +237,10 @@ static bool run_suite(const char *const *names, size_t count, uint32_t code,
     world.names = names;
     world.count = count;
     memset(results, 0, sizeof(*results));
-    return sce_test_run_suite(runtime_suite_suite(&suite_storage), &world, responders_answering(&the_responders, code),
-                              overrides, &the_run, keep, results, NULL);
+    const sce_test_suite_t *suite = runtime_suite_suite(&suite_storage);
+    results->suite = suite->name;
+    return sce_test_run_suite(suite, &world, responders_answering(&the_responders, code), overrides, &the_run, keep,
+                              results, NULL);
 }
 
 // Whether the run reported exactly the test cases `names`, in that order.
@@ -294,6 +315,57 @@ static void test_fails_a_job_the_system_under_test_answers_with_a_failure(void) 
     CHECK(results.of[0].ended_at == SECOND, "time advances to the timer's instant: ended at %lld",
           (long long)results.of[0].ended_at);
     CHECK(results.of[0].logged_timeout, "the timer's timeout is logged");
+}
+
+// The test log every runtime writes of `test_case` in a world with no feature,
+// answered with success: one file the C11, the C++ and the Rust runs are all
+// held to (`a_generated_test_case_writes_its_test_log` in
+// backends/rust/tests/tests/a_test_suite_runs_through_its_runner.rs), so the
+// agreement of the backends is one set of bytes. The file ends in a newline,
+// which no canonical text holds, so it is read without it. False when it cannot
+// be read whole, or does not end in one newline.
+static bool shared_log(const char *test_case, char *out, size_t cap, size_t *len) {
+    char path[1024];
+    (void)snprintf(path, sizeof(path), "%s/sce-build/tests/fixtures/test_profile/runtime/expected_logs/%s.json",
+                   SCE_PROJECT_ROOT, test_case);
+    FILE *file = fopen(path, "rb");
+    if (file == NULL) {
+        return false;
+    }
+    const size_t n = fread(out, 1u, cap - 1u, file);
+    (void)fclose(file);
+    if (n == 0u || n >= cap - 1u || out[n - 1u] != '\n') {
+        return false;
+    }
+    out[n - 1u] = '\0';
+    *len = n - 1u;
+    return true;
+}
+
+// docs/SCE_TEST_PROFILE.md §12.5: the test log of a generated test case, in its
+// one canonical text, byte for byte the one the Rust and the C++ runtimes write
+// of the same run. The request the component sends carries the value and the
+// record type its template's unit gives, the job of the suite's module
+// parameter; the reply arrives at 500 and is taken in that round, which stops
+// the timer, passes and ends the MTC.
+static void test_a_generated_test_case_writes_its_test_log(void) {
+    static results_t results;
+    CHECK(run_suite(NULL, 0u, 0u, NULL, &results), "the suite runs");
+    static const char *const ONLY[] = {"answers_the_job"};
+    CHECK(reported(&results, ONLY, 1u), "a world with no feature runs the unguarded case alone");
+    if (results.count != 1u) {
+        return;
+    }
+    static char want[MAX_TEST_LOG];
+    size_t want_len = 0u;
+    if (!shared_log("answers_the_job", want, sizeof(want), &want_len)) {
+        CHECK(false, "the shared test log is readable under %s and ends in one newline", SCE_PROJECT_ROOT);
+        return;
+    }
+    const case_result_t *answered = &results.of[0];
+    CHECK(answered->written == SCE_TEST_TRACE_WRITTEN, "the test log is written: %d", (int)answered->written);
+    CHECK(answered->test_log_len == want_len && memcmp(answered->test_log, want, want_len) == 0,
+          "the test log is the shared one:\n  wrote %s\n  want  %s", answered->test_log, want);
 }
 
 // §11.8: a world runs the test cases whose selection it satisfies, in the
@@ -374,6 +446,8 @@ int main(void) {
     test_runs_every_test_case_of_a_world_with_the_verdict_it_expects();
     every_component_is_handed_back();
     test_fails_a_job_the_system_under_test_answers_with_a_failure();
+    every_component_is_handed_back();
+    test_a_generated_test_case_writes_its_test_log();
     every_component_is_handed_back();
     test_runs_the_test_cases_a_world_selects();
     every_component_is_handed_back();

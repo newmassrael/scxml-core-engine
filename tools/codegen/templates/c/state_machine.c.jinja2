@@ -7489,12 +7489,14 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_deliver_link_{{ link | to_snake
 
 /* P6: a send on a port is appended to the queue of the port it is connected to, or handed to the
    system adapter where it is mapped, the value copied before this returns. A test-port send always
-   carries its template's value (`forge::static_lowering`, `StaticTarget::test_message`). */
+   carries its template's value with the record type the test log names and writes it by
+   (`forge::static_lowering`, `StaticTarget::test_message`), lent as one `sce_test_message_value_t`. */
 SCE_SM_FN static void {{ P }}_component_send(void *user_data, const sce_host_send_request_t *request,
                                              sce_host_send_response_list_t *out) {
     const {{ P }}_t *sm = (const {{ P }}_t *)user_data;
     (void)out;
-    sce_test_context_send(&sm->test_context, request->target, request->event_name, request->value);
+    sce_test_context_send(&sm->test_context, request->target, request->event_name,
+                          sce_test_message_value_carried(request->value));
 }
 {% endif %}
 {% if creates_ptcs %}

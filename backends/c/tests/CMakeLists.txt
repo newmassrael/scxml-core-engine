@@ -4451,6 +4451,10 @@ target_include_directories(sce_c_integration_a_test_suite_runs_through_its_runne
 )
 sce_c_link_runtime(sce_c_integration_a_test_suite_runs_through_its_runner EXCLUDES lua dom http clock)
 target_link_libraries(sce_c_integration_a_test_suite_runs_through_its_runner PRIVATE m)
+# The test log every runtime writes of `answers_the_job`, one shared file under
+# sce-build/tests/fixtures/test_profile/runtime/expected_logs/, read at run time.
+target_compile_definitions(sce_c_integration_a_test_suite_runs_through_its_runner PRIVATE
+    SCE_PROJECT_ROOT="${CMAKE_SOURCE_DIR}")
 target_compile_options(sce_c_integration_a_test_suite_runs_through_its_runner PRIVATE
     -Wall -Wextra -Werror -Wpedantic
     -Wconversion -Wsign-conversion -Wshadow -Wcast-align
@@ -4841,11 +4845,15 @@ set_tests_properties(c11_unit_json_text PROPERTIES
 # the round scheduler, NOW, port queues and snapshots, timers, verdicts, the
 # entities, the guard and the suite runner, held to the cases of the Rust
 # runtime by name with components written by hand, and every bound a run is
-# held to refused by name. Header-only and allocation-free, so the tests need
-# nothing a configuration can leave out; `m` for the saved value readers a
-# module parameter is read through.
+# held to refused by name, and the test log a run writes (§12.5), its status
+# held to the one its wire schema declares, read from SCE_PROJECT_ROOT.
+# Header-only and allocation-free, so the tests need nothing a configuration
+# can leave out; `m` for the saved value readers a module parameter is read
+# through.
 add_executable(sce_c_test_case_run_unit_test unit/test_case_run_test.c)
 target_link_libraries(sce_c_test_case_run_unit_test PRIVATE sce_c_runtime m)
+target_compile_definitions(sce_c_test_case_run_unit_test PRIVATE
+    SCE_PROJECT_ROOT="${CMAKE_SOURCE_DIR}")
 set_target_properties(sce_c_test_case_run_unit_test PROPERTIES
     C_STANDARD 11
     C_STANDARD_REQUIRED ON

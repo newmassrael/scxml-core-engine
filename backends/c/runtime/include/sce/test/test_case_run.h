@@ -24,11 +24,14 @@
  *     the ports and the timers of one component (`SCE_TEST_MAX_PORTS`,
  *     `SCE_TEST_MAX_TIMERS`), the messages waiting in its queues
  *     (`SCE_TEST_MAX_QUEUED_MESSAGES`, sce/test/port.h) and the lines of its log
- *     (`SCE_TEST_MAX_LOG_RECORDS`, each of `SCE_TEST_MAX_LOG_DETAIL` bytes). A
- *     run that would pass one of the first four ends with `error`, the bound
- *     named in its log, as a dynamic error does (P13); a log line that does not
- *     fit is counted in `log_lost`, never cut, and a run that lost one ends with
- *     `error` too, since its log no longer says what happened.
+ *     (`SCE_TEST_MAX_LOG_RECORDS`, each of `SCE_TEST_MAX_LOG_DETAIL` bytes), and
+ *     the records of its test log (`SCE_TEST_MAX_TRACE_RECORDS`, their texts in
+ *     `SCE_TEST_TRACE_TEXT_SIZE` bytes, sce/test/test_log.h). A run that would
+ *     pass one of the first four ends with `error`, the bound named in its log,
+ *     as a dynamic error does (P13); a log line or a record of the test log that
+ *     does not fit is counted in `log_lost` or `trace.lost`, never cut, and a run
+ *     that lost one ends with `error` too, since its log no longer says what
+ *     happened.
  *   - A machine and a system adapter are a struct whose first member points to
  *     its table of functions, C's form of the interfaces the siblings declare.
  *     The factory of machines hands out a machine from storage of its own and
@@ -59,6 +62,7 @@
 #include "sce/saved_json.h"
 #include "sce/test/module_parameters.h"
 #include "sce/test/port.h"
+#include "sce/test/test_log.h"
 #include "sce/test/timer.h"
 #include "sce/test/verdict.h"
 
@@ -159,7 +163,10 @@ typedef struct sce_test_configuration_s {
 
 /* ── The log and the result (§12.5) ────────────────────────────────────── */
 
-/** What the test log records of a run. */
+/** What a line of the run's log records (§12.5): the run as a reader follows
+ *  it, with the removals of PTCs and the cause of an `error` in the runtime's
+ *  words. The test log, which two runtimes compare, is
+ *  `sce_test_case_result_t::trace`. */
 typedef enum sce_test_log_kind_e {
     /** The MTC was created and started. */
     SCE_TEST_LOG_START = 0,
@@ -183,7 +190,7 @@ typedef enum sce_test_log_kind_e {
     SCE_TEST_LOG_ERROR
 } sce_test_log_kind_t;
 
-/** One line of the test log. */
+/** One line of the run's log. */
 typedef struct sce_test_log_record_s {
     /** `NOW` when it was recorded. */
     sce_test_instant_t at;
@@ -196,21 +203,39 @@ typedef struct sce_test_log_record_s {
     char detail[SCE_TEST_MAX_LOG_DETAIL];
 } sce_test_log_record_t;
 
-/** The outcome of one test case: its verdict, the instant it ended at, and its
- *  log. */
+/** The outcome of one test case: its verdict, the instant it ended at, the
+ *  lines of its log, and its test log. */
 typedef struct sce_test_case_result_s {
     /** The test case verdict (P14). */
     sce_test_verdict_t verdict;
     /** `NOW` when the run ended. */
     sce_test_instant_t ended_at;
-    /** The test log, in the order it was recorded. */
+    /** The lines of the run's log, for a reader, in the order they were
+        recorded. */
     sce_test_log_record_t log[SCE_TEST_MAX_LOG_RECORDS];
     size_t log_count;
     /** The lines the log could not hold: past `SCE_TEST_MAX_LOG_RECORDS`, or a
         detail longer than `SCE_TEST_MAX_LOG_DETAIL`. A run that lost one ends
         with `error`. */
     size_t log_lost;
+    /** The test log (docs/adr/0091, C3): the records of TCI's test logging
+        interface, in the order the run produced them, which
+        `sce_test_case_result_canonical_log` writes. */
+    sce_test_trace_t trace;
 } sce_test_case_result_t;
+
+/**
+ * The test log of this run of the test case `test_case` of the suite `suite`,
+ * in its one canonical text (`sce_test_trace_write`), into the `cap` bytes at
+ * `buf`, or measured where `buf` is NULL; `*len`, where `len` is not NULL, the
+ * length of the text whether or not it fit. A caller with an allocator measures,
+ * then writes into `*len + 1` bytes.
+ */
+static inline sce_test_trace_written_t sce_test_case_result_canonical_log(const sce_test_case_result_t *result,
+                                                                          const char *suite, const char *test_case,
+                                                                          char *buf, size_t cap, size_t *len) {
+    return sce_test_trace_write(&result->trace, suite, test_case, result->verdict, buf, cap, len);
+}
 
 /* ── The SUT's side, and a component's machine (§12.2, §12.3) ──────────── */
 
@@ -391,13 +416,16 @@ static inline void sce_test_run_record_(sce_test_case_run_t *run, const char *co
     va_end(args);
 }
 
-/* A dynamic error (P13): the run ends with `error`, the reason in the log. */
+/* A dynamic error (P13): the run ends with `error`, the reason in the log's
+   line. The test log records the verdict without the reason, which is this
+   runtime's own prose. */
 static inline void sce_test_run_fail_(sce_test_case_run_t *run, const char *component, const char *format, ...) {
     va_list args;
     run->error = true;
     va_start(args, format);
     sce_test_run_vrecord_(run, component, SCE_TEST_LOG_ERROR, format, args);
     va_end(args);
+    sce_test_trace_verdict(&run->result.trace, run->now, component, SCE_TEST_VERDICT_ERROR, NULL);
 }
 
 static inline bool sce_test_run_ended_(const sce_test_case_run_t *run) {
@@ -453,6 +481,7 @@ static inline void sce_test_run_settle_(sce_test_case_run_t *run, sce_test_entit
         return;
     }
     entity->terminated = true;
+    sce_test_trace_done(&run->result.trace, run->now, entity->name, entity->verdict);
     if (strcmp(entity->name, SCE_TEST_MTC_NAME) == 0) {
         run->mtc_terminated = true;
         return;
@@ -537,6 +566,7 @@ static inline sce_test_entity_t *sce_test_run_enter_(sce_test_case_run_t *run, c
     run->order[run->order_count++] = (size_t)(entity - run->entities);
     sce_test_run_record_(run, name, strcmp(name, SCE_TEST_MTC_NAME) == 0 ? SCE_TEST_LOG_START : SCE_TEST_LOG_CREATE,
                          "%s", component_type);
+    sce_test_trace_created(&run->result.trace, run->now, name, component_type);
     return entity;
 }
 
@@ -626,7 +656,7 @@ static inline void sce_test_run_enqueue_(sce_test_case_run_t *run, const char *a
 }
 
 static inline void sce_test_run_send_(sce_test_case_run_t *run, const char *sender, const char *port, const char *event,
-                                      sce_host_value_t value) {
+                                      sce_test_message_value_t value) {
     sce_test_message_t message;
     switch (sce_test_message_set(&message, event, value)) {
     case SCE_TEST_MESSAGE_HELD:
@@ -637,10 +667,16 @@ static inline void sce_test_run_send_(sce_test_case_run_t *run, const char *send
         return;
     case SCE_TEST_MESSAGE_VALUE_TOO_LARGE:
         sce_test_run_fail_(run, sender, "sends '%s' on '%s', a value of %lu bytes, past SCE_TEST_MAX_VALUE_SIZE (%u)",
-                           event, port, (unsigned long)value.size, (unsigned)SCE_TEST_MAX_VALUE_SIZE);
+                           event, port, (unsigned long)value.value.size, (unsigned)SCE_TEST_MAX_VALUE_SIZE);
+        return;
+    case SCE_TEST_MESSAGE_UNTYPED:
+        sce_test_run_fail_(run, sender,
+                           "sends '%s' on '%s', a value that names no record type the test log names and writes it by",
+                           event, port);
         return;
     }
     sce_test_run_record_(run, sender, SCE_TEST_LOG_SEND, "%s %s", port, event);
+    sce_test_trace_message(&run->result.trace, run->now, SCE_TEST_TRACE_MESSAGE_SENT, sender, port, &message);
     const sce_test_configuration_t *configuration = run->configuration;
     for (size_t i = 0u; i < configuration->connection_count; ++i) {
         const sce_test_connection_t *connection = &configuration->connections[i];
@@ -672,6 +708,12 @@ static inline void sce_test_run_send_(sce_test_case_run_t *run, const char *send
 
 static inline void sce_test_run_deliver_input_(sce_test_case_run_t *run, const char *system_port,
                                                const sce_test_message_t *message) {
+    if (!sce_test_record_type_complete(message->record_type)) {
+        sce_test_run_fail_(run, SCE_TEST_MTC_NAME,
+                           "an input '%s' on system port '%s' names no record type the test log names and writes it by",
+                           message->event, system_port);
+        return;
+    }
     const sce_test_configuration_t *configuration = run->configuration;
     for (size_t i = 0u; i < configuration->mapping_count; ++i) {
         const sce_test_mapping_t *mapping = &configuration->mappings[i];
@@ -826,11 +868,17 @@ static inline void sce_test_run_finish_(sce_test_case_run_t *run) {
             machine->vtable->release(machine);
         }
     }
-    if (run->error || run->result.log_lost > 0u) {
+    const bool lost = run->result.log_lost > 0u || run->result.trace.lost > 0u;
+    if (lost && !run->error) {
+        /* A line or a record past this runtime's bounds: its own error (P13). */
+        sce_test_trace_verdict(&run->result.trace, run->now, SCE_TEST_MTC_NAME, SCE_TEST_VERDICT_ERROR, NULL);
+    }
+    if (run->error || lost) {
         verdict = SCE_TEST_VERDICT_ERROR;
     }
     run->result.verdict = verdict;
     run->result.ended_at = run->now;
+    sce_test_trace_ended(&run->result.trace, run->now, verdict);
 }
 
 /**
@@ -874,6 +922,7 @@ static inline const sce_test_case_result_t *sce_test_case_run_run(sce_test_case_
     }
     run->has_run = true;
     run->now = 0;
+    sce_test_trace_started(&run->result.trace, run->now);
     sce_test_run_create_entity_(run, SCE_TEST_MTC_NAME, run->configuration->mtc_type);
     while (!sce_test_run_ended_(run)) {
         sce_test_run_round_(run);
@@ -981,6 +1030,7 @@ static inline bool sce_test_context_receive(const sce_test_component_context_t *
         return false;
     }
     sce_test_run_record_(run, context->name, SCE_TEST_LOG_RECEIVE, "%s %s", port, head->event);
+    sce_test_trace_message(&run->result.trace, run->now, SCE_TEST_TRACE_MESSAGE_RECEIVED, context->name, port, head);
     return sce_test_port_remove_head(queue, &run->pool, out);
 }
 
@@ -1000,6 +1050,7 @@ static inline void sce_test_context_timeout(const sce_test_component_context_t *
     }
     sce_test_timer_timeout_taken(binding);
     sce_test_run_record_(run, context->name, SCE_TEST_LOG_TIMEOUT, "%s", timer);
+    sce_test_trace_timer(&run->result.trace, run->now, SCE_TEST_TRACE_TIMER_TIMED_OUT, context->name, timer);
 }
 
 /** A done branch on the PTC `ptc`: nothing is removed (-4 §9.16); the component
@@ -1029,6 +1080,7 @@ static inline void sce_test_context_setverdict(const sce_test_component_context_
         sce_test_run_record_(context->run, context->name, SCE_TEST_LOG_VERDICT, "%s %s", sce_test_verdict_name(verdict),
                              reason);
     }
+    sce_test_trace_verdict(&context->run->result.trace, context->run->now, context->name, verdict, reason);
 }
 
 /** `<sce:start-timer>` (P7), for `duration` microseconds from `NOW`; `timer` is
@@ -1047,34 +1099,42 @@ static inline void sce_test_context_start_timer(const sce_test_component_context
         return;
     }
     sce_test_timer_start(binding, context->run->now, duration);
+    sce_test_trace_timer_started(&context->run->result.trace, context->run->now, context->name, timer, duration);
 }
 
-/** `<sce:stop-timer>` (P7). A timer never started is idle, and stays so. */
+/** `<sce:stop-timer>` (P7). A timer never started is idle, and stays so. The
+ *  test log records the stop of a running timer; the stop of one that is not
+ *  running changes nothing. */
 static inline void sce_test_context_stop_timer(const sce_test_component_context_t *context, const char *timer) {
     sce_test_entity_t *entity = sce_test_context_entity_(context);
     if (entity == NULL) {
         return;
     }
     sce_test_timer_t *binding = sce_test_entity_timer_(entity, timer, false);
-    if (binding != NULL) {
-        sce_test_timer_stop(binding);
+    if (binding == NULL || binding->status != SCE_TEST_TIMER_RUNNING) {
+        return;
     }
+    sce_test_timer_stop(binding);
+    sce_test_trace_timer(&context->run->result.trace, context->run->now, SCE_TEST_TRACE_TIMER_STOPPED, context->name,
+                         timer);
 }
 
 /** A `<log>` (P8): recorded in the test log with `NOW` and the component. */
 static inline void sce_test_context_log(const sce_test_component_context_t *context, const char *text) {
     if (sce_test_context_entity_(context) != NULL) {
         sce_test_run_record_(context->run, context->name, SCE_TEST_LOG_LOG, "%s", text);
+        sce_test_trace_log(&context->run->result.trace, context->run->now, context->name, text);
     }
 }
 
 /* ── Doors (§12.3) ── */
 
-/** A send on `port` (P6) of the record `event` whose value is `value`: to the
- *  queue of the connected port, or to the system adapter when the port is
- *  mapped. The value is copied before this returns. */
+/** A send on `port` (P6) of the record `event` whose value is `value`, which
+ *  names the record type the test log writes it by: to the queue of the
+ *  connected port, or to the system adapter when the port is mapped. The value
+ *  is copied before this returns. */
 static inline void sce_test_context_send(const sce_test_component_context_t *context, const char *port,
-                                         const char *event, sce_host_value_t value) {
+                                         const char *event, sce_test_message_value_t value) {
     if (sce_test_context_entity_(context) != NULL) {
         sce_test_run_send_(context->run, context->name, port, event, value);
     }
