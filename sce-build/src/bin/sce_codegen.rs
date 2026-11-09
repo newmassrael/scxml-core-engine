@@ -5639,15 +5639,16 @@ fn requested_backends(language: &[String], error_format: ErrorFormat) -> (bool, 
             })
             .collect()
     } else {
-        // "Every backend" is every one that emits something: a sweep that
-        // included a backend with no emitter yet would end each document's
-        // verdict list with a refusal that says nothing about the document.
+        // "Every backend" is every one that emits something and writes nothing
+        // in part: a sweep that included a backend with no emitter yet, or one
+        // that lowers a kind in part, would end each document's verdict list
+        // with a refusal that says nothing about the document.
         // Naming one (`--language swift`) still asks the question and is
         // refused by name, fatally, as any named backend's refusal is.
         Language::ALL
             .iter()
             .copied()
-            .filter(|language| sce_build::forge::codegen_matrix::emits_anything(*language))
+            .filter(|language| sce_build::forge::codegen_matrix::sweeps(*language))
             .collect()
     };
     (explicit, langs)

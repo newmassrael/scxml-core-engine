@@ -684,6 +684,23 @@ pub fn emits_anything(lang: Language) -> bool {
             .any(|kind| matches!(lookup(kind, lang), EmitOutcome::Emit))
 }
 
+/// Whether a sweep over "every backend" asks `lang`: it emits something
+/// ([`emits_anything`]) and writes no kind in part ([`ships_in_part`]).
+///
+/// A backend that writes some kind in whole and another in part (Swift writes a
+/// text template and a test template whole, and its statechart in part) is
+/// asked by name, where it refuses by the construct what it does not lower; a
+/// sweep that included it would end the verdict of every document it lowers only
+/// in part with a refusal that says nothing about the document. It joins the
+/// sweep in the change that leaves it nothing in part.
+pub fn sweeps(lang: Language) -> bool {
+    emits_anything(lang)
+        && !ForgeKind::ALL_ATTR_NAMES
+            .iter()
+            .filter_map(|name| ForgeKind::from_attr(name))
+            .any(|kind| ships_in_part(kind, lang))
+}
+
 /// Whether `lang` writes anything at all, in whole or in part: [`emits_anything`],
 /// or a kind in part ([`ships_in_part`]).
 ///
@@ -1203,8 +1220,8 @@ mod tests {
 
     /// docs/adr/0092, landing order: a backend of [`UNION_BACKENDS`] emits a
     /// union, and every other awaits it, letting it through the matrix to the
-    /// dispatch that refuses the document by name. Rust and Kotlin emit one,
-    /// in [`Language::ALL`]'s order.
+    /// dispatch that refuses the document by name. Rust, Kotlin and Swift emit
+    /// one, in [`Language::ALL`]'s order.
     #[test]
     fn a_union_is_emitted_by_its_backends_and_awaited_by_the_rest() {
         for &lang in Language::ALL {
@@ -1218,12 +1235,39 @@ mod tests {
         }
         assert_eq!(
             emitting(ForgeKind::Union).collect::<Vec<_>>(),
-            [Language::Rust, Language::Kotlin]
+            [Language::Rust, Language::Kotlin, Language::Swift]
         );
         for &lang in UNION_BACKENDS {
             let times = UNION_BACKENDS.iter().filter(|l| **l == lang).count();
             assert_eq!(times, 1, "{lang:?}");
         }
+    }
+
+    /// A sweep over every backend asks the ones that emit something and write
+    /// nothing in part: a backend that writes a kind whole and another in part
+    /// ([`ships_in_part`]) is asked by name alone.
+    #[test]
+    fn a_sweep_asks_no_backend_that_writes_a_kind_in_part() {
+        for &lang in Language::ALL {
+            let in_part = ForgeKind::ALL_ATTR_NAMES
+                .iter()
+                .filter_map(|name| ForgeKind::from_attr(name))
+                .any(|kind| ships_in_part(kind, lang));
+            assert_eq!(sweeps(lang), emits_anything(lang) && !in_part, "{lang:?}");
+            // Whatever a sweep leaves out, a named backend is still asked.
+            if emits_anything(lang) || in_part {
+                assert!(writes_something(lang), "{lang:?}");
+            }
+        }
+        assert!(emits_anything(Language::Swift) && !sweeps(Language::Swift));
+        assert_eq!(
+            Language::ALL
+                .iter()
+                .copied()
+                .filter(|lang| sweeps(*lang))
+                .collect::<Vec<_>>(),
+            emitting(ForgeKind::Statechart).collect::<Vec<_>>()
+        );
     }
 
     #[test]
