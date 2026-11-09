@@ -6,3 +6,9 @@ commit = "43322fa72e60db5213604a20108bb0c31399911a"
 base = "44d066709144eb41cf688f402c932a48fdd9723f"
 machine = "mf977c53d872e"
 at = 1794193407
+
+[return]
+reason = "conflict"
+detail = "sce-build/src/forge/generator.rs"
+report = "mf977c53d872e:0000000060-af3afa7e3418/attempt-1.log"
+at = 1794195363
