@@ -841,3 +841,50 @@ TEST(EventPayloadComposed, AValueAHostBuiltIsCheckedAtEveryDepthBeforeItIsRaised
     EXPECT_EQ(EventPayloadBounds::optional("due", std::optional<std::string>{"x"}, present), "");
     EXPECT_EQ(checked, std::vector<std::string>{"due"}) << "an absent value holds nothing to check";
 }
+
+// A machine holds a text, a byte string and a list in a type that holds its bound
+// (docs/adr/0086, section 7.4): each is read into that type at its path, refused past the
+// bound as the plain reader refuses, written as the value it holds, and a list's lower count,
+// which no type holds, is still checked over a list of that type.
+TEST(EventPayloadComposed, AValueIsReadIntoAndWrittenFromTheTypeThatHoldsItsBound) {
+    const std::string data = R"({"name":"abc","blob":"xy","tags":["a","bc"]})";
+    EventPayloadFields fields;
+    ASSERT_TRUE(EventPayloadFields::decode(data, fields).empty());
+
+    EventPayloadValue nameValue;
+    ASSERT_TRUE(fields.value("name", nameValue).empty());
+    SCE::Forge::OwnedText<3> name;
+    EXPECT_TRUE(nameValue.readText(3, name).empty());
+    EXPECT_EQ(name, "abc");
+    SCE::Forge::OwnedText<2> shortName;
+    const Refusal past = nameValue.readText(2, shortName);
+    EXPECT_EQ(past.code(), RefusalCode::TooLong);
+    EXPECT_EQ(past.reason(), "'name' is 3 bytes, past the 2 its type declares");
+    EXPECT_TRUE(shortName.empty()) << "a refused text leaves the place as it was";
+
+    EventPayloadValue blob;
+    ASSERT_TRUE(fields.value("blob", blob).empty());
+    SCE::Forge::OwnedBytes<2> bytes;
+    EXPECT_TRUE(blob.readBytes(2, bytes).empty());
+    EXPECT_EQ(bytes, (std::vector<uint8_t>{'x', 'y'}));
+
+    EventPayloadValue tags;
+    ASSERT_TRUE(fields.value("tags", tags).empty());
+    SCE::Forge::OwnedList<SCE::Forge::OwnedText<2>, 2> list;
+    const auto text = [](const EventPayloadValue &v, auto &into) { return v.readText(2, into); };
+    EXPECT_TRUE(tags.readList(2, list, text).empty());
+    EXPECT_EQ(list.size(), 2u);
+    EXPECT_EQ(list[1], "bc");
+    SCE::Forge::OwnedList<SCE::Forge::OwnedText<2>, 1> one;
+    EXPECT_EQ(tags.readList(1, one, text).code(), RefusalCode::TooMany);
+
+    EXPECT_EQ(EventPayloadFields::json(name), "\"abc\"");
+    EXPECT_EQ(EventPayloadFields::json(bytes), "\"xy\"");
+    EXPECT_EQ(EventPayloadFields::list(list, [](const auto &e) { return EventPayloadFields::json(e); }),
+              R"(["a","bc"])");
+
+    const auto nothing = [](const std::string &, const auto &) { return std::string{}; };
+    EXPECT_EQ(EventPayloadBounds::listWithin("tags", list, 2, 2, nothing), "");
+    EXPECT_EQ(EventPayloadBounds::listWithin("tags", list, 3, 3, nothing),
+              "'tags' holds 2 elements, fewer than the 3 its type declares");
+}

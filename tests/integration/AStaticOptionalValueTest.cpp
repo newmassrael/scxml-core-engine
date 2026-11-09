@@ -13,6 +13,8 @@
 
 #include <gtest/gtest.h>
 
+#include <sce/forge/algorithm.h>
+#include <sce/forge/bounded.h>
 #include <sce/forge/optional.h>
 
 #include "static_block_ends_sm.h"
@@ -48,13 +50,20 @@ TEST(AStaticOptionalValueTest, AnOptionalValueIsReadWithADefaultOnlyWhenAbsent) 
     EXPECT_EQ(SCE::Forge::otherwise(std::optional<std::string>("soon"), [] { return std::optional<std::string>(); }),
               std::optional<std::string>("soon"));
 
+    // An optional text the machine holds keeps its bound in its type (docs/adr/0086, section
+    // 7.4): its default is read as the text it is, whatever bound the default holds.
+    using Held = SCE::Forge::OwnedText<4>;
+    EXPECT_EQ(SCE::Forge::otherwise(std::optional<Held>(), [] { return "none"; }), "none");
+    EXPECT_EQ(SCE::Forge::otherwise(std::optional<Held>(Held::literal("soon")), [] { return "later"; }), "soon");
+
     SCE::Forge::AlgorithmFailure bound;
-    const auto held = [&bound](const std::string &text) { return SCE::Forge::Checked::bounded(bound, text, 4u); };
+    const auto held = [&bound](const std::string &text) { return SCE::Forge::Checked::held<Held>(bound, text); };
     EXPECT_FALSE(SCE::Forge::mapPresent(std::optional<std::string>(), held).has_value());
     EXPECT_EQ(SCE::Forge::mapPresent(std::optional<std::string>("soon"), held), std::optional<std::string>("soon"));
     EXPECT_FALSE(bound.failed()) << "an absent text and one within the bound fit it";
-    SCE::Forge::mapPresent(std::optional<std::string>("later"), held);
+    const auto past = SCE::Forge::mapPresent(std::optional<std::string>("later"), held);
     EXPECT_TRUE(bound.failed()) << "a present text past the bound is a capacity failure";
+    EXPECT_TRUE(past.has_value() && past->empty()) << "and nothing of it is kept, never a part cut to fit";
 
     namespace E = ::SCE::Generated::static_block_ends;
     EXPECT_EQ(E::sceLogName(std::optional<std::int64_t>()), "null");
