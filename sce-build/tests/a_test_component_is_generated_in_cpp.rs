@@ -214,7 +214,7 @@ fn taking_a_branch_removes_what_it_matched_before_its_content() {
     let bound = at(&asker, "pendingJobReplyPayload_.job = sceValue.job;");
     assert!(asker.contains("pendingJobReplyPayload_.code = sceValue.code;"));
     assert!(asker.contains(
-        "const auto &sceValue = ::std::any_cast<const ::SCE::Generated::ReplyOk::Value &>(sceMessage.value);"
+        "const auto &sceValue = sceMessage.value.get<::SCE::Generated::ReplyOk::Value>();"
     ));
     let tagged = at(&asker, "pendingPayloadTag_ = AskerPayloadTag::JobReply;");
     let content = at(&asker, "this->testContext_->stopTimer(\"reply\");");
@@ -250,13 +250,16 @@ fn the_statements_the_send_and_the_ptc_go_through_the_runtime() {
         "hostRequest.processorType = \"http://sce.dev/ext/test-port\";",
         "hostRequest.eventName = \"job.request\";",
         "hostRequest.target = \"sut\";",
-        "hostRequest.value = ::SCE::Generated::RequestOf::value(v_job);",
+        "hostRequest.value = ::SCE::Test::messageValue(::SCE::Generated::RequestOf::value(v_job), \
+         ::SCE::Generated::RequestOf::TYPE, ::SCE::Generated::RequestOf::canonical);",
     ] {
         assert!(asker.contains(needle), "asker holds `{needle}`");
     }
     let coordinator = text("coordinator");
     for needle in [
-        "hostRequest.value = ::SCE::Generated::ReplyOf::value(v_requested, v_ok);",
+        "hostRequest.value = ::SCE::Test::messageValue(\
+         ::SCE::Generated::ReplyOf::value(v_requested, v_ok), ::SCE::Generated::ReplyOf::TYPE, \
+         ::SCE::Generated::ReplyOf::canonical);",
         "hostInvoke.processorType = \"http://sce.dev/ext/test-component\";",
         "hostInvoke.invokeId = \"answerer\";",
     ] {

@@ -84,6 +84,12 @@ using AdapterFactory = std::function<std::unique_ptr<SystemAdapter>(const std::s
 struct CaseResult {
     std::string testCase;
     TestCaseResult result;
+
+    /// The test log of this run of the test case in the suite @p suite, in its
+    /// one canonical text (TestCaseResult::canonicalLog()).
+    std::string canonicalLog(const std::string &suite) const {
+        return result.canonicalLog(suite, testCase);
+    }
 };
 
 /**
@@ -116,11 +122,15 @@ inline std::vector<CaseResult> runSuite(const Suite &suite, const Features &worl
             continue;
         }
         const TestCase &testCase = execute.testCase;
-        // P13: the test case cannot start, so it ends at once with `error`.
+        // P13: the test case cannot start, so it ends at once with `error`. No
+        // component was created, so the test log holds its start and its end
+        // alone.
         const auto refused = [&](std::string why) {
             TestCaseResult result;
             result.verdict = Verdict::Error;
             result.log.push_back(LogRecord{0, MTC_NAME, LogKind::Error, std::move(why)});
+            result.records.push_back(TestLogRecord{0, TestLog::TestCaseStarted{}});
+            result.records.push_back(TestLogRecord{0, TestLog::TestCaseEnded{Verdict::Error}});
             results.push_back(CaseResult{testCase.name, std::move(result)});
         };
         const auto missing = std::find_if(testCase.moduleParameters.begin(), testCase.moduleParameters.end(),

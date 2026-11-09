@@ -1701,13 +1701,18 @@ public:
         }
 {% endif %}
         // P6: a send on a port is appended to the queue of the port it is
-        // connected to, or handed to the system adapter where it is mapped.
-        machine_.registerEventProcessor("{{ test_port_processor | escape_cpp }}",
-                                        [&context](const ::SCE::HostSendRequest& request) {
-                                            context.send(request.target,
-                                                         ::SCE::Test::Message{request.eventName, request.value});
-                                            return ::std::vector<::SCE::HostSendResponse>{};
-                                        });
+        // connected to, or handed to the system adapter where it is mapped. A
+        // test-port send always carries its template's value with the name of
+        // its record type and the writer of its canonical form in the test log
+        // (`forge::static_lowering`, `StaticTarget::test_message`), which
+        // std::any_cast refuses to read as anything else.
+        machine_.registerEventProcessor(
+            "{{ test_port_processor | escape_cpp }}", [&context](const ::SCE::HostSendRequest& request) {
+                context.send(request.target,
+                             ::SCE::Test::Message{request.eventName,
+                                                  ::std::any_cast<::SCE::Test::MessageValue>(request.value)});
+                return ::std::vector<::SCE::HostSendResponse>{};
+            });
         // P9: the start of a PTC's invocation creates and starts it, and its
         // cancel removes it, whether it is still running or already done.
         machine_.registerInvoker(

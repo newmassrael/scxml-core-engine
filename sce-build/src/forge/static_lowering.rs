@@ -10207,7 +10207,7 @@ impl StaticTarget for CppTarget {
                     .collect();
                 format!(
                     "{{\n    const ::SCE::Test::Message sceMessage = {CPP_TEST_CONTEXT}->receive({});\n    \
-                     const auto &sceValue = ::std::any_cast<const {unit}::Value &>(sceMessage.value);\n\
+                     const auto &sceValue = sceMessage.value.get<{unit}::Value>();\n\
                      {copies}    pendingPayloadTag_ = {machine}PayloadTag::{};\n}}",
                     cpp_text(port),
                     filters::to_event_variant(template.event.clone())
@@ -10261,12 +10261,16 @@ impl StaticTarget for CppTarget {
         };
         Some(format!("{CPP_TEST_CONTEXT}->log({text});"))
     }
-    // The specific template's `value`, which the send hands its processor as the
-    // request's value (`HostSendRequest::value`, `actions/send.jinja2`).
+    // The specific template's `value`, with the name of its record type and the
+    // unit's writer of its canonical form in the test log
+    // (docs/SCE_TEST_PROFILE.md §12.5), which the send hands its processor as
+    // the request's value (`HostSendRequest::value`, `actions/send.jinja2`). A
+    // sent template is over the record of a message, so its unit writes both
+    // (`TYPE` and `canonical`, `forge/cpp/test_template.h.jinja2`).
     fn test_message(&self, message: &TemplateRef, args: &[String]) -> Option<String> {
+        let unit = cpp_test_template_namespace(&message.unit);
         Some(format!(
-            "{}::value({})",
-            cpp_test_template_namespace(&message.unit),
+            "::SCE::Test::messageValue({unit}::value({}), {unit}::TYPE, {unit}::canonical)",
             args.join(", ")
         ))
     }

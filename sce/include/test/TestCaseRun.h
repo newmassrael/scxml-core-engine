@@ -15,7 +15,6 @@
 #pragma once
 
 #include <algorithm>
-#include <any>
 #include <exception>
 #include <functional>
 #include <map>
@@ -29,6 +28,7 @@
 
 #include "test/ModuleParameters.h"
 #include "test/Port.h"
+#include "test/TestLog.h"
 #include "test/Timer.h"
 #include "test/Verdict.h"
 
@@ -73,9 +73,12 @@ struct Configuration {
     std::vector<std::pair<Endpoint, std::string>> mappings;
 };
 
-/// What the test log records of a run (§12.5).
+/// What a line of the run's log records (§12.5): the run as a reader follows
+/// it, with the removals of PTCs and the cause of an `error` in the runtime's
+/// words. The test log, which two runtimes compare, is TestCaseResult::records.
 enum class LogKind { Start, Create, Send, Receive, Timeout, Done, Kill, Verdict, Log, Error };
 
+/// One line of the run's log.
 struct LogRecord {
     Instant at;
     std::string component;
@@ -83,12 +86,23 @@ struct LogRecord {
     std::string detail;
 };
 
-/// The outcome of one test case: its verdict, the instant it ended at, and
-/// its log.
+/// The outcome of one test case: its verdict, the instant it ended at, the
+/// lines of its log, and its test log.
 struct TestCaseResult {
     Verdict verdict = Verdict::None;
     Instant endedAt = 0;
+    /// The lines of the run's log, for a reader.
     std::vector<LogRecord> log;
+    /// The test log (docs/adr/0091, C3): the records of TCI's test logging
+    /// interface, in the order the run produced them, which canonicalLog()
+    /// writes.
+    std::vector<TestLogRecord> records;
+
+    /// The test log of this run of the test case @p testCase of the suite
+    /// @p suite, in its one canonical text (writeTestLog()).
+    std::string canonicalLog(const std::string &suite, const std::string &testCase) const {
+        return writeTestLog(suite, testCase, verdict, records);
+    }
 };
 
 /**
@@ -235,10 +249,11 @@ public:
         : configuration_(std::move(configuration)), factory_(std::move(factory)), adapter_(adapter), guard_(guard),
           moduleParameters_(std::move(moduleParameters)) {}
 
-    /// Runs the test case to its end and returns its verdict and log.
+    /// Runs the test case to its end and returns its verdict and logs.
     TestCaseResult run() {
         result_ = TestCaseResult{};
         now_ = 0;
+        trace(TestLog::TestCaseStarted{});
         createEntity(MTC_NAME, configuration_.mtcType);
         while (!ended()) {
             round();
@@ -348,6 +363,7 @@ private:
             return;
         }
         found->second.terminated = true;
+        trace(TestLog::ComponentDone{name, found->second.context->verdict_});
         if (name == MTC_NAME) {
             mtcTerminated_ = true;
             return;
@@ -381,6 +397,7 @@ private:
         }
         result_.verdict = verdict;
         result_.endedAt = now_;
+        trace(TestLog::TestCaseEnded{verdict});
     }
 
     // ── Entities (§2.1, P9) ──────────────────────────────────────────
@@ -411,6 +428,7 @@ private:
         entities_.emplace(name, std::move(entity));
         order_.push_back(name);
         record(name, name == MTC_NAME ? LogKind::Start : LogKind::Create, type);
+        trace(TestLog::ComponentCreated{name, type});
         started.start(context);
         settle(name);
     }
@@ -448,6 +466,7 @@ private:
     void send(const std::string &sender, const std::string &port, Message message) {
         const Endpoint from{sender, port};
         record(sender, LogKind::Send, port + " " + message.event);
+        trace(TestLog::MessageSent{sender, port, message.value.typeName(), message.value.canonical()});
         for (const auto &[a, b] : configuration_.connections) {
             if (a == from || b == from) {
                 const Endpoint &to = a == from ? b : a;
@@ -487,14 +506,21 @@ private:
 
     // ── The verdict and the log (§5, §12.5) ──────────────────────────
 
-    /// A dynamic error (P13): the run ends with `error`.
+    /// A dynamic error (P13): the run ends with `error`. The test log records
+    /// the verdict without @p why, which is this runtime's own prose.
     void fail(const std::string &component, const std::string &why) {
         error_ = true;
         record(component, LogKind::Error, why);
+        trace(TestLog::VerdictSet{component, Verdict::Error, std::nullopt});
     }
 
     void record(const std::string &component, LogKind kind, std::string detail) {
         result_.log.push_back(LogRecord{now_, component, kind, std::move(detail)});
+    }
+
+    /// A record of the test log, at `NOW`.
+    void trace(TestLogEvent event) {
+        result_.records.push_back(TestLogRecord{now_, std::move(event)});
     }
 
     Configuration configuration_;
@@ -534,6 +560,7 @@ inline Message ComponentContext::receive(const std::string &port) {
     branchTaken_ = true;
     Message message = ports_.at(port).removeHead();
     run_.record(name_, LogKind::Receive, port + " " + message.event);
+    run_.trace(TestLog::MessageReceived{name_, port, message.value.typeName(), message.value.canonical()});
     return message;
 }
 
@@ -541,6 +568,7 @@ inline void ComponentContext::timeout(const std::string &timer) {
     branchTaken_ = true;
     timers_.at(timer).timeoutTaken();
     run_.record(name_, LogKind::Timeout, timer);
+    run_.trace(TestLog::TimerTimedOut{name_, timer});
 }
 
 inline void ComponentContext::doneTaken(const std::string &ptc) {
@@ -551,18 +579,28 @@ inline void ComponentContext::doneTaken(const std::string &ptc) {
 inline void ComponentContext::setverdict(Verdict verdict, const std::string &reason) {
     verdict_ = worse(verdict_, verdict);
     run_.record(name_, LogKind::Verdict, std::string(verdictName(verdict)) + (reason.empty() ? "" : " " + reason));
+    run_.trace(TestLog::VerdictSet{name_, verdict, reason.empty() ? std::nullopt : std::optional<std::string>(reason)});
 }
 
 inline void ComponentContext::startTimer(const std::string &timer, Duration duration) {
     timers_[timer].start(run_.now_, duration);
+    run_.trace(TestLog::TimerStarted{name_, timer, duration});
 }
 
+/// The test log records the stop of a running timer; the stop of one that is
+/// not running changes nothing.
 inline void ComponentContext::stopTimer(const std::string &timer) {
-    timers_[timer].stop();
+    Timer &binding = timers_[timer];
+    const bool running = binding.status() == TimerStatus::Running;
+    binding.stop();
+    if (running) {
+        run_.trace(TestLog::TimerStopped{name_, timer});
+    }
 }
 
 inline void ComponentContext::log(const std::string &text) {
     run_.record(name_, LogKind::Log, text);
+    run_.trace(TestLog::Log{name_, text});
 }
 
 inline void ComponentContext::send(const std::string &port, Message message) {
@@ -607,7 +645,7 @@ bool receives(const ComponentContext &context, const std::string &port, const st
     if (head == nullptr || head->event != event) {
         return false;
     }
-    const Value *value = std::any_cast<Value>(&head->value);
+    const Value *value = head->value.as<Value>();
     return value != nullptr && std::forward<Matches>(matches)(*value);
 }
 

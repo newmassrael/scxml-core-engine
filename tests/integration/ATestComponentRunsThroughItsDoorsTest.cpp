@@ -11,7 +11,6 @@
 
 #include <gtest/gtest.h>
 
-#include <any>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -28,6 +27,7 @@
 #include "job_reply.h"
 #include "job_request.h"
 #include "ptc_keeper_sm.h"
+#include "reply_ok.h"
 #include "test/TestCaseRun.h"
 
 namespace {
@@ -81,7 +81,7 @@ public:
 
     void send(const std::string &systemPort, const Message &message, Instant now) override {
         sent.emplace_back(systemPort, message.event);
-        const auto *request = std::any_cast<Request>(&message.value);
+        const auto *request = message.value.as<Request>();
         if (request == nullptr) {
             return;
         }
@@ -89,7 +89,11 @@ public:
         Reply reply{};
         reply.job = job_.value_or(request->job);
         reply.code = code_;
-        pending_.emplace_back(now + ANSWER_DELAY, Message{SCE::Generated::JobReply::EVENT_NAME, reply});
+        // The reply's canonical form in the test log is the one the unit of a
+        // template over its record writes.
+        pending_.emplace_back(now + ANSWER_DELAY, Message{SCE::Generated::JobReply::EVENT_NAME,
+                                                          SCE::Test::messageValue(reply, SCE::Generated::ReplyOk::TYPE,
+                                                                                  SCE::Generated::ReplyOk::canonical)});
     }
 
     std::optional<Instant> nextInput() const override {
