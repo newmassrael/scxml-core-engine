@@ -179,6 +179,12 @@ pub enum GenerationError {
     },
     #[error("the store's read set {digest} is not one a run wrote: {line}")]
     MalformedReadSet { digest: Digest, line: String },
+    #[error("`sce-codegen {arguments}` used {tool}, whose version cannot be named: {detail}")]
+    Tool {
+        arguments: String,
+        tool: String,
+        detail: String,
+    },
 }
 
 /// A file's digest, kept with the length and date it was taken at.
@@ -348,6 +354,16 @@ impl Generator {
             salt.push('\n');
             salt.push_str(path);
         }
+        // Each tool the run shaped its output with, by the version this
+        // machine resolves for it now: a different version is another action.
+        for tool in &reads.tools {
+            let version = tool_version(tool).map_err(|detail| GenerationError::Tool {
+                arguments: generation.arguments.join(" "),
+                tool: tool.clone(),
+                detail,
+            })?;
+            salt.push_str(&format!("\n!{tool}={version}"));
+        }
         Ok(Some(KeyedInputs {
             key: self.action(command, root.digest.clone(), salt.into_bytes()),
             directories: root.directories,
@@ -441,6 +457,13 @@ impl Generator {
             .current_dir(&self.root)
             .env_clear()
             .envs(std::env::var_os("PATH").map(|p| ("PATH", p)))
+            // How this machine names its tools (`SCE_TOOL_<NAME>`, the
+            // toolchain's overrides): the run resolves a tool as the key
+            // does ([`tool_version`]), so both see the same binary.
+            .envs(std::env::vars_os().filter(|(name, _)| {
+                name.to_str()
+                    .is_some_and(|n| n.starts_with(crate::toolchain::OVERRIDE_VAR_PREFIX))
+            }))
             .envs(generation.effective_environment())
             .output()?;
         if !output.status.success() {
@@ -543,6 +566,10 @@ impl Generator {
         let out = out.canonicalize()?;
         let mut reads = ReadSet::default();
         for line in listed.lines().filter(|l| !l.is_empty()) {
+            if let Some(tool) = line.strip_prefix('!') {
+                reads.tools.insert(tool.to_string());
+                continue;
+            }
             let (absent, path) = match line.strip_prefix('?') {
                 Some(path) => (true, Path::new(path)),
                 None => (false, Path::new(line)),
@@ -606,16 +633,35 @@ impl Generator {
     }
 }
 
-/// The files a run read, relative to the root, and those it looked for and
-/// did not find.
+/// The files a run read, relative to the root, those it looked for and did
+/// not find, and the tools it shaped its output with, by name.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct ReadSet {
     present: BTreeSet<String>,
     absent: BTreeSet<String>,
+    tools: BTreeSet<String>,
+}
+
+/// The version of the tool `name` a run of the generator would use on this
+/// machine, resolved by the function the generator resolves it with, so the
+/// key names the tool the run used. A tool this layer cannot resolve is
+/// refused rather than left out of the key.
+fn tool_version(name: &str) -> Result<String, String> {
+    match name {
+        crate::formatter::CLANG_FORMAT => {
+            crate::formatter::resolve_clang_format(&crate::toolchain::ToolLocator::from_env())
+                .map(|resolved| resolved.version)
+                .map_err(|e| e.to_string())
+        }
+        other => Err(format!(
+            "a run used the tool `{other}`, which no action key can name yet"
+        )),
+    }
 }
 
 impl ReadSet {
-    /// One path a line, sorted, an absent one written `?<path>`.
+    /// One path a line, sorted, an absent one written `?<path>`, then each
+    /// tool `!<name>`.
     fn render(&self) -> String {
         let mut text = String::new();
         for path in &self.present {
@@ -625,6 +671,11 @@ impl ReadSet {
         for path in &self.absent {
             text.push('?');
             text.push_str(path);
+            text.push('\n');
+        }
+        for tool in &self.tools {
+            text.push('!');
+            text.push_str(tool);
             text.push('\n');
         }
         text
@@ -638,6 +689,13 @@ impl ReadSet {
         let text = std::str::from_utf8(bytes).map_err(|_| malformed("(not UTF-8)"))?;
         let mut reads = ReadSet::default();
         for line in text.lines() {
+            if let Some(tool) = line.strip_prefix('!') {
+                if tool.is_empty() || tool.contains('/') {
+                    return Err(malformed(line));
+                }
+                reads.tools.insert(tool.to_string());
+                continue;
+            }
             let (absent, path) = match line.strip_prefix('?') {
                 Some(path) => (true, path),
                 None => (false, line),
@@ -742,11 +800,12 @@ mod tests {
                 .map(String::from)
                 .collect(),
             absent: ["x/deploy.yaml".to_string()].into_iter().collect(),
+            tools: ["clang-format".to_string()].into_iter().collect(),
         };
         let text = reads.render();
         assert_eq!(
             text,
-            "tools/codegen/templates/a.jinja2\nx/doc.scxml\n?x/deploy.yaml\n"
+            "tools/codegen/templates/a.jinja2\nx/doc.scxml\n?x/deploy.yaml\n!clang-format\n"
         );
         assert_eq!(
             ReadSet::parse(text.as_bytes(), &Digest::of(text.as_bytes())).unwrap(),

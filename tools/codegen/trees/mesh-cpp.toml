@@ -1,0 +1,34 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# The C++ Mesh envelope (ADR 0097): the standard Mesh documents the C++
+# runtime's `sce_mesh_common` target compiles, generated for C++ into
+# sce/src/mesh/generated. Each is named by its path under stdlib/mesh, so it
+# carries the source hash of that directory.
+#
+# The generator formats C++ with clang-format of its pinned major, and each
+# run says so (`--reads` lists `!clang-format`), so the formatter's version is
+# part of every one of these actions.
+
+[tree]
+name = "mesh-cpp"
+roots = ["sce/src/mesh/generated"]
+
+[[generation]]
+each = { list = [
+    "envelope",
+    "causal_entry",
+    "pattern_kind",
+    "payload_codec",
+    "rpc_status",
+    "causal_admission",
+    "causal_admit",
+    "causal_cut",
+    "causal_known",
+    "causal_lacks",
+    "causal_raise",
+    "envelope_id",
+], as = "document" }
+arguments = ["generate", "stdlib/mesh/{document}.scxml", "--language", "cpp", "--output-dir", "{out}"]
+place = "sce/src/mesh/generated"
+keep = ["*.h"]

@@ -459,6 +459,12 @@ function(_sce_codegen_plan_fresh VAR ENTRY)
     else()
         file(STRINGS "${ENTRY}.reads" _READS ENCODING UTF-8)
         foreach(_READ IN LISTS _READS)
+            # `!<tool>`: a tool the run shaped bytes with (the C++ formatter).
+            # A plan answers which files a generation writes, not their bytes,
+            # so the tool's version moves no answer kept here.
+            if("${_READ}" MATCHES "^!")
+                continue()
+            endif()
             if("${_READ}" MATCHES "^\\?(.*)$")
                 if(EXISTS "${CMAKE_MATCH_1}")
                     set(_WHY "${CMAKE_MATCH_1}, absent when it was planned, is there")

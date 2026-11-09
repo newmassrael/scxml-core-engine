@@ -171,6 +171,31 @@ fn reads_file() -> Option<&'static Path> {
     READS.get().map(PathBuf::as_path)
 }
 
+/// The tools outside this program a run used to shape its output (the C++
+/// formatter), by name, for `--reads` to list as `!<name>`: what a tool makes
+/// of the bytes is a function of its version, which a reader keying the run
+/// resolves as this program does (`sce_build::formatter::resolve_clang_format`).
+static TOOLS_USED: std::sync::Mutex<BTreeSet<&'static str>> =
+    std::sync::Mutex::new(BTreeSet::new());
+
+/// Files a run read beside the ones its depfile entries record (a
+/// `--format-style` file), for `--reads`.
+static ALSO_READ: std::sync::Mutex<Vec<PathBuf>> = std::sync::Mutex::new(Vec::new());
+
+fn record_tool_used(tool: &'static str) {
+    TOOLS_USED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .insert(tool);
+}
+
+fn record_also_read(path: &Path) {
+    ALSO_READ
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .push(path.to_path_buf());
+}
+
 /// Whether a run records what it read ([`GenerateReport::depfile`]): a run
 /// asked for a depfile (`--write-deps`), and a run asked for its reads
 /// (`--reads`), which are the prerequisites that depfile would name.
@@ -1879,7 +1904,8 @@ struct Cli {
     /// less every file the run produces; with `--plan --plan-children`,
     /// those of every child generation it planned too. A file the run named
     /// and did not find is written `?<path>`, since its appearing would
-    /// change what the run does.
+    /// change what the run does, and a tool the run shaped its output with
+    /// (the C++ formatter) is written `!<name>`, since its version does.
     ///
     /// What a run writes is a function of what it read and of its arguments.
     /// So a build that keeps a plan's answer can tell when it is still the
@@ -9185,8 +9211,12 @@ fn write_reads(read: Option<&DepfileEntry>) {
         .map(|file| plain_absolute(file))
         .collect();
     drop(tree);
+    let also_read = ALSO_READ
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
     let mut list = String::new();
-    for file in depfile_prerequisites(entry) {
+    for file in depfile_prerequisites(entry).into_iter().chain(also_read) {
         if produced.contains(&plain_absolute(&file)) {
             continue;
         }
@@ -9195,6 +9225,18 @@ fn write_reads(read: Option<&DepfileEntry>) {
             list.push('?');
         }
         list.push_str(&file.display().to_string());
+        list.push('\n');
+    }
+    // The tools the run shaped its output with, each `!<name>`, after the
+    // files: a tool is named, never a path, since which binary serves it is
+    // the reader's to resolve as this program resolves it.
+    for tool in TOOLS_USED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .iter()
+    {
+        list.push('!');
+        list.push_str(tool);
         list.push('\n');
     }
     fs::write(path, list).unwrap_or_else(|e| {
@@ -15815,7 +15857,15 @@ fn create_cpp_formatter(
         return None;
     }
     match sce_build::formatter::CppFormatter::new(format_style.map(Path::new)) {
-        Ok(f) => Some(f),
+        Ok(f) => {
+            // What the formatter makes of the C++ is a function of its version
+            // and its style, so a run that formats says so (`--reads`).
+            record_tool_used(sce_build::formatter::CLANG_FORMAT);
+            if let Some(style) = format_style {
+                record_also_read(Path::new(style));
+            }
+            Some(f)
+        }
         Err(sce_build::formatter::FormatError::StyleNotFound(p)) => {
             cli_exit(CliError::FormatStyleNotFound { path: p });
         }
