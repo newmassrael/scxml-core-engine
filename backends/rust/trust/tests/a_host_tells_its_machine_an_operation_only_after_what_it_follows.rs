@@ -22,8 +22,7 @@ const ALICE: u64 = 1;
 const BOB: u64 = 2;
 const CAROL: u64 = 3;
 
-const WRITE: &str = "record_list.write";
-const SUPERSEDE: &str = "record_list.supersede";
+const CHANGE_EVENT: &str = "record_list.change";
 
 fn person(node: u64) -> Identity {
     Identity::from_seed([node as u8; 32])
@@ -74,15 +73,20 @@ fn host(node: u64) -> Trust {
     host
 }
 
+/// A change of `node`'s stamped at `wall` that writes `value` into row 1, field 3.
 fn write(node: u64, wall: i64, value: i64) -> String {
-    json!({"id": 1, "field": 3, "value": value.to_string(), "text": "",
-           "wallTime": wall.to_string(), "counter": 0, "nodeId": node.to_string()})
+    json!({"by": node.to_string(), "wallTime": wall.to_string(), "counter": 0, "ops": [
+        {"kind": 0, "id": 1, "field": 3, "value": value.to_string(), "text": "",
+         "wallTime": "0", "counter": 0, "nodeId": "0"}]})
     .to_string()
 }
 
+/// A change of `by`'s that writes over the write `node` stamped at `wall`, made after its machine
+/// was told it: stamped at the same time, a counter past it.
 fn supersede(node: u64, wall: i64, by: u64) -> String {
-    json!({"id": 1, "field": 3, "wallTime": wall.to_string(), "counter": 0,
-           "nodeId": node.to_string(), "by": by.to_string()})
+    json!({"by": by.to_string(), "wallTime": wall.to_string(), "counter": 1, "ops": [
+        {"kind": 1, "id": 1, "field": 3, "value": "0", "text": "",
+         "wallTime": wall.to_string(), "counter": 0, "nodeId": node.to_string()}]})
     .to_string()
 }
 
@@ -100,18 +104,16 @@ fn take(host: &Trust, event: &str, data: &str) {
     host.take_operation(event, data).unwrap();
 }
 
-/// The events a host's machine is told now, by their event and the value of the field `wallTime`
-/// and `by` (a write is named by its time, a write-over by its author too).
+/// The events a host's machine is told now, by their event and the change's time and author
+/// (`wallTime/by`).
 fn told(host: &Trust) -> Vec<(String, String)> {
     host.deliver()
         .into_iter()
         .map(|(event, data)| {
             let data: Value = serde_json::from_str(&data).unwrap();
-            let by = data["by"]
-                .as_str()
-                .map_or(String::new(), |by| format!("/{by}"));
-            let wall = data["wallTime"].as_str().unwrap_or("").to_string();
-            (event, format!("{wall}{by}"))
+            let by = data["by"].as_str().unwrap_or("");
+            let wall = data["wallTime"].as_str().unwrap_or("");
+            (event, format!("{wall}/{by}"))
         })
         .collect()
 }
@@ -130,7 +132,7 @@ fn a_write_over_is_told_only_after_the_write_it_names() {
     let alice = host(ALICE);
     let bob = host(BOB);
     let carol = host(CAROL);
-    let a1 = signed(&alice, WRITE, &write(ALICE, 1000, 1));
+    let a1 = signed(&alice, CHANGE_EVENT, &write(ALICE, 1000, 1));
     assert_eq!(
         alice.delivered(),
         vec![(ALICE, 1)],
@@ -138,10 +140,10 @@ fn a_write_over_is_told_only_after_the_write_it_names() {
     );
     assert!(told(&alice).is_empty());
 
-    take(&bob, WRITE, &a1);
-    assert_eq!(told(&bob), vec![event(WRITE, "1000")]);
+    take(&bob, CHANGE_EVENT, &a1);
+    assert_eq!(told(&bob), vec![event(CHANGE_EVENT, "1000/1")]);
     assert_eq!(bob.delivered(), vec![(ALICE, 1)]);
-    let b1 = signed(&bob, SUPERSEDE, &supersede(ALICE, 1000, BOB));
+    let b1 = signed(&bob, CHANGE_EVENT, &supersede(ALICE, 1000, BOB));
     let carried: Value = serde_json::from_str(&b1).unwrap();
     assert_eq!(
         carried[message::CONTEXT_FIELD],
@@ -149,20 +151,20 @@ fn a_write_over_is_told_only_after_the_write_it_names() {
         "the write-over carries what its author's machine was told of alice"
     );
 
-    take(&carol, SUPERSEDE, &b1);
+    take(&carol, CHANGE_EVENT, &b1);
     assert!(
         told(&carol).is_empty(),
         "a write-over given before its write is held"
     );
     assert_eq!(carol.lacking(), vec![(ALICE, 1, 1)]);
-    take(&carol, WRITE, &a1);
+    take(&carol, CHANGE_EVENT, &a1);
     assert_eq!(
         told(&carol),
-        vec![event(WRITE, "1000"), event(SUPERSEDE, "1000/2")]
+        vec![event(CHANGE_EVENT, "1000/1"), event(CHANGE_EVENT, "1000/2")]
     );
     assert!(carol.lacking().is_empty());
-    take(&carol, WRITE, &a1);
-    take(&carol, SUPERSEDE, &b1);
+    take(&carol, CHANGE_EVENT, &a1);
+    take(&carol, CHANGE_EVENT, &b1);
     assert!(
         told(&carol).is_empty(),
         "what the machine was told is not told again"
@@ -177,20 +179,20 @@ fn a_write_over_is_told_only_after_the_write_it_names() {
 fn an_operation_past_a_gap_in_its_chain_waits_for_the_gap() {
     let alice = host(ALICE);
     let carol = host(CAROL);
-    let a1 = signed(&alice, WRITE, &write(ALICE, 1000, 1));
-    let a2 = signed(&alice, WRITE, &write(ALICE, 1001, 2));
-    let a3 = signed(&alice, WRITE, &write(ALICE, 1002, 3));
-    take(&carol, WRITE, &a3);
-    take(&carol, WRITE, &a2);
+    let a1 = signed(&alice, CHANGE_EVENT, &write(ALICE, 1000, 1));
+    let a2 = signed(&alice, CHANGE_EVENT, &write(ALICE, 1001, 2));
+    let a3 = signed(&alice, CHANGE_EVENT, &write(ALICE, 1002, 3));
+    take(&carol, CHANGE_EVENT, &a3);
+    take(&carol, CHANGE_EVENT, &a2);
     assert!(told(&carol).is_empty());
     assert_eq!(carol.lacking(), vec![(ALICE, 1, 1)]);
-    take(&carol, WRITE, &a1);
+    take(&carol, CHANGE_EVENT, &a1);
     assert_eq!(
         told(&carol),
         vec![
-            event(WRITE, "1000"),
-            event(WRITE, "1001"),
-            event(WRITE, "1002")
+            event(CHANGE_EVENT, "1000/1"),
+            event(CHANGE_EVENT, "1001/1"),
+            event(CHANGE_EVENT, "1002/1")
         ]
     );
 }
@@ -202,12 +204,12 @@ fn an_operation_past_a_gap_in_its_chain_waits_for_the_gap() {
 fn what_a_machine_was_told_is_kept_and_forgotten_as_a_whole() {
     let alice = host(ALICE);
     let bob = host(BOB);
-    let a1 = signed(&alice, WRITE, &write(ALICE, 1000, 1));
-    take(&bob, WRITE, &a1);
-    let b1 = signed(&bob, SUPERSEDE, &supersede(ALICE, 1000, BOB));
+    let a1 = signed(&alice, CHANGE_EVENT, &write(ALICE, 1000, 1));
+    take(&bob, CHANGE_EVENT, &a1);
+    let b1 = signed(&bob, CHANGE_EVENT, &supersede(ALICE, 1000, BOB));
     let carol = host(CAROL);
-    take(&carol, SUPERSEDE, &b1);
-    take(&carol, WRITE, &a1);
+    take(&carol, CHANGE_EVENT, &b1);
+    take(&carol, CHANGE_EVENT, &a1);
     assert_eq!(told(&carol).len(), 2);
 
     let restored = host(CAROL);
@@ -219,7 +221,7 @@ fn what_a_machine_was_told_is_kept_and_forgotten_as_a_whole() {
     assert!(carol.delivered().is_empty());
     assert_eq!(
         told(&carol),
-        vec![event(WRITE, "1000"), event(SUPERSEDE, "1000/2")]
+        vec![event(CHANGE_EVENT, "1000/1"), event(CHANGE_EVENT, "1000/2")]
     );
 }
 
@@ -231,26 +233,26 @@ fn what_a_machine_was_told_is_kept_and_forgotten_as_a_whole() {
 fn a_context_that_names_what_no_machine_is_told_does_not_hold_for_good() {
     let alice = host(ALICE);
     let bob = host(BOB);
-    let a1 = signed(&alice, WRITE, &write(ALICE, 1000, 1));
+    let a1 = signed(&alice, CHANGE_EVENT, &write(ALICE, 1000, 1));
     // Bob's device signs a note, and then (set up again from his seed, holding nothing) a write
     // at the same number: two operations at one number, which freeze his chain from 1.
-    take(&bob, WRITE, &a1);
-    let b1 = signed(&bob, SUPERSEDE, &supersede(ALICE, 1000, BOB));
+    take(&bob, CHANGE_EVENT, &a1);
+    let b1 = signed(&bob, CHANGE_EVENT, &supersede(ALICE, 1000, BOB));
     let again = host(BOB);
-    let b1_again = signed(&again, WRITE, &write(BOB, 1500, 9));
+    let b1_again = signed(&again, CHANGE_EVENT, &write(BOB, 1500, 9));
     // Alice's machine is told bob's note before anyone holds the second, and she writes after it.
-    take(&alice, SUPERSEDE, &b1);
-    assert_eq!(told(&alice), vec![event(SUPERSEDE, "1000/2")]);
-    let a2 = signed(&alice, WRITE, &write(ALICE, 2000, 2));
+    take(&alice, CHANGE_EVENT, &b1);
+    assert_eq!(told(&alice), vec![event(CHANGE_EVENT, "1000/2")]);
+    let a2 = signed(&alice, CHANGE_EVENT, &write(ALICE, 2000, 2));
 
     let carol = host(CAROL);
-    take(&carol, WRITE, &a1);
-    take(&carol, WRITE, &b1_again);
-    take(&carol, SUPERSEDE, &b1);
-    take(&carol, WRITE, &a2);
+    take(&carol, CHANGE_EVENT, &a1);
+    take(&carol, CHANGE_EVENT, &b1_again);
+    take(&carol, CHANGE_EVENT, &b1);
+    take(&carol, CHANGE_EVENT, &a2);
     assert_eq!(
         told(&carol),
-        vec![event(WRITE, "1000"), event(WRITE, "2000")],
+        vec![event(CHANGE_EVENT, "1000/1"), event(CHANGE_EVENT, "2000/1")],
         "nothing of bob's frozen chain is told, and what follows it is not held for it"
     );
     assert!(carol.lacking().is_empty());
@@ -268,7 +270,9 @@ fn a_context_names_only_devices_the_log_granted_other_than_its_author() {
         (vec![(7, 1)], "node 7"),
     ] {
         let value: Value = serde_json::from_str(&write(ALICE, 1000, 1)).unwrap();
-        let signing = message::signing(LIST, WRITE, &value).unwrap().unwrap();
+        let signing = message::signing(LIST, CHANGE_EVENT, &value)
+            .unwrap()
+            .unwrap();
         let link = Link {
             seq: 1,
             prev: message::NO_OPERATION,
@@ -280,7 +284,7 @@ fn a_context_names_only_devices_the_log_granted_other_than_its_author() {
         let mut data = value.clone();
         link.write_into(&mut data).unwrap();
         data[SIGNATURE_FIELD] = Value::String(encoding::encode(&person(ALICE).sign(&bytes)));
-        match carol.take_operation(WRITE, &data.to_string()) {
+        match carol.take_operation(CHANGE_EVENT, &data.to_string()) {
             Err(TakeError::Refused(reason)) => {
                 assert!(reason.contains(why), "{why}: {reason}")
             }

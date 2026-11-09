@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// A device's host is given what its machine sends, and a machine sends a write again: an
+// A device's host is given what its machine sends, and a machine sends a change again: an
 // application that keeps its own log of commands builds the machine again from it, and the machine
-// sends every write and note it makes as it made them the first time. What is asked: that the same
-// write or note sent again, after the host restarted from its store too, leaves as the operation the
-// host holds (its number, its signature, its sealed text) and nothing is signed; that a write of the
-// device under a stamp it signed with another content is refused before anything is signed; and
-// that a host whose state came back from a store older than the device's last operation signs
-// nothing new until it holds the device's chain as far as a relay does, and then signs at the next
-// number, where a host that did not wait signs a second operation at a number it had used and every
-// host given both freezes the device.
+// sends every change it makes as it made it the first time. What is asked: that the same change sent
+// again, after the host restarted from its store too, leaves as the operation the host holds (its
+// number, its signature, its sealed texts) and nothing is signed; that a change of the device under
+// a dot it signed with another content is refused before anything is signed; and that a host whose
+// state came back from a store older than the device's last operation signs nothing new until it
+// holds the device's chain as far as a relay does, and then signs at the next number, where a host
+// that did not wait signs a second operation at a number it had used and every host given both
+// freezes the device. A change is one operation, whole (docs/adr/0085, section 1).
 
 use sce_rust_trust::membership::{Body, Entry, Log, Profile};
 use sce_rust_trust::{Head, Identity, Sealed, Sent, Trust};
@@ -18,8 +18,7 @@ use serde_json::{json, Value};
 
 const LIST: &str = "home";
 const ALICE: u64 = 1;
-const WRITE: &str = "record_list.write";
-const SUPERSEDE: &str = "record_list.supersede";
+const CHANGE: &str = "record_list.change";
 
 fn admin() -> Identity {
     Identity::from_seed([9; 32])
@@ -82,18 +81,32 @@ fn host_in(entries: &[Entry], own: Option<u64>, epochs: u32) -> Trust {
     trust
 }
 
-/// A write of `value` and `text` to field 3 of row `id`, stamped by alice at `wall`.
-fn write(id: u64, wall: i64, value: i64, text: &str) -> Value {
-    json!({"id": id, "field": 3, "value": value.to_string(), "text": text,
-           "wallTime": wall.to_string(), "counter": 0, "nodeId": ALICE.to_string()})
+/// One write of `value` and `text` to `field` of row `id`, as a change holds it.
+fn put(id: u64, field: u64, value: i64, text: &str) -> Value {
+    json!({"kind": 0, "id": id, "field": field, "value": value.to_string(), "text": text,
+           "wallTime": "0", "counter": 0, "nodeId": "0"})
 }
 
-/// Alice's note that she wrote over her write of row `id` stamped at `wall`, in the change stamped
-/// `at`.
+/// Alice's change stamped at `wall` of the operations `ops`.
+fn change(wall: i64, ops: Vec<Value>) -> Value {
+    json!({"by": ALICE.to_string(), "wallTime": wall.to_string(), "counter": 0, "ops": ops})
+}
+
+/// A change of alice's stamped at `wall`: a write of `value` and `text` to field 3 of row `id`.
+fn write(id: u64, wall: i64, value: i64, text: &str) -> Value {
+    change(wall, vec![put(id, 3, value, text)])
+}
+
+/// Alice's change stamped at `at` that writes over her write of row `id`, field 3, stamped at
+/// `wall`, and writes nothing.
 fn note(id: u64, wall: i64, at: i64) -> Value {
-    json!({"id": id, "field": 3, "wallTime": wall.to_string(), "counter": 0,
-           "nodeId": ALICE.to_string(), "by": ALICE.to_string(),
-           "atWallTime": at.to_string(), "atCounter": 0})
+    change(
+        at,
+        vec![
+            json!({"kind": 1, "id": id, "field": 3, "value": "0", "text": "",
+                    "wallTime": wall.to_string(), "counter": 0, "nodeId": ALICE.to_string()}),
+        ],
+    )
 }
 
 fn sealed(host: &Trust, event: &str, data: &Value) -> Sealed {
@@ -118,20 +131,21 @@ fn field(data: &str, name: &str) -> Value {
     parsed(data)[name].clone()
 }
 
-/// Alice's machine writes two values, notes that the second is over the first, and writes a row
-/// as one part of a change of two; the host restarts from its store, and the machine, built again
-/// from her commands, sends all of it again. Each leaves as the operation that was made, with its
-/// number and its signature, and the chain does not grow.
+/// Alice's machine makes four changes: a write, a write, a change that writes the first over, and
+/// a change of two writes; the host restarts from its store, and the machine, built again from her
+/// commands, sends all of it again. Each leaves as the operation that was made, with its number and
+/// its signature, and the chain does not grow.
 fn sent_again_leaves_as_it_was_made(epochs: u32) {
     let entries = list(epochs);
     let alice = host_in(&entries, Some(ALICE), epochs);
-    let mut part = write(2, 3000, 7, "");
-    part["parts"] = json!("2");
     let sends = [
-        (WRITE, write(1, 1000, 10, "milk")),
-        (WRITE, write(1, 2000, 11, "bread")),
-        (SUPERSEDE, note(1, 1000, 2000)),
-        (WRITE, part),
+        (CHANGE, write(1, 1000, 10, "milk")),
+        (CHANGE, write(2, 2000, 11, "bread")),
+        (CHANGE, note(1, 1000, 2500)),
+        (
+            CHANGE,
+            change(3000, vec![put(4, 3, 7, ""), put(4, 4, 8, "")]),
+        ),
     ];
     let made: Vec<Sealed> = sends
         .iter()
@@ -146,7 +160,7 @@ fn sent_again_leaves_as_it_was_made(epochs: u32) {
     if epochs > 0 {
         assert!(
             !made[0].data.contains("milk")
-                && field(&made[0].data, "text")
+                && field(&made[0].data, "ops")[0]["text"]
                     .as_str()
                     .unwrap()
                     .starts_with('~'),
@@ -174,16 +188,11 @@ fn sent_again_leaves_as_it_was_made(epochs: u32) {
             "the same number, signature and text"
         );
     }
-    // A part sent alone, as a copy that shares what it holds sends it, is the part as it was made.
-    let alone = sealed(&restarted, WRITE, &write(2, 3000, 7, ""));
-    assert!(!alone.signed);
-    assert_eq!(parsed(&alone.data), parsed(&made[3].data));
-    assert_eq!(field(&alone.data, "parts"), json!("2"));
     assert_eq!(restarted.last_seq(ALICE), 4);
     assert_eq!(restarted.signed_operations(), alice.signed_operations());
 
     // What it makes next is the next number.
-    let next = sealed(&restarted, WRITE, &write(3, 4000, 1, ""));
+    let next = sealed(&restarted, CHANGE, &write(3, 4000, 1, ""));
     assert!(next.signed);
     assert_eq!(field(&next.data, "seq"), json!("5"));
 }
@@ -205,11 +214,11 @@ fn a_sealed_write_sent_again_leaves_with_the_text_it_was_sealed_with() {
 fn another_content_under_a_stamp_the_device_signed_is_refused_and_nothing_is_signed() {
     let entries = list(1);
     let alice = host_in(&entries, Some(ALICE), 1);
-    let first = sealed(&alice, WRITE, &write(1, 1000, 10, "milk"));
+    let first = sealed(&alice, CHANGE, &write(1, 1000, 10, "milk"));
     assert!(first.signed);
 
     for other in [write(1, 1000, 11, "milk"), write(1, 1000, 10, "bread")] {
-        let reason = refused(&alice, WRITE, &other);
+        let reason = refused(&alice, CHANGE, &other);
         assert!(reason.contains("another content"), "{reason}");
         assert!(reason.contains("at 1"), "{reason}");
     }
@@ -219,12 +228,12 @@ fn another_content_under_a_stamp_the_device_signed_is_refused_and_nothing_is_sig
 
     let restarted = host_in(&entries, Some(ALICE), 1);
     restarted.restore_from_text(&alice.to_text());
-    let reason = refused(&restarted, WRITE, &write(1, 1000, 11, "milk"));
+    let reason = refused(&restarted, CHANGE, &write(1, 1000, 11, "milk"));
     assert!(reason.contains("another content"), "{reason}");
     assert_eq!(restarted.signed_operations().len(), 1);
     // The write it made is the one it holds, and what follows is numbered after it.
-    assert!(!sealed(&restarted, WRITE, &write(1, 1000, 10, "milk")).signed);
-    let next = sealed(&restarted, WRITE, &write(1, 2000, 11, "milk"));
+    assert!(!sealed(&restarted, CHANGE, &write(1, 1000, 10, "milk")).signed);
+    let next = sealed(&restarted, CHANGE, &write(1, 2000, 11, "milk"));
     assert_eq!(field(&next.data, "seq"), json!("2"));
 }
 
@@ -238,11 +247,11 @@ fn a_device_whose_state_came_back_signs_nothing_new_until_it_holds_its_chain_aga
     let entries = list(0);
     let alice = host_in(&entries, Some(ALICE), 0);
     for n in 1..=2 {
-        sealed(&alice, WRITE, &write(n, 1000 + n as i64, 1, ""));
+        sealed(&alice, CHANGE, &write(n, 1000 + n as i64, 1, ""));
     }
     let older = alice.to_text();
     for n in 3..=4 {
-        sealed(&alice, WRITE, &write(n, 1000 + n as i64, 1, ""));
+        sealed(&alice, CHANGE, &write(n, 1000 + n as i64, 1, ""));
     }
     // What a relay that was given all four says of the device's chain.
     let published: Vec<Head> = alice.heads();
@@ -257,10 +266,10 @@ fn a_device_whose_state_came_back_signs_nothing_new_until_it_holds_its_chain_aga
     restored.await_own_chain();
     assert!(restored.awaits_own_chain());
 
-    let reason = refused(&restored, WRITE, &write(9, 5000, 1, ""));
+    let reason = refused(&restored, CHANGE, &write(9, 5000, 1, ""));
     assert!(reason.contains("signs nothing new"), "{reason}");
     assert!(
-        !sealed(&restored, WRITE, &write(1, 1001, 1, "")).signed,
+        !sealed(&restored, CHANGE, &write(1, 1001, 1, "")).signed,
         "what it holds still leaves"
     );
     assert_eq!(restored.own_chain_behind(&published), Some((ALICE, 3, 4)));
@@ -273,7 +282,7 @@ fn a_device_whose_state_came_back_signs_nothing_new_until_it_holds_its_chain_aga
     assert_eq!(restored.own_chain_behind(&published), None);
     assert!(restored.confirm_own_chain(&published));
     assert!(!restored.awaits_own_chain());
-    let next = sealed(&restored, WRITE, &write(9, 5000, 1, ""));
+    let next = sealed(&restored, CHANGE, &write(9, 5000, 1, ""));
     assert!(next.signed);
     assert_eq!(field(&next.data, "seq"), json!("5"));
 
@@ -281,20 +290,20 @@ fn a_device_whose_state_came_back_signs_nothing_new_until_it_holds_its_chain_aga
     for (event, data) in alice.operations(ALICE, 1, 4) {
         witness.take_operation(&event, &data).unwrap();
     }
-    witness.take_operation(WRITE, &next.data).unwrap();
+    witness.take_operation(CHANGE, &next.data).unwrap();
     assert!(witness.equivocating().is_empty());
     assert_eq!(witness.last_seq(ALICE), 5);
 
     // A host that did not wait signs at 3, and the device is frozen there.
     let careless = host_in(&entries, Some(ALICE), 0);
     careless.restore_from_text(&older);
-    let forked = sealed(&careless, WRITE, &write(9, 5000, 1, ""));
+    let forked = sealed(&careless, CHANGE, &write(9, 5000, 1, ""));
     assert_eq!(field(&forked.data, "seq"), json!("3"));
     let other = host_in(&entries, None, 0);
     for (event, data) in alice.operations(ALICE, 1, 4) {
         other.take_operation(&event, &data).unwrap();
     }
-    other.take_operation(WRITE, &forked.data).unwrap();
+    other.take_operation(CHANGE, &forked.data).unwrap();
     assert_eq!(other.equivocating(), vec![(ALICE, 3)]);
 }
 
@@ -319,7 +328,7 @@ fn a_restored_device_reads_its_chain_back_from_where_it_and_the_relay_agree() {
     let entries = list(0);
     let alice = host_in(&entries, Some(ALICE), 0);
     for n in 1..=4 {
-        sealed(&alice, WRITE, &write(n, 1000 + n as i64, 1, ""));
+        sealed(&alice, CHANGE, &write(n, 1000 + n as i64, 1, ""));
     }
     let older = alice.to_text();
     let restored = host_in(&entries, Some(ALICE), 0);
@@ -361,20 +370,20 @@ fn a_restored_device_reads_its_chain_back_from_where_it_and_the_relay_agree() {
 }
 
 /// A host whose sends a courier carries keeps what its person may not sign yet. Alice's machine
-/// writes twice and notes that the second write is over the first before her host holds any of the
-/// log: each waits, in its order, the first sent again waits once, and another content under its
-/// stamp is refused at once. The host's text keeps what waits, and a host restarted from it holds the
-/// same. Given the log, the host still holds no key of the epoch it is in, and what waits, and a write
-/// made then, waits on; given the key, all of it is signed in its order at 1 to 4, and the first sent
-/// again is the operation held.
+/// makes two changes that write and one that writes the first over before her host holds any of
+/// the log: each waits, in its order, the first sent again waits once, and another content under
+/// its dot is refused at once. The host's text keeps what waits, and a host restarted from it holds
+/// the same. Given the log, the host still holds no key of the epoch it is in, and what waits, and a
+/// change made then, waits on; given the key, all of it is signed in its order at 1 to 4, and the
+/// first sent again is the operation held.
 #[test]
 fn what_a_host_may_not_sign_yet_waits_and_is_signed_in_its_order() {
     let alice = Trust::open(LIST);
     alice.set_identity(ALICE, person(ALICE));
     let sends = [
-        (WRITE, write(1, 1000, 10, "milk")),
-        (WRITE, write(1, 2000, 11, "bread")),
-        (SUPERSEDE, note(1, 1000, 2000)),
+        (CHANGE, write(1, 1000, 10, "milk")),
+        (CHANGE, write(2, 2000, 11, "bread")),
+        (CHANGE, note(1, 1000, 2500)),
     ];
     for (event, data) in &sends {
         match alice.keep_sent(event, &data.to_string()) {
@@ -383,10 +392,10 @@ fn what_a_host_may_not_sign_yet_waits_and_is_signed_in_its_order() {
         }
     }
     assert!(matches!(
-        alice.keep_sent(WRITE, &sends[0].1.to_string()),
+        alice.keep_sent(CHANGE, &sends[0].1.to_string()),
         Sent::Waiting(_)
     ));
-    match alice.keep_sent(WRITE, &write(1, 1000, 12, "tea").to_string()) {
+    match alice.keep_sent(CHANGE, &write(1, 1000, 12, "tea").to_string()) {
         Sent::Refused(reason) => assert!(reason.contains("another content"), "{reason}"),
         other => panic!("expected a refusal, got {other:?}"),
     }
@@ -404,7 +413,7 @@ fn what_a_host_may_not_sign_yet_waits_and_is_signed_in_its_order() {
     }
     assert!(restarted.sign_waiting().is_empty(), "no key of epoch 1 yet");
     let later = write(2, 3000, 1, "");
-    match restarted.keep_sent(WRITE, &later.to_string()) {
+    match restarted.keep_sent(CHANGE, &later.to_string()) {
         Sent::Waiting(reason) => assert!(reason.contains("no key of epoch 1"), "{reason}"),
         other => panic!("expected the write to wait, got {other:?}"),
     }
@@ -415,30 +424,30 @@ fn what_a_host_may_not_sign_yet_waits_and_is_signed_in_its_order() {
         .iter()
         .map(|(event, data)| (event.to_string(), data.to_string()))
         .collect();
-    in_order.push((WRITE.to_string(), later.to_string()));
+    in_order.push((CHANGE.to_string(), later.to_string()));
     assert_eq!(waited.taken, in_order);
     assert!(waited.dropped.is_empty());
     assert_eq!(restarted.waiting(), 0);
     assert_eq!(restarted.last_seq(ALICE), 4);
     assert_eq!(
-        restarted.keep_sent(WRITE, &sends[0].1.to_string()),
+        restarted.keep_sent(CHANGE, &sends[0].1.to_string()),
         Sent::Held
     );
 }
 
-/// Alice's device signed two writes and a note, and its store holds the first write alone: her
-/// machine, built again from her commands, sends all three again while the restored host waits for
-/// her chain. The first is held; the two the store lacks wait, and say why. Once her chain is read
-/// back, each that waited is the operation held: `sign_waiting` names them held and none taken, and
-/// her chain does not grow.
+/// Alice's device signed two changes that write and one that writes over, and its store holds the
+/// first alone: her machine, built again from her commands, sends all three again while the
+/// restored host waits for her chain. The first is held; the two the store lacks wait, and say why.
+/// Once her chain is read back, each that waited is the operation held: `sign_waiting` names them
+/// held and none taken, and her chain does not grow.
 #[test]
 fn what_waited_and_turned_out_held_is_told_apart_from_what_was_signed() {
     let entries = list(1);
     let alice = host_in(&entries, Some(ALICE), 1);
     let sends = [
-        (WRITE, write(1, 1000, 10, "milk")),
-        (WRITE, write(1, 2000, 11, "bread")),
-        (SUPERSEDE, note(1, 1000, 2000)),
+        (CHANGE, write(1, 1000, 10, "milk")),
+        (CHANGE, write(2, 2000, 11, "bread")),
+        (CHANGE, note(1, 1000, 2500)),
     ];
     assert!(sealed(&alice, sends[0].0, &sends[0].1).signed);
     let older = alice.to_text();
@@ -451,7 +460,7 @@ fn what_waited_and_turned_out_held_is_told_apart_from_what_was_signed() {
     assert_eq!(restored.restore_from_text(&older), 1);
     restored.await_own_chain();
     assert_eq!(
-        restored.keep_sent(WRITE, &sends[0].1.to_string()),
+        restored.keep_sent(CHANGE, &sends[0].1.to_string()),
         Sent::Held
     );
     for (event, data) in &sends[1..] {
@@ -503,7 +512,7 @@ fn what_waited_is_refused_once_the_log_says_the_person_may_not_write() {
     let alice = Trust::open(LIST);
     alice.set_identity(ALICE, person(ALICE));
     let data = write(1, 1000, 10, "milk").to_string();
-    assert!(matches!(alice.keep_sent(WRITE, &data), Sent::Waiting(_)));
+    assert!(matches!(alice.keep_sent(CHANGE, &data), Sent::Waiting(_)));
     for entry in &list(0) {
         alice.append(entry).unwrap();
     }
@@ -522,9 +531,9 @@ fn what_waited_is_refused_once_the_log_says_the_person_may_not_write() {
     assert!(waited.taken.is_empty());
     assert_eq!(waited.dropped.len(), 1, "{waited:?}");
     let (event, sent, why) = &waited.dropped[0];
-    assert_eq!((event.as_str(), sent.as_str()), (WRITE, data.as_str()));
+    assert_eq!((event.as_str(), sent.as_str()), (CHANGE, data.as_str()));
     assert!(why.contains("may not write (role 1"), "{why}");
     assert_eq!(alice.waiting(), 0);
     assert!(alice.signed_operations().is_empty());
-    assert!(matches!(alice.keep_sent(WRITE, &data), Sent::Refused(_)));
+    assert!(matches!(alice.keep_sent(CHANGE, &data), Sent::Refused(_)));
 }

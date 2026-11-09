@@ -104,16 +104,22 @@ fn linked(list: &str, parent: u64, node: u64, role: u8) -> Body {
     }
 }
 
+/// A change of `author`'s at `wall` of one write, of `text` to row `id`.
 fn write(author: u64, id: u64, wall: i64, text: &str) -> String {
-    json!({"id": id.to_string(), "field": "3", "value": "0", "text": text,
-           "wallTime": wall.to_string(), "counter": "0", "nodeId": author.to_string()})
+    json!({"by": author.to_string(), "wallTime": wall.to_string(), "counter": "0", "ops": [
+        {"kind": 0, "id": id.to_string(), "field": "3", "value": "0", "text": text,
+         "wallTime": "0", "counter": "0", "nodeId": "0"}]})
     .to_string()
 }
 
 fn sent(host: &mut Trust, author: u64, id: u64, wall: i64) -> String {
-    host.seal("#server", "record_list.write", &write(author, id, wall, ""))
-        .unwrap()
-        .unwrap()
+    host.seal(
+        "#server",
+        "record_list.change",
+        &write(author, id, wall, ""),
+    )
+    .unwrap()
+    .unwrap()
 }
 
 #[test]
@@ -134,7 +140,7 @@ fn a_member_links_a_new_device_and_the_log_says_whose_it_is() {
     assert!(hosts
         .of(0)
         .clone()
-        .admit("phone", "record_list.write", &op)
+        .admit("phone", "record_list.change", &op)
         .is_ok());
 
     // The entry reads back from the JSON it is sent as.
@@ -260,9 +266,9 @@ fn what_a_removed_device_made_and_others_held_is_kept_when_their_checkpoints_sho
     let mut carol = hosts.of(3).clone();
     let mut hub = hosts.of(0).clone();
     for op in &ops {
-        carol.admit("bob", "record_list.write", op).unwrap();
+        carol.admit("bob", "record_list.change", op).unwrap();
     }
-    hub.admit("bob", "record_list.write", &ops[0]).unwrap();
+    hub.admit("bob", "record_list.change", &ops[0]).unwrap();
     let before_removal = hosts.of(3).checkpoint(30_000, 7).unwrap();
     assert_eq!(
         before_removal
@@ -285,7 +291,7 @@ fn what_a_removed_device_made_and_others_held_is_kept_when_their_checkpoints_sho
     let after_removal = hosts.of(3).checkpoint(40_000, 8).unwrap();
     for op in &ops[1..] {
         assert!(
-            hub.admit("bob", "record_list.write", op).is_err(),
+            hub.admit("bob", "record_list.change", op).is_err(),
             "past the last accepted"
         );
     }
@@ -323,7 +329,7 @@ fn what_a_removed_device_made_and_others_held_is_kept_when_their_checkpoints_sho
     assert_eq!(amend(2, 3, vec![before_removal]), Ok(()));
     for op in &ops[1..] {
         assert!(
-            hub.admit("bob", "record_list.write", op).is_ok(),
+            hub.admit("bob", "record_list.change", op).is_ok(),
             "now accepted"
         );
     }
@@ -401,7 +407,7 @@ fn a_host_that_keeps_to_the_list_destroys_the_key_and_opens_nothing_sealed_under
     let sealed_1 = alice
         .seal(
             "#server",
-            "record_list.write",
+            "record_list.change",
             &write(1, 1, 1000, "old secret"),
         )
         .unwrap()
@@ -414,11 +420,11 @@ fn a_host_that_keeps_to_the_list_destroys_the_key_and_opens_nothing_sealed_under
     // Before the destruction, bob opens it.
     let mut bob = hosts.of(2).clone();
     let told = bob
-        .admit("alice", "record_list.write", &sealed_1)
+        .admit("alice", "record_list.change", &sealed_1)
         .unwrap()
         .unwrap();
     assert_eq!(
-        serde_json::from_str::<Value>(&told).unwrap()["text"],
+        serde_json::from_str::<Value>(&told).unwrap()["ops"][0]["text"],
         "old secret"
     );
 
@@ -455,16 +461,16 @@ fn a_host_that_keeps_to_the_list_destroys_the_key_and_opens_nothing_sealed_under
     fresh.set_identity(2, person(2));
     fresh.set_epoch_key(2, [6; 32]);
     let reason = fresh
-        .admit("hub", "record_list.write", &sealed_1)
+        .admit("hub", "record_list.change", &sealed_1)
         .unwrap_err();
     assert!(reason.contains("destroyed"), "{reason}");
     assert!(matches!(
-        fresh.take_operation("record_list.write", &sealed_1),
+        fresh.take_operation("record_list.change", &sealed_1),
         Err(sce_rust_trust::TakeError::Refused(_))
     ));
     // The hub holds no key, and carries what it is given, as it always did.
     let mut hub = hosts.of(0).clone();
-    assert!(hub.admit("alice", "record_list.write", &sealed_1).is_ok());
+    assert!(hub.admit("alice", "record_list.change", &sealed_1).is_ok());
 
     // A key of the epoch that a member sends is not taken either.
     let grant = hosts

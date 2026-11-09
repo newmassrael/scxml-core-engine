@@ -4,22 +4,20 @@
 //! The rule a host puts in front of its machine and behind it.
 //!
 //! Who may write the list is what the membership log says (`crate::membership`), and nothing a
-//! peer says about itself: a write that arrives is admitted when its author, the node it names as
-//! the one that stamped it, was a member whose role let them write at the time they made it, and
-//! the signature it carries is true under the key the log gave them for that time. A write that
-//! leaves carries its author's signature: made here when the author is this host's own person,
-//! and otherwise the one it arrived with, which is how a hub hands on what a member wrote
+//! peer says about itself: a change that arrives is admitted when its author, the node it names as
+//! the one that made it (`by`), was a member whose role let them write at the time they made it,
+//! and the signature it carries is true under the key the log gave them for that time. A change
+//! that leaves carries its author's signature: made here when the author is this host's own
+//! person, and otherwise the one it arrived with, which is how a host hands on what a member wrote
 //! without being able to make it.
 //!
 //! The list it guards is the standard shared record list (`crate::message::LIST_DOCUMENT`), and
-//! the events it signs, admits and refuses are that part's ([`crate::message::SIGNED`]).
-//!
-//! A note that a write was written over (`record_list.supersede`) is signed by the person who wrote
-//! over it, with the time they made it at (`at`), and the host keeps who wrote over what
-//! (the note's provenance): the machine sends a tombstone again on a resync as the copy that
-//! holds it, and the host puts back on it who really wrote over it and the signature they made.
-//! The signature and `at` are the host's: they are written into the event as it leaves and taken
-//! out as it arrives, and a machine sees neither.
+//! the event it signs, admits and refuses is that part's change, `record_list.change`
+//! ([`crate::message::SIGNED`]): one change, whole, is one signed operation of its author's chain
+//! (docs/adr/0085, section 1), and the content of each of its writes is what is sealed when the
+//! list keeps it from the hub. The signature and the change's place in its chain are the host's:
+//! they are written into the event as it leaves and taken out as it arrives, and a machine sees
+//! none of them.
 //!
 //! An instant is settled, and every copy forgets the tombstones up to it, on the members' word and
 //! no one else's: the checkpoints of every device that is a writer ([`Trust::checkpoint`]), all
@@ -46,8 +44,7 @@ use crate::encoding;
 use crate::identity::{Identity, PublicKey};
 use crate::membership::{Body, Draft, Entry, Hash, Log, LogError, Profile, WRITER};
 use crate::message::{
-    self, Link, FLOOR_EVENT, ROLE_EVENT, SETTLEMENT_FIELD, SIGNATURE_FIELD, SUPERSEDE_EVENT,
-    WRITE_EVENT,
+    self, Link, CHANGE_EVENT, FLOOR_EVENT, ROLE_EVENT, SETTLEMENT_FIELD, SIGNATURE_FIELD,
 };
 use crate::secrecy;
 
@@ -155,14 +152,11 @@ struct State {
     /// The checkpoints the host made or took in, one for each device and each instant and digest
     /// it speaks of: what a settlement is made from, and what shows an operation withheld.
     checkpoints: BTreeMap<(u64, i64, u32), Checkpoint>,
-    /// Each write that was admitted or made here, by its subject as the machine holds it (its
-    /// register, its stamp and its content, opened: [`message::Signing::subject`]): what the host
-    /// that relays it sends it on as, whether the machine sends it as a part of its change or, on
-    /// a resync, alone. It is the operation as it travels.
-    wires: BTreeMap<Vec<u8>, Wire>,
-    /// Who wrote over each write, by the note's subject: the operation of the person who did, as
-    /// it travels, so that a tombstone the machine sends again is sent as theirs.
-    notes: BTreeMap<Vec<u8>, Wire>,
+    /// Each change that was admitted or made here, by the bytes it is signed as when the machine
+    /// holds it (its content opened, [`message::Signing::message`]): what a change the machine
+    /// sends again leaves as, with the number and the signature it has. It is the operation as it
+    /// travels.
+    changes: BTreeMap<Vec<u8>, Wire>,
     /// Every operation held of each device, the proof of a conflict included: what the chains are
     /// checked against, in whatever order the operations came, and what decides what the machine is
     /// told of a device ([`crate::chain`]).
@@ -258,8 +252,7 @@ impl Trust {
                 awaiting_own_chain: false,
                 waiting: Vec::new(),
                 checkpoints: BTreeMap::new(),
-                wires: BTreeMap::new(),
-                notes: BTreeMap::new(),
+                changes: BTreeMap::new(),
                 ops: BTreeMap::new(),
                 evicted: Vec::new(),
                 restored: Vec::new(),
@@ -280,8 +273,8 @@ impl Trust {
 
     /// Take an entry of the membership log in: the genesis, or the one that follows the head and is
     /// signed by the administrators it needs. `Ok(false)` when it is one already held. Two
-    /// different entries at one position are a fork, which freezes the host: it takes no write,
-    /// note or settled instant until an administrator resolves it ([`Self::forked`]).
+    /// different entries at one position are a fork, which freezes the host: it takes no change or
+    /// settled instant until an administrator resolves it ([`Self::forked`]).
     pub fn append(&self, entry: &Entry) -> Result<bool, LogError> {
         let mut state = self.state();
         let appended = state.log.append(entry);
@@ -673,8 +666,8 @@ impl Trust {
     }
 
     /// The devices this host holds conflicting operations of, and the number of the first conflict:
-    /// two operations at one number, one that does not follow the one before it, a write whose time
-    /// goes back along the chain or whose stamp another write has. Proof that the device's chain
+    /// two operations at one number, one that does not follow the one before it, a change whose time
+    /// goes back along the chain or whose dot another change has. Proof that the device's chain
     /// forked or that it used a nonce twice, which every host that holds the operations
     /// ([`Self::evidence`]) finds at the same number.
     pub fn equivocating(&self) -> Vec<(u64, u64)> {
@@ -1153,8 +1146,8 @@ impl Trust {
     }
 
     /// What this host holds, as one text for its store (the key-value feature): a JSON object
-    /// with the checkpoints it made or took in, and every operation it holds (the writes it
-    /// relays and the notes of who wrote over what, every number of every chain), each as the
+    /// with the checkpoints it made or took in, and every operation it holds (the changes it
+    /// made, took in and relays, every number of every chain), each as the
     /// event and the data it goes on the wire with, and what its machine sent that waits to be
     /// signed ([`Self::keep_sent`]), in order, as the machine sent it. It holds no key: a host keeps
     /// those where it keeps its person's secret.
@@ -1308,31 +1301,23 @@ fn told_of(state: &State, node: u64) -> Vec<(u64, [u8; 32])> {
         .unwrap_or_default()
 }
 
-/// Put what the host keeps writes and notes by in line with what the machine is told of `node`: an
-/// operation that is not told is not what the host sends a write on as, and one that is, is.
+/// Put what the host keeps changes by in line with what the machine is told of `node`: an
+/// operation that is not told is not what the host sends a change on as, and one that is, is.
 fn sync_tables(state: &mut State, node: u64) {
     let Some(chain) = state.ops.get(&node) else {
         return;
     };
     let signatures: std::collections::BTreeSet<[u8; 64]> =
         chain.all().map(|held| held.wire.signature).collect();
-    let told: Vec<(&'static str, Vec<u8>, Wire)> = chain
+    let told: Vec<(Vec<u8>, Wire)> = chain
         .view()
-        .map(|held| (held.event, held.key.clone(), held.wire.clone()))
+        .map(|held| (held.key.clone(), held.wire.clone()))
         .collect();
     state
-        .wires
+        .changes
         .retain(|_, wire| !signatures.contains(&wire.signature));
-    state
-        .notes
-        .retain(|_, wire| !signatures.contains(&wire.signature));
-    for (event, key, wire) in told {
-        let table = if event == WRITE_EVENT {
-            &mut state.wires
-        } else {
-            &mut state.notes
-        };
-        table.entry(key).or_insert(wire);
+    for (key, wire) in told {
+        state.changes.entry(key).or_insert(wire);
     }
 }
 
@@ -1402,14 +1387,11 @@ fn evict_past_the_cutoff(state: &mut State) {
                 &cutoffs,
             );
         }
-        // What was held and is not now is not what the host sends a write on as, told or not.
+        // What was held and is not now is not what the host sends a change on as, told or not.
         if !gone.is_empty() {
             let signatures: Vec<[u8; 64]> = gone.iter().map(|(_, _, sig)| *sig).collect();
             state
-                .wires
-                .retain(|_, wire| !signatures.contains(&wire.signature));
-            state
-                .notes
+                .changes
                 .retain(|_, wire| !signatures.contains(&wire.signature));
         }
         tell_what_changed(state, node, &before, None);
@@ -1490,14 +1472,9 @@ fn hold(state: &mut State, node: u64, held: Held) -> Placed {
             .ops
             .get(&node)
             .and_then(|chain| chain.at(seq))
-            .map(|one| (one.event, one.key.clone(), one.wire.clone()));
-        if let Some((event, key, wire)) = table_entry {
-            let table = if event == WRITE_EVENT {
-                &mut state.wires
-            } else {
-                &mut state.notes
-            };
-            table.entry(key).or_insert(wire);
+            .map(|one| (one.key.clone(), one.wire.clone()));
+        if let Some((key, wire)) = table_entry {
+            state.changes.entry(key).or_insert(wire);
         }
     }
     Placed {
@@ -1624,11 +1601,7 @@ fn never_opened(state: &State, epoch: u32) -> bool {
 /// opened when this host keeps content from the hub, as [`Trust::take_operation`] tells it.
 fn told_text(state: &State, held: &Held) -> Option<String> {
     let travelling: Value = serde_json::from_str(&held.wire.data).ok()?;
-    let visible = if held.event == WRITE_EVENT {
-        open_write(state, &travelling, held.wire.link.log).ok()?
-    } else {
-        travelling
-    };
+    let visible = open_change(state, &travelling, held.wire.link.log).ok()?;
     Some(visible.to_string())
 }
 
@@ -1860,8 +1833,8 @@ pub struct Taken {
 }
 
 /// How an operation taken in conflicts with the operations the host held of its device: two at one
-/// number, one that does not follow the one before it or that the next does not follow, a write
-/// whose time goes back along the chain or whose stamp another write has. It is held as proof,
+/// number, one that does not follow the one before it or that the next does not follow, a change
+/// whose time goes back along the chain or whose dot another change has. It is held as proof,
 /// as every host that holds both holds it, and the device's chain is frozen from the lowest
 /// position of any conflict among what is held.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1986,13 +1959,13 @@ struct Verified {
     link: Link,
     id: [u8; 32],
     stamp: Option<(i64, u64)>,
-    /// What a write is sealed under (its id, field, time, counter and device), so that two writes
-    /// under one stamp are seen as the nonce used twice that they are.
+    /// The change's dot (its author and its stamp, [`message::Signing::subject`]), which every write
+    /// of it is sealed under with its register, so that two changes under one dot are seen as the
+    /// nonce used twice that they are.
     wid: Option<Vec<u8>>,
     travelling: Value,
     visible: Value,
-    /// What the host keeps it under: the subject of the write as the machine holds it, or the
-    /// subject of a note.
+    /// What the host keeps it under: the bytes the change is signed as when the machine holds it.
     key: Vec<u8>,
 }
 
@@ -2095,114 +2068,105 @@ fn verify_operation(
     // is what the set of them says, whatever order they were given in ([`Chain`]), and an operation
     // that conflicts is held as proof and not refused.
 
-    // A write's stamp is its author's clock when it wrote it, and what a write is sealed under is
-    // the fields that make its stamp: both are the author's own claims, which the chain checks.
-    let (stamp, wid) = if event == WRITE_EVENT {
-        (
-            Some(message::stamp_of(&value).map_err(|error| format!("{event}: {error:?}"))?),
-            Some(message::write_stamp(&value).map_err(|error| format!("{event}: {error:?}"))?),
-        )
-    } else {
-        (None, None)
-    };
+    // A change's stamp is its author's clock when it made it, and what its writes are sealed under
+    // is its dot: both are the author's own claims, which the chain checks.
+    let stamp = message::stamp_of(&value).map_err(|error| format!("{event}: {error:?}"))?;
 
-    let visible = if event == WRITE_EVENT {
-        open_write(state, &value, link.log).map_err(|refusal| match refusal {
-            Refusal::NoKey { reason, epoch, .. } => Refusal::NoKey {
-                reason,
-                epoch,
-                at: Some((author, link.seq)),
-            },
-            other => other,
-        })?
-    } else {
-        value.clone()
-    };
-    let key = if event == WRITE_EVENT {
-        message::signing(&state.calendar, event, &visible)
-            .and_then(Result::ok)
-            .ok_or_else(|| format!("{event}: what it holds is not a write"))?
-            .subject
-    } else {
-        signing.subject
-    };
+    let visible = open_change(state, &value, link.log).map_err(|refusal| match refusal {
+        Refusal::NoKey { reason, epoch, .. } => Refusal::NoKey {
+            reason,
+            epoch,
+            at: Some((author, link.seq)),
+        },
+        other => other,
+    })?;
+    let key = message::signing(&state.calendar, event, &visible)
+        .and_then(Result::ok)
+        .ok_or_else(|| format!("{event}: what it holds is not a change"))?
+        .message;
     Ok(Verified {
         author,
         link,
         id,
-        stamp,
-        wid,
+        stamp: Some(stamp),
+        wid: Some(signing.subject),
         travelling: value,
         visible,
         key,
     })
 }
 
-/// The write as the machine is told it: the content opened, when this host keeps content from
-/// the hub, and the write as it is otherwise. Whether the list keeps content, and which epoch a
-/// write may be sealed under, is judged at the entry of the log the write names (`entry`): a device
-/// wrote it knowing the log up to there, and two hosts that were given the same entries in another
-/// order judge it the same. A write that names an entry before the list began to seal is plain, and
-/// holds whether the host took it before or after the entry that began the epoch.
-fn open_write(state: &State, wire: &Value, entry: u64) -> Result<Value, Refusal> {
-    let epoch_then = state.log.epoch_at(entry);
+/// The change as the machine is told it: the content of each of its writes opened, when this host
+/// keeps content from the hub, and the change as it is otherwise. Whether the list keeps content,
+/// and which epoch a write may be sealed under, is judged at the entry of the log the change names
+/// (`entry`): a device made it knowing the log up to there, and two hosts that were given the same
+/// entries in another order judge it the same. A change that names an entry before the list began
+/// to seal is plain, and holds whether the host took it before or after the entry that began the
+/// epoch. A write-over carries no content, and is as it is. A change whose operation is of no kind
+/// a change holds, or that writes one register twice, is no change, sealed or not.
+fn open_change(state: &State, wire: &Value, entry: u64) -> Result<Value, Refusal> {
+    let event = CHANGE_EVENT;
     let refused = |reason: String| Refusal::Refused(reason);
-    let sealed = wire.get("text").and_then(Value::as_str).unwrap_or("");
-    if epoch_then == 0 {
-        if secrecy::epoch_of(sealed).is_some() {
+    let writes =
+        message::writes_of(wire).map_err(|error| refused(format!("{event}: {error:?}")))?;
+    let epoch_then = state.log.epoch_at(entry);
+    let mut visible = wire.clone();
+    for (at, stamp) in writes {
+        let sealed = wire["ops"][at]
+            .get("text")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        if epoch_then == 0 {
+            if secrecy::epoch_of(sealed).is_some() {
+                return Err(refused(format!(
+                    "{event}: its write {at} is sealed under an epoch, and the membership log it names has begun none"
+                )));
+            }
+            continue;
+        }
+        let Some(epoch) = secrecy::epoch_of(sealed) else {
             return Err(refused(format!(
-                "{WRITE_EVENT}: it is sealed under an epoch, and the membership log it names has begun none"
+                "{event}: the content of its write {at} is not sealed, and the list keeps content from the hub"
+            )));
+        };
+        if epoch == 0 || epoch > epoch_then {
+            return Err(refused(format!(
+                "{event}: its write {at} is sealed under epoch {epoch}, which the membership log it names has not begun"
             )));
         }
-        return Ok(wire.clone());
-    }
-    let Some(epoch) = secrecy::epoch_of(sealed) else {
-        return Err(refused(format!(
-            "{WRITE_EVENT}: its content is not sealed, and the list keeps content from the hub"
-        )));
-    };
-    if epoch == 0 || epoch > epoch_then {
-        return Err(refused(format!(
-            "{WRITE_EVENT}: it is sealed under epoch {epoch}, which the membership log it names has not begun"
-        )));
-    }
-    // A hub that holds no key carries it as it is; a host that opens refuses what the list has had
-    // destroyed the keys of, for good (it is not parked: no key will come).
-    if state.log.is_shredded(epoch) && !state.relays_sealed() {
-        return Err(refused(format!(
-            "{WRITE_EVENT}: it is sealed under epoch {epoch}, whose keys the list had destroyed"
-        )));
-    }
-    if state.relays_sealed() {
-        return Ok(wire.clone());
-    }
-    let stamp =
-        message::write_stamp(wire).map_err(|error| refused(format!("{WRITE_EVENT}: {error:?}")))?;
-    let (value, text) =
-        secrecy::open(&state.calendar, &state.epoch_keys, &stamp, sealed).map_err(|error| {
-            match error {
+        // A hub that holds no key carries it as it is; a host that opens refuses what the list has
+        // had destroyed the keys of, for good (it is not parked: no key will come).
+        if state.log.is_shredded(epoch) && !state.relays_sealed() {
+            return Err(refused(format!(
+                "{event}: its write {at} is sealed under epoch {epoch}, whose keys the list had destroyed"
+            )));
+        }
+        if state.relays_sealed() {
+            continue;
+        }
+        let (value, text) = secrecy::open(&state.calendar, &state.epoch_keys, &stamp, sealed)
+            .map_err(|error| match error {
                 secrecy::OpenError::NotSealed => refused(format!(
-                "{WRITE_EVENT}: its content is not sealed, and this host keeps content from the hub"
-            )),
-                // A key this host does not hold yet (the group's commit has not reached it) or never
-                // will (an epoch before it joined): the host asks again later, and does not take the
-                // write for one that cannot hold.
+                    "{event}: the content of its write {at} is not sealed, and this host keeps content from the hub"
+                )),
+                // A key this host does not hold yet (the group's commit has not reached it) or
+                // never will (an epoch before it joined): the host asks again later, and does not
+                // take the change for one that cannot hold.
                 secrecy::OpenError::NoKey { epoch } => Refusal::NoKey {
-                    reason: format!("{WRITE_EVENT}: this host holds no key of epoch {epoch}"),
+                    reason: format!("{event}: this host holds no key of epoch {epoch}"),
                     epoch,
                     at: None,
                 },
                 secrecy::OpenError::Corrupt => {
-                    refused(format!("{WRITE_EVENT}: its content does not open"))
+                    refused(format!("{event}: the content of its write {at} does not open"))
                 }
-            }
-        })?;
-    let mut visible = wire.clone();
-    let object = visible
-        .as_object_mut()
-        .ok_or_else(|| refused(format!("{WRITE_EVENT}: the data is not an object")))?;
-    object.insert("value".to_string(), Value::String(value.to_string()));
-    object.insert("text".to_string(), Value::String(text));
+            })?;
+        let object = visible["ops"][at]
+            .as_object_mut()
+            .ok_or_else(|| refused(format!("{event}: its write {at} is not an object")))?;
+        object.insert("value".to_string(), Value::String(value.to_string()));
+        object.insert("text".to_string(), Value::String(text));
+    }
     Ok(visible)
 }
 
@@ -2313,14 +2277,8 @@ fn make_operation(
         .ok_or_else(|| format!("{event}: the data is not what it names"))?;
     let bytes = message::operation_bytes(&signing.message, &link);
     let signature = identity.sign(&bytes);
-    let (stamp, wid) = if event == WRITE_EVENT {
-        (
-            Some(message::stamp_of(&travelling).map_err(|error| format!("{event}: {error:?}"))?),
-            Some(message::write_stamp(&travelling).map_err(|error| format!("{event}: {error:?}"))?),
-        )
-    } else {
-        (None, None)
-    };
+    let stamp = message::stamp_of(&travelling).map_err(|error| format!("{event}: {error:?}"))?;
+    let wid = signing.subject;
     let wire = Wire {
         data: travelling.to_string(),
         link,
@@ -2330,15 +2288,15 @@ fn make_operation(
     let held = Held {
         id: message::operation_id(&bytes),
         prev,
-        stamp,
-        wid,
+        stamp: Some(stamp),
+        wid: Some(wid),
         key,
         event,
         wire: wire.clone(),
     };
-    // What this device signs it signs once and in order: a write whose stamp goes back along its
-    // chain, or that another write of it has, is not signed. The second would be sealed under the
-    // nonce of the first, and what a relay knows of the one gives it the other.
+    // What this device signs it signs once and in order: a change whose stamp goes back along its
+    // chain, or whose dot another change of it has, is not signed. Its writes would be sealed under
+    // the nonces of the other's, and what a relay knows of the one gives it the other.
     let conflict = state
         .ops
         .get(&author)
@@ -2346,10 +2304,10 @@ fn make_operation(
     if let Some((at, why)) = conflict {
         return Err(match why {
             Why::Repeats => format!(
-                "{event}: its stamp names a write this device signed already (at {at}), and a stamp is sealed under once"
+                "{event}: its dot names a change this device signed already (at {at}), and a dot is sealed under once"
             ),
             Why::GoesBack => format!(
-                "{event}: its stamp goes back along this device's chain (a write at {at} has a later time)"
+                "{event}: its stamp goes back along this device's chain (a change at {at} has a later time)"
             ),
             Why::Forked => format!(
                 "{event}: it would not follow the chain this device has signed (conflict at {at})"
@@ -2371,35 +2329,6 @@ fn signed_name(event: &str) -> Option<&'static str> {
         .find(|name| *name == event)
 }
 
-/// A note leaves as who really wrote over the write, with their operation as it was made, when
-/// the host holds that; and as the host's own person's next operation, when it does not and the
-/// note names that person: a copy that holds a tombstone and sends it again vouches for it by
-/// sending what the person signed, and a host that holds no author for it sends nothing.
-fn seal_note(state: &mut State, data: &str) -> Result<Sealed, String> {
-    let event = SUPERSEDE_EVENT;
-    let malformed = || format!("{event}: the data is not a note");
-    let value: Value = serde_json::from_str(data).map_err(|_| malformed())?;
-    let signing = message::signing(&state.calendar, event, &value)
-        .and_then(Result::ok)
-        .ok_or_else(malformed)?;
-    if let Some(wire) = state.notes.get(&signing.subject) {
-        let data = wire.to_json().ok_or_else(malformed)?;
-        return Ok(Sealed {
-            data,
-            signed: false,
-        });
-    }
-    if !matches!(&state.own, Some((node, _)) if *node == signing.author) {
-        return Err(format!(
-            "{event}: this host holds no author for this note, which names node {}",
-            signing.author
-        ));
-    }
-    let wire = make_operation(state, event, value, signing.author, signing.subject)?;
-    let data = wire.to_json().ok_or_else(malformed)?;
-    Ok(Sealed { data, signed: true })
-}
-
 /// What an event the host's machine sent leaves as ([`Trust::seal_sent`]), and whether a new
 /// operation of the host's person's chain was signed for it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2407,10 +2336,9 @@ pub struct Sealed {
     /// The data the event leaves with.
     pub data: String,
     /// Whether a new operation was signed and numbered for it. When not, the event leaves as what
-    /// the host held already: the operation made or admitted before for the same write or note
-    /// (the machine sent it again, as a machine built again from its host's own log does, or as a
-    /// copy that shares what it holds on a resync does), or a settled instant with the members'
-    /// settlement.
+    /// the host held already: the operation made or admitted before for the same change (the
+    /// machine sent it again, as a copy given its own change back does), or a settled instant with
+    /// the members' settlement.
     pub signed: bool,
 }
 
@@ -2420,17 +2348,15 @@ impl Trust {
     /// behind its machine is this, without the second part). `Ok(None)` for an event that is not
     /// signed.
     ///
-    /// **A write or a note is signed once.** What the host keeps a write by is its register, its
-    /// stamp and its content, and a note by the write it is about ([`message::Signing::subject`]):
-    /// the same write or note sent again leaves as the operation the host holds, with the number
-    /// and the signature it has, and nothing is signed. So a machine built again from its host's own
-    /// log, which sends its writes again, makes no operation and gives the relay nothing new. What
-    /// an operation travels in (`parts`, and a note's `by`, `atWallTime` and `atCounter`) is not
-    /// what it is about, so a write sent alone that was signed as a part of a change leaves as that
-    /// part. A write of the host's person under a stamp the device signed another content under is
-    /// refused before anything is sealed or signed: one stamp names one write, and a second content
-    /// under it would be the device signing two things for one write, which every host given both
-    /// holds as proof and freezes the device for.
+    /// **A change is signed once, whole.** One change is one operation of its author's chain
+    /// (docs/adr/0085, section 1), and what the host keeps a change by is the bytes it is signed
+    /// as, its content opened: the same change sent again leaves as the operation the host holds,
+    /// with the number and the signature it has, and nothing is signed. So a machine that sends a
+    /// change again makes no operation and gives the relay nothing new. A change of the host's
+    /// person under a dot (its author and its stamp) the device signed another change under is
+    /// refused before anything is sealed or signed: one dot names one change, and a second content
+    /// under it would be the device signing two things for one change, sealed under one nonce, which
+    /// every host given both holds as proof and freezes the device for.
     pub fn seal_sent(&self, event: &str, data: &str) -> Result<Option<Sealed>, String> {
         seal_in(&mut self.state(), event, data)
     }
@@ -2449,13 +2375,10 @@ fn seal_in(state: &mut State, event: &str, data: &str) -> Result<Option<Sealed>,
             signed: false,
         }));
     }
-    if event == SUPERSEDE_EVENT {
-        return seal_note(state, data).map(Some);
-    }
     if !message::SIGNED_EVENTS.contains(&event) {
         return Ok(None);
     }
-    seal_write(state, data).map(Some)
+    seal_change(state, data).map(Some)
 }
 
 /// Why nothing is sent: the membership log forked at `index`.
@@ -2505,23 +2428,23 @@ fn no_key_of_the_epoch(event: &str, epoch: u32) -> String {
     )
 }
 
-/// Why a write of `author`'s under `stamp` (its register and stamp) about `subject` is not signed:
-/// the device signed another content under that stamp. One stamp names one write, and a second
-/// content under it would be the device signing two things for one write.
+/// Why a change of `author`'s under `dot` (its author and its stamp) signed as `content` is not
+/// signed: the device signed another change under that dot. One dot names one change, and a second
+/// content under it would be the device signing two things for one change.
 fn another_content_signed(
     state: &State,
     author: u64,
-    stamp: &[u8],
-    subject: &[u8],
+    dot: &[u8],
+    content: &[u8],
 ) -> Option<String> {
     let at = state
         .ops
         .get(&author)
-        .and_then(|chain| chain.stamped(stamp))
-        .filter(|other| other.key.as_slice() != subject)
+        .and_then(|chain| chain.stamped(dot))
+        .filter(|other| other.key.as_slice() != content)
         .map(Held::seq)?;
     Some(format!(
-        "{WRITE_EVENT}: this device signed another content for this write (its register and stamp) at {at}, and one write is signed with one content"
+        "{CHANGE_EVENT}: this device signed another content under this dot (its author and its stamp) at {at}, and one change is signed with one content"
     ))
 }
 
@@ -2532,11 +2455,10 @@ struct Waiting {
     event: &'static str,
     /// Its payload, as the machine sent it.
     data: String,
-    /// What it is about ([`message::Signing::subject`]): one write or note waits once.
-    subject: Vec<u8>,
-    /// A write's register and stamp ([`message::write_stamp`]), which names one write; none for a
-    /// note.
-    stamp: Option<Vec<u8>>,
+    /// The bytes it is signed as ([`message::Signing::message`]): one change waits once.
+    content: Vec<u8>,
+    /// Its dot ([`message::Signing::subject`]), which names one change.
+    dot: Vec<u8>,
     /// The node of the person it names as its author.
     author: u64,
 }
@@ -2548,23 +2470,18 @@ impl Waiting {
         let event = signed_name(event)?;
         let value: Value = serde_json::from_str(data).ok()?;
         let signing = message::signing(list, event, &value)?.ok()?;
-        let stamp = if event == WRITE_EVENT {
-            Some(message::write_stamp(&value).ok()?)
-        } else {
-            None
-        };
         Some(Self {
             event,
             data: data.to_string(),
-            subject: signing.subject,
-            stamp,
+            content: signing.message,
+            dot: signing.subject,
             author: signing.author,
         })
     }
 
-    /// Whether `other` is this send made again: the same event about the same thing.
+    /// Whether `other` is this send made again: the same change.
     fn is_the_same(&self, other: &Waiting) -> bool {
-        self.event == other.event && self.subject == other.subject
+        self.event == other.event && self.content == other.content
     }
 }
 
@@ -2582,10 +2499,12 @@ enum Readiness {
 
 /// Whether this host's person may sign `event` as a new operation now: the person is a member the
 /// log the host holds lets write, with the key the host signs with; the device is not waiting for
-/// its own chain; for a write of a list keyed by a group the host's device is in, the log names an
-/// epoch ([`Trust::keyed_by_a_group`]); and, for a write of a list that keeps its content, the host
-/// holds the key of the epoch the log is in. What a round can change is [`Readiness::NotYet`]; what only a later entry of
-/// an administrator's could, and a device that may never sign again, is [`Readiness::Never`].
+/// its own chain; for a list keyed by a group the host's device is in, the log names an epoch
+/// ([`Trust::keyed_by_a_group`]); and, for a list that keeps its content, the host holds the key of
+/// the epoch the log is in. A change is one unit, sealed whole under one epoch, so a change that
+/// holds no write waits for the key as one that holds writes does. What a round can change is
+/// [`Readiness::NotYet`]; what only a later entry of an administrator's could, and a device that
+/// may never sign again, is [`Readiness::Never`].
 fn readiness(state: &State, event: &str) -> Readiness {
     let Some((node, identity)) = state.own.as_ref() else {
         return Readiness::Never(format!("{event}: this host has no person"));
@@ -2628,13 +2547,8 @@ fn readiness(state: &State, event: &str) -> Readiness {
         role if role < WRITER => Readiness::Never(format!(
             "{event}: node {node} may not write (role {role} at entry {tip})"
         )),
-        _ if event == WRITE_EVENT && names_no_epoch_of_its_group(state) => {
-            Readiness::NotYet(no_epoch_of_the_group(event))
-        }
-        _ if event == WRITE_EVENT
-            && state.keeps_content()
-            && !state.epoch_keys.contains_key(&state.log.epoch()) =>
-        {
+        _ if names_no_epoch_of_its_group(state) => Readiness::NotYet(no_epoch_of_the_group(event)),
+        _ if state.keeps_content() && !state.epoch_keys.contains_key(&state.log.epoch()) => {
             Readiness::NotYet(no_key_of_the_epoch(event, state.log.epoch()))
         }
         _ => Readiness::Ready,
@@ -2646,8 +2560,8 @@ fn readiness(state: &State, event: &str) -> Readiness {
 pub enum Sent {
     /// A new operation of the person's chain was signed for it.
     Signed,
-    /// The host holds it already, as the operation made or admitted before for the same write or
-    /// note (or a settled instant with the members' settlement): nothing is signed.
+    /// The host holds it already, as the operation made or admitted before for the same change (or
+    /// a settled instant with the members' settlement): nothing is signed.
     Held,
     /// It is no event that is signed: nothing is kept.
     NotSigned,
@@ -2676,7 +2590,7 @@ pub struct Waited {
     /// sent: each `(event, data)`. The relay is given each with the rest of what it lacks.
     pub taken: Vec<(String, String)>,
     /// The sends the host held already when their turn came, as the operation made or admitted
-    /// before for the same write or note (the device's own chain, read back, held them): nothing
+    /// before for the same change (the device's own chain, read back, held them): nothing
     /// was signed for them, and the relay is given nothing new. Each `(event, data)`.
     pub held: Vec<(String, String)>,
     /// The sends refused for good, each `(event, data, why)`: the log the host now holds says the
@@ -2709,10 +2623,10 @@ impl Trust {
     /// ([`Self::await_own_chain`]). Such a send is kept ([`Sent::Waiting`]), and so is every send
     /// after it, in the order they were made, and [`Self::sign_waiting`] signs them once the person
     /// may. A send the machine makes again while it waits waits once; another content under the
-    /// stamp of a write that waits, or that the device signed, is refused at once.
+    /// dot of a change that waits, or that the device signed, is refused at once.
     ///
-    /// **What is final is refused.** An event that is not signed is [`Sent::NotSigned`]; a write or
-    /// note the host holds already is [`Sent::Held`]; another person's that the host holds no
+    /// **What is final is refused.** An event that is not signed is [`Sent::NotSigned`]; a change
+    /// the host holds already is [`Sent::Held`]; another person's that the host holds no
     /// signature for, a person that may not write under the log the host holds (a reader, a
     /// device taken off), a frozen chain, a forked log and a host with no person are
     /// [`Sent::Refused`]. A device whose log grants it writing signs the send at once
@@ -2722,11 +2636,7 @@ impl Trust {
         let Some(send) = Waiting::of(&state.calendar, event, data) else {
             return Sent::of(seal_in(&mut state, event, data));
         };
-        let held = if send.event == WRITE_EVENT {
-            state.wires.contains_key(&send.subject)
-        } else {
-            state.notes.contains_key(&send.subject)
-        };
+        let held = state.changes.contains_key(&send.content);
         let own = matches!(&state.own, Some((node, _)) if *node == send.author);
         if held || !own {
             return Sent::of(seal_in(&mut state, event, data));
@@ -2738,20 +2648,15 @@ impl Trust {
         {
             return Sent::Waiting(why_it_waits(&state, send.event));
         }
-        if let Some(stamp) = &send.stamp {
-            let clash = state
-                .waiting
-                .iter()
-                .any(|waiting| waiting.stamp.as_ref() == Some(stamp));
-            if clash {
-                return Sent::Refused(format!(
-                    "{WRITE_EVENT}: a write of this device that waits to be signed has another content for this write (its register and stamp), and one write is signed with one content"
-                ));
-            }
-            if let Some(reason) = another_content_signed(&state, send.author, stamp, &send.subject)
-            {
-                return Sent::Refused(reason);
-            }
+        let clash = state.waiting.iter().any(|waiting| waiting.dot == send.dot);
+        if clash {
+            return Sent::Refused(format!(
+                "{CHANGE_EVENT}: a change of this device that waits to be signed has another content under this dot (its author and its stamp), and one change is signed with one content"
+            ));
+        }
+        if let Some(reason) = another_content_signed(&state, send.author, &send.dot, &send.content)
+        {
+            return Sent::Refused(reason);
         }
         if !state.waiting.is_empty() {
             let why = why_it_waits(&state, send.event);
@@ -2778,7 +2683,7 @@ impl Trust {
     /// here is one its copy holds and no other copy will.
     ///
     /// **What was signed and what was held are told apart.** A send that waited may turn out, when
-    /// its turn comes, to be a write or a note the host holds already: a device restored from an
+    /// its turn comes, to be a change the host holds already: a device restored from an
     /// older store kept it waiting because the store did not hold it, and the round then read the
     /// device's own chain back from the relay, which did. It leaves as the operation held, and is in
     /// [`Waited::held`], not in [`Waited::taken`], which holds only the sends a new operation was
@@ -2803,8 +2708,8 @@ impl Trust {
                     Ok(Some(sealed)) if sealed.signed => {
                         waited.taken.push((send.event.to_string(), send.data));
                     }
-                    // Nothing new was signed: the write or the note leaves as the operation the
-                    // host held already.
+                    // Nothing new was signed: the change leaves as the operation the host held
+                    // already.
                     Ok(_) => waited.held.push((send.event.to_string(), send.data)),
                     Err(why) => waited
                         .dropped
@@ -2839,23 +2744,26 @@ impl Sealer for Trust {
     }
 }
 
-/// A write leaves as it traveled to this host, with its author's signature, when it is another
-/// person's; and as this host's person's own, sealed when the host keeps content from the hub,
-/// and signed here, when it is theirs. A write this host cannot make leave as it must is not sent
-/// as something else: a host that keeps content and holds no key of the epoch the log is in sends
-/// nothing, and does not fall back to an older key or to the clear.
-fn seal_write(state: &mut State, data: &str) -> Result<Sealed, String> {
-    let event = WRITE_EVENT;
-    let malformed = || format!("{event}: the data is not a write");
+/// A change leaves as it traveled to this host, with its author's signature, when it is another
+/// person's; and as this host's person's own, each of its writes sealed when the host keeps content
+/// from the hub, and signed here whole, as one operation, when it is theirs (docs/adr/0085, section
+/// 1). A change this host cannot make leave as it must is not sent as something else: a host that
+/// keeps content and holds no key of the epoch the log is in sends nothing, and does not fall back
+/// to an older key or to the clear.
+fn seal_change(state: &mut State, data: &str) -> Result<Sealed, String> {
+    let event = CHANGE_EVENT;
+    let malformed = || format!("{event}: the data is not a change");
     let visible: Value = serde_json::from_str(data).map_err(|_| malformed())?;
-    let signing = message::signing(&state.calendar, event, &visible)
-        .and_then(Result::ok)
-        .ok_or_else(malformed)?;
-    let held = signing.subject;
+    let signing = match message::signing(&state.calendar, event, &visible) {
+        Some(Ok(signing)) => signing,
+        Some(Err(error)) => return Err(format!("{event}: {error:?}")),
+        None => return Err(malformed()),
+    };
+    let held = signing.message;
     let own = matches!(&state.own, Some((node, _)) if *node == signing.author);
-    // What was made or admitted before leaves as it did: one write is one set of bytes, and the
-    // same write sent again (a machine built again from its host's log) signs nothing.
-    if let Some(wire) = state.wires.get(&held) {
+    // What was made or admitted before leaves as it did: one change is one set of bytes, and the
+    // same change sent again signs nothing.
+    if let Some(wire) = state.changes.get(&held) {
         let data = wire.to_json().ok_or_else(malformed)?;
         return Ok(Sealed {
             data,
@@ -2868,13 +2776,14 @@ fn seal_write(state: &mut State, data: &str) -> Result<Sealed, String> {
             signing.author
         ));
     }
-    // One stamp names one write. Another content under a stamp this device has signed is refused
-    // here, before it is sealed under the stamp's nonce or signed: it would be the device signing two
-    // things for one write.
-    let stamp = message::write_stamp(&visible).map_err(|_| malformed())?;
-    if let Some(reason) = another_content_signed(state, signing.author, &stamp, &held) {
+    // One dot names one change. Another change under a dot this device has signed is refused here,
+    // before its writes are sealed under the dot's nonces or it is signed: it would be the device
+    // signing two things for one change. So is a change that writes one register twice, whose two
+    // writes would be sealed under one nonce.
+    if let Some(reason) = another_content_signed(state, signing.author, &signing.subject, &held) {
         return Err(reason);
     }
+    let writes = message::writes_of(&visible).map_err(|error| format!("{event}: {error:?}"))?;
     if names_no_epoch_of_its_group(state) {
         return Err(no_epoch_of_the_group(event));
     }
@@ -2885,20 +2794,23 @@ fn seal_write(state: &mut State, data: &str) -> Result<Sealed, String> {
             .epoch_keys
             .get(&epoch)
             .ok_or_else(|| no_key_of_the_epoch(event, epoch))?;
-        let (number, text) = message::write_content(&visible).map_err(|_| malformed())?;
-        let object = wire.as_object_mut().ok_or_else(malformed)?;
-        object.insert("value".to_string(), Value::String("0".to_string()));
-        object.insert(
-            "text".to_string(),
-            Value::String(secrecy::seal(
-                &state.calendar,
-                epoch,
-                key,
-                &stamp,
-                number,
-                &text,
-            )),
-        );
+        for (at, stamp) in writes {
+            let (number, text) =
+                message::write_content(&visible["ops"][at]).map_err(|_| malformed())?;
+            let object = wire["ops"][at].as_object_mut().ok_or_else(malformed)?;
+            object.insert("value".to_string(), Value::String("0".to_string()));
+            object.insert(
+                "text".to_string(),
+                Value::String(secrecy::seal(
+                    &state.calendar,
+                    epoch,
+                    key,
+                    &stamp,
+                    number,
+                    &text,
+                )),
+            );
+        }
     }
     let operation = make_operation(state, event, wire, signing.author, held)?;
     let data = operation.to_json().ok_or_else(malformed)?;

@@ -3,18 +3,20 @@
 
 //! Keeping the content of a write from the hub.
 //!
-//! A list has a key for each epoch, held by its members and by no one else, and a write that
-//! leaves a member's host has its number and its text sealed under the key of the latest epoch:
-//! what the hub holds and relays is the stamp of the write (which row, which field, when, by
-//! whom) and a text it cannot read. The stamp stays in the clear, because the hub's machine
-//! orders, merges, forgets and compares digests by it; what a hub learns is that a member changed
-//! a field of a row at a time, and not what it was changed to.
+//! A list has a key for each epoch, held by its members and by no one else, and each write of a
+//! change that leaves a member's host has its number and its text sealed under the key of the
+//! latest epoch: what the hub holds and relays is the change's stamp and author, the register of
+//! each of its operations, and for each write a text it cannot read. The stamp stays in the clear,
+//! because a copy merges and orders by it; what a hub learns is that a member changed fields of a
+//! row at a time, and not what they were changed to.
 //!
-//! The cipher is XChaCha20-Poly1305. Its nonce is made from the stamp, which every write has
-//! of its own, so that a host needs no source of randomness and one write is sealed one way
-//! (a host that sends a write again sends the same bytes); the stamp is also the cipher's
-//! associated data with the list's name and the epoch, so a sealed text moved to another write,
-//! another list or another epoch does not open.
+//! The cipher is XChaCha20-Poly1305. Its nonce is made from the write's stamp, its register and
+//! its change's dot ([`crate::message::write_stamp`]), which every write has of its own (a change
+//! writes a register once, and a device signs one change under one dot), so that a host needs no
+//! source of randomness and one write is sealed one way (a host that sends a change again sends
+//! the same bytes); the stamp is also the cipher's associated data with the list's name and the
+//! epoch, so a sealed text moved to another write, another change, another list or another epoch
+//! does not open.
 //!
 //! A key is given to a member sealed under what their key and the giver's agree on
 //! ([`crate::Identity::agree`]), so that it travels over any channel and the host that carries it
@@ -33,8 +35,12 @@ use crate::identity::PublicKey;
 /// that was written in the clear, which it does not take.
 pub const SEALED_PREFIX: &str = "~";
 
-const NONCE_DOMAIN: &str = "sce-trust/nonce/1";
-const AAD_DOMAIN: &str = "sce-trust/content/1";
+/// The second: what a nonce and the associated data are made from is a write of a change, named
+/// by its register and the change's dot (docs/adr/0085, section 1), where the first was a write
+/// sent alone. The stamp of a write of the first form and of a write of a change can be the same
+/// bytes, and one key may hold both across the cut: a domain of their own keeps their nonces apart.
+const NONCE_DOMAIN: &str = "sce-trust/nonce/2";
+const AAD_DOMAIN: &str = "sce-trust/content/2";
 const WRAP_DOMAIN: &str = "sce-trust/wrap/1";
 
 /// A key of one epoch of a list.

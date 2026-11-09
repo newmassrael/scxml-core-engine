@@ -61,13 +61,13 @@ impl Wire {
 pub(crate) struct Held {
     pub id: Id,
     pub prev: Id,
-    /// A write's time and counter, which along one chain do not go back.
+    /// A change's time and counter, which along one chain do not go back.
     pub stamp: Option<(i64, u64)>,
-    /// What a write is sealed under, with the epoch and the list: its id, field, time, counter and
-    /// device. A stamp that names two writes is a nonce used twice.
+    /// What the writes of a change are sealed under, with their registers, the epoch and the list:
+    /// its dot, its author and its stamp. A dot that names two changes is a nonce used twice.
     pub wid: Option<Vec<u8>>,
-    /// What the host keeps the operation by: the subject of the write as the machine holds it, or
-    /// the subject of a note (`crate::message::Signing::subject`).
+    /// What the host keeps the operation by: the bytes the change is signed as when the machine
+    /// holds it (`crate::message::Signing::message`).
     pub key: Vec<u8>,
     pub event: &'static str,
     pub wire: Wire,
