@@ -530,13 +530,51 @@ code with the exporter: it depends on no crate of SCE, and reads each of its inp
 suite's documents with `roxmltree` and named as **Constructs** names them, the witness into a model of its own, and
 the two modules with a tokenizer and a recursive descent over exactly the TTCN-3 §9.5 writes, each definition and
 statement a place as **Places** names it. So a defect of the exporter's reading is not shared by the reading that
-checks it. A construct of a module outside that TTCN-3 is a `parse` violation, never a place left out, and a
-document of the standard library is not read and is named as such. Of the three checks, it holds the first:
+checks it. A construct of a module outside that TTCN-3 is a `parse` violation, never a place left out. A document
+the validator does not read as written is not read, and is named: a document of the standard library; one that
+holds an `<xi:include>` or an `<sce:use>`, which the export expands before it reads the document; and a
+`test-component` that holds a `<parallel>`, a `<history>`, a `<script>`, a `<donedata>`, a `<raise>` or a
+`<cancel>`, which the profile's check refuses (§8.2) and the third check could not compute the sets of. It holds the
+three checks:
 
-- every place of the two modules is named by exactly one location (`place-unnamed`, `place-named-twice`, and
-  `place-twice` for a module that holds one place twice), and every location names a place (`location-dangling`);
-- every construct has exactly one entry of each rule that translates it (`construct-missing`, `entry-duplicate`),
-  and every entry names a construct of the documents (`construct-dangling`).
+1. **Places and entries** (`sce-ttcn3-validator/src/coverage.rs`):
+   - every place of the two modules is named by exactly one location (`place-unnamed`, `place-named-twice`, and
+     `place-twice` for a module that holds one place twice), and every location names a place
+     (`location-dangling`);
+   - every construct has exactly one entry of each rule that translates it (`construct-missing`,
+     `entry-duplicate`), and every entry names a construct of the documents (`construct-dangling`).
+2. **Rule and form** (`form.rs`): each entry's rule translates a construct of its construct's kind (`rule-kind`),
+   and every place the entry names has the TTCN-3 form that rule writes for the construct, read from the documents
+   (`form`): E1 a type of the document's kind, name, fields, variants or alternatives (a union's in its tag enum's
+   order) and its codec functions; E2 a template of its name, type and formal parameters; E3 a port type of its
+   messages and their directions; E4 a component type and its ports, timers and variables by name and type; E5 a
+   function that runs on its component; E6 a label for the atomic state and an `if` for a guarded eventless
+   transition; E7 an `alt`; E8 an alternative that receives on the transition's port with its template, or waits
+   for its timer or its PTC, with a guard exactly where the transition has a `cond`, or a `goto`; E9 a send on the
+   port with the template; E10 a start or a stop of the timer, a duration the same number of microseconds as the
+   document's; E11 the reference, the creation and the kill of the PTC; E12 a `return`; E13 a `setverdict` of the
+   value (`inconc` for `inconclusive`) and a `log` of the label; E14 a test case on the MTC's component type in
+   the configuration's system, mapping the MTC's ports and calling its function, and the system component type and
+   its ports; E15 the control part, the module parameters and an `execute` of the test case with its guard, under a
+   selection exactly where the suite writes one. The structure is compared, not the text, and an expression is not
+   compared: the export writes it from a typed tree the validator does not build. A statement, a label and a local
+   stand in a function of their component, and a member in its component's type.
+3. **Order and sets** (`order.rs`, `scxml313.rs`): for each function, the statements before its first label are
+   owed the start of the machine and those of each label the atomic state's checks, the start of its invocations
+   and its `alt` (§9.5 **Behaviour**). The validator computes each branch's exit and entry sets itself
+   (§scxml-3.13, for a statechart of one active atomic state and its ancestors): the domain is the source of an
+   internal transition whose targets are all inside its compound source, and otherwise the least common compound
+   ancestor of the source and the targets; it exits the active states below the domain, deepest first, and enters
+   the states from the domain down to each target and the default entry below a compound one, outermost first; a
+   targetless transition exits and enters nothing. A block is owed each exited state's onexit and the kill of its
+   PTCs, the transition's content, each entered state's onentry and a default entry's initial content, then the
+   `goto` of the atomic state the machine is left in, or the exit of a top-level `<final>` and its `return`. It
+   holds the constructs that name each block's places to that order (`block-order`, a `goto` to another state among
+   them); the constructs that name the alternatives of each `alt`, in textual order, and the `alt`'s claim, to the
+   branches of the state and then of each ancestor, innermost first (`alt-order`, and an alternative that claims
+   another state or transition); each alternative's claim of the states it exits and enters to the sets
+   (`exit-set`, `entry-set`); and an `alt` or an alternative that claims nothing is `claim-missing`. With the
+   second check, which holds each place's text to the construct that names it, this holds the order of the text.
 
 Which rule translates a construct of each kind, and when one must, is one table
 (`sce-ttcn3-validator/src/rules.rs`). A rule writes a construct always, or when the documents fix it without the exit and entry set of any transition: a test
