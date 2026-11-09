@@ -228,14 +228,9 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
                 guard,
                 list: None,
             } => {
-                // A streamed field is written whole, in bytes the sink writes.
-                if matches!(field.bit_size, BitSize::Fixed { bits } if !matches!(bits, 8 | 16 | 32 | 64))
-                {
-                    forms.push(format!(
-                        "`{}`, a streamed field of less than a byte",
-                        field.id
-                    ));
-                }
+                // A streamed fixed field is whole (the parser refuses one that
+                // is not, docs/adr/0095 §3), and `fixed_write` writes any whole
+                // width.
                 match guard {
                     Guard::Always => {}
                     // Written where the value holds it: an element it presents
@@ -305,18 +300,17 @@ pub(super) fn unlowered_forms(plan: &CodecPlan<'_>, imports: &[ImportContext]) -
             Write::Variant => forms.push("a variant".to_string()),
         }
     }
-    // A field is written in its declared bits (a byte or less, or one of the
-    // sink's whole widths), as the bytes it holds, as a VLE of a width the
-    // sink writes, or as the body of the codec it embeds.
+    // A field is written in its declared bits (the pieces of its word in each
+    // byte, or its whole bytes, docs/adr/0095 §2), as the bytes it holds, as a
+    // VLE of a width the sink writes, or as the body of the codec it embeds.
     forms.extend(
         m.fields
             .iter()
             .filter(|f| {
                 !matches!(
                     f.bit_size,
-                    BitSize::Fixed {
-                        bits: 1..=8 | 16 | 32 | 64
-                    } | BitSize::Tail
+                    BitSize::Fixed { .. }
+                        | BitSize::Tail
                         | BitSize::LengthRef
                         | BitSize::Embed
                         | BitSize::Repeat { .. }

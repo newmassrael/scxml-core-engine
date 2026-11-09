@@ -70,6 +70,7 @@ const PRINTED: &[&str] = &[
     "codec_little_endian",
     "codec_nested_body",
     "codec_nested_parent",
+    "codec_optional_field_attributes",
     "codec_origin_choice",
     "codec_origin_envelope",
     "codec_origin_leaf",
