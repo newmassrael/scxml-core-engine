@@ -141,7 +141,7 @@ static void host_payload(static_composed_payload_batch_sent_payload_t *payload) 
     item->id = 4u;
     item->amount = 2;
     memcpy(item->label.data, "abc", 4u);
-    item->level = SIGNAL_LEVEL_LOW;
+    item->level = ENUM_SIGNAL_LEVEL_LOW;
     item->due.present = false;
     memcpy(item->blob.data, "wx", 2u);
     item->blob.len = 2u;
@@ -153,7 +153,7 @@ static void host_payload(static_composed_payload_batch_sent_payload_t *payload) 
     payload->grid.data[0].data[0] = 1u;
     payload->grid.data[0].data[1] = 2u;
     payload->levels.len = 1u;
-    payload->levels.data[0] = SIGNAL_LEVEL_LOW;
+    payload->levels.data[0] = ENUM_SIGNAL_LEVEL_LOW;
     payload->maybe.len = 2u;
     payload->maybe.data[0].present = true;
     payload->maybe.data[0].value = 9u;
