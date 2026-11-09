@@ -56,6 +56,9 @@ on:
       # The test profile's templates and the documents they name, which
       # `scripts/regen_static_datamodel_swift.sh` generates into the machines' target.
       - 'sce-build/tests/fixtures/test_profile/**'
+      # The union kind's fixtures the template over a union names, generated into the same
+      # target: its union, the tag's enum and its cases' records.
+      - 'sce-build/tests/fixtures/union/**'
       - 'sce-build/tests/fixtures/swift_statecharts/**'
       - 'sce-build/tests/fixtures/swift_ecmascript/**'
       - 'resources/**'

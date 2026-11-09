@@ -14,12 +14,14 @@ import XCTest
 // `ATestTemplateMatchesItsValuesTest.kt`, of the Go `a_test_template_matches_its_values_test.go`, of the
 // Python `test_a_test_template_matches_its_values.py` and of the C11
 // `test_a_test_template_matches_its_values.c`, which hold the same templates to the same values, each
-// test named after the Rust case. Swift lowers a union, and the generator writes the two templates
-// over one on Swift (`sce-build/tests/a_test_template_is_generated_in_swift.rs` holds their text),
-// but this target does not generate them, so they and their cases have no twin here. The units are
-// generated from the fixtures under `sce-build/tests/fixtures/test_profile/` by
-// `scripts/regen_static_datamodel_swift.sh` into the target `StaticDatamodelMachines`, each template an enum named by its document. Every
-// character outside ASCII is written as its escape.
+// test named after the Rust case. Swift lowers a union, so the two templates over one are here too,
+// with the values the Kotlin twins hold them to: `shape_is_circle` over the union of the union kind's
+// fixtures, and `order_placed_match` over a record whose `payment` is a union, whose `canonical`
+// writes the case as `{variant: record}` or `{variant: {}}`. The units are generated from the
+// fixtures under `sce-build/tests/fixtures/test_profile/` and the union documents they name under
+// `sce-build/tests/fixtures/union/` by `scripts/regen_static_datamodel_swift.sh` into the target
+// `StaticDatamodelMachines`, each template an enum named by its document. Every character outside
+// ASCII is written as its escape.
 final class ATestTemplateMatchesItsValuesTests: XCTestCase {
     /// U+00E9, one character of two UTF-8 bytes.
     private let eAcute = "\u{E9}"
@@ -236,5 +238,117 @@ final class ATestTemplateMatchesItsValuesTests: XCTestCase {
         XCTAssertEqual(JobReport.TYPE, "job_status")
         XCTAssertEqual(OrderLineExact.TYPE, "order_line")
         XCTAssertEqual(VoucherIs.TYPE, "voucher_payment")
+    }
+
+    /// union-match (§11.4): a union matches in the case its matcher names, and in no other, whatever the
+    /// case holds. A template over a union writes no canonical form: a message is a record.
+    func testAUnionMatchesInTheCaseItsMatcherNames() {
+        XCTAssertTrue(ShapeIsCircle.matches(UnionShapeMinimal.circle(ShapeRadiusMinimalPayload(radius: 3))))
+        XCTAssertFalse(ShapeIsCircle.matches(UnionShapeMinimal.dot))
+        XCTAssertFalse(ShapeIsCircle.matches(UnionShapeMinimal.rect(ShapeRectMinimalPayload(width: 1, height: 2))))
+    }
+
+    /// The quantity limit `order_placed_match` is given.
+    private let quantityLimit: UInt16 = 5
+
+    /// An order `order_placed_match` matches with the quantity limit 5: two lines, the second the exact
+    /// one, no note and no priority, a VIP customer, paid by a card of four characters.
+    private func order() -> OrderPlacedPayload {
+        OrderPlacedPayload(
+            order_id: 7,
+            lines: [OrderLinePayload(sku: "A-1", quantity: 5, color: PaintColor.green), OrderLineExact.value()],
+            note: nil,
+            priority: nil,
+            customer: OrderCustomerPayload(full_name: "Ada", vip: true),
+            payment: OrderPayment.card(CardPaymentPayload(last4: "1234", amount: 1)))
+    }
+
+    /// `order()` paid by `payment`.
+    private func order(paidBy payment: OrderPayment) -> OrderPlacedPayload {
+        var paid = order()
+        paid.payment = payment
+        return paid
+    }
+
+    /// A value list of two union matches: a card whose record the case's matcher holds, and the case
+    /// that holds no record; any other case, or a card its matcher does not hold, matches neither.
+    func testAUnionFieldMatchesOneOfTheCasesItsValueListNames() {
+        XCTAssertTrue(OrderPlacedMatch.matches(order(), quantityLimit))
+        XCTAssertTrue(OrderPlacedMatch.matches(order(paidBy: OrderPayment.cash), quantityLimit))
+        XCTAssertFalse(OrderPlacedMatch.matches(order(paidBy: OrderPayment.voucher(VoucherIs.value())), quantityLimit))
+        let cards: [(String, UInt32)] = [("123", 1), ("1234", 0)]
+        for (last4, amount) in cards {
+            let card = order(paidBy: OrderPayment.card(CardPaymentPayload(last4: last4, amount: amount)))
+            XCTAssertFalse(OrderPlacedMatch.matches(card, quantityLimit), "\(last4) \(amount)")
+        }
+    }
+
+    /// The other fields of the order: a list of records, a reference with the argument it binds, an
+    /// optional text with ifpresent and a length, an optional number with ifpresent and a range, and a
+    /// nested record's `bool`.
+    func testEveryFieldOfAnOrderIsHeldToItsMatcher() {
+        func first(_ quantity: UInt16, _ color: PaintColor) -> OrderLinePayload {
+            OrderLinePayload(sku: "A-1", quantity: quantity, color: color)
+        }
+        func withLines(_ lines: [OrderLinePayload]) -> OrderPlacedPayload {
+            var lined = order()
+            lined.lines = lines
+            return lined
+        }
+        let more = withLines([first(6, PaintColor.green), OrderLineExact.value()])
+        XCTAssertFalse(OrderPlacedMatch.matches(more, quantityLimit))
+        XCTAssertTrue(OrderPlacedMatch.matches(more, 6))
+        XCTAssertFalse(
+            OrderPlacedMatch.matches(withLines([first(5, PaintColor.blue), OrderLineExact.value()]), quantityLimit))
+        XCTAssertFalse(
+            OrderPlacedMatch.matches(
+                withLines([first(5, PaintColor.green), first(5, PaintColor.green)]), quantityLimit))
+        XCTAssertFalse(OrderPlacedMatch.matches(withLines([first(5, PaintColor.green)]), quantityLimit))
+
+        let notes: [(String, Bool)] = [("abcdefgh", true), ("abcdefghi", false)]
+        for (note, held) in notes {
+            var noted = order()
+            noted.note = note
+            XCTAssertEqual(OrderPlacedMatch.matches(noted, quantityLimit), held, note)
+        }
+        let priorities: [(UInt8, Bool)] = [(1, true), (5, true), (0, false), (6, false)]
+        for (priority, held) in priorities {
+            var prioritised = order()
+            prioritised.priority = priority
+            XCTAssertEqual(OrderPlacedMatch.matches(prioritised, quantityLimit), held, "\(priority)")
+        }
+        var ordinary = order()
+        ordinary.customer = OrderCustomerPayload(full_name: "Ada", vip: false)
+        XCTAssertFalse(OrderPlacedMatch.matches(ordinary, quantityLimit))
+    }
+
+    /// docs/SCE_TEST_PROFILE.md §12.5: the unit's `canonical` writes an order by the types its documents
+    /// declare, in the JSON Canonicalization Scheme: a union's case as one member named by its variant,
+    /// holding the case's record, or the empty object for the case that holds none; an enum by its
+    /// declared name, a byte string in upper-case hex, an absent field omitted and a present one
+    /// written. Each text is compared whole, by its bytes, with the bytes the Kotlin twin
+    /// (`anOrdersCanonicalFormIsWrittenByTheTypesItsDocumentsDeclare`) holds its unit to.
+    func testAnOrdersCanonicalFormIsWrittenByTheTypesItsDocumentsDeclare() throws {
+        let customer = "\"customer\":{\"full_name\":\"Ada\",\"vip\":true}"
+        let lines =
+            "\"lines\":[{\"color\":\"green\",\"quantity\":\"5\",\"sku\":\"A-1\"},"
+            + "{\"color\":\"red\",\"quantity\":\"2\",\"sku\":\"A-1\"}]"
+        XCTAssertEqual(
+            try canonicalBytes(OrderPlacedMatch.canonical(order())),
+            Array(
+                "{\(customer),\(lines),\"order_id\":\"7\",\"payment\":{\"card\":{\"amount\":\"1\",\"last4\":\"1234\"}}}"
+                    .utf8))
+        var noted = order(paidBy: OrderPayment.voucher(VoucherIs.value()))
+        noted.note = "late"
+        noted.priority = 3
+        XCTAssertEqual(
+            try canonicalBytes(OrderPlacedMatch.canonical(noted)),
+            Array(
+                ("{\(customer),\(lines),\"note\":\"late\",\"order_id\":\"7\","
+                    + "\"payment\":{\"voucher\":{\"voucher_code\":\"00FF10A0\"}},\"priority\":\"3\"}").utf8))
+        XCTAssertEqual(
+            try canonicalBytes(OrderPlacedMatch.canonical(order(paidBy: OrderPayment.cash))),
+            Array("{\(customer),\(lines),\"order_id\":\"7\",\"payment\":{\"cash\":{}}}".utf8))
+        XCTAssertEqual(OrderPlacedMatch.TYPE, "order_placed")
     }
 }
