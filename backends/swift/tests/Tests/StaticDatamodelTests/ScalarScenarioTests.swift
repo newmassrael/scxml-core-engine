@@ -1687,8 +1687,8 @@ private func recordBytes() -> Machine {
     replay("sheet_peer_server", sheetPeer())
 }
 
-// The standard record list, alone, as a person's copy, as a hub, and as the ones that change,
-// retire and take a record.
+// The standard record list, alone, as a person's copy, and as the ones that change, retire and
+// take a record, each change one message, `record_list.change` (docs/adr/0085).
 
 @Test func aRecordListAloneHoldsWhatItIsGiven() {
     replay("record_list_alone", sharedRecordList())
@@ -1698,16 +1698,18 @@ private func recordBytes() -> Machine {
     replay("record_list_change", sharedRecordList())
 }
 
-@Test func aRecordListHubSettlesWhatItsPeopleSend() {
-    replay("record_list_hub", sharedRecordList())
-}
-
 @Test func aRecordListPersonWritesOverAValueAndSendsIt() {
     replay("record_list_person", sharedRecordList())
 }
 
 @Test func aRecordListRetiresARecordAndTellsItsPeers() {
     replay("record_list_retire", sharedRecordList())
+}
+
+// A change and the one it writes over, given in their causal order, the only order the list's
+// delivery layer gives (docs/adr/0085, section 9.3).
+@Test func aRecordListTakesAChangeAfterTheOneItWritesOver() {
+    replay("record_list_out_of_causal_order_is_not_given", sharedRecordList())
 }
 
 // With no Mesh router every send to a peer is refused where it is made, and what a copy does to
@@ -1720,6 +1722,13 @@ private func recordBytes() -> Machine {
 // words (`#_list`), then publishes what the list told it.
 @Test func aParentPassesTheHostsWordsToItsRecordListAndKeepsWhatItIsTold() {
     replay("record_list_parent", recordListParent())
+}
+
+// Two changes that clear one value at once, given in both orders, leave the value gone with
+// nothing held, and the parent is told each register a change moved once (docs/adr/0085,
+// section 9.3).
+@Test func aRecordListTakesTwoConcurrentClearsInEitherOrder() {
+    replay("record_list_concurrent_clears", recordListParent())
 }
 
 // A child session that talks to a Mesh peer is given a router of its own by the machine that
