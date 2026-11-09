@@ -448,13 +448,14 @@ const GENERATE_FLAGS: &[FlagFacts] = &[
          document no differently, so `check` needs no counterpart",
     ),
     f(
-        "--plan-reads",
+        "--reads",
         Reach::Emission,
-        Some(&["--plan", "--plan-reads", "{probe_file}"]),
+        Some(&["--plan", "--reads", "{probe_file}"]),
         "rust",
-        "writes beside a plan the list of the files its run read, which a \
-         build keeps to tell when the plan is still current; it reads the \
-         document no differently, so `check` needs no counterpart",
+        "writes beside a run the list of the files it read, which a build \
+         keeps to tell when a plan is still current and an action cache keys \
+         a generation on; it reads the document no differently, so `check` \
+         needs no counterpart",
     ),
     f(
         "--plan-requires",

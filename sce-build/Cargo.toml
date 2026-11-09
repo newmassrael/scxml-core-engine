@@ -57,6 +57,14 @@ minijinja-contrib = { version = "2", features = ["pycompat"] }
 # SHA-256 for spec §6.2.6 generated-source drift detection. See
 # `forge::drift` — computes `source-hash` over input SCXML + deploy.yaml.
 sha2 = { workspace = true }
+# Protobuf encoding of the REAPI messages an action key is the digest of
+# (ADR 0097, `action::reapi`). The key has to be the digest a REAPI server
+# computes for the same action, so the messages are encoded by a protobuf
+# implementation rather than by hand. Derive only: no protoc, no gRPC.
+prost = "0.13"
+# The tree manifests of `tools/codegen/trees/` (ADR 0097, `action::tree`),
+# TOML like every other declaration of this repository (Cargo.toml, bx.toml).
+toml = "0.8"
 # CLI argument parsing (for sce-codegen binary)
 clap = { version = "4", features = ["derive"], optional = true }
 # ELF symbol-table reader for `addr2sce --pc` / `--hardfault`
@@ -260,7 +268,7 @@ name = "generation_can_be_planned"
 path = "tests/generation_can_be_planned.rs"
 required-features = ["cli"]
 
-# `--plan-reads` and `plan-batch`, which let a configure keep each plan per
+# `--reads` and `plan-batch`, which let a configure keep each plan per
 # state of its inputs and ask many at once. Spawns sce-codegen, so it declares
 # the feature as the target above does.
 [[test]]
@@ -746,6 +754,14 @@ required-features = ["cli"]
 [[test]]
 name = "generator_source_witness"
 path = "tests/generator_source_witness.rs"
+required-features = ["cli"]
+
+# The bridge of ADR 0097, landing 0: every tree declared under
+# tools/codegen/trees, materialized from its actions by the real binary, is
+# the tree committed in the checkout. Drives `sce-codegen materialize`.
+[[test]]
+name = "a_declared_tree_reproduces_its_committed_tree"
+path = "tests/a_declared_tree_reproduces_its_committed_tree.rs"
 required-features = ["cli"]
 
 # Forge AST export wire-format drift guard. Reads the checked-in
