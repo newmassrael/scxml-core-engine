@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
+// source-hash: 50ba4afa70e08ed0ad002509e6baae9623e17ddc8afb219bbba6da905f187359
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -210,6 +210,8 @@ pub struct StaticPayloadEnumUnimportedRecordListRefusedPayload {
     pub field: u16,
     pub kind: StaticPayloadEnumUnimportedRecordCommandEnum,
     pub reason: StaticPayloadEnumUnimportedWhyEnum,
+    pub command: u64,
+    pub withdrawn: bool,
 }
 
 /// NL→IR Item C1 Path A: typed `_event.data` payload sum for the EventSchema-imported events whose transition guards lowered natively.
@@ -242,23 +244,7 @@ impl StaticPayloadEnumUnimportedInject
         payload: StaticPayloadEnumUnimportedRecordListRefusedPayload,
     ) {
         let data = ::sce_rust_runtime::payload_wire(format_args!(
-            "{{\"id\":{}, \"field\":{}, \"kind\":{}, \"reason\":{}}}",
-            payload.id,
-            payload.field,
-            ::sce_rust_runtime::event_payload::quote(match payload.kind {
-                StaticPayloadEnumUnimportedRecordCommandEnum::Edit => "edit",
-                StaticPayloadEnumUnimportedRecordCommandEnum::Clear => "clear",
-                StaticPayloadEnumUnimportedRecordCommandEnum::Retire => "retire",
-            }),
-            ::sce_rust_runtime::event_payload::quote(match payload.reason {
-                StaticPayloadEnumUnimportedWhyEnum::NotWriter => "notWriter",
-                StaticPayloadEnumUnimportedWhyEnum::NoRoomForValue => "noRoomForValue",
-                StaticPayloadEnumUnimportedWhyEnum::NoRoomForHistory => "noRoomForHistory",
-                StaticPayloadEnumUnimportedWhyEnum::NoRoomForDigest => "noRoomForDigest",
-                StaticPayloadEnumUnimportedWhyEnum::ChangeTooLarge => "changeTooLarge",
-                StaticPayloadEnumUnimportedWhyEnum::RegisterNamedTwice => "registerNamedTwice",
-                StaticPayloadEnumUnimportedWhyEnum::ClockExhausted => "clockExhausted",
-            })
+            "{{\"id\":{}, \"field\":{}, \"kind\":{}, \"reason\":{}, \"command\":\"{}\", \"withdrawn\":{}}}", payload.id, payload.field, ::sce_rust_runtime::event_payload::quote(match payload.kind { StaticPayloadEnumUnimportedRecordCommandEnum::Edit => "edit", StaticPayloadEnumUnimportedRecordCommandEnum::Clear => "clear", StaticPayloadEnumUnimportedRecordCommandEnum::Retire => "retire", }), ::sce_rust_runtime::event_payload::quote(match payload.reason { StaticPayloadEnumUnimportedWhyEnum::NotWriter => "notWriter", StaticPayloadEnumUnimportedWhyEnum::NoRoomForValue => "noRoomForValue", StaticPayloadEnumUnimportedWhyEnum::NoRoomForHistory => "noRoomForHistory", StaticPayloadEnumUnimportedWhyEnum::NoRoomForDigest => "noRoomForDigest", StaticPayloadEnumUnimportedWhyEnum::ChangeTooLarge => "changeTooLarge", StaticPayloadEnumUnimportedWhyEnum::RegisterNamedTwice => "registerNamedTwice", StaticPayloadEnumUnimportedWhyEnum::ClockExhausted => "clockExhausted", StaticPayloadEnumUnimportedWhyEnum::PeerRefused => "peerRefused", }), payload.command, payload.withdrawn
         ));
         self.raise_external_typed_with_data(
             StaticPayloadEnumUnimportedEvent::RecordListRefused,
@@ -279,6 +265,7 @@ pub enum StaticPayloadEnumUnimportedWhyEnum {
     ChangeTooLarge,
     RegisterNamedTwice,
     ClockExhausted,
+    PeerRefused,
 }
 
 impl StaticPayloadEnumUnimportedWhyEnum {
@@ -293,6 +280,7 @@ impl StaticPayloadEnumUnimportedWhyEnum {
             Self::ChangeTooLarge => "changeTooLarge",
             Self::RegisterNamedTwice => "registerNamedTwice",
             Self::ClockExhausted => "clockExhausted",
+            Self::PeerRefused => "peerRefused",
         }
     }
 
@@ -307,6 +295,7 @@ impl StaticPayloadEnumUnimportedWhyEnum {
             Self::ChangeTooLarge => 6,
             Self::RegisterNamedTwice => 7,
             Self::ClockExhausted => 8,
+            Self::PeerRefused => 9,
         }
     }
 
@@ -321,6 +310,7 @@ impl StaticPayloadEnumUnimportedWhyEnum {
             6 => Some(Self::ChangeTooLarge),
             7 => Some(Self::RegisterNamedTwice),
             8 => Some(Self::ClockExhausted),
+            9 => Some(Self::PeerRefused),
             _ => None,
         }
     }
@@ -375,6 +365,8 @@ pub struct StaticPayloadEnumUnimportedRefusedRecord {
     pub field: u16,
     pub kind: StaticPayloadEnumUnimportedRecordCommandEnum,
     pub reason: StaticPayloadEnumUnimportedWhyEnum,
+    pub command: u64,
+    pub withdrawn: bool,
 }
 
 // ── SCE Accepted Subset §2.15: what a host observes of a sce-static machine ──
@@ -441,6 +433,7 @@ impl ::sce_rust_runtime::saved_state::SavedValue for StaticPayloadEnumUnimported
                 Self::ChangeTooLarge => "changeTooLarge",
                 Self::RegisterNamedTwice => "registerNamedTwice",
                 Self::ClockExhausted => "clockExhausted",
+                Self::PeerRefused => "peerRefused",
             }
             .to_string(),
         )
@@ -459,6 +452,7 @@ impl ::sce_rust_runtime::saved_state::SavedValue for StaticPayloadEnumUnimported
                 "changeTooLarge" => Ok(Self::ChangeTooLarge),
                 "registerNamedTwice" => Ok(Self::RegisterNamedTwice),
                 "clockExhausted" => Ok(Self::ClockExhausted),
+                "peerRefused" => Ok(Self::PeerRefused),
                 other => Err(::sce_rust_runtime::saved_state::StateRefusal::new(format!(
                     "'{what}' ({other}) is not a variant of Why"
                 ))),
@@ -521,6 +515,14 @@ impl ::sce_rust_runtime::saved_state::SavedValue for StaticPayloadEnumUnimported
                 "reason".to_string(),
                 ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.reason),
             ),
+            (
+                "command".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.command),
+            ),
+            (
+                "withdrawn".to_string(),
+                ::sce_rust_runtime::saved_state::SavedValue::to_saved(&self.withdrawn),
+            ),
         ])
     }
 
@@ -533,6 +535,8 @@ impl ::sce_rust_runtime::saved_state::SavedValue for StaticPayloadEnumUnimported
             field: ::sce_rust_runtime::saved_state::record_field(value, what, "field")?,
             kind: ::sce_rust_runtime::saved_state::record_field(value, what, "kind")?,
             reason: ::sce_rust_runtime::saved_state::record_field(value, what, "reason")?,
+            command: ::sce_rust_runtime::saved_state::record_field(value, what, "command")?,
+            withdrawn: ::sce_rust_runtime::saved_state::record_field(value, what, "withdrawn")?,
         })
     }
 }
@@ -645,9 +649,20 @@ impl StaticPayloadEnumUnimportedPersist for Engine<StaticPayloadEnumUnimportedPo
             format2_revised: "57817562bf8bd69e15b9aef6b534e3254e6df14318768a08a811af0cd2d0d418",
             records: &[::sce_rust_runtime::saved_state::RecordLineage {
                 event: "record_list.refused",
-                revision: 1,
-                revisions: &[],
-                added: &[],
+                revision: 2,
+                revisions: &["d5e8ad29ad99e6b7d154abc7c4b2bd2538450f9e595bf3ad77ede3779dfb771e"],
+                added: &[
+                    ::sce_rust_runtime::saved_state::AddedField {
+                        id: "command",
+                        since: 2,
+                        default: "\"0\"",
+                    },
+                    ::sce_rust_runtime::saved_state::AddedField {
+                        id: "withdrawn",
+                        since: 2,
+                        default: "false",
+                    },
+                ],
                 widened: &[],
                 holders: &[::sce_rust_runtime::saved_state::RecordHolder {
                     variable: "kept",
@@ -668,9 +683,14 @@ impl StaticPayloadEnumUnimportedPersist for Engine<StaticPayloadEnumUnimportedPo
                 },
                 ::sce_rust_runtime::saved_state::EnumLineage {
                     key: "enum:sce:std/shared/record_refusal.scxml",
-                    revision: 1,
-                    revisions: &[],
-                    added: &[],
+                    revision: 2,
+                    revisions: &[
+                        "3ac588a3c4a21b24f14d28b1fcef233ad4398105757a2598b93d4d89f93275e8",
+                    ],
+                    added: &[::sce_rust_runtime::saved_state::AddedVariant {
+                        name: "peerRefused",
+                        since: 2,
+                    }],
                     holders: &[
                         ::sce_rust_runtime::saved_state::EnumHolder {
                             variable: "last",
@@ -1165,7 +1185,11 @@ impl StatePolicy for StaticPayloadEnumUnimportedPolicy {
         }
         match event {
             StaticPayloadEnumUnimportedEvent::RecordListRefused => {
-                let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
+                let fields =
+                    ::sce_rust_runtime::event_payload::PayloadFields::decode_with_defaults(
+                        data,
+                        "{\"command\":\"0\",\"withdrawn\":false}",
+                    )?;
                 self.pending_payload = StaticPayloadEnumUnimportedPayload::RecordListRefused(
                     StaticPayloadEnumUnimportedRecordListRefusedPayload {
                         id: fields.unsigned::<u32>("id")?,
@@ -1192,8 +1216,11 @@ impl StatePolicy for StaticPayloadEnumUnimportedPolicy {
                                 StaticPayloadEnumUnimportedWhyEnum::RegisterNamedTwice
                             }
                             "clockExhausted" => StaticPayloadEnumUnimportedWhyEnum::ClockExhausted,
+                            "peerRefused" => StaticPayloadEnumUnimportedWhyEnum::PeerRefused,
                             other => return Err(fields.unknown_variant("reason", other, "Why")),
                         },
+                        command: fields.unsigned64("command")?,
+                        withdrawn: fields.truth("withdrawn")?,
                     },
                 );
             }
@@ -1301,6 +1328,8 @@ impl StatePolicy for StaticPayloadEnumUnimportedPolicy {
                                 field: ev.field,
                                 kind: ev.kind,
                                 reason: ev.reason,
+                                command: ev.command,
+                                withdrawn: ev.withdrawn,
                             })
                             .is_ok()
                     {

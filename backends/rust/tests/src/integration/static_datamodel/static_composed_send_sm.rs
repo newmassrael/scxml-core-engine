@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
+// source-hash: 50ba4afa70e08ed0ad002509e6baae9623e17ddc8afb219bbba6da905f187359
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -78,8 +78,8 @@
 // closure; this one suspicious-category lint reads the `match` of a constant
 // default as a hand-written `unwrap_or_default`.
 #![allow(clippy::manual_unwrap_or_default)]
-#![doc = "SCE-MAP: static_composed_send.scxml:29 :: _machine"]
-// SCE-MAP: static_composed_send.scxml:29 :: _machine
+#![doc = "SCE-MAP: static_composed_send.scxml:41 :: _machine"]
+// SCE-MAP: static_composed_send.scxml:41 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -111,9 +111,10 @@ pub enum StaticComposedSendState {
 #[repr(u16)]
 pub enum StaticComposedSendEvent {
     BatchSent = 0,
-    ErrorExecution = 1,
+    CountedSent = 1,
+    ErrorExecution = 2,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-    Null = 2,
+    Null = 3,
 }
 
 // ======================================================================
@@ -173,14 +174,18 @@ pub const STATIC_COMPOSED_SEND_TABLES: ::sce_rust_runtime::DocumentTables<'stati
             TransitionRow::new(Some(StateId(0)), Target::NONE, true, true),
             // 2: idle, transition 2
             TransitionRow::new(Some(StateId(0)), Target::NONE, true, true),
-            // 3: the document's initial transition
+            // 3: idle, transition 3
+            TransitionRow::new(Some(StateId(0)), Target::NONE, true, true),
+            // 4: idle, transition 4
+            TransitionRow::new(Some(StateId(0)), Target::NONE, true, true),
+            // 5: the document's initial transition
             TransitionRow::new(None, Target::state(StateId(0)), false, false),
         ],
         targets: &[],
-        initial: TransitionId(3),
+        initial: TransitionId(5),
         default_state: ::sce_rust_runtime::StateId(StaticComposedSendState::Idle as u16),
-        null_event: ::sce_rust_runtime::EventId(2),
-        error_events: &[::sce_rust_runtime::EventId(1)],
+        null_event: ::sce_rust_runtime::EventId(3),
+        error_events: &[::sce_rust_runtime::EventId(2)],
         history: None,
         parallel: None,
     }
@@ -220,6 +225,12 @@ pub struct StaticComposedSendBatchSentPayload {
     pub late: ::sce_rust_runtime::portable::BoundedList<u8, 2>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct StaticComposedSendCountedSentPayload {
+    pub kept: ::sce_rust_runtime::portable::BoundedList<u8, 2>,
+    pub hops: u8,
+}
+
 /// NL→IR Item C1 Path A: typed `_event.data` payload sum for the EventSchema-imported events whose transition guards lowered natively.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub enum StaticComposedSendPayload {
@@ -227,6 +238,7 @@ pub enum StaticComposedSendPayload {
     #[default]
     None,
     BatchSent(StaticComposedSendBatchSentPayload),
+    CountedSent(StaticComposedSendCountedSentPayload),
 }
 
 /// NL→IR Item C1 Path A: per-event typed `_event.data` inject seam.
@@ -237,6 +249,10 @@ pub trait StaticComposedSendInject {
     /// Binds the event name and payload variant in one call (name↔type
     /// pairing cannot be constructed inconsistently).
     fn raise_batch_sent(&mut self, payload: StaticComposedSendBatchSentPayload);
+    /// Typed `_event.data` inject for `counted.sent`.
+    /// Binds the event name and payload variant in one call (name↔type
+    /// pairing cannot be constructed inconsistently).
+    fn raise_counted_sent(&mut self, payload: StaticComposedSendCountedSentPayload);
 }
 
 impl StaticComposedSendInject for ::sce_rust_runtime::Engine<StaticComposedSendPolicy> {
@@ -316,6 +332,20 @@ impl StaticComposedSendInject for ::sce_rust_runtime::Engine<StaticComposedSendP
             &data,
         );
     }
+    fn raise_counted_sent(&mut self, payload: StaticComposedSendCountedSentPayload) {
+        let data = ::sce_rust_runtime::event_payload::record_json(vec![
+            (
+                "kept",
+                ::sce_rust_runtime::event_payload::list_json(&payload.kept, |h| h.to_string()),
+            ),
+            ("hops", payload.hops.to_string()),
+        ]);
+        self.raise_external_typed_with_data(
+            StaticComposedSendEvent::CountedSent,
+            StaticComposedSendPayload::CountedSent(payload),
+            &data,
+        );
+    }
 }
 
 // ── SCE Accepted Subset §2.15: the enum and record types the sce-static variables hold ──
@@ -391,6 +421,9 @@ pub struct StaticComposedSendData {
     pub late_sum: u32,
     pub late: ::sce_rust_runtime::portable::BoundedList<u8, 2>,
     pub refusals: u32,
+    pub counted_deliveries: u32,
+    pub counted_sum: u32,
+    pub counted_hops: u8,
 }
 
 /// What a host observes: the full active configuration — every active state,
@@ -430,6 +463,9 @@ impl StaticComposedSendObserve for Engine<StaticComposedSendPolicy> {
                 late_sum: policy.late_sum,
                 late: policy.late.clone(),
                 refusals: policy.refusals,
+                counted_deliveries: policy.counted_deliveries,
+                counted_sum: policy.counted_sum,
+                counted_hops: policy.counted_hops,
             },
             truncated: self.last_macrostep_truncated(),
         }
@@ -572,10 +608,10 @@ impl StaticComposedSendPersist for Engine<StaticComposedSendPolicy> {
 
     const SHAPE: ::sce_rust_runtime::saved_state::SavedShape =
         ::sce_rust_runtime::saved_state::SavedShape {
-            first: "f70a18d28ff04fb593898feceefb707a60de12cb52ea065383856cb153e5f555",
-            revised: "6b116cdf67e27f00da8519217f6d5f8eaa08a218c75642a2c9eb51734b379288",
-            format2_first: "f70a18d28ff04fb593898feceefb707a60de12cb52ea065383856cb153e5f555",
-            format2_revised: "6b116cdf67e27f00da8519217f6d5f8eaa08a218c75642a2c9eb51734b379288",
+            first: "1e90a6306dff5c26ad4140c585404fe0fb4ed6167709cdddf054d940e56091b1",
+            revised: "c45313f157703b7337989e2ff1d45441c09d2892a1a4a8a65e2046918f346378",
+            format2_first: "1e90a6306dff5c26ad4140c585404fe0fb4ed6167709cdddf054d940e56091b1",
+            format2_revised: "c45313f157703b7337989e2ff1d45441c09d2892a1a4a8a65e2046918f346378",
             records: &[],
             enums: &[],
             features: None,
@@ -637,6 +673,24 @@ impl StaticComposedSendPersist for Engine<StaticComposedSendPolicy> {
                     "refusals".to_string(),
                     ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.refusals),
                 ),
+                (
+                    "held".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.held),
+                ),
+                (
+                    "counted_deliveries".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(
+                        &policy.counted_deliveries,
+                    ),
+                ),
+                (
+                    "counted_sum".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.counted_sum),
+                ),
+                (
+                    "counted_hops".to_string(),
+                    ::sce_rust_runtime::saved_state::SavedValue::to_saved(&policy.counted_hops),
+                ),
             ],
             // What each history recorded is the engine's (docs/adr/0064).
             ::sce_rust_runtime::saved_state::save_history(self, Self::HISTORIES),
@@ -696,6 +750,23 @@ impl StaticComposedSendPersist for Engine<StaticComposedSendPolicy> {
         let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
             saved.variable("refusals")?,
             "refusals",
+        )?;
+        let _: ::sce_rust_runtime::portable::BoundedList<u8, 2> =
+            ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+                saved.variable("held")?,
+                "held",
+            )?;
+        let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("counted_deliveries")?,
+            "counted_deliveries",
+        )?;
+        let _: u32 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("counted_sum")?,
+            "counted_sum",
+        )?;
+        let _: u8 = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("counted_hops")?,
+            "counted_hops",
         )?;
         ::sce_rust_runtime::saved_state::judge::<StaticComposedSendPolicy>(saved)
     }
@@ -757,6 +828,22 @@ impl StaticComposedSendPersist for Engine<StaticComposedSendPolicy> {
             saved.variable("refusals")?,
             "refusals",
         )?;
+        policy.held = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("held")?,
+            "held",
+        )?;
+        policy.counted_deliveries = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("counted_deliveries")?,
+            "counted_deliveries",
+        )?;
+        policy.counted_sum = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("counted_sum")?,
+            "counted_sum",
+        )?;
+        policy.counted_hops = ::sce_rust_runtime::saved_state::SavedValue::from_saved(
+            saved.variable("counted_hops")?,
+            "counted_hops",
+        )?;
         ::sce_rust_runtime::saved_state::enter(policy, saved, clock, wall_now_ms)
     }
 }
@@ -775,6 +862,9 @@ pub struct StaticComposedSendInvokeParams {
     pub first_maybe: Option<u16>,
     pub late_sum: Option<u32>,
     pub refusals: Option<u32>,
+    pub counted_deliveries: Option<u32>,
+    pub counted_sum: Option<u32>,
+    pub counted_hops: Option<u8>,
 }
 
 // ======================================================================
@@ -806,6 +896,14 @@ pub struct StaticComposedSendPolicy {
     late: ::sce_rust_runtime::portable::BoundedList<u8, 2>,
     /// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
     refusals: u32,
+    /// W3C SCXML 5.2: the `held` datamodel variable.
+    held: ::sce_rust_runtime::portable::BoundedList<u8, 2>,
+    /// W3C SCXML 5.2: the `counted_deliveries` datamodel variable, published (`sce:direction="out"`).
+    counted_deliveries: u32,
+    /// W3C SCXML 5.2: the `counted_sum` datamodel variable, published (`sce:direction="out"`).
+    counted_sum: u32,
+    /// W3C SCXML 5.2: the `counted_hops` datamodel variable, published (`sce:direction="out"`).
+    counted_hops: u8,
     // W3C SCXML 5.10: the session's id (script engine, invoke tracking, the
     // saved state), bound when the machine is built and never empty
     // (docs/adr/0045): drawn, given by the host, or given by the parent.
@@ -842,6 +940,11 @@ impl StaticComposedSendPolicy {
         let late: ::sce_rust_runtime::portable::BoundedList<u8, 2> =
             ::sce_rust_runtime::portable::BoundedList::new();
         let refusals: u32 = 0;
+        let held: ::sce_rust_runtime::portable::BoundedList<u8, 2> =
+            ::sce_rust_runtime::portable::BoundedList::new();
+        let counted_deliveries: u32 = 0;
+        let counted_sum: u32 = 0;
+        let counted_hops: u8 = 0;
         Self {
             pending_payload: StaticComposedSendPayload::default(),
             deliveries,
@@ -854,6 +957,10 @@ impl StaticComposedSendPolicy {
             late_sum,
             late,
             refusals,
+            held,
+            counted_deliveries,
+            counted_sum,
+            counted_hops,
             session_id: Some(session_id),
             parent_external_queue: None,
             invoke_id: String::new(),
@@ -943,6 +1050,15 @@ impl StaticComposedSendPolicy {
         if let Some(value) = params.refusals {
             self.refusals = value;
         }
+        if let Some(value) = params.counted_deliveries {
+            self.counted_deliveries = value;
+        }
+        if let Some(value) = params.counted_sum {
+            self.counted_sum = value;
+        }
+        if let Some(value) = params.counted_hops {
+            self.counted_hops = value;
+        }
     }
 
     /// W3C SCXML 5.2: what the published `deliveries` datamodel variable
@@ -1003,6 +1119,24 @@ impl StaticComposedSendPolicy {
     /// holds now. Only the machine writes it.
     pub fn refusals(&self) -> u32 {
         self.refusals
+    }
+
+    /// W3C SCXML 5.2: what the published `counted_deliveries` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn counted_deliveries(&self) -> u32 {
+        self.counted_deliveries
+    }
+
+    /// W3C SCXML 5.2: what the published `counted_sum` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn counted_sum(&self) -> u32 {
+        self.counted_sum
+    }
+
+    /// W3C SCXML 5.2: what the published `counted_hops` datamodel variable
+    /// holds now. Only the machine writes it.
+    pub fn counted_hops(&self) -> u8 {
+        self.counted_hops
     }
 }
 
@@ -1084,6 +1218,7 @@ impl StatePolicy for StaticComposedSendPolicy {
     const HISTORIES: &'static [Self::History] = &[];
     const EVENTS: &'static [Self::Event] = &[
         StaticComposedSendEvent::BatchSent,
+        StaticComposedSendEvent::CountedSent,
         StaticComposedSendEvent::ErrorExecution,
         StaticComposedSendEvent::Null,
     ];
@@ -1159,6 +1294,7 @@ impl StatePolicy for StaticComposedSendPolicy {
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
             StaticComposedSendEvent::BatchSent => "batch.sent",
+            StaticComposedSendEvent::CountedSent => "counted.sent",
             StaticComposedSendEvent::ErrorExecution => "error.execution",
             StaticComposedSendEvent::Null => "",
         }
@@ -1167,6 +1303,7 @@ impl StatePolicy for StaticComposedSendPolicy {
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
             "batch.sent" => Some(StaticComposedSendEvent::BatchSent),
+            "counted.sent" => Some(StaticComposedSendEvent::CountedSent),
             "error.execution" => Some(StaticComposedSendEvent::ErrorExecution),
             _ => None,
         }
@@ -1283,6 +1420,16 @@ impl StatePolicy for StaticComposedSendPolicy {
                             .and_then(|v| v.list::<_, 2>(|v| v.unsigned::<u8>()))?,
                     });
             }
+            StaticComposedSendEvent::CountedSent => {
+                let fields = ::sce_rust_runtime::event_payload::PayloadFields::decode(data)?;
+                self.pending_payload =
+                    StaticComposedSendPayload::CountedSent(StaticComposedSendCountedSentPayload {
+                        kept: fields
+                            .field("kept")
+                            .and_then(|v| v.list_within::<_, 2>(1, |v| v.unsigned::<u8>()))?,
+                        hops: fields.field("hops").and_then(|v| v.unsigned::<u8>())?,
+                    });
+            }
             _ => {}
         }
         Ok(())
@@ -1293,8 +1440,8 @@ impl StatePolicy for StaticComposedSendPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: static_composed_send.scxml:29 :: _machine"]
-    // SCE-MAP: static_composed_send.scxml:29 :: _machine
+    #[doc = "SCE-MAP: static_composed_send.scxml:41 :: _machine"]
+    // SCE-MAP: static_composed_send.scxml:41 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -1310,8 +1457,8 @@ impl StatePolicy for StaticComposedSendPolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: static_composed_send.scxml:29 :: _machine"]
-    // SCE-MAP: static_composed_send.scxml:29 :: _machine
+    #[doc = "SCE-MAP: static_composed_send.scxml:41 :: _machine"]
+    // SCE-MAP: static_composed_send.scxml:41 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -1329,8 +1476,8 @@ impl StatePolicy for StaticComposedSendPolicy {
     // enables, as its row of the tables, which holds its targets and its
     // type. The engine walks the atomic states and their ancestors and keeps
     // the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: static_composed_send.scxml:29 :: _machine"]
-    // SCE-MAP: static_composed_send.scxml:29 :: _machine
+    #[doc = "SCE-MAP: static_composed_send.scxml:41 :: _machine"]
+    // SCE-MAP: static_composed_send.scxml:41 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -1351,10 +1498,22 @@ impl StatePolicy for StaticComposedSendPolicy {
                         return Some(::sce_rust_runtime::TransitionId(1));
                     }
                 }
-                if event == StaticComposedSendEvent::ErrorExecution {
-                    {
+                if event == StaticComposedSendEvent::CountedSent {
+                    if self.counted_deliveries == 0 {
                         // idle, transition 2
                         return Some(::sce_rust_runtime::TransitionId(2));
+                    }
+                }
+                if event == StaticComposedSendEvent::CountedSent {
+                    {
+                        // idle, transition 3
+                        return Some(::sce_rust_runtime::TransitionId(3));
+                    }
+                }
+                if event == StaticComposedSendEvent::ErrorExecution {
+                    {
+                        // idle, transition 4
+                        return Some(::sce_rust_runtime::TransitionId(4));
                     }
                 }
                 None
@@ -1366,8 +1525,8 @@ impl StatePolicy for StaticComposedSendPolicy {
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries. `transition` is a
     // written transition's row, one whose row says it has content.
-    #[doc = "SCE-MAP: static_composed_send.scxml:29 :: _machine"]
-    // SCE-MAP: static_composed_send.scxml:29 :: _machine
+    #[doc = "SCE-MAP: static_composed_send.scxml:41 :: _machine"]
+    // SCE-MAP: static_composed_send.scxml:41 :: _machine
     fn execute_transition_content(
         &mut self,
         transition: ::sce_rust_runtime::TransitionId,
@@ -1376,7 +1535,7 @@ impl StatePolicy for StaticComposedSendPolicy {
         match transition.0 {
             // idle, transition 0
             0 => {
-                // SCE-MAP: static_composed_send.scxml:53 :: idle :: _transition_0
+                // SCE-MAP: static_composed_send.scxml:70 :: idle :: _transition_0
                 // W3C SCXML 3.13: Transition 0 actions
                 let ev = match &self.pending_payload {
                     StaticComposedSendPayload::BatchSent(ev) => ev.clone(),
@@ -1512,11 +1671,78 @@ impl StatePolicy for StaticComposedSendPolicy {
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
                         let _ = send_id; // suppress unused warning when no send operation
                     }
+
+                    {
+                        let send_id: &str = "__send_1";
+
+                        let mut _param_failed = false;
+
+                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                        // delivered, so each name carries a vector. The typed value is kept
+                        // rather than its text — a receiver reading `_event.data.value === 42`
+                        // finds the string "42" unequal.
+                        //
+                        // Declared out here rather than inside the payload block because
+                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                        // below are renderings of that one evaluation: the BasicHTTP and
+                        // host-served arms read this map instead of asking the data model again.
+                        let mut _send_wire_params: ::std::collections::BTreeMap<
+                            String,
+                            Vec<::sce_rust_runtime::ScriptValue>,
+                        > = ::std::collections::BTreeMap::new();
+                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                        let event_data_string: String = {
+                            let wire_params = &mut _send_wire_params;
+                            // W3C SCXML 5.7.1: the value is computed from the machine's fields; a
+                            // checked operation that overflows leaves the pair out and says so.
+                            match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
+            Ok({ ::sce_forge_runtime::algorithm::holds_at_least(self.held.len(), 1)?; ::sce_rust_runtime::ScriptValue::Array(self.held.iter().map(|h| ::sce_rust_runtime::ScriptValue::Int(i64::from(*h))).collect()) })
+        })() {
+            Ok(val) => {
+                wire_params.entry("kept".to_string()).or_default().push(val);
+            }
+            Err(_) => {
+                ::sce_rust_runtime::sce_log_error!("send param 'kept' overflowed or failed");
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedSendEvent::ErrorExecution, "<send> <param name='kept'> could not be read"));
+                // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
+                _param_failed = true;
+            }
+        }
+                            // The value is read from the machine's field as it stands now.
+                            wire_params
+                                .entry("hops".to_string())
+                                .or_default()
+                                .push(::sce_rust_runtime::ScriptValue::Int(i64::from(3)));
+                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                                wire_params,
+                            )
+                        };
+                        let event_data: &str = &event_data_string;
+
+                        // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                        // A delay postpones it and does not change the queue.
+                        {
+                            let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                StaticComposedSendEvent::CountedSent,
+                            );
+                            meta.set_event_data(event_data);
+                            engine.raise(meta);
+                        }
+
+                        // W3C SCXML 4.9: a <param> that could not be read raised an error while
+                        // this element was processed, so the rest of the block does not run —
+                        // from however deep a <foreach> it came.
+                        if _param_failed {
+                            break 'action_block;
+                        }
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
+                    }
                 }
             }
             // idle, transition 1
             1 => {
-                // SCE-MAP: static_composed_send.scxml:67 :: idle :: _transition_1
+                // SCE-MAP: static_composed_send.scxml:90 :: idle :: _transition_1
                 // W3C SCXML 3.13: Transition 1 actions
                 let ev = match &self.pending_payload {
                     StaticComposedSendPayload::BatchSent(ev) => ev.clone(),
@@ -1641,12 +1867,214 @@ impl StatePolicy for StaticComposedSendPolicy {
                             break 'action_block; // W3C SCXML 4.9: the error ends the block
                         }
                     }
+
+                    // SCE Accepted Subset §2.15: <sce:append target="held">
+                    let sce_failed = if self.held.len() < 2 && self.held.push(7).is_ok() {
+                        false
+                    } else {
+                        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                            StaticComposedSendEvent::ErrorExecution,
+                            "<sce:append target='held'>: the list already holds its capacity of 2",
+                        ));
+                        true
+                    };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    {
+                        let send_id: &str = "__send_2";
+
+                        let mut _param_failed = false;
+
+                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                        // delivered, so each name carries a vector. The typed value is kept
+                        // rather than its text — a receiver reading `_event.data.value === 42`
+                        // finds the string "42" unequal.
+                        //
+                        // Declared out here rather than inside the payload block because
+                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                        // below are renderings of that one evaluation: the BasicHTTP and
+                        // host-served arms read this map instead of asking the data model again.
+                        let mut _send_wire_params: ::std::collections::BTreeMap<
+                            String,
+                            Vec<::sce_rust_runtime::ScriptValue>,
+                        > = ::std::collections::BTreeMap::new();
+                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                        let event_data_string: String = {
+                            let wire_params = &mut _send_wire_params;
+                            // W3C SCXML 5.7.1: the value is computed from the machine's fields; a
+                            // checked operation that overflows leaves the pair out and says so.
+                            match (|| -> Result<::sce_rust_runtime::ScriptValue, sce_forge_runtime::algorithm::AlgorithmError> {
+            Ok({ ::sce_forge_runtime::algorithm::holds_at_least(self.held.len(), 1)?; ::sce_rust_runtime::ScriptValue::Array(self.held.iter().map(|h| ::sce_rust_runtime::ScriptValue::Int(i64::from(*h))).collect()) })
+        })() {
+            Ok(val) => {
+                wire_params.entry("kept".to_string()).or_default().push(val);
+            }
+            Err(_) => {
+                ::sce_rust_runtime::sce_log_error!("send param 'kept' overflowed or failed");
+                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedSendEvent::ErrorExecution, "<send> <param name='kept'> could not be read"));
+                // W3C SCXML 5.7.1: the pair is left out; 4.9: the block stops after the send.
+                _param_failed = true;
+            }
+        }
+                            // The value is read from the machine's field as it stands now.
+                            wire_params
+                                .entry("hops".to_string())
+                                .or_default()
+                                .push(::sce_rust_runtime::ScriptValue::Int(i64::from(3)));
+                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                                wire_params,
+                            )
+                        };
+                        let event_data: &str = &event_data_string;
+
+                        // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                        // A delay postpones it and does not change the queue.
+                        {
+                            let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                StaticComposedSendEvent::CountedSent,
+                            );
+                            meta.set_event_data(event_data);
+                            engine.raise(meta);
+                        }
+
+                        // W3C SCXML 4.9: a <param> that could not be read raised an error while
+                        // this element was processed, so the rest of the block does not run —
+                        // from however deep a <foreach> it came.
+                        if _param_failed {
+                            break 'action_block;
+                        }
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
+                    }
                 }
             }
             // idle, transition 2
             2 => {
-                // SCE-MAP: static_composed_send.scxml:89 :: idle :: _transition_2
+                // SCE-MAP: static_composed_send.scxml:118 :: idle :: _transition_2
                 // W3C SCXML 3.13: Transition 2 actions
+                let ev = match &self.pending_payload {
+                    StaticComposedSendPayload::CountedSent(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="counted_deliveries">
+                    self.counted_deliveries = 1;
+
+                    {
+                        let send_id: &str = "__send_3";
+
+                        // W3C SCXML 6.2 / test178: a name may repeat and every value must be
+                        // delivered, so each name carries a vector. The typed value is kept
+                        // rather than its text — a receiver reading `_event.data.value === 42`
+                        // finds the string "42" unequal.
+                        //
+                        // Declared out here rather than inside the payload block because
+                        // §scxml-6.2.3 evaluates a `<send>`'s arguments ONCE, and the transports
+                        // below are renderings of that one evaluation: the BasicHTTP and
+                        // host-served arms read this map instead of asking the data model again.
+                        let mut _send_wire_params: ::std::collections::BTreeMap<
+                            String,
+                            Vec<::sce_rust_runtime::ScriptValue>,
+                        > = ::std::collections::BTreeMap::new();
+                        // W3C SCXML 6.2: Evaluate <param> expressions at send time
+                        let event_data_string: String = {
+                            let wire_params = &mut _send_wire_params;
+                            // The value is read from the machine's field as it stands now.
+                            wire_params.entry("kept".to_string()).or_default().push(
+                                ::sce_rust_runtime::ScriptValue::Array(
+                                    ev.kept
+                                        .iter()
+                                        .map(|h| {
+                                            ::sce_rust_runtime::ScriptValue::Int(i64::from(*h))
+                                        })
+                                        .collect(),
+                                ),
+                            );
+                            // The value is read from the machine's field as it stands now.
+                            wire_params
+                                .entry("hops".to_string())
+                                .or_default()
+                                .push(::sce_rust_runtime::ScriptValue::Int(i64::from(ev.hops)));
+                            ::sce_rust_runtime::helpers::event_data::build_json_from_typed_params(
+                                wire_params,
+                            )
+                        };
+                        let event_data: &str = &event_data_string;
+
+                        // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event.
+                        // A delay postpones it and does not change the queue.
+                        {
+                            let mut meta = sce_rust_runtime::EventWithMetadata::new(
+                                StaticComposedSendEvent::CountedSent,
+                            );
+                            meta.set_event_data(event_data);
+                            engine.raise(meta);
+                        }
+
+                        let _ = event_data; // suppress unused warning in branches that skip dispatch
+                        let _ = send_id; // suppress unused warning when no send operation
+                    }
+                }
+            }
+            // idle, transition 3
+            3 => {
+                // SCE-MAP: static_composed_send.scxml:126 :: idle :: _transition_3
+                // W3C SCXML 3.13: Transition 3 actions
+                let ev = match &self.pending_payload {
+                    StaticComposedSendPayload::CountedSent(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="counted_deliveries">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.counted_deliveries = sce_forge_runtime::algorithm::add::<u32>(
+                                self.counted_deliveries,
+                                1,
+                            )?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedSendEvent::ErrorExecution, "<assign location='counted_deliveries'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+
+                    // W3C SCXML 5.3: <assign location="counted_hops">
+                    self.counted_hops = ev.hops;
+
+                    for each in ev.kept.clone() {
+                        let _ = &each;
+
+                        // W3C SCXML 5.3: <assign location="counted_sum">
+                        let sce_failed = match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+    self.counted_sum = sce_forge_runtime::algorithm::add::<u32>(self.counted_sum, each as u32)?;
+    Ok(())
+})() {
+    Ok(()) => false,
+    Err(_) => {
+        engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticComposedSendEvent::ErrorExecution, "<assign location='counted_sum'>: an integer operation overflowed or failed"));
+        true
+    }
+};
+                        if sce_failed {
+                            break 'action_block; // W3C SCXML 4.9: the error ends the block
+                        }
+                    }
+                }
+            }
+            // idle, transition 4
+            4 => {
+                // SCE-MAP: static_composed_send.scxml:135 :: idle :: _transition_4
+                // W3C SCXML 3.13: Transition 4 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     // W3C SCXML 5.3: <assign location="refusals">
