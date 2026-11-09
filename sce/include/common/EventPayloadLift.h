@@ -1451,13 +1451,6 @@ public:
         return refusal.empty() ? v.readName(out) : refusal;
     }
 
-    /** @brief A byte-string field, held to no bound; `EventPayloadValue::readBytes` holds it to its own */
-    EventPayloadRefusal readBytes(const char *name, std::vector<uint8_t> &out) const {
-        EventPayloadValue v;
-        EventPayloadRefusal refusal = value(name, v);
-        return refusal.empty() ? v.readBytes(std::numeric_limits<size_t>::max(), out) : refusal;
-    }
-
     /** @brief A whole-number field, at the width its schema declares (`EventPayloadValue::readInteger`) */
     template <typename T> EventPayloadRefusal readInteger(const char *name, T &out) const {
         EventPayloadValue v;
