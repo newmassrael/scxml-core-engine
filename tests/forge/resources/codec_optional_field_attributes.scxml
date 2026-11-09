@@ -10,19 +10,19 @@
      stopped reaching the IR. `<sce:while max-iter>` was exactly that
      shape and was dropped in silence for as long as it existed.
 
-     This fixture exists to be mutated, so it carries the attributes
-     rather than a behaviour:
+     It carries the attributes to the IR, and its frame is held to the
+     independent model (docs/adr/0095): byte cases in
+     `numerical_reference.json`, written by `binary_model.py`.
 
        byte 0     : `status`, a flags carrier read little-endian, whose
-                    bits start two in — `bit-offset` and `endian` on a
-                    `<sce:flags>`.
+                    flags are bits 2 and 3 — `bit-offset` and `endian`
+                    on a `<sce:flags>`.
        bytes 1..2 : `reading`, a 12-bit big-endian value that starts
-                    four bits into its first byte — the same two on a
-                    `<sce:field>`.
+                    four bits into byte 1, so its word is bytes 1 and 2
+                    — the same two on a `<sce:field>`.
 
-     ⚠ Deliberately no golden in `tests/forge/expected/`. Thirty-three
-     resources have none; what this document is for is the attribute
-     reaching the IR, and a golden would pin a rendering nobody reads.
+     No golden in `tests/forge/expected/`: the byte cases pin what it
+     means, and a golden would pin a rendering nobody reads.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"

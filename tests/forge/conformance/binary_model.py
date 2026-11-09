@@ -27,9 +27,19 @@ this file, and which of the two is wrong is decided against the page.
 
 What the model reads so far, and refuses by name past it:
 
-* an unsigned field of a fixed width (`sce:bit-size` a number of bits), whole
-  bytes in the codec's byte order, or bits of a byte it shares with the fields
-  at the same `sce:byte` (`sce:bit-offset`);
+* an unsigned field of a fixed width (`sce:bit-size` a number of bits `N`) at
+  `sce:byte` `B` and `sce:bit-offset` `O` (0 where absent), as docs/adr/0095
+  writes it: the `W = ceil((O + N) / 8)` bytes from `B` on, read as one
+  unsigned integer in the field's byte order (its `sce:endian`, else the
+  codec's `sce:default-endian`, else big; `native` reads as big), are its
+  word, and its value is bits `O` to `O + N` of the word counted from the
+  least significant. A layout of fixed fields and then byte strings, none of
+  them gated, is positional ([`Codec.positional`]): its fixed bytes run from 0
+  to the end of the last fixed field, each the or of the bits each field holds
+  in it, a byte no field holds written zero and not read. Any other layout
+  writes each element in turn, so its fixed fields are whole bytes. Two fields
+  over one bit, a partial field in a layout written in turn, a word past 64
+  bits and more bits than the type holds are refused by name ([`Refused`]);
 * an unsigned field written as a VLE (`sce:bit-size="vle"`): seven bits a byte,
   low group first, the high bit set on every byte but the last, and the ninth
   byte, where a value reaches it, all eight bits
@@ -154,6 +164,11 @@ LENGTH, COUNT, BODY_LENGTH = "length", "count", "body length"
 
 class Unread(Exception):
     """A shape of the document this model does not read yet."""
+
+
+class Refused(Exception):
+    """A document the page refuses (`validation/attribute-rule-violated`,
+    docs/adr/0095 §3): no frame is written for it."""
 
 
 @dataclass
@@ -360,8 +375,30 @@ class Field:
             value &= ~(((1 << bits.width) - 1) << bits.bit)
         return value
 
-    def shares_a_byte(self) -> bool:
-        return self.size == "fixed" and (self.bit_offset is not None or self.bits < 8)
+    def whole(self) -> bool:
+        """Whether this fixed field is whole bytes: no bit offset, and a
+        width of whole bytes (docs/adr/0095 §2)."""
+        return self.size == "fixed" and not self.bit_offset and self.bits % 8 == 0
+
+    def word_bytes(self) -> int:
+        """`W`, the bytes the word of this fixed field spans from its
+        `sce:byte` on: ceil((O + N) / 8) (docs/adr/0095 §1)."""
+        return ((self.bit_offset or 0) + self.bits + 7) // 8
+
+    def order(self) -> str:
+        """The byte order of the word: `native` reads as big."""
+        return "little" if self.endian == "little" else "big"
+
+    def word(self, value: int) -> bytes:
+        """The `W` bytes of the word that holds `value` in this field's bits
+        and nothing in any other bit."""
+        return (value << (self.bit_offset or 0)).to_bytes(self.word_bytes(), self.order())
+
+    def of_word(self, data: bytes) -> int:
+        """The value of this field in the `W` bytes `data` of its word: bits
+        `O` to `O + N`, counted from the least significant."""
+        word = int.from_bytes(data, self.order())
+        return (word >> (self.bit_offset or 0)) & ((1 << self.bits) - 1)
 
     def measure(self) -> str:
         """How the element that measures this one measures it."""
@@ -383,6 +420,62 @@ class Codec:
 
     def flag(self, carrier: str, name: str) -> Flag:
         return next(f for f in self.field(carrier).flags if f.name == name)
+
+    def positional(self) -> bool:
+        """Whether each fixed field is at its declared byte: the layout is
+        fixed fields, none gated or aligned to a burst, and after them only
+        byte strings (`tail`, `length-ref`), none gated, written in turn. Any
+        other layout writes every element in turn (docs/adr/0095 §2, §3)."""
+        strings = False
+        for f in self.fields:
+            if f.size == "fixed" and f.gate is None and f.aligned_at is None:
+                if strings:
+                    return False
+            elif f.sce_type in SEQUENCE and f.gate is None:
+                strings = True
+            else:
+                return False
+        return True
+
+    def fixed(self) -> list[Field]:
+        """The fixed fields, in the order the document declares them."""
+        return [f for f in self.fields if f.size == "fixed"]
+
+    def fixed_end(self) -> int:
+        """Of a positional layout, the end of its last fixed field: its fixed
+        bytes run from 0 to here, a byte no field holds among them."""
+        return max((f.byte + f.word_bytes() for f in self.fixed()), default=0)
+
+    def fixed_frame(self, values: dict[str, int]) -> bytes:
+        """The fixed bytes of a positional layout holding `values`, by field
+        id: each byte the or of the bits each field holds in it, and zero where
+        no field holds a bit (docs/adr/0095 §2)."""
+        out = bytearray(self.fixed_end())
+        for f in self.fixed():
+            for i, bits in enumerate(f.word(values[f.id])):
+                out[f.byte + i] |= bits
+        return bytes(out)
+
+    def check_bits(self) -> None:
+        """Refuse what docs/adr/0095 §3 refuses of where the fixed fields'
+        bits lie: in a positional layout two fields over one bit, and in a
+        layout written in turn a field that is not whole bytes."""
+        if not self.positional():
+            for f in self.fixed():
+                if not f.whole():
+                    raise Refused(
+                        f"{self.name}: `{f.id}` is not whole bytes in a layout written in turn"
+                    )
+            return
+        held = bytearray(self.fixed_end())
+        for f in self.fixed():
+            for i, bits in enumerate(f.word((1 << f.bits) - 1)):
+                if held[f.byte + i] & bits:
+                    raise Refused(
+                        f"{self.name}: `{f.id}` holds a bit of byte {f.byte + i} "
+                        "another field holds"
+                    )
+                held[f.byte + i] |= bits
 
     def measured(self) -> dict[str, list[Field]]:
         """Each measuring element named, and the elements it measures."""
@@ -587,7 +680,9 @@ class Codec:
         return out
 
     def check(self) -> None:
-        """Refuse what the model does not read among the relations of fields."""
+        """Refuse what the model does not read among the relations of fields,
+        and what the page refuses of where their bits lie."""
+        self.check_bits()
         for (carrier, name), decided in self.decided().items():
             if carrier and self.flag(carrier, name).width != 1:
                 raise Unread(f"{self.name}: a gate on the {name} flag, wider than one bit")
@@ -980,8 +1075,13 @@ def read_document(path: Path) -> Codec:
                 size, bits = "vle", WIDTH[sce_type]
             elif size_text is not None and size_text.isdigit():
                 size, bits = "fixed", int(size_text)
-                if bits > WIDTH[sce_type] or (bits > 8 and bits % 8):
-                    raise Unread(f"{stem}: `{id}` has {bits} bits")
+                offset = attribute_int(node, "bit-offset") or 0
+                if bits == 0 or offset < 0:
+                    raise Unread(f"{stem}: `{id}` has {bits} bits at bit {offset}")
+                if bits > WIDTH[sce_type]:
+                    raise Refused(f"{stem}: `{id}` has {bits} bits, more than {sce_type} holds")
+                if offset + bits > 64:
+                    raise Refused(f"{stem}: the word of `{id}` is {offset + bits} bits, past 64")
             else:
                 raise Unread(f"{stem}: bit-size {size_text!r} of `{id}` is not read yet")
         else:
@@ -990,6 +1090,9 @@ def read_document(path: Path) -> Codec:
         length_field = node.get(f"{SCE}length-field")
         if (size == "length-ref") != (length_field is not None):
             raise Unread(f"{stem}: `{id}` pairs length-ref and length-field otherwise")
+        endian = node.get(f"{SCE}endian", default_endian)
+        if endian not in ("big", "little", "native"):
+            raise Unread(f"{stem}: the byte order {endian!r} of `{id}` is not read yet")
         fields.append(
             Field(
                 id=id,
@@ -998,7 +1101,7 @@ def read_document(path: Path) -> Codec:
                 bits=bits,
                 byte=int(node.get(f"{SCE}byte")),
                 bit_offset=attribute_int(node, "bit-offset"),
-                endian=node.get(f"{SCE}endian", default_endian),
+                endian=endian,
                 carrier=tag == f"{SCE}flags",
                 flags=flags,
                 gate=read_gate(stem, node, inputs),
@@ -1377,8 +1480,8 @@ def handed(codec: Codec, inputs: dict | None) -> dict[str, int]:
 def encode(codec: Codec, source: dict, inputs: dict | None = None) -> bytes:
     """The frame of `source`, `inputs` the flag inputs its parent hands it: the
     fields in declaration order, a field gated off left out, each derived
-    element computed from what the value presents, and the fields that share a
-    byte packed into it."""
+    element computed from what the value presents, and the fixed fields of a
+    positional layout written together as its fixed bytes."""
     if not isinstance(source, dict):
         raise ValueError(f"{codec.name}: a source is a JSON object")
     inputs = handed(codec, inputs)
@@ -1464,7 +1567,10 @@ def encode(codec: Codec, source: dict, inputs: dict | None = None) -> bytes:
                 value = (value & ~mask) | (wire << flag.bit)
         carriers[f.id] = value
     out = bytearray()
-    packed: dict[int, int] = {}
+    # A positional layout's fixed fields lead it, and their bytes are written
+    # once the last of them is known (docs/adr/0095 §2).
+    fixed = codec.fixed() if codec.positional() else []
+    words: dict[str, int] = {}
     for f in codec.fields:
         if f.gate is not None:
             holds = gate_holds(codec, f.gate, carriers, inputs, source)
@@ -1503,20 +1609,14 @@ def encode(codec: Codec, source: dict, inputs: dict | None = None) -> bytes:
             raise ValueError(f"{codec.name}: `{f.id}` = {value!r} has more than {f.bits} bits")
         if f.size == "vle":
             out += vle(value)
-        elif f.shares_a_byte():
-            packed[f.byte] = packed.get(f.byte, 0) | (value << (f.bit_offset or 0))
-            if last_of_its_byte(codec, f):
-                out.append(packed[f.byte])
+        elif fixed and f.size == "fixed":
+            words[f.id] = value
+            if f is fixed[-1]:
+                out += codec.fixed_frame(words)
         else:
-            out += value.to_bytes(f.bits // 8, "big" if f.endian == "big" else "little")
+            # A layout written in turn holds only whole fields (check_bits).
+            out += f.word(value)
     return bytes(out)
-
-
-def last_of_its_byte(codec: Codec, f: Field) -> bool:
-    return not any(
-        g.shares_a_byte() and g.byte == f.byte and codec.fields.index(g) > codec.fields.index(f)
-        for g in codec.fields
-    )
 
 
 def decode(codec: Codec, frame: bytes, inputs: dict | None = None) -> dict:
@@ -1553,6 +1653,10 @@ def decode_at(
             raise ValueError(f"{codec.name}: the frame ends inside `{what}`")
 
     start = at
+    # Where the codec's frame begins, from which a positional layout's fixed
+    # fields lie at their declared bytes; they lead the layout.
+    origin = at
+    fixed = codec.fixed() if codec.positional() else []
     for f in codec.fields:
         if f.gate is not None and not gate_holds(codec, f.gate, carriers, inputs, raw):
             raw[f.id] = None
@@ -1636,15 +1740,18 @@ def decode_at(
         if f.size == "vle":
             within(1, f.id)
             value, at = read_vle(frame[:end], at)
-        elif f.shares_a_byte():
-            within(1, f.id)
-            value = (frame[at] >> (f.bit_offset or 0)) & ((1 << f.bits) - 1)
-            if last_of_its_byte(codec, f):
-                at += 1
+        elif fixed and f.size == "fixed":
+            # Each field is read from its word, and a byte no field holds is
+            # not read (docs/adr/0095 §2).
+            if f is fixed[0]:
+                within(codec.fixed_end(), "the fixed bytes")
+            value = f.of_word(frame[origin + f.byte : origin + f.byte + f.word_bytes()])
+            if f is fixed[-1]:
+                at = origin + codec.fixed_end()
         else:
-            n = f.bits // 8
+            n = f.word_bytes()
             within(n, f.id)
-            value = int.from_bytes(frame[at : at + n], "big" if f.endian == "big" else "little")
+            value = f.of_word(frame[at : at + n])
             at += n
         raw[f.id] = value
         if f.carrier:
@@ -1799,6 +1906,19 @@ FIXTURES = {
             ({"priority": 0, "channel": 0, "direction": 3}, "direction alone, the low two bits"),
             ({"priority": 5, "channel": 2, "direction": 1}, "three fields in one byte"),
         ]
+    ),
+    "codec_optional_field_attributes": Fixture(
+        [
+            ({"status": 0x0C, "reading": 0xABC},
+             "ready and fault set; reading is the word 0xABC0 over bytes 1 and 2"),
+            ({"status": 0x00, "reading": 0}, "every field zero: three zero bytes"),
+            ({"status": 0x04, "reading": 0xFFF},
+             "ready alone; reading at its largest, the low four bits of byte 2 no field's"),
+            ({"status": 0x00, "reading": 0x00F},
+             "the low four bits of reading are the high four of byte 2, and nothing else is set"),
+        ],
+        "a one-byte flags carrier read little-endian, and a 12-bit big-endian field four bits "
+        "into byte 1 that spans bytes 1 and 2 (docs/adr/0095 §1).",
     ),
     "codec_tail": Fixture(
         [
