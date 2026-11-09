@@ -23,7 +23,9 @@ func TestEachArgumentCostsWhatItsClauseSays(t *testing.T) {
 	policy.SessionID = sce.GenerateSessionID()
 	policy.ScriptEngine = scegotest.NewLuaEngine()
 	engine := sce.NewEngine[ABadInvokeArgumentIsReportedOnceState, ABadInvokeArgumentIsReportedOnceEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	for _, event := range []ABadInvokeArgumentIsReportedOnceEvent{
 		ABadInvokeArgumentIsReportedOnceEventGo,
 		ABadInvokeArgumentIsReportedOnceEventFinish,

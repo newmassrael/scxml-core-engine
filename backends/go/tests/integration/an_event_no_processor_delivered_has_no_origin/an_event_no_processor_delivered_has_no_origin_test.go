@@ -37,7 +37,9 @@ func TestAnEventNoProcessorDeliveredHasNoOrigin(t *testing.T) {
 		}
 		return []sce.HostSendResponse{{EventName: "host.reply"}}
 	})
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	engine.Step()
 
 	engine.RaiseExternal(AnEventNoProcessorDeliveredHasNoOriginEventPosted, "")

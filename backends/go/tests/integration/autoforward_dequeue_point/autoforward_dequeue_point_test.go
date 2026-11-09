@@ -32,7 +32,9 @@ func TestAnExternalEventIsForwardedAtTheDequeueNotTheEnqueue(t *testing.T) {
 	policy := NewAutoforwardDequeuePointPolicy()
 	policy.SessionID = sce.GenerateSessionID()
 	engine := sce.NewEngine[AutoforwardDequeuePointState, AutoforwardDequeuePointEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	completed := engine.RunUntilCompletion(2*time.Second, 10*time.Millisecond)
 	if !completed {

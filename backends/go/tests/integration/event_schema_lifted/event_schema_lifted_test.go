@@ -37,7 +37,9 @@ func newLifted(t *testing.T) (*sce.Engine[StatechartLiftedState, StatechartLifte
 	policy := NewStatechartLiftedPolicy()
 	policy.SessionID = sce.GenerateSessionID()
 	engine := sce.NewEngine[StatechartLiftedState, StatechartLiftedEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	if got := engine.GetCurrentState(); got != StatechartLiftedStateWaiting {
 		t.Fatalf("initial state = %v, want Waiting", got)
 	}

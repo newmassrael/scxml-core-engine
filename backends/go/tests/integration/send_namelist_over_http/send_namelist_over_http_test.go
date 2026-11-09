@@ -47,7 +47,9 @@ func TestSendNamelistReachesTheFormAndABrokenItemDiscardsTheMessage(t *testing.T
 	policy.BasicHTTPAccessURI = scegotest.BasicHTTPAccessURI()
 	engine := sce.NewEngine[SendNamelistOverHttpState, SendNamelistOverHttpEvent](&policy)
 	scegotest.SetupHTTPTest(engine)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	completed := engine.RunUntilCompletion(15*time.Second, 10*time.Millisecond)
 	if !completed {

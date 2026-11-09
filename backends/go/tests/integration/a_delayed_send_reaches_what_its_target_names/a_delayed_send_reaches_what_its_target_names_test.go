@@ -24,7 +24,9 @@ func TestADelayedSendReachesWhatItsTargetNames(t *testing.T) {
 	policy.SessionID = sce.GenerateSessionID()
 	policy.ScriptEngine = scegotest.NewLuaEngine()
 	engine := sce.NewEngine[ADelayedSendReachesWhatItsTargetNamesState, ADelayedSendReachesWhatItsTargetNamesEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	if !engine.RunUntilCompletion(3*time.Second, 5*time.Millisecond) {
 		t.Fatalf("the machine never completed (parked in %v)", engine.GetCurrentState())
@@ -46,7 +48,9 @@ func TestADelayedSendReachesWhatItsTargetNamesOnALateHost(t *testing.T) {
 	policy.ScriptEngine = scegotest.NewLuaEngine()
 	engine := sce.NewEngine[ADelayedSendReachesWhatItsTargetNamesState, ADelayedSendReachesWhatItsTargetNamesEvent](&policy)
 	engine.SetClock(sce.NewManualClock(0))
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	for i := 0; i < 20 && !engine.IsInFinalState(); i++ {
 		engine.AdvanceTimeMs(150)

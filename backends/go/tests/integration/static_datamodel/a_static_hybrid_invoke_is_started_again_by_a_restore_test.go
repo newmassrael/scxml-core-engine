@@ -36,7 +36,9 @@ func hybridStarted() (*hybridEngine, *static_invoke_hybrid_saved.StaticInvokeHyb
 	policy := static_invoke_hybrid_saved.NewStaticInvokeHybridSavedPolicy()
 	engine := sce.NewEngine[static_invoke_hybrid_saved.StaticInvokeHybridSavedState, static_invoke_hybrid_saved.StaticInvokeHybridSavedEvent](&policy)
 	engine.SetClock(sce.NewManualClock(0))
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		panic(err)
+	}
 	return engine, &policy
 }
 

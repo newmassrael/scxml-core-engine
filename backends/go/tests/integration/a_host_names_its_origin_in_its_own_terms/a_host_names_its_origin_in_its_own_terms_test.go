@@ -39,7 +39,9 @@ func TestAHostNamesItsOriginInItsOwnTerms(t *testing.T) {
 		}
 		return nil
 	})
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	engine.Step()
 
 	if started == nil {

@@ -32,7 +32,9 @@ func TestAComputedNameIsMatchedByTokenAndToldWhole(t *testing.T) {
 	policy.SessionID = sce.GenerateSessionID()
 	policy.ScriptEngine = scegotest.NewLuaEngine()
 	engine := sce.NewEngine[AComputedEventNameIsMatchedLikeAnyOtherState, AComputedEventNameIsMatchedLikeAnyOtherEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	completed := engine.RunUntilCompletion(2*time.Second, 10*time.Millisecond)
 	if !completed {
@@ -62,7 +64,9 @@ func runObserved(t *testing.T, seen *[]sce.TransitionTaken[AComputedEventNameIsM
 	if clear {
 		engine.SetTransitionObserver(nil)
 	}
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	if !engine.RunUntilCompletion(2*time.Second, 10*time.Millisecond) {
 		t.Fatalf("the observed run stopped before its final state")
 	}

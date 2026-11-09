@@ -32,7 +32,9 @@ func TestADeliveryForwardedByItsNamesComesBackWhole(t *testing.T) {
 	policy := static_composed_send.NewStaticComposedSendPolicy()
 	policy.SessionID = sce.GenerateSessionID()
 	engine := sce.NewEngine[static_composed_send.StaticComposedSendState, static_composed_send.StaticComposedSendEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	// Every list full, the second item's `tags` holding three, an element of
 	// `maybe` absent and `spare` present.
 	engine.RaiseExternalByName("batch.sent", composedBatch(4, 3, 4))

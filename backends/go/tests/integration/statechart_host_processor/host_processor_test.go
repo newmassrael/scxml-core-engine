@@ -80,7 +80,9 @@ func TestARegisteredHandlerReceivesTheSendAndItsReplyArrives(t *testing.T) {
 		// instead of a host-side table performing it.
 		return []sce.HostSendResponse{{EventName: "turn.done"}}
 	})
-	s.engine.Initialize()
+	if err := s.engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	s.engine.Step()
 
 	if got := s.counter(t, "served"); got != 1 {
@@ -176,7 +178,9 @@ func TestARegisteredHandlerReceivesTheSendAndItsReplyArrives(t *testing.T) {
 // performed the act.
 func TestADeclaredTypeWithNoHandlerStillRaisesErrorExecution(t *testing.T) {
 	s := newStarted()
-	s.engine.Initialize()
+	if err := s.engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	s.engine.Step()
 
 	if got := s.counter(t, "refused"); got != 1 {
@@ -209,7 +213,9 @@ func TestAHandlerThatAnswersNothingIsNotAnError(t *testing.T) {
 				ran = true
 				return reply.answer
 			})
-			s.engine.Initialize()
+			if err := s.engine.Initialize(); err != nil {
+				t.Fatal(err)
+			}
 			s.engine.Step()
 
 			if !ran {
@@ -233,7 +239,9 @@ func TestAHandlerRegisteredForAnotherTypeDoesNotServeThisOne(t *testing.T) {
 	s.engine.RegisterEventProcessor("x-some-other-host", func(sce.HostSendRequest) []sce.HostSendResponse {
 		return []sce.HostSendResponse{{EventName: "turn.done"}}
 	})
-	s.engine.Initialize()
+	if err := s.engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	s.engine.Step()
 
 	if got := s.counter(t, "served"); got != 0 {
@@ -252,7 +260,9 @@ func TestAReplyNamingAnUndeclaredEventIsDropped(t *testing.T) {
 	s.engine.RegisterEventProcessor(declaredType, func(sce.HostSendRequest) []sce.HostSendResponse {
 		return []sce.HostSendResponse{{EventName: "turn.never.declared"}}
 	})
-	s.engine.Initialize()
+	if err := s.engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	s.engine.Step()
 
 	if got := s.counter(t, "served"); got != 0 {
@@ -301,7 +311,9 @@ func TestRegisteringATypeTwiceReplaces(t *testing.T) {
 		currentRan = true
 		return []sce.HostSendResponse{{EventName: "turn.done"}}
 	})
-	s.engine.Initialize()
+	if err := s.engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	s.engine.Step()
 
 	if supersededRan {

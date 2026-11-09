@@ -96,7 +96,9 @@ func TestARegisteredInvokerIsStartedWithWhatTheDocumentWrote(t *testing.T) {
 	var log []string
 	s := newStarted()
 	s.engine.RegisterInvoker(declaredType, recordingInvoker(&log))
-	s.engine.Initialize()
+	if err := s.engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	s.engine.Step()
 
 	// The fixture counts a completion only when its `_event.invokeid` names the
@@ -148,7 +150,9 @@ func TestWhatTheRequestSaysIsEvaluatedWhenTheInvocationStarts(t *testing.T) {
 		}
 		return nil
 	})
-	s.engine.Initialize()
+	if err := s.engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	s.engine.Step()
 	starts = nil // `probe` / `probe2`, which the case above already reads
 	s.engine.ProcessEvent(StatechartHostInvokerEventEvaluate)
@@ -184,7 +188,9 @@ func TestLeavingTheStateCancelsTheInvocation(t *testing.T) {
 	// Still running when the state exits — a completed invocation has nothing
 	// left to cancel (TestACompletedInvocationIsNotCancelled).
 	s.engine.RegisterInvoker(declaredType, runningInvoker(&log, &starts))
-	s.engine.Initialize()
+	if err := s.engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	s.engine.Step()
 	s.engine.ProcessEvent(StatechartHostInvokerEventLeave)
 
@@ -233,7 +239,9 @@ func TestCancelIsNotDeliveredForAnInvocationThatNeverStarted(t *testing.T) {
 	// Now let one start, cancel it, and cancel again: the second call has
 	// nothing left to do. A registry that answered twice would have the host
 	// tear down the same work twice.
-	s.engine.Initialize()
+	if err := s.engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	s.engine.Step()
 	if !s.engine.CancelHostInvoke(declaredType, "probe") {
 		t.Fatal("a started invocation reported nothing to cancel")
@@ -261,7 +269,9 @@ func TestAnInvocationWhoseStateLeftIsNeverStarted(t *testing.T) {
 	var starts []hostStart
 	s := newStarted()
 	s.engine.RegisterInvoker(declaredType, runningInvoker(&log, &starts))
-	s.engine.Initialize()
+	if err := s.engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	s.engine.Step()
 	s.engine.ProcessEvent(StatechartHostInvokerEventPass)
 
@@ -328,7 +338,9 @@ func TestACompletedInvocationIsNotCancelled(t *testing.T) {
 	var log []string
 	s := newStarted()
 	s.engine.RegisterInvoker(declaredType, recordingInvoker(&log))
-	s.engine.Initialize()
+	if err := s.engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	s.engine.Step()
 	s.engine.ProcessEvent(StatechartHostInvokerEventLeave)
 
@@ -348,7 +360,9 @@ func TestAFailedInvocationRaisesErrorInvokeOnceWithItsOrigin(t *testing.T) {
 	var starts []hostStart
 	s := newStarted()
 	s.engine.RegisterInvoker(declaredType, runningInvoker(&log, &starts))
-	s.engine.Initialize()
+	if err := s.engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	s.engine.Step()
 	s.engine.ProcessEvent(StatechartHostInvokerEventFail)
 
@@ -395,7 +409,9 @@ func TestARefusedStartRaisesErrorExecutionAndStartsNothing(t *testing.T) {
 		refusal := `{"reason":"NOT_HERE"}`
 		return &sce.HostInvokeResponse{Refusal: &refusal}
 	})
-	s.engine.Initialize()
+	if err := s.engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	s.engine.Step()
 	s.engine.ProcessEvent(StatechartHostInvokerEventRefuse)
 	s.engine.Step()
@@ -419,7 +435,9 @@ func TestALateCompletionIsAcceptedExactlyOnce(t *testing.T) {
 	var starts []hostStart
 	s := newStarted()
 	s.engine.RegisterInvoker(declaredType, runningInvoker(&log, &starts))
-	s.engine.Initialize()
+	if err := s.engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	s.engine.Step()
 	if got := s.counter(t, "started"); got != 0 {
 		t.Fatalf("started before any completion: %d", got)
@@ -456,7 +474,9 @@ func TestACompletionAfterTheCancelIsRefused(t *testing.T) {
 	var starts []hostStart
 	s := newStarted()
 	s.engine.RegisterInvoker(declaredType, runningInvoker(&log, &starts))
-	s.engine.Initialize()
+	if err := s.engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	s.engine.Step()
 	token := tokenOf(t, starts, "probe")
 	s.engine.ProcessEvent(StatechartHostInvokerEventLeave)
@@ -478,7 +498,9 @@ func TestARestartedInvokeRefusesTheFirstRunsReply(t *testing.T) {
 	var starts []hostStart
 	s := newStarted()
 	s.engine.RegisterInvoker(declaredType, runningInvoker(&log, &starts))
-	s.engine.Initialize()
+	if err := s.engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	s.engine.Step()
 	first := tokenOf(t, starts, "probe")
 	s.engine.ProcessEvent(StatechartHostInvokerEventLeave)
@@ -513,7 +535,9 @@ func TestADoneInvokeRaisedTheOldWayIsRefusedAndCounted(t *testing.T) {
 	var starts []hostStart
 	s := newStarted()
 	s.engine.RegisterInvoker(declaredType, runningInvoker(&log, &starts))
-	s.engine.Initialize()
+	if err := s.engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	s.engine.Step()
 
 	s.engine.RaiseExternalByNameWithMeta("done.invoke.probe", sce.EventMetadata{InvokeID: "probe"})
@@ -538,7 +562,9 @@ func TestAnIdlocationHoldsTheIDTheHostIsHanded(t *testing.T) {
 	var log []string
 	s := newStarted()
 	s.engine.RegisterInvoker(declaredType, recordingInvoker(&log))
-	s.engine.Initialize()
+	if err := s.engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	s.engine.Step()
 	s.engine.ProcessEvent(StatechartHostInvokerEventLeave)
 
@@ -565,7 +591,9 @@ func TestAnIdlocationIsAssignedLikeALocation(t *testing.T) {
 	var log []string
 	s := newStarted()
 	s.engine.RegisterInvoker(declaredType, recordingInvoker(&log))
-	s.engine.Initialize()
+	if err := s.engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	s.engine.Step()
 	s.engine.ProcessEvent(StatechartHostInvokerEventLocate)
 	s.engine.Step()
@@ -616,7 +644,9 @@ func TestAGenericDoneInvokeRaisedTheOldWayIsRefused(t *testing.T) {
 	var starts []hostStart
 	s := newStarted()
 	s.engine.RegisterInvoker(declaredType, runningInvoker(&log, &starts))
-	s.engine.Initialize()
+	if err := s.engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	s.engine.Step()
 	s.engine.ProcessEvent(StatechartHostInvokerEventLeave)
 
@@ -640,7 +670,9 @@ func TestAGenericDoneInvokeRaisedTheOldWayIsRefused(t *testing.T) {
 // were running.
 func TestADeclaredTypeWithNoInvokerStillRaisesErrorExecution(t *testing.T) {
 	s := newStarted()
-	s.engine.Initialize()
+	if err := s.engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	s.engine.Step()
 
 	// One error.execution per invocation nobody ran.
@@ -659,7 +691,9 @@ func TestAnInvokerRegisteredForAnotherTypeDoesNotRunThisOne(t *testing.T) {
 	var log []string
 	s := newStarted()
 	s.engine.RegisterInvoker("x-some-other-host", recordingInvoker(&log))
-	s.engine.Initialize()
+	if err := s.engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	s.engine.Step()
 
 	if got := s.counter(t, "started"); got != 0 {
@@ -693,7 +727,9 @@ func timed(t *testing.T) (started, *[]string, *[]hostStart) {
 		}
 		return nil
 	})
-	s.engine.Initialize()
+	if err := s.engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	s.engine.Step()
 	s.engine.ProcessEvent(StatechartHostInvokerEventTime)
 	return s, &log, &starts
@@ -777,7 +813,9 @@ func typedCompletion(t *testing.T, doneData string) [3]int64 {
 	var starts []hostStart
 	s := newStarted()
 	s.engine.RegisterInvoker(declaredType, runningInvoker(&log, &starts))
-	s.engine.Initialize()
+	if err := s.engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	s.engine.Step()
 	s.engine.ProcessEvent(StatechartHostInvokerEventType)
 	if !s.engine.CompleteHostInvoke(declaredType, "perm", tokenOf(t, starts, "perm"), doneData) {
@@ -837,7 +875,9 @@ func typedHost(t *testing.T) (started, *permHost, *[]string) {
 	var starts []hostStart
 	s := newStarted()
 	RegisterStatechartHostInvokerXSceHostInvoker(s.engine, host, runningInvoker(&log, &starts))
-	s.engine.Initialize()
+	if err := s.engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	s.engine.Step()
 	s.engine.ProcessEvent(StatechartHostInvokerEventType)
 	return s, host, &log

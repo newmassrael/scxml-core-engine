@@ -42,7 +42,9 @@ func TestEachErrorEndsOnlyItsOwnBlock(t *testing.T) {
 	policy.SessionID = sce.GenerateSessionID()
 	policy.ScriptEngine = scegotest.NewLuaEngine()
 	engine := sce.NewEngine[AnErrorEndsTheBlockItWasRaisedInState, AnErrorEndsTheBlockItWasRaisedInEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	for _, event := range []AnErrorEndsTheBlockItWasRaisedInEvent{
 		AnErrorEndsTheBlockItWasRaisedInEventT,
 		AnErrorEndsTheBlockItWasRaisedInEventFinish,

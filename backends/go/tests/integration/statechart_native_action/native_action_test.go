@@ -69,7 +69,9 @@ func newStarted() started {
 	policy := NewStatechartNativeActionPolicy(host)
 	policy.SessionID = sce.GenerateSessionID()
 	engine := sce.NewEngine[StatechartNativeActionState, StatechartNativeActionEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		panic(err)
+	}
 	return started{engine: engine, host: host}
 }
 

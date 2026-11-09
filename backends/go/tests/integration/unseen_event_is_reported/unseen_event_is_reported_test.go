@@ -35,7 +35,9 @@ func started(t *testing.T) (*sce.Engine[UnseenEventIsReportedState, UnseenEventI
 	// ECMAScript-datamodel machine.
 	policy.ScriptEngine = scegotest.NewLuaEngine()
 	engine := sce.NewEngine[UnseenEventIsReportedState, UnseenEventIsReportedEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	return engine, &policy
 }
 

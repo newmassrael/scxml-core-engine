@@ -37,7 +37,9 @@ func TestADataElementsXMLIsADomTreeTheDocumentCanWalk(t *testing.T) {
 	// ECMAScript-datamodel machine.
 	policy.ScriptEngine = scegotest.NewLuaEngine()
 	engine := sce.NewEngine[XmlDataIsADomTreeState, XmlDataIsADomTreeEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	// Every transition is eventless, so the verdict is reached in the first
 	// macrostep and no event is needed to ask the question.

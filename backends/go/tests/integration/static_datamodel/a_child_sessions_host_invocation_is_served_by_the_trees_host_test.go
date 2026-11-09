@@ -65,7 +65,9 @@ func treeStarted(t *testing.T) (*treeEngine, *static_invoke_tree.StaticInvokeTre
 	engine := sce.NewEngine[static_invoke_tree.StaticInvokeTreeState, static_invoke_tree.StaticInvokeTreeEvent](&policy)
 	engine.SetClock(sce.NewManualClock(0))
 	starts := serveTreeClock(engine)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	return engine, &policy, starts
 }
 

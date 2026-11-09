@@ -40,7 +40,9 @@ func startedChildMesh(register func(*childMeshEngine)) (*static_child_mesh.Stati
 		return nil
 	})
 	register(engine)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		panic(err)
+	}
 	settleChildMesh(engine)
 	return &policy, engine, parentSends
 }

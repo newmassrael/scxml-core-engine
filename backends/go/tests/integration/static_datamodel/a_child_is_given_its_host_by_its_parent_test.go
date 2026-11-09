@@ -57,7 +57,11 @@ func startChildHost(host *parentHost) (*static_child_host.StaticChildHostPolicy,
 	policy := static_child_host.NewStaticChildHostPolicy(host)
 	policy.SessionID = sce.GenerateSessionID()
 	engine := sce.NewEngine[static_child_host.StaticChildHostState, static_child_host.StaticChildHostEvent](&policy)
-	engine.Initialize()
+	// A `sce-static` machine runs no script engine, so its start has no
+	// script session to be refused for.
+	if err := engine.Initialize(); err != nil {
+		panic(err)
+	}
 	for i := 0; i < 40; i++ {
 		engine.Tick()
 	}
@@ -160,7 +164,9 @@ func TestACandidateIsGivenTheHostAnsweredForItAndNoOther(t *testing.T) {
 	policy := static_child_host_hybrid.NewStaticChildHostHybridPolicy(host)
 	policy.SessionID = sce.GenerateSessionID()
 	engine := sce.NewEngine[static_child_host_hybrid.StaticChildHostHybridState, static_child_host_hybrid.StaticChildHostHybridEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	tick := func() {
 		for i := 0; i < 40; i++ {
 			engine.Tick()

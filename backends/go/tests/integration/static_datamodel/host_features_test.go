@@ -314,7 +314,9 @@ func replayHostScenario[S interface {
 	engine := sce.NewEngine[S, E](policy)
 	engine.SetClock(sce.NewManualClock(0))
 	hf.Serve(engine, rig.host)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	scheduled, needsScheduler := any(policy).(interface{ NeedsEventScheduler() bool })
 	needsScheduler = needsScheduler && scheduled.NeedsEventScheduler()
 	settle := func() {
@@ -510,7 +512,9 @@ func runSequence(t *testing.T, table map[string]any, sequence []int) {
 	engine := sce.NewEngine[static_host_model.StaticHostModelState, static_host_model.StaticHostModelEvent](&policy)
 	engine.SetClock(sce.NewManualClock(0))
 	hf.Serve(engine, host)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	settle := func() {
 		for i := 0; i < hostSettleTicks; i++ {
 			engine.Tick()
@@ -741,7 +745,9 @@ func runHarness(t *testing.T, table map[string]any, sequence []int) harnessRun {
 	})
 	engine.SetClock(sce.NewManualClock(0))
 	hf.Serve(engine, host)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	settle := func() {
 		for i := 0; i < harnessSettleTicks; i++ {
 			engine.Tick()

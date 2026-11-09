@@ -49,7 +49,9 @@ func TestAnAncestorEnteredOnTheWayToATargetTakesNoDefaultChild(t *testing.T) {
 	// ECMAScript-datamodel machine.
 	policy.ScriptEngine = scegotest.NewLuaEngine()
 	engine := sce.NewEngine[AncestorEntryIsNotDefaultEntryState, AncestorEntryIsNotDefaultEntryEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	entry := engine.GetActiveStates()
 	if !active(entry, AncestorEntryIsNotDefaultEntryStateAway) {

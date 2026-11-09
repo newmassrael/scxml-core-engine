@@ -71,7 +71,9 @@ func composedPayloadEngine() (*sce.Engine[static_composed_payload.StaticComposed
 	policy := static_composed_payload.NewStaticComposedPayloadPolicy()
 	policy.SessionID = sce.GenerateSessionID()
 	engine := sce.NewEngine[static_composed_payload.StaticComposedPayloadState, static_composed_payload.StaticComposedPayloadEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		panic(err)
+	}
 	return engine, &policy
 }
 

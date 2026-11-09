@@ -33,7 +33,9 @@ func started(t *testing.T, router sce.HostInvokeHandler) (*machine, *AMeshReques
 	if router != nil {
 		engine.RegisterMeshRPCInvoker(router)
 	}
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	engine.Step()
 	return engine, &policy
 }

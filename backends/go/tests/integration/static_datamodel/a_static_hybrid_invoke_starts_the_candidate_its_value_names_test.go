@@ -41,7 +41,9 @@ func settledHybrid(t *testing.T) (*static_invoke_hybrid.StaticInvokeHybridPolicy
 	policy := static_invoke_hybrid.NewStaticInvokeHybridPolicy()
 	policy.SessionID = sce.GenerateSessionID()
 	engine := sce.NewEngine[static_invoke_hybrid.StaticInvokeHybridState, static_invoke_hybrid.StaticInvokeHybridEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	for i := 0; i < 40; i++ {
 		engine.Tick()
 	}

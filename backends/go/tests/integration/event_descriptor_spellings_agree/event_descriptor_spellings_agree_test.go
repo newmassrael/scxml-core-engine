@@ -31,7 +31,9 @@ func TestEverySpellingOfOneDescriptorCatchesTheSameEvents(t *testing.T) {
 	policy := NewEventDescriptorSpellingsAgreePolicy()
 	policy.SessionID = sce.GenerateSessionID()
 	engine := sce.NewEngine[EventDescriptorSpellingsAgreeState, EventDescriptorSpellingsAgreeEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	if completed := engine.RunUntilCompletion(2*time.Second, 10*time.Millisecond); !completed {
 		t.Fatalf("the machine never reached a final state (parked in %v); every case "+

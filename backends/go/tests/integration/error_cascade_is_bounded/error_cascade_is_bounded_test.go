@@ -44,7 +44,9 @@ func started(t *testing.T) (*sce.Engine[ErrorCascadeIsBoundedState, ErrorCascade
 	// ECMAScript-datamodel machine.
 	policy.ScriptEngine = scegotest.NewLuaEngine()
 	engine := sce.NewEngine[ErrorCascadeIsBoundedState, ErrorCascadeIsBoundedEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	return engine, &policy
 }
 

@@ -109,7 +109,9 @@ func waiting(t *testing.T) *Engine {
 	engine := sce.NewEngine[StatechartStaticDelayedHostSendState, StatechartStaticDelayedHostSendEvent](&policy)
 	engine.SetClock(sce.NewManualClock(0))
 	engine.RegisterEventProcessor(declaredType, func(sce.HostSendRequest) []sce.HostSendResponse { return nil })
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	drive(engine, "start")
 	drive(engine, "bump")
 	engine.AdvanceTimeMs(waitedMs)

@@ -41,7 +41,9 @@ func TestAStateIsStillActiveWhileItsOwnOnexitRuns(t *testing.T) {
 	// machine.
 	policy.ScriptEngine = scegotest.NewLuaEngine()
 	engine := sce.NewEngine[OnexitRunsBeforeTheStateLeavesState, OnexitRunsBeforeTheStateLeavesEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	entry := engine.GetActiveStates()
 	if !active(entry, OnexitRunsBeforeTheStateLeavesStateInner) {

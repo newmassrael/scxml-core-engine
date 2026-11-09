@@ -35,7 +35,9 @@ func started(t *testing.T) (*runEngine, *TheRunEndsByExitingEveryStatePolicy) {
 	// machine.
 	policy.ScriptEngine = scegotest.NewLuaEngine()
 	engine := sce.NewEngine[TheRunEndsByExitingEveryStateState, TheRunEndsByExitingEveryStateEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	entry := engine.GetActiveStates()
 	inner := false
 	for _, s := range entry {

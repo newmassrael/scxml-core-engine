@@ -28,7 +28,9 @@ func TestDoneInvokeFromASiblingReachesTheAutoforwardChild(t *testing.T) {
 	policy := NewAutoforwardDoneInvokePolicy()
 	policy.SessionID = sce.GenerateSessionID()
 	engine := sce.NewEngine[AutoforwardDoneInvokeState, AutoforwardDoneInvokeEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	completed := engine.RunUntilCompletion(2*time.Second, 10*time.Millisecond)
 	if !completed {

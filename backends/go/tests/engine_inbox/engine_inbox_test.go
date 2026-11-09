@@ -351,7 +351,8 @@ func (p *probePolicy) HasChildTick() bool {
 	return false
 }
 
-func (p *probePolicy) InitializeDataModel(*probeEngine) {
+func (p *probePolicy) InitializeDataModel(*probeEngine) *sce.ScriptSessionFailure {
+	return nil
 }
 
 func (p *probePolicy) ExecuteFinalizeForChildEvent(*sce.EventWithMetadata[probeEvent], *probeEngine) {
@@ -532,7 +533,9 @@ func expectedFrom(posted []post) []string {
 func replay(t *testing.T, posted []post) ([]string, []string) {
 	t.Helper()
 	pr := newProbe()
-	pr.engine.Initialize()
+	if err := pr.engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	inbox := pr.engine.Inbox()
 	for _, p := range posted {
 		if !p.to(inbox) {
@@ -574,7 +577,9 @@ func TestPostsFromManyGoroutinesDuringMacrostepsAreTakenAsASingleGoroutineReplay
 		}
 	}
 	inbox.WakeWith(signal)
-	pr.engine.Initialize()
+	if err := pr.engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	token := pr.latestToken(t)
 
 	// The order the inbox took the posts in is recorded under one lock with the
@@ -656,7 +661,9 @@ func TestPostsFromManyGoroutinesDuringMacrostepsAreTakenAsASingleGoroutineReplay
 func TestAPostedEndingOfACancelledOrRestartedStartIsRefusedAsADirectOneIs(t *testing.T) {
 	pr := newProbe()
 	inbox := pr.engine.Inbox()
-	pr.engine.Initialize()
+	if err := pr.engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	first := pr.latestToken(t)
 
 	// `leave` exits `working`, which cancels the first start.
@@ -710,7 +717,9 @@ func TestAPostedEndingOfACancelledOrRestartedStartIsRefusedAsADirectOneIs(t *tes
 func TestAPostedEndingCarriesTheOriginItNames(t *testing.T) {
 	pr := newProbe()
 	inbox := pr.engine.Inbox()
-	pr.engine.Initialize()
+	if err := pr.engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	first := pr.latestToken(t)
 
 	// To this machine: applied with CompleteHostInvokeFrom.
@@ -750,7 +759,9 @@ func TestAPostedEndingCarriesTheOriginItNames(t *testing.T) {
 func TestAMeshDeliveryIsPostedAndAppliedAsApplyMeshCallAppliesIt(t *testing.T) {
 	pr := newProbe()
 	inbox := pr.engine.Inbox()
-	pr.engine.Initialize()
+	if err := pr.engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	token := pr.latestToken(t)
 
 	raise := sce.MeshCall{Kind: sce.MeshCallRaise, Name: "ping", Metadata: sce.MeshEventMetadata("peer", "remote", "")}
@@ -786,7 +797,9 @@ func TestAPostBeforeTheRunIsTakenByItAndOneAfterTheStopIsRefused(t *testing.T) {
 		t.Fatalf("a post was applied before the run started: %v", pr.policy.taken)
 	}
 	// Applied at the first macrostep boundary of the run.
-	pr.engine.Initialize()
+	if err := pr.engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	if want := []string{"ping:early"}; !slices.Equal(pr.policy.taken, want) {
 		t.Fatalf("a post made before the run was not taken by it: took %v, want %v", pr.policy.taken, want)
 	}
@@ -812,7 +825,9 @@ func TestAPostBeforeTheRunIsTakenByItAndOneAfterTheStopIsRefused(t *testing.T) {
 	}
 
 	// A run entered again has an open inbox.
-	pr.engine.Initialize()
+	if err := pr.engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	if !inbox.RaiseExternalByName("ping", "again") {
 		t.Fatalf("the inbox of a run entered again refused a post")
 	}
@@ -840,7 +855,9 @@ func TestAnEndingNamingTheRootPostedBeforeTheRunIsTakenByIt(t *testing.T) {
 		t.Fatalf("a post was applied before the run started: %v", pr.policy.taken)
 	}
 
-	pr.engine.Initialize()
+	if err := pr.engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	if token := pr.latestToken(t); token != firstToken {
 		t.Fatalf("the run's first start of `job` carries token %d, not the %d the post named", token, firstToken)
 	}
@@ -878,7 +895,9 @@ func TestAnIDGivenAfterTheEngineIsMadeIsTheOneAPostBeforeTheRunNames(t *testing.
 		t.Fatalf("an ending naming the id the host gave (%s) was refused before the run", given)
 	}
 
-	pr.engine.Initialize()
+	if err := pr.engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	if token := pr.latestToken(t); token != firstToken {
 		t.Fatalf("the run's first start of `job` carries token %d, not the %d the post named", token, firstToken)
 	}
@@ -928,7 +947,9 @@ func TestAPostHeldWhenTheRunEndsIsAppliedAndOneAfterIsRefused(t *testing.T) {
 	// enters `over`, after the last boundary's drain and before the run's end.
 	heldTaken := false
 	pr.onCancel = func() { heldTaken = inbox.RaiseExternal(probePing, "at-the-end") }
-	pr.engine.Initialize()
+	if err := pr.engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	pr.engine.RaiseExternal(probeFinish, "")
 	pr.engine.Step()
@@ -969,7 +990,9 @@ func TestAnEventPostedBeforeTheMachinesOwnSendIsTakenFirst(t *testing.T) {
 			return in.RaiseExternal(probePing, "posted")
 		})
 	}
-	pr.engine.Initialize()
+	if err := pr.engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	pr.engine.RaiseExternal(probeCall, "")
 	pr.engine.Tick()
@@ -1041,7 +1064,9 @@ func orderStarted(t *testing.T, host *orderHost) (*orderEngine, *static_invoke_e
 		}
 		return nil
 	})
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	for drives := 0; len(host.starts) == 0 && drives < treeDrives; drives++ {
 		engine.Tick()
 	}
@@ -1155,7 +1180,9 @@ func TestAPostNamingAChildThatHasEndedIsRefused(t *testing.T) {
 		return nil
 	})
 	inbox := engine.Inbox()
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	// `go` is forwarded to `worker`, which enters `second` and starts the clock.
 	engine.RaiseExternalByName("go", "")
 	for drives := 0; len(starts) == 0 && drives < treeDrives; drives++ {

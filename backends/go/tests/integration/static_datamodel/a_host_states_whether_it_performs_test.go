@@ -41,7 +41,11 @@ func refusal(build func()) (message any) {
 func runDuty(policy *static_host_duty.StaticHostDutyPolicy, host *dutyHost) []string {
 	policy.SessionID = sce.GenerateSessionID()
 	engine := sce.NewEngine[static_host_duty.StaticHostDutyState, static_host_duty.StaticHostDutyEvent](policy)
-	engine.Initialize()
+	// A `sce-static` machine runs no script engine, so its start has no
+	// script session to be refused for.
+	if err := engine.Initialize(); err != nil {
+		panic(err)
+	}
 	engine.RaiseExternalByName("engage", "")
 	engine.Step()
 	engine.RaiseExternalByName("release", "")
@@ -118,7 +122,9 @@ func TestAMachineWithNoDutyTakesAHostThatDeclaresNoRealization(t *testing.T) {
 	policy := static_host_call.NewStaticHostCallPolicy(host)
 	policy.SessionID = sce.GenerateSessionID()
 	engine := sce.NewEngine[static_host_call.StaticHostCallState, static_host_call.StaticHostCallEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	if want := []string{"0,false"}; !reflect.DeepEqual(host.heard, want) {
 		t.Errorf("entering `idle` made the host hear %v, want %v", host.heard, want)
 	}

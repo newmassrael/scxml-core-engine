@@ -67,7 +67,9 @@ func started() *sce.Engine[ParallelRegionRootExternalDomainState, ParallelRegion
 	policy := NewParallelRegionRootExternalDomainPolicy()
 	policy.SessionID = sce.GenerateSessionID()
 	engine := sce.NewEngine[ParallelRegionRootExternalDomainState, ParallelRegionRootExternalDomainEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		panic(err)
+	}
 	return engine
 }
 

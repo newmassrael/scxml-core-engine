@@ -33,7 +33,9 @@ func TestANestedFinalDoesNotEndTheSession(t *testing.T) {
 	policy := NewNestedFinalNotTerminalPolicy()
 	policy.SessionID = sce.GenerateSessionID()
 	engine := sce.NewEngine[NestedFinalNotTerminalState, NestedFinalNotTerminalEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	if got := engine.GetCurrentState(); got != NestedFinalNotTerminalStatePhaseDone {
 		t.Fatalf("fixture came to rest in %v, want PhaseDone: it is supposed to stop "+

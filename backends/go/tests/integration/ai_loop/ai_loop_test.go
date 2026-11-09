@@ -86,7 +86,9 @@ func silent(sce.HostSendRequest) []sce.HostSendResponse { return nil }
 // A booted machine, sitting in `priming` with nothing prompted yet.
 func booted() loop {
 	l := notInitialised(silent)
-	l.engine.Initialize()
+	if err := l.engine.Initialize(); err != nil {
+		panic("the ai_loop machine did not start: " + err.Error())
+	}
 	l.engine.Step()
 	return l
 }
@@ -843,7 +845,9 @@ func TestTheDocumentDeclaresItsActsToTheHost(t *testing.T) {
 		seen = append(seen, act{event: req.EventName, text: text})
 		return nil
 	})
-	l.engine.Initialize()
+	if err := l.engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	if len(seen) == 0 {
 		t.Fatal("entering `priming` asked the host to perform nothing at all")
@@ -930,7 +934,7 @@ func TestARunJournalledAsNamesResumesWhereItStopped(t *testing.T) {
 		t.Fatalf("the current state's own name `%s` did not read back", journalledCurrent)
 	}
 
-	if rejection := resumed.engine.EnterAt(configuration, current); rejection != sce.ConfigurationAccepted {
+	if rejection := resumed.engine.EnterAt(configuration, current); rejection.Rejection != sce.ConfigurationAccepted {
 		t.Fatalf("a configuration this document published is one it can be put back into; "+
 			"the engine refused %v with rejection %v", journal, rejection)
 	}

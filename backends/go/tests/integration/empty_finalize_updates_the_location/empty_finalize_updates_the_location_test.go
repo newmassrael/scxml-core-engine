@@ -36,7 +36,9 @@ func TestAnEmptyFinalizeUpdatesTheLocationAndAnAbsentOneDoesNot(t *testing.T) {
 	policy.SessionID = sce.GenerateSessionID()
 	policy.ScriptEngine = scegotest.NewLuaEngine()
 	engine := sce.NewEngine[EmptyFinalizeUpdatesTheLocationState, EmptyFinalizeUpdatesTheLocationEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	completed := engine.RunUntilCompletion(15*time.Second, 10*time.Millisecond)
 	if !completed {

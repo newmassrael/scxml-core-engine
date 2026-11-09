@@ -67,7 +67,9 @@ func asking(t *testing.T) (*Engine, *router) {
 	engine.SetClock(sce.NewManualClock(0))
 	log := &router{}
 	log.register(engine)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	engine.RaiseExternalByName("go", "")
 	engine.Tick()
 	return engine, log

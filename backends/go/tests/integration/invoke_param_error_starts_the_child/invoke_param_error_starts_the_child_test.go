@@ -35,7 +35,9 @@ func TestAnInvokeParamThatWillNotEvaluateCostsItsPairAndNothingElse(t *testing.T
 	policy.SessionID = sce.GenerateSessionID()
 	policy.ScriptEngine = scegotest.NewLuaEngine()
 	engine := sce.NewEngine[InvokeParamErrorStartsTheChildState, InvokeParamErrorStartsTheChildEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	completed := engine.RunUntilCompletion(10*time.Second, 10*time.Millisecond)
 	if !completed {

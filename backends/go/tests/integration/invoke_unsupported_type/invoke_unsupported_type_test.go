@@ -32,7 +32,9 @@ func TestAnUnsupportedInvokeTypeRaisesErrorExecution(t *testing.T) {
 	policy := NewInvokeUnsupportedTypePolicy()
 	policy.SessionID = sce.GenerateSessionID()
 	engine := sce.NewEngine[InvokeUnsupportedTypeState, InvokeUnsupportedTypeEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	completed := engine.RunUntilCompletion(2*time.Second, 10*time.Millisecond)
 

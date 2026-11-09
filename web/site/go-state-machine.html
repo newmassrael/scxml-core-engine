@@ -186,6 +186,9 @@ sce-codegen generate --scxml traffic_light.scxml --language go --output-dir ./ge
 <pre><code>package main
 
 import (
+    "fmt"
+    "log"
+
     sce "github.com/newmassrael/sce-go-runtime"
     gen "your-module/generated"
 )
@@ -195,7 +198,11 @@ func main() {
     policy := gen.NewTrafficLightPolicy()
     engine := sce.NewEngine[gen.TrafficLightState, gen.TrafficLightEvent](policy)
 
-    engine.Initialize()                                    // Enters "red" state
+    // Enters "red" state. A machine with a script engine whose script
+    // session cannot be established is not started, and says why.
+    if err := engine.Initialize(); err != nil {
+        log.Fatal(err)
+    }
     engine.ProcessEvent(gen.TrafficLightEventTimer)         // red -> green
     engine.ProcessEvent(gen.TrafficLightEventTimer)         // green -> yellow
     engine.ProcessEvent(gen.TrafficLightEventTimer)         // yellow -> red

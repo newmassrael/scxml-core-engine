@@ -68,7 +68,9 @@ func newHarness(withHandler bool) *harness {
 			return []sce.HostSendResponse{{EventName: "turn.done"}}
 		})
 	}
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		panic(err)
+	}
 	return h
 }
 

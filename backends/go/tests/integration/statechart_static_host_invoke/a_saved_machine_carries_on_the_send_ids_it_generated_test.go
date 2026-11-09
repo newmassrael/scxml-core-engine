@@ -28,7 +28,9 @@ func idsStarted() *Engine {
 	policy := NewStatechartStaticHostInvokePolicy()
 	engine := sce.NewEngine[StatechartStaticHostInvokeState, StatechartStaticHostInvokeEvent](&policy)
 	engine.SetClock(sce.NewManualClock(0))
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		panic(err)
+	}
 	return engine
 }
 

@@ -30,7 +30,9 @@ func started(t *testing.T, router sce.HostSendHandler) (*machine, *APeerNamedAtR
 	if router != nil {
 		engine.RegisterMeshRouter(router)
 	}
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	engine.Step()
 	return engine, &policy
 }

@@ -45,7 +45,9 @@ func TestEveryRegionTakesItsOwnTransition(t *testing.T) {
 	// The fixture's <assign>s make this an ECMAScript-datamodel machine.
 	policy.ScriptEngine = scegotest.NewLuaEngine()
 	engine := sce.NewEngine[ParallelRegionsTakeOwnTransitionsState, ParallelRegionsTakeOwnTransitionsEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	entry := engine.GetActiveStates()
 	if !active(entry, ParallelRegionsTakeOwnTransitionsStateWorking) ||

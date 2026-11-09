@@ -40,7 +40,9 @@ func TestADelayedHttpSendIsPostedWhenDue(t *testing.T) {
 		return names
 	}
 	engine.SetClock(sce.NewManualClock(0))
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	// A zero wait, written or evaluated, is no deferral: the POST is made
 	// before Initialize returns, with no tick to bring it out.

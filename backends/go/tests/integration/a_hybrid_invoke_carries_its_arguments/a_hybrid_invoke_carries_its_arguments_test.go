@@ -28,7 +28,9 @@ func TestEachArgumentReachesOnlyTheChildThatDeclaresIt(t *testing.T) {
 	policy.ScriptEngine = scegotest.NewLuaEngine()
 	policy.SessionID = sce.GenerateSessionID()
 	engine := sce.NewEngine[AHybridInvokeCarriesItsArgumentsState, AHybridInvokeCarriesItsArgumentsEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	if !engine.RunUntilCompletion(2*time.Second, 10*time.Millisecond) {
 		t.Fatalf("the machine never completed (parked in %v); refusedPhase parks "+

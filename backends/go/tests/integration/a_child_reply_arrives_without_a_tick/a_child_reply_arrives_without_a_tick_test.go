@@ -34,7 +34,9 @@ func TestTheChildsReplyArrivesBeforeTheHostsNextEvent(t *testing.T) {
 	// machine.
 	policy.ScriptEngine = scegotest.NewLuaEngine()
 	engine := sce.NewEngine[AChildReplyArrivesWithoutATickState, AChildReplyArrivesWithoutATickEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	engine.RaiseExternal(AChildReplyArrivesWithoutATickEventFinish, "")
 	engine.Step()
 

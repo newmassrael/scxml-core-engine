@@ -34,7 +34,9 @@ func startedParent(t *testing.T) (*static_invoke_params.StaticInvokeParamsPolicy
 	policy := static_invoke_params.NewStaticInvokeParamsPolicy()
 	policy.SessionID = sce.GenerateSessionID()
 	engine := sce.NewEngine[static_invoke_params.StaticInvokeParamsState, static_invoke_params.StaticInvokeParamsEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	settle(engine)
 	return &policy, engine
 }

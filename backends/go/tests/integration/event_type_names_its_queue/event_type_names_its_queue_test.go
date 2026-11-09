@@ -40,7 +40,9 @@ func TestEachEventIsTypedByTheQueueItWasTakenFrom(t *testing.T) {
 	policy.ScriptEngine = scegotest.NewLuaEngine()
 	engine := sce.NewEngine[EventTypeNamesItsQueueState, EventTypeNamesItsQueueEvent](&policy)
 	// The document queues its own events; the run needs nothing from the host.
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	seen := fmt.Sprintf("intCode=%s sendCode=%s extCode=%s (1 internal, 2 external, 3 other; wanted 1 / 1 / 2)",
 		record(policy.IntCode()), record(policy.SendCode()), record(policy.ExtCode()))

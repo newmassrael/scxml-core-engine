@@ -36,7 +36,9 @@ func TestAnEventTheHostHandsOverReachesTheAutoforwardChild(t *testing.T) {
 	policy := NewHostEventReachesTheChildPolicy()
 	policy.SessionID = sce.GenerateSessionID()
 	engine := sce.NewEngine[HostEventReachesTheChildState, HostEventReachesTheChildEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	// The child opens the exchange, so drive until its `ready` has moved the
 	// parent into `armed` — the one state that can be handed an event from

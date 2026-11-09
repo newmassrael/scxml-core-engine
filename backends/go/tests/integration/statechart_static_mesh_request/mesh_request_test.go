@@ -38,7 +38,9 @@ func started(router sce.HostInvokeHandler) (*Engine, *StatechartStaticMeshReques
 	if router != nil {
 		engine.RegisterMeshRPCInvoker(router)
 	}
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		panic(err)
+	}
 	engine.Step()
 	return engine, &policy
 }

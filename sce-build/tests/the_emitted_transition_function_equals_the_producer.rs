@@ -1618,7 +1618,10 @@ type engine = sce.Engine[machine.@MACHINE@State, machine.@MACHINE@Event]
 func fresh() *engine {
 	policy := machine.New@MACHINE@Policy()
 	started := sce.NewEngine[machine.@MACHINE@State, machine.@MACHINE@Event](&policy)
-	started.Initialize()
+	if err := started.Initialize(); err != nil {
+		fmt.Println("MISMATCH: the machine did not start:", err)
+		os.Exit(1)
+	}
 	return started
 }
 

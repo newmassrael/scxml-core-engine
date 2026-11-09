@@ -38,7 +38,9 @@ func TestAStateBindsItsDataOnlyOnItsFirstEntry(t *testing.T) {
 	// machine.
 	policy.ScriptEngine = scegotest.NewLuaEngine()
 	engine := sce.NewEngine[LateDataBindsOnFirstEntryState, LateDataBindsOnFirstEntryEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	// Enter `s`, change its `v`, leave it, enter it again — one step each.
 	for _, event := range []LateDataBindsOnFirstEntryEvent{

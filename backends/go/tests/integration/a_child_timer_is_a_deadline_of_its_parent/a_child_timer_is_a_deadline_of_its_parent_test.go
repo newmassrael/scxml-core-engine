@@ -38,7 +38,9 @@ func started() *sce.Engine[AChildTimerIsADeadlineOfItsParentState, AChildTimerIs
 	policy := NewAChildTimerIsADeadlineOfItsParentPolicy()
 	engine := sce.NewEngine[AChildTimerIsADeadlineOfItsParentState, AChildTimerIsADeadlineOfItsParentEvent](&policy)
 	engine.SetClock(sce.NewManualClock(0))
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		panic(err)
+	}
 	return engine
 }
 

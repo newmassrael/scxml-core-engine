@@ -41,7 +41,9 @@ func sendIdArmed(t *testing.T) (*sendIdEngine, *static_send_idlocation.StaticSen
 	}
 	engine := sce.NewEngine[static_send_idlocation.StaticSendIdlocationState, static_send_idlocation.StaticSendIdlocationEvent](&policy)
 	engine.SetClock(sce.NewManualClock(0))
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	sendIdSend(engine, "arm")
 	return engine, &policy
 }

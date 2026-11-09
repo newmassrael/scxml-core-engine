@@ -38,7 +38,9 @@ func TestEveryRegionFinalCompletesTheParallel(t *testing.T) {
 	policy := NewParallelCompletionRaisesDoneStatePolicy()
 	policy.SessionID = sce.GenerateSessionID()
 	engine := sce.NewEngine[ParallelCompletionRaisesDoneStateState, ParallelCompletionRaisesDoneStateEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	entry := engine.GetActiveStates()
 	if !active(entry, ParallelCompletionRaisesDoneStateStateA1) ||

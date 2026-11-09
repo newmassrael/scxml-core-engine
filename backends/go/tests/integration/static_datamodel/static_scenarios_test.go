@@ -658,7 +658,11 @@ func driveRouted[S interface {
 			return children.open(invokeID)
 		})
 	}
-	engine.Initialize()
+	// A `sce-static` machine runs no script engine, so its start has no
+	// script session to be refused for.
+	if err := engine.Initialize(); err != nil {
+		panic(err)
+	}
 	// The generated policy says which call the machine needs: `Step` drains the
 	// queues and nothing else, and a machine with a delayed send or a child
 	// session is driven by `Tick`, which also runs those.
@@ -1065,7 +1069,9 @@ func TestADeliveryWithoutThePayloadRunsNoneOfTheContent(t *testing.T) {
 	policy := static_payload.NewStaticPayloadPolicy()
 	policy.SessionID = sce.GenerateSessionID()
 	engine := sce.NewEngine[static_payload.StaticPayloadState, static_payload.StaticPayloadEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	engine.RaiseExternalByName("day.picked", `{"year": 2026, "month": 9, "dayOfMonth": 20}`)
 	engine.Step()
@@ -1430,7 +1436,9 @@ func TestAHostThatWritesIntoTheBytesItRaisedAnEventWithChangesNothingOfTheMachin
 	policy.SessionID = sce.GenerateSessionID()
 	engine := sce.NewEngine[static_payload_bytes.StaticPayloadBytesState, static_payload_bytes.StaticPayloadBytesEvent](&policy)
 	engine.SetClock(sce.NewManualClock(0))
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	toVariable := []byte("wxyz")
 	static_payload_bytes.StaticPayloadBytesRaiseFramedTaken(engine, 100, toVariable)
@@ -2092,7 +2100,9 @@ func staticInvokeTree(t *testing.T) machine {
 		}
 		engine := sce.NewEngine[static_invoke_tree.StaticInvokeTreeState, static_invoke_tree.StaticInvokeTreeEvent](&policy)
 		engine.SetClock(sce.NewManualClock(0))
-		engine.Initialize()
+		if err := engine.Initialize(); err != nil {
+			t.Fatal(err)
+		}
 		return &policy, engine
 	}
 	policy, engine := start()
@@ -2756,7 +2766,9 @@ func TestAHostActionTakesTypedDatamodelArguments(t *testing.T) {
 	policy := static_host_call.NewStaticHostCallPolicy(host)
 	policy.SessionID = sce.GenerateSessionID()
 	engine := sce.NewEngine[static_host_call.StaticHostCallState, static_host_call.StaticHostCallEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	for i := 0; i < 4; i++ {
 		engine.RaiseExternalByName("retry", "")
 		engine.Step()
@@ -2778,7 +2790,9 @@ func TestAHostActionTakesAnArgumentThatMayBeAbsent(t *testing.T) {
 	policy := static_host_call.NewStaticHostCallPolicy(host)
 	policy.SessionID = sce.GenerateSessionID()
 	engine := sce.NewEngine[static_host_call.StaticHostCallState, static_host_call.StaticHostCallEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	for _, event := range []string{"plan", "escalate", "unplan"} {
 		engine.RaiseExternalByName(event, "")
 		engine.Step()
@@ -2796,7 +2810,9 @@ func TestAnArgumentThatOverflowsStopsTheCallAndRaisesAnError(t *testing.T) {
 	policy := static_host_call_arguments.NewStaticHostCallArgumentsPolicy(host)
 	policy.SessionID = sce.GenerateSessionID()
 	engine := sce.NewEngine[static_host_call_arguments.StaticHostCallArgumentsState, static_host_call_arguments.StaticHostCallArgumentsEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	engine.RaiseExternalByName("fine", "")
 	engine.Step()

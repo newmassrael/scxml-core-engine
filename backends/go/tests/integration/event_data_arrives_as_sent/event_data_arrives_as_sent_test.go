@@ -41,7 +41,9 @@ func TestAHostsJSONPayloadIsAddressableAndItsTextStaysText(t *testing.T) {
 	// ECMAScript-datamodel machine.
 	policy.ScriptEngine = scegotest.NewLuaEngine()
 	engine := sce.NewEngine[EventDataArrivesAsSentState, EventDataArrivesAsSentEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	// Every verdict is a top-level <final>, read from the terminal accessor:
 	// §scxml-D-exitInterpreter leaves the configuration empty once it ends.

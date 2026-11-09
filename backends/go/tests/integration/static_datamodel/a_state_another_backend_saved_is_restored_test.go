@@ -244,7 +244,9 @@ func TestAWaitingSendIsSavedWithTheOriginItsEventWillCarry(t *testing.T) {
 	}
 	engine := sce.NewEngine[static_timers.StaticTimersState, static_timers.StaticTimersEvent](&policy)
 	engine.SetClock(sce.NewManualClock(0))
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	saved, err := static_timers.StaticTimersSaveAt(engine, savedAtMs)
 	if err != nil {
 		t.Fatalf("saves: %v", err)

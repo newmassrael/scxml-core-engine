@@ -58,7 +58,9 @@ func newStarted() started {
 		}
 		return nil
 	})
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		panic(err)
+	}
 	return started{engine: engine, policy: &policy, sends: &sends, starts: &starts}
 }
 

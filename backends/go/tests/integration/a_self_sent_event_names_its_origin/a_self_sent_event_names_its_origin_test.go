@@ -24,7 +24,9 @@ func TestASelfSentEventNamesItsOrigin(t *testing.T) {
 	policy.ScriptEngine = scegotest.NewLuaEngine()
 	engine := sce.NewEngine[ASelfSentEventNamesItsOriginState, ASelfSentEventNamesItsOriginEvent](&policy)
 	engine.SetClock(sce.NewManualClock(0))
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	engine.AdvanceTimeMs(1000)
 	engine.Step()
 

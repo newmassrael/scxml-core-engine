@@ -29,7 +29,9 @@ func TestAStringPastTheChildsBoundIsLeftOutAndReported(t *testing.T) {
 	policy := static_invoke_string.NewStaticInvokeStringPolicy()
 	policy.SessionID = sce.GenerateSessionID()
 	engine := sce.NewEngine[static_invoke_string.StaticInvokeStringState, static_invoke_string.StaticInvokeStringEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	// Let the children run and report to their parent.
 	for i := 0; i < 5; i++ {
 		engine.Tick()

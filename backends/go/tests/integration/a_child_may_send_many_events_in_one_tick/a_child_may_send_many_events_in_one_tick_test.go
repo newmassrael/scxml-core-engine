@@ -40,15 +40,23 @@ func TestEveryEventTheChildSentArrives(t *testing.T) {
 	policy.ScriptEngine = scegotest.NewLuaEngine()
 	engine := sce.NewEngine[AChildMaySendManyEventsInOneTickState, AChildMaySendManyEventsInOneTickEvent](&policy)
 
-	finished := make(chan struct{})
+	// The start's answer crosses back on the channel: t.Fatal belongs to the
+	// test's own goroutine.
+	finished := make(chan error, 1)
 	go func() {
-		engine.Initialize()
+		if err := engine.Initialize(); err != nil {
+			finished <- err
+			return
+		}
 		engine.RaiseExternal(AChildMaySendManyEventsInOneTickEventFinish, "")
 		engine.Step()
-		close(finished)
+		finished <- nil
 	}()
 	select {
-	case <-finished:
+	case err := <-finished:
+		if err != nil {
+			t.Fatal(err)
+		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("the engine did not return: a child that sends many events in one tick must not block it")
 	}

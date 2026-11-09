@@ -63,7 +63,9 @@ func newStarted() started {
 	engine := sce.NewEngine[StatechartHostInvokerOptionalState, StatechartHostInvokerOptionalEvent](&policy)
 	host := &lookupHost{}
 	RegisterStatechartHostInvokerOptionalXSceHostInvoker(engine, host)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		panic(err)
+	}
 	return started{engine: engine, policy: &policy, host: host}
 }
 

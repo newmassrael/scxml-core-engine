@@ -41,7 +41,9 @@ func TestCompletionCarriesTheMachineToATopLevelFinal(t *testing.T) {
 	policy := NewParallelDoneStateIsDeliveredPolicy()
 	policy.SessionID = sce.GenerateSessionID()
 	engine := sce.NewEngine[ParallelDoneStateIsDeliveredState, ParallelDoneStateIsDeliveredEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	entry := engine.GetActiveStates()
 	if !active(entry, ParallelDoneStateIsDeliveredStateA1) ||

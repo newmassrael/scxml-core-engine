@@ -28,7 +28,9 @@ func TestLeavingTheInvokingStateRaisesNoCancelEvent(t *testing.T) {
 	// machine.
 	policy.ScriptEngine = scegotest.NewLuaEngine()
 	engine := sce.NewEngine[CancellingAnInvokeRaisesNothingState, CancellingAnInvokeRaisesNothingEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	if engine.GetCurrentState() != CancellingAnInvokeRaisesNothingStateP {
 		t.Fatalf("the run has to start in `p`, with its child invoked")
 	}

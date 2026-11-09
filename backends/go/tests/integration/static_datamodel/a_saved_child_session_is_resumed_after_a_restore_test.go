@@ -62,7 +62,9 @@ func invokeStarted(t *testing.T) (*invokeEngine, *static_invoke.StaticInvokePoli
 	}
 	engine := sce.NewEngine[static_invoke.StaticInvokeState, static_invoke.StaticInvokeEvent](&policy)
 	engine.SetClock(sce.NewManualClock(0))
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	return engine, &policy
 }
 

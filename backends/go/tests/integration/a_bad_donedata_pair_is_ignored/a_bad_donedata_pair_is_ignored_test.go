@@ -39,7 +39,9 @@ func TestTheBadPairsAreDroppedAndTheDoneEventsStillArrive(t *testing.T) {
 	policy.ScriptEngine = scegotest.NewLuaEngine()
 	engine := sce.NewEngine[ABadDonedataPairIsIgnoredState, ABadDonedataPairIsIgnoredEvent](&policy)
 	// The run needs nothing from the host.
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	seen := fmt.Sprintf("errors=%s shape=%s (wanted 2 / 1)", record(policy.Errors()), record(policy.Shape()))
 	if ended, ok := engine.TerminalState(); !ok || ended != ABadDonedataPairIsIgnoredStateDone {

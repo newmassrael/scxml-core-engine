@@ -38,7 +38,9 @@ const pastBothDeadlines = 400 * time.Millisecond
 func started() *sce.Engine[LateTickHonoursCancelState, LateTickHonoursCancelEvent] {
 	policy := NewLateTickHonoursCancelPolicy()
 	engine := sce.NewEngine[LateTickHonoursCancelState, LateTickHonoursCancelEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		panic(err)
+	}
 	return engine
 }
 
@@ -195,7 +197,9 @@ func startedOn(clock sce.SceClock) *sce.Engine[LateTickHonoursCancelState, LateT
 	policy := NewLateTickHonoursCancelPolicy()
 	engine := sce.NewEngine[LateTickHonoursCancelState, LateTickHonoursCancelEvent](&policy)
 	engine.SetClock(clock)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		panic(err)
+	}
 	return engine
 }
 

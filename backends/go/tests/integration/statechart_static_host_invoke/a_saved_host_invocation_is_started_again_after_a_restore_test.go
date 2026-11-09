@@ -103,7 +103,9 @@ func working(t *testing.T) (*Engine, *StatechartStaticHostInvokePolicy, *host) {
 	engine.SetClock(sce.NewManualClock(0))
 	log := &host{}
 	log.register(engine)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	engine.RaiseExternalByName("start", "")
 	engine.Tick()
 	return engine, &policy, log

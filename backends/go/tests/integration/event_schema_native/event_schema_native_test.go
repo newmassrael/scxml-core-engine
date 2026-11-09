@@ -32,7 +32,9 @@ func TestTypedPayloadGuardFiresNatively(t *testing.T) {
 	policy.SessionID = sce.GenerateSessionID()
 	// No policy.ScriptEngine — needs_script_engine is false for a typed guard.
 	engine := sce.NewEngine[StatechartMinimalState, StatechartMinimalEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	if got := engine.GetCurrentState(); got != StatechartMinimalStateWaiting {
 		t.Fatalf("initial state = %v, want Waiting", got)
@@ -52,7 +54,9 @@ func TestTypedPayloadGuardMissesOnNonzero(t *testing.T) {
 	policy := NewStatechartMinimalPolicy()
 	policy.SessionID = sce.GenerateSessionID()
 	engine := sce.NewEngine[StatechartMinimalState, StatechartMinimalEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	// Same event, a payload the guard rejects — the machine stays put.
 	StatechartMinimalRaiseJobCompleted(engine, 5)
@@ -72,7 +76,9 @@ func TestARefusedDeliveryWithNothingInItsPlaceIsCountedAsDiscarded(t *testing.T)
 	policy := NewStatechartMinimalPolicy()
 	policy.SessionID = sce.GenerateSessionID()
 	engine := sce.NewEngine[StatechartMinimalState, StatechartMinimalEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	engine.RaiseExternalByName("job.completed", `{"elapsed_ms": "nought"}`)
 	engine.Step()

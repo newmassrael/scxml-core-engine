@@ -32,7 +32,9 @@ func started(t *testing.T) (*sce.Engine[TypedReaderNamesState, TypedReaderNamesE
 	policy.SessionID = sce.GenerateSessionID()
 	policy.ScriptEngine = scegotest.NewLuaEngine()
 	engine := sce.NewEngine[TypedReaderNamesState, TypedReaderNamesEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	return engine, &policy
 }
 

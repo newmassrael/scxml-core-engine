@@ -33,7 +33,9 @@ func TestEachPayloadArrivesOnItsOwnEvent(t *testing.T) {
 	// machine.
 	policy.ScriptEngine = scegotest.NewLuaEngine()
 	engine := sce.NewEngine[APayloadRidesOnItsOwnEventState, APayloadRidesOnItsOwnEventEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	engine.RaiseExternal(APayloadRidesOnItsOwnEventEventFinish, "")
 	engine.Step()
 

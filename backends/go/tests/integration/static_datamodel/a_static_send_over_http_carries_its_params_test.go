@@ -34,7 +34,9 @@ func httpMachine(t *testing.T) (*static_send_http.StaticSendHttpPolicy, func(nam
 		posted = append(posted, request)
 		return nil
 	})
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	raise := func(name string) {
 		engine.RaiseExternalByName(name, "")
 		engine.Step()

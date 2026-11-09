@@ -29,7 +29,9 @@ func TestAnOriginIsTheAddressItsSenderPublished(t *testing.T) {
 	policy.SessionID = sce.GenerateSessionID()
 	policy.ScriptEngine = scegotest.NewLuaEngine()
 	engine := sce.NewEngine[AnOriginIsTheAddressItsSenderPublishedState, AnOriginIsTheAddressItsSenderPublishedEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	if !engine.RunUntilCompletion(2*time.Second, 10*time.Millisecond) {
 		t.Fatalf("the run stopped in %v: a reply sent to an origin reached nobody", engine.GetCurrentState())

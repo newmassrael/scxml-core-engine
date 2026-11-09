@@ -36,7 +36,9 @@ func TestParentObservesDonedataOnDoneInvoke(t *testing.T) {
 	policy.SessionID = sce.GenerateSessionID()
 	policy.ScriptEngine = scegotest.NewLuaEngine()
 	engine := sce.NewEngine[DonedataLocalInvokeState, DonedataLocalInvokeEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	// Children are synchronous (single top-level `<final>`), so the parent
 	// reaches `pass`/`fail` within a few microsteps. A brief poll loop

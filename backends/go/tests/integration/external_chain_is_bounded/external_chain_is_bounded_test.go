@@ -121,7 +121,9 @@ func started(t *testing.T) (machine, *ExternalChainIsBoundedPolicy) {
 	policy.ScriptEngine = scegotest.NewLuaEngine()
 	engine := sce.NewEngine[ExternalChainIsBoundedState, ExternalChainIsBoundedEvent](&policy)
 	engine.SetClock(sce.NewManualClock(0))
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	return engine, &policy
 }
 

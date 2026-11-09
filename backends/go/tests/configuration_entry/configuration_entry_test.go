@@ -110,7 +110,7 @@ func TestAParallelConfigurationIsAccepted(t *testing.T) {
 	policy, engine := newParallelWithEngine()
 	configuration := atWork()
 
-	if verdict := engine.EnterAt(configuration, parallel.ParallelRegionsTakeOwnTransitionsStateWorking); verdict != sce.ConfigurationAccepted {
+	if verdict := engine.EnterAt(configuration, parallel.ParallelRegionsTakeOwnTransitionsStateWorking); verdict.Rejection != sce.ConfigurationAccepted {
 		t.Fatalf("a configuration of the document was refused: %s", verdict)
 	}
 	if got := policy.GetActiveStates(); !sameSet(got, configuration) {
@@ -131,7 +131,7 @@ func TestAnAcceptedConfigurationIsNotAliasedToTheCallersSlice(t *testing.T) {
 	policy, engine := newParallelWithEngine()
 	configuration := atWork()
 
-	if verdict := engine.EnterAt(configuration, parallel.ParallelRegionsTakeOwnTransitionsStateWorking); verdict != sce.ConfigurationAccepted {
+	if verdict := engine.EnterAt(configuration, parallel.ParallelRegionsTakeOwnTransitionsStateWorking); verdict.Rejection != sce.ConfigurationAccepted {
 		t.Fatalf("a configuration of the document was refused: %s", verdict)
 	}
 
@@ -153,7 +153,7 @@ func TestALinearConfigurationRoundTripsWithoutAPolicyActiveSet(t *testing.T) {
 	if verdict := engine.EnterAt(
 		[]linear.StatechartNativeActionState{linear.StatechartNativeActionStateAssembling},
 		linear.StatechartNativeActionStateAssembling,
-	); verdict != sce.ConfigurationAccepted {
+	); verdict.Rejection != sce.ConfigurationAccepted {
 		t.Fatalf("a single-state configuration was refused: %s", verdict)
 	}
 	if got := engine.GetCurrentState(); got != linear.StatechartNativeActionStateAssembling {
@@ -173,7 +173,7 @@ func TestALinearConfigurationRoundTripsWithoutAPolicyActiveSet(t *testing.T) {
 
 func TestAnEmptyConfigurationIsRefused(t *testing.T) {
 	_, engine := newParallel()
-	if verdict := engine.EnterAt(nil, parallel.ParallelRegionsTakeOwnTransitionsStateWorking); verdict != sce.ConfigurationEmpty {
+	if verdict := engine.EnterAt(nil, parallel.ParallelRegionsTakeOwnTransitionsStateWorking); verdict.Rejection != sce.ConfigurationEmpty {
 		t.Fatalf("a machine is never in nothing, but the empty set answered %s", verdict)
 	}
 }
@@ -184,7 +184,7 @@ func TestTwoSiblingsOfOneRegionAreRefused(t *testing.T) {
 	_, engine := newParallel()
 	configuration := append(atWork(), parallel.ParallelRegionsTakeOwnTransitionsStateJudging)
 
-	if verdict := engine.EnterAt(configuration, parallel.ParallelRegionsTakeOwnTransitionsStateWorking); verdict != sce.ConfigurationCompoundChildCount {
+	if verdict := engine.EnterAt(configuration, parallel.ParallelRegionsTakeOwnTransitionsStateWorking); verdict.Rejection != sce.ConfigurationCompoundChildCount {
 		t.Fatalf("`running` was given two active children and the answer was %s; that is a "+
 			"configuration the document has no reading for", verdict)
 	}
@@ -201,7 +201,7 @@ func TestAParallelWithARegionMissingIsRefused(t *testing.T) {
 		parallel.ParallelRegionsTakeOwnTransitionsStateWorking,
 	}
 
-	if verdict := engine.EnterAt(configuration, parallel.ParallelRegionsTakeOwnTransitionsStateWorking); verdict != sce.ConfigurationParallelRegionMissing {
+	if verdict := engine.EnterAt(configuration, parallel.ParallelRegionsTakeOwnTransitionsStateWorking); verdict.Rejection != sce.ConfigurationParallelRegionMissing {
 		t.Fatalf("`budget` is a region of `run` and a run is always in both at once, but the "+
 			"answer was %s", verdict)
 	}
@@ -218,7 +218,7 @@ func TestAConfigurationThatSkipsAnAncestorIsRefused(t *testing.T) {
 		parallel.ParallelRegionsTakeOwnTransitionsStateWithin,
 	}
 
-	if verdict := engine.EnterAt(configuration, parallel.ParallelRegionsTakeOwnTransitionsStateWorking); verdict != sce.ConfigurationAncestorMissing {
+	if verdict := engine.EnterAt(configuration, parallel.ParallelRegionsTakeOwnTransitionsStateWorking); verdict.Rejection != sce.ConfigurationAncestorMissing {
 		t.Fatalf("`working` is a child of `running`, which the set does not hold, but the answer "+
 			"was %s", verdict)
 	}
@@ -230,7 +230,7 @@ func TestARepeatedStateIsRefused(t *testing.T) {
 	_, engine := newParallel()
 	configuration := append(atWork(), parallel.ParallelRegionsTakeOwnTransitionsStateWorking)
 
-	if verdict := engine.EnterAt(configuration, parallel.ParallelRegionsTakeOwnTransitionsStateWorking); verdict != sce.ConfigurationDuplicate {
+	if verdict := engine.EnterAt(configuration, parallel.ParallelRegionsTakeOwnTransitionsStateWorking); verdict.Rejection != sce.ConfigurationDuplicate {
 		t.Fatalf("a state named twice answered %s", verdict)
 	}
 }
@@ -242,14 +242,14 @@ func TestTwoRootsAreRefused(t *testing.T) {
 	_, engine := newParallel()
 	configuration := append(atWork(), parallel.ParallelRegionsTakeOwnTransitionsStateSettled)
 
-	if verdict := engine.EnterAt(configuration, parallel.ParallelRegionsTakeOwnTransitionsStateWorking); verdict != sce.ConfigurationRootCount {
+	if verdict := engine.EnterAt(configuration, parallel.ParallelRegionsTakeOwnTransitionsStateWorking); verdict.Rejection != sce.ConfigurationRootCount {
 		t.Fatalf("two disjoint trees answered %s", verdict)
 	}
 }
 
 func TestACurrentStateOutsideTheConfigurationIsRefused(t *testing.T) {
 	_, engine := newParallel()
-	if verdict := engine.EnterAt(atWork(), parallel.ParallelRegionsTakeOwnTransitionsStateJudging); verdict != sce.ConfigurationCurrentNotActive {
+	if verdict := engine.EnterAt(atWork(), parallel.ParallelRegionsTakeOwnTransitionsStateJudging); verdict.Rejection != sce.ConfigurationCurrentNotActive {
 		t.Fatalf("the current state is the one the machine is standing in, so it is in the set by "+
 			"definition, but the answer was %s", verdict)
 	}
@@ -260,7 +260,7 @@ func TestACurrentStateOutsideTheConfigurationIsRefused(t *testing.T) {
 // rather than the leaf.
 func TestANonAtomicCurrentStateIsRefused(t *testing.T) {
 	_, engine := newParallel()
-	if verdict := engine.EnterAt(atWork(), parallel.ParallelRegionsTakeOwnTransitionsStateRunning); verdict != sce.ConfigurationCurrentNotAtomic {
+	if verdict := engine.EnterAt(atWork(), parallel.ParallelRegionsTakeOwnTransitionsStateRunning); verdict.Rejection != sce.ConfigurationCurrentNotAtomic {
 		t.Fatalf("a compound current state answered %s", verdict)
 	}
 }
@@ -273,7 +273,7 @@ func TestARefusedEntryLeavesTheEngineUntouched(t *testing.T) {
 	policy, engine := newParallel()
 	before := engine.GetCurrentState()
 
-	if verdict := engine.EnterAt(nil, parallel.ParallelRegionsTakeOwnTransitionsStateWorking); verdict != sce.ConfigurationEmpty {
+	if verdict := engine.EnterAt(nil, parallel.ParallelRegionsTakeOwnTransitionsStateWorking); verdict.Rejection != sce.ConfigurationEmpty {
 		t.Fatalf("the empty set answered %s", verdict)
 	}
 
@@ -328,7 +328,9 @@ func TestEveryStateReadsBackFromItsOwnName(t *testing.T) {
 // proved alone.
 func TestAConfigurationJournalledAsNamesIsAcceptedBack(t *testing.T) {
 	writer, writerEngine := newParallelWithEngine()
-	writerEngine.Initialize()
+	if err := writerEngine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	writerEngine.RaiseExternal(parallel.ParallelRegionsTakeOwnTransitionsEventE, "")
 	writerEngine.Step()
 
@@ -352,7 +354,7 @@ func TestAConfigurationJournalledAsNamesIsAcceptedBack(t *testing.T) {
 		t.Fatalf("the journal's current state %q could not be read back", currentName)
 	}
 
-	if verdict := readerEngine.EnterAt(configuration, current); verdict != sce.ConfigurationAccepted {
+	if verdict := readerEngine.EnterAt(configuration, current); verdict.Rejection != sce.ConfigurationAccepted {
 		t.Fatalf("a configuration a run actually reached was refused on the way back: %s", verdict)
 	}
 	if got := readerEngine.GetCurrentState(); got != current {

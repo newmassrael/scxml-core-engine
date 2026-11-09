@@ -35,7 +35,9 @@ func TestAnInvokeParamCarriesTheInvokingSessionsValue(t *testing.T) {
 	policy.SessionID = sce.GenerateSessionID()
 	policy.ScriptEngine = scegotest.NewLuaEngine()
 	engine := sce.NewEngine[InvokeParamSeedsDeclaredChildDataState, InvokeParamSeedsDeclaredChildDataEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	// Three sequential invokes, each answering in its own macrostep.
 	completed := engine.RunUntilCompletion(3*time.Second, 10*time.Millisecond)

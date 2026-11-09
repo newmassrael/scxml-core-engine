@@ -29,7 +29,9 @@ func TestTheLeftStatesInvokeIsNeverAttempted(t *testing.T) {
 	// machine.
 	policy.ScriptEngine = scegotest.NewLuaEngine()
 	engine := sce.NewEngine[AnInvokeLeftBeforeItStartsRaisesNothingState, AnInvokeLeftBeforeItStartsRaisesNothingEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	if engine.GetCurrentState() != AnInvokeLeftBeforeItStartsRaisesNothingStateS1 {
 		t.Fatalf("`s0` leaves on an eventless transition within the first macrostep")
 	}

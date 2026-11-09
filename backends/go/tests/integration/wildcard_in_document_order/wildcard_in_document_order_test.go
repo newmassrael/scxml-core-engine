@@ -35,7 +35,9 @@ func TestAWildcardKeepsItsGuardAndItsType(t *testing.T) {
 	// ECMAScript-datamodel machine.
 	policy.ScriptEngine = scegotest.NewLuaEngine()
 	engine := sce.NewEngine[WildcardInDocumentOrderState, WildcardInDocumentOrderEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	if completed := engine.RunUntilCompletion(2*time.Second, 10*time.Millisecond); !completed {
 		t.Fatalf("the machine never reached a final state (parked in %v); resting in "+

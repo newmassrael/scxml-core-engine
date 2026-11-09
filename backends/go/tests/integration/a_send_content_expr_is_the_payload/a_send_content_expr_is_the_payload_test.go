@@ -24,7 +24,9 @@ func TestASendContentExprIsThePayload(t *testing.T) {
 	policy.SessionID = sce.GenerateSessionID()
 	policy.ScriptEngine = scegotest.NewLuaEngine()
 	engine := sce.NewEngine[ASendContentExprIsThePayloadState, ASendContentExprIsThePayloadEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	if !engine.RunUntilCompletion(2*time.Second, 10*time.Millisecond) {
 		t.Fatalf("the machine never completed (parked in %v)", engine.GetCurrentState())

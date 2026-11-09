@@ -26,7 +26,9 @@ func TestEachDelayIsReadAsOneCSS2Time(t *testing.T) {
 	policy.ScriptEngine = scegotest.NewLuaEngine()
 	engine := sce.NewEngine[ADelayIsACss2TimeState, ADelayIsACss2TimeEvent](&policy)
 	engine.SetClock(sce.NewManualClock(0))
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 	engine.AdvanceTimeMs(60000)
 	engine.Step()
 

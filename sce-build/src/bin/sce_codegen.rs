@@ -11350,7 +11350,9 @@ impl W3cBackend for GoBackend {
              \n\
              func TestW3C{test_id}(t *testing.T) {{\n\
              {engine_setup}{http_setup}\n\
-             \tengine.Initialize()\n\
+             \tif err := engine.Initialize(); err != nil {{\n\
+             \t\tt.Fatalf(\"Test {test_id} did not start: %v\", err)\n\
+             \t}}\n\
              \tcompleted := engine.RunUntilCompletion({timeout}, 10*time.Millisecond)\n\
              \tif !completed {{\n\
              \t\tt.Fatalf(\"Test {test_id} timed out\")\n\

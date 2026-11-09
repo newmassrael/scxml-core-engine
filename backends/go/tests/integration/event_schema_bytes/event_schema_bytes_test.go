@@ -25,7 +25,9 @@ func TestBytesPayloadGuardFiresOnMatch(t *testing.T) {
 	policy := NewStatechartBytesPolicy()
 	policy.SessionID = sce.GenerateSessionID()
 	engine := sce.NewEngine[StatechartBytesState, StatechartBytesEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	if got := engine.GetCurrentState(); got != StatechartBytesStateWaiting {
 		t.Fatalf("initial state = %v, want Waiting", got)
@@ -44,7 +46,9 @@ func TestBytesPayloadGuardMissesOnNonmatch(t *testing.T) {
 	policy := NewStatechartBytesPolicy()
 	policy.SessionID = sce.GenerateSessionID()
 	engine := sce.NewEngine[StatechartBytesState, StatechartBytesEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	StatechartBytesRaiseSignalReceived(engine, []byte("no"))
 	engine.Step()

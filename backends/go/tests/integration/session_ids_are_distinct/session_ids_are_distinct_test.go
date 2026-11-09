@@ -37,7 +37,9 @@ func TestTwoLiveSessionsAreIssuedDifferentIds(t *testing.T) {
 	policy.SessionID = sce.GenerateSessionID()
 	policy.ScriptEngine = scegotest.NewLuaEngine()
 	engine := sce.NewEngine[SessionIdsAreDistinctState, SessionIdsAreDistinctEvent](&policy)
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	completed := engine.RunUntilCompletion(2*time.Second, 10*time.Millisecond)
 	if !completed {
@@ -84,7 +86,9 @@ func TestAStructuredDeclarationReadsBackAsJSON(t *testing.T) {
 		t.Fatalf("an uninitialised machine answered a datamodel read")
 	}
 
-	engine.Initialize()
+	if err := engine.Initialize(); err != nil {
+		t.Fatal(err)
+	}
 
 	json, ok := policy.ReadBackProbe()
 	if !ok {

@@ -35,7 +35,9 @@ func TestTheMachineAndItsTransitionFunctionAgreeOnEveryPair(t *testing.T) {
 		Start: func() {
 			policy := NewNestedLifecyclePolicy()
 			engine = sce.NewEngine[NestedLifecycleState, NestedLifecycleEvent](&policy)
-			engine.Initialize()
+			if err := engine.Initialize(); err != nil {
+				t.Fatal(err)
+			}
 		},
 		Send: func(name string) {
 			engine.RaiseExternalByName(name, "")
