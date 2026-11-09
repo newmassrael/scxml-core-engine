@@ -577,12 +577,16 @@ impl ForgeKind {
             Self::TestComponent | Self::TestConfiguration | Self::TestCase | Self::TestSuite => {
                 RuntimeDep::SceRuntime
             }
-            // docs/SCE_TEST_PROFILE.md §11.9, §12.2: a template's unit names
-            // nothing of the forge runtime; a length restriction on a text
-            // reads the test profile's own runtime (`sce/include/test/`), which
-            // ships with SCE's headers and is no forge tier. A port type writes
-            // no file.
-            Self::TestTemplate | Self::TestPortType => RuntimeDep::None,
+            // docs/SCE_TEST_PROFILE.md §11.9, §12.2, §12.5: a template's unit
+            // names the test profile's runtime, part of the SCE runtime: the
+            // canonical form of a message in the test log, written by the unit
+            // of a template over a record, and on C++ the length of a text
+            // (`sce/include/test/`). The upper bound is therefore the SCE
+            // runtime; a template over another type names none
+            // (`ForgeDocument::runtime_dep`).
+            Self::TestTemplate => RuntimeDep::SceRuntime,
+            // A port type writes no file.
+            Self::TestPortType => RuntimeDep::None,
         }
     }
 
@@ -7247,13 +7251,20 @@ impl ForgeDocument {
             }
             // A union's unit is a sum type of the language's own.
             Self::Union(_) => RuntimeDep::None,
-            // A template's unit names nothing of the forge runtime
-            // (docs/SCE_TEST_PROFILE.md §12.2), and a port type writes no file.
-            // A Rust unit over a record names the SCE runtime's test log, and
-            // states that tier itself (`generator::rust_test_template`);
-            // the tables of a configuration, a test case and a suite are their
-            // kinds', on the SCE runtime.
-            Self::TestTemplate(_) | Self::TestPortType(_) => RuntimeDep::None,
+            // The unit of a template over a record, the type of a message,
+            // writes the message's type name and canonical form in the test
+            // log with the SCE runtime's test module (docs/SCE_TEST_PROFILE.md
+            // §12.5); a template over another type names no runtime. A port
+            // type writes no file. The tables of a configuration, a test case
+            // and a suite are their kinds', on the SCE runtime.
+            Self::TestTemplate(m) => {
+                if m.is_over_record() {
+                    RuntimeDep::SceRuntime
+                } else {
+                    RuntimeDep::None
+                }
+            }
+            Self::TestPortType(_) => RuntimeDep::None,
             Self::TestConfiguration(_) | Self::TestCase(_) | Self::TestSuite(_) => {
                 self.kind().max_runtime_dep()
             }
@@ -7448,6 +7459,17 @@ impl TestTemplateModel {
     /// counts as specific.
     pub fn is_specific(&self) -> bool {
         self.matcher.is_specific()
+    }
+
+    /// Whether the template is over a record (`sce:type="record:<alias>"`),
+    /// the type of a message (docs/SCE_TEST_PROFILE.md §11.3): the template
+    /// whose unit writes a message's type name and canonical form in the test
+    /// log (§12.5).
+    pub fn is_over_record(&self) -> bool {
+        matches!(
+            self.template_type,
+            crate::forge::value_type::TypeOf::Record { .. }
+        )
     }
 }
 

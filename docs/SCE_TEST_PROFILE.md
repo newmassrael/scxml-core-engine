@@ -1813,6 +1813,12 @@ one at a time. Each lifts the refusal of §11.9 for itself when its runtime land
 | The test cases a world of the features runs, with guards and module parameters | a generated table from the `test-suite` | it is data |
 | The SUT's side of a mapped port | a system adapter: an interface the runtime calls, shaped after TRI's `triSend` and `triEnqueueMsg` (ADR 0091 answer 1) | the codec and the transport are the adapter's |
 
+Every generated unit states the runtime it names (`Runtime:` in its header), the tier of its document. A component's
+machine and the tables of a configuration, a test case and a suite are on the SCE runtime. A template over a record,
+the type of a message, is on it too, since its unit writes the message's type name and canonical form in the test log
+with the profile's runtime (§12.5); so the `test-template` kind's bound is the SCE runtime, and a template over any
+other type names no runtime. A `test-port-type` writes no file.
+
 ### 12.3 A component is an unchanged statechart machine
 
 The runtime reaches a component's machine only through doors the engine already has. The engine's macrostep, its
@@ -1935,8 +1941,9 @@ The form is the type's, not the language's: a byte string and a list of `uint8` 
 So the generated unit of every template over a record writes its record's type name and its value's form by the types
 its document declares (Rust: `TYPE` and `canonical`, with the writers of `sce_rust_runtime::test::canonical`), and a
 send carries the value with both (Rust: `sce_rust_runtime::test::message_value`, a `MessageValue` that is a
-`TestValue`). Such a unit names the SCE runtime, and its header says so (Rust: `Runtime: sce_runtime`, where a unit that
-writes no form says `none`). A system adapter gives the type name and the writer of each value it hands the run.
+`TestValue`). Such a unit names the profile's runtime, so a template over a record is on the SCE runtime and its unit's
+header says `Runtime: sce_runtime` on every backend (§12.2). A system adapter gives the type name and the writer of
+each value it hands the run.
 
 **The text.** A log is written in the JSON Canonicalization Scheme (RFC 8785): no whitespace, the members of each object
 sorted by their names as UTF-16 code units, each text escaped as ECMAScript's `JSON.stringify` escapes it, which is the
