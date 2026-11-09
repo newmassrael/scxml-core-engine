@@ -6299,8 +6299,8 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Count first: a vocabulary that gained or lost a variant without the manifest moving
     // would otherwise satisfy every assertion below.
-    #expect(variants.count == 17, "pattern_kind: oracle variant count")
-    guard variants.count == 17 else {
+    #expect(variants.count == 18, "pattern_kind: oracle variant count")
+    guard variants.count == 18 else {
         return
     }
 
@@ -6423,6 +6423,13 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     )
     // The name the declaration answers is the one the document wrote.
     #expect(PatternKind.parallelRegionDone.declaredName == "parallelRegionDone", "pattern_kind.parallelRegionDone declared name")
+    #expect(try oracleText(variants[17].member("name")) == "causalVector", "pattern_kind variant 17 name")
+    #expect(
+        try oracleNumberText(variants[17].member("value")) == String(PatternKind.causalVector.rawValue),
+        "pattern_kind.causalVector"
+    )
+    // The name the declaration answers is the one the document wrote.
+    #expect(PatternKind.causalVector.declaredName == "causalVector", "pattern_kind.causalVector declared name")
 }
 
 // MARK: - enum: payload_codec
