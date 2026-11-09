@@ -4050,6 +4050,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "sce-ttcn3-validator"
+version = "0.1.0"
+dependencies = [
+ "roxmltree",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "schannel"
 version = "0.1.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"

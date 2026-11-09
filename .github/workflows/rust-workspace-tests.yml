@@ -59,6 +59,9 @@ on:
     paths:
       - 'sce-build/**'
       - 'sce-build-wasm/**'
+      # The validator of a suite's TTCN-3 export, its own tests and those of
+      # sce-build that hold every export the fixtures make to it.
+      - 'sce-ttcn3-validator/**'
       - 'backends/rust/**'
       # What the world simulation hosts a generated Kotlin copy with
       # (`backends/rust/world`, `a_kotlin_copy_shares_the_todo_list_with_rust_copies`):
@@ -199,6 +202,9 @@ on:
     paths:
       - 'sce-build/**'
       - 'sce-build-wasm/**'
+      # The validator of a suite's TTCN-3 export, its own tests and those of
+      # sce-build that hold every export the fixtures make to it.
+      - 'sce-ttcn3-validator/**'
       - 'backends/rust/**'
       # What the world simulation hosts a generated Kotlin copy with
       # (`backends/rust/world`, `a_kotlin_copy_shares_the_todo_list_with_rust_copies`):

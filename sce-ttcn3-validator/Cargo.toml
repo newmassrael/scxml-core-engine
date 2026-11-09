@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# sce-ttcn3-validator -- the validator of a test suite's TTCN-3 export (docs/adr/0091 answer 12,
+# docs/SCE_TEST_PROFILE.md section 9.4).
+#
+# The export of a suite is held by translation validation: beside its two modules the exporter
+# writes a correspondence witness, and this crate checks the witness against the suite's documents
+# and the two modules. It is separate from the exporter, and kept so: it depends on no crate of SCE,
+# and reads the documents, the witness and the TTCN-3 with readers of its own, so a defect of the
+# exporter's reading is not shared by the reading that checks it.
+
+[package]
+name = "sce-ttcn3-validator"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Checks a test suite's TTCN-3 export against its documents and its correspondence witness, apart from the exporter"
+
+[lib]
+name = "sce_ttcn3_validator"
+
+[[bin]]
+name = "sce-ttcn3-validate"
+path = "src/bin/sce_ttcn3_validate.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+# The suite's documents, read as XML. The reader sce-build uses, at its version.
+roxmltree = "0.20"
+# The witness, read as JSON into a model of its own.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

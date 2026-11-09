@@ -261,6 +261,15 @@ scan_exclusions = [
     # so excluding them swallows no section from this gate. If one ever cites a
     # clause it has to leave this list and be enrolled in `paths`.
     "sce-revision/",
+    # The validator of a test suite's TTCN-3 export (`sce-ttcn3-validator/`, ADR
+    # 0091 answer 12), which holds the export's witness to the suite's documents and
+    # modules apart from the exporter. Measured 2026-11-09 over its 13 Rust sources:
+    # each `§` in them names a section of docs/SCE_TEST_PROFILE.md or of ES 201 873-1,
+    # and none a section of any ledger's namespace, so excluding them swallows no
+    # section from this gate. The check of a branch's exit and entry sets computes
+    # the Recommendation's 3.13 again; where a source cites it, the crate leaves this
+    # list and is enrolled in `paths`.
+    "sce-ttcn3-validator/",
 ]
 severity_missing = "reject"
 # Path B curated: every §scxml-<id> cite is bound to a ratified

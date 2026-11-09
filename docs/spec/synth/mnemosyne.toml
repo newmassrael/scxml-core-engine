@@ -200,6 +200,10 @@ scan_exclusions = [
     # The judgment of a revision of a requirement list (`sce-revision/`). Measured
     # 2026-10-09 over its 4 Rust sources: no `§` citation of any ledger.
     "sce-revision/",
+    # The validator of a test suite's TTCN-3 export (`sce-ttcn3-validator/`). Measured
+    # 2026-11-09 over its 13 Rust sources: each `§` names a section of
+    # docs/SCE_TEST_PROFILE.md or of ES 201 873-1, none of any ledger.
+    "sce-ttcn3-validator/",
 ]
 severity_missing = "reject"
 # Path B curated: all 2590 §synth- citations are bound to a

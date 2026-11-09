@@ -36,6 +36,7 @@ members = [
     "backends/rust/assurance",
     "sce-revision",
     "sce-specs",
+    "sce-ttcn3-validator",
 ]
 
 [workspace.package]
