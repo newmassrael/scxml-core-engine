@@ -11,7 +11,8 @@
 package {{ package }}
 {# `go_imports` are the packages the unit's text names, read off it by the
    renderer: `bytes` where a byte string is compared or copied, the profile's
-   runtime where a text's characters are counted, and the package of each
+   runtime where a text's characters are counted, its package `canonical`
+   where the unit writes a record's canonical form, and the package of each
    document whose enum, record or template the unit names. `uses_optional` is
    read off the text by the render door: a value that may be absent is the
    runtime's `optional.Of[T]` (docs/adr/0055). #}
@@ -51,5 +52,21 @@ func Matches(value Value{% for p in parameters %}, {{ p.name }} {{ p.ty }}{% end
 // keeps the type Value and the package's functions in one namespace.
 func Specific({% for p in parameters %}{{ p.name }} {{ p.ty }}{% if not loop.last %}, {% endif %}{% endfor %}) Value {
 	return {{ value_expr }}
+}
+{% endif %}
+{# Only a template over a record, the type of a message, writes the name of a
+   message's type and the canonical form of its value. #}
+{% if canonical_expr %}
+
+// TYPE is the name of the record Value is, as the types module of the suite's TTCN-3 export names it
+// (docs/SCE_TEST_PROFILE.md §9.5): the `type` of a message of it in the test log (§12.5).
+const TYPE = "{{ log_type | escape_go }}"
+
+// Canonical is value in the canonical form of the test log (docs/SCE_TEST_PROFILE.md §12.5): each
+// integer as the text of its digits, a byte string in upper-case hex, an enum by its declared name,
+// an absent field omitted. A send of this template carries it beside the value it sends
+// (`testprofile.MessageValue`).
+func Canonical(value Value) any {
+	return {{ canonical_expr }}
 }
 {% endif %}

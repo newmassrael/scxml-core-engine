@@ -180,10 +180,16 @@ fn every_matcher_is_spelled_over_the_schemas_record() {
             elapsed_at_most.as_str(),
         ],
     );
+    // The match alone: the unit's `Canonical` reads every field, the matched
+    // ones and the others alike.
+    let matches = text
+        .split_once("\nfunc Matches(")
+        .map(|(_, rest)| rest.split_once("\n}\n").map_or(rest, |(body, _)| body))
+        .unwrap_or_else(|| panic!("no `Matches` function:\n{text}"));
     // any-value-or-none holds whatever the field holds.
-    assert!(!text.contains("value.Tag"), "{text}");
+    assert!(!matches.contains("value.Tag"), "{text}");
     // A matcher that reads no element (`any-value` in a list) compares none.
-    assert!(!text.contains("value.Codes[1]"), "{text}");
+    assert!(!matches.contains("value.Codes[1]"), "{text}");
     // Nothing builds or names an optional value, and no byte string is
     // compared, so neither package is imported: Go refuses an unused one.
     assert!(!text.contains("sce-forge-runtime/optional"), "{text}");
@@ -209,8 +215,12 @@ fn a_specific_templates_value_is_its_record() {
             "\t\"github.com/newmassrael/sce-forge-runtime/optional\"\n",
         ],
     );
-    // No text is counted, so the runtime is not imported.
-    assert!(!report.contains("sce-go-runtime/testprofile"), "{report}");
+    // No text is counted, so the runtime is not imported, though its writers
+    // of the canonical form are.
+    assert!(
+        !report.contains("\"github.com/newmassrael/sce-go-runtime/testprofile\"\n"),
+        "{report}"
+    );
 
     let report_of = unit_of(&profile_dir(), "job_report_of");
     holds_each(
@@ -406,4 +416,214 @@ fn a_template_that_names_another_package_needs_the_module_path() {
     };
     let text = format!("{err:?}");
     assert!(text.contains("go_module_prefix"), "{text}");
+}
+
+/// The import spec of the runtime's writers of the canonical form.
+const CANONICAL_IMPORT: &str =
+    "\t\"github.com/newmassrael/sce-go-runtime/testprofile/canonical\"\n";
+
+/// docs/SCE_TEST_PROFILE.md §12.5: a template over a record, the type of a
+/// message, writes its value's canonical form in the test log by the types the
+/// schema declares, each field by its declared id, an optional one absent where
+/// it is, and imports the writers; a template over another type writes none.
+/// The type's name is the one the Rust unit writes for the same record.
+#[test]
+fn a_template_over_a_record_writes_its_values_canonical_form() {
+    for (path, name, _) in templates() {
+        let text = unit(&path, name);
+        let over_record = !matches!(
+            name,
+            "elapsed_at_most" | "quantity_at_most" | "quantity_two"
+        );
+        assert_eq!(
+            text.contains("\nfunc Canonical(value Value) any {\n"),
+            over_record,
+            "{name}: the canonical form is written exactly for a template over a record:\n{text}"
+        );
+        assert_eq!(
+            text.contains(CANONICAL_IMPORT),
+            over_record,
+            "{name}: the writers are imported exactly where the unit names them:\n{text}"
+        );
+        // The unit names the SCE runtime exactly where it writes the form, and
+        // its header says so.
+        let runtime = if over_record { "sce_runtime" } else { "none" };
+        assert!(
+            text.contains(&format!("// Runtime: {runtime}\n")),
+            "{name}: the header states the runtime the unit names:\n{text}"
+        );
+        // A message's type, as the TTCN-3 export's types module names its
+        // record: the unit name of the event schema's file.
+        let record = match name {
+            "every_matcher" | "job_report" | "job_report_of" | "report_within" => {
+                Some("job_status")
+            }
+            "order_line_exact" | "order_line_bounded" => Some("order_line"),
+            "card_within" => Some("card_payment"),
+            "voucher_is" => Some("voucher_payment"),
+            // The kind example's schema is the file `event-schema.scxml`.
+            "test_template" => Some("event_schema"),
+            _ => None,
+        };
+        assert_eq!(
+            record.is_some(),
+            over_record,
+            "{name}: a record template is named here"
+        );
+        if let Some(record) = record {
+            let declared = format!("\nconst TYPE = \"{record}\"\n");
+            holds_each(&text, &[declared.as_str()]);
+        }
+    }
+    let report = unit_of(&profile_dir(), "job_report");
+    holds_each(
+        &report,
+        &[
+            "\treturn canonical.Record(canonical.Field(\"elapsed_ms\", canonical.Integer(value.ElapsedMs)), \
+             canonical.Field(\"note\", canonical.Optional(value.Note.IsPresent(), \
+             func() any { return canonical.Text(value.Note.Proven()) })), \
+             canonical.Field(\"codes\", canonical.List(len(value.Codes), \
+             func(item_0 int) any { return canonical.Integer(value.Codes[item_0]) })), \
+             canonical.Field(\"tag\", canonical.Optional(value.Tag.IsPresent(), \
+             func() any { return canonical.Integer(value.Tag.Proven()) })), \
+             canonical.Field(\"retry\", canonical.Optional(value.Retry.IsPresent(), \
+             func() any { return canonical.Integer(value.Retry.Proven()) })), \
+             canonical.Field(\"count\", canonical.Integer(value.Count)))\n",
+        ],
+    );
+    // A closed enum by its declared name, a byte string by its octets.
+    let exact = unit_of(&imports_dir(), "order_line_exact");
+    holds_each(
+        &exact,
+        &["canonical.Field(\"color\", canonical.Enumerated(value.Color.DeclaredName()))"],
+    );
+    let voucher = unit_of(&imports_dir(), "voucher_is");
+    holds_each(
+        &voucher,
+        &["canonical.Record(canonical.Field(\"voucher_code\", canonical.Bytes(value.VoucherCode)))"],
+    );
+}
+
+/// An enum of an open set of variants, whose number no variant declares is
+/// written as its digits.
+const OPEN_LEVEL: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="enum" name="level_open"
+       sce:underlying-type="uint8" sce:strict-variants="false">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="low" value="0"/>
+      <sce:variant name="high" value="1"/>
+    </data>
+  </datamodel>
+</scxml>
+"#;
+
+/// A record whose one field is a value of the open enum.
+const GAUGE_SCHEMA: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="gauge_record"
+       sce:event-name="gauge.record">
+  <sce:import kind="enum" src="level_open.scxml" as="Level"/>
+  <datamodel>
+    <data id="level" sce:type="enum:Level" sce:direction="in"/>
+  </datamodel>
+</scxml>
+"#;
+
+/// A record with a byte string that may be absent.
+const SPARE_SCHEMA: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="spare_record"
+       sce:event-name="spare.record">
+  <datamodel>
+    <data id="code" sce:type="bytes[4]" sce:direction="in"/>
+    <data id="spare" sce:type="optional&lt;bytes[4]&gt;" sce:direction="in"/>
+  </datamodel>
+</scxml>
+"#;
+
+/// A record whose one field is a list of the record with the byte string that
+/// may be absent.
+const HOLDER_SCHEMA: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="holder_record"
+       sce:event-name="holder.record">
+  <sce:import kind="event-schema" src="spare_record.scxml" as="Spare"/>
+  <datamodel>
+    <data id="items" sce:type="list&lt;record:Spare&gt;[2]" sce:direction="in"/>
+  </datamodel>
+</scxml>
+"#;
+
+/// A template named `name` over the record `alias` of the schema `schema`,
+/// whose field `field` matches any value.
+fn any_value_template(name: &str, alias: &str, schema: &str, field: &str) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="{name}"
+       sce:type="record:{alias}">
+  <sce:import kind="event-schema" src="{schema}.scxml" as="{alias}"/>
+  <sce:record-match>
+    <sce:any-value field="{field}"/>
+  </sce:record-match>
+</scxml>
+"#
+    )
+}
+
+/// The canonical form of a value of an open enum is its declared name, or its
+/// carrier's digits; a list of records is written through a closure over each
+/// element's index, numbered by depth, and an optional field of an element
+/// through a closure the runtime calls only where the field holds a value. The
+/// documents are a test's alone, written into a directory of their own.
+#[test]
+fn an_open_enum_and_a_list_of_records_are_written_by_their_types() {
+    let dir = tempfile::tempdir().expect("a directory for the documents");
+    for (name, text) in [
+        ("level_open", OPEN_LEVEL),
+        ("gauge_record", GAUGE_SCHEMA),
+        ("spare_record", SPARE_SCHEMA),
+        ("holder_record", HOLDER_SCHEMA),
+    ] {
+        std::fs::write(dir.path().join(format!("{name}.scxml")), text)
+            .unwrap_or_else(|e| panic!("{name}: {e}"));
+    }
+    let gauge = dir.path().join("over_gauge.scxml");
+    std::fs::write(
+        &gauge,
+        any_value_template("over_gauge", "Gauge", "gauge_record", "level"),
+    )
+    .expect("the template over the gauge");
+    holds_each(
+        &unit(&gauge, "over_gauge"),
+        &[
+            "\nconst TYPE = \"gauge_record\"\n",
+            "\treturn canonical.Record(canonical.Field(\"level\", \
+             canonical.OpenEnumerated(value.Level.DeclaredName(), value.Level.ToUnderlying())))\n",
+        ],
+    );
+    let holder = dir.path().join("over_holder.scxml");
+    std::fs::write(
+        &holder,
+        any_value_template("over_holder", "Holder", "holder_record", "items"),
+    )
+    .expect("the template over the holder");
+    holds_each(
+        &unit(&holder, "over_holder"),
+        &[
+            "\nconst TYPE = \"holder_record\"\n",
+            "\treturn canonical.Record(canonical.Field(\"items\", canonical.List(len(value.Items), \
+             func(item_0 int) any { return canonical.Record(\
+             canonical.Field(\"code\", canonical.Bytes(value.Items[item_0].Code)), \
+             canonical.Field(\"spare\", canonical.Optional(value.Items[item_0].Spare.IsPresent(), \
+             func() any { return canonical.Bytes(value.Items[item_0].Spare.Proven()) }))) })))\n",
+        ],
+    );
 }
