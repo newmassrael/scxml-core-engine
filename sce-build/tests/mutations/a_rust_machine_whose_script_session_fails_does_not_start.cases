@@ -1,0 +1,144 @@
+# Mutation cases for docs/adr/0096 on the Rust channel: a machine whose script
+# session cannot be established does not start, and its host is told why; an
+# invoked child that cannot start is a failed invoke.
+#
+# Run with `scripts/mutate sce-build/tests/mutations/a_rust_machine_whose_script_session_fails_does_not_start.cases`.
+#
+# Establishing a session used to be lazy, logged and marked done whatever
+# happened: `create_session` returned nothing, a bind that failed was a log
+# line, and the machine ran over a session it did not have, every condition an
+# error. Each case below puts back one piece of that shape and names the
+# assertion that must go red. The script engine of the oracle is a double over
+# the Lua engine that fails the step a case asks for, so the failure is
+# reached through the engine a generated machine is handed, as a host's would
+# be.
+#
+# The runtime's own cases, over a hand-written policy, are
+# `backends/rust/runtime/tests/a_machine_whose_script_session_fails_does_not_start.rs`;
+# this file holds the generated machine, which is where the template halves
+# can only be seen.
+#
+# Anchors are literal slices of the source; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-tests --test a_machine_whose_script_session_fails_does_not_start
+mutation_targets backends/rust/runtime/src/engine.rs tools/codegen/templates/rust/scriptengine_helpers.rs.jinja2 tools/codegen/templates/rust/invoke_methods.rs.jinja2
+
+# The templates reach `cargo test` only through the committed tree the
+# regeneration below writes, so both halves are declared: the generated files
+# are compiled into the test, and the command is what carries a mutated
+# template into them.
+mutation_targets backends/rust/tests/src/integration/a_child_reply_arrives_without_a_tick/a_child_reply_arrives_without_a_tick_sm.rs
+mutation_targets backends/rust/tests/src/integration/a_child_reply_arrives_without_a_tick/a_child_reply_arrives_without_a_tick__sce_synth_invoke__kid_sm.rs
+mutation_regen scripts/regen_a_child_reply_arrives_without_a_tick.sh
+
+mutation_oracles backends/rust/tests/tests/a_machine_whose_script_session_fails_does_not_start.rs
+
+# ── The start goes on past a session that failed ────────────────────
+#
+# The engine drops the policy's failure and enters the initial configuration
+# anyway: the old shape, with the failure now reported to nobody.
+# Killer: `a_start_whose_session_cannot_be_established_is_refused_with_the_step`,
+# whose `expect_err` finds a start that succeeded.
+
+mutation_case "the start enters the machine past a session that failed" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """        if concepts::has_data_model_init::<P>() {
+            self.initialize_data_model_dispatch()?;
+        }
+
+        self.core.main_loop.is_running = true;""",
+     """        if concepts::has_data_model_init::<P>() {
+            let _ = self.initialize_data_model_dispatch();
+        }
+
+        self.core.main_loop.is_running = true;""")
+PY
+
+# ── The resumed start goes on past a session that failed ────────────
+#
+# Killer: `a_resumed_start_whose_session_cannot_be_established_is_refused`,
+# which finds `enter_at` answering `Ok`.
+
+mutation_case "enter_at enters the configuration past a session that failed" <<'PY'
+edit("backends/rust/runtime/src/engine.rs",
+     """            self.initialize_data_model_dispatch().map_err(|failure| {
+                ConfigurationRejection::ScriptSessionUnavailable(failure.into())
+            })?;""",
+     """            let _ = self.initialize_data_model_dispatch();""")
+PY
+
+# ── A bind that failed is a log line again ──────────────────────────
+#
+# The generated policy logs the failed bind and carries on initializing the
+# datamodel in a session whose system variables are not there.
+# Killers: `a_start_whose_session_cannot_be_established_is_refused_with_the_step`
+# (its `system-variables` round starts) and
+# `a_session_whose_system_variables_cannot_be_bound_is_released` (nothing is
+# destroyed).
+
+mutation_case "a failed bind of the system variables is logged and passed over" <<'PY'
+edit("tools/codegen/templates/rust/scriptengine_helpers.rs.jinja2",
+     """            ::sce_rust_runtime::sce_log_error!("Failed to setup system variables: {}", e);
+            se.destroy_session(&sid);
+            return Err(sce_rust_runtime::ScriptSessionFailure::of_system_variables(&e));
+        }""",
+     """            ::sce_rust_runtime::sce_log_error!("Failed to setup system variables: {}", e);
+        }""")
+PY
+
+# ── A session that failed is marked established ─────────────────────
+#
+# The first start is refused, and the flag says the session is there, so the
+# next start finds it "done" and runs the machine over no session.
+# Killer: `a_refused_start_is_refused_again_rather_than_run_without_a_session`,
+# whose second start succeeds.
+
+mutation_case "a session whose creation failed is marked established" <<'PY'
+edit("tools/codegen/templates/rust/scriptengine_helpers.rs.jinja2",
+     """            ::sce_rust_runtime::sce_log_error!("The script session '{}' could not be created: {}", sid, e);
+            return Err(sce_rust_runtime::ScriptSessionFailure::of_creation(&e));""",
+     """            ::sce_rust_runtime::sce_log_error!("The script session '{}' could not be created: {}", sid, e);
+            self.script_engine_initialized = true;
+            return Err(sce_rust_runtime::ScriptSessionFailure::of_creation(&e));""")
+PY
+
+# ── The refused child is kept ──────────────────────────────────────
+#
+# The parent keeps the child whose start was refused, as a session of its own,
+# in its slot and its table of invocations.
+# Killer: `a_child_whose_session_fails_leaves_its_parent_with_error_execution_and_no_child`,
+# whose `is_child_session_running` finds it.
+
+mutation_case "the child whose start was refused is kept" <<'PY'
+edit("tools/codegen/templates/rust/invoke_methods.rs.jinja2",
+     """                    self.active_invokes.remove("{{ invoke_info.invoke_id }}");
+{% if 'error.execution' in model.events %}""",
+     """{% if 'error.execution' in model.events %}""")
+edit("tools/codegen/templates/rust/invoke_methods.rs.jinja2",
+     """{% endif %}
+                    continue;
+                }
+{% endmacro %}""",
+     """{% endif %}
+                }
+{% endmacro %}""")
+PY
+
+# ── The refused child raises nothing ───────────────────────────────
+#
+# The invoke ends without a child and without telling the document.
+# Killer: `a_child_whose_session_fails_leaves_its_parent_with_error_execution_and_no_child`,
+# whose `last_unhandled_error` finds no error.execution.
+
+mutation_case "the child whose start was refused raises no error.execution" <<'PY'
+edit("tools/codegen/templates/rust/invoke_methods.rs.jinja2",
+     """{% if 'error.execution' in model.events %}
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                        {{ machine_name }}Event::{{ 'error.execution' | to_event_variant }},
+                        &format!("<invoke id='{}'> did not start: its child's""",
+     """{% if false %}
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                        {{ machine_name }}Event::{{ 'error.execution' | to_event_variant }},
+                        &format!("<invoke id='{}'> did not start: its child's""")
+PY
