@@ -18,3 +18,18 @@ typealias Value = com.sce.generated.job_request.JobRequestPayload
 @Suppress("UNUSED_PARAMETER", "SENSELESS_COMPARISON", "USELESS_IS_CHECK")
 fun matches(value: Value): Boolean =
     true
+
+/**
+ * The name of the record [Value] is, as the types module of the suite's TTCN-3 export names it
+ * (docs/SCE_TEST_PROFILE.md §9.5): the `type` of a message of it in the test log (§12.5).
+ */
+const val TYPE: String = "job_request"
+
+/**
+ * [value] in the canonical form of the test log (docs/SCE_TEST_PROFILE.md §12.5): each
+ * integer as the text of its digits, a byte string in upper-case hex, an enum and a case
+ * of a union by their declared names, an absent field omitted. A send of this template
+ * carries it beside the value it sends (`com.sce.runtime.test.messageValue`).
+ */
+fun canonical(value: Value): Any =
+    com.sce.runtime.test.Canonical.record("job" to com.sce.runtime.test.Canonical.integer(value.job))

@@ -27,3 +27,18 @@ fun matches(value: Value): Boolean =
 @Suppress("UNUSED_PARAMETER")
 fun value(): Value =
     com.sce.generated.voucher_payment.VoucherPaymentPayload(voucher_code = byteArrayOf(0x00.toByte(), 0xff.toByte(), 0x10.toByte(), 0xa0.toByte()))
+
+/**
+ * The name of the record [Value] is, as the types module of the suite's TTCN-3 export names it
+ * (docs/SCE_TEST_PROFILE.md §9.5): the `type` of a message of it in the test log (§12.5).
+ */
+const val TYPE: String = "voucher_payment"
+
+/**
+ * [value] in the canonical form of the test log (docs/SCE_TEST_PROFILE.md §12.5): each
+ * integer as the text of its digits, a byte string in upper-case hex, an enum and a case
+ * of a union by their declared names, an absent field omitted. A send of this template
+ * carries it beside the value it sends (`com.sce.runtime.test.messageValue`).
+ */
+fun canonical(value: Value): Any =
+    com.sce.runtime.test.Canonical.record("voucher_code" to com.sce.runtime.test.Canonical.bytes(value.voucher_code))
