@@ -4315,7 +4315,7 @@ whose length no declaration states (a call) is held where it arrives, as before.
 narrowing the language offers is the assignment: the value taken into a variable whose
 `sce:capacity` is the field's bound or less, which fails as `error.execution` when it
 does not fit, is then sent. Measured 2026-10-21, before the rule: a parent that sent
-the 96-byte `text` of a record of `record_write` as the 32-byte `text` of
+the 96-byte `text` of a record of the list's write (now `record_op`) as the 32-byte `text` of
 `record_list.edit` passed `check`, and the list refused every delivery past 32 bytes
 when it read it. `sce-build/tests/a_send_is_held_to_the_schema_its_receiver_reads.rs`
 holds both rules.
@@ -7568,27 +7568,28 @@ variables hold, which it refuses with `error.execution` where the six backends t
 the generic part of `todo_peer`, a statechart of the standard library: the protocol of
 the to-do list without its schedule and its host's time zones, its events named
 `record_list.<verb>`, its schemas and its own rules under `stdlib/shared/`
-(`record_write`, `record_edit`, `record_settled`, `record_roster`, `register_values`
+(`record_change`, `record_op`, `record_edit`, `record_roster`, `register_values`
 and the rest), and every bound a `sce:limit` that defaults to the to-do list's number
-(`merge_entries`, `merge_values`, `merge_digest`, `merge_text`, `shared_typed_text`,
-`shared_roster`, `shared_answers`, `shared_moved`, and `shared_staged` and
-`shared_parts` for a change of several commands, docs/adr/0046). It names no peer: a person's copy
-sends to the route `#hub`, and the hub, the copy `record_list.join` names the hub, sends
-to the route `#people`, which a deployment binds to a key every person's copy listens
-on, so that one send reaches them all, the author of the change included (who holds it
-already, and takes it again as nothing). No condition reads a node number; the hub's
-own change is passed on to the people and sent to no hub. A statechart invokes it as a
+(`merge_entries`, `merge_values`, `merge_text`, `shared_typed_text`, `shared_roster`,
+`shared_moved`, and `shared_staged` and `shared_parts` for a change of several
+commands, docs/adr/0046). It names no peer: every copy sends each change of its own to
+the route `#people`, one group every copy sends to and reads, which a deployment binds
+to the list's delivery layer (the peer core of a host that has one, or a Mesh binding
+with `delivery: causal`, docs/adr/0085), and no copy is a hub. The layer gives every
+copy each change once, whole, and only after every change its author had taken in, so
+the list keeps no tombstone, no digest and no settle round: it is the effect alone. No
+condition reads a node number. A statechart invokes it as a
 child session by its library name ("Child sessions" above) and hands it `announce`;
 from then on the list tells its parent, once for each change it takes in, each register
 the change moved: its count and first value in the order of the dots
 (`record_list.register`) and each further value (`record_list.value`), as the register
 stands when the change is whole, so a change that writes over two values and writes
 its own is told once. A change is a unit (docs/adr/0046): the commands of one, each but
-the last saying `more`, are judged whole, stamped once and taken in at once, and a
-change of more than one operation travels as that many messages carrying `parts`
-(a write-over also the change's stamp, `atWallTime` and `atCounter`), which a copy
-holds until it holds them all and takes in together, so a parent is told it once on
-every copy. A list a host started keeps `announce` false and tells no one:
+the last saying `more`, are judged whole, stamped once and taken in at once, and the
+change travels as one message, `record_list.change`, whose `ops` is a list of records
+(`record_op`, docs/adr/0086), every write-over before every write, so a copy takes it
+in whole and a parent is told it once on every copy (docs/adr/0085). A list a host
+started keeps `announce` false and tells no one:
 `#_parent` names no session at the top level, and the send names it by an expression
 among its declared `sce:targets`, so the machine keeps the entry a host starts it by.
 Its scenarios name it by its library name (`"machine": "sce:std/shared/record_list"`),
@@ -7596,27 +7597,25 @@ which every driver, regen script, build rule and the Interpreter's scan take as 
 take a fixture's stem, so no copy of the text stands in the fixture directory; the
 generated machine is named by the last segment of that name. Its scenarios are written
 by hand from a model of the list and are short: `record_list_person` is a person's copy
-(two writes at once both kept, a supersede that drops only what it saw, the walk of the
-digest that finds a lost change, a settle, a floor that forgets tombstones and refuses
-a write at or before it, a copy that answers with another hash and says it is stale,
-the room refusing past its bound, a text past what a person writes and a change of its
-own while its member may only read both refused whole); `record_list_hub` is the hub (passing every change
-on to `#people`, its roster refusing a reader's write and supersede, its own change,
-a settle counted to its end and a differing answer told the last floor, the walk);
-`record_list_alone` is the list a host started, which tells no parent and fails at
-nothing; `record_list_offline` is a copy given no Mesh router (`"router": false`), a
-person's and then a hub, which keeps every change it makes because what a copy does
+(two writes at once both kept, a write-over that drops only what its writer saw, the
+room refusing past its bound, a text past what a person writes and a change of its own
+while its member may only read both refused whole, and a peer's change whose author may
+only read taken in as no change); `record_list_alone` is the list a host started, which
+tells no parent and fails at nothing; `record_list_offline` is a copy given no Mesh
+router (`"router": false`), which keeps every change it makes because what a copy does
 to itself is queued before anything it sends to a peer (docs/adr/0046);
 `record_list_change` is a change of several fields staged with `more` and sent as one
-unit, a change refused whole for a text and for naming a register twice, and a peer's
-change held a part at a time until it is whole, by a person and by the hub;
+message, a change refused whole for a text and for naming a register twice, and a
+peer's change taken in whole, the clock moved once by its stamp;
 `record_list_retire` is a field emptied (`record_list.clear`) and a row retired
-(`record_list.retire`), each writing over what the copy holds and nothing else, a write
-the retiring copy had not seen staying, and a settle that forgets what the retire wrote
-over; and `record_list_parent` is a statechart that invokes it and publishes what
+(`record_list.retire`), each writing over what the copy holds and nothing else, and a
+write the retiring copy had not seen staying; `record_list_out_of_causal_order_is_not_given`
+is a change and the one it writes over in their causal order, the one order the layer
+gives; `record_list_concurrent_clears` is two changes that clear one value at once, in
+both orders, told once each; and `record_list_parent` is a statechart that invokes it and publishes what
 it was told: a register's one value, two values written at once told as a count of 2
 with the earlier dot first, a register written over value by value told as a count of
-0, a write already held told nothing, the hub's own change told once, a retired row told
+0, a write already held told nothing, the list's own change told once, a retired row told
 as each of its registers holding nothing, a write its author made without seeing
 the retire told as the field coming back, and each change the list refused told once as
 `record_list.refused`, the command at fault, a value of the standard enum `record_command`
@@ -7629,7 +7628,7 @@ first revision is the one the saved shape of every machine that holds it is boun
 The model the
 expected values come from was first held to every step `todo_peer` took in the world's
 to-do afternoon. The world test replays that afternoon on the standard part's Rust
-machine in its own process, the sends by their routes and an edit that wrote over what
+machine in its own process, each change one message and an edit that wrote over what
 it saw as one unit, and writes no file of it. The Interpreter replays them all, the
 parent with the list it names by `src` lowered beside it (§2.15).
 
