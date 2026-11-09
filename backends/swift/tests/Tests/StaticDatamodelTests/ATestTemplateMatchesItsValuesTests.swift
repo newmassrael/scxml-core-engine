@@ -14,11 +14,11 @@ import XCTest
 // `ATestTemplateMatchesItsValuesTest.kt`, of the Go `a_test_template_matches_its_values_test.go`, of the
 // Python `test_a_test_template_matches_its_values.py` and of the C11
 // `test_a_test_template_matches_its_values.c`, which hold the same templates to the same values, each
-// test named after the Rust case. Swift lowers no union, so the two templates over one, and their
-// cases, have no twin here: the generator refuses them on Swift
-// (`sce-build/tests/a_test_template_is_generated_in_swift.rs`). The units are generated from the
-// fixtures under `sce-build/tests/fixtures/test_profile/` by `scripts/regen_static_datamodel_swift.sh`
-// into the target `StaticDatamodelMachines`, each template an enum named by its document. Every
+// test named after the Rust case. Swift lowers a union, and the generator writes the two templates
+// over one on Swift (`sce-build/tests/a_test_template_is_generated_in_swift.rs` holds their text),
+// but this target does not generate them, so they and their cases have no twin here. The units are
+// generated from the fixtures under `sce-build/tests/fixtures/test_profile/` by
+// `scripts/regen_static_datamodel_swift.sh` into the target `StaticDatamodelMachines`, each template an enum named by its document. Every
 // character outside ASCII is written as its escape.
 final class ATestTemplateMatchesItsValuesTests: XCTestCase {
     /// U+00E9, one character of two UTF-8 bytes.
