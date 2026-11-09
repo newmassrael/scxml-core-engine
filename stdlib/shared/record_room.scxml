@@ -4,10 +4,17 @@
 <!--
   sce:std/shared/record_room.scxml — how much a shared record list (record_list) is
   allowed to hold, as the host tells a copy of it: `values`, the most values its
-  registers hold (a new register is refused when the copy holds that many already),
-  `history`, the most tombstones it keeps before the host has to settle (a change is
-  refused when the copy holds that many) and `digest`, the most nodes of its digest (a
-  change is refused when the copy holds that many). A 0 is no limit of that kind.
+  registers hold (a new register is refused when the copy holds that many already), and
+  `history`, the most changes the copy's delivery layer may hold not yet stable. A 0 is no
+  limit of that kind.
+
+  The list judges `values` itself. `history` is the delivery layer's: the list keeps no
+  change once it is taken in, so it has no count of its own to judge, and the layer that
+  keeps each change until every member holds it refuses one it has no room for, which the
+  list tells as `noRoomForHistory`; stability frees it (docs/adr/0085, sections 2.5 and
+  3). `digest` is read by no copy: the list keeps no digest (docs/adr/0085, section 2.1).
+  It stays declared, so a host built against the list before it changes nothing by
+  sending it.
 
   The limits are the host's to give a list because a list is built with the room it has
   (`sce:limit`, the bounds a deployment chooses) and what a list holds is a plan's: one

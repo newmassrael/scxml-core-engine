@@ -13,9 +13,10 @@
   - `notWriter`: the copy's member may only read (record_list.role);
   - `noRoomForValue`: the values the copy would hold after the change pass the room the
     host gave it (record_list.room, `values`);
-  - `noRoomForHistory`: the copy holds as many tombstones as the room lets it (`history`),
-    which a settle frees;
-  - `noRoomForDigest`: the copy holds as many digest nodes as the room lets it (`digest`);
+  - `noRoomForHistory`: the copy's delivery layer holds as many changes not yet stable as
+    the room lets it (`history`), which stability frees (docs/adr/0085, section 2.5);
+  - `noRoomForDigest`: told by no copy, since the list keeps no digest (docs/adr/0085,
+    section 2.1); it stays declared, with its number, so a parent built before reads it;
   - `changeTooLarge`: the change stages more commands, or is more operations, than the
     copy is built to hold (`shared_staged`, `shared_parts`);
   - `registerNamedTwice`: two commands of the change write or clear one register;
