@@ -1,0 +1,107 @@
+# Mutation cases for "a shared list takes its own change at its verdict, and is built
+# again from what was made" (docs/adr/0085, section 7, landing 4d; docs/adr/0093,
+# sections 3 and 4.3), under the Rust runtime.
+#
+# Run with
+# `scripts/mutate sce-build/tests/mutations/a_shared_list_takes_its_own_change_at_its_verdict_rust.cases`.
+#
+# A copy of the standard shared record list (stdlib/shared/record_list.scxml) that keeps
+# a journal offers each change to its host and takes it in only at its layer's verdict:
+# refused, nothing; waiting, provisionally, with an undo record a later write-over
+# strikes from, withdrawn with every provisional change after it. A command or a verdict
+# that names no offered change is the host's fault and is refused. A raise moves the
+# clock up only. A restored write takes the dot it carries, and a recalled change of
+# another node is never provisional. Each case takes one of those away, and the
+# scenarios replayed by `static_scenarios` (record_list_journal, record_list_provisional,
+# record_list_raise, record_list_recall, record_list_restore and record_list_verdict)
+# must turn red.
+#
+# The list reaches the Rust lane only through the committed tree its regeneration
+# writes, so the tree is a declared target and the regeneration carries a mutated
+# document into it.
+#
+# Anchors are literal slices of the document; an edit that moves one is reported
+# INCONCLUSIVE with the anchor quoted, never as a pass.
+
+mutation_tests -p sce-rust-tests --test static_scenarios
+mutation_targets stdlib/shared/record_list.scxml
+mutation_targets backends/rust/tests/src/integration/static_datamodel/record_list_sm.rs
+mutation_targets backends/rust/tests/src/integration/static_datamodel/record_list_parent__sce_synth_invoke__list_sm.rs
+mutation_regen scripts/regen_static_datamodel_rust.sh
+mutation_oracles backends/rust/tests/tests/static_scenarios.rs sce-build/tests/fixtures/static_datamodel/scenarios/record_list_journal.json sce-build/tests/fixtures/static_datamodel/scenarios/record_list_provisional.json sce-build/tests/fixtures/static_datamodel/scenarios/record_list_raise.json sce-build/tests/fixtures/static_datamodel/scenarios/record_list_recall.json sce-build/tests/fixtures/static_datamodel/scenarios/record_list_restore.json sce-build/tests/fixtures/static_datamodel/scenarios/record_list_verdict.json
+
+# ── The offer and its verdict ──────────────────────────────────────
+
+mutation_case "a refused change is taken in all the same" <<'PY'
+edit("stdlib/shared/record_list.scxml",
+     '''<if cond="_event.data.outcome !== Outcome.refused">''',
+     '''<if cond="true">''')
+PY
+
+mutation_case "a refusal is told without the reason the layer gave" <<'PY'
+edit("stdlib/shared/record_list.scxml",
+     '''<assign location="refusedFor" expr="_event.data.reason ?? Refusal.peerRefused"/>''',
+     '''<assign location="refusedFor" expr="Refusal.peerRefused"/>''')
+PY
+
+mutation_case "a command given while an offer is outstanding is staged and closed" <<'PY'
+edit("stdlib/shared/record_list.scxml",
+     '''<transition event="record_list.edit" cond="len(offered) &gt; 0" type="internal">''',
+     '''<transition event="record_list.edit" cond="false" type="internal">''')
+PY
+
+mutation_case "a verdict is taken for an offer it does not name" <<'PY'
+edit("stdlib/shared/record_list.scxml",
+     ''' &amp;&amp; _event.data.counter === offeredAt.counter" type="internal">''',
+     '''" type="internal">''')
+PY
+
+mutation_case "a change closed while the provisional changes fill their room is offered" <<'PY'
+edit("stdlib/shared/record_list.scxml",
+     '''len(provisional) &gt;= _x.limits.shared_provisional''',
+     '''false''')
+PY
+
+# ── Provisional changes and their withdrawal ───────────────────────
+
+mutation_case "a write-over after a provisional change strikes nothing from its undo record" <<'PY'
+edit("stdlib/shared/record_list.scxml",
+     '''<if cond="!wasLive &amp;&amp; len(undo) &gt; 0">''',
+     '''<if cond="false">''')
+PY
+
+mutation_case "a withdrawal gives back none of the values its change wrote over" <<'PY'
+edit("stdlib/shared/record_list.scxml",
+     '''          <assign location="held.nodeId" expr="u.nodeId"/>
+          <assign location="values" expr="MvValueKeep(values, held)"/>''',
+     '''          <assign location="held.nodeId" expr="u.nodeId"/>
+          <assign location="values" expr="values"/>''')
+PY
+
+mutation_case "a withdrawal withdraws one change, not the provisional ones after it" <<'PY'
+edit("stdlib/shared/record_list.scxml",
+     '''<if cond="at &gt;= withdrawFrom">''',
+     '''<if cond="at === withdrawFrom">''')
+PY
+
+# ── The clock, a restore and a recall ──────────────────────────────
+
+mutation_case "a raise below the clock moves it back" <<'PY'
+edit("stdlib/shared/record_list.scxml",
+     '''    <transition event="record_list.raise" type="internal">
+      <if cond="_event.data.wallTime &gt; clock.wallTime || (_event.data.wallTime === clock.wallTime &amp;&amp; _event.data.counter &gt; clock.counter)">''',
+     '''    <transition event="record_list.raise" type="internal">
+      <if cond="true">''')
+PY
+
+mutation_case "a restored write is given the dot of no change instead of its own" <<'PY'
+edit("stdlib/shared/record_list.scxml",
+     '''<if cond="restoring">''',
+     '''<if cond="false">''')
+PY
+
+mutation_case "a recalled change of another node is taken in provisionally" <<'PY'
+edit("stdlib/shared/record_list.scxml",
+     '''<assign location="tentative" expr="_event.data.provisional &amp;&amp; _event.data.by === node"/>''',
+     '''<assign location="tentative" expr="_event.data.provisional"/>''')
+PY

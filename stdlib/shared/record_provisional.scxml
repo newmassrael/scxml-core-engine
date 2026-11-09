@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/shared/record_provisional.scxml — one change of a copy of a shared record list
+  that the copy took in provisionally (docs/adr/0093, section 3.3), as the copy holds it
+  until the host confirms or withdraws it: the record type of the copy's `provisional`
+  changes. It travels in no message (the event it names is never sent).
+
+  `wallTime` and `counter` are the change's stamp, which names it, and `command` the
+  host's name for the command that ended it, which the copy tells its parent with the
+  change's confirmation or withdrawal. `id`, `field` and `kind` are what a withdrawal is
+  told as (record_refused): the register of the change's first operation, and `edit`
+  for a write or `clear` for a write-over (record_command), read from the change itself,
+  so a change taken in provisionally at its verdict and one recalled so after a restart
+  are told alike. What the change's write-overs took out is the copy's undo record
+  (record_undo), kept apart, since a record holds no list.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="record_provisional"
+       sce:event-name="record_list.provisional">
+  <sce:import kind="enum" src="sce:std/shared/record_command.scxml" as="Command"/>
+  <datamodel>
+    <data id="wallTime" sce:type="int64" sce:direction="in"/>
+    <data id="counter" sce:type="uint32" sce:direction="in"/>
+    <data id="command" sce:type="uint64" sce:direction="in"/>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="field" sce:type="uint16" sce:direction="in"/>
+    <data id="kind" sce:type="enum:Command" sce:direction="in"/>
+  </datamodel>
+</scxml>

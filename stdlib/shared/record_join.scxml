@@ -3,21 +3,35 @@
 <!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
 <!--
   sce:std/shared/record_join.scxml — what the host tells a copy of a shared record
-  list (record_list) when it starts: the node id its stamps carry.
+  list (record_list) when it starts: the node id its stamps carry, and whether its host
+  keeps a journal of what each change made.
 
   No copy is a hub: every copy sends its changes to one group every copy reads, and the
   layer below the list delivers them (docs/adr/0085, section 3.2), so a copy has no role
   of its own to be told. The flag that once named the hub is retired with the hub's
   relay; a key the schema does not declare is stepped over where the event is read, so a
   host that still sends it changes nothing.
+
+  `journal`, added by the second revision, says whether the copy's host keeps a journal
+  of what each change made (docs/adr/0083, docs/adr/0093). A copy that keeps one offers
+  each change it closes to its host on the route `#journal` (record_list.made,
+  record_made), takes it in only once the host gives it the verdict of the change's
+  delivery layer (record_list.verdict), reports the outcome (record_list.closed,
+  record_closed), and sends none of its own changes to a peer: its host gives what was
+  offered to the layer that carries it. A join that does not carry it keeps a journal: a
+  list a host starts keeps one unless it is told not to, and only a copy that is thrown
+  away when its run ends (a scenario, a world run) is joined with `journal` false, which
+  takes its own change in at once and sends it to `#people` itself.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        version="1.0"
        sce:kind="event-schema"
        name="record_join"
-       sce:event-name="record_list.join">
+       sce:event-name="record_list.join"
+       sce:revision="2">
   <datamodel>
     <data id="node" sce:type="uint64" sce:direction="in"/>
+    <data id="journal" sce:type="bool" sce:direction="in" sce:since="2" sce:default="true"/>
   </datamodel>
 </scxml>

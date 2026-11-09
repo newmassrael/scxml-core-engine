@@ -20,6 +20,14 @@
   change, which the copy then judges, stamps and takes in as one (docs/adr/0046). An
   edit that does not carry it, as every edit of the first revision, is a change of its
   own.
+
+  `command`, added by the third revision, is the host's own name for the command, which
+  the list reads nothing of: a copy that keeps a journal (record_join) gives the one of
+  the command that ends a change back with what it reports of it (record_made,
+  record_closed) and with what it tells its parent of the change's verdict, so the host
+  files what the change made under the command that made it, the sequence number of its
+  journal as a rule (docs/adr/0083, docs/adr/0093). An edit that does not carry it is
+  command 0.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -27,7 +35,7 @@
        sce:kind="event-schema"
        name="record_edit"
        sce:event-name="record_list.edit"
-       sce:revision="2">
+       sce:revision="3">
   <datamodel>
     <data id="id" sce:type="uint32" sce:direction="in"/>
     <data id="field" sce:type="uint16" sce:direction="in"/>
@@ -35,5 +43,6 @@
     <data id="text" sce:type="string[shared_typed_text=32]" sce:direction="in"/>
     <data id="now" sce:type="int64" sce:direction="in"/>
     <data id="more" sce:type="bool" sce:direction="in" sce:since="2" sce:default="false"/>
+    <data id="command" sce:type="uint64" sce:direction="in" sce:since="3" sce:default="0"/>
   </datamodel>
 </scxml>

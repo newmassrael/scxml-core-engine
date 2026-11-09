@@ -199,6 +199,12 @@ fn record_list_scenario(about: &str, record: &[Taken]) -> String {
                 if RecordListPolicy::resolve_event_by_name(&named).is_none() {
                     step["dropped"] = json!(true);
                 }
+                // The to-do list's copy sends its changes to its group itself, which the
+                // standard list does when it keeps no journal (docs/adr/0093, section 3):
+                // its join says so, as every copy a test throws away is joined.
+                if named == "record_list.join" {
+                    step["data"]["journal"] = json!(false);
+                }
                 step["event"] = json!(named);
             }
             if let Some(sent) = step["expect"]["sent"].as_array() {

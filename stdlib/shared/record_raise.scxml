@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/shared/record_raise.scxml — the host's word to a copy of a shared record list
+  that a stamp of the copy's own node is held beyond what the copy holds
+  (docs/adr/0093, section 4.3): the highest stamp of the device's own changes its
+  delivery layer holds, given after every rebuild and whenever the layer reports a
+  higher one. The copy raises its clock to it, as it does to a change of its own it is
+  given back, and never by a peer's receive, since it is no peer's: a stamp at or below
+  the clock moves nothing, and the next change the copy makes is stamped after it. So a
+  new stamp exceeds every stamp of the device, in its journal and in its layer's chain.
+
+  The fields are record_confirm's (the shape `record_stamp` of docs/adr/0093, section
+  5): `wallTime` and `counter` are the stamp, and `command` is not read; a host writes
+  0 there.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="record_raise"
+       sce:event-name="record_list.raise">
+  <datamodel>
+    <data id="wallTime" sce:type="int64" sce:direction="in"/>
+    <data id="counter" sce:type="uint32" sce:direction="in"/>
+    <data id="command" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>
