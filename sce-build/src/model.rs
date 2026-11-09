@@ -1379,6 +1379,17 @@ pub struct Param {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     #[cfg_attr(test, schemars(skip))]
     pub native_value: String,
+    /// Codegen-internal: whether [`Self::native_value`] is not a value but the
+    /// statements that write a composed value where the pair of this param
+    /// stands (docs/adr/0086, section 5.3), for a backend that has no value a
+    /// composed param could be held in until it is written (C11,
+    /// [`crate::forge::static_lowering::StaticTarget::composed_param_writes`]).
+    /// The template names the pair, and the statements write its value.
+    /// `false` for every other param. Set by [`crate::forge::static_lowering`],
+    /// outside the IR contract, for the reason [`Self::native_value`] gives.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_writes: bool,
     /// Codegen-internal: under `datamodel="sce-static"`, the value an
     /// `<invoke type="scxml">` hands the child's variable named
     /// [`Self::name`] (§scxml-6.4.1), as an expression in the backend's own
