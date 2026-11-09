@@ -39,10 +39,10 @@ pub fn is_identifier(name: &str) -> bool {
 }
 
 /// The words the export does not let a name take: the keywords of TTCN-3
-/// (ES 201 873-1 Annex A), the keywords its extension packages add (the
-/// real-time package's and the object-oriented package's), and the names of
-/// its predefined functions (-1 Annex C), which a definition of the same name
-/// would make ambiguous. Wider than a tool needs is safe: a refused name is
+/// (ES 201 873-1 V4.17.1 table A.3), the keywords of its extension packages
+/// (table A.5, which -1 also forbids as identifiers), those of the
+/// object-oriented package, and the names of its predefined functions
+/// (table 15, which A.1.5.0 treats as reserved words). Wider than a tool needs is safe: a refused name is
 /// renamed in its document once, and a name a tool reserves and the export
 /// wrote would be a module that does not compile.
 pub const RESERVED: &[&str] = &[
@@ -200,15 +200,41 @@ pub const RESERVED: &[&str] = &[
     "with",
     "xor",
     "xor4b",
-    // The real-time package's.
+    // The keywords of the extension packages (-1 table A.5).
+    "apply",
+    "assert",
+    "at",
+    "configuration",
+    "conjunct",
+    "cont",
+    "delta",
+    "disjunct",
+    "duration",
+    "finished",
+    "history",
+    "implies",
+    "inv",
+    "mode",
+    "notinv",
     "now",
+    "object",
+    "onentry",
+    "onexit",
+    "par",
+    "prev",
     "realtime",
+    "seq",
+    "setstate",
+    "static",
+    "stepsize",
+    "stream",
     "timestamp",
+    "until",
+    "values",
     "wait",
-    // The object-oriented package's.
+    // The object-oriented package's (ES 203 790), beyond table A.5.
     "class",
     "finally",
-    "object",
     "super",
     "this",
     // The predefined functions.
@@ -503,7 +529,8 @@ mod tests {
             assert!(seen.insert(*word), "{word} is listed twice");
         }
         for word in [
-            "error", "pass", "timeout", "value", "lengthof", "now", "class",
+            "error", "pass", "timeout", "value", "lengthof", "now", "values", "mode", "static",
+            "class",
         ] {
             assert!(is_reserved(word), "{word}");
         }

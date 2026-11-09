@@ -512,8 +512,9 @@ export cannot write so is refused (`test-profile/export-name`) and never renamed
 module, the test log and the witness need no mapping between two names of one thing. A name is refused when:
 
 - it is not a TTCN-3 identifier, an ASCII letter followed by ASCII letters, digits and underscores (-1 Annex A);
-- it is a word the export reserves: the keywords of TTCN-3, those of its real-time and object-oriented packages,
-  and the names of its predefined functions (`ttcn3_export::names::RESERVED`). The list is wider than one tool
+- it is a word the export reserves: the keywords of TTCN-3 and of its extension packages (-1 tables A.3 and A.5,
+  both forbidden as identifiers), those of its object-oriented package, and the names of its predefined functions
+  (-1 table 15, reserved by A.1.5.0) (`ttcn3_export::names::RESERVED`). The list is wider than one tool
   needs on purpose: a refused name is renamed in its document once, where a reserved name written is a module that
   does not compile;
 - it is one identifier with another name of a scope that sees both (-1 §5.2.2). The definitions of the two
