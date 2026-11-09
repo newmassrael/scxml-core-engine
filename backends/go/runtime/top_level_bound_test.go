@@ -3,7 +3,7 @@
 //
 // A payload's own text and byte-string fields are held to their bound where the
 // delivery is read, as a text and a byte string are at any depth
-// (docs/adr/0086, section 4.4): PayloadText and PayloadBytes are the readers a
+// (docs/adr/0086, section 4.4): PayloadTextWithin and PayloadBytes are the readers a
 // generated lift of a schema of entries calls, and each refuses one past the
 // bound with the code, pointer and bound of PayloadValue's own refusal.
 
@@ -37,18 +37,18 @@ func TestATopLevelTextIsHeldToItsBoundWhereItIsRead(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the object did not read: %v", err)
 	}
-	_, err = PayloadText(fields, "note", 4)
+	_, err = PayloadTextWithin(fields, "note", 4)
 	refusedTooLong(t, err, "/note", 4)
 	if err != nil && err.Error() != "'note' is 5 bytes, past the 4 its type declares" {
 		t.Errorf("reason = %q", err.Error())
 	}
-	if note, err := PayloadText(fields, "note", 5); err != nil || note != "abcde" {
+	if note, err := PayloadTextWithin(fields, "note", 5); err != nil || note != "abcde" {
 		t.Errorf("note = %q, %v; want the five bytes it carried", note, err)
 	}
 	// The bound counts UTF-8 bytes: two characters, four bytes.
-	_, err = PayloadText(fields, "wide", 3)
+	_, err = PayloadTextWithin(fields, "wide", 3)
 	refusedTooLong(t, err, "/wide", 3)
-	if wide, err := PayloadText(fields, "wide", 4); err != nil || wide != "éé" {
+	if wide, err := PayloadTextWithin(fields, "wide", 4); err != nil || wide != "éé" {
 		t.Errorf("wide = %q, %v; want the four bytes it carried", wide, err)
 	}
 }

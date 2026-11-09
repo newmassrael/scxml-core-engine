@@ -1132,7 +1132,8 @@ func PayloadBool(obj PayloadFields, name string) (bool, error) {
 
 // PayloadString reads the text a field carries, held to no bound: what an enum
 // field's variant is named by, which its reader matches against the names its
-// enum declares. A text field is read by PayloadText, which holds its bound.
+// enum declares. A text field is read by PayloadTextWithin, which holds its
+// bound.
 func PayloadString(obj PayloadFields, name string) (string, error) {
 	v, err := field(obj, name)
 	if err != nil {
@@ -1141,10 +1142,12 @@ func PayloadString(obj PayloadFields, name string) (string, error) {
 	return v.Name()
 }
 
-// PayloadText reads a text field of at most bound UTF-8 bytes (docs/adr/0086,
-// section 4.4): the top level of a payload is held to its bound by
-// PayloadValue.Text, the reader a text at any depth is held by.
-func PayloadText(obj PayloadFields, name string, bound int) (string, error) {
+// PayloadTextWithin reads a text field of at most bound UTF-8 bytes
+// (docs/adr/0086, section 4.4): the top level of a payload is held to its
+// bound by PayloadValue.Text, the reader a text at any depth is held by. Not
+// PayloadText, which names the third rung of the payload ladder
+// (PayloadReading).
+func PayloadTextWithin(obj PayloadFields, name string, bound int) (string, error) {
 	v, err := field(obj, name)
 	if err != nil {
 		return "", err

@@ -6482,7 +6482,12 @@ fn go_payload_present_reader(
         SceType::Bool => format!("sce.PayloadBool({obj}, \"{id}\")"),
         // A text and a byte string are held to their bound at the lift, the top
         // level included (docs/adr/0086, section 4.4).
-        SceType::String => format!("sce.PayloadText({obj}, \"{id}\", {})", lift_text_bound(f)),
+        SceType::String => {
+            format!(
+                "sce.PayloadTextWithin({obj}, \"{id}\", {})",
+                lift_text_bound(f)
+            )
+        }
         SceType::Bytes => format!("sce.PayloadBytes({obj}, \"{id}\", {})", lift_bytes_bound(f)),
         // An enum is the machine's own, lifted from the variant's declared
         // name; a name the enum does not declare is a payload that does not
@@ -46188,7 +46193,7 @@ mod tests {
             "Go",
             &go,
             &[
-                "sce.PayloadText(",
+                "sce.PayloadTextWithin(",
                 "\"label\", 8)",
                 "sce.PayloadBytes(",
                 "\"frame\", 8)",

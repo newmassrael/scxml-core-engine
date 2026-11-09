@@ -45,8 +45,8 @@ PY
 
 mutation_case "the Go lift reads a text held to no bound" <<'PY'
 edit("sce-build/src/forge/generator.rs",
-     "        SceType::String => format!(\"sce.PayloadText({obj}, \\\"{id}\\\", {})\", lift_text_bound(f)),",
-     "        SceType::String => format!(\"sce.PayloadString({obj}, \\\"{id}\\\")\"),")
+     "                \"sce.PayloadTextWithin({obj}, \\\"{id}\\\", {})\",\n                lift_text_bound(f)\n",
+     "                \"sce.PayloadString({obj}, \\\"{id}\\\")\",\n")
 PY
 
 mutation_case "the Kotlin lift reads a text held to no bound" <<'PY'
