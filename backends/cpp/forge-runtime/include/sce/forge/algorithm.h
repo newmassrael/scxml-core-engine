@@ -27,6 +27,10 @@
 #include <limits>
 #include <optional>
 #include <type_traits>
+#include <utility>
+#include <vector>
+
+#include "sce/forge/bounded.h"
 
 namespace SCE::Forge {
 
@@ -36,10 +40,11 @@ enum class AlgorithmError : std::uint8_t {
     Overflow,
     /// An integer `/` or `%` by zero.
     DivideByZero,
-    /// A buffer append past its declared capacity, or a string past the bound
-    /// its variable declares (`Checked::bounded`). This backend's buffers grow
-    /// past their capacity (SCE_FORGE.md §4.12), so a buffer never reports one;
-    /// the failure has one name everywhere.
+    /// A buffer append past its declared capacity, or a text, a byte string or
+    /// a list past the bound of the place it is written to (`Checked::held`,
+    /// `Checked::heldList`). This backend's algorithm buffers grow past their
+    /// capacity (SCE_FORGE.md §4.12), so a buffer never reports one; the
+    /// failure has one name everywhere.
     CapacityExceeded,
     /// A `<sce:require>` precondition that does not hold: an input outside
     /// the algorithm's domain.
@@ -167,19 +172,53 @@ template <typename T> AlgorithmResult<T> found(const std::optional<T> &value) {
     return AlgorithmResult<T>::success(*value);
 }
 
-/// `value` when it holds no more than `capacity` bytes — the bound a string
-/// variable of a `sce-static` machine declares, counted in UTF-8 bytes, and the
-/// bound a byte string declares, counted in bytes — and an empty `S` with a
-/// capacity failure recorded in `f` otherwise, which the statement around it
-/// never uses. `S` is a string or a byte string whose `size()` counts bytes, as
-/// `std::string`'s and `std::vector<std::uint8_t>`'s do, so a machine holds the
-/// same value wherever it runs.
-template <typename S> S bounded(AlgorithmFailure &f, S value, std::uint32_t capacity) {
-    if (value.size() > capacity) {
-        f.fail(AlgorithmError::CapacityExceeded);
-        return S{};
-    }
+namespace Detail {
+
+/// The list `value` holds, read as the list it is: a `Bounded`'s own, and any
+/// other value as it is (a `std::string`, a `std::vector`, a string literal).
+template <typename V> constexpr const V &plainOf(const V &value) noexcept {
     return value;
+}
+
+template <typename L, std::size_t Max, std::size_t Min>
+constexpr const L &plainOf(const Bounded<L, Max, Min> &value) noexcept {
+    return value.inner();
+}
+
+}  // namespace Detail
+
+/// `value` held in `B`, a `Bounded` over a list that owns its elements
+/// (`OwnedText<N>`, `OwnedBytes<N>`): a copy of the text, the byte string or
+/// the list `value` is, when it lies within `B`'s bounds — counted in UTF-8
+/// bytes for a text, which must also be well-formed UTF-8, and in bytes or
+/// elements otherwise — and `B`'s default, holding none, with a capacity
+/// failure recorded in `f` where it does not, which the statement around it
+/// never uses (docs/adr/0086, section 7.4). The value is never cut to fit. What
+/// every write of a machine's bounded place goes through, so a machine holds
+/// the same value wherever it runs.
+template <typename B, typename V> B held(AlgorithmFailure &f, const V &value) {
+    auto made = B::make(typename B::list_type(Detail::plainOf(value)));
+    if (!made.has_value()) {
+        f.fail(AlgorithmError::CapacityExceeded);
+        return B{};
+    }
+    return std::move(*made);
+}
+
+/// The list `value`, an algorithm's or an adapter's answer, held in the
+/// `OwnedList<T, Max>` of the variable it is written to, or the empty list with
+/// a capacity failure recorded in `f` where it holds more than `Max` elements
+/// (`held`): an algorithm's list may hold more than the bound it declared on a
+/// backend whose lists grow, and the machine holds the same list wherever it
+/// runs. The element type is the list's own, so the place's type is named by
+/// its bound alone.
+template <std::size_t Max, typename T> OwnedList<T, Max> heldList(AlgorithmFailure &f, std::vector<T> value) {
+    auto made = OwnedList<T, Max>::make(std::move(value));
+    if (!made.has_value()) {
+        f.fail(AlgorithmError::CapacityExceeded);
+        return OwnedList<T, Max>{};
+    }
+    return std::move(*made);
 }
 
 template <typename T> constexpr T add(AlgorithmFailure &f, T a, T b) noexcept {

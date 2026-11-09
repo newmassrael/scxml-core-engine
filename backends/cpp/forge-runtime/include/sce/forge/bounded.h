@@ -11,15 +11,26 @@
 // type refuses nothing (docs/adr/0081, step 4).
 //
 // `Bounded<L, Max, Min>` holds a list `L` and is checked once, by `make`; it
-// has no mutable access, so its elements cannot leave the bounds once it is
-// made. A `Bounded` whose bounds lie within another's converts to it unchecked,
-// since its type already says so: to a view without a copy, and to an owning
-// list by an explicit copy. `Bytes<Max, Min>` is the view a generated value
-// presents a byte string through, and what its constructor takes; the value
-// keeps its own copy.
+// has no mutable access to an element, so its elements cannot leave the bounds
+// once it is made. A `Bounded` whose bounds lie within another's converts to it
+// unchecked, since its type already says so: to a view without a copy, and to
+// an owning list by an explicit copy. `Bytes<Max, Min>` is the view a generated
+// value presents a byte string through, and what its constructor takes; the
+// value keeps its own copy.
+//
+// A `Bounded` over a list that owns its elements is also the place a generated
+// `sce-static` machine holds a text, a byte string and a list in, its bound in
+// its type (docs/adr/0086, section 7.4): `OwnedText<Max>`, `OwnedBytes<Max>`
+// and `OwnedList<T, Max>`, the owned counterparts of `Text`, `Bytes` and
+// `List`, in a variable, a record's field and a payload's alike. Such a place
+// grows only by `push`, which refuses past `Max`, is emptied by `clear`, starts
+// at a literal by `literal`, whose length the compiler judges against the
+// bound, and is read wherever the list it holds is expected, read only.
 //
 // This mirrors the Rust runtime's `Bounded` (backends/rust/forge-runtime,
-// `bounded.rs`), so the two languages' codecs hold the same refinement.
+// `bounded.rs`), so the two languages' codecs hold the same refinement, and
+// the owned forms mirror `sce-portable-bytes`' `SceString`, `SceBytes` and
+// `BoundedList`, so the two languages' machines hold the same places.
 
 #pragma once
 
@@ -27,9 +38,11 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include "sce/forge/span.h"
 #include "sce/forge/utf8.h"
@@ -123,6 +136,9 @@ public:
     /// The list it holds.
     using list_type = L;
 
+    /// The type of an element, as the list it holds names it.
+    using value_type = typename L::value_type;
+
     /// The most elements it holds.
     static constexpr std::size_t most = Max;
 
@@ -149,6 +165,35 @@ public:
             }
         }
         return Bounded(Checked{}, std::move(list));
+    }
+
+    /// The text of the string literal `text`, held in a text that owns it: its
+    /// length, the `K - 1` bytes before the zero that ends a literal, is judged
+    /// against the bounds where the literal is written, so a literal past them
+    /// does not compile, and one within them is built whole, with nothing to
+    /// refuse (docs/adr/0086, section 7.4). A zero inside the literal is one of
+    /// its bytes. What a generated machine starts a text place at; the
+    /// generator writes only well-formed UTF-8.
+    template <std::size_t K, typename M = L,
+              std::enable_if_t<Detail::IsText<M>::value && Detail::MakesCopies<M>::value, int> = 0>
+    [[nodiscard]] static Bounded literal(const char (&text)[K]) {
+        static_assert(K >= 1, "a string literal ends with the zero that is no byte of its text");
+        static_assert(K - 1 <= Max, "the literal is longer than the bound its place holds");
+        static_assert(Min <= K - 1, "the literal is shorter than the fewest its place holds");
+        return Bounded(Checked{}, L(text, K - 1));
+    }
+
+    /// The `K` elements of `items`, held in a list that owns them: `K` is judged
+    /// against the bounds where the elements are written, as a text literal's
+    /// length is, so `literal({0x01, 0x02})` past the bound does not compile.
+    /// What a generated machine starts a byte-string place at; an empty one
+    /// starts at the default, which holds none.
+    template <std::size_t K, typename M = L,
+              std::enable_if_t<!Detail::IsText<M>::value && Detail::MakesCopies<M>::value, int> = 0>
+    [[nodiscard]] static Bounded literal(const value_type (&items)[K]) {
+        static_assert(K <= Max, "the literal holds more elements than the bound its place holds");
+        static_assert(Min <= K, "the literal holds fewer elements than the fewest its place holds");
+        return Bounded(Checked{}, L(items, items + K));
     }
 
     /// The list a `Bounded` within these bounds holds, viewed or held as it
@@ -210,6 +255,51 @@ public:
         return list_.end();
     }
 
+    /// Append `value` where the list holds fewer than `Max` elements, and answer
+    /// whether it did: a full list refuses it and is left as it was, so the list
+    /// never holds more than its type says (docs/adr/0086, section 7.4). What a
+    /// machine's `<sce:append>` writes through. A list that owns its elements
+    /// has one; a text has none, since a byte appended could leave it no UTF-8,
+    /// and is written whole instead.
+    template <typename V, typename M = L,
+              std::enable_if_t<!Detail::IsText<M>::value && Detail::MakesCopies<M>::value, int> = 0>
+    [[nodiscard]] bool push(V &&value) {
+        if (size() >= Max) {
+            return false;
+        }
+        list_.push_back(std::forward<V>(value));
+        return true;
+    }
+
+    /// Hold no element: what a machine's `<sce:clear>` does to a list, which
+    /// then takes up to `Max` elements again. Only a list whose bounds admit
+    /// none has it.
+    template <typename M = L, std::enable_if_t<Min == 0 && Detail::MakesCopies<M>::value, int> = 0>
+    void clear() noexcept {
+        list_.clear();
+    }
+
+    /// The list it holds, read only, wherever that list is expected: a host
+    /// lent a machine's text as a `const std::string &`, a function that takes
+    /// a `const std::vector<T> &`. Only a list that owns its elements is lent
+    /// so; a view converts to another view by its constructor. `M` is the
+    /// target type the conversion is asked for, which is the list's own.
+    template <typename M, std::enable_if_t<std::is_same<M, L>::value && Detail::MakesCopies<M>::value, int> = 0>
+    constexpr operator const M &() const noexcept {
+        return list_;
+    }
+
+    /// The text it holds, viewed, wherever a `std::string_view` is expected: a
+    /// text template's hole, a `std::string` made of it. Only a text that owns
+    /// its bytes is viewed so. `V` is the target type the conversion is asked
+    /// for.
+    template <typename V, std::enable_if_t<std::is_same<V, std::string_view>::value && Detail::IsText<L>::value &&
+                                               Detail::MakesCopies<L>::value,
+                                           int> = 0>
+    operator V() const noexcept {
+        return V(list_.data(), list_.size());
+    }
+
 private:
     struct Checked {};
 
@@ -253,6 +343,46 @@ template <std::size_t Max, std::size_t Min = 0> using Text = Bounded<std::string
 /// codec's value (docs/adr/0065 §6 R2, docs/adr/0081 step 4). The value keeps
 /// its own copy, a `Bounded<std::vector<T>, Max, Min>`.
 template <typename T, std::size_t Max, std::size_t Min = 0> using List = Bounded<Span<const T>, Max, Min>;
+
+/// A text of at least `Min` and at most `Max` UTF-8 bytes, held in a string of
+/// its own: the one type a `string[Max]` is held in by a generated machine's
+/// variable, a record's field, a payload's and a schema unit's alike
+/// (docs/adr/0086, section 7.4), and what `Text` views. The owned counterpart
+/// of `Text`, as Rust's `SceString<N>` is of a borrowed `str`.
+template <std::size_t Max, std::size_t Min = 0> using OwnedText = Bounded<std::string, Max, Min>;
+
+/// A byte string of at least `Min` and at most `Max` bytes, held in a vector of
+/// its own: the type a `bytes[Max]` is held in by a generated machine's
+/// variable, a record's field and a composed payload's (docs/adr/0086, section
+/// 7.4), and what `Bytes` views. The owned counterpart of `Bytes`, as Rust's
+/// `SceBytes<N>` is.
+template <std::size_t Max, std::size_t Min = 0> using OwnedBytes = Bounded<std::vector<std::uint8_t>, Max, Min>;
+
+/// A list of at least `Min` and at most `Max` values of `T`, held in a vector of
+/// its own: the type a `list<T>[Max]` is held in by a generated machine's
+/// variable, a record's field, a payload's and a schema unit's alike
+/// (docs/adr/0086, section 7.4), and what `List` views. The owned counterpart
+/// of `List`, as Rust's `BoundedList<T, N>` is.
+template <typename T, std::size_t Max, std::size_t Min = 0> using OwnedList = Bounded<std::vector<T>, Max, Min>;
+
+/// The list of `map` of each element of `from`, in order, each element taken
+/// as the `T` `map` answers, held to the bounds of `from`: the copy a machine
+/// makes of a list into a place whose element is copied by a conversion of its
+/// own (a text into a larger bound), which the place then takes by widening,
+/// its own bounds being at least `from`'s (docs/adr/0086, sections 5.1 and
+/// 7.4). A place whose bounds do not hold `from`'s does not compile, so the
+/// copy refuses nothing: no more elements are pushed than `from` holds, which
+/// is at most `Max`.
+template <typename T, typename L, std::size_t Max, std::size_t Min, typename F>
+OwnedList<T, Max> widenedMap(const Bounded<L, Max, Min> &from, F &&map) {
+    OwnedList<T, Max> to;
+    for (const auto &element : from) {
+        if (!to.push(map(element))) {
+            break;
+        }
+    }
+    return to;
+}
 
 /// Two lists of one count (docs/adr/0065 §6 R5): a codec that writes one number
 /// for two lists holds both as this, so the number cannot disagree with either.
@@ -504,6 +634,34 @@ template <typename R, typename L, std::size_t Max, std::size_t Min,
           std::enable_if_t<Detail::IsContiguous<R>::value, int> = 0>
 constexpr bool operator!=(const R &a, const Bounded<L, Max, Min> &b) {
     return !(a == b);
+}
+
+// A text compares with a string literal, which holds no size of its own and is
+// read up to its first zero, as a machine compares a variable with the literal
+// a guard writes (`title == "beta"`).
+
+/// Whether the text `a` holds the characters of `b`, in order.
+template <typename L, std::size_t Max, std::size_t Min, std::enable_if_t<Detail::IsText<L>::value, int> = 0>
+bool operator==(const Bounded<L, Max, Min> &a, const char *b) {
+    return std::string_view(a.data(), a.size()) == std::string_view(b);
+}
+
+/// Whether `a` holds the characters of the text `b`, in order.
+template <typename L, std::size_t Max, std::size_t Min, std::enable_if_t<Detail::IsText<L>::value, int> = 0>
+bool operator==(const char *a, const Bounded<L, Max, Min> &b) {
+    return b == a;
+}
+
+/// Whether the text `a` and `b` differ.
+template <typename L, std::size_t Max, std::size_t Min, std::enable_if_t<Detail::IsText<L>::value, int> = 0>
+bool operator!=(const Bounded<L, Max, Min> &a, const char *b) {
+    return !(a == b);
+}
+
+/// Whether `a` and the text `b` differ.
+template <typename L, std::size_t Max, std::size_t Min, std::enable_if_t<Detail::IsText<L>::value, int> = 0>
+bool operator!=(const char *a, const Bounded<L, Max, Min> &b) {
+    return !(b == a);
 }
 
 }  // namespace SCE::Forge

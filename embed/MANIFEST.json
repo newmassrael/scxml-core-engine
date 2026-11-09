@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.1 (1ubuntu1~24.04.2)",
-  "embed_version": "c14cd4e",
+  "embed_version": "a022cb7",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 578,
+  "symbol_count": 592,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -2901,6 +2901,18 @@
     {
       "header": "sce/forge/algorithm.h",
       "kind": "function",
+      "name": "SCE::Forge::Checked::Detail::plainOf<T>",
+      "signature": "const L & SCE::Forge::Checked::Detail::plainOf<T>(const Bounded<L, Max, Min> &) noexcept"
+    },
+    {
+      "header": "sce/forge/algorithm.h",
+      "kind": "function",
+      "name": "SCE::Forge::Checked::Detail::plainOf<T>",
+      "signature": "const V & SCE::Forge::Checked::Detail::plainOf<T>(const V &) noexcept"
+    },
+    {
+      "header": "sce/forge/algorithm.h",
+      "kind": "function",
       "name": "SCE::Forge::Checked::add<T>",
       "signature": "T SCE::Forge::Checked::add<T>(AlgorithmFailure &, T, T) noexcept"
     },
@@ -2913,12 +2925,6 @@
     {
       "header": "sce/forge/algorithm.h",
       "kind": "function",
-      "name": "SCE::Forge::Checked::bounded<T>",
-      "signature": "S SCE::Forge::Checked::bounded<T>(AlgorithmFailure &, S, std::uint32_t)"
-    },
-    {
-      "header": "sce/forge/algorithm.h",
-      "kind": "function",
       "name": "SCE::Forge::Checked::div<T>",
       "signature": "T SCE::Forge::Checked::div<T>(AlgorithmFailure &, T, T) noexcept"
     },
@@ -2927,6 +2933,18 @@
       "kind": "function",
       "name": "SCE::Forge::Checked::found<T>",
       "signature": "AlgorithmResult<T> SCE::Forge::Checked::found<T>(const std::optional<T> &)"
+    },
+    {
+      "header": "sce/forge/algorithm.h",
+      "kind": "function",
+      "name": "SCE::Forge::Checked::held<T>",
+      "signature": "B SCE::Forge::Checked::held<T>(AlgorithmFailure &, const V &)"
+    },
+    {
+      "header": "sce/forge/algorithm.h",
+      "kind": "function",
+      "name": "SCE::Forge::Checked::heldList<T>",
+      "signature": "OwnedList<T, Max> SCE::Forge::Checked::heldList<T>(AlgorithmFailure &, std::vector<T>)"
     },
     {
       "header": "sce/forge/algorithm.h",
@@ -3088,7 +3106,19 @@
       "header": "sce/forge/bounded.h",
       "kind": "function",
       "name": "SCE::Forge::operator!=<T>",
+      "signature": "bool SCE::Forge::operator!=<T>(const Bounded<L, Max, Min> &, const char *)"
+    },
+    {
+      "header": "sce/forge/bounded.h",
+      "kind": "function",
+      "name": "SCE::Forge::operator!=<T>",
       "signature": "bool SCE::Forge::operator!=<T>(const R &, const Bounded<L, Max, Min> &)"
+    },
+    {
+      "header": "sce/forge/bounded.h",
+      "kind": "function",
+      "name": "SCE::Forge::operator!=<T>",
+      "signature": "bool SCE::Forge::operator!=<T>(const char *, const Bounded<L, Max, Min> &)"
     },
     {
       "header": "sce/forge/bounded.h",
@@ -3112,7 +3142,25 @@
       "header": "sce/forge/bounded.h",
       "kind": "function",
       "name": "SCE::Forge::operator==<T>",
+      "signature": "bool SCE::Forge::operator==<T>(const Bounded<L, Max, Min> &, const char *)"
+    },
+    {
+      "header": "sce/forge/bounded.h",
+      "kind": "function",
+      "name": "SCE::Forge::operator==<T>",
       "signature": "bool SCE::Forge::operator==<T>(const R &, const Bounded<L, Max, Min> &)"
+    },
+    {
+      "header": "sce/forge/bounded.h",
+      "kind": "function",
+      "name": "SCE::Forge::operator==<T>",
+      "signature": "bool SCE::Forge::operator==<T>(const char *, const Bounded<L, Max, Min> &)"
+    },
+    {
+      "header": "sce/forge/bounded.h",
+      "kind": "function",
+      "name": "SCE::Forge::widenedMap<T>",
+      "signature": "OwnedList<T, Max> SCE::Forge::widenedMap<T>(const Bounded<L, Max, Min> &, F &&)"
     },
     {
       "header": "sce/forge/bounded.h",
@@ -3215,6 +3263,24 @@
       "kind": "typedef",
       "name": "SCE::Forge::List",
       "type": "Bounded<Span<const T>, Max, Min>"
+    },
+    {
+      "header": "sce/forge/bounded.h",
+      "kind": "typedef",
+      "name": "SCE::Forge::OwnedBytes",
+      "type": "Bounded<std::vector<std::uint8_t>, Max, Min>"
+    },
+    {
+      "header": "sce/forge/bounded.h",
+      "kind": "typedef",
+      "name": "SCE::Forge::OwnedList",
+      "type": "Bounded<std::vector<T>, Max, Min>"
+    },
+    {
+      "header": "sce/forge/bounded.h",
+      "kind": "typedef",
+      "name": "SCE::Forge::OwnedText",
+      "type": "Bounded<std::string, Max, Min>"
     },
     {
       "header": "sce/forge/bounded.h",
@@ -3890,8 +3956,28 @@
     {
       "header": "sce/forge/optional.h",
       "kind": "struct",
+      "members": [
+        "using type = T"
+      ],
+      "name": "SCE::Forge::Detail::Answered<T>"
+    },
+    {
+      "header": "sce/forge/optional.h",
+      "kind": "struct",
       "members": [],
       "name": "SCE::Forge::Detail::IsOptional<T>"
+    },
+    {
+      "header": "sce/forge/optional.h",
+      "kind": "typedef",
+      "name": "SCE::Forge::Detail::type",
+      "type": "std::string"
+    },
+    {
+      "header": "sce/forge/optional.h",
+      "kind": "typedef",
+      "name": "SCE::Forge::Detail::type",
+      "type": "std::vector<std::uint8_t>"
     },
     {
       "header": "sce/forge/queue.h",
