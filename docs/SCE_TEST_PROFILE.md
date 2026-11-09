@@ -1978,11 +1978,15 @@ at the same points into bounded storage of the run, a record past it ending the 
 over the scheme's writer `sce_jcs_t` (`sce/saved_json.h`), which sorts an object's members in the buffer as it closes;
 the unit of a template over a record declares `<name>_canonical` and `<name>_record_type`, with the writers of
 `sce/test/canonical.h`, and a send lends the value with its record type (`sce_test_message_value_t`, on
-`sce_host_send_request_t::value`). The Rust runtime wrote the test log first and the C++, Kotlin, Go, Python and C11
-runtimes write the same one: the run of `answers_the_job` of the generated `runtime_suite` is held on all six to one
-file,
-`sce-build/tests/fixtures/test_profile/runtime/expected_logs/answers_the_job.json`, so their agreement is one set of
-bytes. Each other backend's runtime writes the same records, in the same text.
+`sce_host_send_request_t::value`). Swift: `canonicalLog(suite:testCase:)` and `canonicalLog(suite:)`, the records of
+`TestLogRecord` of `SceTestProfile` written at the same points, over the scheme's writer `writeCanonicalJSON` of
+`SceRuntime`, which orders the names of an object by their `utf16` views and never by Swift's `String` order; the unit
+of a template over a record declares `TYPE` and `canonical`, with the writers of `SceTestProfile.Canonical`, and a send
+carries the value with both (`SceTestProfile.messageValue`, a `MessageValue` that is a `TestValue`, which the
+request's `HostSendValue` holds). The Rust runtime wrote the test log first and the C++, Kotlin, Go, Python, C11 and
+Swift runtimes write the same one: the run of `answers_the_job` of the generated `runtime_suite` is held on all seven
+to one file, `sce-build/tests/fixtures/test_profile/runtime/expected_logs/answers_the_job.json`, so their agreement is
+one set of bytes.
 
 ### 12.6 The order of the slices
 
