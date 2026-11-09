@@ -225,7 +225,8 @@ committed where they are.
     version, the enabled features) rather than of its binary (question 1);
   - the templates its language reads, the standard library documents and schemas the generator compiles in or reads;
   - the input closure of the document: the documents it imports, starts or reads and their `deploy.yaml`, which ADR
-    0094 defines and which `--plan-reads` and the depfile already list (`ARCHITECTURE.md:370-376`);
+    0094 defines and which `--reads` (named `--plan-reads` until landing 0 let a real run state it too) and the
+    depfile already list (`ARCHITECTURE.md:370-376`);
   - the flags, the language, and the formatter when one runs (clang-format major 19 for C++,
     `docs/SCE_CODEGEN_DETERMINISM.md:361-372`).
   The input set of a document is computed by the generator's plan, not written as globs: a glob list "enumerates the
@@ -492,8 +493,12 @@ The owner accepted the recommended answer to every question. Restated as decisio
    site's REAPI CAS, the one bx already runs for RFC 0001 and RFC 0044, the one store every send goes through. The
    action cache of section 3 is the REAPI Action Cache beside that CAS, so the fleet holds one cache, not two: an
    action key is an REAPI `Action` digest, an entry is an REAPI `ActionResult`, and bx and `materialize` read and
-   write the same entries. How a machine outside the site reaches it is settled with RFC 0049 (its relay, section
-   4.2).
+   write the same entries. Settled with bx on 2026-11-09 and written as RFC 0049 section 4.11: the entries live under
+   the project's own instance, named in the site registry (`$(bx-paths sites)`), so sources and generated outputs
+   share one content store; only the site's build machines and the landing integrator write, through the worker port
+   (a machine certificate where the site runs a CA), and a workstation only reads; a workstation outside the site
+   reads through the ssh forward `bx-fleet site-tunnel <site>` opens, never through bx's upload relay. The client is a
+   plain REAPI v2 client with SHA-256 digests and no dependency on bx.
 4. **Go and SwiftPM releases come from tagged release refs written only by the release pipeline** (section 7).
 5. **The 1,019 forge goldens stay committed as oracles** (section 8).
 6. **A commit-pinned Mesh consumer stays supported**, by running the generator (in-process for Rust); the migration
