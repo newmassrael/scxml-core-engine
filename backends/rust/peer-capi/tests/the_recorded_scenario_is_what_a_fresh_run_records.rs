@@ -14,12 +14,13 @@
 // puts to the relay and the relay's answer, a failure of the transport, the outcome each machine is
 // told, what each device stands at, and bob's sealed state, after which his core is made again given
 // nothing but the list and the genesis, and restored from it. What it shows: a list is opened and a
-// device admitted through the ABI alone; a write bob's machine makes before his device has read the
+// device admitted through the ABI alone; a change bob's machine makes before his device has read the
 // log that lets him write is kept, once, and his first round signs it and gives it the relay; bob's
-// writes and his note reach alice's machine; a device restored from its sealed state needs no key
-// given again, says it waits for its own chain, keeps a new write until the chain is read back and
-// then signs it, and gives a write it holds as held; another content under a stamp a device signed
-// is refused; a round that loses its transport ends, and the next goes on; and a device taken off is
+// changes reach alice's machine whole, a write and its write-over as one (docs/adr/0085, section
+// 1); a device restored from its sealed state needs no key given again, says it waits for its own
+// chain, keeps a new change until the chain is read back and then signs it, and gives a change it
+// holds as held; another content under a dot a device signed is refused; a round that loses its
+// transport ends, and the next goes on; and a device taken off is
 // refused by the relay, so that what it writes afterwards reaches no one. Bob's device is handed no
 // token: it logs in at the relay with his person's key (ADR 0080), over a connection that presents
 // none, and the relay issues the token his rounds then present; once taken off, his device is
@@ -59,9 +60,9 @@ const BOB: u64 = 2;
 const AT_ALICE: usize = 0;
 const AT_BOB: usize = 1;
 
-const WRITE: &str = "record_list.write";
-const SUPERSEDE: &str = "record_list.supersede";
-const PROPOSE: &str = "record_list.propose";
+const CHANGE: &str = "record_list.change";
+/// A command of the list's own, which no host signs.
+const EDIT: &str = "record_list.edit";
 
 const PATH: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -130,21 +131,41 @@ fn unhex(text: &str) -> Vec<u8> {
         .collect()
 }
 
-/// A write of `value` to field 3 of row `id`, stamped by `node` at `wall`, as the record list's
-/// `record_list.write` carries it: a 64-bit number as text, a narrower one as a number.
+/// A change of one write of `value` to field 3 of row `id`, stamped by `node` at `wall`, as the
+/// record list's `record_list.change` carries it: a 64-bit number as text, a narrower one as a
+/// number, and the write's own dot, which is its change's, 0.
 fn write(id: u32, node: u64, wall: i64, value: i64) -> String {
-    json!({"id": id, "field": 3, "value": value.to_string(), "text": "",
-           "wallTime": wall.to_string(), "counter": 0, "nodeId": node.to_string()})
+    json!({"by": node.to_string(), "wallTime": wall.to_string(), "counter": 0, "ops": [
+        {"kind": 0, "id": id, "field": 3, "value": value.to_string(), "text": "",
+         "wallTime": "0", "counter": 0, "nodeId": "0"}]})
     .to_string()
 }
 
-/// The note, as `record_list.supersede` carries it, that `by` wrote over the write of row `id`
-/// that `node` stamped at `wall`, in the change stamped `at`.
-fn supersede(id: u32, node: u64, wall: i64, by: u64, at: i64) -> String {
-    json!({"id": id, "field": 3, "wallTime": wall.to_string(), "counter": 0,
-           "nodeId": node.to_string(), "by": by.to_string(),
-           "atWallTime": at.to_string(), "atCounter": 0})
+/// The change of `by`'s stamped at `at` that writes over the write of row `id`, field 3, that
+/// `node` stamped at `wall`, and writes the field anew with `value`: two operations, one change.
+fn rewrite(id: u32, node: u64, wall: i64, by: u64, at: i64, value: i64) -> String {
+    json!({"by": by.to_string(), "wallTime": at.to_string(), "counter": 0, "ops": [
+        {"kind": 1, "id": id, "field": 3, "value": "0", "text": "",
+         "wallTime": wall.to_string(), "counter": 0, "nodeId": node.to_string()},
+        {"kind": 0, "id": id, "field": 3, "value": value.to_string(), "text": "",
+         "wallTime": "0", "counter": 0, "nodeId": "0"}]})
     .to_string()
+}
+
+/// How many operations each change of `event` an exchange told the machine holds, in order.
+fn ops_of_each(outcome: &Value, event: &str) -> Vec<usize> {
+    outcome["events"]
+        .as_array()
+        .expect("an ended exchange tells events")
+        .iter()
+        .filter(|pair| pair[0] == event)
+        .map(|pair| {
+            let data: Value =
+                serde_json::from_str(pair[1].as_str().expect("an event's data is a text"))
+                    .expect("an event's data is JSON");
+            data["ops"].as_array().map_or(0, Vec::len)
+        })
+        .collect()
 }
 
 /// The devices of the scenario: each one's node, the seed of its person's key, the hash of the
@@ -817,11 +838,11 @@ fn record() -> Value {
         "{said}"
     );
     assert_eq!(
-        run.outbound(AT_BOB, WRITE, &write(1, BOB, 1000, 10)),
+        run.outbound(AT_BOB, CHANGE, &write(1, BOB, 1000, 10)),
         "waiting"
     );
     assert_eq!(
-        run.outbound(AT_BOB, WRITE, &write(1, BOB, 1000, 10)),
+        run.outbound(AT_BOB, CHANGE, &write(1, BOB, 1000, 10)),
         "waiting",
         "the same write waits once"
     );
@@ -883,53 +904,45 @@ fn record() -> Value {
     );
     assert_eq!(run.standing(AT_BOB)["waiting"], 0);
 
-    // Bob writes the field again, and notes that the second write is over the first; his machine
-    // also sends an event that is not signed, and a write under a stamp he signed with another
-    // value.
+    // Bob writes the field again over his first write, one change of a write-over and a write; his
+    // machine also sends an event that is not signed, and a change under a dot he signed with
+    // another value.
     assert_eq!(
-        run.outbound(AT_BOB, WRITE, &write(1, BOB, 2000, 20)),
+        run.outbound(AT_BOB, CHANGE, &rewrite(1, BOB, 1000, BOB, 2000, 20)),
         "taken"
     );
+    assert_eq!(run.outbound(AT_BOB, EDIT, r#"{"id":1}"#), "not_signed");
     assert_eq!(
-        run.outbound(AT_BOB, SUPERSEDE, &supersede(1, BOB, 1000, BOB, 2000)),
-        "taken"
-    );
-    assert_eq!(
-        run.outbound(AT_BOB, PROPOSE, r#"{"before":"30000"}"#),
-        "not_signed"
-    );
-    assert_eq!(
-        run.outbound(AT_BOB, WRITE, &write(1, BOB, 1000, 11)),
+        run.outbound(AT_BOB, CHANGE, &write(1, BOB, 1000, 11)),
         "refused",
-        "another content under a stamp bob signed"
+        "another content under a dot bob signed"
     );
     let pushed = run.round(AT_BOB, "sync");
-    assert_eq!(pushed["pushed"], 2, "{pushed}");
+    assert_eq!(pushed["pushed"], 1, "one change, one operation: {pushed}");
     let told = run.round(AT_ALICE, "sync");
-    assert_eq!(named(&told, WRITE), 2, "{told}");
-    assert_eq!(named(&told, SUPERSEDE), 1, "{told}");
+    assert_eq!(
+        ops_of_each(&told, CHANGE),
+        vec![1, 2],
+        "his first change and his second, whole: {told}"
+    );
 
     // Bob's device is saved, sealed, stopped and started again from its sealed state with no key
-    // given again, and his machine, built again from his application's own log, sends his writes
+    // given again, and his machine, built again from his application's own log, sends his changes
     // again: the core says it waits for his own chain, what it holds comes back held, and a new
-    // write is kept until a round has read his chain back. That round signs it at the number after
-    // his last and gives it the relay; sent again, it is held.
+    // change is kept until a round has read his chain back. That round signs it at the number
+    // after his last and gives it the relay; sent again, it is held.
     let key = hex(&DATA_KEY);
     let sealed = run.save(AT_BOB, &key);
-    assert_eq!(
-        run.restore(AT_BOB, &key, &sealed),
-        3,
-        "his three operations"
-    );
+    assert_eq!(run.restore(AT_BOB, &key, &sealed), 2, "his two operations");
     let restored = run.standing(AT_BOB);
     assert_eq!(restored["awaits_own_chain"], true, "{restored}");
     assert_eq!(restored["node"], "2", "his person came back from the state");
     assert_eq!(
-        run.outbound(AT_BOB, WRITE, &write(1, BOB, 1000, 10)),
+        run.outbound(AT_BOB, CHANGE, &write(1, BOB, 1000, 10)),
         "held"
     );
     assert_eq!(
-        run.outbound(AT_BOB, WRITE, &write(2, BOB, 3000, 30)),
+        run.outbound(AT_BOB, CHANGE, &write(2, BOB, 3000, 30)),
         "waiting",
         "nothing new is signed before his chain is read back, and nothing is lost"
     );
@@ -943,17 +956,13 @@ fn record() -> Value {
     assert_eq!(read_back["awaits_own_chain"], false, "{read_back}");
     assert_eq!(read_back["waiting"], 0, "{read_back}");
     assert_eq!(
-        run.outbound(AT_BOB, WRITE, &write(1, BOB, 2000, 20)),
+        run.outbound(AT_BOB, CHANGE, &rewrite(1, BOB, 1000, BOB, 2000, 20)),
         "held"
     );
     assert_eq!(
-        run.outbound(AT_BOB, SUPERSEDE, &supersede(1, BOB, 1000, BOB, 2000)),
-        "held"
-    );
-    assert_eq!(
-        run.outbound(AT_BOB, WRITE, &write(2, BOB, 3000, 30)),
+        run.outbound(AT_BOB, CHANGE, &write(2, BOB, 3000, 30)),
         "held",
-        "the write that waited, signed once"
+        "the change that waited, signed once"
     );
     let rebuilt = run.round(AT_BOB, "resync");
     assert_eq!(refused(&rebuilt), 0, "{rebuilt}");
@@ -967,7 +976,7 @@ fn record() -> Value {
     assert_eq!(failed["outcome"], "failed", "{failed}");
     assert_eq!(failed["failure"], "link", "{failed}");
     let told = run.round(AT_ALICE, "sync");
-    assert_eq!(named(&told, WRITE), 1, "bob's new write: {told}");
+    assert_eq!(named(&told, CHANGE), 1, "bob's new change: {told}");
     assert_eq!(refused(&told), 0, "{told}");
 
     // Alice takes bob off: his chain ends at the last operation of his her device holds, and her
@@ -983,7 +992,7 @@ fn record() -> Value {
     // round reads the removal, and the relay, which lets a device the log took off read and give
     // nothing, refuses him: the write reaches no one, and alice's machine is told nothing of it.
     assert_eq!(
-        run.outbound(AT_BOB, WRITE, &write(3, BOB, 4000, 40)),
+        run.outbound(AT_BOB, CHANGE, &write(3, BOB, 4000, 40)),
         "taken"
     );
     let cut = run.round(AT_BOB, "sync");
@@ -998,7 +1007,7 @@ fn record() -> Value {
     assert_eq!(refused_login["outcome"], "failed", "{refused_login}");
     assert_eq!(refused_login["code"], "forbidden", "{refused_login}");
     let after = run.round(AT_ALICE, "sync");
-    assert_eq!(named(&after, WRITE), 0, "{after}");
+    assert_eq!(named(&after, CHANGE), 0, "{after}");
     assert_eq!(refused(&after), 0, "{after}");
 
     run.into_scenario()
