@@ -11,15 +11,23 @@ that takes the last would read two values from one text. A value is a ``dict``
 (an object, in the order its members were written), a ``list``, a ``str``, a
 ``bool``, a :class:`JsonNumber` or ``None``.
 
+The same values are written a second way, in the JSON Canonicalization Scheme
+(:func:`write_jcs`), which the test log of the test profile is written in
+(docs/SCE_TEST_PROFILE.md §12.5).
+
 Cross-language siblings: ``backends/go/runtime/saved_json.go``,
 ``com.sce.runtime.Json`` (Kotlin) and ``sce_rust_runtime::json`` (Rust).
 """
 
 from __future__ import annotations
 
+import math
+import re
 from typing import Any, List
 
-__all__ = ["JsonError", "JsonNumber", "parse_json", "write_json"]
+from .number_text import number_text
+
+__all__ = ["JsonError", "JsonNumber", "NotCanonical", "parse_json", "write_jcs", "write_json"]
 
 
 class JsonNumber:
@@ -312,5 +320,127 @@ def _write_into(value: Any, out: List[str]) -> None:
         out.append("}")
     else:
         raise TypeError(
+            f"{type(value).__name__} is not a JSON value; wrap a number in JsonNumber"
+        )
+
+
+class NotCanonical(Exception):
+    """Why a value has no form in the JSON Canonicalization Scheme
+    (:func:`write_jcs`)."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        #: Why.
+        self.reason = reason
+
+
+def write_jcs(value: Any) -> str:
+    """``value`` in the JSON Canonicalization Scheme (RFC 8785): no whitespace,
+    the members of each object sorted by their names as sequences of UTF-16 code
+    units (section 3.2.3), each text escaped as ECMAScript's ``JSON.stringify``
+    escapes it (section 3.2.2.2), and each number as ECMAScript spells the double
+    it reads as (:func:`number_text`, section 3.2.2.3). Two values equal under
+    the scheme are then written as the same bytes, whatever order their members
+    were built in.
+
+    It is not :func:`write_json`, which keeps the order members were built in
+    and the spelling a number carries. Python orders texts by their code points,
+    which is not the order of their UTF-16 code units where a name holds a
+    character above U+FFFF, so each name is sorted by its UTF-16 encoding.
+
+    A value is held as :func:`write_json` holds one. Raises
+    :class:`NotCanonical` for a :class:`JsonNumber` that is no JSON number or is
+    past the range of a double, which the scheme has no spelling for; for an
+    object member whose name is not a text; for two names that are the same
+    code units, which have no single meaning (section 3.1); and for a value of
+    a type that is no JSON value, a number not held as a :class:`JsonNumber`
+    among them.
+
+    Cross-language siblings: ``sce_rust_runtime::json::write_canonical`` (Rust)
+    and ``com.sce.runtime.Json.writeJcs`` (Kotlin).
+    """
+    out: List[str] = []
+    _write_jcs_into(value, out)
+    return "".join(out)
+
+
+#: The grammar of a JSON number (RFC 8259 section 6).
+_JSON_NUMBER = re.compile(r"-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?")
+
+#: A UTF-16 code unit of a surrogate, which a text read as code units holds
+#: alone only where no pair is formed.
+_SURROGATE = re.compile(r"[\ud800-\udfff]")
+
+
+def _utf16_units(text: str) -> bytes:
+    """``text`` as its UTF-16 code units, big-endian, so that comparing two of
+    them byte by byte compares their code units in order (RFC 8785 section
+    3.2.3). A surrogate the text holds is kept as the unit it is."""
+    return text.encode("utf-16-be", "surrogatepass")
+
+
+def _jcs_text(text: str) -> str:
+    """``text`` quoted as ``JSON.stringify`` quotes a string (ECMA-262
+    QuoteJSONString): the one form every engine writes (:func:`_escape`), and a
+    surrogate that stands alone as ``\\uXXXX`` in lowercase hex.
+
+    ``json.dumps`` with ``ensure_ascii=False`` writes the controls the same way
+    but leaves a lone surrogate as it is, which is no UTF-8 text. ECMAScript
+    holds a text as UTF-16 code units, so a high surrogate followed by a low one
+    is the one character they encode: the text is read as its code units first,
+    which joins such a pair into that character, and only a surrogate left
+    alone is escaped."""
+    units = _utf16_units(text).decode("utf-16-be", "surrogatepass")
+    escaped = _SURROGATE.sub(lambda unit: f"\\u{ord(unit.group()):04x}", _escape(units))
+    return '"' + escaped + '"'
+
+
+def _write_jcs_into(value: Any, out: List[str]) -> None:
+    if value is None:
+        out.append("null")
+    elif value is True:
+        out.append("true")
+    elif value is False:
+        out.append("false")
+    elif isinstance(value, JsonNumber):
+        if _JSON_NUMBER.fullmatch(value.text) is None:
+            raise NotCanonical(f"'{value.text}' is not a number")
+        number = float(value.text)
+        if not math.isfinite(number):
+            raise NotCanonical(
+                f"the number {value.text} is past the range of a double, which RFC 8785 "
+                "writes every number as"
+            )
+        out.append(number_text(number))
+    elif isinstance(value, str):
+        out.append(_jcs_text(value))
+    elif isinstance(value, list):
+        out.append("[")
+        for at, item in enumerate(value):
+            if at:
+                out.append(",")
+            _write_jcs_into(item, out)
+        out.append("]")
+    elif isinstance(value, dict):
+        members = []
+        for name, item in value.items():
+            if not isinstance(name, str):
+                raise NotCanonical(
+                    f"an object member is named by {type(name).__name__}, not a text"
+                )
+            members.append((_utf16_units(name), name, item))
+        members.sort(key=lambda member: member[0])
+        for left, right in zip(members, members[1:]):
+            if left[0] == right[0]:
+                raise NotCanonical(f'the member "{right[1]}" appears twice')
+        out.append("{")
+        for at, (_, name, item) in enumerate(members):
+            if at:
+                out.append(",")
+            out.append(_jcs_text(name) + ":")
+            _write_jcs_into(item, out)
+        out.append("}")
+    else:
+        raise NotCanonical(
             f"{type(value).__name__} is not a JSON value; wrap a number in JsonNumber"
         )

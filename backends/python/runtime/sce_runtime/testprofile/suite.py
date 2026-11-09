@@ -34,6 +34,7 @@ from .run import (
     TestCaseResult,
     TestCaseRun,
 )
+from .testlog import TestCaseEnded, TestCaseStarted, TestLogRecord
 from .verdict import Verdict
 
 #: The features a world of a suite's feature model enables (ADR 0057 §2): a
@@ -111,8 +112,13 @@ class CaseResult:
 
     #: The test case's name.
     test_case: str
-    #: Its verdict and log.
+    #: Its verdict and logs.
     result: TestCaseResult
+
+    def canonical_log(self, suite: str) -> str:
+        """The test log of this run of the test case in the suite ``suite``, in
+        its one canonical text (``TestCaseResult.canonical_log``)."""
+        return self.result.canonical_log(suite, self.test_case)
 
 
 class OverrideRefusal(Exception):
@@ -126,13 +132,18 @@ class OverrideRefusal(Exception):
 
 
 def _refused(test_case: str, why: str) -> CaseResult:
-    """P13: the test case cannot start, so it ends at once with ``error``."""
+    """P13: the test case cannot start, so it ends at once with ``error``. No
+    component was created, so the test log holds its start and its end alone."""
     return CaseResult(
         test_case=test_case,
         result=TestCaseResult(
             verdict=Verdict.ERROR,
             ended_at=0,
             log=[LogRecord(at=0, component=MTC_NAME, kind=LogKind.ERROR, detail=why)],
+            records=[
+                TestLogRecord(0, TestCaseStarted()),
+                TestLogRecord(0, TestCaseEnded(Verdict.ERROR)),
+            ],
         ),
     )
 

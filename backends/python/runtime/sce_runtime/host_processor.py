@@ -74,9 +74,11 @@ class HostSendRequest:
     #: whose messages are values and never encodings: the test profile's
     #: test-port processor, whose send carries its specific template's value,
     #: a record of the type the event schema's unit declares
-    #: (docs/SCE_TEST_PROFILE.md §12.3; docs/adr/0091, C2). ``None`` for every
-    #: other send, whose data is `event_data`, so a send site that names no
-    #: value is unchanged.
+    #: (docs/SCE_TEST_PROFILE.md §12.3; docs/adr/0091, C2), with the name of
+    #: that type and the writer of its canonical form in the test log (§12.5),
+    #: as one ``sce_runtime.testprofile.TestValue`` (``message_value``).
+    #: ``None`` for every other send, whose data is `event_data`, so a send site
+    #: that names no value is unchanged.
     #:
     #: A saved state does not carry it: a test-port send has no delay (the test
     #: profile's P6), so none is pending when a machine is saved, and a
