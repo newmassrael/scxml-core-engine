@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# The Go forge runtime's round-trip codecs (ADR 0097): five codec fixtures of
+# tests/forge/resources generated for Go, a package each under
+# round_trip/generated, which the runtime's round-trip tests import.
+#
+# The module prefix is the forge runtime's module (backends/go/forge-runtime/
+# go.mod) followed by the directory the packages sit in; a change of the one
+# is a change of the other, and the bridge test fails on a prefix that no
+# longer names where the packages are.
+
+[tree]
+name = "go-round-trip"
+roots = ["backends/go/forge-runtime/round_trip/generated"]
+
+[[generation]]
+each = { list = [
+    "codec_default_marker_arm_a",
+    "codec_default_marker_arm_b",
+    "codec_variant_default_marker",
+    "codec_present_if_basic",
+    "codec_cbor_map",
+], as = "fixture" }
+arguments = [
+    "generate", "tests/forge/resources/{fixture}.scxml",
+    "--language", "go",
+    "--output-dir", "{out}",
+    "--go-module-prefix", "github.com/newmassrael/sce-forge-runtime/round_trip/generated",
+]
+place = "backends/go/forge-runtime/round_trip/generated/{fixture}"
+keep = ["*.go"]
