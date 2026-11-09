@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/shared/record_closed.scxml — how a change ended, as a copy of a shared record
+  list that keeps a journal (record_join) reports it to its host on the route
+  `#journal`, once for every change the copy closes, made or refused, so a host's
+  record of a command always has an outcome (docs/adr/0083, section 1.2). A change the
+  copy offered (record_made) is reported once the host gave its verdict
+  (record_list.verdict); one the copy refused itself, and one that named nothing the
+  copy holds, at once.
+
+  `command` is the host's name for the command that ended the change (record_edit,
+  record_clear, record_retire); `operations` how many operations the copy took in of
+  it, 0 for a change that was refused or named nothing; `reason` why it was refused
+  (record_refusal: one of the copy's own reasons, or for a change its delivery layer
+  refused the reason its verdict gave, `peerRefused` when it gave none), absent for a
+  change taken in and for one that named nothing,
+  since no variant of the enum stands for no refusal (docs/adr/0055); and `wallTime`
+  and `counter` the change's stamp, 0 when nothing was stamped. A change the layer
+  refused was stamped, and keeps its stamp here: no other change is ever given it.
+
+  A list a host started is told its refusals this way, as a statechart that invoked the
+  list is told them by record_list.refused (record_refused).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="record_closed"
+       sce:event-name="record_list.closed">
+  <sce:import kind="enum" src="sce:std/shared/record_refusal.scxml" as="Refusal"/>
+  <datamodel>
+    <data id="command" sce:type="uint64" sce:direction="in"/>
+    <data id="operations" sce:type="uint32" sce:direction="in"/>
+    <data id="reason" sce:type="optional&lt;enum:Refusal&gt;" sce:direction="in"/>
+    <data id="wallTime" sce:type="int64" sce:direction="in"/>
+    <data id="counter" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+</scxml>

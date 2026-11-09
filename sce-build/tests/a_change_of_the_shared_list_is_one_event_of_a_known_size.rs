@@ -221,3 +221,49 @@ fn an_operation_carries_the_text_of_a_value_whole() {
         );
     }
 }
+
+/// What a copy that keeps a journal offers its host of a change (`record_list.made`) is
+/// the change and the host's command that ended it, one report per change
+/// (docs/adr/0085, section 7.1); a host gives it back as `record_list.recall` with
+/// whether it was provisional (docs/adr/0093, section 3.5); and a stable state is handed
+/// over as `record_list.restore`, the change's fields read as a state (docs/adr/0085,
+/// section 4.4). So each is a number the build knows: the largest change and a known
+/// number of bytes more, and every one moves with `shared_parts`.
+#[test]
+fn a_change_offered_recalled_or_restored_is_the_change_and_a_known_number_of_bytes_more() {
+    let with_command = |change: String| {
+        let body = change.strip_suffix('}').expect("a change is an object");
+        format!("{body},\"command\":{WIDE_UNSIGNED}}}")
+    };
+    let with_flag = |made: String| {
+        let body = made.strip_suffix('}').expect("a report is an object");
+        format!("{body},\"provisional\":false}}")
+    };
+    let made = with_command(largest_change(64, 96)).len();
+    let recalled = with_flag(with_command(largest_change(64, 96))).len();
+    let restored = largest_change(64, 96).len();
+    assert_eq!((made, recalled, restored), (47_933, 47_953, 47_900));
+    let fewer = with_command(largest_change(8, 96)).len();
+    for (document, written, moved) in [
+        ("stdlib/shared/record_made.scxml", made, fewer),
+        (
+            "stdlib/shared/record_recall.scxml",
+            recalled,
+            with_flag(with_command(largest_change(8, 96))).len(),
+        ),
+        (
+            "stdlib/shared/record_restore.scxml",
+            restored,
+            largest_change(8, 96).len(),
+        ),
+    ] {
+        for (given, size) in [(&[][..], written), (&["shared_parts=8"][..], moved)] {
+            let out = generated(document, "rust", given);
+            let fragment = format!("pub const DATA_MAX_LEN: u64 = {size};");
+            assert!(
+                out.contains(&fragment),
+                "{document} under {given:?}: the unit declares `{fragment}`:\n{out}"
+            );
+        }
+    }
+}

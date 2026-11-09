@@ -371,9 +371,11 @@ fn a_copy_built_again_from_its_own_commands_writes_nothing_twice() {
         let Ok(()) = engine.initialize();
         engine
     });
-    members
-        .world
-        .raise("alice", "record_list.join", r#"{"node":"1"}"#);
+    members.world.raise(
+        "alice",
+        "record_list.join",
+        r#"{"node":"1","journal":false}"#,
+    );
     for (id, field, value, text, now) in commands {
         record_edit_at(&mut members.world, "alice", id, field, value, text, now);
     }
@@ -493,9 +495,11 @@ fn control_a_copy_rebuilt_from_its_commands_among_a_peer_ahead_refuses_and_diffe
         let Ok(()) = engine.initialize();
         engine
     });
-    members
-        .world
-        .raise("alice", "record_list.join", r#"{"node":"1"}"#);
+    members.world.raise(
+        "alice",
+        "record_list.join",
+        r#"{"node":"1","journal":false}"#,
+    );
     for (id, value, now) in alice_commands {
         record_edit_at(&mut members.world, "alice", id, DUE, value, "", now);
     }

@@ -42,7 +42,12 @@
 
   The clock is moved by what a copy sees as well as by what it does: a change made after
   reading someone else's sorts after it. A copy's clock is moved once for each change it
-  takes in, by the change's stamp.
+  takes in, by the change's stamp: a peer's by a receive, and one of the copy's own node
+  (given back to a copy built again, a change of write-overs only among them) up to its
+  stamp, so a copy stamps nothing after with a dot it has used (docs/adr/0083, section
+  1.6). A state handed over (`record_list.restore`) and the host's word of the highest
+  stamp of the copy's own node its delivery layer holds (`record_list.raise`) raise it
+  the same way.
 
   A change is a unit (docs/adr/0046, docs/adr/0085). It is the commands a copy is given
   from the first after the last change ended up to the first that does not say `more`
@@ -54,11 +59,13 @@
   edits. A change that fails a test is refused whole, with nothing stamped, sent or taken
   in. A change that passes is one message, `record_list.change` (record_change): its
   author, its stamp, which is the dot of every write in it, and its operations in that
-  order. The copy takes it in first, each operation by `record_list.take`, an event with
-  no data that reads the next operation of `taking`, and sends it after, whole. A change
-  a peer made reaches the copy as the same message and is taken in by the same events,
-  so a parent is told the change once, and no copy can hold half of one: no half of one
-  is ever on a wire.
+  order. A copy that keeps no journal takes it in first, each operation by
+  `record_list.take`, an event with no data that reads the next operation of `taking`,
+  and sends it after, whole; a copy that keeps one offers it to its host and takes it in
+  at the host's verdict (below, "What a copy tells its host"). A change a peer made
+  reaches the copy as the same message and is taken in by the same events, so a parent
+  is told the change once, and no copy can hold half of one: no half of one is ever on a
+  wire.
 
   A field can be emptied and a row retired (docs/adr/0046, section 2). `record_list.clear`
   (record_clear) writes over every value the copy holds in one register and writes none,
@@ -90,7 +97,11 @@
   `shared_roster` (64 members), `shared_staged` (32 commands one change stages),
   `shared_parts` (64 operations of one change, the most a `record_list.change` carries)
   and `shared_moved` (64 registers a change moves before they are told, at least
-  `shared_parts`, since a change of n operations moves at most n). Each name is carried
+  `shared_parts`, since a change of n operations moves at most n),
+  `shared_provisional` (8 changes a copy holds taken in provisionally, docs/adr/0093,
+  section 3.4) and `shared_undo` (512 values those changes took out, at least
+  `shared_provisional` times `shared_parts`, since each takes out at most as many as it
+  has operations). Each name is carried
   by the standard algorithms and schemas the list reads through, so the machine and what
   it calls move together. Every copy of one list is built with the same numbers. A change
   of n operations queues about 2n internal events at once while it is taken in, which a
@@ -115,7 +126,13 @@
   is told too, once, after the command that ended it: `record_list.refused`
   (record_refused) with the command at fault (record_command) and why (record_refusal),
   so a parent never takes a change nothing was written for as made (docs/adr/0046,
-  docs/adr/0052).
+  docs/adr/0052). A change of a copy that keeps a journal is told by its verdict as
+  well (docs/adr/0093, section 3.3): one its delivery layer refused is told as
+  `record_list.refused` with the reason the layer gave, `peerRefused` when it gave none;
+  one the layer answered `waiting`
+  is told as each register it moved and `record_list.pending` (record_pending), and
+  later as `record_list.confirmed` (record_confirmed) or, withdrawn, as each register
+  the withdrawal moved and `record_list.refused` with `peerRefused` and `withdrawn`.
 
   A list a host started has no parent, and `#_parent` names no session there: `announce`
   keeps the value its <data> gives it, false, and the list tells no one. The condition is
@@ -146,7 +163,47 @@
   was never attached) is `error.execution` where it is made, which ends its block. So in
   every transition the copy queues what it does to itself before it sends anything to a
   peer, and a send to a peer is the last act of its block: a copy with no router takes
-  every change it makes in, and counts each send it could not make in `refusals`.
+  every change it makes in, and counts each send it could not make in `refusals`. A copy
+  that keeps a journal sends nothing to a peer, and what it does to itself waits on its
+  layer's verdict instead, which is the host's to give (below).
+
+  What a copy tells its host (docs/adr/0083, docs/adr/0093). A copy joined with
+  `journal` (the default, record_join) has a delivery layer its host keeps, and takes in
+  a change of its own only once that layer has answered for it, so it never holds a
+  change its layer refused. It judges and stamps the change as any copy does, holds it
+  in `offered`, and offers it to its host on the route `#journal` as
+  `record_list.made` (record_made: the change and the host's `command` that ended it).
+  The host gives it to the layer, commits the change and its verdict to its journal,
+  and gives the copy `record_list.verdict` (record_verdict, record_outcome). Accepted or
+  held, the change is taken in; refused, nothing is taken in, the copy holds what it
+  held before the close and its clock stays at the stamp, which no change is given
+  again; waiting, the change is taken in provisionally, with an undo record of what its
+  write-overs took out (`provisional`, record_provisional; `undo`, record_undo), until
+  the host confirms it (`record_list.confirm`, record_confirm) or withdraws it
+  (`record_list.withdraw`, record_withdraw), which withdraws it and every provisional
+  change after it, latest first: the values their writes added go, and the values their
+  write-overs took out come back, except one a later write-over took out too. Then the
+  copy reports the outcome, `record_list.closed` (record_closed), which it reports at
+  once for a change it refused itself or that named nothing. One offer is outstanding
+  at a time: a command given while one is is a host's fault, refused where it happens
+  and counted in `refusals`, as a verdict, a confirmation or a withdrawal is that names
+  no change the copy holds. A copy that holds `shared_provisional` provisional changes
+  refuses the next change it closes, `noRoomForHistory`. Peer changes the layer gives
+  while an offer is outstanding are taken in as always: they are concurrent with the
+  offered change, whose write-overs were fixed when it was closed. `record_list.raise`
+  (record_raise) is the host's word of the highest stamp of the copy's own node its
+  layer holds, which the clock is raised to. A copy joined with `journal` false, a copy
+  a test throws away, reports nothing and takes its change in at once, as a copy with a
+  layer that accepts everything would.
+
+  A copy built again is given what was made, never the commands (docs/adr/0083,
+  docs/adr/0085, section 4.4): first the stable state its host folded its journal into,
+  as `record_list.restore` (record_restore: the live values, each with its own dot, and
+  the state's clock), then every change after it, the copy's own and its peers', as
+  `record_list.recall` (record_recall), in a causal order; a change of its own the host
+  journalled as provisional is recalled so, and taken in provisionally as at its
+  verdict. Neither is judged by the roster, reported or sent, and each is told to the
+  parent once.
 
   `values` and `adds` are what a run compares across copies.
 -->
@@ -182,8 +239,24 @@
   <sce:import kind="enum" src="sce:std/shared/record_command.scxml" as="Command"/>
   <sce:import kind="enum" src="sce:std/shared/record_refusal.scxml" as="Refusal"/>
   <sce:import kind="event-schema" src="sce:std/shared/record_refused.scxml" as="Refused"/>
+  <sce:import kind="event-schema" src="sce:std/shared/record_made.scxml" as="Made"/>
+  <sce:import kind="event-schema" src="sce:std/shared/record_closed.scxml" as="Closed"/>
+  <sce:import kind="event-schema" src="sce:std/shared/record_verdict.scxml" as="Verdict"/>
+  <sce:import kind="enum" src="sce:std/shared/record_outcome.scxml" as="Outcome"/>
+  <sce:import kind="event-schema" src="sce:std/shared/record_confirm.scxml" as="Confirm"/>
+  <sce:import kind="event-schema" src="sce:std/shared/record_withdraw.scxml" as="Withdraw"/>
+  <sce:import kind="event-schema" src="sce:std/shared/record_raise.scxml" as="ClockRaise"/>
+  <sce:import kind="event-schema" src="sce:std/shared/record_pending.scxml" as="Pending"/>
+  <sce:import kind="event-schema" src="sce:std/shared/record_confirmed.scxml" as="Confirmed"/>
+  <sce:import kind="event-schema" src="sce:std/shared/record_recall.scxml" as="Recall"/>
+  <sce:import kind="event-schema" src="sce:std/shared/record_restore.scxml" as="Restore"/>
+  <sce:import kind="event-schema" src="sce:std/shared/record_provisional.scxml" as="Provisional"/>
+  <sce:import kind="event-schema" src="sce:std/shared/record_undo.scxml" as="Undo"/>
   <datamodel>
     <data id="node" sce:type="uint64" expr="0" sce:direction="out"/>
+    <!-- Whether the host keeps a journal of what each change made (record_join): a copy
+         keeps one unless it is joined without. -->
+    <data id="journal" sce:type="bool" expr="true"/>
     <data id="clock" sce:type="record:Hlc" sce:direction="out">
       <sce:set name="wallTime" expr="0"/>
       <sce:set name="counter" expr="0"/>
@@ -311,10 +384,72 @@
       <sce:set name="counter" expr="0"/>
       <sce:set name="nodeId" expr="0"/>
     </data>
+    <!-- How the operations in `taking` are taken in: as a state handed over, each write
+         at the dot it carries (`restoring`, record_list.restore), and as a change of the
+         copy's own taken in provisionally, whose write-overs keep what they take out in
+         the undo record (`tentative`). -->
+    <data id="restoring" sce:type="bool" expr="false"/>
+    <data id="tentative" sce:type="bool" expr="false"/>
+    <!-- A change of a copy that keeps a journal (docs/adr/0093): the host's name for the
+         command in hand, kept before anything can fail, so the one that ends a change
+         names it (`closingCommand`); the change offered to the host and not answered
+         yet, its operations (`offered`, empty when none is) and its stamp
+         (`offeredAt`); why its layer refused it, as its verdict says (`refusedFor`);
+         and what is reported of the change that ended (record_closed):
+         how many operations were taken in (`closedOps`), why it was refused (`closedFor`,
+         absent for a change taken in or one that named nothing) and its stamp
+         (`closedAt`, 0 when nothing was stamped). -->
+    <data id="closingCommand" sce:type="uint64" expr="0"/>
+    <data id="offered" sce:type="list&lt;record:Op&gt;[shared_parts=64]"/>
+    <data id="offeredAt" sce:type="record:Hlc">
+      <sce:set name="wallTime" expr="0"/>
+      <sce:set name="counter" expr="0"/>
+      <sce:set name="nodeId" expr="0"/>
+    </data>
+    <data id="refusedFor" sce:type="enum:Refusal" expr="Refusal.peerRefused"/>
+    <data id="closedOps" sce:type="uint32" expr="0"/>
+    <data id="closedFor" sce:type="optional&lt;enum:Refusal&gt;" expr="null"/>
+    <data id="closedAt" sce:type="record:Hlc">
+      <sce:set name="wallTime" expr="0"/>
+      <sce:set name="counter" expr="0"/>
+      <sce:set name="nodeId" expr="0"/>
+    </data>
+    <!-- The changes of the copy's own taken in provisionally, in the order they were
+         taken in (`provisional`), and the values their write-overs took out (`undo`),
+         until the host confirms or withdraws each (docs/adr/0093, section 3.4); the
+         change named now (`standing`), whether the host's word named one the copy holds
+         (`named`) and where the changes to withdraw begin (`withdrawFrom`); and what is
+         kept of each list while one is rebuilt without what leaves it. -->
+    <data id="provisional" sce:type="list&lt;record:Provisional&gt;[shared_provisional=8]"/>
+    <data id="provisionalKept" sce:type="list&lt;record:Provisional&gt;[shared_provisional=8]"/>
+    <data id="standing" sce:type="record:Provisional">
+      <sce:set name="wallTime" expr="0"/>
+      <sce:set name="counter" expr="0"/>
+      <sce:set name="command" expr="0"/>
+      <sce:set name="id" expr="0"/>
+      <sce:set name="field" expr="0"/>
+      <sce:set name="kind" expr="Command.edit"/>
+    </data>
+    <data id="named" sce:type="bool" expr="false"/>
+    <data id="withdrawFrom" sce:type="uint32" expr="0"/>
+    <data id="undo" sce:type="list&lt;record:Undo&gt;[shared_undo=512]"/>
+    <data id="undoKept" sce:type="list&lt;record:Undo&gt;[shared_undo=512]"/>
+    <data id="undoing" sce:type="record:Undo">
+      <sce:set name="atWallTime" expr="0"/>
+      <sce:set name="atCounter" expr="0"/>
+      <sce:set name="id" expr="0"/>
+      <sce:set name="field" expr="0"/>
+      <sce:set name="value" expr="0"/>
+      <sce:set name="text" expr="''"/>
+      <sce:set name="wallTime" expr="0"/>
+      <sce:set name="counter" expr="0"/>
+      <sce:set name="nodeId" expr="0"/>
+    </data>
   </datamodel>
   <state id="open">
     <transition event="record_list.join" type="internal">
       <assign location="node" expr="_event.data.node"/>
+      <assign location="journal" expr="_event.data.journal"/>
     </transition>
 
     <!-- How many values the host lets this copy hold (record_list.room). 0 is no limit.
@@ -333,6 +468,21 @@
       <assign location="roster" expr="RecordRoster(roster, _event.data.node, _event.data.role)"/>
     </transition>
 
+    <!-- A command given while a change the copy offered its host is not answered yet is
+         the host's fault (docs/adr/0093, section 3.2): a change made now would be
+         prepared on a state that lacks the one before it. It is refused where it
+         happens, stages nothing, and is counted in `refusals`. These come before the
+         commands' own transitions, which they are taken in place of. -->
+    <transition event="record_list.edit" cond="len(offered) &gt; 0" type="internal">
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+    <transition event="record_list.clear" cond="len(offered) &gt; 0" type="internal">
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+    <transition event="record_list.retire" cond="len(offered) &gt; 0" type="internal">
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+
     <!-- A person's edit of one field: a command of a change (docs/adr/0046). It is
          staged, and the command that does not say `more` ends the change, which
          `record_list.close` judges, stamps and takes in whole. A change past the room of
@@ -340,8 +490,11 @@
          change. A text past what a person writes never reaches here: record_edit's text
          is of that bound, and an edit past it is refused whole where it is read
          (docs/adr/0086, section 4.4). Nothing is stamped or sent here. A change already
-         refused stages nothing more, and is ended all the same. -->
+         refused stages nothing more, and is ended all the same. The host's name for the
+         command is kept before anything can fail, so the one that ends the change is
+         named in what is reported of it, refused or not. -->
     <transition event="record_list.edit" type="internal">
+      <assign location="closingCommand" expr="_event.data.command"/>
       <assign location="holding" expr="_event.data.more"/>
       <if cond="!spoiled">
         <assign location="namedId" expr="_event.data.id"/>
@@ -367,6 +520,7 @@
          an edit is, which writes over every value the copy holds in the field when the
          change is taken in, and writes none. -->
     <transition event="record_list.clear" type="internal">
+      <assign location="closingCommand" expr="_event.data.command"/>
       <assign location="holding" expr="_event.data.more"/>
       <if cond="!spoiled">
         <assign location="namedId" expr="_event.data.id"/>
@@ -392,6 +546,7 @@
          which writes over every value the copy holds in any field of the row when the
          change is taken in, and writes none. -->
     <transition event="record_list.retire" type="internal">
+      <assign location="closingCommand" expr="_event.data.command"/>
       <assign location="holding" expr="_event.data.more"/>
       <if cond="!spoiled">
         <assign location="namedId" expr="_event.data.id"/>
@@ -430,9 +585,16 @@
          the order of its commands. A write carries no dot of its own: its dot is the
          change's stamp, which the change carries once, so its `wallTime`, `counter` and
          `nodeId` are 0 (record_op). A change of more operations than `taking` holds is
-         refused whole, by error.execution, before the clock moves. Then every operation
-         is queued to be taken in here, and after them the change is queued to be sent:
-         the copy holds the change before it sends it. -->
+         refused whole, by error.execution, before the clock moves. Then, by a copy that
+         keeps no journal, every operation is queued to be taken in here, and after them
+         the change is queued to be sent: the copy holds the change before it sends it.
+         A copy that keeps one holds the change offered instead, and queues its offer to
+         the host (docs/adr/0093, section 3.1): it takes the change in at the verdict. Such
+         a copy refuses a change it closes while it holds as many provisional changes as
+         it has room for (`shared_provisional`), `noRoomForHistory`: its layer may hold
+         the change not yet carried, and the copy could not take it in provisionally. The
+         outcome of a change refused here, or of one that named nothing, is reported to
+         the host at once. -->
     <transition event="record_list.close" type="internal">
       <if cond="!spoiled &amp;&amp; len(roster) &gt; 0">
         <assign location="forbidden" expr="true"/>
@@ -490,6 +652,10 @@
         <assign location="spoiled" expr="true"/>
         <assign location="spoiledFor" expr="Refusal.noRoomForValue"/>
       </if>
+      <if cond="!spoiled &amp;&amp; journal &amp;&amp; gone + writes &gt; 0 &amp;&amp; len(provisional) &gt;= _x.limits.shared_provisional">
+        <assign location="spoiled" expr="true"/>
+        <assign location="spoiledFor" expr="Refusal.noRoomForHistory"/>
+      </if>
       <if cond="!spoiled &amp;&amp; gone + writes &gt; 0">
         <assign location="probing" expr="true"/>
         <assign location="probe" expr="Refusal.clockExhausted"/>
@@ -533,41 +699,179 @@
         <sce:clear target="staged"/>
         <assign location="clock" expr="stamp"/>
         <assign location="dot" expr="stamp"/>
-        <foreach array="taking" item="t">
-          <send target="#_internal" event="record_list.take"/>
-        </foreach>
-        <send target="#_internal" event="record_list.pass"/>
+        <if cond="!journal">
+          <assign location="restoring" expr="false"/>
+          <assign location="tentative" expr="false"/>
+          <foreach array="taking" item="t">
+            <send target="#_internal" event="record_list.take"/>
+          </foreach>
+          <send target="#_internal" event="record_list.pass"/>
+        </if>
+        <if cond="journal">
+          <sce:clear target="offered"/>
+          <foreach array="taking" item="t">
+            <sce:append target="offered" expr="t"/>
+          </foreach>
+          <assign location="offeredAt" expr="stamp"/>
+          <send target="#_internal" event="record_list.offer"/>
+        </if>
       </if>
+      <!-- A change that named nothing the copy holds is no change; a copy that keeps a
+           journal says so, as an outcome with no operation and no refusal. -->
       <if cond="!spoiled &amp;&amp; gone + writes === 0">
         <sce:clear target="staged"/>
+        <if cond="journal">
+          <assign location="closedOps" expr="0"/>
+          <assign location="closedFor" expr="null"/>
+          <assign location="closedAt.wallTime" expr="0"/>
+          <assign location="closedAt.counter" expr="0"/>
+          <assign location="closedAt.nodeId" expr="0"/>
+          <send target="#_internal" event="record_list.conclude"/>
+        </if>
       </if>
       <!-- A refused change is dropped whole and told to the statechart that invoked the
            list, once, with the command at fault and why (record_refused); a list a host
-           started tells no one. -->
+           started tells no one. A copy that keeps a journal reports it to its host as
+           well, as the outcome of the command that ended it, queued before the parent is
+           sent anything. -->
       <if cond="spoiled">
         <sce:clear target="staged"/>
         <assign location="spoiled" expr="false"/>
+        <if cond="journal">
+          <assign location="closedOps" expr="0"/>
+          <assign location="closedFor" expr="spoiledFor"/>
+          <assign location="closedAt.wallTime" expr="0"/>
+          <assign location="closedAt.counter" expr="0"/>
+          <assign location="closedAt.nodeId" expr="0"/>
+          <send target="#_internal" event="record_list.conclude"/>
+        </if>
         <if cond="announce">
           <send event="record_list.refused" targetexpr="'#_parent'" sce:targets="#_parent">
             <param name="id" expr="namedId"/>
             <param name="field" expr="namedField"/>
             <param name="kind" expr="namedKind"/>
             <param name="reason" expr="spoiledFor"/>
+            <param name="command" expr="closingCommand"/>
+            <param name="withdrawn" expr="false"/>
           </send>
         </if>
       </if>
     </transition>
 
+    <!-- The change a copy that keeps a journal closed, offered to its host on the route
+         `#journal` (record_made, docs/adr/0093, section 3.1): its author, its stamp, its
+         operations and the host's name for the command that ended it. The host gives it
+         to the change's delivery layer and the copy its verdict. The send is the whole of
+         the block, so one that fails where it is made fails alone. -->
+    <transition event="record_list.offer" type="internal">
+      <send target="#journal" event="record_list.made">
+        <param name="by" expr="offeredAt.nodeId"/>
+        <param name="wallTime" expr="offeredAt.wallTime"/>
+        <param name="counter" expr="offeredAt.counter"/>
+        <param name="ops" expr="offered"/>
+        <param name="command" expr="closingCommand"/>
+      </send>
+    </transition>
+
+    <!-- The verdict of the copy's delivery layer on the change it offered (record_verdict,
+         docs/adr/0093, section 3.3), given by the host once it has journalled it, naming
+         the change by its stamp. Every outcome but a refusal takes the change in, each
+         operation by `record_list.take` in the change's order, before the outcome is
+         reported (record_closed): accepted and held alike, and waiting provisionally,
+         its stamp, the host's command and what its refusal would be told as kept in
+         `provisional`, and its write-overs keeping what they take out in `undo`; a
+         parent is told the registers once the change is whole, and that the change is
+         pending. A refusal takes nothing in: the copy holds what it held before the
+         close, its clock stays at the stamp, which no change is given again, and the
+         parent is told why, the layer's reason or `peerRefused` when it gives none
+         (`noRoomForHistory` for a layer whose log is full, docs/adr/0085, section 3).
+         The clock is not moved: it was moved to the stamp when the change was closed. A
+         change the layer refused, or one withdrawn, is told as the register of its first
+         operation, a write as an edit and a write-over as a clear, since no command of it
+         is at fault, and the change itself is named the same way after a restart
+         (record_refused). -->
+    <transition event="record_list.verdict" cond="len(offered) &gt; 0 &amp;&amp; _event.data.outcome !== Outcome.none &amp;&amp; _event.data.wallTime === offeredAt.wallTime &amp;&amp; _event.data.counter === offeredAt.counter" type="internal">
+      <assign location="standing.wallTime" expr="offeredAt.wallTime"/>
+      <assign location="standing.counter" expr="offeredAt.counter"/>
+      <assign location="standing.command" expr="closingCommand"/>
+      <assign location="standing.id" expr="offered[0].id"/>
+      <assign location="standing.field" expr="offered[0].field"/>
+      <if cond="offered[0].kind === 0">
+        <assign location="standing.kind" expr="Command.edit"/>
+      <else/>
+        <assign location="standing.kind" expr="Command.clear"/>
+      </if>
+      <assign location="closedAt" expr="offeredAt"/>
+      <if cond="_event.data.outcome === Outcome.refused">
+        <assign location="refusedFor" expr="_event.data.reason ?? Refusal.peerRefused"/>
+        <assign location="closedOps" expr="0"/>
+        <assign location="closedFor" expr="refusedFor"/>
+        <sce:clear target="offered"/>
+        <send target="#_internal" event="record_list.conclude"/>
+        <if cond="announce">
+          <send event="record_list.refused" targetexpr="'#_parent'" sce:targets="#_parent">
+            <param name="id" expr="standing.id"/>
+            <param name="field" expr="standing.field"/>
+            <param name="kind" expr="standing.kind"/>
+            <param name="reason" expr="refusedFor"/>
+            <param name="command" expr="standing.command"/>
+            <param name="withdrawn" expr="false"/>
+          </send>
+        </if>
+      </if>
+      <if cond="_event.data.outcome !== Outcome.refused">
+        <assign location="closedOps" expr="len(offered)"/>
+        <assign location="closedFor" expr="null"/>
+        <sce:clear target="taking"/>
+        <foreach array="offered" item="t">
+          <sce:append target="taking" expr="t"/>
+        </foreach>
+        <assign location="took" expr="0"/>
+        <assign location="dot" expr="offeredAt"/>
+        <assign location="restoring" expr="false"/>
+        <assign location="tentative" expr="_event.data.outcome === Outcome.waiting"/>
+        <if cond="tentative">
+          <sce:append target="provisional" expr="standing"/>
+        </if>
+        <sce:clear target="offered"/>
+        <foreach array="taking" item="t">
+          <send target="#_internal" event="record_list.take"/>
+        </foreach>
+        <send target="#_internal" event="record_list.conclude"/>
+        <if cond="tentative &amp;&amp; announce">
+          <send event="record_list.pending" targetexpr="'#_parent'" sce:targets="#_parent">
+            <param name="wallTime" expr="standing.wallTime"/>
+            <param name="counter" expr="standing.counter"/>
+            <param name="command" expr="standing.command"/>
+          </send>
+        </if>
+      </if>
+    </transition>
+
+    <!-- A verdict that names no change the copy holds offered, or that is no verdict
+         (`none`), is the host's fault: it changes nothing and is counted. -->
+    <transition event="record_list.verdict" type="internal">
+      <assign location="refusals" expr="refusals + 1"/>
+    </transition>
+
+    <!-- The outcome of the change that ended, reported to the host's journal
+         (record_closed): taken in, refused or naming nothing, so the host's record of
+         the command that ended it always has one. -->
+    <transition event="record_list.conclude" type="internal">
+      <send target="#journal" event="record_list.closed">
+        <param name="command" expr="closingCommand"/>
+        <param name="operations" expr="closedOps"/>
+        <param name="reason" expr="closedFor"/>
+        <param name="wallTime" expr="closedAt.wallTime"/>
+        <param name="counter" expr="closedAt.counter"/>
+      </send>
+    </transition>
+
     <!-- A peer's change, as the delivery layer gives it: once, whole, and after every
          change its author had taken in when it made it (docs/adr/0085, section 3). Its
          author is judged against the roster, on every copy: one the roster does not let
-         write is taken in as no change, counted in `denied`. Otherwise every operation is
-         queued to be taken in, in the order of the change, and then the clock is moved by
-         the change's stamp, once: a peer's change by `hlc_receive`; a change of this
-         copy's own node, which a copy that was started again from an older save is given
-         back, up to its stamp, so that what the copy stamps next is after it and never
-         with a dot it has used. The clock is moved last, so a clock that cannot move
-         ends a block that has queued the change already. -->
+         write is taken in as no change, counted in `denied`. Otherwise the change becomes
+         the change in hand and is delivered (record_list.deliver). -->
     <transition event="record_list.change" type="internal">
       <assign location="authorized" expr="true"/>
       <if cond="len(roster) &gt; 0">
@@ -587,27 +891,109 @@
         <assign location="dot.wallTime" expr="_event.data.wallTime"/>
         <assign location="dot.counter" expr="_event.data.counter"/>
         <assign location="dot.nodeId" expr="_event.data.by"/>
-        <foreach array="taking" item="t">
-          <send target="#_internal" event="record_list.take"/>
-        </foreach>
-        <if cond="dot.nodeId === node &amp;&amp; (dot.wallTime &gt; clock.wallTime || (dot.wallTime === clock.wallTime &amp;&amp; dot.counter &gt; clock.counter))">
-          <assign location="clock.wallTime" expr="dot.wallTime"/>
-          <assign location="clock.counter" expr="dot.counter"/>
+        <assign location="restoring" expr="false"/>
+        <assign location="tentative" expr="false"/>
+        <send target="#_internal" event="record_list.deliver"/>
+      </if>
+    </transition>
+
+    <!-- A change the host recorded, given back to a copy it builds again (record_recall,
+         docs/adr/0083, section 1.5; docs/adr/0085, section 7.2): the copy's own, as it
+         offered it, or another's, as the host's delivery layer holds it, in a causal
+         order. It becomes the change in hand and is delivered as a peer's change is, by
+         the one path every change is taken in by, and is not judged by the roster: it
+         was admitted where it was made or carried. Nothing is reported or sent, so a copy
+         built again sends nothing while it is. A change of the copy's own the host
+         journalled as provisional is taken in provisionally, as at its verdict, and is
+         kept in `provisional` with what its withdrawal would be told as (docs/adr/0093,
+         section 3.5); the flag is not read of another's change. -->
+    <transition event="record_list.recall" type="internal">
+      <assign location="taking" expr="_event.data.ops"/>
+      <assign location="took" expr="0"/>
+      <assign location="dot.wallTime" expr="_event.data.wallTime"/>
+      <assign location="dot.counter" expr="_event.data.counter"/>
+      <assign location="dot.nodeId" expr="_event.data.by"/>
+      <assign location="restoring" expr="false"/>
+      <assign location="tentative" expr="_event.data.provisional &amp;&amp; _event.data.by === node"/>
+      <if cond="tentative">
+        <assign location="standing.wallTime" expr="_event.data.wallTime"/>
+        <assign location="standing.counter" expr="_event.data.counter"/>
+        <assign location="standing.command" expr="_event.data.command"/>
+        <assign location="standing.id" expr="taking[0].id"/>
+        <assign location="standing.field" expr="taking[0].field"/>
+        <if cond="taking[0].kind === 0">
+          <assign location="standing.kind" expr="Command.edit"/>
+        <else/>
+          <assign location="standing.kind" expr="Command.clear"/>
         </if>
-        <if cond="dot.nodeId !== node">
-          <assign location="clock" expr="HlcReceive(clock, dot, clock.wallTime, node)"/>
-        </if>
+        <sce:append target="provisional" expr="standing"/>
+      </if>
+      <send target="#_internal" event="record_list.deliver"/>
+    </transition>
+
+    <!-- The change in hand (`taking`, `dot`), a peer's or a recalled one, delivered:
+         every operation is queued to be taken in, in the order of the change, and then
+         the clock is moved by the change's stamp, once: a peer's change by `hlc_receive`;
+         a change of this copy's own node, which a copy built again or started again from
+         an older save is given back, up to its stamp, a change of write-overs only among
+         them (docs/adr/0083, section 1.6), so that what the copy stamps next is after it
+         and never with a dot it has used. The clock is moved last, so a clock that
+         cannot move ends a block that has queued the change already. -->
+    <transition event="record_list.deliver" type="internal">
+      <foreach array="taking" item="t">
+        <send target="#_internal" event="record_list.take"/>
+      </foreach>
+      <if cond="dot.nodeId === node &amp;&amp; (dot.wallTime &gt; clock.wallTime || (dot.wallTime === clock.wallTime &amp;&amp; dot.counter &gt; clock.counter))">
+        <assign location="clock.wallTime" expr="dot.wallTime"/>
+        <assign location="clock.counter" expr="dot.counter"/>
+      </if>
+      <if cond="dot.nodeId !== node">
+        <assign location="clock" expr="HlcReceive(clock, dot, clock.wallTime, node)"/>
+      </if>
+    </transition>
+
+    <!-- A stable state, handed to a copy its host builds again before the changes after
+         it (record_restore, docs/adr/0085, section 4.4): its live values, each a write at
+         the dot it carries, taken in by the one path every operation is, and the state's
+         clock, which the copy's clock is raised to as to a stamp of its own, and never by
+         a receive. It claims no change's identity: it is judged by no roster, reported
+         and sent to no one, and told to the parent once. A value held already moves
+         nothing, so a state given in several parts is taken in whole in any order. -->
+    <transition event="record_list.restore" type="internal">
+      <assign location="taking" expr="_event.data.ops"/>
+      <assign location="took" expr="0"/>
+      <assign location="restoring" expr="true"/>
+      <assign location="tentative" expr="false"/>
+      <foreach array="taking" item="t">
+        <send target="#_internal" event="record_list.take"/>
+      </foreach>
+      <if cond="_event.data.wallTime &gt; clock.wallTime || (_event.data.wallTime === clock.wallTime &amp;&amp; _event.data.counter &gt; clock.counter)">
+        <assign location="clock.wallTime" expr="_event.data.wallTime"/>
+        <assign location="clock.counter" expr="_event.data.counter"/>
+      </if>
+    </transition>
+
+    <!-- The highest stamp of the copy's own node its delivery layer holds, as the host
+         gives it (record_raise, docs/adr/0093, section 4.3): the clock is raised to it as
+         to a stamp of the copy's own, never by a receive, since it is no peer's. A stamp
+         at or below the clock moves nothing; the next change is stamped after it. -->
+    <transition event="record_list.raise" type="internal">
+      <if cond="_event.data.wallTime &gt; clock.wallTime || (_event.data.wallTime === clock.wallTime &amp;&amp; _event.data.counter &gt; clock.counter)">
+        <assign location="clock.wallTime" expr="_event.data.wallTime"/>
+        <assign location="clock.counter" expr="_event.data.counter"/>
       </if>
     </transition>
 
     <!-- The next operation of `taking`, taken in: a write gives its register one more
          value, once, and a write-over takes the value it names out. This is where every
-         operation is merged, a copy's own and a peer's alike, and it keeps nothing of an
-         operation but its effect.
+         operation is merged, a copy's own and a peer's alike, a recalled one and a state
+         handed over, and it keeps nothing of an operation but its effect, and, for a
+         change taken in provisionally, what its write-overs take out.
 
-         A write: its dot is the change's (`dot`). Unless its value is held already, its
-         add is added and its value kept, which is told to the parent
-         (record_list.announce). The text is read into the value it is kept in. -->
+         A write: its dot is the change's (`dot`), or, in a state handed over
+         (`restoring`), the dot it carries. Unless its value is held already, its add is
+         added and its value kept, which is told to the parent (record_list.announce). The
+         text is read into the value it is kept in. -->
     <transition event="record_list.take" type="internal">
       <assign location="op" expr="taking[took]"/>
       <assign location="took" expr="took + 1"/>
@@ -621,9 +1007,14 @@
         <assign location="held.wallTime" expr="dot.wallTime"/>
         <assign location="held.counter" expr="dot.counter"/>
         <assign location="held.nodeId" expr="dot.nodeId"/>
-        <assign location="entry.wallTime" expr="dot.wallTime"/>
-        <assign location="entry.counter" expr="dot.counter"/>
-        <assign location="entry.nodeId" expr="dot.nodeId"/>
+        <if cond="restoring">
+          <assign location="held.wallTime" expr="op.wallTime"/>
+          <assign location="held.counter" expr="op.counter"/>
+          <assign location="held.nodeId" expr="op.nodeId"/>
+        </if>
+        <assign location="entry.wallTime" expr="held.wallTime"/>
+        <assign location="entry.counter" expr="held.counter"/>
+        <assign location="entry.nodeId" expr="held.nodeId"/>
         <assign location="present" expr="MvValueHolds(values, held)"/>
         <if cond="!present">
           <sce:clear target="one"/>
@@ -642,7 +1033,15 @@
            `values`, and nothing is kept of it. Its write was given to this copy before it,
            so no later delivery brings the value back. A write-over whose value is gone
            already, because another change wrote it over first, changes nothing and tells
-           nothing. A value taken out is told to the parent (record_list.announce). -->
+           nothing. A value taken out is told to the parent (record_list.announce).
+
+           A write-over of a change taken in provisionally keeps the value it takes out in
+           the undo record, under the change's stamp, so a withdrawal gives it back
+           (docs/adr/0093, section 3.4). A write-over whose value is gone already strikes
+           the value from the undo record, whatever change it is of: a provisional change
+           took the value out first, and another change took it out too, so the value
+           stays out whatever is withdrawn. A value is in the undo record only while it is
+           out, so the one and the other never meet in one write-over. -->
       <if cond="op.kind === 1">
         <assign location="entry.wallTime" expr="op.wallTime"/>
         <assign location="entry.counter" expr="op.counter"/>
@@ -653,6 +1052,34 @@
         <assign location="held.counter" expr="op.counter"/>
         <assign location="held.nodeId" expr="op.nodeId"/>
         <assign location="wasLive" expr="MvValueHolds(values, held)"/>
+        <if cond="tentative &amp;&amp; wasLive">
+          <foreach array="values" item="v">
+            <if cond="v.id === held.id &amp;&amp; v.field === held.field &amp;&amp; v.wallTime === held.wallTime &amp;&amp; v.counter === held.counter &amp;&amp; v.nodeId === held.nodeId">
+              <assign location="undoing.id" expr="v.id"/>
+              <assign location="undoing.field" expr="v.field"/>
+              <assign location="undoing.value" expr="v.value"/>
+              <assign location="undoing.text" expr="v.text"/>
+              <assign location="undoing.wallTime" expr="v.wallTime"/>
+              <assign location="undoing.counter" expr="v.counter"/>
+              <assign location="undoing.nodeId" expr="v.nodeId"/>
+            </if>
+          </foreach>
+          <assign location="undoing.atWallTime" expr="dot.wallTime"/>
+          <assign location="undoing.atCounter" expr="dot.counter"/>
+          <sce:append target="undo" expr="undoing"/>
+        </if>
+        <if cond="!wasLive &amp;&amp; len(undo) &gt; 0">
+          <sce:clear target="undoKept"/>
+          <foreach array="undo" item="u">
+            <if cond="u.id !== held.id || u.field !== held.field || u.wallTime !== held.wallTime || u.counter !== held.counter || u.nodeId !== held.nodeId">
+              <sce:append target="undoKept" expr="u"/>
+            </if>
+          </foreach>
+          <sce:clear target="undo"/>
+          <foreach array="undoKept" item="u">
+            <sce:append target="undo" expr="u"/>
+          </foreach>
+        </if>
         <sce:clear target="one"/>
         <sce:append target="one" expr="entry"/>
         <assign location="adds" expr="OrsetLive(adds, one)"/>
@@ -676,6 +1103,173 @@
         <param name="counter" expr="dot.counter"/>
         <param name="ops" expr="taking"/>
       </send>
+    </transition>
+
+    <!-- The host's word that a change the copy took in provisionally is carried now
+         (record_confirm, docs/adr/0093, section 3.3): the change leaves `provisional` and
+         its values leave the undo record, and the parent is told it is confirmed. A
+         confirmation that names no change the copy holds provisionally is the host's
+         fault: it changes nothing and is counted. -->
+    <transition event="record_list.confirm" type="internal">
+      <assign location="named" expr="false"/>
+      <foreach array="provisional" item="p">
+        <if cond="p.wallTime === _event.data.wallTime &amp;&amp; p.counter === _event.data.counter">
+          <assign location="named" expr="true"/>
+          <assign location="standing" expr="p"/>
+        </if>
+      </foreach>
+      <if cond="!named">
+        <assign location="refusals" expr="refusals + 1"/>
+      </if>
+      <if cond="named">
+        <sce:clear target="provisionalKept"/>
+        <foreach array="provisional" item="p">
+          <if cond="p.wallTime !== standing.wallTime || p.counter !== standing.counter">
+            <sce:append target="provisionalKept" expr="p"/>
+          </if>
+        </foreach>
+        <sce:clear target="provisional"/>
+        <foreach array="provisionalKept" item="p">
+          <sce:append target="provisional" expr="p"/>
+        </foreach>
+        <sce:clear target="undoKept"/>
+        <foreach array="undo" item="u">
+          <if cond="u.atWallTime !== standing.wallTime || u.atCounter !== standing.counter">
+            <sce:append target="undoKept" expr="u"/>
+          </if>
+        </foreach>
+        <sce:clear target="undo"/>
+        <foreach array="undoKept" item="u">
+          <sce:append target="undo" expr="u"/>
+        </foreach>
+        <if cond="announce">
+          <send event="record_list.confirmed" targetexpr="'#_parent'" sce:targets="#_parent">
+            <param name="wallTime" expr="standing.wallTime"/>
+            <param name="counter" expr="standing.counter"/>
+            <param name="command" expr="standing.command"/>
+          </send>
+        </if>
+      </if>
+    </transition>
+
+    <!-- The host's word that the copy's delivery layer dropped a change the copy took in
+         provisionally (record_withdraw, docs/adr/0093, section 3.4): that change and
+         every provisional change after it are withdrawn, latest first, each by an event of
+         its own (record_list.unwind), since each was prepared on a state that held the
+         one before it. A withdrawal that names no change the copy holds provisionally is
+         the host's fault: it changes nothing and is counted. -->
+    <transition event="record_list.withdraw" type="internal">
+      <assign location="named" expr="false"/>
+      <foreach array="provisional" item="p" index="at">
+        <if cond="!named &amp;&amp; p.wallTime === _event.data.wallTime &amp;&amp; p.counter === _event.data.counter">
+          <assign location="named" expr="true"/>
+          <assign location="withdrawFrom" expr="at"/>
+        </if>
+      </foreach>
+      <if cond="!named">
+        <assign location="refusals" expr="refusals + 1"/>
+      </if>
+      <if cond="named">
+        <foreach array="provisional" item="p" index="at">
+          <if cond="at &gt;= withdrawFrom">
+            <send target="#_internal" event="record_list.unwind"/>
+          </if>
+        </foreach>
+      </if>
+    </transition>
+
+    <!-- The latest provisional change, withdrawn by its undo record and never by building
+         the copy again (docs/adr/0093, section 3.4): every value its writes added (every
+         value whose dot is its stamp under this copy's node) goes, every value its
+         write-overs took out and no later change took out comes back, and the change and
+         its undo record are forgotten. So the copy holds what a copy that never took the
+         change in holds, the values in another order. The parent is told each register
+         the withdrawals moved once, after the last of them, and `record_list.refused`
+         with `peerRefused` and `withdrawn` for the change. The clock is not moved back: a
+         stamp is never given twice, even to a change no copy holds. -->
+    <transition event="record_list.unwind" type="internal">
+      <assign location="standing" expr="provisional[len(provisional) - 1]"/>
+      <sce:clear target="one"/>
+      <foreach array="adds" item="a">
+        <if cond="a.wallTime === standing.wallTime &amp;&amp; a.counter === standing.counter &amp;&amp; a.nodeId === node">
+          <sce:append target="one" expr="a"/>
+        </if>
+      </foreach>
+      <assign location="adds" expr="OrsetLive(adds, one)"/>
+      <foreach array="one" item="a">
+        <assign location="held.id" expr="a.element / 65536"/>
+        <assign location="held.field" expr="a.element % 65536"/>
+        <assign location="held.wallTime" expr="a.wallTime"/>
+        <assign location="held.counter" expr="a.counter"/>
+        <assign location="held.nodeId" expr="a.nodeId"/>
+        <assign location="values" expr="MvValueDrop(values, held)"/>
+        <if cond="announce">
+          <assign location="shareId" expr="a.element / 65536"/>
+          <assign location="shareField" expr="a.element % 65536"/>
+          <send target="#_internal" event="record_list.announce">
+            <param name="id" expr="shareId"/>
+            <param name="field" expr="shareField"/>
+          </send>
+        </if>
+      </foreach>
+      <foreach array="undo" item="u">
+        <if cond="u.atWallTime === standing.wallTime &amp;&amp; u.atCounter === standing.counter">
+          <assign location="entry.element" expr="u.id"/>
+          <assign location="entry.element" expr="entry.element * 65536 + u.field"/>
+          <assign location="entry.wallTime" expr="u.wallTime"/>
+          <assign location="entry.counter" expr="u.counter"/>
+          <assign location="entry.nodeId" expr="u.nodeId"/>
+          <sce:clear target="one"/>
+          <sce:append target="one" expr="entry"/>
+          <assign location="adds" expr="OrsetUnion(adds, one)"/>
+          <assign location="held.id" expr="u.id"/>
+          <assign location="held.field" expr="u.field"/>
+          <assign location="held.value" expr="u.value"/>
+          <assign location="held.text" expr="u.text"/>
+          <assign location="held.wallTime" expr="u.wallTime"/>
+          <assign location="held.counter" expr="u.counter"/>
+          <assign location="held.nodeId" expr="u.nodeId"/>
+          <assign location="values" expr="MvValueKeep(values, held)"/>
+          <if cond="announce">
+            <assign location="shareId" expr="u.id"/>
+            <assign location="shareField" expr="u.field"/>
+            <send target="#_internal" event="record_list.announce">
+              <param name="id" expr="shareId"/>
+              <param name="field" expr="shareField"/>
+            </send>
+          </if>
+        </if>
+      </foreach>
+      <sce:clear target="undoKept"/>
+      <foreach array="undo" item="u">
+        <if cond="u.atWallTime !== standing.wallTime || u.atCounter !== standing.counter">
+          <sce:append target="undoKept" expr="u"/>
+        </if>
+      </foreach>
+      <sce:clear target="undo"/>
+      <foreach array="undoKept" item="u">
+        <sce:append target="undo" expr="u"/>
+      </foreach>
+      <sce:clear target="provisionalKept"/>
+      <foreach array="provisional" item="p" index="at">
+        <if cond="at + 1 &lt; len(provisional)">
+          <sce:append target="provisionalKept" expr="p"/>
+        </if>
+      </foreach>
+      <sce:clear target="provisional"/>
+      <foreach array="provisionalKept" item="p">
+        <sce:append target="provisional" expr="p"/>
+      </foreach>
+      <if cond="announce">
+        <send event="record_list.refused" targetexpr="'#_parent'" sce:targets="#_parent">
+          <param name="id" expr="standing.id"/>
+          <param name="field" expr="standing.field"/>
+          <param name="kind" expr="standing.kind"/>
+          <param name="reason" expr="Refusal.peerRefused"/>
+          <param name="command" expr="standing.command"/>
+          <param name="withdrawn" expr="true"/>
+        </send>
+      </if>
     </transition>
 
     <!-- A register the change in hand moved, named to be told: kept in `moved` once,

@@ -125,11 +125,14 @@
 //   * `record_list`: the standard shared record list (sce:std/shared/record_list), a
 //     scenario's machine named by its library name, as a person's copy and as the
 //     hub, started by a host, when it tells no parent anything, and started with no
-//     Mesh router, when it keeps every change it makes; and
+//     Mesh router, when it keeps every change it makes; as a copy that keeps a
+//     journal, which offers each change to its host on `#journal` and takes it in at
+//     the verdict, provisionally while it waits, and as one built again from what was
+//     made (`record_list.recall`, `record_list.restore`); and
 //     `record_list_parent`, which
 //     invokes it by its library name and publishes what it was told of each
 //     register, and of each change the list refused, its reason by the name the
-//     standard enum record_refusal declares.
+//     standard enum record_refusal declares, and of each change's verdict.
 //
 // Linked WITHOUT `sce_c_scripting` and `lua54` on purpose: these machines carry
 // no script engine, so the link is the proof. If the emit ever reached for one,
@@ -3041,14 +3044,20 @@ STATIC_SCENARIO_UNROUTED(record_list)
     E(nodeId, wide_digits)
 // The last change the list refused, a record that is absent until there is one: the
 // command at fault and the reason, each by the name its enum declares, record_command
-// and record_refusal (docs/adr/0046, docs/adr/0055).
+// and record_refusal (docs/adr/0046, docs/adr/0055), the host's name for the command
+// as the text of its digits, and whether the change was withdrawn (record_refused's
+// second revision, docs/adr/0093).
 #define RECORD_LIST_REFUSED_FIELDS(N, E)                                                                               \
     N(id)                                                                                                              \
     N(field)                                                                                                           \
     E(kind, record_command_declared_name)                                                                              \
-    E(reason, record_refusal_declared_name)
+    E(reason, record_refusal_declared_name)                                                                            \
+    E(command, wide_digits)                                                                                            \
+    N(withdrawn)
 VARIABLE_READER(record_list_parent, told)
 VARIABLE_READER(record_list_parent, refusedCount)
+VARIABLE_READER(record_list_parent, pendingCount)
+VARIABLE_READER(record_list_parent, confirmedCount)
 
 static const char *record_list_parent_text_text(sce_static_string_96_t text) {
     static char copy[sizeof(text.data)];
@@ -3078,6 +3087,8 @@ static const name_value_t record_list_parent_states[] = {
 static const variable_t record_list_parent_variables[] = {
     {"told", record_list_parent_read_told},
     {"refusedCount", record_list_parent_read_refusedCount},
+    {"pendingCount", record_list_parent_read_pendingCount},
+    {"confirmedCount", record_list_parent_read_confirmedCount},
 };
 static const record_variable_t record_list_parent_records[] = {RECORD_ROW(record_list_parent, shown),
                                                                RECORD_LIST_ROW(record_list_parent, others),
@@ -3348,8 +3359,14 @@ int main(void) {
     bad |= record_list_scenario("record_list_change", 15);
     bad |= record_list_scenario("record_list_retire", 12);
     bad |= record_list_scenario("record_list_out_of_causal_order_is_not_given", 5);
+    bad |= record_list_scenario("record_list_journal", 19);
+    bad |= record_list_scenario("record_list_provisional", 37);
+    bad |= record_list_scenario("record_list_raise", 10);
+    bad |= record_list_scenario("record_list_recall", 13);
+    bad |= record_list_scenario("record_list_restore", 8);
     bad |= record_list_parent_scenario("record_list_parent", 27);
     bad |= record_list_parent_scenario("record_list_concurrent_clears", 7);
+    bad |= record_list_parent_scenario("record_list_verdict", 16);
     bad |= sheet_peer_scenario("sheet_peer_alice", 24);
     bad |= sheet_peer_scenario("sheet_peer_bob", 26);
     bad |= sheet_peer_scenario("sheet_peer_server", 26);

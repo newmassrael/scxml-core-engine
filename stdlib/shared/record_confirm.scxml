@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael -->
+<!--
+  sce:std/shared/record_confirm.scxml — the host's word to a copy of a shared record list
+  that a change it took in provisionally is carried now (docs/adr/0093, section 3.3):
+  its delivery layer signed it. The copy forgets the change's undo record, and tells its
+  parent record_list.confirmed (record_confirmed).
+
+  The fields are the shape every word about one change of the copy's own has
+  (docs/adr/0093, section 5, `record_stamp`): `wallTime` and `counter`, the change's
+  stamp, which names it, and `command`, the host's name for the command that ended it,
+  which the list does not read here and a host writes as its journal holds it. A
+  schema names one event, so each event of that shape has a schema of its own:
+  record_confirm, record_withdraw and record_raise, which a host gives a copy, and
+  record_pending and record_confirmed, which a copy tells its parent. A confirm that
+  names no change the copy holds provisionally changes nothing and is counted in
+  `refusals`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="record_confirm"
+       sce:event-name="record_list.confirm">
+  <datamodel>
+    <data id="wallTime" sce:type="int64" sce:direction="in"/>
+    <data id="counter" sce:type="uint32" sce:direction="in"/>
+    <data id="command" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>

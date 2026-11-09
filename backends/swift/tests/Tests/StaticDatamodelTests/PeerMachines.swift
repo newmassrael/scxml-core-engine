@@ -249,13 +249,17 @@ func recordListParent() -> Machine {
                     return .null
                 }
                 return .object([
+                    (key: "command", value: digits(refused.command)),
                     (key: "field", value: integer(refused.field)),
                     (key: "id", value: integer(refused.id)),
                     (key: "kind", value: .text(refused.kind.declaredName)),
                     (key: "reason", value: .text(refused.reason.declaredName)),
+                    (key: "withdrawn", value: .bool(refused.withdrawn)),
                 ])
             },
             "refusedCount": { integer(policy.refusedCount) },
+            "pendingCount": { integer(policy.pendingCount) },
+            "confirmedCount": { integer(policy.confirmedCount) },
         ]
     )
 }
