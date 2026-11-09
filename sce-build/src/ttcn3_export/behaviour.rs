@@ -62,7 +62,7 @@ use crate::forge::model::{
 use crate::forge::type_ctx::{StaticEnum, StaticEnumSpelling, StaticScope};
 use crate::forge::types::InferredType;
 use crate::forge::value_type::{TypeOf, TypeScope, ValueType};
-use crate::model::{Action, State, Transition};
+use crate::model::{Action, BlockRole, NestedBlock, State, Transition};
 use crate::test_component::{TemplateUse, TestInvocation, TestStatement, Verdict};
 
 /// The prefix of the event a done branch names (docs/SCE_TEST_PROFILE.md
@@ -896,6 +896,8 @@ impl<'r> Writer<'r> {
     }
 
     /// An `<if>`, its `<elseif>`s as `if`s nested in the `else` before them.
+    /// The blocks are read through [`Action::nested_blocks`], the one
+    /// definition of what lies inside an action.
     fn conditional(
         &self,
         action: &Action,
@@ -904,24 +906,35 @@ impl<'r> Writer<'r> {
         line: Option<u32>,
     ) -> Result<Statement, Located<ForgeError>> {
         let site = self.site(node, line);
-        let mut otherwise = self.actions(
-            &action.else_actions,
-            message,
-            &format!("{node} / else"),
-            line,
-        )?;
-        for (position, branch) in action.elseif_branches.iter().enumerate().rev() {
+        let blocks = action.nested_blocks();
+        let mut then: &[Action] = &[];
+        let mut elseifs: Vec<&NestedBlock<'_>> = Vec::new();
+        let mut otherwise: &[Action] = &[];
+        for block in &blocks {
+            match block.role {
+                BlockRole::Then => then = block.actions,
+                BlockRole::ElseIf => elseifs.push(block),
+                BlockRole::Else => otherwise = block.actions,
+                BlockRole::Body if block.actions.is_empty() => {}
+                BlockRole::Body => return Err(site.refuse("an <if> holds no loop body")),
+            }
+        }
+        let mut otherwise = self.actions(otherwise, message, &format!("{node} / else"), line)?;
+        for (position, branch) in elseifs.iter().enumerate().rev() {
             let branch_node = format!("{node} / elseif {}", position + 1);
+            let cond = branch
+                .cond
+                .ok_or_else(|| site.refuse("an <elseif> holds its condition"))?;
             otherwise = vec![Statement::If {
-                condition: self.expression(&branch.cond, message, &site)?.1,
-                then: self.actions(&branch.actions, message, &branch_node, line)?,
+                condition: self.expression(cond, message, &site)?.1,
+                then: self.actions(branch.actions, message, &branch_node, line)?,
                 otherwise,
                 source: self.source("E8", branch_node, line),
             }];
         }
         Ok(Statement::If {
             condition: self.expression(&action.cond, message, &site)?.1,
-            then: self.actions(&action.then_actions, message, node, line)?,
+            then: self.actions(then, message, node, line)?,
             otherwise,
             source: self.source("E8", node.to_string(), line),
         })
