@@ -230,6 +230,15 @@ impl ComposedSpelling for JsComposed {
             .collect();
         format!("({{{}}})", members.join(", "))
     }
+    // The count held first by the library's `holdsAtLeast`, which throws a
+    // `precondition` failure as a checked operation does, then the list
+    // written: the comma reads them in that order.
+    fn send_counted(&self, held: &Held, _field: &str, least: u32, sent: String) -> Option<String> {
+        Some(format!(
+            "(SceStatic.holdsAtLeast({}, {least}), {sent})",
+            held.text
+        ))
+    }
 
     fn copy_binding(&self) -> &'static str {
         JS_COPY_BINDING
@@ -435,6 +444,12 @@ mod tests {
              sceElement.tags}); })"
         );
         assert_eq!(JsComposed.send_param("x".to_string()), "x");
+        // A list sent where its field asks a lower count it does not prove is
+        // held to the count before it is written (docs/adr/0086, section 15.6).
+        assert_eq!(
+            JsComposed.send_counted(&Held::place("taking"), "ops", 1, "W".to_string()),
+            Some("(SceStatic.holdsAtLeast(taking, 1), W)".to_string())
+        );
     }
 
     /// Two places whose types differ only in their bounds are one type, so a

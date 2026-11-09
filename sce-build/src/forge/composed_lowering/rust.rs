@@ -532,6 +532,14 @@ impl ComposedSpelling for RustComposed<'_> {
             RustCarrier::ScriptValue => rust_script_object(fields),
         }
     }
+    // The count held first, through the `AlgorithmError` the closure a `<send>`
+    // evaluates a param that can fail in answers, then the list written.
+    fn send_counted(&self, held: &Held, _field: &str, least: u32, sent: String) -> Option<String> {
+        Some(format!(
+            "{{ ::sce_forge_runtime::algorithm::holds_at_least({}.len(), {least})?; {sent} }}",
+            held.text
+        ))
+    }
 
     fn copy_binding(&self) -> &'static str {
         "v"
@@ -1205,6 +1213,19 @@ mod tests {
                  (\"level\", {p}::quote(h.level.sce_name())), (\"due\", {p}::optional_json(h.due.as_ref(), \
                  |h| {p}::quote(&h.to_string()))), (\"blob\", {p}::quote(&{p}::bytes_as_payload_text(&h.blob))), \
                  (\"tags\", {p}::list_json(&h.tags, |h| {p}::quote(h)))]))"
+            )
+        );
+    }
+
+    /// A list sent where its field asks a lower count it does not prove is
+    /// held to the count before it is written (docs/adr/0086, section 15.6).
+    #[test]
+    fn a_list_sent_short_of_its_fields_count_fails_before_it_is_written() {
+        assert_eq!(
+            RUST.send_counted(&Held::place("self.taking"), "ops", 1, "W".to_string()),
+            Some(
+                "{ ::sce_forge_runtime::algorithm::holds_at_least(self.taking.len(), 1)?; W }"
+                    .to_string()
             )
         );
     }

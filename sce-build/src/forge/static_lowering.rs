@@ -6680,7 +6680,7 @@ pub fn lower(
                     let element = format!("<invoke id=\"{}\">", info.base.invoke_id);
                     let host_served = info.host_served;
                     for param in &mut info.base.params {
-                        lower_wire_param(param, &plain_ctx, &plain_renames, &rewrites)?;
+                        lower_wire_param(param, None, &plain_ctx, &plain_renames, &rewrites)?;
                         composed_writes_unlowered(
                             &format!("{element} <param name=\"{}\">", param.name),
                             param.native_writes,
@@ -6754,7 +6754,7 @@ pub fn lower(
                     record,
                     done.content_spelling.as_ref(),
                 );
-                let lowered = lower_wire_value(&view, &plain_ctx, &plain_renames, &rewrites)?;
+                let lowered = lower_wire_value(&view, None, &plain_ctx, &plain_renames, &rewrites)?;
                 if let Some(value) = lowered {
                     composed_writes_unlowered(
                         &format!("<donedata> <content expr=\"{record}\">"),
@@ -19359,7 +19359,7 @@ fn lower_action(
             for param in &mut action.params {
                 pairs.push((
                     param.name.clone(),
-                    lower_wire_param(param, ctx, renames, rewrites)?,
+                    lower_wire_param(param, Some(action.event.as_str()), ctx, renames, rewrites)?,
                 ));
                 // A send a host serves carries each value as text too, which a
                 // composed value written where its pair stands is not.
@@ -19392,7 +19392,7 @@ fn lower_action(
                     &content,
                     action.contentexpr_spelling.as_ref(),
                 );
-                let lowered = lower_wire_value(&view, ctx, renames, rewrites)?;
+                let lowered = lower_wire_value(&view, None, ctx, renames, rewrites)?;
                 if let Some(value) = lowered {
                     composed_writes_unlowered(
                         &format!("<send> <content expr=\"{content}\">"),
@@ -20471,6 +20471,7 @@ fn literal_json(is_static_literal: bool, static_value: &str) -> TextBound {
 /// document.
 fn lower_wire_value(
     param: &crate::forge::static_datamodel::WireParam<'_>,
+    sent_as: Option<&str>,
     ctx: &crate::forge::types::TypeCtx<'_>,
     renames: &HashMap<&str, &str>,
     rewrites: &Rewrites<'_>,
@@ -20497,10 +20498,12 @@ fn lower_wire_value(
     let place_measure = crate::forge::expr::written_place(written)
         .and_then(|path| ctx.value_of(&path))
         .map(|place| place_json(&place.ty, rewrites, written));
-    if let Some(wired) = composed_wire_value(param, &construct, ctx, renames, rewrites)? {
+    if let Some((wired, fails)) =
+        composed_wire_value(param, sent_as, &construct, ctx, renames, rewrites)?
+    {
         return Ok(Some(WireValue {
             text: wired,
-            fails: false,
+            fails,
             json: place_measure
                 .unwrap_or_else(|| unbounded_value(written, "names no place a type bounds")),
             writes: rewrites.target.composed_param_writes(),
@@ -20668,16 +20671,23 @@ fn lower_wire_value(
 ///
 /// The judge held the place's type to the field's by fits (section 5.1) where
 /// the document was read, so the value crosses whole and nothing of it is
-/// checked when the send runs: the write cannot fail. A place read through an
-/// index, whose read can fail where the write cannot say so, and a target
-/// that sends no composed value are refused by name.
+/// checked when the send runs, but for one thing: a list filled by appends
+/// fits the field of `sent_as`'s schema but for that field's lower count,
+/// which no variable proves (section 15.6,
+/// [`crate::forge::value_type::fits_but_for_count`]). Its write is then held
+/// to the count when it runs ([`composed::ComposedSpelling::send_counted`])
+/// and can fail, which the answer's `bool` says. A place read through an
+/// index, whose read can fail where the write cannot say so, a target that
+/// sends no composed value and one that holds no such count are refused by
+/// name.
 fn composed_wire_value(
     param: &crate::forge::static_datamodel::WireParam<'_>,
+    sent_as: Option<&str>,
     construct: &str,
     ctx: &crate::forge::types::TypeCtx<'_>,
     renames: &HashMap<&str, &str>,
     rewrites: &Rewrites<'_>,
-) -> Result<Option<String>, GenerateError> {
+) -> Result<Option<(String, bool)>, GenerateError> {
     use crate::forge::composed_lowering as composed;
     let written = param.written;
     let Some((path, place)) = crate::forge::expr::written_place(written)
@@ -20721,6 +20731,29 @@ fn composed_wire_value(
         )
         .map_err(refused)?,
     );
+    // The lower count of the field the value is sent as that the place's type
+    // does not prove, held where the value is written.
+    let (wired, fails) = match unproven_count(&place.ty, param.name, sent_as, rewrites) {
+        None => (wired, false),
+        Some(least) => {
+            let counted = spelling
+                .send_counted(
+                    &composed::Held::place(held.clone()),
+                    param.name,
+                    least,
+                    wired,
+                )
+                .ok_or_else(|| {
+                    refused(format!(
+                        "a list sent where its field asks at least {least} elements, which the \
+                         list does not prove, has no {lang} lowering of the count yet"
+                    ))
+                })?;
+            // A target that writes the param as statements refuses the wire
+            // where the list is short, and its pair fails no evaluation.
+            (counted, !target.composed_param_writes())
+        }
+    };
     // A target that leaves the expression in the document (the Interpreter)
     // writes the value as it crosses, as a scalar param's is.
     if target.lowers_host_action_arguments() {
@@ -20728,28 +20761,62 @@ fn composed_wire_value(
     } else {
         rewrites.note(written, param.spelling, &held);
     }
-    Ok(Some(wired))
+    Ok(Some((wired, fails)))
+}
+
+/// The lower count of the field `name` of the schema the document imports for
+/// the event `sent_as` that a value of `held` does not prove: `Some` only for a
+/// list the judge accepted as fitting but for that count
+/// ([`crate::forge::value_type::fits_but_for_count`]). `None` where no
+/// schema of an event reads the value, where the field is not found, and where
+/// the value proves the count.
+fn unproven_count(
+    held: &crate::forge::value_type::ValueType,
+    name: &str,
+    sent_as: Option<&str>,
+    rewrites: &Rewrites<'_>,
+) -> Option<u32> {
+    use crate::forge::value_path::{walk, Place, Step};
+    use crate::forge::value_type::ValueType;
+    let event = sent_as.filter(|event| !event.is_empty())?;
+    let (alias, _) = rewrites
+        .schemas
+        .iter()
+        .find(|(_, schema)| schema.event_name == event)?;
+    let field = walk(
+        Some(&rewrites.type_scope),
+        &Place::of(ValueType::Record {
+            alias: alias.clone(),
+        }),
+        &[Step::Field(name)],
+    )?;
+    crate::forge::value_type::count_left_to_send(held, &field.ty)
 }
 
 /// Lower the value of a `<param>` of a `<send>` or of a host-run `<invoke>`, in
 /// place: `Param::native_value`, and whether it can fail. Answers the most
 /// bytes of the JSON the value is written as ([`WireValue::json`]).
+/// `sent_as` is the event a `<send>` sends the param in, whose schema reads it
+/// ([`composed_wire_value`]); `None` where no schema of an event reads it.
 fn lower_wire_param(
     param: &mut crate::model::Param,
+    sent_as: Option<&str>,
     ctx: &crate::forge::types::TypeCtx<'_>,
     renames: &HashMap<&str, &str>,
     rewrites: &Rewrites<'_>,
 ) -> Result<TextBound, GenerateError> {
     let view = crate::forge::static_datamodel::WireParam::of_param(param);
-    Ok(match lower_wire_value(&view, ctx, renames, rewrites)? {
-        Some(value) => {
-            param.native_value = value.text;
-            param.native_fails = value.fails;
-            param.native_writes = value.writes;
-            value.json
-        }
-        None => literal_json(param.is_static_literal, &param.static_value),
-    })
+    Ok(
+        match lower_wire_value(&view, sent_as, ctx, renames, rewrites)? {
+            Some(value) => {
+                param.native_value = value.text;
+                param.native_fails = value.fails;
+                param.native_writes = value.writes;
+                value.json
+            }
+            None => literal_json(param.is_static_literal, &param.static_value),
+        },
+    )
 }
 
 /// Refuse by name a composed value written as the statements that write it
@@ -20894,7 +20961,7 @@ fn lower_mesh_request(
         info.native_src_fails = value.can_fail;
     }
     for param in &mut info.base.params {
-        lower_wire_param(param, ctx, renames, rewrites)?;
+        lower_wire_param(param, None, ctx, renames, rewrites)?;
         composed_writes_unlowered(
             &format!("a Mesh <invoke> <param name=\"{}\">", param.name),
             param.native_writes,
@@ -20919,7 +20986,7 @@ fn lower_done_params(
     let mut measured = Vec::with_capacity(params.len());
     for param in params {
         let view = crate::forge::static_datamodel::WireParam::of_done_param(param);
-        let json = match lower_wire_value(&view, ctx, renames, rewrites)? {
+        let json = match lower_wire_value(&view, None, ctx, renames, rewrites)? {
             Some(value) => {
                 composed_writes_unlowered(
                     &format!("<donedata> <param name=\"{}\">", param.name),
@@ -21108,7 +21175,7 @@ fn lower_hybrid_invoke(
                     candidate.seeds.push(param);
                 }
                 None => {
-                    lower_wire_param(&mut param, ctx, renames, rewrites)?;
+                    lower_wire_param(&mut param, None, ctx, renames, rewrites)?;
                     composed_writes_unlowered(
                         &format!("an <invoke> <param name=\"{}\">", param.name),
                         param.native_writes,

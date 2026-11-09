@@ -166,6 +166,18 @@ def at(xs, i: int):
     return xs[i]
 
 
+def holds_at_least(held: int, least: int, written):
+    """What ``written()`` writes, once a list of ``held`` elements is seen to
+    hold ``least``, the lower count of the field a ``<send>`` writes it into
+    (docs/adr/0086, section 15.6), and a precondition failure otherwise. A
+    variable states no lower count, so the send holds it here, before the list
+    is written, and the event is refused whole. ``written`` is a ``lambda`` so
+    that nothing is written of a list that is short."""
+    if held < least:
+        raise AlgorithmFailure(AlgorithmError.PRECONDITION)
+    return written()
+
+
 def found(value):
     """The value a reading found, or an out-of-range failure when it found none
     (``None``): the variant an enum's ``from_underlying`` found for a number,

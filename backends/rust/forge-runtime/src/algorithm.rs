@@ -151,9 +151,31 @@ pub fn found<T>(value: Option<T>) -> Result<T, AlgorithmError> {
     value.ok_or(AlgorithmError::OutOfRange)
 }
 
+/// Whether a list a statechart filled by appends holds the lower count of the
+/// field a `<send>` writes it into (docs/adr/0086, section 15.6): `held` its
+/// elements, `least` the field's count. A variable states no lower count, so
+/// the send holds it here, before it writes the list, and a list short of it
+/// fails the param with `precondition`, the event refused whole.
+pub fn holds_at_least(held: usize, least: u32) -> Result<(), AlgorithmError> {
+    if (held as u64) < u64::from(least) {
+        Err(AlgorithmError::Precondition)
+    } else {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_list_sent_short_of_its_fields_lower_count_fails_as_a_precondition() {
+        assert_eq!(holds_at_least(0, 0), Ok(()));
+        assert_eq!(holds_at_least(1, 1), Ok(()));
+        assert_eq!(holds_at_least(5, 2), Ok(()));
+        assert_eq!(holds_at_least(0, 1), Err(AlgorithmError::Precondition));
+        assert_eq!(holds_at_least(2, 3), Err(AlgorithmError::Precondition));
+    }
 
     #[test]
     fn each_failure_is_named_and_every_value_passes() {

@@ -432,6 +432,27 @@ pub trait ComposedSpelling {
     fn send_param(&self, written: String) -> String {
         written
     }
+    /// `sent`, what [`Self::send_param`] made of a list held at `held`, written
+    /// only once the list is seen to hold at least `least` elements: the lower
+    /// count of the field `field` reads it as, which a list filled by appends
+    /// does not prove where the document is read (docs/adr/0086, section 15.6;
+    /// [`crate::forge::value_type::fits_but_for_count`]). A list short of it
+    /// fails the param as a checked operation that fails does, through the
+    /// failure the target's `<send>` reads its params' failures from, so the
+    /// event is refused whole with `error.execution`; a target that writes a
+    /// param as statements (`StaticTarget::composed_param_writes`) refuses the
+    /// wire before the pair is written, as its other checks do.
+    /// `None` for a spelling that holds no such count, which the lowering
+    /// refuses by name.
+    fn send_counted(
+        &self,
+        _held: &Held,
+        _field: &str,
+        _least: u32,
+        _sent: String,
+    ) -> Option<String> {
+        None
+    }
 
     /// The name a copy binds a reference to an element or a present value to.
     fn copy_binding(&self) -> &'static str;

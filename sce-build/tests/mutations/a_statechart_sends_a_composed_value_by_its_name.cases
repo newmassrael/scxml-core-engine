@@ -17,9 +17,9 @@ mutation_targets sce-build/src/forge/static_datamodel.rs sce-build/src/forge/eve
 # field of two.
 mutation_case "a sent value is not held to fits" <<'PY'
 edit("sce-build/src/forge/static_datamodel.rs",
-     r'''        crate::forge::value_type::fits(&place.ty, &field.ty, &names).map_err(|misfit| {''',
+     r'''        crate::forge::value_type::fits_but_for_count(&place.ty, &field.ty, &names).map_err(''',
      r'''        let _ = &names;
-        Ok::<(), crate::forge::value_type::Misfit>(()).map_err(|misfit| {''')
+        Ok::<Option<u32>, crate::forge::value_type::Misfit>(None).map_err(''')
 PY
 
 # A value that names no place is taken for the place it is not.
