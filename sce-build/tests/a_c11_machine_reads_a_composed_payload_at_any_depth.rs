@@ -374,11 +374,25 @@ fn a_send_a_host_serves_hands_it_each_composed_value_as_its_json() {
     );
     assert_ne!(to_a_peer, text, "the fixture sends to the machine itself");
     let code = c11_machine("static_composed_send.scxml", &to_a_peer);
+    // The mark is taken after the pair's key and before its value is written,
+    // so the text read back is the value alone.
+    let key = code
+        .find("sce_forge_wire_pair_key(sce_wire, \"\\\"items\\\"\");\n")
+        .unwrap_or_else(|| panic!("the pair `items` in:\n{code}"));
+    let after_key = &code[key..];
+    let mark = after_key
+        .find("const size_t sce_value_at = sce_forge_wire_mark(sce_wire);\n")
+        .unwrap_or_else(|| panic!("a mark after the pair `items` in:\n{code}"));
+    let value = after_key
+        .find("if ((sm->pending_payload.as.batch_sent.items).len > ")
+        .unwrap_or_else(|| panic!("the value of `items` in:\n{code}"));
+    assert!(
+        mark < value,
+        "the mark comes before the value:\n{after_key}"
+    );
     holds(
         &code,
         &[
-            "sce_forge_wire_pair_key(sce_wire, \"\\\"items\\\"\");\n                        \
-             const size_t sce_value_at = sce_forge_wire_mark(sce_wire);\n",
             "if (sce_forge_wire_copy_since(sce_wire, sce_value_at,\n                                \
              SCE_SCRATCH_BUF(pairs[1]), SCE_SCRATCH_CAP(pairs[1]))) {",
             "_host_params[_host_param_count].name = \"items\";",
