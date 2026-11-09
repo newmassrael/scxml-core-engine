@@ -31,7 +31,9 @@ namespace SCE::Dispatchers {
  * auto dispatcher = StdThreadDispatcher::create();
  * AsyncStateMachine<MyStateMachine> sm(dispatcher);
  *
- * sm.initialize();
+ * if (const auto refused = sm.initialize()) {
+ *     return;  // the machine's script session could not be established
+ * }
  * sm.postEvent(Event::Start);  // Thread-safe async event
  *
  * dispatcher->run();  // Start event loop

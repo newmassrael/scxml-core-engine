@@ -79,7 +79,9 @@ namespace SCE::Wrappers {
  * timers.registerTimer(TimerID::HEARTBEAT, Event::HEARTBEAT_TICK);
  * timers.startTimer(TimerID::HEARTBEAT, 100ms, true);
  *
- * sm.initialize();
+ * if (const auto refused = sm.initialize()) {
+ *     return;  // the machine's script session could not be established
+ * }
  * sm.runUntilCompletion(5000ms, 10ms);  // Timers fire automatically during polling
  * @endcode
  *
@@ -92,7 +94,9 @@ namespace SCE::Wrappers {
  *     timers1.registerTimer(TimerID::HEARTBEAT, Event::TICK);
  *     timers1.startTimer(TimerID::HEARTBEAT, 100ms, true);
  *
- *     device1.initialize();
+ *     if (const auto refused = device1.initialize()) {
+ *         return;  // the machine's script session could not be established
+ *     }
  *     while (!device1.isInFinalState()) {
  *         device1.tick();
  *         timers1.processExpiredTimers();

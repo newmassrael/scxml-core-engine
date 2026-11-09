@@ -2670,7 +2670,9 @@ public:
      *
      * @example Simple usage
      * @code
-     * sm.initialize();
+     * if (const auto refused = sm.initialize()) {
+     *     return;  // the machine's script session could not be established
+     * }
      * bool success = sm.runUntilCompletion(std::chrono::seconds(3));
      * if (success) {
      *     bool pass = (sm.getCurrentState() == SM::State::Pass);
@@ -3288,27 +3290,54 @@ public:
      * @brief `initialize()`, for a host that refuses to start a machine needing
      *        a parent as a root (`rootStartRefusal()`).
      *
-     * A refusal starts nothing: no datamodel is declared and no state is
-     * entered, so the engine is as its constructor left it.
+     * It refuses for either of two reasons: a machine that needs a parent,
+     * before anything is established, and a machine whose script session
+     * cannot be established (`RootStartRefusal::ScriptSession`, docs/adr/0096),
+     * which `initialize()` refuses as well. A refusal starts nothing: no state
+     * is entered and no executable content runs, so the engine is as its
+     * constructor left it.
      */
-    std::optional<::SCE::Common::RootStartRefusal> initializeAsRoot() {
+    [[nodiscard]] std::optional<::SCE::Common::RootStartRefusal> initializeAsRoot() {
         if (auto refusal = rootStartRefusal()) {
             return refusal;
         }
-        initialize();
+        if (auto failure = initialize()) {
+            return ::SCE::Common::RootStartRefusal::ScriptSession(std::move(*failure));
+        }
         return std::nullopt;
     }
+
+    /**
+     * @brief Whether this machine's start can be refused, which is exactly
+     *        whether it has a script session to establish (docs/adr/0096)
+     *
+     * A machine without one answers every start with nothing; its host may say
+     * so at compile time (`static_assert(!Machine::START_MAY_BE_REFUSED)`)
+     * and read the answer as the empty value it always is.
+     */
+    static constexpr bool START_MAY_BE_REFUSED =
+        SCE::Core::HasDataModelInitTrait<StatePolicy, StaticExecutionEngine>::value;
 
     /**
      * @brief Initialize state machine (§scxml-3.2)
      *
      * Performs the initial configuration:
-     * 1. Enter initial state (with hierarchical entry from root to leaf)
-     * 2. Execute entry actions (may raise internal events)
-     * 3. Process internal event queue
-     * 4. Check for eventless transitions
+     * 1. Establish the script session and declare the datamodel (§scxml-5.3)
+     * 2. Enter initial state (with hierarchical entry from root to leaf)
+     * 3. Execute entry actions (may raise internal events)
+     * 4. Process internal event queue
+     * 5. Check for eventless transitions
+     *
+     * @return nothing when the machine started. A machine with a script engine
+     *         establishes its script session first, and one whose session
+     *         cannot be established is not started (docs/adr/0096): the answer
+     *         names the step that failed and carries the engine's words, no
+     *         state is entered, no executable content runs, no event is taken,
+     *         the inbox is not opened and the engine is not running. A machine
+     *         without a script engine always answers nothing
+     *         (`START_MAY_BE_REFUSED`).
      */
-    void initialize() {
+    [[nodiscard]] std::optional<::SCE::ScriptSessionFailure> initialize() {
         // ARCHITECTURE.md "Engine Threading": a run may be entered on any thread,
         // and its owner is the thread that drives it from here (the first
         // `step`, `tick` or `processEvent`). A run that ended or was stopped
@@ -3318,9 +3347,6 @@ public:
         // its tree's directory before its first macrostep, so an ending posted for
         // it from now on reaches its inbox.
         requireOwner("initialize");
-        inbox_.state().releaseOwner();
-        inbox_.state().open();
-        enterTree();
 
         // §scxml-3.13: entering the initial configuration is one turn, and the
         // `<onentry>` handlers it runs arm their `<send delay>`s against one
@@ -3328,16 +3354,26 @@ public:
         // did to two of them.
         TurnGuard turn(*this);
 
+        // §scxml-5.3: Initialize datamodel before any state entry
+        // This ensures error.execution events are raised immediately if initialization fails.
+        // It establishes the script session first, and a session that cannot be
+        // established refuses the start here, before the inbox opens and the run
+        // is marked running, so nothing below is reached (docs/adr/0096).
+        if constexpr (SCE::Core::HasDataModelInitTrait<StatePolicy, StaticExecutionEngine>::value) {
+            if (auto failure = policy_.initializeDataModel(*this)) {
+                SCE_LOG_ERROR("AOT initialize: the start is refused - {}", failure->describe());
+                return failure;
+            }
+        }
+
+        inbox_.state().releaseOwner();
+        inbox_.state().open();
+        enterTree();
+
         isRunning_ = true;
         terminalState_.reset();
         interpreterExited_ = false;
         lateBoundStates_.clear();
-
-        // §scxml-5.3: Initialize datamodel before any state entry
-        // This ensures error.execution events are raised immediately if initialization fails
-        if constexpr (SCE::Core::HasDataModelInitTrait<StatePolicy, StaticExecutionEngine>::value) {
-            policy_.initializeDataModel(*this);
-        }
 
         // §scxml-D-interpret: enterStates([doc.initialTransition]) — the
         // document's own initial transition, whose source is the <scxml>
@@ -3372,6 +3408,7 @@ public:
             // other.
             completionCallback_();
         }
+        return std::nullopt;
     }
 
     /**
@@ -3407,6 +3444,12 @@ public:
      * outcome this door must never produce, because a host has no way to detect
      * it afterwards.
      *
+     * It also refuses a machine whose script session cannot be established,
+     * with `ConfigurationRejection::ScriptSessionUnavailable` and the failure
+     * naming the step that failed (docs/adr/0096): the session is established
+     * before anything of the engine is touched, so that refusal too leaves the
+     * engine as it was.
+     *
      * ## What it does not do
      *
      * - No `<onentry>`, and no `<onexit>`: no state is entered or left.
@@ -3423,33 +3466,42 @@ public:
      *
      * The C++ twin of the Rust runtime's `Engine::enter_at`.
      *
-     * @return `ConfigurationRejection::None` on success; the rule that was
-     *         broken otherwise, with the engine untouched.
+     * @return a verdict equal to `ConfigurationRejection::None` on success; the
+     *         rule that was broken otherwise, or `ScriptSessionUnavailable`
+     *         with the failure, with the engine untouched.
      */
-    [[nodiscard]] SCE::Core::ConfigurationRejection enterAt(const std::vector<State> &configuration, State current) {
+    [[nodiscard]] SCE::Core::ConfigurationVerdict enterAt(const std::vector<State> &configuration, State current) {
         // Before anything is touched: a rejection must not half-enter.
         const auto verdict = SCE::Core::validateConfiguration<StatePolicy>(configuration, current);
         if (verdict != SCE::Core::ConfigurationRejection::None) {
             SCE_LOG_ERROR("AOT enterAt: refused — {}", SCE::Core::configurationRejectionText(verdict));
-            return verdict;
+            return SCE::Core::ConfigurationVerdict{verdict, std::nullopt};
         }
 
-        // The run resumed here is entered as `initialize` enters one: its owner is
-        // the thread that drives it next, its inbox takes posts, and it enters its
-        // tree's directory under the id it carries on under (a restore has bound it).
         requireOwner("enterAt");
-        inbox_.state().releaseOwner();
-        inbox_.state().open();
-        enterTree();
 
         // §scxml-5.3: the datamodel is declared before anything can read it.
         // This is not a state entry action — `<datamodel>` holds `<data>`, not
         // executable content — so it runs here for the same reason it runs in
         // `initialize()`: a `cond` or an `assign` evaluated after this call
-        // would otherwise reference variables that were never declared.
+        // would otherwise reference variables that were never declared. It
+        // establishes the script session first, and a session that cannot be
+        // established refuses the entry before anything of the engine is
+        // touched, as a configuration of another document is (docs/adr/0096).
         if constexpr (SCE::Core::HasDataModelInitTrait<StatePolicy, StaticExecutionEngine>::value) {
-            policy_.initializeDataModel(*this);
+            if (auto failure = policy_.initializeDataModel(*this)) {
+                SCE_LOG_ERROR("AOT enterAt: refused — {}", failure->describe());
+                return SCE::Core::ConfigurationVerdict{SCE::Core::ConfigurationRejection::ScriptSessionUnavailable,
+                                                       std::move(failure)};
+            }
         }
+
+        // The run resumed here is entered as `initialize` enters one: its owner is
+        // the thread that drives it next, its inbox takes posts, and it enters its
+        // tree's directory under the id it carries on under (a restore has bound it).
+        inbox_.state().releaseOwner();
+        inbox_.state().open();
+        enterTree();
 
         currentState_ = current;
         // A configuration restored AT a top-level <final> is a run that has
@@ -3475,7 +3527,7 @@ public:
         }
 
         isRunning_ = true;
-        return SCE::Core::ConfigurationRejection::None;
+        return SCE::Core::ConfigurationVerdict{};
     }
 
     /**

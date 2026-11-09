@@ -10746,11 +10746,6 @@
         },
         {
           "file": "sce/src/scripting/LuaEngine.cpp",
-          "symbol": "LuaEngine::createSession",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/scripting/LuaEngine.cpp",
           "symbol": "LuaEngine::destroySession",
           "kind": "implements"
         },
@@ -11887,6 +11882,11 @@
           "file": "backends/python/runtime/sce_runtime/engine.py",
           "symbol": "enter_state",
           "kind": "references"
+        },
+        {
+          "file": "sce/src/scripting/LuaEngine.cpp",
+          "symbol": "LuaEngine::createSessionChecked",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -22659,6 +22659,12 @@
       "target_kind": "section",
       "target_id": "scxml-D-enterStates",
       "reason": "the entry set is a state set read in document order; enter_entry_set, already bound, enters it"
+    },
+    {
+      "primitive": "remove_section_binding",
+      "target_kind": "section",
+      "target_id": "scxml-6.4",
+      "reason": "ADR 0096 C++ step: LuaEngine's session creation moved into createSessionChecked, which reports the step that failed; LuaEngine no longer defines createSession (IScriptEngine's final wrapper does)."
     }
   ],
   "frames": {},

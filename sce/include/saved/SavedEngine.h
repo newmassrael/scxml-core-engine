@@ -365,10 +365,11 @@ struct EngineAccess {
     template <typename Engine>
     static void enterSession(Engine &engine, const SavedState &saved, std::int64_t wallNowMs) {
         auto judged = judge<Engine>(saved);
+        // A machine whose script session cannot be established is refused here
+        // too (docs/adr/0096), with the failure's step and words.
         const auto verdict = engine.enterAt(judged.configuration, judged.current);
         if (verdict != Core::ConfigurationRejection::None) {
-            throw StateRefusal(std::string("the saved configuration is refused: ") +
-                               Core::configurationRejectionText(verdict));
+            throw StateRefusal(std::string("the saved configuration is refused: ") + verdict.describe());
         }
         for (auto &queued : judged.external) {
             engine.externalQueue_.raise(queued);

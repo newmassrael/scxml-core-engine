@@ -30,6 +30,10 @@
 
 namespace SCE {
 
+bool IScriptEngine::createSession(const std::string &sessionId, const std::string &parentSessionId) {
+    return !createSessionChecked(sessionId, parentSessionId).has_value();
+}
+
 std::future<ScriptResult> IScriptEngine::executeScript(const std::string &sessionId, const ScriptSource &script) {
     if (!acceptsLanguage(script.language())) {
         return refuseLanguage(script);

@@ -5,6 +5,7 @@
 
 #include "SCXMLTypes.h"
 #include "common/IOProcessorHelper.h"
+#include "common/ScriptSessionFailure.h"
 // §scxml-B-2-8-1: `PayloadReading` travels out of `setCurrentEvent` below and
 // is counted by engines that include no `scripting/` header, so it lives with
 // the event metadata rather than here — see the note in that file.
@@ -15,6 +16,7 @@
 #include <functional>
 #include <future>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -290,7 +292,39 @@ public:
      */
     virtual void collectGarbage() = 0;
 
-    // Session lifecycle (createSession, destroySession, hasSession) inherited from ISessionLifecycle
+    // === Session Lifecycle ===
+    //
+    // destroySession and hasSession are ISessionLifecycle's. createSession is
+    // answered here, from createSessionChecked below, so an engine has one
+    // implementation of creating a session and the two answers cannot drift.
+
+    /**
+     * @brief Create @p sessionId, or say which step of creating it failed
+     *        (docs/adr/0096)
+     *
+     * A session is kept only once all of it is there: an engine creates it and
+     * loads its shared library into it (the ECMAScript semantics, the JSON
+     * builtins and whatever else every session is born with), and one whose
+     * library did not load is released, not kept. A generated machine creates
+     * its script session through this as the first step of its start, so a
+     * failure here refuses the start rather than leaving a machine running over
+     * a session without a datamodel.
+     *
+     * @param sessionId Unique session identifier
+     * @param parentSessionId Parent session identifier (optional)
+     * @return nothing when the session was created; otherwise the step that
+     *         failed — `Create` (the engine could not make the session, or one
+     *         of that id exists) or `Library` (the library did not load) — and
+     *         the engine's words
+     */
+    [[nodiscard]] virtual std::optional<ScriptSessionFailure>
+    createSessionChecked(const std::string &sessionId, const std::string &parentSessionId = "") = 0;
+
+    /**
+     * @brief ISessionLifecycle's answer: whether `createSessionChecked` created
+     *        the session
+     */
+    bool createSession(const std::string &sessionId, const std::string &parentSessionId = "") final;
 
     // === State Query Callback (§scxml-5.9.1 In() predicate) ===
 

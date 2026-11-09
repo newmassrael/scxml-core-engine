@@ -3,8 +3,10 @@
 
 #pragma once
 
+#include "common/ScriptSessionFailure.h"
 #include "dispatchers/IEventDispatcher.h"
 #include <memory>
+#include <optional>
 #include <stdexcept>
 
 namespace SCE::Wrappers {
@@ -35,7 +37,11 @@ namespace SCE::Wrappers {
  *
  * // Wrap generated state machine
  * AsyncStateMachine<traffic_light> sm(dispatcher);
- * sm.initialize();
+ * if (const auto refused = sm.initialize()) {
+ *     // the machine's script session could not be established
+ *     std::cerr << refused->describe() << '\n';
+ *     return;
+ * }
  *
  * // Thread-safe async event posting (from any thread)
  * sm.postEvent(Event::Timer);
@@ -100,10 +106,15 @@ public:
      * Synchronously initializes the state machine. Must be called
      * before posting events.
      *
+     * @return what the machine's own start answers: nothing when it started,
+     *         and the failure when its script session could not be established
+     *         and the start was refused (docs/adr/0096), in which case the
+     *         machine is not running and an event posted to it is not taken.
+     *
      * @note This is synchronous - runs on caller's thread
      */
-    void initialize() {
-        sm_.initialize();
+    [[nodiscard]] std::optional<SCE::ScriptSessionFailure> initialize() {
+        return sm_.initialize();
     }
 
     /**

@@ -118,8 +118,11 @@ public:
      */
     void reset() override;
 
-    // === ISessionLifecycle (shared by IScriptEngine and ISessionManager) ===
-    bool createSession(const std::string &sessionId, const std::string &parentSessionId = "") override;
+    // === Session lifecycle ===
+    // `createSession` (ISessionLifecycle, shared with ISessionManager) is
+    // IScriptEngine's, which answers it from this.
+    std::optional<ScriptSessionFailure> createSessionChecked(const std::string &sessionId,
+                                                             const std::string &parentSessionId = "") override;
     bool destroySession(const std::string &sessionId) override;
     bool hasSession(const std::string &sessionId) const override;
 
@@ -326,7 +329,11 @@ private:
 
     // Lua state management
     lua_State *createLuaState();
-    void registerBuiltins(lua_State *L, const std::string &sessionId);
+    // Every session's library: the SCXML builtins, the ECMAScript semantics
+    // and the JSON builtins. Answers the Lua error of the first chunk that
+    // did not load, which fails the session's creation (docs/adr/0096);
+    // nothing when every one loaded.
+    std::optional<std::string> registerBuiltins(lua_State *L, const std::string &sessionId);
     static void pushScriptValue(lua_State *L, const ScriptValue &value);
     ScriptValue luaToScriptValue(lua_State *L, int index);
     ScriptResult luaResultToScriptResult(lua_State *L, int status);

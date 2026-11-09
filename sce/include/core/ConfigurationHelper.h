@@ -18,9 +18,12 @@
 
 #pragma once
 
+#include "common/ScriptSessionFailure.h"
+
 #include <algorithm>
 #include <cstddef>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace SCE::Core {
@@ -71,6 +74,12 @@ enum class ConfigurationRejection {
     /// The current state is compound or parallel. §scxml-3.11 makes the current
     /// state the atomic one the engine descended to.
     CurrentNotAtomic,
+    /// The set is a configuration of this document, and the machine's script
+    /// session could not be established, so nothing was entered
+    /// (docs/adr/0096). `StaticExecutionEngine::enterAt` refuses with it and
+    /// carries the failure in its `ConfigurationVerdict`; `validateConfiguration`
+    /// never does, since it asks about the set alone.
+    ScriptSessionUnavailable,
 };
 
 /// A human-readable reason, for the message a refusal carries.
@@ -98,8 +107,51 @@ enum class ConfigurationRejection {
         return "the current state is not in the configuration";
     case ConfigurationRejection::CurrentNotAtomic:
         return "the current state must be the atomic state the engine descended to";
+    case ConfigurationRejection::ScriptSessionUnavailable:
+        return "the machine's script session could not be established";
     }
     return "unknown";
+}
+
+/**
+ * @brief What `StaticExecutionEngine::enterAt` answers: the rule a refused
+ *        configuration broke, or `ScriptSessionUnavailable` with the failure
+ *        that refused the entry (docs/adr/0096)
+ *
+ * The rejection alone is an enumeration a constant expression can produce, and
+ * the failure is the engine's words, which only a running engine has; so the
+ * entry's answer holds both, and compares equal to the rejection it names, as
+ * the bare rejection `enterAt` used to answer did.
+ */
+struct ConfigurationVerdict {
+    ConfigurationRejection rejection = ConfigurationRejection::None;
+    /// Present exactly when `rejection` is `ScriptSessionUnavailable`.
+    std::optional<::SCE::ScriptSessionFailure> scriptSessionFailure;
+
+    /// The refusal as a sentence, for the message a refusal carries; the
+    /// failure's step and words follow a refused script session.
+    [[nodiscard]] std::string describe() const {
+        if (scriptSessionFailure.has_value()) {
+            return scriptSessionFailure->describe();
+        }
+        return configurationRejectionText(rejection);
+    }
+};
+
+inline bool operator==(const ConfigurationVerdict &verdict, ConfigurationRejection rejection) noexcept {
+    return verdict.rejection == rejection;
+}
+
+inline bool operator!=(const ConfigurationVerdict &verdict, ConfigurationRejection rejection) noexcept {
+    return verdict.rejection != rejection;
+}
+
+inline bool operator==(ConfigurationRejection rejection, const ConfigurationVerdict &verdict) noexcept {
+    return verdict.rejection == rejection;
+}
+
+inline bool operator!=(ConfigurationRejection rejection, const ConfigurationVerdict &verdict) noexcept {
+    return verdict.rejection != rejection;
 }
 
 namespace detail {

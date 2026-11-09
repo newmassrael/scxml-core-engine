@@ -18,7 +18,11 @@ namespace SCE::Wrappers {
  * using SM = SCE::Generated::traffic_light::traffic_light;
  * AutoProcessStateMachine<SM> light;
  *
- * light.initialize();
+ * if (const auto refused = light.initialize()) {
+ *     // the machine's script session could not be established
+ *     std::cerr << refused->describe() << '\n';
+ *     return 1;
+ * }
  * light.processEvent(Event::Timer);  // Auto-processes event queue
  * @endcode
  *

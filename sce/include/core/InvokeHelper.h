@@ -164,7 +164,9 @@ public:
      *     [this, &engine](const PendingInvoke& p) {
      *         // Execute invoke for p.invokeId
      *         if (child_s1_invoke_0_) {
-     *             child_s1_invoke_0_->initialize();
+     *             if (child_s1_invoke_0_->initialize()) {
+     *                 return;  // refused: its script session failed
+     *             }
      *             if (child_s1_invoke_0_->isInFinalState()) {
      *                 engine.raise(Event::Done_invoke);
      *             }

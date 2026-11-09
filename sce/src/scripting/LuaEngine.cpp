@@ -338,12 +338,13 @@ void LuaEngine::collectGarbage() {
 
 // === Session Management ===
 
-bool LuaEngine::createSession(const std::string &sessionId, const std::string &parentSessionId) {
+std::optional<ScriptSessionFailure> LuaEngine::createSessionChecked(const std::string &sessionId,
+                                                                    const std::string &parentSessionId) {
     std::lock_guard<std::mutex> lock(sessionMutex_);
 
     if (sessions_.count(sessionId)) {
         SCE_LOG_WARN("LuaEngine: Session already exists: {}", sessionId);
-        return false;
+        return ScriptSessionFailure{ScriptSessionStage::Create, "a session '" + sessionId + "' exists already"};
     }
 
     auto ctx = std::make_unique<LuaSessionContext>();
@@ -353,10 +354,21 @@ bool LuaEngine::createSession(const std::string &sessionId, const std::string &p
 
     if (!ctx->L) {
         SCE_LOG_ERROR("LuaEngine: Failed to create Lua state for session: {}", sessionId);
-        return false;
+        return ScriptSessionFailure{ScriptSessionStage::Create,
+                                    "Lua could not allocate a state for session '" + sessionId + "'"};
     }
 
-    registerBuiltins(ctx->L, sessionId);
+    // docs/adr/0096: the session is kept only once all of it is there. A
+    // session whose library did not load has no ECMAScript `==`, no JSON and
+    // no `_scxml_bind_system`, so a machine run over it would read every
+    // condition as an error; it is closed here, and the machine that asked
+    // for it refuses its start.
+    if (auto notLoaded = registerBuiltins(ctx->L, sessionId)) {
+        SCE_LOG_ERROR("LuaEngine: the library did not load into session {}: {}", sessionId, *notLoaded);
+        lua_close(ctx->L);
+        ctx->L = nullptr;
+        return ScriptSessionFailure{ScriptSessionStage::Library, "session '" + sessionId + "': " + *notLoaded};
+    }
 
     // Taken here and nowhere else: after the runtime has installed everything
     // it installs and before the document has run anything. Every later
@@ -374,7 +386,7 @@ bool LuaEngine::createSession(const std::string &sessionId, const std::string &p
     SCE_LOG_DEBUG("LuaEngine: Created session: {} (parent: {})", sessionId,
                   parentSessionId.empty() ? "none" : parentSessionId);
 
-    return true;
+    return std::nullopt;
 }
 
 bool LuaEngine::destroySession(const std::string &sessionId) {
@@ -459,7 +471,21 @@ lua_State *LuaEngine::createLuaState() {
     return L;
 }
 
-void LuaEngine::registerBuiltins(lua_State *L, const std::string &sessionId) {
+std::optional<std::string> LuaEngine::registerBuiltins(lua_State *L, const std::string &sessionId) {
+    // A chunk of the library run into the new state. One that does not load
+    // is the session's creation failing, in Lua's words with the chunk named
+    // (docs/adr/0096): its result used to be discarded, and the session was
+    // kept without the operators every lowered expression calls.
+    const auto load = [L](const char *chunk, const char *what) -> std::optional<std::string> {
+        if (luaL_dostring(L, chunk) == LUA_OK) {
+            return std::nullopt;
+        }
+        const char *said = lua_tostring(L, -1);
+        std::string notLoaded = std::string(what) + " did not load: " + (said != nullptr ? said : "no error message");
+        lua_pop(L, 1);
+        return notLoaded;
+    };
+
     // Store sessionId in Lua registry for access from C callbacks
     lua_pushlightuserdata(L, const_cast<char *>("__session_id"));
     lua_pushstring(L, sessionId.c_str());
@@ -537,7 +563,7 @@ void LuaEngine::registerBuiltins(lua_State *L, const std::string &sessionId) {
     }
 
     // ECMAScript compatibility: string __add, number/boolean __index, JSON, Object builtins
-    luaL_dostring(L, R"LUA(
+    if (auto notLoaded = load(R"LUA(
         -- ECMAScript '+' operator: string + anything = concatenation.
         -- __add is only invoked when Lua cannot natively handle the + operation
         -- (i.e., at least one operand is a non-numeric string). For two numeric
@@ -556,7 +582,10 @@ void LuaEngine::registerBuiltins(lua_State *L, const std::string &sessionId) {
         -- `Object.keys` is in the shared semantics file with the rest of the
         -- engine vocabulary, and sorts there for the same reason it sorted
         -- here: a Lua table has no enumeration order to hand back.
-    )LUA");
+    )LUA",
+                              "the ECMAScript compatibility metatables")) {
+        return notLoaded;
+    }
 
 // §scxml-B-2: the ECMAScript operators Lua does not share — `+`, `==` and
 // the bitwise family, which coerce their operands where Lua either refuses
@@ -565,13 +594,15 @@ void LuaEngine::registerBuiltins(lua_State *L, const std::string &sessionId) {
 // these by name on every backend, so one definition is what keeps the
 // engines from disagreeing about what `==` means.
 #include "ecma_semantics_lua.h"
-    luaL_dostring(L, ECMA_SEMANTICS_LUA);
+    if (auto notLoaded = load(ECMA_SEMANTICS_LUA, "ecma_semantics.lua")) {
+        return notLoaded;
+    }
 
 // §scxml-B-2: JSON.stringify / JSON.parse (Single Source of Truth)
 // Shared with Rust sce-rust-lua via sce/include/scripting/json_builtins.lua
 // CMake generates json_builtins_lua.h with the Lua source as a C++ raw string literal
 #include "json_builtins_lua.h"
-    luaL_dostring(L, JSON_BUILTINS_LUA);
+    return load(JSON_BUILTINS_LUA, "json_builtins.lua");
 }
 
 // === Script Execution ===

@@ -15,6 +15,7 @@
 #include <future>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <queue>
 #include <set>
 #include <string>
@@ -102,12 +103,19 @@ public:
     // === Session Management ===
 
     /**
-     * @brief Create a new JavaScript session with isolated context
+     * @brief Create a new JavaScript session with isolated context, or say
+     *        which step of creating it failed (docs/adr/0096)
+     *
+     * `createSession` (ISessionLifecycle) is IScriptEngine's, which answers it
+     * from this.
+     *
      * @param sessionId Unique identifier for the session
      * @param parentSessionId Optional parent session for hierarchical contexts
-     * @return true if session created successfully
+     * @return nothing when the session was created; the step that failed and
+     *         QuickJS's words otherwise
      */
-    bool createSession(const std::string &sessionId, const std::string &parentSessionId = "") override;
+    std::optional<ScriptSessionFailure> createSessionChecked(const std::string &sessionId,
+                                                             const std::string &parentSessionId = "") override;
 
     /**
      * @brief Destroy a JavaScript session and cleanup its context
@@ -520,20 +528,23 @@ private:
                                               const std::vector<IOProcessorDescriptor> &ioProcessors);
 
     // Context management
-    bool createSessionInternal(const std::string &sessionId, const std::string &parentSessionId);
+    std::optional<ScriptSessionFailure> createSessionInternal(const std::string &sessionId,
+                                                              const std::string &parentSessionId);
     bool destroySessionInternal(const std::string &sessionId);
     SessionContext *getSession(const std::string &sessionId);
 
-    // QuickJS setup
-    bool setupQuickJSContext(JSContext *ctx, const std::string &sessionId);
-    void setupSCXMLBuiltins(JSContext *ctx, const std::string &sessionId);
+    // QuickJS setup. Each answers what did not install, which fails the
+    // session's creation at its library step (docs/adr/0096); nothing when
+    // everything did.
+    std::optional<std::string> setupQuickJSContext(JSContext *ctx, const std::string &sessionId);
+    std::optional<std::string> setupSCXMLBuiltins(JSContext *ctx, const std::string &sessionId);
     void setupEventObject(JSContext *ctx, const std::string &sessionId);
     /// §scxml-5.10: define `_scxmlReadOnlyView`, which `_event` and
     /// `_ioprocessors` are built from, once per context.
     void defineReadOnlyView(JSContext *ctx, const std::string &sessionId);
-    void setupConsoleObject(JSContext *ctx);
+    bool setupConsoleObject(JSContext *ctx);
     void setupMathObject(JSContext *ctx);
-    void setupSystemVariables(JSContext *ctx);
+    bool setupSystemVariables(JSContext *ctx);
 
     // Static callback functions for QuickJS
     static JSValue inFunctionWrapper(JSContext *ctx, JSValue this_val, int argc, JSValue *argv);

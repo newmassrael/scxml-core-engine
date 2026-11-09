@@ -204,14 +204,21 @@ void JSEngine::initializeInternal() {
 
 // === Session Management ===
 
-bool JSEngine::createSession(const std::string &sessionId, const std::string &parentSessionId) {
-    // Zero Duplication Principle: Platform-agnostic execution through Helper
-    auto future = platformExecutor_->executeAsync([this, sessionId, parentSessionId]() {
-        bool success = createSessionInternal(sessionId, parentSessionId);
-        return success ? ScriptResult::createSuccess() : ScriptResult::createError("Failed to create session");
-    });
-    auto result = future.get();
-    return result.isSuccess();
+std::optional<ScriptSessionFailure> JSEngine::createSessionChecked(const std::string &sessionId,
+                                                                   const std::string &parentSessionId) {
+    // Zero Duplication Principle: Platform-agnostic execution through Helper.
+    // `executeAsyncReturning` rather than `executeAsync` because this call
+    // answers with the step that failed, not only whether it did.
+    return platformExecutor_
+        ->executeAsyncReturning<std::optional<ScriptSessionFailure>>(
+            [this, sessionId, parentSessionId]() { return createSessionInternal(sessionId, parentSessionId); },
+            // A shut-down executor refuses rather than runs: no session was
+            // made, which is the create step failing, in the refusal's words.
+            [](const ScriptResult &refused) {
+                return std::optional<ScriptSessionFailure>(
+                    ScriptSessionFailure{ScriptSessionStage::Create, refused.getErrorMessage()});
+            })
+        .get();
 }
 
 bool JSEngine::destroySession(const std::string &sessionId) {
@@ -440,30 +447,41 @@ void JSEngine::collectGarbage() {
 
 // === Internal Implementation (Part 1) ===
 
-bool JSEngine::createSessionInternal(const std::string &sessionId, const std::string &parentSessionId) {
+std::optional<ScriptSessionFailure> JSEngine::createSessionInternal(const std::string &sessionId,
+                                                                    const std::string &parentSessionId) {
     // Validate session ID is not empty
     if (sessionId.empty()) {
         SCE_LOG_ERROR("JSEngine: Session ID cannot be empty");
-        return false;
+        return ScriptSessionFailure{ScriptSessionStage::Create, "a session id cannot be empty"};
     }
 
     if (sessions_.find(sessionId) != sessions_.end()) {
         SCE_LOG_ERROR("JSEngine: Session already exists: {}", sessionId);
-        return false;
+        return ScriptSessionFailure{ScriptSessionStage::Create, "a session '" + sessionId + "' exists already"};
     }
 
-    // Runtime is guaranteed to exist in worker thread
+    // The runtime is made on the worker thread when the engine initializes,
+    // and a runtime QuickJS would not allocate is only logged there; a
+    // context asked of none is a session that cannot be created.
+    if (!runtime_) {
+        SCE_LOG_ERROR("JSEngine: no QuickJS runtime to create session {} in", sessionId);
+        return ScriptSessionFailure{ScriptSessionStage::Create, "the QuickJS runtime was not created"};
+    }
+
     // Create QuickJS context
     JSContext *ctx = JS_NewContext(runtime_);
     if (!ctx) {
         SCE_LOG_ERROR("JSEngine: Failed to create context for session: {}", sessionId);
-        return false;
+        return ScriptSessionFailure{ScriptSessionStage::Create,
+                                    "QuickJS could not allocate a context for session '" + sessionId + "'"};
     }
 
-    // Setup context
-    if (!setupQuickJSContext(ctx, sessionId)) {
+    // docs/adr/0096: the session is kept only once all of it is there; a
+    // context whose builtins did not install is freed, not kept.
+    if (auto notInstalled = setupQuickJSContext(ctx, sessionId)) {
+        SCE_LOG_ERROR("JSEngine: the library did not install into session {}: {}", sessionId, *notInstalled);
         JS_FreeContext(ctx);
-        return false;
+        return ScriptSessionFailure{ScriptSessionStage::Library, "session '" + sessionId + "': " + *notInstalled};
     }
 
     // Create session info
@@ -485,7 +503,7 @@ bool JSEngine::createSessionInternal(const std::string &sessionId, const std::st
     }
 
     SCE_LOG_DEBUG("JSEngine: Created session '{}' - sessions_ map size now: {}", sessionId, sessions_.size());
-    return true;
+    return std::nullopt;
 }
 
 bool JSEngine::destroySessionInternal(const std::string &sessionId) {
@@ -552,49 +570,68 @@ JSEngine::SessionContext *JSEngine::getSession(const std::string &sessionId) {
     return (it != sessions_.end()) ? &it->second : nullptr;
 }
 
-bool JSEngine::setupQuickJSContext(JSContext *ctx, const std::string &sessionId) {
+std::optional<std::string> JSEngine::setupQuickJSContext(JSContext *ctx, const std::string &sessionId) {
     // Set engine instance as context opaque for callbacks
     JS_SetContextOpaque(ctx, this);
 
     // Setup SCXML-specific builtin functions and objects
-    setupSCXMLBuiltins(ctx, sessionId);
-
-    return true;
+    return setupSCXMLBuiltins(ctx, sessionId);
 }
+
+namespace {
+
+/// Install @p value as the property @p name of @p target. A value QuickJS could
+/// not make (an exception, which owns nothing) or a property it would not set
+/// is a builtin that did not install (docs/adr/0096). `JS_SetPropertyStr` takes
+/// @p value whether or not it sets it.
+bool installProperty(JSContext *ctx, ::JSValue target, const char *name, ::JSValue value) {
+    if (JS_IsException(value)) {
+        return false;
+    }
+    return JS_SetPropertyStr(ctx, target, name, value) >= 0;
+}
+
+}  // namespace
 
 // === SCXML-specific Setup ===
 
-void JSEngine::setupSCXMLBuiltins(JSContext *ctx, [[maybe_unused]] const std::string &sessionId) {
+std::optional<std::string> JSEngine::setupSCXMLBuiltins(JSContext *ctx, [[maybe_unused]] const std::string &sessionId) {
     ::JSValue global = JS_GetGlobalObject(ctx);
+    std::optional<std::string> notInstalled;
 
     // Setup In() function for state checking
-    ::JSValue inFunction = JS_NewCFunction(ctx, inFunctionWrapper, "In", 1);
-    JS_SetPropertyStr(ctx, global, "In", inFunction);
+    if (!installProperty(ctx, global, "In", JS_NewCFunction(ctx, inFunctionWrapper, "In", 1))) {
+        notInstalled = "the In() predicate did not install";
+    } else if (!setupConsoleObject(ctx)) {
+        // NOTE: QuickJS already has Math object built-in, no need to set it up
+        // Removing setupMathObject() improves session creation performance by ~10-15%
+        notInstalled = "the console object did not install";
+    } else if (!setupSystemVariables(ctx)) {
+        notInstalled = "the system variables' placeholders did not install";
+    } else {
+        // §scxml-5.10: _event is bound lazily on first event (see JSEngineImpl::setCurrentEventInternal)
 
-    // Setup console object
-    setupConsoleObject(ctx);
-
-    // NOTE: QuickJS already has Math object built-in, no need to set it up
-    // Removing setupMathObject() improves session creation performance by ~10-15%
-
-    // Setup system variables
-    setupSystemVariables(ctx);
-
-    // §scxml-5.10: _event is bound lazily on first event (see JSEngineImpl::setCurrentEventInternal)
-
-    // Bind all registered global functions
-    {
+        // Bind all registered global functions
         std::lock_guard<std::mutex> lock(globalFunctionsMutex_);
         for (const auto &[name, callback] : globalFunctions_) {
             ::JSValue funcName = JS_NewString(ctx, name.c_str());
+            if (JS_IsException(funcName)) {
+                notInstalled = "the registered global function '" + name + "' did not install";
+                break;
+            }
             ::JSValue func = JS_NewCFunctionData(ctx, globalFunctionWrapper, -1, 0, 1, &funcName);
-            JS_SetPropertyStr(ctx, global, name.c_str(), func);
+            const bool installed = installProperty(ctx, global, name.c_str(), func);
             JS_FreeValue(ctx, funcName);  // Free the string after using it
+            if (!installed) {
+                notInstalled = "the registered global function '" + name + "' did not install";
+                break;
+            }
             SCE_LOG_DEBUG("JSEngine: Bound registered global function '{}' to JavaScript context", name);
         }
     }
 
     JS_FreeValue(ctx, global);
+    return notInstalled;
 }
 
 void JSEngine::defineReadOnlyView(JSContext *ctx, const std::string &sessionId) {
@@ -739,17 +776,23 @@ void JSEngine::setupEventObject(JSContext *ctx, const std::string &sessionId) {
     JS_FreeValue(ctx, global);
 }
 
-void JSEngine::setupConsoleObject(JSContext *ctx) {
-    ::JSValue global = JS_GetGlobalObject(ctx);
+bool JSEngine::setupConsoleObject(JSContext *ctx) {
     ::JSValue consoleObj = JS_NewObject(ctx);
+    if (JS_IsException(consoleObj)) {
+        return false;
+    }
 
     // Setup console.log function
-    ::JSValue logFunction = JS_NewCFunction(ctx, consoleFunctionWrapper, "log", 1);
-    JS_SetPropertyStr(ctx, consoleObj, "log", logFunction);
+    if (!installProperty(ctx, consoleObj, "log", JS_NewCFunction(ctx, consoleFunctionWrapper, "log", 1))) {
+        JS_FreeValue(ctx, consoleObj);
+        return false;
+    }
 
     // Set console in global scope
-    JS_SetPropertyStr(ctx, global, "console", consoleObj);
+    ::JSValue global = JS_GetGlobalObject(ctx);
+    const bool installed = installProperty(ctx, global, "console", consoleObj);
     JS_FreeValue(ctx, global);
+    return installed;
 }
 
 void JSEngine::setupMathObject(JSContext *ctx) {
@@ -783,7 +826,7 @@ void JSEngine::setupMathObject(JSContext *ctx) {
     JS_FreeValue(ctx, result);
 }
 
-void JSEngine::setupSystemVariables(JSContext *ctx) {
+bool JSEngine::setupSystemVariables(JSContext *ctx) {
     ::JSValue global = JS_GetGlobalObject(ctx);
 
     // Setup _sessionid (unique identifier for this session)
@@ -791,7 +834,7 @@ void JSEngine::setupSystemVariables(JSContext *ctx) {
     std::string sessionId = "session_" + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
                                                             std::chrono::system_clock::now().time_since_epoch())
                                                             .count());
-    JS_SetPropertyStr(ctx, global, "_sessionid", JS_NewString(ctx, sessionId.c_str()));
+    bool installed = installProperty(ctx, global, "_sessionid", JS_NewString(ctx, sessionId.c_str()));
 
     // Placeholder, not the binding. Both values here are overwritten by
     // `setupSystemVariablesInternal`, which `StateMachine::setupJSEnvironment`
@@ -805,13 +848,13 @@ void JSEngine::setupSystemVariables(JSContext *ctx) {
     // The comment here used to read "from <scxml> element name attribute"
     // above a hardcoded literal, which describes the neighbouring function
     // rather than this one and reads as a defect that is not there.
-    JS_SetPropertyStr(ctx, global, "_name", JS_NewString(ctx, "RSMStateMachine"));
+    installed = installed && installProperty(ctx, global, "_name", JS_NewString(ctx, "RSMStateMachine"));
 
     // Setup _ioprocessors (Event I/O Processors)
-    ::JSValue ioprocessors = JS_NewObject(ctx);
-    JS_SetPropertyStr(ctx, global, "_ioprocessors", ioprocessors);
+    installed = installed && installProperty(ctx, global, "_ioprocessors", JS_NewObject(ctx));
 
     JS_FreeValue(ctx, global);
+    return installed;
 }
 
 // === Static callback functions ===

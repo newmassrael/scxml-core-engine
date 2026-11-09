@@ -16,6 +16,10 @@
 #pragma once
 
 #include "common/ForwardedEvent.h"
+#include "common/ScriptSessionFailure.h"
+
+#include <optional>
+#include <utility>
 
 namespace SCE::Common {
 
@@ -41,23 +45,76 @@ struct NoParent {
 /**
  * @brief Why `StaticExecutionEngine::initializeAsRoot` refused a start.
  *
- * The default is to run such a machine — its `#_parent` sends then raise
- * error.communication (§scxml-C-1). A host that would rather not start a
- * machine that needs a parent, when it has none to give, asks for the refusal
- * by starting it with `initializeAsRoot`.
+ * It refuses for either of two reasons. The first is asked before anything is
+ * established (§scxml-6.2.4: the document sends to `#_parent`, and a session
+ * its host started has no parent to reach): the default is to run a machine
+ * that needs a parent — its
+ * `#_parent` sends then raise error.communication (§scxml-C-1) — and a host
+ * that would rather not start one, when it has none to give, asks for the
+ * refusal by starting it with `initializeAsRoot`. The second is the plain
+ * start's own: a machine whose script session cannot be established is not
+ * started (docs/adr/0096), and the refusal carries the failure.
+ *
+ * Spelled as the two values `RootStartRefusal::NeedsParent` and
+ * `RootStartRefusal::ScriptSession(failure)`, the shape of the refusal on the
+ * other engines; `kind()` tells them apart.
  */
-enum class RootStartRefusal {
-    /// §scxml-6.2.4: the document sends to `#_parent`, and a session its host
-    /// started has no parent to reach.
-    NeedsParent,
+class RootStartRefusal {
+public:
+    enum class Kind {
+        /// The document sends to `#_parent`, and a session its host started
+        /// has no parent to reach.
+        NeedsParent,
+        /// docs/adr/0096: the machine's script session could not be
+        /// established, so nothing was entered and nothing ran.
+        ScriptSession,
+    };
+
+    /// The refusal of a machine that needs a parent.
+    static const RootStartRefusal NeedsParent;
+
+    /// The refusal of a machine whose script session could not be established.
+    static RootStartRefusal ScriptSession(::SCE::ScriptSessionFailure failure) {
+        return RootStartRefusal(std::move(failure));
+    }
+
+    [[nodiscard]] Kind kind() const noexcept {
+        return failure_.has_value() ? Kind::ScriptSession : Kind::NeedsParent;
+    }
+
+    /// The failure a `ScriptSession` refusal carries; null for `NeedsParent`.
+    [[nodiscard]] const ::SCE::ScriptSessionFailure *scriptSessionFailure() const noexcept {
+        return failure_.has_value() ? &*failure_ : nullptr;
+    }
+
+    friend bool operator==(const RootStartRefusal &a, const RootStartRefusal &b) {
+        return a.failure_ == b.failure_;
+    }
+
+    friend bool operator!=(const RootStartRefusal &a, const RootStartRefusal &b) {
+        return !(a == b);
+    }
+
+private:
+    RootStartRefusal() = default;
+
+    explicit RootStartRefusal(::SCE::ScriptSessionFailure failure) : failure_(std::move(failure)) {}
+
+    /// Empty exactly for `NeedsParent`.
+    std::optional<::SCE::ScriptSessionFailure> failure_;
 };
 
+inline const RootStartRefusal RootStartRefusal::NeedsParent{};
+
 /// The refusal as a sentence, for a host to report — the same words on every
-/// engine.
-inline const char *reason(RootStartRefusal refusal) {
-    switch (refusal) {
-    case RootStartRefusal::NeedsParent:
+/// engine. A `ScriptSession` refusal carries the step that failed and the
+/// engine's words beside it (`scriptSessionFailure()->describe()`).
+inline const char *reason(const RootStartRefusal &refusal) {
+    switch (refusal.kind()) {
+    case RootStartRefusal::Kind::NeedsParent:
         return "the machine sends to #_parent and was started with no parent session";
+    case RootStartRefusal::Kind::ScriptSession:
+        return "the machine's script session could not be established";
     }
     return "";
 }

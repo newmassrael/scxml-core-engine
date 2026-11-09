@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.1 (1ubuntu1~24.04.2)",
-  "embed_version": "c14cd4e",
+  "embed_version": "898b55f",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 578,
+  "symbol_count": 590,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -510,17 +510,15 @@
     },
     {
       "header": "common/NoParent.h",
-      "kind": "enum",
-      "name": "SCE::Common::RootStartRefusal",
-      "values": [
-        "NeedsParent"
-      ]
+      "kind": "class",
+      "members": [],
+      "name": "SCE::Common::RootStartRefusal"
     },
     {
       "header": "common/NoParent.h",
       "kind": "function",
       "name": "SCE::Common::reason",
-      "signature": "const char * SCE::Common::reason(RootStartRefusal)"
+      "signature": "const char * SCE::Common::reason(const RootStartRefusal &)"
     },
     {
       "header": "common/NoParent.h",
@@ -547,6 +545,66 @@
       "kind": "class",
       "members": [],
       "name": "SCE::MonotonicClock"
+    },
+    {
+      "header": "common/ScriptSessionFailure.h",
+      "kind": "enum",
+      "name": "SCE::ScriptSessionStage",
+      "values": [
+        "Create",
+        "Library",
+        "SystemVariables"
+      ]
+    },
+    {
+      "header": "common/ScriptSessionFailure.h",
+      "kind": "function",
+      "name": "SCE::operator!=",
+      "signature": "bool SCE::operator!=(const ScriptSessionFailure &, const ScriptSessionFailure &)"
+    },
+    {
+      "header": "common/ScriptSessionFailure.h",
+      "kind": "function",
+      "name": "SCE::operator==",
+      "signature": "bool SCE::operator==(const ScriptSessionFailure &, const ScriptSessionFailure &)"
+    },
+    {
+      "header": "common/ScriptSessionFailure.h",
+      "kind": "function",
+      "name": "SCE::scriptSessionStageName",
+      "signature": "const char * SCE::scriptSessionStageName(ScriptSessionStage) noexcept"
+    },
+    {
+      "header": "common/ScriptSessionFailure.h",
+      "kind": "struct",
+      "members": [
+        "field ScriptSessionStage stage",
+        "field std::string message",
+        "method ScriptSessionFailure &(ScriptSessionFailure &&) noexcept operator=",
+        "method ScriptSessionFailure &(const ScriptSessionFailure &) noexcept(false) operator=",
+        "method std::string () const describe",
+        "method void () noexcept ScriptSessionFailure",
+        "method void () noexcept ~ScriptSessionFailure",
+        "method void (ScriptSessionFailure &&) noexcept ScriptSessionFailure",
+        "method void (const ScriptSessionFailure &) noexcept(false) ScriptSessionFailure"
+      ],
+      "name": "SCE::ScriptSessionFailure"
+    },
+    {
+      "header": "common/ScriptSessionFailure.h",
+      "kind": "struct",
+      "members": [
+        "field ScriptSessionStage stage",
+        "field std::string message",
+        "method ScriptSessionFailure &(ScriptSessionFailure &&) operator=",
+        "method ScriptSessionFailure &(const ScriptSessionFailure &) operator=",
+        "method std::string () const describe",
+        "method void () ScriptSessionFailure",
+        "method void () ~ScriptSessionFailure",
+        "method void (ScriptSessionFailure &&) ScriptSessionFailure",
+        "method void (const ScriptSessionFailure &) ScriptSessionFailure"
+      ],
+      "name": "SCE::ScriptSessionFailure"
     },
     {
       "header": "common/ScriptValueJson.h",
@@ -762,7 +820,8 @@
         "ParallelChildCount",
         "AtomicHasChildren",
         "CurrentNotActive",
-        "CurrentNotAtomic"
+        "CurrentNotAtomic",
+        "ScriptSessionUnavailable"
       ]
     },
     {
@@ -817,6 +876,30 @@
     {
       "header": "core/ConfigurationHelper.h",
       "kind": "function",
+      "name": "SCE::Core::operator!=",
+      "signature": "bool SCE::Core::operator!=(ConfigurationRejection, const ConfigurationVerdict &) noexcept"
+    },
+    {
+      "header": "core/ConfigurationHelper.h",
+      "kind": "function",
+      "name": "SCE::Core::operator!=",
+      "signature": "bool SCE::Core::operator!=(const ConfigurationVerdict &, ConfigurationRejection) noexcept"
+    },
+    {
+      "header": "core/ConfigurationHelper.h",
+      "kind": "function",
+      "name": "SCE::Core::operator==",
+      "signature": "bool SCE::Core::operator==(ConfigurationRejection, const ConfigurationVerdict &) noexcept"
+    },
+    {
+      "header": "core/ConfigurationHelper.h",
+      "kind": "function",
+      "name": "SCE::Core::operator==",
+      "signature": "bool SCE::Core::operator==(const ConfigurationVerdict &, ConfigurationRejection) noexcept"
+    },
+    {
+      "header": "core/ConfigurationHelper.h",
+      "kind": "function",
       "name": "SCE::Core::validateConfiguration<T>",
       "signature": "ConfigurationRejection SCE::Core::validateConfiguration<T>(const std::vector<typename Policy::State> &, typename Policy::State)"
     },
@@ -836,6 +919,33 @@
         "field std::optional<State> state"
       ],
       "name": "SCE::Core::HistoryRejection<T>"
+    },
+    {
+      "header": "core/ConfigurationHelper.h",
+      "kind": "struct",
+      "members": [
+        "field ConfigurationRejection rejection",
+        "field std::optional< ::SCE::ScriptSessionFailure> scriptSessionFailure",
+        "method std::string () const describe",
+        "method void () ConfigurationVerdict",
+        "method void () noexcept ~ConfigurationVerdict",
+        "method void (ConfigurationVerdict &&) ConfigurationVerdict",
+        "method void (const ConfigurationVerdict &) ConfigurationVerdict"
+      ],
+      "name": "SCE::Core::ConfigurationVerdict"
+    },
+    {
+      "header": "core/ConfigurationHelper.h",
+      "kind": "struct",
+      "members": [
+        "field ConfigurationRejection rejection",
+        "field std::optional< ::SCE::ScriptSessionFailure> scriptSessionFailure",
+        "method std::string () const describe",
+        "method void () ConfigurationVerdict",
+        "method void (ConfigurationVerdict &&) ConfigurationVerdict",
+        "method void (const ConfigurationVerdict &) ConfigurationVerdict"
+      ],
+      "name": "SCE::Core::ConfigurationVerdict"
     },
     {
       "header": "core/ConfigurationHelper.h",
