@@ -6947,10 +6947,11 @@ mod tests {
         crate::analyzer::analyze(&mut model, "");
         let output =
             generate_c11(&model, &crate::find_template_base(), "nested_loops", None).expect("c11");
+        // The output carries other headers than this machine's, so it is found by its name.
         let header = output
             .files
             .iter()
-            .find(|(name, _)| name.ends_with("_sm.h"))
+            .find(|(name, _)| name.ends_with("nested_loops_sm.h"))
             .map(|(_, text)| text.as_str())
             .expect("the machine's header");
         // The text of `header` from `open` to the first `close` after it.
