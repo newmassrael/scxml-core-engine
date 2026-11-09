@@ -274,13 +274,15 @@ fn the_statements_the_send_and_the_ptc_go_through_the_runtime() {
         "processor_type: \"http://sce.dev/ext/test-port\".to_string(),",
         "event_name: \"job.request\".to_string(),",
         "target: \"sut\".to_string(),",
-        "value: Some(::std::sync::Arc::new(request_of::value(self.job))),",
+        "value: Some(::sce_rust_runtime::test::message_value(request_of::value(self.job), \
+         request_of::canonical)),",
     ] {
         assert!(asker.contains(needle), "asker holds `{needle}`");
     }
     let coordinator = text("coordinator");
     for needle in [
-        "value: Some(::std::sync::Arc::new(reply_of::value(self.requested, self.ok))),",
+        "value: Some(::sce_rust_runtime::test::message_value(\
+         reply_of::value(self.requested, self.ok), reply_of::canonical)),",
         "processor_type: \"http://sce.dev/ext/test-component\".to_string(),",
         "invoke_id: \"answerer\".to_string(),",
     ] {
@@ -346,8 +348,8 @@ fn a_template_argument_is_handed_over_as_the_template_takes_it() {
     let path = dir.path().join("reporter.scxml");
     std::fs::write(&path, component).expect("the component is written");
     assert!(text_at(&path).contains(
-        "value: Some(::std::sync::Arc::new(job_report_of::value(self.elapsed, &self.note, \
-         self.code))),"
+        "value: Some(::sce_rust_runtime::test::message_value(\
+         job_report_of::value(self.elapsed, &self.note, self.code), job_report_of::canonical)),"
     ));
 }
 
