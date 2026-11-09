@@ -662,6 +662,14 @@ old encode, the old encode and its templates are removed in the same landing.
    (§1), so a refusal leaves the caller's sink untouched. A printed codec's `encode_to_vec` answers an optional
    only where its plan is not total: nineteen goldens whose plan is total now answer the bytes. One codec of the
    repository is kept, a CBOR record list.
+
+   *The thirty-fifth C++ landing, 2026-11-10:* a C++ machine holds every list, text and byte string in the
+   forge runtime's owned bounded type of it (`OwnedList`, `OwnedText`, `OwnedBytes`), its bound in its type, as
+   ADR 0086 §7.4 decided and as the Rust machine does. A value past the bound is no value of the type, so a
+   record's text reaches the CBOR encode already within its bound, and the analysis's refusal for it is one
+   the type keeps rather than one the encode writes. The C++ printer prints a record with a text field, and the
+   CBOR record list is printed; a record's byte-string field is not printed yet. No codec of the repository is
+   kept: the template's C++ encode prints none, and it can be removed.
 5. Swift, when its codec lowers what the plan holds.
 
 ## Consequences
