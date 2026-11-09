@@ -21,7 +21,7 @@
 use core::fmt;
 
 /// A JSON value.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Value {
     /// `null`.
     Null,
@@ -120,6 +120,96 @@ fn write_into(value: &Value, out: &mut String) {
             out.push('}');
         }
     }
+}
+
+/// Why a value has no form in the JSON Canonicalization Scheme.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NotCanonical(String);
+
+impl NotCanonical {
+    /// Why.
+    pub fn reason(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for NotCanonical {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+/// `value` in the JSON Canonicalization Scheme (RFC 8785): no whitespace, the
+/// members of each object sorted by their names as arrays of UTF-16 code units
+/// (section 3.2.3), each text in the one form every engine writes
+/// ([`push_escaped`], which is ECMAScript's `JSON.stringify` of a text: section
+/// 3.2.2.2), and each number as ECMAScript spells the double it reads as
+/// ([`number_text`], section 3.2.2.3). Two values equal under the scheme are
+/// then written as the same bytes, whatever order their members were built in.
+///
+/// Refused, naming why: a number past the range of a double, which the scheme
+/// has no spelling for, and an object that names one member twice, which has
+/// no single meaning (section 3.1).
+pub fn write_canonical(value: &Value) -> Result<String, NotCanonical> {
+    let mut out = String::new();
+    write_canonical_into(value, &mut out)?;
+    Ok(out)
+}
+
+fn write_canonical_into(value: &Value, out: &mut String) -> Result<(), NotCanonical> {
+    match value {
+        Value::Null => out.push_str("null"),
+        Value::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
+        Value::Number(spelling) => {
+            let number: f64 = spelling
+                .parse()
+                .map_err(|_| NotCanonical(format!("'{spelling}' is not a number")))?;
+            if !number.is_finite() {
+                return Err(NotCanonical(format!(
+                    "the number {spelling} is past the range of a double, which RFC 8785 \
+                     writes every number as"
+                )));
+            }
+            out.push_str(&number_text(number));
+        }
+        Value::Text(s) => {
+            out.push('"');
+            push_escaped(out, s);
+            out.push('"');
+        }
+        Value::Array(items) => {
+            out.push('[');
+            for (i, item) in items.iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                write_canonical_into(item, out)?;
+            }
+            out.push(']');
+        }
+        Value::Object(members) => {
+            let mut sorted: Vec<&(String, Value)> = members.iter().collect();
+            sorted.sort_by(|left, right| left.0.encode_utf16().cmp(right.0.encode_utf16()));
+            if let Some(pair) = sorted.windows(2).find(|pair| pair[0].0 == pair[1].0) {
+                return Err(NotCanonical(format!(
+                    "the member \"{}\" appears twice",
+                    pair[0].0
+                )));
+            }
+            out.push('{');
+            for (i, (key, item)) in sorted.into_iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                out.push('"');
+                push_escaped(out, key);
+                out.push_str("\":");
+                write_canonical_into(item, out)?;
+            }
+            out.push('}');
+        }
+    }
+    Ok(())
 }
 
 /// The JSON spelling of one text: escaped and quoted.
@@ -590,5 +680,112 @@ mod tests {
             Ok(Value::Text("\u{1f600}".to_string()))
         );
         assert_eq!(parse(" \t\r\n1 \t\r\n"), Ok(Value::Number("1".to_string())));
+    }
+
+    fn text(s: &str) -> Value {
+        Value::Text(s.to_string())
+    }
+
+    /// RFC 8785 section 3.2.3, the example of the RFC: members are sorted by
+    /// their names as UTF-16 code units, so U+1F600, whose first unit is
+    /// 0xD83D, comes before U+FB33, which an order of code points would put
+    /// after it; U+0080 is written as it is, since only U+0000 to U+001F are
+    /// escaped.
+    #[test]
+    fn canonical_members_are_sorted_by_their_utf16_code_units() {
+        let value = Value::Object(vec![
+            ("\u{20ac}".to_string(), text("Euro Sign")),
+            ("\r".to_string(), text("Carriage Return")),
+            (
+                "\u{fb33}".to_string(),
+                text("Hebrew Letter Dalet With Dagesh"),
+            ),
+            ("1".to_string(), text("One")),
+            ("\u{1f600}".to_string(), text("Emoji: Grinning Face")),
+            ("\u{80}".to_string(), text("Control")),
+            (
+                "\u{f6}".to_string(),
+                text("Latin Small Letter O With Diaeresis"),
+            ),
+        ]);
+        assert_eq!(
+            write_canonical(&value).expect("canonical"),
+            "{\"\\r\":\"Carriage Return\",\"1\":\"One\",\"\u{80}\":\"Control\",\
+             \"\u{f6}\":\"Latin Small Letter O With Diaeresis\",\"\u{20ac}\":\"Euro Sign\",\
+             \"\u{1f600}\":\"Emoji: Grinning Face\",\
+             \"\u{fb33}\":\"Hebrew Letter Dalet With Dagesh\"}"
+        );
+    }
+
+    /// RFC 8785 section 3.2.2.2: a text is escaped as `JSON.stringify` escapes
+    /// it, the five short forms, `\u00xx` in lower-case hex for the other
+    /// controls, and nothing else: not `/`, not U+007F, not a character past
+    /// U+FFFF.
+    #[test]
+    fn a_canonical_text_escapes_only_what_json_stringify_escapes() {
+        let value = text("\u{8}\t\n\u{c}\r\"\\\u{0}\u{1f}\u{7f}/\u{1f600}");
+        assert_eq!(
+            write_canonical(&value).expect("canonical"),
+            "\"\\b\\t\\n\\f\\r\\\"\\\\\\u0000\\u001f\u{7f}/\u{1f600}\""
+        );
+    }
+
+    /// Nested arrays and objects are written with no whitespace, each object's
+    /// members sorted at its own level, an array's items in their order.
+    #[test]
+    fn a_canonical_value_has_no_whitespace_and_sorts_every_level() {
+        let value = Value::Object(vec![
+            (
+                "b".to_string(),
+                Value::Array(vec![
+                    Value::Object(vec![
+                        ("z".to_string(), Value::Null),
+                        ("a".to_string(), Value::Bool(false)),
+                    ]),
+                    text("y"),
+                    Value::Array(Vec::new()),
+                ]),
+            ),
+            ("a".to_string(), Value::Object(Vec::new())),
+        ]);
+        assert_eq!(
+            write_canonical(&value).expect("canonical"),
+            "{\"a\":{},\"b\":[{\"a\":false,\"z\":null},\"y\",[]]}"
+        );
+    }
+
+    /// RFC 8785 section 3.2.2.3: a number is written as ECMAScript writes the
+    /// double it reads as; one past the range of a double is refused.
+    #[test]
+    fn a_canonical_number_is_the_double_it_reads_as() {
+        for (spelling, written) in [
+            ("1E3", "1000"),
+            ("-0", "0"),
+            ("0.10", "0.1"),
+            ("1e21", "1e+21"),
+            ("1e-7", "1e-7"),
+        ] {
+            assert_eq!(
+                write_canonical(&Value::Number(spelling.to_string())),
+                Ok(written.to_string()),
+                "{spelling}"
+            );
+        }
+        let refused = write_canonical(&Value::Number("1e400".to_string()))
+            .expect_err("past the range of a double");
+        assert!(refused.reason().contains("1e400"), "{refused}");
+    }
+
+    /// RFC 8785 section 3.1: an object that names one member twice has no
+    /// single meaning, at whatever depth.
+    #[test]
+    fn a_canonical_object_names_each_member_once() {
+        let twice = Value::Array(vec![Value::Object(vec![
+            ("a".to_string(), text("1")),
+            ("b".to_string(), text("2")),
+            ("a".to_string(), text("3")),
+        ])]);
+        let refused = write_canonical(&twice).expect_err("a member twice");
+        assert!(refused.reason().contains("\"a\""), "{refused}");
     }
 }
