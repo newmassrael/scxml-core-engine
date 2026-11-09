@@ -24,7 +24,9 @@
 // two host processors a generated component registers on its engine (§12.3),
 // written here with the C host's handler types. The cases of `the_bounds` hold
 // what only the C runtime has: every table of a run is bounded at compile time,
-// and a run that would pass a bound ends with `error`, naming it.
+// and a run that would pass a bound ends with `error`, naming it. The cases of
+// `the_test_log` hold the test log a run writes (§12.5): its records, the
+// canonical form of a value, and its text.
 //
 // Header-only code; nothing here allocates.
 
@@ -153,6 +155,24 @@ static sce_test_machine_factory_t factory_of(machines_t *machines) {
     return factory;
 }
 
+// ── The values messages carry ────────────────────────────────────────────
+
+// The canonical form of a message whose record holds no field: `{}`.
+static void writes_no_field(sce_jcs_t *jcs, const void *value) {
+    (void)value;
+    sce_jcs_begin_object(jcs);
+    sce_jcs_end_object(jcs);
+}
+
+// The record type `empty`, which holds no field.
+static const sce_test_record_type_t EMPTY = {"empty", writes_no_field};
+
+// The value of a message of the record type `empty`: no bytes, and `{}` in the
+// test log.
+static sce_test_message_value_t empty_value(void) {
+    return sce_test_message_value(sce_host_value_none(), &EMPTY);
+}
+
 // ── A system adapter that replays a trace ────────────────────────────────
 
 // One input of a trace.
@@ -207,7 +227,7 @@ static bool trace_take_input_due(sce_test_system_adapter_t *adapter, sce_test_in
     }
     const input_t *input = &self->trace[self->next++];
     *system_port = input->system_port;
-    return sce_test_message_set(message, input->event, sce_host_value_none()) == SCE_TEST_MESSAGE_HELD;
+    return sce_test_message_set(message, input->event, empty_value()) == SCE_TEST_MESSAGE_HELD;
 }
 
 static const sce_test_system_adapter_vtable_t TRACE = {trace_send, trace_next_input, trace_take_input_due, NULL};
@@ -328,7 +348,7 @@ static const sce_test_case_result_t *run_case(const sce_test_configuration_t *co
 static void tester_start(const sce_test_component_context_t *context, scripted_t *self) {
     (void)self;
     sce_test_context_create(context, "echo");
-    sce_test_context_send(context, "p", "ping", sce_host_value_none());
+    sce_test_context_send(context, "p", "ping", empty_value());
     sce_test_context_start_timer(context, "reply", SECOND);
 }
 
@@ -353,7 +373,7 @@ static void echo_answers(const sce_test_component_context_t *context, scripted_t
         sce_test_message_t message;
         CHECK(sce_test_context_receive(context, "q", &message), "the request is received");
         CHECK(strcmp(message.event, "ping") == 0, "the request is '%s'", message.event);
-        sce_test_context_send(context, "q", "pong", sce_host_value_none());
+        sce_test_context_send(context, "q", "pong", empty_value());
     }
 }
 
@@ -429,7 +449,7 @@ static void test_verdict_only_ever_becomes_worse(void) {
 
 static sce_test_message_t message_of(const char *event) {
     sce_test_message_t message;
-    (void)sce_test_message_set(&message, event, sce_host_value_none());
+    (void)sce_test_message_set(&message, event, empty_value());
     return message;
 }
 
@@ -533,7 +553,7 @@ static void test_case_run_test_the_guard_ends_a_test_case_with_error(void) {
 
 static void sends_and_waits(const sce_test_component_context_t *context, scripted_t *self) {
     (void)self;
-    sce_test_context_send(context, "p", "ping", sce_host_value_none());
+    sce_test_context_send(context, "p", "ping", empty_value());
     sce_test_context_start_timer(context, "reply", SECOND);
 }
 
@@ -672,6 +692,18 @@ static bool four_next_input(const sce_test_system_adapter_t *adapter, sce_test_i
     return false;
 }
 
+// The canonical forms of the numbers the SUT sends: the text of their digits.
+static void writes_int64(sce_jcs_t *jcs, const void *value) {
+    sce_test_canonical_signed(jcs, *(const int64_t *)value);
+}
+
+static void writes_int32(sce_jcs_t *jcs, const void *value) {
+    sce_test_canonical_signed(jcs, *(const int32_t *)value);
+}
+
+static const sce_test_record_type_t NUMBER_64 = {"number", writes_int64};
+static const sce_test_record_type_t NUMBER_32 = {"number", writes_int32};
+
 static bool four_take_input_due(sce_test_system_adapter_t *adapter, sce_test_instant_t now, const char **system_port,
                                 sce_test_message_t *message) {
     static const int64_t seven_of_another_type = 7;
@@ -684,14 +716,21 @@ static bool four_take_input_due(sce_test_system_adapter_t *adapter, sce_test_ins
     *system_port = "sut";
     switch (self->given++) {
     case 0u:
-        return sce_test_message_set(message, "number", SCE_HOST_VALUE(int64_t, &seven_of_another_type)) ==
-               SCE_TEST_MESSAGE_HELD;
+        return sce_test_message_set(message, "number",
+                                    sce_test_message_value(SCE_HOST_VALUE(int64_t, &seven_of_another_type),
+                                                           &NUMBER_64)) == SCE_TEST_MESSAGE_HELD;
     case 1u:
-        return sce_test_message_set(message, "other", SCE_HOST_VALUE(int32_t, &seven)) == SCE_TEST_MESSAGE_HELD;
+        return sce_test_message_set(message, "other",
+                                    sce_test_message_value(SCE_HOST_VALUE(int32_t, &seven), &NUMBER_32)) ==
+               SCE_TEST_MESSAGE_HELD;
     case 2u:
-        return sce_test_message_set(message, "number", SCE_HOST_VALUE(int32_t, &six)) == SCE_TEST_MESSAGE_HELD;
+        return sce_test_message_set(message, "number",
+                                    sce_test_message_value(SCE_HOST_VALUE(int32_t, &six), &NUMBER_32)) ==
+               SCE_TEST_MESSAGE_HELD;
     default:
-        return sce_test_message_set(message, "number", SCE_HOST_VALUE(int32_t, &seven)) == SCE_TEST_MESSAGE_HELD;
+        return sce_test_message_set(message, "number",
+                                    sce_test_message_value(SCE_HOST_VALUE(int32_t, &seven), &NUMBER_32)) ==
+               SCE_TEST_MESSAGE_HELD;
     }
 }
 
@@ -817,7 +856,7 @@ static void test_case_run_test_a_component_type_with_no_machine_is_an_error(void
 
 static void sends_ping(const sce_test_component_context_t *context, scripted_t *self) {
     (void)self;
-    sce_test_context_send(context, "p", "ping", sce_host_value_none());
+    sce_test_context_send(context, "p", "ping", empty_value());
 }
 
 // P6, P13: a send on a port whose peer is not present is a dynamic error.
@@ -1173,14 +1212,29 @@ typedef struct ping_s {
     uint32_t n;
 } ping_t;
 
-// A send (P6): the request carries the template's value, which the run appends
-// to the connected port, or hands the system adapter.
+// The ping's canonical form, a record of one number, as the unit of a template
+// over it writes it.
+static void writes_ping(sce_jcs_t *jcs, const void *value) {
+    sce_jcs_begin_object(jcs);
+    sce_jcs_key(jcs, "n");
+    SCE_TEST_CANONICAL_INTEGER(jcs, ((const ping_t *)value)->n);
+    sce_jcs_end_object(jcs);
+}
+
+// The record type `ping`.
+static const sce_test_record_type_t PING = {"ping", writes_ping};
+
+// A send (P6): the request carries the template's value with its record type,
+// lent as one `sce_test_message_value_t`, which the run appends to the
+// connected port, or hands the system adapter.
 static void test_port_processor(void *user_data, const sce_host_send_request_t *request,
                                 sce_host_send_response_list_t *out) {
     (void)out;
     const sce_test_component_context_t *context = (const sce_test_component_context_t *)user_data;
-    CHECK(request->value.type != NULL, "a test-port send carries its template's value");
-    sce_test_context_send(context, request->target, request->event_name, request->value);
+    const sce_test_message_value_t carried = sce_test_message_value_carried(request->value);
+    CHECK(carried.value.type != NULL && carried.record_type == &PING,
+          "a test-port send carries its template's value and its record type");
+    sce_test_context_send(context, request->target, request->event_name, carried);
 }
 
 // A PTC (P9): the start creates it, the cancel removes it.
@@ -1238,7 +1292,8 @@ static void door_tester_start(sce_test_component_machine_t *machine, const sce_t
     request.param_count = 0;
     request.event_data = "";
     request.invoke_id = "";
-    request.value = SCE_HOST_VALUE(ping_t, &ping);
+    const sce_test_message_value_t sent = sce_test_message_value(SCE_HOST_VALUE(ping_t, &ping), &PING);
+    request.value = sce_test_message_value_lent(&sent);
     sce_host_send_response_list_t responses;
     memset(&responses, 0, sizeof(responses));
     test_port_processor(&self->context, &request, &responses);
@@ -1364,7 +1419,7 @@ typedef struct oversized_s {
 static void sends_an_oversized_value(const sce_test_component_context_t *context, scripted_t *self) {
     (void)self;
     static oversized_t value;
-    sce_test_context_send(context, "p", "ping", SCE_HOST_VALUE(oversized_t, &value));
+    sce_test_context_send(context, "p", "ping", sce_test_message_value(SCE_HOST_VALUE(oversized_t, &value), &EMPTY));
 }
 
 // A value larger than SCE_TEST_MAX_VALUE_SIZE is refused by name, never cut.
@@ -1386,7 +1441,7 @@ static void sends_a_long_event(const sce_test_component_context_t *context, scri
     char event[SCE_MAX_ID_LEN + 1u];
     memset(event, 'e', sizeof(event) - 1u);
     event[sizeof(event) - 1u] = '\0';
-    sce_test_context_send(context, "p", event, sce_host_value_none());
+    sce_test_context_send(context, "p", event, empty_value());
 }
 
 // An event name longer than SCE_MAX_ID_LEN holds is refused by name: a cut name
@@ -1557,6 +1612,470 @@ static void the_bounds_a_module_parameter_past_the_table_is_refused(void) {
           "the value replaced the old one");
 }
 
+static void sends_an_untyped_value(const sce_test_component_context_t *context, scripted_t *self) {
+    (void)self;
+    sce_test_context_send(context, "p", "ping", sce_test_message_value(sce_host_value_none(), NULL));
+}
+
+// A value that names no record type would leave the test log short of its
+// message, which it could neither name nor write: the send is refused by name,
+// and nothing reaches the adapter.
+static void the_bounds_a_value_of_no_record_type_is_an_error(void) {
+    static machines_t machines;
+    memset(&machines, 0, sizeof(machines));
+    machines_with(&machines, "Tester", sends_an_untyped_value, idle);
+    trace_adapter_t adapter;
+    const sce_test_configuration_t configuration = mapped(TESTER_P);
+    const sce_test_case_result_t *result =
+        run_case(&configuration, &machines, &replaying(&adapter, NULL, 0u)->adapter, NULL);
+    CHECK(result->verdict == SCE_TEST_VERDICT_ERROR, "verdict %d", (int)result->verdict);
+    CHECK(ends_in_error_naming(result, "names no record type"), "the refusal is named");
+    CHECK(adapter.sent_count == 0u, "nothing reached the adapter");
+}
+
+static void restarts_past_the_test_log(const sce_test_component_context_t *context, scripted_t *self) {
+    for (size_t i = 0u; i < SCE_TEST_MAX_TRACE_RECORDS; ++i) {
+        sce_test_context_start_timer(context, "t", SECOND);
+    }
+    sce_test_context_setverdict(context, SCE_TEST_VERDICT_PASS, "");
+    self->ended = true;
+}
+
+// The test log holds SCE_TEST_MAX_TRACE_RECORDS records: the records past it
+// are counted, not kept, a run that lost one ends with error whatever its
+// verdicts, and its log is not written, since it no longer says what happened.
+// A start of a timer writes a record and no line, so the lines lose nothing.
+static void the_bounds_a_record_past_the_test_log_is_counted_and_ends_with_error(void) {
+    static machines_t machines;
+    memset(&machines, 0, sizeof(machines));
+    machines_with(&machines, "Restarter", restarts_past_the_test_log, idle);
+    trace_adapter_t adapter;
+    const sce_test_configuration_t configuration = lone("Restarter");
+    const sce_test_case_result_t *result =
+        run_case(&configuration, &machines, &replaying(&adapter, NULL, 0u)->adapter, NULL);
+    CHECK(result->log_lost == 0u, "%zu lines were lost", result->log_lost);
+    CHECK(result->trace.count == SCE_TEST_MAX_TRACE_RECORDS && result->trace.lost > 0u,
+          "the test log holds %zu records and lost %zu", result->trace.count, result->trace.lost);
+    CHECK(result->verdict == SCE_TEST_VERDICT_ERROR, "verdict %d", (int)result->verdict);
+    size_t len = 1u;
+    CHECK(sce_test_case_result_canonical_log(result, "bounded", "restarts", NULL, 0u, &len) ==
+                  SCE_TEST_TRACE_INCOMPLETE &&
+              len == 0u,
+          "a log that lost a record is not written");
+}
+
+// ── the_test_log ──────────────────────────────────────────────────────────
+//
+// docs/SCE_TEST_PROFILE.md §12.5; docs/adr/0091, C3: each record written where
+// the semantics places its event, in the order the rounds produce them, and the
+// whole log in its one canonical text. The runs are the twins of the Rust
+// module `the_test_log` of
+// backends/rust/runtime/tests/a_test_case_runs_as_the_test_profile_says.rs and
+// of the C++ cases `TheTestLog` of tests/test_runtime/TestCaseRunTest.cpp, and
+// the forms of a value and of a record those of
+// tests/test_runtime/TestLogTest.cpp, whose texts these are byte for byte.
+
+#ifndef SCE_PROJECT_ROOT
+#error "SCE_PROJECT_ROOT names the repository's root, which the schema is read from; the build defines it"
+#endif
+
+// The text a canonical writer wrote, of the cases below.
+static char canonical_out[512];
+
+// A canonical writer over `canonical_out`.
+static sce_jcs_t *canonical_writer(sce_jcs_t *jcs) {
+    sce_jcs_init(jcs, canonical_out, sizeof(canonical_out));
+    return jcs;
+}
+
+// Whether `jcs` finished, its text `want`.
+static bool canonically(sce_jcs_t *jcs, const char *want) {
+    return sce_jcs_finish(jcs) && strcmp(jcs->w.buf, want) == 0;
+}
+
+// An integer is the text of its digits at every width, the ends of the 64-bit
+// ones among them, which a double does not hold exactly.
+static void the_test_log_an_integer_is_the_text_of_its_decimal_digits(void) {
+    static const uint8_t zero = 0u;
+    static const int8_t least_int8 = INT8_MIN;
+    static const uint64_t most_uint64 = UINT64_MAX;
+    static const int64_t least_int64 = INT64_MIN;
+    sce_jcs_t jcs;
+    SCE_TEST_CANONICAL_INTEGER(canonical_writer(&jcs), zero);
+    CHECK(canonically(&jcs, "\"0\""), "wrote %s", canonical_out);
+    SCE_TEST_CANONICAL_INTEGER(canonical_writer(&jcs), least_int8);
+    CHECK(canonically(&jcs, "\"-128\""), "wrote %s", canonical_out);
+    SCE_TEST_CANONICAL_INTEGER(canonical_writer(&jcs), most_uint64);
+    CHECK(canonically(&jcs, "\"18446744073709551615\""), "wrote %s", canonical_out);
+    SCE_TEST_CANONICAL_INTEGER(canonical_writer(&jcs), least_int64);
+    CHECK(canonically(&jcs, "\"-9223372036854775808\""), "wrote %s", canonical_out);
+}
+
+static void the_test_log_a_bool_is_a_truth_value_and_a_text_a_text(void) {
+    sce_jcs_t jcs;
+    sce_test_canonical_boolean(canonical_writer(&jcs), true);
+    CHECK(canonically(&jcs, "true"), "wrote %s", canonical_out);
+    sce_test_canonical_boolean(canonical_writer(&jcs), false);
+    CHECK(canonically(&jcs, "false"), "wrote %s", canonical_out);
+    sce_test_canonical_text(canonical_writer(&jcs), "a\"b");
+    CHECK(canonically(&jcs, "\"a\\\"b\""), "wrote %s", canonical_out);
+}
+
+// Two hex digits an octet, upper case, the leading zero kept.
+static void the_test_log_a_byte_string_is_its_octets_in_upper_case_hex(void) {
+    static const uint8_t octets[] = {0x00u, 0xabu, 0x0fu, 0xffu};
+    sce_jcs_t jcs;
+    sce_test_canonical_bytes(canonical_writer(&jcs), octets, sizeof(octets));
+    CHECK(canonically(&jcs, "\"00AB0FFF\""), "wrote %s", canonical_out);
+    sce_test_canonical_bytes(canonical_writer(&jcs), octets, 0u);
+    CHECK(canonically(&jcs, "\"\""), "wrote %s", canonical_out);
+}
+
+// A closed enum by its declared name; an open one by its name, or by its number
+// where no variant declares it. A value of a closed enum no variant names is no
+// value of its type, and refuses the text.
+static void the_test_log_an_enum_is_its_declared_name(void) {
+    static const uint8_t first = 0u;
+    static const uint8_t undeclared = 7u;
+    sce_jcs_t jcs;
+    sce_test_canonical_enumerated(canonical_writer(&jcs), "red");
+    CHECK(canonically(&jcs, "\"red\""), "wrote %s", canonical_out);
+    SCE_TEST_CANONICAL_OPEN_ENUMERATED(canonical_writer(&jcs), "red", first);
+    CHECK(canonically(&jcs, "\"red\""), "wrote %s", canonical_out);
+    SCE_TEST_CANONICAL_OPEN_ENUMERATED(canonical_writer(&jcs), NULL, undeclared);
+    CHECK(canonically(&jcs, "\"7\""), "wrote %s", canonical_out);
+    sce_test_canonical_enumerated(canonical_writer(&jcs), NULL);
+    CHECK(!sce_jcs_finish(&jcs) && jcs.refusal != NULL, "a closed enum's undeclared value is refused");
+}
+
+// An absent field is omitted, its name followed by no value, and the fields are
+// sorted when written, whatever order they were given in; a list is its
+// elements in order.
+static void the_test_log_a_record_omits_an_absent_field_and_a_list_keeps_its_order(void) {
+    static const uint16_t two = 2u;
+    sce_jcs_t jcs;
+    sce_jcs_begin_object(canonical_writer(&jcs));
+    sce_jcs_key(&jcs, "quantity");
+    SCE_TEST_CANONICAL_INTEGER(&jcs, two);
+    sce_jcs_key(&jcs, "note");
+    sce_jcs_key(&jcs, "color");
+    sce_test_canonical_enumerated(&jcs, "red");
+    sce_jcs_end_object(&jcs);
+    CHECK(canonically(&jcs, "{\"color\":\"red\",\"quantity\":\"2\"}"), "wrote %s", canonical_out);
+    sce_jcs_begin_object(canonical_writer(&jcs));
+    sce_jcs_key(&jcs, "note");
+    sce_jcs_end_object(&jcs);
+    CHECK(canonically(&jcs, "{}"), "wrote %s", canonical_out);
+
+    static const uint8_t three_one_two[] = {3u, 1u, 2u};
+    sce_jcs_begin_array(canonical_writer(&jcs));
+    for (size_t i = 0u; i < sizeof(three_one_two); ++i) {
+        SCE_TEST_CANONICAL_INTEGER(&jcs, three_one_two[i]);
+    }
+    sce_jcs_end_array(&jcs);
+    CHECK(canonically(&jcs, "[\"3\",\"1\",\"2\"]"), "wrote %s", canonical_out);
+    sce_jcs_begin_array(canonical_writer(&jcs));
+    sce_jcs_end_array(&jcs);
+    CHECK(canonically(&jcs, "[]"), "wrote %s", canonical_out);
+}
+
+// The file `relative` under the repository's root, terminated; false when it
+// cannot be read whole into `cap` bytes.
+static bool read_project_file(const char *relative, char *out, size_t cap, size_t *len) {
+    char path[1024];
+    (void)snprintf(path, sizeof(path), "%s/%s", SCE_PROJECT_ROOT, relative);
+    FILE *file = fopen(path, "rb");
+    if (file == NULL) {
+        return false;
+    }
+    const size_t n = fread(out, 1u, cap - 1u, file);
+    (void)fclose(file);
+    out[n] = '\0';
+    *len = n;
+    return n < cap - 1u;
+}
+
+static char schema_text[32768];
+
+// The status this runtime declares is the schema file's own, and the schema
+// pins the name of the shape it writes. SCE_WIRE_CONTRACTS.md requires one
+// commit to move both.
+static void the_test_log_the_schema_file_declares_the_status_this_runtime_does(void) {
+    size_t len = 0u;
+    if (!read_project_file("schemas/sce-test-log.v1.schema.json", schema_text, sizeof(schema_text), &len)) {
+        CHECK(false, "the schema is readable under %s", SCE_PROJECT_ROOT);
+        return;
+    }
+    sce_jv_t root;
+    sce_saved_error_t err;
+    err.message[0] = '\0';
+    if (!sce_json_parse(schema_text, len, &root, &err)) {
+        CHECK(false, "the schema is JSON: %s", err.message);
+        return;
+    }
+    sce_jv_t status;
+    CHECK(sce_jv_get(root, "x-sce-schema-status", &status) && sce_jv_string_is(status, SCE_TEST_LOG_SCHEMA_STATUS),
+          "schemas/sce-test-log.v1.schema.json x-sce-schema-status disagrees with SCE_TEST_LOG_SCHEMA_STATUS");
+    sce_jv_t properties;
+    sce_jv_t shape;
+    sce_jv_t named;
+    CHECK(sce_jv_get(root, "properties", &properties) && sce_jv_get(properties, "schema", &shape) &&
+              sce_jv_get(shape, "const", &named) && sce_jv_string_is(named, SCE_TEST_LOG_SCHEMA),
+          "the schema pins the shape SCE_TEST_LOG_SCHEMA names");
+}
+
+// Every kind the runtime writes is one the schema names, each once.
+static void the_test_log_every_kind_is_one_the_schema_names(void) {
+    size_t len = 0u;
+    if (!read_project_file("schemas/sce-test-log.v1.schema.json", schema_text, sizeof(schema_text), &len)) {
+        CHECK(false, "the schema is readable under %s", SCE_PROJECT_ROOT);
+        return;
+    }
+    for (int kind = (int)SCE_TEST_TRACE_TEST_CASE_STARTED; kind <= (int)SCE_TEST_TRACE_LOG; ++kind) {
+        const char *name = sce_test_trace_kind_name((sce_test_trace_kind_t)kind);
+        char named[64];
+        (void)snprintf(named, sizeof(named), "\"const\": \"%s\"", name);
+        size_t count = 0u;
+        for (const char *at = strstr(schema_text, named); at != NULL; at = strstr(at + 1, named)) {
+            ++count;
+        }
+        CHECK(count == 1u, "the schema names the kind %s once, not %zu times", name, count);
+    }
+}
+
+// The record a reply of the job `job` is.
+typedef struct job_reply_s {
+    uint32_t job;
+} job_reply_t;
+
+static void writes_job_reply(sce_jcs_t *jcs, const void *value) {
+    sce_jcs_begin_object(jcs);
+    sce_jcs_key(jcs, "job");
+    SCE_TEST_CANONICAL_INTEGER(jcs, ((const job_reply_t *)value)->job);
+    sce_jcs_end_object(jcs);
+}
+
+static const sce_test_record_type_t JOB_REPLY = {"job_reply", writes_job_reply};
+
+// The records of the cases below, too large for a frame.
+static sce_test_trace_t shapes;
+
+// A record of each shape: `at` and every integer as the text of its digits, an
+// absent reason omitted, the members sorted when written.
+static void the_test_log_a_record_is_written_with_the_members_of_its_kind(void) {
+    memset(&shapes, 0, sizeof(shapes));
+    sce_test_trace_timer_started(&shapes, 250, "mtc", "reply", 1000000);
+    sce_test_trace_verdict(&shapes, 250, "echo", SCE_TEST_VERDICT_INCONCLUSIVE, NULL);
+    sce_test_trace_verdict(&shapes, 250, "echo", SCE_TEST_VERDICT_FAIL, "late");
+    const job_reply_t reply = {7u};
+    sce_test_message_t message;
+    CHECK(sce_test_message_set(&message, "job.reply",
+                               sce_test_message_value(SCE_HOST_VALUE(job_reply_t, &reply), &JOB_REPLY)) ==
+              SCE_TEST_MESSAGE_HELD,
+          "the reply fits a message");
+    sce_test_trace_message(&shapes, 250, SCE_TEST_TRACE_MESSAGE_RECEIVED, "mtc", "sut", &message);
+    static const char *const want[] = {
+        "{\"at\":\"250\",\"component\":\"mtc\",\"duration_us\":\"1000000\",\"kind\":\"timer-started\","
+        "\"timer\":\"reply\"}",
+        "{\"at\":\"250\",\"component\":\"echo\",\"kind\":\"verdict-set\",\"verdict\":\"inconc\"}",
+        "{\"at\":\"250\",\"component\":\"echo\",\"kind\":\"verdict-set\",\"reason\":\"late\","
+        "\"verdict\":\"fail\"}",
+        "{\"at\":\"250\",\"component\":\"mtc\",\"kind\":\"message-received\",\"port\":\"sut\","
+        "\"type\":\"job_reply\",\"value\":{\"job\":\"7\"}}",
+    };
+    CHECK(shapes.count == 4u && shapes.lost == 0u, "%zu records, %zu lost", shapes.count, shapes.lost);
+    for (size_t i = 0u; i < 4u && i < shapes.count; ++i) {
+        sce_jcs_t jcs;
+        sce_test_trace_write_record(canonical_writer(&jcs), &shapes, &shapes.records[i]);
+        CHECK(canonically(&jcs, want[i]), "record %zu wrote %s", i, canonical_out);
+    }
+}
+
+// The log of a run: its shape, suite, test case and verdict after its records,
+// all sorted, with no whitespace. A call with no buffer measures it.
+static void the_test_log_a_log_is_its_shape_suite_case_verdict_and_records(void) {
+    memset(&shapes, 0, sizeof(shapes));
+    sce_test_trace_started(&shapes, 0);
+    sce_test_trace_ended(&shapes, 0, SCE_TEST_VERDICT_ERROR);
+    const char *want = "{\"records\":[{\"at\":\"0\",\"kind\":\"test-case-started\"},"
+                       "{\"at\":\"0\",\"kind\":\"test-case-ended\",\"verdict\":\"error\"}],"
+                       "\"schema\":\"sce-test-log.v1\",\"suite\":\"a_suite\",\"test_case\":\"a_case\","
+                       "\"verdict\":\"error\"}";
+    size_t measured = 0u;
+    CHECK(sce_test_trace_write(&shapes, "a_suite", "a_case", SCE_TEST_VERDICT_ERROR, NULL, 0u, &measured) ==
+                  SCE_TEST_TRACE_TOO_SMALL &&
+              measured == strlen(want),
+          "measured %zu", measured);
+    size_t len = 0u;
+    CHECK(sce_test_trace_write(&shapes, "a_suite", "a_case", SCE_TEST_VERDICT_ERROR, canonical_out,
+                               sizeof(canonical_out), &len) == SCE_TEST_TRACE_WRITTEN &&
+              len == strlen(want) && strcmp(canonical_out, want) == 0,
+          "wrote %s", canonical_out);
+}
+
+// The log of each test case the runner reported, in the suite `suite`.
+typedef struct logged_s {
+    const char *suite;
+    size_t count;
+    sce_test_trace_written_t written;
+    char text[2048];
+    size_t len;
+} logged_t;
+
+static void keep_log(void *user_data, const char *test_case, const sce_test_case_result_t *result) {
+    logged_t *kept = (logged_t *)user_data;
+    kept->count++;
+    kept->written =
+        sce_test_case_result_canonical_log(result, kept->suite, test_case, kept->text, sizeof(kept->text), &kept->len);
+}
+
+// A suite named `logged_suite` of the one test case `execute`, its log kept in
+// `*kept`.
+static void run_logged(const sce_test_execute_t *execute, sce_test_adapter_factory_t adapters, logged_t *kept) {
+    sce_test_suite_t suite;
+    memset(&suite, 0, sizeof(suite));
+    suite.name = "logged_suite";
+    suite.executes = execute;
+    suite.execute_count = 1u;
+    memset(kept, 0, sizeof(*kept));
+    kept->suite = suite.name;
+    CHECK(sce_test_run_suite(&suite, &NO_FEATURES, adapters, NULL, &run_storage, keep_log, kept, NULL),
+          "no override is given");
+    CHECK(kept->count == 1u, "%zu cases ran", kept->count);
+}
+
+static const sce_test_declared_t PINGING_TIMERS[] = {{"Tester", "t"}, {"Tester", "s"}};
+
+// An MTC and its echo, joined `p` to `q`; the MTC has two timers.
+static sce_test_configuration_t pinging(void) {
+    sce_test_configuration_t configuration = mtc_and_echo();
+    configuration.timers = PINGING_TIMERS;
+    configuration.timer_count = 2u;
+    return configuration;
+}
+
+// The MTC creates the echo, pings it, starts two timers and logs.
+static void pings_and_waits(const sce_test_component_context_t *context, scripted_t *self) {
+    (void)self;
+    const ping_t ping = {3u};
+    sce_test_context_create(context, "echo");
+    sce_test_context_send(context, "p", "ping", sce_test_message_value(SCE_HOST_VALUE(ping_t, &ping), &PING));
+    sce_test_context_start_timer(context, "t", 10);
+    sce_test_context_start_timer(context, "s", 20);
+    sce_test_context_log(context, "asked \"echo\"");
+}
+
+// At the first timer's timeout the MTC stops the second, and the first again,
+// which no longer runs, and passes.
+static void passes_at_the_first_timeout(const sce_test_component_context_t *context, scripted_t *self) {
+    if (sce_test_context_timed_out(context, "t")) {
+        sce_test_context_timeout(context, "t");
+        sce_test_context_stop_timer(context, "s");
+        sce_test_context_stop_timer(context, "t");
+        sce_test_context_setverdict(context, SCE_TEST_VERDICT_PASS, "");
+        self->ended = true;
+    }
+}
+
+// The echo takes the ping, passes with a reason, and terminates.
+static void echo_takes_the_ping(const sce_test_component_context_t *context, scripted_t *self) {
+    if (sce_test_context_snapshot_present(context, "q")) {
+        (void)sce_test_context_receive(context, "q", NULL);
+        sce_test_context_setverdict(context, SCE_TEST_VERDICT_PASS, "pinged");
+        self->ended = true;
+    }
+}
+
+// The log the runner reported, of the cases below.
+static logged_t kept_log;
+
+// P4, P6, P7, P8, P9, P10, P12, P14: the whole log of a run through the suite's
+// runner. The echo's work comes in the round after the MTC's start, at NOW = 0,
+// the timeout at 10; the stop of a timer that no longer runs, and the removal of
+// the terminated echo when the MTC ends, write no record.
+static void the_test_log_a_run_writes_each_record_where_its_event_happens(void) {
+    static machines_t machines;
+    memset(&machines, 0, sizeof(machines));
+    machines_with(machines_with(&machines, "Tester", pings_and_waits, passes_at_the_first_timeout), "Echo", idle,
+                  echo_takes_the_ping);
+    const sce_test_configuration_t configuration = pinging();
+    sce_test_execute_t execute = execute_of("pings_the_echo", &configuration, &machines);
+    adapters_t adapters;
+    run_logged(&execute, tracing(&adapters), &kept_log);
+    const char *want = "{\"records\":["
+                       "{\"at\":\"0\",\"kind\":\"test-case-started\"},"
+                       "{\"at\":\"0\",\"component\":\"mtc\",\"kind\":\"component-created\",\"type\":\"Tester\"},"
+                       "{\"at\":\"0\",\"component\":\"echo\",\"kind\":\"component-created\",\"type\":\"Echo\"},"
+                       "{\"at\":\"0\",\"component\":\"mtc\",\"kind\":\"message-sent\",\"port\":\"p\","
+                       "\"type\":\"ping\",\"value\":{\"n\":\"3\"}},"
+                       "{\"at\":\"0\",\"component\":\"mtc\",\"duration_us\":\"10\",\"kind\":\"timer-started\","
+                       "\"timer\":\"t\"},"
+                       "{\"at\":\"0\",\"component\":\"mtc\",\"duration_us\":\"20\",\"kind\":\"timer-started\","
+                       "\"timer\":\"s\"},"
+                       "{\"at\":\"0\",\"component\":\"mtc\",\"kind\":\"log\",\"text\":\"asked \\\"echo\\\"\"},"
+                       "{\"at\":\"0\",\"component\":\"echo\",\"kind\":\"message-received\",\"port\":\"q\","
+                       "\"type\":\"ping\",\"value\":{\"n\":\"3\"}},"
+                       "{\"at\":\"0\",\"component\":\"echo\",\"kind\":\"verdict-set\",\"reason\":\"pinged\","
+                       "\"verdict\":\"pass\"},"
+                       "{\"at\":\"0\",\"component\":\"echo\",\"kind\":\"component-done\",\"verdict\":\"pass\"},"
+                       "{\"at\":\"10\",\"component\":\"mtc\",\"kind\":\"timer-timed-out\",\"timer\":\"t\"},"
+                       "{\"at\":\"10\",\"component\":\"mtc\",\"kind\":\"timer-stopped\",\"timer\":\"s\"},"
+                       "{\"at\":\"10\",\"component\":\"mtc\",\"kind\":\"verdict-set\",\"verdict\":\"pass\"},"
+                       "{\"at\":\"10\",\"component\":\"mtc\",\"kind\":\"component-done\",\"verdict\":\"pass\"},"
+                       "{\"at\":\"10\",\"kind\":\"test-case-ended\",\"verdict\":\"pass\"}"
+                       "],\"schema\":\"sce-test-log.v1\",\"suite\":\"logged_suite\","
+                       "\"test_case\":\"pings_the_echo\",\"verdict\":\"pass\"}";
+    CHECK(kept_log.written == SCE_TEST_TRACE_WRITTEN, "the log is written: %d", (int)kept_log.written);
+    CHECK(kept_log.len == strlen(want) && strcmp(kept_log.text, want) == 0, "wrote %s", kept_log.text);
+}
+
+// P13: an error the runtime sets is a verdict without the runtime's own reason,
+// which another runtime would not write alike.
+static void the_test_log_an_error_the_runtime_sets_is_logged_without_its_cause(void) {
+    static machines_t machines;
+    memset(&machines, 0, sizeof(machines));
+    machines_with(&machines, "Waiter", idle, idle);
+    trace_adapter_t adapter;
+    const sce_test_configuration_t configuration = lone("Waiter");
+    const sce_test_duration_t guard = 7;
+    const sce_test_case_result_t *result =
+        run_case(&configuration, &machines, &replaying(&adapter, NULL, 0u)->adapter, &guard);
+    CHECK(result->verdict == SCE_TEST_VERDICT_ERROR, "verdict %d", (int)result->verdict);
+    const char *want = "{\"records\":["
+                       "{\"at\":\"0\",\"kind\":\"test-case-started\"},"
+                       "{\"at\":\"0\",\"component\":\"mtc\",\"kind\":\"component-created\",\"type\":\"Waiter\"},"
+                       "{\"at\":\"7\",\"component\":\"mtc\",\"kind\":\"verdict-set\",\"verdict\":\"error\"},"
+                       "{\"at\":\"7\",\"kind\":\"test-case-ended\",\"verdict\":\"error\"}"
+                       "],\"schema\":\"sce-test-log.v1\",\"suite\":\"logged_suite\","
+                       "\"test_case\":\"waits\",\"verdict\":\"error\"}";
+    size_t len = 0u;
+    CHECK(sce_test_case_result_canonical_log(result, "logged_suite", "waits", canonical_out, sizeof(canonical_out),
+                                             &len) == SCE_TEST_TRACE_WRITTEN &&
+              strcmp(canonical_out, want) == 0,
+          "wrote %s", canonical_out);
+}
+
+// P13: a test case that cannot start, for want of an adapter, logs its start and
+// its end alone, since no component was created.
+static void the_test_log_a_test_case_that_cannot_start_logs_its_start_and_end(void) {
+    static machines_t machines;
+    memset(&machines, 0, sizeof(machines));
+    machines_with(machines_with(&machines, "Tester", pings_and_waits, passes_at_the_first_timeout), "Echo", idle,
+                  echo_takes_the_ping);
+    const sce_test_configuration_t configuration = pinging();
+    sce_test_execute_t execute = execute_of("unplayed", &configuration, &machines);
+    adapters_t adapters;
+    const sce_test_adapter_factory_t none = tracing(&adapters);
+    adapters.give_none = true;
+    run_logged(&execute, none, &kept_log);
+    const char *want = "{\"records\":["
+                       "{\"at\":\"0\",\"kind\":\"test-case-started\"},"
+                       "{\"at\":\"0\",\"kind\":\"test-case-ended\",\"verdict\":\"error\"}"
+                       "],\"schema\":\"sce-test-log.v1\",\"suite\":\"logged_suite\","
+                       "\"test_case\":\"unplayed\",\"verdict\":\"error\"}";
+    CHECK(kept_log.written == SCE_TEST_TRACE_WRITTEN && strcmp(kept_log.text, want) == 0, "wrote %s", kept_log.text);
+}
+
 int main(void) {
     test_verdict_only_ever_becomes_worse();
     test_port_a_snapshot_sees_only_what_was_queued_when_it_was_taken();
@@ -1593,6 +2112,20 @@ int main(void) {
     the_bounds_a_line_past_the_log_is_counted_and_ends_with_error();
     the_bounds_a_line_past_its_detail_is_counted_and_ends_with_error();
     the_bounds_a_module_parameter_past_the_table_is_refused();
+    the_bounds_a_value_of_no_record_type_is_an_error();
+    the_bounds_a_record_past_the_test_log_is_counted_and_ends_with_error();
+    the_test_log_an_integer_is_the_text_of_its_decimal_digits();
+    the_test_log_a_bool_is_a_truth_value_and_a_text_a_text();
+    the_test_log_a_byte_string_is_its_octets_in_upper_case_hex();
+    the_test_log_an_enum_is_its_declared_name();
+    the_test_log_a_record_omits_an_absent_field_and_a_list_keeps_its_order();
+    the_test_log_the_schema_file_declares_the_status_this_runtime_does();
+    the_test_log_every_kind_is_one_the_schema_names();
+    the_test_log_a_record_is_written_with_the_members_of_its_kind();
+    the_test_log_a_log_is_its_shape_suite_case_verdict_and_records();
+    the_test_log_a_run_writes_each_record_where_its_event_happens();
+    the_test_log_an_error_the_runtime_sets_is_logged_without_its_cause();
+    the_test_log_a_test_case_that_cannot_start_logs_its_start_and_end();
     if (failures != 0) {
         (void)fprintf(stderr, "%d check(s) failed\n", failures);
         return 1;

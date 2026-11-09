@@ -15486,15 +15486,21 @@ impl StaticTarget for CTarget {
     // C has no expression that holds a value behind the pointer a host value
     // lends (`sce_host_value_t`), so the send's value is the statements that
     // hold the specific template's `value` in a local of the block the request
-    // stands in and lend it to the request (`_host_req`), under the name every
-    // template of its type gives it (`<unit>_value_type`), which the run copies
-    // before the processor returns (`c/state_machine.c.jinja2`).
+    // stands in, under the name every template of its type gives it
+    // (`<unit>_value_type`), with the record type the test log names and writes
+    // it by (docs/SCE_TEST_PROFILE.md §12.5, `<unit>_record_type`) in a second
+    // local, and lend that to the request (`_host_req`) as one
+    // `sce_test_message_value_t`, which the run copies before the processor
+    // returns (`c/state_machine.c.jinja2`). A sent template is over the record
+    // of a message, so its unit declares both (`forge/c/test_template.h.jinja2`).
     fn test_message(&self, message: &TemplateRef, args: &[String]) -> Option<String> {
         let unit = c_test_template(&message.unit);
         Some(format!(
             "const {unit}_value_t {C_TEST_SENT} = {unit}_value({}); \
-             _host_req.value = sce_host_value_of({unit}_value_type(), &{C_TEST_SENT}, \
-             sizeof({C_TEST_SENT}));",
+             const sce_test_message_value_t {C_TEST_SENT_MESSAGE} = sce_test_message_value(\
+             sce_host_value_of({unit}_value_type(), &{C_TEST_SENT}, sizeof({C_TEST_SENT})), \
+             {unit}_record_type()); \
+             _host_req.value = sce_test_message_value_lent(&{C_TEST_SENT_MESSAGE});",
             args.join(", ")
         ))
     }
@@ -15526,6 +15532,11 @@ const C_TEST_RECEIVED: &str = "sce_test_received_";
 /// content when the branch both receives and sends, so the two locals carry
 /// two names: one name would shadow the other (`-Wshadow`).
 const C_TEST_SENT: &str = "sce_test_sent_";
+
+/// The local that holds the value of [`C_TEST_SENT`] with the record type the
+/// test log names and writes it by, which the request lends the test-port
+/// processor, in the same block.
+const C_TEST_SENT_MESSAGE: &str = "sce_test_sent_message_";
 
 /// `text` as a C string literal.
 fn c_text(text: &str) -> String {

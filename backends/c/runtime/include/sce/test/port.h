@@ -18,7 +18,10 @@
  * A message carries its value as the bytes of the value the generated code
  * holds, copied out of the sender's frame, beside the C name of its type: a
  * template's matcher reads it back as that type, and matching is on the value,
- * never on an encoding (ADR 0091 C2). Header-only and allocation-free.
+ * never on an encoding (ADR 0091 C2). It carries the record type the test log
+ * names it by and writes it with too (sce/test/canonical.h), which a send and
+ * an input give with the value (`sce_test_message_value_t`). Header-only and
+ * allocation-free.
  */
 
 #ifndef SCE_TEST_PORT_H
@@ -30,6 +33,7 @@
 #include <string.h>
 
 #include "sce/host_processor.h"
+#include "sce/test/canonical.h"
 #include "sce/types.h"
 
 #ifdef __cplusplus
@@ -64,16 +68,64 @@ typedef int64_t sce_test_duration_t;
 #define SCE_TEST_NO_MESSAGE SIZE_MAX
 
 /**
- * A message on a port: the event name of its record and the record's value.
+ * A value a message carries and the record type the test log names and writes
+ * it by (docs/SCE_TEST_PROFILE.md §12.5): the C11 form of Rust's
+ * `message_value` and C++'s `SCE::Test::messageValue`.
+ *
+ * `value` is the value as the code that holds it lends it, read back by its C
+ * type; its canonical form is written by the types its document declares, which
+ * its C type alone does not say, so `record_type` writes it. A generated send
+ * gives the value of its template's unit with the unit's `<name>_record_type`,
+ * and so does a system adapter for each input it hands the run.
+ */
+typedef struct sce_test_message_value_s {
+    sce_host_value_t value;
+    const sce_test_record_type_t *record_type;
+} sce_test_message_value_t;
+
+/** `value` as a message's value, of the record type `record_type`. */
+static inline sce_test_message_value_t sce_test_message_value(sce_host_value_t value,
+                                                              const sce_test_record_type_t *record_type) {
+    sce_test_message_value_t made;
+    made.value = value;
+    made.record_type = record_type;
+    return made;
+}
+
+/** `*value` lent as a request's value, as a generated test-port send lends it
+ *  to the test-port processor (`sce_host_send_request_t::value`); valid for as
+ *  long as `*value` and what it lends. */
+static inline sce_host_value_t sce_test_message_value_lent(const sce_test_message_value_t *value) {
+    return SCE_HOST_VALUE(sce_test_message_value_t, value);
+}
+
+/**
+ * The message value a request carries, as `sce_test_message_value_lent` lent it;
+ * for a request whose value is anything else, that value of no record type,
+ * which a send refuses (`SCE_TEST_MESSAGE_UNTYPED`).
+ */
+static inline sce_test_message_value_t sce_test_message_value_carried(sce_host_value_t carried) {
+    if (carried.type != NULL && carried.data != NULL && carried.size == sizeof(sce_test_message_value_t) &&
+        strcmp(carried.type, "sce_test_message_value_t") == 0) {
+        return *(const sce_test_message_value_t *)carried.data;
+    }
+    return sce_test_message_value(carried, NULL);
+}
+
+/**
+ * A message on a port: the event name of its record, the record's value and
+ * its record type.
  *
  * `type` is the C name of the value's type as its sender named it
  * (`sce_host_value_t::type`), NULL for a message that carries no value; the
- * value is its `size` bytes, held aligned for any type.
+ * value is its `size` bytes, held aligned for any type. `record_type` names the
+ * value and writes its canonical form in the test log.
  */
 typedef struct sce_test_message_s {
     char event[SCE_MAX_ID_LEN];
     const char *type;
     size_t size;
+    const sce_test_record_type_t *record_type;
 
     union {
         max_align_t align;
@@ -87,31 +139,45 @@ typedef enum sce_test_message_fit_e {
     /** The event name is longer than `SCE_MAX_ID_LEN` holds. */
     SCE_TEST_MESSAGE_EVENT_TOO_LONG,
     /** The value is larger than `SCE_TEST_MAX_VALUE_SIZE`. */
-    SCE_TEST_MESSAGE_VALUE_TOO_LARGE
+    SCE_TEST_MESSAGE_VALUE_TOO_LARGE,
+    /** The value names no record type, so the test log could not name it or
+        write it. */
+    SCE_TEST_MESSAGE_UNTYPED
 } sce_test_message_fit_t;
+
+/** Whether `record_type` names a record and writes its values. */
+static inline bool sce_test_record_type_complete(const sce_test_record_type_t *record_type) {
+    return record_type != NULL && record_type->name != NULL && record_type->name[0] != '\0' &&
+           record_type->canonical != NULL;
+}
 
 /**
  * Write the message of the record `event` whose value is `value` into `out`,
  * the value's bytes copied out of the lender's frame.
  *
- * Refuses rather than cuts: an event name or a value past its bound leaves `out`
- * empty and says which, since a shortened name could match another record's
- * branch.
+ * Refuses rather than cuts: an event name or a value past its bound, or a value
+ * of no record type, leaves `out` empty and says which, since a shortened name
+ * could match another record's branch and a message the test log cannot write
+ * would leave the log short of it.
  */
 static inline sce_test_message_fit_t sce_test_message_set(sce_test_message_t *out, const char *event,
-                                                          sce_host_value_t value) {
+                                                          sce_test_message_value_t value) {
     memset(out, 0, sizeof(*out));
     if (strlen(event) >= sizeof(out->event)) {
         return SCE_TEST_MESSAGE_EVENT_TOO_LONG;
     }
-    if (value.size > sizeof(out->value.bytes)) {
+    if (value.value.size > sizeof(out->value.bytes)) {
         return SCE_TEST_MESSAGE_VALUE_TOO_LARGE;
     }
+    if (!sce_test_record_type_complete(value.record_type)) {
+        return SCE_TEST_MESSAGE_UNTYPED;
+    }
     memcpy(out->event, event, strlen(event) + 1u);
-    out->type = value.type;
-    out->size = value.size;
-    if (value.size > 0u) {
-        memcpy(out->value.bytes, value.data, value.size);
+    out->type = value.value.type;
+    out->size = value.value.size;
+    out->record_type = value.record_type;
+    if (value.value.size > 0u) {
+        memcpy(out->value.bytes, value.value.data, value.value.size);
     }
     return SCE_TEST_MESSAGE_HELD;
 }

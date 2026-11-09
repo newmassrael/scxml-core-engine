@@ -2158,7 +2158,13 @@ GATES: dict[str, dict] = {
                   # plans them through.
                   "tests/w3c/conformance/fixtures.json", "resources/**",
                   "cmake/SCEW3CRegistry.cmake", "cmake/SCEStaticW3CTest.cmake",
-                  "cmake/SCECodegenPlan.cmake"],
+                  "cmake/SCECodegenPlan.cmake",
+                  # The test log every runtime writes of the generated suite,
+                  # which `test_a_test_suite_runs_through_its_runner.c` reads
+                  # at run time, and the wire schema whose status
+                  # `test_case_run_test.c` holds the runtime's to.
+                  "sce-build/tests/fixtures/test_profile/runtime/expected_logs/**",
+                  "schemas/sce-test-log.v1.schema.json"],
         "deps": ["codegen-build"],
         "ci_only": "391s inside a push, measured 2026-08-23 — and that number "
                    "is the point. The same 245 tests read 85s and 95s run on "

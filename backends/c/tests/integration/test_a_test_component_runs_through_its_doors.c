@@ -37,6 +37,7 @@
 #include "job_reply.h"
 #include "job_request.h"
 #include "ptc_keeper_sm.h"
+#include "reply_ok.h"
 
 static int failures = 0;
 
@@ -139,8 +140,11 @@ static void responder_send(sce_test_system_adapter_t *adapter, const char *syste
     reply.job = self->answers_job ? self->job : request->job;
     reply.code = self->code;
     const size_t slot = self->pending_count++;
-    CHECK(sce_test_message_set(&self->pending[slot], JOB_REPLY_EVENT_NAME, SCE_HOST_VALUE(JobReplyPayload_t, &reply)) ==
-              SCE_TEST_MESSAGE_HELD,
+    // The reply's record type in the test log is the one the unit of a
+    // template over its record gives.
+    CHECK(sce_test_message_set(&self->pending[slot], JOB_REPLY_EVENT_NAME,
+                               sce_test_message_value(SCE_HOST_VALUE(JobReplyPayload_t, &reply),
+                                                      reply_ok_record_type())) == SCE_TEST_MESSAGE_HELD,
           "the reply fits a message");
     self->pending_at[slot] = now + ANSWER_DELAY;
 }
