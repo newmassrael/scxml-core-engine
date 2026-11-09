@@ -1,10 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   counted.sent: a list that holds at least one element and at most two
-  (docs/adr/0086, section 15). static_composed_send sends it from a list
+  (docs/adr/0086, section 15), and a number beside it, so the schema holds a
+  composed field and a scalar one. static_composed_send sends it from a list
   variable it fills by appends, which states no lower count (section 15.7), so
   the send holds the count when it runs (section 15.6): sent empty it is
-  refused whole with error.execution, and sent with an element it arrives.
+  refused whole with error.execution, and sent with an element it arrives. The
+  machine then forwards what arrived, the list by the name of the part of the
+  payload it is and the number as the scalar field of that payload it is.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -14,5 +17,6 @@
        sce:event-name="counted.sent">
   <datamodel>
     <data id="kept" sce:type="list&lt;uint8&gt;[1..2]" sce:direction="in"/>
+    <data id="hops" sce:type="uint8" sce:direction="in"/>
   </datamodel>
 </scxml>

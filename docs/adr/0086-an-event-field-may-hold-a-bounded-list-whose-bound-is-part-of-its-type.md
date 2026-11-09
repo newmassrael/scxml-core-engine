@@ -1389,7 +1389,12 @@ Each test fails when the rule it pins is removed; the landing checks each once a
    refused wire, before the pair is written. A short list fails the param, so the event is refused whole with
    `error.execution` and nothing of it is delivered. `static_composed_send` sends `counted.sent`
    (`event_counted.scxml`, a `list<uint8>[1..2]`) empty, which is refused, and then with one element, which
-   arrives, on every lane.
+   arrives, on every lane. In the same landing the judge put the payload of an event whose schema holds a
+   composed field in scope for a scalar `<param>`, as it already was for an `<assign>` and an `<if>`: it had read
+   the scope off the schema's view of one entry per field, which such a schema has none of, so `record_list_parent`
+   could not forward the `by` of a `record_list.change`. A scalar field of a schema that also holds a list is a
+   typed scalar like any other; `static_composed_send` forwards `counted.sent`'s list and its scalar `hops` on
+   every lane.
 
 ADR 0085 landing 4 is the first user of steps 1 to 5, and its landing 5 of step 7. (Steps 5 to 8 were numbered 4
 to 7 before the amendment of 2026-11-04 inserted step 4.) ADR 0085's amendment of 2026-11-08 applies this grammar to

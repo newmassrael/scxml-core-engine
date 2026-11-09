@@ -65,9 +65,11 @@ int main(void) {
     expect_u32("refusals", static_composed_send_get_refusals(sm), 1u,
                "the one refusal is the list sent short of its field's lower count");
     // A list variable sent to a field that states a lower count (docs/adr/0086, section 15.6):
-    // sent empty, refused whole and never delivered; sent with its one element, delivered.
-    expect_u32("counted_deliveries", static_composed_send_get_counted_deliveries(sm), 1u, "one delivery");
+    // sent empty, refused whole and never delivered; sent with its one element, delivered, and
+    // forwarded once more with its scalar `hops`, a scalar field of a payload that holds a list.
+    expect_u32("counted_deliveries", static_composed_send_get_counted_deliveries(sm), 2u, "two deliveries");
     expect_u32("counted_sum", static_composed_send_get_counted_sum(sm), 7u, "the element 7");
+    expect_u32("counted_hops", static_composed_send_get_counted_hops(sm), 3u, "the hops forwarded");
     expect_u32("deliveries", static_composed_send_get_deliveries(sm), 2u,
                "the forwarded delivery came back on the internal queue");
     // Depth 1: the lengths of a list of records and a list of enum values.

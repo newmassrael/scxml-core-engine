@@ -72,9 +72,11 @@ def test_a_delivery_forwarded_by_its_names_comes_back_whole() -> None:
     )
     # A list variable sent to a field that states a lower count (docs/adr/0086,
     # section 15.6): sent empty, refused whole and never delivered; sent with
-    # its one element, delivered.
-    assert policy.counted_deliveries() == 1
+    # its one element, delivered, and forwarded once more with its scalar
+    # `hops`, a scalar field of a payload that holds a list.
+    assert policy.counted_deliveries() == 2
     assert policy.counted_sum() == 7
+    assert policy.counted_hops() == 3
     assert policy.deliveries() == 2, "the forwarded delivery came back on the internal queue"
     # Depth 1: the lengths of a list of records and a list of enum values.
     assert policy.item_count() == 3
