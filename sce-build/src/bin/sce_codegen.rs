@@ -11037,6 +11037,15 @@ impl W3cBackend for RustBackend {
             String::new()
         };
         let policy_ctor = policy_ctor.replace("{POLICY_BINDING}", policy_binding);
+        // docs/adr/0096: a machine with a script engine is refused its start
+        // when its script session cannot be established, and the test says so
+        // when that happens; the start of one without cannot be refused, which
+        // the irrefutable pattern states.
+        let start = if needs_script {
+            "    engine.initialize().expect(\"the machine's script session is established\");\n"
+        } else {
+            "    let Ok(()) = engine.initialize();\n"
+        };
         let pass_variant = to_pascal_case(pass_state);
         let marker =
             sce_build::forge::sourcemap::marker_payload(&format!("{input_stem}.scxml"), 1, &[]);
@@ -11052,7 +11061,7 @@ impl W3cBackend for RustBackend {
              {http_access_uri}\
              \x20   let mut engine = sce_rust_runtime::Engine::new(policy);\n\
              {http_setup}\
-             \x20   engine.initialize();\n\
+             {start}\
              \x20   let completed = engine.run_until_completion(\n\
              \x20       Duration::from_secs({timeout_secs}),\n\
              \x20       Duration::from_millis(10),\n\

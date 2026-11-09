@@ -14,7 +14,7 @@
 {% elif action.expr and model.needs_script_engine %}
 // W3C SCXML 4.7: <log> with script engine expression
 {
-    self.ensure_script_engine();
+    self.assert_script_session();
     let sid = self.session_id.as_ref().unwrap().clone();
     let se = self.script_engine.clone();
     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;

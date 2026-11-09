@@ -68,7 +68,7 @@ PY
 
 mutation_case "the child is seeded with absence rather than the parent's value" <<'PY'
 edit("tools/codegen/templates/rust/scriptengine_helpers.rs.jinja2",
-     """        let _ = se.set_variable(&sid, name, value);""",
-     """        let _ = value;
-        let _ = se.set_variable(&sid, name, sce_rust_runtime::ScriptValue::Null);""")
+     """            let _ = se.set_variable(&sid, &name, value);""",
+     """            let _ = value;
+            let _ = se.set_variable(&sid, &name, sce_rust_runtime::ScriptValue::Null);""")
 PY

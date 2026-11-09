@@ -58,7 +58,7 @@
                 // <onentry>. The engine owns the first-entry rule; this is only
                 // what binding means for this state.
                 if engine.claim_late_binding_first_entry({{ machine_name }}State::{{ state_id | to_state_variant }}) {
-                    self.ensure_script_engine();
+                    self.assert_script_session();
                     let sid = self.session_id.as_ref().unwrap().clone();
                     let se = self.script_engine.clone();
                     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -183,7 +183,7 @@
 {% set done_native = state.donedata.params | selectattr("native_value") | list | length > 0 %}
                 {
 {% if not done_native %}
-                    self.ensure_script_engine();
+                    self.assert_script_session();
                     let sid = self.session_id.as_ref().unwrap().clone();
                     let se = self.script_engine.clone();
                     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -307,7 +307,7 @@
                     // machine carries the engine.
 {% set donedata_content_lua = state.donedata.content.text | to_lua_data_content %}
 {% endif %}
-                    self.ensure_script_engine();
+                    self.assert_script_session();
                     let sid = self.session_id.as_ref().unwrap().clone();
                     let se = self.script_engine.clone();
                     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;

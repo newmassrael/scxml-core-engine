@@ -242,7 +242,7 @@
 {% set send_prologue = (model.needs_script_engine and (action.eventexpr or action.targetexpr or action.typeexpr or action.delayexpr or has_namelist or action.idlocation)) or action.native_delay or action.native_event or action.native_target or action.native_idlocation %}
 {% if send_prologue %}
 {% if model.needs_script_engine %}
-    self.ensure_script_engine();
+    self.assert_script_session();
     let __sce_arg_sid = self.session_id.as_ref().unwrap().clone();
     let __sce_arg_se = self.script_engine.clone();
     let __sce_arg_se: &dyn sce_rust_runtime::IScriptEngine = &*__sce_arg_se;
@@ -638,7 +638,7 @@
     // W3C SCXML 6.2: Evaluate <param> expressions at send time
     let event_data_string: String = {
 {% if has_engine_params %}
-        self.ensure_script_engine();
+        self.assert_script_session();
         let sid = self.session_id.as_ref().unwrap().clone();
         let se = self.script_engine.clone();
         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -753,7 +753,7 @@
     // send time, and serialized so the far end parses instead of evaluating.
     // The analysis counted this text, so the machine carries the engine.
     let event_data_string: String = {
-        self.ensure_script_engine();
+        self.assert_script_session();
         let sid = self.session_id.as_ref().unwrap().clone();
         let se = self.script_engine.clone();
         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -807,7 +807,7 @@
     // Processor MUST place error.execution in the internal event queue and use
     // the empty string as the value of the <content> element."
     let event_data_string: String = {
-        self.ensure_script_engine();
+        self.assert_script_session();
         let sid = self.session_id.as_ref().unwrap().clone();
         let se = self.script_engine.clone();
         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;

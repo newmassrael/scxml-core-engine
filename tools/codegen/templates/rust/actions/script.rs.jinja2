@@ -5,7 +5,7 @@
 {% if action.content %}
 {
     // W3C SCXML 5.8: <script>
-    self.ensure_script_engine();
+    self.assert_script_session();
     let sid = self.session_id.as_ref().unwrap().clone();
     let se = self.script_engine.clone();
     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;

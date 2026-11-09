@@ -67,8 +67,9 @@
        above each function this template emits. #}
     {{ sce_map.source_marker(model.source_location, "rust", symbol_artifact=sce_artifact.machine) }}
     fn bind_current_event(&mut self, event: Self::Event, engine: &mut sce_rust_runtime::Engine<Self>) {
-        // W3C SCXML 5.10: Ensure script engine and set _event for guard evaluation
-        self.ensure_script_engine();
+        // W3C SCXML 5.10: set _event for guard evaluation, in the session the
+        // start established (docs/adr/0096)
+        self.assert_script_session();
 {% if model.has_parallel_states or model.uses_in_predicate %}
         // A selection does not change the configuration, so the guards it
         // runs read the one published here.

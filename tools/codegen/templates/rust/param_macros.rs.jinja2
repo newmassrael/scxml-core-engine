@@ -74,7 +74,7 @@
         }
 {% elif param.expr and model.needs_script_engine %}
         {
-            self.ensure_script_engine();
+            self.assert_script_session();
             let sid = self.session_id.as_ref().unwrap().clone();
             let se = self.script_engine.clone();
             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -100,7 +100,7 @@
         }
 {% elif param.location and model.needs_script_engine %}
         {
-            self.ensure_script_engine();
+            self.assert_script_session();
             let sid = self.session_id.as_ref().unwrap().clone();
             let se = self.script_engine.clone();
             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -177,7 +177,7 @@
         }
 {% elif (param.expr or param.location) and model.needs_script_engine %}
         if !request_refused {
-            self.ensure_script_engine();
+            self.assert_script_session();
             let sid = self.session_id.as_ref().unwrap().clone();
             let se = self.script_engine.clone();
             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
