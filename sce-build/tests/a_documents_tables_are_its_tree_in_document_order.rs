@@ -390,7 +390,7 @@ fn holds(name: &str, model: &SCXMLModel, tables: &DocumentTables) {
 /// `tables` as the runtime's `DocumentTables`, the rows a generated machine's
 /// constant states. The runtime's rows borrow for `'static`, so each pool is
 /// leaked, for the life of the test process.
-fn runtime_tables(tables: &DocumentTables) -> rt::DocumentTables {
+fn runtime_tables(tables: &DocumentTables) -> rt::DocumentTables<'static> {
     let states: Vec<rt::StateRow> = tables
         .states
         .iter()
