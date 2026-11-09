@@ -31,6 +31,19 @@
 
 {% endfor %}
 {% endif %}
+{% if c_bytes_defs %}
+#include <stddef.h>
+#include "sce/forge/bytes.h"  /* the view a byte string's buffer is filled from */
+
+{# A `bytes` field is held in a buffer of its bound beside the length it holds,
+   the type a `sce-static` statechart holds the same bytes in, declared under the
+   guard both headers share: bytes carry no terminator, so the length is what
+   says how many the field holds. #}
+{% for def in c_bytes_defs %}
+{{ def }}
+
+{% endfor %}
+{% endif %}
 {# The optional value of each text and each value of an enum a field of this
    struct may leave absent (docs/adr/0055), declared once, under the guard every
    unit that holds one shares, after the buffer and the enum it wraps. #}

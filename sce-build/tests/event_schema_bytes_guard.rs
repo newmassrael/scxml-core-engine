@@ -207,6 +207,40 @@ int main() {
     );
 }
 
+// The C11 unit of the schema itself holds `raw` in the buffer of its bound
+// beside the length it holds (`sce_static_bytes_8_t`), the type a `sce-static`
+// statechart holds the same bytes in, declared under the guard both share. A
+// pointer would say nothing of how many bytes it points to, since bytes carry
+// no terminator, and a reader of the unit's record (a test template, the test
+// log, a CBOR codec's list) could read none of them.
+#[test]
+fn c11_schema_unit_holds_a_byte_string_with_its_length() {
+    let schema = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/event_schema/schema_signal_bytes.scxml");
+    let output = sce_build::compile_forge_file(
+        &schema,
+        sce_build::generator::Language::C11,
+        &[],
+        &sce_build::ForgeCompileOptions::default(),
+    )
+    .unwrap_or_else(|e| panic!("the bytes schema generates on C11: {e:?}"));
+    let unit = output
+        .files
+        .iter()
+        .map(|(_, code)| code.as_str())
+        .collect::<Vec<&str>>()
+        .join("\n");
+    for expected in [
+        "    sce_static_bytes_8_t raw;\n",
+        "#ifndef SCE_STATIC_BYTES_8\n",
+        "    uint8_t data[8];\n    size_t len;\n",
+        "#include \"sce/forge/bytes.h\"",
+    ] {
+        assert!(unit.contains(expected), "missing `{expected}`:\n{unit}");
+    }
+    assert!(!unit.contains("const uint8_t * raw;"), "{unit}");
+}
+
 // C11 parity: the bounded-buffer + memcmp lowering must build under the
 // strict freestanding MCU profile (no hosted-libc guarantee — memcmp is
 // one of the freestanding-required builtins). Skipped when no C compiler
