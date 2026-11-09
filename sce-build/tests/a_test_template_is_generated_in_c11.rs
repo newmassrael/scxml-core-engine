@@ -176,10 +176,17 @@ fn every_matcher_is_spelled_over_the_schemas_record() {
             "#include \"sce/test/text_length.h\"\n",
         ],
     );
+    // The match alone: the unit's `every_matcher_canonical` reads every field,
+    // the matched ones and the others alike.
+    let matches = text
+        .split_once("static inline bool every_matcher_matches(")
+        .and_then(|(_, rest)| rest.split_once("\n}\n"))
+        .map(|(body, _)| body)
+        .unwrap_or_else(|| panic!("no `every_matcher_matches` function:\n{text}"));
     // any-value-or-none holds whatever the field holds.
-    assert!(!text.contains("(*value).tag"), "{text}");
+    assert!(!matches.contains("(*value).tag"), "{text}");
     // A matcher that reads no element (`any-value` in a list) compares none.
-    assert!(!text.contains("(*value).codes.items[1]"), "{text}");
+    assert!(!matches.contains("(*value).codes.items[1]"), "{text}");
     // Nothing the template holds of its own may be absent.
     assert!(!text.contains("sce/forge/optional.h"), "{text}");
 }
@@ -406,15 +413,46 @@ fn blob_template(name: &str, code: &str) -> String {
     )
 }
 
+/// The schema of a record that holds a list of byte strings alone.
+const SPARES_RECORD: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="spares_record"
+       sce:event-name="spares.record">
+  <datamodel>
+    <data id="spares" sce:type="list&lt;bytes[2]&gt;[2]" sce:direction="in"/>
+  </datamodel>
+</scxml>
+"#;
+
+/// A template over the spares record whose first spare is the byte string
+/// `00ff`.
+const SPARES_TEMPLATE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="spares_first"
+       sce:type="record:Spares">
+  <sce:import kind="event-schema" src="spares_record.scxml" as="Spares"/>
+  <sce:record-match>
+    <sce:list-match field="spares">
+      <sce:specific value="00ff"/>
+      <sce:any-value/>
+    </sce:list-match>
+  </sce:record-match>
+</scxml>
+"#;
+
 /// A byte string of one entry is held by the C11 event schema unit as a
 /// pointer with no length, so a template that compares, counts or builds one is
 /// refused by name: a literal of it, and a length restriction on it. No
 /// parameter reaches one: a parameter of a byte string is refused where its
 /// type is spelled, and the profile admits no specific value of a record that
-/// holds one (`test_profile::matcher_admitted`). One inside a list is the
-/// composition's, which holds its length, and is compared by its length and its
-/// octets. The documents are a test's alone, written into a directory of their
-/// own.
+/// holds one (`test_profile::matcher_admitted`). A template over a record that
+/// holds one and matches it with any value is refused too, since the test log
+/// writes every field of a message (docs/SCE_TEST_PROFILE.md §12.5) and that
+/// one has no form there. One inside a list is the composition's, which holds
+/// its length, and is compared and written by its length and its octets. The
+/// documents are a test's alone, written into a directory of their own.
 #[test]
 fn a_byte_string_of_one_entry_is_refused_and_one_in_a_list_is_compared_by_its_octets() {
     let detail = refused(&imports_dir().join("voucher_is.scxml"));
@@ -425,6 +463,7 @@ fn a_byte_string_of_one_entry_is_refused_and_one_in_a_list_is_compared_by_its_oc
 
     let dir = tempfile::tempdir().expect("a directory for the documents");
     std::fs::write(dir.path().join("blob_record.scxml"), BLOB_RECORD).expect("the schema");
+    std::fs::write(dir.path().join("spares_record.scxml"), SPARES_RECORD).expect("the schema");
     let write = |name: &str, text: String| {
         let path = dir.path().join(format!("{name}.scxml"));
         std::fs::write(&path, text).expect("the template");
@@ -435,7 +474,17 @@ fn a_byte_string_of_one_entry_is_refused_and_one_in_a_list_is_compared_by_its_oc
         "blob_spare",
         blob_template("blob_spare", r#"<sce:any-value field="code"/>"#),
     );
-    let text = unit(&any_code, "blob_spare");
+    let detail = refused(&any_code);
+    assert!(
+        detail.starts_with(
+            "test-template 'blob_spare': a byte string of one entry, which the C11 unit of an \
+             event schema holds as a pointer with no length, has no form in the test log"
+        ),
+        "{detail}"
+    );
+
+    let first = write("spares_first", SPARES_TEMPLATE.to_string());
+    let text = unit(&first, "spares_first");
     holds_each(
         &text,
         &[
@@ -443,9 +492,10 @@ fn a_byte_string_of_one_entry_is_refused_and_one_in_a_list_is_compared_by_its_oc
             "((*value).spares.items[0].len == sizeof(\"\\000\\377\") - 1u && \
              memcmp((*value).spares.items[0].data, \"\\000\\377\", sizeof(\"\\000\\377\") - 1u) \
              == 0)",
+            "        sce_test_canonical_bytes(jcs, (*value).spares.items[sce_item_0].data, \
+             (*value).spares.items[sce_item_0].len);\n",
         ],
     );
-    assert!(!text.contains("(*value).code"), "{text}");
 
     for (name, code) in [
         (
@@ -699,6 +749,169 @@ fn a_reference_inside_a_list_to_a_template_of_an_optional_type_is_refused() {
             "typedef sce_optional_uint8_t no_tag_value_t;\n",
             "    return !(*value).present;\n",
             "#include \"sce/forge/optional.h\"",
+        ],
+    );
+}
+
+/// docs/SCE_TEST_PROFILE.md §12.5: a template over a record, the type of a
+/// message, writes its value's canonical form (`<name>_canonical`) and the
+/// record type a send carries it by (`<name>_record_type`), named as the TTCN-3
+/// export's types module names the record, the unit name of its event schema's
+/// file, and includes the runtime's writers; a template over another type
+/// writes neither and includes nothing more. The unit names the SCE runtime
+/// exactly where it writes them, and its header says so.
+#[test]
+fn a_template_over_a_record_writes_its_values_canonical_form() {
+    for (path, name, _) in templates() {
+        let text = unit(&path, name);
+        let record = match name {
+            "every_matcher" | "job_report" | "job_report_of" | "report_within" => {
+                Some("job_status")
+            }
+            "order_line_exact" | "order_line_bounded" => Some("order_line"),
+            "card_within" => Some("card_payment"),
+            // The kind example's schema is the file `event-schema.scxml`.
+            "test_template" => Some("event_schema"),
+            _ => None,
+        };
+        let over_record = record.is_some();
+        let canonical = format!(
+            "static inline void {name}_canonical(sce_jcs_t *jcs, const {name}_value_t *value) \
+             {{\n    (void)value;\n    sce_jcs_begin_object(jcs);\n"
+        );
+        assert_eq!(
+            text.contains(&canonical),
+            over_record,
+            "{name}: the canonical form is written exactly for a template over a record:\n{text}"
+        );
+        assert_eq!(
+            text.contains("#include \"sce/test/canonical.h\"\n"),
+            over_record,
+            "{name}: the writers are included exactly where the form is written:\n{text}"
+        );
+        let runtime = if over_record { "sce_runtime" } else { "none" };
+        assert!(
+            text.contains(&format!("/* Runtime: {runtime} */\n")),
+            "{name}: the header states the runtime the unit names:\n{text}"
+        );
+        if let Some(record) = record {
+            let declared = format!(
+                "    static const sce_test_record_type_t record_type = {{ \"{record}\", \
+                 {name}_canonical_lent }};\n"
+            );
+            assert!(text.contains(&declared), "{name}: `{declared}`:\n{text}");
+        }
+    }
+    // Each field by its declared id before its value, in the order the schema
+    // declares them; an optional one's value behind its `present`, a list's
+    // elements in a loop over its length, every integer through the runtime's
+    // macro.
+    let report = unit_of(&profile_dir(), "job_report");
+    holds_each(
+        &report,
+        &[
+            "    sce_jcs_begin_object(jcs);\n    sce_jcs_key(jcs, \"elapsed_ms\");\n    \
+             SCE_TEST_CANONICAL_INTEGER(jcs, (*value).elapsed_ms);\n    \
+             sce_jcs_key(jcs, \"note\");\n",
+            "    sce_jcs_key(jcs, \"note\");\n    if ((*value).note.present) {\n        \
+             sce_test_canonical_text(jcs, (*value).note.value.data);\n    }\n",
+            "    sce_jcs_key(jcs, \"codes\");\n    sce_jcs_begin_array(jcs);\n    \
+             for (uint32_t sce_item_0 = 0u; sce_item_0 < (*value).codes.len; ++sce_item_0) {\n        \
+             SCE_TEST_CANONICAL_INTEGER(jcs, (*value).codes.items[sce_item_0]);\n    }\n    \
+             sce_jcs_end_array(jcs);\n",
+            "    sce_jcs_key(jcs, \"tag\");\n    if ((*value).tag.present) {\n        \
+             SCE_TEST_CANONICAL_INTEGER(jcs, (*value).tag.value);\n    }\n",
+            "    sce_jcs_key(jcs, \"count\");\n    SCE_TEST_CANONICAL_INTEGER(jcs, (*value).count);\n    \
+             sce_jcs_end_object(jcs);\n}\n",
+            "static inline void job_report_canonical_lent(sce_jcs_t *jcs, const void *value) {\n    \
+             job_report_canonical(jcs, (const job_report_value_t *)value);\n}\n",
+            "static inline const sce_test_record_type_t *job_report_record_type(void) {\n",
+        ],
+    );
+}
+
+/// A record's canonical form reaches a text through its buffer and a value of a
+/// closed enum through the name its enum's unit declares for it
+/// (`<enum>_declared_name`), since a C enumerator names neither its variant nor
+/// its number.
+#[test]
+fn a_records_canonical_form_reaches_a_text_and_an_enum_through_their_units() {
+    let exact = unit_of(&imports_dir(), "order_line_exact");
+    holds_each(
+        &exact,
+        &[
+            "    sce_jcs_key(jcs, \"sku\");\n    sce_test_canonical_text(jcs, (*value).sku.data);\n",
+            "    sce_jcs_key(jcs, \"quantity\");\n    \
+             SCE_TEST_CANONICAL_INTEGER(jcs, (*value).quantity);\n",
+            "    sce_jcs_key(jcs, \"color\");\n    \
+             sce_test_canonical_enumerated(jcs, paint_color_declared_name((*value).color));\n",
+        ],
+    );
+}
+
+/// An enum of an open set whose variants do not name every number.
+const OPEN_LEVEL: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="enum" name="signal_level" sce:underlying-type="uint8"
+       sce:strict-variants="false">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="low" value="0"/>
+      <sce:variant name="high" value="1"/>
+    </data>
+  </datamodel>
+</scxml>
+"#;
+
+/// A record that holds a value of the open enum.
+const LEVEL_READING: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="level_reading"
+       sce:event-name="level.reading">
+  <sce:import kind="enum" src="signal_level.scxml" as="Level"/>
+  <datamodel>
+    <data id="level" sce:type="enum:Level" sce:direction="in"/>
+  </datamodel>
+</scxml>
+"#;
+
+/// A template over the reading, of any level.
+const ANY_READING: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="any_reading"
+       sce:type="record:Reading">
+  <sce:import kind="event-schema" src="level_reading.scxml" as="Reading"/>
+  <sce:record-match>
+    <sce:any-value field="level"/>
+  </sce:record-match>
+</scxml>
+"#;
+
+/// A value of an enum of an open set is written by its declared name, or by
+/// its number where no variant declares it, which the runtime's macro decides
+/// from the two it is handed. The documents are a test's alone, written into a
+/// directory of their own.
+#[test]
+fn a_value_of_an_open_enum_is_written_by_its_name_or_its_number() {
+    let dir = tempfile::tempdir().expect("a directory for the documents");
+    for (file, text) in [
+        ("signal_level.scxml", OPEN_LEVEL),
+        ("level_reading.scxml", LEVEL_READING),
+        ("any_reading.scxml", ANY_READING),
+    ] {
+        std::fs::write(dir.path().join(file), text).expect("the document");
+    }
+    let reading = unit(&dir.path().join("any_reading.scxml"), "any_reading");
+    holds_each(
+        &reading,
+        &[
+            "    sce_jcs_key(jcs, \"level\");\n    SCE_TEST_CANONICAL_OPEN_ENUMERATED(jcs, \
+             signal_level_declared_name((*value).level), (*value).level);\n",
+            "    static const sce_test_record_type_t record_type = { \"level_reading\", \
+             any_reading_canonical_lent };\n",
         ],
     );
 }

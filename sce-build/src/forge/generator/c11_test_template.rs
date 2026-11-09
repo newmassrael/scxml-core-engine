@@ -38,27 +38,34 @@
 //! returns, each record by its fields' designators, so no type is named inside
 //! it; a text through the fill function of its buffer.
 //!
+//! A template over a record also writes `<name>_canonical` and
+//! `<name>_record_type`, the canonical form of a message of it in the test log
+//! and the record type a send carries it by (§12.5), whose walk is shared
+//! ([`super::test_template_walk::canonical_value`]); [`C11Canonical`] spells it
+//! as the statements that write it through the runtime's `sce_jcs_t`.
+//!
 //! What C11 refuses by name: a union, which it lowers nowhere
 //! ([`crate::forge::codegen_matrix::UNION_BACKENDS`]), by the walk before
 //! anything is spelled; a byte string of one entry, which the C11 event schema
-//! unit holds as a pointer with no length, so no value of it can be compared or
-//! built; and a reference, inside a list, to a template of an optional type,
-//! whose value the list holds in its own optional type rather than the one the
-//! referenced template takes.
+//! unit holds as a pointer with no length, so no value of it can be compared,
+//! built or written in the test log, and so no template over a record that
+//! holds one; and a reference, inside a list, to a template of an optional
+//! type, whose value the list holds in its own optional type rather than the
+//! one the referenced template takes.
 
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeSet;
 
 use super::test_template_walk::{
-    hex_octets, integer_literal, negate, CaseTest, Held, JoinSpelling, Op, Position, Stands,
-    TemplateFunction, TemplateSpelling, TemplateWalk, Use,
+    hex_octets, integer_literal, negate, CanonicalSpelling, CaseTest, Held, JoinSpelling, Op,
+    Position, Stands, TemplateFunction, TemplateSpelling, TemplateWalk, Use,
 };
 use super::*;
 use crate::forge::schema_unit_type::{unit_type, C11Declarations, UnitNames};
 use crate::forge::static_lowering::{
     c_string_storage_def, c_string_storage_of, c_string_storage_type,
 };
-use crate::forge::value_type::{ScopedRecord, ScopedUnion, TypeOf, ValueType};
+use crate::forge::value_type::{ScopedEnum, ScopedRecord, ScopedUnion, TypeOf, ValueType};
 use crate::generator::Language;
 
 /// The header of the test profile's C11 runtime that declares the length of a
@@ -68,6 +75,17 @@ const TEXT_LENGTH_HEADER: &str = "sce/test/text_length.h";
 /// The function [`TEXT_LENGTH_HEADER`] declares: a text's code points, as C++'s
 /// `SCE::Test::textLength` counts them.
 const TEXT_LENGTH: &str = "sce_test_text_length";
+
+/// The header of the test profile's C11 runtime that declares the writers of
+/// the canonical form of a value in the test log and the record type a message
+/// carries, which the unit of a template over a record writes its
+/// `<name>_canonical` and its `<name>_record_type` with
+/// (docs/SCE_TEST_PROFILE.md §12.5).
+const CANONICAL_HEADER: &str = "sce/test/canonical.h";
+
+/// The writer `<name>_canonical` is handed, which each of its statements
+/// writes through: a `sce_jcs_t *`.
+const C_JCS: &str = "jcs";
 
 /// The unit of the test template `m`, whose imports are `imports`.
 pub(super) fn render_test_template_c11(
@@ -109,6 +127,14 @@ pub(super) fn render_test_template_c11(
     if let Some(why) = refusal {
         return Err(walk.refused(why));
     }
+    // Only a template over a record, the type of a message, writes a message's
+    // record type and its value's canonical form (`TemplateWalk::message_form`).
+    let canonical = C11Canonical::default();
+    let (log_type, canonical_body) = walk.message_form(&canonical, &scope)?.unzip();
+    let refusal = canonical.refusal.borrow_mut().take();
+    if let Some(why) = refusal {
+        return Err(walk.refused(why));
+    }
 
     let mut ctx = l.base_context(&m.name);
     ctx.insert(
@@ -130,6 +156,17 @@ pub(super) fn render_test_template_c11(
     ctx.insert("parameters".into(), serde_json::Value::Array(parameters));
     ctx.insert("match_expr".into(), match_expr.into());
     ctx.insert("value_expr".into(), serde_json::json!(value_expr));
+    // The statements of `<name>_canonical`, one level inside its body, and the
+    // record type's name as a C string literal.
+    ctx.insert(
+        "canonical_body".into(),
+        serde_json::json!(canonical_body.map(|body| indented(&body))),
+    );
+    ctx.insert(
+        "log_type".into(),
+        serde_json::json!(log_type.map(|name| format!("\"{}\"", filters::escape_c(name)))),
+    );
+    ctx.insert("canonical_header".into(), CANONICAL_HEADER.into());
     // The record, enum and referenced templates' units, each as the import
     // names it ([`forge_import_identity`]); a union was refused above.
     let type_includes: Vec<String> = imports.iter().map(|i| i.include_stmt.clone()).collect();
@@ -609,5 +646,210 @@ impl TemplateSpelling for CSpelling {
             elements.len(),
             elements.join(", ")
         )
+    }
+}
+
+/// `text`, each line of it one level further in, as the statements of a block.
+fn indented(text: &str) -> String {
+    text.lines()
+        .map(|line| {
+            if line.is_empty() {
+                String::new()
+            } else {
+                format!("    {line}")
+            }
+        })
+        .collect::<Vec<String>>()
+        .join("\n")
+}
+
+/// A value `<name>_canonical` writes, in C11.
+struct C11CanonicalAt {
+    /// The C expression of the value: `(*value)`, which the function is lent,
+    /// an element of a list by its index, or a field of either.
+    expr: String,
+    /// Whether the value is an element of a list, which a composition holds in
+    /// its own types: there a byte string holds its length.
+    composed: bool,
+    /// How many loops over a list the value stands inside: the number of the
+    /// next loop's index, so no index shadows another (`-Wshadow`).
+    depth: usize,
+}
+
+/// The C11 spelling of the canonical form of a value in the test log
+/// (docs/SCE_TEST_PROFILE.md §12.5): the statements that write it through the
+/// runtime's `sce_jcs_t` ([`C_JCS`]), with the writers of [`CANONICAL_HEADER`].
+/// Which form each SCE type takes is the walk's
+/// ([`super::test_template_walk::canonical_value`]).
+///
+/// C has no closure, so a list is a loop over its `len` elements, each read by
+/// its index ([`CanonicalSpelling::list_element`]), and a field that may be
+/// absent is read by `value` behind its `present`
+/// ([`CanonicalSpelling::optional_value`]). Each field is named before its
+/// value is written; an absent one writes no value after its name, which the
+/// writer then leaves out (`sce_jcs_key`). A C enumerator names neither its
+/// variant nor its number, so an enum's value is read through the functions of
+/// the enum's own unit ([`CanonicalSpelling::enumerated_of`]); and an integer
+/// of any width through the runtime's macro, since C has no overload by the
+/// width and signedness of a field. A byte string of one entry, which the C11
+/// event schema unit holds as a pointer with no length, has no form here and is
+/// refused by name; C11 lowers no union, so the walk's refusal of one stands.
+#[derive(Default)]
+struct C11Canonical {
+    /// The first refusal a spelling met, which the unit is refused by once the
+    /// walk is done: the walk asks for a text and not for a result.
+    refusal: RefCell<Option<String>>,
+}
+
+impl C11Canonical {
+    /// Keeps `why` as the unit's refusal, unless one was kept before it.
+    fn refuse(&self, why: String) {
+        let mut kept = self.refusal.borrow_mut();
+        if kept.is_none() {
+            *kept = Some(why);
+        }
+    }
+}
+
+impl CanonicalSpelling for C11Canonical {
+    type At = C11CanonicalAt;
+
+    /// `<name>_canonical`'s parameter `value`, a pointer to the value.
+    fn root(&self) -> C11CanonicalAt {
+        C11CanonicalAt {
+            expr: "(*value)".to_string(),
+            composed: false,
+            depth: 0,
+        }
+    }
+
+    /// The field, which its record's unit holds as it holds a field of its
+    /// type, wherever the record stands.
+    fn field(&self, at: &C11CanonicalAt, id: &str) -> C11CanonicalAt {
+        C11CanonicalAt {
+            expr: format!(
+                "{}.{}",
+                at.expr,
+                event_schema_field_ident(id, Language::C11)
+            ),
+            composed: false,
+            depth: at.depth,
+        }
+    }
+
+    /// The index of a loop over a list, numbered by the loops it stands in.
+    fn bound(&self, at: &C11CanonicalAt, prefix: &str) -> (String, C11CanonicalAt) {
+        let name = format!("sce_{prefix}_{}", at.depth);
+        let bound = C11CanonicalAt {
+            expr: name.clone(),
+            composed: at.composed,
+            depth: at.depth + 1,
+        };
+        (name, bound)
+    }
+
+    /// The element the loop's index names.
+    fn list_element(&self, list: &C11CanonicalAt, bound: C11CanonicalAt) -> C11CanonicalAt {
+        C11CanonicalAt {
+            expr: format!("{}.items[{}]", list.expr, bound.expr),
+            composed: true,
+            depth: bound.depth,
+        }
+    }
+
+    /// The value the field holds, read behind its `present`: nothing is bound.
+    fn optional_value(&self, field: &C11CanonicalAt, _bound: C11CanonicalAt) -> C11CanonicalAt {
+        C11CanonicalAt {
+            expr: format!("{}.value", field.expr),
+            composed: field.composed,
+            depth: field.depth,
+        }
+    }
+
+    fn boolean(&self, at: &C11CanonicalAt) -> String {
+        format!("sce_test_canonical_boolean({C_JCS}, {});", at.expr)
+    }
+
+    /// Never asked: [`Self::enumerated_of`] writes every value of an enum, by
+    /// the functions of the enum's unit, which this does not name.
+    fn enumerated(&self, _at: &C11CanonicalAt, _strict: bool) -> String {
+        unreachable!("a C11 enum value is written by `enumerated_of`, which names its enum")
+    }
+
+    /// The name the enum's unit declares for the value (`<enum>_declared_name`);
+    /// for an enum of an open set, its number where no variant declares it.
+    fn enumerated_of(&self, at: &C11CanonicalAt, declared: &ScopedEnum) -> String {
+        let prefix = crate::forge::enum_naming::c11_function_prefix(&declared.name);
+        if declared.strict {
+            format!(
+                "sce_test_canonical_enumerated({C_JCS}, {prefix}_declared_name({}));",
+                at.expr
+            )
+        } else {
+            format!(
+                "SCE_TEST_CANONICAL_OPEN_ENUMERATED({C_JCS}, {prefix}_declared_name({0}), {0});",
+                at.expr
+            )
+        }
+    }
+
+    fn integer(&self, at: &C11CanonicalAt) -> String {
+        format!("SCE_TEST_CANONICAL_INTEGER({C_JCS}, {});", at.expr)
+    }
+
+    /// The text up to its terminator, in the buffer of its bound.
+    fn text(&self, at: &C11CanonicalAt) -> String {
+        format!("sce_test_canonical_text({C_JCS}, {}.data);", at.expr)
+    }
+
+    /// A byte string a list holds, by its length and its octets. One of one
+    /// entry is held with no length, and is refused.
+    fn bytes(&self, at: &C11CanonicalAt) -> String {
+        if !at.composed {
+            self.refuse(
+                "a byte string of one entry, which the C11 unit of an event schema holds as a \
+                 pointer with no length, has no form in the test log"
+                    .to_string(),
+            );
+            return String::new();
+        }
+        format!(
+            "sce_test_canonical_bytes({C_JCS}, {0}.data, {0}.len);",
+            at.expr
+        )
+    }
+
+    fn list(&self, at: &C11CanonicalAt, binding: &str, element: String) -> String {
+        format!(
+            "sce_jcs_begin_array({C_JCS});\n\
+             for (uint32_t {binding} = 0u; {binding} < {}.len; ++{binding}) {{\n{}\n}}\n\
+             sce_jcs_end_array({C_JCS});",
+            at.expr,
+            indented(&element)
+        )
+    }
+
+    /// As it is: the record names the field before it.
+    fn held_field(&self, written: String) -> String {
+        written
+    }
+
+    /// The value written where the field holds one, and nothing where it holds
+    /// none, which leaves the name the record wrote before it with no value.
+    fn optional_field(&self, field: &C11CanonicalAt, _binding: &str, written: String) -> String {
+        format!("if ({}.present) {{\n{}\n}}", field.expr, indented(&written))
+    }
+
+    /// The object, each field named by its declared id before its value.
+    fn record(&self, fields: Vec<(String, String)>) -> String {
+        let mut written = format!("sce_jcs_begin_object({C_JCS});\n");
+        for (id, value) in fields {
+            written.push_str(&format!(
+                "sce_jcs_key({C_JCS}, \"{}\");\n{value}\n",
+                filters::escape_c(id)
+            ));
+        }
+        written.push_str(&format!("sce_jcs_end_object({C_JCS});"));
+        written
     }
 }

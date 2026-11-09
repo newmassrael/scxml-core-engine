@@ -21,6 +21,9 @@
 {% if counts_characters %}
 #include "{{ text_length_header }}"
 {% endif %}
+{% if canonical_body %}
+#include "{{ canonical_header }}"
+{% endif %}
 {% for inc in type_includes %}
 {{ inc }}
 {% endfor %}
@@ -80,6 +83,33 @@ static inline {{ prefix }}_value_t {{ prefix }}_value({% for p in parameters %}{
 {% endfor %}
     const {{ prefix }}_value_t value = {{ value_expr }};
     return value;
+}
+{% endif %}
+{# Only a template over a record, the type of a message, writes the canonical form of a message's
+   value and the record type a send carries it by. #}
+{% if canonical_body %}
+
+/* `*value` in the canonical form of the test log (docs/SCE_TEST_PROFILE.md §12.5), through `jcs`:
+ * each integer as the text of its digits, a byte string in upper-case hex, an enum by its declared
+ * name, each field by its declared id and an absent one left out. */
+static inline void {{ prefix }}_canonical(sce_jcs_t *jcs, const {{ prefix }}_value_t *value) {
+    (void)value;
+{{ canonical_body }}
+}
+
+/* `{{ prefix }}_canonical` of a value lent as it is lent to a record type's writer. */
+static inline void {{ prefix }}_canonical_lent(sce_jcs_t *jcs, const void *value) {
+    {{ prefix }}_canonical(jcs, (const {{ prefix }}_value_t *)value);
+}
+
+/* The record type of a message of `{{ prefix }}_value_t` in the test log (docs/SCE_TEST_PROFILE.md
+ * §12.5): the record's name as the types module of the suite's TTCN-3 export names it (§9.5), and
+ * `{{ prefix }}_canonical`. A send of this template carries it beside the value it sends
+ * (`sce_test_message_value`), and a system adapter gives it with each value of the record it hands
+ * the run. */
+static inline const sce_test_record_type_t *{{ prefix }}_record_type(void) {
+    static const sce_test_record_type_t record_type = { {{ log_type }}, {{ prefix }}_canonical_lent };
+    return &record_type;
 }
 {% endif %}
 
