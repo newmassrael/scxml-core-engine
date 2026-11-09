@@ -1020,8 +1020,11 @@ func (p *StaticLiftPolicy) AcceptParams(params StaticLiftInvokeParams) {
 
 
 
-// No script engine needed for this state machine.
-func (p *StaticLiftPolicy) InitializeDataModel(eng *sce.Engine[StaticLiftState, StaticLiftEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StaticLiftPolicy) InitializeDataModel(eng *sce.Engine[StaticLiftState, StaticLiftEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StaticLiftPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

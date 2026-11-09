@@ -480,7 +480,10 @@ impl Test225Policy {
 
         // §scxml-6.4.3: the invoke params the parent handed this session, applied
         // after the `<data>` above so that each overrides the default its
-        // `<data>` gave. The parent hands them before this session's start
+        // `<data>` gave, and before the top-level `<script>` below, which runs
+        // over the datamodel as initialized (§scxml-D-interpret: the datamodel
+        // is initialized, then the global script element is executed). The
+        // parent hands them before this session's start
         // (`set_param_value_in_script_engine`) and this session applies them,
         // so the child's session is made by the child.
         for (name, value) in std::mem::take(&mut self.pending_params) {

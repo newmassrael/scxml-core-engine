@@ -992,8 +992,11 @@ func (p *PresencePeerPolicy) AcceptParams(params PresencePeerInvokeParams) {
 
 
 
-// No script engine needed for this state machine.
-func (p *PresencePeerPolicy) InitializeDataModel(eng *sce.Engine[PresencePeerState, PresencePeerEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *PresencePeerPolicy) InitializeDataModel(eng *sce.Engine[PresencePeerState, PresencePeerEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *PresencePeerPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

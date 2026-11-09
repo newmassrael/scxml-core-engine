@@ -220,8 +220,11 @@ func NewInvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy() InvokePreced
 
 
 
-// No script engine needed for this state machine.
-func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) InitializeDataModel(eng *sce.Engine[InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) InitializeDataModel(eng *sce.Engine[InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

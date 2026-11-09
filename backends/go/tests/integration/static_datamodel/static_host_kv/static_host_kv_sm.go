@@ -1236,8 +1236,11 @@ func (p *StaticHostKvPolicy) AcceptParams(params StaticHostKvInvokeParams) {
 
 
 
-// No script engine needed for this state machine.
-func (p *StaticHostKvPolicy) InitializeDataModel(eng *sce.Engine[StaticHostKvState, StaticHostKvEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StaticHostKvPolicy) InitializeDataModel(eng *sce.Engine[StaticHostKvState, StaticHostKvEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StaticHostKvPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

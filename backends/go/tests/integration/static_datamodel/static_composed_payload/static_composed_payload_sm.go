@@ -830,8 +830,11 @@ func (p *StaticComposedPayloadPolicy) AcceptParams(params StaticComposedPayloadI
 
 
 
-// No script engine needed for this state machine.
-func (p *StaticComposedPayloadPolicy) InitializeDataModel(eng *sce.Engine[StaticComposedPayloadState, StaticComposedPayloadEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StaticComposedPayloadPolicy) InitializeDataModel(eng *sce.Engine[StaticComposedPayloadState, StaticComposedPayloadEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StaticComposedPayloadPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

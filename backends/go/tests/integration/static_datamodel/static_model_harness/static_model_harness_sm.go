@@ -1615,8 +1615,11 @@ func (p *StaticModelHarnessPolicy) AcceptParams(params StaticModelHarnessInvokeP
 
 
 
-// No script engine needed for this state machine.
-func (p *StaticModelHarnessPolicy) InitializeDataModel(eng *sce.Engine[StaticModelHarnessState, StaticModelHarnessEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StaticModelHarnessPolicy) InitializeDataModel(eng *sce.Engine[StaticModelHarnessState, StaticModelHarnessEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StaticModelHarnessPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

@@ -584,8 +584,11 @@ func (p *StaticOptionalWidenedPolicy) AcceptParams(params StaticOptionalWidenedI
 
 
 
-// No script engine needed for this state machine.
-func (p *StaticOptionalWidenedPolicy) InitializeDataModel(eng *sce.Engine[StaticOptionalWidenedState, StaticOptionalWidenedEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StaticOptionalWidenedPolicy) InitializeDataModel(eng *sce.Engine[StaticOptionalWidenedState, StaticOptionalWidenedEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StaticOptionalWidenedPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

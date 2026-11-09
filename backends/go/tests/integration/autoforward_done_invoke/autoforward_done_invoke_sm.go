@@ -225,8 +225,11 @@ func NewAutoforwardDoneInvokePolicy() AutoforwardDoneInvokePolicy {
 
 
 
-// No script engine needed for this state machine.
-func (p *AutoforwardDoneInvokePolicy) InitializeDataModel(eng *sce.Engine[AutoforwardDoneInvokeState, AutoforwardDoneInvokeEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *AutoforwardDoneInvokePolicy) InitializeDataModel(eng *sce.Engine[AutoforwardDoneInvokeState, AutoforwardDoneInvokeEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *AutoforwardDoneInvokePolicy) SetParamValueInScriptEngine(name string, value interface{}) {}
@@ -299,7 +302,13 @@ func (p *AutoforwardDoneInvokePolicy) ExecutePendingInvokes(engine *sce.Engine[A
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "inv_watch", "")
-			childEngine.Initialize()
+			if refused := childEngine.Initialize(); refused != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "inv_watch")
+				engine.Raise(sce.NewPlatformError(AutoforwardDoneInvokeEventErrorExecution, sce.ChildStartRefusal("inv_watch", refused)))
+				continue
+			}
+
 
 			// W3C SCXML 6.4: Store child and create wrapper
 			wrapper := &childEngineWrapperAutoforwardDoneInvoke_InvWatch{engine: childEngine, policy: &childPolicy}
@@ -374,7 +383,13 @@ func (p *AutoforwardDoneInvokePolicy) ExecutePendingInvokes(engine *sce.Engine[A
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "inv_short", "")
-			childEngine.Initialize()
+			if refused := childEngine.Initialize(); refused != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "inv_short")
+				engine.Raise(sce.NewPlatformError(AutoforwardDoneInvokeEventErrorExecution, sce.ChildStartRefusal("inv_short", refused)))
+				continue
+			}
+
 
 			// W3C SCXML 6.4: Store child and create wrapper
 			wrapper := &childEngineWrapperAutoforwardDoneInvoke_InvShort{engine: childEngine, policy: &childPolicy}
@@ -628,7 +643,7 @@ type childEngineWrapperAutoforwardDoneInvoke_InvWatch struct {
 	engine *sce.Engine[AutoforwardDoneInvokeSceSynthInvokeInvWatchState, AutoforwardDoneInvokeSceSynthInvokeInvWatchEvent]
 	policy *AutoforwardDoneInvokeSceSynthInvokeInvWatchPolicy
 }
-func (w *childEngineWrapperAutoforwardDoneInvoke_InvWatch) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperAutoforwardDoneInvoke_InvWatch) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperAutoforwardDoneInvoke_InvWatch) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperAutoforwardDoneInvoke_InvWatch) Step() { w.engine.Step() }
 func (w *childEngineWrapperAutoforwardDoneInvoke_InvWatch) Stop() { w.engine.Stop() }
@@ -647,7 +662,7 @@ type childEngineWrapperAutoforwardDoneInvoke_InvShort struct {
 	engine *sce.Engine[AutoforwardDoneInvokeSceSynthInvokeInvShortState, AutoforwardDoneInvokeSceSynthInvokeInvShortEvent]
 	policy *AutoforwardDoneInvokeSceSynthInvokeInvShortPolicy
 }
-func (w *childEngineWrapperAutoforwardDoneInvoke_InvShort) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperAutoforwardDoneInvoke_InvShort) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperAutoforwardDoneInvoke_InvShort) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperAutoforwardDoneInvoke_InvShort) Step() { w.engine.Step() }
 func (w *childEngineWrapperAutoforwardDoneInvoke_InvShort) Stop() { w.engine.Stop() }

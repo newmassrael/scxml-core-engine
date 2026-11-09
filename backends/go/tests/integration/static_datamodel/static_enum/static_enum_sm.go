@@ -547,8 +547,11 @@ func (p *StaticEnumPolicy) AcceptParams(params StaticEnumInvokeParams) {
 
 
 
-// No script engine needed for this state machine.
-func (p *StaticEnumPolicy) InitializeDataModel(eng *sce.Engine[StaticEnumState, StaticEnumEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StaticEnumPolicy) InitializeDataModel(eng *sce.Engine[StaticEnumState, StaticEnumEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StaticEnumPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

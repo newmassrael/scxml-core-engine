@@ -575,8 +575,11 @@ func (p *StaticHostDutyChildPolicy) AcceptParams(params StaticHostDutyChildInvok
 
 
 
-// No script engine needed for this state machine.
-func (p *StaticHostDutyChildPolicy) InitializeDataModel(eng *sce.Engine[StaticHostDutyChildState, StaticHostDutyChildEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StaticHostDutyChildPolicy) InitializeDataModel(eng *sce.Engine[StaticHostDutyChildState, StaticHostDutyChildEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StaticHostDutyChildPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}
@@ -649,7 +652,13 @@ func (p *StaticHostDutyChildPolicy) ExecutePendingInvokes(engine *sce.Engine[Sta
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "worker", "")
-			childEngine.Initialize()
+			if refused := childEngine.Initialize(); refused != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "worker")
+				engine.Raise(sce.NewPlatformError(StaticHostDutyChildEventErrorExecution, sce.ChildStartRefusal("worker", refused)))
+				continue
+			}
+
 
 			// W3C SCXML 6.4: Store child and create wrapper
 			wrapper := &childEngineWrapperStaticHostDutyChild_Worker{engine: childEngine, policy: &childPolicy}
@@ -843,7 +852,7 @@ type childEngineWrapperStaticHostDutyChild_Worker struct {
 	engine *sce.Engine[StaticHostDutyChildSceSynthInvokeWorkerState, StaticHostDutyChildSceSynthInvokeWorkerEvent]
 	policy *StaticHostDutyChildSceSynthInvokeWorkerPolicy
 }
-func (w *childEngineWrapperStaticHostDutyChild_Worker) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticHostDutyChild_Worker) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperStaticHostDutyChild_Worker) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperStaticHostDutyChild_Worker) Step() { w.engine.Step() }
 func (w *childEngineWrapperStaticHostDutyChild_Worker) Stop() { w.engine.Stop() }

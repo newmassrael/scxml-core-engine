@@ -488,8 +488,11 @@ func (p *StaticMeshRelayPolicy) SetSessionID(id string) error {
 
 
 
-// No script engine needed for this state machine.
-func (p *StaticMeshRelayPolicy) InitializeDataModel(eng *sce.Engine[StaticMeshRelayState, StaticMeshRelayEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StaticMeshRelayPolicy) InitializeDataModel(eng *sce.Engine[StaticMeshRelayState, StaticMeshRelayEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StaticMeshRelayPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}
@@ -562,7 +565,13 @@ func (p *StaticMeshRelayPolicy) ExecutePendingInvokes(engine *sce.Engine[StaticM
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "inner", "")
-			childEngine.Initialize()
+			if refused := childEngine.Initialize(); refused != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "inner")
+				engine.Raise(sce.NewPlatformError(StaticMeshRelayEventErrorExecution, sce.ChildStartRefusal("inner", refused)))
+				continue
+			}
+
 
 			// W3C SCXML 6.4: Store child and create wrapper
 			wrapper := &childEngineWrapperStaticMeshRelay_Inner{engine: childEngine, policy: &childPolicy}
@@ -736,7 +745,7 @@ type childEngineWrapperStaticMeshRelay_Inner struct {
 	engine *sce.Engine[StaticMeshRelaySceSynthInvokeInnerState, StaticMeshRelaySceSynthInvokeInnerEvent]
 	policy *StaticMeshRelaySceSynthInvokeInnerPolicy
 }
-func (w *childEngineWrapperStaticMeshRelay_Inner) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticMeshRelay_Inner) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperStaticMeshRelay_Inner) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperStaticMeshRelay_Inner) Step() { w.engine.Step() }
 func (w *childEngineWrapperStaticMeshRelay_Inner) Stop() { w.engine.Stop() }

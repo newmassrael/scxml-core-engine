@@ -635,8 +635,11 @@ func (p *StaticInvokeTreePolicy) AcceptParams(params StaticInvokeTreeInvokeParam
 
 
 
-// No script engine needed for this state machine.
-func (p *StaticInvokeTreePolicy) InitializeDataModel(eng *sce.Engine[StaticInvokeTreeState, StaticInvokeTreeEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StaticInvokeTreePolicy) InitializeDataModel(eng *sce.Engine[StaticInvokeTreeState, StaticInvokeTreeEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StaticInvokeTreePolicy) SetParamValueInScriptEngine(name string, value interface{}) {}
@@ -709,7 +712,13 @@ func (p *StaticInvokeTreePolicy) ExecutePendingInvokes(engine *sce.Engine[Static
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "worker", "")
-			childEngine.Initialize()
+			if refused := childEngine.Initialize(); refused != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "worker")
+				engine.Raise(sce.NewPlatformError(StaticInvokeTreeEventErrorExecution, sce.ChildStartRefusal("worker", refused)))
+				continue
+			}
+
 
 			// W3C SCXML 6.4: Store child and create wrapper
 			wrapper := &childEngineWrapperStaticInvokeTree_Worker{engine: childEngine, policy: &childPolicy}
@@ -903,7 +912,7 @@ type childEngineWrapperStaticInvokeTree_Worker struct {
 	engine *sce.Engine[StaticInvokeTreeSceSynthInvokeWorkerState, StaticInvokeTreeSceSynthInvokeWorkerEvent]
 	policy *StaticInvokeTreeSceSynthInvokeWorkerPolicy
 }
-func (w *childEngineWrapperStaticInvokeTree_Worker) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticInvokeTree_Worker) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperStaticInvokeTree_Worker) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperStaticInvokeTree_Worker) Step() { w.engine.Step() }
 func (w *childEngineWrapperStaticInvokeTree_Worker) Stop() { w.engine.Stop() }

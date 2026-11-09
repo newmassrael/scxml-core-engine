@@ -1066,8 +1066,11 @@ func (p *StaticInvokeOptionalPolicy) AcceptParams(params StaticInvokeOptionalInv
 
 
 
-// No script engine needed for this state machine.
-func (p *StaticInvokeOptionalPolicy) InitializeDataModel(eng *sce.Engine[StaticInvokeOptionalState, StaticInvokeOptionalEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StaticInvokeOptionalPolicy) InitializeDataModel(eng *sce.Engine[StaticInvokeOptionalState, StaticInvokeOptionalEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StaticInvokeOptionalPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}
@@ -1159,7 +1162,13 @@ func (p *StaticInvokeOptionalPolicy) ExecutePendingInvokes(engine *sce.Engine[St
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "given", "")
-			childEngine.Initialize()
+			if refused := childEngine.Initialize(); refused != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "given")
+				engine.Raise(sce.NewPlatformError(StaticInvokeOptionalEventErrorExecution, sce.ChildStartRefusal("given", refused)))
+				continue
+			}
+
 
 			// W3C SCXML 6.4: Store child and create wrapper
 			wrapper := &childEngineWrapperStaticInvokeOptional_Given{engine: childEngine, policy: &childPolicy}
@@ -1253,7 +1262,13 @@ func (p *StaticInvokeOptionalPolicy) ExecutePendingInvokes(engine *sce.Engine[St
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "lifted", "")
-			childEngine.Initialize()
+			if refused := childEngine.Initialize(); refused != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "lifted")
+				engine.Raise(sce.NewPlatformError(StaticInvokeOptionalEventErrorExecution, sce.ChildStartRefusal("lifted", refused)))
+				continue
+			}
+
 
 			// W3C SCXML 6.4: Store child and create wrapper
 			wrapper := &childEngineWrapperStaticInvokeOptional_Lifted{engine: childEngine, policy: &childPolicy}
@@ -1340,7 +1355,13 @@ func (p *StaticInvokeOptionalPolicy) ExecutePendingInvokes(engine *sce.Engine[St
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "absent", "")
-			childEngine.Initialize()
+			if refused := childEngine.Initialize(); refused != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "absent")
+				engine.Raise(sce.NewPlatformError(StaticInvokeOptionalEventErrorExecution, sce.ChildStartRefusal("absent", refused)))
+				continue
+			}
+
 
 			// W3C SCXML 6.4: Store child and create wrapper
 			wrapper := &childEngineWrapperStaticInvokeOptional_Absent{engine: childEngine, policy: &childPolicy}
@@ -1424,7 +1445,13 @@ func (p *StaticInvokeOptionalPolicy) ExecutePendingInvokes(engine *sce.Engine[St
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "replaced", "")
-			childEngine.Initialize()
+			if refused := childEngine.Initialize(); refused != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "replaced")
+				engine.Raise(sce.NewPlatformError(StaticInvokeOptionalEventErrorExecution, sce.ChildStartRefusal("replaced", refused)))
+				continue
+			}
+
 
 			// W3C SCXML 6.4: Store child and create wrapper
 			wrapper := &childEngineWrapperStaticInvokeOptional_Replaced{engine: childEngine, policy: &childPolicy}
@@ -1515,7 +1542,13 @@ func (p *StaticInvokeOptionalPolicy) ExecutePendingInvokes(engine *sce.Engine[St
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "over", "")
-			childEngine.Initialize()
+			if refused := childEngine.Initialize(); refused != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "over")
+				engine.Raise(sce.NewPlatformError(StaticInvokeOptionalEventErrorExecution, sce.ChildStartRefusal("over", refused)))
+				continue
+			}
+
 
 			// W3C SCXML 6.4: Store child and create wrapper
 			wrapper := &childEngineWrapperStaticInvokeOptional_Over{engine: childEngine, policy: &childPolicy}
@@ -1606,7 +1639,13 @@ func (p *StaticInvokeOptionalPolicy) ExecutePendingInvokes(engine *sce.Engine[St
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "fits", "")
-			childEngine.Initialize()
+			if refused := childEngine.Initialize(); refused != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "fits")
+				engine.Raise(sce.NewPlatformError(StaticInvokeOptionalEventErrorExecution, sce.ChildStartRefusal("fits", refused)))
+				continue
+			}
+
 
 			// W3C SCXML 6.4: Store child and create wrapper
 			wrapper := &childEngineWrapperStaticInvokeOptional_Fits{engine: childEngine, policy: &childPolicy}
@@ -2080,7 +2119,7 @@ type childEngineWrapperStaticInvokeOptional_Given struct {
 	engine *sce.Engine[StaticInvokeOptionalSceSynthInvokeGivenState, StaticInvokeOptionalSceSynthInvokeGivenEvent]
 	policy *StaticInvokeOptionalSceSynthInvokeGivenPolicy
 }
-func (w *childEngineWrapperStaticInvokeOptional_Given) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticInvokeOptional_Given) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperStaticInvokeOptional_Given) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperStaticInvokeOptional_Given) Step() { w.engine.Step() }
 func (w *childEngineWrapperStaticInvokeOptional_Given) Stop() { w.engine.Stop() }
@@ -2101,7 +2140,7 @@ type childEngineWrapperStaticInvokeOptional_Lifted struct {
 	engine *sce.Engine[StaticInvokeOptionalSceSynthInvokeLiftedState, StaticInvokeOptionalSceSynthInvokeLiftedEvent]
 	policy *StaticInvokeOptionalSceSynthInvokeLiftedPolicy
 }
-func (w *childEngineWrapperStaticInvokeOptional_Lifted) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticInvokeOptional_Lifted) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperStaticInvokeOptional_Lifted) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperStaticInvokeOptional_Lifted) Step() { w.engine.Step() }
 func (w *childEngineWrapperStaticInvokeOptional_Lifted) Stop() { w.engine.Stop() }
@@ -2122,7 +2161,7 @@ type childEngineWrapperStaticInvokeOptional_Absent struct {
 	engine *sce.Engine[StaticInvokeOptionalSceSynthInvokeAbsentState, StaticInvokeOptionalSceSynthInvokeAbsentEvent]
 	policy *StaticInvokeOptionalSceSynthInvokeAbsentPolicy
 }
-func (w *childEngineWrapperStaticInvokeOptional_Absent) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticInvokeOptional_Absent) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperStaticInvokeOptional_Absent) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperStaticInvokeOptional_Absent) Step() { w.engine.Step() }
 func (w *childEngineWrapperStaticInvokeOptional_Absent) Stop() { w.engine.Stop() }
@@ -2143,7 +2182,7 @@ type childEngineWrapperStaticInvokeOptional_Replaced struct {
 	engine *sce.Engine[StaticInvokeOptionalSceSynthInvokeReplacedState, StaticInvokeOptionalSceSynthInvokeReplacedEvent]
 	policy *StaticInvokeOptionalSceSynthInvokeReplacedPolicy
 }
-func (w *childEngineWrapperStaticInvokeOptional_Replaced) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticInvokeOptional_Replaced) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperStaticInvokeOptional_Replaced) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperStaticInvokeOptional_Replaced) Step() { w.engine.Step() }
 func (w *childEngineWrapperStaticInvokeOptional_Replaced) Stop() { w.engine.Stop() }
@@ -2164,7 +2203,7 @@ type childEngineWrapperStaticInvokeOptional_Over struct {
 	engine *sce.Engine[StaticInvokeOptionalSceSynthInvokeOverState, StaticInvokeOptionalSceSynthInvokeOverEvent]
 	policy *StaticInvokeOptionalSceSynthInvokeOverPolicy
 }
-func (w *childEngineWrapperStaticInvokeOptional_Over) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticInvokeOptional_Over) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperStaticInvokeOptional_Over) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperStaticInvokeOptional_Over) Step() { w.engine.Step() }
 func (w *childEngineWrapperStaticInvokeOptional_Over) Stop() { w.engine.Stop() }
@@ -2185,7 +2224,7 @@ type childEngineWrapperStaticInvokeOptional_Fits struct {
 	engine *sce.Engine[StaticInvokeOptionalSceSynthInvokeFitsState, StaticInvokeOptionalSceSynthInvokeFitsEvent]
 	policy *StaticInvokeOptionalSceSynthInvokeFitsPolicy
 }
-func (w *childEngineWrapperStaticInvokeOptional_Fits) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticInvokeOptional_Fits) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperStaticInvokeOptional_Fits) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperStaticInvokeOptional_Fits) Step() { w.engine.Step() }
 func (w *childEngineWrapperStaticInvokeOptional_Fits) Stop() { w.engine.Stop() }

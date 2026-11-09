@@ -588,8 +588,11 @@ func (p *StaticChildHostPolicy) AcceptParams(params StaticChildHostInvokeParams)
 
 
 
-// No script engine needed for this state machine.
-func (p *StaticChildHostPolicy) InitializeDataModel(eng *sce.Engine[StaticChildHostState, StaticChildHostEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StaticChildHostPolicy) InitializeDataModel(eng *sce.Engine[StaticChildHostState, StaticChildHostEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StaticChildHostPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}
@@ -662,7 +665,13 @@ func (p *StaticChildHostPolicy) ExecutePendingInvokes(engine *sce.Engine[StaticC
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "worker", "")
-			childEngine.Initialize()
+			if refused := childEngine.Initialize(); refused != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "worker")
+				engine.Raise(sce.NewPlatformError(StaticChildHostEventErrorExecution, sce.ChildStartRefusal("worker", refused)))
+				continue
+			}
+
 
 			// W3C SCXML 6.4: Store child and create wrapper
 			wrapper := &childEngineWrapperStaticChildHost_Worker{engine: childEngine, policy: &childPolicy}
@@ -856,7 +865,7 @@ type childEngineWrapperStaticChildHost_Worker struct {
 	engine *sce.Engine[StaticChildHostSceSynthInvokeWorkerState, StaticChildHostSceSynthInvokeWorkerEvent]
 	policy *StaticChildHostSceSynthInvokeWorkerPolicy
 }
-func (w *childEngineWrapperStaticChildHost_Worker) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticChildHost_Worker) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperStaticChildHost_Worker) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperStaticChildHost_Worker) Step() { w.engine.Step() }
 func (w *childEngineWrapperStaticChildHost_Worker) Stop() { w.engine.Stop() }

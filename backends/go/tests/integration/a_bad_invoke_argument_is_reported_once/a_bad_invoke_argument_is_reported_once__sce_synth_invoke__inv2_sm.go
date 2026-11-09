@@ -192,8 +192,11 @@ func NewABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2Policy() ABadInvokeArg
 
 
 
-// No script engine needed for this state machine.
-func (p *ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2Policy) InitializeDataModel(eng *sce.Engine[ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2State, ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2Event]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2Policy) InitializeDataModel(eng *sce.Engine[ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2State, ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2Event]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *ABadInvokeArgumentIsReportedOnceSceSynthInvokeInv2Policy) SetParamValueInScriptEngine(name string, value interface{}) {}

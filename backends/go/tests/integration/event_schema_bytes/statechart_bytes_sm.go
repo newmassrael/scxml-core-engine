@@ -234,8 +234,11 @@ func NewStatechartBytesPolicy() StatechartBytesPolicy {
 
 
 
-// No script engine needed for this state machine.
-func (p *StatechartBytesPolicy) InitializeDataModel(eng *sce.Engine[StatechartBytesState, StatechartBytesEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StatechartBytesPolicy) InitializeDataModel(eng *sce.Engine[StatechartBytesState, StatechartBytesEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StatechartBytesPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

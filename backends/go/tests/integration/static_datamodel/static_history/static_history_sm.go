@@ -620,8 +620,11 @@ func (p *StaticHistoryPolicy) IsStateActive(stateID string) bool {
 	return false
 }
 
-// No script engine needed for this state machine.
-func (p *StaticHistoryPolicy) InitializeDataModel(eng *sce.Engine[StaticHistoryState, StaticHistoryEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StaticHistoryPolicy) InitializeDataModel(eng *sce.Engine[StaticHistoryState, StaticHistoryEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StaticHistoryPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

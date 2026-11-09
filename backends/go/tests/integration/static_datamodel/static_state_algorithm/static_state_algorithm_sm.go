@@ -806,8 +806,11 @@ func (p *StaticStateAlgorithmPolicy) AcceptParams(params StaticStateAlgorithmInv
 
 
 
-// No script engine needed for this state machine.
-func (p *StaticStateAlgorithmPolicy) InitializeDataModel(eng *sce.Engine[StaticStateAlgorithmState, StaticStateAlgorithmEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StaticStateAlgorithmPolicy) InitializeDataModel(eng *sce.Engine[StaticStateAlgorithmState, StaticStateAlgorithmEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StaticStateAlgorithmPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

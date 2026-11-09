@@ -201,8 +201,11 @@ func NewADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGonePolicy() ADelayed
 
 
 
-// No script engine needed for this state machine.
-func (p *ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGonePolicy) InitializeDataModel(eng *sce.Engine[ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneState, ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGonePolicy) InitializeDataModel(eng *sce.Engine[ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneState, ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGoneEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *ADelayedSendReachesWhatItsTargetNamesSceSynthInvokeGonePolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

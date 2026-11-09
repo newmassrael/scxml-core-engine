@@ -236,8 +236,11 @@ func NewInvokePrecedesDequeueMidrunPolicy() InvokePrecedesDequeueMidrunPolicy {
 
 
 
-// No script engine needed for this state machine.
-func (p *InvokePrecedesDequeueMidrunPolicy) InitializeDataModel(eng *sce.Engine[InvokePrecedesDequeueMidrunState, InvokePrecedesDequeueMidrunEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *InvokePrecedesDequeueMidrunPolicy) InitializeDataModel(eng *sce.Engine[InvokePrecedesDequeueMidrunState, InvokePrecedesDequeueMidrunEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *InvokePrecedesDequeueMidrunPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}
@@ -310,7 +313,13 @@ func (p *InvokePrecedesDequeueMidrunPolicy) ExecutePendingInvokes(engine *sce.En
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "inv_watch", "")
-			childEngine.Initialize()
+			if refused := childEngine.Initialize(); refused != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "inv_watch")
+				engine.Raise(sce.NewPlatformError(InvokePrecedesDequeueMidrunEventErrorExecution, sce.ChildStartRefusal("inv_watch", refused)))
+				continue
+			}
+
 
 			// W3C SCXML 6.4: Store child and create wrapper
 			wrapper := &childEngineWrapperInvokePrecedesDequeueMidrun_InvWatch{engine: childEngine, policy: &childPolicy}
@@ -504,7 +513,7 @@ type childEngineWrapperInvokePrecedesDequeueMidrun_InvWatch struct {
 	engine *sce.Engine[InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchState, InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchEvent]
 	policy *InvokePrecedesDequeueMidrunSceSynthInvokeInvWatchPolicy
 }
-func (w *childEngineWrapperInvokePrecedesDequeueMidrun_InvWatch) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperInvokePrecedesDequeueMidrun_InvWatch) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperInvokePrecedesDequeueMidrun_InvWatch) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperInvokePrecedesDequeueMidrun_InvWatch) Step() { w.engine.Step() }
 func (w *childEngineWrapperInvokePrecedesDequeueMidrun_InvWatch) Stop() { w.engine.Stop() }

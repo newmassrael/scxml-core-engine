@@ -174,8 +174,11 @@ func NewCancellingAnInvokeRaisesNothingSceSynthInvokeChildPolicy() CancellingAnI
 
 
 
-// No script engine needed for this state machine.
-func (p *CancellingAnInvokeRaisesNothingSceSynthInvokeChildPolicy) InitializeDataModel(eng *sce.Engine[CancellingAnInvokeRaisesNothingSceSynthInvokeChildState, CancellingAnInvokeRaisesNothingSceSynthInvokeChildEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *CancellingAnInvokeRaisesNothingSceSynthInvokeChildPolicy) InitializeDataModel(eng *sce.Engine[CancellingAnInvokeRaisesNothingSceSynthInvokeChildState, CancellingAnInvokeRaisesNothingSceSynthInvokeChildEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *CancellingAnInvokeRaisesNothingSceSynthInvokeChildPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

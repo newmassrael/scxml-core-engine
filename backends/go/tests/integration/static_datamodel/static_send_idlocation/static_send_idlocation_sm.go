@@ -557,8 +557,11 @@ func (p *StaticSendIdlocationPolicy) AcceptParams(params StaticSendIdlocationInv
 
 
 
-// No script engine needed for this state machine.
-func (p *StaticSendIdlocationPolicy) InitializeDataModel(eng *sce.Engine[StaticSendIdlocationState, StaticSendIdlocationEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StaticSendIdlocationPolicy) InitializeDataModel(eng *sce.Engine[StaticSendIdlocationState, StaticSendIdlocationEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StaticSendIdlocationPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

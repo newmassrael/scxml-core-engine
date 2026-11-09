@@ -910,8 +910,11 @@ func (p *StaticInvokeTreeSceSynthInvokeWorkerPolicy) AcceptParams(params StaticI
 
 
 
-// No script engine needed for this state machine.
-func (p *StaticInvokeTreeSceSynthInvokeWorkerPolicy) InitializeDataModel(eng *sce.Engine[StaticInvokeTreeSceSynthInvokeWorkerState, StaticInvokeTreeSceSynthInvokeWorkerEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StaticInvokeTreeSceSynthInvokeWorkerPolicy) InitializeDataModel(eng *sce.Engine[StaticInvokeTreeSceSynthInvokeWorkerState, StaticInvokeTreeSceSynthInvokeWorkerEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StaticInvokeTreeSceSynthInvokeWorkerPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}
@@ -1046,7 +1049,13 @@ func (p *StaticInvokeTreeSceSynthInvokeWorkerPolicy) ExecutePendingInvokes(engin
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "_invoke_0", "static_hybrid_watcher")
-			childEngine.Initialize()
+			if refused := childEngine.Initialize(); refused != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "_invoke_0")
+				engine.Raise(sce.NewPlatformError(StaticInvokeTreeSceSynthInvokeWorkerEventErrorExecution, sce.ChildStartRefusal("_invoke_0", refused)))
+				continue
+			}
+
 
 			wrapper := &childEngineWrapperStaticInvokeTreeSceSynthInvokeWorker_Invoke00jStaticHybridWatcher{engine: childEngine, policy: &childPolicy}
 			p.childInvoke0 = wrapper
@@ -1122,7 +1131,13 @@ func (p *StaticInvokeTreeSceSynthInvokeWorkerPolicy) ExecutePendingInvokes(engin
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "_invoke_0", "static_hybrid_holder")
-			childEngine.Initialize()
+			if refused := childEngine.Initialize(); refused != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "_invoke_0")
+				engine.Raise(sce.NewPlatformError(StaticInvokeTreeSceSynthInvokeWorkerEventErrorExecution, sce.ChildStartRefusal("_invoke_0", refused)))
+				continue
+			}
+
 
 			wrapper := &childEngineWrapperStaticInvokeTreeSceSynthInvokeWorker_Invoke00jStaticHybridHolder{engine: childEngine, policy: &childPolicy}
 			p.childInvoke0 = wrapper
@@ -1262,7 +1277,7 @@ type childEngineWrapperStaticInvokeTreeSceSynthInvokeWorker_Invoke00jStaticHybri
 	engine *sce.Engine[StaticHybridWatcherState, StaticHybridWatcherEvent]
 	policy *StaticHybridWatcherPolicy
 }
-func (w *childEngineWrapperStaticInvokeTreeSceSynthInvokeWorker_Invoke00jStaticHybridWatcher) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticInvokeTreeSceSynthInvokeWorker_Invoke00jStaticHybridWatcher) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperStaticInvokeTreeSceSynthInvokeWorker_Invoke00jStaticHybridWatcher) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperStaticInvokeTreeSceSynthInvokeWorker_Invoke00jStaticHybridWatcher) Step() { w.engine.Step() }
 func (w *childEngineWrapperStaticInvokeTreeSceSynthInvokeWorker_Invoke00jStaticHybridWatcher) Stop() { w.engine.Stop() }
@@ -1283,7 +1298,7 @@ type childEngineWrapperStaticInvokeTreeSceSynthInvokeWorker_Invoke00jStaticHybri
 	engine *sce.Engine[StaticHybridHolderState, StaticHybridHolderEvent]
 	policy *StaticHybridHolderPolicy
 }
-func (w *childEngineWrapperStaticInvokeTreeSceSynthInvokeWorker_Invoke00jStaticHybridHolder) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticInvokeTreeSceSynthInvokeWorker_Invoke00jStaticHybridHolder) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperStaticInvokeTreeSceSynthInvokeWorker_Invoke00jStaticHybridHolder) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperStaticInvokeTreeSceSynthInvokeWorker_Invoke00jStaticHybridHolder) Step() { w.engine.Step() }
 func (w *childEngineWrapperStaticInvokeTreeSceSynthInvokeWorker_Invoke00jStaticHybridHolder) Stop() { w.engine.Stop() }

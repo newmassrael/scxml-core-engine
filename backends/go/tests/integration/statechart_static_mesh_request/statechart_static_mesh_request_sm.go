@@ -587,8 +587,11 @@ func (p *StatechartStaticMeshRequestPolicy) AcceptParams(params StatechartStatic
 
 
 
-// No script engine needed for this state machine.
-func (p *StatechartStaticMeshRequestPolicy) InitializeDataModel(eng *sce.Engine[StatechartStaticMeshRequestState, StatechartStaticMeshRequestEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StatechartStaticMeshRequestPolicy) InitializeDataModel(eng *sce.Engine[StatechartStaticMeshRequestState, StatechartStaticMeshRequestEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StatechartStaticMeshRequestPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

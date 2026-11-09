@@ -400,8 +400,11 @@ func (p *StaticHostedSecondPolicy) SetSessionID(id string) error {
 
 
 
-// No script engine needed for this state machine.
-func (p *StaticHostedSecondPolicy) InitializeDataModel(eng *sce.Engine[StaticHostedSecondState, StaticHostedSecondEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StaticHostedSecondPolicy) InitializeDataModel(eng *sce.Engine[StaticHostedSecondState, StaticHostedSecondEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StaticHostedSecondPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

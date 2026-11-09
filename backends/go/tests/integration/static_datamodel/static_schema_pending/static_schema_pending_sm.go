@@ -677,8 +677,11 @@ func (p *StaticSchemaPendingPolicy) AcceptParams(params StaticSchemaPendingInvok
 
 
 
-// No script engine needed for this state machine.
-func (p *StaticSchemaPendingPolicy) InitializeDataModel(eng *sce.Engine[StaticSchemaPendingState, StaticSchemaPendingEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StaticSchemaPendingPolicy) InitializeDataModel(eng *sce.Engine[StaticSchemaPendingState, StaticSchemaPendingEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StaticSchemaPendingPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

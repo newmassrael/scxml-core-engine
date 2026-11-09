@@ -679,8 +679,11 @@ func (p *StaticSchemaRevisionPolicy) AcceptParams(params StaticSchemaRevisionInv
 
 
 
-// No script engine needed for this state machine.
-func (p *StaticSchemaRevisionPolicy) InitializeDataModel(eng *sce.Engine[StaticSchemaRevisionState, StaticSchemaRevisionEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StaticSchemaRevisionPolicy) InitializeDataModel(eng *sce.Engine[StaticSchemaRevisionState, StaticSchemaRevisionEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StaticSchemaRevisionPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

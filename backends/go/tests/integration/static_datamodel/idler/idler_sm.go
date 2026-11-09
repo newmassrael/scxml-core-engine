@@ -453,7 +453,11 @@ func (c *IdlerComponent) Start(context *scetestprofile.ComponentContext) {
 		}
 		return nil
 	})
-	machine.Initialize()
+	// A test component holds no script engine (`needs_script_engine` is false
+	// for every one), so its start has no script session to be refused for.
+	if err := machine.Initialize(); err != nil {
+		panic("a test component's machine has no script session to fail: " + err.Error())
+	}
 	c.machine = machine
 }
 
@@ -474,8 +478,11 @@ func (c *IdlerComponent) Terminated() bool {
 
 
 
-// No script engine needed for this state machine.
-func (p *IdlerPolicy) InitializeDataModel(eng *sce.Engine[IdlerState, IdlerEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *IdlerPolicy) InitializeDataModel(eng *sce.Engine[IdlerState, IdlerEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *IdlerPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

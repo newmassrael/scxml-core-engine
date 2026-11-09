@@ -539,8 +539,11 @@ func (p *StaticSendHttpPolicy) AcceptParams(params StaticSendHttpInvokeParams) {
 
 
 
-// No script engine needed for this state machine.
-func (p *StaticSendHttpPolicy) InitializeDataModel(eng *sce.Engine[StaticSendHttpState, StaticSendHttpEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StaticSendHttpPolicy) InitializeDataModel(eng *sce.Engine[StaticSendHttpState, StaticSendHttpEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StaticSendHttpPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

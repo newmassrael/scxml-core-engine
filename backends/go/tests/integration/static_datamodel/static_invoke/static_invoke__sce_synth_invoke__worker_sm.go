@@ -395,8 +395,11 @@ func (p *StaticInvokeSceSynthInvokeWorkerPolicy) SetSessionID(id string) error {
 
 
 
-// No script engine needed for this state machine.
-func (p *StaticInvokeSceSynthInvokeWorkerPolicy) InitializeDataModel(eng *sce.Engine[StaticInvokeSceSynthInvokeWorkerState, StaticInvokeSceSynthInvokeWorkerEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StaticInvokeSceSynthInvokeWorkerPolicy) InitializeDataModel(eng *sce.Engine[StaticInvokeSceSynthInvokeWorkerState, StaticInvokeSceSynthInvokeWorkerEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StaticInvokeSceSynthInvokeWorkerPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

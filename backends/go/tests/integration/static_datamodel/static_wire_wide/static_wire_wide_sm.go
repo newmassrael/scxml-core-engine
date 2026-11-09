@@ -643,8 +643,11 @@ func (p *StaticWireWidePolicy) AcceptParams(params StaticWireWideInvokeParams) {
 
 
 
-// No script engine needed for this state machine.
-func (p *StaticWireWidePolicy) InitializeDataModel(eng *sce.Engine[StaticWireWideState, StaticWireWideEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StaticWireWidePolicy) InitializeDataModel(eng *sce.Engine[StaticWireWideState, StaticWireWideEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StaticWireWidePolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

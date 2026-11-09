@@ -381,8 +381,11 @@ func (p *StaticMeshRelaySceSynthInvokeInnerPolicy) SetSessionID(id string) error
 
 
 
-// No script engine needed for this state machine.
-func (p *StaticMeshRelaySceSynthInvokeInnerPolicy) InitializeDataModel(eng *sce.Engine[StaticMeshRelaySceSynthInvokeInnerState, StaticMeshRelaySceSynthInvokeInnerEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StaticMeshRelaySceSynthInvokeInnerPolicy) InitializeDataModel(eng *sce.Engine[StaticMeshRelaySceSynthInvokeInnerState, StaticMeshRelaySceSynthInvokeInnerEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StaticMeshRelaySceSynthInvokeInnerPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

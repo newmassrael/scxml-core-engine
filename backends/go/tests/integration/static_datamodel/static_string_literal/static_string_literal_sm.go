@@ -469,8 +469,11 @@ func (p *StaticStringLiteralPolicy) AcceptParams(params StaticStringLiteralInvok
 
 
 
-// No script engine needed for this state machine.
-func (p *StaticStringLiteralPolicy) InitializeDataModel(eng *sce.Engine[StaticStringLiteralState, StaticStringLiteralEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StaticStringLiteralPolicy) InitializeDataModel(eng *sce.Engine[StaticStringLiteralState, StaticStringLiteralEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StaticStringLiteralPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

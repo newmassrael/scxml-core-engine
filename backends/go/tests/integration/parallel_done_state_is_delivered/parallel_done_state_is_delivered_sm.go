@@ -255,8 +255,11 @@ func (p *ParallelDoneStateIsDeliveredPolicy) IsStateActive(stateID string) bool 
 	return false
 }
 
-// No script engine needed for this state machine.
-func (p *ParallelDoneStateIsDeliveredPolicy) InitializeDataModel(eng *sce.Engine[ParallelDoneStateIsDeliveredState, ParallelDoneStateIsDeliveredEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *ParallelDoneStateIsDeliveredPolicy) InitializeDataModel(eng *sce.Engine[ParallelDoneStateIsDeliveredState, ParallelDoneStateIsDeliveredEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *ParallelDoneStateIsDeliveredPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

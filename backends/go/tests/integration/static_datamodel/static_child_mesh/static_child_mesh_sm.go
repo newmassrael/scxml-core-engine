@@ -674,8 +674,11 @@ func (p *StaticChildMeshPolicy) AcceptParams(params StaticChildMeshInvokeParams)
 
 
 
-// No script engine needed for this state machine.
-func (p *StaticChildMeshPolicy) InitializeDataModel(eng *sce.Engine[StaticChildMeshState, StaticChildMeshEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StaticChildMeshPolicy) InitializeDataModel(eng *sce.Engine[StaticChildMeshState, StaticChildMeshEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StaticChildMeshPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}
@@ -748,7 +751,13 @@ func (p *StaticChildMeshPolicy) ExecutePendingInvokes(engine *sce.Engine[StaticC
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "list", "")
-			childEngine.Initialize()
+			if refused := childEngine.Initialize(); refused != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "list")
+				engine.Raise(sce.NewPlatformError(StaticChildMeshEventErrorExecution, sce.ChildStartRefusal("list", refused)))
+				continue
+			}
+
 
 			// W3C SCXML 6.4: Store child and create wrapper
 			wrapper := &childEngineWrapperStaticChildMesh_List{engine: childEngine, policy: &childPolicy}
@@ -839,7 +848,13 @@ func (p *StaticChildMeshPolicy) ExecutePendingInvokes(engine *sce.Engine[StaticC
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "peer", "static_mesh_relay")
-			childEngine.Initialize()
+			if refused := childEngine.Initialize(); refused != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "peer")
+				engine.Raise(sce.NewPlatformError(StaticChildMeshEventErrorExecution, sce.ChildStartRefusal("peer", refused)))
+				continue
+			}
+
 
 			wrapper := &childEngineWrapperStaticChildMesh_Peer0jStaticMeshRelay{engine: childEngine, policy: &childPolicy}
 			p.childPeer = wrapper
@@ -1064,7 +1079,7 @@ type childEngineWrapperStaticChildMesh_List struct {
 	engine *sce.Engine[StaticChildMeshSceSynthInvokeListState, StaticChildMeshSceSynthInvokeListEvent]
 	policy *StaticChildMeshSceSynthInvokeListPolicy
 }
-func (w *childEngineWrapperStaticChildMesh_List) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticChildMesh_List) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperStaticChildMesh_List) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperStaticChildMesh_List) Step() { w.engine.Step() }
 func (w *childEngineWrapperStaticChildMesh_List) Stop() { w.engine.Stop() }
@@ -1085,7 +1100,7 @@ type childEngineWrapperStaticChildMesh_Peer0jStaticMeshRelay struct {
 	engine *sce.Engine[StaticMeshRelayState, StaticMeshRelayEvent]
 	policy *StaticMeshRelayPolicy
 }
-func (w *childEngineWrapperStaticChildMesh_Peer0jStaticMeshRelay) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticChildMesh_Peer0jStaticMeshRelay) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperStaticChildMesh_Peer0jStaticMeshRelay) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperStaticChildMesh_Peer0jStaticMeshRelay) Step() { w.engine.Step() }
 func (w *childEngineWrapperStaticChildMesh_Peer0jStaticMeshRelay) Stop() { w.engine.Stop() }

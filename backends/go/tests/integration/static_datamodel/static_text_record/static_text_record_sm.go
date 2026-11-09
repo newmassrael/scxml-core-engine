@@ -688,8 +688,11 @@ func (p *StaticTextRecordPolicy) AcceptParams(params StaticTextRecordInvokeParam
 
 
 
-// No script engine needed for this state machine.
-func (p *StaticTextRecordPolicy) InitializeDataModel(eng *sce.Engine[StaticTextRecordState, StaticTextRecordEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StaticTextRecordPolicy) InitializeDataModel(eng *sce.Engine[StaticTextRecordState, StaticTextRecordEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StaticTextRecordPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

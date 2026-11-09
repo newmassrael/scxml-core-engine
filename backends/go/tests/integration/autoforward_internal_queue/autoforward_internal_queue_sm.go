@@ -221,8 +221,11 @@ func NewAutoforwardInternalQueuePolicy() AutoforwardInternalQueuePolicy {
 
 
 
-// No script engine needed for this state machine.
-func (p *AutoforwardInternalQueuePolicy) InitializeDataModel(eng *sce.Engine[AutoforwardInternalQueueState, AutoforwardInternalQueueEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *AutoforwardInternalQueuePolicy) InitializeDataModel(eng *sce.Engine[AutoforwardInternalQueueState, AutoforwardInternalQueueEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *AutoforwardInternalQueuePolicy) SetParamValueInScriptEngine(name string, value interface{}) {}
@@ -295,7 +298,13 @@ func (p *AutoforwardInternalQueuePolicy) ExecutePendingInvokes(engine *sce.Engin
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "inv_watch", "")
-			childEngine.Initialize()
+			if refused := childEngine.Initialize(); refused != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "inv_watch")
+				engine.Raise(sce.NewPlatformError(AutoforwardInternalQueueEventErrorExecution, sce.ChildStartRefusal("inv_watch", refused)))
+				continue
+			}
+
 
 			// W3C SCXML 6.4: Store child and create wrapper
 			wrapper := &childEngineWrapperAutoforwardInternalQueue_InvWatch{engine: childEngine, policy: &childPolicy}
@@ -489,7 +498,7 @@ type childEngineWrapperAutoforwardInternalQueue_InvWatch struct {
 	engine *sce.Engine[AutoforwardInternalQueueSceSynthInvokeInvWatchState, AutoforwardInternalQueueSceSynthInvokeInvWatchEvent]
 	policy *AutoforwardInternalQueueSceSynthInvokeInvWatchPolicy
 }
-func (w *childEngineWrapperAutoforwardInternalQueue_InvWatch) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperAutoforwardInternalQueue_InvWatch) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperAutoforwardInternalQueue_InvWatch) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperAutoforwardInternalQueue_InvWatch) Step() { w.engine.Step() }
 func (w *childEngineWrapperAutoforwardInternalQueue_InvWatch) Stop() { w.engine.Stop() }

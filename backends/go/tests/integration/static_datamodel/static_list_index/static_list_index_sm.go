@@ -715,8 +715,11 @@ func (p *StaticListIndexPolicy) AcceptParams(params StaticListIndexInvokeParams)
 
 
 
-// No script engine needed for this state machine.
-func (p *StaticListIndexPolicy) InitializeDataModel(eng *sce.Engine[StaticListIndexState, StaticListIndexEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StaticListIndexPolicy) InitializeDataModel(eng *sce.Engine[StaticListIndexState, StaticListIndexEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StaticListIndexPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

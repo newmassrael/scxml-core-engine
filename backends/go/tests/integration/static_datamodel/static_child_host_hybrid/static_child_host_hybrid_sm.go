@@ -632,8 +632,11 @@ func (p *StaticChildHostHybridPolicy) AcceptParams(params StaticChildHostHybridI
 
 
 
-// No script engine needed for this state machine.
-func (p *StaticChildHostHybridPolicy) InitializeDataModel(eng *sce.Engine[StaticChildHostHybridState, StaticChildHostHybridEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StaticChildHostHybridPolicy) InitializeDataModel(eng *sce.Engine[StaticChildHostHybridState, StaticChildHostHybridEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StaticChildHostHybridPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}
@@ -721,7 +724,12 @@ func (p *StaticChildHostHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "work", "static_hosted_first")
-			childEngine.Initialize()
+			if childEngine.Initialize() != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "work")
+				continue
+			}
+
 
 			wrapper := &childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedFirst{engine: childEngine, policy: &childPolicy}
 			p.childWork = wrapper
@@ -788,7 +796,12 @@ func (p *StaticChildHostHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[S
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "work", "static_hosted_second")
-			childEngine.Initialize()
+			if childEngine.Initialize() != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "work")
+				continue
+			}
+
 
 			wrapper := &childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedSecond{engine: childEngine, policy: &childPolicy}
 			p.childWork = wrapper
@@ -928,7 +941,7 @@ type childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedFirst struct {
 	engine *sce.Engine[StaticHostedFirstState, StaticHostedFirstEvent]
 	policy *StaticHostedFirstPolicy
 }
-func (w *childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedFirst) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedFirst) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedFirst) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedFirst) Step() { w.engine.Step() }
 func (w *childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedFirst) Stop() { w.engine.Stop() }
@@ -949,7 +962,7 @@ type childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedSecond struct {
 	engine *sce.Engine[StaticHostedSecondState, StaticHostedSecondEvent]
 	policy *StaticHostedSecondPolicy
 }
-func (w *childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedSecond) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedSecond) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedSecond) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedSecond) Step() { w.engine.Step() }
 func (w *childEngineWrapperStaticChildHostHybrid_Work0jStaticHostedSecond) Stop() { w.engine.Stop() }

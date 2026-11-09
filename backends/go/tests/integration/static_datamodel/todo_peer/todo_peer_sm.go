@@ -3946,8 +3946,11 @@ func (p *TodoPeerPolicy) AcceptParams(params TodoPeerInvokeParams) {
 
 
 
-// No script engine needed for this state machine.
-func (p *TodoPeerPolicy) InitializeDataModel(eng *sce.Engine[TodoPeerState, TodoPeerEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *TodoPeerPolicy) InitializeDataModel(eng *sce.Engine[TodoPeerState, TodoPeerEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *TodoPeerPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

@@ -811,8 +811,11 @@ func (p *SyncClientPolicy) AcceptParams(params SyncClientInvokeParams) {
 
 
 
-// No script engine needed for this state machine.
-func (p *SyncClientPolicy) InitializeDataModel(eng *sce.Engine[SyncClientState, SyncClientEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *SyncClientPolicy) InitializeDataModel(eng *sce.Engine[SyncClientState, SyncClientEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *SyncClientPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

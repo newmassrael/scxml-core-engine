@@ -202,8 +202,11 @@ func NewAChildTimerIsADeadlineOfItsParentPolicy() AChildTimerIsADeadlineOfItsPar
 
 
 
-// No script engine needed for this state machine.
-func (p *AChildTimerIsADeadlineOfItsParentPolicy) InitializeDataModel(eng *sce.Engine[AChildTimerIsADeadlineOfItsParentState, AChildTimerIsADeadlineOfItsParentEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *AChildTimerIsADeadlineOfItsParentPolicy) InitializeDataModel(eng *sce.Engine[AChildTimerIsADeadlineOfItsParentState, AChildTimerIsADeadlineOfItsParentEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *AChildTimerIsADeadlineOfItsParentPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}
@@ -276,7 +279,13 @@ func (p *AChildTimerIsADeadlineOfItsParentPolicy) ExecutePendingInvokes(engine *
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "kid", "")
-			childEngine.Initialize()
+			if refused := childEngine.Initialize(); refused != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "kid")
+				engine.Raise(sce.NewPlatformError(AChildTimerIsADeadlineOfItsParentEventErrorExecution, sce.ChildStartRefusal("kid", refused)))
+				continue
+			}
+
 
 			// W3C SCXML 6.4: Store child and create wrapper
 			wrapper := &childEngineWrapperAChildTimerIsADeadlineOfItsParent_Kid{engine: childEngine, policy: &childPolicy}
@@ -450,7 +459,7 @@ type childEngineWrapperAChildTimerIsADeadlineOfItsParent_Kid struct {
 	engine *sce.Engine[AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState, AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidEvent]
 	policy *AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidPolicy
 }
-func (w *childEngineWrapperAChildTimerIsADeadlineOfItsParent_Kid) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperAChildTimerIsADeadlineOfItsParent_Kid) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperAChildTimerIsADeadlineOfItsParent_Kid) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperAChildTimerIsADeadlineOfItsParent_Kid) Step() { w.engine.Step() }
 func (w *childEngineWrapperAChildTimerIsADeadlineOfItsParent_Kid) Stop() { w.engine.Stop() }

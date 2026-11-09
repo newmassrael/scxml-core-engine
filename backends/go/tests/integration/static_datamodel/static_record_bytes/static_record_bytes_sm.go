@@ -715,8 +715,11 @@ func (p *StaticRecordBytesPolicy) AcceptParams(params StaticRecordBytesInvokePar
 
 
 
-// No script engine needed for this state machine.
-func (p *StaticRecordBytesPolicy) InitializeDataModel(eng *sce.Engine[StaticRecordBytesState, StaticRecordBytesEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StaticRecordBytesPolicy) InitializeDataModel(eng *sce.Engine[StaticRecordBytesState, StaticRecordBytesEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StaticRecordBytesPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

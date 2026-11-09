@@ -767,8 +767,11 @@ func (p *StaticStateAlgorithmOptionalPolicy) AcceptParams(params StaticStateAlgo
 
 
 
-// No script engine needed for this state machine.
-func (p *StaticStateAlgorithmOptionalPolicy) InitializeDataModel(eng *sce.Engine[StaticStateAlgorithmOptionalState, StaticStateAlgorithmOptionalEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StaticStateAlgorithmOptionalPolicy) InitializeDataModel(eng *sce.Engine[StaticStateAlgorithmOptionalState, StaticStateAlgorithmOptionalEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StaticStateAlgorithmOptionalPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

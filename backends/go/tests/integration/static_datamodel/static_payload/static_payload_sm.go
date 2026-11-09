@@ -555,8 +555,11 @@ func (p *StaticPayloadPolicy) AcceptParams(params StaticPayloadInvokeParams) {
 
 
 
-// No script engine needed for this state machine.
-func (p *StaticPayloadPolicy) InitializeDataModel(eng *sce.Engine[StaticPayloadState, StaticPayloadEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StaticPayloadPolicy) InitializeDataModel(eng *sce.Engine[StaticPayloadState, StaticPayloadEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StaticPayloadPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

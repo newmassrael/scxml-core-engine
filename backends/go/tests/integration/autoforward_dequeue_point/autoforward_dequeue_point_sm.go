@@ -227,8 +227,11 @@ func NewAutoforwardDequeuePointPolicy() AutoforwardDequeuePointPolicy {
 
 
 
-// No script engine needed for this state machine.
-func (p *AutoforwardDequeuePointPolicy) InitializeDataModel(eng *sce.Engine[AutoforwardDequeuePointState, AutoforwardDequeuePointEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *AutoforwardDequeuePointPolicy) InitializeDataModel(eng *sce.Engine[AutoforwardDequeuePointState, AutoforwardDequeuePointEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *AutoforwardDequeuePointPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}
@@ -301,7 +304,13 @@ func (p *AutoforwardDequeuePointPolicy) ExecutePendingInvokes(engine *sce.Engine
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "inv_probe", "")
-			childEngine.Initialize()
+			if refused := childEngine.Initialize(); refused != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "inv_probe")
+				engine.Raise(sce.NewPlatformError(AutoforwardDequeuePointEventErrorExecution, sce.ChildStartRefusal("inv_probe", refused)))
+				continue
+			}
+
 
 			// W3C SCXML 6.4: Store child and create wrapper
 			wrapper := &childEngineWrapperAutoforwardDequeuePoint_InvProbe{engine: childEngine, policy: &childPolicy}
@@ -495,7 +504,7 @@ type childEngineWrapperAutoforwardDequeuePoint_InvProbe struct {
 	engine *sce.Engine[AutoforwardDequeuePointSceSynthInvokeInvProbeState, AutoforwardDequeuePointSceSynthInvokeInvProbeEvent]
 	policy *AutoforwardDequeuePointSceSynthInvokeInvProbePolicy
 }
-func (w *childEngineWrapperAutoforwardDequeuePoint_InvProbe) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperAutoforwardDequeuePoint_InvProbe) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperAutoforwardDequeuePoint_InvProbe) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperAutoforwardDequeuePoint_InvProbe) Step() { w.engine.Step() }
 func (w *childEngineWrapperAutoforwardDequeuePoint_InvProbe) Stop() { w.engine.Stop() }

@@ -483,7 +483,11 @@ func (c *AnswererComponent) Start(context *scetestprofile.ComponentContext) {
 		}
 		return nil
 	})
-	machine.Initialize()
+	// A test component holds no script engine (`needs_script_engine` is false
+	// for every one), so its start has no script session to be refused for.
+	if err := machine.Initialize(); err != nil {
+		panic("a test component's machine has no script session to fail: " + err.Error())
+	}
 	c.machine = machine
 }
 
@@ -520,8 +524,11 @@ func (p *AnswererPolicy) AcceptParams(params AnswererInvokeParams) {
 
 
 
-// No script engine needed for this state machine.
-func (p *AnswererPolicy) InitializeDataModel(eng *sce.Engine[AnswererState, AnswererEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *AnswererPolicy) InitializeDataModel(eng *sce.Engine[AnswererState, AnswererEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *AnswererPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

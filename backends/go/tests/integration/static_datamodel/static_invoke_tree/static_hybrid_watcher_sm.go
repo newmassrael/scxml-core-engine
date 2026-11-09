@@ -417,8 +417,11 @@ func (p *StaticHybridWatcherPolicy) AcceptParams(params StaticHybridWatcherInvok
 
 
 
-// No script engine needed for this state machine.
-func (p *StaticHybridWatcherPolicy) InitializeDataModel(eng *sce.Engine[StaticHybridWatcherState, StaticHybridWatcherEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StaticHybridWatcherPolicy) InitializeDataModel(eng *sce.Engine[StaticHybridWatcherState, StaticHybridWatcherEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StaticHybridWatcherPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

@@ -251,8 +251,11 @@ func NewStatechartDelayedHostSendPolicy() StatechartDelayedHostSendPolicy {
 
 
 
-// No script engine needed for this state machine.
-func (p *StatechartDelayedHostSendPolicy) InitializeDataModel(eng *sce.Engine[StatechartDelayedHostSendState, StatechartDelayedHostSendEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StatechartDelayedHostSendPolicy) InitializeDataModel(eng *sce.Engine[StatechartDelayedHostSendState, StatechartDelayedHostSendEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StatechartDelayedHostSendPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

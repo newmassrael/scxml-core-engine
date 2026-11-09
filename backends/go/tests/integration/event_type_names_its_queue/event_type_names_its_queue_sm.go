@@ -254,17 +254,30 @@ func (p *EventTypeNamesItsQueuePolicy) ExtCode() (int64, bool) {
 
 
 
-// ensureScriptEngine lazily initializes the script engine session.
+// assertScriptSession holds that the script session this machine's executable
+// content runs in was established by its start (InitializeDataModel). A start
+// whose session could not be established was refused before anything could
+// reach here, so reaching here without one is a defect of the generated code,
+// not a condition of the run, and it panics as a missing engine does
+// (docs/adr/0096).
+func (p *EventTypeNamesItsQueuePolicy) assertScriptSession() {
+	if !p.scriptEngineInitialized {
+		panic("EventTypeNamesItsQueuePolicy: the script session is established by the start, before any executable content runs")
+	}
+}
+
+// establishScriptSession makes this machine's script session, the first step
+// of every start (docs/adr/0096). It is three steps: create the session, which
+// loads the shared library into it, then bind the system variables. A step that
+// fails releases what the steps before it made and is the answer, and the
+// session is not marked established, so the start is refused with nothing half
+// done and a later start asks for the session again.
 //
 // Engine DI Parity RFC: panics if ScriptEngine was not set on the policy
 // before Initialize() — mirrors Kotlin's mandatory constructor parameter
-// contract. Silent no-op would otherwise turn missed injection into a
-// hidden runtime regression (every <assign>/<log>/guard becomes a no-op
-// and the SM walks to its default-state final without diagnostic).
-func (p *EventTypeNamesItsQueuePolicy) ensureScriptEngine() {
-	if p.scriptEngineInitialized {
-		return
-	}
+// contract. A missing engine is a broken invariant of the host, not a failure
+// of the session, so it is not answered as one.
+func (p *EventTypeNamesItsQueuePolicy) establishScriptSession() *sce.ScriptSessionFailure {
 	engine := p.ScriptEngine
 	if engine == nil {
 		panic("EventTypeNamesItsQueuePolicy: ScriptEngine field must be set before Initialize()")
@@ -274,25 +287,42 @@ func (p *EventTypeNamesItsQueuePolicy) ensureScriptEngine() {
 		sessionID = sce.GenerateSessionID()
 		p.SessionID = sessionID
 	}
-	if !engine.HasSession(sessionID) {
-		_ = engine.CreateSession(sessionID)
+	if err := engine.CreateSession(sessionID); err != nil {
+		return sce.ScriptSessionFailureOfCreation(err)
 	}
 	// W3C SCXML C.1.1 / C.2.3: the _ioprocessors entries come from the same
 	// helper every other backend uses, so a machine reads the same entry names
 	// and the same addresses whichever one runs it.
-	_ = engine.SetupSystemVariables(sessionID, "event_type_names_its_queue",
-		sce.BuildIoProcessors(sessionID, p.BasicHTTPAccessURI))
+	if err := engine.SetupSystemVariables(sessionID, "event_type_names_its_queue",
+		sce.BuildIoProcessors(sessionID, p.BasicHTTPAccessURI)); err != nil {
+		engine.DestroySession(sessionID)
+		return sce.ScriptSessionFailureOfSystemVariables(err)
+	}
 	p.scriptEngineInitialized = true
+	return nil
 }
 
 
-// InitializeDataModel sets up datamodel via script engine (W3C SCXML 5.3).
-func (p *EventTypeNamesItsQueuePolicy) InitializeDataModel(eng *sce.Engine[EventTypeNamesItsQueueState, EventTypeNamesItsQueueEvent]) {
-	p.ensureScriptEngine()
+// InitializeDataModel establishes the script session, then initializes the
+// datamodel in it (W3C SCXML 5.3), raising error.execution for a `<data>` or a
+// top-level `<script>` that fails. Called from Engine.Initialize and
+// Engine.EnterAt, the first step of either, before any state is entered.
+//
+// It is the one place a session is made (establishScriptSession), and a
+// session that cannot be established is its answer: nothing of the datamodel is
+// touched and the start is refused (docs/adr/0096). The order after it is the
+// document's: its `<data>`, then the invoke params its parent handed it, then
+// its top-level `<script>`.
+func (p *EventTypeNamesItsQueuePolicy) InitializeDataModel(eng *sce.Engine[EventTypeNamesItsQueueState, EventTypeNamesItsQueueEvent]) *sce.ScriptSessionFailure {
+	if !p.scriptEngineInitialized {
+		if failure := p.establishScriptSession(); failure != nil {
+			return failure
+		}
+	}
 	engine := p.ScriptEngine
 	sessionID := p.SessionID
 
-	// `_sessionid` and `_name` are bound by `ensureScriptEngine`, through
+	// `_sessionid` and `_name` are bound by `establishScriptSession`, through
 	// `SetupSystemVariables`; they are system variables, which a write by name
 	// cannot change (§scxml-5.10), so writing them again here would be refused.
 
@@ -329,12 +359,15 @@ func (p *EventTypeNamesItsQueuePolicy) InitializeDataModel(eng *sce.Engine[Event
 	}
 
 
-
 	// §scxml-6.4.3: apply the invoke params the parent staged — overriding the
 	// `<data>` default this block just seeded, and only for a name the child
 	// declares ("if the names do not match, the Processor MUST NOT add the
 	// value ... to the invoked session's data model"). `HasVariable` is that
-	// filter, and it is this channel's only copy of the rule.
+	// filter, and it is this channel's only copy of the rule. They are applied
+	// before the top-level `<script>`, which reads the datamodel the invocation
+	// started it with. The parent hands them before this session's start
+	// (`SetParamValueInScriptEngine`) and this session applies them, so a
+	// child's session is made by the child.
 	if len(p.pendingParams) > 0 {
 		for paramName, paramValue := range p.pendingParams {
 			if engine.HasVariable(sessionID, paramName) {
@@ -343,6 +376,8 @@ func (p *EventTypeNamesItsQueuePolicy) InitializeDataModel(eng *sce.Engine[Event
 		}
 		p.pendingParams = nil
 	}
+
+	return nil
 }
 
 // evaluateGuard evaluates a guard condition via script engine.
@@ -369,7 +404,7 @@ func (p *EventTypeNamesItsQueuePolicy) evaluateIfCond(guard string, eng *sce.Eng
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
 func (p *EventTypeNamesItsQueuePolicy) evaluateGuardRaising(guard string, eng *sce.Engine[EventTypeNamesItsQueueState, EventTypeNamesItsQueueEvent], reason string) (value bool, ok bool) {
-	p.ensureScriptEngine()
+	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
@@ -381,7 +416,7 @@ func (p *EventTypeNamesItsQueuePolicy) evaluateGuardRaising(guard string, eng *s
 
 // executeScript executes a script block via script engine.
 func (p *EventTypeNamesItsQueuePolicy) executeScript(script string) error {
-	p.ensureScriptEngine()
+	p.assertScriptSession()
 	engine := p.ScriptEngine
 	return engine.ExecuteScript(p.SessionID, script)
 }
@@ -397,7 +432,7 @@ func (p *EventTypeNamesItsQueuePolicy) executeScript(script string) error {
 // _event.data.<field> read empty, and nothing anywhere could say so — see
 // sce.PayloadReading.
 func (p *EventTypeNamesItsQueuePolicy) setCurrentEvent(name string) sce.PayloadReading {
-	p.ensureScriptEngine()
+	p.assertScriptSession()
 	engine := p.ScriptEngine
 	data := p.pendingEventData
 	eventType := p.pendingEventType
@@ -430,7 +465,7 @@ func (p *EventTypeNamesItsQueuePolicy) setCurrentEvent(name string) sce.PayloadR
 
 // assignVariable assigns a value to a datamodel variable via script engine.
 func (p *EventTypeNamesItsQueuePolicy) assignVariable(location, expr string) error {
-	p.ensureScriptEngine()
+	p.assertScriptSession()
 	engine := p.ScriptEngine
 	script := location + " = " + expr
 	return engine.ExecuteScript(p.SessionID, script)
@@ -438,7 +473,7 @@ func (p *EventTypeNamesItsQueuePolicy) assignVariable(location, expr string) err
 
 // getVariable reads a datamodel variable from the script engine.
 func (p *EventTypeNamesItsQueuePolicy) getVariable(name string) interface{} {
-	p.ensureScriptEngine()
+	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.GetVariable(p.SessionID, name)
 	if err != nil {
@@ -450,8 +485,10 @@ func (p *EventTypeNamesItsQueuePolicy) getVariable(name string) interface{} {
 // SetParamValueInScriptEngine stores an invoke param's VALUE for deferred
 // application after datamodel init (§scxml-6.4.3).
 //
-// Params are applied at the end of InitializeDataModel, overriding the
-// `<data>` default only for names the child declares. The value crosses as a
+// Params are applied by InitializeDataModel after the `<data>` and before the
+// top-level `<script>`, overriding the `<data>` default only for names the
+// child declares, so the session they are applied in is the child's own,
+// established by its start (docs/adr/0096). The value crosses as a
 // value: this took the parent's value rendered as Lua source and
 // re-evaluated it here until 2026-08-21, which survived every value a test
 // had tried and lost the ones Lua cannot spell — `ToScriptLiteral` renders a
@@ -705,7 +742,7 @@ func (p *EventTypeNamesItsQueuePolicy) ClearEventMetadata() {
 // its initial state is entered by default.
 //line event_type_names_its_queue.scxml:29
 func (p *EventTypeNamesItsQueuePolicy) ExecuteEntryActions(state EventTypeNamesItsQueueState, engine *sce.Engine[EventTypeNamesItsQueueState, EventTypeNamesItsQueueEvent], isDefaultEntry bool) {
-	p.ensureScriptEngine()
+	p.assertScriptSession()
 	switch state {
 	case EventTypeNamesItsQueueStateS0:
 //line event_type_names_its_queue.scxml:39
@@ -739,7 +776,7 @@ func (p *EventTypeNamesItsQueuePolicy) ExecuteEntryActions(state EventTypeNamesI
 		// and its pair left out, and the message still goes; the error ends
 		// the block once it has. Read at the end of this element.
 		paramFailed := false
-		p.ensureScriptEngine()
+		p.assertScriptSession()
 		se := p.ScriptEngine
 		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
 		// delivered, so this is an ordered list rather than a map. The typed
@@ -789,7 +826,7 @@ func (p *EventTypeNamesItsQueuePolicy) ExecuteHistoryDefaultContent(history sce.
 // configuration — §scxml-D-exitStates's order.
 //line event_type_names_its_queue.scxml:29
 func (p *EventTypeNamesItsQueuePolicy) ExecuteExitActions(state EventTypeNamesItsQueueState, engine *sce.Engine[EventTypeNamesItsQueueState, EventTypeNamesItsQueueEvent], configurationBeforeExit []EventTypeNamesItsQueueState) {
-	p.ensureScriptEngine()
+	p.assertScriptSession()
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
 	// handler is true: the <onexit> switch comes first and the removal from
@@ -871,7 +908,7 @@ func (p *EventTypeNamesItsQueuePolicy) FirstEnabledTransition(state EventTypeNam
 // 3.13), between the microstep's exits and its entries.
 //line event_type_names_its_queue.scxml:29
 func (p *EventTypeNamesItsQueuePolicy) ExecuteTransitionContent(source EventTypeNamesItsQueueState, transitionIndex int, engine *sce.Engine[EventTypeNamesItsQueueState, EventTypeNamesItsQueueEvent]) {
-	p.ensureScriptEngine()
+	p.assertScriptSession()
 	switch source {
 	case EventTypeNamesItsQueueStateS0:
 		switch transitionIndex {

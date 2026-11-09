@@ -650,8 +650,11 @@ func (p *StaticRenderPolicy) AcceptParams(params StaticRenderInvokeParams) {
 
 
 
-// No script engine needed for this state machine.
-func (p *StaticRenderPolicy) InitializeDataModel(eng *sce.Engine[StaticRenderState, StaticRenderEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StaticRenderPolicy) InitializeDataModel(eng *sce.Engine[StaticRenderState, StaticRenderEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StaticRenderPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

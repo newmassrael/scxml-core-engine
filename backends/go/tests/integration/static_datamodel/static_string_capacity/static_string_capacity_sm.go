@@ -550,8 +550,11 @@ func (p *StaticStringCapacityPolicy) AcceptParams(params StaticStringCapacityInv
 
 
 
-// No script engine needed for this state machine.
-func (p *StaticStringCapacityPolicy) InitializeDataModel(eng *sce.Engine[StaticStringCapacityState, StaticStringCapacityEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StaticStringCapacityPolicy) InitializeDataModel(eng *sce.Engine[StaticStringCapacityState, StaticStringCapacityEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StaticStringCapacityPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

@@ -241,8 +241,11 @@ func NewHostEventReachesTheChildPolicy() HostEventReachesTheChildPolicy {
 
 
 
-// No script engine needed for this state machine.
-func (p *HostEventReachesTheChildPolicy) InitializeDataModel(eng *sce.Engine[HostEventReachesTheChildState, HostEventReachesTheChildEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *HostEventReachesTheChildPolicy) InitializeDataModel(eng *sce.Engine[HostEventReachesTheChildState, HostEventReachesTheChildEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *HostEventReachesTheChildPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}
@@ -315,7 +318,13 @@ func (p *HostEventReachesTheChildPolicy) ExecutePendingInvokes(engine *sce.Engin
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "inv_probe", "")
-			childEngine.Initialize()
+			if refused := childEngine.Initialize(); refused != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "inv_probe")
+				engine.Raise(sce.NewPlatformError(HostEventReachesTheChildEventErrorExecution, sce.ChildStartRefusal("inv_probe", refused)))
+				continue
+			}
+
 
 			// W3C SCXML 6.4: Store child and create wrapper
 			wrapper := &childEngineWrapperHostEventReachesTheChild_InvProbe{engine: childEngine, policy: &childPolicy}
@@ -509,7 +518,7 @@ type childEngineWrapperHostEventReachesTheChild_InvProbe struct {
 	engine *sce.Engine[HostEventReachesTheChildSceSynthInvokeInvProbeState, HostEventReachesTheChildSceSynthInvokeInvProbeEvent]
 	policy *HostEventReachesTheChildSceSynthInvokeInvProbePolicy
 }
-func (w *childEngineWrapperHostEventReachesTheChild_InvProbe) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperHostEventReachesTheChild_InvProbe) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperHostEventReachesTheChild_InvProbe) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperHostEventReachesTheChild_InvProbe) Step() { w.engine.Step() }
 func (w *childEngineWrapperHostEventReachesTheChild_InvProbe) Stop() { w.engine.Stop() }

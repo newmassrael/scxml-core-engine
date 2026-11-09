@@ -1318,8 +1318,11 @@ func (p *StaticOptionalPolicy) AcceptParams(params StaticOptionalInvokeParams) {
 
 
 
-// No script engine needed for this state machine.
-func (p *StaticOptionalPolicy) InitializeDataModel(eng *sce.Engine[StaticOptionalState, StaticOptionalEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StaticOptionalPolicy) InitializeDataModel(eng *sce.Engine[StaticOptionalState, StaticOptionalEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StaticOptionalPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

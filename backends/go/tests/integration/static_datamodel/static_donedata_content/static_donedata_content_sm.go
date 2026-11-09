@@ -484,8 +484,11 @@ func (p *StaticDonedataContentPolicy) AcceptParams(params StaticDonedataContentI
 
 
 
-// No script engine needed for this state machine.
-func (p *StaticDonedataContentPolicy) InitializeDataModel(eng *sce.Engine[StaticDonedataContentState, StaticDonedataContentEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StaticDonedataContentPolicy) InitializeDataModel(eng *sce.Engine[StaticDonedataContentState, StaticDonedataContentEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StaticDonedataContentPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

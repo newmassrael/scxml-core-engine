@@ -251,17 +251,30 @@ func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) ReplyBlank() (int64, bool
 
 
 
-// ensureScriptEngine lazily initializes the script engine session.
+// assertScriptSession holds that the script session this machine's executable
+// content runs in was established by its start (InitializeDataModel). A start
+// whose session could not be established was refused before anything could
+// reach here, so reaching here without one is a defect of the generated code,
+// not a condition of the run, and it panics as a missing engine does
+// (docs/adr/0096).
+func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) assertScriptSession() {
+	if !p.scriptEngineInitialized {
+		panic("AnEventNoProcessorDeliveredHasNoOriginPolicy: the script session is established by the start, before any executable content runs")
+	}
+}
+
+// establishScriptSession makes this machine's script session, the first step
+// of every start (docs/adr/0096). It is three steps: create the session, which
+// loads the shared library into it, then bind the system variables. A step that
+// fails releases what the steps before it made and is the answer, and the
+// session is not marked established, so the start is refused with nothing half
+// done and a later start asks for the session again.
 //
 // Engine DI Parity RFC: panics if ScriptEngine was not set on the policy
 // before Initialize() — mirrors Kotlin's mandatory constructor parameter
-// contract. Silent no-op would otherwise turn missed injection into a
-// hidden runtime regression (every <assign>/<log>/guard becomes a no-op
-// and the SM walks to its default-state final without diagnostic).
-func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) ensureScriptEngine() {
-	if p.scriptEngineInitialized {
-		return
-	}
+// contract. A missing engine is a broken invariant of the host, not a failure
+// of the session, so it is not answered as one.
+func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) establishScriptSession() *sce.ScriptSessionFailure {
 	engine := p.ScriptEngine
 	if engine == nil {
 		panic("AnEventNoProcessorDeliveredHasNoOriginPolicy: ScriptEngine field must be set before Initialize()")
@@ -271,25 +284,42 @@ func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) ensureScriptEngine() {
 		sessionID = sce.GenerateSessionID()
 		p.SessionID = sessionID
 	}
-	if !engine.HasSession(sessionID) {
-		_ = engine.CreateSession(sessionID)
+	if err := engine.CreateSession(sessionID); err != nil {
+		return sce.ScriptSessionFailureOfCreation(err)
 	}
 	// W3C SCXML C.1.1 / C.2.3: the _ioprocessors entries come from the same
 	// helper every other backend uses, so a machine reads the same entry names
 	// and the same addresses whichever one runs it.
-	_ = engine.SetupSystemVariables(sessionID, "an_event_no_processor_delivered_has_no_origin",
-		sce.BuildIoProcessors(sessionID, p.BasicHTTPAccessURI))
+	if err := engine.SetupSystemVariables(sessionID, "an_event_no_processor_delivered_has_no_origin",
+		sce.BuildIoProcessors(sessionID, p.BasicHTTPAccessURI)); err != nil {
+		engine.DestroySession(sessionID)
+		return sce.ScriptSessionFailureOfSystemVariables(err)
+	}
 	p.scriptEngineInitialized = true
+	return nil
 }
 
 
-// InitializeDataModel sets up datamodel via script engine (W3C SCXML 5.3).
-func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) InitializeDataModel(eng *sce.Engine[AnEventNoProcessorDeliveredHasNoOriginState, AnEventNoProcessorDeliveredHasNoOriginEvent]) {
-	p.ensureScriptEngine()
+// InitializeDataModel establishes the script session, then initializes the
+// datamodel in it (W3C SCXML 5.3), raising error.execution for a `<data>` or a
+// top-level `<script>` that fails. Called from Engine.Initialize and
+// Engine.EnterAt, the first step of either, before any state is entered.
+//
+// It is the one place a session is made (establishScriptSession), and a
+// session that cannot be established is its answer: nothing of the datamodel is
+// touched and the start is refused (docs/adr/0096). The order after it is the
+// document's: its `<data>`, then the invoke params its parent handed it, then
+// its top-level `<script>`.
+func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) InitializeDataModel(eng *sce.Engine[AnEventNoProcessorDeliveredHasNoOriginState, AnEventNoProcessorDeliveredHasNoOriginEvent]) *sce.ScriptSessionFailure {
+	if !p.scriptEngineInitialized {
+		if failure := p.establishScriptSession(); failure != nil {
+			return failure
+		}
+	}
 	engine := p.ScriptEngine
 	sessionID := p.SessionID
 
-	// `_sessionid` and `_name` are bound by `ensureScriptEngine`, through
+	// `_sessionid` and `_name` are bound by `establishScriptSession`, through
 	// `SetupSystemVariables`; they are system variables, which a write by name
 	// cannot change (§scxml-5.10), so writing them again here would be refused.
 
@@ -316,12 +346,15 @@ func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) InitializeDataModel(eng *
 	}
 
 
-
 	// §scxml-6.4.3: apply the invoke params the parent staged — overriding the
 	// `<data>` default this block just seeded, and only for a name the child
 	// declares ("if the names do not match, the Processor MUST NOT add the
 	// value ... to the invoked session's data model"). `HasVariable` is that
-	// filter, and it is this channel's only copy of the rule.
+	// filter, and it is this channel's only copy of the rule. They are applied
+	// before the top-level `<script>`, which reads the datamodel the invocation
+	// started it with. The parent hands them before this session's start
+	// (`SetParamValueInScriptEngine`) and this session applies them, so a
+	// child's session is made by the child.
 	if len(p.pendingParams) > 0 {
 		for paramName, paramValue := range p.pendingParams {
 			if engine.HasVariable(sessionID, paramName) {
@@ -330,6 +363,8 @@ func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) InitializeDataModel(eng *
 		}
 		p.pendingParams = nil
 	}
+
+	return nil
 }
 
 // evaluateGuard evaluates a guard condition via script engine.
@@ -356,7 +391,7 @@ func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) evaluateIfCond(guard stri
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
 func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[AnEventNoProcessorDeliveredHasNoOriginState, AnEventNoProcessorDeliveredHasNoOriginEvent], reason string) (value bool, ok bool) {
-	p.ensureScriptEngine()
+	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
@@ -368,7 +403,7 @@ func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) evaluateGuardRaising(guar
 
 // executeScript executes a script block via script engine.
 func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) executeScript(script string) error {
-	p.ensureScriptEngine()
+	p.assertScriptSession()
 	engine := p.ScriptEngine
 	return engine.ExecuteScript(p.SessionID, script)
 }
@@ -384,7 +419,7 @@ func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) executeScript(script stri
 // _event.data.<field> read empty, and nothing anywhere could say so — see
 // sce.PayloadReading.
 func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) setCurrentEvent(name string) sce.PayloadReading {
-	p.ensureScriptEngine()
+	p.assertScriptSession()
 	engine := p.ScriptEngine
 	data := p.pendingEventData
 	eventType := p.pendingEventType
@@ -417,7 +452,7 @@ func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) setCurrentEvent(name stri
 
 // assignVariable assigns a value to a datamodel variable via script engine.
 func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) assignVariable(location, expr string) error {
-	p.ensureScriptEngine()
+	p.assertScriptSession()
 	engine := p.ScriptEngine
 	script := location + " = " + expr
 	return engine.ExecuteScript(p.SessionID, script)
@@ -425,7 +460,7 @@ func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) assignVariable(location, 
 
 // getVariable reads a datamodel variable from the script engine.
 func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) getVariable(name string) interface{} {
-	p.ensureScriptEngine()
+	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.GetVariable(p.SessionID, name)
 	if err != nil {
@@ -437,8 +472,10 @@ func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) getVariable(name string) 
 // SetParamValueInScriptEngine stores an invoke param's VALUE for deferred
 // application after datamodel init (§scxml-6.4.3).
 //
-// Params are applied at the end of InitializeDataModel, overriding the
-// `<data>` default only for names the child declares. The value crosses as a
+// Params are applied by InitializeDataModel after the `<data>` and before the
+// top-level `<script>`, overriding the `<data>` default only for names the
+// child declares, so the session they are applied in is the child's own,
+// established by its start (docs/adr/0096). The value crosses as a
 // value: this took the parent's value rendered as Lua source and
 // re-evaluated it here until 2026-08-21, which survived every value a test
 // had tried and lost the ones Lua cannot spell — `ToScriptLiteral` renders a
@@ -694,7 +731,7 @@ func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) ClearEventMetadata() {
 // its initial state is entered by default.
 //line an_event_no_processor_delivered_has_no_origin.scxml:27
 func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) ExecuteEntryActions(state AnEventNoProcessorDeliveredHasNoOriginState, engine *sce.Engine[AnEventNoProcessorDeliveredHasNoOriginState, AnEventNoProcessorDeliveredHasNoOriginEvent], isDefaultEntry bool) {
-	p.ensureScriptEngine()
+	p.assertScriptSession()
 	switch state {
 	case AnEventNoProcessorDeliveredHasNoOriginStateAsking:
 //line an_event_no_processor_delivered_has_no_origin.scxml:43
@@ -763,7 +800,7 @@ func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) ExecuteHistoryDefaultCont
 // configuration — §scxml-D-exitStates's order.
 //line an_event_no_processor_delivered_has_no_origin.scxml:27
 func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) ExecuteExitActions(state AnEventNoProcessorDeliveredHasNoOriginState, engine *sce.Engine[AnEventNoProcessorDeliveredHasNoOriginState, AnEventNoProcessorDeliveredHasNoOriginEvent], configurationBeforeExit []AnEventNoProcessorDeliveredHasNoOriginState) {
-	p.ensureScriptEngine()
+	p.assertScriptSession()
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
 	// handler is true: the <onexit> switch comes first and the removal from
@@ -837,7 +874,7 @@ func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) FirstEnabledTransition(st
 // 3.13), between the microstep's exits and its entries.
 //line an_event_no_processor_delivered_has_no_origin.scxml:27
 func (p *AnEventNoProcessorDeliveredHasNoOriginPolicy) ExecuteTransitionContent(source AnEventNoProcessorDeliveredHasNoOriginState, transitionIndex int, engine *sce.Engine[AnEventNoProcessorDeliveredHasNoOriginState, AnEventNoProcessorDeliveredHasNoOriginEvent]) {
-	p.ensureScriptEngine()
+	p.assertScriptSession()
 	switch source {
 	case AnEventNoProcessorDeliveredHasNoOriginStateAsking:
 		switch transitionIndex {

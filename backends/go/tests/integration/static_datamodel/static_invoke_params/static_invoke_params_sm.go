@@ -756,8 +756,11 @@ func (p *StaticInvokeParamsPolicy) AcceptParams(params StaticInvokeParamsInvokeP
 
 
 
-// No script engine needed for this state machine.
-func (p *StaticInvokeParamsPolicy) InitializeDataModel(eng *sce.Engine[StaticInvokeParamsState, StaticInvokeParamsEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StaticInvokeParamsPolicy) InitializeDataModel(eng *sce.Engine[StaticInvokeParamsState, StaticInvokeParamsEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StaticInvokeParamsPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}
@@ -830,7 +833,13 @@ func (p *StaticInvokeParamsPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "control", "")
-			childEngine.Initialize()
+			if refused := childEngine.Initialize(); refused != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "control")
+				engine.Raise(sce.NewPlatformError(StaticInvokeParamsEventErrorExecution, sce.ChildStartRefusal("control", refused)))
+				continue
+			}
+
 
 			// W3C SCXML 6.4: Store child and create wrapper
 			wrapper := &childEngineWrapperStaticInvokeParams_Control{engine: childEngine, policy: &childPolicy}
@@ -914,7 +923,13 @@ func (p *StaticInvokeParamsPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "watcher", "")
-			childEngine.Initialize()
+			if refused := childEngine.Initialize(); refused != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "watcher")
+				engine.Raise(sce.NewPlatformError(StaticInvokeParamsEventErrorExecution, sce.ChildStartRefusal("watcher", refused)))
+				continue
+			}
+
 
 			// W3C SCXML 6.4: Store child and create wrapper
 			wrapper := &childEngineWrapperStaticInvokeParams_Watcher{engine: childEngine, policy: &childPolicy}
@@ -1001,7 +1016,13 @@ func (p *StaticInvokeParamsPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "worker", "")
-			childEngine.Initialize()
+			if refused := childEngine.Initialize(); refused != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "worker")
+				engine.Raise(sce.NewPlatformError(StaticInvokeParamsEventErrorExecution, sce.ChildStartRefusal("worker", refused)))
+				continue
+			}
+
 
 			// W3C SCXML 6.4: Store child and create wrapper
 			wrapper := &childEngineWrapperStaticInvokeParams_Worker{engine: childEngine, policy: &childPolicy}
@@ -1295,7 +1316,7 @@ type childEngineWrapperStaticInvokeParams_Worker struct {
 	engine *sce.Engine[StaticInvokeParamsSceSynthInvokeWorkerState, StaticInvokeParamsSceSynthInvokeWorkerEvent]
 	policy *StaticInvokeParamsSceSynthInvokeWorkerPolicy
 }
-func (w *childEngineWrapperStaticInvokeParams_Worker) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticInvokeParams_Worker) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperStaticInvokeParams_Worker) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperStaticInvokeParams_Worker) Step() { w.engine.Step() }
 func (w *childEngineWrapperStaticInvokeParams_Worker) Stop() { w.engine.Stop() }
@@ -1316,7 +1337,7 @@ type childEngineWrapperStaticInvokeParams_Control struct {
 	engine *sce.Engine[StaticInvokeParamsSceSynthInvokeControlState, StaticInvokeParamsSceSynthInvokeControlEvent]
 	policy *StaticInvokeParamsSceSynthInvokeControlPolicy
 }
-func (w *childEngineWrapperStaticInvokeParams_Control) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticInvokeParams_Control) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperStaticInvokeParams_Control) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperStaticInvokeParams_Control) Step() { w.engine.Step() }
 func (w *childEngineWrapperStaticInvokeParams_Control) Stop() { w.engine.Stop() }
@@ -1337,7 +1358,7 @@ type childEngineWrapperStaticInvokeParams_Watcher struct {
 	engine *sce.Engine[StaticInvokeParamsSceSynthInvokeWatcherState, StaticInvokeParamsSceSynthInvokeWatcherEvent]
 	policy *StaticInvokeParamsSceSynthInvokeWatcherPolicy
 }
-func (w *childEngineWrapperStaticInvokeParams_Watcher) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticInvokeParams_Watcher) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperStaticInvokeParams_Watcher) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperStaticInvokeParams_Watcher) Step() { w.engine.Step() }
 func (w *childEngineWrapperStaticInvokeParams_Watcher) Stop() { w.engine.Stop() }

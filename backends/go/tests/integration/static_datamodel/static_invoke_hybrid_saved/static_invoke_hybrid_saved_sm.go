@@ -630,8 +630,11 @@ func (p *StaticInvokeHybridSavedPolicy) AcceptParams(params StaticInvokeHybridSa
 
 
 
-// No script engine needed for this state machine.
-func (p *StaticInvokeHybridSavedPolicy) InitializeDataModel(eng *sce.Engine[StaticInvokeHybridSavedState, StaticInvokeHybridSavedEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StaticInvokeHybridSavedPolicy) InitializeDataModel(eng *sce.Engine[StaticInvokeHybridSavedState, StaticInvokeHybridSavedEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StaticInvokeHybridSavedPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}
@@ -728,7 +731,12 @@ func (p *StaticInvokeHybridSavedPolicy) ExecutePendingInvokes(engine *sce.Engine
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "watch", "static_hybrid_watcher")
-			childEngine.Initialize()
+			if childEngine.Initialize() != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "watch")
+				continue
+			}
+
 
 			wrapper := &childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridWatcher{engine: childEngine, policy: &childPolicy}
 			p.childWatch = wrapper
@@ -804,7 +812,12 @@ func (p *StaticInvokeHybridSavedPolicy) ExecutePendingInvokes(engine *sce.Engine
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "watch", "static_hybrid_holder")
-			childEngine.Initialize()
+			if childEngine.Initialize() != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "watch")
+				continue
+			}
+
 
 			wrapper := &childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridHolder{engine: childEngine, policy: &childPolicy}
 			p.childWatch = wrapper
@@ -944,7 +957,7 @@ type childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridWatcher struct
 	engine *sce.Engine[StaticHybridWatcherState, StaticHybridWatcherEvent]
 	policy *StaticHybridWatcherPolicy
 }
-func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridWatcher) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridWatcher) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridWatcher) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridWatcher) Step() { w.engine.Step() }
 func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridWatcher) Stop() { w.engine.Stop() }
@@ -965,7 +978,7 @@ type childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridHolder struct 
 	engine *sce.Engine[StaticHybridHolderState, StaticHybridHolderEvent]
 	policy *StaticHybridHolderPolicy
 }
-func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridHolder) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridHolder) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridHolder) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridHolder) Step() { w.engine.Step() }
 func (w *childEngineWrapperStaticInvokeHybridSaved_Watch0jStaticHybridHolder) Stop() { w.engine.Stop() }

@@ -417,8 +417,11 @@ func (p *StaticInvokeStringSceSynthInvokeOverPolicy) AcceptParams(params StaticI
 
 
 
-// No script engine needed for this state machine.
-func (p *StaticInvokeStringSceSynthInvokeOverPolicy) InitializeDataModel(eng *sce.Engine[StaticInvokeStringSceSynthInvokeOverState, StaticInvokeStringSceSynthInvokeOverEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StaticInvokeStringSceSynthInvokeOverPolicy) InitializeDataModel(eng *sce.Engine[StaticInvokeStringSceSynthInvokeOverState, StaticInvokeStringSceSynthInvokeOverEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StaticInvokeStringSceSynthInvokeOverPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

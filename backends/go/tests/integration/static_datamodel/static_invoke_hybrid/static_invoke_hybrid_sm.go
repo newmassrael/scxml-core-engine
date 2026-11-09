@@ -1090,8 +1090,11 @@ func (p *StaticInvokeHybridPolicy) AcceptParams(params StaticInvokeHybridInvokeP
 
 
 
-// No script engine needed for this state machine.
-func (p *StaticInvokeHybridPolicy) InitializeDataModel(eng *sce.Engine[StaticInvokeHybridState, StaticInvokeHybridEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StaticInvokeHybridPolicy) InitializeDataModel(eng *sce.Engine[StaticInvokeHybridState, StaticInvokeHybridEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StaticInvokeHybridPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}
@@ -1202,7 +1205,13 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "first_run", "static_hybrid_first")
-			childEngine.Initialize()
+			if refused := childEngine.Initialize(); refused != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "first_run")
+				engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sce.ChildStartRefusal("first_run", refused)))
+				continue
+			}
+
 
 			wrapper := &childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridFirst{engine: childEngine, policy: &childPolicy}
 			p.childFirstRun = wrapper
@@ -1288,7 +1297,13 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "first_run", "static_hybrid_second")
-			childEngine.Initialize()
+			if refused := childEngine.Initialize(); refused != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "first_run")
+				engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sce.ChildStartRefusal("first_run", refused)))
+				continue
+			}
+
 
 			wrapper := &childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridSecond{engine: childEngine, policy: &childPolicy}
 			p.childFirstRun = wrapper
@@ -1400,7 +1415,13 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "lossy_run", "static_hybrid_first")
-			childEngine.Initialize()
+			if refused := childEngine.Initialize(); refused != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "lossy_run")
+				engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sce.ChildStartRefusal("lossy_run", refused)))
+				continue
+			}
+
 
 			wrapper := &childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridFirst{engine: childEngine, policy: &childPolicy}
 			p.childLossyRun = wrapper
@@ -1486,7 +1507,13 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "lossy_run", "static_hybrid_second")
-			childEngine.Initialize()
+			if refused := childEngine.Initialize(); refused != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "lossy_run")
+				engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sce.ChildStartRefusal("lossy_run", refused)))
+				continue
+			}
+
 
 			wrapper := &childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridSecond{engine: childEngine, policy: &childPolicy}
 			p.childLossyRun = wrapper
@@ -1588,7 +1615,13 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "missing_run", "static_hybrid_first")
-			childEngine.Initialize()
+			if refused := childEngine.Initialize(); refused != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "missing_run")
+				engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sce.ChildStartRefusal("missing_run", refused)))
+				continue
+			}
+
 
 			wrapper := &childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridFirst{engine: childEngine, policy: &childPolicy}
 			p.childMissingRun = wrapper
@@ -1664,7 +1697,13 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "missing_run", "static_hybrid_second")
-			childEngine.Initialize()
+			if refused := childEngine.Initialize(); refused != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "missing_run")
+				engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sce.ChildStartRefusal("missing_run", refused)))
+				continue
+			}
+
 
 			wrapper := &childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridSecond{engine: childEngine, policy: &childPolicy}
 			p.childMissingRun = wrapper
@@ -1776,7 +1815,13 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "second_run", "static_hybrid_first")
-			childEngine.Initialize()
+			if refused := childEngine.Initialize(); refused != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "second_run")
+				engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sce.ChildStartRefusal("second_run", refused)))
+				continue
+			}
+
 
 			wrapper := &childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridFirst{engine: childEngine, policy: &childPolicy}
 			p.childSecondRun = wrapper
@@ -1862,7 +1907,13 @@ func (p *StaticInvokeHybridPolicy) ExecutePendingInvokes(engine *sce.Engine[Stat
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "second_run", "static_hybrid_second")
-			childEngine.Initialize()
+			if refused := childEngine.Initialize(); refused != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "second_run")
+				engine.Raise(sce.NewPlatformError(StaticInvokeHybridEventErrorExecution, sce.ChildStartRefusal("second_run", refused)))
+				continue
+			}
+
 
 			wrapper := &childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridSecond{engine: childEngine, policy: &childPolicy}
 			p.childSecondRun = wrapper
@@ -2158,7 +2209,7 @@ type childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridFirst struct {
 	engine *sce.Engine[StaticHybridFirstState, StaticHybridFirstEvent]
 	policy *StaticHybridFirstPolicy
 }
-func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridFirst) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridFirst) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridFirst) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridFirst) Step() { w.engine.Step() }
 func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridFirst) Stop() { w.engine.Stop() }
@@ -2179,7 +2230,7 @@ type childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridSecond struct {
 	engine *sce.Engine[StaticHybridSecondState, StaticHybridSecondEvent]
 	policy *StaticHybridSecondPolicy
 }
-func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridSecond) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridSecond) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridSecond) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridSecond) Step() { w.engine.Step() }
 func (w *childEngineWrapperStaticInvokeHybrid_FirstRun0jStaticHybridSecond) Stop() { w.engine.Stop() }
@@ -2200,7 +2251,7 @@ type childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridFirst struct {
 	engine *sce.Engine[StaticHybridFirstState, StaticHybridFirstEvent]
 	policy *StaticHybridFirstPolicy
 }
-func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridFirst) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridFirst) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridFirst) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridFirst) Step() { w.engine.Step() }
 func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridFirst) Stop() { w.engine.Stop() }
@@ -2221,7 +2272,7 @@ type childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridSecond struct {
 	engine *sce.Engine[StaticHybridSecondState, StaticHybridSecondEvent]
 	policy *StaticHybridSecondPolicy
 }
-func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridSecond) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridSecond) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridSecond) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridSecond) Step() { w.engine.Step() }
 func (w *childEngineWrapperStaticInvokeHybrid_SecondRun0jStaticHybridSecond) Stop() { w.engine.Stop() }
@@ -2242,7 +2293,7 @@ type childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridFirst struct {
 	engine *sce.Engine[StaticHybridFirstState, StaticHybridFirstEvent]
 	policy *StaticHybridFirstPolicy
 }
-func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridFirst) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridFirst) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridFirst) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridFirst) Step() { w.engine.Step() }
 func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridFirst) Stop() { w.engine.Stop() }
@@ -2263,7 +2314,7 @@ type childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridSecond struct {
 	engine *sce.Engine[StaticHybridSecondState, StaticHybridSecondEvent]
 	policy *StaticHybridSecondPolicy
 }
-func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridSecond) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridSecond) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridSecond) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridSecond) Step() { w.engine.Step() }
 func (w *childEngineWrapperStaticInvokeHybrid_LossyRun0jStaticHybridSecond) Stop() { w.engine.Stop() }
@@ -2284,7 +2335,7 @@ type childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridFirst struct {
 	engine *sce.Engine[StaticHybridFirstState, StaticHybridFirstEvent]
 	policy *StaticHybridFirstPolicy
 }
-func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridFirst) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridFirst) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridFirst) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridFirst) Step() { w.engine.Step() }
 func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridFirst) Stop() { w.engine.Stop() }
@@ -2305,7 +2356,7 @@ type childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridSecond struct 
 	engine *sce.Engine[StaticHybridSecondState, StaticHybridSecondEvent]
 	policy *StaticHybridSecondPolicy
 }
-func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridSecond) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridSecond) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridSecond) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridSecond) Step() { w.engine.Step() }
 func (w *childEngineWrapperStaticInvokeHybrid_MissingRun0jStaticHybridSecond) Stop() { w.engine.Stop() }

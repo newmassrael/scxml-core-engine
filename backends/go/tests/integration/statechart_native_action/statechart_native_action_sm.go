@@ -280,8 +280,11 @@ func NewStatechartNativeActionPolicy(actions StatechartNativeActionActions) Stat
 
 
 
-// No script engine needed for this state machine.
-func (p *StatechartNativeActionPolicy) InitializeDataModel(eng *sce.Engine[StatechartNativeActionState, StatechartNativeActionEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StatechartNativeActionPolicy) InitializeDataModel(eng *sce.Engine[StatechartNativeActionState, StatechartNativeActionEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StatechartNativeActionPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

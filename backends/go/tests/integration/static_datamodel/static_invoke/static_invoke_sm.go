@@ -562,8 +562,11 @@ func (p *StaticInvokePolicy) AcceptParams(params StaticInvokeInvokeParams) {
 
 
 
-// No script engine needed for this state machine.
-func (p *StaticInvokePolicy) InitializeDataModel(eng *sce.Engine[StaticInvokeState, StaticInvokeEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StaticInvokePolicy) InitializeDataModel(eng *sce.Engine[StaticInvokeState, StaticInvokeEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StaticInvokePolicy) SetParamValueInScriptEngine(name string, value interface{}) {}
@@ -636,7 +639,13 @@ func (p *StaticInvokePolicy) ExecutePendingInvokes(engine *sce.Engine[StaticInvo
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "worker", "")
-			childEngine.Initialize()
+			if refused := childEngine.Initialize(); refused != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "worker")
+				engine.Raise(sce.NewPlatformError(StaticInvokeEventErrorExecution, sce.ChildStartRefusal("worker", refused)))
+				continue
+			}
+
 
 			// W3C SCXML 6.4: Store child and create wrapper
 			wrapper := &childEngineWrapperStaticInvoke_Worker{engine: childEngine, policy: &childPolicy}
@@ -830,7 +839,7 @@ type childEngineWrapperStaticInvoke_Worker struct {
 	engine *sce.Engine[StaticInvokeSceSynthInvokeWorkerState, StaticInvokeSceSynthInvokeWorkerEvent]
 	policy *StaticInvokeSceSynthInvokeWorkerPolicy
 }
-func (w *childEngineWrapperStaticInvoke_Worker) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticInvoke_Worker) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperStaticInvoke_Worker) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperStaticInvoke_Worker) Step() { w.engine.Step() }
 func (w *childEngineWrapperStaticInvoke_Worker) Stop() { w.engine.Stop() }

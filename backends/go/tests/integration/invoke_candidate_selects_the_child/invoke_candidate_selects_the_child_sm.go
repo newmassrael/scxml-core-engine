@@ -251,17 +251,30 @@ func (p *InvokeCandidateSelectsTheChildPolicy) Pick() (string, bool) {
 
 
 
-// ensureScriptEngine lazily initializes the script engine session.
+// assertScriptSession holds that the script session this machine's executable
+// content runs in was established by its start (InitializeDataModel). A start
+// whose session could not be established was refused before anything could
+// reach here, so reaching here without one is a defect of the generated code,
+// not a condition of the run, and it panics as a missing engine does
+// (docs/adr/0096).
+func (p *InvokeCandidateSelectsTheChildPolicy) assertScriptSession() {
+	if !p.scriptEngineInitialized {
+		panic("InvokeCandidateSelectsTheChildPolicy: the script session is established by the start, before any executable content runs")
+	}
+}
+
+// establishScriptSession makes this machine's script session, the first step
+// of every start (docs/adr/0096). It is three steps: create the session, which
+// loads the shared library into it, then bind the system variables. A step that
+// fails releases what the steps before it made and is the answer, and the
+// session is not marked established, so the start is refused with nothing half
+// done and a later start asks for the session again.
 //
 // Engine DI Parity RFC: panics if ScriptEngine was not set on the policy
 // before Initialize() — mirrors Kotlin's mandatory constructor parameter
-// contract. Silent no-op would otherwise turn missed injection into a
-// hidden runtime regression (every <assign>/<log>/guard becomes a no-op
-// and the SM walks to its default-state final without diagnostic).
-func (p *InvokeCandidateSelectsTheChildPolicy) ensureScriptEngine() {
-	if p.scriptEngineInitialized {
-		return
-	}
+// contract. A missing engine is a broken invariant of the host, not a failure
+// of the session, so it is not answered as one.
+func (p *InvokeCandidateSelectsTheChildPolicy) establishScriptSession() *sce.ScriptSessionFailure {
 	engine := p.ScriptEngine
 	if engine == nil {
 		panic("InvokeCandidateSelectsTheChildPolicy: ScriptEngine field must be set before Initialize()")
@@ -271,25 +284,42 @@ func (p *InvokeCandidateSelectsTheChildPolicy) ensureScriptEngine() {
 		sessionID = sce.GenerateSessionID()
 		p.SessionID = sessionID
 	}
-	if !engine.HasSession(sessionID) {
-		_ = engine.CreateSession(sessionID)
+	if err := engine.CreateSession(sessionID); err != nil {
+		return sce.ScriptSessionFailureOfCreation(err)
 	}
 	// W3C SCXML C.1.1 / C.2.3: the _ioprocessors entries come from the same
 	// helper every other backend uses, so a machine reads the same entry names
 	// and the same addresses whichever one runs it.
-	_ = engine.SetupSystemVariables(sessionID, "invoke_candidate_selects_the_child",
-		sce.BuildIoProcessors(sessionID, p.BasicHTTPAccessURI))
+	if err := engine.SetupSystemVariables(sessionID, "invoke_candidate_selects_the_child",
+		sce.BuildIoProcessors(sessionID, p.BasicHTTPAccessURI)); err != nil {
+		engine.DestroySession(sessionID)
+		return sce.ScriptSessionFailureOfSystemVariables(err)
+	}
 	p.scriptEngineInitialized = true
+	return nil
 }
 
 
-// InitializeDataModel sets up datamodel via script engine (W3C SCXML 5.3).
-func (p *InvokeCandidateSelectsTheChildPolicy) InitializeDataModel(eng *sce.Engine[InvokeCandidateSelectsTheChildState, InvokeCandidateSelectsTheChildEvent]) {
-	p.ensureScriptEngine()
+// InitializeDataModel establishes the script session, then initializes the
+// datamodel in it (W3C SCXML 5.3), raising error.execution for a `<data>` or a
+// top-level `<script>` that fails. Called from Engine.Initialize and
+// Engine.EnterAt, the first step of either, before any state is entered.
+//
+// It is the one place a session is made (establishScriptSession), and a
+// session that cannot be established is its answer: nothing of the datamodel is
+// touched and the start is refused (docs/adr/0096). The order after it is the
+// document's: its `<data>`, then the invoke params its parent handed it, then
+// its top-level `<script>`.
+func (p *InvokeCandidateSelectsTheChildPolicy) InitializeDataModel(eng *sce.Engine[InvokeCandidateSelectsTheChildState, InvokeCandidateSelectsTheChildEvent]) *sce.ScriptSessionFailure {
+	if !p.scriptEngineInitialized {
+		if failure := p.establishScriptSession(); failure != nil {
+			return failure
+		}
+	}
 	engine := p.ScriptEngine
 	sessionID := p.SessionID
 
-	// `_sessionid` and `_name` are bound by `ensureScriptEngine`, through
+	// `_sessionid` and `_name` are bound by `establishScriptSession`, through
 	// `SetupSystemVariables`; they are system variables, which a write by name
 	// cannot change (§scxml-5.10), so writing them again here would be refused.
 
@@ -306,12 +336,15 @@ func (p *InvokeCandidateSelectsTheChildPolicy) InitializeDataModel(eng *sce.Engi
 	}
 
 
-
 	// §scxml-6.4.3: apply the invoke params the parent staged — overriding the
 	// `<data>` default this block just seeded, and only for a name the child
 	// declares ("if the names do not match, the Processor MUST NOT add the
 	// value ... to the invoked session's data model"). `HasVariable` is that
-	// filter, and it is this channel's only copy of the rule.
+	// filter, and it is this channel's only copy of the rule. They are applied
+	// before the top-level `<script>`, which reads the datamodel the invocation
+	// started it with. The parent hands them before this session's start
+	// (`SetParamValueInScriptEngine`) and this session applies them, so a
+	// child's session is made by the child.
 	if len(p.pendingParams) > 0 {
 		for paramName, paramValue := range p.pendingParams {
 			if engine.HasVariable(sessionID, paramName) {
@@ -320,6 +353,8 @@ func (p *InvokeCandidateSelectsTheChildPolicy) InitializeDataModel(eng *sce.Engi
 		}
 		p.pendingParams = nil
 	}
+
+	return nil
 }
 
 // evaluateGuard evaluates a guard condition via script engine.
@@ -346,7 +381,7 @@ func (p *InvokeCandidateSelectsTheChildPolicy) evaluateIfCond(guard string, eng 
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
 func (p *InvokeCandidateSelectsTheChildPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[InvokeCandidateSelectsTheChildState, InvokeCandidateSelectsTheChildEvent], reason string) (value bool, ok bool) {
-	p.ensureScriptEngine()
+	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
@@ -358,7 +393,7 @@ func (p *InvokeCandidateSelectsTheChildPolicy) evaluateGuardRaising(guard string
 
 // executeScript executes a script block via script engine.
 func (p *InvokeCandidateSelectsTheChildPolicy) executeScript(script string) error {
-	p.ensureScriptEngine()
+	p.assertScriptSession()
 	engine := p.ScriptEngine
 	return engine.ExecuteScript(p.SessionID, script)
 }
@@ -374,7 +409,7 @@ func (p *InvokeCandidateSelectsTheChildPolicy) executeScript(script string) erro
 // _event.data.<field> read empty, and nothing anywhere could say so — see
 // sce.PayloadReading.
 func (p *InvokeCandidateSelectsTheChildPolicy) setCurrentEvent(name string) sce.PayloadReading {
-	p.ensureScriptEngine()
+	p.assertScriptSession()
 	engine := p.ScriptEngine
 	data := p.pendingEventData
 	eventType := p.pendingEventType
@@ -407,7 +442,7 @@ func (p *InvokeCandidateSelectsTheChildPolicy) setCurrentEvent(name string) sce.
 
 // assignVariable assigns a value to a datamodel variable via script engine.
 func (p *InvokeCandidateSelectsTheChildPolicy) assignVariable(location, expr string) error {
-	p.ensureScriptEngine()
+	p.assertScriptSession()
 	engine := p.ScriptEngine
 	script := location + " = " + expr
 	return engine.ExecuteScript(p.SessionID, script)
@@ -415,7 +450,7 @@ func (p *InvokeCandidateSelectsTheChildPolicy) assignVariable(location, expr str
 
 // getVariable reads a datamodel variable from the script engine.
 func (p *InvokeCandidateSelectsTheChildPolicy) getVariable(name string) interface{} {
-	p.ensureScriptEngine()
+	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.GetVariable(p.SessionID, name)
 	if err != nil {
@@ -427,8 +462,10 @@ func (p *InvokeCandidateSelectsTheChildPolicy) getVariable(name string) interfac
 // SetParamValueInScriptEngine stores an invoke param's VALUE for deferred
 // application after datamodel init (§scxml-6.4.3).
 //
-// Params are applied at the end of InitializeDataModel, overriding the
-// `<data>` default only for names the child declares. The value crosses as a
+// Params are applied by InitializeDataModel after the `<data>` and before the
+// top-level `<script>`, overriding the `<data>` default only for names the
+// child declares, so the session they are applied in is the child's own,
+// established by its start (docs/adr/0096). The value crosses as a
 // value: this took the parent's value rendered as Lua source and
 // re-evaluated it here until 2026-08-21, which survived every value a test
 // had tried and lost the ones Lua cannot spell — `ToScriptLiteral` renders a
@@ -460,7 +497,7 @@ func (p *InvokeCandidateSelectsTheChildPolicy) ExecutePendingInvokes(engine *sce
 			// document stem, so `file:x.scxml` and `./x.scxml` are one child).
 			__sceSelected := ""
 			// W3C SCXML 6.4.3: Evaluate srcexpr at runtime
-			p.ensureScriptEngine()
+			p.assertScriptSession()
 			{
 				se := p.ScriptEngine
 				if __sceValue, err := se.EvaluateExpression(p.SessionID, `pick`); err != nil {
@@ -534,7 +571,13 @@ func (p *InvokeCandidateSelectsTheChildPolicy) ExecutePendingInvokes(engine *sce
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "_invoke_0", "chosen")
-			childEngine.Initialize()
+			if refused := childEngine.Initialize(); refused != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "_invoke_0")
+				engine.Raise(sce.NewPlatformError(InvokeCandidateSelectsTheChildEventErrorExecution, sce.ChildStartRefusal("_invoke_0", refused)))
+				continue
+			}
+
 
 			wrapper := &childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jChosen{engine: childEngine, policy: &childPolicy}
 			p.childInvoke0 = wrapper
@@ -601,7 +644,13 @@ func (p *InvokeCandidateSelectsTheChildPolicy) ExecutePendingInvokes(engine *sce
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "_invoke_0", "other")
-			childEngine.Initialize()
+			if refused := childEngine.Initialize(); refused != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "_invoke_0")
+				engine.Raise(sce.NewPlatformError(InvokeCandidateSelectsTheChildEventErrorExecution, sce.ChildStartRefusal("_invoke_0", refused)))
+				continue
+			}
+
 
 			wrapper := &childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jOther{engine: childEngine, policy: &childPolicy}
 			p.childInvoke0 = wrapper
@@ -741,7 +790,7 @@ type childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jChosen struct {
 	engine *sce.Engine[ChosenState, ChosenEvent]
 	policy *ChosenPolicy
 }
-func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jChosen) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jChosen) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jChosen) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jChosen) Step() { w.engine.Step() }
 func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jChosen) Stop() { w.engine.Stop() }
@@ -760,7 +809,7 @@ type childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jOther struct {
 	engine *sce.Engine[OtherState, OtherEvent]
 	policy *OtherPolicy
 }
-func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jOther) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jOther) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jOther) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jOther) Step() { w.engine.Step() }
 func (w *childEngineWrapperInvokeCandidateSelectsTheChild_Invoke00jOther) Stop() { w.engine.Stop() }
@@ -1019,7 +1068,7 @@ func (p *InvokeCandidateSelectsTheChildPolicy) ClearEventMetadata() {
 // its initial state is entered by default.
 //line invoke_candidate_selects_the_child.scxml:34
 func (p *InvokeCandidateSelectsTheChildPolicy) ExecuteEntryActions(state InvokeCandidateSelectsTheChildState, engine *sce.Engine[InvokeCandidateSelectsTheChildState, InvokeCandidateSelectsTheChildEvent], isDefaultEntry bool) {
-	p.ensureScriptEngine()
+	p.assertScriptSession()
 	switch state {
 	case InvokeCandidateSelectsTheChildStateProbe:
 //line invoke_candidate_selects_the_child.scxml:41
@@ -1053,7 +1102,7 @@ func (p *InvokeCandidateSelectsTheChildPolicy) ExecuteHistoryDefaultContent(hist
 // configuration — §scxml-D-exitStates's order.
 //line invoke_candidate_selects_the_child.scxml:34
 func (p *InvokeCandidateSelectsTheChildPolicy) ExecuteExitActions(state InvokeCandidateSelectsTheChildState, engine *sce.Engine[InvokeCandidateSelectsTheChildState, InvokeCandidateSelectsTheChildEvent], configurationBeforeExit []InvokeCandidateSelectsTheChildState) {
-	p.ensureScriptEngine()
+	p.assertScriptSession()
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
 	// handler is true: the <onexit> switch comes first and the removal from

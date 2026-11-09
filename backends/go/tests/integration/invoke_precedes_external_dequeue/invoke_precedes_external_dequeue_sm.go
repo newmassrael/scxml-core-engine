@@ -224,8 +224,11 @@ func NewInvokePrecedesExternalDequeuePolicy() InvokePrecedesExternalDequeuePolic
 
 
 
-// No script engine needed for this state machine.
-func (p *InvokePrecedesExternalDequeuePolicy) InitializeDataModel(eng *sce.Engine[InvokePrecedesExternalDequeueState, InvokePrecedesExternalDequeueEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *InvokePrecedesExternalDequeuePolicy) InitializeDataModel(eng *sce.Engine[InvokePrecedesExternalDequeueState, InvokePrecedesExternalDequeueEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *InvokePrecedesExternalDequeuePolicy) SetParamValueInScriptEngine(name string, value interface{}) {}
@@ -298,7 +301,13 @@ func (p *InvokePrecedesExternalDequeuePolicy) ExecutePendingInvokes(engine *sce.
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "inv_watch", "")
-			childEngine.Initialize()
+			if refused := childEngine.Initialize(); refused != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "inv_watch")
+				engine.Raise(sce.NewPlatformError(InvokePrecedesExternalDequeueEventErrorExecution, sce.ChildStartRefusal("inv_watch", refused)))
+				continue
+			}
+
 
 			// W3C SCXML 6.4: Store child and create wrapper
 			wrapper := &childEngineWrapperInvokePrecedesExternalDequeue_InvWatch{engine: childEngine, policy: &childPolicy}
@@ -492,7 +501,7 @@ type childEngineWrapperInvokePrecedesExternalDequeue_InvWatch struct {
 	engine *sce.Engine[InvokePrecedesExternalDequeueSceSynthInvokeInvWatchState, InvokePrecedesExternalDequeueSceSynthInvokeInvWatchEvent]
 	policy *InvokePrecedesExternalDequeueSceSynthInvokeInvWatchPolicy
 }
-func (w *childEngineWrapperInvokePrecedesExternalDequeue_InvWatch) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperInvokePrecedesExternalDequeue_InvWatch) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperInvokePrecedesExternalDequeue_InvWatch) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperInvokePrecedesExternalDequeue_InvWatch) Step() { w.engine.Step() }
 func (w *childEngineWrapperInvokePrecedesExternalDequeue_InvWatch) Stop() { w.engine.Stop() }

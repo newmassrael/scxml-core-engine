@@ -206,8 +206,11 @@ func NewNestedFinalNotTerminalPolicy() NestedFinalNotTerminalPolicy {
 
 
 
-// No script engine needed for this state machine.
-func (p *NestedFinalNotTerminalPolicy) InitializeDataModel(eng *sce.Engine[NestedFinalNotTerminalState, NestedFinalNotTerminalEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *NestedFinalNotTerminalPolicy) InitializeDataModel(eng *sce.Engine[NestedFinalNotTerminalState, NestedFinalNotTerminalEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *NestedFinalNotTerminalPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

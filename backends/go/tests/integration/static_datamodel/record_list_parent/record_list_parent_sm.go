@@ -1646,8 +1646,11 @@ func (p *RecordListParentPolicy) AcceptParams(params RecordListParentInvokeParam
 
 
 
-// No script engine needed for this state machine.
-func (p *RecordListParentPolicy) InitializeDataModel(eng *sce.Engine[RecordListParentState, RecordListParentEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *RecordListParentPolicy) InitializeDataModel(eng *sce.Engine[RecordListParentState, RecordListParentEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *RecordListParentPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}
@@ -1729,7 +1732,13 @@ func (p *RecordListParentPolicy) ExecutePendingInvokes(engine *sce.Engine[Record
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "list", "")
-			childEngine.Initialize()
+			if refused := childEngine.Initialize(); refused != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "list")
+				engine.Raise(sce.NewPlatformError(RecordListParentEventErrorExecution, sce.ChildStartRefusal("list", refused)))
+				continue
+			}
+
 
 			// W3C SCXML 6.4: Store child and create wrapper
 			wrapper := &childEngineWrapperRecordListParent_List{engine: childEngine, policy: &childPolicy}
@@ -1903,7 +1912,7 @@ type childEngineWrapperRecordListParent_List struct {
 	engine *sce.Engine[RecordListParentSceSynthInvokeListState, RecordListParentSceSynthInvokeListEvent]
 	policy *RecordListParentSceSynthInvokeListPolicy
 }
-func (w *childEngineWrapperRecordListParent_List) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperRecordListParent_List) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperRecordListParent_List) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperRecordListParent_List) Step() { w.engine.Step() }
 func (w *childEngineWrapperRecordListParent_List) Stop() { w.engine.Stop() }

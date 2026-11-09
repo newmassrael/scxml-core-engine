@@ -201,8 +201,11 @@ func NewAChildTimerIsADeadlineOfItsParentSceSynthInvokeKidPolicy() AChildTimerIs
 
 
 
-// No script engine needed for this state machine.
-func (p *AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidPolicy) InitializeDataModel(eng *sce.Engine[AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState, AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidPolicy) InitializeDataModel(eng *sce.Engine[AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidState, AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *AChildTimerIsADeadlineOfItsParentSceSynthInvokeKidPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}

@@ -348,17 +348,30 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) Keeper() (int64, bool) {
 
 
 
-// ensureScriptEngine lazily initializes the script engine session.
+// assertScriptSession holds that the script session this machine's executable
+// content runs in was established by its start (InitializeDataModel). A start
+// whose session could not be established was refused before anything could
+// reach here, so reaching here without one is a defect of the generated code,
+// not a condition of the run, and it panics as a missing engine does
+// (docs/adr/0096).
+func (p *EmptyFinalizeUpdatesTheLocationPolicy) assertScriptSession() {
+	if !p.scriptEngineInitialized {
+		panic("EmptyFinalizeUpdatesTheLocationPolicy: the script session is established by the start, before any executable content runs")
+	}
+}
+
+// establishScriptSession makes this machine's script session, the first step
+// of every start (docs/adr/0096). It is three steps: create the session, which
+// loads the shared library into it, then bind the system variables. A step that
+// fails releases what the steps before it made and is the answer, and the
+// session is not marked established, so the start is refused with nothing half
+// done and a later start asks for the session again.
 //
 // Engine DI Parity RFC: panics if ScriptEngine was not set on the policy
 // before Initialize() — mirrors Kotlin's mandatory constructor parameter
-// contract. Silent no-op would otherwise turn missed injection into a
-// hidden runtime regression (every <assign>/<log>/guard becomes a no-op
-// and the SM walks to its default-state final without diagnostic).
-func (p *EmptyFinalizeUpdatesTheLocationPolicy) ensureScriptEngine() {
-	if p.scriptEngineInitialized {
-		return
-	}
+// contract. A missing engine is a broken invariant of the host, not a failure
+// of the session, so it is not answered as one.
+func (p *EmptyFinalizeUpdatesTheLocationPolicy) establishScriptSession() *sce.ScriptSessionFailure {
 	engine := p.ScriptEngine
 	if engine == nil {
 		panic("EmptyFinalizeUpdatesTheLocationPolicy: ScriptEngine field must be set before Initialize()")
@@ -368,25 +381,42 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ensureScriptEngine() {
 		sessionID = sce.GenerateSessionID()
 		p.SessionID = sessionID
 	}
-	if !engine.HasSession(sessionID) {
-		_ = engine.CreateSession(sessionID)
+	if err := engine.CreateSession(sessionID); err != nil {
+		return sce.ScriptSessionFailureOfCreation(err)
 	}
 	// W3C SCXML C.1.1 / C.2.3: the _ioprocessors entries come from the same
 	// helper every other backend uses, so a machine reads the same entry names
 	// and the same addresses whichever one runs it.
-	_ = engine.SetupSystemVariables(sessionID, "empty_finalize_updates_the_location",
-		sce.BuildIoProcessors(sessionID, p.BasicHTTPAccessURI))
+	if err := engine.SetupSystemVariables(sessionID, "empty_finalize_updates_the_location",
+		sce.BuildIoProcessors(sessionID, p.BasicHTTPAccessURI)); err != nil {
+		engine.DestroySession(sessionID)
+		return sce.ScriptSessionFailureOfSystemVariables(err)
+	}
 	p.scriptEngineInitialized = true
+	return nil
 }
 
 
-// InitializeDataModel sets up datamodel via script engine (W3C SCXML 5.3).
-func (p *EmptyFinalizeUpdatesTheLocationPolicy) InitializeDataModel(eng *sce.Engine[EmptyFinalizeUpdatesTheLocationState, EmptyFinalizeUpdatesTheLocationEvent]) {
-	p.ensureScriptEngine()
+// InitializeDataModel establishes the script session, then initializes the
+// datamodel in it (W3C SCXML 5.3), raising error.execution for a `<data>` or a
+// top-level `<script>` that fails. Called from Engine.Initialize and
+// Engine.EnterAt, the first step of either, before any state is entered.
+//
+// It is the one place a session is made (establishScriptSession), and a
+// session that cannot be established is its answer: nothing of the datamodel is
+// touched and the start is refused (docs/adr/0096). The order after it is the
+// document's: its `<data>`, then the invoke params its parent handed it, then
+// its top-level `<script>`.
+func (p *EmptyFinalizeUpdatesTheLocationPolicy) InitializeDataModel(eng *sce.Engine[EmptyFinalizeUpdatesTheLocationState, EmptyFinalizeUpdatesTheLocationEvent]) *sce.ScriptSessionFailure {
+	if !p.scriptEngineInitialized {
+		if failure := p.establishScriptSession(); failure != nil {
+			return failure
+		}
+	}
 	engine := p.ScriptEngine
 	sessionID := p.SessionID
 
-	// `_sessionid` and `_name` are bound by `ensureScriptEngine`, through
+	// `_sessionid` and `_name` are bound by `establishScriptSession`, through
 	// `SetupSystemVariables`; they are system variables, which a write by name
 	// cannot change (§scxml-5.10), so writing them again here would be refused.
 
@@ -423,12 +453,15 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) InitializeDataModel(eng *sce.Eng
 	}
 
 
-
 	// §scxml-6.4.3: apply the invoke params the parent staged — overriding the
 	// `<data>` default this block just seeded, and only for a name the child
 	// declares ("if the names do not match, the Processor MUST NOT add the
 	// value ... to the invoked session's data model"). `HasVariable` is that
-	// filter, and it is this channel's only copy of the rule.
+	// filter, and it is this channel's only copy of the rule. They are applied
+	// before the top-level `<script>`, which reads the datamodel the invocation
+	// started it with. The parent hands them before this session's start
+	// (`SetParamValueInScriptEngine`) and this session applies them, so a
+	// child's session is made by the child.
 	if len(p.pendingParams) > 0 {
 		for paramName, paramValue := range p.pendingParams {
 			if engine.HasVariable(sessionID, paramName) {
@@ -437,6 +470,8 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) InitializeDataModel(eng *sce.Eng
 		}
 		p.pendingParams = nil
 	}
+
+	return nil
 }
 
 // evaluateGuard evaluates a guard condition via script engine.
@@ -463,7 +498,7 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) evaluateIfCond(guard string, eng
 // be evaluated (W3C SCXML 5.9.1); ok is false then, where a bare false could
 // not say so.
 func (p *EmptyFinalizeUpdatesTheLocationPolicy) evaluateGuardRaising(guard string, eng *sce.Engine[EmptyFinalizeUpdatesTheLocationState, EmptyFinalizeUpdatesTheLocationEvent], reason string) (value bool, ok bool) {
-	p.ensureScriptEngine()
+	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.EvaluateExpression(p.SessionID, guard)
 	if err != nil {
@@ -475,7 +510,7 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) evaluateGuardRaising(guard strin
 
 // executeScript executes a script block via script engine.
 func (p *EmptyFinalizeUpdatesTheLocationPolicy) executeScript(script string) error {
-	p.ensureScriptEngine()
+	p.assertScriptSession()
 	engine := p.ScriptEngine
 	return engine.ExecuteScript(p.SessionID, script)
 }
@@ -491,7 +526,7 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) executeScript(script string) err
 // _event.data.<field> read empty, and nothing anywhere could say so — see
 // sce.PayloadReading.
 func (p *EmptyFinalizeUpdatesTheLocationPolicy) setCurrentEvent(name string) sce.PayloadReading {
-	p.ensureScriptEngine()
+	p.assertScriptSession()
 	engine := p.ScriptEngine
 	data := p.pendingEventData
 	eventType := p.pendingEventType
@@ -524,7 +559,7 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) setCurrentEvent(name string) sce
 
 // assignVariable assigns a value to a datamodel variable via script engine.
 func (p *EmptyFinalizeUpdatesTheLocationPolicy) assignVariable(location, expr string) error {
-	p.ensureScriptEngine()
+	p.assertScriptSession()
 	engine := p.ScriptEngine
 	script := location + " = " + expr
 	return engine.ExecuteScript(p.SessionID, script)
@@ -532,7 +567,7 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) assignVariable(location, expr st
 
 // getVariable reads a datamodel variable from the script engine.
 func (p *EmptyFinalizeUpdatesTheLocationPolicy) getVariable(name string) interface{} {
-	p.ensureScriptEngine()
+	p.assertScriptSession()
 	engine := p.ScriptEngine
 	result, err := engine.GetVariable(p.SessionID, name)
 	if err != nil {
@@ -544,8 +579,10 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) getVariable(name string) interfa
 // SetParamValueInScriptEngine stores an invoke param's VALUE for deferred
 // application after datamodel init (§scxml-6.4.3).
 //
-// Params are applied at the end of InitializeDataModel, overriding the
-// `<data>` default only for names the child declares. The value crosses as a
+// Params are applied by InitializeDataModel after the `<data>` and before the
+// top-level `<script>`, overriding the `<data>` default only for names the
+// child declares, so the session they are applied in is the child's own,
+// established by its start (docs/adr/0096). The value crosses as a
 // value: this took the parent's value rendered as Lua source and
 // re-evaluated it here until 2026-08-21, which survived every value a test
 // had tried and lost the ones Lua cannot spell — `ToScriptLiteral` renders a
@@ -574,7 +611,7 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecutePendingInvokes(engine *sc
 	for _, pending := range invokesToExecute {
 		if pending.DocumentID == "inv_absent" {
 			{
-				p.ensureScriptEngine()
+				p.assertScriptSession()
 				se := p.ScriptEngine
 				namelistValid := true
 				if namelistValid && !se.HasVariable(p.SessionID, "guard") {
@@ -648,7 +685,13 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecutePendingInvokes(engine *sc
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "inv_absent", "")
-			childEngine.Initialize()
+			if refused := childEngine.Initialize(); refused != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "inv_absent")
+				engine.Raise(sce.NewPlatformError(EmptyFinalizeUpdatesTheLocationEventErrorExecution, sce.ChildStartRefusal("inv_absent", refused)))
+				continue
+			}
+
 
 			// W3C SCXML 6.4: Store child and create wrapper
 			wrapper := &childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvAbsent{engine: childEngine, policy: &childPolicy}
@@ -671,7 +714,7 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecutePendingInvokes(engine *sc
 		}
 		if pending.DocumentID == "inv_empty" {
 			{
-				p.ensureScriptEngine()
+				p.assertScriptSession()
 				se := p.ScriptEngine
 				namelistValid := true
 				if namelistValid && !se.HasVariable(p.SessionID, "tally") {
@@ -745,7 +788,13 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecutePendingInvokes(engine *sc
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "inv_empty", "")
-			childEngine.Initialize()
+			if refused := childEngine.Initialize(); refused != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "inv_empty")
+				engine.Raise(sce.NewPlatformError(EmptyFinalizeUpdatesTheLocationEventErrorExecution, sce.ChildStartRefusal("inv_empty", refused)))
+				continue
+			}
+
 
 			// W3C SCXML 6.4: Store child and create wrapper
 			wrapper := &childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvEmpty{engine: childEngine, policy: &childPolicy}
@@ -768,7 +817,7 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecutePendingInvokes(engine *sc
 		}
 		if pending.DocumentID == "inv_unmatched" {
 			{
-				p.ensureScriptEngine()
+				p.assertScriptSession()
 				se := p.ScriptEngine
 				namelistValid := true
 				if namelistValid && !se.HasVariable(p.SessionID, "keeper") {
@@ -842,7 +891,13 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecutePendingInvokes(engine *sc
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "inv_unmatched", "")
-			childEngine.Initialize()
+			if refused := childEngine.Initialize(); refused != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "inv_unmatched")
+				engine.Raise(sce.NewPlatformError(EmptyFinalizeUpdatesTheLocationEventErrorExecution, sce.ChildStartRefusal("inv_unmatched", refused)))
+				continue
+			}
+
 
 			// W3C SCXML 6.4: Store child and create wrapper
 			wrapper := &childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvUnmatched{engine: childEngine, policy: &childPolicy}
@@ -1148,7 +1203,7 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteFinalizeForChildEvent(eve
 	}
 
 	if finalizeScript != "" {
-		p.ensureScriptEngine()
+		p.assertScriptSession()
 		se := p.ScriptEngine
 		if se != nil {
 			// §scxml-5.10: under the name the child sent it, which is the value's own
@@ -1187,7 +1242,7 @@ type childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvEmpty struct {
 	engine *sce.Engine[EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyState, EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyEvent]
 	policy *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvEmptyPolicy
 }
-func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvEmpty) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvEmpty) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvEmpty) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvEmpty) Step() { w.engine.Step() }
 func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvEmpty) Stop() { w.engine.Stop() }
@@ -1206,7 +1261,7 @@ type childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvAbsent struct {
 	engine *sce.Engine[EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentState, EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentEvent]
 	policy *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvAbsentPolicy
 }
-func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvAbsent) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvAbsent) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvAbsent) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvAbsent) Step() { w.engine.Step() }
 func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvAbsent) Stop() { w.engine.Stop() }
@@ -1225,7 +1280,7 @@ type childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvUnmatched struct {
 	engine *sce.Engine[EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedState, EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedEvent]
 	policy *EmptyFinalizeUpdatesTheLocationSceSynthInvokeInvUnmatchedPolicy
 }
-func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvUnmatched) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvUnmatched) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvUnmatched) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvUnmatched) Step() { w.engine.Step() }
 func (w *childEngineWrapperEmptyFinalizeUpdatesTheLocation_InvUnmatched) Stop() { w.engine.Stop() }
@@ -1512,7 +1567,7 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ClearEventMetadata() {
 // its initial state is entered by default.
 //line empty_finalize_updates_the_location.scxml:52
 func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteEntryActions(state EmptyFinalizeUpdatesTheLocationState, engine *sce.Engine[EmptyFinalizeUpdatesTheLocationState, EmptyFinalizeUpdatesTheLocationEvent], isDefaultEntry bool) {
-	p.ensureScriptEngine()
+	p.assertScriptSession()
 	switch state {
 	case EmptyFinalizeUpdatesTheLocationStateAbsentPhase:
 //line empty_finalize_updates_the_location.scxml:105
@@ -1633,7 +1688,7 @@ func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteHistoryDefaultContent(his
 // configuration — §scxml-D-exitStates's order.
 //line empty_finalize_updates_the_location.scxml:52
 func (p *EmptyFinalizeUpdatesTheLocationPolicy) ExecuteExitActions(state EmptyFinalizeUpdatesTheLocationState, engine *sce.Engine[EmptyFinalizeUpdatesTheLocationState, EmptyFinalizeUpdatesTheLocationEvent], configurationBeforeExit []EmptyFinalizeUpdatesTheLocationState) {
-	p.ensureScriptEngine()
+	p.assertScriptSession()
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
 	// handler is true: the <onexit> switch comes first and the removal from

@@ -616,8 +616,11 @@ func (p *StaticInvokeEndingOrderPolicy) AcceptParams(params StaticInvokeEndingOr
 
 
 
-// No script engine needed for this state machine.
-func (p *StaticInvokeEndingOrderPolicy) InitializeDataModel(eng *sce.Engine[StaticInvokeEndingOrderState, StaticInvokeEndingOrderEvent]) {}
+// No script engine needed for this state machine, so it has no script session
+// to fail and its start is never refused for one.
+func (p *StaticInvokeEndingOrderPolicy) InitializeDataModel(eng *sce.Engine[StaticInvokeEndingOrderState, StaticInvokeEndingOrderEvent]) *sce.ScriptSessionFailure {
+	return nil
+}
 
 // SetParamValueInScriptEngine is a no-op for state machines without script engine.
 func (p *StaticInvokeEndingOrderPolicy) SetParamValueInScriptEngine(name string, value interface{}) {}
@@ -690,7 +693,13 @@ func (p *StaticInvokeEndingOrderPolicy) ExecutePendingInvokes(engine *sce.Engine
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "worker", "")
-			childEngine.Initialize()
+			if refused := childEngine.Initialize(); refused != nil {
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "worker")
+				engine.Raise(sce.NewPlatformError(StaticInvokeEndingOrderEventErrorExecution, sce.ChildStartRefusal("worker", refused)))
+				continue
+			}
+
 
 			// W3C SCXML 6.4: Store child and create wrapper
 			wrapper := &childEngineWrapperStaticInvokeEndingOrder_Worker{engine: childEngine, policy: &childPolicy}
@@ -864,7 +873,7 @@ type childEngineWrapperStaticInvokeEndingOrder_Worker struct {
 	engine *sce.Engine[StaticInvokeEndingOrderSceSynthInvokeWorkerState, StaticInvokeEndingOrderSceSynthInvokeWorkerEvent]
 	policy *StaticInvokeEndingOrderSceSynthInvokeWorkerPolicy
 }
-func (w *childEngineWrapperStaticInvokeEndingOrder_Worker) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapperStaticInvokeEndingOrder_Worker) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapperStaticInvokeEndingOrder_Worker) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperStaticInvokeEndingOrder_Worker) Step() { w.engine.Step() }
 func (w *childEngineWrapperStaticInvokeEndingOrder_Worker) Stop() { w.engine.Stop() }
