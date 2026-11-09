@@ -59,7 +59,7 @@ fn typed_payload_guard_fires_natively() {
 #[test]
 fn a_refused_delivery_with_nothing_in_its_place_is_counted_as_discarded() {
     let mut engine = sce_rust_runtime::Engine::new(StatechartMinimalPolicy::new());
-    engine.initialize();
+    let Ok(()) = engine.initialize();
 
     engine.raise_external_by_name("job.completed", r#"{"elapsed_ms": "nought"}"#);
     engine.step();
