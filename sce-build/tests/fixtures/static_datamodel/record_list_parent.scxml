@@ -80,6 +80,14 @@
     </data>
     <data id="refused" sce:type="optional&lt;record:Refused&gt;" expr="null" sce:direction="out"/>
     <data id="refusedCount" sce:type="uint32" expr="0" sce:direction="out"/>
+    <!-- The author and the stamp of a peer's change the parent passes on, taken out of
+         the payload where the transition on `record_list.change` reads it: a <param>
+         is read from the machine's fields when its <send> runs, so a number of the
+         payload is carried by a variable of its type, and the operations, a composed
+         part of the payload, by its own name. -->
+    <data id="changeBy" sce:type="uint64" expr="0"/>
+    <data id="changeWallTime" sce:type="int64" expr="0"/>
+    <data id="changeCounter" sce:type="uint32" expr="0"/>
   </datamodel>
   <state id="holding">
     <invoke type="scxml" id="list" src="sce:std/shared/record_list.scxml">
@@ -133,10 +141,13 @@
     <!-- A peer's change, forwarded whole: its operations are a part of the payload,
          named as the list they are. -->
     <transition event="record_list.change" type="internal">
+      <assign location="changeBy" expr="_event.data.by"/>
+      <assign location="changeWallTime" expr="_event.data.wallTime"/>
+      <assign location="changeCounter" expr="_event.data.counter"/>
       <send target="#_list" event="record_list.change">
-        <param name="by" expr="_event.data.by"/>
-        <param name="wallTime" expr="_event.data.wallTime"/>
-        <param name="counter" expr="_event.data.counter"/>
+        <param name="by" expr="changeBy"/>
+        <param name="wallTime" expr="changeWallTime"/>
+        <param name="counter" expr="changeCounter"/>
         <param name="ops" expr="_event.data.ops"/>
       </send>
     </transition>
