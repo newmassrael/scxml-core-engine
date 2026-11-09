@@ -2712,6 +2712,35 @@ fn namelist_params<'a>(
     })
 }
 
+/// The machine name of the statechart whose document's file stem is `stem`
+/// (SCE_ACCEPTED_SUBSET.md §2.1): the stem written as an identifier by the
+/// spelling every forge document's artifacts take
+/// ([`crate::filters::to_snake_case`]), so `job-tester.scxml` is the machine
+/// `job_tester` as `bounded-collection.scxml` is the unit `bounded_collection`.
+///
+/// Every name a backend writes for the machine derives from this one: its
+/// files, its module, package or namespace, its types and its symbols, and the
+/// name a parent starts it by. So each reader that names a statechart by its
+/// file asks it here (the parser, an `<invoke src>` naming its child, a run
+/// naming the files it writes), and none spells the stem a second way. The
+/// file keeps the stem as its author wrote it: a child is read from
+/// [`ScxmlInvokeInfo::child_file_name`], and a diagnostic names the path the
+/// caller gave.
+pub fn statechart_machine_name(stem: &str) -> String {
+    crate::filters::to_snake_case(stem.to_string())
+}
+
+/// The stem of the document an `<invoke src>` names as a file, as written: the
+/// last component of the path, a `file:` scheme dropped, without its
+/// extension. `None` for a path with none.
+fn src_file_stem(src: &str) -> Option<String> {
+    let stripped = src.replace("file:", "");
+    std::path::Path::new(&stripped)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .map(str::to_string)
+}
+
 impl ScxmlInvokeInfo {
     /// What this invoke hands its child ([`invoke_arguments`]).
     pub fn arguments(&self) -> Vec<Param> {
@@ -2719,26 +2748,29 @@ impl ScxmlInvokeInfo {
     }
 
     /// The machine name of the child an `<invoke src>` names as a file: the stem
-    /// of the path, a `file:` scheme dropped, and empty for a path with none. Its
-    /// document is `<name>.scxml` beside the invoking one
-    /// ([`Self::child_file_name`]), whatever directory the path names.
+    /// of the path, a `file:` scheme dropped, written as the child's own parse
+    /// names it ([`statechart_machine_name`]), and empty for a path with none.
+    /// Its document is the file of that stem as written, beside the invoking
+    /// one ([`Self::child_file_name`]), whatever directory the path names.
     pub fn file_child_name(src: &str) -> String {
-        let stripped = src.replace("file:", "");
-        std::path::Path::new(&stripped)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .map(str::to_string)
+        src_file_stem(src)
+            .map(|stem| statechart_machine_name(&stem))
             .unwrap_or_default()
     }
 
-    /// The file name of the child this invoke reads from disk: `<child_name>.scxml`
-    /// in the directory of the document that invokes it, the document the parse
-    /// types the invoke's arguments against and the generated backends start.
-    /// `None` for a child whose document the invoke carries (written in
-    /// `<content>`, or a standard statechart), and for one with no name.
+    /// The file name of the child this invoke reads from disk: `<stem>.scxml`,
+    /// the stem as `src` writes it, in the directory of the document that
+    /// invokes it, the document the parse types the invoke's arguments against
+    /// and the generated backends start. Not `<child_name>.scxml`: the machine
+    /// name is the stem written as an identifier, and `child-x.scxml` is not
+    /// `child_x.scxml`. `None` for a child whose document the invoke carries
+    /// (written in `<content>`, or a standard statechart), and for one with no
+    /// name.
     pub fn child_file_name(&self) -> Option<String> {
-        (self.inline_child.is_none() && !self.common.child_name.is_empty())
-            .then(|| format!("{}.scxml", self.common.child_name))
+        if self.inline_child.is_some() || self.common.child_name.is_empty() {
+            return None;
+        }
+        src_file_stem(&self.src).map(|stem| format!("{stem}.scxml"))
     }
 
     /// The child's document as `src` names it from the document that holds
@@ -6685,6 +6717,35 @@ mod child_duties {
     #[test]
     fn a_machine_with_no_invoke_has_no_duty_child() {
         assert!(!SCXMLModel::default().any_child_states_duties());
+    }
+
+    /// A child whose file stem holds a hyphen is started as the machine its
+    /// stem spells as an identifier ([`super::statechart_machine_name`]), and
+    /// read from the file `src` names, as written: the duty the file states
+    /// reaches the invoke only when that file was read.
+    #[test]
+    fn a_child_whose_stem_holds_a_hyphen_is_read_from_the_file_src_names() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/static_datamodel/static_host_duty.scxml");
+        std::fs::copy(&fixture, dir.path().join("host-duty.scxml"))
+            .expect("copy the duty fixture under a hyphenated stem");
+        let doc = dir.path().join("parent.scxml");
+        std::fs::write(
+            &doc,
+            parent(r#"<invoke type="scxml" id="w" src="host-duty.scxml"/>"#),
+        )
+        .expect("write the parent");
+        let model = crate::parser::SCXMLParser::new()
+            .parse_file(doc.to_str().expect("a UTF-8 path"))
+            .unwrap_or_else(|e| panic!("the parent parses: {e:?}"));
+        let invoke = scxml_invoke(&model);
+        assert_eq!(invoke.common.child_name, "host_duty");
+        assert_eq!(invoke.child_file_name().as_deref(), Some("host-duty.scxml"));
+        assert!(
+            invoke.common.child_declares_host_duties,
+            "the child's own file was read"
+        );
     }
 }
 

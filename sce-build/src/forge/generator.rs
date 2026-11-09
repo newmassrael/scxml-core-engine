@@ -741,7 +741,8 @@ pub struct ImportContext {
 #[derive(Debug, Clone)]
 pub struct TestComponentImport {
     /// The name its machine and its component are generated under: the file
-    /// stem of its document, as every statechart's machine is named.
+    /// stem of its document written as an identifier, as every statechart's
+    /// machine is named ([`crate::model::statechart_machine_name`]).
     pub machine: String,
     pub ports: Vec<String>,
     pub timers: Vec<String>,

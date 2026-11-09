@@ -1465,10 +1465,14 @@ fn compile_scxml_configured(
         )
         .unwrap_or_else(|e| panic!("Failed to compile {scxml_path}: {e}"));
 
-        let stem = Path::new(scxml_path)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .expect("Invalid SCXML filename");
+        // The machine's files are named by its machine name, the file stem
+        // written as an identifier, as the compile above named them.
+        let stem = crate::model::statechart_machine_name(
+            Path::new(scxml_path)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .expect("Invalid SCXML filename"),
+        );
 
         // Inline kinds produce sibling modules alongside the machine.
         // Build scripts must write every artifact the compiler reports.
@@ -1483,7 +1487,7 @@ fn compile_scxml_configured(
         // `build.rs` is the only place that knows `OUT_DIR` as a value.
         // See this function's documentation for what it is for.
         let include_path = Path::new(&out_dir).join(format!("{stem}_sm.include.rs"));
-        let shim = generator::generate_rust_include_shim(&template_dir, stem, &out_path)
+        let shim = generator::generate_rust_include_shim(&template_dir, &stem, &out_path)
             .unwrap_or_else(|e| panic!("Cannot render the include shim for {stem}: {e}"));
         std::fs::write(
             &include_path,
@@ -1994,11 +1998,6 @@ fn compile_scxml_lang_typed_mutated(
         model.c11_section_attribute_class = section_class.map(str::to_string);
     }
 
-    let input_stem = Path::new(scxml_path)
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("unknown");
-
     // Run language-specific codegen first, then attach the parse-phase
     // deps to the resulting `GeneratedOutput`. Codegen helpers
     // (`generate*`) do not see the deps — they live one layer above,
@@ -2011,10 +2010,12 @@ fn compile_scxml_lang_typed_mutated(
         codegen: Some(options),
         ..ModelEmitOptions::default()
     };
+    // The files are named by the machine name the parse gave the model (the
+    // file stem written as an identifier), never by the stem a second time.
     let mut output = emit_model_artifacts(
         &model,
         template_dir,
-        input_stem,
+        &model.name,
         scxml_path,
         language,
         &emit_options,
@@ -2089,7 +2090,10 @@ pub struct ModelEmitOptions<'a> {
 /// them. Putting the backend dispatch and the sibling emission in one
 /// function means a caller cannot have one without the other.
 ///
-/// `source_name` is the document's path: it names the file in
+/// `input_stem` names the machine's files: the machine name the model was
+/// parsed under, the file stem written as an identifier
+/// ([`model::statechart_machine_name`]), or a carried child's synthesised
+/// name. `source_name` is the document's path: it names the file in
 /// diagnostics and it is the directory a sibling kind's imports resolve
 /// against.
 pub fn emit_model_artifacts(

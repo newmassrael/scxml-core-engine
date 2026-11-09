@@ -7666,21 +7666,29 @@ impl DeployConfig {
 
     /// Find a machine name in deploy.yaml by matching the source filename.
     ///
-    /// Fallback for when `model.name` (file stem) does not match the
-    /// deploy.yaml key. This happens when the SCXML `name` attribute
-    /// differs from the filename (e.g., `motor_someip_multi.scxml` has
-    /// `<scxml name="motor">` and deploy.yaml uses `motor:` as the key).
+    /// Fallback for when `model.name` (the machine name, the file stem
+    /// written as an identifier) does not match the deploy.yaml key. This
+    /// happens when the SCXML `name` attribute differs from the filename
+    /// (e.g., `motor_someip_multi.scxml` has `<scxml name="motor">` and
+    /// deploy.yaml uses `motor:` as the key).
     ///
-    /// Returns the deploy.yaml machine key that has a `source:` ending
-    /// with the given file stem + ".scxml". Returns `None` if no match.
-    pub fn find_machine_name_by_source(&self, file_stem: &str) -> Option<String> {
-        let source_suffix = format!("{file_stem}.scxml");
+    /// Returns the deploy.yaml machine key whose `source:` is a `.scxml`
+    /// document the statechart parser names `machine`: the stem of its file
+    /// written as an identifier
+    /// ([`crate::model::statechart_machine_name`]), so a `source:` of
+    /// `motor-ctl.scxml` is found by the machine `motor_ctl` its parse
+    /// produces. Returns `None` if no match.
+    pub fn find_machine_name_by_source(&self, machine: &str) -> Option<String> {
         for device in self.topology.values() {
             for (name, cfg) in &device.machines {
                 let Some(source) = cfg.source_path() else {
                     continue;
                 };
-                if source == source_suffix || source.ends_with(&format!("/{source_suffix}")) {
+                let file_name = source.rsplit('/').next().unwrap_or(source);
+                let Some(stem) = file_name.strip_suffix(".scxml") else {
+                    continue;
+                };
+                if crate::model::statechart_machine_name(stem) == machine {
                     return Some(name.clone());
                 }
             }

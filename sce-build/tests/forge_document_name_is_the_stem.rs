@@ -356,6 +356,151 @@ fn generated_output_does_not_quote_a_name_attribute_the_source_lacks() {
     );
 }
 
+/// A statechart with nothing in it but its states: the probe of the naming
+/// rule, written under a stem that holds a hyphen.
+const PLAIN_STATECHART: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="idle"
+       datamodel="sce-static">
+    <state id="idle">
+        <transition event="go" target="done"/>
+    </state>
+    <final id="done"/>
+</scxml>
+"#;
+
+/// A statechart that starts the child `job-runner.scxml` beside it.
+const PARENT_OF_A_HYPHENATED_CHILD: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="running"
+       datamodel="sce-static">
+    <state id="running">
+        <invoke type="http://www.w3.org/TR/scxml/" src="job-runner.scxml"/>
+    </state>
+</scxml>
+"#;
+
+/// `sce-codegen generate <doc> -l <language> --no-format -o <out>`: the names
+/// of the files the run wrote into `out`, and their text joined.
+fn generate_files(doc: &Path, language: &str, out: &Path) -> (Vec<String>, String) {
+    let result = Command::new(sce_codegen_bin())
+        .arg("generate")
+        .arg(doc)
+        .args(["-l", language, "--no-format", "-o"])
+        .arg(out)
+        .current_dir(repo_root())
+        .output()
+        .expect("sce-codegen runs");
+    assert!(
+        result.status.success(),
+        "generate -l {language} failed for {}: {}",
+        doc.display(),
+        String::from_utf8_lossy(&result.stderr),
+    );
+    let mut names = Vec::new();
+    let mut text = String::new();
+    for entry in std::fs::read_dir(out).expect("read output dir") {
+        let path = entry.expect("dir entry").path();
+        if !path.is_file() {
+            continue;
+        }
+        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+            names.push(name.to_string());
+        }
+        text.push_str(&std::fs::read_to_string(&path).unwrap_or_default());
+    }
+    names.sort();
+    (names, text)
+}
+
+/// A statechart's machine is named by its file stem written as an identifier,
+/// by the spelling a forge document's artifacts take (SCE_ACCEPTED_SUBSET.md
+/// §2.1): `probe-machine.scxml` writes `probe_machine_sm.*`, the C++ namespace
+/// `SCE::Generated::probe_machine` and the Python module `probe_machine_sm`,
+/// none of which a hyphen could stand in. The stem as written stays where the
+/// output names the document it came from, so only the identifier forms are
+/// held absent.
+#[test]
+fn a_statechart_stem_with_a_hyphen_is_written_as_an_identifier() {
+    let scratch = ScratchDir::new("statechart-stem");
+    let inputs = scratch.path().join("in");
+    std::fs::create_dir_all(&inputs).expect("create input dir");
+    let doc = inputs.join("probe-machine.scxml");
+    std::fs::write(&doc, PLAIN_STATECHART).expect("write the statechart");
+
+    for (language, machine_file) in [
+        ("rust", "probe_machine_sm.rs"),
+        ("cpp", "probe_machine_sm.h"),
+        ("python", "probe_machine_sm.py"),
+    ] {
+        let out = ScratchDir::new("statechart-stem-out");
+        let (names, text) = generate_files(&doc, language, out.path());
+        assert!(
+            names.iter().any(|name| name == machine_file),
+            "{language}: the machine is not written as {machine_file}: {names:?}"
+        );
+        assert!(
+            names.iter().all(|name| !name.contains("probe-machine")),
+            "{language}: a file is named by the stem as written: {names:?}"
+        );
+        assert!(
+            !text.contains("probe-machine_sm"),
+            "{language}: the output names the machine's module by the stem as \
+             written"
+        );
+        if language == "cpp" {
+            assert!(
+                text.contains("namespace SCE::Generated::probe_machine"),
+                "cpp: the machine's namespace is not the stem written as an \
+                 identifier"
+            );
+            assert!(
+                !text.contains("Generated::probe-machine"),
+                "cpp: a namespace is named by the stem as written"
+            );
+        }
+    }
+}
+
+/// A parent starts a child whose stem holds a hyphen by the machine name the
+/// child's own generation gives it, and the child is still read from the file
+/// `src` names: the run stages it into its output under that file's own name,
+/// which it does only once it found the file.
+#[test]
+fn a_parent_starts_a_hyphenated_child_by_its_machine_name() {
+    let scratch = ScratchDir::new("hyphenated-child");
+    let inputs = scratch.path().join("in");
+    std::fs::create_dir_all(&inputs).expect("create input dir");
+    std::fs::write(inputs.join("job-runner.scxml"), PLAIN_STATECHART).expect("write the child");
+    let parent = inputs.join("parent.scxml");
+    std::fs::write(&parent, PARENT_OF_A_HYPHENATED_CHILD).expect("write the parent");
+
+    for (language, names_the_child) in [
+        ("rust", "super::job_runner_sm::"),
+        ("cpp", "#include \"job_runner_sm.h\""),
+    ] {
+        let out = ScratchDir::new("hyphenated-child-out");
+        let (names, text) = generate_files(&parent, language, out.path());
+        assert!(
+            text.contains(names_the_child),
+            "{language}: the parent does not start the child as `job_runner`"
+        );
+        assert!(
+            !text.contains("job-runner_sm"),
+            "{language}: the parent names the child's machine by the stem as \
+             written"
+        );
+        assert!(
+            names.iter().any(|name| name == "job-runner.scxml"),
+            "{language}: the child document is not staged under its own file \
+             name: {names:?}"
+        );
+        assert!(
+            names.iter().all(|name| name != "job_runner.scxml"),
+            "{language}: the child document is staged under its machine name, \
+             a second document beside the first: {names:?}"
+        );
+    }
+}
+
 #[test]
 fn acceptance_doc_states_the_naming_rule() {
     let doc = std::fs::read_to_string(repo_root().join("docs/SCE_ACCEPTED_SUBSET.md"))

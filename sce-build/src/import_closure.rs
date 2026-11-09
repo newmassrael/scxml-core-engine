@@ -49,7 +49,8 @@ use crate::DocumentLabel;
 /// Which pipeline generates a unit, and so which rule names its package.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnitKind {
-    /// A statechart: its machine's package is named for the document's stem.
+    /// A statechart: its machine's package is named for the document's stem,
+    /// written as an identifier.
     Statechart,
     /// A forge kind: its package is named for the document's own name.
     Forge,
@@ -82,7 +83,8 @@ pub struct Unit {
     pub identity: String,
     /// The name its unit is generated under: a forge document's own name
     /// (`name=`, which an algorithm may set apart from its file), a
-    /// statechart's stem.
+    /// statechart's machine name, its stem written as an identifier
+    /// ([`crate::model::statechart_machine_name`]).
     pub name: String,
     pub kind: UnitKind,
     pub role: Role,
@@ -219,9 +221,11 @@ pub fn walk(named: &[String], options: WalkOptions<'_>) -> Result<Vec<Unit>, Ref
                     references,
                 )
             }
+            // Named as the statechart parser names the machine: the stem
+            // written as an identifier, which its package is named for.
             crate::Pipeline::Scxml => (
                 UnitKind::Statechart,
-                label.identifier.to_string(),
+                crate::model::statechart_machine_name(label.identifier),
                 statechart_references(text),
             ),
         };

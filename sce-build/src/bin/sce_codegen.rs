@@ -6503,10 +6503,10 @@ fn cmd_check(args: CheckArgs, error_format: ErrorFormat) {
                 None
             };
 
-            let input_stem = Path::new(scxml_path)
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("unknown");
+            // The machine's files are named by the machine name the parse gave
+            // it, the file stem written as an identifier, as `generate` names
+            // them.
+            let input_stem = model.name.as_str();
 
             report.needs_script_engine = Some(model.needs_script_engine);
             report.needs_event_scheduler = Some(model.needs_event_scheduler_driving());
@@ -7432,10 +7432,9 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
     // §scxml-5.8: Document rejected at parse time (e.g., unloadable external script)
     // Generate a language-appropriate rejection stub so AOT test reports PASS.
     if model.document_rejected {
-        let input_stem = Path::new(scxml_path)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("unknown");
+        // Named as the machine it stands in for: the file stem written as an
+        // identifier, the name the parse gave the model.
+        let input_stem = model.name.as_str();
         let out = Path::new(output_dir);
         ensure_output_dir(out).unwrap_or_else(|e| {
             error_format.emit_and_exit(
@@ -7699,11 +7698,6 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
     // the same call.
     preparation.bound(&mut model);
 
-    let input_stem = Path::new(scxml_path)
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("unknown");
-
     // Typed generator failures route through `Located<ForgeError>` so
     // the NDJSON wire carries the real `generate/*` code (template-load,
     // template-render, invalid-config) instead of collapsing to
@@ -7920,8 +7914,12 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
         // P's package, and each of its in-line children with it — they are
         // written beside it and it names their machines unqualified
         // (`sce_build::place_in_package`). Without `--parent-stem` the
-        // in-line children join the document's own package.
-        let adopter = parent_stem.filter(|_| as_child);
+        // in-line children join the document's own package. P is a stem, and
+        // the package is named by the machine name the parent's own parse
+        // gives it: the stem written as an identifier.
+        let adopter = parent_stem
+            .filter(|_| as_child)
+            .map(sce_build::model::statechart_machine_name);
         let forge_options = sce_build::ForgeCompileOptions {
             go_module_prefix: go_module_prefix.map(str::to_owned),
             const_fold_budget,
@@ -7950,21 +7948,24 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
             c_symbol_prefix,
             variants: variants.as_ref(),
         };
+        // The machine's files are named by the machine name the parse gave
+        // it: the file stem written as an identifier (SCE_ACCEPTED_SUBSET.md
+        // §2.1), never the stem a second time.
         let mut output = sce_build::emit_model_artifacts(
             &model,
             &template_dir,
-            input_stem,
+            &model.name,
             scxml_path,
             lang,
             &emit_options,
         )
         .unwrap_or_else(|e| error_format.emit_forge_and_exit(&e));
-        if let Some(adopter) = adopter {
+        if let Some(adopter) = adopter.as_deref() {
             sce_build::place_in_package(
                 &mut output,
                 lang,
                 &model.name,
-                input_stem,
+                &model.name,
                 adopter,
                 kotlin_package_prefix,
             );
@@ -8017,7 +8018,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
                 host_invoker_types: &host_invoker,
                 digest: sce_build::RunDigest::Of(&source_hex),
             },
-            adopter.unwrap_or(&model.name),
+            adopter.as_deref().unwrap_or(&model.name),
             &emit_options,
         )
         .unwrap_or_else(|e| error_format.emit_forge_and_exit(&e));
@@ -8240,24 +8241,39 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
     report
 }
 
-/// Collect child SCXML names from model's static/hybrid invokes.
+/// Collect the file names of the child documents of model's static/hybrid
+/// invokes.
 ///
 /// Every machine the run writes is asked, the document and each child it
 /// carries at any depth ([`SCXMLModel::with_carried_descendants`]): a carried
 /// child's machine names its children as the document's names its own, and
 /// the build that compiles it has to have them. A carried child is listed once,
 /// where its parent starts it; a child two machines start is listed once.
-fn collect_invoke_child_names(model: &SCXMLModel) -> Vec<String> {
+///
+/// A `src` child is listed by its own file name, the stem as `src` writes it
+/// (`ScxmlInvokeInfo::child_file_name`), the name the run stages it under
+/// ([`copy_static_invoke_children`]); its machine name is that stem written as
+/// an identifier, which a hyphen in the stem tells apart from the file. A
+/// carried child, a hybrid invoke's stub and a candidate are listed by the
+/// name the run writes or reads each under.
+fn collect_invoke_child_documents(model: &SCXMLModel) -> Vec<String> {
     let mut children: Vec<String> = Vec::new();
     let mut listed: BTreeSet<String> = BTreeSet::new();
-    let mut list = |name: &str| {
-        if !name.is_empty() && listed.insert(name.to_string()) {
-            children.push(name.to_string());
+    let mut list = |file_name: Option<String>| {
+        if let Some(file_name) = file_name {
+            if listed.insert(file_name.clone()) {
+                children.push(file_name);
+            }
         }
     };
+    let of_stem = |stem: &str| (!stem.is_empty()).then(|| format!("{stem}.scxml"));
     for machine in model.with_carried_descendants() {
         for invoke in machine.iter_scxml_invokes() {
-            list(&invoke.child_name);
+            list(
+                invoke
+                    .child_file_name()
+                    .or_else(|| of_stem(&invoke.child_name)),
+            );
         }
         for invoke in machine.iter_hybrid_invokes() {
             // §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: a declared candidate set
@@ -8265,10 +8281,10 @@ fn collect_invoke_child_names(model: &SCXMLModel) -> Vec<String> {
             // per candidate. Naming the stub here as well would ask the build for
             // a machine the parent no longer references.
             if invoke.candidates.is_empty() {
-                list(&invoke.child_name);
+                list(of_stem(&invoke.child_name));
             } else {
                 for candidate in &invoke.candidates {
-                    list(&candidate.stem);
+                    list(of_stem(&candidate.stem));
                 }
             }
         }
@@ -8278,20 +8294,20 @@ fn collect_invoke_child_names(model: &SCXMLModel) -> Vec<String> {
 
 /// The child documents a run of `model` writes into `output_dir` for a build
 /// to generate by a run of their own: every child its machines start
-/// ([`collect_invoke_child_names`]) but the ones they carry, whose machines
-/// the run itself writes ([`SCXMLModel::inline_child_invokes`]). A child the
-/// run finds no document for is named all the same, and a plan of it finds
-/// none to read ([`plan_child_generations`]).
+/// ([`collect_invoke_child_documents`]) but the ones they carry, whose
+/// machines the run itself writes ([`SCXMLModel::inline_child_invokes`]). A
+/// child the run finds no document for is named all the same, and a plan of
+/// it finds none to read ([`plan_child_generations`]).
 fn child_documents(model: &SCXMLModel, output_dir: &Path) -> Vec<PathBuf> {
     let carried: BTreeSet<String> = model
         .inline_child_invokes()
         .into_iter()
-        .map(|invoke| invoke.child_name.clone())
+        .map(|invoke| format!("{}.scxml", invoke.child_name))
         .collect();
-    collect_invoke_child_names(model)
+    collect_invoke_child_documents(model)
         .into_iter()
-        .filter(|name| !carried.contains(name))
-        .map(|name| output_dir.join(format!("{name}.scxml")))
+        .filter(|file_name| !carried.contains(file_name))
+        .map(|file_name| output_dir.join(file_name))
         .collect()
 }
 
@@ -8350,7 +8366,7 @@ fn copy_static_invoke_children(
     parse: &dyn Fn(&Path) -> Option<SCXMLModel>,
 ) {
     for child in child_documents_to_stage(model, scxml_path, input_root, parse) {
-        let dest = output_dir.join(format!("{}.scxml", child.name));
+        let dest = output_dir.join(&child.file_name);
         if let Err(e) = stage_child_document(&child.from, &dest) {
             eprintln!(
                 "Warning: Cannot copy {} {} to output: {e}",
@@ -8381,17 +8397,22 @@ impl ChildReference {
 }
 
 /// A child document a run stages into its output directory: where it was
-/// read from, the name of its machine (the name the machine starting it gives
-/// it), and how it was named.
+/// read from, the file name it is staged under (its own, as its author named
+/// it, which a later run reads it by and names its machine from), and how it
+/// was named.
 struct StagedChild {
     from: PathBuf,
-    name: String,
+    file_name: String,
     reference: ChildReference,
 }
 
 /// The child documents the machines of one document name, each as written
-/// from that document and with the name of its machine: every candidate of
-/// every hybrid invoke, then every `src` child, in document order.
+/// from that document and with its own file name: every candidate of every
+/// hybrid invoke, then every `src` child, in document order. The file name,
+/// not the machine's: a machine name is the stem written as an identifier
+/// (`sce_build::model::statechart_machine_name`), and a copy staged under it
+/// would be a second document beside the first wherever the output directory
+/// is the source directory.
 fn child_references(machines: &[&SCXMLModel]) -> Vec<(PathBuf, String, ChildReference)> {
     // §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: a hybrid invoke that
     // declared `sce:candidates` has one child per candidate, and they are
@@ -8405,7 +8426,7 @@ fn child_references(machines: &[&SCXMLModel]) -> Vec<(PathBuf, String, ChildRefe
         .map(|candidate| {
             (
                 PathBuf::from(&candidate.path),
-                candidate.stem.clone(),
+                format!("{}.scxml", candidate.stem),
                 ChildReference::Candidate,
             )
         });
@@ -8413,9 +8434,10 @@ fn child_references(machines: &[&SCXMLModel]) -> Vec<(PathBuf, String, ChildRefe
         .iter()
         .flat_map(|machine| machine.iter_scxml_invokes())
         .filter_map(|invoke| {
+            let file_name = invoke.child_file_name()?;
             invoke
                 .child_document_path()
-                .map(|written| (written, invoke.child_name.clone(), ChildReference::Src))
+                .map(|written| (written, file_name, ChildReference::Src))
         });
     candidates.chain(src_children).collect()
 }
@@ -8453,13 +8475,13 @@ fn child_documents_to_stage(
                      roots: &[PathBuf],
                      dir: &Path,
                      staged: &mut Vec<StagedChild>| {
-        for (written, name, reference) in references {
+        for (written, file_name, reference) in references {
             match sce_build::parser::locate_child_document(roots, Some(dir), &written) {
                 Some(from) => {
-                    if named.insert(name.clone()) {
+                    if named.insert(file_name.clone()) {
                         staged.push(StagedChild {
                             from,
-                            name,
+                            file_name,
                             reference,
                         });
                     }
@@ -10006,10 +10028,9 @@ fn generate_w3c_unified(
 
                 resolve_source_path(&mut model, &scxml_path);
 
-                let input_stem = scxml_path
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("unknown");
+                // Named as `generate` names a machine's files: by the machine
+                // name the parse gave the model.
+                let input_stem = model.name.as_str();
 
                 // The machine and, beside it, the transition function the
                 // fixture declares: one result, so a backend that cannot
