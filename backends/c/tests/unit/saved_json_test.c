@@ -11,7 +11,11 @@
 //   * a text that is not one JSON value is refused in the words every backend uses;
 //   * every value type is written as its saved form and read back as it was, and a
 //     value of another kind or another width is refused, not converted;
-//   * a text, a byte string and a list are held to the bounds the machine has.
+//   * a text, a byte string and a list are held to the bounds the machine has;
+//   * a value is written in the JSON Canonicalization Scheme (RFC 8785) by
+//     `sce_jcs_t`, held to the cases of `tests/test_runtime/CanonicalJsonTest.cpp`
+//     and of `write_canonical` in `backends/rust/runtime/src/json.rs`, with the
+//     same bytes.
 //
 // Nothing here allocates: the writer writes into a buffer on the stack and the reader
 // walks the text it was handed, which is the contract the MCU profile needs.
@@ -416,6 +420,208 @@ static void a_writer_over_no_buffer_measures_the_text(void) {
     CHECK(!sce_jw_finish(&real) && real.len == 10u, "len %zu", real.len);
 }
 
+// ── The canonical writer (RFC 8785) ──────────────────────────────────────
+
+// `jcs` finished, and its text `want`, byte for byte, `n` bytes long.
+static bool wrote_canonically(sce_jcs_t *jcs, const char *want, size_t n) {
+    return sce_jcs_finish(jcs) && jcs->refusal == NULL && jcs->w.len == n && memcmp(jcs->w.buf, want, n) == 0;
+}
+
+// RFC 8785 section 3.2.3, the example of the RFC: members are sorted by their
+// names as UTF-16 code units, so U+1F600, whose first unit is 0xD83D, comes
+// before U+FB33, which an order of code points or of UTF-8 bytes puts after it;
+// U+0080 is written as it is, since only U+0000 to U+001F are escaped.
+static void canonical_members_are_sorted_by_their_utf16_code_units(void) {
+    char out[512];
+    sce_jcs_t jcs;
+    sce_jcs_init(&jcs, out, sizeof(out));
+    sce_jcs_begin_object(&jcs);
+    sce_jcs_key(&jcs, "\xE2\x82\xAC");
+    sce_jcs_string(&jcs, "Euro Sign");
+    sce_jcs_key(&jcs, "\r");
+    sce_jcs_string(&jcs, "Carriage Return");
+    sce_jcs_key(&jcs, "\xEF\xAC\xB3");
+    sce_jcs_string(&jcs, "Hebrew Letter Dalet With Dagesh");
+    sce_jcs_key(&jcs, "1");
+    sce_jcs_string(&jcs, "One");
+    sce_jcs_key(&jcs, "\xF0\x9F\x98\x80");
+    sce_jcs_string(&jcs, "Emoji: Grinning Face");
+    sce_jcs_key(&jcs, "\xC2\x80");
+    sce_jcs_string(&jcs, "Control");
+    sce_jcs_key(&jcs, "\xC3\xB6");
+    sce_jcs_string(&jcs, "Latin Small Letter O With Diaeresis");
+    sce_jcs_end_object(&jcs);
+    const char *want = "{\"\\r\":\"Carriage Return\",\"1\":\"One\",\"\xC2\x80\":\"Control\","
+                       "\"\xC3\xB6\":\"Latin Small Letter O With Diaeresis\",\"\xE2\x82\xAC\":\"Euro Sign\","
+                       "\"\xF0\x9F\x98\x80\":\"Emoji: Grinning Face\","
+                       "\"\xEF\xAC\xB3\":\"Hebrew Letter Dalet With Dagesh\"}";
+    CHECK(wrote_canonically(&jcs, want, strlen(want)), "wrote %s", out);
+}
+
+// RFC 8785 section 3.2.2.2: a text is escaped as `JSON.stringify` escapes it,
+// the five short forms, `\u00xx` in lower-case hex for the other controls, and
+// nothing else: not `/`, not U+007F, not a character past U+FFFF.
+static void a_canonical_text_escapes_only_what_json_stringify_escapes(void) {
+    static const char text[] = {'\b',   '\t',   '\n', '\f',   '\r',   '"',    '\\',  '\0',
+                                '\x1f', '\x7f', '/',  '\xF0', '\x9F', '\x98', '\x80'};
+    char out[128];
+    sce_jcs_t jcs;
+    sce_jcs_init(&jcs, out, sizeof(out));
+    sce_jcs_string_n(&jcs, text, sizeof(text));
+    const char *want = "\"\\b\\t\\n\\f\\r\\\"\\\\\\u0000\\u001f\x7f/\xF0\x9F\x98\x80\"";
+    CHECK(wrote_canonically(&jcs, want, strlen(want)), "wrote %s", out);
+}
+
+// Nested arrays and objects are written with no whitespace, each object's
+// members sorted at its own level, an array's elements in their order.
+static void a_canonical_value_has_no_whitespace_and_sorts_every_level(void) {
+    char out[128];
+    sce_jcs_t jcs;
+    sce_jcs_init(&jcs, out, sizeof(out));
+    sce_jcs_begin_object(&jcs);
+    sce_jcs_key(&jcs, "b");
+    sce_jcs_begin_array(&jcs);
+    sce_jcs_begin_object(&jcs);
+    sce_jcs_key(&jcs, "z");
+    sce_jcs_null(&jcs);
+    sce_jcs_key(&jcs, "a");
+    sce_jcs_bool(&jcs, false);
+    sce_jcs_end_object(&jcs);
+    sce_jcs_string(&jcs, "y");
+    sce_jcs_begin_array(&jcs);
+    sce_jcs_end_array(&jcs);
+    sce_jcs_end_array(&jcs);
+    sce_jcs_key(&jcs, "a");
+    sce_jcs_begin_object(&jcs);
+    sce_jcs_end_object(&jcs);
+    sce_jcs_end_object(&jcs);
+    const char *want = "{\"a\":{},\"b\":[{\"a\":false,\"z\":null},\"y\",[]]}";
+    CHECK(wrote_canonically(&jcs, want, strlen(want)), "wrote %s", out);
+}
+
+// RFC 8785 section 3.1: an object that names one member twice has no single
+// meaning, at whatever depth, and refuses the text.
+static void a_canonical_object_names_each_member_once(void) {
+    char out[128];
+    sce_jcs_t jcs;
+    sce_jcs_init(&jcs, out, sizeof(out));
+    sce_jcs_begin_array(&jcs);
+    sce_jcs_begin_object(&jcs);
+    sce_jcs_key(&jcs, "a");
+    sce_jcs_string(&jcs, "1");
+    sce_jcs_key(&jcs, "b");
+    sce_jcs_string(&jcs, "2");
+    sce_jcs_key(&jcs, "a");
+    sce_jcs_string(&jcs, "3");
+    sce_jcs_end_object(&jcs);
+    sce_jcs_end_array(&jcs);
+    CHECK(!sce_jcs_finish(&jcs), "a member named twice is refused");
+    CHECK(jcs.refusal != NULL && strstr(jcs.refusal, "twice") != NULL, "the refusal says why: %s",
+          jcs.refusal != NULL ? jcs.refusal : "(none)");
+}
+
+// A name no value follows names no member, which is how a record leaves out a
+// field that is absent; a value of an object with no name before it, and a name
+// outside an object, refuse the text.
+static void a_name_no_value_follows_names_no_member(void) {
+    char out[64];
+    sce_jcs_t jcs;
+    sce_jcs_init(&jcs, out, sizeof(out));
+    sce_jcs_begin_object(&jcs);
+    sce_jcs_key(&jcs, "note");
+    sce_jcs_key(&jcs, "count");
+    sce_jcs_string(&jcs, "1");
+    sce_jcs_key(&jcs, "tag");
+    sce_jcs_end_object(&jcs);
+    const char *want = "{\"count\":\"1\"}";
+    CHECK(wrote_canonically(&jcs, want, strlen(want)), "wrote %s", out);
+
+    sce_jcs_init(&jcs, out, sizeof(out));
+    sce_jcs_begin_object(&jcs);
+    sce_jcs_string(&jcs, "unnamed");
+    sce_jcs_end_object(&jcs);
+    CHECK(!sce_jcs_finish(&jcs) && jcs.refusal != NULL, "a value with no name is refused");
+
+    sce_jcs_init(&jcs, out, sizeof(out));
+    sce_jcs_begin_array(&jcs);
+    sce_jcs_key(&jcs, "stray");
+    sce_jcs_string(&jcs, "x");
+    sce_jcs_end_array(&jcs);
+    CHECK(!sce_jcs_finish(&jcs) && jcs.refusal != NULL, "a name in an array is refused");
+}
+
+// Over no buffer the writer measures: the sort moves bytes and adds none, so the
+// length is the text's. A buffer too small says so with no refusal, and the
+// length says how large to make it.
+static void a_canonical_writer_over_no_buffer_measures_the_text(void) {
+    sce_jcs_t measure;
+    sce_jcs_init(&measure, NULL, 0u);
+    sce_jcs_begin_object(&measure);
+    sce_jcs_key(&measure, "z");
+    sce_jcs_string(&measure, "last");
+    sce_jcs_key(&measure, "a");
+    sce_jcs_bool(&measure, true);
+    sce_jcs_end_object(&measure);
+    CHECK(!sce_jcs_finish(&measure) && measure.refusal == NULL, "a measure fits nothing and refuses nothing");
+    const char *want = "{\"a\":true,\"z\":\"last\"}";
+    CHECK(measure.w.len == strlen(want), "measured %zu", measure.w.len);
+
+    char small[8];
+    sce_jcs_t real;
+    sce_jcs_init(&real, small, sizeof(small));
+    sce_jcs_begin_object(&real);
+    sce_jcs_key(&real, "z");
+    sce_jcs_string(&real, "last");
+    sce_jcs_key(&real, "a");
+    sce_jcs_bool(&real, true);
+    sce_jcs_end_object(&real);
+    CHECK(!sce_jcs_finish(&real) && real.refusal == NULL && real.w.len == strlen(want),
+          "a buffer too small says so: len %zu", real.w.len);
+}
+
+// A value written already in the scheme is taken as it is, and moves with its
+// member when the object is sorted.
+static void a_value_written_already_moves_with_its_member(void) {
+    char inner[32];
+    sce_jcs_t value;
+    sce_jcs_init(&value, inner, sizeof(inner));
+    sce_jcs_begin_object(&value);
+    sce_jcs_key(&value, "job");
+    sce_jcs_string(&value, "7");
+    sce_jcs_end_object(&value);
+    CHECK(sce_jcs_finish(&value), "the value is written");
+    char out[64];
+    sce_jcs_t jcs;
+    sce_jcs_init(&jcs, out, sizeof(out));
+    sce_jcs_begin_object(&jcs);
+    sce_jcs_key(&jcs, "value");
+    sce_jcs_written(&jcs, inner, value.w.len);
+    sce_jcs_key(&jcs, "type");
+    sce_jcs_string(&jcs, "job_request");
+    sce_jcs_end_object(&jcs);
+    const char *want = "{\"type\":\"job_request\",\"value\":{\"job\":\"7\"}}";
+    CHECK(wrote_canonically(&jcs, want, strlen(want)), "wrote %s", out);
+}
+
+// A name that is not well-formed UTF-8 still has one place in the order: a byte
+// that begins no sequence stands for U+FFFD, which sorts after every character
+// of the Basic Multilingual Plane below it and before U+FFFF.
+static void a_malformed_name_still_sorts_by_the_character_it_stands_for(void) {
+    char out[128];
+    sce_jcs_t jcs;
+    sce_jcs_init(&jcs, out, sizeof(out));
+    sce_jcs_begin_object(&jcs);
+    sce_jcs_key(&jcs, "\xFF");
+    sce_jcs_string(&jcs, "malformed");
+    sce_jcs_key(&jcs, "\xEF\xBF\xBC");
+    sce_jcs_string(&jcs, "U+FFFC");
+    sce_jcs_key(&jcs, "\xEF\xBF\xBF");
+    sce_jcs_string(&jcs, "U+FFFF");
+    sce_jcs_end_object(&jcs);
+    const char *want = "{\"\xEF\xBF\xBC\":\"U+FFFC\",\"\xFF\":\"malformed\",\"\xEF\xBF\xBF\":\"U+FFFF\"}";
+    CHECK(wrote_canonically(&jcs, want, strlen(want)), "wrote %s", out);
+}
+
 int main(void) {
     every_shared_text_reads_and_writes_back_as_it_was();
     a_number_keeps_the_spelling_it_was_written_in();
@@ -428,6 +634,14 @@ int main(void) {
     a_session_id_is_an_xml_nmtoken();
     a_variant_is_read_by_the_name_its_document_declares();
     a_writer_over_no_buffer_measures_the_text();
+    canonical_members_are_sorted_by_their_utf16_code_units();
+    a_canonical_text_escapes_only_what_json_stringify_escapes();
+    a_canonical_value_has_no_whitespace_and_sorts_every_level();
+    a_canonical_object_names_each_member_once();
+    a_name_no_value_follows_names_no_member();
+    a_canonical_writer_over_no_buffer_measures_the_text();
+    a_value_written_already_moves_with_its_member();
+    a_malformed_name_still_sorts_by_the_character_it_stands_for();
     if (failures != 0) {
         (void)fprintf(stderr, "%d check(s) failed\n", failures);
         return 1;

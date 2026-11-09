@@ -16,7 +16,10 @@
  * text and a call with one writes it; the reader walks the text in place, a
  * value being a span of it, and decodes a string into a buffer the caller owns.
  * Nesting is bounded by SCE_JSON_MAX_DEPTH, which a tree of sessions stays
- * inside to a depth of about fourteen sessions.
+ * inside to a depth of about fourteen sessions. Over the same writer, `sce_jcs_t`
+ * writes a value in the JSON Canonicalization Scheme (RFC 8785), each object's
+ * members sorted in the buffer it writes into: the text of the test log
+ * (docs/SCE_TEST_PROFILE.md §12.5).
  *
  * Header-only, C11, and consumable from C++ (the gate in
  * `cxx_consumption_gate.cmake`). Cross-language siblings:
@@ -954,6 +957,322 @@ static inline void sce_jw_value(sce_jw_t *w, sce_jv_t v) {
         return;
     }
     }
+}
+
+/* ── Write canonically (RFC 8785) ─────────────────────────────────────────── */
+
+/* A writer of the JSON Canonicalization Scheme (RFC 8785) over the writer above,
+ * into a buffer the host owns: no whitespace, each text escaped as ECMAScript's
+ * `JSON.stringify` escapes it, which is the writer's one set of escapes
+ * (`sce_jw_escaped_`, RFC 8785 section 3.2.2.2), and the members of each object
+ * sorted by their names as arrays of UTF-16 code units (section 3.2.3), whatever
+ * order they were written in. Two values equal under the scheme are then the
+ * same bytes. The C11 sibling of `SCE::Saved::writeCanonical` (C++) and
+ * `sce_rust_runtime::json::write_canonical` (Rust).
+ *
+ * A member is named by `sce_jcs_key` and written with the value that follows the
+ * name, which is lent until then. A name no value follows before the next name
+ * or the end of its object names no member: that is how a record leaves out a
+ * field that is absent.
+ *
+ * It writes texts, truth values, null, arrays and objects, and no number: the
+ * scheme writes a number as ECMAScript spells the double it reads as, and the
+ * texts this writer is for hold every integer as the text of its digits
+ * (docs/SCE_TEST_PROFILE.md §12.5).
+ *
+ * It allocates nothing. The members of an object are sorted in the buffer when
+ * the object ends, which moves bytes and adds none, so over no buffer the writer
+ * measures the text as `sce_jw_t` does; a text past its buffer is not sorted, and
+ * does not fit. Refused, `refusal` saying why and `sce_jcs_finish` answering
+ * false: an object that names one member twice, which has no single meaning
+ * (section 3.1), found where the text is held; a value of an object written with
+ * no name before it, and a name outside an object; and a value nested deeper than
+ * SCE_JSON_MAX_DEPTH. */
+typedef struct sce_jcs_s {
+    sce_jw_t w;
+    /* Where the text of each open container starts, by its depth. */
+    size_t opened[SCE_JSON_MAX_DEPTH];
+    /* Bit d is set while the container at depth d is an object. */
+    uint64_t objects;
+    /* The name of the member the next value is written as, or NULL. */
+    const char *key;
+    /* Why the text is not in the scheme, or NULL. */
+    const char *refusal;
+} sce_jcs_t;
+
+static inline void sce_jcs_init(sce_jcs_t *j, char *buf, size_t cap) {
+    sce_jw_init(&j->w, buf, cap);
+    j->objects = 0u;
+    j->key = NULL;
+    j->refusal = NULL;
+}
+
+/* Refuse the text for `why`, a sentence of static storage; the first refusal is
+ * the one kept. */
+static inline void sce_jcs_refuse(sce_jcs_t *j, const char *why) {
+    if (j->refusal == NULL) {
+        j->refusal = why;
+    }
+}
+
+/* Whether the container being written is an object. */
+static inline bool sce_jcs_in_object_(const sce_jcs_t *j) {
+    return j->w.depth > 0u && (j->objects & ((uint64_t)1u << (j->w.depth - 1u))) != 0u;
+}
+
+/* What stands before a value: the name of its member in an object, the comma
+ * between it and the element before it in an array, nothing at the top. */
+static inline void sce_jcs_place_(sce_jcs_t *j) {
+    if (j->w.depth == 0u) {
+        return;
+    }
+    if (!sce_jcs_in_object_(j)) {
+        sce_jw_element(&j->w);
+        return;
+    }
+    if (j->key == NULL) {
+        sce_jcs_refuse(j, "a value of an object is written with no member name before it");
+        sce_jw_separate_(&j->w);
+        return;
+    }
+    sce_jw_key(&j->w, j->key);
+    j->key = NULL;
+}
+
+/* Name the member the next value is written as. */
+static inline void sce_jcs_key(sce_jcs_t *j, const char *name) {
+    if (!sce_jcs_in_object_(j)) {
+        sce_jcs_refuse(j, "a member name is written outside an object");
+        return;
+    }
+    j->key = name;
+}
+
+static inline void sce_jcs_open_(sce_jcs_t *j, bool object) {
+    sce_jcs_place_(j);
+    const unsigned depth = j->w.depth;
+    if (depth < SCE_JSON_MAX_DEPTH) {
+        const uint64_t bit = (uint64_t)1u << depth;
+        j->opened[depth] = j->w.len;
+        j->objects = object ? (j->objects | bit) : (j->objects & ~bit);
+    }
+    if (object) {
+        sce_jw_begin_object(&j->w);
+    } else {
+        sce_jw_begin_array(&j->w);
+    }
+}
+
+static inline void sce_jcs_begin_object(sce_jcs_t *j) {
+    sce_jcs_open_(j, true);
+}
+
+static inline void sce_jcs_begin_array(sce_jcs_t *j) {
+    sce_jcs_open_(j, false);
+}
+
+static inline void sce_jcs_end_array(sce_jcs_t *j) {
+    sce_jw_end_array(&j->w);
+}
+
+/* The UTF-16 code units of a member name, one at a time, read from its decoded
+ * bytes. A character past U+FFFF is its two surrogates; a byte that begins no
+ * UTF-8 sequence, or a sequence cut short, stands for U+FFFD, as it does where
+ * the other backends read the name. */
+typedef struct sce_jcs_units_s {
+    sce_jstr_t s;
+    /* The low surrogate of the character whose high one was read, or 0. */
+    uint32_t low;
+} sce_jcs_units_t;
+
+static inline bool sce_jcs_next_unit_(sce_jcs_units_t *u, uint32_t *unit) {
+    if (u->low != 0u) {
+        *unit = u->low;
+        u->low = 0u;
+        return true;
+    }
+    unsigned char byte = 0u;
+    if (!sce_jstr_next(&u->s, &byte)) {
+        return false;
+    }
+    const uint32_t lead = byte;
+    uint32_t point;
+    unsigned more;
+    if (lead < 0x80u) {
+        *unit = lead;
+        return true;
+    } else if ((lead & 0xE0u) == 0xC0u) {
+        point = lead & 0x1Fu;
+        more = 1u;
+    } else if ((lead & 0xF0u) == 0xE0u) {
+        point = lead & 0x0Fu;
+        more = 2u;
+    } else if ((lead & 0xF8u) == 0xF0u) {
+        point = lead & 0x07u;
+        more = 3u;
+    } else {
+        *unit = 0xFFFDu;
+        return true;
+    }
+    for (unsigned i = 0u; i < more; ++i) {
+        const sce_jstr_t before = u->s;
+        unsigned char next = 0u;
+        const bool continues = sce_jstr_next(&u->s, &next) && ((uint32_t)next & 0xC0u) == 0x80u;
+        if (!continues) {
+            u->s = before;
+            *unit = 0xFFFDu;
+            return true;
+        }
+        point = (point << 6) | ((uint32_t)next & 0x3Fu);
+    }
+    if (point < 0x10000u) {
+        *unit = point;
+        return true;
+    }
+    point -= 0x10000u;
+    *unit = 0xD800u + (point >> 10);
+    u->low = 0xDC00u + (point & 0x3FFu);
+    return true;
+}
+
+/* The order of two member names, each the span of a JSON string, as arrays of
+ * UTF-16 code units: below zero when `a` comes first, zero when they are one
+ * name. For valid UTF-8 it is the order of the bytes but for a character past
+ * U+FFFF against one of U+E000 to U+FFFF, whose first code unit, a surrogate,
+ * comes before it. */
+static inline int sce_jcs_compare_names_(sce_jv_t a, sce_jv_t b) {
+    sce_jcs_units_t x;
+    sce_jcs_units_t y;
+    sce_jstr_init(&x.s, a);
+    sce_jstr_init(&y.s, b);
+    x.low = 0u;
+    y.low = 0u;
+    for (;;) {
+        uint32_t ux = 0u;
+        uint32_t uy = 0u;
+        const bool more_x = sce_jcs_next_unit_(&x, &ux);
+        const bool more_y = sce_jcs_next_unit_(&y, &uy);
+        if (!more_x || !more_y) {
+            return more_x ? 1 : (more_y ? -1 : 0);
+        }
+        if (ux != uy) {
+            return ux < uy ? -1 : 1;
+        }
+    }
+}
+
+/* The `n` bytes at `p` in the opposite order. */
+static inline void sce_jcs_reverse_(char *p, size_t n) {
+    for (size_t i = 0u; i < n / 2u; ++i) {
+        const char held = p[i];
+        p[i] = p[n - 1u - i];
+        p[n - 1u - i] = held;
+    }
+}
+
+/* Sort the members of the object whose text starts at `opened` and ends the text
+ * written so far, which the buffer holds whole and which this writer wrote, so it
+ * has no whitespace. A selection: each pass finds the least name among the
+ * members not yet in place and turns it to the front of them, the members it
+ * passes keeping their order (three reversals of the bytes, so no room is
+ * needed). The same name twice refuses the text. */
+static inline void sce_jcs_sort_members_(sce_jcs_t *j, size_t opened) {
+    char *const text = j->w.buf;
+    const char *const end = text + j->w.len;
+    size_t first = opened + 1u; /* where the first member not yet in place starts */
+    for (;;) {
+        sce_jiter_t it;
+        it.p = text + first;
+        it.end = end;
+        it.done = text[first] == '}';
+        sce_jv_t key;
+        sce_jv_t value;
+        sce_jv_t least;
+        least.p = NULL;
+        least.end = NULL;
+        size_t least_at = first;
+        size_t least_end = first;
+        size_t count = 0u;
+        while (sce_jiter_member(&it, &key, &value)) {
+            const int order = count == 0u ? -1 : sce_jcs_compare_names_(key, least);
+            if (order == 0) {
+                sce_jcs_refuse(j, "an object names one member twice");
+                return;
+            }
+            if (order < 0) {
+                least = key;
+                least_at = (size_t)(key.p - text);
+                least_end = (size_t)(value.end - text);
+            }
+            ++count;
+        }
+        if (count < 2u) {
+            return;
+        }
+        if (least_at == first) {
+            first = least_end + 1u;
+            continue;
+        }
+        /* [first, least_end) is the members before the least, a comma, and the
+           least; turned about, it is the least, a comma, and the others. */
+        const size_t span = least_end - first;
+        const size_t least_len = least_end - least_at;
+        sce_jcs_reverse_(text + first, span);
+        sce_jcs_reverse_(text + first, least_len);
+        sce_jcs_reverse_(text + first + least_len + 1u, span - least_len - 1u);
+        first += least_len + 1u;
+    }
+}
+
+/* The end of an object: a name no value followed names no member, and the
+ * members are sorted where the buffer holds the object's text whole. */
+static inline void sce_jcs_end_object(sce_jcs_t *j) {
+    j->key = NULL;
+    if (j->w.depth == 0u) {
+        return;
+    }
+    const size_t opened = j->opened[j->w.depth - 1u];
+    sce_jw_end_object(&j->w);
+    if (j->refusal == NULL && !j->w.too_deep && j->w.buf != NULL && j->w.len <= j->w.cap) {
+        sce_jcs_sort_members_(j, opened);
+    }
+}
+
+static inline void sce_jcs_string_n(sce_jcs_t *j, const char *s, size_t n) {
+    sce_jcs_place_(j);
+    sce_jw_string_n(&j->w, s, n);
+}
+
+static inline void sce_jcs_string(sce_jcs_t *j, const char *s) {
+    sce_jcs_string_n(j, s, strlen(s));
+}
+
+static inline void sce_jcs_bool(sce_jcs_t *j, bool v) {
+    sce_jcs_place_(j);
+    sce_jw_bool(&j->w, v);
+}
+
+static inline void sce_jcs_null(sce_jcs_t *j) {
+    sce_jcs_place_(j);
+    sce_jw_null(&j->w);
+}
+
+/* A value whose whole text this writer wrote already, the `n` bytes at `text`,
+ * as they are: it is in the scheme, so nothing in it moves. */
+static inline void sce_jcs_written(sce_jcs_t *j, const char *text, size_t n) {
+    sce_jcs_place_(j);
+    sce_jw_put_(&j->w, text, n);
+}
+
+/* Terminate the text where there is room. True when the whole text fit and is in
+ * the scheme. Where it is false, `refusal` says why when the text is not in the
+ * scheme; otherwise the buffer is to be enlarged to `w.len + 1` bytes. */
+static inline bool sce_jcs_finish(sce_jcs_t *j) {
+    if (j->w.too_deep) {
+        sce_jcs_refuse(j, "a value nests deeper than SCE_JSON_MAX_DEPTH");
+    }
+    const bool whole = sce_jw_finish(&j->w);
+    return whole && j->refusal == NULL;
 }
 
 #ifdef __cplusplus
