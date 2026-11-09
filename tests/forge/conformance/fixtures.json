@@ -866,6 +866,23 @@
       ]
     },
     {
+      "name": "codec_optional_field_attributes",
+      "kind": "codec",
+      "ref_section": "codecs",
+      "fields": [
+        {
+          "name": "status",
+          "type": "u8",
+          "compare": "equality"
+        },
+        {
+          "name": "reading",
+          "type": "u16",
+          "compare": "equality"
+        }
+      ]
+    },
+    {
       "name": "codec_tail",
       "kind": "codec",
       "ref_section": "codecs",
