@@ -1292,7 +1292,10 @@ machine `job_tester`: `job_tester_sm.rs`, `job_tester_sm.h` with
 `bounded_collection.rs`. A stem already in lower snake case is written
 unchanged. The spelling is made once, where the parser names the model
 (`model::statechart_machine_name`), and every name above derives from
-the model's. The file keeps the stem as written: a parent's
+the model's. A build that declares the machine's files before it runs
+the generator reads the name from the generator's plan
+(`sce-codegen --plan --plan-machines`, `cmake/SCECodegenPlan.cmake`)
+rather than spelling the stem itself. The file keeps the stem as written: a parent's
 `<invoke src="job-tester.scxml">` reads that file and starts the
 machine `job_tester`, a run stages a child document under its own file
 name, a `deploy.yaml` `source:` of `job-tester.scxml` is found by the

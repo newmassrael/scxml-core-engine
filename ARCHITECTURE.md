@@ -238,6 +238,10 @@ A consumer's generation is declared as the tree's are (see "Build-Time Plans"): 
 writes (its machine, a child an inline `<invoke>` synthesizes, the header of a declared transition function, a
 `src` or candidate child's generation) are the generator's plan and not names in the build, each file has one
 command as its producer with a depfile, and what the machines link is recorded against each file. The
+machine's name is the plan's too: `job-tester.scxml` adds `job_tester_sm.h`, whose machine is in
+`namespace SCE::Generated::job_tester`. The custom target a generation of another language is waited on
+through (`<target>_<name>_kt`, `<target>_<name>_<language>`) keeps the file's name as written, since it is
+named when the call is made, before the plan is read. The
 installed generator is run with the installed templates (`SCE_TEMPLATE_DIR`), a plan and a generation alike.
 `sce_add_algorithm` no longer takes `HEADER`: the header is the generator's to name, and a call that gives it is
 refused.
@@ -353,7 +357,12 @@ through `sce_codegen_write_input`, which leaves unchanged content as it is, date
 changed nothing asked those plans again. The module asks every
 plan with `--plan-requires` too, so the same answer states what the machines of each
 generation need linked (`<PREFIX>_REQUIRES`; see "What a machine links" under C11 Backend
-Layering). A plan is the whole
+Layering), and with `--plan-machines`, so it states the machine name of the statechart each
+generation writes (`\tmachine\t<generation>\t<name>`, `<PREFIX>_MACHINE_NAME`): the file stem
+written as an identifier (`docs/SCE_ACCEPTED_SUBSET.md`), from which the module names the
+machine's files (`job-tester.scxml` declares `job_tester_sm.h`). The module never spells a
+machine's files from the stem itself; when it did, a hyphenated or camelCase stem made the plan
+refuse its own generation as one that does not name its machine. A plan is the whole
 generation run in memory, and the test tree with the Mesh fixtures asks several hundred: asked
 one after another they took 207 s of an 8-core machine's configure. The module now asks each
 plan once per state of its inputs, and many at once, without changing an answer:
