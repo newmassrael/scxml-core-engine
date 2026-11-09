@@ -3,7 +3,7 @@
 - Status: specification of ADR 0091, order of work step 1 (§1 to §10), the document forms of step 2 (§11), the
   structure of the native runtime of step 3 (§12), and the structure of the exporter of step 4, with its types
   module, its manifest, its name contract and the behaviour of each test component (§9.5), and its correspondence
-  witness (§9.4).
+  witness (§9.4), and the test log that step 6's equivalence law compares (§12.5).
 - Decision: `docs/adr/0091-a-test-is-a-document-of-the-test-profile-and-its-ttcn-3-export-runs-and-agrees-with-it.md`.
   Where this document and the ADR disagree, the ADR is amended or this document is wrong; neither is read as
   overriding the other.
@@ -1871,12 +1871,74 @@ value for a parameter the suite does not declare is the caller's mistake and is 
 A test case whose components read a module parameter the run has no value for, or for which no adapter is given,
 ends with `error` (P13) before any of its components is created.
 
-### 12.5 Verdicts and the result
+### 12.5 Verdicts, the result and the test log
 
 The runtime keeps `E-VERDICT` for each component and computes `TC-VERDICT` over the MTC and every PTC, removed or not
-(P14), with `error` above the four verdicts a document sets (P13). A test case's result is its verdict and its log:
-each send, receive, timeout, verdict and log line, with its `NOW` and its component. The log's schema is fixed with
-the equivalence law (order of work step 6).
+(P14), with `error` above the four verdicts a document sets (P13). A test case's result is its verdict, the lines of
+its log, and its test log. The lines are for a reader: each send, receive, timeout, verdict and log line, the creation
+and removal of each component, and the cause of an `error` in the runtime's own words, each with its `NOW` and its
+component. The test log is what ADR 0091 C3 compares between the native run and the TTCN-3 run of a suite.
+
+**The test log** (ADR 0091 C3 and answer 8) is the wire surface `schemas/sce-test-log.v1.schema.json`, `pre-release`,
+registered in `SCE_WIRE_CONTRACTS.md`. Each run of a test case writes one:
+
+```json
+{"records":[…],"schema":"sce-test-log.v1","suite":"runtime_suite","test_case":"answers_the_job","verdict":"pass"}
+```
+
+`verdict` is the test case verdict, spelled as TTCN-3 spells it: `none`, `pass`, `inconc`, `fail` or `error`. Each
+record has `at`, `NOW` when it was written, and `kind`, an event of TCI's test logging interface (ES 201 873-6) in
+kebab case, with the members of its kind. A component is named `mtc` or by the PTC's name in its configuration. On the
+TTCN-3 side the records are written from the tool's log events (answer 8); the native runtime writes the same kinds at
+the points of the semantics this table names:
+
+| `kind` | Members | Written | Rule |
+|---|---|---|---|
+| `test-case-started` | | as the run starts, at `NOW = 0`, before the MTC is created | P11 |
+| `component-created` | `component`, `type` | when the run creates a component, before its machine starts: the MTC as the test case starts, a PTC when the invocation that creates it starts | P9 |
+| `message-sent` | `component`, `port`, `value` | when a component sends, before the message is appended to the connected port or handed to the system adapter | P6 |
+| `message-received` | `component`, `port`, `value` | when a receive branch removes the head of its port, before the branch's content runs: the message was received and matched | P4 step 1 |
+| `timer-started` | `component`, `timer`, `duration_us` | at `<sce:start-timer>`, a restart of a running timer included | P7 |
+| `timer-stopped` | `component`, `timer` | at `<sce:stop-timer>` of a running timer. The stop of one that is not running changes nothing and writes nothing | P7 |
+| `timer-timed-out` | `component`, `timer` | when a timeout branch takes its timer, before the branch's content runs. An expiry no branch takes writes nothing | P4 step 1 |
+| `verdict-set` | `component`, `verdict`, `reason` | at `<sce:setverdict>`, with the document's reason where it is not empty; and at each dynamic error, with `error` and no reason (below) | P12, P13 |
+| `log` | `component`, `text` | at a `<log>` | P8 |
+| `component-done` | `component`, `verdict` | when a component, the MTC included, enters a top-level `<final>`, with its local verdict then. A PTC removed before it terminates writes none | P10 |
+| `test-case-ended` | `verdict` | when the test case verdict is computed, at the `NOW` the run ended at | P14 |
+
+The records stand in the order the round scheduler produces them (§12.4): those of one macrostep in the order its
+statements run, and the components of a round in their creation order. A test case that cannot start (§12.4) writes
+`test-case-started` and `test-case-ended` with `error` alone, since no component was created. The `error` of a dynamic
+error carries no reason, because its cause is the runtime's own prose, which the other side would not write alike; the
+lines of the result keep it.
+
+**The value form.** A message's `value` is in the canonical form of the profile's types (§6.3), built from texts, truth
+values, arrays and objects alone:
+
+| Type | Form |
+|---|---|
+| `intN`, `uintN` | a text of the decimal digits, since an `int64` or a `uint64` is past what a reader that holds numbers as doubles reads exactly |
+| `bool` | `true` or `false` |
+| `enum:X` | the name the document declares for the variant. A number no variant of an open set declares, which the export refuses (§9.5), is the text of its digits |
+| `string[N]` | a text |
+| `bytes[N]` | the octets in upper-case hex, two digits each |
+| `record:X` | an object of its fields by their declared ids; an absent field is omitted, as TTCN-3's `omit` is |
+| `list<T>[B]` | an array of its elements in order |
+| `union:X` | an object of one member, named by its case's variant, whose value is the case's record, or `{}` for a case that holds none |
+
+The form is the type's, not the language's: a byte string and a list of `uint8` are one Rust type and take two forms.
+So the generated unit of every template over a record writes its value's form by the types its document declares
+(Rust: `canonical`, with the writers of `sce_rust_runtime::test::canonical`), and a send carries the value with the
+writer of its form (Rust: `sce_rust_runtime::test::message_value`, a `MessageValue` that is a `TestValue`). A system
+adapter gives the writer of each value it hands the run.
+
+**The text.** A log is written in the JSON Canonicalization Scheme (RFC 8785): no whitespace, the members of each object
+sorted by their names as UTF-16 code units, each text escaped as ECMAScript's `JSON.stringify` escapes it, which is the
+one form every engine writes (`tests/json_text/string_escape.json`). An instant, a duration and every integer of a
+value are texts, so the log holds no number, and two logs agree exactly when their bytes do. Rust:
+`TestCaseResult::canonical_log(suite, test_case)` and `CaseResult::canonical_log(suite)`, over the scheme's writer
+`sce_rust_runtime::json::write_canonical`. The Rust runtime writes the test log first; each other backend's runtime
+writes the same records, in the same text.
 
 ### 12.6 The order of the slices
 
