@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 26e5bf730b3c2b04bc64b3f3339bd11d68362c63297741a6a051afa4c6cd0d1b
+// source-hash: f64002805653a41c56a6a08d7b604e8955d0ac09d55e75365d49e24374faca5e
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -19,7 +19,7 @@
 // Implements StatePolicy with full transition logic, entry/exit actions, and
 // event processing.
 
-// SCE-MAP: record_list.scxml:209 :: _machine
+// SCE-MAP: record_list.scxml:210 :: _machine
 
 import SceRuntime
 import SceForgeRuntime
@@ -400,7 +400,6 @@ public enum RecordListRefusalEnum: UInt8, CaseIterable, Sendable {
     case noRoomForValue = 2
     case noRoomForHistory = 3
     case noRoomForDigest = 4
-    case textTooLong = 5
     case changeTooLarge = 6
     case registerNamedTwice = 7
     case clockExhausted = 8
@@ -412,7 +411,6 @@ public enum RecordListRefusalEnum: UInt8, CaseIterable, Sendable {
         case .noRoomForValue: return "noRoomForValue"
         case .noRoomForHistory: return "noRoomForHistory"
         case .noRoomForDigest: return "noRoomForDigest"
-        case .textTooLong: return "textTooLong"
         case .changeTooLarge: return "changeTooLarge"
         case .registerNamedTwice: return "registerNamedTwice"
         case .clockExhausted: return "clockExhausted"
@@ -437,7 +435,6 @@ public enum RecordListRefusalEnum: UInt8, CaseIterable, Sendable {
         case "noRoomForValue": self = .noRoomForValue
         case "noRoomForHistory": self = .noRoomForHistory
         case "noRoomForDigest": self = .noRoomForDigest
-        case "textTooLong": self = .textTooLong
         case "changeTooLarge": self = .changeTooLarge
         case "registerNamedTwice": self = .registerNamedTwice
         case "clockExhausted": self = .clockExhausted
@@ -821,8 +818,6 @@ public final class RecordListPolicy: InvocablePolicy {
     var vEntry: RecordListEntryRecord = RecordListEntryRecord(element: 0, wallTime: 0, counter: 0, nodeId: 0)
     /// W3C SCXML 5.2: the `values` datamodel variable, published (`sce:direction="out"`).
     var vValues: [RecordListValueRecord] = []
-    /// W3C SCXML 5.2: the `typed` datamodel variable.
-    var vTyped: String = ""
     /// W3C SCXML 5.2: the `held` datamodel variable.
     var vHeld: RecordListValueRecord = RecordListValueRecord(id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0)
     /// W3C SCXML 5.2: the `digest` datamodel variable, published (`sce:direction="out"`).
@@ -1006,7 +1001,6 @@ public final class RecordListPolicy: InvocablePolicy {
         public init() {}
         public var vNode: UInt64? = nil
         public var vHub: Bool? = nil
-        public var vTyped: String? = nil
         public var vMine: UInt32? = nil
         public var vShareId: UInt32? = nil
         public var vShareField: UInt16? = nil
@@ -1058,9 +1052,6 @@ public final class RecordListPolicy: InvocablePolicy {
         }
         if let value = params.vHub {
             vHub = value
-        }
-        if let value = params.vTyped {
-            vTyped = value
         }
         if let value = params.vMine {
             vMine = value
@@ -1594,7 +1585,7 @@ public final class RecordListPolicy: InvocablePolicy {
             payload.id = try fields.unsigned("id")
             payload.field = try fields.unsigned("field")
             payload.value = try fields.signed64("value")
-            payload.text = try fields.text("text")
+            payload.text = try fields.text("text", bound: 32)
             payload.now = try fields.signed64("now")
             payload.more = try fields.truth("more")
             pendingRecordListEditPayload = payload
@@ -1706,7 +1697,7 @@ public final class RecordListPolicy: InvocablePolicy {
             payload.id = try fields.unsigned("id")
             payload.field = try fields.unsigned("field")
             payload.value = try fields.signed64("value")
-            payload.text = try fields.text("text")
+            payload.text = try fields.text("text", bound: 96)
             payload.wallTime = try fields.signed64("wallTime")
             payload.counter = try fields.unsigned("counter")
             payload.nodeId = try fields.unsigned64("nodeId")
@@ -2162,16 +2153,6 @@ public final class RecordListPolicy: InvocablePolicy {
 
 
                 self.vProbing = true
-
-
-
-                self.vProbe = RecordListRefusalEnum.textTooLong
-
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingRecordListEditPayload.text, capacity: 32); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(RecordListEvent.errorExecution, message: "<assign location='typed'>: an integer operation overflowed or failed")); return true }; self.vTyped = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
 
 
 
@@ -7018,10 +6999,10 @@ extension RecordListPolicy: SavedPolicy {
     /// re-typed or moved something a saved state names refuses it.
     public static var savedShape: SavedShape {
         SavedShape(
-            first: "b9de4ddc5460d55ea67b11e5f7b85473c44d2879aafb4bae5ab00811a707f429",
-            revised: "d404fdb4f5731790516c940d94a1f83b63dbfcb947f2e096f93e4ea529d40a80",
-            format2First: "091a179d000b2f2cb209ae48bb504c63ce0976b9e88c74bf13c001fe6b7efba1",
-            format2Revised: "f6a25db2dee068cd0208ca7d01fc6fbe12df24ae8234343dd9772cf65863b547",
+            first: "a19e77db8250a195249ade686a9bb02b25da03309449cc228f1fda01c1fd792d",
+            revised: "3251600de5bc2baa9cd835462ffa530fc0ea4b543cf1ed5d6e8623002c38b5e7",
+            format2First: "f07397fd111637feae43e644bdb300073319756c9be0442cbf7596660ff33f8a",
+            format2Revised: "da7b1092cfdc71ec67de077860c8f924b6f9e616e3f9535ed34eff7d249cf70a",
             records: [
                 SavedRecordLineage(
                     event: "merge.hlc_timestamp", revision: 1,
@@ -7144,7 +7125,6 @@ extension RecordListPolicy: SavedPolicy {
             SavedEntry("stable", SavedValues.list(vStable) { $0.toSaved() }),
             SavedEntry("entry", vEntry.toSaved()),
             SavedEntry("values", SavedValues.list(vValues) { $0.toSaved() }),
-            SavedEntry("typed", SavedValues.of(vTyped)),
             SavedEntry("held", vHeld.toSaved()),
             SavedEntry("digest", SavedValues.list(vDigest) { $0.toSaved() }),
             SavedEntry("mine", SavedValues.of(vMine)),
@@ -7220,66 +7200,65 @@ extension RecordListPolicy: SavedPolicy {
         let value7 = try SavedValues.list(try saved.variable("stable"), "stable", capacity: 1024) { e, w in try RecordListEntryRecord.fromSaved(e, w) }
         let value8 = try RecordListEntryRecord.fromSaved(try saved.variable("entry"), "entry")
         let value9 = try SavedValues.list(try saved.variable("values"), "values", capacity: 512) { e, w in try RecordListValueRecord.fromSaved(e, w) }
-        let value10 = try SavedValues.string(try saved.variable("typed"), "typed", capacity: 32)
-        let value11 = try RecordListValueRecord.fromSaved(try saved.variable("held"), "held")
-        let value12 = try SavedValues.list(try saved.variable("digest"), "digest", capacity: 2048) { e, w in try RecordListNodeRecord.fromSaved(e, w) }
-        let value13 = try SavedValues.uint32(try saved.variable("mine"), "mine")
-        let value14 = try SavedValues.uint32(try saved.variable("shareId"), "shareId")
-        let value15 = try SavedValues.uint16(try saved.variable("shareField"), "shareField")
-        let value16 = try SavedValues.bool(try saved.variable("known"), "known")
-        let value17 = try SavedValues.bool(try saved.variable("wasLive"), "wasLive")
-        let value18 = try SavedValues.bool(try saved.variable("isLive"), "isLive")
-        let value19 = try SavedValues.bool(try saved.variable("present"), "present")
-        let value20 = try SavedValues.uint32(try saved.variable("refusals"), "refusals")
-        let value21 = try SavedValues.int64(try saved.variable("floor"), "floor")
-        let value22 = try SavedValues.bool(try saved.variable("stale"), "stale")
-        let value23 = try SavedValues.uint32(try saved.variable("late"), "late")
-        let value24 = try SavedValues.int64(try saved.variable("frozenFor"), "frozenFor")
-        let value25 = try SavedValues.uint32(try saved.variable("frozenHash"), "frozenHash")
-        let value26 = try SavedValues.int64(try saved.variable("pending"), "pending")
-        let value27 = try SavedValues.uint32(try saved.variable("members"), "members")
-        let value28 = try SavedValues.uint32(try saved.variable("agreeing"), "agreeing")
-        let value29 = try SavedValues.list(try saved.variable("answers"), "answers", capacity: 512) { e, w in try RecordListAnswerRecord.fromSaved(e, w) }
-        let value30 = try RecordListAnswerRecord.fromSaved(try saved.variable("answer"), "answer")
-        let value31 = try SavedValues.uint32(try saved.variable("agreed"), "agreed")
-        let value32 = try SavedValues.uint32(try saved.variable("roomValues"), "roomValues")
-        let value33 = try SavedValues.uint32(try saved.variable("roomHistory"), "roomHistory")
-        let value34 = try SavedValues.uint32(try saved.variable("roomDigest"), "roomDigest")
-        let value35 = try SavedValues.uint32(try saved.variable("full"), "full")
-        let value36 = try SavedValues.list(try saved.variable("roster"), "roster", capacity: 64) { e, w in try RecordListMemberRecord.fromSaved(e, w) }
-        let value37 = try SavedValues.uint32(try saved.variable("denied"), "denied")
-        let value38 = try SavedValues.bool(try saved.variable("forbidden"), "forbidden")
-        let value39 = try SavedValues.bool(try saved.variable("authorized"), "authorized")
-        let value40 = try SavedValues.bool(try saved.variable("announce"), "announce")
-        let value41 = try SavedValues.uint32(try saved.variable("announced"), "announced")
-        let value42 = try SavedValues.list(try saved.variable("moved"), "moved", capacity: 64) { e, w in try SavedValues.uint64(e, w) }
-        let value43 = try SavedValues.bool(try saved.variable("listed"), "listed")
-        let value44 = try SavedValues.list(try saved.variable("live"), "live", capacity: 512) { e, w in try RecordListValueRecord.fromSaved(e, w) }
-        let value45 = try SavedValues.uint32(try saved.variable("ordinal"), "ordinal")
-        let value46 = try RecordListValueRecord.fromSaved(try saved.variable("empty"), "empty")
-        let value47 = try SavedValues.list(try saved.variable("staged"), "staged", capacity: 32) { e, w in try RecordListPartRecord.fromSaved(e, w) }
-        let value48 = try SavedValues.bool(try saved.variable("holding"), "holding")
-        let value49 = try SavedValues.int64(try saved.variable("closingNow"), "closingNow")
-        let value50 = try SavedValues.bool(try saved.variable("spoiled"), "spoiled")
-        let value51 = try SavedValues.bool(try saved.variable("probing"), "probing")
-        let value52 = try SavedValues.uint32(try saved.variable("gone"), "gone")
-        let value53 = try SavedValues.uint32(try saved.variable("writes"), "writes")
-        let value54 = try SavedValues.bool(try saved.variable("covered"), "covered")
-        let value55 = try SavedValues.enumeration(try saved.variable("probe"), "probe", as: RecordListRefusalEnum.self)
-        let value56 = try SavedValues.enumeration(try saved.variable("spoiledFor"), "spoiledFor", as: RecordListRefusalEnum.self)
-        let value57 = try SavedValues.uint32(try saved.variable("namedId"), "namedId")
-        let value58 = try SavedValues.uint16(try saved.variable("namedField"), "namedField")
-        let value59 = try SavedValues.enumeration(try saved.variable("namedKind"), "namedKind", as: RecordListCommandEnum.self)
-        let value60 = try SavedValues.list(try saved.variable("taking"), "taking", capacity: 64) { e, w in try RecordListPartRecord.fromSaved(e, w) }
-        let value61 = try SavedValues.uint32(try saved.variable("took"), "took")
-        let value62 = try SavedValues.list(try saved.variable("passing"), "passing", capacity: 64) { e, w in try RecordListPartRecord.fromSaved(e, w) }
-        let value63 = try SavedValues.uint32(try saved.variable("passed"), "passed")
-        let value64 = try SavedValues.list(try saved.variable("waiting"), "waiting", capacity: 64) { e, w in try RecordListPartRecord.fromSaved(e, w) }
-        let value65 = try SavedValues.list(try saved.variable("kept"), "kept", capacity: 64) { e, w in try RecordListPartRecord.fromSaved(e, w) }
-        let value66 = try RecordListPartRecord.fromSaved(try saved.variable("part"), "part")
-        let value67 = try RecordListPartRecord.fromSaved(try saved.variable("op"), "op")
-        let value68 = try SavedValues.bool(try saved.variable("already"), "already")
-        let value69 = try SavedValues.uint32(try saved.variable("count"), "count")
+        let value10 = try RecordListValueRecord.fromSaved(try saved.variable("held"), "held")
+        let value11 = try SavedValues.list(try saved.variable("digest"), "digest", capacity: 2048) { e, w in try RecordListNodeRecord.fromSaved(e, w) }
+        let value12 = try SavedValues.uint32(try saved.variable("mine"), "mine")
+        let value13 = try SavedValues.uint32(try saved.variable("shareId"), "shareId")
+        let value14 = try SavedValues.uint16(try saved.variable("shareField"), "shareField")
+        let value15 = try SavedValues.bool(try saved.variable("known"), "known")
+        let value16 = try SavedValues.bool(try saved.variable("wasLive"), "wasLive")
+        let value17 = try SavedValues.bool(try saved.variable("isLive"), "isLive")
+        let value18 = try SavedValues.bool(try saved.variable("present"), "present")
+        let value19 = try SavedValues.uint32(try saved.variable("refusals"), "refusals")
+        let value20 = try SavedValues.int64(try saved.variable("floor"), "floor")
+        let value21 = try SavedValues.bool(try saved.variable("stale"), "stale")
+        let value22 = try SavedValues.uint32(try saved.variable("late"), "late")
+        let value23 = try SavedValues.int64(try saved.variable("frozenFor"), "frozenFor")
+        let value24 = try SavedValues.uint32(try saved.variable("frozenHash"), "frozenHash")
+        let value25 = try SavedValues.int64(try saved.variable("pending"), "pending")
+        let value26 = try SavedValues.uint32(try saved.variable("members"), "members")
+        let value27 = try SavedValues.uint32(try saved.variable("agreeing"), "agreeing")
+        let value28 = try SavedValues.list(try saved.variable("answers"), "answers", capacity: 512) { e, w in try RecordListAnswerRecord.fromSaved(e, w) }
+        let value29 = try RecordListAnswerRecord.fromSaved(try saved.variable("answer"), "answer")
+        let value30 = try SavedValues.uint32(try saved.variable("agreed"), "agreed")
+        let value31 = try SavedValues.uint32(try saved.variable("roomValues"), "roomValues")
+        let value32 = try SavedValues.uint32(try saved.variable("roomHistory"), "roomHistory")
+        let value33 = try SavedValues.uint32(try saved.variable("roomDigest"), "roomDigest")
+        let value34 = try SavedValues.uint32(try saved.variable("full"), "full")
+        let value35 = try SavedValues.list(try saved.variable("roster"), "roster", capacity: 64) { e, w in try RecordListMemberRecord.fromSaved(e, w) }
+        let value36 = try SavedValues.uint32(try saved.variable("denied"), "denied")
+        let value37 = try SavedValues.bool(try saved.variable("forbidden"), "forbidden")
+        let value38 = try SavedValues.bool(try saved.variable("authorized"), "authorized")
+        let value39 = try SavedValues.bool(try saved.variable("announce"), "announce")
+        let value40 = try SavedValues.uint32(try saved.variable("announced"), "announced")
+        let value41 = try SavedValues.list(try saved.variable("moved"), "moved", capacity: 64) { e, w in try SavedValues.uint64(e, w) }
+        let value42 = try SavedValues.bool(try saved.variable("listed"), "listed")
+        let value43 = try SavedValues.list(try saved.variable("live"), "live", capacity: 512) { e, w in try RecordListValueRecord.fromSaved(e, w) }
+        let value44 = try SavedValues.uint32(try saved.variable("ordinal"), "ordinal")
+        let value45 = try RecordListValueRecord.fromSaved(try saved.variable("empty"), "empty")
+        let value46 = try SavedValues.list(try saved.variable("staged"), "staged", capacity: 32) { e, w in try RecordListPartRecord.fromSaved(e, w) }
+        let value47 = try SavedValues.bool(try saved.variable("holding"), "holding")
+        let value48 = try SavedValues.int64(try saved.variable("closingNow"), "closingNow")
+        let value49 = try SavedValues.bool(try saved.variable("spoiled"), "spoiled")
+        let value50 = try SavedValues.bool(try saved.variable("probing"), "probing")
+        let value51 = try SavedValues.uint32(try saved.variable("gone"), "gone")
+        let value52 = try SavedValues.uint32(try saved.variable("writes"), "writes")
+        let value53 = try SavedValues.bool(try saved.variable("covered"), "covered")
+        let value54 = try SavedValues.enumeration(try saved.variable("probe"), "probe", as: RecordListRefusalEnum.self)
+        let value55 = try SavedValues.enumeration(try saved.variable("spoiledFor"), "spoiledFor", as: RecordListRefusalEnum.self)
+        let value56 = try SavedValues.uint32(try saved.variable("namedId"), "namedId")
+        let value57 = try SavedValues.uint16(try saved.variable("namedField"), "namedField")
+        let value58 = try SavedValues.enumeration(try saved.variable("namedKind"), "namedKind", as: RecordListCommandEnum.self)
+        let value59 = try SavedValues.list(try saved.variable("taking"), "taking", capacity: 64) { e, w in try RecordListPartRecord.fromSaved(e, w) }
+        let value60 = try SavedValues.uint32(try saved.variable("took"), "took")
+        let value61 = try SavedValues.list(try saved.variable("passing"), "passing", capacity: 64) { e, w in try RecordListPartRecord.fromSaved(e, w) }
+        let value62 = try SavedValues.uint32(try saved.variable("passed"), "passed")
+        let value63 = try SavedValues.list(try saved.variable("waiting"), "waiting", capacity: 64) { e, w in try RecordListPartRecord.fromSaved(e, w) }
+        let value64 = try SavedValues.list(try saved.variable("kept"), "kept", capacity: 64) { e, w in try RecordListPartRecord.fromSaved(e, w) }
+        let value65 = try RecordListPartRecord.fromSaved(try saved.variable("part"), "part")
+        let value66 = try RecordListPartRecord.fromSaved(try saved.variable("op"), "op")
+        let value67 = try SavedValues.bool(try saved.variable("already"), "already")
+        let value68 = try SavedValues.uint32(try saved.variable("count"), "count")
         return { [self] in
             self.vNode = value0
             self.vHub = value1
@@ -7291,66 +7270,65 @@ extension RecordListPolicy: SavedPolicy {
             self.vStable = value7
             self.vEntry = value8
             self.vValues = value9
-            self.vTyped = value10
-            self.vHeld = value11
-            self.vDigest = value12
-            self.vMine = value13
-            self.vShareId = value14
-            self.vShareField = value15
-            self.vKnown = value16
-            self.vWasLive = value17
-            self.vIsLive = value18
-            self.vPresent = value19
-            self.vRefusals = value20
-            self.vFloor = value21
-            self.vStale = value22
-            self.vLate = value23
-            self.vFrozenFor = value24
-            self.vFrozenHash = value25
-            self.vPending = value26
-            self.vMembers = value27
-            self.vAgreeing = value28
-            self.vAnswers = value29
-            self.vAnswer = value30
-            self.vAgreed = value31
-            self.vRoomValues = value32
-            self.vRoomHistory = value33
-            self.vRoomDigest = value34
-            self.vFull = value35
-            self.vRoster = value36
-            self.vDenied = value37
-            self.vForbidden = value38
-            self.vAuthorized = value39
-            self.vAnnounce = value40
-            self.vAnnounced = value41
-            self.vMoved = value42
-            self.vListed = value43
-            self.vLive = value44
-            self.vOrdinal = value45
-            self.vEmpty = value46
-            self.vStaged = value47
-            self.vHolding = value48
-            self.vClosingNow = value49
-            self.vSpoiled = value50
-            self.vProbing = value51
-            self.vGone = value52
-            self.vWrites = value53
-            self.vCovered = value54
-            self.vProbe = value55
-            self.vSpoiledFor = value56
-            self.vNamedId = value57
-            self.vNamedField = value58
-            self.vNamedKind = value59
-            self.vTaking = value60
-            self.vTook = value61
-            self.vPassing = value62
-            self.vPassed = value63
-            self.vWaiting = value64
-            self.vKept = value65
-            self.vPart = value66
-            self.vOp = value67
-            self.vAlready = value68
-            self.vCount = value69
+            self.vHeld = value10
+            self.vDigest = value11
+            self.vMine = value12
+            self.vShareId = value13
+            self.vShareField = value14
+            self.vKnown = value15
+            self.vWasLive = value16
+            self.vIsLive = value17
+            self.vPresent = value18
+            self.vRefusals = value19
+            self.vFloor = value20
+            self.vStale = value21
+            self.vLate = value22
+            self.vFrozenFor = value23
+            self.vFrozenHash = value24
+            self.vPending = value25
+            self.vMembers = value26
+            self.vAgreeing = value27
+            self.vAnswers = value28
+            self.vAnswer = value29
+            self.vAgreed = value30
+            self.vRoomValues = value31
+            self.vRoomHistory = value32
+            self.vRoomDigest = value33
+            self.vFull = value34
+            self.vRoster = value35
+            self.vDenied = value36
+            self.vForbidden = value37
+            self.vAuthorized = value38
+            self.vAnnounce = value39
+            self.vAnnounced = value40
+            self.vMoved = value41
+            self.vListed = value42
+            self.vLive = value43
+            self.vOrdinal = value44
+            self.vEmpty = value45
+            self.vStaged = value46
+            self.vHolding = value47
+            self.vClosingNow = value48
+            self.vSpoiled = value49
+            self.vProbing = value50
+            self.vGone = value51
+            self.vWrites = value52
+            self.vCovered = value53
+            self.vProbe = value54
+            self.vSpoiledFor = value55
+            self.vNamedId = value56
+            self.vNamedField = value57
+            self.vNamedKind = value58
+            self.vTaking = value59
+            self.vTook = value60
+            self.vPassing = value61
+            self.vPassed = value62
+            self.vWaiting = value63
+            self.vKept = value64
+            self.vPart = value65
+            self.vOp = value66
+            self.vAlready = value67
+            self.vCount = value68
         }
     }
 }

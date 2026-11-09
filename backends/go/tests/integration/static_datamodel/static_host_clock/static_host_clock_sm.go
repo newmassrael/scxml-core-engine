@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9c4f25c71477b8168828f3c8f9ccad85a4253ff428db93b5b34a11bbacc1faa1
+// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -1150,8 +1150,8 @@ func (p *StaticHostClockPolicy) PopulateEventMetadata(meta *sce.EventMetadata) {
 // generated Raise<Event> inject seam. Every other producer — <send> with
 // <param>, an invoke forwarding either way, autoforward, BasicHTTP, mesh —
 // fills EventMetadata.Data, so the schema's fields are read out of that here.
-// A refusal is returned for the engine to raise as error.execution, which is
-// what W3C SCXML 3.13 gives for a guard that cannot be evaluated.
+// A refusal is returned, on which the engine refuses the delivery whole and
+// takes an error.execution in its place (docs/adr/0086, section 4.2).
 func (p *StaticHostClockPolicy) LiftTypedPayload(event StaticHostClockEvent, meta *sce.EventMetadata) error {
 	// A typed carrier already bound the view, so the producer was the
 	// inject seam and there is nothing to read out of `Data`.
@@ -1165,7 +1165,7 @@ func (p *StaticHostClockPolicy) LiftTypedPayload(event StaticHostClockEvent, met
 			return err
 		}
 		var payload StaticHostClockDoneInvokeNowPayload
-		if payload.error, err = sce.PayloadString(fields, "error"); err != nil {
+		if payload.error, err = sce.PayloadTextWithin(fields, "error", 24); err != nil {
 			return err
 		}
 		if payload.utc_ms, err = sce.PayloadSigned64(fields, "utc_ms"); err != nil {
@@ -1182,10 +1182,10 @@ func (p *StaticHostClockPolicy) LiftTypedPayload(event StaticHostClockEvent, met
 			return err
 		}
 		var payload StaticHostClockDoneInvokeZonePayload
-		if payload.error, err = sce.PayloadString(fields, "error"); err != nil {
+		if payload.error, err = sce.PayloadTextWithin(fields, "error", 24); err != nil {
 			return err
 		}
-		if payload.zone_id, err = sce.PayloadString(fields, "zone_id"); err != nil {
+		if payload.zone_id, err = sce.PayloadTextWithin(fields, "zone_id", 64); err != nil {
 			return err
 		}
 		if payload.utc_offset_s, err = sce.PayloadSigned[int32](fields, "utc_offset_s"); err != nil {

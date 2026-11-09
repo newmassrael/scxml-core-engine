@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9c4f25c71477b8168828f3c8f9ccad85a4253ff428db93b5b34a11bbacc1faa1
+// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -517,7 +517,7 @@ public final class StaticOptionalRecordPolicy: InvocablePolicy {
             let fields = try PayloadFields.decode(metadata.data)
             var payload = StaticOptionalRecordItemPickedPayload()
             payload.id = try fields.unsigned("id")
-            payload.title = try fields.text("title")
+            payload.title = try fields.text("title", bound: 16)
             payload.count = try fields.signed("count")
             pendingItemPickedPayload = payload
             pendingPayloadTag = .itemPicked

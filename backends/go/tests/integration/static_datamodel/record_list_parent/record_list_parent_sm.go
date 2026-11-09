@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9c4f25c71477b8168828f3c8f9ccad85a4253ff428db93b5b34a11bbacc1faa1
+// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -914,7 +914,6 @@ const (
 	RecordListParentRecordRefusalEnumNoRoomForValue RecordListParentRecordRefusalEnum = 2
 	RecordListParentRecordRefusalEnumNoRoomForHistory RecordListParentRecordRefusalEnum = 3
 	RecordListParentRecordRefusalEnumNoRoomForDigest RecordListParentRecordRefusalEnum = 4
-	RecordListParentRecordRefusalEnumTextTooLong RecordListParentRecordRefusalEnum = 5
 	RecordListParentRecordRefusalEnumChangeTooLarge RecordListParentRecordRefusalEnum = 6
 	RecordListParentRecordRefusalEnumRegisterNamedTwice RecordListParentRecordRefusalEnum = 7
 	RecordListParentRecordRefusalEnumClockExhausted RecordListParentRecordRefusalEnum = 8
@@ -931,8 +930,6 @@ func (v RecordListParentRecordRefusalEnum) String() string {
 		return "noRoomForHistory"
 	case RecordListParentRecordRefusalEnumNoRoomForDigest:
 		return "noRoomForDigest"
-	case RecordListParentRecordRefusalEnumTextTooLong:
-		return "textTooLong"
 	case RecordListParentRecordRefusalEnumChangeTooLarge:
 		return "changeTooLarge"
 	case RecordListParentRecordRefusalEnumRegisterNamedTwice:
@@ -952,7 +949,7 @@ func (v RecordListParentRecordRefusalEnum) ToUnderlying() uint8 {
 // value for a number no variant declares.
 func RecordListParentRecordRefusalEnumFromUnderlying(raw uint8) optional.Of[RecordListParentRecordRefusalEnum] {
 	switch raw {
-	case 1, 2, 3, 4, 5, 6, 7, 8:
+	case 1, 2, 3, 4, 6, 7, 8:
 		return optional.Some(RecordListParentRecordRefusalEnum(raw))
 	}
 	return optional.None[RecordListParentRecordRefusalEnum]()
@@ -978,8 +975,6 @@ func RecordListParentRecordRefusalEnumFromSaved(value any, what string) (RecordL
 		return RecordListParentRecordRefusalEnumNoRoomForHistory, nil
 	case "noRoomForDigest":
 		return RecordListParentRecordRefusalEnumNoRoomForDigest, nil
-	case "textTooLong":
-		return RecordListParentRecordRefusalEnumTextTooLong, nil
 	case "changeTooLarge":
 		return RecordListParentRecordRefusalEnumChangeTooLarge, nil
 	case "registerNamedTwice":
@@ -1084,12 +1079,12 @@ const RecordListParentLimitSharedTypedText uint32 = 32
 // this machine names when every record schema it holds is in its first
 // revision (docs/adr/0045, section 2). The generator computes it once, so it is
 // the text every backend's constant is.
-const RecordListParentSavedShapeFormat2 = "11b03bea0c822147097a0e03f3585997b3c1a52659ebeb3187b514d1470b7a7a"
+const RecordListParentSavedShapeFormat2 = "7afa835c6abdf9b644884855314499a143ca4457e93c16a1587a16ed80f759ac"
 
 // RecordListParentSavedShapeFormat2Revised is the shape a format-2 saved state
 // of this machine names when it names a later revision of a record schema or
 // an enum.
-const RecordListParentSavedShapeFormat2Revised = "798fa308f5f8f9083f3778bf144eb6dd07fedbddf41f1721540579f8bed9afde"
+const RecordListParentSavedShapeFormat2Revised = "2130125bdb38062885f16430b45cebbfaca284433cbdf4ca33b2ec052e4cf9e1"
 
 // RecordListParentSavedEnumKeys names each enum a value of a saved state of
 // this machine is of, by its document (docs/adr/0044): the key `revisions`
@@ -1107,10 +1102,10 @@ var RecordListParentSavedEnumKeys = [...]string{
 // one saved at an earlier revision of a record schema is read with each field a
 // later revision added at its default.
 var RecordListParentSavedShape = sce.SavedShape{
-	First:          "d29628f9cc18dfa690b968ce10709031b7e718b8f8e45573c79d78466a4fc1cf",
-	Revised:        "4c3e62bd1e2a8511315643a001a26fd69249ba1130d0128413aa2164e09adae4",
-	Format2First:   "11b03bea0c822147097a0e03f3585997b3c1a52659ebeb3187b514d1470b7a7a",
-	Format2Revised: "798fa308f5f8f9083f3778bf144eb6dd07fedbddf41f1721540579f8bed9afde",
+	First:          "4cb68ae1f448dca9c8282ca73cadcc1e88a226ef18799f7023b5c0b32cc5ac7f",
+	Revised:        "895a13663d6ce24ce93775145fd7e0e6fc564efe5022579ed83296c619b2233a",
+	Format2First:   "7afa835c6abdf9b644884855314499a143ca4457e93c16a1587a16ed80f759ac",
+	Format2Revised: "2130125bdb38062885f16430b45cebbfaca284433cbdf4ca33b2ec052e4cf9e1",
 	Records: []sce.RecordLineage{
 		{
 			Event:     "record_list.refused",
@@ -2189,8 +2184,8 @@ func (p *RecordListParentPolicy) PopulateEventMetadata(meta *sce.EventMetadata) 
 // generated Raise<Event> inject seam. Every other producer — <send> with
 // <param>, an invoke forwarding either way, autoforward, BasicHTTP, mesh —
 // fills EventMetadata.Data, so the schema's fields are read out of that here.
-// A refusal is returned for the engine to raise as error.execution, which is
-// what W3C SCXML 3.13 gives for a guard that cannot be evaluated.
+// A refusal is returned, on which the engine refuses the delivery whole and
+// takes an error.execution in its place (docs/adr/0086, section 4.2).
 func (p *RecordListParentPolicy) LiftTypedPayload(event RecordListParentEvent, meta *sce.EventMetadata) error {
 	// A typed carrier already bound the view, so the producer was the
 	// inject seam and there is nothing to read out of `Data`.
@@ -2233,7 +2228,7 @@ func (p *RecordListParentPolicy) LiftTypedPayload(event RecordListParentEvent, m
 		if payload.value, err = sce.PayloadSigned64(fields, "value"); err != nil {
 			return err
 		}
-		if payload.text, err = sce.PayloadString(fields, "text"); err != nil {
+		if payload.text, err = sce.PayloadTextWithin(fields, "text", 32); err != nil {
 			return err
 		}
 		if payload.now, err = sce.PayloadSigned64(fields, "now"); err != nil {
@@ -2273,7 +2268,7 @@ func (p *RecordListParentPolicy) LiftTypedPayload(event RecordListParentEvent, m
 		if payload.kind, err = func() (RecordListParentRecordCommandEnum, error) { name, err := sce.PayloadString(fields, "kind"); if err != nil { return 0, err }; switch name { case "edit": return RecordListParentRecordCommandEnumEdit, nil; case "clear": return RecordListParentRecordCommandEnumClear, nil; case "retire": return RecordListParentRecordCommandEnumRetire, nil; }; return 0, sce.PayloadUnknownVariant("kind", name, "record_command") }(); err != nil {
 			return err
 		}
-		if payload.reason, err = func() (RecordListParentRecordRefusalEnum, error) { name, err := sce.PayloadString(fields, "reason"); if err != nil { return 0, err }; switch name { case "notWriter": return RecordListParentRecordRefusalEnumNotWriter, nil; case "noRoomForValue": return RecordListParentRecordRefusalEnumNoRoomForValue, nil; case "noRoomForHistory": return RecordListParentRecordRefusalEnumNoRoomForHistory, nil; case "noRoomForDigest": return RecordListParentRecordRefusalEnumNoRoomForDigest, nil; case "textTooLong": return RecordListParentRecordRefusalEnumTextTooLong, nil; case "changeTooLarge": return RecordListParentRecordRefusalEnumChangeTooLarge, nil; case "registerNamedTwice": return RecordListParentRecordRefusalEnumRegisterNamedTwice, nil; case "clockExhausted": return RecordListParentRecordRefusalEnumClockExhausted, nil; }; return 0, sce.PayloadUnknownVariant("reason", name, "record_refusal") }(); err != nil {
+		if payload.reason, err = func() (RecordListParentRecordRefusalEnum, error) { name, err := sce.PayloadString(fields, "reason"); if err != nil { return 0, err }; switch name { case "notWriter": return RecordListParentRecordRefusalEnumNotWriter, nil; case "noRoomForValue": return RecordListParentRecordRefusalEnumNoRoomForValue, nil; case "noRoomForHistory": return RecordListParentRecordRefusalEnumNoRoomForHistory, nil; case "noRoomForDigest": return RecordListParentRecordRefusalEnumNoRoomForDigest, nil; case "changeTooLarge": return RecordListParentRecordRefusalEnumChangeTooLarge, nil; case "registerNamedTwice": return RecordListParentRecordRefusalEnumRegisterNamedTwice, nil; case "clockExhausted": return RecordListParentRecordRefusalEnumClockExhausted, nil; }; return 0, sce.PayloadUnknownVariant("reason", name, "record_refusal") }(); err != nil {
 			return err
 		}
 		p.pendingRecordListRefusedPayload = payload
@@ -2296,7 +2291,7 @@ func (p *RecordListParentPolicy) LiftTypedPayload(event RecordListParentEvent, m
 		if payload.value, err = sce.PayloadSigned64(fields, "value"); err != nil {
 			return err
 		}
-		if payload.text, err = sce.PayloadString(fields, "text"); err != nil {
+		if payload.text, err = sce.PayloadTextWithin(fields, "text", 96); err != nil {
 			return err
 		}
 		if payload.wallTime, err = sce.PayloadSigned64(fields, "wallTime"); err != nil {
@@ -2411,7 +2406,7 @@ func (p *RecordListParentPolicy) LiftTypedPayload(event RecordListParentEvent, m
 		if payload.value, err = sce.PayloadSigned64(fields, "value"); err != nil {
 			return err
 		}
-		if payload.text, err = sce.PayloadString(fields, "text"); err != nil {
+		if payload.text, err = sce.PayloadTextWithin(fields, "text", 96); err != nil {
 			return err
 		}
 		if payload.wallTime, err = sce.PayloadSigned64(fields, "wallTime"); err != nil {
@@ -2440,7 +2435,7 @@ func (p *RecordListParentPolicy) LiftTypedPayload(event RecordListParentEvent, m
 		if payload.value, err = sce.PayloadSigned64(fields, "value"); err != nil {
 			return err
 		}
-		if payload.text, err = sce.PayloadString(fields, "text"); err != nil {
+		if payload.text, err = sce.PayloadTextWithin(fields, "text", 96); err != nil {
 			return err
 		}
 		if payload.wallTime, err = sce.PayloadSigned64(fields, "wallTime"); err != nil {

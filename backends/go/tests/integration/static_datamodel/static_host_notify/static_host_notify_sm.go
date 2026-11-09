@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9c4f25c71477b8168828f3c8f9ccad85a4253ff428db93b5b34a11bbacc1faa1
+// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -1771,8 +1771,8 @@ func (p *StaticHostNotifyPolicy) PopulateEventMetadata(meta *sce.EventMetadata) 
 // generated Raise<Event> inject seam. Every other producer — <send> with
 // <param>, an invoke forwarding either way, autoforward, BasicHTTP, mesh —
 // fills EventMetadata.Data, so the schema's fields are read out of that here.
-// A refusal is returned for the engine to raise as error.execution, which is
-// what W3C SCXML 3.13 gives for a guard that cannot be evaluated.
+// A refusal is returned, on which the engine refuses the delivery whole and
+// takes an error.execution in its place (docs/adr/0086, section 4.2).
 func (p *StaticHostNotifyPolicy) LiftTypedPayload(event StaticHostNotifyEvent, meta *sce.EventMetadata) error {
 	// A typed carrier already bound the view, so the producer was the
 	// inject seam and there is nothing to read out of `Data`.
@@ -1786,10 +1786,10 @@ func (p *StaticHostNotifyPolicy) LiftTypedPayload(event StaticHostNotifyEvent, m
 			return err
 		}
 		var payload StaticHostNotifyDoneInvokeAskPayload
-		if payload.error, err = sce.PayloadString(fields, "error"); err != nil {
+		if payload.error, err = sce.PayloadTextWithin(fields, "error", 24); err != nil {
 			return err
 		}
-		if payload.state, err = sce.PayloadString(fields, "state"); err != nil {
+		if payload.state, err = sce.PayloadTextWithin(fields, "state", 16); err != nil {
 			return err
 		}
 		p.pendingDoneInvokeAskPayload = payload
@@ -1800,7 +1800,7 @@ func (p *StaticHostNotifyPolicy) LiftTypedPayload(event StaticHostNotifyEvent, m
 			return err
 		}
 		var payload StaticHostNotifyDoneInvokeCancelPayload
-		if payload.error, err = sce.PayloadString(fields, "error"); err != nil {
+		if payload.error, err = sce.PayloadTextWithin(fields, "error", 24); err != nil {
 			return err
 		}
 		if payload.existed, err = sce.PayloadBool(fields, "existed"); err != nil {
@@ -1814,10 +1814,10 @@ func (p *StaticHostNotifyPolicy) LiftTypedPayload(event StaticHostNotifyEvent, m
 			return err
 		}
 		var payload StaticHostNotifyDoneInvokeFarPayload
-		if payload.error, err = sce.PayloadString(fields, "error"); err != nil {
+		if payload.error, err = sce.PayloadTextWithin(fields, "error", 24); err != nil {
 			return err
 		}
-		if payload.status, err = sce.PayloadString(fields, "status"); err != nil {
+		if payload.status, err = sce.PayloadTextWithin(fields, "status", 16); err != nil {
 			return err
 		}
 		p.pendingDoneInvokeFarPayload = payload
@@ -1828,10 +1828,10 @@ func (p *StaticHostNotifyPolicy) LiftTypedPayload(event StaticHostNotifyEvent, m
 			return err
 		}
 		var payload StaticHostNotifyDoneInvokePostPayload
-		if payload.error, err = sce.PayloadString(fields, "error"); err != nil {
+		if payload.error, err = sce.PayloadTextWithin(fields, "error", 24); err != nil {
 			return err
 		}
-		if payload.status, err = sce.PayloadString(fields, "status"); err != nil {
+		if payload.status, err = sce.PayloadTextWithin(fields, "status", 16); err != nil {
 			return err
 		}
 		p.pendingDoneInvokePostPayload = payload
@@ -1842,10 +1842,10 @@ func (p *StaticHostNotifyPolicy) LiftTypedPayload(event StaticHostNotifyEvent, m
 			return err
 		}
 		var payload StaticHostNotifyDoneInvokePromptPayload
-		if payload.error, err = sce.PayloadString(fields, "error"); err != nil {
+		if payload.error, err = sce.PayloadTextWithin(fields, "error", 24); err != nil {
 			return err
 		}
-		if payload.state, err = sce.PayloadString(fields, "state"); err != nil {
+		if payload.state, err = sce.PayloadTextWithin(fields, "state", 16); err != nil {
 			return err
 		}
 		p.pendingDoneInvokePromptPayload = payload
@@ -1856,7 +1856,7 @@ func (p *StaticHostNotifyPolicy) LiftTypedPayload(event StaticHostNotifyEvent, m
 			return err
 		}
 		var payload StaticHostNotifyHostNotifyCancelRequestPayload
-		if payload.id, err = sce.PayloadString(fields, "id"); err != nil {
+		if payload.id, err = sce.PayloadTextWithin(fields, "id", 64); err != nil {
 			return err
 		}
 		p.pendingHostNotifyCancelRequestPayload = payload
@@ -1867,13 +1867,13 @@ func (p *StaticHostNotifyPolicy) LiftTypedPayload(event StaticHostNotifyEvent, m
 			return err
 		}
 		var payload StaticHostNotifyHostNotifyPostRequestPayload
-		if payload.id, err = sce.PayloadString(fields, "id"); err != nil {
+		if payload.id, err = sce.PayloadTextWithin(fields, "id", 64); err != nil {
 			return err
 		}
-		if payload.title, err = sce.PayloadString(fields, "title"); err != nil {
+		if payload.title, err = sce.PayloadTextWithin(fields, "title", 128); err != nil {
 			return err
 		}
-		if payload.body, err = sce.PayloadString(fields, "body"); err != nil {
+		if payload.body, err = sce.PayloadTextWithin(fields, "body", 512); err != nil {
 			return err
 		}
 		if payload.at_ms, err = sce.PayloadSigned64(fields, "at_ms"); err != nil {

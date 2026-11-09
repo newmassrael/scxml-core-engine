@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9c4f25c71477b8168828f3c8f9ccad85a4253ff428db93b5b34a11bbacc1faa1
+// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: static_payload_bytes.scxml:23 :: _machine
+// SCE-MAP: static_payload_bytes.scxml:28 :: _machine
 
 package static_payload_bytes
 
@@ -908,8 +908,8 @@ func (p *StaticPayloadBytesPolicy) PopulateEventMetadata(meta *sce.EventMetadata
 // generated Raise<Event> inject seam. Every other producer — <send> with
 // <param>, an invoke forwarding either way, autoforward, BasicHTTP, mesh —
 // fills EventMetadata.Data, so the schema's fields are read out of that here.
-// A refusal is returned for the engine to raise as error.execution, which is
-// what W3C SCXML 3.13 gives for a guard that cannot be evaluated.
+// A refusal is returned, on which the engine refuses the delivery whole and
+// takes an error.execution in its place (docs/adr/0086, section 4.2).
 func (p *StaticPayloadBytesPolicy) LiftTypedPayload(event StaticPayloadBytesEvent, meta *sce.EventMetadata) error {
 	// A typed carrier already bound the view, so the producer was the
 	// inject seam and there is nothing to read out of `Data`.
@@ -926,7 +926,7 @@ func (p *StaticPayloadBytesPolicy) LiftTypedPayload(event StaticPayloadBytesEven
 		if payload.sensor, err = sce.PayloadUnsigned[uint8](fields, "sensor"); err != nil {
 			return err
 		}
-		if payload.frame, err = sce.PayloadBytes(fields, "frame"); err != nil {
+		if payload.frame, err = sce.PayloadBytes(fields, "frame", 8); err != nil {
 			return err
 		}
 		p.pendingFramedTakenPayload = payload
@@ -951,7 +951,7 @@ func (p *StaticPayloadBytesPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line static_payload_bytes.scxml:23
+//line static_payload_bytes.scxml:28
 func (p *StaticPayloadBytesPolicy) ExecuteEntryActions(state StaticPayloadBytesState, engine *sce.Engine[StaticPayloadBytesState, StaticPayloadBytesEvent], isDefaultEntry bool) {
 	switch state {
 	default:
@@ -964,7 +964,7 @@ func (p *StaticPayloadBytesPolicy) ExecuteEntryActions(state StaticPayloadBytesS
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line static_payload_bytes.scxml:23
+//line static_payload_bytes.scxml:28
 func (p *StaticPayloadBytesPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[StaticPayloadBytesState, StaticPayloadBytesEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -972,7 +972,7 @@ func (p *StaticPayloadBytesPolicy) ExecuteHistoryDefaultContent(history sce.Hist
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line static_payload_bytes.scxml:23
+//line static_payload_bytes.scxml:28
 func (p *StaticPayloadBytesPolicy) ExecuteExitActions(state StaticPayloadBytesState, engine *sce.Engine[StaticPayloadBytesState, StaticPayloadBytesEvent], configurationBeforeExit []StaticPayloadBytesState) {
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
@@ -989,7 +989,7 @@ func (p *StaticPayloadBytesPolicy) ExecuteExitActions(state StaticPayloadBytesSt
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line static_payload_bytes.scxml:23
+//line static_payload_bytes.scxml:28
 func (p *StaticPayloadBytesPolicy) BindCurrentEvent(event StaticPayloadBytesEvent, engine *sce.Engine[StaticPayloadBytesState, StaticPayloadBytesEvent]) {
 	// This document's guards never read _event, so there is nothing to bind.
 }
@@ -999,7 +999,7 @@ func (p *StaticPayloadBytesPolicy) BindCurrentEvent(event StaticPayloadBytesEven
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line static_payload_bytes.scxml:23
+//line static_payload_bytes.scxml:28
 func (p *StaticPayloadBytesPolicy) FirstEnabledTransition(state StaticPayloadBytesState, event StaticPayloadBytesEvent, engine *sce.Engine[StaticPayloadBytesState, StaticPayloadBytesEvent]) (sce.EnabledTransition[StaticPayloadBytesState, sce.HistoryID], bool) {
 	switch state {
 	case StaticPayloadBytesStateIdle:
@@ -1056,10 +1056,36 @@ func (p *StaticPayloadBytesPolicy) FirstEnabledTransition(state StaticPayloadByt
 			}
 		}
 		if event == StaticPayloadBytesEventFramedTaken {
-			{
+			// NL→IR Item C1 Path A: native typed `_event.data` guard — cond
+			// "_event.data.sensor >= 50" lowered to a tag-checked field comparison on
+			// the lifted `pending<Event>Payload` (no script engine).
+			if p.pendingPayloadTag == StaticPayloadBytesPayloadTagFramedTaken && (p.pendingFramedTakenPayload.sensor >= 50) {
 				return sce.EnabledTransition[StaticPayloadBytesState, sce.HistoryID]{
 					Source:          state,
 					TransitionIndex: 4,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
+		if event == StaticPayloadBytesEventFramedTaken {
+			// NL→IR Item C1 Path A: native typed `_event.data` guard — cond
+			// "_event.data.sensor >= 40" lowered to a tag-checked field comparison on
+			// the lifted `pending<Event>Payload` (no script engine).
+			if p.pendingPayloadTag == StaticPayloadBytesPayloadTagFramedTaken && (p.pendingFramedTakenPayload.sensor >= 40) {
+				return sce.EnabledTransition[StaticPayloadBytesState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 5,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
+		if event == StaticPayloadBytesEventFramedTaken {
+			{
+				return sce.EnabledTransition[StaticPayloadBytesState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 6,
 					HasActions:      true,
 					IsInternal:      true,
 				}, true
@@ -1069,7 +1095,7 @@ func (p *StaticPayloadBytesPolicy) FirstEnabledTransition(state StaticPayloadByt
 			{
 				return sce.EnabledTransition[StaticPayloadBytesState, sce.HistoryID]{
 					Source:          state,
-					TransitionIndex: 5,
+					TransitionIndex: 7,
 					HasActions:      true,
 					IsInternal:      true,
 				}, true
@@ -1081,13 +1107,13 @@ func (p *StaticPayloadBytesPolicy) FirstEnabledTransition(state StaticPayloadByt
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line static_payload_bytes.scxml:23
+//line static_payload_bytes.scxml:28
 func (p *StaticPayloadBytesPolicy) ExecuteTransitionContent(source StaticPayloadBytesState, transitionIndex int, engine *sce.Engine[StaticPayloadBytesState, StaticPayloadBytesEvent]) {
 	switch source {
 	case StaticPayloadBytesStateIdle:
 		switch transitionIndex {
 		case 0:
-//line static_payload_bytes.scxml:39
+//line static_payload_bytes.scxml:44
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1098,7 +1124,7 @@ func (p *StaticPayloadBytesPolicy) ExecuteTransitionContent(source StaticPayload
 
 			}()
 		case 1:
-//line static_payload_bytes.scxml:42
+//line static_payload_bytes.scxml:47
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -1109,7 +1135,7 @@ func (p *StaticPayloadBytesPolicy) ExecuteTransitionContent(source StaticPayload
 
 			}()
 		case 2:
-//line static_payload_bytes.scxml:45
+//line static_payload_bytes.scxml:50
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticPayloadBytesPayloadTagFramedTaken {
@@ -1130,7 +1156,7 @@ func (p *StaticPayloadBytesPolicy) ExecuteTransitionContent(source StaticPayload
 
 			}()
 		case 3:
-//line static_payload_bytes.scxml:49
+//line static_payload_bytes.scxml:54
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticPayloadBytesPayloadTagFramedTaken {
@@ -1148,7 +1174,30 @@ func (p *StaticPayloadBytesPolicy) ExecuteTransitionContent(source StaticPayload
 
 			}()
 		case 4:
-//line static_payload_bytes.scxml:53
+//line static_payload_bytes.scxml:62
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+				if p.pendingPayloadTag != StaticPayloadBytesPayloadTagFramedTaken {
+					return
+				}
+
+
+	p.vSize = uint32(len(p.pendingFramedTakenPayload.frame))
+
+			}()
+		case 5:
+//line static_payload_bytes.scxml:68
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vMisses, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticPayloadBytesEventErrorExecution, "<assign location='misses'>: an integer operation overflowed or failed")); return true }; p.vMisses = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+			}()
+		case 6:
+//line static_payload_bytes.scxml:71
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticPayloadBytesPayloadTagFramedTaken {
@@ -1165,8 +1214,8 @@ func (p *StaticPayloadBytesPolicy) ExecuteTransitionContent(source StaticPayload
 	p.vLast.sensor = p.pendingFramedTakenPayload.sensor
 
 			}()
-		case 5:
-//line static_payload_bytes.scxml:57
+		case 7:
+//line static_payload_bytes.scxml:75
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

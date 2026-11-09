@@ -451,7 +451,8 @@ class StatechartHostInvokerStateMachine(
     // lifting the fields out of `metadata.data`, which every other producer
     // fills. An event with neither resets the fields to null, so every typed
     // guard fails. A payload that cannot be read as this event's schema throws
-    // EventPayload.Refusal, which the engine reports as error.execution. Twin
+    // EventPayload.Refusal, on which the engine refuses the delivery whole and
+    // takes an error.execution in its place (docs/adr/0086, section 4.2). Twin
     // of the Go policy's PopulateEventMetadata + LiftTypedPayload / the C11 pop
     // loop's `sm->pending_payload = evt.payload`.
     override fun populateTypedPayload(event: StatechartHostInvokerEvent, metadata: EventMetadata) {

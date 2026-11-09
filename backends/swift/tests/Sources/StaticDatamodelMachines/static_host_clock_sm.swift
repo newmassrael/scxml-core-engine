@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9c4f25c71477b8168828f3c8f9ccad85a4253ff428db93b5b34a11bbacc1faa1
+// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -474,7 +474,7 @@ public final class StaticHostClockPolicy: InvocablePolicy {
         case .doneInvokeNow:
             let fields = try PayloadFields.decode(metadata.data)
             var payload = StaticHostClockDoneInvokeNowPayload()
-            payload.error = try fields.text("error")
+            payload.error = try fields.text("error", bound: 24)
             payload.utc_ms = try fields.signed64("utc_ms")
             payload.monotonic_ms = try fields.signed64("monotonic_ms")
             pendingDoneInvokeNowPayload = payload
@@ -482,8 +482,8 @@ public final class StaticHostClockPolicy: InvocablePolicy {
         case .doneInvokeZone:
             let fields = try PayloadFields.decode(metadata.data)
             var payload = StaticHostClockDoneInvokeZonePayload()
-            payload.error = try fields.text("error")
-            payload.zone_id = try fields.text("zone_id")
+            payload.error = try fields.text("error", bound: 24)
+            payload.zone_id = try fields.text("zone_id", bound: 64)
             payload.utc_offset_s = try fields.signed("utc_offset_s")
             pendingDoneInvokeZonePayload = payload
             pendingPayloadTag = .doneInvokeZone

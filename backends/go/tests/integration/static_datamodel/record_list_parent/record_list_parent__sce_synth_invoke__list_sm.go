@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9c4f25c71477b8168828f3c8f9ccad85a4253ff428db93b5b34a11bbacc1faa1
+// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: record_list.scxml:209 :: _machine
+// SCE-MAP: record_list.scxml:210 :: _machine
 
 package record_list_parent
 
@@ -1466,7 +1466,6 @@ const (
 	RecordListParentSceSynthInvokeListRefusalEnumNoRoomForValue RecordListParentSceSynthInvokeListRefusalEnum = 2
 	RecordListParentSceSynthInvokeListRefusalEnumNoRoomForHistory RecordListParentSceSynthInvokeListRefusalEnum = 3
 	RecordListParentSceSynthInvokeListRefusalEnumNoRoomForDigest RecordListParentSceSynthInvokeListRefusalEnum = 4
-	RecordListParentSceSynthInvokeListRefusalEnumTextTooLong RecordListParentSceSynthInvokeListRefusalEnum = 5
 	RecordListParentSceSynthInvokeListRefusalEnumChangeTooLarge RecordListParentSceSynthInvokeListRefusalEnum = 6
 	RecordListParentSceSynthInvokeListRefusalEnumRegisterNamedTwice RecordListParentSceSynthInvokeListRefusalEnum = 7
 	RecordListParentSceSynthInvokeListRefusalEnumClockExhausted RecordListParentSceSynthInvokeListRefusalEnum = 8
@@ -1483,8 +1482,6 @@ func (v RecordListParentSceSynthInvokeListRefusalEnum) String() string {
 		return "noRoomForHistory"
 	case RecordListParentSceSynthInvokeListRefusalEnumNoRoomForDigest:
 		return "noRoomForDigest"
-	case RecordListParentSceSynthInvokeListRefusalEnumTextTooLong:
-		return "textTooLong"
 	case RecordListParentSceSynthInvokeListRefusalEnumChangeTooLarge:
 		return "changeTooLarge"
 	case RecordListParentSceSynthInvokeListRefusalEnumRegisterNamedTwice:
@@ -1504,7 +1501,7 @@ func (v RecordListParentSceSynthInvokeListRefusalEnum) ToUnderlying() uint8 {
 // value for a number no variant declares.
 func RecordListParentSceSynthInvokeListRefusalEnumFromUnderlying(raw uint8) optional.Of[RecordListParentSceSynthInvokeListRefusalEnum] {
 	switch raw {
-	case 1, 2, 3, 4, 5, 6, 7, 8:
+	case 1, 2, 3, 4, 6, 7, 8:
 		return optional.Some(RecordListParentSceSynthInvokeListRefusalEnum(raw))
 	}
 	return optional.None[RecordListParentSceSynthInvokeListRefusalEnum]()
@@ -1530,8 +1527,6 @@ func RecordListParentSceSynthInvokeListRefusalEnumFromSaved(value any, what stri
 		return RecordListParentSceSynthInvokeListRefusalEnumNoRoomForHistory, nil
 	case "noRoomForDigest":
 		return RecordListParentSceSynthInvokeListRefusalEnumNoRoomForDigest, nil
-	case "textTooLong":
-		return RecordListParentSceSynthInvokeListRefusalEnumTextTooLong, nil
 	case "changeTooLarge":
 		return RecordListParentSceSynthInvokeListRefusalEnumChangeTooLarge, nil
 	case "registerNamedTwice":
@@ -1639,12 +1634,12 @@ const RecordListParentSceSynthInvokeListLimitSharedTypedText uint32 = 32
 // this machine names when every record schema it holds is in its first
 // revision (docs/adr/0045, section 2). The generator computes it once, so it is
 // the text every backend's constant is.
-const RecordListParentSceSynthInvokeListSavedShapeFormat2 = "091a179d000b2f2cb209ae48bb504c63ce0976b9e88c74bf13c001fe6b7efba1"
+const RecordListParentSceSynthInvokeListSavedShapeFormat2 = "f07397fd111637feae43e644bdb300073319756c9be0442cbf7596660ff33f8a"
 
 // RecordListParentSceSynthInvokeListSavedShapeFormat2Revised is the shape a format-2 saved state
 // of this machine names when it names a later revision of a record schema or
 // an enum.
-const RecordListParentSceSynthInvokeListSavedShapeFormat2Revised = "f6a25db2dee068cd0208ca7d01fc6fbe12df24ae8234343dd9772cf65863b547"
+const RecordListParentSceSynthInvokeListSavedShapeFormat2Revised = "da7b1092cfdc71ec67de077860c8f924b6f9e616e3f9535ed34eff7d249cf70a"
 
 // RecordListParentSceSynthInvokeListSavedEnumKeys names each enum a value of a saved state of
 // this machine is of, by its document (docs/adr/0044): the key `revisions`
@@ -1662,10 +1657,10 @@ var RecordListParentSceSynthInvokeListSavedEnumKeys = [...]string{
 // one saved at an earlier revision of a record schema is read with each field a
 // later revision added at its default.
 var RecordListParentSceSynthInvokeListSavedShape = sce.SavedShape{
-	First:          "b9de4ddc5460d55ea67b11e5f7b85473c44d2879aafb4bae5ab00811a707f429",
-	Revised:        "d404fdb4f5731790516c940d94a1f83b63dbfcb947f2e096f93e4ea529d40a80",
-	Format2First:   "091a179d000b2f2cb209ae48bb504c63ce0976b9e88c74bf13c001fe6b7efba1",
-	Format2Revised: "f6a25db2dee068cd0208ca7d01fc6fbe12df24ae8234343dd9772cf65863b547",
+	First:          "a19e77db8250a195249ade686a9bb02b25da03309449cc228f1fda01c1fd792d",
+	Revised:        "3251600de5bc2baa9cd835462ffa530fc0ea4b543cf1ed5d6e8623002c38b5e7",
+	Format2First:   "f07397fd111637feae43e644bdb300073319756c9be0442cbf7596660ff33f8a",
+	Format2Revised: "da7b1092cfdc71ec67de077860c8f924b6f9e616e3f9535ed34eff7d249cf70a",
 	Records: []sce.RecordLineage{
 		{
 			Event:     "merge.hlc_timestamp",
@@ -1824,7 +1819,6 @@ func RecordListParentSceSynthInvokeListSaveAt(engine *sce.Engine[RecordListParen
 	variables.Set("stable", sce.SavedWriteList(p.vStable, func(r RecordListParentSceSynthInvokeListEntryRecord) any { return r.ToSaved() }))
 	variables.Set("entry", p.vEntry.ToSaved())
 	variables.Set("values", sce.SavedWriteList(p.vValues, func(r RecordListParentSceSynthInvokeListValueRecord) any { return r.ToSaved() }))
-	variables.Set("typed", sce.SavedWriteString(p.vTyped))
 	variables.Set("held", p.vHeld.ToSaved())
 	variables.Set("digest", sce.SavedWriteList(p.vDigest, func(r RecordListParentSceSynthInvokeListNodeRecord) any { return r.ToSaved() }))
 	variables.Set("mine", sce.SavedWriteUint32(p.vMine))
@@ -1955,11 +1949,6 @@ func RecordListParentSceSynthInvokeListJudge(saved *sce.SavedState) error {
 	if raw, err := grown.Variable("values"); err != nil {
 		return err
 	} else if _, err := sce.SavedReadList(raw, "values", 512, RecordListParentSceSynthInvokeListValueRecordFromSaved); err != nil {
-		return err
-	}
-	if raw, err := grown.Variable("typed"); err != nil {
-		return err
-	} else if _, err := sce.SavedReadBoundedString(raw, "typed", 32); err != nil {
 		return err
 	}
 	if raw, err := grown.Variable("held"); err != nil {
@@ -2364,483 +2353,475 @@ func RecordListParentSceSynthInvokeListRestoreAt(policy *RecordListParentSceSynt
 	if err != nil {
 		return nil, err
 	}
-	raw11, err := grown.Variable("typed")
+	raw11, err := grown.Variable("held")
 	if err != nil {
 		return nil, err
 	}
-	read11, err := sce.SavedReadBoundedString(raw11, "typed", 32)
+	read11, err := RecordListParentSceSynthInvokeListValueRecordFromSaved(raw11, "held")
 	if err != nil {
 		return nil, err
 	}
-	raw12, err := grown.Variable("held")
+	raw12, err := grown.Variable("digest")
 	if err != nil {
 		return nil, err
 	}
-	read12, err := RecordListParentSceSynthInvokeListValueRecordFromSaved(raw12, "held")
+	read12, err := sce.SavedReadList(raw12, "digest", 2048, RecordListParentSceSynthInvokeListNodeRecordFromSaved)
 	if err != nil {
 		return nil, err
 	}
-	raw13, err := grown.Variable("digest")
+	raw13, err := grown.Variable("mine")
 	if err != nil {
 		return nil, err
 	}
-	read13, err := sce.SavedReadList(raw13, "digest", 2048, RecordListParentSceSynthInvokeListNodeRecordFromSaved)
+	read13, err := sce.SavedReadUint32(raw13, "mine")
 	if err != nil {
 		return nil, err
 	}
-	raw14, err := grown.Variable("mine")
+	raw14, err := grown.Variable("shareId")
 	if err != nil {
 		return nil, err
 	}
-	read14, err := sce.SavedReadUint32(raw14, "mine")
+	read14, err := sce.SavedReadUint32(raw14, "shareId")
 	if err != nil {
 		return nil, err
 	}
-	raw15, err := grown.Variable("shareId")
+	raw15, err := grown.Variable("shareField")
 	if err != nil {
 		return nil, err
 	}
-	read15, err := sce.SavedReadUint32(raw15, "shareId")
+	read15, err := sce.SavedReadUint16(raw15, "shareField")
 	if err != nil {
 		return nil, err
 	}
-	raw16, err := grown.Variable("shareField")
+	raw16, err := grown.Variable("known")
 	if err != nil {
 		return nil, err
 	}
-	read16, err := sce.SavedReadUint16(raw16, "shareField")
+	read16, err := sce.SavedReadBool(raw16, "known")
 	if err != nil {
 		return nil, err
 	}
-	raw17, err := grown.Variable("known")
+	raw17, err := grown.Variable("wasLive")
 	if err != nil {
 		return nil, err
 	}
-	read17, err := sce.SavedReadBool(raw17, "known")
+	read17, err := sce.SavedReadBool(raw17, "wasLive")
 	if err != nil {
 		return nil, err
 	}
-	raw18, err := grown.Variable("wasLive")
+	raw18, err := grown.Variable("isLive")
 	if err != nil {
 		return nil, err
 	}
-	read18, err := sce.SavedReadBool(raw18, "wasLive")
+	read18, err := sce.SavedReadBool(raw18, "isLive")
 	if err != nil {
 		return nil, err
 	}
-	raw19, err := grown.Variable("isLive")
+	raw19, err := grown.Variable("present")
 	if err != nil {
 		return nil, err
 	}
-	read19, err := sce.SavedReadBool(raw19, "isLive")
+	read19, err := sce.SavedReadBool(raw19, "present")
 	if err != nil {
 		return nil, err
 	}
-	raw20, err := grown.Variable("present")
+	raw20, err := grown.Variable("refusals")
 	if err != nil {
 		return nil, err
 	}
-	read20, err := sce.SavedReadBool(raw20, "present")
+	read20, err := sce.SavedReadUint32(raw20, "refusals")
 	if err != nil {
 		return nil, err
 	}
-	raw21, err := grown.Variable("refusals")
+	raw21, err := grown.Variable("floor")
 	if err != nil {
 		return nil, err
 	}
-	read21, err := sce.SavedReadUint32(raw21, "refusals")
+	read21, err := sce.SavedReadInt64(raw21, "floor")
 	if err != nil {
 		return nil, err
 	}
-	raw22, err := grown.Variable("floor")
+	raw22, err := grown.Variable("stale")
 	if err != nil {
 		return nil, err
 	}
-	read22, err := sce.SavedReadInt64(raw22, "floor")
+	read22, err := sce.SavedReadBool(raw22, "stale")
 	if err != nil {
 		return nil, err
 	}
-	raw23, err := grown.Variable("stale")
+	raw23, err := grown.Variable("late")
 	if err != nil {
 		return nil, err
 	}
-	read23, err := sce.SavedReadBool(raw23, "stale")
+	read23, err := sce.SavedReadUint32(raw23, "late")
 	if err != nil {
 		return nil, err
 	}
-	raw24, err := grown.Variable("late")
+	raw24, err := grown.Variable("frozenFor")
 	if err != nil {
 		return nil, err
 	}
-	read24, err := sce.SavedReadUint32(raw24, "late")
+	read24, err := sce.SavedReadInt64(raw24, "frozenFor")
 	if err != nil {
 		return nil, err
 	}
-	raw25, err := grown.Variable("frozenFor")
+	raw25, err := grown.Variable("frozenHash")
 	if err != nil {
 		return nil, err
 	}
-	read25, err := sce.SavedReadInt64(raw25, "frozenFor")
+	read25, err := sce.SavedReadUint32(raw25, "frozenHash")
 	if err != nil {
 		return nil, err
 	}
-	raw26, err := grown.Variable("frozenHash")
+	raw26, err := grown.Variable("pending")
 	if err != nil {
 		return nil, err
 	}
-	read26, err := sce.SavedReadUint32(raw26, "frozenHash")
+	read26, err := sce.SavedReadInt64(raw26, "pending")
 	if err != nil {
 		return nil, err
 	}
-	raw27, err := grown.Variable("pending")
+	raw27, err := grown.Variable("members")
 	if err != nil {
 		return nil, err
 	}
-	read27, err := sce.SavedReadInt64(raw27, "pending")
+	read27, err := sce.SavedReadUint32(raw27, "members")
 	if err != nil {
 		return nil, err
 	}
-	raw28, err := grown.Variable("members")
+	raw28, err := grown.Variable("agreeing")
 	if err != nil {
 		return nil, err
 	}
-	read28, err := sce.SavedReadUint32(raw28, "members")
+	read28, err := sce.SavedReadUint32(raw28, "agreeing")
 	if err != nil {
 		return nil, err
 	}
-	raw29, err := grown.Variable("agreeing")
+	raw29, err := grown.Variable("answers")
 	if err != nil {
 		return nil, err
 	}
-	read29, err := sce.SavedReadUint32(raw29, "agreeing")
+	read29, err := sce.SavedReadList(raw29, "answers", 512, RecordListParentSceSynthInvokeListAnswerRecordFromSaved)
 	if err != nil {
 		return nil, err
 	}
-	raw30, err := grown.Variable("answers")
+	raw30, err := grown.Variable("answer")
 	if err != nil {
 		return nil, err
 	}
-	read30, err := sce.SavedReadList(raw30, "answers", 512, RecordListParentSceSynthInvokeListAnswerRecordFromSaved)
+	read30, err := RecordListParentSceSynthInvokeListAnswerRecordFromSaved(raw30, "answer")
 	if err != nil {
 		return nil, err
 	}
-	raw31, err := grown.Variable("answer")
+	raw31, err := grown.Variable("agreed")
 	if err != nil {
 		return nil, err
 	}
-	read31, err := RecordListParentSceSynthInvokeListAnswerRecordFromSaved(raw31, "answer")
+	read31, err := sce.SavedReadUint32(raw31, "agreed")
 	if err != nil {
 		return nil, err
 	}
-	raw32, err := grown.Variable("agreed")
+	raw32, err := grown.Variable("roomValues")
 	if err != nil {
 		return nil, err
 	}
-	read32, err := sce.SavedReadUint32(raw32, "agreed")
+	read32, err := sce.SavedReadUint32(raw32, "roomValues")
 	if err != nil {
 		return nil, err
 	}
-	raw33, err := grown.Variable("roomValues")
+	raw33, err := grown.Variable("roomHistory")
 	if err != nil {
 		return nil, err
 	}
-	read33, err := sce.SavedReadUint32(raw33, "roomValues")
+	read33, err := sce.SavedReadUint32(raw33, "roomHistory")
 	if err != nil {
 		return nil, err
 	}
-	raw34, err := grown.Variable("roomHistory")
+	raw34, err := grown.Variable("roomDigest")
 	if err != nil {
 		return nil, err
 	}
-	read34, err := sce.SavedReadUint32(raw34, "roomHistory")
+	read34, err := sce.SavedReadUint32(raw34, "roomDigest")
 	if err != nil {
 		return nil, err
 	}
-	raw35, err := grown.Variable("roomDigest")
+	raw35, err := grown.Variable("full")
 	if err != nil {
 		return nil, err
 	}
-	read35, err := sce.SavedReadUint32(raw35, "roomDigest")
+	read35, err := sce.SavedReadUint32(raw35, "full")
 	if err != nil {
 		return nil, err
 	}
-	raw36, err := grown.Variable("full")
+	raw36, err := grown.Variable("roster")
 	if err != nil {
 		return nil, err
 	}
-	read36, err := sce.SavedReadUint32(raw36, "full")
+	read36, err := sce.SavedReadList(raw36, "roster", 64, RecordListParentSceSynthInvokeListMemberRecordFromSaved)
 	if err != nil {
 		return nil, err
 	}
-	raw37, err := grown.Variable("roster")
+	raw37, err := grown.Variable("denied")
 	if err != nil {
 		return nil, err
 	}
-	read37, err := sce.SavedReadList(raw37, "roster", 64, RecordListParentSceSynthInvokeListMemberRecordFromSaved)
+	read37, err := sce.SavedReadUint32(raw37, "denied")
 	if err != nil {
 		return nil, err
 	}
-	raw38, err := grown.Variable("denied")
+	raw38, err := grown.Variable("forbidden")
 	if err != nil {
 		return nil, err
 	}
-	read38, err := sce.SavedReadUint32(raw38, "denied")
+	read38, err := sce.SavedReadBool(raw38, "forbidden")
 	if err != nil {
 		return nil, err
 	}
-	raw39, err := grown.Variable("forbidden")
+	raw39, err := grown.Variable("authorized")
 	if err != nil {
 		return nil, err
 	}
-	read39, err := sce.SavedReadBool(raw39, "forbidden")
+	read39, err := sce.SavedReadBool(raw39, "authorized")
 	if err != nil {
 		return nil, err
 	}
-	raw40, err := grown.Variable("authorized")
+	raw40, err := grown.Variable("announce")
 	if err != nil {
 		return nil, err
 	}
-	read40, err := sce.SavedReadBool(raw40, "authorized")
+	read40, err := sce.SavedReadBool(raw40, "announce")
 	if err != nil {
 		return nil, err
 	}
-	raw41, err := grown.Variable("announce")
+	raw41, err := grown.Variable("announced")
 	if err != nil {
 		return nil, err
 	}
-	read41, err := sce.SavedReadBool(raw41, "announce")
+	read41, err := sce.SavedReadUint32(raw41, "announced")
 	if err != nil {
 		return nil, err
 	}
-	raw42, err := grown.Variable("announced")
+	raw42, err := grown.Variable("moved")
 	if err != nil {
 		return nil, err
 	}
-	read42, err := sce.SavedReadUint32(raw42, "announced")
+	read42, err := sce.SavedReadList(raw42, "moved", 64, sce.SavedReadUint64)
 	if err != nil {
 		return nil, err
 	}
-	raw43, err := grown.Variable("moved")
+	raw43, err := grown.Variable("listed")
 	if err != nil {
 		return nil, err
 	}
-	read43, err := sce.SavedReadList(raw43, "moved", 64, sce.SavedReadUint64)
+	read43, err := sce.SavedReadBool(raw43, "listed")
 	if err != nil {
 		return nil, err
 	}
-	raw44, err := grown.Variable("listed")
+	raw44, err := grown.Variable("live")
 	if err != nil {
 		return nil, err
 	}
-	read44, err := sce.SavedReadBool(raw44, "listed")
+	read44, err := sce.SavedReadList(raw44, "live", 512, RecordListParentSceSynthInvokeListValueRecordFromSaved)
 	if err != nil {
 		return nil, err
 	}
-	raw45, err := grown.Variable("live")
+	raw45, err := grown.Variable("ordinal")
 	if err != nil {
 		return nil, err
 	}
-	read45, err := sce.SavedReadList(raw45, "live", 512, RecordListParentSceSynthInvokeListValueRecordFromSaved)
+	read45, err := sce.SavedReadUint32(raw45, "ordinal")
 	if err != nil {
 		return nil, err
 	}
-	raw46, err := grown.Variable("ordinal")
+	raw46, err := grown.Variable("empty")
 	if err != nil {
 		return nil, err
 	}
-	read46, err := sce.SavedReadUint32(raw46, "ordinal")
+	read46, err := RecordListParentSceSynthInvokeListValueRecordFromSaved(raw46, "empty")
 	if err != nil {
 		return nil, err
 	}
-	raw47, err := grown.Variable("empty")
+	raw47, err := grown.Variable("staged")
 	if err != nil {
 		return nil, err
 	}
-	read47, err := RecordListParentSceSynthInvokeListValueRecordFromSaved(raw47, "empty")
+	read47, err := sce.SavedReadList(raw47, "staged", 32, RecordListParentSceSynthInvokeListPartRecordFromSaved)
 	if err != nil {
 		return nil, err
 	}
-	raw48, err := grown.Variable("staged")
+	raw48, err := grown.Variable("holding")
 	if err != nil {
 		return nil, err
 	}
-	read48, err := sce.SavedReadList(raw48, "staged", 32, RecordListParentSceSynthInvokeListPartRecordFromSaved)
+	read48, err := sce.SavedReadBool(raw48, "holding")
 	if err != nil {
 		return nil, err
 	}
-	raw49, err := grown.Variable("holding")
+	raw49, err := grown.Variable("closingNow")
 	if err != nil {
 		return nil, err
 	}
-	read49, err := sce.SavedReadBool(raw49, "holding")
+	read49, err := sce.SavedReadInt64(raw49, "closingNow")
 	if err != nil {
 		return nil, err
 	}
-	raw50, err := grown.Variable("closingNow")
+	raw50, err := grown.Variable("spoiled")
 	if err != nil {
 		return nil, err
 	}
-	read50, err := sce.SavedReadInt64(raw50, "closingNow")
+	read50, err := sce.SavedReadBool(raw50, "spoiled")
 	if err != nil {
 		return nil, err
 	}
-	raw51, err := grown.Variable("spoiled")
+	raw51, err := grown.Variable("probing")
 	if err != nil {
 		return nil, err
 	}
-	read51, err := sce.SavedReadBool(raw51, "spoiled")
+	read51, err := sce.SavedReadBool(raw51, "probing")
 	if err != nil {
 		return nil, err
 	}
-	raw52, err := grown.Variable("probing")
+	raw52, err := grown.Variable("gone")
 	if err != nil {
 		return nil, err
 	}
-	read52, err := sce.SavedReadBool(raw52, "probing")
+	read52, err := sce.SavedReadUint32(raw52, "gone")
 	if err != nil {
 		return nil, err
 	}
-	raw53, err := grown.Variable("gone")
+	raw53, err := grown.Variable("writes")
 	if err != nil {
 		return nil, err
 	}
-	read53, err := sce.SavedReadUint32(raw53, "gone")
+	read53, err := sce.SavedReadUint32(raw53, "writes")
 	if err != nil {
 		return nil, err
 	}
-	raw54, err := grown.Variable("writes")
+	raw54, err := grown.Variable("covered")
 	if err != nil {
 		return nil, err
 	}
-	read54, err := sce.SavedReadUint32(raw54, "writes")
+	read54, err := sce.SavedReadBool(raw54, "covered")
 	if err != nil {
 		return nil, err
 	}
-	raw55, err := grown.Variable("covered")
+	raw55, err := grown.Variable("probe")
 	if err != nil {
 		return nil, err
 	}
-	read55, err := sce.SavedReadBool(raw55, "covered")
+	read55, err := RecordListParentSceSynthInvokeListRefusalEnumFromSaved(raw55, "probe")
 	if err != nil {
 		return nil, err
 	}
-	raw56, err := grown.Variable("probe")
+	raw56, err := grown.Variable("spoiledFor")
 	if err != nil {
 		return nil, err
 	}
-	read56, err := RecordListParentSceSynthInvokeListRefusalEnumFromSaved(raw56, "probe")
+	read56, err := RecordListParentSceSynthInvokeListRefusalEnumFromSaved(raw56, "spoiledFor")
 	if err != nil {
 		return nil, err
 	}
-	raw57, err := grown.Variable("spoiledFor")
+	raw57, err := grown.Variable("namedId")
 	if err != nil {
 		return nil, err
 	}
-	read57, err := RecordListParentSceSynthInvokeListRefusalEnumFromSaved(raw57, "spoiledFor")
+	read57, err := sce.SavedReadUint32(raw57, "namedId")
 	if err != nil {
 		return nil, err
 	}
-	raw58, err := grown.Variable("namedId")
+	raw58, err := grown.Variable("namedField")
 	if err != nil {
 		return nil, err
 	}
-	read58, err := sce.SavedReadUint32(raw58, "namedId")
+	read58, err := sce.SavedReadUint16(raw58, "namedField")
 	if err != nil {
 		return nil, err
 	}
-	raw59, err := grown.Variable("namedField")
+	raw59, err := grown.Variable("namedKind")
 	if err != nil {
 		return nil, err
 	}
-	read59, err := sce.SavedReadUint16(raw59, "namedField")
+	read59, err := RecordListParentSceSynthInvokeListCommandEnumFromSaved(raw59, "namedKind")
 	if err != nil {
 		return nil, err
 	}
-	raw60, err := grown.Variable("namedKind")
+	raw60, err := grown.Variable("taking")
 	if err != nil {
 		return nil, err
 	}
-	read60, err := RecordListParentSceSynthInvokeListCommandEnumFromSaved(raw60, "namedKind")
+	read60, err := sce.SavedReadList(raw60, "taking", 64, RecordListParentSceSynthInvokeListPartRecordFromSaved)
 	if err != nil {
 		return nil, err
 	}
-	raw61, err := grown.Variable("taking")
+	raw61, err := grown.Variable("took")
 	if err != nil {
 		return nil, err
 	}
-	read61, err := sce.SavedReadList(raw61, "taking", 64, RecordListParentSceSynthInvokeListPartRecordFromSaved)
+	read61, err := sce.SavedReadUint32(raw61, "took")
 	if err != nil {
 		return nil, err
 	}
-	raw62, err := grown.Variable("took")
+	raw62, err := grown.Variable("passing")
 	if err != nil {
 		return nil, err
 	}
-	read62, err := sce.SavedReadUint32(raw62, "took")
+	read62, err := sce.SavedReadList(raw62, "passing", 64, RecordListParentSceSynthInvokeListPartRecordFromSaved)
 	if err != nil {
 		return nil, err
 	}
-	raw63, err := grown.Variable("passing")
+	raw63, err := grown.Variable("passed")
 	if err != nil {
 		return nil, err
 	}
-	read63, err := sce.SavedReadList(raw63, "passing", 64, RecordListParentSceSynthInvokeListPartRecordFromSaved)
+	read63, err := sce.SavedReadUint32(raw63, "passed")
 	if err != nil {
 		return nil, err
 	}
-	raw64, err := grown.Variable("passed")
+	raw64, err := grown.Variable("waiting")
 	if err != nil {
 		return nil, err
 	}
-	read64, err := sce.SavedReadUint32(raw64, "passed")
+	read64, err := sce.SavedReadList(raw64, "waiting", 64, RecordListParentSceSynthInvokeListPartRecordFromSaved)
 	if err != nil {
 		return nil, err
 	}
-	raw65, err := grown.Variable("waiting")
+	raw65, err := grown.Variable("kept")
 	if err != nil {
 		return nil, err
 	}
-	read65, err := sce.SavedReadList(raw65, "waiting", 64, RecordListParentSceSynthInvokeListPartRecordFromSaved)
+	read65, err := sce.SavedReadList(raw65, "kept", 64, RecordListParentSceSynthInvokeListPartRecordFromSaved)
 	if err != nil {
 		return nil, err
 	}
-	raw66, err := grown.Variable("kept")
+	raw66, err := grown.Variable("part")
 	if err != nil {
 		return nil, err
 	}
-	read66, err := sce.SavedReadList(raw66, "kept", 64, RecordListParentSceSynthInvokeListPartRecordFromSaved)
+	read66, err := RecordListParentSceSynthInvokeListPartRecordFromSaved(raw66, "part")
 	if err != nil {
 		return nil, err
 	}
-	raw67, err := grown.Variable("part")
+	raw67, err := grown.Variable("op")
 	if err != nil {
 		return nil, err
 	}
-	read67, err := RecordListParentSceSynthInvokeListPartRecordFromSaved(raw67, "part")
+	read67, err := RecordListParentSceSynthInvokeListPartRecordFromSaved(raw67, "op")
 	if err != nil {
 		return nil, err
 	}
-	raw68, err := grown.Variable("op")
+	raw68, err := grown.Variable("already")
 	if err != nil {
 		return nil, err
 	}
-	read68, err := RecordListParentSceSynthInvokeListPartRecordFromSaved(raw68, "op")
+	read68, err := sce.SavedReadBool(raw68, "already")
 	if err != nil {
 		return nil, err
 	}
-	raw69, err := grown.Variable("already")
+	raw69, err := grown.Variable("count")
 	if err != nil {
 		return nil, err
 	}
-	read69, err := sce.SavedReadBool(raw69, "already")
-	if err != nil {
-		return nil, err
-	}
-	raw70, err := grown.Variable("count")
-	if err != nil {
-		return nil, err
-	}
-	read70, err := sce.SavedReadUint32(raw70, "count")
+	read69, err := sce.SavedReadUint32(raw69, "count")
 	if err != nil {
 		return nil, err
 	}
@@ -2857,66 +2838,65 @@ func RecordListParentSceSynthInvokeListRestoreAt(policy *RecordListParentSceSynt
 	policy.vStable = read8
 	policy.vEntry = read9
 	policy.vValues = read10
-	policy.vTyped = read11
-	policy.vHeld = read12
-	policy.vDigest = read13
-	policy.vMine = read14
-	policy.vShareId = read15
-	policy.vShareField = read16
-	policy.vKnown = read17
-	policy.vWasLive = read18
-	policy.vIsLive = read19
-	policy.vPresent = read20
-	policy.vRefusals = read21
-	policy.vFloor = read22
-	policy.vStale = read23
-	policy.vLate = read24
-	policy.vFrozenFor = read25
-	policy.vFrozenHash = read26
-	policy.vPending = read27
-	policy.vMembers = read28
-	policy.vAgreeing = read29
-	policy.vAnswers = read30
-	policy.vAnswer = read31
-	policy.vAgreed = read32
-	policy.vRoomValues = read33
-	policy.vRoomHistory = read34
-	policy.vRoomDigest = read35
-	policy.vFull = read36
-	policy.vRoster = read37
-	policy.vDenied = read38
-	policy.vForbidden = read39
-	policy.vAuthorized = read40
-	policy.vAnnounce = read41
-	policy.vAnnounced = read42
-	policy.vMoved = read43
-	policy.vListed = read44
-	policy.vLive = read45
-	policy.vOrdinal = read46
-	policy.vEmpty = read47
-	policy.vStaged = read48
-	policy.vHolding = read49
-	policy.vClosingNow = read50
-	policy.vSpoiled = read51
-	policy.vProbing = read52
-	policy.vGone = read53
-	policy.vWrites = read54
-	policy.vCovered = read55
-	policy.vProbe = read56
-	policy.vSpoiledFor = read57
-	policy.vNamedId = read58
-	policy.vNamedField = read59
-	policy.vNamedKind = read60
-	policy.vTaking = read61
-	policy.vTook = read62
-	policy.vPassing = read63
-	policy.vPassed = read64
-	policy.vWaiting = read65
-	policy.vKept = read66
-	policy.vPart = read67
-	policy.vOp = read68
-	policy.vAlready = read69
-	policy.vCount = read70
+	policy.vHeld = read11
+	policy.vDigest = read12
+	policy.vMine = read13
+	policy.vShareId = read14
+	policy.vShareField = read15
+	policy.vKnown = read16
+	policy.vWasLive = read17
+	policy.vIsLive = read18
+	policy.vPresent = read19
+	policy.vRefusals = read20
+	policy.vFloor = read21
+	policy.vStale = read22
+	policy.vLate = read23
+	policy.vFrozenFor = read24
+	policy.vFrozenHash = read25
+	policy.vPending = read26
+	policy.vMembers = read27
+	policy.vAgreeing = read28
+	policy.vAnswers = read29
+	policy.vAnswer = read30
+	policy.vAgreed = read31
+	policy.vRoomValues = read32
+	policy.vRoomHistory = read33
+	policy.vRoomDigest = read34
+	policy.vFull = read35
+	policy.vRoster = read36
+	policy.vDenied = read37
+	policy.vForbidden = read38
+	policy.vAuthorized = read39
+	policy.vAnnounce = read40
+	policy.vAnnounced = read41
+	policy.vMoved = read42
+	policy.vListed = read43
+	policy.vLive = read44
+	policy.vOrdinal = read45
+	policy.vEmpty = read46
+	policy.vStaged = read47
+	policy.vHolding = read48
+	policy.vClosingNow = read49
+	policy.vSpoiled = read50
+	policy.vProbing = read51
+	policy.vGone = read52
+	policy.vWrites = read53
+	policy.vCovered = read54
+	policy.vProbe = read55
+	policy.vSpoiledFor = read56
+	policy.vNamedId = read57
+	policy.vNamedField = read58
+	policy.vNamedKind = read59
+	policy.vTaking = read60
+	policy.vTook = read61
+	policy.vPassing = read62
+	policy.vPassed = read63
+	policy.vWaiting = read64
+	policy.vKept = read65
+	policy.vPart = read66
+	policy.vOp = read67
+	policy.vAlready = read68
+	policy.vCount = read69
 	for _, recorded := range history {
 		policy.SetHistoryValue(recorded.History, recorded.States)
 	}
@@ -3207,8 +3187,6 @@ type RecordListParentSceSynthInvokeListPolicy struct {
 	vEntry RecordListParentSceSynthInvokeListEntryRecord
 	// W3C SCXML 5.2: the `values` datamodel variable, published (`sce:direction="out"`).
 	vValues []RecordListParentSceSynthInvokeListValueRecord
-	// W3C SCXML 5.2: the `typed` datamodel variable.
-	vTyped string
 	// W3C SCXML 5.2: the `held` datamodel variable.
 	vHeld RecordListParentSceSynthInvokeListValueRecord
 	// W3C SCXML 5.2: the `digest` datamodel variable, published (`sce:direction="out"`).
@@ -3358,7 +3336,6 @@ func NewRecordListParentSceSynthInvokeListPolicy() RecordListParentSceSynthInvok
 		vStable: nil,
 		vEntry: RecordListParentSceSynthInvokeListEntryRecord{element: 0, wallTime: 0, counter: 0, nodeId: 0},
 		vValues: nil,
-		vTyped: "",
 		vHeld: RecordListParentSceSynthInvokeListValueRecord{id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0},
 		vDigest: nil,
 		vMine: 0,
@@ -3527,7 +3504,6 @@ func (p *RecordListParentSceSynthInvokeListPolicy) Announced() uint32 {
 type RecordListParentSceSynthInvokeListInvokeParams struct {
 	VNode *uint64
 	VHub *bool
-	VTyped *string
 	VMine *uint32
 	VShareId *uint32
 	VShareField *uint16
@@ -3579,9 +3555,6 @@ func (p *RecordListParentSceSynthInvokeListPolicy) AcceptParams(params RecordLis
 	}
 	if params.VHub != nil {
 		p.vHub = *params.VHub
-	}
-	if params.VTyped != nil {
-		p.vTyped = *params.VTyped
 	}
 	if params.VMine != nil {
 		p.vMine = *params.VMine
@@ -4035,8 +4008,8 @@ func (p *RecordListParentSceSynthInvokeListPolicy) PopulateEventMetadata(meta *s
 // generated Raise<Event> inject seam. Every other producer — <send> with
 // <param>, an invoke forwarding either way, autoforward, BasicHTTP, mesh —
 // fills EventMetadata.Data, so the schema's fields are read out of that here.
-// A refusal is returned for the engine to raise as error.execution, which is
-// what W3C SCXML 3.13 gives for a guard that cannot be evaluated.
+// A refusal is returned, on which the engine refuses the delivery whole and
+// takes an error.execution in its place (docs/adr/0086, section 4.2).
 func (p *RecordListParentSceSynthInvokeListPolicy) LiftTypedPayload(event RecordListParentSceSynthInvokeListEvent, meta *sce.EventMetadata) error {
 	// A typed carrier already bound the view, so the producer was the
 	// inject seam and there is nothing to read out of `Data`.
@@ -4121,7 +4094,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) LiftTypedPayload(event Record
 		if payload.value, err = sce.PayloadSigned64(fields, "value"); err != nil {
 			return err
 		}
-		if payload.text, err = sce.PayloadString(fields, "text"); err != nil {
+		if payload.text, err = sce.PayloadTextWithin(fields, "text", 32); err != nil {
 			return err
 		}
 		if payload.now, err = sce.PayloadSigned64(fields, "now"); err != nil {
@@ -4366,7 +4339,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) LiftTypedPayload(event Record
 		if payload.value, err = sce.PayloadSigned64(fields, "value"); err != nil {
 			return err
 		}
-		if payload.text, err = sce.PayloadString(fields, "text"); err != nil {
+		if payload.text, err = sce.PayloadTextWithin(fields, "text", 96); err != nil {
 			return err
 		}
 		if payload.wallTime, err = sce.PayloadSigned64(fields, "wallTime"); err != nil {
@@ -4404,7 +4377,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line record_list.scxml:209
+//line record_list.scxml:210
 func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteEntryActions(state RecordListParentSceSynthInvokeListState, engine *sce.Engine[RecordListParentSceSynthInvokeListState, RecordListParentSceSynthInvokeListEvent], isDefaultEntry bool) {
 	switch state {
 	default:
@@ -4417,7 +4390,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteEntryActions(state Rec
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line record_list.scxml:209
+//line record_list.scxml:210
 func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[RecordListParentSceSynthInvokeListState, RecordListParentSceSynthInvokeListEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -4425,7 +4398,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteHistoryDefaultContent(
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line record_list.scxml:209
+//line record_list.scxml:210
 func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteExitActions(state RecordListParentSceSynthInvokeListState, engine *sce.Engine[RecordListParentSceSynthInvokeListState, RecordListParentSceSynthInvokeListEvent], configurationBeforeExit []RecordListParentSceSynthInvokeListState) {
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
@@ -4442,7 +4415,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteExitActions(state Reco
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line record_list.scxml:209
+//line record_list.scxml:210
 func (p *RecordListParentSceSynthInvokeListPolicy) BindCurrentEvent(event RecordListParentSceSynthInvokeListEvent, engine *sce.Engine[RecordListParentSceSynthInvokeListState, RecordListParentSceSynthInvokeListEvent]) {
 	// This document's guards never read _event, so there is nothing to bind.
 }
@@ -4452,7 +4425,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) BindCurrentEvent(event Record
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line record_list.scxml:209
+//line record_list.scxml:210
 func (p *RecordListParentSceSynthInvokeListPolicy) FirstEnabledTransition(state RecordListParentSceSynthInvokeListState, event RecordListParentSceSynthInvokeListEvent, engine *sce.Engine[RecordListParentSceSynthInvokeListState, RecordListParentSceSynthInvokeListEvent]) (sce.EnabledTransition[RecordListParentSceSynthInvokeListState, sce.HistoryID], bool) {
 	switch state {
 	case RecordListParentSceSynthInvokeListStateOpen:
@@ -4744,13 +4717,13 @@ func (p *RecordListParentSceSynthInvokeListPolicy) FirstEnabledTransition(state 
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line record_list.scxml:209
+//line record_list.scxml:210
 func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(source RecordListParentSceSynthInvokeListState, transitionIndex int, engine *sce.Engine[RecordListParentSceSynthInvokeListState, RecordListParentSceSynthInvokeListEvent]) {
 	switch source {
 	case RecordListParentSceSynthInvokeListStateOpen:
 		switch transitionIndex {
 		case 0:
-//line record_list.scxml:433
+//line record_list.scxml:429
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentSceSynthInvokeListPayloadTagRecordListJoin {
@@ -4766,7 +4739,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 1:
-//line record_list.scxml:440
+//line record_list.scxml:436
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentSceSynthInvokeListPayloadTagRecordListRoom {
@@ -4786,7 +4759,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 2:
-//line record_list.scxml:451
+//line record_list.scxml:447
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentSceSynthInvokeListPayloadTagRecordListRole {
@@ -4800,7 +4773,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 3:
-//line record_list.scxml:462
+//line record_list.scxml:459
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentSceSynthInvokeListPayloadTagRecordListEdit {
@@ -4827,16 +4800,6 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 
 	p.vProbing = true
-
-
-
-	p.vProbe = RecordListParentSceSynthInvokeListRefusalEnumTextTooLong
-
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.pendingRecordListEditPayload.text, 32); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListParentSceSynthInvokeListEventErrorExecution, "<assign location='typed'>: an integer operation overflowed or failed")); return true }; p.vTyped = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
 
 
 
@@ -4902,7 +4865,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 4:
-//line record_list.scxml:489
+//line record_list.scxml:484
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentSceSynthInvokeListPayloadTagRecordListClear {
@@ -4994,7 +4957,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 5:
-//line record_list.scxml:514
+//line record_list.scxml:509
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentSceSynthInvokeListPayloadTagRecordListRetire {
@@ -5086,7 +5049,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 6:
-//line record_list.scxml:556
+//line record_list.scxml:551
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -5729,7 +5692,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 7:
-//line record_list.scxml:708
+//line record_list.scxml:703
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -6252,7 +6215,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 8:
-//line record_list.scxml:844
+//line record_list.scxml:839
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -6989,7 +6952,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 9:
-//line record_list.scxml:947
+//line record_list.scxml:942
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentSceSynthInvokeListPayloadTagRecordListWrite {
@@ -7031,7 +6994,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 10:
-//line record_list.scxml:970
+//line record_list.scxml:965
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentSceSynthInvokeListPayloadTagRecordListWrite {
@@ -7144,7 +7107,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 11:
-//line record_list.scxml:1005
+//line record_list.scxml:1000
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -7155,7 +7118,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 12:
-//line record_list.scxml:1012
+//line record_list.scxml:1007
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentSceSynthInvokeListPayloadTagRecordListSupersede {
@@ -7268,7 +7231,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 13:
-//line record_list.scxml:1052
+//line record_list.scxml:1047
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -7557,7 +7520,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 14:
-//line record_list.scxml:1131
+//line record_list.scxml:1126
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentSceSynthInvokeListPayloadTagRecordListAnnounce {
@@ -7623,7 +7586,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 15:
-//line record_list.scxml:1154
+//line record_list.scxml:1149
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -8036,7 +7999,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 16:
-//line record_list.scxml:1209
+//line record_list.scxml:1204
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentSceSynthInvokeListPayloadTagRecordListKeep {
@@ -8072,7 +8035,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 17:
-//line record_list.scxml:1226
+//line record_list.scxml:1221
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentSceSynthInvokeListPayloadTagRecordListCompact {
@@ -8172,7 +8135,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 18:
-//line record_list.scxml:1260
+//line record_list.scxml:1255
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentSceSynthInvokeListPayloadTagRecordListSettle {
@@ -8271,7 +8234,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 19:
-//line record_list.scxml:1281
+//line record_list.scxml:1276
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentSceSynthInvokeListPayloadTagRecordListPropose {
@@ -8397,7 +8360,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 20:
-//line record_list.scxml:1311
+//line record_list.scxml:1306
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentSceSynthInvokeListPayloadTagRecordListAck {
@@ -8680,7 +8643,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 21:
-//line record_list.scxml:1375
+//line record_list.scxml:1370
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentSceSynthInvokeListPayloadTagRecordListFloor {
@@ -8834,7 +8797,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 22:
-//line record_list.scxml:1425
+//line record_list.scxml:1420
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -8933,7 +8896,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 	}
 			}()
 		case 23:
-//line record_list.scxml:1445
+//line record_list.scxml:1440
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentSceSynthInvokeListPayloadTagRecordListVisit {
@@ -9127,7 +9090,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 24:
-//line record_list.scxml:1482
+//line record_list.scxml:1477
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentSceSynthInvokeListPayloadTagRecordListNode {
@@ -9427,7 +9390,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 25:
-//line record_list.scxml:1531
+//line record_list.scxml:1526
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentSceSynthInvokeListPayloadTagRecordListShare {
@@ -9835,7 +9798,7 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 			}()
 		case 26:
-//line record_list.scxml:1593
+//line record_list.scxml:1590
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

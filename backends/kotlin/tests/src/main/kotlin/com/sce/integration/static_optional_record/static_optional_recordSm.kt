@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9c4f25c71477b8168828f3c8f9ccad85a4253ff428db93b5b34a11bbacc1faa1
+// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_optional_record.scxml
@@ -380,7 +380,8 @@ class StaticOptionalRecordStateMachine(
     // lifting the fields out of `metadata.data`, which every other producer
     // fills. An event with neither resets the fields to null, so every typed
     // guard fails. A payload that cannot be read as this event's schema throws
-    // EventPayload.Refusal, which the engine reports as error.execution. Twin
+    // EventPayload.Refusal, on which the engine refuses the delivery whole and
+    // takes an error.execution in its place (docs/adr/0086, section 4.2). Twin
     // of the Go policy's PopulateEventMetadata + LiftTypedPayload / the C11 pop
     // loop's `sm->pending_payload = evt.payload`.
     override fun populateTypedPayload(event: StaticOptionalRecordEvent, metadata: EventMetadata) {
@@ -392,7 +393,7 @@ class StaticOptionalRecordStateMachine(
                 // fields out of `data`, which every other producer fills.
                 if (event == StaticOptionalRecordEvent.Item.Picked) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingItemPickedPayload = StaticOptionalRecordItemPickedPayload(fields.uint32("id"), fields.string("title"), fields.int32("count"))
+                    pendingItemPickedPayload = StaticOptionalRecordItemPickedPayload(fields.uint32("id"), fields.string("title", 16), fields.int32("count"))
                 }
             }
         }

@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9c4f25c71477b8168828f3c8f9ccad85a4253ff428db93b5b34a11bbacc1faa1
+// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -205,7 +205,6 @@ const (
 	StaticPayloadEnumUnimportedWhyEnumNoRoomForValue StaticPayloadEnumUnimportedWhyEnum = 2
 	StaticPayloadEnumUnimportedWhyEnumNoRoomForHistory StaticPayloadEnumUnimportedWhyEnum = 3
 	StaticPayloadEnumUnimportedWhyEnumNoRoomForDigest StaticPayloadEnumUnimportedWhyEnum = 4
-	StaticPayloadEnumUnimportedWhyEnumTextTooLong StaticPayloadEnumUnimportedWhyEnum = 5
 	StaticPayloadEnumUnimportedWhyEnumChangeTooLarge StaticPayloadEnumUnimportedWhyEnum = 6
 	StaticPayloadEnumUnimportedWhyEnumRegisterNamedTwice StaticPayloadEnumUnimportedWhyEnum = 7
 	StaticPayloadEnumUnimportedWhyEnumClockExhausted StaticPayloadEnumUnimportedWhyEnum = 8
@@ -222,8 +221,6 @@ func (v StaticPayloadEnumUnimportedWhyEnum) String() string {
 		return "noRoomForHistory"
 	case StaticPayloadEnumUnimportedWhyEnumNoRoomForDigest:
 		return "noRoomForDigest"
-	case StaticPayloadEnumUnimportedWhyEnumTextTooLong:
-		return "textTooLong"
 	case StaticPayloadEnumUnimportedWhyEnumChangeTooLarge:
 		return "changeTooLarge"
 	case StaticPayloadEnumUnimportedWhyEnumRegisterNamedTwice:
@@ -243,7 +240,7 @@ func (v StaticPayloadEnumUnimportedWhyEnum) ToUnderlying() uint8 {
 // value for a number no variant declares.
 func StaticPayloadEnumUnimportedWhyEnumFromUnderlying(raw uint8) optional.Of[StaticPayloadEnumUnimportedWhyEnum] {
 	switch raw {
-	case 1, 2, 3, 4, 5, 6, 7, 8:
+	case 1, 2, 3, 4, 6, 7, 8:
 		return optional.Some(StaticPayloadEnumUnimportedWhyEnum(raw))
 	}
 	return optional.None[StaticPayloadEnumUnimportedWhyEnum]()
@@ -269,8 +266,6 @@ func StaticPayloadEnumUnimportedWhyEnumFromSaved(value any, what string) (Static
 		return StaticPayloadEnumUnimportedWhyEnumNoRoomForHistory, nil
 	case "noRoomForDigest":
 		return StaticPayloadEnumUnimportedWhyEnumNoRoomForDigest, nil
-	case "textTooLong":
-		return StaticPayloadEnumUnimportedWhyEnumTextTooLong, nil
 	case "changeTooLarge":
 		return StaticPayloadEnumUnimportedWhyEnumChangeTooLarge, nil
 	case "registerNamedTwice":
@@ -426,12 +421,12 @@ func StaticPayloadEnumUnimportedRefusedRecordFromSaved(value any, what string) (
 // this machine names when every record schema it holds is in its first
 // revision (docs/adr/0045, section 2). The generator computes it once, so it is
 // the text every backend's constant is.
-const StaticPayloadEnumUnimportedSavedShapeFormat2 = "e46e9211d49e6ad750d2a7d941e066e5bd755b8fab314f055bf6cf953c5dae5d"
+const StaticPayloadEnumUnimportedSavedShapeFormat2 = "86d1575a4d0b03a30cf0d461c3b32f1e1d79f8134d1688c0c727c6fb7689e956"
 
 // StaticPayloadEnumUnimportedSavedShapeFormat2Revised is the shape a format-2 saved state
 // of this machine names when it names a later revision of a record schema or
 // an enum.
-const StaticPayloadEnumUnimportedSavedShapeFormat2Revised = "c1d6a992c546dec8ec42587953284ed8519eac537d64581625ce7063f8b5268f"
+const StaticPayloadEnumUnimportedSavedShapeFormat2Revised = "57817562bf8bd69e15b9aef6b534e3254e6df14318768a08a811af0cd2d0d418"
 
 // StaticPayloadEnumUnimportedSavedEnumKeys names each enum a value of a saved state of
 // this machine is of, by its document (docs/adr/0044): the key `revisions`
@@ -449,10 +444,10 @@ var StaticPayloadEnumUnimportedSavedEnumKeys = [...]string{
 // one saved at an earlier revision of a record schema is read with each field a
 // later revision added at its default.
 var StaticPayloadEnumUnimportedSavedShape = sce.SavedShape{
-	First:          "60b1f94fa3bf7ca3236aafdd09c81831b91b1473dba7a603b712203b06b90104",
-	Revised:        "abcc6fca73cad31c2aec6e1e94f26d004b87084345c8e133e718fe481447e64d",
-	Format2First:   "e46e9211d49e6ad750d2a7d941e066e5bd755b8fab314f055bf6cf953c5dae5d",
-	Format2Revised: "c1d6a992c546dec8ec42587953284ed8519eac537d64581625ce7063f8b5268f",
+	First:          "e6e710c3ee5576e7e59b057043abc9705709080a5d6e7853feb927052dd5aa2f",
+	Revised:        "2eb56b96e592c1915bf2275169ed4dce44aa7f9b45a8734b0fc33514f13ba0ae",
+	Format2First:   "86d1575a4d0b03a30cf0d461c3b32f1e1d79f8134d1688c0c727c6fb7689e956",
+	Format2Revised: "57817562bf8bd69e15b9aef6b534e3254e6df14318768a08a811af0cd2d0d418",
 	Records: []sce.RecordLineage{
 		{
 			Event:     "record_list.refused",
@@ -1023,8 +1018,8 @@ func (p *StaticPayloadEnumUnimportedPolicy) PopulateEventMetadata(meta *sce.Even
 // generated Raise<Event> inject seam. Every other producer — <send> with
 // <param>, an invoke forwarding either way, autoforward, BasicHTTP, mesh —
 // fills EventMetadata.Data, so the schema's fields are read out of that here.
-// A refusal is returned for the engine to raise as error.execution, which is
-// what W3C SCXML 3.13 gives for a guard that cannot be evaluated.
+// A refusal is returned, on which the engine refuses the delivery whole and
+// takes an error.execution in its place (docs/adr/0086, section 4.2).
 func (p *StaticPayloadEnumUnimportedPolicy) LiftTypedPayload(event StaticPayloadEnumUnimportedEvent, meta *sce.EventMetadata) error {
 	// A typed carrier already bound the view, so the producer was the
 	// inject seam and there is nothing to read out of `Data`.
@@ -1047,7 +1042,7 @@ func (p *StaticPayloadEnumUnimportedPolicy) LiftTypedPayload(event StaticPayload
 		if payload.kind, err = func() (StaticPayloadEnumUnimportedRecordCommandEnum, error) { name, err := sce.PayloadString(fields, "kind"); if err != nil { return 0, err }; switch name { case "edit": return StaticPayloadEnumUnimportedRecordCommandEnumEdit, nil; case "clear": return StaticPayloadEnumUnimportedRecordCommandEnumClear, nil; case "retire": return StaticPayloadEnumUnimportedRecordCommandEnumRetire, nil; }; return 0, sce.PayloadUnknownVariant("kind", name, "record_command") }(); err != nil {
 			return err
 		}
-		if payload.reason, err = func() (StaticPayloadEnumUnimportedWhyEnum, error) { name, err := sce.PayloadString(fields, "reason"); if err != nil { return 0, err }; switch name { case "notWriter": return StaticPayloadEnumUnimportedWhyEnumNotWriter, nil; case "noRoomForValue": return StaticPayloadEnumUnimportedWhyEnumNoRoomForValue, nil; case "noRoomForHistory": return StaticPayloadEnumUnimportedWhyEnumNoRoomForHistory, nil; case "noRoomForDigest": return StaticPayloadEnumUnimportedWhyEnumNoRoomForDigest, nil; case "textTooLong": return StaticPayloadEnumUnimportedWhyEnumTextTooLong, nil; case "changeTooLarge": return StaticPayloadEnumUnimportedWhyEnumChangeTooLarge, nil; case "registerNamedTwice": return StaticPayloadEnumUnimportedWhyEnumRegisterNamedTwice, nil; case "clockExhausted": return StaticPayloadEnumUnimportedWhyEnumClockExhausted, nil; }; return 0, sce.PayloadUnknownVariant("reason", name, "Why") }(); err != nil {
+		if payload.reason, err = func() (StaticPayloadEnumUnimportedWhyEnum, error) { name, err := sce.PayloadString(fields, "reason"); if err != nil { return 0, err }; switch name { case "notWriter": return StaticPayloadEnumUnimportedWhyEnumNotWriter, nil; case "noRoomForValue": return StaticPayloadEnumUnimportedWhyEnumNoRoomForValue, nil; case "noRoomForHistory": return StaticPayloadEnumUnimportedWhyEnumNoRoomForHistory, nil; case "noRoomForDigest": return StaticPayloadEnumUnimportedWhyEnumNoRoomForDigest, nil; case "changeTooLarge": return StaticPayloadEnumUnimportedWhyEnumChangeTooLarge, nil; case "registerNamedTwice": return StaticPayloadEnumUnimportedWhyEnumRegisterNamedTwice, nil; case "clockExhausted": return StaticPayloadEnumUnimportedWhyEnumClockExhausted, nil; }; return 0, sce.PayloadUnknownVariant("reason", name, "Why") }(); err != nil {
 			return err
 		}
 		p.pendingRecordListRefusedPayload = payload

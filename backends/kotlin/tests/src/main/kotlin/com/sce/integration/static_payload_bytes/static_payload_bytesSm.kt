@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9c4f25c71477b8168828f3c8f9ccad85a4253ff428db93b5b34a11bbacc1faa1
+// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_payload_bytes.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: static_payload_bytes.scxml:23 :: _machine
+// SCE-MAP: static_payload_bytes.scxml:28 :: _machine
 
 package com.sce.integration.static_payload_bytes
 
@@ -333,7 +333,8 @@ class StaticPayloadBytesStateMachine(
     // lifting the fields out of `metadata.data`, which every other producer
     // fills. An event with neither resets the fields to null, so every typed
     // guard fails. A payload that cannot be read as this event's schema throws
-    // EventPayload.Refusal, which the engine reports as error.execution. Twin
+    // EventPayload.Refusal, on which the engine refuses the delivery whole and
+    // takes an error.execution in its place (docs/adr/0086, section 4.2). Twin
     // of the Go policy's PopulateEventMetadata + LiftTypedPayload / the C11 pop
     // loop's `sm->pending_payload = evt.payload`.
     override fun populateTypedPayload(event: StaticPayloadBytesEvent, metadata: EventMetadata) {
@@ -345,7 +346,7 @@ class StaticPayloadBytesStateMachine(
                 // fields out of `data`, which every other producer fills.
                 if (event == StaticPayloadBytesEvent.Framed.Taken) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingFramedTakenPayload = StaticPayloadBytesFramedTakenPayload(fields.uint8("sensor"), fields.bytes("frame"))
+                    pendingFramedTakenPayload = StaticPayloadBytesFramedTakenPayload(fields.uint8("sensor"), fields.bytes("frame", 8))
                 }
             }
         }
@@ -452,6 +453,24 @@ class StaticPayloadBytesStateMachine(
             hasActions = true,
             isInternal = true,
         )
+
+        // W3C SCXML 3.13: idle's transition 6, as the microstep reads it.
+        val transitionIdleAt6 = EnabledTransition<StaticPayloadBytesState, HistoryId>(
+            StaticPayloadBytesState.Idle,
+            emptyList(),
+            6,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: idle's transition 7, as the microstep reads it.
+        val transitionIdleAt7 = EnabledTransition<StaticPayloadBytesState, HistoryId>(
+            StaticPayloadBytesState.Idle,
+            emptyList(),
+            7,
+            hasActions = true,
+            isInternal = true,
+        )
     }
 
 
@@ -509,8 +528,10 @@ class StaticPayloadBytesStateMachine(
         event is StaticPayloadBytesEvent.Framed.Taken && pendingFramedTakenPayload != null && (pendingFramedTakenPayload!!.sensor == 0.toUByte()) -> TransitionsPart0.transitionIdleAt1
         event is StaticPayloadBytesEvent.Framed.Taken && pendingFramedTakenPayload != null && (pendingFramedTakenPayload!!.sensor >= 200.toUByte()) -> TransitionsPart0.transitionIdleAt2
         event is StaticPayloadBytesEvent.Framed.Taken && pendingFramedTakenPayload != null && (pendingFramedTakenPayload!!.sensor >= 100.toUByte()) -> TransitionsPart0.transitionIdleAt3
-        event is StaticPayloadBytesEvent.Framed.Taken -> TransitionsPart0.transitionIdleAt4
-        event is StaticPayloadBytesEvent.Error.Execution -> TransitionsPart0.transitionIdleAt5
+        event is StaticPayloadBytesEvent.Framed.Taken && pendingFramedTakenPayload != null && (pendingFramedTakenPayload!!.sensor >= 50.toUByte()) -> TransitionsPart0.transitionIdleAt4
+        event is StaticPayloadBytesEvent.Framed.Taken && pendingFramedTakenPayload != null && (pendingFramedTakenPayload!!.sensor >= 40.toUByte()) -> TransitionsPart0.transitionIdleAt5
+        event is StaticPayloadBytesEvent.Framed.Taken -> TransitionsPart0.transitionIdleAt6
+        event is StaticPayloadBytesEvent.Error.Execution -> TransitionsPart0.transitionIdleAt7
         else -> null
     }
 
@@ -519,7 +540,7 @@ class StaticPayloadBytesStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: static_payload_bytes.scxml:23 :: _machine
+    // SCE-MAP: static_payload_bytes.scxml:28 :: _machine
     override fun onEntry(state: StaticPayloadBytesState, isDefaultEntry: Boolean) {
         when (state) {
             is StaticPayloadBytesState.Idle -> onEntryOfIdle()
@@ -528,11 +549,11 @@ class StaticPayloadBytesStateMachine(
 
 
     private fun onEntryOfIdle() {
-                // SCE-MAP: static_payload_bytes.scxml:38 :: idle :: _state_body
+                // SCE-MAP: static_payload_bytes.scxml:43 :: idle :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: static_payload_bytes.scxml:23 :: _machine
+    // SCE-MAP: static_payload_bytes.scxml:28 :: _machine
     override fun onExit(state: StaticPayloadBytesState) {
         when (state) {
             is StaticPayloadBytesState.Idle -> onExitOfIdle()
@@ -541,13 +562,13 @@ class StaticPayloadBytesStateMachine(
 
 
     private fun onExitOfIdle() {
-                // SCE-MAP: static_payload_bytes.scxml:38 :: idle :: _state_body
+                // SCE-MAP: static_payload_bytes.scxml:43 :: idle :: _state_body
     }
 
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: static_payload_bytes.scxml:23 :: _machine
+    // SCE-MAP: static_payload_bytes.scxml:28 :: _machine
     override fun executeTransitionContent(source: StaticPayloadBytesState, transitionIndex: Int) {
         when (source) {
             is StaticPayloadBytesState.Idle -> transitionContentOfIdle(transitionIndex)
@@ -568,13 +589,15 @@ class StaticPayloadBytesStateMachine(
             3 -> transitionContentOfIdleAt3()
             4 -> transitionContentOfIdleAt4()
             5 -> transitionContentOfIdleAt5()
+            6 -> transitionContentOfIdleAt6()
+            7 -> transitionContentOfIdleAt7()
             else -> {}
         }
     }
 
 
     private fun transitionContentOfIdleAt0() {
-                // SCE-MAP: static_payload_bytes.scxml:39 :: idle :: _transition_0
+                // SCE-MAP: static_payload_bytes.scxml:44 :: idle :: _transition_0
 
             if (try { vMatches = com.sce.forge.runtime.SceChecked.add(vMatches, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticPayloadBytesEvent.Error.Execution, "<assign location='matches'>: an integer operation overflowed or failed"); true }) {
                 return
@@ -582,7 +605,7 @@ class StaticPayloadBytesStateMachine(
     }
 
     private fun transitionContentOfIdleAt1() {
-                // SCE-MAP: static_payload_bytes.scxml:42 :: idle :: _transition_1
+                // SCE-MAP: static_payload_bytes.scxml:47 :: idle :: _transition_1
 
             if (try { vMisses = com.sce.forge.runtime.SceChecked.add(vMisses, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticPayloadBytesEvent.Error.Execution, "<assign location='misses'>: an integer operation overflowed or failed"); true }) {
                 return
@@ -590,7 +613,7 @@ class StaticPayloadBytesStateMachine(
     }
 
     private fun transitionContentOfIdleAt2() {
-                // SCE-MAP: static_payload_bytes.scxml:45 :: idle :: _transition_2
+                // SCE-MAP: static_payload_bytes.scxml:50 :: idle :: _transition_2
                 if (pendingFramedTakenPayload == null) {
                     return
                 }
@@ -605,7 +628,7 @@ class StaticPayloadBytesStateMachine(
     }
 
     private fun transitionContentOfIdleAt3() {
-                // SCE-MAP: static_payload_bytes.scxml:49 :: idle :: _transition_3
+                // SCE-MAP: static_payload_bytes.scxml:54 :: idle :: _transition_3
                 if (pendingFramedTakenPayload == null) {
                     return
                 }
@@ -618,7 +641,24 @@ class StaticPayloadBytesStateMachine(
     }
 
     private fun transitionContentOfIdleAt4() {
-                // SCE-MAP: static_payload_bytes.scxml:53 :: idle :: _transition_4
+                // SCE-MAP: static_payload_bytes.scxml:62 :: idle :: _transition_4
+                if (pendingFramedTakenPayload == null) {
+                    return
+                }
+
+            vSize = (pendingFramedTakenPayload!!.frame).size.toUInt()
+    }
+
+    private fun transitionContentOfIdleAt5() {
+                // SCE-MAP: static_payload_bytes.scxml:68 :: idle :: _transition_5
+
+            if (try { vMisses = com.sce.forge.runtime.SceChecked.add(vMisses, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticPayloadBytesEvent.Error.Execution, "<assign location='misses'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+    }
+
+    private fun transitionContentOfIdleAt6() {
+                // SCE-MAP: static_payload_bytes.scxml:71 :: idle :: _transition_6
                 if (pendingFramedTakenPayload == null) {
                     return
                 }
@@ -630,8 +670,8 @@ class StaticPayloadBytesStateMachine(
             vLast = vLast.copy(sensor = pendingFramedTakenPayload!!.sensor)
     }
 
-    private fun transitionContentOfIdleAt5() {
-                // SCE-MAP: static_payload_bytes.scxml:57 :: idle :: _transition_5
+    private fun transitionContentOfIdleAt7() {
+                // SCE-MAP: static_payload_bytes.scxml:75 :: idle :: _transition_7
 
             if (try { vErrors = com.sce.forge.runtime.SceChecked.add(vErrors, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticPayloadBytesEvent.Error.Execution, "<assign location='errors'>: an integer operation overflowed or failed"); true }) {
                 return

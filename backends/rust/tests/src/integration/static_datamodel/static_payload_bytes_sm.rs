@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9c4f25c71477b8168828f3c8f9ccad85a4253ff428db93b5b34a11bbacc1faa1
+// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file] (content derived from the input document)
@@ -78,8 +78,8 @@
 // closure; this one suspicious-category lint reads the `match` of a constant
 // default as a hand-written `unwrap_or_default`.
 #![allow(clippy::manual_unwrap_or_default)]
-#![doc = "SCE-MAP: static_payload_bytes.scxml:23 :: _machine"]
-// SCE-MAP: static_payload_bytes.scxml:23 :: _machine
+#![doc = "SCE-MAP: static_payload_bytes.scxml:28 :: _machine"]
+// SCE-MAP: static_payload_bytes.scxml:28 :: _machine
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -179,11 +179,15 @@ pub const STATIC_PAYLOAD_BYTES_TABLES: ::sce_rust_runtime::DocumentTables = {
             TransitionRow::new(Some(StateId(0)), Target::NONE, true, true),
             // 5: idle, transition 5
             TransitionRow::new(Some(StateId(0)), Target::NONE, true, true),
-            // 6: the document's initial transition
+            // 6: idle, transition 6
+            TransitionRow::new(Some(StateId(0)), Target::NONE, true, true),
+            // 7: idle, transition 7
+            TransitionRow::new(Some(StateId(0)), Target::NONE, true, true),
+            // 8: the document's initial transition
             TransitionRow::new(None, Target::state(StateId(0)), false, false),
         ],
         targets: &[],
-        initial: TransitionId(6),
+        initial: TransitionId(8),
         default_state: ::sce_rust_runtime::StateId(StaticPayloadBytesState::Idle as u16),
         null_event: ::sce_rust_runtime::EventId(2),
         error_events: &[::sce_rust_runtime::EventId(0)],
@@ -1005,7 +1009,8 @@ impl StatePolicy for StaticPayloadBytesPolicy {
     // read that view out of the `data` every other producer fills — `<send>`
     // with `<param>`, an invoke forwarding either way, autoforward, BasicHTTP,
     // mesh. A payload that does not read as this event's schema is returned as
-    // a refusal, which the engine raises as `error.execution`.
+    // a refusal, on which the engine refuses the delivery whole and takes an
+    // `error.execution` in its place (docs/adr/0086, section 4.2).
     fn lift_event_payload(
         &mut self,
         event: Self::Event,
@@ -1035,8 +1040,8 @@ impl StatePolicy for StaticPayloadBytesPolicy {
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: static_payload_bytes.scxml:23 :: _machine"]
-    // SCE-MAP: static_payload_bytes.scxml:23 :: _machine
+    #[doc = "SCE-MAP: static_payload_bytes.scxml:28 :: _machine"]
+    // SCE-MAP: static_payload_bytes.scxml:28 :: _machine
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
@@ -1052,8 +1057,8 @@ impl StatePolicy for StaticPayloadBytesPolicy {
     // recorded runs nothing.
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: static_payload_bytes.scxml:23 :: _machine"]
-    // SCE-MAP: static_payload_bytes.scxml:23 :: _machine
+    #[doc = "SCE-MAP: static_payload_bytes.scxml:28 :: _machine"]
+    // SCE-MAP: static_payload_bytes.scxml:28 :: _machine
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -1071,8 +1076,8 @@ impl StatePolicy for StaticPayloadBytesPolicy {
     // enables, as its row of the tables, which holds its targets and its
     // type. The engine walks the atomic states and their ancestors and keeps
     // the ordered set. `Event::Null` asks for eventless transitions.
-    #[doc = "SCE-MAP: static_payload_bytes.scxml:23 :: _machine"]
-    // SCE-MAP: static_payload_bytes.scxml:23 :: _machine
+    #[doc = "SCE-MAP: static_payload_bytes.scxml:28 :: _machine"]
+    // SCE-MAP: static_payload_bytes.scxml:28 :: _machine
     fn first_enabled_transition(
         &mut self,
         state: Self::State,
@@ -1110,15 +1115,29 @@ impl StatePolicy for StaticPayloadBytesPolicy {
                     }
                 }
                 if event == StaticPayloadBytesEvent::FramedTaken {
+                    if matches!(&self.pending_payload, StaticPayloadBytesPayload::FramedTaken(ev) if ev.sensor >= 50)
                     {
                         // idle, transition 4
                         return Some(::sce_rust_runtime::TransitionId(4));
                     }
                 }
-                if event == StaticPayloadBytesEvent::ErrorExecution {
+                if event == StaticPayloadBytesEvent::FramedTaken {
+                    if matches!(&self.pending_payload, StaticPayloadBytesPayload::FramedTaken(ev) if ev.sensor >= 40)
                     {
                         // idle, transition 5
                         return Some(::sce_rust_runtime::TransitionId(5));
+                    }
+                }
+                if event == StaticPayloadBytesEvent::FramedTaken {
+                    {
+                        // idle, transition 6
+                        return Some(::sce_rust_runtime::TransitionId(6));
+                    }
+                }
+                if event == StaticPayloadBytesEvent::ErrorExecution {
+                    {
+                        // idle, transition 7
+                        return Some(::sce_rust_runtime::TransitionId(7));
                     }
                 }
                 None
@@ -1130,8 +1149,8 @@ impl StatePolicy for StaticPayloadBytesPolicy {
     // W3C SCXML 3.13: a transition's executable content, run by the engine
     // between the microstep's exits and its entries. `transition` is a
     // written transition's row, one whose row says it has content.
-    #[doc = "SCE-MAP: static_payload_bytes.scxml:23 :: _machine"]
-    // SCE-MAP: static_payload_bytes.scxml:23 :: _machine
+    #[doc = "SCE-MAP: static_payload_bytes.scxml:28 :: _machine"]
+    // SCE-MAP: static_payload_bytes.scxml:28 :: _machine
     fn execute_transition_content(
         &mut self,
         transition: ::sce_rust_runtime::TransitionId,
@@ -1140,7 +1159,7 @@ impl StatePolicy for StaticPayloadBytesPolicy {
         match transition.0 {
             // idle, transition 0
             0 => {
-                // SCE-MAP: static_payload_bytes.scxml:39 :: idle :: _transition_0
+                // SCE-MAP: static_payload_bytes.scxml:44 :: idle :: _transition_0
                 // W3C SCXML 3.13: Transition 0 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
@@ -1164,7 +1183,7 @@ impl StatePolicy for StaticPayloadBytesPolicy {
             }
             // idle, transition 1
             1 => {
-                // SCE-MAP: static_payload_bytes.scxml:42 :: idle :: _transition_1
+                // SCE-MAP: static_payload_bytes.scxml:47 :: idle :: _transition_1
                 // W3C SCXML 3.13: Transition 1 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
@@ -1187,7 +1206,7 @@ impl StatePolicy for StaticPayloadBytesPolicy {
             }
             // idle, transition 2
             2 => {
-                // SCE-MAP: static_payload_bytes.scxml:45 :: idle :: _transition_2
+                // SCE-MAP: static_payload_bytes.scxml:50 :: idle :: _transition_2
                 // W3C SCXML 3.13: Transition 2 actions
                 let ev = match &self.pending_payload {
                     StaticPayloadBytesPayload::FramedTaken(ev) => ev.clone(),
@@ -1251,7 +1270,7 @@ impl StatePolicy for StaticPayloadBytesPolicy {
             }
             // idle, transition 3
             3 => {
-                // SCE-MAP: static_payload_bytes.scxml:49 :: idle :: _transition_3
+                // SCE-MAP: static_payload_bytes.scxml:54 :: idle :: _transition_3
                 // W3C SCXML 3.13: Transition 3 actions
                 let ev = match &self.pending_payload {
                     StaticPayloadBytesPayload::FramedTaken(ev) => ev.clone(),
@@ -1283,8 +1302,45 @@ impl StatePolicy for StaticPayloadBytesPolicy {
             }
             // idle, transition 4
             4 => {
-                // SCE-MAP: static_payload_bytes.scxml:53 :: idle :: _transition_4
+                // SCE-MAP: static_payload_bytes.scxml:62 :: idle :: _transition_4
                 // W3C SCXML 3.13: Transition 4 actions
+                let ev = match &self.pending_payload {
+                    StaticPayloadBytesPayload::FramedTaken(ev) => ev.clone(),
+                    _ => return,
+                };
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="size">
+                    self.size = (ev.frame).len() as u32;
+                }
+            }
+            // idle, transition 5
+            5 => {
+                // SCE-MAP: static_payload_bytes.scxml:68 :: idle :: _transition_5
+                // W3C SCXML 3.13: Transition 5 actions
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                'action_block: {
+                    // W3C SCXML 5.3: <assign location="misses">
+                    let sce_failed =
+                        match (|| -> Result<(), sce_forge_runtime::algorithm::AlgorithmError> {
+                            self.misses = sce_forge_runtime::algorithm::add::<u32>(self.misses, 1)?;
+                            Ok(())
+                        })() {
+                            Ok(()) => false,
+                            Err(_) => {
+                                engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(StaticPayloadBytesEvent::ErrorExecution, "<assign location='misses'>: an integer operation overflowed or failed"));
+                                true
+                            }
+                        };
+                    if sce_failed {
+                        break 'action_block; // W3C SCXML 4.9: the error ends the block
+                    }
+                }
+            }
+            // idle, transition 6
+            6 => {
+                // SCE-MAP: static_payload_bytes.scxml:71 :: idle :: _transition_6
+                // W3C SCXML 3.13: Transition 6 actions
                 let ev = match &self.pending_payload {
                     StaticPayloadBytesPayload::FramedTaken(ev) => ev.clone(),
                     _ => return,
@@ -1314,10 +1370,10 @@ impl StatePolicy for StaticPayloadBytesPolicy {
                     self.last.sensor = ev.sensor;
                 }
             }
-            // idle, transition 5
-            5 => {
-                // SCE-MAP: static_payload_bytes.scxml:57 :: idle :: _transition_5
-                // W3C SCXML 3.13: Transition 5 actions
+            // idle, transition 7
+            7 => {
+                // SCE-MAP: static_payload_bytes.scxml:75 :: idle :: _transition_7
+                // W3C SCXML 3.13: Transition 7 actions
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 'action_block: {
                     // W3C SCXML 5.3: <assign location="errors">

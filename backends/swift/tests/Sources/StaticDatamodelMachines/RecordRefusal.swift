@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 26e5bf730b3c2b04bc64b3f3339bd11d68362c63297741a6a051afa4c6cd0d1b
-// SCE-MAP: record_refusal.scxml:26 :: _forge_body
+// source-hash: f64002805653a41c56a6a08d7b604e8955d0ac09d55e75365d49e24374faca5e
+// SCE-MAP: record_refusal.scxml:30 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="enum")
 // Runtime: none
@@ -18,7 +18,6 @@ public enum RecordRefusal: UInt8, CaseIterable, Sendable {
     case noRoomForValue = 2
     case noRoomForHistory = 3
     case noRoomForDigest = 4
-    case textTooLong = 5
     case changeTooLarge = 6
     case registerNamedTwice = 7
     case clockExhausted = 8
@@ -30,7 +29,6 @@ public enum RecordRefusal: UInt8, CaseIterable, Sendable {
         case .noRoomForValue: return "noRoomForValue"
         case .noRoomForHistory: return "noRoomForHistory"
         case .noRoomForDigest: return "noRoomForDigest"
-        case .textTooLong: return "textTooLong"
         case .changeTooLarge: return "changeTooLarge"
         case .registerNamedTwice: return "registerNamedTwice"
         case .clockExhausted: return "clockExhausted"
@@ -55,7 +53,6 @@ public enum RecordRefusal: UInt8, CaseIterable, Sendable {
         case "noRoomForValue": self = .noRoomForValue
         case "noRoomForHistory": self = .noRoomForHistory
         case "noRoomForDigest": self = .noRoomForDigest
-        case "textTooLong": self = .textTooLong
         case "changeTooLarge": self = .changeTooLarge
         case "registerNamedTwice": self = .registerNamedTwice
         case "clockExhausted": self = .clockExhausted
