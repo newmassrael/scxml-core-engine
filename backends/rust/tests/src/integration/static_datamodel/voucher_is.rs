@@ -4,7 +4,7 @@
 // SCE-MAP: voucher_is.scxml:4 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="test-template")
-// Runtime: none
+// Runtime: sce_runtime
 // Do not edit — regenerate from the source SCXML file.
 
 /// The type the template `voucher_is` matches: `record:Voucher`, as the
@@ -27,4 +27,23 @@ pub fn value() -> Value {
     super::voucher_payment::VoucherPaymentPayload {
         voucher_code: b"\x00\xff\x10\xa0".to_vec(),
     }
+}
+
+/// The name of the record `Value` is, as the types module of the suite's TTCN-3 export names it
+/// (docs/SCE_TEST_PROFILE.md §9.5): the `type` of a message of it in the test log (§12.5).
+#[allow(dead_code)]
+pub const TYPE: &str = "voucher_payment";
+
+/// `value` in the canonical form of the test log (docs/SCE_TEST_PROFILE.md §12.5): each
+/// integer as the text of its digits, a byte string in upper-case hex, an enum and a case
+/// of a union by their declared names, an absent field omitted. A send of this template
+/// carries it beside the value it sends (`sce_rust_runtime::test::message_value`).
+#[allow(dead_code)]
+pub fn canonical(value: &Value) -> ::sce_rust_runtime::json::Value {
+    ::sce_rust_runtime::test::canonical::record([(
+        "voucher_code",
+        Some(::sce_rust_runtime::test::canonical::bytes(
+            value.voucher_code.as_slice(),
+        )),
+    )])
 }

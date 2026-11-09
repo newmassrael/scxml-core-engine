@@ -3,7 +3,7 @@
 // SCE-MAP: card_within.scxml:6 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="test-template")
-// Runtime: none
+// Runtime: sce_runtime
 // Do not edit — regenerate from the source SCXML file.
 
 import SceTestProfile

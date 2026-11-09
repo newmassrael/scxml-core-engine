@@ -3,7 +3,7 @@
 // SCE-MAP: order_line_exact.scxml:4 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="test-template")
-// Runtime: none
+// Runtime: sce_runtime
 // Do not edit — regenerate from the source SCXML file.
 
 /// The test template `order_line_exact` (docs/SCE_TEST_PROFILE.md §11.4): a caseless enum of

@@ -3,7 +3,7 @@
 // SCE-MAP: order_line_bounded.scxml:5 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="test-template")
-// Runtime: none
+// Runtime: sce_runtime
 // Do not edit — regenerate from the source SCXML file.
 
 package order_line_bounded
