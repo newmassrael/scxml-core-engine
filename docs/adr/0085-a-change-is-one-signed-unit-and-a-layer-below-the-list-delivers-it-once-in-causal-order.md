@@ -775,3 +775,42 @@ Decided while splitting landing 4 (2026-11-09), under the same rule and open to 
 - **The world cross product keeps its negative arm** (4e). The check against "today's rule" that section 9 asks
   for cannot be run on a tree that no longer holds that rule. A permanent arm over a binding with no causal layer
   is a check that keeps running.
+
+Decided while landing 4c (2026-11-09), under the same rule and open to the owner's review:
+
+- **A staged command is a record of its own, `record_staged`.** A command is not an operation: a clear and a
+  retire name what is to be written over, and the values they write over are the ones the copy holds when the
+  change ends, which only then become write-overs. Typing `staged` by `record_op` would give `kind` two meanings,
+  and keeping `record_part` for it would keep the parts' fields (`by`, `atWallTime`, `parts`) alive in the list.
+  `record_command` numbers the commands as `record_staged`'s `kind` does.
+- **The change in hand is one list, taken and sent.** `taking` holds the change's operations in their wire form
+  (a write's dot 0, section 1.1), the source takes them in and then sends that same list as `ops`, and a peer's
+  change is copied into it whole. The write's dot is read from the change in hand (`dot`, its stamp with its
+  author), which every operation of one change is taken under before anything else reaches the copy. One list is
+  one shape: nothing builds a second form of a change to send.
+- **The clock moves once per change.** A peer's change moves it by `hlc_receive` of the change's stamp, once,
+  after every operation of it is queued, so a clock that cannot move ends a block that has queued the change
+  already. A change of the copy's own node, which a copy started again from an older save is given back, raises
+  it to the stamp without a tick, as a copy's own write did. The list moved it once per part before, which counted
+  one receive per operation of one message; the textbook clock (Kulkarni et al. 2014) receives a message once.
+- **A write the copy holds already moves nothing.** It is kept though the layer never gives a change twice: it is
+  one comparison, and it makes a copy's own change given back to it after a restore harmless. It does not make
+  the list idempotent across a write-over: a write given again after the write-over that named it would come back,
+  which is why exactly-once delivery is the layer's duty and not the list's (section 2.2).
+- **The roster is judged on every copy, a peer's change included.** A change whose author the roster does not let
+  write is taken in as no change and counted in `denied` (section 2.4); with no hub left, no copy judges for the
+  others.
+- **`record_room` keeps its three fields; the list reads `values` alone.** `history` is the layer's room, which
+  the layer's verdict refuses past (section 3, landing 4d), and `digest` is read by no copy. A field dropped
+  from the schema would refuse nothing (a key a schema does not declare is stepped over, ADR 0086 section 4.1)
+  but would break the parent that forwards it; it stays declared and documented as unread.
+- **`record_list_hub` is retired.** With no hub, what it held that stays the list's (the roster judged on a peer's
+  change) moves into `record_list_person`, and the walk and the settle leave with the list's delivery (section
+  8.5). `record_settled`, the hash a settle compared, leaves the standard library with the settle round.
+- **The two scenarios of section 9.3 are written where they are observed.** `record_list_concurrent_clears` runs on
+  `record_list_parent`, so that "told once" is a count the parent keeps; `record_list_out_of_causal_order_is_not_given`
+  runs on the list itself, whose `values` and `adds` are read. The run that turns the first red under the old rule
+  is the same schedule given to the list at `7ff8257b04` in parts (Alice's change as two `record_list.supersede`
+  of `parts` 2): its write-over of x is `already` and its write-over of y is held for good, so y stays live and the
+  parent is never told it empty. The second holds the order the layer gives; its old-rule failure is case (b), an
+  order the layer never gives, and is held by the negative arm of 4e.
