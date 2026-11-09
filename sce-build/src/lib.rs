@@ -4976,12 +4976,8 @@ pub fn compile_forge_from_parsed(
         // (docs/adr/0085, Landing order step 3a): a record whose schema did not
         // resolve, or that holds a field no codec writes, is refused here, by
         // name and alike for every language.
-        // A language whose unit of the schema holds a field in a type a list
-        // cannot own refuses that record by name too.
         let record_scope = forge::generator::import_type_scope(&import_ctx);
-        if let Some(why) = forge::cbor_codec::record_list_unlowered(m, &record_scope)
-            .or_else(|| forge::cbor_codec::record_list_unlowered_on(language, m, &record_scope))
-        {
+        if let Some(why) = forge::cbor_codec::record_list_unlowered(m, &record_scope) {
             return Err(Located::in_file(
                 forge::error::ForgeError::from(forge::error::GenerateError::unsupported_at(
                     format!("codec '{}': {why}", m.name),

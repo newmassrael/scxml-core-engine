@@ -194,8 +194,10 @@ typedef struct {
  * of every field, each under its id as text (docs/adr/0086, section 9.2). Its
  * keys in any order, a key the schema does not declare skipped whole; a key
  * given twice is SCE_FORGE_CODEC_CBOR_MALFORMED, a field missing
- * SCE_FORGE_CODEC_CBOR_REQUIRED_KEY_MISSING, and a text past its bound, or one
- * that carries the byte its terminator is, SCE_FORGE_CODEC_CBOR_OUT_OF_RANGE. */
+ * SCE_FORGE_CODEC_CBOR_REQUIRED_KEY_MISSING, and a text or a byte string past
+ * its bound, or a text that carries the byte its terminator is,
+ * SCE_FORGE_CODEC_CBOR_OUT_OF_RANGE. A byte string is read into the buffer the
+ * unit holds it in, beside its length. */
 static inline sce_forge_codec_status_t {{ r.decode_fn }}(sce_forge_cursor_t *c, {{ r.type_name }} *out) {
     uint64_t count = 0;
     uint64_t i;
@@ -232,6 +234,8 @@ static inline sce_forge_codec_status_t {{ r.decode_fn }}(sce_forge_cursor_t *c, 
             if (s == SCE_FORGE_CODEC_OK && strlen(out->{{ f.name }}.data) != text_len) {
                 s = SCE_FORGE_CODEC_CBOR_OUT_OF_RANGE;
             }
+{% elif f.kind == "bytes" %}
+            s = sce_forge_cbor_read_bytes(c, {{ f.max }}U, {{ f.max }}U, out->{{ f.name }}.data, &out->{{ f.name }}.len);
 {% elif f.value_type == "uint64_t" %}
             s = sce_forge_cbor_read_uint(c, &out->{{ f.name }});
 {% else %}
@@ -256,7 +260,8 @@ static inline sce_forge_codec_status_t {{ r.decode_fn }}(sce_forge_cursor_t *c, 
 
 /* Write one record of `{{ r.schema }}` as one map of every field, the keys in
  * the order RFC 8949 §4.2.1 sorts their encodings: a shorter key first. A text
- * whose buffer holds no terminator at its bound is past the bound, refused with
+ * whose buffer holds no terminator at its bound, or a byte string whose length
+ * is past its bound, is past the bound, refused with
  * SCE_FORGE_CODEC_CBOR_OUT_OF_RANGE rather than written. */
 static inline sce_forge_codec_status_t {{ r.encode_fn }}(const {{ r.type_name }} *record, sce_forge_writer_t *w) {
     sce_forge_codec_status_t s = sce_forge_cbor_write_map_head(w, {{ r.field_count }}U);
@@ -275,6 +280,11 @@ static inline sce_forge_codec_status_t {{ r.encode_fn }}(const {{ r.type_name }}
         return SCE_FORGE_CODEC_CBOR_OUT_OF_RANGE;
     }
     s = sce_forge_cbor_write_text(w, record->{{ f.name }}.data, strlen(record->{{ f.name }}.data));
+{% elif f.kind == "bytes" %}
+    if (record->{{ f.name }}.len > {{ f.max }}U) {
+        return SCE_FORGE_CODEC_CBOR_OUT_OF_RANGE;
+    }
+    s = sce_forge_cbor_write_bytes(w, record->{{ f.name }}.data, record->{{ f.name }}.len);
 {% else %}
     s = sce_forge_cbor_write_uint(w, (uint64_t)record->{{ f.name }});
 {% endif %}
