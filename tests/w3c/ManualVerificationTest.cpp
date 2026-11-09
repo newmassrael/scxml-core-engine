@@ -15,6 +15,10 @@
  */
 
 #include "ManualVerification.h"
+#include "impl/TestMetadataParser.h"
+#include <algorithm>
+#include <cctype>
+#include <filesystem>
 #include <gtest/gtest.h>
 #include <set>
 #include <string>
@@ -78,13 +82,39 @@ ManualRun with(ManualRun run, const std::vector<std::string> &messages) {
     return run;
 }
 
+// The fixtures whose metadata says they are manual, asked of the suite's own
+// metadata through the parser the runner reads it with: which fixtures are
+// manual is the registry's to say, and a list written here would be a copy of
+// it that the next manual fixture leaves behind.
+std::set<std::string> manualFixturesOfTheSuite() {
+    namespace fs = std::filesystem;
+    SCE::W3C::TestMetadataParser parser;
+    std::set<std::string> ids;
+    for (const auto &entry : fs::directory_iterator(SCE_W3C_RESOURCES_DIR)) {
+        const std::string name = entry.path().filename().string();
+        const fs::path metadata = entry.path() / "metadata.txt";
+        if (!entry.is_directory() || name.empty() ||
+            !std::all_of(name.begin(), name.end(), [](unsigned char c) { return std::isdigit(c) != 0; }) ||
+            !fs::is_regular_file(metadata)) {
+            continue;
+        }
+        if (parser.parseMetadata(metadata.string()).manual) {
+            ids.insert(name);
+        }
+    }
+    return ids;
+}
+
 TEST(ManualVerifierTable, HoldsEveryManualFixtureOfTheSuite) {
     std::set<std::string> ids;
     for (const auto &entry : SCE::W3C::manualVerifiers()) {
         ids.insert(entry.first);
         EXPECT_TRUE(entry.second.judge != nullptr) << entry.first;
     }
-    EXPECT_EQ(ids, (std::set<std::string>{"178", "230", "250", "301", "307", "313", "314", "415"}));
+    const std::set<std::string> manual = manualFixturesOfTheSuite();
+    // A suite read as having no manual fixture is a suite that was not read.
+    ASSERT_FALSE(manual.empty()) << "no fixture under " << SCE_W3C_RESOURCES_DIR << " says it is manual";
+    EXPECT_EQ(ids, manual);
 }
 
 TEST(ManualVerifierTable, AFixtureWithNoVerifierHasNone) {

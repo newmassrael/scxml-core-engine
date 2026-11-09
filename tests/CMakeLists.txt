@@ -272,6 +272,15 @@ add_executable(sce_scxml_tests
     # The verdicts of the manual W3C fixtures, on runs written by hand
     w3c/ManualVerification.cpp
     w3c/ManualVerificationTest.cpp
+    # Which fixtures are manual, read from their metadata by the runner's parser
+    w3c/impl/TestMetadataParser.cpp
+)
+
+# The suite the manual verifiers are held to: ManualVerificationTest asks each
+# fixture's metadata which are manual, rather than keeping a list of them.
+target_compile_definitions(sce_scxml_tests
+    PRIVATE
+        SCE_W3C_RESOURCES_DIR="${CMAKE_SOURCE_DIR}/resources"
 )
 
 target_include_directories(sce_scxml_tests
