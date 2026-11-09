@@ -13,6 +13,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <string>
 #include <type_traits>
@@ -30,14 +31,21 @@ std::vector<uint8_t> everyByte() {
     return bytes;
 }
 
-// What a payload's field reads as bytes, or why it does not.
+// What a payload's field reads as bytes, or why it does not: the value the field's name
+// holds, read by the byte-string reader every lift reads one by, held to no bound, since
+// what these cases measure is the spelling and not the length.
 std::string readFrame(const std::string &wire, std::vector<uint8_t> &out) {
     EventPayloadFields fields;
     const std::string refusal = EventPayloadFields::decode(wire, fields);
     if (!refusal.empty()) {
         return refusal;
     }
-    return fields.readBytes("frame", out);
+    SCE::Common::EventPayloadValue value;
+    const SCE::Common::EventPayloadRefusal absent = fields.value("frame", value);
+    if (!absent.empty()) {
+        return absent;
+    }
+    return value.readBytes(std::numeric_limits<size_t>::max(), out);
 }
 
 // What a generated lift of a schema of entries reads a text or byte-string field by
