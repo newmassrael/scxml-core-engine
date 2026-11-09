@@ -173,10 +173,17 @@ fn every_matcher_is_spelled_over_the_schemas_record() {
             TEST_RUNTIME_IMPORT,
         ],
     );
+    // The match alone: the unit's `canonical` reads every field, the matched
+    // ones and the others alike.
+    let matches = text
+        .split_once("public static func matches(")
+        .and_then(|(_, rest)| rest.split_once("\n    }\n"))
+        .map(|(body, _)| body)
+        .unwrap_or_else(|| panic!("no `matches` function:\n{text}"));
     // any-value-or-none holds whatever the field holds.
-    assert!(!text.contains("value.tag"), "{text}");
+    assert!(!matches.contains("value.tag"), "{text}");
     // A matcher that reads no element (`any-value` in a list) compares none.
-    assert!(!text.contains("value.codes[1]"), "{text}");
+    assert!(!matches.contains("value.codes[1]"), "{text}");
 }
 
 /// A specific template's value: the payload struct's initializer of every
