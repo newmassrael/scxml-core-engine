@@ -21,7 +21,7 @@ const LOCATION: &str = "sce://scxml/s";
 /// A session `s` named `machine`, with one processor and one current event.
 fn bound_session() -> LuaEngine {
     let engine = LuaEngine::new();
-    engine.create_session("s");
+    engine.create_session("s").expect("the session is created");
     engine
         .setup_system_variables(
             "s",

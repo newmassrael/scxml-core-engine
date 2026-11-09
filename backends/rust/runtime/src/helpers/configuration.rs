@@ -52,7 +52,7 @@ use crate::policy::StatePolicy;
 /// [`StatePolicy::get_state_name`]
 /// to render it in the document's own vocabulary, which is the vocabulary a host
 /// persisted it under.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfigurationRejection<S> {
     /// The chain holds nothing. A configuration always holds at least a root.
     Empty,
@@ -119,6 +119,11 @@ pub enum ConfigurationRejection<S> {
         /// The state the caller claimed the machine is at.
         current: S,
     },
+    /// The chain is a configuration of this document, and the machine's script
+    /// session could not be established, so nothing was entered
+    /// (docs/adr/0096). [`Engine::enter_at`](crate::Engine::enter_at) refuses
+    /// with it; [`validate`] never does, since it asks about the chain alone.
+    ScriptSessionUnavailable(crate::ScriptSessionFailure),
 }
 
 /// Whether `configuration` is a configuration of `P`'s document, with `current`
@@ -236,7 +241,7 @@ fn check_child_arity<P: StatePolicy>(
 /// machine can only be taken, through the history, to a configuration its
 /// document could have been in.
 #[cfg(feature = "std")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HistoryRejection<S> {
     /// The value holds no state. A history records at least one.
     Empty,

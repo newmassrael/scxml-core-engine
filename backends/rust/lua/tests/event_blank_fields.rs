@@ -116,7 +116,9 @@ fn a_blank_event_field_reads_as_nil() {
     let mut read = 0usize;
     for (index, case) in table.iter().enumerate() {
         let session = format!("event_blank_field_{index}");
-        engine.create_session(&session);
+        engine
+            .create_session(&session)
+            .expect("the session is created");
         engine
             .set_current_event(
                 &session,

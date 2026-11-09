@@ -57,7 +57,7 @@ fn read(engine: &LuaEngine, session: &str, expr: &str) -> ScriptValue {
 #[test]
 fn an_expression_shaped_payload_arrives_as_the_text_it_is() {
     let engine = LuaEngine::new();
-    engine.create_session("s");
+    engine.create_session("s").expect("the session is created");
     deliver(&engine, "s", "2 + 3");
 
     assert_eq!(
@@ -73,7 +73,7 @@ fn an_expression_shaped_payload_arrives_as_the_text_it_is() {
 #[test]
 fn a_payload_that_is_a_call_does_not_execute() {
     let engine = LuaEngine::new();
-    engine.create_session("s");
+    engine.create_session("s").expect("the session is created");
     engine
         .execute_script("s", "breached = false")
         .expect("execute_script");
@@ -98,7 +98,7 @@ fn a_payload_that_is_a_call_does_not_execute() {
 #[test]
 fn text_that_is_not_a_value_is_space_normalized() {
     let engine = LuaEngine::new();
-    engine.create_session("s");
+    engine.create_session("s").expect("the session is created");
     deliver(&engine, "s", "hold   the\n\tline");
 
     assert_eq!(
@@ -113,7 +113,7 @@ fn text_that_is_not_a_value_is_space_normalized() {
 #[test]
 fn a_json_payload_is_still_decoded_with_its_types() {
     let engine = LuaEngine::new();
-    engine.create_session("s");
+    engine.create_session("s").expect("the session is created");
     deliver(&engine, "s", r#"{"milestone":"refined","turns":2}"#);
 
     assert_eq!(
@@ -133,7 +133,7 @@ fn a_json_payload_is_still_decoded_with_its_types() {
 #[test]
 fn a_repeated_name_arrives_as_an_array() {
     let engine = LuaEngine::new();
-    engine.create_session("s");
+    engine.create_session("s").expect("the session is created");
     deliver(&engine, "s", r#"{"n":[1,2]}"#);
 
     assert_eq!(read(&engine, "s", "_event.data.n[1]"), ScriptValue::Int(1));
@@ -153,7 +153,7 @@ fn a_repeated_name_arrives_as_an_array() {
 #[test]
 fn json_parse_refuses_text_that_is_not_json() {
     let engine = LuaEngine::new();
-    engine.create_session("s");
+    engine.create_session("s").expect("the session is created");
 
     assert_eq!(
         read(&engine, "s", "JSON.parse('2 + 3') == nil"),
@@ -175,7 +175,7 @@ fn json_parse_refuses_text_that_is_not_json() {
 #[test]
 fn json_parse_still_reads_json() {
     let engine = LuaEngine::new();
-    engine.create_session("s");
+    engine.create_session("s").expect("the session is created");
 
     assert_eq!(
         read(&engine, "s", "JSON.parse('{\"a\":[1,2],\"b\":\"x\"}').a[2]"),
@@ -209,7 +209,7 @@ fn json_parse_still_reads_json() {
 #[test]
 fn an_xml_payload_is_still_read_into_a_dom() {
     let engine = LuaEngine::new();
-    engine.create_session("s");
+    engine.create_session("s").expect("the session is created");
     deliver(
         &engine,
         "s",
@@ -242,7 +242,7 @@ fn an_xml_payload_is_still_read_into_a_dom() {
 #[test]
 fn text_that_merely_opens_like_xml_is_still_read() {
     let engine = LuaEngine::new();
-    engine.create_session("s");
+    engine.create_session("s").expect("the session is created");
     deliver(&engine, "s", "<assign>  to\n\tdetail failed");
 
     assert_eq!(

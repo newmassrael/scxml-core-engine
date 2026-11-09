@@ -136,6 +136,7 @@ impl<D: Clone + Default + std::fmt::Debug + 'static> StatePolicy for InboxPolicy
     type Workspace = Workspace<{ state_scratch(1) }, 1, 6, 0>;
     type RunStore = RunStore<{ state_words(1) }, 0, 0>;
     type Configuration = BoundedVec<St, 1>;
+    type StartFailure = core::convert::Infallible;
 
     // One child of the `<scxml>` element with two targetless transitions that
     // have content; the document's initial transition, last, enters it.
@@ -244,7 +245,7 @@ impl<D: Clone + Default + std::fmt::Debug + 'static> StatePolicy for InboxPolicy
 
 fn running() -> Engine<InboxPolicy> {
     let mut engine = Engine::new(InboxPolicy::new());
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     engine
 }
 
@@ -375,7 +376,7 @@ fn a_post_to_the_inbox_of_an_engine_that_is_gone_is_refused_with_its_input() {
 fn a_posted_payload_rides_with_its_event_and_comes_back_with_a_refusal() {
     let _posting = posting();
     let mut engine = Engine::new(InboxPolicy::<u32>::carrying());
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     let inbox = engine.inbox();
 
     let poster = inbox.clone();
@@ -477,7 +478,7 @@ fn a_bounded_inbox_refuses_a_post_when_full_and_its_engine_applies_what_it_took(
     // first boundary.
     let mut engine = Engine::new(InboxPolicy::new());
     engine.attach_inbox(&FULL_AT_TWO);
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     assert_eq!(
         engine.policy().taken,
         ["ping", "pong"],

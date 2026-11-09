@@ -29,7 +29,9 @@ fn a_read_is_refused_exactly_when_the_shared_table_says() {
     for (i, case) in cases.iter().enumerate() {
         let engine = LuaEngine::new();
         let session = format!("s{i}");
-        engine.create_session(&session);
+        engine
+            .create_session(&session)
+            .expect("the session is created");
         for name in case["declared"].as_array().expect("declared is a list") {
             let name = name.as_str().expect("a declared name is a string");
             engine

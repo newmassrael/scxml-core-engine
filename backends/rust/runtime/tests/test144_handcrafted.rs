@@ -87,6 +87,7 @@ impl StatePolicy for Test144Policy {
     type Workspace = Workspace<{ state_scratch(4) }, 1, 6, 0>;
     type RunStore = RunStore<{ state_words(4) }, 0, 0>;
     type Configuration = BoundedVec<Test144State, 1>;
+    type StartFailure = core::convert::Infallible;
 
     // C++ `getParent` answers `std::nullopt` for all: four children of the
     // `<scxml>` element, two of them `<final>`. The document's initial
@@ -265,7 +266,7 @@ fn test144_initialize_drains_internal_queue_and_reaches_pass() {
     let _ = env_logger::builder().is_test(true).try_init();
 
     let mut engine = Engine::<Test144Policy>::new(Test144Policy::new());
-    engine.initialize();
+    let Ok(()) = engine.initialize();
 
     // After initialize():
     //   - enter S0 → raise Foo, Bar into internal queue

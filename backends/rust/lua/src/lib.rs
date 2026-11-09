@@ -474,9 +474,10 @@ fn map_lua_err(e: mlua::Error) -> ScriptError {
 /// globals' own slots, so that any write a script makes to one fails. An
 /// ordinary `globals().set` of one of these names is refused by that same
 /// file, which is why there is no other path here. `create_session` loads the
-/// file before any session exists to bind into; a session whose builtins
-/// failed to load has no `_scxml_bind_system`, and the bind fails rather than
-/// leaving a writable copy.
+/// file before any session exists to bind into, and keeps no session whose
+/// builtins failed to load; were one bound into anyway, it would have no
+/// `_scxml_bind_system`, and the bind would fail rather than leave a writable
+/// copy.
 fn bind_system_variable(lua: &Lua, name: &str, value: impl IntoLua) -> ScriptResult<()> {
     let bind: LuaFunction = lua
         .globals()
@@ -946,36 +947,41 @@ impl IScriptEngine for LuaEngine {
         self.initialize();
     }
 
-    fn create_session(&self, session_id: &str) {
+    fn create_session(&self, session_id: &str) -> ScriptResult<()> {
         let mut sessions = self.sessions.lock().unwrap();
         if sessions.contains_key(session_id) {
-            return; // Idempotent
+            return Ok(()); // Idempotent
         }
 
+        // docs/adr/0096: the session is kept only once all of it is there. A
+        // session whose shared library did not load has no ECMAScript `==`, no
+        // `_scxml_bind_system` and no JSON, so a machine run over it would read
+        // every condition as an error; it is dropped here, and the machine that
+        // asked for it refuses its start.
         let lua = Lua::new();
-        // Setup builtins for this session
-        if let Err(e) = Self::setup_builtins(&lua) {
-            log::error!(
-                "Failed to setup Lua builtins for session {}: {}",
-                session_id,
-                e
-            );
-        }
+        Self::setup_builtins(&lua)
+            .map_err(|e| ScriptError::LibraryNotLoaded(format!("session {session_id}: {e}")))?;
 
         // Register any global functions added via register_global_function()
-        // (1:1 with C++ LuaEngine::createSession which calls registerBuiltins)
-        if let Ok(gf) = self.global_functions.lock() {
-            for (name, cb) in gf.iter() {
-                let cb = cb.clone();
-                if let Ok(f) = lua.create_function(move |_, args: LuaMultiValue| {
+        // (1:1 with C++ LuaEngine::createSession which calls registerBuiltins).
+        // A function the host registered and the session does not hold is a
+        // session other than the one the host configured, so a failure here
+        // fails the creation too.
+        let functions = self
+            .global_functions
+            .lock()
+            .map_err(|e| ScriptError::EngineError(format!("global functions: {e}")))?;
+        for (name, cb) in functions.iter() {
+            let cb = cb.clone();
+            let f = lua
+                .create_function(move |_, args: LuaMultiValue| {
                     let script_args: Vec<ScriptValue> =
                         args.into_vec().iter().map(lua_value_to_script).collect();
                     let result = cb(&script_args);
                     Ok(result.to_bool())
-                }) {
-                    let _ = lua.globals().set(name.as_str(), f);
-                }
-            }
+                })
+                .map_err(map_lua_err)?;
+            lua.globals().set(name.as_str(), f).map_err(map_lua_err)?;
         }
 
         sessions.insert(
@@ -986,6 +992,7 @@ impl IScriptEngine for LuaEngine {
                 state_query_callback: None,
             },
         );
+        Ok(())
     }
 
     fn destroy_session(&self, session_id: &str) {

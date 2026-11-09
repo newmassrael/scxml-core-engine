@@ -93,6 +93,7 @@ impl StatePolicy for ParallelPolicy {
     type Workspace = Workspace<{ state_scratch(6) }, 2, 12, 0>;
     type RunStore = RunStore<{ state_words(6) }, 0, 0>;
     type Configuration = BoundedVec<PState, 5>;
+    type StartFailure = core::convert::Infallible;
 
     // The transitions: `a1 --advance--> a2`, then the initial transitions of
     // the compound states `ra` and `rb`, then the document's.
@@ -298,6 +299,7 @@ impl StatePolicy for LinearPolicy {
     type Workspace = Workspace<{ state_scratch(3) }, 1, 9, 0>;
     type RunStore = RunStore<{ state_words(3) }, 0, 0>;
     type Configuration = BoundedVec<LState, 2>;
+    type StartFailure = core::convert::Infallible;
 
     // The transitions: `x1 --go--> x2`, then `root`'s initial transition, then
     // the document's.
@@ -429,7 +431,7 @@ fn the_hand_written_tables_keep_the_rules_the_procedures_assume() {
 #[test]
 fn parallel_configuration_round_trips_through_a_new_engine() {
     let mut ran = Engine::<ParallelPolicy>::new(ParallelPolicy::new());
-    ran.initialize();
+    let Ok(()) = ran.initialize();
 
     // What a host would persist: both readers.
     let saved_configuration = ran.get_active_states();
@@ -454,7 +456,7 @@ fn parallel_configuration_round_trips_through_a_new_engine() {
 #[test]
 fn linear_configuration_round_trips_without_a_parallel_region() {
     let mut ran = Engine::<LinearPolicy>::new(LinearPolicy::new());
-    ran.initialize();
+    let Ok(()) = ran.initialize();
 
     let saved_configuration = ran.get_active_states();
     let saved_current = ran.get_current_state();
@@ -513,7 +515,7 @@ fn initialize_by_contrast_does_run_them() {
     // entry actions are exactly what `initialize` is for. Without this the test
     // above could pass on a machine that simply cannot move.
     let mut engine = Engine::<ParallelPolicy>::new(ParallelPolicy::new());
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     assert!(engine.policy().entries > 0);
     assert_eq!(engine.get_current_state(), PState::A2);
 }
@@ -633,6 +635,6 @@ fn a_refused_entry_leaves_the_engine_untouched() {
     assert!(!engine.is_running());
     assert_eq!(engine.policy().entries, 0);
 
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     assert_eq!(engine.get_current_state(), PState::A2);
 }

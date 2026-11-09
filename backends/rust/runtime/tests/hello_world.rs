@@ -71,6 +71,7 @@ impl StatePolicy for HwPolicy {
     type Workspace = Workspace<{ state_scratch(3) }, 1, 6, 0>;
     type RunStore = RunStore<{ state_words(3) }, 0, 0>;
     type Configuration = BoundedVec<HwState, 1>;
+    type StartFailure = core::convert::Infallible;
 
     // Three children of the `<scxml>` element; the document's initial
     // transition, last, enters `stopped`.
@@ -237,7 +238,7 @@ fn an_engine_built_in_its_slot_runs_as_one_built_by_value() {
     assert!(!engine.is_running());
     assert!(!engine.has_ready_events());
 
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     engine.process_event(HwEvent::Play);
     engine.process_event(HwEvent::End);
     assert_eq!(engine.terminal_state(), Some(HwState::Done));
@@ -251,7 +252,7 @@ fn an_engine_built_in_its_slot_runs_as_one_built_by_value() {
 #[test]
 fn initialize_enters_initial_state() {
     let mut engine = Engine::<HwPolicy>::new(HwPolicy::new());
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     assert_eq!(engine.get_current_state(), HwState::Stopped);
     assert!(engine.is_running());
 }
@@ -259,7 +260,7 @@ fn initialize_enters_initial_state() {
 #[test]
 fn play_transitions_to_running() {
     let mut engine = Engine::<HwPolicy>::new(HwPolicy::new());
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     engine.process_event(HwEvent::Play);
     assert_eq!(engine.get_current_state(), HwState::Running);
     assert!(!engine.is_in_final_state());
@@ -268,7 +269,7 @@ fn play_transitions_to_running() {
 #[test]
 fn full_lifecycle_stopped_running_done() {
     let mut engine = Engine::<HwPolicy>::new(HwPolicy::new());
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     assert_eq!(engine.get_current_state(), HwState::Stopped);
 
     engine.process_event(HwEvent::Play);
@@ -282,7 +283,7 @@ fn full_lifecycle_stopped_running_done() {
 #[test]
 fn stop_returns_to_stopped_from_running() {
     let mut engine = Engine::<HwPolicy>::new(HwPolicy::new());
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     engine.process_event(HwEvent::Play);
     engine.process_event(HwEvent::Stop);
     assert_eq!(engine.get_current_state(), HwState::Stopped);
@@ -291,7 +292,7 @@ fn stop_returns_to_stopped_from_running() {
 #[test]
 fn unmatched_event_is_ignored() {
     let mut engine = Engine::<HwPolicy>::new(HwPolicy::new());
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     // Stopped has no handler for Stop
     engine.process_event(HwEvent::Stop);
     assert_eq!(engine.get_current_state(), HwState::Stopped);
@@ -300,7 +301,7 @@ fn unmatched_event_is_ignored() {
 #[test]
 fn stop_method_halts_engine() {
     let mut engine = Engine::<HwPolicy>::new(HwPolicy::new());
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     engine.stop();
     assert!(!engine.is_running());
     // After stop, process_event should be a no-op
@@ -326,7 +327,7 @@ fn the_queue_and_the_slot_a_document_does_not_use_take_no_space() {
 #[test]
 fn a_machine_with_no_delayed_send_answers_that_nothing_is_pending() {
     let mut engine = Engine::<HwPolicy>::new(HwPolicy::new());
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     assert!(!engine.has_ready_events());
     assert_eq!(engine.time_until_next_scheduled_ms(), None);
     assert!(
@@ -352,7 +353,7 @@ fn a_machine_with_no_delayed_send_answers_that_nothing_is_pending() {
 #[should_panic(expected = "keeps no delayed-send queue")]
 fn arming_a_delayed_send_on_a_machine_with_no_queue_stops_the_program() {
     let mut engine = Engine::<HwPolicy>::new(HwPolicy::new());
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     let _ = engine.schedule_event(
         HwEvent::End,
         std::time::Duration::from_millis(1),
@@ -471,7 +472,7 @@ mod transition_observer {
     }
 
     fn drive(engine: &mut Engine<HwPolicy>) {
-        engine.initialize();
+        let Ok(()) = engine.initialize();
         for event in [HwEvent::Play, HwEvent::Stop, HwEvent::Play, HwEvent::End] {
             engine.process_event(event);
         }
@@ -500,7 +501,7 @@ mod transition_observer {
     fn an_unmatched_event_tells_the_observer_nothing() {
         let seen = Seen::default();
         let mut engine = observed(&seen);
-        engine.initialize();
+        let Ok(()) = engine.initialize();
         engine.process_event(HwEvent::Stop);
 
         assert_eq!(engine.get_current_state(), HwState::Stopped);

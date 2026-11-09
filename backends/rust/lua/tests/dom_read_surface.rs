@@ -126,7 +126,9 @@ fn the_binding_answers_dom_level_1_core() {
     let mut failures = Vec::new();
     for (index, case) in table.iter().enumerate() {
         let session = format!("dom_surface_{index}");
-        engine.create_session(&session);
+        engine
+            .create_session(&session)
+            .expect("the session is created");
         engine
             .set_variable_as_dom(&session, "var1", &case.xml)
             .expect("the document binds as a DOM");
@@ -182,7 +184,9 @@ fn the_binding_answers_dom_level_1_core() {
 #[test]
 fn a_data_element_that_does_not_parse_still_declares_its_variable() {
     let engine = LuaEngine::new();
-    engine.create_session("unparseable");
+    engine
+        .create_session("unparseable")
+        .expect("the session is created");
     engine
         .set_variable_as_dom("unparseable", "var1", "<books><unclosed></books>")
         .expect("binding reports success even when the content is not a document");

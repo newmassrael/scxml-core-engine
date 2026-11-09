@@ -129,6 +129,28 @@ pub fn raise_done_invoke<P: StatePolicy>(
     }
 }
 
+/// Start `child`, a session this one invokes, once it was given its clock,
+/// its Mesh router, the tree's host invokers and the tree's inboxes.
+///
+/// The child establishes its script session as the first step of its start
+/// (docs/adr/0096). A child whose session cannot be established is refused
+/// its start, and what it was given is withdrawn: its router is told the
+/// session ended and its inbox leaves the tree's directory. The failure, as a
+/// [`ScriptSessionFailure`](crate::ScriptSessionFailure) whatever the child's
+/// policy names it, is for the generated parent, which keeps no child and
+/// raises `error.execution` naming the invoke and the step that failed.
+pub fn start_child<Q: StatePolicy>(
+    child: &mut Engine<Q>,
+) -> Result<(), crate::ScriptSessionFailure> {
+    match child.initialize() {
+        Ok(()) => Ok(()),
+        Err(failure) => {
+            child.withdraw_unstarted_child();
+            Err(failure.into())
+        }
+    }
+}
+
 /// §scxml-6.4 + SCE_ACCEPTED_SUBSET.md §2.13: the stem of the document a
 /// hybrid `<invoke>`'s evaluated `srcexpr` names — what the value is matched
 /// against the declared `sce:candidates` by.

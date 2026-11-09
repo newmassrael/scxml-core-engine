@@ -58,6 +58,7 @@ impl StatePolicy for HttpPolicy {
     type Workspace = Workspace<{ state_scratch(1) }, 1, 6, 0>;
     type RunStore = RunStore<{ state_words(1) }, 0, 0>;
     type Configuration = BoundedVec<HttpState, 1>;
+    type StartFailure = core::convert::Infallible;
 
     // One child of the `<scxml>` element and no transition of its own: the
     // only row of the transitions table is the document's initial transition.
@@ -157,7 +158,7 @@ impl StatePolicy for HttpPolicy {
 
 fn running_engine() -> Engine<HttpPolicy> {
     let mut engine = Engine::new(HttpPolicy::default());
-    engine.initialize();
+    let Ok(()) = engine.initialize();
     engine
 }
 
