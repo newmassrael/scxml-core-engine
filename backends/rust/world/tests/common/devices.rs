@@ -67,8 +67,9 @@ pub const FORGED_ROW: u64 = 77;
 /// The machine a Kotlin device's step server hosts.
 const MACHINE: &str = "record_list";
 
-/// What a write is called, which a relay that forges makes one of.
-const WRITE: &str = "record_list.write";
+/// What a change is called, which a relay that forges makes one of: one change is one signed
+/// operation (docs/adr/0085, section 1).
+const CHANGE: &str = "record_list.change";
 
 /// What a device's host answers its machine's send with: the send is the core's from then on,
 /// and no peer of the Mesh is sent anything.
@@ -776,11 +777,7 @@ impl Devices {
             }
             let sent = Sends::default();
             world.set_sealer(name, Box::new(ToTheCore(sent.clone())));
-            world.raise(
-                name,
-                "record_list.join",
-                &format!(r#"{{"node":"{node}","hub":false}}"#),
-            );
+            world.raise(name, "record_list.join", &format!(r#"{{"node":"{node}"}}"#));
             devices.push(Device {
                 name,
                 node,
@@ -1131,7 +1128,7 @@ impl Devices {
                         if !kept(data) {
                             continue;
                         }
-                        if forge && event == WRITE {
+                        if forge && event == CHANGE {
                             let made_up = Record::Operation {
                                 event: event.clone(),
                                 data: moved_to(data, FORGED_ROW),
@@ -1242,11 +1239,13 @@ impl Devices {
         records_of(&mut self.world, name)
     }
 
-    /// Every copy holds one list, with one digest; which.
+    /// Every copy holds one list, with one set of live writes; which. The list keeps its effect
+    /// and nothing of its delivery (docs/adr/0085, section 2): what two copies hold alike is their
+    /// values and the tags of their live writes, whatever order the changes reached each in.
     pub fn agreed(&mut self) -> BTreeMap<(u64, u64), Field> {
         let names = self.names();
         let first = records_of(&mut self.world, names[0]);
-        let digest = record_variables_of(&mut self.world, names[0])["digest"].clone();
+        let adds = live_writes(&mut self.world, names[0]);
         for name in &names[1..] {
             assert_eq!(
                 records_of(&mut self.world, name),
@@ -1255,9 +1254,9 @@ impl Devices {
                 names[0]
             );
             assert_eq!(
-                record_variables_of(&mut self.world, name)["digest"],
-                digest,
-                "{} and {name} hold different digests",
+                live_writes(&mut self.world, name),
+                adds,
+                "{} and {name} hold different live writes",
                 names[0]
             );
         }
@@ -1305,18 +1304,32 @@ impl Devices {
     }
 }
 
-/// The row an operation's data names, when it names one.
+/// The tags of the live writes the copy `name` holds (`adds`), in one order: what two copies that
+/// took the same changes in, in any order, hold alike.
+fn live_writes(world: &mut World, name: &str) -> Vec<String> {
+    let mut adds: Vec<String> = record_variables_of(world, name)["adds"]
+        .as_array()
+        .expect("a copy's live writes are a list")
+        .iter()
+        .map(Value::to_string)
+        .collect();
+    adds.sort();
+    adds
+}
+
+/// The row a change's first operation names, when the data is a change. The devices here make
+/// changes of one write each, so a change names one row.
 fn row_of(data: &str) -> Option<u64> {
     serde_json::from_str::<Value>(data)
         .ok()
-        .and_then(|value| value["id"].as_u64())
+        .and_then(|value| value["ops"][0]["id"].as_u64())
 }
 
-/// The operation's data with its row changed to `row`, and everything else, its signature
-/// among it, as it was.
+/// The change's data with the row of its first operation changed to `row`, and everything else,
+/// its signature among it, as it was.
 fn moved_to(data: &str, row: u64) -> String {
     let mut value: Value =
         serde_json::from_str(data).expect("an operation the relay holds is JSON");
-    value["id"] = json!(row);
+    value["ops"][0]["id"] = json!(row);
     value.to_string()
 }
