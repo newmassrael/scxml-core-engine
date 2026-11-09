@@ -2472,35 +2472,32 @@ func recordListMachine(routed bool) machine {
 	policy := record_list.NewRecordListPolicy()
 	policy.SessionID = sce.GenerateSessionID()
 	return driveRouted[record_list.RecordListState, record_list.RecordListEvent](&policy, map[string]func() any{
-		"node":       func() any { return digits(policy.Node()) },
-		"hub":        func() any { return policy.Hub() },
-		"clock":      func() any { return hlcJSON(policy.Clock()) },
-		"adds":       func() any { return orsetEntriesJSON(policy.Adds()) },
-		"tombstones": func() any { return orsetEntriesJSON(policy.Tombstones()) },
-		"values":     func() any { return todoValuesJSON(policy.Values()) },
-		"digest":     func() any { return merkleNodesJSON(policy.Digest()) },
-		"refusals":   func() any { return policy.Refusals() },
-		"floor":      func() any { return signedDigits(policy.Floor()) },
-		"stale":      func() any { return policy.Stale() },
-		"late":       func() any { return policy.Late() },
-		"full":       func() any { return policy.Full() },
-		"denied":     func() any { return policy.Denied() },
-		"announced":  func() any { return policy.Announced() },
+		"node":      func() any { return digits(policy.Node()) },
+		"clock":     func() any { return hlcJSON(policy.Clock()) },
+		"adds":      func() any { return orsetEntriesJSON(policy.Adds()) },
+		"values":    func() any { return todoValuesJSON(policy.Values()) },
+		"refusals":  func() any { return policy.Refusals() },
+		"full":      func() any { return policy.Full() },
+		"denied":    func() any { return policy.Denied() },
+		"announced": func() any { return policy.Announced() },
 	}, routed)
 }
 
 // The standard shared record list, its scenarios' machine named by its library name:
-// a person's copy, which sends its changes to the hub by `#hub`, and the hub, which
-// passes every change on to the people by `#people`. A list a host started tells no
-// parent of the registers its changes move, and nothing fails. A copy given no
-// router keeps every change it makes (docs/adr/0046).
+// a copy, which sends each change of its own whole by `#people` and takes its peers'
+// changes whole (docs/adr/0085). A list a host started tells no parent of the
+// registers its changes move, and nothing fails. A copy given no router keeps every
+// change it makes (docs/adr/0046). A change and the one it writes over are given in
+// their causal order, the only order the list's delivery layer gives.
 func TestACopyOfTheStandardRecordListIsReplayedAsEachPeerSawIt(t *testing.T) {
 	t.Run("a person", func(t *testing.T) { replay(t, "record_list_person", recordListCopy()) })
-	t.Run("the hub", func(t *testing.T) { replay(t, "record_list_hub", recordListCopy()) })
 	t.Run("alone", func(t *testing.T) { replay(t, "record_list_alone", recordListCopy()) })
 	t.Run("offline", func(t *testing.T) { replay(t, "record_list_offline", recordListMachine(false)) })
 	t.Run("a change", func(t *testing.T) { replay(t, "record_list_change", recordListCopy()) })
 	t.Run("a retire", func(t *testing.T) { replay(t, "record_list_retire", recordListCopy()) })
+	t.Run("in causal order", func(t *testing.T) {
+		replay(t, "record_list_out_of_causal_order_is_not_given", recordListCopy())
+	})
 }
 
 // registerRecord is a `record:Register` (sce:std/shared/record_register) as a host
@@ -2553,9 +2550,22 @@ func registerValuesJSON[R registerValueRecord](values []R) any {
 // their dots, a count of 0 when every value was written over, and nothing for a write
 // the list already held.
 func TestAParentIsToldWhatEachRegisterOfItsListHolds(t *testing.T) {
+	replay(t, "record_list_parent", recordListParent())
+}
+
+// Two changes that clear one value at once, given in both orders, leave the value
+// gone with nothing held, and the parent is told each register a change moved once
+// (docs/adr/0085, section 9.3).
+func TestAListTakesTwoConcurrentClearsInEitherOrder(t *testing.T) {
+	replay(t, "record_list_concurrent_clears", recordListParent())
+}
+
+// recordListParent is one run of record_list_parent, which invokes the list as its
+// child, as a scenario reads it.
+func recordListParent() machine {
 	policy := record_list_parent.NewRecordListParentPolicy()
 	policy.SessionID = sce.GenerateSessionID()
-	replay(t, "record_list_parent", drive[record_list_parent.RecordListParentState, record_list_parent.RecordListParentEvent](&policy, map[string]func() any{
+	return drive[record_list_parent.RecordListParentState, record_list_parent.RecordListParentEvent](&policy, map[string]func() any{
 		"told":   func() any { return policy.Told() },
 		"shown":  func() any { return registerJSON(policy.Shown()) },
 		"others": func() any { return registerValuesJSON(policy.Others()) },
@@ -2573,7 +2583,7 @@ func TestAParentIsToldWhatEachRegisterOfItsListHolds(t *testing.T) {
 			}
 		},
 		"refusedCount": func() any { return policy.RefusedCount() },
-	}))
+	})
 }
 
 // presenceCopy is one copy of the list of who is online, as a scenario reads it.
