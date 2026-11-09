@@ -1917,5 +1917,12 @@ name = "a_union_variable_is_built_where_it_is_declared_or_starts_absent"
 path = "tests/a_union_variable_is_built_where_it_is_declared_or_starts_absent.rs"
 required-features = ["cli"]
 
+# A plan names the machine a hyphenated stem spells, as the build reads it from the plan. It
+# runs `sce-codegen`, so it carries the `cli` gate.
+[[test]]
+name = "a_plan_names_the_machine_a_hyphenated_stem_spells"
+path = "tests/a_plan_names_the_machine_a_hyphenated_stem_spells.rs"
+required-features = ["cli"]
+
 [lints]
 workspace = true
