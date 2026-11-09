@@ -344,7 +344,7 @@ the encoder, and ADR 0085's domain bump starts signing with it.**
    | Lane | A text of `string[B]` | A byte string of `bytes[B]` |
    |---|---|---|
    | Rust | `PayloadFields::text(name, B)`, held by `PayloadValue::text_within`, which `text::<N>` calls | `PayloadFields::bytes::<B>`, the capacity of `SceBytes<B>` |
-   | Go | `PayloadText(fields, name, B)`, held by `PayloadValue.Text` | `PayloadBytes(fields, name, B)`, held by `PayloadValue.Bytes` |
+   | Go | `PayloadTextWithin(fields, name, B)`, held by `PayloadValue.Text` | `PayloadBytes(fields, name, B)`, held by `PayloadValue.Bytes` |
    | Kotlin | `Fields.string(name, B)`, held by `Value.string` | `Fields.bytes(name, B)`, held by `Value.bytes` |
    | Python | `Text(B)` in the lift's field, read by `read_value` | `Bytes(B)`, read by `read_value` |
    | C++ | `EventPayloadFields::value`, then `EventPayloadValue::readText(B, …)` | `EventPayloadValue::readBytes(B, …)` |
