@@ -81,7 +81,11 @@ data class Configuration(
     val mappings: List<Pair<Endpoint, String>> = emptyList(),
 )
 
-/** What the test log records of a run (§12.5). */
+/**
+ * What a line of the run's log records (§12.5): the run as a reader follows
+ * it, with the removals of PTCs and the cause of an `error` in the runtime's
+ * words. The test log, which two runtimes compare, is [TestCaseResult.records].
+ */
 enum class LogKind {
     /** The MTC was created and started. */
     START,
@@ -114,7 +118,7 @@ enum class LogKind {
     ERROR,
 }
 
-/** One line of the test log. */
+/** One line of the run's log. */
 data class LogRecord(
     /** `NOW` when it was recorded. */
     val at: Instant,
@@ -129,15 +133,36 @@ data class LogRecord(
     val detail: String,
 )
 
-/** The outcome of one test case: its verdict, the instant it ended at, and its log. */
+/**
+ * The outcome of one test case: its verdict, the instant it ended at, the lines
+ * of its log, and its test log.
+ */
 data class TestCaseResult(
     /** The test case verdict (P14). */
     val verdict: Verdict = Verdict.NONE,
     /** `NOW` when the run ended. */
     val endedAt: Instant = 0,
-    /** The test log. */
+    /** The lines of the run's log, for a reader. */
     val log: List<LogRecord> = emptyList(),
-)
+    /**
+     * The test log (docs/adr/0091, C3): the records of TCI's test logging
+     * interface, in the order the run produced them, which [canonicalLog]
+     * writes.
+     */
+    val records: List<TestLogRecord> = emptyList(),
+) {
+    /**
+     * The test log of this run of the test case [testCase] of the suite
+     * [suite], in its one canonical text: the JSON Canonicalization Scheme of
+     * `schema`, `suite`, `test_case`, `verdict` and `records`, each record in
+     * the order the run produced it.
+     *
+     * @throws IllegalStateException when a message's value is not in the
+     *   canonical form ([TestValue.canonical]), which no writer of [Canonical]
+     *   builds.
+     */
+    fun canonicalLog(suite: String, testCase: String): String = writeTestLog(suite, testCase, verdict, records)
+}
 
 /**
  * The SUT's side of the mapped ports (§12.2).
@@ -235,6 +260,7 @@ internal class RunState(
     /** A dynamic error ended the run (P13). Not `error`, which would hide the standard library's. */
     private var failed = false
     private val log = mutableListOf<LogRecord>()
+    private val records = mutableListOf<TestLogRecord>()
 
     /** A step of the run is inside the state ([access]). */
     var held = false
@@ -341,6 +367,7 @@ internal class RunState(
             return
         }
         entity.terminated = true
+        trace(TestLogEvent.ComponentDone(name, entity.state.verdict))
         if (name == MTC_NAME) {
             mtcTerminated = true
             return
@@ -368,7 +395,8 @@ internal class RunState(
         if (failed) {
             verdict = Verdict.ERROR
         }
-        return TestCaseResult(verdict = verdict, endedAt = now, log = log.toList())
+        trace(TestLogEvent.TestCaseEnded(verdict))
+        return TestCaseResult(verdict = verdict, endedAt = now, log = log.toList(), records = records.toList())
     }
 
     // -- Entities (§2.1, P9) ------------------------------------------
@@ -390,6 +418,7 @@ internal class RunState(
         order.add(name)
         val kind = if (name == MTC_NAME) LogKind.START else LogKind.CREATE
         record(name, kind, componentType)
+        trace(TestLogEvent.ComponentCreated(name, componentType))
         return created
     }
 
@@ -441,6 +470,7 @@ internal class RunState(
 
     fun send(sender: String, port: String, message: Message) {
         record(sender, LogKind.SEND, "$port ${message.event}")
+        trace(TestLogEvent.MessageSent(sender, port, message.typeName, message.canonicalValue()))
         val peer = configuration.connections.firstNotNullOfOrNull { (a, b) ->
             when {
                 a.names(sender, port) -> b
@@ -492,6 +522,7 @@ internal class RunState(
             ?: error("$name receives on '$port', which its component type does not declare")
         val message = queue.removeHead()
         record(name, LogKind.RECEIVE, "$port ${message.event}")
+        trace(TestLogEvent.MessageReceived(name, port, message.typeName, message.canonicalValue()))
         return message
     }
 
@@ -502,6 +533,7 @@ internal class RunState(
             ?: error("$name times out on '$timer', which its component type does not declare")
         binding.timeoutTaken()
         record(name, LogKind.TIMEOUT, timer)
+        trace(TestLogEvent.TimerTimedOut(name, timer))
     }
 
     fun setverdict(name: String, serial: Long, verdict: Verdict, reason: String) {
@@ -509,18 +541,28 @@ internal class RunState(
         component.verdict = worse(component.verdict, verdict)
         val detail = if (reason.isEmpty()) verdict.spelling else "${verdict.spelling} $reason"
         record(name, LogKind.VERDICT, detail)
+        trace(TestLogEvent.VerdictSet(name, verdict, reason.ifEmpty { null }))
     }
 
     // -- The verdict and the log (§5, §12.5) --------------------------
 
-    /** A dynamic error (P13): the run ends with `error`. */
+    /**
+     * A dynamic error (P13): the run ends with `error`. The test log records
+     * the verdict without [why], which is this runtime's own prose.
+     */
     fun fail(component: String, why: String) {
         failed = true
         record(component, LogKind.ERROR, why)
+        trace(TestLogEvent.VerdictSet(component, Verdict.ERROR, null))
     }
 
     fun record(component: String, kind: LogKind, detail: String) {
         log.add(LogRecord(at = now, component = component, kind = kind, detail = detail))
+    }
+
+    /** A record of the test log, at `NOW`. */
+    fun trace(event: TestLogEvent) {
+        records.add(TestLogRecord(at = now, event = event))
     }
 }
 
@@ -672,17 +714,33 @@ class ComponentContext internal constructor(
 
     /** `<sce:start-timer>` (P7), for [duration] microseconds from `NOW`. */
     fun startTimer(timer: String, duration: Duration) {
-        access { it.component(name, serial).timers.getOrPut(timer) { Timer() }.start(it.now, duration) }
+        access {
+            it.component(name, serial).timers.getOrPut(timer) { Timer() }.start(it.now, duration)
+            it.trace(TestLogEvent.TimerStarted(name, timer, duration))
+        }
     }
 
-    /** `<sce:stop-timer>` (P7). */
+    /**
+     * `<sce:stop-timer>` (P7). The test log records the stop of a running
+     * timer; the stop of one that is not running changes nothing.
+     */
     fun stopTimer(timer: String) {
-        access { it.component(name, serial).timers.getOrPut(timer) { Timer() }.stop() }
+        access {
+            val binding = it.component(name, serial).timers.getOrPut(timer) { Timer() }
+            val running = binding.status == TimerStatus.RUNNING
+            binding.stop()
+            if (running) {
+                it.trace(TestLogEvent.TimerStopped(name, timer))
+            }
+        }
     }
 
     /** A `<log>` (P8): recorded in the test log with `NOW` and the component. */
     fun log(text: String) {
-        access { it.record(name, LogKind.LOG, text) }
+        access {
+            it.record(name, LogKind.LOG, text)
+            it.trace(TestLogEvent.Log(name, text))
+        }
     }
 
     // -- Doors (§12.3) ------------------------------------------------
@@ -753,7 +811,7 @@ inline fun <reified V : Any> receives(
     event: String,
     crossinline matches: (V) -> Boolean,
 ): Boolean = context.withSnapshot(port) { head ->
-    val value = if (head != null && head.event == event) head.value as? V else null
+    val value = if (head != null && head.event == event) head.valueAs<V>() else null
     value != null && matches(value)
 }
 
@@ -782,13 +840,14 @@ class TestCaseRun(
     private var started = false
 
     /**
-     * Runs the test case to its end and returns its verdict and log.
+     * Runs the test case to its end and returns its verdict and logs.
      *
      * @throws IllegalStateException when this run has been run already.
      */
     fun run(): TestCaseResult {
         check(!started) { "a test case run is run once; build another to run the test case again" }
         started = true
+        state.access(MTC_NAME) { it.trace(TestLogEvent.TestCaseStarted) }
         createEntity(state, MTC_NAME, state.configuration.mtcType)
         while (!state.access(MTC_NAME) { it.ended() }) {
             round(state)

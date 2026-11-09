@@ -104,6 +104,85 @@ object Json {
 
     private val SURROGATES = 0xD800..0xDFFF
 
+    /** Why a value has no form in the JSON Canonicalization Scheme ([writeJcs]). */
+    class NotCanonical(val reason: String) : Exception(reason)
+
+    /**
+     * [value] in the JSON Canonicalization Scheme (RFC 8785): no whitespace,
+     * the members of each object sorted by their names as sequences of UTF-16
+     * code units (section 3.2.3), which is the order `String.compareTo` gives,
+     * each text in the one form every engine writes ([quote], which is
+     * ECMAScript's `JSON.stringify` of a text: section 3.2.2.2), and each
+     * number as ECMAScript spells the double it reads as ([numberText],
+     * section 3.2.2.3). Two values equal under the scheme are then written as
+     * the same bytes, whatever order their members were built in.
+     *
+     * It is not [writeCanonical], whose order is the code points' and whose
+     * numbers keep the spelling they carry: the two orders differ where a name
+     * holds a character above U+FFFF.
+     *
+     * A [Map] names each member once, which the scheme requires (section
+     * 3.1), so only what is no JSON value is refused.
+     *
+     * Cross-language sibling: `sce_rust_runtime::json::write_canonical` (Rust).
+     *
+     * @throws NotCanonical for a [Number] that is no JSON number or is past the
+     *   range of a double, which the scheme has no spelling for; for an object
+     *   member whose name is not a text; and for a value of a type that is no
+     *   JSON value.
+     */
+    fun writeJcs(value: Any?): String = StringBuilder().also { writeJcsInto(value, it) }.toString()
+
+    /** The grammar of a JSON number (RFC 8259 section 6). */
+    private val JSON_NUMBER = Regex("-?(0|[1-9][0-9]*)(\\.[0-9]+)?([eE][+-]?[0-9]+)?")
+
+    private fun writeJcsInto(value: Any?, out: StringBuilder) {
+        when (value) {
+            null -> out.append("null")
+            is Boolean -> out.append(value.toString())
+            is Number -> {
+                if (!JSON_NUMBER.matches(value.text)) {
+                    throw NotCanonical("'${value.text}' is not a number")
+                }
+                val number = value.text.toDouble()
+                if (!number.isFinite()) {
+                    throw NotCanonical(
+                        "the number ${value.text} is past the range of a double, which RFC 8785 " +
+                            "writes every number as",
+                    )
+                }
+                out.append(numberText(number))
+            }
+            is String -> out.append(quote(value))
+            is List<*> -> {
+                out.append('[')
+                value.forEachIndexed { i, item ->
+                    if (i > 0) out.append(',')
+                    writeJcsInto(item, out)
+                }
+                out.append(']')
+            }
+            is Map<*, *> -> {
+                val members = value.entries.map { (key, item) ->
+                    val name = key as? String ?: throw NotCanonical(
+                        "an object member is named by ${key?.let { it::class.simpleName }}, not a text",
+                    )
+                    name to item
+                }.sortedBy { it.first }
+                out.append('{')
+                members.forEachIndexed { i, (name, item) ->
+                    if (i > 0) out.append(',')
+                    out.append(quote(name)).append(':')
+                    writeJcsInto(item, out)
+                }
+                out.append('}')
+            }
+            else -> throw NotCanonical(
+                "${value::class.simpleName} is not a JSON value; wrap a number in Json.Number",
+            )
+        }
+    }
+
     private fun writeInto(value: Any?, out: StringBuilder, canonical: Boolean) {
         when (value) {
             null -> out.append("null")
