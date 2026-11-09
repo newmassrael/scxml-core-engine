@@ -1296,25 +1296,46 @@ fn batch_payload_read(document: &roxmltree::Document<'_>) -> String {
         .to_string()
 }
 
-/// The data of an event whose schema holds a composed value is read whole, by
-/// the library's `payload` handed the descriptor of the schema's record with
-/// every bound at every depth in it, and its defaults (docs/adr/0086, sections
-/// 4 and 6). Every read of a part of it is that value and the fields, elements
-/// and lengths after it: the `<foreach>` that walks a list of the data, the one
-/// that walks a list an enclosing loop's item holds, the length, and the list
-/// taken whole. No field of it is read on its own through `field`, which would
-/// refuse that field alone and leave the rest of the delivery unread.
+/// The descriptor the door of `batch.sent` is installed with in `document`, a
+/// lowered statechart: the type between `SceStatic.door("batch.sent", ` and the
+/// `, true)` that marks it composed.
+fn batch_door(document: &roxmltree::Document<'_>) -> String {
+    let library = attributes_of(document, "data", ("id", "SceStaticInstalled"), "expr");
+    assert_eq!(library.len(), 1, "one <data> installs the library");
+    let open = "SceStatic.door(\"batch.sent\", ";
+    let at = library[0]
+        .find(open)
+        .unwrap_or_else(|| panic!("the door of batch.sent is installed: {}", library[0]));
+    let rest = &library[0][at + open.len()..];
+    let end = rest
+        .find(", true);")
+        .unwrap_or_else(|| panic!("the door of batch.sent is a composed one: {rest}"));
+    rest[..end].to_string()
+}
+
+/// The data of an event whose schema holds a composed value is read whole by
+/// its door when the event is taken, handed the descriptor of the schema's
+/// record with every bound at every depth in it, and its defaults
+/// (docs/adr/0086, sections 4 and 6), and the value the door read is what every
+/// expression reads, through the library's `taken`. Every read of a part of it
+/// is that value and the fields, elements and lengths after it: the `<foreach>`
+/// that walks a list of the data, the one that walks a list an enclosing loop's
+/// item holds, the length, and the list taken whole. No field of it is read on
+/// its own through `field`, which would refuse that field alone and leave the
+/// rest of the delivery unread.
 #[test]
 fn a_composed_payload_is_read_whole_and_at_any_depth_through_the_library() {
     let out = lowered_fixture("static_composed_payload");
     let document = roxmltree::Document::parse(&out).expect("well-formed");
     let read = batch_payload_read(&document);
+    assert_eq!(read, "SceStatic.taken('batch.sent', _event.data)");
+    let door = batch_door(&document);
     assert!(
-        read.starts_with(
-            "SceStatic.payload(_event.data, {record: {'items': {list: {record: {'id': 'uint32', \
+        door.starts_with(
+            "{record: {'items': {list: {record: {'id': 'uint32', \
              'amount': 'int64', 'label': {string: 8}, 'level': ['low', 'high'"
         ),
-        "{read}"
+        "{door}"
     );
     for part in [
         "'due': {optional: 'int64'}, 'blob': {bytes: 4}, 'tags': {list: {string: 8}, max: 4}}}, \
@@ -1324,11 +1345,11 @@ fn a_composed_payload_is_read_whole_and_at_any_depth_through_the_library() {
         "'spare': {optional: {list: 'uint8', max: 2}}",
         "'note': {string: 4}",
     ] {
-        assert!(read.contains(part), "the read holds `{part}`: {read}");
+        assert!(door.contains(part), "the door holds `{part}`: {door}");
     }
     assert!(
-        read.ends_with("'late': {list: 'uint8', max: 2}}, defaults: {\"late\":[]}})"),
-        "a list the second revision added reads empty where a delivery lacks it: {read}"
+        door.ends_with("'late': {list: 'uint8', max: 2}}, defaults: {\"late\":[]}}"),
+        "a list the second revision added reads empty where a delivery lacks it: {door}"
     );
     assert_eq!(
         attributes_of(&document, "foreach", ("", ""), "array"),
@@ -1368,46 +1389,32 @@ fn first_elements(document: &roxmltree::Document<'_>, event: &str) -> Vec<(Strin
         .collect()
 }
 
-/// A transition taken on an event whose composed payload the machine reads
-/// opens its content with a read of the whole data, a `<script>` that keeps
-/// nothing of it (docs/adr/0086, section 4.2): a delivery outside its type makes
-/// it throw, `error.execution` is raised and the block ends, so none of the
-/// transition's content runs, as on the generated backends, which lift the
-/// payload when the event is dequeued. Every transition on the event opens with
-/// it, the one that reads nothing of the data before its first statement too;
-/// a transition on another event does not.
+/// An event whose composed payload the machine reads is read whole by its door
+/// when the event is taken, before any transition is selected (docs/adr/0086,
+/// section 4.2): a delivery outside its type is refused whole and
+/// `error.execution` taken in its place, as on the generated backends. So no
+/// transition on the event opens its content with a read of its own: each
+/// stands as the lowering wrote it, the one that counts the delivery before it
+/// reads the data too.
 #[test]
-fn a_transition_on_a_composed_payload_reads_it_whole_before_its_content() {
+fn a_composed_payload_is_read_whole_at_its_door_and_no_content_reads_it_again() {
     for machine in ["static_composed_payload", "static_composed_send"] {
         let out = lowered_fixture(machine);
         let document = roxmltree::Document::parse(&out).expect("well-formed");
-        let read = batch_payload_read(&document);
+        assert!(
+            batch_door(&document).starts_with("{record: {"),
+            "{machine}: {out}"
+        );
         let opened = first_elements(&document, "batch.sent");
         assert!(!opened.is_empty(), "{machine}: {out}");
-        for (name, text) in &opened {
-            assert_eq!(name, "script", "{machine}: {out}");
-            assert_eq!(text, &format!("{read};"), "{machine}");
+        for (name, _) in &opened {
+            assert_ne!(name, "script", "{machine}: {out}");
         }
-        for (name, _) in first_elements(&document, "error.execution") {
-            assert_eq!(name, "assign", "{machine}: {out}");
-        }
+        assert!(
+            !out.contains("SceStatic.payload("),
+            "{machine}: no expression reads the data whole again: {out}"
+        );
     }
-    // `static_composed_send`'s first transition counts the delivery before it
-    // reads the data: the read stands before the count.
-    let out = lowered_fixture("static_composed_send");
-    let document = roxmltree::Document::parse(&out).expect("well-formed");
-    let counted = document
-        .descendants()
-        .find(|n| {
-            n.is_element() && n.tag_name().name() == "transition" && n.attribute("cond").is_some()
-        })
-        .expect("the guarded transition");
-    let names: Vec<&str> = counted
-        .children()
-        .filter(|child| child.is_element())
-        .map(|child| child.tag_name().name())
-        .collect();
-    assert_eq!(names.get(..2), Some(&["script", "assign"][..]), "{out}");
 }
 
 /// `text`, an SCXML document in the default namespace, written with the prefix
@@ -1458,10 +1465,9 @@ fn beside_the_fixtures(root: (&str, String)) -> std::collections::BTreeMap<Strin
 
 /// Every element the lowering writes into a document whose SCXML namespace has
 /// a prefix stands in that namespace, under the document's own prefix: the
-/// `<data>` that installs the library and the `<data>` of a list, the `<script>`
-/// that opens a transition on a composed payload, and the `<script>` a lift
-/// becomes. An element written with no prefix would stand in no namespace, and
-/// an engine would read it as no executable content at all.
+/// `<data>` that installs the library and the doors, the `<data>` of a list, and
+/// the `<script>` a lift becomes. An element written with no prefix would stand
+/// in no namespace, and an engine would read it as no executable content at all.
 #[test]
 fn an_element_the_lowering_writes_takes_the_documents_scxml_prefix() {
     const SCXML: &str = "http://www.w3.org/2005/07/scxml";
@@ -1484,21 +1490,25 @@ fn an_element_the_lowering_writes_takes_the_documents_scxml_prefix() {
             unbound.is_empty(),
             "{machine}: elements in no namespace {unbound:?}: {out}"
         );
-        let scripts = document
-            .descendants()
-            .filter(|n| {
-                n.is_element()
-                    && n.tag_name().name() == "script"
-                    && n.tag_name().namespace() == Some(SCXML)
-            })
-            .count();
-        assert!(scripts > 0, "{machine}: no <s:script> was written: {out}");
         let library = document
             .descendants()
             .find(|n| n.attribute("id") == Some("SceStaticInstalled"))
             .expect("the library is installed");
         assert_eq!(library.tag_name().namespace(), Some(SCXML), "{machine}");
-        assert!(out.contains("<s:script>"), "{machine}: {out}");
+        // A lift becomes a `<script>`; a composed payload is read by its door,
+        // in the library's `<data>`, and opens no transition with one.
+        if machine == "static_lift" {
+            let scripts = document
+                .descendants()
+                .filter(|n| {
+                    n.is_element()
+                        && n.tag_name().name() == "script"
+                        && n.tag_name().namespace() == Some(SCXML)
+                })
+                .count();
+            assert!(scripts > 0, "{machine}: no <s:script> was written: {out}");
+            assert!(out.contains("<s:script>"), "{machine}: {out}");
+        }
     }
 }
 
