@@ -1,31 +1,89 @@
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// What the tests of a crowd have in common: a hundred people on the hub of the to-do list
-// or of the sheet, and the ways of holding every copy to the one list or sheet the
-// network says they should end with.
+// What the tests of a crowd have in common: many people sharing the to-do list or the
+// sheet, and the ways of holding every copy to the one list or sheet the network says they
+// should end with.
 //
-// The documents (`todo_peer.scxml`, `sheet_peer.scxml`) are written for two people: the
-// hub passes a write on to `#alice` unless it is node 1's and to `#bob` unless it is node
-// 2's. In a crowd those two names are topics ([`World::topic`]), which is how a hub that
-// does not list its readers reaches a hundred of them: `#alice` is every person but the
-// second and `#bob` every person but the first, so a write of the first or the second
-// person reaches all the others once, and a write of any other person reaches each of
-// the others twice and its writer twice as well, which a copy takes in as writes it
-// already holds. Any of the hundred may write: a copy sends a write to the hub from the
-// handler of its own edit and sends nothing for one it is given, so a write the hub sends
-// back to its writer is applied once and ends there.
+// The to-do list's copies are the members of one causal group (`#people`, `delivery:
+// causal`, docs/adr/0085 section 3.2): every copy sends its changes to the group and reads
+// it, and the layer below the list delivers each change to every copy once. A view holds at
+// most 64 members, the bound of the vector an envelope carries, so a crowd of the list is
+// at most that ([`VIEW_BOUND`]).
+//
+// The sheet (`sheet_peer.scxml`) is written for two people and a hub: the hub passes a
+// write on to `#alice` unless it is node 1's and to `#bob` unless it is node 2's. In a
+// crowd those two names are topics ([`World::topic`]), which is how a hub that does not list
+// its readers reaches a hundred of them: `#alice` is every person but the second and `#bob`
+// every person but the first, so a write of the first or the second person reaches all the
+// others once, and a write of any other person reaches each of the others twice and its
+// writer twice as well, which a copy takes in as writes it already holds. Any of the hundred
+// may write: a copy sends a write to the hub from the handler of its own edit and sends
+// nothing for one it is given, so a write the hub sends back to its writer is applied once
+// and ends there.
 
 use std::collections::BTreeMap;
 
+use sce_rust_mesh::causal::CausalGroup;
 use sce_rust_mesh::router::Router;
 use sce_rust_runtime::StatePolicy;
 use sce_rust_world::World;
 
 use super::{
-    contents_of, peer, person, sheet_of, shown_of, todos_of, Content, Field, Held, Shown,
-    GAP_TIMEOUT_MS,
+    at_rest, contents_of, group_world_of, peer, person, sheet_of, shown_of, todos_of, Content,
+    Field, Held, Shown, GAP_TIMEOUT_MS, PEOPLE,
 };
+
+/// The most members the view of a causal group holds: the bound of the vector an envelope
+/// carries (docs/adr/0085, section 3.2).
+pub const VIEW_BOUND: usize = 64;
+
+/// The causal group of the copies `names`, each one machine on a device of its own, as a
+/// deploy names them (`<device>/<machine>`).
+pub fn crowd_group(names: &[String]) -> CausalGroup {
+    assert!(
+        names.len() <= VIEW_BOUND,
+        "a view holds at most {VIEW_BOUND} members, and {} were given",
+        names.len()
+    );
+    let view: Vec<&'static str> = names
+        .iter()
+        .map(|name| &*Box::leak(format!("{name}/{name}").into_boxed_str()))
+        .collect();
+    CausalGroup {
+        name: PEOPLE,
+        epoch: 0,
+        view: Box::leak(view.into_boxed_slice()),
+    }
+}
+
+/// A world of the people `names`, every two `latency_ms` apart, each the member of one causal
+/// group, of the machines `new` makes, which are told to start by the event `join` with the
+/// data `data` gives for a node. The world is at rest when it is handed back.
+pub fn crowd_group_world<P: StatePolicy + 'static>(
+    seed: u64,
+    names: &[String],
+    latency_ms: i64,
+    new: impl Fn() -> P,
+    join: &str,
+    data: impl Fn(u64) -> String,
+) -> World {
+    let copies: Vec<&str> = names.iter().map(String::as_str).collect();
+    let mut world = group_world_of(
+        seed,
+        latency_ms,
+        &copies,
+        crowd_group(names),
+        |world, who, router| {
+            world.add(who, new(), router);
+        },
+    );
+    for (index, who) in names.iter().enumerate() {
+        world.raise(who, join, &data(node_in_crowd(index)));
+    }
+    at_rest(&mut world);
+    world
+}
 
 /// The hub's name, which the documents write as `#server`.
 pub const HUB: &str = "server";
@@ -87,17 +145,18 @@ pub fn crowd_world<P: StatePolicy + 'static>(
     world
 }
 
-/// Every copy of the crowd holds the list of to-dos the hub does; which.
+/// Every copy of the crowd holds the list of to-dos the first does; which.
 pub fn agreed_todos_among(world: &mut World, names: &[String]) -> BTreeMap<(u64, u64), Field> {
-    let server = todos_of(world, HUB);
-    for who in names {
+    let first = todos_of(world, &names[0]);
+    for who in &names[1..] {
         assert_eq!(
             todos_of(world, who),
-            server,
-            "{who} and the hub hold different to-do lists"
+            first,
+            "{who} and {} hold different to-do lists",
+            names[0]
         );
     }
-    server
+    first
 }
 
 /// Every copy of the crowd holds the cells the hub does, with the stamps that put them

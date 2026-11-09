@@ -9,10 +9,10 @@
 // the changes meant.
 //
 // The traffic between the copies is the real traffic: a Kotlin copy's `<send>` leaves the
-// machine as the engine's host send, goes through the Mesh endpoint the world holds for it
-// and over the simulated network, and what a Rust copy sends reaches the Kotlin one the
-// same way. The oracle is the one the all-Rust tests use, and it reads the network, not
-// the copies, so it judges the mix.
+// machine as the engine's host send, goes through the Mesh endpoint and its causal layer the
+// world holds for it and over the simulated network, and what a Rust copy sends reaches the
+// Kotlin one the same way. The oracle is the one the all-Rust tests use, and it reads the
+// network, not the copies, so it judges the mix.
 //
 // These tests need a JVM and the step server's build (`./gradlew
 // :sce-kotlin-world:installDist`); without them they say so and pass, unless
@@ -21,7 +21,7 @@
 mod common;
 
 use common::kotlin::{on_the_wire, Cast, Mix, ACTORS, MIXES};
-use common::resync::{assert_converged, digest_of, MINUTE};
+use common::repair::{assert_converged, lose_everything, MINUTE};
 use common::*;
 use sce_rust_world::{Outcome, World};
 
@@ -77,7 +77,7 @@ fn changes_to_different_fields_of_one_todo_are_both_kept_with_a_kotlin_person() 
 /// and writes a third writes over both.
 #[test]
 fn two_titles_written_at_the_same_instant_are_both_kept_in_every_mix() {
-    let cast = cast!(&["alice", "bob", "server"]);
+    let cast = cast!(&ACTORS);
     for kotlin in MIXES {
         let mix = cast.mix(kotlin);
         let said = mix.describe();
@@ -126,25 +126,26 @@ fn two_titles_written_at_the_same_instant_are_both_kept_in_every_mix() {
 /// moment on two sides of a cut link are both kept, whichever side is Kotlin.
 #[test]
 fn changes_made_offline_by_either_side_are_merged_in_every_mix() {
-    let cast = cast!(&["alice", "bob", "server"]);
+    let cast = cast!(&ACTORS);
     for kotlin in MIXES {
         let mix = cast.mix(kotlin);
         let said = mix.describe();
 
         let mut world = mix.world(5, 20);
-        world.partition("alice", "server");
+        world.partition("alice", "bob");
+        world.partition("alice", "carol");
         todo_title(&mut world, "alice", 1, "pack bags");
         todo_set(&mut world, "alice", 1, DUE, 100);
-        assert_eq!(world.run_until_quiet(500), Outcome::Quiet, "{said}");
-        world.advance_ms(500);
+        world.advance_ms(1_000);
         // Bob, meanwhile, ticks off the same to-do and writes another.
         todo_set(&mut world, "bob", 1, DONE, 1);
         todo_title(&mut world, "bob", 2, "book taxi");
-        assert_eq!(world.run_until_quiet(500), Outcome::Quiet, "{said}");
+        world.advance_ms(500);
         // Alice holds only her own while she is cut off.
         assert_eq!(todos_of(&mut world, "alice").len(), 2, "{said}");
 
-        world.heal("alice", "server");
+        world.heal("alice", "bob");
+        world.heal("alice", "carol");
         assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet, "{said}");
         let list = agreed_todos(&mut world);
         assert_eq!(list.len(), 4, "{said}");
@@ -166,13 +167,15 @@ fn changes_made_offline_by_either_side_are_merged_in_every_mix() {
         let mut world = mix.world(5, 20);
         todo_set(&mut world, "alice", 1, DUE, 10);
         assert_eq!(world.run_until_quiet(10_000), Outcome::Quiet, "{said}");
-        world.partition("alice", "server");
+        world.partition("alice", "bob");
+        world.partition("alice", "carol");
         todo_set(&mut world, "alice", 1, DUE, 20);
         todo_set(&mut world, "bob", 1, DUE, 30);
-        assert_eq!(world.run_until_quiet(500), Outcome::Quiet, "{said}");
+        world.advance_ms(500);
         assert_eq!(todos_of(&mut world, "alice")[&(1, DUE)].value, 20, "{said}");
 
-        world.heal("alice", "server");
+        world.heal("alice", "bob");
+        world.heal("alice", "carol");
         assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet, "{said}");
         let list = agreed_todos(&mut world);
         let mut values: Vec<_> = list[&(1, DUE)].live.iter().map(|held| held.value).collect();
@@ -228,7 +231,7 @@ fn a_title_in_another_script_is_held_to_its_bytes_by_a_kotlin_copy() {
 /// every seed the three copies end alike and as the oracle says.
 #[test]
 fn a_random_afternoon_with_kotlin_and_rust_copies_ends_with_one_list() {
-    let cast = cast!(&["alice", "bob", "server"]);
+    let cast = cast!(&ACTORS);
     for kotlin in MIXES {
         let mix = cast.mix(kotlin);
         for seed in 0..AFTERNOONS {
@@ -244,7 +247,7 @@ fn a_random_afternoon_with_kotlin_and_rust_copies_ends_with_one_list() {
 /// saved states: a Kotlin copy comes back through the `restore` its generator wrote.
 #[test]
 fn a_random_afternoon_with_restarts_of_kotlin_and_rust_copies_ends_with_one_list() {
-    let cast = cast!(&["alice", "bob", "server"]);
+    let cast = cast!(&ACTORS);
     for kotlin in MIXES {
         let mix = cast.mix(kotlin);
         for seed in 0..AFTERNOONS {
@@ -261,7 +264,7 @@ fn a_random_afternoon_with_restarts_of_kotlin_and_rust_copies_ends_with_one_list
 /// a copy is written in but how it was added.
 #[test]
 fn a_kotlin_copy_sends_and_holds_what_a_rust_copy_does() {
-    let cast = cast!(&["alice", "bob", "server"]);
+    let cast = cast!(&ACTORS);
     let nothing: &[&'static str] = &[];
     let rust_mix = cast.mix(nothing);
     for seed in 0..AFTERNOONS {
@@ -301,8 +304,8 @@ fn a_kotlin_copy_sends_and_holds_what_a_rust_copy_does() {
 /// the child reads no clock and draws no number of its own.
 #[test]
 fn a_run_with_kotlin_copies_is_the_same_run_each_time() {
-    let cast = cast!(&["alice", "bob", "server"]);
-    let mix = cast.mix(&["alice", "bob", "server"]);
+    let cast = cast!(&ACTORS);
+    let mix = cast.mix(&ACTORS);
     let run = |seed| {
         let mut world = mix.world(seed, 5);
         todo_afternoon(&mut world, seed, true, |world, who| mix.restart(world, who));
@@ -314,11 +317,11 @@ fn a_run_with_kotlin_copies_is_the_same_run_each_time() {
 }
 
 /// A Kotlin copy killed and started again from what it saved of itself holds what it held:
-/// every variable, so a restore that drops one is said where it drops it. The registers, the
-/// writes seen and the tombstones all come back, and the list still converges.
+/// every variable, so a restore that drops one is said where it drops it. The registers and
+/// the values come back, and the list still converges.
 #[test]
 fn a_kotlin_copy_restarted_midway_holds_what_it_held_and_the_list_still_converges() {
-    let cast = cast!(&["alice", "bob", "server"]);
+    let cast = cast!(&ACTORS);
     for kotlin in MIXES {
         let mix = cast.mix(kotlin);
         let said = mix.describe();
@@ -337,7 +340,7 @@ fn a_kotlin_copy_restarted_midway_holds_what_it_held_and_the_list_still_converge
             "{said}"
         );
 
-        for who in ["alice", "bob", "server"] {
+        for who in ACTORS {
             let before = todo_variables_of(&mut world, who);
             mix.restart(&mut world, who);
             assert_eq!(
@@ -361,85 +364,59 @@ fn a_kotlin_copy_restarted_midway_holds_what_it_held_and_the_list_still_converge
         );
         assert_eq!(list[&(4, DUE)].value, 6, "{said}");
         assert_eq!(list, todo_oracle(&world), "{said}");
-        assert_eq!(
-            todo_variables_of(&mut world, "server")["hub"],
-            true,
-            "{said}: the hub came back as the hub"
-        );
         assert!(world.host_errors().is_empty(), "{said}");
     }
 }
 
-/// Some to-dos written across the first half hour, a save of `who`'s copy, and then more
-/// changes by both people in the minutes after it: the changes that copy would lose if it
-/// came back from the save. The save is text, which is the same for either language.
-fn saved_then_both_write_on(mix: &Mix<'_>, who: &str) -> (World, String) {
+/// Some to-dos written across the first half hour; then the links of `who` lose everything,
+/// both ways, while the people write on in the minutes after it: the changes that copy does
+/// not get, and the ones of its own no one gets. Its links carry again at the end.
+fn cut_off_while_the_others_write_on(mix: &Mix<'_>, who: &str) -> World {
     let mut world = mix.world(7, 20);
-    assert_eq!(world.run_until_quiet(1), Outcome::Quiet);
     todo_title(&mut world, "alice", 1, "pay rent");
     todo_set(&mut world, "bob", 1, DUE, 5);
     todo_set(&mut world, "alice", 2, DONE, 0);
-    assert_eq!(world.run_until_quiet(10_000), Outcome::Quiet);
+    assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet);
     world.advance_ms(30 * MINUTE);
 
-    let old = mix.save(&mut world, who);
-
+    lose_everything(&mut world, who, true);
     world.advance_ms(7 * MINUTE);
     todo_title(&mut world, "bob", 1, "pay the rent");
-    assert_eq!(world.run_until_quiet(10_000), Outcome::Quiet);
     world.advance_ms(5 * MINUTE);
     todo_set(&mut world, "alice", 3, DUE, 9);
     todo_title(&mut world, "alice", 2, "buy bread");
-    assert_eq!(world.run_until_quiet(10_000), Outcome::Quiet);
     world.advance_ms(11 * MINUTE);
-    todo_set(&mut world, "bob", 3, DONE, 1);
-    assert_eq!(world.run_until_quiet(10_000), Outcome::Quiet);
-    (world, old)
+    todo_set(&mut world, "carol", 3, DONE, 1);
+    world.advance_ms(MINUTE);
+    lose_everything(&mut world, who, false);
+    world
 }
 
-/// A copy brought back from a save older than what the others have been sent holds less
-/// than they do and stays that way, whichever copy it is and whichever language it is
-/// written in: nothing the network does repairs it. Told that its link is back, it ends
-/// with the list the others hold, and the digest each copy keeps, which every language
-/// computes with its own checked integer arithmetic, is the digest of what it holds and
-/// the same as the others'.
+/// A copy whose links lost everything for a while holds less than the others, and they lack
+/// what it made, whichever copy it is and whichever language it is written in. Once its
+/// links carry again, the layers' vectors find what each lacks, with no word from any host,
+/// and every copy ends with the list the oracle says, its layer at rest.
 #[test]
-fn a_copy_restored_from_an_old_save_is_repaired_by_resync_in_every_mix() {
-    let cast = cast!(&["alice", "bob", "server"]);
+fn a_copy_whose_links_lost_everything_is_repaired_in_every_mix() {
+    let cast = cast!(&ACTORS);
     for kotlin in MIXES {
         let mix = cast.mix(kotlin);
-        for lost in ["alice", "server"] {
-            let said = format!("{}, {lost} restored", mix.describe());
-            let (mut world, old) = saved_then_both_write_on(&mix, lost);
-            let whole_list = assert_converged(&mut world, &format!("{said}: before the restore"));
-
-            mix.restore_from(&mut world, lost, &old);
-            let behind = todos_of(&mut world, lost);
+        for lost in ["alice", "carol"] {
+            let said = format!("{}, {lost} cut off", mix.describe());
+            let mut world = cut_off_while_the_others_write_on(&mix, lost);
             assert_ne!(
-                behind, whole_list,
-                "{said}: it came back without what came after"
-            );
-            // The links are up and the others believe it has everything they sent it, so
-            // there is nothing left for the network to do.
-            assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet, "{said}");
-            assert_eq!(
                 todos_of(&mut world, lost),
-                behind,
-                "{said}: nothing repaired it"
+                todos_of(&mut world, "bob"),
+                "{said}: the copy cut off holds what the others hold"
             );
-            assert_ne!(
-                digest_of(&mut world, lost),
-                digest_of(
-                    &mut world,
-                    if lost == "server" { "alice" } else { "server" }
-                ),
+            assert_eq!(world.run_until_quiet(600_000), Outcome::Quiet, "{said}");
+            let list = assert_converged(&mut world, &format!("{said}: after the repair"));
+            assert_eq!(
+                list[&(1, TITLE)].text.as_deref(),
+                Some("pay the rent"),
                 "{said}"
             );
-
-            world.raise(lost, "todo.resync", "");
-            assert_eq!(world.run_until_quiet(60_000), Outcome::Quiet, "{said}");
-            let list = assert_converged(&mut world, &format!("{said}: after the resync"));
-            assert_eq!(list, whole_list, "{said}");
+            assert_eq!(list[&(3, DONE)].value, 1, "{said}");
         }
     }
 }

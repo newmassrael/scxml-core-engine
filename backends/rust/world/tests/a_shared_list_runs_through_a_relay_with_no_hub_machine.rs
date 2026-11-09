@@ -5,7 +5,7 @@
 // keeps it and holds no key, and the other member's courier brings it out and tells that member's
 // machine. The machines are copies of the standard shared record list
 // (sce:std/shared/record_list.scxml), the document the trust layer secures, each run by its host,
-// and know nothing of it; the world's hub actor is given nothing. What is asked:
+// and know nothing of it; the world's third copy, carol's, is given nothing. What is asked:
 // that two members agree on one list through the relay, in the profile where the hub is not
 // trusted (content sealed, the relay reads none of it) and in the one where it is (the same relay,
 // the same protocol); that an instant is settled on the members' checkpoints, carried through the
@@ -60,7 +60,7 @@ struct Members {
 
 impl Members {
     fn new(seed: u64, profile: Profile) -> Self {
-        let mut world = record_world(seed, 20);
+        let mut world = record_world(seed);
         let authority = Authority::new([3; 32], "the-relay");
         let relay: Shared = Arc::new(Mutex::new(
             Relay::open(MemoryStore::new(), authority.clone(), Limits::default()).unwrap(),
@@ -142,8 +142,8 @@ impl Members {
                 }
             }
             quiet(&mut self.world);
-            // What a machine sends to a hub it does not have is kept by the host and refused to the
-            // mesh: those are the host's errors, and nothing else is.
+            // What a machine sends is kept by the host for the relay and refused to the mesh:
+            // those are the host's errors, and nothing else is.
             self.world.host_errors();
             if !moved {
                 return;

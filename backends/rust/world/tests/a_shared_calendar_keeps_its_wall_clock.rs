@@ -225,7 +225,7 @@ fn copies_told_different_zones_show_one_reading_at_different_instants() {
     let mut world = todo_world(1, 20);
     set_zone(&mut world, "alice", 1, &seoul());
     set_zone(&mut world, "bob", 1, &new_york());
-    set_zone(&mut world, "server", 1, &new_york());
+    set_zone(&mut world, "carol", 1, &new_york());
     quiet(&mut world);
     schedule_todo(
         &mut world,
@@ -261,7 +261,7 @@ fn clearing_the_zones_puts_every_event_back_in_utc() {
         [instant(2026, 4, 6, 13, 0)]
     );
 
-    for who in ["alice", "bob", "server"] {
+    for who in COPIES {
         world.raise(who, "todo.zone_clear", "");
     }
     quiet(&mut world);
@@ -416,12 +416,12 @@ fn a_random_month_in_new_york_ends_with_one_agenda() {
         set_zone_everywhere(&mut world, 1, &zones[&1]);
         let mut rng = Rng::new(seed);
         assert_eq!(world.run_until_quiet(1), Outcome::Quiet, "seed {seed}");
-        world.jitter("alice", "server", 40);
-        world.jitter("bob", "server", 40);
-        world.reorder("alice", "server");
-        world.reorder("bob", "server");
-        world.degrade("alice", "server", 0, 20);
-        world.degrade("bob", "server", 0, 20);
+        let links = links_of(&COPIES);
+        for &(a, b) in &links {
+            world.jitter(a, b, 40);
+            world.reorder(a, b);
+            world.degrade(a, b, 0, 20);
+        }
         // Three events that have a schedule to begin with, each repeating another way, so
         // that the changes below act on something that shows occurrences.
         for (id, repeat) in [(1, DAILY), (2, WEEKLY), (3, MONTHLY)] {
@@ -431,9 +431,9 @@ fn a_random_month_in_new_york_ends_with_one_agenda() {
             schedule_todo(&mut world, "alice", id, &plan);
         }
         assert_eq!(world.run_until_quiet(10_000), Outcome::Quiet, "seed {seed}");
-        let mut cut = [false, false];
+        let mut cut = vec![false; links.len()];
         for _ in 0..70 {
-            let who = if rng.below(2) == 0 { "alice" } else { "bob" };
+            let who = COPIES[rng.below(3) as usize];
             let id = 1 + rng.below(3);
             let (field, value) = match rng.below(9) {
                 0 => {
@@ -460,20 +460,20 @@ fn a_random_month_in_new_york_ends_with_one_agenda() {
             };
             todo_set(&mut world, who, id, field, value);
             if rng.below(6) == 0 {
-                let which = usize::from(rng.below(2) == 1);
-                let name = ["alice", "bob"][which];
+                let which = rng.below(links.len() as u64) as usize;
+                let (a, b) = links[which];
                 if cut[which] {
-                    world.heal(name, "server");
+                    world.heal(a, b);
                 } else {
-                    world.partition(name, "server");
+                    world.partition(a, b);
                 }
                 cut[which] = !cut[which];
             }
             world.run_until_quiet(rng.below(60) as i64 + 1);
         }
-        for (which, name) in ["alice", "bob"].into_iter().enumerate() {
+        for (which, &(a, b)) in links.iter().enumerate() {
             if cut[which] {
-                world.heal(name, "server");
+                world.heal(a, b);
             }
         }
         assert_eq!(
@@ -482,7 +482,7 @@ fn a_random_month_in_new_york_ends_with_one_agenda() {
             "seed {seed}"
         );
 
-        for who in ["alice", "bob", "server"] {
+        for who in COPIES {
             assert_eq!(
                 todo_variables_of(&mut world, who)["refusals"],
                 0,
