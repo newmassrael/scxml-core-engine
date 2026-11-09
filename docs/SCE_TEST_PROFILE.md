@@ -873,6 +873,11 @@ has. A name follows -1's term for the concept where -1 has one. The rules of §4
 this section adds only what the XML must say. Every refusal named here is a `DiagnosticCode` whose name begins with
 `test-profile/`, unless an existing code already states it.
 
+Each example of §11.3 to §11.8 is a fixture of the profile's tests, `sce-build/tests/fixtures/test_profile/<name>.scxml`
+for the `name` its root carries: its `<scxml>` element is quoted as committed, and the file is the reference. Together
+they are one suite, `job_suite`, whose export `sce-build/tests/a_test_suite_is_exported_to_ttcn3.rs` holds
+(`the_job_suite_is_exported`).
+
 ### 11.1 Two URIs
 
 | URI | Names | Rule |
@@ -889,14 +894,19 @@ names `sce-static`. Any other value is refused, in all six kinds.
 ### 11.3 `test-port-type`
 
 ```xml
-<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
        version="1.0" sce:kind="test-port-type" name="job_port">
-  <sce:import kind="event-schema" src="job_request.scxml" as="JobRequest"/>
-  <sce:import kind="event-schema" src="job_completed.scxml" as="JobCompleted"/>
-  <sce:message type="JobRequest" direction="out"/>
-  <sce:message type="JobCompleted" direction="in"/>
+  <sce:import kind="event-schema" src="job_status.scxml" as="JobStatus"/>
+  <sce:import kind="event-schema" src="../../../kind-examples/event-schema.scxml"
+              as="JobCompleted"/>
+  <sce:message type="JobStatus" direction="inout"/>
+  <sce:message type="JobCompleted" direction="out"/>
 </scxml>
 ```
+
+A port of `job_port` sends and receives a job's status, `job_status.scxml`, and sends a job's completion, the
+`event-schema` of `sce-build/kind-examples/event-schema.scxml`.
 
 - `<sce:message>` names an imported `event-schema` and its direction: `in`, `out` or `inout`, seen from the component
   that owns a port of this type (-1 §6.2.9).
@@ -904,26 +914,56 @@ names `sce-static`. Any other value is refused, in all six kinds.
   with `out` or `inout`. §11.6 checks ports against each other by these lists.
 - Refused: a port type with no message; one type listed twice; two types with the same event name, because a message
   delivered to a port is told apart from the others by its event name.
-- Export: `type port job_port message { out JobRequest; in JobCompleted }`.
+- Export (E3, §9.5): each message in document order with its direction, its type named as the types module names
+  it, by the unit name of its `event-schema` document, the stem of its file in lower snake case:
+
+  ```ttcn3
+  type port job_port message {
+    inout job_status;
+    out event_schema;
+  }
+  ```
 
 ### 11.4 `test-template`
 
 ```xml
-<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       version="1.0" sce:kind="test-template" name="completed_within" sce:type="record:JobCompleted">
-  <sce:import kind="event-schema" src="job_completed.scxml" as="JobCompleted"/>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="every_matcher"
+       sce:type="record:JobStatus">
+  <sce:import kind="event-schema" src="job_status.scxml" as="JobStatus"/>
+  <sce:import kind="test-template" src="elapsed_at_most.scxml" as="ElapsedAtMost"/>
   <datamodel>
     <data id="limit" sce:type="uint32" sce:direction="in"/>
   </datamodel>
   <sce:record-match>
-    <sce:value-range field="elapsed_ms">
-      <sce:lower value="0"/>
-      <sce:upper param="limit"/>
-    </sce:value-range>
-    <sce:any-value-or-none field="note"/>
+    <sce:value-list field="elapsed_ms">
+      <sce:specific value="1"/>
+      <sce:value-range>
+        <sce:lower value="10"/>
+        <sce:upper param="limit"/>
+      </sce:value-range>
+    </sce:value-list>
+    <sce:any-value field="note" length-max="8" ifpresent="true"/>
+    <sce:list-match field="codes" length-min="1" length-max="4">
+      <sce:specific value="3"/>
+      <sce:any-value/>
+      <sce:complement>
+        <sce:specific value="0"/>
+      </sce:complement>
+    </sce:list-match>
+    <sce:any-value-or-none field="tag"/>
+    <sce:omit field="retry"/>
+    <sce:template-ref field="count" template="ElapsedAtMost" args="limit"/>
   </sce:record-match>
 </scxml>
 ```
+
+`every_matcher` matches the record of `job_status.scxml`, a job's status: `elapsed_ms` a `uint32`, `note` an
+`optional<string[32]>`, `codes` a `list<uint8>[4]`, `tag` and `retry` each an `optional<uint8>`, and `count` a
+`uint32`. It writes every matcher a record holds but `union-match`, and every attribute a matcher carries. Its formal
+parameter `limit` bounds a range and is bound in turn to the parameter of `elapsed_at_most.scxml`, a template over a
+number whose upper bound is its own parameter `limit`.
 
 - `sce:type` on the root is the template's type, written in the type grammar of `event-schema` fields. A template
   used in a send or a receive has the type `record:<alias>` of a message.
@@ -978,34 +1018,57 @@ and no backend generates a record type for it (`docs/SCE_ACCEPTED_SUBSET.md`, "F
 ### 11.5 `test-component`
 
 ```xml
-<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       version="1.0" sce:kind="test-component" name="job_tester" datamodel="sce-static" initial="requesting">
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="job_tester"
+       datamodel="sce-static" initial="requesting">
   <sce:import kind="test-port-type" src="job_port.scxml" as="JobPort"/>
-  <sce:import kind="test-template" src="job_request.scxml" as="Request"/>
-  <sce:import kind="test-template" src="completed_within.scxml" as="CompletedWithin"/>
+  <sce:import kind="test-template" src="job_report.scxml" as="JobReport"/>
+  <sce:import kind="test-template" src="every_matcher.scxml" as="EveryMatcher"/>
+  <sce:import kind="event-schema" src="job_status.scxml" as="Status"/>
   <sce:test-port id="sut" type="JobPort"/>
   <sce:test-port id="ctl" type="JobPort"/>
   <sce:test-timer id="deadline" duration="2s"/>
+  <sce:test-timer id="settle"/>
   <datamodel>
     <data id="elapsed_limit" sce:type="uint32" sce:module-parameter="true"/>
+    <data id="elapsed" sce:type="uint32" expr="0"/>
   </datamodel>
   <state id="requesting">
+    <invoke type="http://sce.dev/ext/test-component" src="helper.scxml" id="helper"/>
     <onentry>
-      <send type="http://sce.dev/ext/test-port" target="sut" sce:test-template="Request"/>
+      <send type="http://sce.dev/ext/test-port" target="sut" sce:test-template="JobReport"/>
       <sce:start-timer timer="deadline"/>
     </onentry>
-    <transition sce:receive="sut" sce:test-template="CompletedWithin" sce:template-args="elapsed_limit" target="passed">
+    <transition sce:receive="sut" sce:test-template="EveryMatcher"
+                sce:template-args="elapsed_limit" target="settling">
       <sce:stop-timer timer="deadline"/>
-      <sce:setverdict value="pass"/>
+      <assign location="elapsed" expr="_event.data.elapsed_ms"/>
+      <send type="http://sce.dev/ext/test-port" target="ctl" sce:test-template="JobReport"/>
     </transition>
     <transition sce:timeout="deadline" target="failed">
       <sce:setverdict value="fail" reason="'no reply in time'"/>
+    </transition>
+  </state>
+  <state id="settling">
+    <onentry>
+      <sce:start-timer timer="settle" duration="500ms"/>
+    </onentry>
+    <transition sce:timeout="settle" target="passed">
+      <sce:setverdict value="pass"/>
     </transition>
   </state>
   <final id="passed"/>
   <final id="failed"/>
 </scxml>
 ```
+
+The main test component creates the PTC `helper` while it waits in `requesting`. It sends the specific template
+`job_report.scxml` to the system under test on `sut`, and waits two seconds for a status `every_matcher` accepts
+within the limit the suite gives as the module parameter `elapsed_limit`. On such a status it keeps the elapsed time
+the status reports and sends the report on `ctl`, the port connected to the helper's; the same branch leaves
+`requesting`, which removes the helper (P9). It then waits half
+a second on a timer with no default duration, and passes. No status in time fails.
 
 - **Declarations**, children of `<scxml>`:
   - `<sce:test-port id="p" type="<alias>">`, a port of an imported `test-port-type` (-1 §6.2.10);
@@ -1047,7 +1110,8 @@ and no backend generates a record type for it (`docs/SCE_ACCEPTED_SUBSET.md`, "F
 ### 11.6 `test-configuration`
 
 ```xml
-<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
        version="1.0" sce:kind="test-configuration" name="tester_and_helper">
   <sce:import kind="test-component" src="job_tester.scxml" as="Tester"/>
   <sce:import kind="test-component" src="helper.scxml" as="Helper"/>
@@ -1063,21 +1127,24 @@ and no backend generates a record type for it (`docs/SCE_ACCEPTED_SUBSET.md`, "F
 </scxml>
 ```
 
-The tester's `ctl` port is of `job_port`, which sends `JobRequest` and receives `JobCompleted`. The helper's
-`ctl` port is of the port type that turns each direction, so that what one port sends the other receives:
+The tester's `ctl` port is of `job_port`, which sends and receives `JobStatus` and sends `JobCompleted`. The
+helper's `ctl` port is of `job_control_port`, the port type that turns each direction, so that what one port sends
+the other receives: `JobStatus` both ways, and `JobCompleted` in.
 
 ```xml
-<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
        version="1.0" sce:kind="test-port-type" name="job_control_port">
-  <sce:import kind="event-schema" src="job_request.scxml" as="JobRequest"/>
-  <sce:import kind="event-schema" src="job_completed.scxml" as="JobCompleted"/>
-  <sce:message type="JobRequest" direction="in"/>
-  <sce:message type="JobCompleted" direction="out"/>
+  <sce:import kind="event-schema" src="job_status.scxml" as="JobStatus"/>
+  <sce:import kind="event-schema" src="../../../kind-examples/event-schema.scxml"
+              as="JobCompleted"/>
+  <sce:message type="JobStatus" direction="inout"/>
+  <sce:message type="JobCompleted" direction="in"/>
 </scxml>
 ```
 
 Two ports of one type connect only where the type receives every message it sends; two ports of `job_port` would
-not, since `JobRequest` is on its `out` list and not on its `in` list.
+not, since `JobCompleted` is on its `out` list and not on its `in` list.
 
 - `<sce:mtc>` names the MTC's component type, once. `<sce:ptc>` names each PTC and its type. The name `mtc` is the
   MTC's and no PTC takes it.
@@ -1097,8 +1164,10 @@ not, since `JobRequest` is on its `out` list and not on its `in` list.
 ### 11.7 `test-case`
 
 ```xml
-<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
-       version="1.0" sce:kind="test-case" name="completes_in_time" sce:configuration="TesterAndHelper">
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-case" name="completes_in_time"
+       sce:configuration="TesterAndHelper">
   <sce:import kind="test-configuration" src="tester_and_helper.scxml" as="TesterAndHelper"/>
 </scxml>
 ```
@@ -1110,14 +1179,21 @@ not, since `JobRequest` is on its `out` list and not on its `in` list.
 ### 11.8 `test-suite`
 
 ```xml
-<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
        version="1.0" sce:kind="test-suite" name="job_suite">
   <sce:import kind="feature-model" src="job_features.scxml" as="Features"/>
   <sce:import kind="test-case" src="completes_in_time.scxml" as="CompletesInTime"/>
   <sce:module-parameter id="elapsed_limit" type="uint32" value="500"/>
-  <sce:execute test-case="CompletesInTime" guard="10s" requires="job-timeout"/>
+  <sce:module-parameter id="run_label" type="string[8]" value="nightly"/>
+  <sce:module-parameter id="key" type="bytes[2]" value="0aff"/>
+  <sce:execute test-case="CompletesInTime" guard="10s" requires="all(job-timeout, job-retry)"/>
 </scxml>
 ```
+
+The suite runs `completes_in_time` under a guard of ten seconds, in a world that has both features of
+`job_features.scxml`. It declares three module parameters, one of each form a module parameter's type takes (below):
+a scalar, `elapsed_limit`, which `job_tester` reads; a `string[N]`; and a `bytes[N]`.
 
 - `<sce:execute>` lists one test case, in run order (P11). `guard` is its time limit (answer 4). `requires` is its
   selection, a feature condition over the imported `feature-model` in ADR 0057's grammar; an `<sce:execute>` is an
