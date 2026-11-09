@@ -131,9 +131,11 @@ fn add(
     (welcome, pending.commit)
 }
 
+/// A change of `author`'s of one write, of `text` to row `id`.
 fn write(author: u64, id: u64, text: &str) -> String {
-    json!({"id": id.to_string(), "field": "3", "value": "0", "text": text,
-           "wallTime": (1000 + id).to_string(), "counter": "0", "nodeId": author.to_string()})
+    json!({"by": author.to_string(), "wallTime": (1000 + id).to_string(), "counter": "0", "ops": [
+        {"kind": 0, "id": id.to_string(), "field": "3", "value": "0", "text": text,
+         "wallTime": "0", "counter": "0", "nodeId": "0"}]})
     .to_string()
 }
 
@@ -156,16 +158,16 @@ fn devices_the_log_admitted_agree_on_the_key_of_each_epoch_and_seal_under_it() {
     bob.publish_epoch_key(hosts.of(2)).unwrap();
     let mut alice_host = hosts.of(1).clone();
     let sent = alice_host
-        .seal("#hub", "record_list.write", &write(1, 1, "buy milk"))
+        .seal("#hub", "record_list.change", &write(1, 1, "buy milk"))
         .unwrap()
         .unwrap();
     let mut bob_host = hosts.of(2).clone();
     let told = bob_host
-        .admit("alice", "record_list.write", &sent)
+        .admit("alice", "record_list.change", &sent)
         .unwrap()
         .unwrap();
     let told: Value = serde_json::from_str(&told).unwrap();
-    assert_eq!(told["text"], "buy milk");
+    assert_eq!(told["ops"][0]["text"], "buy milk");
 }
 
 #[test]
@@ -410,16 +412,16 @@ fn a_removed_device_derives_no_key_of_a_later_epoch_and_opens_nothing_sealed_aft
     carol.publish_epoch_key(hosts.of(3)).unwrap();
     let mut alice_host = hosts.of(1).clone();
     let sent = alice_host
-        .seal("#hub", "record_list.write", &write(1, 2, "after bob"))
+        .seal("#hub", "record_list.change", &write(1, 2, "after bob"))
         .unwrap()
         .unwrap();
     let mut carol_host = hosts.of(3).clone();
     assert!(carol_host
-        .admit("alice", "record_list.write", &sent)
+        .admit("alice", "record_list.change", &sent)
         .is_ok());
     let mut bob_host = hosts.of(2).clone();
     let reason = bob_host
-        .admit("alice", "record_list.write", &sent)
+        .admit("alice", "record_list.change", &sent)
         .unwrap_err();
     assert!(reason.contains("no key of epoch 3"), "{reason}");
 }

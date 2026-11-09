@@ -29,9 +29,11 @@ fn identity(node: u64) -> Identity {
     Identity::from_seed([node as u8; 32])
 }
 
+/// A change of `author`'s of one write, of `text` to row `id`.
 fn write(author: u64, id: u64, text: &str) -> String {
-    json!({"id": id.to_string(), "field": "3", "value": "0", "text": text,
-           "wallTime": (1000 + id).to_string(), "counter": "0", "nodeId": author.to_string()})
+    json!({"by": author.to_string(), "wallTime": (1000 + id).to_string(), "counter": "0", "ops": [
+        {"kind": 0, "id": id.to_string(), "field": "3", "value": "0", "text": text,
+         "wallTime": "0", "counter": "0", "nodeId": "0"}]})
     .to_string()
 }
 
@@ -141,15 +143,15 @@ impl Net {
 
     fn sealed(&self, index: usize, id: u64, text: &str) -> String {
         let mut host = self.trust(index);
-        host.seal("#hub", "record_list.write", &write(NODES[index], id, text))
+        host.seal("#hub", "record_list.change", &write(NODES[index], id, text))
             .unwrap()
             .unwrap()
     }
 
     fn opens(&self, index: usize, op: &str) -> Result<String, String> {
         let mut host = self.trust(index);
-        host.admit("relay", "record_list.write", op).map(|told| {
-            serde_json::from_str::<Value>(&told.unwrap()).unwrap()["text"]
+        host.admit("relay", "record_list.change", op).map(|told| {
+            serde_json::from_str::<Value>(&told.unwrap()).unwrap()["ops"][0]["text"]
                 .as_str()
                 .unwrap()
                 .to_string()
