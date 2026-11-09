@@ -24,7 +24,10 @@
 package static_datamodel
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	sce "github.com/newmassrael/sce-go-runtime"
@@ -206,6 +209,43 @@ func TestATestSuiteRunsThroughItsRunner_FailsAJobTheSystemUnderTestAnswersWithAF
 	}
 	if !suiteLogged(results[0], testprofile.LogTimeout) {
 		t.Errorf("the timeout is logged: %v", results[0].Result.Log)
+	}
+}
+
+// suiteAnswersTheJobLog is the test log of the run of answers_the_job that
+// every runtime writes, the one file the Rust, C++ and Kotlin runs are held to
+// too (`a_generated_test_case_writes_its_test_log` in
+// backends/rust/tests/tests/a_test_suite_runs_through_its_runner.rs), so the
+// agreement of the backends is one set of bytes. The file ends in a newline,
+// which no canonical text holds.
+func suiteAnswersTheJobLog(t *testing.T) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "..", "sce-build", "tests", "fixtures",
+		"test_profile", "runtime", "expected_logs", "answers_the_job.json"))
+	if err != nil {
+		t.Fatalf("the shared test log: %v", err)
+	}
+	text, ended := strings.CutSuffix(string(raw), "\n")
+	if !ended {
+		t.Fatal("the shared test log ends in one newline")
+	}
+	return text
+}
+
+// docs/SCE_TEST_PROFILE.md §12.5: the test log of a generated test case, in
+// its one canonical text. The request the component sends carries the value
+// its template's unit writes, the job of the suite's module parameter; the
+// reply arrives at 500 and is taken in that round, which stops the timer,
+// passes and ends the MTC.
+func TestATestSuiteRunsThroughItsRunner_AGeneratedTestCaseWritesItsTestLog(t *testing.T) {
+	var requested []uint32
+	results := suiteRun(t, testprofile.FeaturesOf(), 0, &requested, nil)
+	if got := suiteNames(results); !reflect.DeepEqual(got, []string{"answers_the_job"}) {
+		t.Fatalf("the suite runs %v", got)
+	}
+	got, want := results[0].CanonicalLog("runtime_suite"), suiteAnswersTheJobLog(t)
+	if got != want {
+		t.Fatalf("the test log is\n%s\nnot the shared\n%s", got, want)
 	}
 }
 
