@@ -74,11 +74,13 @@ struct HostSendRequest {
     std::string invokeId;
     /// The message as the value the generated code holds, for a processor
     /// whose messages are values and never encodings: the test profile's
-    /// test-port processor, whose send carries its specific template's value,
-    /// a record of the type the event schema's unit declares
-    /// (docs/SCE_TEST_PROFILE.md §12.3; docs/adr/0091, C2). Empty for every
-    /// other send, whose data is `eventData`. The Rust runtime carries the
-    /// same value as `HostSendRequest::value`.
+    /// test-port processor, whose send carries an `SCE::Test::MessageValue`:
+    /// its specific template's value, a record of the type the event schema's
+    /// unit declares, with that type's name and the writer of its canonical
+    /// form for the test log (docs/SCE_TEST_PROFILE.md §12.3, §12.5;
+    /// docs/adr/0091, C2). Empty for every other send, whose data is
+    /// `eventData`. The Rust runtime carries the same value as
+    /// `HostSendRequest::value`.
     std::any value;
 };
 
