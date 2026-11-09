@@ -7521,9 +7521,10 @@ its own).
 
 **A run of several machines, one machine at a time.** The scenarios of `todo_peer`
 and `sheet_peer` (`todo_peer_alice.json`, `todo_peer_bob.json`,
-`todo_peer_server.json` and the three of `sheet_peer`) are not written by hand. The
-world simulation (`backends/rust/world`) runs three copies of a shared document, two
-people and the hub they send to, over a network that delays and cuts what it
+`todo_peer_carol.json` and the three of `sheet_peer`) are not written by hand. The
+world simulation (`backends/rust/world`) runs three copies of a shared document (for
+the to-do list, three people's copies, the members of one causal group; for the sheet,
+two people and the hub they send to) over a network that delays and cuts what it
 carries, and each copy keeps a record of every event it was given, by its host or
 by a peer, in the order it took them, with what it held and what it sent after each
 (`World::add_read`, `World::record_of`). That record is a scenario. A machine is a
@@ -7553,22 +7554,19 @@ down is not sent again, which a soft-state document such as `presence_peer` repa
 its next heartbeat.
 
 The to-do afternoon includes changes a link dropped for good, which no retry
-repairs, and the copies finding them again: the host raises `todo.resync` on a copy
-when its link is back and the copies walk their merkle digests (`digest`, kept with
-`merkle_insert` over the minute of each change's dot, thirty base-3 digits, which is
-every minute a signed 64-bit millisecond clock holds) one node to a message
-(`todo.node`), answering where their own node differs with its children, down to a
-minute, where each side sends the changes it holds for that minute as the ordinary
-writes and supersedes they were. Every step of that exchange is in the scenarios,
-including the hash of each change (`merkle_change_hash`), so each backend is held to
-the same digest; the afternoon reaches past 2051 (the first form of the key's 16
-digits ended at 3^16 minutes) and to-dos and fields numbered in the thousands, whose
-register is `id * 65536 + field` over a uint32 and a uint16, below the 2^53 the
-Interpreter's integers hold. A copy restarted from an older save, which
-loses changes in the same way, is a restore and not an event, so the world tests
-(`a_copy_restored_from_an_old_save_is_repaired_by_resync.rs`, and for wall times and
-field numbers it could not reach, `a_resync_reaches_every_wall_time_and_every_field_number.rs`)
-hold that case. The Interpreter's own bound is the one limit that is not the others':
+repairs, and the copies finding them again: not by the list, which speaks the standard
+list's wire (`record_list.change`, docs/adr/0085 section 1.4) and keeps no digest, but
+by the Mesh core's causal route below it (`delivery: causal`), whose layers exchange
+their delivered vectors on a period and when a link comes back and answer each with
+the changes it lacks. A copy's record holds the changes as its layer delivered them,
+once each and after what each follows, so the scenarios hold what the list did with
+them and nothing of the repair; the afternoon reaches past 2051 (the first form of a
+digest's key ended at 3^16 minutes) and to-dos and fields numbered in the thousands,
+whose register is `id * 65536 + field` over a uint32 and a uint16, below the 2^53 the
+Interpreter's integers hold. The repair itself is held by the world tests
+(`a_lost_change_is_repaired_at_every_wall_time_and_field_number.rs`), and a copy
+restored from an older save, which is a new incarnation of its member, by
+`a_copy_restored_from_an_old_save_begins_a_new_incarnation.rs`. The Interpreter's own bound is the one limit that is not the others':
 a wall time past 2^53 milliseconds (year 285,000) is not a value its statechart
 variables hold, which it refuses with `error.execution` where the six backends take it.
 
