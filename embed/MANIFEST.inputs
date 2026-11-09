@@ -5,8 +5,8 @@
 # is refused (scripts/gates/embed-manifest-stamp.sh).
 27ab25a53081ba59539774e8eaebb1c0448e2591 backends/cpp/forge-runtime/include/sce/forge/ProcedureServiceTypes.h
 0101c5df1630d85e405d969740b3a10998d87384 backends/cpp/forge-runtime/include/sce/forge/ProcedureStateMachine.h
-f0e49786d6f7121bd0be54a05656c05d733163e7 backends/cpp/forge-runtime/include/sce/forge/algorithm.h
-d5cc929a323d0ac7ce75c621b93095a41412c128 backends/cpp/forge-runtime/include/sce/forge/bounded.h
+0716469f4e939a8dca4ac1ab1ebf3ab987288702 backends/cpp/forge-runtime/include/sce/forge/algorithm.h
+30fbf7f633bd964e040931c97124fca4de3d9a3b backends/cpp/forge-runtime/include/sce/forge/bounded.h
 75343d94d9f432eae354ee0f5c3c7040c4a3ef4e backends/cpp/forge-runtime/include/sce/forge/broadcast_log.h
 9520922a0f12e3b2819d9f69e7b4f020fb004856 backends/cpp/forge-runtime/include/sce/forge/broadcast_log_narrow.h
 90117b1cc0a93df84cd4d969aea2b7bfbbbc4fd9 backends/cpp/forge-runtime/include/sce/forge/cbor.h
@@ -18,7 +18,7 @@ e4c2a5b0612b72e59d9f168cb7d309d91a1d9ac9 backends/cpp/forge-runtime/include/sce/
 76d8cbc6a797561723f883e9610347e4476050c6 backends/cpp/forge-runtime/include/sce/forge/lookup.h
 92a4d10d5f3e6ed58f0e745afe080ef7105f42d2 backends/cpp/forge-runtime/include/sce/forge/membership.h
 59ae8513571c3d52945b4230aef2a7bf8f9fe7d2 backends/cpp/forge-runtime/include/sce/forge/observer.h
-0dd04cf71e25ca016831d531d3230af1667a5695 backends/cpp/forge-runtime/include/sce/forge/optional.h
+c63797bbcf49cd41a3f8999251fdc00666c1137f backends/cpp/forge-runtime/include/sce/forge/optional.h
 d521e84a1aa512d0cd54bc9cc9895927c8618084 backends/cpp/forge-runtime/include/sce/forge/queue.h
 074b858784a9d8a198415304709852798b59a567 backends/cpp/forge-runtime/include/sce/forge/queue_segmented.h
 7580ca6da4a75630d1a06533df31743bd72c9c08 backends/cpp/forge-runtime/include/sce/forge/span.h
@@ -54,7 +54,7 @@ d611f45fb20abee2e1561eb233a5d88155eed523 sce/include/common/DocumentStem.h
 aa9cf77ec9057a5b422a6778b90c8b5b1661bf51 sce/include/common/DoneDataHelper.h
 cde332d7ac1a3725d6ccff1064dcb2cce191a4ed sce/include/common/EventDataHelper.h
 da5695d5b6fb84a0e01330963b783c4bf47d4ca0 sce/include/common/EventMetadataHelper.h
-92ebb18ed9545d52c3d5309c6fa7857fca795cdd sce/include/common/EventPayloadLift.h
+bbed2da4edf846d4f5eec1249546973aae8ac9cb sce/include/common/EventPayloadLift.h
 070e34e281d4e1c060f32c72851daa47fb85af01 sce/include/common/EventTypeHelper.h
 9cb966273eed824566bb7044d8234152fd38c71c sce/include/common/ExternTemplates.h
 e0f7b479d7cd491ec9896113f438bdce5976252c sce/include/common/FileLoadingHelper.h
