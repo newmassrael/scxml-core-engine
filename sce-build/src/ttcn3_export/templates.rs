@@ -351,7 +351,14 @@ fn matcher(
         },
         TestMatcherForm::AnyValue => Body::AnyValue,
         TestMatcherForm::AnyValueOrNone => Body::AnyValueOrNone,
-        TestMatcherForm::ValueRange { lower, upper } => Body::Range {
+        // A bound's line places a refusal of the document; the module writes
+        // only the bound.
+        TestMatcherForm::ValueRange {
+            lower,
+            upper,
+            lower_line: _,
+            upper_line: _,
+        } => Body::Range {
             lower: lower
                 .as_ref()
                 .map(|value| bound(value).ok_or_else(unread))
