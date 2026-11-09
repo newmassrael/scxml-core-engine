@@ -4264,10 +4264,12 @@ fn render_c11(
             .as_ref()
             .map(|scratch| scratch.defs.join("\n\n"))
             .unwrap_or_default(),
-        static_scratch_member => static_lowering
+        // The members of the machine's one scratch record that hold it, beside the
+        // roles of its slot (docs/adr/0086, section 8.5 (d)).
+        static_scratch_members => static_lowering
             .scratch
             .as_ref()
-            .map(|scratch| scratch.member.clone())
+            .map(|scratch| scratch.members.clone())
             .unwrap_or_default(),
         static_format2_shape => format2_keys(&static_lowering),
         static_saved_shape => &static_saved_shape,
@@ -6910,6 +6912,81 @@ mod tests {
     </onentry>
   </state>
 </scxml>"##;
+
+    /// A `sce-static` machine with a `<foreach>` inside another, whose copies
+    /// the C11 machine holds in its scratch, one union per depth of loop
+    /// (docs/adr/0082).
+    const STATIC_NESTED_FOREACH_SCXML: &str = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" initial="s" datamodel="sce-static" name="nested_loops">
+  <datamodel>
+    <data id="picked" sce:type="list&lt;uint8&gt;[4]"/>
+    <data id="crossings" sce:type="uint32" expr="0"/>
+  </datamodel>
+  <state id="s">
+    <onentry>
+      <foreach array="picked" item="v">
+        <foreach array="picked" item="w">
+          <assign location="crossings" expr="crossings + 1"/>
+        </foreach>
+      </foreach>
+    </onentry>
+  </state>
+</scxml>"##;
+
+    /// A C11 machine declares one member `scratch`, of its one scratch record
+    /// (docs/adr/0086, section 8.5 (d)), which holds the unions of its loops'
+    /// copies (docs/adr/0082) beside the colours of its slot's roles; the code
+    /// reaches a loop's copy through that record.
+    #[test]
+    fn c11_holds_its_loop_storage_in_its_one_scratch_record() {
+        let mut model = parse(STATIC_NESTED_FOREACH_SCXML);
+        crate::analyzer::analyze(&mut model, "");
+        let output =
+            generate_c11(&model, &crate::find_template_base(), "nested_loops", None).expect("c11");
+        let header = output
+            .files
+            .iter()
+            .find(|(name, _)| name.ends_with("_sm.h"))
+            .map(|(_, text)| text.as_str())
+            .expect("the machine's header");
+        // The text of `header` from `open` to the first `close` after it.
+        fn between<'h>(header: &'h str, open: &str, close: &str) -> &'h str {
+            let start = header
+                .find(open)
+                .unwrap_or_else(|| panic!("`{open}` in:\n{header}"));
+            let end = start
+                + header[start..]
+                    .find(close)
+                    .unwrap_or_else(|| panic!("`{close}` after `{open}` in:\n{header}"));
+            &header[start..end]
+        }
+        let record = between(
+            header,
+            "typedef struct nested_loops_scratch {",
+            "} nested_loops_scratch_t;",
+        );
+        for depth in ["loop_0", "loop_1"] {
+            assert_eq!(
+                record.matches(format!("    }} {depth};").as_str()).count(),
+                1,
+                "the scratch record holds the union `{depth}`:\n{record}"
+            );
+        }
+        let machine = between(header, "typedef struct nested_loops {", "} nested_loops_t;");
+        let scratches: Vec<&str> = machine
+            .lines()
+            .map(str::trim)
+            .filter(|line| line.ends_with(" scratch;"))
+            .collect();
+        assert_eq!(
+            scratches,
+            vec!["nested_loops_scratch_t scratch;"],
+            "the machine has one scratch:\n{machine}"
+        );
+        let c: String = output.files.iter().map(|(_, text)| text.as_str()).collect();
+        assert!(c.contains("sm->scratch.loop_0."), "{c}");
+        assert!(c.contains("sm->scratch.loop_1."), "{c}");
+    }
 
     /// The native loop of a `sce-static` `<foreach>` whose body ends its block
     /// on every path is the head the lowering gave for the first element
