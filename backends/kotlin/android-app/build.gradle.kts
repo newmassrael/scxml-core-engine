@@ -58,7 +58,7 @@ dependencies {
     implementation(project(":sce-kotlin-runtime"))
     implementation(project(":sce-kotlin-lua"))
     implementation(project(":sce-kotlin-quickjs"))
-    implementation(libs.rhino)
+    implementation(project(":sce-kotlin-rhino"))
 
     // AndroidX core
     implementation(libs.core.ktx)
