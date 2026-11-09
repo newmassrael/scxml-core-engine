@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §11.7: the test case of the nested suite and
+     the configuration it runs in. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-case" name="nested_case"
+       sce:configuration="NestedConfiguration">
+  <sce:import kind="test-configuration" src="nested_configuration.scxml"
+              as="NestedConfiguration"/>
+</scxml>

@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- docs/SCE_TEST_PROFILE.md §9.4: a main test component whose states nest,
+     so the blocks of its branches exit and enter more than one state: a
+     transition between two children of a compound state, one that leaves
+     every state for a top-level final, an internal transition of the
+     compound state that keeps it, a targetless branch, and a default entry
+     whose initial transition writes content. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-component" name="nested_tester"
+       datamodel="sce-static" initial="outer">
+  <sce:import kind="test-port-type" src="orders_port.scxml" as="OrdersPort"/>
+  <sce:test-port id="sut" type="OrdersPort"/>
+  <sce:test-timer id="tick" duration="250ms"/>
+  <sce:test-timer id="limit" duration="2s"/>
+  <state id="outer" initial="first">
+    <onentry>
+      <sce:start-timer timer="limit"/>
+    </onentry>
+    <onexit>
+      <log label="leaving outer"/>
+    </onexit>
+    <transition sce:timeout="limit" target="failed">
+      <sce:setverdict value="fail" reason="'out of time'"/>
+    </transition>
+    <transition sce:receive="sut" type="internal" target="first">
+      <log label="restart"/>
+    </transition>
+    <state id="first">
+      <onentry>
+        <sce:start-timer timer="tick"/>
+      </onentry>
+      <onexit>
+        <log label="leaving first"/>
+      </onexit>
+      <transition sce:timeout="tick" target="second"/>
+      <transition sce:receive="sut">
+        <log label="ignored"/>
+      </transition>
+    </state>
+    <state id="second">
+      <initial>
+        <transition target="deep">
+          <log label="into deep"/>
+        </transition>
+      </initial>
+      <onentry>
+        <log label="entering second"/>
+      </onentry>
+      <onexit>
+        <log label="leaving second"/>
+      </onexit>
+      <state id="deep">
+        <onentry>
+          <sce:start-timer timer="tick" duration="0.5s"/>
+        </onentry>
+        <onexit>
+          <log label="leaving deep"/>
+        </onexit>
+        <transition sce:timeout="tick" target="passed">
+          <sce:setverdict value="pass"/>
+        </transition>
+      </state>
+    </state>
+  </state>
+  <final id="passed"/>
+  <final id="failed"/>
+</scxml>
