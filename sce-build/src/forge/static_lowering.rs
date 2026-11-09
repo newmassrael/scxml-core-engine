@@ -13238,8 +13238,31 @@ pub(crate) fn c_bytes_storage_type(capacity: u32) -> String {
 
 /// The function that fills the buffer of [`c_bytes_storage_type`] from the view of
 /// bytes already held to the bound.
-fn c_bytes_storage_of(capacity: u32) -> String {
+pub(crate) fn c_bytes_storage_of(capacity: u32) -> String {
     format!("sce_static_bytes_{capacity}_of")
+}
+
+/// The declaration of [`c_bytes_storage_type`] and of its fill function, under a
+/// guard named by the bound. Every header that holds a byte string of that bound
+/// writes this one text: a `sce-static` machine's variable or record, and the
+/// unit of an event schema whose field is one, so a program that includes both
+/// declares the type once and a value crosses between them as it is. The fill
+/// function takes the runtime's view (`sce/forge/bytes.h`), which the header
+/// includes, and `size_t` (`<stddef.h>`).
+pub(crate) fn c_bytes_storage_def(capacity: u32) -> String {
+    let ty = c_bytes_storage_type(capacity);
+    let guard = ty.to_uppercase().trim_end_matches("_T").to_string();
+    let of = c_bytes_storage_of(capacity);
+    format!(
+        "#ifndef {guard}\n#define {guard}\n\
+         /* SCE Accepted Subset §2.15: a `bytes` of at most {capacity} bytes. */\n\
+         typedef struct {{\n    uint8_t data[{capacity}];\n    size_t len;\n}} {ty};\n\n\
+         static inline {ty} {of}(sce_forge_bytes_view_t bytes) {{\n    \
+         {ty} value = {{ {{ 0 }}, 0 }};\n    \
+         for (size_t i = 0; i < bytes.len && i < {capacity}u; ++i) {{\n        \
+         value.data[i] = bytes.data[i];\n    }}\n    \
+         value.len = bytes.len < {capacity}u ? bytes.len : {capacity}u;\n    return value;\n}}\n#endif"
+    )
 }
 
 /// C11: a variable is a member of the machine's policy struct (`sm->policy`),
@@ -14483,23 +14506,10 @@ impl StaticTarget for CTarget {
     // (`sce_forge_bytes_view_t`) built by the reader. `_of` fills it from the view
     // of a value already held to the bound, which a literal's is.
     fn bytes_storage(&self, capacity: u32, init: &str) -> Option<StringStorage> {
-        let ty = c_bytes_storage_type(capacity);
-        let guard = ty.to_uppercase().trim_end_matches("_T").to_string();
-        let of = c_bytes_storage_of(capacity);
-        let def = format!(
-            "#ifndef {guard}\n#define {guard}\n\
-             /* SCE Accepted Subset §2.15: a `bytes` of at most {capacity} bytes. */\n\
-             typedef struct {{\n    uint8_t data[{capacity}];\n    size_t len;\n}} {ty};\n\n\
-             static inline {ty} {of}(sce_forge_bytes_view_t bytes) {{\n    \
-             {ty} value = {{ {{ 0 }}, 0 }};\n    \
-             for (size_t i = 0; i < bytes.len && i < {capacity}u; ++i) {{\n        \
-             value.data[i] = bytes.data[i];\n    }}\n    \
-             value.len = bytes.len < {capacity}u ? bytes.len : {capacity}u;\n    return value;\n}}\n#endif"
-        );
         Some(StringStorage {
-            init: format!("{of}({init})"),
-            ty,
-            def,
+            init: format!("{}({init})", c_bytes_storage_of(capacity)),
+            ty: c_bytes_storage_type(capacity),
+            def: c_bytes_storage_def(capacity),
             view: "sce_forge_bytes_view_t".to_string(),
         })
     }

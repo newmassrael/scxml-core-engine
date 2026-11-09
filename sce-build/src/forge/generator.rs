@@ -4142,9 +4142,20 @@ fn render_event_schema(
                 Some(bound) => format!("::sce_portable_bytes::SceString<{bound}>").into(),
                 None => resolved.clone(),
             };
-            let c_type = match text_bound {
-                Some(bound) => crate::forge::static_lowering::c_string_storage_type(bound).into(),
-                None => resolved.clone(),
+            // A byte string is held on C11 in the buffer of its bound beside the
+            // length it holds, the type a `sce-static` statechart holds the same
+            // bytes in ([`c11_schema_bytes_capacity`]): the bytes carry no
+            // terminator, so a reader of the field, a test template's matcher
+            // and the canonical form of the test log among them, knows how many
+            // it holds only from that length.
+            let c_type = match (text_bound, c11_schema_bytes_capacity(f)) {
+                (Some(bound), _) => {
+                    crate::forge::static_lowering::c_string_storage_type(bound).into()
+                }
+                (None, Some(capacity)) => {
+                    crate::forge::static_lowering::c_bytes_storage_type(capacity).into()
+                }
+                (None, None) => resolved.clone(),
             };
             // An optional field (docs/adr/0055): the type an algorithm holds the
             // value of one in, in this language ([`algorithm_optional_type`]),
@@ -4422,6 +4433,19 @@ fn render_event_schema(
         .map(|&bound| crate::forge::static_lowering::c_string_storage_def(bound))
         .collect();
     ctx.insert("c_text_defs".into(), serde_json::json!(c_text_defs));
+    // The declaration of each buffer the C11 struct holds a byte string in with
+    // its length, once per capacity, under the guard every header that declares
+    // it shares ([`crate::forge::static_lowering::c_bytes_storage_def`]).
+    let bytes_capacities: std::collections::BTreeSet<u32> = entries
+        .iter()
+        .flatten()
+        .filter_map(c11_schema_bytes_capacity)
+        .collect();
+    let c_bytes_defs: Vec<String> = bytes_capacities
+        .iter()
+        .map(|&capacity| crate::forge::static_lowering::c_bytes_storage_def(capacity))
+        .collect();
+    ctx.insert("c_bytes_defs".into(), serde_json::json!(c_bytes_defs));
     // The declaration of the optional value of each element an optional field of
     // the struct holds that the runtime does not declare — a text over its buffer,
     // a value of an enum — once each, under the guard every unit that holds one
@@ -38219,6 +38243,14 @@ fn c11_schema_field_optional(
         .into()),
         (_, bound) => c11_entry_optional(l, imports, elem, bound),
     }
+}
+
+/// How many bytes the C11 unit of an event schema holds the field `field` in,
+/// where it is a byte string of one entry: the capacity its type declares
+/// ([`lift_bytes_bound`]), which a `sce-static` statechart's channel holds the
+/// same field in. `None` for a field of any other type.
+pub(crate) fn c11_schema_bytes_capacity(field: &EntryField) -> Option<u32> {
+    matches!(field.sce_type, EntryType::Scalar(SceType::Bytes)).then(|| lift_bytes_bound(field))
 }
 
 /// The optional value of `elem` as the C11 unit of an event schema holds a field
