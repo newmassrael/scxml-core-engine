@@ -818,10 +818,13 @@ pub enum ScratchSite {
 #[derive(Debug, Clone, Default)]
 pub struct Scratch {
     /// The declarations the machine's own header makes before the machine, which the
-    /// member names.
+    /// members name.
     pub defs: Vec<String>,
-    /// The member of the machine that holds it.
-    pub member: String,
+    /// The members that hold it, each one declaration of the record a target's
+    /// machine holds all of its scratch in: a machine has one scratch, and what it
+    /// holds for its calls and loops sits there beside every other role of it (for
+    /// C11, beside the roles of its slot, docs/adr/0086, section 8.5 (d)).
+    pub members: Vec<String>,
     /// The line of each unit whose types the storage is of, which the machine's
     /// header includes.
     pub imports: Vec<String>,
@@ -2040,8 +2043,8 @@ pub trait StaticTarget {
         None
     }
     /// The storage of the machine `machine` for the calls and loops the walk lowered,
-    /// which it holds and not the stack (docs/adr/0082): its `scratch`, of one member for
-    /// each of `sites`, for a target that holds one. `None` for the others, and for a
+    /// which it holds and not the stack (docs/adr/0082): the members of its one scratch
+    /// that hold `sites`, for a target that holds one. `None` for the others, and for a
     /// machine with no such site.
     fn scratch(&self, _machine: &str, _sites: &[ScratchSite]) -> Option<Scratch> {
         None
@@ -14975,7 +14978,10 @@ impl StaticTarget for CTarget {
     // list is taken only as the whole of an assignment and an adapter's copies end with
     // its call. A union for each depth of loop: two loops at one depth never run at once,
     // and a loop inside a loop, or a call inside either, does. So the machine is as large
-    // as its largest call and its deepest nest of copies, and no larger.
+    // as its largest call and its deepest nest of copies, and no larger. Each union is a
+    // named member of the machine's one scratch record (`<machine>_scratch_t`), beside
+    // the colours of its slot's roles (docs/adr/0086, section 8.5 (e)), and apart from
+    // them: a loop's copy is live through a `<send>` in its body.
     fn scratch(&self, machine: &str, sites: &[ScratchSite]) -> Option<Scratch> {
         if sites.is_empty() {
             return None;
@@ -15010,10 +15016,10 @@ impl StaticTarget for CTarget {
         }
         let union = |members: &[String], name: &str| {
             format!(
-                "        union {{\n{}\n        }} {name};",
+                "    union {{\n{}\n    }} {name};",
                 members
                     .iter()
-                    .map(|member| format!("            {member}"))
+                    .map(|member| format!("        {member}"))
                     .collect::<Vec<_>>()
                     .join("\n")
             )
@@ -15027,7 +15033,7 @@ impl StaticTarget for CTarget {
         }
         Some(Scratch {
             defs,
-            member: format!("struct {{\n{}\n    }} scratch;", parts.join("\n")),
+            members: parts,
             imports: Vec::new(),
         })
     }
@@ -23485,5 +23491,58 @@ mod tests {
             ),
             "MDueRecord{/*id=*/7u, /*due=*/std::nullopt}"
         );
+    }
+
+    /// A C11 machine holds one scratch (docs/adr/0086, section 8.5 (d)): the
+    /// storage of its calls and loops (docs/adr/0082) is named members of that
+    /// one record, a union for the calls and one for each depth of loop, and
+    /// never a second member of the machine called `scratch`. No member meets
+    /// the name of a role of the slot the record holds beside them.
+    #[test]
+    fn c11_call_and_loop_storage_are_members_of_the_one_scratch() {
+        let sites = [
+            ScratchSite::Direct {
+                symbol: "lib_pick".to_string(),
+            },
+            ScratchSite::Loop {
+                depth: 0,
+                list_ty: "m_item_list_4_t".to_string(),
+            },
+            ScratchSite::Loop {
+                depth: 1,
+                list_ty: "sce_static_list_uint8_4_t".to_string(),
+            },
+        ];
+        let scratch = CTarget::arguments()
+            .scratch("m", &sites)
+            .expect("a machine with a call and loops holds storage for them");
+        assert_eq!(
+            scratch.members,
+            vec![
+                "    union {\n        lib_pick_list_t into_lib_pick;\n    } call;".to_string(),
+                "    union {\n        m_item_list_4_t of_m_item_list_4;\n    } loop_0;".to_string(),
+                "    union {\n        sce_static_list_uint8_4_t of_sce_static_list_uint8_4;\n    } \
+                 loop_1;"
+                    .to_string(),
+            ]
+        );
+        for member in &scratch.members {
+            assert!(
+                !member.contains("scratch;"),
+                "a member of the scratch, not a second scratch:\n{member}"
+            );
+            let name = member
+                .trim_end_matches(';')
+                .rsplit(' ')
+                .next()
+                .expect("a member has a name");
+            assert!(
+                crate::forge::c11_scratch::ROLES
+                    .iter()
+                    .all(|role| role.name != name),
+                "`{name}` is the name of a role of the slot"
+            );
+        }
+        assert!(CTarget::arguments().scratch("m", &[]).is_none());
     }
 }
