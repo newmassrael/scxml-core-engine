@@ -5426,6 +5426,34 @@ bound yet, so the two places are one type, and the variable shares nothing with 
 place. A payload that holds a union, at any depth, is refused by name on C++, which
 holds no union yet (docs/adr/0092, section 7).
 
+The C11 backend reads a composed payload with no allocator and no closure
+(docs/adr/0086, section 7.1, the C11 row): its payload struct holds each field in a
+type named by its shape and declared once under a guard of that name, a list in
+`{ size_t len; T data[N]; }` (`sce_static_list_uint8_2_t`,
+`<machine>_record_item_list_3_t`), a text and a byte string in the buffer of their
+bound (`sce_static_string_<N>_t`, `sce_static_bytes_<N>_t`), a value that may be
+absent in `sce/forge/optional.h`'s struct of a flag and a value, and a record in the
+machine's struct, so a list variable and a payload's list of one shape are one type.
+The lift reads each field where the machine holds the payload, by one function of
+the machine per type over the runtime's bounded readers (`sce/event_payload.h`),
+and refuses the delivery whole at the first value outside its type, before any of
+it is kept; the reason names the path (`items/2/tags/0`) in a buffer of the longest
+path the type has, so it is never cut. `len`, an index, a field of a record element
+and a `<foreach>` over a list the payload or an enclosing loop's item holds lower at
+any depth. A text or a byte string a composed value holds is held in its buffer,
+which a C11 expression does not read as a text: it is taken whole (forwarded by a
+`<send>`, copied with the value that holds it), and a read of it as a value is
+refused by name. The inject seam, `<machine>_raise_<event>_typed`, writes what a host
+hands it as its JSON, part by part, and holds each part to its type as it writes it:
+a list past the room of its type, a text with no end in its buffer, a byte string
+past its buffer and an enum value no variant names each make the seam answer false
+and raise nothing (docs/adr/0086, section 5.4); the machine lifts the event from
+that JSON. A list a place holds is taken whole into a list variable whose type it
+fits by assignment, a C struct copying the array it holds, and into one of a larger
+bound by the constructor its type declares beside it (`<list type>_of`). A payload
+that holds a union, at any depth, is refused by name on C11, which holds no union
+yet (docs/adr/0092, section 7).
+
 A `<send>` of the event of a schema whose field is composed gives that field by
 a `<param>` naming the place that holds the value whole (docs/adr/0086, section
 5.2): a variable, a field of a record variable, or a part of the payload of the
@@ -5455,7 +5483,14 @@ Python too. The C++ backend writes it into the `ScriptValue` its send holds each
 param in, a list as a `ScriptArray`, a record as a `ScriptObject` and an absent
 value as `ScriptNull`, each scalar as a scalar param crosses, which
 `EventDataHelper::buildEventDataJson` writes as the event's JSON, keys ascending at
-every depth; a place read through an index is refused by name on C++ too.
+every depth; a place read through an index is refused by name on C++ too. The C11
+backend has no value a composed param could be held in until it is written, so it
+writes the value where its pair stands, part by part, through the wire writer
+(`sce/forge/wire.h`): a list as an array, a record as an object, keys ascending at
+every depth, an absent value as `null` and each scalar as a scalar param crosses; a
+place read through an index is refused by name on C11 too, and so is a composed value
+an `<invoke>`'s `<param>`, a `<donedata>`, a `<content expr>` or a `<send>` a host
+serves carries, whose request carries each value as text too.
 
 **Which backend lowers a composed value** (docs/adr/0086, section 7.3). One table
 decides what each backend lowers of a composed value, a row per backend
@@ -5480,7 +5515,7 @@ by its own name each position it does not lower.
 
 - `python` lowers reads, copies, sends; refuses unions
 
-- `c11` lowers none; refuses reads, copies, unions, sends
+- `c11` lowers reads, copies, sends; refuses unions
 
 - `swift` lowers reads, copies, sends; refuses unions
 
@@ -5518,6 +5553,11 @@ this list):
   and `test_a_composed_payload_is_read_at_any_depth.py` and
   `test_a_composed_value_is_sent_by_its_name.py` under
   `backends/python/tests/integration/static_datamodel/` drive them.
+
+- `c11`: `backends/c/tests/CMakeLists.txt` generates the machines into the
+  integration directory, and `test_a_composed_payload_is_read_at_any_depth.c`
+  and `test_a_composed_value_is_sent_by_its_name.c` under
+  `backends/c/tests/integration/` drive them.
 
 - `swift`: `scripts/regen_static_datamodel_swift.sh` commits the generated
   machines, and `AComposedPayloadIsReadAtAnyDepthTests.swift` and
@@ -6299,7 +6339,8 @@ variables of the integer types, `bool`, an enum, a string and a real of either w
 (a `float`, which the wire writes as the `double` it widens to), the join
 of strings and integers the data model sizes (`wait + 'ms'`), a transition's
 guard, `<assign>`, `<if>` / `<elseif>`, `<log>`, `<raise>`, `In()`, `<cancel>`, an
-event's typed payload of numbers, bools, strings and enums, a call of an imported
+event's typed payload of numbers, bools, strings and enums, a composed one (docs/adr/0086,
+read, taken whole and sent as "Which backend lowers a composed value" states), a call of an imported
 algorithm, a `<sce:action>` whose arguments are typed expressions of them, a
 record whose fields are numbers, bools, reals of either width and enums, a list of integers, bools, reals
 of either width or such records with its `<sce:append>`, `<sce:clear>` and `<foreach>`, the

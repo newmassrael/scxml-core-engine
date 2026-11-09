@@ -260,6 +260,13 @@ pub const REASONS: &[Reason] = &[
         row: "lift_not_variant",
         text: "`{0}` payload: '{1}' ({v}) is not a variant of {2}",
     },
+    // A composed payload's lift (docs/adr/0086, section 4.2): the first quote
+    // is the path to the refused place, at the bound of the longest path its
+    // type has, and the second the payload reader's sentence.
+    Reason {
+        row: "lift_place_refused",
+        text: "`{0}` payload: '{v}' {v}",
+    },
     // A typed host-run request's field; the quote is the request reader's
     // sentence.
     Reason {
@@ -1106,6 +1113,26 @@ mod tests {
         let text =
             "<invoke type='' id=''>: _sce_deadline_ms='' is not a whole number of milliseconds";
         assert_eq!(seal(), text.len() as u64 + 10 + 3 + 20);
+    }
+
+    /// docs/adr/0086, section 4.2: the reason a composed payload's lift raises
+    /// quotes the path to the refused place at the bound of the longest path
+    /// its type has, and the reader's sentence at the bound the runtime
+    /// publishes, so the slot holds it at its longest and the path is never
+    /// cut.
+    #[test]
+    fn a_composed_lift_quotes_its_path_and_the_readers_sentence_at_their_bounds() {
+        let _scope = scope();
+        let format = row("lift_place_refused")
+            .expect("the row")
+            .format(
+                &["batch.sent"],
+                &[Quote::Within(14), Quote::Published(PAYLOAD_REFUSAL)],
+            )
+            .expect("two quotes");
+        assert_eq!(format, "\"`batch.sent` payload: '%.14s' %s\"");
+        let text = "`batch.sent` payload: '' ";
+        assert_eq!(seal(), text.len() as u64 + 14 + PAYLOAD_REFUSAL.max_len);
     }
 
     /// A quoting row is no plain literal, and a site that hands it a number
