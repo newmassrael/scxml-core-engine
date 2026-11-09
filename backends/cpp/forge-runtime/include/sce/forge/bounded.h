@@ -95,6 +95,23 @@ struct IsText<L, std::void_t<typename L::value_type>> : std::is_same<std::remove
 template <std::size_t Max, std::size_t Min, std::size_t Max2, std::size_t Min2>
 struct WithinBounds : std::bool_constant<Max2 <= Max && Min <= Min2> {};
 
+/// The list a `Bounded` holds, lent read only wherever that list is expected:
+/// a host lent a machine's text as a `const std::string &`, a function that
+/// takes a `const std::vector<T> &`, a `std::string` made of it. Only a list
+/// that owns its elements is lent so; a view converts to another view by its
+/// constructor. The conversion is a base's and not a member template of
+/// `Bounded`, since a conversion function template that yields a reference
+/// is not deduced where a `std::string` is copy-initialized from it by every
+/// compiler: GCC refuses `std::string s = text;` through one.
+template <typename Derived, typename L, bool Lends> class LendsItsList {};
+
+template <typename Derived, typename L> class LendsItsList<Derived, L, true> {
+public:
+    constexpr operator const L &() const noexcept {
+        return static_cast<const Derived &>(*this).inner();
+    }
+};
+
 /// What a value is read as where it is converted to `To` implicitly, as a
 /// variable of type `To` initialized from it is. Never defined: it is read in
 /// `noexcept` and `decltype` alone, to ask whether that conversion throws.
@@ -129,7 +146,8 @@ struct IsContiguous<T,
 }  // namespace Detail
 
 /// A list `L` of at least `Min` elements and at most `Max`.
-template <typename L, std::size_t Max, std::size_t Min> class Bounded {
+template <typename L, std::size_t Max, std::size_t Min>
+class Bounded : public Detail::LendsItsList<Bounded<L, Max, Min>, L, Detail::MakesCopies<L>::value> {
     static_assert(Min <= Max, "the bounds admit no list");
 
 public:
@@ -279,16 +297,6 @@ public:
         list_.clear();
     }
 
-    /// The list it holds, read only, wherever that list is expected: a host
-    /// lent a machine's text as a `const std::string &`, a function that takes
-    /// a `const std::vector<T> &`. Only a list that owns its elements is lent
-    /// so; a view converts to another view by its constructor. `M` is the
-    /// target type the conversion is asked for, which is the list's own.
-    template <typename M, std::enable_if_t<std::is_same<M, L>::value && Detail::MakesCopies<M>::value, int> = 0>
-    constexpr operator const M &() const noexcept {
-        return list_;
-    }
-
     /// The text it holds, viewed, wherever a `std::string_view` is expected: a
     /// text template's hole, a `std::string` made of it. Only a text that owns
     /// its bytes is viewed so. `V` is the target type the conversion is asked
@@ -366,13 +374,16 @@ template <std::size_t Max, std::size_t Min = 0> using OwnedBytes = Bounded<std::
 template <typename T, std::size_t Max, std::size_t Min = 0> using OwnedList = Bounded<std::vector<T>, Max, Min>;
 
 /// The list of `map` of each element of `from`, in order, each element taken
-/// as the `T` `map` answers, held to the bounds of `from`: the copy a machine
-/// makes of a list into a place whose element is copied by a conversion of its
-/// own (a text into a larger bound), which the place then takes by widening,
-/// its own bounds being at least `from`'s (docs/adr/0086, sections 5.1 and
-/// 7.4). A place whose bounds do not hold `from`'s does not compile, so the
-/// copy refuses nothing: no more elements are pushed than `from` holds, which
-/// is at most `Max`.
+/// as the `T` `map` answers, held to the upper bound of `from` and to no lower
+/// one: the copy a machine makes of a list into a place whose element is
+/// copied by a conversion of its own (a text into a larger bound), which the
+/// place then takes by widening, its own upper bound being at least `from`'s
+/// (docs/adr/0086, sections 5.1 and 7.4). Every list place of a machine admits
+/// none (`OwnedList<T, N>`), so no lower bound is carried; a place of a lower
+/// bound does not take the copy and does not compile. A place whose upper
+/// bound does not hold `from`'s does not compile either, so the copy refuses
+/// nothing: no more elements are pushed than `from` holds, which is at most
+/// `Max`.
 template <typename T, typename L, std::size_t Max, std::size_t Min, typename F>
 OwnedList<T, Max> widenedMap(const Bounded<L, Max, Min> &from, F &&map) {
     OwnedList<T, Max> to;
