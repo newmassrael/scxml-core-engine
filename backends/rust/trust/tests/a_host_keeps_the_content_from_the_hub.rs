@@ -10,7 +10,9 @@
 // holds no key of the epoch it is in writes nothing.
 // A key is given to a member sealed so that only that member opens it, and it comes from a key
 // the list's members or administrators hold. An epoch begins with an entry of the log, and a
-// removed member is given none of the keys that follow.
+// removed member is given none of the keys that follow. A write is one operation of a change
+// (docs/adr/0085, section 1): each write of a change is sealed under its register and the change's
+// dot, and a write-over, which carries no content, is not sealed.
 
 use sce_rust_mesh::endpoint::{Admission, Sealer};
 use sce_rust_trust::membership::{Body, Entry, Log, Profile};
@@ -19,6 +21,9 @@ use sce_rust_trust::{encoding, GrantError, Identity, RotateError, Sent, Trust};
 use serde_json::{json, Value};
 
 const CALENDAR: &str = "home";
+
+/// The one event a signature is carried by: a change of the list.
+const CHANGE: &str = "record_list.change";
 
 fn admin() -> Identity {
     Identity::from_seed([9; 32])
@@ -81,35 +86,40 @@ fn host_in(entries: &[Entry], own: Option<(u64, u8)>, keys: &[(u32, u8)]) -> Tru
     trust
 }
 
+/// A change of `author`'s at `wall_time` of one write: the title of row 1.
 fn titled(author: u64, wall_time: i64, text: &str) -> String {
-    json!({"id":1,"field":1,"value":"0","text":text,
-           "wallTime":wall_time.to_string(),"counter":0,"nodeId":author.to_string()})
+    json!({"by":author.to_string(),"wallTime":wall_time.to_string(),"counter":0,"ops":[
+        {"kind":0,"id":1,"field":1,"value":"0","text":text,"wallTime":"0","counter":0,"nodeId":"0"}]})
     .to_string()
 }
 
+/// A change of `author`'s at `wall_time` of one write: a number of row 2.
 fn numbered(author: u64, wall_time: i64, value: i64) -> String {
-    json!({"id":2,"field":3,"value":value.to_string(),"text":"",
-           "wallTime":wall_time.to_string(),"counter":0,"nodeId":author.to_string()})
+    json!({"by":author.to_string(),"wallTime":wall_time.to_string(),"counter":0,"ops":[
+        {"kind":0,"id":2,"field":3,"value":value.to_string(),"text":"","wallTime":"0","counter":0,"nodeId":"0"}]})
     .to_string()
 }
 
-/// What a host sends for a write, or the reason it does not.
+/// What a host sends for a change, or the reason it does not.
 fn try_send(host: &mut Trust, data: &str) -> Result<Option<String>, String> {
-    host.seal("#server", "record_list.write", data)
+    host.seal("#server", CHANGE, data)
 }
 
 fn send(host: &mut Trust, data: &str) -> String {
     match try_send(host, data) {
         Ok(Some(sent)) => sent,
-        other => panic!("expected the write to leave, got {other:?}"),
+        other => panic!("expected the change to leave, got {other:?}"),
     }
 }
 
+/// The text of the first operation of a change.
 fn text_of(data: &str) -> String {
-    serde_json::from_str::<Value>(data).unwrap()["text"]
-        .as_str()
-        .unwrap()
-        .to_string()
+    op_of(data, 0)["text"].as_str().unwrap().to_string()
+}
+
+/// The operation at `at` of a change.
+fn op_of(data: &str, at: usize) -> Value {
+    serde_json::from_str::<Value>(data).unwrap()["ops"][at].clone()
 }
 
 #[test]
@@ -123,14 +133,11 @@ fn a_write_leaves_sealed_and_a_member_reads_it_where_the_hub_cannot() {
     assert!(text_of(&wire).starts_with('~'), "{wire}");
     assert!(!wire.contains("buy milk"));
     let on_wire: Value = serde_json::from_str(&wire).unwrap();
-    assert_eq!(on_wire["value"], "0");
+    assert_eq!(on_wire["ops"][0]["value"], "0");
 
     // The hub's host holds no key: it admits what it can verify and its machine holds the
     // sealed text, which it sends on as it is.
-    let held_by_the_hub = hub
-        .admit("alice", "record_list.write", &wire)
-        .unwrap()
-        .unwrap();
+    let held_by_the_hub = hub.admit("alice", CHANGE, &wire).unwrap().unwrap();
     assert_eq!(text_of(&held_by_the_hub), text_of(&wire));
     let relayed = send(&mut hub, &held_by_the_hub);
     assert_eq!(
@@ -140,33 +147,58 @@ fn a_write_leaves_sealed_and_a_member_reads_it_where_the_hub_cannot() {
     );
 
     // Bob's host opens it, and his machine is told what alice wrote.
-    let told = bob
-        .admit("server", "record_list.write", &relayed)
-        .unwrap()
-        .unwrap();
+    let told = bob.admit("server", CHANGE, &relayed).unwrap().unwrap();
     let told: Value = serde_json::from_str(&told).unwrap();
-    assert_eq!(told["text"], "buy milk");
+    assert_eq!(told["ops"][0]["text"], "buy milk");
     assert!(told.get("sig").is_none());
 
     // A number is sealed as the text is.
     let wire = send(&mut alice, &numbered(1, 1001, -7));
     assert_eq!(text_of(&wire).chars().next(), Some('~'));
-    assert_eq!(serde_json::from_str::<Value>(&wire).unwrap()["value"], "0");
-    let told = bob
-        .admit("server", "record_list.write", &wire)
-        .unwrap()
-        .unwrap();
-    assert_eq!(serde_json::from_str::<Value>(&told).unwrap()["value"], "-7");
+    assert_eq!(op_of(&wire, 0)["value"], "0");
+    let told = bob.admit("server", CHANGE, &wire).unwrap().unwrap();
+    assert_eq!(op_of(&told, 0)["value"], "-7");
 }
 
-/// A write of alice (node 1) in the clear that names the entry `host` is at, signed by `signer`: made
-/// by hand, since a host that keeps content from the hub does not make one.
+/// Each write of a change is sealed apart, under its register and the change's dot: two writes of
+/// one text in one change are two sealed texts, each opens to its own write, and a write-over,
+/// which carries no content, travels as it was made. A member's machine is told the whole change,
+/// every write opened.
+#[test]
+fn every_write_of_a_change_is_sealed_under_its_own_register() {
+    let one = list(1);
+    let mut alice = host_in(&one, Some((1, 1)), &[(1, 5)]);
+    let mut bob = host_in(&one, Some((2, 2)), &[(1, 5)]);
+    let change = json!({"by":"1","wallTime":"1000","counter":0,"ops":[
+        {"kind":1,"id":1,"field":1,"value":"0","text":"","wallTime":"900","counter":0,"nodeId":"2"},
+        {"kind":0,"id":1,"field":1,"value":"0","text":"milk","wallTime":"0","counter":0,"nodeId":"0"},
+        {"kind":0,"id":1,"field":2,"value":"3","text":"milk","wallTime":"0","counter":0,"nodeId":"0"}]});
+    let wire = send(&mut alice, &change.to_string());
+    assert!(!wire.contains("milk"), "{wire}");
+    assert_eq!(
+        op_of(&wire, 0),
+        change["ops"][0],
+        "the write-over as it was made"
+    );
+    let (first, second) = (op_of(&wire, 1), op_of(&wire, 2));
+    for sealed in [&first, &second] {
+        assert!(sealed["text"].as_str().unwrap().starts_with('~'));
+        assert_eq!(sealed["value"], "0");
+    }
+    assert_ne!(
+        first["text"], second["text"],
+        "one text under two registers is two sealed texts"
+    );
+    let told: Value =
+        serde_json::from_str(&bob.admit("server", CHANGE, &wire).unwrap().unwrap()).unwrap();
+    assert_eq!(told, change, "the change as alice's machine made it");
+}
+
+/// A change of alice (node 1) whose write is in the clear and that names the entry `host` is at,
+/// signed by `signer`: made by hand, since a host that keeps content from the hub does not make one.
 fn clear_write_naming_the_tip(host: &Trust, signer: &Identity) -> String {
-    let mut value = json!({"id": "1", "field": "1", "value": "0", "text": "buy milk",
-        "wallTime": "1000", "counter": "0", "nodeId": "1"});
-    let signing = message::signing(CALENDAR, "record_list.write", &value)
-        .unwrap()
-        .unwrap();
+    let mut value: Value = serde_json::from_str(&titled(1, 1000, "buy milk")).unwrap();
+    let signing = message::signing(CALENDAR, CHANGE, &value).unwrap().unwrap();
     let (next, log_hash) = host.head();
     let link = Link {
         seq: 1,
@@ -201,9 +233,7 @@ fn a_list_that_keeps_content_takes_and_sends_no_write_in_the_clear() {
         host_in(&one, Some((2, 2)), &[(1, 5)]),
     ] {
         let mut host = host;
-        assert!(host
-            .admit("server", "record_list.write", &in_the_clear)
-            .is_ok());
+        assert!(host.admit("server", CHANGE, &in_the_clear).is_ok());
     }
 
     // One that names the entry that began the epoch, or one after it, is sealed or it is refused, at
@@ -214,9 +244,7 @@ fn a_list_that_keeps_content_takes_and_sends_no_write_in_the_clear() {
         host_in(&one, Some((2, 2)), &[(1, 5)]),
     ] {
         let mut host = host;
-        let reason = host
-            .admit("server", "record_list.write", &after)
-            .unwrap_err();
+        let reason = host.admit("server", CHANGE, &after).unwrap_err();
         assert!(reason.contains("not sealed"), "{reason}");
     }
 
@@ -234,34 +262,24 @@ fn sealed_content_under_another_key_or_epoch_is_refused() {
     let wire = send(&mut alice, &titled(1, 1000, "buy milk"));
 
     let mut without_it = host_in(&two, Some((2, 2)), &[(1, 5)]);
-    let reason = without_it
-        .admit("server", "record_list.write", &wire)
-        .unwrap_err();
+    let reason = without_it.admit("server", CHANGE, &wire).unwrap_err();
     assert!(reason.contains("no key of epoch 2"), "{reason}");
 
     let mut another_key = host_in(&two, Some((2, 2)), &[(2, 7)]);
-    let reason = another_key
-        .admit("server", "record_list.write", &wire)
-        .unwrap_err();
+    let reason = another_key.admit("server", CHANGE, &wire).unwrap_err();
     assert!(reason.contains("does not open"), "{reason}");
 
     let mut right_key = host_in(&two, Some((2, 2)), &[(1, 5), (2, 6)]);
-    assert!(right_key
-        .admit("server", "record_list.write", &wire)
-        .is_ok());
+    assert!(right_key.admit("server", CHANGE, &wire).is_ok());
 
     // A host whose log has not begun epoch 2 does not take what is sealed under it: the operation
     // names the entry that begins it, which the host does not hold, and neither does a hub that
     // holds no key.
     let mut behind = host_in(one, Some((2, 2)), &[(1, 5), (2, 6)]);
-    let reason = behind
-        .admit("server", "record_list.write", &wire)
-        .unwrap_err();
+    let reason = behind.admit("server", CHANGE, &wire).unwrap_err();
     assert!(reason.contains("does not hold as it is"), "{reason}");
     let mut behind_hub = host_in(one, None, &[]);
-    assert!(behind_hub
-        .admit("alice", "record_list.write", &wire)
-        .is_err());
+    assert!(behind_hub.admit("alice", CHANGE, &wire).is_err());
 }
 
 #[test]
@@ -282,17 +300,11 @@ fn a_write_seals_under_the_epoch_the_log_is_in_and_the_older_ones_still_open() {
 
     let mut bob = host_in(&two, Some((2, 2)), &[(1, 5), (2, 6)]);
     for (wire, text) in [(&old, "old"), (&new, "new")] {
-        let told = bob
-            .admit("server", "record_list.write", wire)
-            .unwrap()
-            .unwrap();
-        assert_eq!(serde_json::from_str::<Value>(&told).unwrap()["text"], text);
+        let told = bob.admit("server", CHANGE, wire).unwrap().unwrap();
+        assert_eq!(text_of(&told), text);
     }
     // What was sealed before is sent again as it was, on a resync.
-    let told = alice
-        .admit("server", "record_list.write", &old)
-        .unwrap()
-        .unwrap();
+    let told = alice.admit("server", CHANGE, &old).unwrap().unwrap();
     assert_eq!(
         text_of(&try_send(&mut alice, &told).unwrap().unwrap()),
         text_of(&old),
@@ -320,7 +332,7 @@ fn a_key_is_given_to_a_member_and_to_no_one_else() {
     let mut alice = alice;
     let mut bob = bob;
     let wire = send(&mut alice, &titled(1, 1000, "buy milk"));
-    assert!(bob.admit("server", "record_list.write", &wire).is_ok());
+    assert!(bob.admit("server", CHANGE, &wire).is_ok());
 
     // A grant that is changed, for another list, or from a key nobody knows is not taken.
     let changed = grant.replace("\"epoch\":1", "\"epoch\":4");
@@ -355,10 +367,7 @@ fn what_a_host_keeps_comes_back_from_its_store_and_still_opens() {
     let mut alice = host_in(&one, Some((1, 1)), &[(1, 5)]);
     let mut hub = host_in(&one, None, &[]);
     let wire = send(&mut alice, &titled(1, 1000, "buy milk"));
-    let held = hub
-        .admit("alice", "record_list.write", &wire)
-        .unwrap()
-        .unwrap();
+    let held = hub.admit("alice", CHANGE, &wire).unwrap().unwrap();
     let text = hub.to_text();
     assert!(!text.contains("buy milk"));
 
@@ -369,10 +378,7 @@ fn what_a_host_keeps_comes_back_from_its_store_and_still_opens() {
     // A person's host that kept the key reads the same text back, and holds the write as its
     // machine holds it.
     let mut bob = host_in(&one, Some((2, 2)), &[(1, 5)]);
-    let told = bob
-        .admit("server", "record_list.write", &wire)
-        .unwrap()
-        .unwrap();
+    let told = bob.admit("server", CHANGE, &wire).unwrap().unwrap();
     let text = bob.to_text();
     let mut restarted = host_in(&one, Some((2, 2)), &[(1, 5)]);
     assert_eq!(restarted.restore_from_text(&text), 1);
@@ -447,22 +453,14 @@ fn a_member_taken_off_opens_nothing_written_after_the_next_epoch() {
 
     // From now on alice seals under epoch 2; carol opens it and bob does not.
     let after = send(&mut alice, &titled(1, 2000, "after"));
-    let told = carol
-        .admit("server", "record_list.write", &after)
-        .unwrap()
-        .unwrap();
-    assert_eq!(
-        serde_json::from_str::<Value>(&told).unwrap()["text"],
-        "after"
-    );
-    let reason = bob
-        .admit("server", "record_list.write", &after)
-        .unwrap_err();
+    let told = carol.admit("server", CHANGE, &after).unwrap().unwrap();
+    assert_eq!(text_of(&told), "after");
+    let reason = bob.admit("server", CHANGE, &after).unwrap_err();
     assert!(reason.contains("no key of epoch 2"), "{reason}");
 
     // What was sealed before opens for the keys that opened it: the new key is no part of it.
-    assert!(carol.admit("server", "record_list.write", &before).is_ok());
-    assert!(bob.admit("server", "record_list.write", &before).is_ok());
+    assert!(carol.admit("server", CHANGE, &before).is_ok());
+    assert!(bob.admit("server", CHANGE, &before).is_ok());
 
     // Only an administrator begins an epoch, and a key that is held is not replaced.
     assert_eq!(
@@ -498,7 +496,7 @@ fn a_host_keyed_by_a_group_signs_no_write_before_the_log_names_an_epoch() {
 
     let mut grouped = host_in(&none, Some((1, 1)), &[]);
     grouped.keyed_by_a_group();
-    match grouped.keep_sent("record_list.write", &titled(1, 1000, "milk")) {
+    match grouped.keep_sent(CHANGE, &titled(1, 1000, "milk")) {
         Sent::Waiting(why) => assert!(why.contains("names no epoch"), "{why}"),
         other => panic!("expected the write to wait, got {other:?}"),
     }
@@ -528,9 +526,6 @@ fn a_host_keyed_by_a_group_signs_no_write_before_the_log_names_an_epoch() {
     let sealed = text_of(&signed[0].1);
     assert!(!sealed.contains("milk"), "sealed: {sealed}");
     let mut bob = host_in(&grouped.entries(), Some((2, 2)), &[(1, 5)]);
-    let told = bob
-        .admit("server", "record_list.write", &signed[0].1)
-        .unwrap()
-        .unwrap();
+    let told = bob.admit("server", CHANGE, &signed[0].1).unwrap().unwrap();
     assert_eq!(text_of(&told), "milk", "opened under the key of epoch 1");
 }

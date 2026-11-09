@@ -54,11 +54,16 @@ fn person(node: u64) -> Identity {
     Identity::from_seed([node as u8; 32])
 }
 
-/// A write with a stamp that goes forward along a device's chain.
+/// A change of one write of row `id`, of `value`, by `node` at `wall`.
+fn change(node: u64, id: u64, wall: i64, value: i64) -> Value {
+    json!({"by": node.to_string(), "wallTime": wall.to_string(), "counter": "0", "ops": [
+        {"kind": 0, "id": id.to_string(), "field": "3", "value": value.to_string(), "text": "",
+         "wallTime": "0", "counter": "0", "nodeId": "0"}]})
+}
+
+/// A change of one write with a stamp that goes forward along a device's chain.
 fn write(author: u64, id: u64, wall: i64) -> String {
-    json!({"id": id.to_string(), "field": "3", "value": id.to_string(), "text": "",
-           "wallTime": wall.to_string(), "counter": "0", "nodeId": author.to_string()})
-    .to_string()
+    change(author, id, wall, id as i64).to_string()
 }
 
 /// The id, time and write number of an operation as it travels.
@@ -66,12 +71,12 @@ fn id_and_time_of(data: &str) -> ([u8; 32], i64, u64) {
     let mut value: Value = serde_json::from_str(data).unwrap();
     value.as_object_mut().unwrap().remove(SIGNATURE_FIELD);
     let link = Link::take_from(&mut value).unwrap();
-    let signing = message::signing(LIST, "record_list.write", &value)
+    let signing = message::signing(LIST, "record_list.change", &value)
         .unwrap()
         .unwrap();
     let id = message::operation_id(&message::operation_bytes(&signing.message, &link));
     let wall = value["wallTime"].as_str().unwrap().parse().unwrap();
-    let write = value["id"].as_str().unwrap().parse().unwrap();
+    let write = value["ops"][0]["id"].as_str().unwrap().parse().unwrap();
     (id, wall, write)
 }
 
@@ -88,9 +93,8 @@ fn forged_write(
     wall: i64,
     value: i64,
 ) -> String {
-    let mut data = json!({"id": id.to_string(), "field": "3", "value": value.to_string(), "text": "",
-        "wallTime": wall.to_string(), "counter": "0", "nodeId": node.to_string()});
-    let signing = message::signing(LIST, "record_list.write", &data)
+    let mut data = change(node, id, wall, value);
+    let signing = message::signing(LIST, "record_list.change", &data)
         .unwrap()
         .unwrap();
     let (next, log_hash) = host.head();
@@ -260,7 +264,7 @@ impl World {
             wall,
             id as i64 + 1000,
         );
-        self.ops.push(("record_list.write".to_string(), forged));
+        self.ops.push(("record_list.change".to_string(), forged));
     }
 
     /// A device signs two different operations at one number: its key is on two hosts that have not
@@ -283,12 +287,12 @@ impl World {
             self.next_id += 1;
             let Ok(Some(sent)) = sealer.seal(
                 "#server",
-                "record_list.write",
+                "record_list.change",
                 &write(node, id, 1000 + id as i64),
             ) else {
                 return;
             };
-            self.ops.push(("record_list.write".to_string(), sent));
+            self.ops.push(("record_list.change".to_string(), sent));
             if index == 0 {
                 self.delivered[device + 1].insert(self.ops.len() - 1);
             }
@@ -308,12 +312,12 @@ impl World {
         let mut sealer = host.clone();
         let Ok(Some(sent)) = sealer.seal(
             "#server",
-            "record_list.write",
+            "record_list.change",
             &write(DEVICES[device], id, wall),
         ) else {
             return;
         };
-        self.ops.push(("record_list.write".to_string(), sent));
+        self.ops.push(("record_list.change".to_string(), sent));
         // The device holds what it made.
         self.delivered[device + 1].insert(self.ops.len() - 1);
     }
