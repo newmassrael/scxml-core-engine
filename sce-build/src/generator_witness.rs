@@ -17,7 +17,36 @@ use std::path::{Path, PathBuf};
 /// `build.rs` is here because it *is* generator behaviour: it derives the
 /// embedded template registry and the provenance stamps, so editing it
 /// changes emitted output without touching a single file under `src/`.
-pub const WITNESS_FILES: &[&str] = &["Cargo.lock", "sce-build/Cargo.toml", "sce-build/build.rs"];
+///
+/// The rest are files outside [`WITNESS_TREES`] that the generator compiles
+/// in with `include_str!`, so an edit to one changes what it emits: the
+/// harnesses and base classes `w3c_suite.rs` writes beside the W3C machines,
+/// the runtimes' policy sources and the script helpers a backend embeds, and
+/// the default formatting style. They are named one by one because the
+/// directories that hold them hold much else the generator never reads;
+/// `every_file_of_this_tree_the_binary_compiles_in_is_witnessed` reads the
+/// compiler's own list of what the binary read and fails on a file missing
+/// here.
+pub const WITNESS_FILES: &[&str] = &[
+    "Cargo.lock",
+    "sce-build/Cargo.toml",
+    "sce-build/build.rs",
+    "backends/go/tests/go.sum",
+    "backends/go/tests/harness/harness.go",
+    "backends/kotlin/runtime/src/commonMain/kotlin/com/sce/runtime/StateMachineEngine.kt",
+    "backends/kotlin/tests/src/main/kotlin/com/sce/http/W3CHttpTestServer.kt",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/VirtualDrive.kt",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CHttpTestBase.kt",
+    "backends/kotlin/tests/src/test/kotlin/com/sce/w3c/W3CTestBase.kt",
+    "backends/python/runtime/sce_runtime/policy.py",
+    "backends/python/tests/conftest.py",
+    "backends/rust/runtime/src/policy.rs",
+    "backends/rust/tests/src/harness.rs",
+    "sce/include/scripting/ecma_semantics.lua",
+    "sce/include/scripting/json_builtins.lua",
+    "sce/include/static/StaticExecutionEngine.h",
+    "tools/codegen/default.clang-format",
+];
 
 /// Directories walked recursively, relative to the workspace root. Every
 /// file contributes regardless of extension, so a data file added next to
@@ -26,8 +55,22 @@ pub const WITNESS_FILES: &[&str] = &["Cargo.lock", "sce-build/Cargo.toml", "sce-
 ///
 /// `stdlib` is here because it IS in the binary: an `sce:std/...` import is
 /// resolved from the copy `build.rs` embeds, never from disk, so an edited
-/// standard document changes what this generator emits.
-pub const WITNESS_TREES: &[&str] = &["sce-build/src", "stdlib"];
+/// standard document changes what this generator emits. So are the kind
+/// examples, which the generator compiles in as the example of each kind.
+pub const WITNESS_TREES: &[&str] = &["sce-build/src", "sce-build/kind-examples", "stdlib"];
+
+/// The one directory the binary may compile files from without the witness
+/// covering them, relative to the workspace root: the Jinja2 template tree.
+///
+/// A native `sce-codegen` reads its templates from disk on every run
+/// (`SCE_TEMPLATE_DIR`, `template::find_template_base`); the copy `build.rs`
+/// embeds serves the WASM build, which has no filesystem. So a template is
+/// an input of each generation that renders it, named in that generation's
+/// depfile, and never of the generator: folding the tree in here would make
+/// every template edit demand a rebuild that changes nothing. Every other
+/// file of the checkout the binary compiles in has to be a witness member
+/// (`every_file_of_this_tree_the_binary_compiles_in_is_witnessed`).
+pub const RUN_TIME_TREE: &str = "tools/codegen/templates";
 
 /// Value [`crate::GENERATOR_SOURCE_DIGEST`] carries when the build could
 /// not read the witness set — a vendored crate or a release tarball with
@@ -222,14 +265,23 @@ pub(crate) fn hex_encode(bytes: &[u8; 32]) -> String {
 mod tests {
     use super::*;
 
-    /// Minimal workspace carrying one file per member of the witness set.
+    /// Minimal workspace carrying every named member of the witness set and
+    /// one file in each of its trees.
     fn fake_workspace(dir: &Path) {
+        for file in WITNESS_FILES {
+            let path = dir.join(file);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, format!("// {file}\n")).unwrap();
+        }
         fs::create_dir_all(dir.join("sce-build/src/forge")).unwrap();
-        fs::write(dir.join("Cargo.lock"), b"[[package]]\nname = \"x\"\n").unwrap();
-        fs::write(dir.join("sce-build/Cargo.toml"), b"[package]\n").unwrap();
-        fs::write(dir.join("sce-build/build.rs"), b"fn main() {}\n").unwrap();
         fs::write(dir.join("sce-build/src/lib.rs"), b"pub mod forge;\n").unwrap();
         fs::write(dir.join("sce-build/src/forge/mod.rs"), b"// forge\n").unwrap();
+        fs::create_dir_all(dir.join("sce-build/kind-examples")).unwrap();
+        fs::write(
+            dir.join("sce-build/kind-examples/enum.scxml"),
+            b"<scxml/>\n",
+        )
+        .unwrap();
         fs::create_dir_all(dir.join("stdlib/time")).unwrap();
         fs::write(dir.join("stdlib/time/a.scxml"), b"<scxml/>\n").unwrap();
     }
@@ -339,17 +391,17 @@ mod tests {
         fake_workspace(tmp.path());
 
         let watched = witness_paths(tmp.path()).unwrap();
-        let mut expected: Vec<PathBuf> = [
-            "Cargo.lock",
-            "sce-build/Cargo.toml",
-            "sce-build/build.rs",
-            "sce-build/src/lib.rs",
-            "sce-build/src/forge/mod.rs",
-            "stdlib/time/a.scxml",
-        ]
-        .iter()
-        .map(|p| tmp.path().join(p))
-        .collect();
+        let mut expected: Vec<PathBuf> = WITNESS_FILES
+            .iter()
+            .copied()
+            .chain([
+                "sce-build/src/lib.rs",
+                "sce-build/src/forge/mod.rs",
+                "sce-build/kind-examples/enum.scxml",
+                "stdlib/time/a.scxml",
+            ])
+            .map(|p| tmp.path().join(p))
+            .collect();
         expected.sort();
 
         assert_eq!(watched, expected);
