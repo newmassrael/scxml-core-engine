@@ -19,6 +19,11 @@
 {% endif %}
 #include <string>
 #include <vector>
+{% if needs_bounded %}
+{# docs/adr/0086, section 7.4: a bounded text or list is held in the forge
+   runtime's type of it, the type a machine holds the same value in. #}
+#include <sce/forge/bounded.h>
+{% endif %}
 {% for inc in type_includes %}
 #include "{{ inc }}"
 {% endfor %}

@@ -758,10 +758,12 @@ fn render_cpp(
         Some(present) => l.type_name(present).into_owned(),
         None => format!("std::vector<{}>", record_type_of(&l, imports, e)),
     })?;
-    // Each field of a record as the schema's C++ unit holds it: a text in a
-    // `std::string`, a byte string in a `std::vector<uint8_t>`.
-    insert_cbor_records(&l, m, imports, &mut ctx, &|ty| {
-        scalar_record_field_type(&l, ty)
+    // Each field of a record as the schema's C++ unit holds it: a text in the
+    // `OwnedText<N>` of its bound (docs/adr/0086, section 7.4), a byte string
+    // in a `std::vector<uint8_t>`.
+    insert_cbor_records(&l, m, imports, &mut ctx, &|ty| match ty {
+        ValueType::Text { max } => crate::forge::composed_lowering::cpp_text_type(max.max),
+        other => scalar_record_field_type(&l, other),
     })?;
     // docs/adr/0081 step 4: a map whose plan the C++ printer lowers is printed
     // from it, its entries presented through accessors and encoded over any

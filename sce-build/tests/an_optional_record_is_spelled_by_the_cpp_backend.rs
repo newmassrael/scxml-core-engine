@@ -140,7 +140,7 @@ fn the_scenario_machine_holds_an_optional_record_in_a_std_optional() {
             "savedReadOptional(grown.variable(\"pick\"), \"pick\", ",
             "ItemRecordFromSaved)",
             // The answer of an algorithm, made the machine's record where there is one.
-            "SCE::Forge::mapPresent(r, [&](const SCE::Generated::SchemaItemPick::SchemaItemPickPayload &scePresent)",
+            "SCE::Forge::mapPresent(r, [&](const auto &scePresent)",
         ],
     );
 }
@@ -204,9 +204,10 @@ fn a_field_of_an_algorithms_optional_record_is_written_through_the_present_recor
             "held = x;",
             "held.has_value()",
             // A number and a text written through the present record, the text from
-            // a literal the validator bounds.
+            // a literal the validator bounds, built in the field's own bounded type
+            // (docs/adr/0086, section 7.4).
             "(*held).count = 7;",
-            "(*held).title = \"bumped\";",
+            "(*held).title = ::SCE::Forge::OwnedText<16>::literal(\"bumped\");",
             // And read the same way.
             "(*held).count",
         ],
@@ -424,8 +425,7 @@ fn an_optional_enum_field_crosses_an_adapter_by_the_declared_name_of_its_variant
         &[
             "std::optional<std::string> call_Retitle__v(",
             "/*title=*/p0.title",
-            "SCE::Forge::mapPresent(p0.status, [&](const ",
-            "StatusEnum &scePresent)",
+            "SCE::Forge::mapPresent(p0.status, [&](const auto &scePresent)",
         ],
     );
 }

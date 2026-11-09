@@ -30,9 +30,10 @@ use crate::generator::Language;
 
 /// Every form of the CBOR codec `plan` the C++ printer does not print yet: an
 /// encode that can refuse, which an enum of a signed carrier or a list's lower
-/// count makes, and a list of records with a text or a byte string field,
-/// which the schema's C++ unit holds in a `std::string` or a `std::vector`
-/// with no bound, so no view of the records holds them within theirs.
+/// count makes, and a list of records with a byte string field, which the
+/// schema's C++ unit holds in a `std::vector` with no bound, so no view of the
+/// records holds it within its own. A text field is held in the `OwnedText`
+/// of its bound (docs/adr/0086, section 7.4), which holds it within it.
 /// `imports` are the codec's own, which declare its records.
 pub(in super::super) fn unlowered_forms(
     plan: &CborPlan<'_>,
@@ -51,11 +52,11 @@ pub(in super::super) fn unlowered_forms(
                 record
                     .fields
                     .iter()
-                    .any(|(_, ty)| matches!(ty, ValueType::Text { .. } | ValueType::Bytes { .. }))
+                    .any(|(_, ty)| matches!(ty, ValueType::Bytes { .. }))
             })
     });
     if unbounded {
-        forms.push("a list of records with a text or a byte string field".to_string());
+        forms.push("a list of records with a byte string field".to_string());
     }
     forms
 }
@@ -67,8 +68,8 @@ fn leaf(e: &CborEntry) -> &SceType {
         .expect("a leaf entry has a leaf type; a list of records is asked apart")
 }
 
-/// A field of a record a printed list holds: a boolean or an unsigned integer,
-/// the only fields a record of a printed map has (`unlowered_forms`).
+/// A field of a record a printed list holds: a boolean, an unsigned integer or
+/// a text, the only fields a record of a printed map has (`unlowered_forms`).
 struct RecordField {
     /// The field's id, the text its key is.
     key: String,
@@ -87,6 +88,11 @@ enum RecordFieldKind {
     /// holds as it is.
     Uint {
         wide: bool,
+    },
+    /// A text of at most `max` UTF-8 bytes, held in the `OwnedText` of that
+    /// bound (docs/adr/0086, section 7.4), so its write refuses nothing.
+    Text {
+        max: u32,
     },
 }
 
@@ -113,20 +119,29 @@ struct Record {
 fn records(plan: &CborPlan<'_>, l: &LangCtx, imports: &[ImportContext]) -> Vec<Record> {
     let scope = crate::forge::generator::import_type_scope(imports);
     let field = |(id, ty): &(String, ValueType)| -> RecordField {
-        let ValueType::Scalar(t) = ty else {
-            unreachable!("a record of a printed map holds no text or byte string")
-        };
-        let kind = match cbor_codec::record_field(ty) {
-            Some(("bool", _)) => RecordFieldKind::Bool,
-            Some(("uint", _)) => RecordFieldKind::Uint {
-                wide: *t == SceType::Uint64,
-            },
-            _ => unreachable!("a record of a printed map holds a boolean or an unsigned integer"),
+        let (kind, held) = match ty {
+            ValueType::Text { max } => (
+                RecordFieldKind::Text { max: max.max },
+                crate::forge::composed_lowering::cpp_text_type(max.max),
+            ),
+            ValueType::Scalar(t) => {
+                let kind = match cbor_codec::record_field(ty) {
+                    Some(("bool", _)) => RecordFieldKind::Bool,
+                    Some(("uint", _)) => RecordFieldKind::Uint {
+                        wide: *t == SceType::Uint64,
+                    },
+                    _ => unreachable!(
+                        "a record of a printed map holds a boolean, an unsigned integer or a text"
+                    ),
+                };
+                (kind, l.type_name(t).into_owned())
+            }
+            _ => unreachable!("a record of a printed map holds no byte string (`unlowered_forms`)"),
         };
         RecordField {
             key: id.clone(),
             name: crate::forge::generator::event_schema_field_ident(id, Language::Cpp),
-            ty: l.type_name(t).into_owned(),
+            ty: held,
             kind,
         }
     };
@@ -181,6 +196,9 @@ fn records_struct(records: &[Record], struct_name: &str) -> String {
                     "cbor::write_uint(w, static_cast<std::uint64_t>(record.{}))",
                     f.name
                 ),
+                RecordFieldKind::Text { .. } => {
+                    format!("cbor::write_text(w, record.{}.inner())", f.name)
+                }
             };
             write.push_str(&format!(
                 "        if (auto _e = cbor::write_text(w, {key:?}); _e) return _e;\n\
@@ -212,6 +230,16 @@ fn records_struct(records: &[Record], struct_name: &str) -> String {
                     "                const auto raw = cbor::read_uint_upto(c, static_cast<std::uint64_t>(std::numeric_limits<{ty}>::max()));\n\
                      \x20               if (!raw) return std::nullopt;\n\
                      \x20               held_{name} = static_cast<{ty}>(*raw);\n",
+                    name = f.name,
+                    ty = f.ty
+                ),
+                // Read within the bound and as UTF-8, which is what the
+                // field's type holds, so its `make` always makes it.
+                RecordFieldKind::Text { max } => format!(
+                    "                auto text = cbor::read_text(c, {max});\n\
+                     \x20               if (!text) return std::nullopt;\n\
+                     \x20               held_{name} = {ty}::make(std::move(*text));\n\
+                     \x20               if (!held_{name}) return std::nullopt;\n",
                     name = f.name,
                     ty = f.ty
                 ),

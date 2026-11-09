@@ -156,7 +156,7 @@
                 // Defer invoke: {{ invoke_info.invoke_id }} ({{ invoke_info.src }}). docs/adr/0045:
                 // the id it is started under comes from the number of this start, so it
                 // comes from the tree alone and is the same text on every backend.
-{{ invoke_start.defer_scxml_invoke(invoke_info, state_id, "                ", "child") }}
+{{ invoke_start.defer_scxml_invoke(invoke_info, state_id, "                ", "child", 'error.execution' in model.events) }}
 {% endfor %}
 {% endif %}
 {% if state.invokes | scxml_remote %}
@@ -438,7 +438,7 @@
                 {% for invoke_info in state.invokes | hybrid %}
                 // Defer hybrid invoke: {{ invoke_info.invoke_id }} {% if invoke_info.srcexpr %}(srcexpr: {{ invoke_info.srcexpr }}){% elif invoke_info.contentexpr %}(contentexpr: {{ invoke_info.contentexpr }}){% endif %}
 
-{{ invoke_start.defer_scxml_invoke(invoke_info, state_id, "                ", "hybrid") }}
+{{ invoke_start.defer_scxml_invoke(invoke_info, state_id, "                ", "hybrid", 'error.execution' in model.events) }}
 {% endfor %}
 {% endif %}
 {% if state.on_entry_blocks %}

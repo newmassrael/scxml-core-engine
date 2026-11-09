@@ -12,10 +12,10 @@
 // A delivery whose every list is full is lifted into the machine's own types, and each
 // read at depths 1 to 3 is what a host reads back. A delivery one past a bound at depth 2
 // is refused whole (section 4.2): none of the content runs, and error.execution is raised
-// once. A value a host injects through the seam is held to every bound before anything is
-// sent (section 5.4): within them it is read as any delivery, and one past a bound at any
-// depth is answered as the refusal naming its path, and nothing is raised. A list taken
-// whole into a variable is the machine's own copy.
+// once. A value a host injects through the seam is built in the types that hold every
+// bound (section 7.4): within them it is read as any delivery, and one past a bound at any
+// depth is no value of its type, so the host cannot build it and nothing is raised. A list
+// taken whole into a variable is the machine's own copy.
 
 #include <cstdint>
 #include <optional>
@@ -55,13 +55,27 @@ std::string batch(int secondTags) {
            "\"note\":\"abcd\",\"late\":[5,6]}";
 }
 
-/// An item a host builds, its `tags` holding `tags` texts.
+/// The types the machine holds the batch's fields in (docs/adr/0086, section 7.4).
+using Tag = decltype(Item::tags)::value_type;
+using Tags = decltype(Item::tags);
+using Payload = P::StaticComposedPayloadBatchSentPayload;
+using Items = decltype(Payload::items);
+using Late = decltype(Payload::late);
+
+/// An item a host builds, its `tags` holding `tags` texts, at most the four its type holds.
 Item hostItem(std::uint32_t id, int tags) {
-    std::vector<std::string> words;
+    Tags words;
     for (int n = 0; n < tags; ++n) {
-        words.push_back("t" + std::to_string(n));
+        const auto tag = Tag::make("t" + std::to_string(n));
+        EXPECT_TRUE(tag.has_value() && words.push(*tag)) << "tag " << n << " lies within its bounds";
     }
-    return Item{id, 2, "abc", Level::Low, std::nullopt, std::vector<std::uint8_t>{'w', 'x'}, words};
+    return Item{id,
+                2,
+                decltype(Item::label)::literal("abc"),
+                Level::Low,
+                std::nullopt,
+                decltype(Item::blob)::literal({'w', 'x'}),
+                words};
 }
 
 TEST(AComposedPayloadIsReadAtAnyDepthTest, AFullDeliveryIsReadAtEveryDepth) {
@@ -134,14 +148,17 @@ TEST(AComposedPayloadIsReadAtAnyDepthTest, AValueAHostInjectsWithinItsBoundsIsRe
     Machine machine;
     EXPECT_EQ(machine.initialize(), std::nullopt);
     std::vector<std::uint8_t> late{5, 6};
-    const std::string refused =
-        machine.raiseBatchSent(std::vector<Item>{hostItem(4, 2)}, std::vector<std::vector<std::uint8_t>>{{1, 2}},
-                               std::vector<Level>{Level::Low},
-                               std::vector<std::optional<std::uint16_t>>{std::optional<std::uint16_t>(9), std::nullopt},
-                               std::nullopt, "ab", late);
-    EXPECT_EQ(refused, "") << "a value within every bound is raised";
+    const auto items = Items::make(std::vector<Item>{hostItem(4, 2)});
+    const auto heldLate = Late::make(late);
+    ASSERT_TRUE(items.has_value() && heldLate.has_value()) << "each list lies within its bound";
+    using Grid = decltype(Payload::grid);
+    using Levels = decltype(Payload::levels);
+    using Maybe = decltype(Payload::maybe);
+    machine.raiseBatchSent(*items, Grid::literal({Grid::value_type::literal({1, 2})}), Levels::literal({Level::Low}),
+                           Maybe::literal({std::optional<std::uint16_t>(9), std::nullopt}), std::nullopt,
+                           decltype(Payload::note)::literal("ab"), *heldLate);
     StaticScenario::settleRounds(machine);
-    EXPECT_EQ(machine.refusals(), 0u);
+    EXPECT_EQ(machine.refusals(), 0u) << "a value within every bound is raised and read";
     EXPECT_EQ(machine.item_count(), 1u);
     EXPECT_EQ(machine.tag_count(), 2u);
     EXPECT_EQ(machine.id_sum(), 4u);
@@ -154,37 +171,27 @@ TEST(AComposedPayloadIsReadAtAnyDepthTest, AValueAHostInjectsWithinItsBoundsIsRe
     EXPECT_EQ(machine.late(), (std::vector<std::uint8_t>{5, 6}));
 }
 
-TEST(AComposedPayloadIsReadAtAnyDepthTest, AListAHostInjectsOnePastItsBoundIsRefusedBeforeAnythingIsSent) {
-    // `late` is a list<uint8>[2]: three elements are no value of its type, and the seam
-    // answers the refusal before anything is sent.
+TEST(AComposedPayloadIsReadAtAnyDepthTest, AValuePastABoundAtAnyDepthIsNoValueAHostCanBuild) {
+    // Each bound of the batch is its type's (docs/adr/0086, section 7.4), so a value past
+    // one is refused where the host would make it, before there is anything to send:
+    // `late` is a list<uint8>[2], `tags` a list<string[8]>[4] inside each item, `note` a
+    // string[4].
+    EXPECT_FALSE(Late::make(std::vector<std::uint8_t>{5, 6, 7}).has_value()) << "three elements past two";
+    Tags four;
+    for (int n = 0; n < 4; ++n) {
+        EXPECT_TRUE(four.push(Tag::literal("t"))) << "tag " << n << " lies within four";
+    }
+    EXPECT_FALSE(four.push(Tag::literal("t"))) << "a fifth tag is refused, the list left as it was";
+    EXPECT_EQ(four.size(), 4u);
+    EXPECT_FALSE(Tag::make(std::string("ninebytes")).has_value()) << "nine bytes past eight";
+    EXPECT_FALSE(decltype(Payload::note)::make(std::string("abcde")).has_value()) << "five bytes past four";
+    // Nothing was built past a bound, so nothing reached the machine.
     Machine machine;
     EXPECT_EQ(machine.initialize(), std::nullopt);
-    const std::string refused = machine.raiseBatchSent(std::vector<Item>{hostItem(4, 2)}, {}, {}, {}, std::nullopt,
-                                                       "ab", std::vector<std::uint8_t>{5, 6, 7});
-    EXPECT_EQ(refused, "'late' holds 3 elements, past the 2 its type declares");
     StaticScenario::settleRounds(machine);
-    EXPECT_EQ(machine.refusals(), 0u) << "nothing was sent, so nothing was refused";
+    EXPECT_EQ(machine.refusals(), 0u);
     EXPECT_EQ(machine.item_count(), 0u);
     EXPECT_TRUE(machine.late().empty());
-}
-
-TEST(AComposedPayloadIsReadAtAnyDepthTest, ARecordAHostBuildsOnePastAnInnerBoundIsRefusedByItsPath) {
-    // `tags` is a list<string[8]>[4] inside each item: an item of five is refused at the
-    // path of the list inside the element, and a tag of nine bytes at the path of the tag.
-    Machine machine;
-    EXPECT_EQ(machine.initialize(), std::nullopt);
-    EXPECT_EQ(machine.raiseBatchSent(std::vector<Item>{hostItem(1, 5)}, {}, {}, {}, std::nullopt, "ab", {}),
-              "'items/0/tags' holds 5 elements, past the 4 its type declares");
-    Item nine = hostItem(1, 0);
-    nine.tags.push_back("ninebytes");
-    EXPECT_EQ(machine.raiseBatchSent(std::vector<Item>{nine}, {}, {}, {}, std::nullopt, "ab", {}),
-              "'items/0/tags/0' is 9 bytes, past the 8 its type declares");
-    // A top-level text past its bound is refused at its own name.
-    EXPECT_EQ(machine.raiseBatchSent({}, {}, {}, {}, std::nullopt, "abcde", {}),
-              "'note' is 5 bytes, past the 4 its type declares");
-    StaticScenario::settleRounds(machine);
-    EXPECT_EQ(machine.refusals(), 0u) << "nothing was sent, so nothing was refused";
-    EXPECT_EQ(machine.item_count(), 0u);
 }
 
 }  // namespace

@@ -9342,6 +9342,46 @@ pub(crate) fn rust_literal(written: &str, bytes: bool) -> Option<String> {
     rust_emit_value(&ast).ok()
 }
 
+/// `text` as what the C++ runtime's `OwnedText<N>::literal` is handed: the
+/// string literal of its bytes while the text fits one and holds no U+0000,
+/// and otherwise the braced character constants of its bytes and the zero
+/// that ends them, an array of the same type and length, which holds a zero
+/// byte as any other and is held to no length.
+pub(crate) fn cpp_text_literal(text: &str) -> String {
+    if text.len() <= crate::filters::CPP_STRING_LITERAL_MAX_BYTES && !text.contains('\0') {
+        return format!("\"{}\"", crate::filters::escape_cpp(text.to_string()));
+    }
+    let mut constants = crate::filters::c_char_constants(text);
+    constants.push("'\\0'".to_string());
+    format!("{{{}}}", constants.join(", "))
+}
+
+/// What the C++ runtime's `literal` of a text or a byte-string place is handed
+/// for `written`, when it is one string literal: a text as the C++ string
+/// literal of its bytes, or, where the text is too long for one or holds a
+/// U+0000, the braced character constants of its bytes and the zero that ends
+/// them, an array of the same type and length; for a place of bytes (`bytes`)
+/// the braced hex bytes of the printable ASCII it spells, as a literal lands in
+/// a byte-string slot ([`string_literal_as_bytes`]). `Some(None)` for a byte
+/// string of no bytes, which no array holds and which the place's default is.
+/// `None` for any other expression, and for a text no byte string spells.
+pub(crate) fn cpp_literal_elements(written: &str, bytes: bool) -> Option<Option<String>> {
+    let mut ast = parse_to_ast(written.trim()).ok()?;
+    let ExprKind::StringLit { value } = &ast.kind else {
+        return None;
+    };
+    if !bytes {
+        return Some(Some(cpp_text_literal(value)));
+    }
+    if !string_literal_as_bytes(&mut ast) {
+        return None;
+    }
+    let ExprKind::BytesLit { bytes } = &ast.kind else {
+        return None;
+    };
+    Some((!bytes.is_empty()).then(|| format!("{{{}}}", bytes_as_hex_list(bytes))))
+}
+
 /// A text or a byte string for a place that copies it through its own
 /// checked constructor ([`Position::Copied`]): borrowed whole, as the `&str`
 /// or `&[u8]` the constructor takes, and the arms of a conditional one by one,

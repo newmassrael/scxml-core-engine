@@ -4128,18 +4128,23 @@ fn render_event_schema(
             let resolved = l.type_name(f.sce_type.present_type());
             let go_field_name = event_schema_field_ident(&f.id, crate::generator::Language::Go);
             let rs_field_name = event_schema_field_ident(&f.id, crate::generator::Language::Rust);
-            // A `string` field the schema bounds is held in a buffer of that
-            // many UTF-8 bytes where the language's own string cannot be one
-            // (SCE_FORGE.md §4.12): Rust the runtime's bounded text, which is
-            // fixed-capacity on the no-alloc profile; C11 the bounded buffer a
-            // `sce-static` statechart holds the same text in. A string with no
-            // bound stays the language's own, and no record can name it.
+            // A `string` field the schema bounds is held in a type of that many
+            // UTF-8 bytes where the language's own string cannot be one
+            // (SCE_FORGE.md §4.12): Rust and C++ the runtime's bounded text, the
+            // type a machine holds the same text in (docs/adr/0086, section
+            // 7.4), fixed-capacity on Rust's no-alloc profile; C11 the bounded
+            // buffer a `sce-static` statechart holds the same text in. A string
+            // with no bound stays the language's own, and no record can name it.
             let text_bound = match (f.sce_type.present_type(), f.max_size) {
                 (SceType::String, Some(bound)) => Some(bound),
                 _ => None,
             };
             let rs_type = match text_bound {
                 Some(bound) => format!("::sce_portable_bytes::SceString<{bound}>").into(),
+                None => resolved.clone(),
+            };
+            let cpp_type: std::borrow::Cow<'static, str> = match text_bound {
+                Some(bound) => crate::forge::composed_lowering::cpp_text_type(bound).into(),
                 None => resolved.clone(),
             };
             let c_type = match text_bound {
@@ -4164,12 +4169,18 @@ fn render_event_schema(
                     )?;
                     // A text the schema bounds is held, where it is present, in the
                     // buffer a present one is: the runtime's bounded text on Rust,
-                    // which an algorithm's record reads as the `&str` it derefs to.
+                    // which an algorithm's record reads as the `&str` it derefs to,
+                    // and on C++, which it reads as the `std::string` it holds.
                     Some(match (_lang, text_bound) {
                         (crate::generator::Language::Rust, Some(_))
                             if matches!(elem, SceType::String) =>
                         {
                             l.optional_of(&rs_type).unwrap_or(held)
+                        }
+                        (crate::generator::Language::Cpp, Some(_))
+                            if matches!(elem, SceType::String) =>
+                        {
+                            l.optional_of(&cpp_type).unwrap_or(held)
                         }
                         (
                             crate::generator::Language::Rust
@@ -4198,7 +4209,7 @@ fn render_event_schema(
             };
             Ok(serde_json::json!({
                 "id": f.id,
-                "cpp_type": spelled(resolved.clone()),
+                "cpp_type": spelled(cpp_type),
                 "rs_type": spelled(rs_type),
                 "kt_type": spelled(resolved.clone()),
                 "go_type": spelled(resolved.clone()),
@@ -4405,6 +4416,14 @@ fn render_event_schema(
     // declare (docs/adr/0055); Go's runtime package is read off the text by the
     // render.
     ctx.insert("needs_optional".into(), m.holds_optional().into());
+    // A C++ field held in the forge runtime's bounded text or list
+    // (docs/adr/0086, section 7.4) names the type its header declares.
+    let holds_bounded = fields.iter().any(|f| {
+        f["cpp_type"]
+            .as_str()
+            .is_some_and(|ty| ty.contains(crate::forge::composed_lowering::CPP_FORGE))
+    });
+    ctx.insert("needs_bounded".into(), holds_bounded.into());
     // The declaration of each bounded buffer the C11 struct holds a text in, a
     // field's own or one a composition holds, once per bound, under the guard
     // every header that declares it shares.
@@ -38804,12 +38823,18 @@ fn lower_text_write(
                     "{}({literal})",
                     crate::forge::static_lowering::c_string_storage_of(bound)
                 ),
+                // The schema unit's `OwnedText<N>` (docs/adr/0086, section 7.4),
+                // built from the literal by a construction the compiler judges
+                // against the bound, as the build judged it here.
+                Language::Cpp => format!(
+                    "{}::literal({})",
+                    crate::forge::composed_lowering::cpp_text_type(bound),
+                    expr::cpp_literal_elements(rhs, false)
+                        .flatten()
+                        .unwrap_or(literal)
+                ),
                 // The language's own `String`: the bound was judged at build time.
-                Language::Cpp
-                | Language::Go
-                | Language::Python
-                | Language::Kotlin
-                | Language::Swift => literal,
+                Language::Go | Language::Python | Language::Kotlin | Language::Swift => literal,
             }
         }
         TextSource::Field { record, field } => {
@@ -38826,11 +38851,14 @@ fn lower_text_write(
                     "{}({member}.data)",
                     crate::forge::static_lowering::c_string_storage_of(bound)
                 ),
-                Language::Cpp
-                | Language::Go
-                | Language::Python
-                | Language::Kotlin
-                | Language::Swift => member,
+                // Widened into the field's `OwnedText<N>`, the source's bound
+                // at most `N` as the build judged it, which the widening
+                // asserts again by its bounds.
+                Language::Cpp => format!(
+                    "{}({member})",
+                    crate::forge::composed_lowering::cpp_text_type(bound)
+                ),
+                Language::Go | Language::Python | Language::Kotlin | Language::Swift => member,
             }
         }
         // `null`: Kotlin's and Python's absent value. Every other backend was refused

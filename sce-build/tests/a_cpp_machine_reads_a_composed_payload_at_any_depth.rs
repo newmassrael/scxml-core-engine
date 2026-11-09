@@ -160,14 +160,17 @@ fn the_payload_is_held_in_the_machine_types_each_record_declared_once() {
     holds(
         &code,
         &[
-            "struct BatchReaderBatchSentPayload {\n    std::vector<BatchReaderItemRecord> items;\n    \
-             std::vector<std::vector<uint8_t>> grid;\n    std::vector<BatchReaderSignalLevelEnum> \
-             levels;\n    std::vector<std::optional<uint16_t>> maybe;\n    \
-             std::optional<std::vector<uint8_t>> spare;\n    std::string note;\n    \
-             std::vector<uint8_t> late;\n};",
-            "struct BatchReaderItemRecord {\n    uint32_t id;\n    int64_t amount;\n    std::string \
-             label;\n    BatchReaderSignalLevelEnum level;\n    std::optional<int64_t> due;\n    \
-             std::vector<uint8_t> blob;\n    std::vector<std::string> tags;\n};",
+            "struct BatchReaderBatchSentPayload {\n    \
+             ::SCE::Forge::OwnedList<BatchReaderItemRecord, 3> items;\n    \
+             ::SCE::Forge::OwnedList<::SCE::Forge::OwnedList<uint8_t, 2>, 2> grid;\n    \
+             ::SCE::Forge::OwnedList<BatchReaderSignalLevelEnum, 2> levels;\n    \
+             ::SCE::Forge::OwnedList<std::optional<uint16_t>, 2> maybe;\n    \
+             std::optional<::SCE::Forge::OwnedList<uint8_t, 2>> spare;\n    \
+             ::SCE::Forge::OwnedText<4> note;\n    ::SCE::Forge::OwnedList<uint8_t, 2> late;\n};",
+            "struct BatchReaderItemRecord {\n    uint32_t id;\n    int64_t amount;\n    \
+             ::SCE::Forge::OwnedText<8> label;\n    BatchReaderSignalLevelEnum level;\n    \
+             std::optional<int64_t> due;\n    ::SCE::Forge::OwnedBytes<4> blob;\n    \
+             ::SCE::Forge::OwnedList<::SCE::Forge::OwnedText<8>, 4> tags;\n};",
         ],
     );
     assert_eq!(
@@ -243,52 +246,28 @@ fn the_lift_reads_each_field_by_its_type_at_every_depth() {
 /// `CppComposed::write_record` and `CppComposed::write_optional`
 /// (`sce-build/src/forge/composed_lowering/cpp.rs`), and by the prelude and the
 /// answer `cpp_composed_payload` gives the inject seam
-/// (`sce-build/src/forge/generator.rs`): the seam holds what a host hands it to
-/// every bound its type declares, at any depth, before it builds anything
-/// (docs/adr/0086, section 5.4), answers the refusal, and writes the payload it
+/// (`sce-build/src/forge/generator.rs`): the seam takes each field in the type
+/// that holds its bounds (docs/adr/0086, section 7.4), so a host cannot hand it
+/// a value past one and it checks nothing of a payload that states no lower
+/// count, refuses nothing and answers nothing, and it writes the payload it
 /// builds as the JSON a lift reads back.
 #[test]
-fn the_inject_seam_checks_what_it_is_handed_and_writes_it_as_its_json() {
+fn the_inject_seam_takes_each_field_in_its_type_and_writes_it_as_its_json() {
     let code = reader_machine();
-    let b = "::SCE::Common::EventPayloadBounds";
-    let nothing = "[](const ::std::string &, const auto &) -> ::std::string { return {}; }";
     let j = "::SCE::Common::EventPayloadFields::json";
+    assert!(
+        !code.contains("EventPayloadBounds"),
+        "every bound of the batch is its types':\n{code}"
+    );
     holds(
         &code,
         &[
-            "    [[nodiscard]] ::std::string raiseBatchSent(std::vector<BatchReaderItemRecord> items, \
-             std::vector<std::vector<uint8_t>> grid, std::vector<BatchReaderSignalLevelEnum> \
-             levels, std::vector<std::optional<uint16_t>> maybe, \
-             std::optional<std::vector<uint8_t>> spare, std::string note, std::vector<uint8_t> \
-             late) {\n        ::std::string sceRefused;\n",
-            &format!(
-                "        sceRefused = {b}::list(::std::string(\"items\"), items, 3u, [&](const \
-                 ::std::string &scePath0, const auto &sceValue0) -> ::std::string {{ return [&]() \
-                 -> ::std::string {{ ::std::string sceRefused; sceRefused = {b}::text(scePath0 + \
-                 \"/label\", sceValue0.label, 8u); if (!sceRefused.empty()) {{ return sceRefused; \
-                 }} sceRefused = {b}::bytes(scePath0 + \"/blob\", sceValue0.blob, 4u); if \
-                 (!sceRefused.empty()) {{ return sceRefused; }} sceRefused = {b}::list(scePath0 + \
-                 \"/tags\", sceValue0.tags, 4u, [&](const ::std::string &scePath1, const auto \
-                 &sceValue1) -> ::std::string {{ return {b}::text(scePath1, sceValue1, 8u); }}); \
-                 if (!sceRefused.empty()) {{ return sceRefused; }} return sceRefused; }}(); }});\n        \
-                 if (!sceRefused.empty()) {{\n            return sceRefused;\n        }}\n"
-            ),
-            &format!(
-                "        sceRefused = {b}::list(::std::string(\"grid\"), grid, 2u, [&](const \
-                 ::std::string &scePath0, const auto &sceValue0) -> ::std::string {{ return \
-                 {b}::list(scePath0, sceValue0, 2u, {nothing}); }});\n"
-            ),
-            &format!("        sceRefused = {b}::list(::std::string(\"levels\"), levels, 2u, {nothing});\n"),
-            &format!("        sceRefused = {b}::list(::std::string(\"maybe\"), maybe, 2u, {nothing});\n"),
-            &format!(
-                "        sceRefused = {b}::optional(::std::string(\"spare\"), spare, [&](const \
-                 ::std::string &scePath0, const auto &sceValue0) -> ::std::string {{ return \
-                 {b}::list(scePath0, sceValue0, 2u, {nothing}); }});\n"
-            ),
-            &format!(
-                "        sceRefused = {b}::text(::std::string(\"note\"), note, 4u);\n        if \
-                 (!sceRefused.empty()) {{\n            return sceRefused;\n        }}\n"
-            ),
+            "    void raiseBatchSent(::SCE::Forge::OwnedList<BatchReaderItemRecord, 3> items, \
+             ::SCE::Forge::OwnedList<::SCE::Forge::OwnedList<uint8_t, 2>, 2> grid, \
+             ::SCE::Forge::OwnedList<BatchReaderSignalLevelEnum, 2> levels, \
+             ::SCE::Forge::OwnedList<std::optional<uint16_t>, 2> maybe, \
+             std::optional<::SCE::Forge::OwnedList<uint8_t, 2>> spare, ::SCE::Forge::OwnedText<4> \
+             note, ::SCE::Forge::OwnedList<uint8_t, 2> late) {\n",
             "        BatchReaderBatchSentPayload scePayload{/*items=*/::std::move(items), \
              /*grid=*/::std::move(grid), /*levels=*/::std::move(levels), \
              /*maybe=*/::std::move(maybe), /*spare=*/::std::move(spare), \
@@ -302,7 +281,7 @@ fn the_inject_seam_checks_what_it_is_handed_and_writes_it_as_its_json() {
                  {{\"amount\", {j}(::std::to_string(sceElement.amount))}}, "
             ),
             &format!("{{\"note\", {j}(scePayload.note)}}"),
-            "        this->raiseExternal(m);\n        return {};\n    }\n",
+            "        this->raiseExternal(m);\n    }\n",
         ],
     );
 }
@@ -329,13 +308,21 @@ fn the_reads_lower_at_any_depth() {
 /// `copier` and `CppComposed::copy_whole` (`sce-build/src/forge/composed_lowering.rs`,
 /// `composed_lowering/cpp.rs`), and by `ComposedLowering::of`'s
 /// `copies`: a list a payload holds is taken whole into a list variable of a
-/// larger bound, one C++ type, by the assignment, which copies the vector by
-/// value, so the variable is appended to and emptied in place without reaching
-/// the payload's.
+/// larger bound, each element copied into a list of the payload's bound
+/// (`widenedMap`) which the variable's `OwnedList` takes by widening, its bound
+/// in its type (docs/adr/0086, section 7.4), so the variable is appended to and
+/// emptied in place without reaching the payload's.
 #[test]
 fn a_list_is_taken_whole_into_a_variable_as_a_copy_by_value() {
     let code = fixture_machine("static_composed_payload.scxml");
-    holds(&code, &["v_late = pendingBatchSentPayload_.late;"]);
+    holds(
+        &code,
+        &[
+            "::SCE::Forge::OwnedList<uint8_t, 4> v_late = {};",
+            "v_late = ::SCE::Forge::widenedMap<uint8_t>(pendingBatchSentPayload_.late, [&](const \
+             auto &sceCopied) -> uint8_t { return sceCopied; });",
+        ],
+    );
 }
 
 /// Pinned by `composed_wire_value` (`sce-build/src/forge/static_lowering.rs`),

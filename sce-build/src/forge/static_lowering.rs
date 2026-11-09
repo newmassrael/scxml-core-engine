@@ -8873,6 +8873,27 @@ fn runtime_verdict(verdict: crate::test_component::Verdict) -> &'static str {
 }
 
 impl CppTarget {
+    /// `value`, a `std::vector` an imported algorithm or an adapter gave back,
+    /// held in the `OwnedList` of the variable it is written to, whose type
+    /// names the bound `capacity` (docs/adr/0086, section 7.4): past it the
+    /// runtime records the capacity failure every checked operation records
+    /// and answers the empty list, which the statement never writes. An
+    /// algorithm's list may hold more than the bound it declared on a backend
+    /// whose lists grow, and the machine holds the same list wherever it runs.
+    fn held_list(value: &str, capacity: u32) -> String {
+        let forge = crate::forge::composed_lowering::CPP_FORGE;
+        format!("{forge}::Checked::heldList<{capacity}>(sce_failure_, {value})")
+    }
+
+    /// `value` held in `ty`, the bounded type of the place it is written to,
+    /// through the runtime's checked construction: a copy of the text or byte
+    /// string, or the capacity failure recorded and the empty value answered,
+    /// never a part cut to fit (docs/adr/0086, section 7.4).
+    fn held(ty: &str, value: &str) -> String {
+        let forge = crate::forge::composed_lowering::CPP_FORGE;
+        format!("{forge}::Checked::held<{ty}>(sce_failure_, {value})")
+    }
+
     /// The first action of `actions`, or of a block nested in one, that this
     /// target has no lowering for yet.
     fn unlowered_action(actions: &[Action]) -> Option<String> {
@@ -8959,15 +8980,19 @@ impl StaticTarget for CppTarget {
     }
     // The present value is bound by a lambda the runtime calls only where the
     // value is present (`SCE::Forge::mapPresent`); it captures the statement's
-    // `sce_failure_`, so a failure it records is the statement's.
+    // `sce_failure_`, so a failure it records is the statement's. The lambda
+    // takes the present value as the type it has, which need not be the
+    // place's `present`: a text of another bound, or the plain text a `??`
+    // answers, is held to the place's bound by `map` (docs/adr/0086, section
+    // 7.4).
     fn optional_map(
         &self,
         value: &str,
-        present: &str,
+        _present: &str,
         map: &dyn Fn(&str) -> String,
     ) -> Option<String> {
         Some(format!(
-            "SCE::Forge::mapPresent({value}, [&](const {present} &{CPP_PRESENT}) {{ return {}; }})",
+            "SCE::Forge::mapPresent({value}, [&](const auto &{CPP_PRESENT}) {{ return {}; }})",
             map(CPP_PRESENT)
         ))
     }
@@ -9012,10 +9037,10 @@ impl StaticTarget for CppTarget {
     fn assign_present_field(&self, target: &str, field: &str, value: &str) -> Option<String> {
         Some(format!("(*{target}).{field} = {value};"))
     }
-    // The machine's list is the `std::vector` the adapter answers, counted by its
-    // `size()` as a byte string is.
+    // The `std::vector` the adapter answers, held in the variable's
+    // `OwnedList` ([`CppTarget::held_list`]).
     fn state_list_within(&self, _adapter: &str, value: &str, capacity: u32) -> String {
-        format!("SCE::Forge::Checked::bounded(sce_failure_, {value}, {capacity}u)")
+        Self::held_list(value, capacity)
     }
     fn schema_import(&self, schema_name: &str) -> Option<String> {
         Some(
@@ -9431,9 +9456,18 @@ impl StaticTarget for CppTarget {
             .fields
             .iter()
             .map(|field| {
-                let present = match field.sce_type.present_type() {
-                    SceType::Enum(reference) => enum_types[&reference.alias].clone(),
-                    other => crate::forge::generator::cpp_type(other).to_string(),
+                // A text and a byte string are held in the one type of each,
+                // the field's bound in it (docs/adr/0086, section 7.4), as a
+                // variable of the same type is ([`Self::string_storage`]).
+                let present = match (field.sce_type.present_type(), field.max_size) {
+                    (SceType::Enum(reference), _) => enum_types[&reference.alias].clone(),
+                    (SceType::String, Some(bound)) => {
+                        crate::forge::composed_lowering::cpp_text_type(bound)
+                    }
+                    (SceType::Bytes, Some(bound)) => {
+                        crate::forge::composed_lowering::cpp_bytes_type(bound)
+                    }
+                    (other, _) => crate::forge::generator::cpp_type(other).to_string(),
                 };
                 // An optional field is held in the optional type over its
                 // present value's (docs/adr/0055).
@@ -9486,14 +9520,14 @@ impl StaticTarget for CppTarget {
                     (SceType::Enum(reference), _) => {
                         format!("{}FromSaved", enum_types[&reference.alias])
                     }
-                    // A string is read back only if it fits the bound the schema
-                    // declares, as a string variable's is, and so is a byte string, in
-                    // bytes.
+                    // A string is read back into the type that holds the bound the
+                    // schema declares, as a string variable's is, and so is a byte
+                    // string, in bytes (docs/adr/0086, section 7.4).
                     (SceType::String, Some(bound)) => {
-                        format!("::SCE::Saved::savedBoundedString({bound}u)")
+                        format!("::SCE::Saved::savedOwnedText<{bound}>()")
                     }
                     (SceType::Bytes, Some(bound)) => {
-                        format!("::SCE::Saved::savedBoundedBytes({bound}u)")
+                        format!("::SCE::Saved::savedOwnedBytes<{bound}>()")
                     }
                     (SceType::Bytes, None) => {
                         format!("::SCE::Saved::savedBoundedBytes({}u)", i32::MAX)
@@ -9633,11 +9667,14 @@ impl StaticTarget for CppTarget {
     fn enum_number_symbols(&self, ty: &str, _model: &EnumModel) -> (String, String) {
         (format!("{ty}ToUnderlying"), format!("{ty}FromUnderlying"))
     }
+    // The list an imported algorithm and an adapter take and answer: the plain
+    // `std::vector`, which an algorithm reads as a span and which the machine's
+    // own list, an `OwnedList` ([`Self::bounded_list`]), is lent as.
     fn list_type(&self, elem: &SceType) -> String {
         format!("std::vector<{}>", crate::forge::generator::cpp_type(elem))
     }
-    // The machine's own vector is lent, so a host cannot grow it past the
-    // bound the machine keeps.
+    // The vector the machine's own list holds is lent, read only, so a host
+    // cannot change the list the machine holds.
     fn list_view(&self, elem: &SceType) -> Option<String> {
         Some(format!(
             "const std::vector<{}>&",
@@ -9653,35 +9690,140 @@ impl StaticTarget for CppTarget {
     fn list_empty(&self) -> String {
         "{}".to_string()
     }
-    // Records the failure and answers an empty string, as a checked operation
-    // answers zero. A literal is a `const char *`, which holds no size, so the
-    // value is made the owned `std::string` a variable holds before it is
-    // counted.
-    fn bounded_string(&self, value: &str, capacity: u32) -> String {
-        format!("SCE::Forge::Checked::bounded(sce_failure_, std::string({value}), {capacity}u)")
+    // The bound is the type's (docs/adr/0086, section 7.4), spelled as a list a
+    // composed value holds is, so a list copied whole from one into a variable
+    // of the same bound is one type. Nothing to declare: the type is the forge
+    // runtime's.
+    fn bounded_list(&self, elem: &SceType, capacity: Option<u32>) -> BoundedList {
+        let capacity = capacity.expect("a list variable declares its bound where it is read");
+        BoundedList {
+            ty: crate::forge::composed_lowering::cpp_bounded_list(
+                crate::forge::generator::cpp_type(elem),
+                capacity,
+            ),
+            def: None,
+            empty: self.list_empty(),
+        }
     }
-    // A byte string is already the `std::vector<uint8_t>` a variable holds (a
-    // literal is the one the emitter writes), whose `size()` counts bytes. A record's
-    // `std::vector<uint8_t>` field is the same, in a struct that is handed to a host
-    // by value and held in a list the host is lent as a constant reference; a
-    // payload's is read where the machine's own is, and held to the bound of the
-    // variable or the record's field it is written to. The inject seam takes the
-    // vector by value and the payload holds it by value, so what the machine keeps
-    // is never the host's own.
+    fn bounded_record_list(&self, record: &str, capacity: Option<u32>) -> BoundedList {
+        let capacity = capacity.expect("a list variable declares its bound where it is read");
+        BoundedList {
+            ty: crate::forge::composed_lowering::cpp_bounded_list(record, capacity),
+            def: None,
+            empty: self.list_empty(),
+        }
+    }
+    // The text copied into the place's own `OwnedText<N>` through the runtime's
+    // checked construction ([`CppTarget::held`]), which records the failure and
+    // answers the empty text, as a checked operation answers zero: a value of
+    // any spelling (a literal, a `std::string`, a text of another bound) is
+    // copied as the text it is.
+    fn bounded_string(&self, value: &str, capacity: u32) -> String {
+        Self::held(
+            &crate::forge::composed_lowering::cpp_text_type(capacity),
+            value,
+        )
+    }
+    // ... and a byte string into the place's own `OwnedBytes<N>`: a variable's,
+    // a record's field, or one a payload carried, under that place's bound.
     fn bounded_bytes(&self, value: &str, capacity: u32) -> String {
-        format!("SCE::Forge::Checked::bounded(sce_failure_, {value}, {capacity}u)")
+        Self::held(
+            &crate::forge::composed_lowering::cpp_bytes_type(capacity),
+            value,
+        )
+    }
+    // A literal whose length the compiler judges against the bound where it is
+    // written (`OwnedText<N>::literal`, `OwnedBytes<N>::literal`), so a literal
+    // past it does not compile and one within it is built whole, with nothing
+    // to refuse and no cut.
+    fn checked_literal(
+        &self,
+        elem: &SceType,
+        bound: u32,
+        written: &str,
+    ) -> Option<Result<String, String>> {
+        let bytes = matches!(elem, SceType::Bytes);
+        let ty = if bytes {
+            crate::forge::composed_lowering::cpp_bytes_type(bound)
+        } else {
+            crate::forge::composed_lowering::cpp_text_type(bound)
+        };
+        Some(
+            crate::forge::expr::cpp_literal_elements(written, bytes)
+                .map(|elements| match elements {
+                    None => format!("{ty}{{}}"),
+                    Some(elements) => format!("{ty}::literal({elements})"),
+                })
+                .ok_or_else(|| {
+                    format!(
+                        "`{}` is no literal, and a text or a byte string starts at one",
+                        written.trim()
+                    )
+                }),
+        )
+    }
+    // A text variable is held in the one text type, its bound in the type
+    // (docs/adr/0086, section 7.4), and lent to a host as the `std::string` it
+    // holds. It starts at its literal built by [`Self::checked_literal`],
+    // which stands in place of `init`. Nothing to declare: the type is the
+    // forge runtime's.
+    fn string_storage(&self, capacity: u32, init: &str) -> Option<StringStorage> {
+        Some(StringStorage {
+            ty: crate::forge::composed_lowering::cpp_text_type(capacity),
+            def: String::new(),
+            init: init.to_string(),
+            view: "const std::string&".to_string(),
+        })
+    }
+    // ... and a byte string in the one byte-string type, lent as the vector it
+    // holds.
+    fn bytes_storage(&self, capacity: u32, init: &str) -> Option<StringStorage> {
+        Some(StringStorage {
+            ty: crate::forge::composed_lowering::cpp_bytes_type(capacity),
+            def: String::new(),
+            init: init.to_string(),
+            view: "const std::vector<uint8_t>&".to_string(),
+        })
     }
     fn assign(&self, target: &str, value: &str) -> String {
         format!("{target} = {value};")
     }
-    // An algorithm's list is the `std::vector` the machine's own is, counted by
-    // its `size()` as a byte string is.
+    // An algorithm's list is the `std::vector` it answers; the machine's own is
+    // the `OwnedList` of its variable ([`CppTarget::held_list`]).
     fn list_within(&self, value: &str, capacity: u32, _symbol: &str, _elem: &SceType) -> String {
-        format!("SCE::Forge::Checked::bounded(sce_failure_, {value}, {capacity}u)")
+        Self::held_list(value, capacity)
     }
-    // The count is the engine's the action is handed.
+    // The count is the engine's the action is handed, and the id the engine's
+    // own `std::string`, which the variable's `OwnedText<N>` copies through its
+    // checked construction ([`StaticTarget::assign_generated_id`]).
     fn fresh_send_id(&self) -> String {
         "engine.nextAutoSendId()".to_string()
+    }
+    // An expression that says whether the variable refused the id
+    // ([`StaticTarget::assign_generated_id`]): a variable that is no string
+    // takes it as any value, and refuses nothing.
+    fn assign_fresh_send_id(&self, target: &str, is_string: bool) -> String {
+        let id = self.fresh_send_id();
+        if is_string {
+            self.assign_generated_id(target, &id)
+        } else {
+            format!(
+                "([&]() -> bool {{ {} return false; }}())",
+                self.assign(target, &id)
+            )
+        }
+    }
+    // The id copied into the variable's own `OwnedText<N>`
+    // ([`Self::string_storage`]), the type its declaration names, through the
+    // type's `make`: an id past the bound is refused whole, never cut, since an
+    // id cut short names nothing a `<cancel>` could reach, and the expression
+    // answers `true` so the template raises error.execution.
+    fn assign_generated_id(&self, target: &str, id: &str) -> String {
+        format!(
+            "([&]() -> bool {{ auto sceId = ::std::decay_t<decltype({target})>::make({id}); if \
+             (!sceId.has_value()) {{ return true; }} {} return false; }}())",
+            self.assign(target, "::std::move(*sceId)")
+        )
     }
     fn assign_field(&self, target: &str, field: &str, value: &str) -> String {
         format!("{target}.{field} = {value};")
@@ -9769,10 +9911,15 @@ impl StaticTarget for CppTarget {
         let (code_alias, _) = lift.refusal_code()?;
         let code_ty = self.enum_type(lift.machine, code_alias)?;
         let refusal_ty = self.record_type(lift.machine, lift.refusal_alias);
+        // The record's path is held in the `OwnedText` of its bound
+        // (docs/adr/0086, section 7.4); the runtime holds every pointer to
+        // `path_bound` bytes, so the text fits.
+        let path_ty = crate::forge::composed_lowering::cpp_text_type(path_bound);
+        let path = format!("{path_ty}::make(sceRefusal.pointer()).value_or({path_ty}{{}})");
         let members = lift.refusal_members(
             self,
             &format!("static_cast<{code_ty}>(sceRefusal.code())"),
-            "sceRefusal.pointer()",
+            &path,
             "sceRefusal.bound()",
         )?;
         let refusal_record = self.record_value(&refusal_ty, &members);
@@ -9805,7 +9952,9 @@ impl StaticTarget for CppTarget {
     // An expression that is `true` when the append failed: the list is full, or
     // the value could not be computed. The room is checked first, so a full
     // list computes nothing, and the value is computed into a local before it
-    // is pushed, so a failed one leaves the list as it was.
+    // is pushed, so a failed one leaves the list as it was. The list's own
+    // `push` refuses past the bound its type holds (docs/adr/0086, section
+    // 7.4), so a refused push is the overflow too, not a value dropped unseen.
     fn append(
         &self,
         target: &str,
@@ -9820,7 +9969,7 @@ impl StaticTarget for CppTarget {
              if ({target}.size() >= {capacity}) {{ {overflow} return true; }} \
              auto sce_value = {value}; \
              if (sce_failure_.failed()) {{ {failed} return true; }} \
-             {target}.push_back(sce_value); return false; }})()"
+             if (!{target}.push(sce_value)) {{ {overflow} return true; }} return false; }})()"
         )
     }
     fn clear(&self, target: &str) -> String {
@@ -22693,7 +22842,12 @@ mod tests {
         assert_eq!(field("due").ty, "std::optional<int64_t>");
         assert_eq!(field("due").init, "std::optional<int64_t>()");
         assert_eq!(field("other").init, "std::optional<int64_t>(7)");
-        assert_eq!(field("title").ty, "std::optional<std::string>");
+        // A text is held in the type that holds its bound (docs/adr/0086,
+        // section 7.4), present or not.
+        assert_eq!(
+            field("title").ty,
+            "std::optional<::SCE::Forge::OwnedText<4>>"
+        );
         assert!(
             lowered.saved_shape.is_some(),
             "a saved state holds an optional value (docs/adr/0055, step 6)"
@@ -22712,7 +22866,8 @@ mod tests {
         assert_eq!(write[0].native_code, "v_due = std::optional<int64_t>();");
         assert!(
             write[1].native_code.contains(
-                "auto sce_value = std::optional<std::string>(SCE::Forge::Checked::bounded(sce_failure_, "
+                "auto sce_value = std::optional<::SCE::Forge::OwnedText<4>>(\
+                 ::SCE::Forge::Checked::held<::SCE::Forge::OwnedText<4>>(sce_failure_, "
             ),
             "{}",
             write[1].native_code
@@ -22761,6 +22916,85 @@ mod tests {
                 ],
             ),
             "MDueRecord{/*id=*/7u, /*due=*/std::nullopt}"
+        );
+    }
+
+    /// C++ holds every place of a machine with its bound in its type
+    /// (docs/adr/0086, section 7.4), as Rust does: a list in `OwnedList`, a text
+    /// in `OwnedText`, a byte string in `OwnedBytes`, each written through the
+    /// runtime's checked construction, appended through the list's own refusing
+    /// `push`, started at a literal the compiler judges against the bound, and
+    /// lent to a host as the plain value it holds; a generated id is held to its
+    /// variable's bound and refused whole past it.
+    #[test]
+    fn cpp_holds_each_place_with_its_bound_in_its_type() {
+        let target = CppTarget;
+        assert_eq!(
+            target.bounded_list(&SceType::Uint16, Some(3)).ty,
+            "::SCE::Forge::OwnedList<uint16_t, 3>"
+        );
+        assert_eq!(
+            target.bounded_record_list("MItemRecord", Some(2)).ty,
+            "::SCE::Forge::OwnedList<MItemRecord, 2>"
+        );
+        assert_eq!(
+            target.bounded_string("v_name", 8),
+            "::SCE::Forge::Checked::held<::SCE::Forge::OwnedText<8>>(sce_failure_, v_name)"
+        );
+        assert_eq!(
+            target.bounded_bytes("v_blob", 4),
+            "::SCE::Forge::Checked::held<::SCE::Forge::OwnedBytes<4>>(sce_failure_, v_blob)"
+        );
+        assert_eq!(
+            target.list_within("call()", 5, "call", &SceType::Uint8),
+            "::SCE::Forge::Checked::heldList<5>(sce_failure_, call())"
+        );
+        let text = target
+            .string_storage(8, "\"\"")
+            .expect("a text is held in a type");
+        assert_eq!(text.ty, "::SCE::Forge::OwnedText<8>");
+        assert_eq!(text.view, "const std::string&");
+        assert!(text.def.is_empty(), "the type is the runtime's");
+        let bytes = target.bytes_storage(4, "{}").expect("a byte string too");
+        assert_eq!(bytes.ty, "::SCE::Forge::OwnedBytes<4>");
+        assert_eq!(bytes.view, "const std::vector<uint8_t>&");
+        assert_eq!(
+            target.checked_literal(&SceType::String, 8, "'beta'"),
+            Some(Ok(
+                "::SCE::Forge::OwnedText<8>::literal(\"beta\")".to_string()
+            ))
+        );
+        assert_eq!(
+            target.checked_literal(&SceType::Bytes, 4, "'ok'"),
+            Some(Ok(
+                "::SCE::Forge::OwnedBytes<4>::literal({0x6f, 0x6b})".to_string()
+            ))
+        );
+        assert_eq!(
+            target.checked_literal(&SceType::Bytes, 4, "''"),
+            Some(Ok("::SCE::Forge::OwnedBytes<4>{}".to_string()))
+        );
+        assert!(
+            matches!(
+                target.checked_literal(&SceType::String, 8, "a + b"),
+                Some(Err(_))
+            ),
+            "a text starts at a literal"
+        );
+        let append = target.append("v_items", 3, "7u", false, "overflow();", "failed();");
+        assert!(
+            append.contains("if (!v_items.push(sce_value)) { overflow(); return true; }"),
+            "{append}"
+        );
+        let id = target.assign_fresh_send_id("v_sent", true);
+        assert!(
+            id.contains("::std::decay_t<decltype(v_sent)>::make(engine.nextAutoSendId())")
+                && id.contains("if (!sceId.has_value()) { return true; }"),
+            "{id}"
+        );
+        assert_eq!(
+            target.assign_fresh_send_id("v_count", false),
+            "([&]() -> bool { v_count = engine.nextAutoSendId(); return false; }())"
         );
     }
 }

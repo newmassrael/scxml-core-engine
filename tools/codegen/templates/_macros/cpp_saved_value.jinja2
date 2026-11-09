@@ -30,27 +30,31 @@
 {%- endmacro %}
 
 {#- The value of the variable `field` read back from `raw`, the JSON value a saved state holds
-    it as, or the refusal naming it: held to the bound the machine keeps, which a restored
-    value must not be the first to exceed. -#}
+    it as, or the refusal naming it: read into the type the machine holds it in, whose bound a
+    restored value must not be the first to exceed (docs/adr/0086, section 7.4). -#}
 {% macro read(field, raw) -%}
 {%- if field.saved_kind == "optional" and (field.saved_elem == "enum" or field.saved_elem == "record") -%}
 ::SCE::Saved::savedReadOptional({{ raw }}, "{{ field.id | escape_cpp }}", {{ field.saved_type }}FromSaved)
+{%- elif field.saved_kind == "optional" and field.saved_type == "bytes" and field.bound is not none -%}
+::SCE::Saved::savedReadOptional({{ raw }}, "{{ field.id | escape_cpp }}", ::SCE::Saved::savedOwnedBytes<{{ field.bound }}>())
 {%- elif field.saved_kind == "optional" and field.saved_type == "bytes" -%}
-::SCE::Saved::savedReadOptional({{ raw }}, "{{ field.id | escape_cpp }}", ::SCE::Saved::savedBoundedBytes({{ field.bound if field.bound is not none else 2147483647 }}u))
+::SCE::Saved::savedReadOptional({{ raw }}, "{{ field.id | escape_cpp }}", ::SCE::Saved::savedBoundedBytes(2147483647u))
 {%- elif field.saved_kind == "optional" and field.saved_type == "string" and field.bound is not none -%}
-::SCE::Saved::savedReadOptional({{ raw }}, "{{ field.id | escape_cpp }}", ::SCE::Saved::savedBoundedString({{ field.bound }}u))
+::SCE::Saved::savedReadOptional({{ raw }}, "{{ field.id | escape_cpp }}", ::SCE::Saved::savedOwnedText<{{ field.bound }}>())
 {%- elif field.saved_kind == "optional" -%}
 ::SCE::Saved::savedReadOptional({{ raw }}, "{{ field.id | escape_cpp }}", ::SCE::Saved::savedRead{{ field.saved_type | capitalize }})
 {%- elif field.saved_kind == "record" or field.saved_kind == "enum" -%}
 {{ field.saved_type }}FromSaved({{ raw }}, "{{ field.id | escape_cpp }}")
 {%- elif field.saved_kind == "list" -%}
-::SCE::Saved::savedReadList({{ raw }}, "{{ field.id | escape_cpp }}", {{ field.bound }}u, ::SCE::Saved::savedRead{{ field.saved_type | capitalize }})
+::SCE::Saved::savedReadOwnedList<{{ field.bound }}>({{ raw }}, "{{ field.id | escape_cpp }}", ::SCE::Saved::savedRead{{ field.saved_type | capitalize }})
 {%- elif field.saved_kind == "record_list" -%}
-::SCE::Saved::savedReadList({{ raw }}, "{{ field.id | escape_cpp }}", {{ field.bound }}u, {{ field.saved_type }}FromSaved)
+::SCE::Saved::savedReadOwnedList<{{ field.bound }}>({{ raw }}, "{{ field.id | escape_cpp }}", {{ field.saved_type }}FromSaved)
+{%- elif field.saved_type == "bytes" and field.bound is not none -%}
+::SCE::Saved::savedReadOwnedBytes<{{ field.bound }}>({{ raw }}, "{{ field.id | escape_cpp }}")
 {%- elif field.saved_type == "bytes" -%}
-::SCE::Saved::savedReadBytes({{ raw }}, "{{ field.id | escape_cpp }}", {{ field.bound if field.bound is not none else 2147483647 }}u)
+::SCE::Saved::savedReadBytes({{ raw }}, "{{ field.id | escape_cpp }}", 2147483647u)
 {%- elif field.saved_type == "string" and field.bound is not none -%}
-::SCE::Saved::savedReadBoundedString({{ raw }}, "{{ field.id | escape_cpp }}", {{ field.bound }}u)
+::SCE::Saved::savedReadOwnedText<{{ field.bound }}>({{ raw }}, "{{ field.id | escape_cpp }}")
 {%- else -%}
 ::SCE::Saved::savedRead{{ field.saved_type | capitalize }}({{ raw }}, "{{ field.id | escape_cpp }}")
 {%- endif -%}

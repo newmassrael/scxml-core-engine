@@ -23,14 +23,17 @@
    value is the variant of that name, built the same way for an expected value,
    compared as the enum and reported by the name it declares. #}
 {% macro enum_value(document, variants, read) %}[&] { const std::string name = {{ read }}.get<std::string>(); {% for v in variants %}if (name == "{{ v.name }}") { return SCE::Generated::{{ document | to_pascal_case }}::{{ document | to_pascal_case }}::{{ v.ident }}; } {% endfor %}std::abort(); }(){% endmacro %}
-{% macro field_value(fld, read) %}{% if fld.enum_document is defined %}{{ enum_value(fld.enum_document, fld.variants, read) }}{% else %}{{ read }}.get<{{ fld.type | cpp_type }}>(){% endif %}{% endmacro %}
+{# A text is the type the payload struct holds it in at `place`: a `std::string`,
+   or the `OwnedText<N>` of a bounded field (docs/adr/0086, section 7.4),
+   made by the harness's `text_of`. #}
+{% macro field_value(fld, read, place) %}{% if fld.enum_document is defined %}{{ enum_value(fld.enum_document, fld.variants, read) }}{% elif fld.type == "string" %}text_of<decltype({{ place }})>({{ read }}.get<std::string>()){% else %}{{ read }}.get<{{ fld.type | cpp_type }}>(){% endif %}{% endmacro %}
 {# A value that may be absent (docs/adr/0055) is the `std::optional` the
    generated algorithm's slot is, empty where the oracle writes `null`; an
    optional answer is compared whole, so an absent answer equals only an absent
    one, and is reported as `null` or as its number. #}
 {% macro optional_value(read, ty) %}({{ read }}.is_null() ? std::optional<{{ ty | cpp_type }}>{} : std::optional<{{ ty | cpp_type }}>{ {{ read }}.get<{{ ty | cpp_type }}>() }){% endmacro %}
 {% macro optional_text(value) %}({{ value }}.has_value() ? std::to_string(*{{ value }}) : std::string("null")).c_str(){% endmacro %}
-{% macro field_text(fld, value) %}{% if fld.enum_document is defined %}SCE::Generated::{{ fld.enum_document | to_pascal_case }}::declared_name({{ value }}){% elif fld.type == "string" %}{{ value }}.c_str(){% else %}std::to_string({{ value }}).c_str(){% endif %}{% endmacro %}
+{% macro field_text(fld, value) %}{% if fld.enum_document is defined %}SCE::Generated::{{ fld.enum_document | to_pascal_case }}::declared_name({{ value }}){% elif fld.type == "string" %}std::string({{ value }}).c_str(){% else %}std::to_string({{ value }}).c_str(){% endif %}{% endmacro %}
     const auto &spec = ref["{{ f.ref_section }}"]["{{ f.name }}"];
     int i = 0;
     for (const auto &c : spec["cases"]) {
@@ -43,7 +46,7 @@
 {% if arg_ty.record is defined %}
         SCE::Generated::{{ arg_ty.record | to_pascal_case }}::{{ arg_ty.record | to_pascal_case }}Payload arg{{ ai }}{};
 {% for fld in arg_ty.fields %}
-        arg{{ ai }}.{{ fld.ident }} = {{ field_value(fld, "c[\"args\"][" ~ ai ~ "][\"" ~ fld.name ~ "\"]") }};
+        arg{{ ai }}.{{ fld.ident }} = {{ field_value(fld, "c[\"args\"][" ~ ai ~ "][\"" ~ fld.name ~ "\"]", "arg" ~ ai ~ "." ~ fld.ident) }};
 {% endfor %}
 {% elif arg_ty == "bytes" %}
         std::vector<std::uint8_t> arg{{ loop.index0 }}_buf;
@@ -59,7 +62,7 @@
         for (const auto &x : c["args"][{{ ai }}]) {
             SCE::Generated::{{ r.record | to_pascal_case }}::{{ r.record | to_pascal_case }}Payload e{};
 {% for fld in r.fields %}
-            e.{{ fld.ident }} = {{ field_value(fld, "x[\"" ~ fld.name ~ "\"]") }};
+            e.{{ fld.ident }} = {{ field_value(fld, "x[\"" ~ fld.name ~ "\"]", "e." ~ fld.ident) }};
 {% endfor %}
             arg{{ ai }}.push_back(e);
         }
@@ -96,7 +99,7 @@
 {% if f.output.record is defined %}
         auto actual = {% if f.may_fail %}returned{% else %}{{ call }}{% endif %};
 {% for fld in f.output.fields %}
-        CHECK((actual.{{ fld.ident }} == {{ field_value(fld, "c[\"expected\"][\"" ~ fld.name ~ "\"]") }}),
+        CHECK((actual.{{ fld.ident }} == {{ field_value(fld, "c[\"expected\"][\"" ~ fld.name ~ "\"]", "actual." ~ fld.ident) }}),
               "{{ f.name }} case %d: {{ fld.name }} actual=%s expected=%s",
               i,
               {{ field_text(fld, "actual." ~ fld.ident) }},
@@ -113,7 +116,7 @@
               expected.size());
         for (std::size_t k = 0; k < expected.size() && k < actual.size(); ++k) {
 {% for fld in f.output.list_of.fields %}
-            CHECK((actual[k].{{ fld.ident }} == {{ field_value(fld, "expected[k][\"" ~ fld.name ~ "\"]") }}),
+            CHECK((actual[k].{{ fld.ident }} == {{ field_value(fld, "expected[k][\"" ~ fld.name ~ "\"]", "actual[k]." ~ fld.ident) }}),
                   "{{ f.name }} case %d [%zu]: {{ fld.name }} actual=%s expected=%s",
                   i,
                   k,
