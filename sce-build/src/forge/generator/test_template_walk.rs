@@ -1278,6 +1278,21 @@ pub(super) trait CanonicalSpelling {
     fn case_record(&self, bound: Self::At) -> Self::At {
         bound
     }
+    /// The place that holds an element of the list at `list`, once the walk
+    /// has bound it as `bound` ([`Self::bound`] with the prefix `item`). The
+    /// bound value itself by default, where a function binds each element; a
+    /// backend whose binding is the element's index names the element by it.
+    fn list_element(&self, _list: &Self::At, bound: Self::At) -> Self::At {
+        bound
+    }
+    /// The place that holds the value of the optional field at `field`, where
+    /// it holds one, once the walk has bound it as `bound` ([`Self::bound`]
+    /// with the prefix `present`). The bound value itself by default, where a
+    /// function binds the value; a backend that binds none reads it from the
+    /// field.
+    fn optional_value(&self, _field: &Self::At, bound: Self::At) -> Self::At {
+        bound
+    }
 
     /// A `bool`.
     fn boolean(&self, at: &Self::At) -> String;
@@ -1355,7 +1370,8 @@ pub(super) fn canonical_value<S: CanonicalSpelling>(
             ))
         }
         TypeOf::List { elem, .. } => {
-            let (binding, element) = spelling.bound(at, "item");
+            let (binding, bound) = spelling.bound(at, "item");
+            let element = spelling.list_element(at, bound);
             let written = canonical_value(spelling, elem, &element, scope)?;
             spelling.list(at, &binding, written)
         }
@@ -1371,7 +1387,8 @@ pub(super) fn canonical_value<S: CanonicalSpelling>(
                     let field = spelling.field(at, id);
                     let value = match field_type {
                         TypeOf::Optional { elem } => {
-                            let (binding, present) = spelling.bound(&field, "present");
+                            let (binding, bound) = spelling.bound(&field, "present");
+                            let present = spelling.optional_value(&field, bound);
                             let written = canonical_value(spelling, elem, &present, &record.scope)?;
                             spelling.optional_field(&field, &binding, written)
                         }
@@ -1607,5 +1624,21 @@ mod tests {
         let (binding, bound) = Plain.bound(&Plain.root(), "case");
         assert_eq!(binding, "case_of_value");
         assert_eq!(Plain.case_record(bound.clone()), bound);
+    }
+
+    /// The element of a bound list and the value of a bound optional field
+    /// are, by default, the value the binding names, which is where a function
+    /// that binds them puts them: a backend that keeps the defaults writes what
+    /// it wrote before the hooks.
+    #[test]
+    fn a_list_element_and_an_optional_value_are_the_bound_value_by_default() {
+        let root = Plain.root();
+        let (_, item) = Plain.bound(&root, "item");
+        assert_eq!(item, "item_of_value");
+        assert_eq!(Plain.list_element(&root, item.clone()), item);
+        let field = Plain.field(&root, "note");
+        let (_, present) = Plain.bound(&field, "present");
+        assert_eq!(present, "present_of_value.note");
+        assert_eq!(Plain.optional_value(&field, present.clone()), present);
     }
 }
