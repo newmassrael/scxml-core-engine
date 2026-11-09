@@ -3058,6 +3058,49 @@ if(SCE_C_RUNTIME_POSIX AND SCE_ENABLE_LUA)
         STAGE_ALSO schema_signal.scxml enum_signal_level.scxml
     )
 
+    # docs/adr/0086, sections 5.2 and 6: the composed fixtures every backend whose
+    # row of the one table of what is lowered reads a composed payload compiles and
+    # runs (docs/SCE_ACCEPTED_SUBSET.md, "Which backend lowers a composed value"). The
+    # first reads a payload of lists, records and optional values at depths 1 to 3,
+    # the second forwards one to itself by the names of its parts; each reads the
+    # schemas beside it.
+    foreach(_STATIC_COMPOSED_MACHINE static_composed_payload static_composed_send)
+        sce_generate_static_integration_c_test(${_STATIC_COMPOSED_MACHINE}
+            "${SCE_C_INTEGRATION_GENERATED_DIR}"
+            SCXML_FILE "${CMAKE_SOURCE_DIR}/sce-build/tests/fixtures/static_datamodel/${_STATIC_COMPOSED_MACHINE}.scxml"
+            STAGE_ALSO event_batch.scxml event_batch_item.scxml enum_signal_level.scxml
+        )
+    endforeach()
+    foreach(_STATIC_COMPOSED_CASE a_composed_payload_is_read_at_any_depth:static_composed_payload
+                                  a_composed_value_is_sent_by_its_name:static_composed_send)
+        string(REPLACE ":" ";" _STATIC_COMPOSED_PARTS "${_STATIC_COMPOSED_CASE}")
+        list(GET _STATIC_COMPOSED_PARTS 0 _STATIC_COMPOSED_TEST)
+        list(GET _STATIC_COMPOSED_PARTS 1 _STATIC_COMPOSED_FIXTURE)
+        add_executable(sce_c_integration_${_STATIC_COMPOSED_TEST}
+            integration/test_${_STATIC_COMPOSED_TEST}.c
+            ${INTEGRATION_C_TEST_${_STATIC_COMPOSED_FIXTURE}_SOURCES}
+        )
+        # No script engine: the link excludes `lua` and `dom`, so the configure
+        # refuses the target the day the generator states either.
+        sce_c_link_runtime(sce_c_integration_${_STATIC_COMPOSED_TEST} EXCLUDES lua dom)
+        target_include_directories(sce_c_integration_${_STATIC_COMPOSED_TEST} PRIVATE
+            "${SCE_C_INTEGRATION_GENERATED_DIR}"
+            "${CMAKE_SOURCE_DIR}/backends/c/forge-runtime/include"
+        )
+        set_target_properties(sce_c_integration_${_STATIC_COMPOSED_TEST} PROPERTIES
+            C_STANDARD 11
+            C_STANDARD_REQUIRED ON
+            C_EXTENSIONS OFF
+        )
+        add_test(NAME c11_integration_${_STATIC_COMPOSED_TEST}
+            COMMAND sce_c_integration_${_STATIC_COMPOSED_TEST}
+        )
+        set_tests_properties(c11_integration_${_STATIC_COMPOSED_TEST} PROPERTIES
+            TIMEOUT 30
+            LABELS "integration;c11;aot"
+        )
+    endforeach()
+
     add_executable(sce_c_integration_static_scalars
         integration/test_static_scalars.c
         ${INTEGRATION_C_TEST_static_counter_SOURCES}

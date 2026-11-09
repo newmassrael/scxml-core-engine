@@ -48,6 +48,7 @@ use std::collections::BTreeMap;
 use crate::forge::model::{EventSchemaModel, SceType};
 use crate::forge::value_type::{ScopedCase, ScopedUnion, TypeScope, ValueType};
 
+mod c11;
 mod cpp;
 mod ecmascript;
 mod go;
@@ -58,6 +59,7 @@ mod swift;
 #[cfg(test)]
 mod test_support;
 
+pub use c11::C11Composed;
 pub use cpp::{CppCarrier, CppComposed};
 pub use ecmascript::JsComposed;
 pub use go::{GoCarrier, GoComposed};
@@ -66,6 +68,7 @@ pub use python::{PythonCarrier, PythonComposed};
 pub use rust::{RustCarrier, RustComposed};
 pub use swift::{SwiftCarrier, SwiftComposed};
 
+pub(crate) use c11::{c11_pairs, c11_path_len, C11_WIRE};
 pub(crate) use cpp::{
     cpp_bounded_list, cpp_bytes_type, cpp_raise_checks, cpp_text_type, CPP_FORGE,
 };
@@ -430,6 +433,14 @@ pub trait ComposedSpelling {
     fn write_scalar(&self, ty: &SceType, held: &Held) -> String;
     /// The JSON of a value of an enum: the declared name of its variant.
     fn write_enum(&self, held: &Held) -> String;
+    /// The JSON of a value of the enum the statechart holds as `alias`: what
+    /// the walk writes an enum by, [`Self::write_enum`] for a spelling whose
+    /// value names its variant without its enum (a method of the value), and
+    /// the enum's own function of its declared names for one that has no
+    /// method to call (C11).
+    fn write_enum_of(&self, _alias: &str, held: &Held) -> String {
+        self.write_enum(held)
+    }
     /// The JSON of a text.
     fn write_text(&self, held: &Held) -> String;
     /// The JSON of a byte string.
@@ -476,6 +487,15 @@ pub trait ComposedSpelling {
     /// bound to [`Self::copy_binding`], into a place whose element the machine
     /// holds in `elem_ty`.
     fn copy_list(&self, held: &Held, elem: &str, elem_ty: &str) -> String;
+    /// A copy of the list `held` into a place the machine holds in `list_ty`,
+    /// as [`Self::copy_list`] spells it: what the walk copies a list by,
+    /// [`Self::copy_list`] for a spelling whose list's type is told by its
+    /// element, and the constructor of the place's own type for one whose
+    /// list's type is named by its bound too and that has no generic to name
+    /// it by (C11).
+    fn copy_list_into(&self, held: &Held, elem: &str, elem_ty: &str, _list_ty: &str) -> String {
+        self.copy_list(held, elem, elem_ty)
+    }
 
     /// The declaration that writes the composed record `alias` as a saved state
     /// does and reads it back (docs/adr/0092, section 6.1 item 7), for a backend
@@ -724,9 +744,13 @@ pub fn copier(
         (from, ValueType::Optional { elem: to }) => {
             Ok(spelling.copy_present(&part(from, to, held)?))
         }
-        (ValueType::List { elem: from, .. }, ValueType::List { elem: to, .. }) => {
-            Ok(spelling.copy_list(held, &part(from, to, &element)?, &typed(to)?))
-        }
+        (ValueType::List { elem: from, .. }, ValueType::List { elem: to_elem, .. }) => Ok(spelling
+            .copy_list_into(
+                held,
+                &part(from, to_elem, &element)?,
+                &typed(to_elem)?,
+                &typed(to)?,
+            )),
         (from, to) => Err(format!(
             "`{from}` copied into a place of `{to}` has no copy that changes its type yet"
         )),
@@ -1185,7 +1209,9 @@ pub fn writer(
 ) -> Result<String, String> {
     let bound = Held::reference(spelling.write_binding());
     Ok(match ty {
-        ValueType::Scalar(SceType::Enum(_)) => spelling.write_enum(held),
+        ValueType::Scalar(SceType::Enum(reference)) => {
+            spelling.write_enum_of(&reference.alias, held)
+        }
         ValueType::Scalar(scalar) => spelling.write_scalar(scalar, held),
         ValueType::Text { .. } => spelling.write_text(held),
         ValueType::Bytes { .. } => spelling.write_bytes(held),
