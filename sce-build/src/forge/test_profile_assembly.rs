@@ -97,7 +97,10 @@ impl<'a> Site<'a> {
 
     /// The refusal of a rule of the test profile that the document `document`
     /// of `kind` breaks on `line`: `actual` is what the document wrote there,
-    /// empty where the rule is about an element as a whole.
+    /// a token of that line (SCE_ERROR_CONTRACT.md §3.1.1). It is empty where
+    /// the rule is about an element as a whole, and where what breaks it is
+    /// not written in this document: a value read from another document, a
+    /// count, a declaration that is missing. The message names those.
     fn profile_refusal(
         &self,
         line: Option<u32>,
@@ -387,12 +390,14 @@ fn check_port_type(
         })?;
         let event = schema.document.event_name.as_str();
         if let Some(first) = by_event.insert(event.to_string(), message.schema.as_str()) {
+            // The event name is the schema's, written in its document; what
+            // this line writes is the message type that carries it.
             return Err(site.profile_refusal(
                 message.source_line,
                 TestProfileRule::MessageEventName,
                 ForgeKind::TestPortType,
                 &port_type.name,
-                event,
+                &message.schema,
                 format!(
                     "the message types '{first}' and '{}' both carry the event name '{event}': \
                      a message delivered to a port is told apart from the others by its event \
@@ -435,8 +440,7 @@ fn port_type_lists(
 struct Instance<'m> {
     name: &'m str,
     alias: &'m str,
-    /// The line of its declaration: the `<sce:ptc>`, or the root for the MTC,
-    /// whose `<sce:mtc>` the model keeps no line of.
+    /// The line of its declaration: the `<sce:mtc>` or the `<sce:ptc>`.
     line: Option<u32>,
     element: &'static str,
 }
@@ -533,7 +537,7 @@ fn check_configuration(
     let instances: Vec<Instance<'_>> = std::iter::once(Instance {
         name: TestConfigurationModel::MTC,
         alias: &configuration.mtc,
-        line: line(configuration.source_location.as_ref()),
+        line: configuration.mtc_source_line,
         element: "<sce:mtc>",
     })
     .chain(configuration.ptcs.iter().map(|ptc| Instance {
@@ -648,21 +652,23 @@ fn check_configuration(
         let [a, b] = connect.endpoints.as_slice() else {
             continue;
         };
+        // Each port is named on its own `<sce:endpoint>`, so a refusal of a
+        // port stands on the line that names it.
         let ends = [
             (
                 a,
-                components.port(site, &a.component, &a.port, "endpoint", connect.source_line)?,
+                components.port(site, &a.component, &a.port, "endpoint", a.source_line)?,
             ),
             (
                 b,
-                components.port(site, &b.component, &b.port, "endpoint", connect.source_line)?,
+                components.port(site, &b.component, &b.port, "endpoint", b.source_line)?,
             ),
         ];
         for (from, to) in [(&ends[0], &ends[1]), (&ends[1], &ends[0])] {
             let stray = missing_from(&from.1.outs, &to.1.ins);
             if !stray.is_empty() {
                 return Err(site.profile_refusal(
-                    connect.source_line,
+                    from.0.source_line,
                     TestProfileRule::PortLists,
                     kind,
                     name,
@@ -702,7 +708,10 @@ fn check_configuration(
 
     // §2.2: every component port takes part in exactly one connect or map.
     // The parser refused a port joined twice; one joined by none is refused
-    // here, where the components' ports are known.
+    // here, where the components' ports are known. It stands on the
+    // component's declaration and reports no `actual`: the port is declared
+    // in the component's document, and the join this one lacks is written
+    // nowhere.
     for instance in &components.instances {
         let Some(ty) = components.types.get(instance.alias) else {
             continue;
@@ -714,7 +723,7 @@ fn check_configuration(
                     TestProfileRule::PortConnection,
                     kind,
                     name,
-                    &port.id,
+                    "",
                     format!(
                         "the port '{}' of the component '{}' is joined by no connect or map: \
                          every port of the configuration takes part in exactly one connect or map",
@@ -776,9 +785,12 @@ fn check_ptc_tree(
                 continue;
             };
             if !configuration.ptcs.iter().any(|ptc| ptc.id == id) {
+                // The PTC is named in the component's document, and the
+                // configuration lacks its declaration: the refusal stands on
+                // the component that invokes it, with no `actual`.
                 return Err(refuse(
                     instance.line,
-                    id,
+                    "",
                     format!(
                         "the component '{}' invokes the PTC '{id}' ({}), which no <sce:ptc> of \
                          the configuration declares: every <invoke> of a test component creates \
@@ -832,9 +844,11 @@ fn check_ptc_tree(
         match started {
             Some((_, identity)) if identity == ty.component.at.identity => {}
             Some((src, _)) => {
+                // `src` is written in the invoking component's document; what
+                // the `<sce:ptc>` writes is the type it declares.
                 return Err(refuse(
                     ptc.source_line,
-                    src,
+                    &ptc.component,
                     format!(
                         "the <invoke> of the component '{}' that creates the PTC '{}' ({}) \
                          starts '{src}', which is not the test component '{}' the <sce:ptc> \
@@ -1016,12 +1030,15 @@ fn check_module_parameters(
     let kind = ForgeKind::TestSuite;
     for id in &component.profile.module_parameters {
         let Some(declared) = suite.module_parameters.iter().find(|p| p.id == *id) else {
+            // The parameter is read in the component's document and declared
+            // nowhere in the suite: the refusal stands on the execute that
+            // reaches the component, with no `actual`.
             return Err(site.profile_refusal(
                 execute.source_line,
                 TestProfileRule::ModuleParameter,
                 kind,
                 &suite.name,
-                id,
+                "",
                 format!(
                     "the test case '{case}' runs the component '{}', which reads the module \
                      parameter '{id}', and the suite declares no <sce:module-parameter> of that \

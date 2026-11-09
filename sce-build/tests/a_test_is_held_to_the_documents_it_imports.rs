@@ -14,6 +14,8 @@
 //! the accepted set, the components and port types the refusals combine, and
 //! one `refused_*` document per refusal, named for what it refuses.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 
 use sce_build::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
@@ -90,13 +92,15 @@ fn a_test_whose_documents_agree_is_accepted() {
 
 /// One refusal per rule its imports decide: the fixture, the code, the value
 /// the record names as `actual` (`None` where the rule is about an element as
-/// a whole), and the document the refusal is placed in.
+/// a whole, or where what breaks it is not written in the document the
+/// refusal is placed in), and the document the refusal is placed in.
 const REFUSALS: &[(&str, DiagnosticCode, Option<&str>, &str)] = &[
-    // §11.3: the port type.
+    // §11.3: the port type. The event name is the schema's; the line holds
+    // the message type that carries it.
     (
         "refused_port_type_event_name_twice.scxml",
         DiagnosticCode::TestProfileMessageEventName,
-        Some("test.ping"),
+        Some("PingAgain"),
         "refused_port_type_event_name_twice.scxml",
     ),
     // §11.6: the configuration's documents.
@@ -156,11 +160,12 @@ const REFUSALS: &[(&str, DiagnosticCode, Option<&str>, &str)] = &[
         None,
         "refused_configuration_map_crosses_nothing.scxml",
     ),
-    // §2.2, §11.6: every port in exactly one join.
+    // §2.2, §11.6: every port in exactly one join. The port is declared in
+    // the component's document, and the join is written nowhere.
     (
         "refused_configuration_port_unjoined.scxml",
         DiagnosticCode::TestProfilePortConnection,
-        Some("control"),
+        None,
         "refused_configuration_port_unjoined.scxml",
     ),
     // §11.6, P9: the PTCs and the invocations that create them.
@@ -170,10 +175,12 @@ const REFUSALS: &[(&str, DiagnosticCode, Option<&str>, &str)] = &[
         Some("extra"),
         "refused_configuration_ptc_not_invoked.scxml",
     ),
+    // The PTC is named by the component's invocation, and the configuration
+    // lacks its declaration.
     (
         "refused_configuration_invoke_names_no_ptc.scxml",
         DiagnosticCode::TestProfilePtcInvocation,
-        Some("helper"),
+        None,
         "refused_configuration_invoke_names_no_ptc.scxml",
     ),
     (
@@ -182,10 +189,12 @@ const REFUSALS: &[(&str, DiagnosticCode, Option<&str>, &str)] = &[
         Some("helper"),
         "refused_configuration_ptc_invoked_twice.scxml",
     ),
+    // The document the invocation starts is written in the component; the
+    // `<sce:ptc>` writes the type it declares.
     (
         "refused_configuration_ptc_of_another_type.scxml",
         DiagnosticCode::TestProfilePtcInvocation,
-        Some("ping_helper.scxml"),
+        Some("Bystander"),
         "refused_configuration_ptc_of_another_type.scxml",
     ),
     (
@@ -214,10 +223,11 @@ const REFUSALS: &[(&str, DiagnosticCode, Option<&str>, &str)] = &[
         Some("ping-burst"),
         "refused_suite_feature_undeclared.scxml",
     ),
+    // The parameter is read in the component, and the suite declares none.
     (
         "refused_suite_module_parameter_undeclared.scxml",
         DiagnosticCode::TestProfileModuleParameter,
-        Some("limit"),
+        None,
         "refused_suite_module_parameter_undeclared.scxml",
     ),
     (
@@ -231,7 +241,7 @@ const REFUSALS: &[(&str, DiagnosticCode, Option<&str>, &str)] = &[
     (
         "refused_suite_reaches_an_unjoined_port.scxml",
         DiagnosticCode::TestProfilePortConnection,
-        Some("control"),
+        None,
         "refused_configuration_port_unjoined.scxml",
     ),
 ];
@@ -269,6 +279,15 @@ fn each_rule_the_imports_decide_is_refused_with_its_own_code() {
         if err.location.line.is_none() {
             wrong.push(format!("{name}: placed on no line"));
         }
+        // SCE_ERROR_CONTRACT.md §3.1.1: the value a record names is on the
+        // line it is placed on, as the document spells it.
+        if let Some(actual) = got_actual.as_deref() {
+            let text = read(&dir().join(placed_in));
+            let line = err.location.line.map(|row| row as usize);
+            if let Err(why) = common::wire_site::locate(&text, line, actual) {
+                wrong.push(format!("{name}: actual {actual:?} is not found: {why}"));
+            }
+        }
     }
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }
@@ -299,13 +318,22 @@ fn every_refusal_fixture_is_judged() {
 
 /// A refusal stands on the row of what it names: the second message type of
 /// one event name, the PTC nothing creates, the module parameter declared of
-/// another type.
+/// another type, the endpoint whose port sends what the other does not
+/// receive, the endpoint naming a port its component does not declare. One
+/// that names what this document does not write stands on the element it
+/// is about: the MTC whose port no join takes or whose invocation names an
+/// undeclared PTC, the execute that reaches an undeclared module parameter.
 #[test]
 fn each_refusal_is_placed_on_the_row_that_holds_it() {
     for (name, row) in [
         ("refused_port_type_event_name_twice.scxml", 11),
         ("refused_configuration_ptc_not_invoked.scxml", 13),
         ("refused_suite_module_parameter_type.scxml", 8),
+        ("refused_configuration_connect_lists.scxml", 15),
+        ("refused_configuration_endpoint_port_undeclared.scxml", 16),
+        ("refused_configuration_port_unjoined.scxml", 10),
+        ("refused_configuration_invoke_names_no_ptc.scxml", 11),
+        ("refused_suite_module_parameter_undeclared.scxml", 9),
     ] {
         let err = check(name).expect_err("refused");
         assert_eq!(err.location.line, Some(row), "{name}: {err:?}");

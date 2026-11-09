@@ -7605,6 +7605,9 @@ pub struct TestConfigurationModel {
     pub name: String,
     /// The alias of the imported `test-component` the MTC is.
     pub mtc: String,
+    /// Source line of the `<sce:mtc>`.
+    #[serde(skip, default)]
+    pub mtc_source_line: Option<u32>,
     /// The `<sce:ptc>` children, in document order.
     pub ptcs: Vec<TestPtc>,
     /// The `<sce:system-port>` children: the ports of the test system
@@ -7687,6 +7690,9 @@ pub struct TestConnect {
 pub struct TestEndpoint {
     pub component: String,
     pub port: String,
+    /// Source line of the `<sce:endpoint>`.
+    #[serde(skip, default)]
+    pub source_line: Option<u32>,
 }
 
 /// Test-case document — docs/SCE_TEST_PROFILE.md §11.7: a test case and the

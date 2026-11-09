@@ -2733,7 +2733,11 @@ fn parse_test_configuration(
                 return Err(port_joined_twice(&endpoint, &component, &port));
             }
             joined.push(key);
-            endpoints.push(TestEndpoint { component, port });
+            endpoints.push(TestEndpoint {
+                component,
+                port,
+                source_line: Some(row_of(&endpoint)),
+            });
         }
         if endpoints.len() != 2 {
             return Err(located(
@@ -2778,6 +2782,7 @@ fn parse_test_configuration(
     Ok(TestConfigurationModel {
         name: label.identifier.to_string(),
         mtc,
+        mtc_source_line: Some(row_of(mtc_node)),
         ptcs,
         system_ports,
         maps,

@@ -14317,14 +14317,15 @@ mod tests {
             ),
             (
                 // Two message types of one event name on a port type
-                // (docs/SCE_TEST_PROFILE.md §11.3): the event name is
-                // `actual`.
+                // (docs/SCE_TEST_PROFILE.md §11.3): the event name is the
+                // schemas', written in their documents, so `actual` is the
+                // second message type, which the refused line writes.
                 "forge/test-profile-message-event-name",
                 ValidationError::TestProfile {
                     rule: TestProfileRule::MessageEventName,
                     kind: ForgeKind::TestPortType,
                     document: "job_port".into(),
-                    actual: "job.status".into(),
+                    actual: "JobStatusAgain".into(),
                     detail: "the message types 'JobStatus' and 'JobStatusAgain' both carry the \
                              event name 'job.status': a message delivered to a port is told \
                              apart from the others by its event name, so the message types of a \
@@ -14332,7 +14333,7 @@ mod tests {
                         .into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:0aec7ec4e4e796b9","code":"test-profile/message-event-name","stage":"validation","spec":"SCE Test Profile §11.3","message":"test-port-type 'job_port': the message types 'JobStatus' and 'JobStatusAgain' both carry the event name 'job.status': a message delivered to a port is told apart from the others by its event name, so the message types of a port type carry distinct ones","actual":"job.status"}"#,
+                r#"{"v":1,"id":"fnv1a:16106d6d7e54e23b","code":"test-profile/message-event-name","stage":"validation","spec":"SCE Test Profile §11.3","message":"test-port-type 'job_port': the message types 'JobStatus' and 'JobStatusAgain' both carry the event name 'job.status': a message delivered to a port is told apart from the others by its event name, so the message types of a port type carry distinct ones","actual":"JobStatusAgain"}"#,
             ),
             (
                 // A connect one of whose ports sends what the other does not
