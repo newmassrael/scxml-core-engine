@@ -717,15 +717,16 @@ struct C11CanonicalAt {
 /// ([`super::test_template_walk::canonical_value`]).
 ///
 /// C has no closure, so a list is a loop over its `len` elements, each read by
-/// its index ([`CanonicalSpelling::list_element`]), and a field that may be
-/// absent is read by `value` behind its `present`
+/// its index ([`CanonicalSpelling::list_element`]), and a field or an element
+/// that may be absent is read by `value` behind its `present`
 /// ([`CanonicalSpelling::optional_value`]). Each field is named before its
 /// value is written; an absent one writes no value after its name, which the
-/// writer then leaves out (`sce_jcs_key`). A C enumerator names neither its
-/// variant nor its number, so an enum's value is read through the functions of
-/// the enum's own unit ([`CanonicalSpelling::enumerated_of`]); and an integer
-/// of any width through the runtime's macro, since C has no overload by the
-/// width and signedness of a field. A byte string, of one entry or inside a
+/// writer then leaves out (`sce_jcs_key`), and an absent element writes `null`
+/// in its place (`sce_test_canonical_absent_element`). A C enumerator names
+/// neither its variant nor its number, so an enum's value is read through the
+/// functions of the enum's own unit ([`CanonicalSpelling::enumerated_of`]);
+/// and an integer of any width through the runtime's macro, since C has no
+/// overload by the width and signedness of a field. A byte string, of one entry or inside a
 /// list, holds its octets in `data` and their count in `len`, which its form
 /// reads alike. C11 lowers no union, so the walk's refusal of one stands.
 struct C11Canonical;
@@ -844,6 +845,22 @@ impl CanonicalSpelling for C11Canonical {
     /// none, which leaves the name the record wrote before it with no value.
     fn optional_field(&self, field: &C11CanonicalAt, _binding: &str, written: String) -> String {
         format!("if ({}.present) {{\n{}\n}}", field.expr, indented(&written))
+    }
+
+    /// The value written where the element holds one, read behind its
+    /// `present` as a field's is, and `null` where it holds none, which the
+    /// array keeps in its place.
+    fn optional_element(
+        &self,
+        element: &C11CanonicalAt,
+        _binding: &str,
+        written: String,
+    ) -> String {
+        format!(
+            "if ({}.present) {{\n{}\n}} else {{\n    sce_test_canonical_absent_element({C_JCS});\n}}",
+            element.expr,
+            indented(&written)
+        )
     }
 
     /// The object, each field named by its declared id before its value.

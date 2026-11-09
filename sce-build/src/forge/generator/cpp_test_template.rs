@@ -237,6 +237,15 @@ impl CanonicalSpelling for CppCanonical {
         )
     }
 
+    /// The element's value through the same lambda as a field's, or `null`
+    /// where it holds none.
+    fn optional_element(&self, element: &CppCanonicalAt, binding: &str, written: String) -> String {
+        format!(
+            "{CANONICAL}::optionalElement({}, [](const auto &{binding}) {{ return {written}; }})",
+            element.base
+        )
+    }
+
     fn record(&self, fields: Vec<(String, String)>) -> String {
         let fields: Vec<String> = fields
             .into_iter()

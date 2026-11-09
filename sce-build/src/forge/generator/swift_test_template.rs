@@ -288,6 +288,16 @@ impl CanonicalSpelling for SwiftCanonical {
         )
     }
 
+    /// The element's `map`, as a field's, whose `nil` the runtime's
+    /// `optionalElement` writes as JSON `null`, which the list keeps in its
+    /// place.
+    fn optional_element(&self, element: &CanonicalAt, binding: &str, written: String) -> String {
+        format!(
+            "{CANONICAL}.optionalElement({}.map {{ {binding} -> {CANONICAL_VALUE} in {written} }})",
+            element.expr
+        )
+    }
+
     fn record(&self, fields: Vec<(String, String)>) -> String {
         let fields: Vec<String> = fields
             .into_iter()

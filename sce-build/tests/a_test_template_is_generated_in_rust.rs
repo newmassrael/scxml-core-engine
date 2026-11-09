@@ -373,3 +373,59 @@ fn a_records_canonical_form_reaches_every_type_it_holds() {
     );
     holds_each(&placed, &[lines.as_str(), customer.as_str(), paid.as_str()]);
 }
+
+/// The schema of a record that holds a list of values that may be absent.
+const TAG_RECORD: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="event-schema" name="tag_record"
+       sce:event-name="tag.record">
+  <datamodel>
+    <data id="tags" sce:type="list&lt;optional&lt;uint8&gt;&gt;[2]" sce:direction="in"/>
+  </datamodel>
+</scxml>
+"#;
+
+/// A template over a record that holds a list of values that may be absent
+/// writes each element in the test log as the runtime's `optional_element`
+/// gives it: its value where it holds one and `null` where it holds none,
+/// since the array names an element by its position and cannot leave one out
+/// as a record leaves out an absent field. The documents are a test's alone,
+/// written into a directory of their own.
+#[test]
+fn an_absent_element_of_a_list_is_written_as_null() {
+    let dir = tempfile::tempdir().expect("a directory for the documents");
+    std::fs::write(dir.path().join("tag_record.scxml"), TAG_RECORD).expect("the schema");
+    let listed = dir.path().join("tags_of.scxml");
+    std::fs::write(
+        &listed,
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="test-template" name="tags_of"
+       sce:type="record:Tags">
+  <sce:import kind="event-schema" src="tag_record.scxml" as="Tags"/>
+  <datamodel>
+    <data id="tag" sce:type="optional&lt;uint8&gt;" sce:direction="in"/>
+  </datamodel>
+  <sce:record-match>
+    <sce:list-match field="tags">
+      <sce:specific param="tag"/>
+      <sce:specific param="tag"/>
+    </sce:list-match>
+  </sce:record-match>
+</scxml>
+"#,
+    )
+    .expect("the template");
+    let text = unit(&listed, "tags_of");
+    let c = CANONICAL;
+    let written = format!(
+        "{c}::record([(\"tags\", Some({c}::list(value.tags.as_slice().iter().map(|item_0| \
+         {c}::optional_element(item_0.as_ref().map(|present_1| {c}::integer(*present_1)))))))])"
+    );
+    holds_each(
+        &text,
+        &["pub const TYPE: &str = \"tag_record\";", written.as_str()],
+    );
+}

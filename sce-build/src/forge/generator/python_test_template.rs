@@ -217,8 +217,9 @@ impl CanonicalSpelling for PythonCanonical {
         }
     }
 
-    /// A generator binds each element of a list, and an assignment expression
-    /// the value of a field that may be absent.
+    /// A generator binds each element of a list, an assignment expression the
+    /// value of a field that may be absent, and a lambda the value of an
+    /// element that may be.
     fn bound(&self, at: &CanonicalAt, prefix: &str) -> (String, CanonicalAt) {
         let name = format!("{prefix}_{}", at.depth);
         let value = CanonicalAt {
@@ -275,6 +276,15 @@ impl CanonicalSpelling for PythonCanonical {
         format!(
             "None if ({binding} := {}) is None else {written}",
             field.expr
+        )
+    }
+
+    /// The element's value through a lambda, or JSON `null` where it is
+    /// `None`, which the list keeps in its place.
+    fn optional_element(&self, element: &CanonicalAt, binding: &str, written: String) -> String {
+        format!(
+            "{PYTHON_CANONICAL}.optional_element({}, lambda {binding}: {written})",
+            element.expr
         )
     }
 

@@ -1287,11 +1287,11 @@ pub(super) trait CanonicalSpelling {
     fn list_element(&self, _list: &Self::At, bound: Self::At) -> Self::At {
         bound
     }
-    /// The place that holds the value of the optional field at `field`, where
-    /// it holds one, once the walk has bound it as `bound` ([`Self::bound`]
-    /// with the prefix `present`). The bound value itself by default, where a
-    /// function binds the value; a backend that binds none reads it from the
-    /// field.
+    /// The place that holds the value of the optional field or list element at
+    /// `field`, where it holds one, once the walk has bound it as `bound`
+    /// ([`Self::bound`] with the prefix `present`). The bound value itself by
+    /// default, where a function binds the value; a backend that binds none
+    /// reads it from the field or the element.
     fn optional_value(&self, _field: &Self::At, bound: Self::At) -> Self::At {
         bound
     }
@@ -1324,6 +1324,12 @@ pub(super) trait CanonicalSpelling {
     /// A field that may be absent, at `field`: the value it holds bound to
     /// `binding` and written as `written`, and nothing where it holds none.
     fn optional_field(&self, field: &Self::At, binding: &str, written: String) -> String;
+    /// An element of a list that may be absent, at `element`: the value it
+    /// holds bound to `binding` and written as `written`, and JSON `null`
+    /// where it holds none. Unlike a field it is never left out, since an
+    /// element is named by its position in the array, which leaving one out
+    /// would move for every element after it.
+    fn optional_element(&self, element: &Self::At, binding: &str, written: String) -> String;
     /// A record of `fields`, each its declared id and its field as
     /// [`Self::held_field`] or [`Self::optional_field`] wrote it, in the order
     /// the schema declares them.
@@ -1348,9 +1354,11 @@ pub(super) trait CanonicalSpelling {
 /// `scope`, in the canonical form of the test log (docs/SCE_TEST_PROFILE.md
 /// §12.5), spelled by `spelling`. The form is the SCE type's, never the
 /// language's. Each record and union is read in the scope of its own document,
-/// as the walk of its matcher reads it. Refused, naming why: a number that is
-/// no integer, and an optional value anywhere but as a field of a record, which
-/// omits it where it is absent.
+/// as the walk of its matcher reads it. An optional value has a form where it
+/// stands in a record, which omits it where it is absent, and in a list, which
+/// writes `null` in its place ([`CanonicalSpelling::optional_element`]).
+/// Refused, naming why: a number that is no integer, and an optional value
+/// anywhere else.
 pub(super) fn canonical_value<S: CanonicalSpelling>(
     spelling: &S,
     ty: &ValueType,
@@ -1375,13 +1383,22 @@ pub(super) fn canonical_value<S: CanonicalSpelling>(
         TypeOf::Optional { .. } => {
             return Err(format!(
                 "a value of {ty} has a form in the test log only as a field of a record, \
-                 which omits it where it is absent"
+                 which omits it where it is absent, or as an element of a list, which is \
+                 null where it is absent"
             ))
         }
         TypeOf::List { elem, .. } => {
             let (binding, bound) = spelling.bound(at, "item");
             let element = spelling.list_element(at, bound);
-            let written = canonical_value(spelling, elem, &element, scope)?;
+            let written = match elem.as_ref() {
+                TypeOf::Optional { elem: held } => {
+                    let (present_binding, present_bound) = spelling.bound(&element, "present");
+                    let present = spelling.optional_value(&element, present_bound);
+                    let value = canonical_value(spelling, held, &present, scope)?;
+                    spelling.optional_element(&element, &present_binding, value)
+                }
+                other => canonical_value(spelling, other, &element, scope)?,
+            };
             spelling.list(at, &binding, written)
         }
         TypeOf::Record { alias } => {
@@ -1574,7 +1591,7 @@ impl<S: JoinSpelling> JoinSpelling for LowersUnions<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::forge::value_type::ScopedVariant;
+    use crate::forge::value_type::{Bound, ScopedVariant};
 
     /// A spelling of the canonical form that keeps the default of every
     /// method that has one, its positions the names it reads.
@@ -1616,6 +1633,9 @@ mod tests {
         }
         fn optional_field(&self, field: &String, binding: &str, written: String) -> String {
             format!("{field}?[{binding}: {written}]")
+        }
+        fn optional_element(&self, element: &String, binding: &str, written: String) -> String {
+            format!("{element}?null[{binding}: {written}]")
         }
         fn record(&self, fields: Vec<(String, String)>) -> String {
             fields
@@ -1677,6 +1697,36 @@ mod tests {
             Plain.enumerated(&root, true),
             "value:closed",
             "the spelling tells a closed enum from an open one"
+        );
+    }
+
+    /// An element of a list that may be absent is written through
+    /// `optional_element`, its value bound inside the element as a field's is
+    /// inside the field, and an optional value anywhere but in a record or a
+    /// list is still refused, naming both places it has a form.
+    #[test]
+    fn an_optional_element_of_a_list_is_written_through_optional_element() {
+        let uint8 = || Box::new(TypeOf::Scalar(SceType::Uint8));
+        let tags: ValueType = TypeOf::List {
+            elem: Box::new(TypeOf::Optional { elem: uint8() }),
+            max: Bound::of(2),
+        };
+        let scope = TypeScope::default();
+        assert_eq!(
+            canonical_value(&Plain, &tags, &Plain.root(), &scope),
+            Ok(
+                "value[item_of_value: item_of_value?null[present_of_item_of_value: \
+                present_of_item_of_value]]"
+                    .to_string()
+            )
+        );
+        let alone: ValueType = TypeOf::Optional { elem: uint8() };
+        let refused = canonical_value(&Plain, &alone, &Plain.root(), &scope)
+            .expect_err("an optional value alone has no form");
+        assert!(
+            refused.contains("only as a field of a record")
+                && refused.contains("as an element of a list"),
+            "{refused}"
         );
     }
 }
