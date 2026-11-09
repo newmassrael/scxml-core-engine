@@ -33,17 +33,25 @@
     `<state>.<start>.<id>`, the start counted in this session (docs/adr/0045), so the id
     comes from the tree alone and is the text every backend writes. Under
     `datamodel="sce-static"` the id is written to the string variable `idlocation` names,
-    whose bound the build held to one the id fits; under a script engine it is stored as
-    an assignment, and a location that cannot take it starts nothing. `indent` is what each
-    line of the start is indented by. #}
-{% macro defer_scxml_invoke(inv, state_id, indent, kind) %}
+    held to that variable's bound as any text written to it is (docs/adr/0086, section
+    7.4): an id it cannot hold is refused whole, raises error.execution where the document
+    declares it (`raises_error`), and the invocation does not start, as a location that
+    cannot take it does under a script engine, where the id is stored as an assignment.
+    `indent` is what each line of the start is indented by. #}
+{% macro defer_scxml_invoke(inv, state_id, indent, kind, raises_error) %}
 {{ indent }}{
 {{ indent }}    // W3C SCXML 3.12.1: the runtime invoke id, in the "stateid.start.id" shape.
 {{ indent }}    std::string generatedInvokeId = "{{ state_id }}." + std::to_string(++invokeStarts_{{ inv.field_suffix }}_) + ".{{ inv.invoke_id }}";
 {% if inv.native_idlocation %}
-{{ indent }}    {{ inv.native_idlocation }}
-{{ indent }}    ::SCE::Core::InvokeHelper::deferInvoke(pendingInvokes_,
-{{ indent }}        PendingInvoke{generatedInvokeId, State::{{ state_id | capitalize }}, "{{ inv.invoke_id }}"});
+{{ indent }}    // `native_idlocation` answers whether the variable refused the id.
+{{ indent }}    if ({{ inv.native_idlocation }}) {
+{% if raises_error %}
+{{ indent }}        engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "<invoke idlocation='{{ inv.idlocation | escape_cpp }}'> could not take the invoke id"));
+{% endif %}
+{{ indent }}    } else {
+{{ indent }}        ::SCE::Core::InvokeHelper::deferInvoke(pendingInvokes_,
+{{ indent }}            PendingInvoke{generatedInvokeId, State::{{ state_id | capitalize }}, "{{ inv.invoke_id }}"});
+{{ indent }}    }
 {% else %}
 {{ store_invoke_idlocation(inv, "generatedInvokeId", "idStored", indent ~ "    ") }}
 {{ indent }}    if (idStored) {

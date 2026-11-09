@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -33,6 +34,20 @@ using Color = SCE::Generated::PaintColor::PaintColor;
 
 namespace EveryMatcher = SCE::Generated::EveryMatcher;
 
+// The types the schema units hold a bounded text and list in (docs/adr/0086, section 7.4).
+using Note = decltype(JobStatus::note)::value_type;
+using Codes = decltype(JobStatus::codes);
+using Sku = decltype(OrderLine::sku);
+using Last4 = decltype(Card::last4);
+
+/// `list` held in `Held`, the type of a place that holds its bound; a list past it fails the
+/// test, since every value below lies within its place's bound.
+template <typename Held, typename List> Held held(List list) {
+    auto made = Held::make(std::move(list));
+    EXPECT_TRUE(made.has_value()) << "the value lies within its place's bound";
+    return made.value_or(Held{});
+}
+
 // U+00E9, one character of two UTF-8 bytes.
 const std::string E_ACUTE = "\xC3\xA9";
 
@@ -51,7 +66,7 @@ JobStatus matching() {
     JobStatus status;
     status.elapsed_ms = 1;
     status.note = std::nullopt;
-    status.codes = {3, 9, 5};
+    status.codes = Codes::literal({3, 9, 5});
     status.tag = std::nullopt;
     status.retry = std::nullopt;
     status.count = 100;
@@ -85,14 +100,14 @@ TEST(ATestTemplate, IfpresentTakesAnAbsentFieldAndALengthCountsCharacters) {
     JobStatus status = matching();
     status.note = std::nullopt;
     EXPECT_TRUE(EveryMatcher::match(status, LIMIT));
-    status.note = std::string("abcdefgh");
+    status.note = Note::literal("abcdefgh");
     EXPECT_TRUE(EveryMatcher::match(status, LIMIT));
-    status.note = std::string("abcdefghi");
+    status.note = Note::literal("abcdefghi");
     EXPECT_FALSE(EveryMatcher::match(status, LIMIT));
     // Eight characters of two bytes each: sixteen bytes, eight characters.
-    status.note = repeated(E_ACUTE, 8);
+    status.note = held<Note>(repeated(E_ACUTE, 8));
     EXPECT_TRUE(EveryMatcher::match(status, LIMIT));
-    status.note = repeated(E_ACUTE, 9);
+    status.note = held<Note>(repeated(E_ACUTE, 9));
     EXPECT_FALSE(EveryMatcher::match(status, LIMIT));
 }
 
@@ -102,14 +117,14 @@ TEST(ATestTemplate, AListMatchHoldsItsCountAndEachElementInOrder) {
     for (const std::vector<std::uint8_t> &codes :
          {std::vector<std::uint8_t>{3, 9, 5}, std::vector<std::uint8_t>{3, 0, 1}}) {
         JobStatus status = matching();
-        status.codes = codes;
+        status.codes = held<Codes>(codes);
         EXPECT_TRUE(EveryMatcher::match(status, LIMIT));
     }
     for (const std::vector<std::uint8_t> &codes :
          {std::vector<std::uint8_t>{3, 9, 0}, std::vector<std::uint8_t>{4, 9, 5}, std::vector<std::uint8_t>{3, 9},
           std::vector<std::uint8_t>{3, 9, 5, 5}, std::vector<std::uint8_t>{}}) {
         JobStatus status = matching();
-        status.codes = codes;
+        status.codes = held<Codes>(codes);
         EXPECT_FALSE(EveryMatcher::match(status, LIMIT)) << codes.size();
     }
 }
@@ -163,17 +178,17 @@ TEST(ATestTemplate, ASpecificTemplatesValueMatchesItsTemplate) {
 // A specific template whose values are partly its parameters.
 TEST(ATestTemplate, ASpecificTemplatesValueHoldsTheParametersItIsGiven) {
     namespace JobReportOf = SCE::Generated::JobReportOf;
-    const std::string note = "late";
+    const Note note = Note::literal("late");
     const JobStatus report = JobReportOf::value(5, note, std::uint8_t{9});
     EXPECT_EQ(report.elapsed_ms, 5u);
-    EXPECT_EQ(report.note, std::optional<std::string>(note));
+    EXPECT_EQ(report.note, std::optional<Note>(note));
     EXPECT_EQ(report.codes, (std::vector<std::uint8_t>{9, 255}));
     EXPECT_FALSE(report.tag.has_value());
     EXPECT_EQ(report.retry, std::optional<std::uint8_t>(2));
     EXPECT_EQ(report.count, 4294967295u);
     EXPECT_TRUE(JobReportOf::match(report, 5, note, std::uint8_t{9}));
     EXPECT_FALSE(JobReportOf::match(report, 6, note, std::uint8_t{9}));
-    EXPECT_FALSE(JobReportOf::match(report, 5, std::string("early"), std::uint8_t{9}));
+    EXPECT_FALSE(JobReportOf::match(report, 5, Note::literal("early"), std::uint8_t{9}));
     EXPECT_FALSE(JobReportOf::match(report, 5, note, std::uint8_t{8}));
 }
 
@@ -199,7 +214,7 @@ TEST(ATestTemplate, AnEnumLiteralAndAReferenceToASpecificTemplateBuildAndMatch) 
 TEST(ATestTemplate, AReferenceToARangeHoldsTheBoundItsArgumentGives) {
     namespace OrderLineBounded = SCE::Generated::OrderLineBounded;
     OrderLine line;
-    line.sku = "A-1";
+    line.sku = Sku::literal("A-1");
     line.quantity = 5;
     line.color = Color::Blue;
     EXPECT_TRUE(OrderLineBounded::match(line, std::uint16_t{5}));
@@ -227,14 +242,14 @@ TEST(ATestTemplate, ALengthOnATextCountsAMultiByteCharacterAsOne) {
     card.amount = 50;
     // Two characters in three bytes, and in four.
     for (const std::string &last4 : {E_ACUTE + "1", repeated(E_ACUTE, 2), std::string("123")}) {
-        card.last4 = last4;
+        card.last4 = held<Last4>(last4);
         EXPECT_TRUE(CardWithin::match(card, 100)) << last4.size();
     }
     for (const std::string &last4 : {std::string("1"), E_ACUTE, std::string("1234")}) {
-        card.last4 = last4;
+        card.last4 = held<Last4>(last4);
         EXPECT_FALSE(CardWithin::match(card, 100)) << last4.size();
     }
-    card.last4 = "12";
+    card.last4 = Last4::literal("12");
     card.amount = 1;
     EXPECT_TRUE(CardWithin::match(card, 100));
     card.amount = 0;

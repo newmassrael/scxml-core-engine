@@ -352,8 +352,11 @@ engine.raiseExternal({{ event_cpp }}, eventData, std::nullopt, {{ target_cpp }})
 // W3C SCXML 6.2.4: under `datamodel="sce-static"` the machine generates the id
 // and writes it to the variable `idlocation` names before it reads any other
 // argument (`Action::native_idlocation`); that variable is then the id the send
-// is known by (`Action::native_sendid`).
-{{ action.native_idlocation }}
+// is known by (`Action::native_sendid`). The id is held to the variable's bound
+// as any text written to it is (docs/adr/0086, section 7.4): an id it cannot
+// hold is refused whole and is the argument error below, raised as
+// error.execution, and nothing is sent.
+[[maybe_unused]] const bool sendIdRefused = {{ action.native_idlocation }};
 std::string sendId = {{ action.native_sendid }};
 {% elif action.id %}
 std::string sendId = "{{ action.id }}";
@@ -385,6 +388,11 @@ ensureSessionId();
 {# ── The element's own arguments, evaluated once ── W3C SCXML 6.2: "The
    Processor MUST evaluate all arguments to <send> when the <send> element is
    evaluated". #}
+{% if action.native_idlocation %}
+if (sendIdRefused) {
+{{ send_arg_error("<send idlocation='" ~ action.idlocation ~ "'> could not take the send id", block_end, '    ') }}
+}
+{% endif %}
 {% if action.idlocation and not action.native_idlocation %}
 // W3C SCXML 6.2.4: the send id goes to `idlocation` first, so it is there even
 // when a later argument fails (test183, test332). The store is the assignment

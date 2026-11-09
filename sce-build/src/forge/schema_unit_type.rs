@@ -14,7 +14,7 @@
 //! |---|---|---|---|---|
 //! | Rust | `BoundedList<T, N>` | `SceString<N>` / `SceBytes<N>` | `Option<T>` | its payload struct |
 //! | Kotlin | `List<T>` | `String` / `ByteArray` | `T?` | its data class |
-//! | C++ | `std::vector<T>` | `std::string` / `std::vector<uint8_t>` | `std::optional<T>` | its struct |
+//! | C++ | `OwnedList<T, N>` | `OwnedText<N>` / `OwnedBytes<N>` | `std::optional<T>` | its struct |
 //! | Go | `[]T` | `string` / `[]byte` | `optional.Of[T]` | its struct |
 //! | Python | `list[T]` | `str` / `bytes` | `Optional[T]` | its record class |
 //! | Swift | `[T]` | `String` / `[UInt8]` | `T?` | its struct |
@@ -30,7 +30,9 @@
 //! Rust's text, byte string and list inside a composition are the bounded types
 //! of `sce-portable-bytes`, whose every constructor refuses a value past its
 //! bound on every profile (sections 5.4 and 7.4), the types a machine holds
-//! the same values in. C11 lays every composition out
+//! the same values in; C++'s are the forge runtime's owned `Bounded` forms
+//! (`sce/forge/bounded.h`), which hold the same bounds for the same reason.
+//! C11 lays every composition out
 //! statically: each distinct one is one named type, its name mangled from its
 //! structure (`sce_list_3_list_4_string_8_t`), declared once under a guard
 //! named by it, so the same composition is one type across the units of a
@@ -134,12 +136,14 @@ pub(crate) fn unit_type(
         },
         Language::Cpp => match ty {
             ValueType::Scalar(t) => names.scalar(t),
-            ValueType::Text { .. } => "std::string".to_string(),
-            ValueType::Bytes { .. } => "std::vector<uint8_t>".to_string(),
+            ValueType::Text { max } => crate::forge::composed_lowering::cpp_text_type(max.max),
+            ValueType::Bytes { max } => crate::forge::composed_lowering::cpp_bytes_type(max.max),
             ValueType::Optional { elem } => format!("std::optional<{}>", inner(elem, c11)?),
             ValueType::Record { alias } => record(alias)?,
             ValueType::Union { alias } => return Err(unlowered(alias)),
-            ValueType::List { elem, .. } => format!("std::vector<{}>", inner(elem, c11)?),
+            ValueType::List { elem, max } => {
+                crate::forge::composed_lowering::cpp_bounded_list(&inner(elem, c11)?, max.max)
+            }
         },
         Language::Go => match ty {
             ValueType::Scalar(t) => names.scalar(t),
@@ -299,7 +303,8 @@ mod tests {
             (Language::Kotlin, "List<List<String>?>"),
             (
                 Language::Cpp,
-                "std::vector<std::optional<std::vector<std::string>>>",
+                "::SCE::Forge::OwnedList<std::optional<::SCE::Forge::OwnedList<\
+                 ::SCE::Forge::OwnedText<8>, 4>>, 3>",
             ),
             (Language::Go, "[]optional.Of[[]string]"),
             (Language::Python, "list[Optional[list[str]]]"),

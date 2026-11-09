@@ -66,7 +66,9 @@ pub use python::{PythonCarrier, PythonComposed};
 pub use rust::{RustCarrier, RustComposed};
 pub use swift::{SwiftCarrier, SwiftComposed};
 
-pub(crate) use cpp::cpp_raise_checks;
+pub(crate) use cpp::{
+    cpp_bounded_list, cpp_bytes_type, cpp_raise_checks, cpp_text_type, CPP_FORGE,
+};
 pub(crate) use go::go_raise_checks;
 pub(crate) use kotlin::kotlin_init_block;
 pub(crate) use python::{python_post_init, PYTHON_PAYLOAD};

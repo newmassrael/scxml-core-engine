@@ -22,6 +22,7 @@
 #include <fstream>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include <nlohmann/json.hpp>
@@ -53,6 +54,24 @@ int g_failures = 0;
             ++g_failures;                              \
         }                                              \
     } while (0)
+
+/// `text` as a value of `T`, a text field of a schema unit: the `std::string`
+/// itself, or the `SCE::Forge::OwnedText<N>` a field of bound `N` is held in
+/// (docs/adr/0086, section 7.4), made through its `make`. Every text of the
+/// manifest lies within its field's bound, so one that does not is a defect of
+/// the manifest, and the run stops on it.
+template <typename T> T text_of(const std::string &text) {
+    if constexpr (std::is_same<T, std::string>::value) {
+        return text;
+    } else {
+        auto held = T::make(text);
+        if (!held.has_value()) {
+            std::fprintf(stderr, "a manifest text '%s' is past its field's bound\n", text.c_str());
+            std::exit(2);
+        }
+        return *held;
+    }
+}
 
 void assert_close(double actual, double expected, double tol, const char *label) {
     double diff = std::fabs(actual - expected);

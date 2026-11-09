@@ -253,12 +253,12 @@
 {% for state_id, state in model.states | dictsort %}
 {% for invoke_info in state.invokes | scxml %}
             if (id == "{{ invoke_info.invoke_id }}") {
-{{ invoke_start.defer_scxml_invoke(invoke_info, state_id, "                ", "restarted") }}
+{{ invoke_start.defer_scxml_invoke(invoke_info, state_id, "                ", "restarted", 'error.execution' in model.events) }}
             }
 {% endfor %}
 {% for invoke_info in state.invokes | hybrid %}
             if (id == "{{ invoke_info.invoke_id }}") {
-{{ invoke_start.defer_scxml_invoke(invoke_info, state_id, "                ", "restarted hybrid") }}
+{{ invoke_start.defer_scxml_invoke(invoke_info, state_id, "                ", "restarted hybrid", 'error.execution' in model.events) }}
             }
 {% endfor %}
 {% endfor %}

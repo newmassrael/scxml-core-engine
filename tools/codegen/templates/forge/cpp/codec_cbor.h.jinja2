@@ -52,7 +52,12 @@
 {% if f.kind == "bool" %}
                 held_{{ f.name }} = cbor::read_bool(c);
 {% elif f.kind == "text" %}
-                held_{{ f.name }} = cbor::read_text(c, {{ f.max }});
+                {# The schema's unit holds the text in the `OwnedText` of its
+                   bound (docs/adr/0086, section 7.4), which the read, held to
+                   the same bound and to UTF-8, always makes. #}
+                if (auto text = cbor::read_text(c, {{ f.max }})) {
+                    held_{{ f.name }} = {{ f.value_type }}::make(std::move(*text));
+                }
 {% elif f.kind == "bytes" %}
                 held_{{ f.name }} = cbor::read_bytes(c, {{ f.max }});
 {% elif f.value_type == "uint64_t" %}
@@ -64,9 +69,10 @@
 {% endif %}
                 if (!held_{{ f.name }}) return std::nullopt;
 {% endmacro %}
-{#- The write of one field of `record`, its key already written. The
-    language's string and vector carry no bound, so a text or a byte string
-    past its bound is refused, not written. #}
+{#- The write of one field of `record`, its key already written. A byte
+    string's vector carries no bound, so one past its bound is refused, not
+    written; a text's `OwnedText` holds its bound, which the same check
+    restates. #}
 {% macro encode_record_field(f) %}
 {% if f.kind == "bool" %}
         if (auto e = cbor::write_bool(w, record.{{ f.name }})) return e;

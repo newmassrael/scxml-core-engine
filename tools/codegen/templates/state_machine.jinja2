@@ -376,6 +376,14 @@ template <typename T> const T &sceLogName(const T &value) {
     return value;
 }
 
+{# docs/adr/0086, section 7.4: a text the machine holds to its bound is shown as
+   the text it holds. Declared before the optional's overload below, which
+   names it for a present text. #}
+template <::std::size_t Max, ::std::size_t Min>
+const ::std::string &sceLogName(const ::SCE::Forge::Bounded<::std::string, Max, Min> &value) {
+    return value.inner();
+}
+
 {# docs/adr/0055: an optional value is shown as `null` when it is absent, and
    as its present value's own `sceLogName` shows it otherwise, which for an
    enum is the overload declared beside its type, found where the value's type
@@ -390,9 +398,12 @@ template <typename C> C sceCopy(const C &list) {
     return list;
 }
 
-/// The same copy with each element's position, a `uint32` as `len` is.
-template <typename T> ::std::vector<::std::pair<::std::uint32_t, T>> sceIndexed(const ::std::vector<T> &list) {
-    ::std::vector<::std::pair<::std::uint32_t, T>> walked;
+/// The same copy with each element's position, a `uint32` as `len` is: of the
+/// list a variable holds to its bound (`OwnedList`, docs/adr/0086, section 7.4)
+/// and of any other list alike, each read by its index.
+template <typename C> auto sceIndexed(const C &list) {
+    using Element = ::std::decay_t<decltype(list[0])>;
+    ::std::vector<::std::pair<::std::uint32_t, Element>> walked;
     walked.reserve(list.size());
     for (::std::uint32_t position = 0; position < list.size(); ++position) {
         walked.emplace_back(position, list[position]);

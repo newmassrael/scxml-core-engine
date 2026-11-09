@@ -297,39 +297,12 @@ fn holds(lang: Language, code: &str, expected: &[&str], encode_at: &str, keys: [
 }
 
 #[test]
-fn the_cpp_map_holds_each_list_in_a_vector_of_the_schemas_payload() {
-    holds(
-        Language::Cpp,
-        &generated_fixture(Language::Cpp),
-        &[
-            "#include \"cbor_causal_entry.h\"",
-            "std::vector<SCE::Generated::CborCausalEntry::CborCausalEntryPayload> seen{};",
-            // A read past the bound is refused before any record is read.
-            "if (!len || *len > 2) return std::nullopt;",
-            "if (!len || *len > 3) return std::nullopt;",
-            "auto record = decode_record_causal_entry(c);",
-            "held_author = cbor::read_text(c, 16);",
-            // The vector carries no bound, so the encode refuses past it.
-            "if (v.size() > 2) return ::SCE::Forge::CodecError::CborOutOfRange;",
-            "if (auto e = cbor::write_array_head(w, v.size())) return e;",
-            "if (auto e = encode_record_causal_entry(w, record)) return e;",
-            "if (record.author.size() > 16) return ::SCE::Forge::CodecError::CborOutOfRange;",
-            "if (auto e = cbor::write_map_head(w, 2)) return e;",
-        ],
-        "encode_record_causal_entry(\n",
-        [
-            "cbor::write_text(w, \"seq\")",
-            "cbor::write_text(w, \"author\")",
-        ],
-    );
-}
-
-#[test]
-fn the_cpp_map_keeps_the_template_struct_where_a_record_holds_a_text() {
+fn the_cpp_map_is_printed_with_its_lists_of_records_that_hold_a_text() {
     // `cbor_causal_entry`'s `author` is a `string[16]`, which the schema's C++
-    // unit holds in a `std::string` with no bound: no view of the records holds
-    // it within its bound, so the map is not printed from its plan. Red if the
-    // printer takes such a list as one it lowers.
+    // unit holds in the `OwnedText<16>` of its bound (docs/adr/0086, section
+    // 7.4): a view of the records holds it within its bound, so the map is
+    // printed from its plan and its encode refuses nothing, as on Rust. Red if
+    // the printer refuses such a list again.
     let unlowered = sce_build::cpp_codec_unlowered_file(
         &fixtures().join(format!("{CODEC}.scxml")),
         &[],
@@ -337,11 +310,37 @@ fn the_cpp_map_keeps_the_template_struct_where_a_record_holds_a_text() {
     )
     .unwrap_or_else(|e| panic!("{CODEC}: {e:?}"))
     .expect("the fixture is a codec");
-    assert_eq!(
-        unlowered,
-        vec!["a list of records with a text or a byte string field".to_string()],
-        "{CODEC}"
+    assert!(unlowered.is_empty(), "{CODEC}: {unlowered:?}");
+
+    let code = generated_fixture(Language::Cpp);
+    holds(
+        Language::Cpp,
+        &code,
+        &[
+            "#include \"cbor_causal_entry.h\"",
+            "::SCE::Forge::Bounded<std::vector<SCE::Generated::CborCausalEntry::CborCausalEntryPayload>, 2> \
+             seen_{};",
+            // A read past the bound is refused before any record is read.
+            "if (!_len || *_len > 2) return std::nullopt;",
+            "if (!_len || *_len > 3) return std::nullopt;",
+            "auto _record = Records::decode_record_causal_entry(c);",
+            // The text is read within its bound and held in the field's type.
+            "auto text = cbor::read_text(c, 16);",
+            "held_author = ::SCE::Forge::OwnedText<16>::make(std::move(*text));",
+            // The write is the array head and each record's map; the types
+            // hold every bound, so nothing is checked.
+            "if (auto _e = cbor::write_array_head(w, static_cast<std::uint64_t>(v.size())); _e) return _e;",
+            "if (auto _e = Records::encode_record_causal_entry(w, _record); _e) return _e;",
+            "if (auto _e = cbor::write_text(w, record.author.inner()); _e) return _e;",
+            "if (auto _e = cbor::write_map_head(w, 2); _e) return _e;",
+        ],
+        "encode_record_causal_entry(::SCE::Forge::SceSink& w",
+        [
+            "cbor::write_text(w, \"seq\")",
+            "cbor::write_text(w, \"author\")",
+        ],
     );
+    assert!(!code.contains("CborOutOfRange"), "{code}");
 }
 
 /// The repository's standard Mesh documents, whose envelope holds a causal

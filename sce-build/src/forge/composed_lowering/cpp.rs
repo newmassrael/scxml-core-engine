@@ -7,14 +7,38 @@
 //!
 //! | `list<T>[N]` | `string[N]` / `bytes[N]` | `optional<T>` | record |
 //! |---|---|---|---|
-//! | `std::vector<T>` | `std::string` / `std::vector<uint8_t>` | `std::optional<T>` | the machine's struct |
+//! | `OwnedList<T, N>` | `OwnedText<N>` / `OwnedBytes<N>` | `std::optional<T>` | the machine's struct |
 //!
-//! No C++ type carries a bound yet (section 7.4, last paragraph), so two
-//! places whose types differ only in their bounds are one type, and a value
-//! that fits is copied as it is, by the assignment, which copies a list by
-//! value at every depth.
+//! Each bounded type is the forge runtime's (`sce/forge/bounded.h`), its bound
+//! in its type (section 7.4), as the Rust row's are: a value past it is no value
+//! of the type, so a host cannot build one, and a copy into a place of a larger
+//! bound widens by type. Two places of one type are copied by the assignment,
+//! which copies a list by value at every depth.
 
 use super::*;
+
+/// The namespace of the forge runtime's bounded types and checked
+/// constructions (`sce/forge/bounded.h`, `sce/forge/algorithm.h`).
+pub(crate) const CPP_FORGE: &str = "::SCE::Forge";
+
+/// The type a C++ machine holds a list of at most `max` values held in `elem`
+/// in, every place alike (docs/adr/0086, section 7.4): a variable, a record's
+/// field and a payload's, so two places of one list type are one C++ type.
+pub(crate) fn cpp_bounded_list(elem: &str, max: u32) -> String {
+    format!("{CPP_FORGE}::OwnedList<{elem}, {max}>")
+}
+
+/// The type a C++ machine holds a text of at most `max` bytes in, every place
+/// alike (docs/adr/0086, section 7.4).
+pub(crate) fn cpp_text_type(max: u32) -> String {
+    format!("{CPP_FORGE}::OwnedText<{max}>")
+}
+
+/// The type a C++ machine holds a byte string of at most `max` bytes in,
+/// every place alike (docs/adr/0086, section 7.4).
+pub(crate) fn cpp_bytes_type(max: u32) -> String {
+    format!("{CPP_FORGE}::OwnedBytes<{max}>")
+}
 
 /// The C++ spellings of the walks, for the machine `machine` (section 7.1, the
 /// C++ row): the runtime's `EventPayloadValue` (`common/EventPayloadLift.h`)
@@ -82,19 +106,21 @@ const CPP_HOLDS_NO_UNION: &str = "a C++ machine holds no union yet (docs/adr/009
 /// The check of a C++ value of `ty`, written in the scope `within` names, at
 /// `value`, named `path` (an expression of a `std::string`): an expression of
 /// type `std::string` that is the refusal, naming the path to the place, of a
-/// value past a bound its type declares at any depth, and empty where there
-/// is none (docs/adr/0086, section 5.4). One call of the runtime's
-/// `EventPayloadBounds::text`, `bytes`, `list` or `listWithin` per
-/// constructor that holds a bound, and of `optional` for a value that may be
-/// absent, the check of an element or a present value inside the lambda the
-/// call hands it to, its parameters named by their `depth`; a record is
-/// checked field by field where it stands, at the path of each field below
-/// its own. `None` for a type that holds no bound at any depth: a number, an
-/// enum, an optional one of them and a record of those.
+/// list short of the lower count its type states at any depth, and empty
+/// where there is none (docs/adr/0086, sections 5.4 and 15.6). One call of the
+/// runtime's `EventPayloadBounds::listWithin` per list that states a lower
+/// count, of `list` per list whose elements hold one, and of `optional` for a
+/// value that may be absent, the check of an element or a present value
+/// inside the lambda the call hands it to, its parameters named by their
+/// `depth`; a record is checked field by field where it stands, at the path of
+/// each field below its own. `None` for a type that holds no lower count at
+/// any depth.
 ///
-/// A C++ struct has no constructor that could refuse a value, so a C++ raise
-/// seam runs this check over the payload a host hands it before it encodes
-/// it, a record a list holds included.
+/// A text's, a byte string's and a list's upper bound is its type's
+/// (`OwnedText`, `OwnedBytes`, `OwnedList`; section 7.4), so a host cannot
+/// build a value past one, and nothing checks it again. A lower count is held
+/// by no type, as on every backend, so a C++ raise seam runs this check over
+/// the payload a host hands it before it encodes it.
 fn cpp_bound_check(
     ty: &ValueType,
     within: Option<&str>,
@@ -113,29 +139,35 @@ fn cpp_bound_check(
         )
     };
     Ok(match ty {
-        ValueType::Text { max } => Some(format!("{bounds}::text({path}, {value}, {}u)", max.max)),
-        ValueType::Bytes { max } => Some(format!("{bounds}::bytes({path}, {value}, {}u)", max.max)),
-        // The count is held whatever the elements are; an element with
-        // nothing of its own to check is handed to a lambda that checks
-        // nothing.
+        // The bound is the type's (section 7.4).
+        ValueType::Text { .. } | ValueType::Bytes { .. } => None,
+        // A lower count is held whatever the elements are, an element with
+        // nothing of its own to check handed to a lambda that checks nothing;
+        // a list without one is walked only for an element that holds one.
         ValueType::List { elem, max } => {
-            let each =
-                match cpp_bound_check(elem, within, &inner_path, &inner_value, depth + 1, records)?
-                {
-                    Some(inner) => part(&inner),
-                    None => {
-                        "[](const ::std::string &, const auto &) -> ::std::string { return {}; }"
-                            .to_string()
-                    }
-                };
-            Some(if max.min == 0 {
-                format!("{bounds}::list({path}, {value}, {}u, {each})", max.max)
-            } else {
-                format!(
-                    "{bounds}::listWithin({path}, {value}, {}u, {}u, {each})",
-                    max.min, max.max
-                )
-            })
+            let inner =
+                cpp_bound_check(elem, within, &inner_path, &inner_value, depth + 1, records)?;
+            match (max.min, inner) {
+                (0, None) => None,
+                (0, Some(inner)) => Some(format!(
+                    "{bounds}::list({path}, {value}, {}u, {})",
+                    max.max,
+                    part(&inner)
+                )),
+                (least, inner) => {
+                    let each = inner.map_or_else(
+                        || {
+                            "[](const ::std::string &, const auto &) -> ::std::string { return {}; }"
+                                .to_string()
+                        },
+                        |inner| part(&inner),
+                    );
+                    Some(format!(
+                        "{bounds}::listWithin({path}, {value}, {least}u, {}u, {each})",
+                        max.max
+                    ))
+                }
+            }
         }
         // An absent value holds nothing to check; a present one is checked at
         // the place's own path, which the runtime hands the lambda.
@@ -235,22 +267,22 @@ impl ComposedSpelling for CppComposed<'_> {
     fn scalar_type(&self, ty: &SceType) -> String {
         crate::forge::generator::cpp_type(ty).to_string()
     }
-    // The C++ row of section 7.1: no type has a bound as its parameter yet
-    // (section 7.4, last paragraph), so the reader holds a value to its bound
-    // where it is read, and a raise seam where a host hands it one.
-    fn text_type(&self, _max: u32) -> String {
-        "std::string".to_string()
+    // The C++ row of section 7.1: the forge runtime's bounded storage, `N` on
+    // the type (section 7.4), which the reader fills and a host builds through
+    // the type's own checked constructions.
+    fn text_type(&self, max: u32) -> String {
+        cpp_text_type(max)
     }
-    fn bytes_type(&self, _max: u32) -> String {
-        "std::vector<uint8_t>".to_string()
+    fn bytes_type(&self, max: u32) -> String {
+        cpp_bytes_type(max)
     }
     // The one C++ spelling of a value that may be absent (docs/adr/0055,
     // section 5).
     fn optional_type(&self, elem: &str) -> String {
         format!("std::optional<{elem}>")
     }
-    fn list_type(&self, elem: &str, _max: u32) -> String {
-        format!("std::vector<{elem}>")
+    fn list_type(&self, elem: &str, max: u32) -> String {
+        cpp_bounded_list(elem, max)
     }
     // The name a statechart's record variable of the same schema is held in
     // (`StaticTarget::record_type`), so a record a payload holds is the type a
@@ -265,10 +297,10 @@ impl ComposedSpelling for CppComposed<'_> {
     // Plain data by the record rule: a struct of the schema's fields in the
     // schema's order, each named as the schema names it, which is how a read
     // names it, and which a host builds by position in that order
-    // (docs/adr/0059, section 5). A C++ struct has no constructor that could
-    // refuse a value, so the raise seam that takes one holds it to every bound
-    // its type declares before it sends it (docs/adr/0086, section 5.4), and
-    // no check is declared beside it.
+    // (docs/adr/0059, section 5). Every upper bound is held by a member's type
+    // (section 7.4); a list's lower count, which no type holds, is checked by
+    // the raise seam that takes one before it sends it (section 5.4), so no
+    // check is declared beside it.
     fn record_def(
         &self,
         ty: &str,
@@ -282,8 +314,8 @@ impl ComposedSpelling for CppComposed<'_> {
             .collect();
         format!(
             "/// SCE Accepted Subset §2.15: a `record:{alias}` value that holds a composed\n\
-             /// value (docs/adr/0086), built by position in the schema's order; a raise\n\
-             /// seam holds it to every bound its type declares before it sends it.\n\
+             /// value (docs/adr/0086), built by position in the schema's order; each\n\
+             /// member's type holds its bound.\n\
              struct {ty} {{\n{members}}};"
         )
     }
@@ -531,13 +563,14 @@ impl ComposedSpelling for CppComposed<'_> {
     fn copy_whole(&self, held: &Held, _plain: bool) -> String {
         held.text.clone()
     }
-    // A text and a byte string are one C++ type whatever their bound, so a
-    // walk that copies by type never reaches these; the value is the copy.
-    fn copy_text(&self, _max: u32, held: &Held) -> String {
-        held.text.clone()
+    // The fit was proven, and the widening of the runtime's bounded type
+    // asserts it again by its bounds, so a copy the build did not prove does
+    // not compile (docs/adr/0086, section 7.4).
+    fn copy_text(&self, max: u32, held: &Held) -> String {
+        format!("{}({})", cpp_text_type(max), held.text)
     }
-    fn copy_bytes(&self, _max: u32, held: &Held) -> String {
-        held.text.clone()
+    fn copy_bytes(&self, max: u32, held: &Held) -> String {
+        format!("{}({})", cpp_bytes_type(max), held.text)
     }
     // The value is the argument of the lambda that copies it, as a writer's
     // is.
@@ -553,11 +586,13 @@ impl ComposedSpelling for CppComposed<'_> {
     fn copy_present(&self, value: &str) -> String {
         value.to_string()
     }
+    // Each element copied into the place's element type, in a list of the
+    // copied list's own bound (`widenedMap`), which the place then takes by
+    // widening, its own bound being at least that one (section 7.4).
     fn copy_list(&self, held: &Held, elem: &str, elem_ty: &str) -> String {
         format!(
-            "[&](const auto &sceList) -> std::vector<{elem_ty}> {{ std::vector<{elem_ty}> \
-             sceItems; sceItems.reserve(sceList.size()); for (const auto &{CPP_COPY_BINDING} : \
-             sceList) {{ sceItems.push_back({elem}); }} return sceItems; }}({})",
+            "{CPP_FORGE}::widenedMap<{elem_ty}>({}, [&](const auto &{CPP_COPY_BINDING}) -> \
+             {elem_ty} {{ return {elem}; }})",
             held.text
         )
     }
@@ -658,10 +693,11 @@ mod tests {
     const R: &str = "[&](const ::SCE::Common::EventPayloadValue &sceValue, auto &sceInto) -> \
                      ::SCE::Common::EventPayloadRefusal";
 
-    /// The C++ row of section 7.1: no type carries a bound, a value that may
-    /// be absent is `std::optional` over its type, a record is the machine's
-    /// struct, at any depth; no check is declared beside a record, since a C++
-    /// struct has no constructor that could refuse a value.
+    /// The C++ row of section 7.1: a text, a byte string and a list are held
+    /// in the runtime's type of each, its bound in the type (section 7.4), a
+    /// value that may be absent is `std::optional` over its type, a record is
+    /// the machine's struct, at any depth; no check is declared beside a
+    /// record, whose members' types hold every bound.
     #[test]
     fn a_cpp_machine_holds_each_constructor_in_its_own_type_at_any_depth() {
         let held = held();
@@ -669,22 +705,28 @@ mod tests {
         let spelled =
             |text: &str| machine_type(&ty(text), None, &held, &enums, &CPP).expect("a type");
         assert_eq!(spelled("uint16"), "uint16_t");
-        assert_eq!(spelled("string[8]"), "std::string");
-        assert_eq!(spelled("bytes[4]"), "std::vector<uint8_t>");
+        assert_eq!(spelled("string[8]"), "::SCE::Forge::OwnedText<8>");
+        assert_eq!(spelled("bytes[4]"), "::SCE::Forge::OwnedBytes<4>");
         assert_eq!(spelled("optional<int64>"), "std::optional<int64_t>");
         assert_eq!(
             spelled("list<list<uint8>[2]>[3]"),
-            "std::vector<std::vector<uint8_t>>"
+            "::SCE::Forge::OwnedList<::SCE::Forge::OwnedList<uint8_t, 2>, 3>"
         );
-        assert_eq!(spelled("list<enum:Level>[2]"), "std::vector<MLevelEnum>");
-        assert_eq!(spelled("list<record:Item>[3]"), "std::vector<MItemRecord>");
+        assert_eq!(
+            spelled("list<enum:Level>[2]"),
+            "::SCE::Forge::OwnedList<MLevelEnum, 2>"
+        );
+        assert_eq!(
+            spelled("list<record:Item>[3]"),
+            "::SCE::Forge::OwnedList<MItemRecord, 3>"
+        );
         assert_eq!(
             spelled("optional<list<uint8>[2]>"),
-            "std::optional<std::vector<uint8_t>>"
+            "std::optional<::SCE::Forge::OwnedList<uint8_t, 2>>"
         );
         assert_eq!(
             spelled("list<optional<uint16>>[2]"),
-            "std::vector<std::optional<uint16_t>>"
+            "::SCE::Forge::OwnedList<std::optional<uint16_t>, 2>"
         );
         let members = record_members("Item", &held, &enums, &CPP).expect("members");
         let checks = record_checks("Item", &held, &CPP).expect("checks");
@@ -693,8 +735,8 @@ mod tests {
         assert!(
             def.ends_with(
                 "struct MItemRecord {\n    uint32_t id;\n    MLevelEnum level;\n    \
-                 std::optional<int64_t> due;\n    std::vector<uint8_t> blob;\n    \
-                 std::vector<std::string> tags;\n};"
+                 std::optional<int64_t> due;\n    ::SCE::Forge::OwnedBytes<4> blob;\n    \
+                 ::SCE::Forge::OwnedList<::SCE::Forge::OwnedText<8>, 4> tags;\n};"
             ),
             "{def}"
         );
@@ -913,12 +955,13 @@ mod tests {
         assert_eq!(wire.send_param("x".to_string()), "x");
     }
 
-    /// Two places whose types differ only in their bounds are one C++ type,
-    /// and a C++ assignment copies a list by value at every depth, so a value
-    /// that fits is copied as it is; where the types differ, each part is
-    /// copied into the place's type by a lambda the value is handed to.
+    /// Two places of one type are copied by the assignment, which copies a
+    /// list by value at every depth; where the bounds differ, a list is mapped
+    /// element by element into the place's element type and widened into the
+    /// place's bound, and a text is widened, the runtime's types asserting the
+    /// fit the build proved (docs/adr/0086, section 7.4).
     #[test]
-    fn a_cpp_copy_of_a_value_that_fits_is_the_value() {
+    fn a_cpp_copy_of_a_value_that_fits_widens_into_the_place() {
         let held = held();
         let enums = enums();
         let copy = |from: &str, to: &str| {
@@ -934,38 +977,53 @@ mod tests {
             )
         };
         assert_eq!(
-            copy("list<uint8>[2]", "list<uint8>[4]"),
+            copy("list<uint8>[2]", "list<uint8>[2]"),
             Ok("x".to_string())
+        );
+        assert_eq!(
+            copy("list<uint8>[2]", "list<uint8>[4]"),
+            Ok(
+                "::SCE::Forge::widenedMap<uint8_t>(x, [&](const auto &sceCopied) -> uint8_t { \
+                 return sceCopied; })"
+                    .to_string()
+            )
         );
         assert_eq!(
             copy("list<string[4]>[2]", "list<string[8]>[3]"),
-            Ok("x".to_string())
+            Ok(
+                "::SCE::Forge::widenedMap<::SCE::Forge::OwnedText<8>>(x, [&](const auto \
+                 &sceCopied) -> ::SCE::Forge::OwnedText<8> { return \
+                 ::SCE::Forge::OwnedText<8>(sceCopied); })"
+                    .to_string()
+            )
         );
         assert_eq!(
             copy("list<record:Item>[2]", "list<record:Item>[3]"),
-            Ok("x".to_string())
+            Ok(
+                "::SCE::Forge::widenedMap<MItemRecord>(x, [&](const auto &sceCopied) -> \
+                 MItemRecord { return sceCopied; })"
+                    .to_string()
+            )
         );
         assert_eq!(
             copy("list<uint8>[2]", "list<optional<uint8>>[2]"),
             Ok(
-                "[&](const auto &sceList) -> std::vector<std::optional<uint8_t>> { \
-                std::vector<std::optional<uint8_t>> sceItems; \
-                sceItems.reserve(sceList.size()); for (const auto &sceCopied : sceList) { \
-                sceItems.push_back(sceCopied); } return sceItems; }(x)"
+                "::SCE::Forge::widenedMap<std::optional<uint8_t>>(x, [&](const auto &sceCopied) \
+                 -> std::optional<uint8_t> { return sceCopied; })"
                     .to_string()
             )
         );
     }
 
-    /// A C++ raise seam holds a host's value to every bound its type declares
-    /// (docs/adr/0086, section 5.4): one check per constructor that holds a
-    /// bound, an element's or a present value's inside the lambda the runtime
-    /// hands it to, each parameter named by its depth; a lower count is held
-    /// too; a record a list holds is checked field by field at the path below
-    /// the element; a number, an enum and an optional one of them are not
-    /// checked.
+    /// A C++ raise seam checks of a host's value only what no type holds, a
+    /// list's lower count (docs/adr/0086, sections 5.4 and 7.4): one check per
+    /// list that states one, an element's or a present value's inside the
+    /// lambda the runtime hands it to, each parameter named by its depth, and
+    /// a list without one walked only for an element that holds one. A text,
+    /// a byte string and a list's upper bound are their types', so a payload
+    /// of no lower count is not checked at all.
     #[test]
-    fn a_cpp_raise_seam_checks_each_bound_before_it_encodes() {
+    fn a_cpp_raise_seam_checks_each_lower_count_before_it_encodes() {
         let held = held();
         let check = |text: &str, id: &str| {
             cpp_bound_check(
@@ -983,46 +1041,36 @@ mod tests {
         assert_eq!(check("uint8", "n"), None);
         assert_eq!(check("enum:Level", "level"), None);
         assert_eq!(check("optional<int64>", "due"), None);
+        assert_eq!(check("string[4]", "note"), None);
+        assert_eq!(check("bytes[4]", "blob"), None);
+        assert_eq!(check("list<list<string[4]>[2]>[3]", "grid"), None);
         assert_eq!(
             check("list<list<uint8>[2]>[2..3]", "grid"),
             Some(format!(
-                "{b}::listWithin(::std::string(\"grid\"), grid, 2u, 3u, [&](const ::std::string \
-                 &scePath0, const auto &sceValue0) -> ::std::string {{ return \
-                 {b}::list(scePath0, sceValue0, 2u, {nothing}); }})"
+                "{b}::listWithin(::std::string(\"grid\"), grid, 2u, 3u, {nothing})"
             ))
         );
         assert_eq!(
-            check("optional<list<string[4]>[2]>", "spare"),
+            check("list<list<uint8>[1..2]>[3]", "grid"),
+            Some(format!(
+                "{b}::list(::std::string(\"grid\"), grid, 3u, [&](const ::std::string \
+                 &scePath0, const auto &sceValue0) -> ::std::string {{ return \
+                 {b}::listWithin(scePath0, sceValue0, 1u, 2u, {nothing}); }})"
+            ))
+        );
+        assert_eq!(
+            check("optional<list<string[4]>[1..2]>", "spare"),
             Some(format!(
                 "{b}::optional(::std::string(\"spare\"), spare, [&](const ::std::string \
                  &scePath0, const auto &sceValue0) -> ::std::string {{ return \
-                 {b}::list(scePath0, sceValue0, 2u, [&](const ::std::string &scePath1, const \
-                 auto &sceValue1) -> ::std::string {{ return {b}::text(scePath1, sceValue1, \
-                 4u); }}); }})"
+                 {b}::listWithin(scePath0, sceValue0, 1u, 2u, {nothing}); }})"
             ))
         );
         let batch = held.record(None, "Batch").expect("Batch");
         assert_eq!(
             cpp_raise_checks(batch, &held).expect("checks"),
-            vec![
-                format!(
-                    "{b}::list(::std::string(\"items\"), items, 3u, [&](const ::std::string \
-                     &scePath0, const auto &sceValue0) -> ::std::string {{ return [&]() -> \
-                     ::std::string {{ ::std::string sceRefused; sceRefused = \
-                     {b}::bytes(scePath0 + \"/blob\", sceValue0.blob, 4u); if \
-                     (!sceRefused.empty()) {{ return sceRefused; }} sceRefused = \
-                     {b}::list(scePath0 + \"/tags\", sceValue0.tags, 4u, [&](const \
-                     ::std::string &scePath1, const auto &sceValue1) -> ::std::string {{ return \
-                     {b}::text(scePath1, sceValue1, 8u); }}); if (!sceRefused.empty()) {{ return \
-                     sceRefused; }} return sceRefused; }}(); }})"
-                ),
-                format!(
-                    "{b}::list(::std::string(\"grid\"), grid, 2u, [&](const ::std::string \
-                     &scePath0, const auto &sceValue0) -> ::std::string {{ return \
-                     {b}::list(scePath0, sceValue0, 2u, {nothing}); }})"
-                ),
-                format!("{b}::list(::std::string(\"late\"), late, 2u, {nothing})"),
-            ]
+            Vec::<String>::new(),
+            "every bound of the batch is its types'"
         );
     }
 

@@ -233,10 +233,14 @@ fn every_backend_declares_each_composed_field_of_the_batch() {
             &[
                 "#include \"event_batch_item.h\"",
                 "#include <optional>",
-                "std::vector<SCE::Generated::EventBatchItem::EventBatchItemPayload> items{};",
-                "std::vector<std::vector<uint8_t>> grid{};",
-                "std::vector<std::optional<uint16_t>> maybe{};",
-                "std::optional<std::vector<uint8_t>> spare{};",
+                "#include <sce/forge/bounded.h>",
+                "::SCE::Forge::OwnedList<SCE::Generated::EventBatchItem::EventBatchItemPayload, 3> \
+                 items{};",
+                "::SCE::Forge::OwnedList<::SCE::Forge::OwnedList<uint8_t, 2>, 2> grid{};",
+                "::SCE::Forge::OwnedList<std::optional<uint16_t>, 2> maybe{};",
+                "std::optional<::SCE::Forge::OwnedList<uint8_t, 2>> spare{};",
+                "::SCE::Forge::OwnedText<4> note{};",
+                "::SCE::Forge::OwnedList<uint8_t, 2> late{};",
             ][..],
         ),
         (
@@ -302,7 +306,10 @@ fn every_backend_declares_a_record_that_holds_a_list_of_texts() {
             "pub tags: ::sce_portable_bytes::BoundedList<::sce_portable_bytes::SceString<8>, 4>,",
         ),
         ("kotlin", "val tags: List<String>"),
-        ("cpp", "std::vector<std::string> tags{};"),
+        (
+            "cpp",
+            "::SCE::Forge::OwnedList<::SCE::Forge::OwnedText<8>, 4> tags{};",
+        ),
         ("go", "Tags []string"),
         ("python", "tags: list[str]"),
         ("swift", "public var tags: [String] = []"),

@@ -254,12 +254,17 @@ impl TemplateSpelling for CppSpelling {
     }
 
     /// An integer in decimal, `true` or `false`, a variant of an enum, a
-    /// text, or a byte string in hex: one spelling compares and builds.
+    /// text, or a byte string in hex. A text and a byte string compare as the
+    /// literal they are, and are built as the runtime's bounded type of their
+    /// bound (`OwnedText`, `OwnedBytes`; docs/adr/0086, section 7.4), whose
+    /// `literal` the compiler judges against it; a field of the schema unit
+    /// that holds a byte string in a `std::vector` takes the bounded one as the
+    /// vector it holds.
     fn literal(
         &self,
         text: &str,
         at: &Position<'_, CppAt>,
-        _purpose: Use,
+        purpose: Use,
     ) -> Result<String, String> {
         let refused = || format!("'{text}' is no literal of {}", at.ty);
         match &at.ty {
@@ -282,8 +287,15 @@ impl TemplateSpelling for CppSpelling {
             TypeOf::Scalar(scalar) if scalar.int_value_range().is_some() => {
                 cpp_integer_literal(text).ok_or_else(refused)
             }
-            TypeOf::Text { .. } => Ok(filters::cpp_text_expression(text)),
-            TypeOf::Bytes { .. } => {
+            TypeOf::Text { max } => Ok(match purpose {
+                Use::Compare => filters::cpp_text_expression(text),
+                Use::Build => format!(
+                    "{}::literal({})",
+                    crate::forge::composed_lowering::cpp_text_type(max.max),
+                    crate::forge::expr::cpp_text_literal(text)
+                ),
+            }),
+            TypeOf::Bytes { max } => {
                 let octets: Vec<String> = text
                     .trim()
                     .as_bytes()
@@ -291,7 +303,14 @@ impl TemplateSpelling for CppSpelling {
                     .map(|pair| pair.iter().map(|b| char::from(*b)).collect::<String>())
                     .map(|pair| format!("0x{pair}"))
                     .collect();
-                Ok(format!("{}{{{}}}", at.at.cpp, octets.join(", ")))
+                let held = crate::forge::composed_lowering::cpp_bytes_type(max.max);
+                Ok(match (purpose, octets.is_empty()) {
+                    (Use::Compare, _) => {
+                        format!("std::vector<std::uint8_t>{{{}}}", octets.join(", "))
+                    }
+                    (Use::Build, true) => format!("{held}{{}}"),
+                    (Use::Build, false) => format!("{held}::literal({{{}}})", octets.join(", ")),
+                })
             }
             _ => Err(refused()),
         }
@@ -339,7 +358,14 @@ impl TemplateSpelling for CppSpelling {
         format!("{payload}{{{}}}", cpp_positional_init(&members))
     }
 
+    /// The list the schema unit holds, `OwnedList<T, N>` (docs/adr/0086, section
+    /// 7.4): built by its `literal`, whose count the compiler judges against
+    /// the bound, and an empty one by its default.
     fn list_value(&self, at: &Position<'_, CppAt>, elements: Vec<String>) -> String {
-        format!("{}{{{}}}", at.at.cpp, elements.join(", "))
+        if elements.is_empty() {
+            format!("{}{{}}", at.at.cpp)
+        } else {
+            format!("{}::literal({{{}}})", at.at.cpp, elements.join(", "))
+        }
     }
 }
