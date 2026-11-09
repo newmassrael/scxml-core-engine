@@ -1776,10 +1776,15 @@ fn install_doors(text: &str, model: &SCXMLModel) -> Result<String, GenerateError
         ))
     })?;
     let root = document.root_element();
+    // Each element written takes its name from how the document names the
+    // SCXML namespace ([`ScxmlElements`]).
+    let elements = ScxmlElements::of(&document);
     let install = format!(
-        "<data id=\"{RUNTIME_DATA_ID}\" expr=\"{}\"/>",
+        "<{} id=\"{RUNTIME_DATA_ID}\" expr=\"{}\"/>",
+        elements.name("data"),
         xml_attribute_value(&installation_expression(&[], &doors))
     );
+    let datamodel_element = elements.name("datamodel");
     // The library is installed by the first `<data>` of the document, so it is
     // there before the first guard is evaluated; a document that declares none
     // is given a `<datamodel>` that holds it.
@@ -1792,7 +1797,7 @@ fn install_doors(text: &str, model: &SCXMLModel) -> Result<String, GenerateError
             },
             None => Edit {
                 range: datamodel.range(),
-                text: format!("<datamodel>{install}</datamodel>"),
+                text: format!("<{datamodel_element}>{install}</{datamodel_element}>"),
             },
         },
         None => {
@@ -1808,7 +1813,7 @@ fn install_doors(text: &str, model: &SCXMLModel) -> Result<String, GenerateError
                 })?;
             Edit {
                 range: at..at,
-                text: format!("<datamodel>{install}</datamodel>\n  "),
+                text: format!("<{datamodel_element}>{install}</{datamodel_element}>\n  "),
             }
         }
     };
