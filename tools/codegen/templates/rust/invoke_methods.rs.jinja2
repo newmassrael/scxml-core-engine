@@ -84,7 +84,7 @@
 {% macro invoke_namelist_guard(invoke_info, model, machine_name) %}
 {% if invoke_info.namelist and model.needs_script_engine %}
                 {
-                    self.ensure_script_engine();
+                    self.assert_script_session();
                     let sid = self.session_id.as_ref().unwrap().clone();
                     let se = self.script_engine.clone();
                     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -108,7 +108,11 @@
 {% endmacro %}
 {#
     §scxml-6.4.1 + §scxml-6.4.3: the invoke's `namelist` values and
-    `<param>`s, into `child_policy` before the child initializes.
+    `<param>`s, into `child_policy` before the child initializes. They are
+    evaluated here, in this session, and handed to the child, whose start
+    applies them once it has established its own script session and
+    initialized its `<data>` (docs/adr/0096): this session never makes the
+    child's session.
 
     `child` is whatever describes the session being started — the invoke
     itself for a static child, the chosen candidate for a hybrid one. The
@@ -146,9 +150,9 @@
                 }
 {% endif %}
 {% if invoke_info.params and model.needs_script_engine %}
-                // W3C SCXML 6.4.1: Pass params to child datamodel before initialization
+                // W3C SCXML 6.4.1: Hand params to the child, which applies them at its start
                 {
-                    self.ensure_script_engine();
+                    self.assert_script_session();
                     let sid = self.session_id.as_ref().unwrap().clone();
                     let se = self.script_engine.clone();
                     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -412,6 +416,31 @@
             }
         }
 {% endmacro %}
+{#
+    docs/adr/0096: start `child_engine`, the session the invoke `invoke_info`
+    is starting, which establishes its script session as the first step of its
+    start. A child whose session cannot be established is not started and not
+    kept: what it was given is withdrawn (`start_child`), it leaves
+    `active_invokes`, and the invoke ends without a child, with error.execution
+    on this session's internal queue naming the invoke and the step that failed,
+    and no done.invoke — the path a `src` or a namelist that cannot be read
+    takes (§scxml-6.4). The invoke is named as `track_child` keys
+    `_event.invokeid`: by the id it was started under (`started_under`) for one
+    that keeps it in an `idlocation`, by the document's id otherwise.
+#}
+{% macro start_child_or_refuse(invoke_info, started_under, keyed_by_started_id, model, machine_name) %}
+{% set invoke_named = started_under if keyed_by_started_id else ('"' ~ (invoke_info.invoke_id | escape_rust) ~ '"') %}
+                if let Err(failure) = sce_rust_runtime::helpers::invoke_processing::start_child(&mut child_engine) {
+                    ::sce_rust_runtime::sce_log_error!("<invoke id='{}'> did not start its child: {}", {{ invoke_named }}, failure);
+                    self.active_invokes.remove("{{ invoke_info.invoke_id }}");
+{% if 'error.execution' in model.events %}
+                    engine.raise(sce_rust_runtime::EventWithMetadata::platform_error(
+                        {{ machine_name }}Event::{{ 'error.execution' | to_event_variant }},
+                        &format!("<invoke id='{}'> did not start: its child's script session failed at step '{}'", {{ invoke_named }}, failure.stage)));
+{% endif %}
+                    continue;
+                }
+{% endmacro %}
 {% macro hybrid_child_start(invoke_info, child, child_mod, child_policy_type, slot, model, machine_name) %}
                 // W3C SCXML 6.4: Create pre-generated child (Rust AOT: child resolved at codegen time)
 {# The host the child performs its acts through is asked of the parent's own host
@@ -448,7 +477,7 @@
                 // ARCHITECTURE.md "Engine Threading", item 3: the child's inbox
                 // enters the tree's directory before its first macrostep.
                 engine.share_tree_inboxes_with(&mut child_engine);
-                child_engine.initialize();
+{{ start_child_or_refuse(invoke_info, "pending.invoke_id", false, model, machine_name) }}
 
                 self.{{ slot }} = Some(Box::new(child_engine));
 
@@ -531,7 +560,7 @@
                 // ARCHITECTURE.md "Engine Threading", item 3: the child's inbox
                 // enters the tree's directory before its first macrostep.
                 engine.share_tree_inboxes_with(&mut child_engine);
-                child_engine.initialize();
+{{ start_child_or_refuse(invoke_info, "pending.invoke_id", invoke_info.idlocation, model, machine_name) }}
 
                 // W3C SCXML 6.4: Store child BEFORE draining events so autoforward can find it
                 self.child_{{ invoke_info.field_suffix }} = Some(Box::new(child_engine));
@@ -582,7 +611,7 @@
                 __sce_selected = sce_rust_runtime::helpers::invoke_processing::document_stem(&__sce_value).to_string();
 {% elif invoke_info.srcexpr %}
                 // W3C SCXML 6.4.3: Evaluate srcexpr at runtime
-                self.ensure_script_engine();
+                self.assert_script_session();
                 let sid = self.session_id.as_ref().unwrap().clone();
                 let se = self.script_engine.clone();
                 let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -613,7 +642,7 @@
                 }
 {% elif invoke_info.contentexpr %}
                 // W3C SCXML 6.4.2: Evaluate contentexpr at runtime
-                self.ensure_script_engine();
+                self.assert_script_session();
                 let sid = self.session_id.as_ref().unwrap().clone();
                 let se = self.script_engine.clone();
                 let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -699,7 +728,7 @@
                 // starts nothing (§scxml-5.9.2), like any argument that cannot
                 // be evaluated.
                 {
-                    self.ensure_script_engine();
+                    self.assert_script_session();
                     let sid = self.session_id.as_ref().unwrap().clone();
                     let se = self.script_engine.clone();
                     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -763,7 +792,7 @@
 {% for attr, expr in [('src', invoke_info.srcexpr), ('content', invoke_info.contentexpr)] %}
 {% if expr %}
                 {
-                    self.ensure_script_engine();
+                    self.assert_script_session();
                     let sid = self.session_id.as_ref().unwrap().clone();
                     let se = self.script_engine.clone();
                     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -791,7 +820,7 @@
                     // §scxml-6.4.1: a namelist location that is not declared,
                     // or does not evaluate, starts nothing — the rule the
                     // scxml invoke reads its namelist by.
-                    self.ensure_script_engine();
+                    self.assert_script_session();
                     let sid = self.session_id.as_ref().unwrap().clone();
                     let se = self.script_engine.clone();
                     let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -988,7 +1017,7 @@
         if !finalize_script.is_empty() {
 {% if model.needs_script_engine %}
             // W3C SCXML 6.5: Execute finalize with _event set to child's event
-            self.ensure_script_engine();
+            self.assert_script_session();
             let sid = self.session_id.as_ref().unwrap().clone();
             let se = self.script_engine.clone();
             let se: &dyn sce_rust_runtime::IScriptEngine = &*se;

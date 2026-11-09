@@ -956,7 +956,12 @@ pub struct {{ machine_name }}Policy{{ policy_generics_decl }} {
     // constructor parameter is mandatory whenever `model.needs_script_engine`
     // is true, mirroring the Kotlin `StateMachineEngine(scriptEngine)` shape.
     pub script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>,
+    // docs/adr/0096: whether the start established the script session.
     script_engine_initialized: bool,
+    // §scxml-6.4.3: the invoke params the parent handed this session, which
+    // its start applies once its session is established and its `<data>`
+    // initialized.
+    pending_params: Vec<(String, sce_rust_runtime::ScriptValue)>,
     // §scxml-C-2-3: inbound BasicHTTP endpoint serving this machine, declared
     // by the deployment before initialize(). Empty means no such endpoint is
     // deployed, and no BasicHTTP entry is published in `_ioprocessors`.
@@ -1173,6 +1178,7 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
 {% endif %}
 {% if model.needs_script_engine %}
             script_engine_initialized: false,
+            pending_params: Vec::new(),
             basic_http_access_uri: String::new(),
 {% if model.has_parallel_states or model.uses_in_predicate %}
             in_predicate_states: None,
@@ -1639,10 +1645,22 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     type Workspace = ::sce_rust_runtime::Workspace<{ ::sce_rust_runtime::state_scratch({{ tables.states | length }}) }, {{ tables.max_enabled }}, {{ tables.max_walk }}, {{ tables.max_history_defaults }}>;
     type RunStore = ::sce_rust_runtime::RunStore<{ ::sce_rust_runtime::state_words({{ tables.states | length }}) }, { ::sce_rust_runtime::record_words({{ tables.states | length }}, {{ tables.histories | length }}) }, {{ tables.histories | length }}>;
     type Configuration = {{ machine_name }}Configuration;
+    // docs/adr/0096: what refuses this machine's start. One with a script
+    // engine is refused when its script session cannot be established; one
+    // without cannot be refused that way, so its host starts it with
+    // `let Ok(()) = engine.initialize();`.
+{% if model.needs_script_engine %}
+    type StartFailure = ::sce_rust_runtime::ScriptSessionFailure;
+{% else %}
+    type StartFailure = ::core::convert::Infallible;
+{% endif %}
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = {{ 'true' if model.has_parallel_states else 'false' }};
     const NEEDS_SCRIPT_ENGINE: bool = {{ 'true' if model.needs_script_engine else 'false' }};
+    // Exactly when there is a script engine: the datamodel's initialization is
+    // where the script session is established (docs/adr/0096), so a machine
+    // with a session to establish always has it run at its start.
     const NEEDS_DATA_MODEL_INIT: bool = {{ 'true' if model.needs_script_engine else 'false' }};
     // The same fact the generate manifest publishes as `needs_event_scheduler`.
     // A `build.rs` consumer never sees that manifest — `compile_scxml` returns
@@ -1820,10 +1838,12 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
 {% include 'process_transition.rs.jinja2' %}
 
 {% if model.needs_script_engine %}
-    // W3C SCXML 5.2/5.3: Datamodel initialization with error.execution support
-    // Delegates to inherent impl method (matches C++ initializeDataModel pattern)
-    fn initialize_data_model(&mut self, engine: &mut Engine<Self>) {
-        self.do_initialize_data_model(engine);
+    // W3C SCXML 5.2/5.3: Datamodel initialization with error.execution support,
+    // after the script session is established; a session that cannot be
+    // refuses the start (docs/adr/0096). Delegates to inherent impl method
+    // (matches C++ initializeDataModel pattern)
+    fn initialize_data_model(&mut self, engine: &mut Engine<Self>) -> Result<(), Self::StartFailure> {
+        self.do_initialize_data_model(engine)
     }
 {% endif %}
 
@@ -2312,7 +2332,9 @@ impl ::sce_rust_runtime::test::ComponentMachine for {{ machine_name }}Component 
                 None
             },
         );
-        machine.initialize();
+        // A test component's datamodel is the static one, so it has no script
+        // session whose failure could refuse its start (docs/adr/0096).
+        let Ok(()) = machine.initialize();
         self.machine = Some(machine);
     }
 

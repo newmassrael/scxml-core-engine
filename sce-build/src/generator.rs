@@ -6715,7 +6715,7 @@ mod tests {
                     line.starts_with("let sid ")
                         || line.starts_with("let se ")
                         || line.starts_with("let se:")
-                        || line.starts_with("self.ensure_script_engine()")
+                        || line.starts_with("self.assert_script_session()")
                 }),
                 "a refused <assign> binds what it never reads:\n{}",
                 arm.join("\n")

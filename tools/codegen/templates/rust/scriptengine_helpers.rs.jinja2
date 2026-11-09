@@ -7,93 +7,47 @@
     W3C SCXML 5.2/5.10: Script engine session lifecycle, system variables,
     datamodel initialization, guard evaluation, event metadata binding.
 
-    Uses datamodel_macros.rs.jinja2 for Zero Duplication between
-    ensure_script_engine() and do_initialize_data_model().
+    docs/adr/0096: the script session is made in one place,
+    `do_initialize_data_model`, the first step of every start; what runs after
+    the start reads the session that step established.
 #}
 {% from 'datamodel_macros.rs.jinja2' import initialize_variable, initialize_state_datamodel %}
-{# W3C SCXML 5.9.2: In() predicate callback registration (shared between ensure_script_engine and do_initialize_data_model) #}
-{% macro register_in_predicate_callback() -%}
-{% if model.has_parallel_states or model.uses_in_predicate %}
-        // W3C SCXML 5.9.2: Register In() state query callback
-        {
-            let shared_states = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
-            self.in_predicate_states = Some(shared_states.clone());
-            // Empty until a hook that can run a script begins, which publishes
-            // the engine's configuration (`publish_in_predicate_states`).
-            se.set_state_query_callback(
-                &sid,
-                Some(Box::new(move |state_id: &str| -> bool {
-                    if let Ok(states) = shared_states.lock() {
-                        states.iter().any(|s| s == state_id)
-                    } else {
-                        false
-                    }
-                })),
-            );
-        }
-{% endif -%}
-{% endmacro %}
 {% if model.needs_script_engine %}
-    // W3C SCXML 5.2: Lazy script engine initialization. The script engine's
-    // session is named by the session's id (W3C SCXML 5.10), which every
-    // constructor bound when the policy was built (docs/adr/0045).
-    fn ensure_script_engine(&mut self) {
-        if self.script_engine_initialized {
-            return;
-        }
-        let sid = self.session_id.as_ref().unwrap().clone();
-        let se = self.script_engine.clone();
-        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-        se.create_session(&sid);
-
-        // §scxml-C-1-1 / §scxml-C-2-3: the `_ioprocessors` entries come from the
-        // same helper every other backend uses, so a machine reads the same
-        // entry names and the same addresses whichever one runs it.
-        let io_processors = sce_rust_runtime::helpers::io_processors::build(
-            &sid,
-            &self.basic_http_access_uri,
+    // docs/adr/0096: the script session this machine's executable content runs
+    // in was established by its start (`do_initialize_data_model`), and a start
+    // whose session could not be established was refused before anything
+    // could reach here. Reaching here without one is a defect of the generated
+    // code, not a condition of the run.
+    fn assert_script_session(&self) {
+        debug_assert!(
+            self.script_engine_initialized,
+            "the script session is established by the start, before any executable content runs"
         );
-        if let Err(e) = se.setup_system_variables(&sid, "{{ model.scxml_name | default('') | w3c_session_name(model.name) | escape_rust }}", &io_processors) {
-            ::sce_rust_runtime::sce_log_error!("Failed to setup system variables: {}", e);
-        }
-
-        // W3C SCXML 5.3.3: Initialize global datamodel variables (no error events)
-{% for var in model.variables %}
-{{ initialize_variable(var, 'global', false, machine_name, model) }}
-{% endfor %}
-
-{% if model.binding == 'early' %}
-{% for state_id, state in model.states | dictsort %}
-{% if state.datamodel %}
-        // W3C SCXML 5.3: Early binding - Initialize state {{ state_id }} datamodel variables
-{{ initialize_state_datamodel(state, state_id, false, machine_name, model) }}
-{% endif %}
-{% endfor %}
-{% endif %}
-
-{% if model.global_scripts %}
-        // W3C SCXML 5.8: Execute global (top-level) scripts at document load time
-{% for script in model.global_scripts %}
-        if let Err(e) = se.execute_script(&sid, "{{ script.content | to_lua_script | escape_rust }}") {
-            ::sce_rust_runtime::sce_log_error!("Global script execution failed: {}", e);
-        }
-{% endfor %}
-{% endif %}
-
-{{ register_in_predicate_callback() }}
-        self.script_engine_initialized = true;
     }
 
-    // W3C SCXML 5.2/5.3: Initialize datamodel and raise error.execution on failure
-    // Called from StatePolicy::initialize_data_model() trait override
-    fn do_initialize_data_model(&mut self, engine: &mut Engine<Self>) {
+    // W3C SCXML 5.2/5.3 + docs/adr/0096: establish the script session, then
+    // initialize the datamodel in it, raising error.execution for a `<data>`
+    // or a top-level `<script>` that fails. Called from
+    // StatePolicy::initialize_data_model(), the first step of the start and of
+    // `enter_at`, before any state is entered.
+    //
+    // This is the one place a session is made. It is three steps: create it
+    // (which loads the shared library into it), then bind the system
+    // variables. The session is named by the session's id (W3C SCXML 5.10),
+    // which every constructor bound when the policy was built
+    // (docs/adr/0045). A step that fails releases what the steps before it
+    // made and is the error, so the start is refused with nothing half done.
+    fn do_initialize_data_model(&mut self, engine: &mut Engine<Self>) -> Result<(), sce_rust_runtime::ScriptSessionFailure> {
         if self.script_engine_initialized {
-            return;
+            return Ok(());
         }
         let sid = self.session_id.as_ref().unwrap().clone();
         let se = self.script_engine.clone();
         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-        se.create_session(&sid);
+        if let Err(e) = se.create_session(&sid) {
+            ::sce_rust_runtime::sce_log_error!("The script session '{}' could not be created: {}", sid, e);
+            return Err(sce_rust_runtime::ScriptSessionFailure::of_creation(&e));
+        }
 
         // §scxml-C-1-1 / §scxml-C-2-3: the `_ioprocessors` entries come from the
         // same helper every other backend uses, so a machine reads the same
@@ -104,7 +58,10 @@
         );
         if let Err(e) = se.setup_system_variables(&sid, "{{ model.scxml_name | default('') | w3c_session_name(model.name) | escape_rust }}", &io_processors) {
             ::sce_rust_runtime::sce_log_error!("Failed to setup system variables: {}", e);
+            se.destroy_session(&sid);
+            return Err(sce_rust_runtime::ScriptSessionFailure::of_system_variables(&e));
         }
+        self.script_engine_initialized = true;
 
         // W3C SCXML 5.3.3: Initialize global datamodel variables (with error events)
 {% for var in model.variables %}
@@ -132,11 +89,36 @@
 {% endfor %}
 {% endif %}
 
-{{ register_in_predicate_callback() }}
+        // §scxml-6.4.3: the invoke params the parent handed this session, applied
+        // after the `<data>` above so that each overrides the default its
+        // `<data>` gave. The parent hands them before this session's start
+        // (`set_param_value_in_script_engine`) and this session applies them,
+        // so the child's session is made by the child.
+        for (name, value) in std::mem::take(&mut self.pending_params) {
+            let _ = se.set_variable(&sid, &name, value);
+        }
+
 {% if model.has_parallel_states or model.uses_in_predicate %}
+        // W3C SCXML 5.9.2: Register In() state query callback
+        {
+            let shared_states = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+            self.in_predicate_states = Some(shared_states.clone());
+            // Empty until a hook that can run a script begins, which publishes
+            // the engine's configuration (`publish_in_predicate_states`).
+            se.set_state_query_callback(
+                &sid,
+                Some(Box::new(move |state_id: &str| -> bool {
+                    if let Ok(states) = shared_states.lock() {
+                        states.iter().any(|s| s == state_id)
+                    } else {
+                        false
+                    }
+                })),
+            );
+        }
         self.publish_in_predicate_states(engine);
 {% endif %}
-        self.script_engine_initialized = true;
+        Ok(())
     }
 
     // W3C SCXML 5.9: Safe guard evaluation with error handling
@@ -159,7 +141,7 @@
     // W3C SCXML 5.9.1: a cond that cannot be evaluated raises error.execution;
     // `None` says so, where a bare `false` could not.
     fn evaluate_guard_raising(&mut self, cond: &str, engine: &mut Engine<Self>, reason: &str) -> Option<bool> {
-        self.ensure_script_engine();
+        self.assert_script_session();
         let sid = self.session_id.as_ref().unwrap().clone();
         let se = self.script_engine.clone();
         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
@@ -225,9 +207,12 @@
     }
 {% endif %}
 
-    // §scxml-6.4.3: seed a `<data>` this (child) session declares with the
-    // value the INVOKING session produced for an `<invoke>` `<param>` or
-    // namelist location.
+    // §scxml-6.4.3: hand this (child) session the value the INVOKING session
+    // produced for an `<invoke>` `<param>` or namelist location, to seed the
+    // `<data>` of that name. The parent calls it before this session's start,
+    // and the start applies it once the session is established and its
+    // `<data>` initialized (`do_initialize_data_model`): the parent does not
+    // make this session's script session on its own stack (docs/adr/0096).
     //
     // The value crosses as a value. This used to take the parent's value
     // rendered as an engine literal and re-evaluate it here, which survived
@@ -238,10 +223,6 @@
     // Interpreter, C++ AOT, C11, Python and Kotlin all pass the value; this
     // is the channel that did not.
     pub fn set_param_value_in_script_engine(&mut self, name: &str, value: sce_rust_runtime::ScriptValue) {
-        self.ensure_script_engine();
-        let sid = self.session_id.as_ref().unwrap().clone();
-        let se = self.script_engine.clone();
-        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
-        let _ = se.set_variable(&sid, name, value);
+        self.pending_params.push((name.to_string(), value));
     }
 {% endif %}

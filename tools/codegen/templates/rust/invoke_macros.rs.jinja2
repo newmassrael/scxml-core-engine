@@ -24,7 +24,7 @@
 {% endif %}
                     }
 {% elif invoke_info.idlocation %}
-                    self.ensure_script_engine();
+                    self.assert_script_session();
                     let id_stored = {
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();
