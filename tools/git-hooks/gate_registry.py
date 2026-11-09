@@ -472,23 +472,68 @@ PACE_NORMALISED: dict[str, str] = {
 # sixteen again and blocks a key whose verdict changed (RFC 0020, section 9),
 # which is the instrument that finds such a gate.
 #
-# `inputs` is the other half of the key. `None` is the whole tracked tree; a list
-# of patterns (bx RFC 0003, section 6) narrows the key to those files, and bx
-# then runs the unit in a copy of them alone, under strace, and calls a read
-# outside them "could not measure" (RFC 0020, section 5.2). Every gate is `None`
-# today, and not by default: that copy holds no `.git`, and the runner and the
-# gate library both ask git for the repository root before anything else, so a
-# narrowed unit could only ever end "could not measure".
-# `narrowed-units-need-a-git-free-root` in the self-test refuses a list until
-# that changes.
+# ── A unit's inputs are its gates' triggers ───────────────────────
 #
-# What whole-tree keys buy, measured against what was asked of them: one tree
-# is judged once (a push retried over the same commits, a full run after a
-# scoped one, two sessions verifying the same tree). A rebase over commits that
-# touch nothing a gate reads still moves the tree, so it is a new key for every
-# unit; that reuse needs narrowed inputs, which needs the root above. bx has
-# proposed making that copy a git repository whose HEAD holds the inputs (not
-# decided on 2026-11-04); this guard is the line to revisit when it is.
+# The unit's `inputs` are the other half of the key. Without them the key holds
+# the whole tracked tree, so every commit that lands on main is a new key for
+# every unit, and a pass kept one landing ago is never used again: measured on
+# 2026-11-09, a landing queue item planned eight units with keys, found none of
+# the passes a judgement of the previous main had kept, and ran all eight. With
+# patterns (bx RFC 0003, section 6) the key holds those files only, and bx runs
+# the unit in a copy of them (RFC 0020, section 5.2; RFC 0026): a one-commit git
+# repository holding the inputs, the tree's `.gitignore` files and links to its
+# build caches, traced with strace, where a read of any tree file outside the
+# inputs ends the unit "could not measure".
+#
+# The patterns are not written here a second time. A gate's trigger, the globs
+# `gate_triggers` derives from its workflow's `paths:` and its own `local` and
+# `extra`, already says which files a change must touch for the gate's verdict
+# to move; the files whose content the verdict is a function of are the same
+# set, so one list answers both questions. A unit runs its gate's dependencies
+# as well, so its inputs are the triggers of every gate in its closure, plus the
+# files the runner itself reads on the way to the gate (`unit_machinery`): the
+# runner, the registry, the gate library and what it sources, each gate's own
+# script and its workflow files. Those are not triggers, and that is the
+# registry's earlier decision rather than an omission: an edit to them is judged
+# by this file's self-test and the always-on gates (`hook-self` below), not by
+# every gate.
+#
+# What follows from one list, in both directions: a trigger that misses a file
+# the gate reads is a coverage hole in the push's selection AND an input the
+# key leaves out, and the copy is what finds it, because the read ends the unit
+# "could not measure" instead of passing. The remedy is to widen the trigger
+# (the workflow's `paths:` and `extra` together), never to add a pattern only to
+# the key. To ask before a queue does: `bx-fleet check learn prepush <unit>
+# --root <checkout>` runs one unit once in the same copy, under the same trace,
+# and names every file it read that its `inputs` miss.
+#
+# Whether a gate may run in such a copy is decided beside each gate whose
+# verdict is kept, by reading its script (`isolated`). `False` carries
+# `not_isolated_reason`, and is the answer for a gate that:
+#   * has no trigger filter (its trigger is the catch-all), so the copy would be
+#     the whole tree and the key is the tree already;
+#   * reads a commit (`commits`) or history: the copy's HEAD is one parentless
+#     commit made of the inputs, with no refs and no remote, so `--at <id>`
+#     refuses there and `git log`, `merge-base` and `diff <rev>` find nothing
+#     (RFC 0026, section 4.4). Such a unit keeps its pass with the commit's id
+#     in its argv and runs in a whole checkout;
+#   * enumerates the whole tree (a walk of the root, a repository-wide
+#     `ls-files`): in the copy it would see the inputs alone and answer about
+#     them, a narrowing the trace cannot see because listing a directory reads
+#     no file in it;
+#   * reads an artifact no gate in its closure builds (a generator binary left
+#     under `target/`): the copy links the tree's build caches, so it would
+#     read whatever binary the cache holds, not one built from its inputs;
+#   * reads through a process that outlives the unit (Gradle's daemon), so the
+#     trace sees none of what the build reads and a missing input could never
+#     end the unit "could not measure".
+# A gate whose verdict is not kept (`cache: False`) declares nothing here: it has
+# no key to narrow. A unit is narrowed only when every gate in its closure is
+# `isolated: True` and it reads no commit; anything else keeps the whole tree.
+#
+# What whole-tree keys still buy: one tree is judged once (a push retried over
+# the same commits, a full run after a scoped one, two sessions verifying the
+# same tree).
 #
 # `commits` is what a verdict reads of git beyond the tree: the commits whose
 # ids, ancestry or objects it asks about. The key holds the tree's content and
@@ -543,6 +588,35 @@ UNIT_REQUIRES_KEYS = ("needs", "packages")
 
 # The shape of a full commit id a plan carries (SHA-1, or SHA-256).
 COMMIT_ID = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+
+# Input patterns that name a file the tree does not hold, and why the absence is
+# the point. Every other pattern in a unit's inputs matches a tracked file (`an
+# input names a file the tree holds` in the self-test), because a pattern that
+# matches nothing is most often a trigger left behind by a rename. These are the
+# other kind: a file whose creation changes the verdict, so its absence is part
+# of what the unit was judged on. The value is the reason.
+ABSENT_INPUTS: dict[str, str] = {
+    ".clippy.toml": "clippy reads it from the workspace root when one exists, "
+                    "and a new one changes every lint verdict (clippy-check.yml "
+                    "watches it for that reason)",
+    "clippy.toml": "the other name clippy reads its configuration under, "
+                   "watched for the same reason",
+}
+
+# A line of a gate script that asks git about history: a commit other than the
+# tree's content, an ancestor, a ref or the index. `git ls-files` and `git grep`
+# are not here, since they read the tracked tree; a HEAD reader is matched by
+# the `commits` scan below as well. Used by `an isolated gate reads no history`.
+HISTORY_READER = re.compile(
+    r"(?:^|[^\w./-])git\s+(?:-[Cc]\s+\S+\s+|--no-pager\s+)*"
+    r"(?:log|merge-base|rev-list|show|diff|worktree|checkout-index|cat-file"
+    r"|describe|blame|reflog)\b"
+    r"|@\{upstream\}|--rev\s+\S|\bHEAD[~^]")
+
+# Characters a bx input pattern does not take (bx RFC 0003, section 6: `[..]`
+# and `{..}` are not part of its grammar, and a GitHub negation has no meaning
+# in a key).
+UNPATTERNED = re.compile(r"[\[\]{}!]")
 
 # The commit names a gate's `commits` may hold: the ones the plan carries.
 CARRIED_COMMITS = ("HEAD",)
@@ -659,7 +733,10 @@ GATES: dict[str, dict] = {
         "cost_s_no_op": 0.111,
         "summary": "build target/debug/sce-codegen",
         "cache": True,
-        "inputs": None,
+        # Isolated: one cargo build into the linked `target/`. It asks git for
+        # nothing but the root, and writes nothing outside the copy but that
+        # build cache.
+        "isolated": True,
         "commits": [],
         "peak_gb": 5,
     },
@@ -707,7 +784,13 @@ GATES: dict[str, dict] = {
         "cost_s": 1.3,
         "summary": "the NL→IR closure ledger vs the tree it describes",
         "cache": True,
-        "inputs": None,
+        "isolated": False,
+        "not_isolated_reason": "no trigger filter: its trigger is the "
+                               "catch-all, for the reason above, so the key is "
+                               "the tree already; and its rows grep whole "
+                               "directories (`sce-build/src/`, `tests/`, "
+                               "`backends/`), which a narrower copy would answer "
+                               "about only in part",
         "commits": [],
         "peak_gb": 1,
     },
@@ -730,7 +813,10 @@ GATES: dict[str, dict] = {
                                 "skips and exits 0 on a machine without "
                                 "clang++-19",
         "unit_requires": {"packages": ["clang-19"]},
-        "inputs": None,
+        # Isolated: the case plants its header in a temporary directory and
+        # runs scripts/emit_embed_manifest.sh on it; both scripts are in its
+        # trigger, and it asks git for nothing.
+        "isolated": True,
         "commits": [],
         "peak_gb": 1,
     },
@@ -753,7 +839,11 @@ GATES: dict[str, dict] = {
         # (`commits`). The plan also keeps no verdict for a tree that differs
         # from HEAD (`plan_units`).
         "cache": True,
-        "inputs": None,
+        "isolated": False,
+        "not_isolated_reason": "reads HEAD's objects (`check --rev HEAD`), and a "
+                               "copy's HEAD is one commit made of the inputs, "
+                               "where `--at` refuses; the unit keeps its pass "
+                               "under HEAD's id and runs in a whole checkout",
         "commits": ["HEAD"],
         "peak_gb": 1,
     },
@@ -795,7 +885,11 @@ GATES: dict[str, dict] = {
         # tree or fixture repositories of their own, and the tools they skip
         # without (the pinned mnemosyne-cli, cmake) are ones bx.toml requires.
         "cache": True,
-        "inputs": None,
+        "isolated": False,
+        "not_isolated_reason": "no trigger filter (tree-hygiene.yml declares "
+                               "none), so the key is the tree already; and it "
+                               "reads HEAD (`commits`), which a copy does not "
+                               "hold",
         "commits": ["HEAD"],
         "peak_gb": 5,
     },
@@ -819,7 +913,12 @@ GATES: dict[str, dict] = {
         "cost_s": 168,
         "summary": "every mutation casefile still applies",
         "cache": True,
-        "inputs": None,
+        "isolated": False,
+        "not_isolated_reason": "no trigger filter (tree-hygiene.yml declares "
+                               "none), so the key is the tree already; and it "
+                               "lists every casefile with `git ls-files` and "
+                               "checks the anchors each one quotes in files "
+                               "anywhere in the tree",
         "commits": [],
         "peak_gb": 1,
     },
@@ -897,7 +996,6 @@ GATES: dict[str, dict] = {
         "no_cache_reason": "reads the clock and git refs: it judges each round's "
                            "duration against the cost model (`date +%s`), and with "
                            "no change set it takes its base from the upstream ref",
-        "inputs": None,
         # The upstream ref it reads moves, and the gate resolves it itself, so
         # there is no commit the plan could carry for it.
         "commits": [],
@@ -920,7 +1018,10 @@ GATES: dict[str, dict] = {
         # The lint set moves with each stable release, which is why the plan
         # names the release in every unit's argv: a new one is a new key.
         "cache": True,
-        "inputs": None,
+        # Isolated: one cargo clippy over the workspace into the linked
+        # `target/`; no git beyond the root, no writes outside the copy but
+        # that build cache.
+        "isolated": True,
         "commits": [],
         "peak_gb": 5,
     },
@@ -939,7 +1040,10 @@ GATES: dict[str, dict] = {
         "summary": "every package builds with the Rust it declares",
         # Each toolchain it installs is the version a tracked manifest declares.
         "cache": True,
-        "inputs": None,
+        # Isolated: `cargo metadata --no-deps` and one `cargo check` per declared
+        # release into `target/rust-version/<release>` under the linked cache;
+        # the toolchains go to rustup's home. No git beyond the root.
+        "isolated": True,
         "commits": [],
         "peak_gb": 5,
     },
@@ -956,7 +1060,10 @@ GATES: dict[str, dict] = {
         "cost_s": 9,
         "summary": "no_std MCU build + clippy + probes; std runtime without http-send",
         "cache": True,
-        "inputs": None,
+        # Isolated: cargo builds into the linked caches (the workspace's and the
+        # probes' own `target/`), and the probe sources it generates are written
+        # into the probe crates, inside the copy. No git beyond the root.
+        "isolated": True,
         "commits": [],
         "peak_gb": 5,
     },
@@ -971,7 +1078,9 @@ GATES: dict[str, dict] = {
         "cost_s": 4,
         "summary": "cargo doc broken intra-doc links, both profiles",
         "cache": True,
-        "inputs": None,
+        # Isolated: two `cargo doc` runs of one crate into the linked `target/`;
+        # no git beyond the root.
+        "isolated": True,
         "commits": [],
         "peak_gb": 5,
     },
@@ -1002,7 +1111,13 @@ GATES: dict[str, dict] = {
         # `package_embed.sh` writes `git describe` into the package's VERSION
         # file, which no step compares, so the gate reads no commit.
         "cache": True,
-        "inputs": None,
+        "isolated": False,
+        "not_isolated_reason": "reads the commit each submodule has checked out "
+                               "(`scripts/embed_manifest.py` asks `git -C "
+                               "<submodule> rev-parse HEAD` for every path "
+                               "`.gitmodules` names), and a copy holds that only "
+                               "for a submodule whose `<path>/.git` its inputs "
+                               "name; this trigger names none",
         "commits": [],
         "peak_gb": 5,
     },
@@ -1220,7 +1335,12 @@ GATES: dict[str, dict] = {
                                 "tool or a built JVM program it runs is "
                                 "missing (`ToolLocator::require_or_skip`, "
                                 "`require_all_or_warn`)",
-        "inputs": None,
+        "isolated": False,
+        "not_isolated_reason": "reads HEAD's history "
+                               "(`lowering_decision_ledger`, `commits`), which "
+                               "a copy's one commit does not hold; and it "
+                               "builds the Kotlin prerequisites in Gradle's "
+                               "daemon, which the trace does not see",
         "commits": ["HEAD"],
         "peak_gb": 5,
     },
@@ -1248,7 +1368,12 @@ GATES: dict[str, dict] = {
         # HEAD records, so the unit carries HEAD's id (`commits`). The plan
         # also keeps no verdict for a tree that differs from HEAD.
         "cache": True,
-        "inputs": None,
+        "isolated": False,
+        "not_isolated_reason": "no trigger filter, so the key is the tree "
+                               "already; and it regenerates in a worktree of "
+                               "HEAD (`git worktree add ... HEAD`) with the "
+                               "submodules cloned from this checkout, none of "
+                               "which a copy holds",
         "commits": ["HEAD"],
         "peak_gb": 6.5,
     },
@@ -1275,7 +1400,6 @@ GATES: dict[str, dict] = {
         "cache": False,
         "no_cache_reason": "its verdict is about the fleet's entries as they "
                            "are when it runs, which move without any commit",
-        "inputs": None,
         "commits": [],
         "peak_gb": 5,
     },
@@ -1287,7 +1411,11 @@ GATES: dict[str, dict] = {
         "cost_s": 146,
         "summary": "committed-tree drift + sourcemap, serial",
         "cache": True,
-        "inputs": None,
+        # Isolated: two cargo test targets into the linked `target/`, which
+        # regenerate into temporary directories and compare with the committed
+        # trees; the trees they list are whole directories of the trigger. No
+        # git beyond the root.
+        "isolated": True,
         "commits": [],
         "peak_gb": 5,
     },
@@ -1317,7 +1445,6 @@ GATES: dict[str, dict] = {
                            "broadcast-log stress runs under `go test -race` record "
                            "what the machine's scheduler happened to run, so a pass "
                            "is one draw and keeping it would stop the drawing",
-        "inputs": None,
         "commits": [],
         "peak_gb": 5,
     },
@@ -1340,7 +1467,6 @@ GATES: dict[str, dict] = {
                            "the histories the scheduler happened to produce and "
                            "ThreadSanitizer reports only the races it saw, so a "
                            "pass is one draw and keeping it would stop the drawing",
-        "inputs": None,
         "commits": [],
         "peak_gb": 5,
     },
@@ -1360,7 +1486,6 @@ GATES: dict[str, dict] = {
                            "broadcast-log stress runs record what the machine's "
                            "scheduler happened to run, so a pass is one draw and "
                            "keeping it would stop the drawing",
-        "inputs": None,
         "commits": [],
         "peak_gb": 1,
     },
@@ -1387,7 +1512,9 @@ GATES: dict[str, dict] = {
         "cost_s": 59,
         "summary": "C++ forge conformance build + test",
         "cache": True,
-        "inputs": None,
+        # Isolated: configures and builds in a temporary directory outside the
+        # tree, runs the generator its closure built; no git beyond the root.
+        "isolated": True,
         "commits": [],
         "peak_gb": 5,
     },
@@ -1429,7 +1556,9 @@ GATES: dict[str, dict] = {
         "cost_s": 17,
         "summary": "C11 forge conformance build + test",
         "cache": True,
-        "inputs": None,
+        # Isolated: configures and builds in a temporary directory outside the
+        # tree, runs the generator its closure built; no git beyond the root.
+        "isolated": True,
         "commits": [],
         "peak_gb": 5,
     },
@@ -1461,7 +1590,6 @@ GATES: dict[str, dict] = {
                            "broadcast-log stress runs record what the JVM's "
                            "threads happened to do, so a pass is one draw and "
                            "keeping it would stop the drawing",
-        "inputs": None,
         "commits": [],
         "peak_gb": 5,
     },
@@ -1525,7 +1653,9 @@ GATES: dict[str, dict] = {
         # The toolchain is a pinned tool of the platform, so its version is in
         # the key, and a machine without it fails the gate loudly.
         "cache": True,
-        "inputs": None,
+        # Isolated: SwiftPM builds inside the package directories of the copy;
+        # `scripts/test_swift_backend.sh` asks git for the root only.
+        "isolated": True,
         "commits": [],
         "peak_gb": 5,
     },
@@ -1555,7 +1685,9 @@ GATES: dict[str, dict] = {
         "cost_s": 76,
         "summary": "W3C conformance, Swift AOT",
         "cache": True,
-        "inputs": None,
+        # Isolated: the `swift-backend` script's `w3c` arm, which builds inside
+        # the copy and asks git for the root only.
+        "isolated": True,
         "commits": [],
         "peak_gb": 5,
     },
@@ -1583,7 +1715,9 @@ GATES: dict[str, dict] = {
         "cost_s": 11,
         "summary": "ECMA-262 lowered artifact, Swift",
         "cache": True,
-        "inputs": None,
+        # Isolated: the `swift-backend` script's `ecma262-lowered` arm, which
+        # builds inside the copy and asks git for the root only.
+        "isolated": True,
         "commits": [],
         "peak_gb": 5,
     },
@@ -1613,7 +1747,11 @@ GATES: dict[str, dict] = {
         "cost_s": 102,
         "summary": "Forge conformance, Swift",
         "cache": True,
-        "inputs": None,
+        # Isolated: the `swift-backend` script's `forge` arm, which builds inside
+        # the copy; the histories it records go to `target/` under the linked
+        # build cache, which nothing reads back into a verdict. No git beyond the
+        # root.
+        "isolated": True,
         "commits": [],
         "peak_gb": 5,
     },
@@ -1659,7 +1797,10 @@ GATES: dict[str, dict] = {
         # GenMC explores every interleaving its model admits rather than
         # sampling some, and its revision is pinned by the tracked installer.
         "cache": True,
-        "inputs": None,
+        # Isolated: the harnesses are rewritten into a temporary directory and
+        # model-checked by the GenMC under the home, at the revision the tracked
+        # installer pins; no git beyond the root.
+        "isolated": True,
         "commits": [],
         "peak_gb": 5,
     },
@@ -1690,7 +1831,9 @@ GATES: dict[str, dict] = {
         "cost_s": 99,
         "summary": "example SCXML codegen smoke + authored-document lint",
         "cache": True,
-        "inputs": None,
+        # Isolated: runs the generator its closure built over named example
+        # documents into a temporary directory; no git beyond the root.
+        "isolated": True,
         "commits": [],
         "peak_gb": 1,
     },
@@ -1717,7 +1860,10 @@ GATES: dict[str, dict] = {
         "cost_s": 60,
         "summary": "sce-build lib suite, compiled-in inputs",
         "cache": True,
-        "inputs": None,
+        # Isolated: one cargo test of the library into the linked `target/`. Its
+        # trigger is the filter that reaches every compiled-in input, which is
+        # the set the suite reads. No git beyond the root.
+        "isolated": True,
         "commits": [],
         "peak_gb": 5,
     },
@@ -1747,7 +1893,13 @@ GATES: dict[str, dict] = {
         # (`git diff --cached`, `checkout-index`) are the commit hook's
         # `--staged` mode; the full gate a unit runs reads the tracked tree.
         "cache": True,
-        "inputs": None,
+        "isolated": False,
+        "not_isolated_reason": "walks the whole tree: `mnemosyne-cli "
+                               "validate-code-refs` and `migrate_citations.py . "
+                               "--check-ledger` judge the citations of every "
+                               "tracked file, so in a copy of its inputs they "
+                               "would judge those files alone; its `--staged` "
+                               "mode also reads the index (`git diff --cached`)",
         "commits": [],
         "peak_gb": 1,
     },
@@ -1774,7 +1926,13 @@ GATES: dict[str, dict] = {
         "cost_s": 72,
         "summary": "authoring core is domain-free, and its refusals still fire",
         "cache": True,
-        "inputs": None,
+        "isolated": False,
+        "not_isolated_reason": "its run-driven cases execute "
+                               "`target/debug/sce-codegen`, and no gate in its "
+                               "closure builds it: a copy links the tree's build "
+                               "caches, so they would run whatever binary the "
+                               "cache holds rather than one built from the "
+                               "inputs",
         "commits": [],
         "peak_gb": 1,
     },
@@ -1790,7 +1948,12 @@ GATES: dict[str, dict] = {
         "cost_s": 81,
         "summary": "the logical interface is platform-free, and the library judges as verify does",
         "cache": True,
-        "inputs": None,
+        "isolated": False,
+        "not_isolated_reason": "it requires `target/debug/sce-codegen` and no "
+                               "gate in its closure builds it: a copy links the "
+                               "tree's build caches, so its cases would run "
+                               "whatever binary the cache holds rather than one "
+                               "built from the inputs",
         "commits": [],
         "peak_gb": 5,
     },
@@ -1806,7 +1969,10 @@ GATES: dict[str, dict] = {
         # the snapshot against its recorded provenance. The `upstream` mode,
         # which fetches the published specification, is not what this runs.
         "cache": True,
-        "inputs": None,
+        # Isolated: Python checks that compare committed catalogs with what the
+        # tracked sources produce; a source the copy lacked would make a catalog
+        # read stale and fail, never pass. No git, no writes.
+        "isolated": True,
         "commits": [],
         "peak_gb": 1,
     },
@@ -1821,7 +1987,9 @@ GATES: dict[str, dict] = {
         # `package_embed.sh` writes `git describe` into the package's VERSION
         # file, which the licence check does not read.
         "cache": True,
-        "inputs": None,
+        # Isolated: reads the licence files of `third_party/` and the CMake list
+        # that describes them, both whole in its trigger; no git, no writes.
+        "isolated": True,
         "commits": [],
         "peak_gb": 1,
     },
@@ -1852,7 +2020,9 @@ GATES: dict[str, dict] = {
         "cost_s": 0,
         "summary": "visualizer vendor libraries vs LICENSE-THIRD-PARTY.md",
         "cache": True,
-        "inputs": None,
+        # Isolated: stats two directories and greps one document, all in its
+        # trigger; no git, no writes.
+        "isolated": True,
         "commits": [],
         "peak_gb": 1,
     },
@@ -1890,7 +2060,11 @@ GATES: dict[str, dict] = {
         "cost_s": 0.185,
         "summary": "BasicHTTP fixture endpoint has one owner",
         "cache": True,
-        "inputs": None,
+        "isolated": False,
+        "not_isolated_reason": "no trigger filter: its trigger is the "
+                               "catch-all, so the key is the tree already, and "
+                               "its scan (`git grep` for the port) is meant to "
+                               "see every tracked file",
         "commits": [],
         "peak_gb": 1,
     },
@@ -1907,7 +2081,9 @@ GATES: dict[str, dict] = {
         "cost_s": 106,
         "summary": "clippy generated codecs, alloc on",
         "cache": True,
-        "inputs": None,
+        # Isolated: clippy over the committed codec goldens into the linked
+        # `target/`; its script asks git for the root only.
+        "isolated": True,
         "commits": [],
         "peak_gb": 5,
     },
@@ -1922,7 +2098,9 @@ GATES: dict[str, dict] = {
         "cost_s": 90,
         "summary": "generated codecs compile without alloc",
         "cache": True,
-        "inputs": None,
+        # Isolated: builds the committed codec goldens without alloc into the
+        # linked `target/`; its script asks git for the root only.
+        "isolated": True,
         "commits": [],
         "peak_gb": 5,
     },
@@ -1962,7 +2140,10 @@ GATES: dict[str, dict] = {
         "cost_s": 55,
         "summary": "W3C conformance, C++ Interpreter + AOT",
         "cache": True,
-        "inputs": None,
+        # Isolated: configures and builds the main CMake tree (`build/`) inside
+        # the copy, where a copy holds no such tree, so it builds from cold;
+        # the report goes to a temporary directory. No git beyond the root.
+        "isolated": True,
         "commits": [],
         "peak_gb": 5,
     },
@@ -2018,7 +2199,15 @@ GATES: dict[str, dict] = {
         # stress half's seed is pinned in the script, so the verdict is the
         # tree's. Kept only from a landing unit, through `visualizer-wasm`.
         "cache": True,
-        "inputs": None,
+        "isolated": False,
+        "not_isolated_reason": "the documents it draws are the ones "
+                               "web/visualizer/measure/fixtures.txt and "
+                               "structure-fixtures.txt name, under "
+                               "`integration_resources/`, `resources/`, "
+                               "`tests/mesh/` and `examples/`, which its "
+                               "trigger does not hold, so a copy of it would "
+                               "lack them; and its dependency "
+                               "`visualizer-wasm` may not run in one either",
         "commits": [],
         "peak_gb": 1,
     },
@@ -2037,7 +2226,13 @@ GATES: dict[str, dict] = {
         "kept_only_from_a_landing": "the emscripten half runs only where emsdk is "
                                 "found, so a pass without it judged one "
                                 "artifact of three",
-        "inputs": None,
+        "isolated": False,
+        "not_isolated_reason": "its emscripten half configures the main CMake "
+                               "tree and compiles the engine for the page "
+                               "(`sce/`, the root CMakeLists.txt, `cmake/`, "
+                               "the submodules), none of which "
+                               "deploy-visualizer.yml's `paths:` name, so a "
+                               "copy of its trigger lacks what it compiles",
         "commits": [],
         "peak_gb": 5,
     },
@@ -2083,7 +2278,11 @@ GATES: dict[str, dict] = {
         "kept_only_from_a_landing": "outside a landing it replays in whatever "
                                     "Chrome is on PATH where the pinned Chrome "
                                     "for Testing is absent",
-        "inputs": None,
+        # Isolated: cargo builds for the target into the linked `target/`,
+        # wasm-bindgen writes the glue into temporary directories, and the
+        # scenarios it replays are in its trigger; the tools it reads are bx's
+        # under the home. No git beyond the root.
+        "isolated": True,
         "commits": [],
         "peak_gb": 5,
     },
@@ -2141,7 +2340,10 @@ GATES: dict[str, dict] = {
         "cost_s": 110,
         "summary": "C++ ctest suite (engine + mesh), the non-c11 half",
         "cache": True,
-        "inputs": None,
+        # Isolated: configures and builds the main CMake tree (`build/`) inside
+        # the copy, from cold, and runs its ctest suite there; logs go to a
+        # temporary directory. No git beyond the root.
+        "isolated": True,
         "commits": [],
         "peak_gb": 5,
     },
@@ -2198,7 +2400,6 @@ GATES: dict[str, dict] = {
                            "Debian archive, and neither is fixed by the tree: "
                            "a rebuilt image can carry another compiler patch "
                            "or package, and the verdict moves with them",
-        "inputs": None,
         "commits": [],
         "peak_gb": 5,
     },
@@ -2238,7 +2439,10 @@ GATES: dict[str, dict] = {
         "cost_s": 240,
         "summary": "generated C++ built and run against an installed SCE",
         "cache": True,
-        "inputs": None,
+        # Isolated: configures, builds and installs into a temporary directory
+        # outside the tree, with the generator its closure built; no git beyond
+        # the root.
+        "isolated": True,
         "commits": [],
         "peak_gb": 5,
     },
@@ -2280,7 +2484,6 @@ GATES: dict[str, dict] = {
                            "verdict is MSVC's as the Windows image carries it, and "
                            "vcpkg's libxml2 and libsodium at the versions its "
                            "checkout holds",
-        "inputs": None,
         "commits": [],
         "peak_gb": 5,
     },
@@ -2327,7 +2530,10 @@ GATES: dict[str, dict] = {
         "cost_s": 123,
         "summary": "ECMA-262 through a Lua-lowered C++ artifact",
         "cache": True,
-        "inputs": None,
+        # Isolated: configures and builds its `lua` tree in a temporary directory
+        # outside the tree, with the generator its closure built; no git beyond
+        # the root.
+        "isolated": True,
         "commits": [],
         "peak_gb": 5,
     },
@@ -2386,7 +2592,13 @@ GATES: dict[str, dict] = {
         "cost_s": 11,
         "summary": "ECMA-262 through a Lua-lowered Kotlin artifact",
         "cache": True,
-        "inputs": None,
+        "isolated": False,
+        "not_isolated_reason": "Gradle builds in its daemon "
+                               "(`org.gradle.daemon=true` in gradle.properties), "
+                               "which may predate the unit and outlive it, so "
+                               "the trace sees none of what the build reads and "
+                               "an input the trigger misses could never end the "
+                               "unit 'could not measure'",
         "commits": [],
         "peak_gb": 5,
     },
@@ -2460,7 +2672,10 @@ GATES: dict[str, dict] = {
         "cost_s": 258,
         "summary": "W3C conformance, C11 MCU backend",
         "cache": True,
-        "inputs": None,
+        # Isolated: configures and builds the main CMake tree (`build/`) inside
+        # the copy, from cold, and runs its C11 entries there; no git beyond the
+        # root.
+        "isolated": True,
         "commits": [],
         "peak_gb": 5,
     },
@@ -2499,7 +2714,10 @@ GATES: dict[str, dict] = {
         "cost_s": 10,
         "summary": "W3C conformance, Go AOT",
         "cache": True,
-        "inputs": None,
+        # Isolated: generates the suite into a temporary directory with the
+        # generator its closure built and runs `go test` there, beside the
+        # fixture server; Go's caches are under the home. No git beyond the root.
+        "isolated": True,
         "commits": [],
         "peak_gb": 5,
     },
@@ -2544,7 +2762,10 @@ GATES: dict[str, dict] = {
                    "runs this arm on every push.",
         "summary": "W3C conformance, Rust AOT",
         "cache": True,
-        "inputs": None,
+        # Isolated: generates with the generator its closure built and runs the
+        # Rust suite through cargo into the linked `target/`; no git beyond the
+        # root.
+        "isolated": True,
         "commits": [],
         "peak_gb": 5,
     },
@@ -2604,7 +2825,13 @@ GATES: dict[str, dict] = {
         "summary": "W3C conformance, Kotlin/JVM AOT (Rhino + QuickJS + Lua, "
                    "each over the machines emitted for the language it reads)",
         "cache": True,
-        "inputs": None,
+        "isolated": False,
+        "not_isolated_reason": "Gradle builds in its daemon "
+                               "(`org.gradle.daemon=true` in gradle.properties), "
+                               "which may predate the unit and outlive it, so "
+                               "the trace sees none of what the build reads and "
+                               "an input the trigger misses could never end the "
+                               "unit 'could not measure'",
         "commits": [],
         "peak_gb": 5,
     },
@@ -2657,7 +2884,10 @@ GATES: dict[str, dict] = {
         "cost_s": 72,
         "summary": "W3C conformance, Python AOT",
         "cache": True,
-        "inputs": None,
+        # Isolated: generates the suite into a temporary directory with the
+        # generator its closure built and runs it on the repository's Python
+        # environment under the home; no git beyond the root.
+        "isolated": True,
         "commits": [],
         "peak_gb": 1,
     },
@@ -2683,7 +2913,12 @@ GATES: dict[str, dict] = {
         "kept_only_from_a_landing": "it skips and exits 0 on a machine without "
                                 "python3-config (python3-dev)",
         "unit_requires": {"packages": ["python3-dev"]},
-        "inputs": None,
+        "isolated": False,
+        "not_isolated_reason": "it configures the main CMake tree and compiles "
+                               "the engine into the extension (`sce/`, the root "
+                               "CMakeLists.txt, `cmake/`, the submodules), and "
+                               "its trigger names the binding sources alone, so "
+                               "a copy of it would lack what it compiles",
         "commits": [],
         "peak_gb": 5,
     },
@@ -2739,7 +2974,10 @@ GATES: dict[str, dict] = {
         "cache": True,
         "kept_only_from_a_landing": "it skips and exits 0 on a machine without "
                                 "emsdk (`[platform.linux.tools.emsdk]`)",
-        "inputs": None,
+        # Isolated, as `w3c-cpp` is: it configures and builds the two
+        # emscripten trees inside the copy, from cold, with the SDK under the
+        # home; no git beyond the root.
+        "isolated": True,
         "commits": [],
         "peak_gb": 5.3,
     },
@@ -2782,7 +3020,10 @@ GATES: dict[str, dict] = {
         "cache": True,
         "kept_only_from_a_landing": "it skips and exits 0 on a machine without "
                                 "emsdk (`[platform.linux.tools.emsdk]`)",
-        "inputs": None,
+        # Isolated, as `cpp-suite` is: it configures and builds the whole
+        # emscripten tree inside the copy, from cold, and runs its ctest suite
+        # there under the SDK's Node; no git beyond the root.
+        "isolated": True,
         "commits": [],
         "peak_gb": 5,
     },
@@ -3769,22 +4010,91 @@ def tracked_tree_is_head(repo_root: Path) -> bool:
     return done.returncode == 0
 
 
-def unit_inputs(closure, table=None):
+# The two files a unit starts in: the runner, and the gate library every gate
+# script sources. What else they read is derived from their code by
+# `runner_inputs`, so a new file either of them opens joins the inputs of every
+# narrowed unit on the commit that adds it.
+RUNNER_SOURCES = ("scripts/gate", "scripts/gates/lib.sh")
+
+_ROOTED_PATH = re.compile(r"\$\{?(?:SCE_)?REPO_ROOT\}?/([A-Za-z0-9_][A-Za-z0-9_./-]*)")
+
+
+def runner_inputs(repo_root: Path) -> list[str]:
+    """The tracked files the runner reads on the way to any gate.
+
+    `RUNNER_SOURCES` themselves, and every tracked file their code names
+    under the repository root (`$REPO_ROOT/...`, `$SCE_REPO_ROOT/...`): the
+    registry the runner resolves a gate's closure with, the submodule
+    preflight, and the libraries the gate library sources for the helpers a
+    gate calls. Comment lines are left out, since a path a comment names is
+    not opened. A path that is not tracked (a build directory, a templated
+    `${slug}`) names no input and is dropped.
+    """
+    tracked = set(tracked_paths(repo_root))
+    found = set(RUNNER_SOURCES)
+    for rel in RUNNER_SOURCES:
+        path = repo_root / rel
+        if not path.is_file():
+            continue
+        for match in _ROOTED_PATH.finditer(script_code(path)):
+            if match.group(1) in tracked:
+                found.add(match.group(1))
+    return sorted(found)
+
+
+def unit_machinery(closure, runner=(), table=None) -> set[str]:
+    """What a unit reads to reach its gates, beside what the gates read.
+
+    The runner's own files (`runner`, from `runner_inputs`), each gate's
+    script, and the workflow files of each gate: the submodule preflight
+    reads a gate's workflows to learn whether its checkout needs
+    submodules. None of these is a trigger (an edit to them is judged by
+    the self-test and the always-on gates), and all of them are read by
+    every run of the unit.
+    """
+    table = GATES if table is None else table
+    files = set(runner)
+    for slug in closure:
+        files.add(f"scripts/gates/{slug}.sh")
+        files.update(f".github/workflows/{wf}"
+                     for wf in table[slug].get("workflows", []))
+    return files
+
+
+def unit_isolated(closure, table=None) -> bool:
+    """Whether a unit running `closure` may run in a copy of its inputs.
+
+    Only when every gate in it says `isolated: True` and none reads a
+    commit. A gate that says nothing (its verdict is not kept) keeps the
+    whole tree, as does a commit reader even where its own entry was wrong
+    about it: the copy's HEAD is not the commit it reads.
+    """
+    table = GATES if table is None else table
+    return all(table[s].get("isolated") is True and not table[s].get("commits")
+               for s in closure)
+
+
+def unit_inputs(closure, triggers=None, runner=(), table=None):
     """The input patterns of a unit that runs every gate in `closure`.
 
-    `None`, the whole tracked tree, as soon as one of them reads the whole
-    tree: a key narrower than what the unit reads would let a pass outlive
-    a change to the part left out. Otherwise the union of their patterns,
+    `None`, the whole tracked tree, when there are no triggers to read, when
+    the unit may not be isolated (`unit_isolated`), or when a gate in it has
+    the catch-all trigger: a key narrower than what the unit reads would let
+    a pass outlive a change to the part left out. Otherwise the union of the
+    triggers of every gate in the closure, the same globs that decide a
+    change must run them, with the unit's machinery (`unit_machinery`),
     sorted so that one closure always yields one key.
     """
     table = GATES if table is None else table
+    if triggers is None or not unit_isolated(closure, table):
+        return None
     patterns: set[str] = set()
     for slug in closure:
-        own = table[slug].get("inputs")
-        if own is None:
+        own = triggers.get(slug) or []
+        if not own or "**" in own:
             return None
         patterns.update(own)
-    return sorted(patterns)
+    return sorted(patterns | unit_machinery(closure, runner, table))
 
 
 def head_commit(repo_root: Path):
@@ -3800,7 +4110,8 @@ def head_commit(repo_root: Path):
 
 
 def plan_units(selected, rust=None, tree_is_head=True, table=None,
-               head=None, landing=False) -> list[dict]:
+               head=None, landing=False, triggers=None,
+               runner=()) -> list[dict]:
     """The bx check units (bx RFC 0004, section 6) that verify `selected`.
 
     `selected` is a set the registry already chose: `select` for a change,
@@ -3809,10 +4120,22 @@ def plan_units(selected, rust=None, tree_is_head=True, table=None,
     carries them or the runner runs them in place.
 
     ONE UNIT PER GATE THAT NO OTHER SELECTED GATE RUNS. A unit is
-    `bash scripts/gate [--rust R] <slug>`, and the runner gives a named gate
-    its dependency closure and stops at the first failure, so a dependency's
-    verdict is part of every dependent's unit. A unit of its own would be
-    the same build again on another machine, measuring nothing new.
+    `bash scripts/gate [--rust R] --unit [--landing] [--at <id>] <slug>`,
+    and the runner gives a
+    named gate its dependency closure and stops at the first failure, so a
+    dependency's verdict is part of every dependent's unit. A unit of its
+    own would be the same build again on another machine, measuring nothing
+    new. `--unit` tells the runner the registry was self-tested when this
+    plan was made, over the whole tree, so it does not test it again where
+    the unit runs: that may be a copy holding the unit's inputs alone, where
+    the self-test, which reads every workflow and every gate script, could
+    only fail or read outside them.
+
+    A UNIT KEPT OVER ITS INPUTS NAMES THEM. With `triggers` (the gates'
+    trigger globs, `gate_triggers`) and `runner` (`runner_inputs`), a kept
+    unit whose closure may be isolated gets `inputs` (`unit_inputs`), and bx
+    keys it by those files alone and runs it in a copy of them. Without
+    `triggers` no unit is narrowed.
 
     A UNIT THAT READS HEAD CARRIES ITS ID. When a gate the unit runs
     declares `commits: ["HEAD"]`, the argv gets `--at <head>`, so the commit
@@ -3857,9 +4180,12 @@ def plan_units(selected, rust=None, tree_is_head=True, table=None,
                 and all(table[s]["cache"] is True for s in closure)
                 and (head is not None or not reads_head)
                 and (landing or not can_skip))
+        # `--rust R` comes first, right after the runner: bx.toml's Rust
+        # tool names its units by that text (`needed_by`).
         argv = ["bash", "scripts/gate"]
         if rust is not None:
             argv += ["--rust", rust]
+        argv.append("--unit")
         if landing:
             argv.append("--landing")
         if reads_head and head is not None:
@@ -3886,7 +4212,7 @@ def plan_units(selected, rust=None, tree_is_head=True, table=None,
                              .get(key, [])})
             if wanted:
                 unit[key] = wanted
-        inputs = unit_inputs(closure, table)
+        inputs = unit_inputs(closure, triggers, runner, table)
         if kept and inputs:
             unit["inputs"] = inputs
         units.append(unit)
@@ -6378,26 +6704,93 @@ def self_test(repo_root: Path) -> int:
             failures.append(
                 f"verdict: {slug} declares peak_gb={peak!r}; it is the memory "
                 f"its own script peaks at, in GiB, a number above 0")
-        if "inputs" not in spec:
+        # a-unit's-inputs-are-its-triggers. The patterns are derived from the
+        # trigger, so a gate that wrote its own list would be a second answer
+        # to the question the trigger already answers.
+        if "inputs" in spec:
             failures.append(
-                f"verdict: {slug} does not declare `inputs` (`None` for the "
-                f"whole tracked tree, or a list of patterns)")
-            continue
-        inputs = spec["inputs"]
-        if inputs is None:
-            continue
-        if not isinstance(inputs, list) or not inputs:
-            failures.append(
-                f"verdict: {slug} declares inputs={inputs!r}; it is `None` or "
-                f"a non-empty list of patterns")
-            continue
-        for pattern in inputs:
-            if (not isinstance(pattern, str) or not pattern
-                    or pattern.startswith("/")
-                    or ".." in pattern.split("/")):
+                f"isolation: {slug} declares `inputs`; a unit's inputs are the "
+                f"triggers of the gates it runs (`unit_inputs`), and a list "
+                f"written beside them would drift from them")
+
+    # every-kept-gate-says-whether-it-runs-in-a-copy. A gate whose pass is kept
+    # says whether it may run in a copy of its inputs (see "A unit's inputs
+    # are its gates' triggers"), `False` with the reason it may not; a gate
+    # whose pass is not kept says nothing, since it has no key to narrow.
+    cases += 1
+    triggers_now = gate_triggers(repo_root)
+    for slug, spec in sorted(GATES.items()):
+        isolated = spec.get("isolated")
+        why = spec.get("not_isolated_reason")
+        if spec.get("cache") is not True:
+            if "isolated" in spec or why is not None:
                 failures.append(
-                    f"verdict: {slug} declares the input {pattern!r}, which is "
-                    f"not a pattern under the repository root")
+                    f"isolation: {slug} keeps no verdict and still says whether "
+                    f"it runs in a copy; with no key there is nothing to narrow")
+            continue
+        if isolated not in (True, False):
+            failures.append(
+                f"isolation: {slug} keeps its verdict and does not say "
+                f"`isolated: True` or `isolated: False`")
+            continue
+        if isolated is False and (not isinstance(why, str)
+                                  or len(why.strip()) < 40):
+            failures.append(
+                f"isolation: {slug} is `isolated: False` with no "
+                f"`not_isolated_reason` saying what a copy of its inputs lacks")
+        if isolated is True and why is not None:
+            failures.append(
+                f"isolation: {slug} is `isolated: True` and still carries a "
+                f"`not_isolated_reason`; one of the two is wrong")
+        if isolated is not True:
+            continue
+        # A copy of the catch-all is the tree, and the key is the tree
+        # already: an always-on gate that claimed a copy would claim nothing.
+        if "**" in triggers_now.get(slug, ["**"]):
+            failures.append(
+                f"isolation: {slug} is `isolated: True` and has no trigger "
+                f"filter; its inputs would be the whole tree")
+        # a-history-reader-is-not-isolated (bx RFC 0026, section 4.4). The
+        # copy's HEAD is one parentless commit of the inputs, so a gate that
+        # reads a commit keeps its pass under the id the plan carries and runs
+        # in a whole checkout, and `--at` would refuse in the copy anyway.
+        if spec.get("commits"):
+            failures.append(
+                f"isolation: {slug} reads {spec['commits']} and is "
+                f"`isolated: True`; a copy holds none of that history, and "
+                f"`--at` refuses there")
+        for dep in sorted(transitive_deps(slug)):
+            if GATES[dep].get("isolated") is not True:
+                failures.append(
+                    f"isolation: {slug} is `isolated: True` and runs {dep}, "
+                    f"which may not run in a copy; the unit would keep the "
+                    f"whole tree, so the claim says nothing")
+        # Derived from the script's code lines, so a gate that starts asking
+        # git about history cannot stay isolated.
+        script = gate_script(repo_root, slug)
+        if script.is_file():
+            for line in script_code(script).splitlines():
+                if HISTORY_READER.search(line):
+                    failures.append(
+                        f"isolation: scripts/gates/{slug}.sh asks git about "
+                        f"history ({line.strip()[:80]!r}) and the gate is "
+                        f"`isolated: True`; a copy holds one commit of its "
+                        f"inputs and nothing else")
+                    break
+
+    # The history scan reads something: the gates known to ask git about
+    # history still match it, so a pattern that drifted blind fails here
+    # instead of passing every script.
+    cases += 1
+    for slug in ("regen-reproduces", "ledger-citations", "mutation-rounds"):
+        script = gate_script(repo_root, slug)
+        if script.is_file() and not any(
+                HISTORY_READER.search(line)
+                for line in script_code(script).splitlines()):
+            failures.append(
+                f"isolation: HISTORY_READER no longer matches "
+                f"scripts/gates/{slug}.sh, which asks git about history; the "
+                f"scan above reads nothing")
 
     # A measured peak names a gate that exists, so the note beside it cannot
     # outlive the gate it was read off.
@@ -6433,26 +6826,110 @@ def self_test(repo_root: Path) -> int:
             "commits: no gate script hands git HEAD, so the scan above read "
             "nothing; `embed-manifest-stamp` and `regen-reproduces` do")
 
-    # narrowed-units-need-a-git-free-root. bx runs a unit with input patterns
-    # in a copy of those files alone, with no `.git` (bx RFC 0020, section
-    # 5.2). A unit is the runner, and every gate sources its library; both
-    # ask git for the repository root before anything else, so a narrowed
-    # unit there would end "could not measure" on every push, and the push
-    # would fail on a property of the copy, not of the tree. Derived from
-    # the two files, so the refusal lifts the day neither asks git.
+    # a-unit-does-not-test-the-registry-again. bx runs a narrowed unit in a
+    # copy of its inputs (bx RFC 0026): a git repository, so the runner and
+    # the gate library find their root there, and nothing else of the tree.
+    # The registry's self-test reads every workflow and every gate script, so
+    # run there it would fail, or read outside the inputs and end the unit
+    # "could not measure". The plan's argv says `--unit`, the runner has to
+    # take it, and its self-test has to be skipped under it; the plan itself
+    # ran the self-test over the whole tree before it printed a unit.
     cases += 1
-    narrowed = sorted(s for s, spec in GATES.items() if spec.get("inputs"))
-    if narrowed:
-        asks_git = [rel for rel in ("scripts/gate", "scripts/gates/lib.sh")
-                    if "rev-parse --show-toplevel" in
-                    (repo_root / rel).read_text(encoding="utf-8",
-                                                errors="replace")]
-        if asks_git:
+    runner_path = repo_root / "scripts" / "gate"
+    runner_code = script_code(runner_path) if runner_path.is_file() else ""
+    if not re.search(r"^\s*--unit\)", runner_code, re.M):
+        failures.append(
+            "unit: scripts/gate takes no `--unit`, and every planned unit "
+            "passes it; each unit would end 'unknown option' (exit 2)")
+    self_test_ifs = [ln for ln in runner_code.splitlines()
+                     if ln.lstrip().startswith("if ") and "--self-test" in ln]
+    if not self_test_ifs:
+        failures.append(
+            "unit: scripts/gate no longer runs the registry's self-test, so "
+            "the check that a unit skips it reads nothing")
+    for ln in self_test_ifs:
+        if "UNIT" not in ln:
             failures.append(
-                f"narrowed: {', '.join(narrowed)} declare input patterns, and "
-                f"{' and '.join(asks_git)} ask git for the repository root; "
-                f"bx runs a narrowed unit in a copy of its inputs that holds "
-                f"no .git, so the unit could only end 'could not measure'")
+                f"unit: scripts/gate runs the registry's self-test under "
+                f"`--unit` too ({ln.strip()[:70]!r}); in a copy of the unit's "
+                f"inputs it reads files the copy does not hold")
+
+    # a-unit's-inputs-are-its-trigger-closure. The live table, unit by unit:
+    # a unit that may run in a copy names the triggers of every gate it runs
+    # plus the machinery that reaches them, and nothing else; a unit that may
+    # not names no inputs, so its key stays the whole tree.
+    cases += 1
+    runner_now = runner_inputs(repo_root)
+    head = "0" * 40
+    every_unit = plan_units(set(GATES), rust="1.0.0", head=head,
+                            triggers=triggers_now, runner=runner_now)
+    for unit in every_unit:
+        closure = {unit["name"]} | transitive_deps(unit["name"])
+        narrowable = (unit["cache"] is True
+                      and all(GATES[s].get("isolated") is True
+                              and not GATES[s]["commits"]
+                              and "**" not in triggers_now[s]
+                              for s in closure))
+        if not narrowable:
+            if "inputs" in unit:
+                failures.append(
+                    f"inputs: unit {unit['name']} names inputs, and a gate it "
+                    f"runs may not run in a copy (or its verdict is not "
+                    f"kept): {unit['inputs'][:5]}...")
+            continue
+        want: set[str] = set(runner_now)
+        for s in closure:
+            want.update(triggers_now[s])
+            want.add(f"scripts/gates/{s}.sh")
+            want.update(f".github/workflows/{wf}"
+                        for wf in GATES[s].get("workflows", []))
+        if unit.get("inputs") != sorted(want):
+            have = set(unit.get("inputs") or [])
+            failures.append(
+                f"inputs: unit {unit['name']} names inputs that are not the "
+                f"triggers of {sorted(closure)} with the runner's files; "
+                f"missing {sorted(want - have)[:5]}, extra "
+                f"{sorted(have - want)[:5]}")
+
+    # an-input-names-a-file-the-tree-holds. A pattern that matches no tracked
+    # file is most often a trigger a rename left behind, and in a key it is a
+    # pattern that keys nothing. The exceptions are files whose ABSENCE is
+    # judged, each with its reason in ABSENT_INPUTS, and an exception that
+    # matches a file is no longer one. A pattern also has to be one bx reads
+    # (bx RFC 0003, section 6): rooted in the repository, `**` only as a
+    # whole component, no `[..]`, `{..}` or negation.
+    cases += 1
+    tracked_now = tracked_paths(repo_root)
+    used = sorted({p for u in every_unit for p in u.get("inputs", [])})
+    if not used:
+        failures.append(
+            "inputs: no unit of the full plan names inputs, so the checks on "
+            "what inputs may hold read nothing")
+    for pattern in used:
+        if (pattern.startswith("/") or ".." in pattern.split("/")
+                or UNPATTERNED.search(pattern)
+                or any("**" in part and part != "**"
+                       for part in pattern.split("/"))):
+            failures.append(
+                f"inputs: {pattern!r} is not a pattern bx reads (rooted, `**` "
+                f"as a whole component, no brackets, braces or negation)")
+            continue
+        regex = glob_to_regex(pattern)
+        hit = any(regex.match(p) for p in tracked_now)
+        if pattern in ABSENT_INPUTS:
+            if hit:
+                failures.append(
+                    f"inputs: {pattern!r} is listed in ABSENT_INPUTS and now "
+                    f"names a tracked file; take it out of the map")
+        elif not hit:
+            failures.append(
+                f"inputs: {pattern!r} names no tracked file; correct the "
+                f"trigger it came from, or record in ABSENT_INPUTS why its "
+                f"absence is judged")
+    for pattern in sorted(set(ABSENT_INPUTS) - set(used)):
+        failures.append(
+            f"inputs: ABSENT_INPUTS names {pattern!r}, which no unit's inputs "
+            f"hold; the reason beside it describes nothing")
 
     # the-plan-is-the-selection. The push used to run exactly the gates
     # `select` chose; it now hands bx the units `plan_units` makes of that
@@ -6471,9 +6948,9 @@ def self_test(repo_root: Path) -> int:
             ("every-gate-landing", list(GATES), True),
     ):
         cases += 1
-        head = "0" * 40
         units = plan_units(set(selection), rust="1.0.0", head=head,
-                           landing=landing)
+                           landing=landing, triggers=triggers_now,
+                           runner=runner_now)
         names = [u["name"] for u in units]
         if len(names) != len(set(names)):
             failures.append(f"plan[{label}]: a unit is named twice: {names}")
@@ -6486,15 +6963,16 @@ def self_test(repo_root: Path) -> int:
                     f"plan[{label}]: unit {unit['name']} is not in the "
                     f"selection {sorted(selection)}")
             reads_head = any("HEAD" in GATES[s]["commits"] for s in closure)
-            want = (["bash", "scripts/gate", "--rust", "1.0.0"]
-                    + (["--landing"] if landing else [])
-                    + (["--at", head] if reads_head else []) + [unit["name"]])
-            if unit["argv"] != want:
+            argv_want = (["bash", "scripts/gate", "--rust", "1.0.0", "--unit"]
+                         + (["--landing"] if landing else [])
+                         + (["--at", head] if reads_head else [])
+                         + [unit["name"]])
+            if unit["argv"] != argv_want:
                 failures.append(
                     f"plan[{label}]: unit {unit['name']} runs {unit['argv']}, "
-                    f"not the runner on its own slug at the planned release "
-                    f"(as a landing's when it is one, and at HEAD's id when "
-                    f"it reads HEAD): {want}")
+                    f"not the runner as a unit on its own slug at the planned "
+                    f"release (as a landing's when it is one, and at HEAD's "
+                    f"id when it reads HEAD): {argv_want}")
             can_skip = any(GATES[s].get("kept_only_from_a_landing") for s in closure)
             if can_skip and not landing and unit["cache"]:
                 failures.append(
@@ -6539,17 +7017,35 @@ def self_test(repo_root: Path) -> int:
     # says: `child` keeps its verdict and runs `parent`, which does not.
     cases += 1
     fixture = {
-        "parent": {"cost_s": 2, "cache": False, "inputs": None,
+        "parent": {"cost_s": 2, "cache": False,
                    "no_cache_reason": "x" * 40, "commits": [], "peak_gb": 5},
         "child": {"cost_s": 3, "deps": ["parent"], "cache": True,
-                  "inputs": None, "commits": [], "peak_gb": 1},
-        "alone": {"cost_s": 1, "cache": True, "inputs": ["docs/**"],
-                  "commits": [], "peak_gb": 1},
-        "at-head": {"cost_s": 1, "cache": True, "inputs": None,
+                  "isolated": True, "commits": [], "peak_gb": 1},
+        "alone": {"cost_s": 1, "cache": True, "isolated": True,
+                  "workflows": ["alone.yml"], "commits": [], "peak_gb": 1},
+        "with-dep": {"cost_s": 1, "deps": ["alone"], "cache": True,
+                     "isolated": True, "commits": [], "peak_gb": 1},
+        "wide": {"cost_s": 1, "cache": True, "isolated": True,
+                 "commits": [], "peak_gb": 1},
+        "held-back": {"cost_s": 1, "cache": True, "isolated": False,
+                      "not_isolated_reason": "x" * 40, "commits": [],
+                      "peak_gb": 1},
+        "at-head": {"cost_s": 1, "cache": True, "isolated": False,
+                    "not_isolated_reason": "x" * 40,
                     "commits": ["HEAD"], "peak_gb": 1},
     }
+    fixture_triggers = {
+        "parent": ["p/**"], "child": ["c/**"], "alone": ["docs/**"],
+        "with-dep": ["src/**"], "wide": ["**"], "held-back": ["b/**"],
+        "at-head": ["h/**"],
+    }
+    fixture_runner = ("scripts/gate", "scripts/gates/lib.sh")
+    alone_inputs = sorted(["docs/**", "scripts/gate", "scripts/gates/lib.sh",
+                           "scripts/gates/alone.sh",
+                           ".github/workflows/alone.yml"])
     by_name = {u["name"]: u for u in plan_units(
-        {"parent", "child", "alone"}, rust="1.0.0", table=fixture)}
+        {"parent", "child", "alone"}, rust="1.0.0", table=fixture,
+        triggers=fixture_triggers, runner=fixture_runner)}
     if set(by_name) != {"child", "alone"}:
         failures.append(
             f"plan-fixture: units {sorted(by_name)}; `parent` is run by "
@@ -6559,10 +7055,15 @@ def self_test(repo_root: Path) -> int:
             "plan-fixture: `child` runs `parent`, whose verdict is not kept, "
             "and its own unit kept a verdict anyway")
     elif by_name["alone"]["cache"] is not True \
-            or by_name["alone"].get("inputs") != ["docs/**"]:
+            or by_name["alone"].get("inputs") != alone_inputs:
         failures.append(
-            f"plan-fixture: `alone` keeps its verdict over its own inputs and "
-            f"was planned as {by_name['alone']}")
+            f"plan-fixture: `alone` keeps its verdict over its trigger, its "
+            f"script, its workflow and the runner's files ({alone_inputs}), "
+            f"and was planned as {by_name['alone']}")
+    elif "inputs" in by_name["child"]:
+        failures.append(
+            f"plan-fixture: `child` keeps no verdict (it runs `parent`) and "
+            f"still named inputs: {by_name['child']['inputs']}")
     elif by_name["child"].get("secs") != 5.0:
         failures.append(
             f"plan-fixture: `child` runs 3s of its own and 2s of `parent`, "
@@ -6571,18 +7072,58 @@ def self_test(repo_root: Path) -> int:
         failures.append(
             f"plan-fixture: `child` peaks at 1 GiB and runs `parent`, which "
             f"peaks at 5, and asked for {by_name['child'].get('mem_gb')}")
-    # A unit that reads HEAD carries its id and keeps its pass only then.
+    # A unit's inputs are the triggers of everything it runs: `with-dep` runs
+    # `alone`, so its key holds both triggers, both scripts and the workflow
+    # `alone` mirrors.
+    cases += 1
+    dep_unit = plan_units({"with-dep"}, rust="1.0.0", table=fixture,
+                          triggers=fixture_triggers, runner=fixture_runner)[0]
+    dep_want = sorted(set(alone_inputs)
+                      | {"src/**", "scripts/gates/with-dep.sh"})
+    if dep_unit.get("inputs") != dep_want:
+        failures.append(
+            f"plan-fixture: `with-dep` runs `alone`, so its inputs are both "
+            f"triggers with the machinery of both ({dep_want}); planned as "
+            f"{dep_unit.get('inputs')}")
+    # The three ways a kept unit keeps the whole tree: the catch-all trigger,
+    # a gate that says it may not run in a copy, and a plan made without the
+    # triggers to read.
+    for label, slug, trig in (
+            ("the catch-all trigger", "wide", fixture_triggers),
+            ("`isolated: False`", "held-back", fixture_triggers),
+            ("no triggers handed to the plan", "alone", None)):
+        cases += 1
+        planned = plan_units({slug}, rust="1.0.0", table=fixture,
+                             triggers=trig, runner=fixture_runner)[0]
+        if planned["cache"] is not True or "inputs" in planned:
+            failures.append(
+                f"plan-fixture: with {label}, `{slug}` keeps its pass over "
+                f"the whole tree and names no inputs; planned as {planned}")
+    # A unit that reads HEAD carries its id and keeps its pass only then, and
+    # names no inputs: a copy holds no commit but its own (bx RFC 0026,
+    # section 4.4), even where the gate's entry wrongly claimed a copy.
     cases += 1
     commit = "a" * 40
     with_head = plan_units({"at-head"}, rust="1.0.0", table=fixture,
-                           head=commit)
+                           head=commit, triggers=fixture_triggers,
+                           runner=fixture_runner)
     without = plan_units({"at-head"}, rust="1.0.0", table=fixture, head=None)
     if with_head[0]["argv"] != ["bash", "scripts/gate", "--rust", "1.0.0",
-                                "--at", commit, "at-head"] \
-            or with_head[0]["cache"] is not True:
+                                "--unit", "--at", commit, "at-head"] \
+            or with_head[0]["cache"] is not True \
+            or "inputs" in with_head[0]:
         failures.append(
             f"plan-fixture: a gate that reads HEAD was planned as "
-            f"{with_head[0]}, not at HEAD's id with its pass kept")
+            f"{with_head[0]}, not at HEAD's id with its pass kept over the "
+            f"whole tree")
+    claims_copy = dict(fixture, **{"at-head": dict(
+        fixture["at-head"], isolated=True, not_isolated_reason=None)})
+    if "inputs" in plan_units({"at-head"}, rust="1.0.0", table=claims_copy,
+                              head=commit, triggers=fixture_triggers,
+                              runner=fixture_runner)[0]:
+        failures.append(
+            "plan-fixture: a gate that reads HEAD and claims `isolated: True` "
+            "was given inputs; the copy's HEAD is not the commit it reads")
     if "--at" in without[0]["argv"] or without[0]["cache"] is not False:
         failures.append(
             f"plan-fixture: with no HEAD id to carry, a gate that reads HEAD "
@@ -6606,9 +7147,9 @@ def self_test(repo_root: Path) -> int:
     # gates it runs require, through what they depend on.
     cases += 1
     skip_fixture = {
-        "prereq": {"cost_s": 1, "cache": True, "inputs": None, "commits": [],
+        "prereq": {"cost_s": 1, "cache": True, "isolated": True, "commits": [],
                    "peak_gb": 1, "unit_requires": {"packages": ["pkg-b"]}},
-        "skipper": {"cost_s": 1, "cache": True, "inputs": None, "commits": [],
+        "skipper": {"cost_s": 1, "cache": True, "isolated": True, "commits": [],
                     "peak_gb": 1, "deps": ["prereq"],
                     "kept_only_from_a_landing": "x" * 40,
                     "unit_requires": {"needs": ["tool-a"],
@@ -6623,7 +7164,8 @@ def self_test(repo_root: Path) -> int:
             f"as {branch_unit}; its pass could be a skip and is not kept")
     if landing_unit["cache"] is not True \
             or landing_unit["argv"] != ["bash", "scripts/gate", "--rust",
-                                        "1.0.0", "--landing", "skipper"]:
+                                        "1.0.0", "--unit", "--landing",
+                                        "skipper"]:
         failures.append(
             f"plan-fixture: a landing's unit of a gate that can skip was "
             f"planned as {landing_unit}, not with --landing and its pass kept")
@@ -6907,13 +7449,19 @@ def print_plan(args, repo_root: Path) -> int:
     tree_is_head = tracked_tree_is_head(repo_root)
     head = head_commit(repo_root)
     units = plan_units(selected, rust=args.rust, tree_is_head=tree_is_head,
-                       head=head, landing=bool(args.landing))
+                       head=head, landing=bool(args.landing),
+                       triggers=gate_triggers(repo_root),
+                       runner=runner_inputs(repo_root))
     print(f"  selection: {reason}", file=sys.stderr)
     for slug in off_fleet:
         print(f"  NOT JUDGED HERE, hosted CI audits it after landing: {slug} "
               f"needs platform {GATES[slug]['platform']!r}, which bx.toml "
               f"does not declare ({GATES[slug].get('platform_reason', '')})",
               file=sys.stderr)
+    narrowed = [u["name"] for u in units if "inputs" in u]
+    if units:
+        print(f"  {len(narrowed)} of {len(units)} unit(s) keyed by their "
+              f"inputs: {' '.join(narrowed) or '-'}", file=sys.stderr)
     if head is None:
         print("  git names no HEAD commit, so no unit that reads it keeps a "
               "verdict", file=sys.stderr)

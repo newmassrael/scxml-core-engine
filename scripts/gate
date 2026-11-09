@@ -15,6 +15,7 @@
 #                                     to main: ci_only gates included, no skip
 #   scripts/gate --rust <release> ... run on that installed Rust release only
 #   scripts/gate --at <commit> ...    refuse to run unless HEAD is that commit
+#   scripts/gate --unit <slug>        run as one unit of a plan (see below)
 #
 # The order is derived, never typed: `tools/git-hooks/gate_registry.py`
 # holds each gate's dependencies and measured cost, and the runner sorts by
@@ -41,6 +42,13 @@
 # registry makes that choice (`push_keeps`), and a landing's plan puts the
 # flag in every unit. And it makes a skip a refusal: a gate that would skip
 # and exit 0 for want of a tool ends with 3, could not run, instead.
+#
+# `--unit` is what a plan's unit passes. The plan ran the registry's self-test
+# over the whole tree before it printed a unit, and bx may run the unit in a
+# copy that holds only the unit's inputs (bx RFC 0026; "A unit's inputs are its
+# gates' triggers" in the registry), so a unit does not run the self-test
+# again: it reads every workflow and every gate script, which such a copy does
+# not hold.
 
 set -euo pipefail
 
@@ -58,6 +66,7 @@ PLAN=0
 RUST_WANT=""
 AT_WANT=""
 LANDING=0
+UNIT=0
 
 while (( $# )); do
     case "$1" in
@@ -66,11 +75,12 @@ while (( $# )); do
         --measure)      MEASURE=1 ;;
         --plan)         PLAN=1 ;;
         --landing)      LANDING=1 ;;
+        --unit)         UNIT=1 ;;
         --rust)         RUST_WANT="${2:-}"; shift ;;
         --at)           AT_WANT="${2:-}"; shift ;;
         --changed-from) MODE="changed"; CHANGED_FILE="$2"; shift ;;
         --changed-in)   MODE="changed"; CHANGED_RANGES+=("$2"); shift ;;
-        -h|--help)      sed -n '5,43p' "$0"; exit 0 ;;
+        -h|--help)      sed -n '5,51p' "$0"; exit 0 ;;
         -*)             printf 'gate: unknown option %s\n' "$1" >&2; exit 2 ;;
         *)              SLUGS+=("$1"); MODE="${MODE:-named}" ;;
     esac
@@ -109,6 +119,11 @@ if (( LANDING )); then
     # scripts/gates/lib.sh reads this and ends with 3, could not run, where it
     # would otherwise exit 0. Exported, so a gate's own sub-scripts see it.
     export SCE_GATE_LANDING=1
+fi
+# A unit is one gate a plan named, so it takes slugs and nothing that selects.
+if (( UNIT )) && [[ $PLAN -eq 1 || $MEASURE -eq 1 || "$MODE" != "named" ]]; then
+    printf 'gate: --unit runs the gate(s) a plan named; it takes slugs, and not --plan, --measure, --list, --all or a change set\n' >&2
+    exit 2
 fi
 
 # ── The commit a plan named, and no other ──────────────────────────────
@@ -259,8 +274,9 @@ gate_select_rust() {
 # The registry decides what runs and in what order, so a broken registry is
 # a silent coverage loss rather than a loud failure. Exercise its own cases
 # first — milliseconds, and it is the only thing standing between a table
-# typo and a gate that quietly stops running.
-if ! python3 "$REGISTRY" --self-test --repo-root "$REPO_ROOT" >/dev/null 2>&1; then
+# typo and a gate that quietly stops running. A unit skips it: the plan that
+# named the unit ran it over the whole tree (see `--unit` above).
+if (( ! UNIT )) && ! python3 "$REGISTRY" --self-test --repo-root "$REPO_ROOT" >/dev/null 2>&1; then
     python3 "$REGISTRY" --self-test --repo-root "$REPO_ROOT" >&2 || true
     printf '\nERROR gate: registry self-test failed — refusing to run.\n' >&2
     exit 1

@@ -1555,17 +1555,34 @@ fn the_push_hands_bx_the_set_the_registry_plans() {
                 "{changed:?}: unit {name} does not run the runner on its own gate"
             );
             assert_eq!(
-                head.get(..4),
-                Some(&["bash", "scripts/gate", "--rust", "1.0.0"][..]),
-                "{changed:?}: unit {name} does not run the runner at the planned \
-                 release: {argv:?}"
+                head.get(..5),
+                Some(&["bash", "scripts/gate", "--rust", "1.0.0", "--unit"][..]),
+                "{changed:?}: unit {name} does not run the runner as a unit at \
+                 the planned release: {argv:?}"
             );
             assert_eq!(
-                head.len() == 6 && head[4] == "--at" && head[5].len() >= 40,
+                head.len() == 7 && head[5] == "--at" && head[6].len() >= 40,
                 reads_head,
                 "{changed:?}: unit {name} carries HEAD's id exactly when a gate \
                  it runs reads HEAD: {argv:?}"
             );
+            // A unit keyed by its inputs runs in a copy of them, so every gate
+            // it runs has to have said it may, and none may read a commit.
+            if unit.get("inputs").is_some() {
+                for s in &closure {
+                    assert_eq!(
+                        mapping[s.as_str()]["isolated"],
+                        serde_json::Value::Bool(true),
+                        "{changed:?}: unit {name} names inputs and runs {s}, \
+                         which does not say it may run in a copy of them"
+                    );
+                }
+                assert!(
+                    !reads_head,
+                    "{changed:?}: unit {name} names inputs and reads HEAD, which \
+                     a copy of its inputs does not hold"
+                );
+            }
             let peak = closure
                 .iter()
                 .filter_map(|s| mapping[s.as_str()]["peak_gb"].as_f64())
