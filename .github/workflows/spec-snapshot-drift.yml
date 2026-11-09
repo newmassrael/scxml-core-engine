@@ -53,6 +53,12 @@ on:
       # them (2026-11-09).
       - 'tests/w3c/aot_tests/Test*.h'
       - 'docs/sce-ledger/mesh/.atomic/verifies-catalog.json'
+      # The tooling suite converts the real SCE_MESH.md and reads the pinned
+      # Mnemosyne revision from spec-citations.yml. The trees the ledgers
+      # enrol reach the push's selection from their configs (`enrolled_by`
+      # in tools/git-hooks/gate_registry.py); a filter here cannot derive.
+      - 'SCE_MESH.md'
+      - '.github/workflows/spec-citations.yml'
       - '.github/workflows/spec-snapshot-drift.yml'
   pull_request:
     branches: [ main ]
@@ -77,6 +83,8 @@ on:
       - 'backends/c/tests/integration/test_static_child_mesh.c'
       - 'tests/w3c/aot_tests/Test*.h'
       - 'docs/sce-ledger/mesh/.atomic/verifies-catalog.json'
+      - 'SCE_MESH.md'
+      - '.github/workflows/spec-citations.yml'
       - '.github/workflows/spec-snapshot-drift.yml'
   schedule:
     # Weekly upstream re-check (Mondays 04:17 UTC; off the hour to spread load).
