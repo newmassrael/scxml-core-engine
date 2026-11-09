@@ -19,6 +19,8 @@
 {% for header in std_includes %}#include <{{ header }}>
 {% endfor %}{% if counts_characters %}
 #include "{{ text_length_header }}"
+{% endif %}{% if builds_bounded %}
+#include <{{ forge_bounded_header }}>
 {% endif %}
 {% for inc in type_includes %}
 {{ inc }}
