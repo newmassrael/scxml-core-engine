@@ -12,6 +12,8 @@
 
 #include "sce/forge/bounded.h"
 
+#include "sce/forge/algorithm.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -137,6 +139,86 @@ void a_default_holds_the_fewest_elements_the_bounds_admit() {
     CHECK(fewest.size() == 2 && fewest[0] == 0 && fewest[1] == 0, "an owning list holds the fewest, value-made");
 }
 
+// The places a generated machine holds a text, a byte string and a list in
+// (docs/adr/0086, section 7.4) are the owning forms, under the names the
+// generator spells. Each is lent read only wherever the list it holds is
+// expected, and a text is viewed wherever a `std::string_view` is; nothing
+// converts into one but its own `make`, `literal` and a widening from a
+// tighter bound.
+using HeldText = ::SCE::Forge::OwnedText<4>;
+using HeldBytes = ::SCE::Forge::OwnedBytes<3>;
+using HeldList = ::SCE::Forge::OwnedList<std::uint16_t, 2>;
+static_assert(std::is_same<HeldText, Bounded<std::string, 4>>::value, "a held text is an owning text");
+static_assert(std::is_same<HeldBytes, Bounded<std::vector<std::uint8_t>, 3>>::value, "a held byte string too");
+static_assert(std::is_same<HeldList::value_type, std::uint16_t>::value, "a list names the type of its element");
+static_assert(std::is_convertible<const HeldText &, const std::string &>::value, "a held text is lent as a string");
+static_assert(std::is_convertible<const HeldText &, std::string_view>::value, "and viewed as one");
+static_assert(std::is_convertible<const HeldList &, const std::vector<std::uint16_t> &>::value,
+              "a held list is lent as the vector it holds");
+static_assert(!std::is_convertible<const Text<4> &, const std::string &>::value, "a view lends no string");
+static_assert(!std::is_constructible<HeldText, std::string>::value, "a bare string is checked by make");
+static_assert(!std::is_constructible<HeldText, const char *>::value, "and so is a pointer to text");
+static_assert(std::is_convertible<::SCE::Forge::OwnedText<2>, HeldText>::value, "a tighter bound widens");
+static_assert(!std::is_constructible<::SCE::Forge::OwnedText<2>, HeldText>::value, "a looser one does not");
+
+void a_held_place_starts_at_a_literal_the_compiler_judges() {
+    const HeldText text = HeldText::literal("beta");
+    CHECK(text == "beta" && "beta" == text && text != "bet" && text.size() == 4, "a text literal is held whole");
+    const HeldText zero = HeldText::literal("a\0b");
+    CHECK(zero.size() == 3 && zero[1] == '\0', "a zero inside a literal is one of its bytes");
+    const HeldBytes bytes = HeldBytes::literal({0x01, 0xFF});
+    CHECK((bytes == std::vector<std::uint8_t>{0x01, 0xFF}), "a byte-string literal holds each byte");
+    const std::string &lent = text;
+    const std::string_view viewed = text;
+    CHECK(lent == "beta" && viewed == "beta" && std::string(text) == "beta", "a held text reads as the string");
+}
+
+void a_held_list_grows_only_within_its_bound() {
+    const std::uint16_t seven = 7;
+    const std::uint16_t eight = 8;
+    const std::uint16_t nine = 9;
+    HeldList list;
+    CHECK(list.push(seven) && list.push(eight), "two elements lie within a bound of two");
+    CHECK(!list.push(nine), "a third is refused");
+    CHECK(list.size() == 2 && list[0] == seven && list[1] == eight, "and the list is as it was before it");
+    const std::vector<std::uint16_t> &lent = list;
+    CHECK((lent.size() == 2 && lent == std::vector<std::uint16_t>{seven, eight}), "it is lent as the vector it holds");
+    list.clear();
+    CHECK(list.empty() && list.push(nine) && list.size() == 1, "an emptied list takes elements again");
+
+    const auto widened = ::SCE::Forge::widenedMap<HeldText>(
+        ::SCE::Forge::OwnedList<::SCE::Forge::OwnedText<2>, 2>::literal(
+            {::SCE::Forge::OwnedText<2>::literal("ab"), ::SCE::Forge::OwnedText<2>::literal("c")}),
+        [](const ::SCE::Forge::OwnedText<2> &element) -> HeldText { return element; });
+    const ::SCE::Forge::OwnedList<HeldText, 3> place = widened;
+    CHECK(place.size() == 2 && place[0] == "ab" && place[1] == "c", "a list widens element by element");
+}
+
+void a_held_place_is_written_only_within_its_bound() {
+    ::SCE::Forge::AlgorithmFailure fits;
+    const HeldText within = ::SCE::Forge::Checked::held<HeldText>(fits, std::string("beta"));
+    CHECK(!fits.failed() && within == "beta", "a text within the bound is held");
+    const HeldText widened = ::SCE::Forge::Checked::held<HeldText>(fits, ::SCE::Forge::OwnedText<2>::literal("ab"));
+    CHECK(!fits.failed() && widened == "ab", "a held text of another bound is copied as the text it is");
+
+    ::SCE::Forge::AlgorithmFailure past;
+    const HeldText refused = ::SCE::Forge::Checked::held<HeldText>(past, "gamma");
+    CHECK(past.failed() && past.error() == ::SCE::Forge::AlgorithmError::CapacityExceeded,
+          "a text past the bound is a capacity failure");
+    CHECK(refused.empty(), "and nothing of it is held, never a part cut to fit");
+
+    ::SCE::Forge::AlgorithmFailure notText;
+    const HeldText broken = ::SCE::Forge::Checked::held<HeldText>(notText, std::string("\xC3"));
+    CHECK(notText.failed() && broken.empty(), "a text that is not UTF-8 has no place either");
+
+    ::SCE::Forge::AlgorithmFailure listFits;
+    const auto list = ::SCE::Forge::Checked::heldList<2>(listFits, std::vector<std::uint16_t>{1, 2});
+    CHECK(!listFits.failed() && list.size() == 2, "an answered list within the bound is held");
+    ::SCE::Forge::AlgorithmFailure listPast;
+    const auto long_list = ::SCE::Forge::Checked::heldList<2>(listPast, std::vector<std::uint16_t>{1, 2, 3});
+    CHECK(listPast.failed() && long_list.empty(), "one past the bound is refused whole");
+}
+
 // Two lists of one count convert as each list does, which keeps each count:
 // owning lists are viewed without a copy, and views are held by an explicit
 // copy. Two bare lists are no `Aligned`; the only door is `make`.
@@ -238,6 +320,9 @@ int main() {
     make_admits_a_text_only_of_well_formed_utf8();
     a_default_holds_the_fewest_elements_the_bounds_admit();
     make_admits_exactly_two_lists_of_one_count();
+    a_held_place_starts_at_a_literal_the_compiler_judges();
+    a_held_list_grows_only_within_its_bound();
+    a_held_place_is_written_only_within_its_bound();
     if (failures != 0) {
         std::fprintf(stderr, "%d check(s) failed\n", failures);
         return 1;
