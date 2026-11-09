@@ -180,7 +180,9 @@ pub struct IndexRule {
     /// Directories the pattern matches that are not indexed this way.
     #[serde(default)]
     pub except: Vec<String>,
-    /// The index file's name in each directory.
+    /// The index file's name in each directory, or, holding `{dir}`, its path
+    /// relative to the root with `{dir}` the directory's (`{dir}.rs` is the
+    /// Rust index beside a directory of modules).
     pub file: String,
     /// The text before the first module, written as it is.
     pub header: String,

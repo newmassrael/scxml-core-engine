@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# The Swift Mesh package's generated part (ADR 0097): every standard Mesh
+# document (`sce:std/mesh`) generated for Swift into the SceMesh target.
+
+[tree]
+name = "mesh-swift"
+roots = ["backends/swift/mesh/Sources/SceMesh/Generated"]
+
+[[generation]]
+each = { files = "stdlib/mesh/*.scxml", as = "document" }
+arguments = ["generate", "stdlib/mesh/{document}.scxml", "--language", "swift", "--output-dir", "{out}"]
+place = "backends/swift/mesh/Sources/SceMesh/Generated"
+keep = ["*.swift"]

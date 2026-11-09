@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# The Swift WebSocket transport's test peer table (ADR 0097): the loopback
+# client's peers, generated over the fixture directory, which the transport's
+# tests build their router from.
+
+[tree]
+name = "mesh-swift-wss"
+roots = ["backends/swift/mesh-wss/Tests/SceMeshWssTests/Generated"]
+
+[[generation]]
+arguments = [
+    "generate", "tests/mesh/wss_loopback/client.scxml",
+    "--deploy", "tests/mesh/wss_loopback/deploy.yaml",
+    "--language", "swift", "--transport-only",
+    "--input-root", "tests/mesh/wss_loopback",
+    "--output-dir", "{out}",
+]
+place = "backends/swift/mesh-wss/Tests/SceMeshWssTests/Generated"
+keep = ["*.swift"]

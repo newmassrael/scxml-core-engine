@@ -162,7 +162,13 @@ pub fn materialize(
                     text.push_str(&entry.line.replace("{module}", super::tree::stem(name)));
                 }
             }
-            let path = format!("{dir}/{}", index.file);
+            // `{dir}` places the index beside its directory rather than in it
+            // (Rust's `generated.rs` for `generated/`).
+            let path = if index.file.contains("{dir}") {
+                index.file.replace("{dir}", dir)
+            } else {
+                format!("{dir}/{}", index.file)
+            };
             write_file(&into.join(&path), text.as_bytes(), false)?;
             report.files.insert(path);
         }
