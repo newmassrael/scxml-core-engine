@@ -206,10 +206,16 @@ fn every_matcher_is_spelled_over_the_schemas_record() {
             "com.sce.generated.elapsed_at_most.matches(value.count, param_limit)",
         ],
     );
+    // The match alone: the unit's `canonical` reads every field, the matched
+    // ones and the others alike.
+    let matches = text
+        .split_once("\nfun matches(")
+        .map(|(_, rest)| rest.split_once("\n\n").map_or(rest, |(body, _)| body))
+        .unwrap_or_else(|| panic!("no `matches` function:\n{text}"));
     // any-value-or-none holds whatever the field holds.
-    assert!(!text.contains("value.tag"), "{text}");
+    assert!(!matches.contains("value.tag"), "{text}");
     // A matcher that reads no element (`any-value` in a list) compares none.
-    assert!(!text.contains("value.codes[1]"), "{text}");
+    assert!(!matches.contains("value.codes[1]"), "{text}");
 }
 
 /// A specific template's value: every field by name, an omitted field absent,
@@ -396,4 +402,102 @@ fn a_byte_string_parameter_is_compared_by_its_octets_and_built_from_a_copy() {
     );
     assert!(!text.contains("value.code =="), "{text}");
     assert!(!text.contains("value.spare =="), "{text}");
+}
+
+/// The runtime's writers of the canonical form of a value in the test log.
+const CANONICAL: &str = "com.sce.runtime.test.Canonical";
+
+/// docs/SCE_TEST_PROFILE.md §12.5: a template over a record, the type of a
+/// message, writes its value's canonical form in the test log by the types the
+/// schema declares, each field by its declared id, an optional one absent where
+/// it is; a template over another type writes none. The type's name is the one
+/// the Rust unit writes for the same record.
+#[test]
+fn a_template_over_a_record_writes_its_values_canonical_form() {
+    for (path, name, file, _) in templates() {
+        let text = unit(&path, name, file);
+        let over_record = !matches!(
+            name,
+            "elapsed_at_most" | "shape_is_circle" | "quantity_at_most" | "quantity_two"
+        );
+        assert_eq!(
+            text.contains("\nfun canonical(value: Value): Any =\n"),
+            over_record,
+            "{name}: the canonical form is written exactly for a template over a record:\n{text}"
+        );
+        // The unit names the SCE runtime exactly where it writes the form, and
+        // its header says so.
+        let runtime = if over_record { "sce_runtime" } else { "none" };
+        assert!(
+            text.contains(&format!("// Runtime: {runtime}\n")),
+            "{name}: the header states the runtime the unit names:\n{text}"
+        );
+        // A message's type, as the TTCN-3 export's types module names its
+        // record: the unit name of the event schema's file.
+        let record = match name {
+            "every_matcher" | "job_report" | "job_report_of" | "report_within" => {
+                Some("job_status")
+            }
+            "order_line_exact" | "order_line_bounded" => Some("order_line"),
+            "card_within" => Some("card_payment"),
+            "voucher_is" => Some("voucher_payment"),
+            "order_placed_match" => Some("order_placed"),
+            // The kind example's schema is the file `event-schema.scxml`.
+            "test_template" => Some("event_schema"),
+            _ => None,
+        };
+        assert_eq!(
+            record.is_some(),
+            over_record,
+            "{name}: a record template is named here"
+        );
+        if let Some(record) = record {
+            holds_each(
+                &text,
+                &[format!("\nconst val TYPE: String = \"{record}\"\n").as_str()],
+            );
+        }
+    }
+    let report = unit_of(&profile_dir(), "job_report", "JobReport.kt");
+    let c = CANONICAL;
+    let written = format!(
+        "{c}.record(\"elapsed_ms\" to {c}.integer(value.elapsed_ms), \
+         \"note\" to value.note?.let {{ present_0 -> {c}.text(present_0) }}, \
+         \"codes\" to {c}.list(value.codes.map {{ item_0 -> {c}.integer(item_0) }}), \
+         \"tag\" to value.tag?.let {{ present_0 -> {c}.integer(present_0) }}, \
+         \"retry\" to value.retry?.let {{ present_0 -> {c}.integer(present_0) }}, \
+         \"count\" to {c}.integer(value.count))"
+    );
+    holds_each(&report, &[written.as_str()]);
+}
+
+/// The canonical form of a record that holds a list of records, an enum, a
+/// nested record and a union: each element's fields read through its lambda's
+/// parameter, an enum and a case by their declared names, a case's record
+/// through the `when` that binds the union, a byte string as its octets.
+#[test]
+fn a_records_canonical_form_reaches_every_type_it_holds() {
+    let placed = unit_of(&imports_dir(), "order_placed_match", "OrderPlacedMatch.kt");
+    let c = CANONICAL;
+    let payment = "com.sce.generated.order_payment.OrderPayment";
+    let lines = format!(
+        "\"lines\" to {c}.list(value.lines.map {{ item_0 -> \
+         {c}.record(\"sku\" to {c}.text(item_0.sku), \
+         \"quantity\" to {c}.integer(item_0.quantity), \
+         \"color\" to {c}.enumerated(item_0.color.declaredName())) }})"
+    );
+    let customer = format!(
+        "\"customer\" to {c}.record(\"full_name\" to {c}.text(value.customer.full_name), \
+         \"vip\" to {c}.boolean(value.customer.vip))"
+    );
+    let paid = format!(
+        "\"payment\" to when (val case_0 = value.payment) {{ \
+         is {payment}.Card -> {c}.unionCase(\"card\", \
+         {c}.record(\"last4\" to {c}.text(case_0.value.last4), \
+         \"amount\" to {c}.integer(case_0.value.amount))); \
+         is {payment}.Cash -> {c}.unionCase(\"cash\", null); \
+         is {payment}.Voucher -> {c}.unionCase(\"voucher\", \
+         {c}.record(\"voucher_code\" to {c}.bytes(case_0.value.voucher_code))) }}"
+    );
+    holds_each(&placed, &[lines.as_str(), customer.as_str(), paid.as_str()]);
 }

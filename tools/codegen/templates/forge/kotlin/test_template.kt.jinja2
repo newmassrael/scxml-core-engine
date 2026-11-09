@@ -46,3 +46,22 @@ fun matches(value: Value{% for p in parameters %}, {{ p.name }}: {{ p.ty }}{% en
 fun value({% for p in parameters %}{{ p.name }}: {{ p.ty }}{% if not loop.last %}, {% endif %}{% endfor %}): Value =
     {{ value_expr }}
 {% endif %}
+{# Only a template over a record, the type of a message, writes the name of a
+   message's type and the canonical form of its value. #}
+{% if canonical_expr %}
+
+/**
+ * The name of the record [Value] is, as the types module of the suite's TTCN-3 export names it
+ * (docs/SCE_TEST_PROFILE.md §9.5): the `type` of a message of it in the test log (§12.5).
+ */
+const val TYPE: String = "{{ log_type | escape_kotlin }}"
+
+/**
+ * [value] in the canonical form of the test log (docs/SCE_TEST_PROFILE.md §12.5): each
+ * integer as the text of its digits, a byte string in upper-case hex, an enum and a case
+ * of a union by their declared names, an absent field omitted. A send of this template
+ * carries it beside the value it sends (`com.sce.runtime.test.messageValue`).
+ */
+fun canonical(value: Value): Any =
+    {{ canonical_expr }}
+{% endif %}

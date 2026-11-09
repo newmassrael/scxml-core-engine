@@ -24,6 +24,7 @@ import com.sce.generated.shape_radius_minimal.ShapeRadiusMinimalPayload
 import com.sce.generated.shape_rect_minimal.ShapeRectMinimalPayload
 import com.sce.generated.union_shape_minimal.UnionShapeMinimal
 import com.sce.generated.voucher_payment.VoucherPaymentPayload
+import com.sce.runtime.Json
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -40,6 +41,8 @@ import com.sce.generated.job_report_of.value as jobReportOfValue
 import com.sce.generated.order_line_bounded.matches as orderLineBounded
 import com.sce.generated.order_line_exact.matches as orderLineExact
 import com.sce.generated.order_line_exact.value as orderLineExactValue
+import com.sce.generated.order_placed_match.TYPE as ORDER_PLACED_TYPE
+import com.sce.generated.order_placed_match.canonical as orderPlacedCanonical
 import com.sce.generated.order_placed_match.matches as orderPlacedMatch
 import com.sce.generated.report_within.matches as reportWithin
 import com.sce.generated.shape_is_circle.matches as shapeIsCircle
@@ -310,5 +313,38 @@ class ATestTemplateMatchesItsValuesTest {
         }
         val ordinary = order().copy(customer = OrderCustomerPayload(full_name = "Ada", vip = false))
         assertFalse(orderPlacedMatch(ordinary, QUANTITY_LIMIT))
+    }
+
+    /**
+     * docs/SCE_TEST_PROFILE.md §12.5: the unit's `canonical` writes an order by the types
+     * its documents declare, in the JSON Canonicalization Scheme: every integer as the
+     * text of its digits, an enum and a union's case by their declared names, a byte
+     * string in upper-case hex, an absent field omitted and a present one written, a case
+     * that holds no record as the empty object. `TYPE` is the unit name of the record's
+     * event schema.
+     */
+    @Test
+    fun anOrdersCanonicalFormIsWrittenByTheTypesItsDocumentsDeclare() {
+        val lines = "\"lines\":[{\"color\":\"green\",\"quantity\":\"5\",\"sku\":\"A-1\"}," +
+            "{\"color\":\"red\",\"quantity\":\"2\",\"sku\":\"A-1\"}]"
+        assertEquals(
+            "{\"customer\":{\"full_name\":\"Ada\",\"vip\":true},$lines,\"order_id\":\"7\"," +
+                "\"payment\":{\"card\":{\"amount\":\"1\",\"last4\":\"1234\"}}}",
+            Json.writeJcs(orderPlacedCanonical(order())),
+        )
+        val noted = order().copy(
+            note = "late",
+            priority = 3.toUByte(),
+            payment = OrderPayment.Voucher(voucherIsValue()),
+        )
+        assertEquals(
+            "{\"customer\":{\"full_name\":\"Ada\",\"vip\":true},$lines,\"note\":\"late\"," +
+                "\"order_id\":\"7\",\"payment\":{\"voucher\":{\"voucher_code\":\"00FF10A0\"}}," +
+                "\"priority\":\"3\"}",
+            Json.writeJcs(orderPlacedCanonical(noted)),
+        )
+        val cash = Json.writeJcs(orderPlacedCanonical(order().copy(payment = OrderPayment.Cash)))
+        assertTrue(cash.endsWith(",\"payment\":{\"cash\":{}}}"), cash)
+        assertEquals("order_placed", ORDER_PLACED_TYPE)
     }
 }
