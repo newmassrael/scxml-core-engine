@@ -433,13 +433,15 @@ func (c *IdlerComponent) Start(context *scetestprofile.ComponentContext) {
 	machine := sce.NewEngine[IdlerState, IdlerEvent](&policy)
 	// P6: a send on a port is appended to the queue of the port it is connected
 	// to, or handed to the system adapter where it is mapped. A test-port send
-	// always carries its template's value (`forge::static_lowering`,
-	// `StaticTarget::test_message`).
+	// always carries its template's value, with the name of its record type
+	// and the writer of its canonical form in the test log (§12.5,
+	// `forge::static_lowering`, `StaticTarget::test_message`).
 	machine.RegisterEventProcessor("http://sce.dev/ext/test-port", func(request sce.HostSendRequest) []sce.HostSendResponse {
-		if request.Value == nil {
+		value, carried := request.Value.(scetestprofile.TestValue)
+		if !carried {
 			panic("a test-port send carries its template's value")
 		}
-		context.Send(request.Target, scetestprofile.Message{Event: request.EventName, Value: request.Value})
+		context.Send(request.Target, scetestprofile.Message{Event: request.EventName, Value: value})
 		return nil
 	})
 	// P9: the start of a PTC's invocation creates and starts it, and its cancel

@@ -6,6 +6,7 @@
 // Runtime: sce_runtime
 // Do not edit — regenerate from the source SCXML file.
 
+import SceRuntime
 import SceTestProfile
 
 /// The test template `every_matcher` (docs/SCE_TEST_PROFILE.md §11.4): a caseless enum of
@@ -21,5 +22,17 @@ public enum EveryMatcher {
     /// `param_limit` is the formal parameter `limit`, of type `uint32`.
     public static func matches(_ value: Value, _ param_limit: UInt32) -> Bool {
         return (value.elapsed_ms == 1 || (value.elapsed_ms >= 10 && value.elapsed_ms <= param_limit)) && (value.note == nil || (value.note != nil && value.note.map { present_0 -> Bool in SceTestProfile.textLength(present_0) <= 8 } ?? true)) && value.codes.count == 3 && value.codes[0] == 3 && value.codes[2] != 0 && value.codes.count >= 1 && value.codes.count <= 4 && value.retry == nil && ElapsedAtMost.matches(value.count, param_limit)
+    }
+
+    /// The name of the record `Value` is, as the types module of the suite's TTCN-3 export names it
+    /// (docs/SCE_TEST_PROFILE.md §9.5): the `type` of a message of it in the test log (§12.5).
+    public static let TYPE: String = "job_status"
+
+    /// `value` in the canonical form of the test log (docs/SCE_TEST_PROFILE.md §12.5): each integer
+    /// as the text of its digits, a byte string in upper-case hex, an enum and a case of a union by
+    /// their declared names, an absent field omitted. A send of this template carries it beside the
+    /// value it sends (`SceTestProfile.messageValue`).
+    public static func canonical(_ value: Value) -> SceRuntime.JSONValue {
+        return SceTestProfile.Canonical.record(("elapsed_ms", SceTestProfile.Canonical.integer(value.elapsed_ms)), ("note", value.note.map { present_0 -> SceRuntime.JSONValue in SceTestProfile.Canonical.text(present_0) }), ("codes", SceTestProfile.Canonical.list(value.codes.map { item_0 -> SceRuntime.JSONValue in SceTestProfile.Canonical.integer(item_0) })), ("tag", value.tag.map { present_0 -> SceRuntime.JSONValue in SceTestProfile.Canonical.integer(present_0) }), ("retry", value.retry.map { present_0 -> SceRuntime.JSONValue in SceTestProfile.Canonical.integer(present_0) }), ("count", SceTestProfile.Canonical.integer(value.count)))
     }
 }

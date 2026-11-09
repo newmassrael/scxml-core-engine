@@ -6,6 +6,7 @@
 // Runtime: sce_runtime
 // Do not edit — regenerate from the source SCXML file.
 
+import SceRuntime
 import SceTestProfile
 
 /// The test template `card_within` (docs/SCE_TEST_PROFILE.md §11.4): a caseless enum of
@@ -21,5 +22,17 @@ public enum CardWithin {
     /// `param_most` is the formal parameter `most`, of type `uint32`.
     public static func matches(_ value: Value, _ param_most: UInt32) -> Bool {
         return SceTestProfile.textLength(value.last4) >= 2 && SceTestProfile.textLength(value.last4) <= 3 && value.amount >= 1 && value.amount <= param_most
+    }
+
+    /// The name of the record `Value` is, as the types module of the suite's TTCN-3 export names it
+    /// (docs/SCE_TEST_PROFILE.md §9.5): the `type` of a message of it in the test log (§12.5).
+    public static let TYPE: String = "card_payment"
+
+    /// `value` in the canonical form of the test log (docs/SCE_TEST_PROFILE.md §12.5): each integer
+    /// as the text of its digits, a byte string in upper-case hex, an enum and a case of a union by
+    /// their declared names, an absent field omitted. A send of this template carries it beside the
+    /// value it sends (`SceTestProfile.messageValue`).
+    public static func canonical(_ value: Value) -> SceRuntime.JSONValue {
+        return SceTestProfile.Canonical.record(("last4", SceTestProfile.Canonical.text(value.last4)), ("amount", SceTestProfile.Canonical.integer(value.amount)))
     }
 }

@@ -9,6 +9,7 @@
 package order_line_exact
 
 import (
+	"github.com/newmassrael/sce-go-runtime/testprofile/canonical"
 	sce_order_line "github.com/newmassrael/sce-go-tests/integration/static_datamodel/order_line"
 	sce_paint_color "github.com/newmassrael/sce-go-tests/integration/static_datamodel/paint_color"
 	sce_quantity_two "github.com/newmassrael/sce-go-tests/integration/static_datamodel/quantity_two"
@@ -30,4 +31,16 @@ func Matches(value Value) bool {
 // keeps the type Value and the package's functions in one namespace.
 func Specific() Value {
 	return sce_order_line.OrderLinePayload{Sku: "A-1", Quantity: sce_quantity_two.Specific(), Color: sce_paint_color.PaintColorRed}
+}
+
+// TYPE is the name of the record Value is, as the types module of the suite's TTCN-3 export names it
+// (docs/SCE_TEST_PROFILE.md §9.5): the `type` of a message of it in the test log (§12.5).
+const TYPE = "order_line"
+
+// Canonical is value in the canonical form of the test log (docs/SCE_TEST_PROFILE.md §12.5): each
+// integer as the text of its digits, a byte string in upper-case hex, an enum by its declared name,
+// an absent field omitted. A send of this template carries it beside the value it sends
+// (`testprofile.MessageValue`).
+func Canonical(value Value) any {
+	return canonical.Record(canonical.Field("sku", canonical.Text(value.Sku)), canonical.Field("quantity", canonical.Integer(value.Quantity)), canonical.Field("color", canonical.Enumerated(value.Color.DeclaredName())))
 }

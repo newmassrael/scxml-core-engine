@@ -6,6 +6,9 @@
 // Runtime: sce_runtime
 // Do not edit — regenerate from the source SCXML file.
 
+import SceRuntime
+import SceTestProfile
+
 /// The test template `voucher_is` (docs/SCE_TEST_PROFILE.md §11.4): a caseless enum of
 /// the module, as an algorithm's unit is, so the `Value`, `matches` and `value` of two templates
 /// never share a name, and a template another one references is called through its enum.
@@ -24,5 +27,17 @@ public enum VoucherIs {
     /// given the same parameters.
     public static func value() -> Value {
         return VoucherPaymentPayload(voucher_code: [0x00, 0xff, 0x10, 0xa0])
+    }
+
+    /// The name of the record `Value` is, as the types module of the suite's TTCN-3 export names it
+    /// (docs/SCE_TEST_PROFILE.md §9.5): the `type` of a message of it in the test log (§12.5).
+    public static let TYPE: String = "voucher_payment"
+
+    /// `value` in the canonical form of the test log (docs/SCE_TEST_PROFILE.md §12.5): each integer
+    /// as the text of its digits, a byte string in upper-case hex, an enum and a case of a union by
+    /// their declared names, an absent field omitted. A send of this template carries it beside the
+    /// value it sends (`SceTestProfile.messageValue`).
+    public static func canonical(_ value: Value) -> SceRuntime.JSONValue {
+        return SceTestProfile.Canonical.record(("voucher_code", SceTestProfile.Canonical.bytes(value.voucher_code)))
     }
 }
