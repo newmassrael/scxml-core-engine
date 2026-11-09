@@ -1969,9 +1969,16 @@ on `HostSendRequest.Value`). Python: the same two functions, `canonical_log`, th
 `sce_runtime.saved_json.write_jcs`, which sorts a name by its UTF-16 encoding and escapes a lone surrogate as
 `JSON.stringify` does; the unit of a template over a record declares `TYPE` and `canonical`, with the writers of
 `sce_runtime.testprofile.canonical`, and a send carries the value with both (`sce_runtime.testprofile.message_value`,
-a `TestValue` on `HostSendRequest.value`, which the message holds as its `test_value`). The Rust runtime wrote the
-test log first and the C++, Kotlin, Go and Python runtimes write the same one: the run of `answers_the_job` of the
-generated `runtime_suite` is held on all five to one file,
+a `TestValue` on `HostSendRequest.value`, which the message holds as its `test_value`). C11:
+`sce_test_case_result_canonical_log(result, suite, test_case, buf, cap, &len)`, which writes into the caller's buffer
+or, given none, measures, called in the runner's report of each result; the records of `sce/test/test_log.h` written
+at the same points into bounded storage of the run, a record past it ending the run with `error` and refusing the log,
+over the scheme's writer `sce_jcs_t` (`sce/saved_json.h`), which sorts an object's members in the buffer as it closes;
+the unit of a template over a record declares `<name>_canonical` and `<name>_record_type`, with the writers of
+`sce/test/canonical.h`, and a send lends the value with its record type (`sce_test_message_value_t`, on
+`sce_host_send_request_t::value`). The Rust runtime wrote the test log first and the C++, Kotlin, Go, Python and C11
+runtimes write the same one: the run of `answers_the_job` of the generated `runtime_suite` is held on all six to one
+file,
 `sce-build/tests/fixtures/test_profile/runtime/expected_logs/answers_the_job.json`, so their agreement is one set of
 bytes. Each other backend's runtime writes the same records, in the same text.
 
