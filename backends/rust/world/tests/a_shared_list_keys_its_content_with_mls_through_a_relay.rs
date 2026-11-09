@@ -421,7 +421,7 @@ fn a_member_taken_off_is_cut_off_at_the_next_epoch() {
     let newest = relay_ops.last().unwrap();
     let mut bob_host = group.party(2).member.trust().clone();
     let reason = bob_host
-        .admit("relay", "record_list.write", newest)
+        .admit("relay", "record_list.change", newest)
         .unwrap_err();
     assert!(reason.contains("no key of epoch 3"), "{reason}");
 }
