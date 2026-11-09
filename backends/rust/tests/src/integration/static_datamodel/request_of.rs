@@ -4,7 +4,7 @@
 // SCE-MAP: request_of.scxml:4 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="test-template")
-// Runtime: none
+// Runtime: sce_runtime
 // Do not edit — regenerate from the source SCXML file.
 
 /// The type the template `request_of` matches: `record:JobRequest`, as the
@@ -26,4 +26,21 @@ pub fn matches(value: &Value, param_wanted: u32) -> bool {
 #[allow(dead_code, unused_variables)]
 pub fn value(param_wanted: u32) -> Value {
     super::job_request::JobRequestPayload { job: param_wanted }
+}
+
+/// The name of the record `Value` is, as the types module of the suite's TTCN-3 export names it
+/// (docs/SCE_TEST_PROFILE.md §9.5): the `type` of a message of it in the test log (§12.5).
+#[allow(dead_code)]
+pub const TYPE: &str = "job_request";
+
+/// `value` in the canonical form of the test log (docs/SCE_TEST_PROFILE.md §12.5): each
+/// integer as the text of its digits, a byte string in upper-case hex, an enum and a case
+/// of a union by their declared names, an absent field omitted. A send of this template
+/// carries it beside the value it sends (`sce_rust_runtime::test::message_value`).
+#[allow(dead_code)]
+pub fn canonical(value: &Value) -> ::sce_rust_runtime::json::Value {
+    ::sce_rust_runtime::test::canonical::record([(
+        "job",
+        Some(::sce_rust_runtime::test::canonical::integer(value.job)),
+    )])
 }

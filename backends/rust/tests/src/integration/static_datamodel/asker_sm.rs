@@ -914,8 +914,13 @@ impl StatePolicy for AskerPolicy {
                                 invoke_id: self.pending_event_invokeid.to_string(),
                                 // docs/SCE_TEST_PROFILE.md §12.3: a test component's message is the
                                 // value of its specific template, handed to the test-port processor
-                                // as a value and never as an encoding (docs/adr/0091, C2).
-                                value: Some(::std::sync::Arc::new(request_of::value(self.job))),
+                                // as a value and never as an encoding (docs/adr/0091, C2), with the
+                                // writer of its canonical form in the test log (§12.5).
+                                value: Some(::sce_rust_runtime::test::message_value(
+                                    request_of::value(self.job),
+                                    request_of::TYPE,
+                                    request_of::canonical,
+                                )),
                             };
                             let __sce_served = engine.perform_host_send(__sce_request);
                             // W3C SCXML 6.2: a declared type with no handler registered is,
