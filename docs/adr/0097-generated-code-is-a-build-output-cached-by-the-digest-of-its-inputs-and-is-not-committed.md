@@ -1,11 +1,11 @@
 # ADR 0097 — Generated code is a build output, cached by the digest of its inputs, and is not committed
 
-- Status: Proposed (2026-11-09). A draft for the owner's decision, written at the owner's order of that day under the
-  owner's standing rule: the most long-term correct structure, textbook in its foundations, cost ignored. Nothing of
-  it has landed. "Open questions for the owner" lists what must be answered before acceptance, each with the
-  recommendation the sections are written to. Numbered 0097 because 0094 and 0096 are taken on branches.
+- Status: Accepted (2026-11-09, owner), with the recommended answer to each of the eight open questions; see
+  "Answers (2026-11-09)". The decision reached the implementing session through the session that drafted this ADR.
+  Decided under the owner's standing rule: the most long-term correct structure, textbook in its foundations, less
+  network, cost ignored. Numbered 0097 because 0094 and 0096 are taken on branches.
 - Date: 2026-11-09
-- Amends, once accepted:
+- Amends:
   - SCE Protocol-Synthesis RFC §synth-6.2.6 (`docs/spec/synth/rfc-sce-protocol-synthesis.md:4147-4167`): its
     sentence "CI regenerates and diffs" becomes "CI generates twice and compares" (section 5); the header and the
     `manual edits to out/ are forbidden` policy are unchanged;
@@ -449,7 +449,8 @@ Worse, and what pays for each:
 
 ## Open questions for the owner
 
-Each has a recommendation; the sections are written to it.
+Each has a recommendation; the sections are written to it. The owner accepted each recommendation; see "Answers
+(2026-11-09)".
 
 1. **How the generator is identified in an action key.** Recommended: by the digest of its source closure
    (`sce-build/**`, `Cargo.lock`, the rustc version, the features), so that a cache hit needs no generator built and
@@ -475,6 +476,32 @@ Each has a recommendation; the sections are written to it.
 8. **The order.** Recommended: Rust test trees first (largest, no consumer), the Mesh libraries last, after the
    release pipeline. The alternative, the Mesh libraries first, would meet the consumer cost before the reference
    pattern is proven.
+
+## Answers (2026-11-09)
+
+The owner accepted the recommended answer to every question. Restated as decisions:
+
+1. **The generator is identified in an action key by the digest of its source closure**: the files
+   `sce-build/src/generator_witness.rs` already names (`WITNESS_FILES` and `WITNESS_TREES`: `Cargo.lock`,
+   `sce-build/Cargo.toml`, `sce-build/build.rs`, `sce-build/src`, `stdlib`), with the rustc version and the enabled
+   features beside them. Not by its binary.
+2. **The action manifest is a repository file the generator reads**, whose schema `sce-build` owns. `bx.toml`'s
+   regeneration actions and every language build hook are derived from it, never written beside it.
+3. **The fleet cache is REAPI-compatible, on the build machines, and used by both `materialize` and bx.** bx RFC 0049
+   (proposed 2026-11-09: a content leaves the workstation once and machines take it from their site) makes each
+   site's REAPI CAS, the one bx already runs for RFC 0001 and RFC 0044, the one store every send goes through. The
+   action cache of section 3 is the REAPI Action Cache beside that CAS, so the fleet holds one cache, not two: an
+   action key is an REAPI `Action` digest, an entry is an REAPI `ActionResult`, and bx and `materialize` read and
+   write the same entries. How a machine outside the site reaches it is settled with RFC 0049 (its relay, section
+   4.2).
+4. **Go and SwiftPM releases come from tagged release refs written only by the release pipeline** (section 7).
+5. **The 1,019 forge goldens stay committed as oracles** (section 8).
+6. **A commit-pinned Mesh consumer stays supported**, by running the generator (in-process for Rust); the migration
+   guide says so before landing 7.
+7. **Mutation casefiles that mutate generated output stay**, naming their target as `<tree>:<path>`, which the runner
+   resolves after materializing the tree.
+8. **The order is that of "Migration in landings"**: the Rust test trees first, the Mesh libraries last, after the
+   release pipeline.
 
 ## References
 
