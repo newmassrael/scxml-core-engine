@@ -574,8 +574,9 @@ class ParamAskerStateMachine(
                 // docs/SCE_TEST_PROFILE.md §12.3: a test component's message is
                 // the value of its specific template, handed to the test-port
                 // processor as a value and never as an encoding (docs/adr/0091,
-                // C2). Every other send leaves it null and carries `eventData`.
-                value = com.sce.generated.request_of.value(vJob)
+                // C2), with the writer of its canonical form in the test log
+                // (§12.5). Every other send leaves it null and carries `eventData`.
+                value = com.sce.runtime.test.messageValue(com.sce.generated.request_of.value(vJob), com.sce.generated.request_of.TYPE) { sceSent -> com.sce.generated.request_of.canonical(sceSent) }
             )
             val hostServed = performHostSend(hostRequest)
             // W3C SCXML 6.2: a declared type with no handler registered is,
