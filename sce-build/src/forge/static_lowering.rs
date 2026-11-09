@@ -20226,15 +20226,33 @@ fn unbounded_value(written: &str, why: impl std::fmt::Display) -> TextBound {
     })
 }
 
-/// The most bytes of the JSON a value a place of the type `ty` holds is
-/// written as: its `J` (docs/adr/0086, section 2.1), whatever the type holds,
-/// a record, a list, an optional value, an enum or a scalar.
+/// The most bytes of the JSON a value the place `place` holds is written as:
+/// its `J` (docs/adr/0086, section 2.1), whatever the type holds, a record, a
+/// list, an optional value, an enum or a scalar.
+///
+/// The type is measured in the scope its aliases are read in
+/// ([`crate::forge::value_path::scope_at`] of `base`, the statechart's own, and
+/// the records the place was read through), as the place was typed: a field
+/// of an imported record names an enum or a record by the alias its own
+/// document imports it under, which the statechart need not import
+/// (docs/adr/0054), so `_event.data.outcome` of a schema that imports
+/// `Outcome` is measured in that schema's scope (docs/adr/0086, section 8.6
+/// (c)).
 fn place_json(
-    ty: &crate::forge::value_type::ValueType,
-    rewrites: &Rewrites<'_>,
+    place: &crate::forge::value_path::Place,
+    base: &crate::forge::value_type::TypeScope,
     written: &str,
 ) -> TextBound {
-    match crate::forge::value_type::json_max_len(ty, &rewrites.type_scope) {
+    let Some(scope) = crate::forge::value_path::scope_at(base, &place.scope) else {
+        return unbounded_value(
+            written,
+            format!(
+                "is read through `{}`, which names no record or union the document imports",
+                place.scope.join("` and `")
+            ),
+        );
+    };
+    match crate::forge::value_type::json_max_len(&place.ty, scope) {
         Ok(bytes) => TextBound::Bounded(bytes),
         Err(why) => unbounded_value(
             written,
@@ -20364,7 +20382,7 @@ fn lower_wire_value(
     // computes, by the branch below that reads it.
     let place_measure = crate::forge::expr::written_place(written)
         .and_then(|path| ctx.value_of(&path))
-        .map(|place| place_json(&place.ty, rewrites, written));
+        .map(|place| place_json(&place, &rewrites.type_scope, written));
     if let Some((wired, fails)) =
         composed_wire_value(param, sent_as, &construct, ctx, renames, rewrites)?
     {
@@ -23544,5 +23562,102 @@ mod tests {
             );
         }
         assert!(CTarget::arguments().scratch("m", &[]).is_none());
+    }
+
+    /// A statechart that forwards a field of an event's payload whose type is an
+    /// enum the event's schema imports and the statechart does not (docs/adr/0054),
+    /// or an optional value of one, sizes the JSON of that field in the schema's
+    /// own scope, the one the place was typed through (docs/adr/0086, section 8.6
+    /// (c)); in the statechart's scope alone the enum names nothing.
+    #[test]
+    fn a_place_is_measured_in_the_scope_of_the_record_it_was_read_through() {
+        use crate::forge::value_path::{resolve, Place};
+        use crate::forge::value_type::{
+            json_max_len, ScopedEnum, ScopedRecord, ScopedVariant, SizeError, TypeScope,
+            WrittenType,
+        };
+        let ty = |text: &str| {
+            WrittenType::read(text)
+                .expect("a type")
+                .bounded()
+                .expect("every bound stated")
+        };
+        let enumeration = |name: &str, variants: &[&str]| ScopedEnum {
+            name: name.to_string(),
+            variants: variants
+                .iter()
+                .zip(0..)
+                .map(|(variant, value)| ScopedVariant {
+                    name: variant.to_string(),
+                    value,
+                })
+                .collect(),
+            underlying: SceType::Uint8,
+            strict: true,
+        };
+        let mut schema_scope = TypeScope::default();
+        schema_scope.enums.insert(
+            "Outcome".to_string(),
+            enumeration("record_outcome", &["accepted", "waiting", "refused"]),
+        );
+        schema_scope.enums.insert(
+            "Refusal".to_string(),
+            enumeration("record_refusal", &["peerRefused", "noRoomForHistory"]),
+        );
+        let mut base = TypeScope::default();
+        base.records.insert(
+            "Verdict".to_string(),
+            ScopedRecord {
+                identity: "record_verdict".to_string(),
+                name: "record_verdict".to_string(),
+                fields: vec![
+                    ("counter".to_string(), ty("uint32")),
+                    ("outcome".to_string(), ty("enum:Outcome")),
+                    ("reason".to_string(), ty("optional<enum:Refusal>")),
+                ],
+                scope: schema_scope,
+            },
+        );
+        let root = Place::of(ty("record:Verdict"));
+        let place = |path: &str| {
+            resolve(
+                Some(&base),
+                |name| (name == "_event.data").then_some(&root),
+                path,
+            )
+            .expect("the payload's field is a place")
+        };
+
+        let outcome = place("_event.data.outcome");
+        assert_eq!(
+            json_max_len(&outcome.ty, &base),
+            Err(SizeError::Unresolved {
+                alias: "Outcome".to_string()
+            }),
+            "the statechart imports no `Outcome`"
+        );
+        // The quoted name of the longest variant.
+        assert_eq!(
+            place_json(&outcome, &base, "_event.data.outcome"),
+            TextBound::Bounded(2 + "accepted".len() as u64)
+        );
+        assert_eq!(
+            place_json(&place("_event.data.reason"), &base, "_event.data.reason"),
+            TextBound::Bounded(2 + "noRoomForHistory".len() as u64)
+        );
+        assert_eq!(
+            place_json(&place("_event.data.counter"), &base, "_event.data.counter"),
+            TextBound::Bounded(10)
+        );
+        // A place read through a record the statechart does not hold has no
+        // scope to be measured in, and says so.
+        let stray = Place {
+            ty: ty("enum:Outcome"),
+            scope: vec!["Nope".to_string()],
+        };
+        assert!(matches!(
+            place_json(&stray, &base, "x.outcome"),
+            TextBound::Unbounded(Unbounded { why, .. }) if why.contains("`Nope`")
+        ));
     }
 }
