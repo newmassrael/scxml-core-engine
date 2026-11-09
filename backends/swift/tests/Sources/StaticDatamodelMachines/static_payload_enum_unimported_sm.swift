@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
+// source-hash: 50ba4afa70e08ed0ad002509e6baae9623e17ddc8afb219bbba6da905f187359
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -96,6 +96,7 @@ public enum StaticPayloadEnumUnimportedWhyEnum: UInt8, CaseIterable, Sendable {
     case changeTooLarge = 6
     case registerNamedTwice = 7
     case clockExhausted = 8
+    case peerRefused = 9
 
     /// The name the enum document declares for the value.
     public var declaredName: String {
@@ -107,6 +108,7 @@ public enum StaticPayloadEnumUnimportedWhyEnum: UInt8, CaseIterable, Sendable {
         case .changeTooLarge: return "changeTooLarge"
         case .registerNamedTwice: return "registerNamedTwice"
         case .clockExhausted: return "clockExhausted"
+        case .peerRefused: return "peerRefused"
         }
     }
 
@@ -131,6 +133,7 @@ public enum StaticPayloadEnumUnimportedWhyEnum: UInt8, CaseIterable, Sendable {
         case "changeTooLarge": self = .changeTooLarge
         case "registerNamedTwice": self = .registerNamedTwice
         case "clockExhausted": self = .clockExhausted
+        case "peerRefused": self = .peerRefused
         default: return nil
         }
     }
@@ -187,14 +190,18 @@ public struct StaticPayloadEnumUnimportedRefusedRecord: Equatable, Sendable, Sce
     public var field: UInt16 = 0
     public var kind: StaticPayloadEnumUnimportedRecordCommandEnum = StaticPayloadEnumUnimportedRecordCommandEnum.allCases[0]
     public var reason: StaticPayloadEnumUnimportedWhyEnum = StaticPayloadEnumUnimportedWhyEnum.allCases[0]
+    public var command: UInt64 = 0
+    public var withdrawn: Bool = false
 
     public init() {}
 
-    public init(id: UInt32, field: UInt16, kind: StaticPayloadEnumUnimportedRecordCommandEnum, reason: StaticPayloadEnumUnimportedWhyEnum) {
+    public init(id: UInt32, field: UInt16, kind: StaticPayloadEnumUnimportedRecordCommandEnum, reason: StaticPayloadEnumUnimportedWhyEnum, command: UInt64, withdrawn: Bool) {
         self.id = id
         self.field = field
         self.kind = kind
         self.reason = reason
+        self.command = command
+        self.withdrawn = withdrawn
     }
 
     /// This value as a saved state writes it.
@@ -204,6 +211,8 @@ public struct StaticPayloadEnumUnimportedRefusedRecord: Equatable, Sendable, Sce
             (key: "field", value: SavedValues.of(field)),
             (key: "kind", value: SavedValues.of(kind)),
             (key: "reason", value: SavedValues.of(reason)),
+            (key: "command", value: SavedValues.of(command)),
+            (key: "withdrawn", value: SavedValues.of(withdrawn)),
         ])
     }
 
@@ -213,7 +222,9 @@ public struct StaticPayloadEnumUnimportedRefusedRecord: Equatable, Sendable, Sce
             id: try SavedValues.uint32(try SavedValues.field(value, what, "id"), "\(what).id"),
             field: try SavedValues.uint16(try SavedValues.field(value, what, "field"), "\(what).field"),
             kind: try SavedValues.enumeration(try SavedValues.field(value, what, "kind"), "\(what).kind", as: StaticPayloadEnumUnimportedRecordCommandEnum.self),
-            reason: try SavedValues.enumeration(try SavedValues.field(value, what, "reason"), "\(what).reason", as: StaticPayloadEnumUnimportedWhyEnum.self)
+            reason: try SavedValues.enumeration(try SavedValues.field(value, what, "reason"), "\(what).reason", as: StaticPayloadEnumUnimportedWhyEnum.self),
+            command: try SavedValues.uint64(try SavedValues.field(value, what, "command"), "\(what).command"),
+            withdrawn: try SavedValues.bool(try SavedValues.field(value, what, "withdrawn"), "\(what).withdrawn")
         )
     }
 }
@@ -234,6 +245,8 @@ struct StaticPayloadEnumUnimportedRecordListRefusedPayload {
     var field: UInt16 = 0
     var kind: StaticPayloadEnumUnimportedRecordCommandEnum = StaticPayloadEnumUnimportedRecordCommandEnum.allCases[0]
     var reason: StaticPayloadEnumUnimportedWhyEnum = StaticPayloadEnumUnimportedWhyEnum.allCases[0]
+    var command: UInt64 = 0
+    var withdrawn: Bool = false
 }
 
 
@@ -517,12 +530,14 @@ public final class StaticPayloadEnumUnimportedPolicy: InvocablePolicy {
         }
         switch event {
         case .recordListRefused:
-            let fields = try PayloadFields.decode(metadata.data)
+            let fields = try PayloadFields.decode(metadata.data, defaults: "{\"command\":\"0\",\"withdrawn\":false}")
             var payload = StaticPayloadEnumUnimportedRecordListRefusedPayload()
             payload.id = try fields.unsigned("id")
             payload.field = try fields.unsigned("field")
             payload.kind = try { () throws -> StaticPayloadEnumUnimportedRecordCommandEnum in let name = try fields.text("kind"); guard let variant = StaticPayloadEnumUnimportedRecordCommandEnum(declaredName: name) else { throw try fields.field("kind").unknownVariant(name, alias: "record_command") }; return variant }()
             payload.reason = try { () throws -> StaticPayloadEnumUnimportedWhyEnum in let name = try fields.text("reason"); guard let variant = StaticPayloadEnumUnimportedWhyEnum(declaredName: name) else { throw try fields.field("reason").unknownVariant(name, alias: "Why") }; return variant }()
+            payload.command = try fields.unsigned64("command")
+            payload.withdrawn = try fields.truth("withdrawn")
             pendingRecordListRefusedPayload = payload
             pendingPayloadTag = .recordListRefused
         default:
@@ -627,7 +642,7 @@ public final class StaticPayloadEnumUnimportedPolicy: InvocablePolicy {
 
                 // SCE Accepted Subset §2.15: <sce:append target="kept">
 
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vKept.count >= 2 { return true }; let sceValue = Checked.element(of: self.vKept, StaticPayloadEnumUnimportedRefusedRecord(id: self.pendingRecordListRefusedPayload.id, field: self.pendingRecordListRefusedPayload.field, kind: self.pendingRecordListRefusedPayload.kind, reason: self.pendingRecordListRefusedPayload.reason)); if sceFailure.failed { return true }; self.vKept.append(sceValue); return false }()) {
+                if ({ () -> Bool in let sceFailure = Failure(); if self.vKept.count >= 2 { return true }; let sceValue = Checked.element(of: self.vKept, StaticPayloadEnumUnimportedRefusedRecord(id: self.pendingRecordListRefusedPayload.id, field: self.pendingRecordListRefusedPayload.field, kind: self.pendingRecordListRefusedPayload.kind, reason: self.pendingRecordListRefusedPayload.reason, command: self.pendingRecordListRefusedPayload.command, withdrawn: self.pendingRecordListRefusedPayload.withdrawn)); if sceFailure.failed { return true }; self.vKept.append(sceValue); return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
@@ -652,14 +667,14 @@ extension Engine where Policy == StaticPayloadEnumUnimportedPolicy {
     /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are
     /// filled: the typed one a native expression reads, and `data`, which is what
     /// every other reader of `_event.data` binds it from.
-    public func raiseRecordListRefused(id: UInt32, field: UInt16, kind: StaticPayloadEnumUnimportedRecordCommandEnum, reason: StaticPayloadEnumUnimportedWhyEnum) {
+    public func raiseRecordListRefused(id: UInt32, field: UInt16, kind: StaticPayloadEnumUnimportedRecordCommandEnum, reason: StaticPayloadEnumUnimportedWhyEnum, command: UInt64, withdrawn: Bool) {
         raiseExternalWithMeta(
             EventWithMetadata(
                 StaticPayloadEnumUnimportedEvent.recordListRefused,
                 metadata: EventMetadata(
-                    data: payloadJSON(.integer("id", id), .integer("field", field), .text("kind", kind.declaredName), .text("reason", reason.declaredName)),
+                    data: payloadJSON(.integer("id", id), .integer("field", field), .text("kind", kind.declaredName), .text("reason", reason.declaredName), .unsigned64("command", command), .truth("withdrawn", withdrawn)),
                     eventType: .externalEvent,
-                    typedPayload: StaticPayloadEnumUnimportedRecordListRefusedPayload(id: id, field: field, kind: kind, reason: reason)
+                    typedPayload: StaticPayloadEnumUnimportedRecordListRefusedPayload(id: id, field: field, kind: kind, reason: reason, command: command, withdrawn: withdrawn)
                 )
             )
         )
@@ -685,9 +700,11 @@ extension StaticPayloadEnumUnimportedPolicy: SavedPolicy {
             format2Revised: "57817562bf8bd69e15b9aef6b534e3254e6df14318768a08a811af0cd2d0d418",
             records: [
                 SavedRecordLineage(
-                    event: "record_list.refused", revision: 1,
-                    revisions: [],
+                    event: "record_list.refused", revision: 2,
+                    revisions: ["d5e8ad29ad99e6b7d154abc7c4b2bd2538450f9e595bf3ad77ede3779dfb771e"],
                     added: [
+                        SavedAddedField(id: "command", since: 2, defaultJSON: "\"0\""),
+                        SavedAddedField(id: "withdrawn", since: 2, defaultJSON: "false"),
                     ],
                     widened: [
                     ],
@@ -705,9 +722,10 @@ extension StaticPayloadEnumUnimportedPolicy: SavedPolicy {
                         SavedEnumHolder(variable: "kept", field: "kind", list: true),
                     ]),
                 SavedEnumLineage(
-                    key: "enum:sce:std/shared/record_refusal.scxml", revision: 1,
-                    revisions: [],
+                    key: "enum:sce:std/shared/record_refusal.scxml", revision: 2,
+                    revisions: ["3ac588a3c4a21b24f14d28b1fcef233ad4398105757a2598b93d4d89f93275e8"],
                     added: [
+                        SavedAddedVariant(name: "peerRefused", since: 2),
                     ],
                     holders: [
                         SavedEnumHolder(variable: "last", field: nil, list: false),

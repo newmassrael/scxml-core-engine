@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
+// source-hash: 50ba4afa70e08ed0ad002509e6baae9623e17ddc8afb219bbba6da905f187359
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -19,7 +19,7 @@
 // Implements StatePolicy with full transition logic, entry/exit actions, and
 // event processing.
 
-// SCE-MAP: static_composed_send.scxml:29 :: _machine
+// SCE-MAP: static_composed_send.scxml:41 :: _machine
 
 import SceRuntime
 import SceForgeRuntime
@@ -79,9 +79,10 @@ private let documentInitialTargetsOfStaticComposedSend: [StaticComposedSendTarge
 /// are selected under (§scxml-3.13).
 public enum StaticComposedSendEvent: Int, Hashable, Sendable {
     case batchSent = 0
-    case errorExecution = 1
+    case countedSent = 1
+    case errorExecution = 2
     /// W3C SCXML 3.13: the sentinel for eventless transition dispatch.
-    case null = 2
+    case null = 3
 }
 
 // ======================================================================
@@ -160,6 +161,7 @@ public struct StaticComposedSendItemRecord: Equatable, Sendable, SceDefault {
 enum StaticComposedSendPayloadTag {
     case none
     case batchSent
+    case countedSent
 }
 
 /// The typed `_event.data` payload of `batch.sent` (NL-to-IR Item C1 Path A): what a
@@ -173,6 +175,14 @@ struct StaticComposedSendBatchSentPayload {
     var spare: [UInt8]? = nil
     var note: String = ""
     var late: [UInt8] = []
+}
+
+/// The typed `_event.data` payload of `counted.sent` (NL-to-IR Item C1 Path A): what a
+/// natively lowered expression reads. Internal to the module; a host hands the
+/// values to the inject seam below.
+struct StaticComposedSendCountedSentPayload {
+    var kept: [UInt8] = []
+    var hops: UInt8 = 0
 }
 
 
@@ -198,6 +208,7 @@ public final class StaticComposedSendPolicy: InvocablePolicy {
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: StaticComposedSendPayloadTag = .none
     var pendingBatchSentPayload = StaticComposedSendBatchSentPayload()
+    var pendingCountedSentPayload = StaticComposedSendCountedSentPayload()
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
@@ -221,6 +232,14 @@ public final class StaticComposedSendPolicy: InvocablePolicy {
     var vLate: [UInt8] = []
     /// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
     var vRefusals: UInt32 = 0
+    /// W3C SCXML 5.2: the `held` datamodel variable.
+    var vHeld: [UInt8] = []
+    /// W3C SCXML 5.2: the `counted_deliveries` datamodel variable, published (`sce:direction="out"`).
+    var vCountedDeliveries: UInt32 = 0
+    /// W3C SCXML 5.2: the `counted_sum` datamodel variable, published (`sce:direction="out"`).
+    var vCountedSum: UInt32 = 0
+    /// W3C SCXML 5.2: the `counted_hops` datamodel variable, published (`sce:direction="out"`).
+    var vCountedHops: UInt8 = 0
 
     /// Reports what the published `deliveries` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -262,6 +281,18 @@ public final class StaticComposedSendPolicy: InvocablePolicy {
     /// (W3C SCXML 5.2). Only the machine writes it.
     public var refusals: UInt32 { vRefusals }
 
+    /// Reports what the published `counted_deliveries` datamodel variable holds now
+    /// (W3C SCXML 5.2). Only the machine writes it.
+    public var countedDeliveries: UInt32 { vCountedDeliveries }
+
+    /// Reports what the published `counted_sum` datamodel variable holds now
+    /// (W3C SCXML 5.2). Only the machine writes it.
+    public var countedSum: UInt32 { vCountedSum }
+
+    /// Reports what the published `counted_hops` datamodel variable holds now
+    /// (W3C SCXML 5.2). Only the machine writes it.
+    public var countedHops: UInt8 { vCountedHops }
+
     /// W3C SCXML 6.4.1: the values a parent's `<param>` and `namelist` give this
     /// machine's variables before it starts, each in the slot named as its
     /// variable's property is. A slot left `nil` keeps the value its `<data>` gave
@@ -277,6 +308,9 @@ public final class StaticComposedSendPolicy: InvocablePolicy {
         public var vFirstMaybe: UInt16? = nil
         public var vLateSum: UInt32? = nil
         public var vRefusals: UInt32? = nil
+        public var vCountedDeliveries: UInt32? = nil
+        public var vCountedSum: UInt32? = nil
+        public var vCountedHops: UInt8? = nil
     }
 
     /// Gives this machine the values `params` carries, in place of the ones its
@@ -308,6 +342,15 @@ public final class StaticComposedSendPolicy: InvocablePolicy {
         }
         if let value = params.vRefusals {
             vRefusals = value
+        }
+        if let value = params.vCountedDeliveries {
+            vCountedDeliveries = value
+        }
+        if let value = params.vCountedSum {
+            vCountedSum = value
+        }
+        if let value = params.vCountedHops {
+            vCountedHops = value
         }
     }
 
@@ -439,6 +482,8 @@ public final class StaticComposedSendPolicy: InvocablePolicy {
         switch event {
         case .batchSent:
             return "batch.sent"
+        case .countedSent:
+            return "counted.sent"
         case .errorExecution:
             return "error.execution"
         case .null:
@@ -451,6 +496,8 @@ public final class StaticComposedSendPolicy: InvocablePolicy {
         switch name {
         case "batch.sent":
             return .batchSent
+        case "counted.sent":
+            return .countedSent
         case "error.execution":
             return .errorExecution
         default:
@@ -508,6 +555,9 @@ public final class StaticComposedSendPolicy: InvocablePolicy {
         case let payload as StaticComposedSendBatchSentPayload:
             pendingPayloadTag = .batchSent
             pendingBatchSentPayload = payload
+        case let payload as StaticComposedSendCountedSentPayload:
+            pendingPayloadTag = .countedSent
+            pendingCountedSentPayload = payload
         default:
             break
         }
@@ -535,6 +585,13 @@ public final class StaticComposedSendPolicy: InvocablePolicy {
             payload.late = try ({ (sceValue: PayloadValue) throws -> [UInt8] in try sceValue.list(bound: 2, { (sceValue: PayloadValue) throws -> UInt8 in try sceValue.unsigned() }) })(fields.field("late"))
             pendingBatchSentPayload = payload
             pendingPayloadTag = .batchSent
+        case .countedSent:
+            let fields = try PayloadFields.decode(metadata.data)
+            var payload = StaticComposedSendCountedSentPayload()
+            payload.kept = try ({ (sceValue: PayloadValue) throws -> [UInt8] in try sceValue.list(least: 1, bound: 2, { (sceValue: PayloadValue) throws -> UInt8 in try sceValue.unsigned() }) })(fields.field("kept"))
+            payload.hops = try ({ (sceValue: PayloadValue) throws -> UInt8 in try sceValue.unsigned() })(fields.field("hops"))
+            pendingCountedSentPayload = payload
+            pendingPayloadTag = .countedSent
         default:
             break
         }
@@ -620,12 +677,35 @@ public final class StaticComposedSendPolicy: InvocablePolicy {
                     )
                 }
             }
+            if event == .countedSent {
+                // W3C SCXML 5.9: cond="counted_deliveries === 0" lowered to Swift at build time
+                if (self.vCountedDeliveries == 0) {
+                    return EnabledTransition(
+                        source: state,
+                        targets: [],
+                        transitionIndex: 2,
+                        hasActions: true,
+                        isInternal: true
+                    )
+                }
+            }
+            if event == .countedSent {
+                do {
+                    return EnabledTransition(
+                        source: state,
+                        targets: [],
+                        transitionIndex: 3,
+                        hasActions: true,
+                        isInternal: true
+                    )
+                }
+            }
             if event == .errorExecution {
                 do {
                     return EnabledTransition(
                         source: state,
                         targets: [],
-                        transitionIndex: 2,
+                        transitionIndex: 4,
                         hasActions: true,
                         isInternal: true
                     )
@@ -696,6 +776,40 @@ public final class StaticComposedSendPolicy: InvocablePolicy {
                     var sendMetadata = EventMetadata.internalRaise()
                     sendMetadata.data = sendEventData
                     engine.raise(EventWithMetadata(StaticComposedSendEvent.batchSent, metadata: sendMetadata))
+                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
+                    // <foreach> it came.
+                    if paramFailed {
+                        break sceBlock
+                    }
+                }
+
+                // W3C SCXML 6.2: send id="__send_1"
+                do {
+                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
+                    // pair left out, and the message still goes; the error ends the block once
+                    // it has. Read at the end of this element.
+                    var paramFailed = false
+                    var sendParts: [PayloadPair] = []
+                    do {
+                        let sceFailure = Failure()
+                        let sceValue: WireValue = { () -> WireValue in if self.vHeld.count < 1 { sceFailure.fail(.precondition) }; return WireValue.composed(listJSON(self.vHeld, { (sceElement) -> String in WireValue.integer(Int64(sceElement)).json })) }()
+                        if !sceFailure.failed {
+                            sendParts.append(PayloadPair("kept", sceValue))
+                        } else {
+                            engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<send> <param name=kept> failed to evaluate"))
+                            paramFailed = true
+                        }
+                    }
+                    do {
+                        let sceValue: WireValue = .integer(Int64(3))
+                        sendParts.append(PayloadPair("hops", sceValue))
+                    }
+                    let sendEventData = payloadJSON(sendParts)
+                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+                    // and does not change the queue.
+                    var sendMetadata = EventMetadata.internalRaise()
+                    sendMetadata.data = sendEventData
+                    engine.raise(EventWithMetadata(StaticComposedSendEvent.countedSent, metadata: sendMetadata))
                     // W3C SCXML 4.9: the <param> error ends the block, from however deep a
                     // <foreach> it came.
                     if paramFailed {
@@ -777,8 +891,116 @@ public final class StaticComposedSendPolicy: InvocablePolicy {
 
                 }
 
+
+                // SCE Accepted Subset §2.15: <sce:append target="held">
+
+                if ({ () -> Bool in let sceFailure = Failure(); if self.vHeld.count >= 2 { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<sce:append target='held'>: the list already holds its capacity of 2")); return true }; let sceValue = Checked.element(of: self.vHeld, 7); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<sce:append target='held'>: an integer operation overflowed or failed")); return true }; self.vHeld.append(sceValue); return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+
+                // W3C SCXML 6.2: send id="__send_2"
+                do {
+                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
+                    // pair left out, and the message still goes; the error ends the block once
+                    // it has. Read at the end of this element.
+                    var paramFailed = false
+                    var sendParts: [PayloadPair] = []
+                    do {
+                        let sceFailure = Failure()
+                        let sceValue: WireValue = { () -> WireValue in if self.vHeld.count < 1 { sceFailure.fail(.precondition) }; return WireValue.composed(listJSON(self.vHeld, { (sceElement) -> String in WireValue.integer(Int64(sceElement)).json })) }()
+                        if !sceFailure.failed {
+                            sendParts.append(PayloadPair("kept", sceValue))
+                        } else {
+                            engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<send> <param name=kept> failed to evaluate"))
+                            paramFailed = true
+                        }
+                    }
+                    do {
+                        let sceValue: WireValue = .integer(Int64(3))
+                        sendParts.append(PayloadPair("hops", sceValue))
+                    }
+                    let sendEventData = payloadJSON(sendParts)
+                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+                    // and does not change the queue.
+                    var sendMetadata = EventMetadata.internalRaise()
+                    sendMetadata.data = sendEventData
+                    engine.raise(EventWithMetadata(StaticComposedSendEvent.countedSent, metadata: sendMetadata))
+                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
+                    // <foreach> it came.
+                    if paramFailed {
+                        break sceBlock
+                    }
+                }
                 }
             case 2:
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                sceBlock: do {
+                    if pendingPayloadTag != .countedSent {
+                        break sceBlock
+                    }
+
+
+                self.vCountedDeliveries = 1
+
+
+                // W3C SCXML 6.2: send id="__send_3"
+                do {
+                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
+                    // pair left out, and the message still goes; the error ends the block once
+                    // it has. Read at the end of this element.
+                    var paramFailed = false
+                    var sendParts: [PayloadPair] = []
+                    do {
+                        let sceValue: WireValue = WireValue.composed(listJSON(self.pendingCountedSentPayload.kept, { (sceElement) -> String in WireValue.integer(Int64(sceElement)).json }))
+                        sendParts.append(PayloadPair("kept", sceValue))
+                    }
+                    do {
+                        let sceValue: WireValue = .integer(Int64(self.pendingCountedSentPayload.hops))
+                        sendParts.append(PayloadPair("hops", sceValue))
+                    }
+                    let sendEventData = payloadJSON(sendParts)
+                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+                    // and does not change the queue.
+                    var sendMetadata = EventMetadata.internalRaise()
+                    sendMetadata.data = sendEventData
+                    engine.raise(EventWithMetadata(StaticComposedSendEvent.countedSent, metadata: sendMetadata))
+                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
+                    // <foreach> it came.
+                    if paramFailed {
+                        break sceBlock
+                    }
+                }
+                }
+            case 3:
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                sceBlock: do {
+                    if pendingPayloadTag != .countedSent {
+                        break sceBlock
+                    }
+
+
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vCountedDeliveries, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<assign location='counted_deliveries'>: an integer operation overflowed or failed")); return true }; self.vCountedDeliveries = sceValue; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+
+
+                self.vCountedHops = self.pendingCountedSentPayload.hops
+
+
+                // W3C SCXML 4.6: <foreach array="_event.data.kept" item="each">, a native loop over a sce-static list
+                for each in self.pendingCountedSentPayload.kept {
+                    _ = each
+
+
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vCountedSum, UInt32(each)); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(StaticComposedSendEvent.errorExecution, message: "<assign location='counted_sum'>: an integer operation overflowed or failed")); return true }; self.vCountedSum = sceValue; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+                }
+                }
+            case 4:
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 sceBlock: do {
 
@@ -825,6 +1047,29 @@ extension Engine where Policy == StaticComposedSendPolicy {
             )
         )
     }
+
+    /// Raises `counted.sent` with its payload, binding the event and the payload's
+    /// values in one call so the pairing of a name and a type cannot be
+    /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are
+    /// filled: the typed one a native expression reads, and `data`, which is what
+    /// every other reader of `_event.data` binds it from.
+    /// A value past a bound its type declares, at any depth, is refused before
+    /// anything is raised (docs/adr/0086, section 5.4): the seam throws the
+    /// `BoundExceeded` that names the path to the place, and raises nothing.
+    public func raiseCountedSent(kept: [UInt8], hops: UInt8) throws {
+        try checkList("kept", kept, least: 1, bound: 2, { _, _ in })
+        let scePayload = StaticComposedSendCountedSentPayload(kept: kept, hops: hops)
+        raiseExternalWithMeta(
+            EventWithMetadata(
+                StaticComposedSendEvent.countedSent,
+                metadata: EventMetadata(
+                    data: recordJSON([PayloadPair.json("kept", rawJSON: listJSON(scePayload.kept, { (sceElement) -> String in WireValue.integer(Int64(sceElement)).json })), PayloadPair.json("hops", rawJSON: WireValue.integer(Int64(scePayload.hops)).json)]),
+                    eventType: .externalEvent,
+                    typedPayload: scePayload
+                )
+            )
+        )
+    }
 }
 
 
@@ -840,10 +1085,10 @@ extension StaticComposedSendPolicy: SavedPolicy {
     /// re-typed or moved something a saved state names refuses it.
     public static var savedShape: SavedShape {
         SavedShape(
-            first: "f70a18d28ff04fb593898feceefb707a60de12cb52ea065383856cb153e5f555",
-            revised: "6b116cdf67e27f00da8519217f6d5f8eaa08a218c75642a2c9eb51734b379288",
-            format2First: "f70a18d28ff04fb593898feceefb707a60de12cb52ea065383856cb153e5f555",
-            format2Revised: "6b116cdf67e27f00da8519217f6d5f8eaa08a218c75642a2c9eb51734b379288")
+            first: "1e90a6306dff5c26ad4140c585404fe0fb4ed6167709cdddf054d940e56091b1",
+            revised: "c45313f157703b7337989e2ff1d45441c09d2892a1a4a8a65e2046918f346378",
+            format2First: "1e90a6306dff5c26ad4140c585404fe0fb4ed6167709cdddf054d940e56091b1",
+            format2Revised: "c45313f157703b7337989e2ff1d45441c09d2892a1a4a8a65e2046918f346378")
     }
 
     /// Every variable, by document id, in declaration order, each as a saved state holds it: the
@@ -860,6 +1105,10 @@ extension StaticComposedSendPolicy: SavedPolicy {
             SavedEntry("late_sum", SavedValues.of(vLateSum)),
             SavedEntry("late", SavedValues.list(vLate) { SavedValues.of($0) }),
             SavedEntry("refusals", SavedValues.of(vRefusals)),
+            SavedEntry("held", SavedValues.list(vHeld) { SavedValues.of($0) }),
+            SavedEntry("counted_deliveries", SavedValues.of(vCountedDeliveries)),
+            SavedEntry("counted_sum", SavedValues.of(vCountedSum)),
+            SavedEntry("counted_hops", SavedValues.of(vCountedHops)),
         ]
     }
 
@@ -876,6 +1125,10 @@ extension StaticComposedSendPolicy: SavedPolicy {
         let value7 = try SavedValues.uint32(try saved.variable("late_sum"), "late_sum")
         let value8 = try SavedValues.list(try saved.variable("late"), "late", capacity: 2) { e, w in try SavedValues.uint8(e, w) }
         let value9 = try SavedValues.uint32(try saved.variable("refusals"), "refusals")
+        let value10 = try SavedValues.list(try saved.variable("held"), "held", capacity: 2) { e, w in try SavedValues.uint8(e, w) }
+        let value11 = try SavedValues.uint32(try saved.variable("counted_deliveries"), "counted_deliveries")
+        let value12 = try SavedValues.uint32(try saved.variable("counted_sum"), "counted_sum")
+        let value13 = try SavedValues.uint8(try saved.variable("counted_hops"), "counted_hops")
         return { [self] in
             self.vDeliveries = value0
             self.vItemCount = value1
@@ -887,6 +1140,10 @@ extension StaticComposedSendPolicy: SavedPolicy {
             self.vLateSum = value7
             self.vLate = value8
             self.vRefusals = value9
+            self.vHeld = value10
+            self.vCountedDeliveries = value11
+            self.vCountedSum = value12
+            self.vCountedHops = value13
         }
     }
 }
