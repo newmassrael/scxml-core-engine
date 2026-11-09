@@ -135,7 +135,10 @@ fn a_configuration_is_its_table_its_machines_and_what_they_read() {
     let ports = between(&asking, "portsOfType:", "timersOfType:");
     assert!(ports.contains("\"param_asker\": [\"sut\"],"), "{ports}");
     let timers = between(&asking, "timersOfType:", "connections:");
-    assert!(timers.contains("\"param_asker\": [\"reply\"],"), "{timers}");
+    assert!(
+        timers.contains("\"param_asker\": [\"deadline\"],"),
+        "{timers}"
+    );
     assert!(
         !asking.contains("exchange_port") && !asking.contains("ExchangePort"),
         "a port type writes no unit, so none is named"

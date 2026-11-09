@@ -68,7 +68,7 @@ fn a_configuration_is_its_table_its_machines_and_what_they_read() {
         "\n#include \"param_asker_sm.h\"\n",
         "\nstatic inline const sce_test_configuration_t *asking_configuration_configuration(void) {\n",
         "\n    static const sce_test_declared_t ports[] = {{\"param_asker\", \"sut\"}};\n",
-        "\n    static const sce_test_declared_t timers[] = {{\"param_asker\", \"reply\"}};\n",
+        "\n    static const sce_test_declared_t timers[] = {{\"param_asker\", \"deadline\"}};\n",
         "\n    static const sce_test_mapping_t mappings[] = {{{\"mtc\", \"sut\"}, \"sut\"}};\n",
         "\n    static const sce_test_configuration_t configuration = {\n        \"param_asker\",\n        \
          NULL, 0u,\n        ports, 1u,\n        timers, 1u,\n        NULL, 0u,\n        \

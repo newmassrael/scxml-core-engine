@@ -210,7 +210,7 @@ fn a_configuration_reads_as_its_components_and_how_their_ports_are_joined() {
         .iter()
         .map(|e| (e.component.as_str(), e.port.as_str()))
         .collect();
-    assert_eq!(ends, [("mtc", "control"), ("helper", "control")]);
+    assert_eq!(ends, [("mtc", "ctl"), ("helper", "ctl")]);
     assert!(configuration.names_component("mtc"));
     assert!(configuration.names_component("helper"));
     assert!(!configuration.names_component("Helper"));
@@ -243,8 +243,8 @@ fn a_test_case_and_a_suite_read_as_what_they_name() {
     assert_eq!(
         parameters,
         [
-            ("limit", "uint32".to_string(), "500"),
-            ("label", "string[8]".to_string(), "nightly"),
+            ("elapsed_limit", "uint32".to_string(), "500"),
+            ("run_label", "string[8]".to_string(), "nightly"),
             ("key", "bytes[2]".to_string(), "0aff"),
         ]
     );
@@ -675,14 +675,14 @@ fn a_test_component_records_its_declarations_branches_sends_and_statements() {
         .iter()
         .map(|p| (p.id.as_str(), p.port_type.as_str()))
         .collect();
-    assert_eq!(ports, [("sut", "JobPort"), ("control", "JobPort")]);
+    assert_eq!(ports, [("sut", "JobPort"), ("ctl", "JobPort")]);
     let timers: Vec<(&str, Option<&str>)> = profile
         .timers
         .iter()
         .map(|t| (t.id.as_str(), t.duration.as_deref()))
         .collect();
-    assert_eq!(timers, [("reply", Some("2s")), ("settle", None)]);
-    assert_eq!(profile.module_parameters, ["limit"]);
+    assert_eq!(timers, [("deadline", Some("2s")), ("settle", None)]);
+    assert_eq!(profile.module_parameters, ["elapsed_limit"]);
     assert_eq!(profile.invocations.len(), 1);
     assert_eq!(profile.invocations[0].id.as_deref(), Some("helper"));
     assert_eq!(profile.invocations[0].src.as_deref(), Some("helper.scxml"));
@@ -712,14 +712,14 @@ fn a_test_component_records_its_declarations_branches_sends_and_statements() {
     assert_eq!(
         statement(entry, 1),
         TestStatement::StartTimer {
-            timer: "reply".into(),
+            timer: "deadline".into(),
             duration: None
         }
     );
     assert_eq!(
         statement(received, 0),
         TestStatement::StopTimer {
-            timer: "reply".into()
+            timer: "deadline".into()
         }
     );
     assert_eq!(
@@ -750,12 +750,12 @@ fn a_test_component_records_its_declarations_branches_sends_and_statements() {
         .expect("a receive branch");
     assert_eq!(receive.receive.as_deref(), Some("sut"));
     assert_eq!(receive.template.template.as_deref(), Some("EveryMatcher"));
-    assert_eq!(receive.template.args, ["limit"]);
+    assert_eq!(receive.template.args, ["elapsed_limit"]);
     let timeout = requesting.transitions[1]
         .test_branch
         .as_ref()
         .expect("a timeout branch");
-    assert_eq!(timeout.timeout.as_deref(), Some("reply"));
+    assert_eq!(timeout.timeout.as_deref(), Some("deadline"));
     assert!(timeout.receive.is_none());
 
     let send = requesting
@@ -1227,13 +1227,13 @@ fn a_test_components_page_shows_its_profile() {
         .unwrap_or_else(|e| panic!("renders: {e:?}"));
     for line in [
         "test-port sut type JobPort",
-        "test-timer reply duration 2s",
-        "module-parameter limit",
-        "branch receive sut template EveryMatcher args limit",
-        "branch timeout reply",
+        "test-timer deadline duration 2s",
+        "module-parameter elapsed_limit",
+        "branch receive sut template EveryMatcher args elapsed_limit",
+        "branch timeout deadline",
         "test-template JobReport",
-        "start-timer reply",
-        "stop-timer reply",
+        "start-timer deadline",
+        "stop-timer deadline",
         "setverdict fail reason 'no reply in time'",
         "start-timer settle duration 500ms",
         "setverdict pass",

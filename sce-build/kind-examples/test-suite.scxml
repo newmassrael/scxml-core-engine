@@ -8,6 +8,6 @@
        version="1.0" sce:kind="test-suite" name="job_suite">
   <sce:import kind="feature-model" src="feature-model.scxml" as="Features"/>
   <sce:import kind="test-case" src="test-case.scxml" as="CompletesInTime"/>
-  <sce:module-parameter id="limit" type="uint32" value="500"/>
+  <sce:module-parameter id="elapsed_limit" type="uint32" value="500"/>
   <sce:execute test-case="CompletesInTime" guard="10s" requires="session-unicast"/>
 </scxml>

@@ -7,11 +7,11 @@
        sce:type="record:JobReply">
   <sce:import kind="event-schema" src="job_reply.scxml" as="JobReply"/>
   <datamodel>
-    <data id="job" sce:type="uint32" sce:direction="in"/>
+    <data id="answers" sce:type="uint32" sce:direction="in"/>
     <data id="code" sce:type="uint32" sce:direction="in"/>
   </datamodel>
   <sce:record-match>
-    <sce:specific field="job" param="job"/>
+    <sce:specific field="job" param="answers"/>
     <sce:specific field="code" param="code"/>
   </sce:record-match>
 </scxml>

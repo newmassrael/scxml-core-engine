@@ -6,8 +6,8 @@
        version="1.0" sce:kind="test-suite" name="job_suite">
   <sce:import kind="feature-model" src="job_features.scxml" as="Features"/>
   <sce:import kind="test-case" src="completes_in_time.scxml" as="CompletesInTime"/>
-  <sce:module-parameter id="limit" type="uint32" value="500"/>
-  <sce:module-parameter id="label" type="string[8]" value="nightly"/>
+  <sce:module-parameter id="elapsed_limit" type="uint32" value="500"/>
+  <sce:module-parameter id="run_label" type="string[8]" value="nightly"/>
   <sce:module-parameter id="key" type="bytes[2]" value="0aff"/>
   <sce:execute test-case="CompletesInTime" guard="10s" requires="all(job-timeout, job-retry)"/>
 </scxml>

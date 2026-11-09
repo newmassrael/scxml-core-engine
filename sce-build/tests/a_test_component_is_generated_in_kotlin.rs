@@ -305,7 +305,7 @@ fn the_statements_the_send_and_the_ptc_go_through_the_runtime() {
     }
     let coordinator = text("coordinator");
     for needle in [
-        "value = com.sce.generated.reply_of.value(vJob, vOk)",
+        "value = com.sce.generated.reply_of.value(vRequested, vOk)",
         "processorType = \"http://sce.dev/ext/test-component\",",
         "invokeId = \"answerer\",",
     ] {

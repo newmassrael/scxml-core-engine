@@ -256,7 +256,7 @@ fn the_statements_the_send_and_the_ptc_go_through_the_runtime() {
     }
     let coordinator = text("coordinator");
     for needle in [
-        "hostRequest.value = ::SCE::Generated::ReplyOf::value(v_job, v_ok);",
+        "hostRequest.value = ::SCE::Generated::ReplyOf::value(v_requested, v_ok);",
         "hostInvoke.processorType = \"http://sce.dev/ext/test-component\";",
         "hostInvoke.invokeId = \"answerer\";",
     ] {

@@ -70,7 +70,7 @@ fn a_configuration_is_its_table_its_machines_and_what_they_read() {
         "#include \"param_asker_sm.h\"",
         "configuration.mtcType = \"param_asker\";",
         "configuration.portsOfType.emplace(\"param_asker\", ::std::vector<::std::string>{\"sut\"});",
-        "configuration.timersOfType.emplace(\"param_asker\", ::std::vector<::std::string>{\"reply\"});",
+        "configuration.timersOfType.emplace(\"param_asker\", ::std::vector<::std::string>{\"deadline\"});",
         "configuration.mappings.push_back({::SCE::Test::Endpoint{\"mtc\", \"sut\"}, \"sut\"});",
         "if (componentType == \"param_asker\") {",
         "return ::std::make_unique<::SCE::Generated::param_asker::param_askerComponent>();",

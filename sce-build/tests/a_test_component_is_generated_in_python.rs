@@ -350,7 +350,7 @@ fn the_statements_the_send_and_the_ptc_go_through_the_runtime() {
     }
     let coordinator = text("coordinator");
     for needle in [
-        "value=sce_reply_of.value(self.v_job, self.v_ok),",
+        "value=sce_reply_of.value(self.v_requested, self.v_ok),",
         "processor_type=\"http://sce.dev/ext/test-component\",",
         "invoke_id=\"answerer\",",
     ] {
