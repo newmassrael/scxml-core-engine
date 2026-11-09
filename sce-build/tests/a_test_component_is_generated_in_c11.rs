@@ -18,9 +18,10 @@
 //! record's C type (`<unit>_value_type`); a send lends its value from a local
 //! of the block its request stands in; a text the content reads is copied into
 //! the buffer the machine keeps for it; nothing is allocated, the component
-//! being storage its factory owns. C11 holds a number, a `bool`, a text and an
-//! enum of a received message as the record's unit does, and refuses a byte
-//! string, which the unit holds as a pointer with no length. A module
+//! being storage its factory owns. C11 holds a number, a `bool`, a text, a
+//! byte string and an enum of a received message as the record's unit does, a
+//! byte string's bytes and length copied into the array of the machine's
+//! channel. A module
 //! parameter starts at its type's zero, or its enum's first variant, and is
 //! read from the run as a saved value of its type is read back, between the
 //! construction of the machine and the entry into its initial configuration.
@@ -757,11 +758,13 @@ fn a_message_with_an_enum_field_its_content_reads_is_copied_on_c11() {
     }
 }
 
-/// The unit of an event schema holds a byte string of one entry as a pointer
-/// with no length, which no copy can hold to its bound, so a receive branch
-/// whose content reads a message of a record with one is refused by name.
+/// The unit of an event schema holds a byte string of one entry in the buffer
+/// of its bound beside its length, and the machine's channel in an array of
+/// the same capacity beside its `_len`, so a receive branch whose content reads
+/// a message of a record with one copies its bytes and its length, the build
+/// holding the two capacities alike.
 #[test]
-fn a_message_with_a_byte_string_its_content_reads_is_refused_on_c11() {
+fn a_message_with_a_byte_string_its_content_reads_is_copied_on_c11() {
     let dir = tempfile::tempdir().expect("a directory");
     let imports = imports_dir();
     let schema = format!("{}/voucher_payment.scxml", imports.display());
@@ -798,11 +801,18 @@ fn a_message_with_a_byte_string_its_content_reads_is_refused_on_c11() {
             ),
         ],
     );
-    let detail = refused(&dir.path().join("voucher_reader.scxml"), "voucher_reader");
-    assert!(
-        detail.contains("taking a branch of a test component has no C11 lowering yet"),
-        "{detail}"
-    );
+    let code = text_at(&dir.path().join("voucher_reader.scxml"));
+    for needle in [
+        "SCE_STATIC_ASSERT(sizeof(sce_test_received_->voucher_code.data) <= sizeof(",
+        ".voucher_code, sce_test_received_->voucher_code.data, \
+         sce_test_received_->voucher_code.len);",
+        ".voucher_code_len = sce_test_received_->voucher_code.len;",
+    ] {
+        assert!(
+            code.contains(needle),
+            "voucher_reader holds `{needle}`:\n{code}"
+        );
+    }
 }
 
 /// §11.5, §11.8, §12.3: a module parameter is declared with its type and no
