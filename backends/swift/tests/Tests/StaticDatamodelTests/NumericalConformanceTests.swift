@@ -2042,6 +2042,36 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
         #expect(returned == expected, "acl_membership")
     }}
 
+// MARK: - algorithm: causal_cut
+
+@Test func causalCutMatchesReference() throws {
+
+    for testCase in try oracleCases("pure_functions", "causal_cut") {
+        let args = try oracleArray(testCase.member("args"))
+        let arg0 = try oracleInteger(args[0], as: UInt32.self)
+        let arg1 = try oracleArray(args[1]).map { element in
+            CausalKnownPayload(
+                holderHi: try oracleInteger(element.member("holderHi"), as: UInt64.self),
+                holderLo: try oracleInteger(element.member("holderLo"), as: UInt64.self),
+                hi: try oracleInteger(element.member("hi"), as: UInt64.self),
+                lo: try oracleInteger(element.member("lo"), as: UInt64.self),
+                seq: try oracleInteger(element.member("seq"), as: UInt64.self)
+            )
+        }
+        let returned = CausalCut.causalCut(arg0, arg1)
+        let expected = try oracleArray(testCase.member("expected"))
+        #expect(returned.count == expected.count, "causal_cut length")
+        for k in expected.indices where k < returned.count {
+            let e = expected[k]
+            let expectedHi = try oracleInteger(e.member("hi"), as: UInt64.self)
+            #expect(returned[k].hi == expectedHi, "causal_cut.hi")
+            let expectedLo = try oracleInteger(e.member("lo"), as: UInt64.self)
+            #expect(returned[k].lo == expectedLo, "causal_cut.lo")
+            let expectedSeq = try oracleInteger(e.member("seq"), as: UInt64.self)
+            #expect(returned[k].seq == expectedSeq, "causal_cut.seq")
+        }
+    }}
+
 // MARK: - algorithm: changes_apply
 
 @Test func changesApplyMatchesReference() throws {
@@ -6269,8 +6299,8 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
 
     // Count first: a vocabulary that gained or lost a variant without the manifest moving
     // would otherwise satisfy every assertion below.
-    #expect(variants.count == 17, "pattern_kind: oracle variant count")
-    guard variants.count == 17 else {
+    #expect(variants.count == 18, "pattern_kind: oracle variant count")
+    guard variants.count == 18 else {
         return
     }
 
@@ -6393,6 +6423,13 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     )
     // The name the declaration answers is the one the document wrote.
     #expect(PatternKind.parallelRegionDone.declaredName == "parallelRegionDone", "pattern_kind.parallelRegionDone declared name")
+    #expect(try oracleText(variants[17].member("name")) == "causalVector", "pattern_kind variant 17 name")
+    #expect(
+        try oracleNumberText(variants[17].member("value")) == String(PatternKind.causalVector.rawValue),
+        "pattern_kind.causalVector"
+    )
+    // The name the declaration answers is the one the document wrote.
+    #expect(PatternKind.causalVector.declaredName == "causalVector", "pattern_kind.causalVector declared name")
 }
 
 // MARK: - enum: payload_codec
@@ -6967,6 +7004,72 @@ private func expectClose(_ actual: Double, _ expected: Double, _ label: String) 
     #expect(try oracleText(fields[1].member("name")) == "lo", "envelope_id field 1 name")
     let expected1 = try oracleNumberText(fields[1].member("value"))
     #expect(String(payload.lo) == expected1, "envelope_id.lo")
+}
+
+// MARK: - event-schema: causal_known
+
+@Test func causalKnownMatchesReference() throws {
+
+    let spec = try oracleSpec("event_schemas", "causal_known")
+    let fields = try oracleArray(spec.member("fields"))
+
+    // Count first: a payload that gained or lost a field without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(fields.count == 5, "causal_known: oracle field count")
+    #expect(CausalKnown.eventName == "mesh.causal_known", "causal_known: event name")
+
+    let payload = CausalKnownPayload(
+        holderHi: 283686952306183,
+        holderLo: 579005069656919567,
+        hi: 1,
+        lo: 2,
+        seq: 3
+    )
+
+    #expect(try oracleText(fields[0].member("name")) == "holderHi", "causal_known field 0 name")
+    let expected0 = try oracleNumberText(fields[0].member("value"))
+    #expect(String(payload.holderHi) == expected0, "causal_known.holderHi")
+    #expect(try oracleText(fields[1].member("name")) == "holderLo", "causal_known field 1 name")
+    let expected1 = try oracleNumberText(fields[1].member("value"))
+    #expect(String(payload.holderLo) == expected1, "causal_known.holderLo")
+    #expect(try oracleText(fields[2].member("name")) == "hi", "causal_known field 2 name")
+    let expected2 = try oracleNumberText(fields[2].member("value"))
+    #expect(String(payload.hi) == expected2, "causal_known.hi")
+    #expect(try oracleText(fields[3].member("name")) == "lo", "causal_known field 3 name")
+    let expected3 = try oracleNumberText(fields[3].member("value"))
+    #expect(String(payload.lo) == expected3, "causal_known.lo")
+    #expect(try oracleText(fields[4].member("name")) == "seq", "causal_known field 4 name")
+    let expected4 = try oracleNumberText(fields[4].member("value"))
+    #expect(String(payload.seq) == expected4, "causal_known.seq")
+}
+
+// MARK: - event-schema: causal_entry
+
+@Test func causalEntryMatchesReference() throws {
+
+    let spec = try oracleSpec("event_schemas", "causal_entry")
+    let fields = try oracleArray(spec.member("fields"))
+
+    // Count first: a payload that gained or lost a field without the manifest moving
+    // would otherwise satisfy every assertion below.
+    #expect(fields.count == 3, "causal_entry: oracle field count")
+    #expect(CausalEntry.eventName == "mesh.causal_entry", "causal_entry: event name")
+
+    let payload = CausalEntryPayload(
+        hi: 283686952306183,
+        lo: 579005069656919567,
+        seq: 3
+    )
+
+    #expect(try oracleText(fields[0].member("name")) == "hi", "causal_entry field 0 name")
+    let expected0 = try oracleNumberText(fields[0].member("value"))
+    #expect(String(payload.hi) == expected0, "causal_entry.hi")
+    #expect(try oracleText(fields[1].member("name")) == "lo", "causal_entry field 1 name")
+    let expected1 = try oracleNumberText(fields[1].member("value"))
+    #expect(String(payload.lo) == expected1, "causal_entry.lo")
+    #expect(try oracleText(fields[2].member("name")) == "seq", "causal_entry field 2 name")
+    let expected2 = try oracleNumberText(fields[2].member("value"))
+    #expect(String(payload.seq) == expected2, "causal_entry.seq")
 }
 
 // MARK: - event-schema: ordering_slot

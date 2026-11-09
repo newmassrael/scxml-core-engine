@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: d445777bd638d59bb235766496907e1278e8d6187af708d676fb6e02145c0dea
+// source-hash: f2f8682669670c7aaedbccb3102dd71d7b187eac29a32d3d20509a5bc070c12e
 // SCE-MAP: envelope.scxml:22 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec" sce:encoding="cbor")
@@ -67,9 +67,15 @@ public struct Envelope: Equatable, Sendable {
     /// Map key 18.
     public var child_session_id: String? = nil
 
+    /// Map key 19.
+    public var causal_epoch: UInt64? = nil
+
+    /// Map key 20.
+    public var causal_vector: [CausalEntryPayload]? = nil
+
     public init() {}
 
-    public init(id: [UInt8], source: String, event_type: String, pattern: PatternKind, datacontenttype: PayloadCodec, data: [UInt8], subject: String?, correlation_id: [UInt8]?, reply_to: String?, invoke_id: [UInt8]?, rpc_status: RpcStatus?, rpc_error_message: String?, deadline_unix_ms: UInt64?, sequence_no: UInt64?, routing_id: [UInt8]?, parallel_id: String?, region_id: String?, child_session_id: String?) {
+    public init(id: [UInt8], source: String, event_type: String, pattern: PatternKind, datacontenttype: PayloadCodec, data: [UInt8], subject: String?, correlation_id: [UInt8]?, reply_to: String?, invoke_id: [UInt8]?, rpc_status: RpcStatus?, rpc_error_message: String?, deadline_unix_ms: UInt64?, sequence_no: UInt64?, routing_id: [UInt8]?, parallel_id: String?, region_id: String?, child_session_id: String?, causal_epoch: UInt64?, causal_vector: [CausalEntryPayload]?) {
         self.id = id
         self.source = source
         self.event_type = event_type
@@ -88,6 +94,8 @@ public struct Envelope: Equatable, Sendable {
         self.parallel_id = parallel_id
         self.region_id = region_id
         self.child_session_id = child_session_id
+        self.causal_epoch = causal_epoch
+        self.causal_vector = causal_vector
     }
 
     /// Decodes one map at the cursor and moves the cursor past it. The map is read through a copy of
@@ -115,6 +123,8 @@ public struct Envelope: Equatable, Sendable {
         var parallel_id_held: String? = nil
         var region_id_held: String? = nil
         var child_session_id_held: String? = nil
+        var causal_epoch_held: UInt64? = nil
+        var causal_vector_held: [CausalEntryPayload]? = nil
         var index: UInt64 = 0
         while index < count {
             index += 1
@@ -203,6 +213,24 @@ public struct Envelope: Equatable, Sendable {
                 // A key given twice is not one map entry.
                 if child_session_id_held != nil { throw CodecError.cborMalformed }
                 child_session_id_held = try Cbor.readText(&reader, maxSize: 262144)
+            case 19:
+                // A key given twice is not one map entry.
+                if causal_epoch_held != nil { throw CodecError.cborMalformed }
+                causal_epoch_held = UInt64(truncatingIfNeeded: try Cbor.readUintUpto(&reader, 18446744073709551615))
+            case 20:
+                // A key given twice is not one map entry.
+                if causal_vector_held != nil { throw CodecError.cborMalformed }
+                // A definite-length array within the list's counts, each item one record's map.
+                let len = try Cbor.readArrayLen(&reader)
+                if len > 64 { throw CodecError.cborOutOfRange }
+                var list: [CausalEntryPayload] = []
+                list.reserveCapacity(Int(len))
+                var item: UInt64 = 0
+                while item < len {
+                    item += 1
+                    list.append(try Envelope.decodeRecordCausalEntry(&reader))
+                }
+                causal_vector_held = list
             default:
                 try Cbor.skip(&reader)
             }
@@ -232,6 +260,8 @@ public struct Envelope: Equatable, Sendable {
         frame.parallel_id = parallel_id_held
         frame.region_id = region_id_held
         frame.child_session_id = child_session_id_held
+        frame.causal_epoch = causal_epoch_held
+        frame.causal_vector = causal_vector_held
         cursor = reader
         return frame
     }
@@ -254,6 +284,8 @@ public struct Envelope: Equatable, Sendable {
         if self.parallel_id != nil { count += 1 }
         if self.region_id != nil { count += 1 }
         if self.child_session_id != nil { count += 1 }
+        if self.causal_epoch != nil { count += 1 }
+        if self.causal_vector != nil { count += 1 }
         Cbor.writeMapHead(count, to: &frame)
         do {
             let value = self.id
@@ -346,6 +378,67 @@ public struct Envelope: Equatable, Sendable {
             if value.utf8.count > 262144 { throw CodecError.cborOutOfRange }
             Cbor.writeText(value, to: &frame)
         }
+        if let value = self.causal_epoch {
+            Cbor.writeUint(19, to: &frame)
+            Cbor.writeUint(UInt64(value), to: &frame)
+        }
+        if let value = self.causal_vector {
+            Cbor.writeUint(20, to: &frame)
+            if value.count > 64 { throw CodecError.cborOutOfRange }
+            Cbor.writeArrayHead(UInt64(value.count), to: &frame)
+            for record in value {
+                try Envelope.encodeRecordCausalEntry(record, to: &frame)
+            }
+        }
         try sink.writeBytes(frame)
+    }
+
+    /// Reads one record of the event schema `causal_entry` (`record:CausalEntry`), as a list of this map
+    /// holds it (docs/adr/0085, Landing order step 3a), into the payload type the schema's own unit
+    /// declares: one CBOR map of every field, each under its id as text (docs/adr/0086, section 9.2). Its
+    /// keys in any order, a key the schema does not declare skipped whole; a key given twice is
+    /// `cborMalformed`, a field missing `cborRequiredKeyMissing`, a text or byte string past its bound
+    /// `cborOutOfRange`.
+    private static func decodeRecordCausalEntry(_ reader: inout SceCursor) throws(CodecError) -> CausalEntryPayload {
+        let count = try Cbor.readMapLen(&reader)
+        var hi_held: UInt64? = nil
+        var lo_held: UInt64? = nil
+        var seq_held: UInt64? = nil
+        var index: UInt64 = 0
+        while index < count {
+            index += 1
+            switch try Cbor.readText(&reader, maxSize: nil) {
+            case "hi":
+                // A key given twice is not one map entry.
+                if hi_held != nil { throw CodecError.cborMalformed }
+                hi_held = try Cbor.readUint(&reader)
+            case "lo":
+                // A key given twice is not one map entry.
+                if lo_held != nil { throw CodecError.cborMalformed }
+                lo_held = try Cbor.readUint(&reader)
+            case "seq":
+                // A key given twice is not one map entry.
+                if seq_held != nil { throw CodecError.cborMalformed }
+                seq_held = try Cbor.readUint(&reader)
+            default:
+                try Cbor.skip(&reader)
+            }
+        }
+        guard let hi_value = hi_held else { throw CodecError.cborRequiredKeyMissing }
+        guard let lo_value = lo_held else { throw CodecError.cborRequiredKeyMissing }
+        guard let seq_value = seq_held else { throw CodecError.cborRequiredKeyMissing }
+        return CausalEntryPayload(hi: hi_value, lo: lo_value, seq: seq_value)
+    }
+
+    /// Appends one record of `causal_entry` to `frame` as one map of every field, the keys in the order
+    /// RFC 8949 §4.2.1 sorts their encodings: a shorter key first.
+    private static func encodeRecordCausalEntry(_ record: CausalEntryPayload, to frame: inout [UInt8]) throws(CodecError) {
+        Cbor.writeMapHead(3, to: &frame)
+        Cbor.writeText("hi", to: &frame)
+        Cbor.writeUint(UInt64(record.hi), to: &frame)
+        Cbor.writeText("lo", to: &frame)
+        Cbor.writeUint(UInt64(record.lo), to: &frame)
+        Cbor.writeText("seq", to: &frame)
+        Cbor.writeUint(UInt64(record.seq), to: &frame)
     }
 }
