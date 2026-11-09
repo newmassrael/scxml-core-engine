@@ -10,12 +10,12 @@
 //! reached through whatever carries the relay protocol's texts. Every input and output is a text in
 //! the form the Mesh and the relay protocol already use:
 //!
-//! - the machine's outbound `record_list.write` and `record_list.supersede`, as the event's name
-//!   and its JSON payload, are signed and remembered ([`Peer::outbound`]); the core says whether it
-//!   took one, held it already (a machine built again from its host's log sends its writes again,
-//!   and a write is signed once), found it is no event that is signed, keeps it until the device
-//!   may sign it (an invited device that has not read the log that lets it write, a restored one
-//!   that has not read its own chain back), or refused it and why;
+//! - the machine's outbound `record_list.change`, as the event's name and its JSON payload, is
+//!   signed whole, one change as one operation, and remembered ([`Peer::outbound`]); the core says
+//!   whether it took one, held it already (a machine built again from its host's log sends its
+//!   changes again, and a change is signed once), found it is no event that is signed, keeps it
+//!   until the device may sign it (an invited device that has not read the log that lets it write,
+//!   a restored one that has not read its own chain back), or refused it and why;
 //! - a round with the relay ([`Peer::start`]) is a sequence of request texts the core gives
 //!   ([`Peer::poll_request`]) and response texts the host gives back ([`Peer::respond`]), or a
 //!   failure of the transport ([`Peer::fail`]); its outcome ([`Peer::take_outcome`]) is the events
@@ -1209,11 +1209,11 @@ impl Peer {
         }
     }
 
-    /// What the machine sent to `#hub` or `#people`, as the event's name and its JSON payload: a
-    /// `record_list.write` or a `record_list.supersede` is signed and remembered, and the next
-    /// round carries it to the relay; what is not signed is kept nowhere; what the trust will never
-    /// sign is refused with the reason. The one place this is done is the relay's client
-    /// ([`keep`]), which a host with a Mesh endpoint reaches through `Keep`.
+    /// What the machine sent to `#people`, as the event's name and its JSON payload: a
+    /// `record_list.change` is signed whole, as one operation, and remembered, and the next round
+    /// carries it to the relay (docs/adr/0085, section 1); what is not signed is kept nowhere; what
+    /// the trust will never sign is refused with the reason. The one place this is done is the
+    /// relay's client ([`keep`]), which a host with a Mesh endpoint reaches through `Keep`.
     ///
     /// **A send the device may not sign yet waits, and is not lost.** A machine sends whenever its
     /// person edits, offline too, and right after its application starts, which for a device that
@@ -1226,16 +1226,16 @@ impl Peer {
     /// (see [`Self::restore_sealed`]). The round that reads what it waits for signs it and gives it
     /// the relay ([`Outcome::taken`]); a round whose log says the person never may (a reader, a
     /// device taken off) refuses it then, and says so ([`Outcome::dropped`], [`Outcome::rebuild`]).
-    /// What waits is in the sealed state. A send of another content under the stamp of a write that
-    /// waits is refused at once, as one under a stamp the device signed is.
+    /// What waits is in the sealed state. A send of another content under the dot of a change that
+    /// waits is refused at once, as one under a dot the device signed is.
     ///
     /// **A replay writes nothing twice.** An application that keeps its own log of commands and
-    /// builds its machine again from it gives the core the machine's sends again: a write or a note
-    /// the device signed already is [`Kept::Held`], the operation it holds with its number and its
+    /// builds its machine again from it gives the core the machine's sends again: a change the
+    /// device signed already is [`Kept::Held`], the operation it holds with its number and its
     /// signature, and nothing new reaches the relay; one that waits is [`Kept::Waiting`] and waits
-    /// once. A write under a stamp the device signed with another content is refused, since it
-    /// would be the device signing two things for one write. A send of a person the log the core
-    /// holds does not let write is refused, since no host would admit it.
+    /// once. A change under a dot the device signed with another content is refused, since it would
+    /// be the device signing two things for one change. A send of a person the log the core holds
+    /// does not let write is refused, since no host would admit it.
     pub fn outbound(&mut self, event: &str, data: &str) -> Kept {
         keep(&self.trust, event, data)
     }
