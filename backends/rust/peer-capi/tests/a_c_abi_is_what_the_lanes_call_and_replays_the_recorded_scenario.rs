@@ -219,8 +219,8 @@ fn the_header_declares_exactly_what_the_library_exports() {
 fn a_send_the_core_cannot_sign_yet_is_kept_and_says_why() {
     let genesis = [0u8; 32];
     let seed = [2u8; 32];
-    let write = c"{\"id\":1,\"field\":3,\"value\":\"1\",\"text\":\"\",\"wallTime\":\"1000\",\"counter\":0,\"nodeId\":\"2\"}";
-    let other = c"{\"id\":1,\"field\":3,\"value\":\"2\",\"text\":\"\",\"wallTime\":\"1000\",\"counter\":0,\"nodeId\":\"2\"}";
+    let write = c"{\"by\":\"2\",\"wallTime\":\"1000\",\"counter\":0,\"ops\":[{\"kind\":0,\"id\":1,\"field\":3,\"value\":\"1\",\"text\":\"\",\"wallTime\":\"0\",\"counter\":0,\"nodeId\":\"0\"}]}";
+    let other = c"{\"by\":\"2\",\"wallTime\":\"1000\",\"counter\":0,\"ops\":[{\"kind\":0,\"id\":1,\"field\":3,\"value\":\"2\",\"text\":\"\",\"wallTime\":\"0\",\"counter\":0,\"nodeId\":\"0\"}]}";
     // SAFETY: each call below passes a live handle, NUL-terminated texts and places valid for a
     // write.
     unsafe {
@@ -232,7 +232,7 @@ fn a_send_the_core_cannot_sign_yet_is_kept_and_says_why() {
         assert_eq!(
             sce_peer_outbound(
                 peer,
-                c"record_list.write".as_ptr(),
+                c"record_list.change".as_ptr(),
                 write.as_ptr(),
                 &mut kept,
                 &mut reason
@@ -251,7 +251,7 @@ fn a_send_the_core_cannot_sign_yet_is_kept_and_says_why() {
         assert_eq!(
             sce_peer_outbound(
                 peer,
-                c"record_list.write".as_ptr(),
+                c"record_list.change".as_ptr(),
                 other.as_ptr(),
                 &mut kept,
                 &mut reason
@@ -371,7 +371,7 @@ fn the_boundary_refuses_what_it_is_not_given_and_says_why() {
     let list = c"home";
     let seed = [1u8; 32];
     let genesis = [0u8; 32];
-    let write = c"{\"id\":1,\"field\":3,\"value\":\"1\",\"text\":\"\",\"wallTime\":\"1000\",\"counter\":0,\"nodeId\":\"2\"}";
+    let write = c"{\"by\":\"2\",\"wallTime\":\"1000\",\"counter\":0,\"ops\":[{\"kind\":0,\"id\":1,\"field\":3,\"value\":\"1\",\"text\":\"\",\"wallTime\":\"0\",\"counter\":0,\"nodeId\":\"0\"}]}";
     // SAFETY: each call below passes pointers that are null, or valid for the length given.
     unsafe {
         assert_eq!(sce_peer_abi_version(), SCE_PEER_ABI_VERSION);
@@ -478,8 +478,8 @@ fn the_boundary_refuses_what_it_is_not_given_and_says_why() {
         assert_eq!(
             sce_peer_outbound(
                 peer,
-                c"record_list.propose".as_ptr(),
-                c"{\"before\":\"30000\"}".as_ptr(),
+                c"record_list.edit".as_ptr(),
+                c"{\"id\":1}".as_ptr(),
                 &mut kept,
                 &mut reason
             ),
@@ -490,7 +490,7 @@ fn the_boundary_refuses_what_it_is_not_given_and_says_why() {
         assert_eq!(
             sce_peer_outbound(
                 peer,
-                c"record_list.propose".as_ptr(),
+                c"record_list.edit".as_ptr(),
                 c"{}".as_ptr(),
                 std::ptr::null_mut(),
                 std::ptr::null_mut()
@@ -506,7 +506,7 @@ fn the_boundary_refuses_what_it_is_not_given_and_says_why() {
         assert_eq!(
             sce_peer_outbound(
                 nobody,
-                c"record_list.write".as_ptr(),
+                c"record_list.change".as_ptr(),
                 write.as_ptr(),
                 &mut kept,
                 &mut reason
@@ -519,7 +519,7 @@ fn the_boundary_refuses_what_it_is_not_given_and_says_why() {
         assert_eq!(
             sce_peer_outbound(
                 nobody,
-                c"record_list.write".as_ptr(),
+                c"record_list.change".as_ptr(),
                 write.as_ptr(),
                 &mut kept,
                 std::ptr::null_mut()
@@ -1057,12 +1057,12 @@ fn the_administrators_acts_on_a_group_go_through_the_abi() {
         assert_eq!(restored["awaits_own_chain"], true, "{restored}");
         let back = network.round(joiner, 2);
         assert_eq!(back["refused"], json!([]), "{back}");
-        let write = c"{\"id\":1,\"field\":3,\"value\":\"5\",\"text\":\"\",\"wallTime\":\"3000\",\"counter\":0,\"nodeId\":\"1\"}";
+        let write = c"{\"by\":\"1\",\"wallTime\":\"3000\",\"counter\":0,\"ops\":[{\"kind\":0,\"id\":1,\"field\":3,\"value\":\"5\",\"text\":\"\",\"wallTime\":\"0\",\"counter\":0,\"nodeId\":\"0\"}]}";
         let mut kept = -1;
         assert_eq!(
             sce_peer_outbound(
                 admin,
-                c"record_list.write".as_ptr(),
+                c"record_list.change".as_ptr(),
                 write.as_ptr(),
                 &mut kept,
                 std::ptr::null_mut()
@@ -1072,15 +1072,18 @@ fn the_administrators_acts_on_a_group_go_through_the_abi() {
         assert_eq!(kept, SCE_PEER_KEPT_TAKEN);
         network.round(admin, 1);
         let told = network.round(joiner, 2);
-        let writes: Vec<Value> = told["events"]
+        let changes: Vec<Value> = told["events"]
             .as_array()
             .expect("an ended round tells events")
             .iter()
-            .filter(|pair| pair[0] == "record_list.write")
+            .filter(|pair| pair[0] == "record_list.change")
             .map(|pair| serde_json::from_str(pair[1].as_str().unwrap()).unwrap())
             .collect();
-        assert_eq!(writes.len(), 1, "{told}");
-        assert_eq!(writes[0]["value"], "5", "opened under the group's key");
+        assert_eq!(changes.len(), 1, "{told}");
+        assert_eq!(
+            changes[0]["ops"][0]["value"], "5",
+            "opened under the group's key"
+        );
 
         // One call takes him off the list and the group: the group moves to an epoch his device
         // holds no key of, and the relay reads him nothing more.
