@@ -136,7 +136,7 @@ func EventAgenda(s sce_event_schedule.EventSchedulePayload, values []sce_mv_valu
         if sceFailure.Failed() {
             return sceValue, sceFailure.Err()
         }
-        var p int64 = 0
+        var p_ int64 = 0
         if sceFailure.Failed() {
             return sceValue, sceFailure.Err()
         }
@@ -167,7 +167,7 @@ func EventAgenda(s sce_event_schedule.EventSchedulePayload, values []sce_mv_valu
             if sceCond3 := freq == 1; sceFailure.Failed() {
                 return sceValue, sceFailure.Err()
             } else if sceCond3 {
-                ps = scealgorithm.AddInt64(&sceFailure, startDay, scealgorithm.MulInt64(&sceFailure, p, every));
+                ps = scealgorithm.AddInt64(&sceFailure, startDay, scealgorithm.MulInt64(&sceFailure, p_, every));
                 if sceFailure.Failed() {
                     return sceValue, sceFailure.Err()
                 }
@@ -175,7 +175,7 @@ func EventAgenda(s sce_event_schedule.EventSchedulePayload, values []sce_mv_valu
             if sceCond3 := freq == 2; sceFailure.Failed() {
                 return sceValue, sceFailure.Err()
             } else if sceCond3 {
-                ps = scealgorithm.AddInt64(&sceFailure, week0Start, scealgorithm.MulInt64(&sceFailure, scealgorithm.MulInt64(&sceFailure, p, every), 7));
+                ps = scealgorithm.AddInt64(&sceFailure, week0Start, scealgorithm.MulInt64(&sceFailure, scealgorithm.MulInt64(&sceFailure, p_, every), 7));
                 if sceFailure.Failed() {
                     return sceValue, sceFailure.Err()
                 }
@@ -187,11 +187,11 @@ func EventAgenda(s sce_event_schedule.EventSchedulePayload, values []sce_mv_valu
             if sceCond3 := freq == 3 || freq == 4; sceFailure.Failed() {
                 return sceValue, sceFailure.Err()
             } else if sceCond3 {
-                var pty int64 = func() int64 { if freq == 3 { return scealgorithm.DivInt64(&sceFailure, scealgorithm.AddInt64(&sceFailure, months0, scealgorithm.MulInt64(&sceFailure, p, every)), 12) }; return scealgorithm.AddInt64(&sceFailure, y0, scealgorithm.MulInt64(&sceFailure, p, every)) }()
+                var pty int64 = func() int64 { if freq == 3 { return scealgorithm.DivInt64(&sceFailure, scealgorithm.AddInt64(&sceFailure, months0, scealgorithm.MulInt64(&sceFailure, p_, every)), 12) }; return scealgorithm.AddInt64(&sceFailure, y0, scealgorithm.MulInt64(&sceFailure, p_, every)) }()
                 if sceFailure.Failed() {
                     return sceValue, sceFailure.Err()
                 }
-                var ptm int64 = func() int64 { if freq == 3 { return scealgorithm.AddInt64(&sceFailure, scealgorithm.RemInt64(&sceFailure, scealgorithm.AddInt64(&sceFailure, months0, scealgorithm.MulInt64(&sceFailure, p, every)), 12), 1) }; return 1 }()
+                var ptm int64 = func() int64 { if freq == 3 { return scealgorithm.AddInt64(&sceFailure, scealgorithm.RemInt64(&sceFailure, scealgorithm.AddInt64(&sceFailure, months0, scealgorithm.MulInt64(&sceFailure, p_, every)), 12), 1) }; return 1 }()
                 if sceFailure.Failed() {
                     return sceValue, sceFailure.Err()
                 }
@@ -467,7 +467,7 @@ func EventAgenda(s sce_event_schedule.EventSchedulePayload, values []sce_mv_valu
                     }
                 }
             }
-            p = scealgorithm.AddInt64(&sceFailure, p, 1);
+            p_ = scealgorithm.AddInt64(&sceFailure, p_, 1);
             if sceFailure.Failed() {
                 return sceValue, sceFailure.Err()
             }

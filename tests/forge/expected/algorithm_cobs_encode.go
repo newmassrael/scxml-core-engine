@@ -13,10 +13,10 @@ package algorithm_cobs_encode
 func AlgorithmCobsEncode(data []byte) []byte {
     var n uint32 = uint32(len(data))
     out := make([]byte, 0, 32)
-    var p uint32 = 0
+    var p_ uint32 = 0
     var done bool = false
     for done == false {
-        var q uint32 = p
+        var q uint32 = p_
         var run uint16 = 0
         for q < n && run < 254 && data[q] != 0 {
             q = q + 1;
@@ -24,7 +24,7 @@ func AlgorithmCobsEncode(data []byte) []byte {
         }
         var code uint8 = uint8(run + 1)
         out = append(out, byte(code))
-        var k uint32 = p
+        var k uint32 = p_
         for k < q {
             out = append(out, byte(data[k]))
             k = k + 1;
@@ -33,14 +33,14 @@ func AlgorithmCobsEncode(data []byte) []byte {
             done = true;
         } else {
             if (run < 254) {
-                p = q + 1;
-                if (p >= n) {
+                p_ = q + 1;
+                if (p_ >= n) {
                     var last uint8 = 1
                     out = append(out, byte(last))
                     done = true;
                 }
             } else {
-                p = q;
+                p_ = q;
             }
         }
     }

@@ -7104,17 +7104,17 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 
 	// W3C SCXML 4.6: <foreach array="provisional" item="p">, a native loop over a sce-static list
-	for _, p := range append(p.vProvisional[:0:0], p.vProvisional...) {
-		_ = p
+	for _, p_ := range append(p.vProvisional[:0:0], p.vProvisional...) {
+		_ = p_
 
-	if p.wallTime == p.pendingRecordListConfirmPayload.wallTime && p.counter == p.pendingRecordListConfirmPayload.counter {
+	if p_.wallTime == p.pendingRecordListConfirmPayload.wallTime && p_.counter == p.pendingRecordListConfirmPayload.counter {
 
 
 	p.vProvisionalFound = true
 
 
 
-	p.vStanding = p
+	p.vStanding = p_
 
 	}
 
@@ -7139,10 +7139,10 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 
 	// W3C SCXML 4.6: <foreach array="provisional" item="p">, a native loop over a sce-static list
-	for _, p := range append(p.vProvisional[:0:0], p.vProvisional...) {
-		_ = p
+	for _, p_ := range append(p.vProvisional[:0:0], p.vProvisional...) {
+		_ = p_
 
-	if p.wallTime != p.vStanding.wallTime || p.counter != p.vStanding.counter {
+	if p_.wallTime != p.vStanding.wallTime || p_.counter != p.vStanding.counter {
 
 	// SCE Accepted Subset §2.15: <sce:append target="provisionalKept">
 
@@ -7161,8 +7161,8 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 
 	// W3C SCXML 4.6: <foreach array="provisionalKept" item="p">, a native loop over a sce-static list
-	for _, p := range append(p.vProvisionalKept[:0:0], p.vProvisionalKept...) {
-		_ = p
+	for _, p_ := range append(p.vProvisionalKept[:0:0], p.vProvisionalKept...) {
+		_ = p_
 
 	// SCE Accepted Subset §2.15: <sce:append target="provisional">
 
@@ -7325,10 +7325,10 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 
 	// W3C SCXML 4.6: <foreach array="provisional" item="p">, a native loop over a sce-static list
-	for sceIndex, p := range append(p.vProvisional[:0:0], p.vProvisional...) {
-		at := uint32(sceIndex); _ = at; _ = p
+	for sceIndex, p_ := range append(p.vProvisional[:0:0], p.vProvisional...) {
+		at := uint32(sceIndex); _ = at; _ = p_
 
-	if !p.vProvisionalFound && p.wallTime == p.pendingRecordListWithdrawPayload.wallTime && p.counter == p.pendingRecordListWithdrawPayload.counter {
+	if !p.vProvisionalFound && p_.wallTime == p.pendingRecordListWithdrawPayload.wallTime && p_.counter == p.pendingRecordListWithdrawPayload.counter {
 
 
 	p.vProvisionalFound = true
@@ -7355,8 +7355,8 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 	if p.vProvisionalFound {
 
 	// W3C SCXML 4.6: <foreach array="provisional" item="p">, a native loop over a sce-static list
-	for sceIndex, p := range append(p.vProvisional[:0:0], p.vProvisional...) {
-		at := uint32(sceIndex); _ = at; _ = p
+	for sceIndex, p_ := range append(p.vProvisional[:0:0], p.vProvisional...) {
+		at := uint32(sceIndex); _ = at; _ = p_
 
 	if at >= p.vWithdrawFrom {
 
@@ -7696,8 +7696,8 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 
 	// W3C SCXML 4.6: <foreach array="provisional" item="p">, a native loop over a sce-static list
-	for sceIndex, p := range append(p.vProvisional[:0:0], p.vProvisional...) {
-		at := uint32(sceIndex); _ = at; _ = p
+	for sceIndex, p_ := range append(p.vProvisional[:0:0], p.vProvisional...) {
+		at := uint32(sceIndex); _ = at; _ = p_
 
 	{
 	var ifCondFailed72 bool
@@ -7724,8 +7724,8 @@ func (p *RecordListParentSceSynthInvokeListPolicy) ExecuteTransitionContent(sour
 
 
 	// W3C SCXML 4.6: <foreach array="provisionalKept" item="p">, a native loop over a sce-static list
-	for _, p := range append(p.vProvisionalKept[:0:0], p.vProvisionalKept...) {
-		_ = p
+	for _, p_ := range append(p.vProvisionalKept[:0:0], p.vProvisionalKept...) {
+		_ = p_
 
 	// SCE Accepted Subset §2.15: <sce:append target="provisional">
 
