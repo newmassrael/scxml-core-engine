@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
+// source-hash: 50ba4afa70e08ed0ad002509e6baae9623e17ddc8afb219bbba6da905f187359
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/record_list_parent.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: record_list_parent.scxml:40 :: _machine
+// SCE-MAP: record_list_parent.scxml:54 :: _machine
 
 package com.sce.integration.record_list_parent
 
@@ -28,17 +28,21 @@ sealed interface RecordListParentEvent : Event {
         data object Execution : Error
     }
     sealed interface RecordList : RecordListParentEvent {
+        data object Change : RecordList
         data object Clear : RecordList
+        data object Confirm : RecordList
+        data object Confirmed : RecordList
         data object Edit : RecordList
         data object Join : RecordList
+        data object Pending : RecordList
         data object Refused : RecordList
         data object Register : RecordList
         data object Retire : RecordList
         data object Role : RecordList
         data object Room : RecordList
-        data object Supersede : RecordList
         data object Value : RecordList
-        data object Write : RecordList
+        data object Verdict : RecordList
+        data object Withdraw : RecordList
     }
 }
 // ── NL→IR Item C1 Path A: typed `_event.data` payload classes ─────────
@@ -48,25 +52,39 @@ sealed interface RecordListParentEvent : Event {
 // The Kotlin twin of the Rust `RecordListParentPayload` enum / Go per-event payload
 // structs: one data class per guarded event, carried through the queue in the
 // type-erased `EventMetadata.typedPayload` and lifted into a nullable field.
+// RecordListParentRecordListChangePayload is the NL→IR Item C1 Path A typed `_event.data`
+// payload for `record_list.change`. Consumers inject it via the `raiseRecordListChange` seam
+// on the machine — they never name this class directly.
+data class RecordListParentRecordListChangePayload(val by: ULong, val wallTime: Long, val counter: UInt, val ops: List<RecordListParentOpRecord>) {
+    init {
+        com.sce.runtime.ValueBounds.listWithin("ops", ops, 1, 64) { _, _ -> }
+    }
+}
+
 // RecordListParentRecordListClearPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `record_list.clear`. Consumers inject it via the `raiseRecordListClear` seam
 // on the machine — they never name this class directly.
-data class RecordListParentRecordListClearPayload(val id: UInt, val field: UShort, val now: Long, val more: Boolean)
+data class RecordListParentRecordListClearPayload(val id: UInt, val field: UShort, val now: Long, val more: Boolean, val command: ULong)
+
+// RecordListParentRecordListConfirmPayload is the NL→IR Item C1 Path A typed `_event.data`
+// payload for `record_list.confirm`. Consumers inject it via the `raiseRecordListConfirm` seam
+// on the machine — they never name this class directly.
+data class RecordListParentRecordListConfirmPayload(val wallTime: Long, val counter: UInt, val command: ULong)
 
 // RecordListParentRecordListEditPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `record_list.edit`. Consumers inject it via the `raiseRecordListEdit` seam
 // on the machine — they never name this class directly.
-data class RecordListParentRecordListEditPayload(val id: UInt, val field: UShort, val value: Long, val text: String, val now: Long, val more: Boolean)
+data class RecordListParentRecordListEditPayload(val id: UInt, val field: UShort, val value: Long, val text: String, val now: Long, val more: Boolean, val command: ULong)
 
 // RecordListParentRecordListJoinPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `record_list.join`. Consumers inject it via the `raiseRecordListJoin` seam
 // on the machine — they never name this class directly.
-data class RecordListParentRecordListJoinPayload(val node: ULong, val hub: Boolean)
+data class RecordListParentRecordListJoinPayload(val node: ULong, val journal: Boolean)
 
 // RecordListParentRecordListRefusedPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `record_list.refused`. Consumers inject it via the `raiseRecordListRefused` seam
 // on the machine — they never name this class directly.
-data class RecordListParentRecordListRefusedPayload(val id: UInt, val field: UShort, val kind: RecordListParentRecordCommandEnum, val reason: RecordListParentRecordRefusalEnum)
+data class RecordListParentRecordListRefusedPayload(val id: UInt, val field: UShort, val kind: RecordListParentRecordCommandEnum, val reason: RecordListParentRecordRefusalEnum, val command: ULong, val withdrawn: Boolean)
 
 // RecordListParentRecordListRegisterPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `record_list.register`. Consumers inject it via the `raiseRecordListRegister` seam
@@ -76,7 +94,7 @@ data class RecordListParentRecordListRegisterPayload(val id: UInt, val field: US
 // RecordListParentRecordListRetirePayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `record_list.retire`. Consumers inject it via the `raiseRecordListRetire` seam
 // on the machine — they never name this class directly.
-data class RecordListParentRecordListRetirePayload(val id: UInt, val now: Long, val more: Boolean)
+data class RecordListParentRecordListRetirePayload(val id: UInt, val now: Long, val more: Boolean, val command: ULong)
 
 // RecordListParentRecordListRolePayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `record_list.role`. Consumers inject it via the `raiseRecordListRole` seam
@@ -88,20 +106,20 @@ data class RecordListParentRecordListRolePayload(val node: ULong, val role: UByt
 // on the machine — they never name this class directly.
 data class RecordListParentRecordListRoomPayload(val values: UInt, val history: UInt, val digest: UInt)
 
-// RecordListParentRecordListSupersedePayload is the NL→IR Item C1 Path A typed `_event.data`
-// payload for `record_list.supersede`. Consumers inject it via the `raiseRecordListSupersede` seam
-// on the machine — they never name this class directly.
-data class RecordListParentRecordListSupersedePayload(val id: UInt, val field: UShort, val wallTime: Long, val counter: UInt, val nodeId: ULong, val by: ULong, val parts: UInt, val atWallTime: Long, val atCounter: UInt)
-
 // RecordListParentRecordListValuePayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `record_list.value`. Consumers inject it via the `raiseRecordListValue` seam
 // on the machine — they never name this class directly.
 data class RecordListParentRecordListValuePayload(val id: UInt, val field: UShort, val ordinal: UInt, val value: Long, val text: String, val wallTime: Long, val counter: UInt, val nodeId: ULong)
 
-// RecordListParentRecordListWritePayload is the NL→IR Item C1 Path A typed `_event.data`
-// payload for `record_list.write`. Consumers inject it via the `raiseRecordListWrite` seam
+// RecordListParentRecordListVerdictPayload is the NL→IR Item C1 Path A typed `_event.data`
+// payload for `record_list.verdict`. Consumers inject it via the `raiseRecordListVerdict` seam
 // on the machine — they never name this class directly.
-data class RecordListParentRecordListWritePayload(val id: UInt, val field: UShort, val value: Long, val text: String, val wallTime: Long, val counter: UInt, val nodeId: ULong, val parts: UInt)
+data class RecordListParentRecordListVerdictPayload(val wallTime: Long, val counter: UInt, val outcome: RecordListParentRecordOutcomeEnum, val reason: RecordListParentRecordRefusalEnum?)
+
+// RecordListParentRecordListWithdrawPayload is the NL→IR Item C1 Path A typed `_event.data`
+// payload for `record_list.withdraw`. Consumers inject it via the `raiseRecordListWithdraw` seam
+// on the machine — they never name this class directly.
+data class RecordListParentRecordListWithdrawPayload(val wallTime: Long, val counter: UInt, val command: ULong)
 
 
 // ── SCE Accepted Subset §2.15: sce-static enum and record variable classes ─────
@@ -161,7 +179,8 @@ enum class RecordListParentRecordRefusalEnum(val declaredName: String) {
     NO_ROOM_FOR_DIGEST("noRoomForDigest"),
     CHANGE_TOO_LARGE("changeTooLarge"),
     REGISTER_NAMED_TWICE("registerNamedTwice"),
-    CLOCK_EXHAUSTED("clockExhausted");
+    CLOCK_EXHAUSTED("clockExhausted"),
+    PEER_REFUSED("peerRefused");
 
     /** This value as a saved state writes it. */
     fun toSaved(): Any = declaredName
@@ -175,6 +194,7 @@ enum class RecordListParentRecordRefusalEnum(val declaredName: String) {
         CHANGE_TOO_LARGE -> 6u.toUByte()
         REGISTER_NAMED_TWICE -> 7u.toUByte()
         CLOCK_EXHAUSTED -> 8u.toUByte()
+        PEER_REFUSED -> 9u.toUByte()
     }
 
     companion object {
@@ -190,13 +210,55 @@ enum class RecordListParentRecordRefusalEnum(val declaredName: String) {
     }
 }
 /** SCE Accepted Subset §2.15: a `record:Refused` datamodel value. */
-data class RecordListParentRefusedRecord(val id: UInt, val field: UShort, val kind: RecordListParentRecordCommandEnum, val reason: RecordListParentRecordRefusalEnum) {
+data class RecordListParentRefusedRecord(val id: UInt, val field: UShort, val kind: RecordListParentRecordCommandEnum, val reason: RecordListParentRecordRefusalEnum, val command: ULong, val withdrawn: Boolean) {
     /** This value as a saved state writes it. */
-    fun toSaved(): Any = linkedMapOf("id" to SavedValues.of(id), "field" to SavedValues.of(field), "kind" to kind.toSaved(), "reason" to reason.toSaved())
+    fun toSaved(): Any = linkedMapOf("id" to SavedValues.of(id), "field" to SavedValues.of(field), "kind" to kind.toSaved(), "reason" to reason.toSaved(), "command" to SavedValues.of(command), "withdrawn" to SavedValues.of(withdrawn))
 
     companion object {
         /** The value a saved state holds, refused unless it is one. */
-        fun fromSaved(value: Any?, what: String): RecordListParentRefusedRecord = RecordListParentRefusedRecord(id = SavedValues.uint32(SavedValues.field(value, what, "id"), "$what.id"), field = SavedValues.uint16(SavedValues.field(value, what, "field"), "$what.field"), kind = RecordListParentRecordCommandEnum.fromSaved(SavedValues.field(value, what, "kind"), "$what.kind"), reason = RecordListParentRecordRefusalEnum.fromSaved(SavedValues.field(value, what, "reason"), "$what.reason"))
+        fun fromSaved(value: Any?, what: String): RecordListParentRefusedRecord = RecordListParentRefusedRecord(id = SavedValues.uint32(SavedValues.field(value, what, "id"), "$what.id"), field = SavedValues.uint16(SavedValues.field(value, what, "field"), "$what.field"), kind = RecordListParentRecordCommandEnum.fromSaved(SavedValues.field(value, what, "kind"), "$what.kind"), reason = RecordListParentRecordRefusalEnum.fromSaved(SavedValues.field(value, what, "reason"), "$what.reason"), command = SavedValues.uint64(SavedValues.field(value, what, "command"), "$what.command"), withdrawn = SavedValues.bool(SavedValues.field(value, what, "withdrawn"), "$what.withdrawn"))
+    }
+}
+/** SCE Accepted Subset §2.15: a `record:Op` datamodel value. */
+data class RecordListParentOpRecord(val kind: UByte, val id: UInt, val field: UShort, val value: Long, val text: String, val wallTime: Long, val counter: UInt, val nodeId: ULong) {
+    /** This value as a saved state writes it. */
+    fun toSaved(): Any = linkedMapOf("kind" to SavedValues.of(kind), "id" to SavedValues.of(id), "field" to SavedValues.of(field), "value" to SavedValues.of(value), "text" to SavedValues.of(text), "wallTime" to SavedValues.of(wallTime), "counter" to SavedValues.of(counter), "nodeId" to SavedValues.of(nodeId))
+
+    companion object {
+        /** The value a saved state holds, refused unless it is one. */
+        fun fromSaved(value: Any?, what: String): RecordListParentOpRecord = RecordListParentOpRecord(kind = SavedValues.uint8(SavedValues.field(value, what, "kind"), "$what.kind"), id = SavedValues.uint32(SavedValues.field(value, what, "id"), "$what.id"), field = SavedValues.uint16(SavedValues.field(value, what, "field"), "$what.field"), value = SavedValues.int64(SavedValues.field(value, what, "value"), "$what.value"), text = SavedValues.string(SavedValues.field(value, what, "text"), "$what.text", 96), wallTime = SavedValues.int64(SavedValues.field(value, what, "wallTime"), "$what.wallTime"), counter = SavedValues.uint32(SavedValues.field(value, what, "counter"), "$what.counter"), nodeId = SavedValues.uint64(SavedValues.field(value, what, "nodeId"), "$what.nodeId"))
+    }
+}
+/** SCE Accepted Subset §2.15: an `enum:record_outcome` datamodel value. */
+enum class RecordListParentRecordOutcomeEnum(val declaredName: String) {
+    NONE("none"),
+    ACCEPTED("accepted"),
+    HELD("held"),
+    WAITING("waiting"),
+    REFUSED("refused");
+
+    /** This value as a saved state writes it. */
+    fun toSaved(): Any = declaredName
+
+    /** The number the enum document declares for this value. */
+    fun toUnderlying(): UByte = when (this) {
+        NONE -> 0u.toUByte()
+        ACCEPTED -> 1u.toUByte()
+        HELD -> 2u.toUByte()
+        WAITING -> 3u.toUByte()
+        REFUSED -> 4u.toUByte()
+    }
+
+    companion object {
+        /** The value a saved state holds, refused unless it is one. */
+        fun fromSaved(value: Any?, what: String): RecordListParentRecordOutcomeEnum {
+            val declared = SavedValues.string(value, what)
+            return entries.firstOrNull { it.declaredName == declared }
+                ?: throw StateRefusal("'$what' ($declared) is not a variant of record_outcome")
+        }
+
+        /** The variant that declares [raw], or null for a number no variant declares. */
+        fun fromUnderlying(raw: UByte): RecordListParentRecordOutcomeEnum? = entries.firstOrNull { it.toUnderlying() == raw }
     }
 }
 /** The bounds this machine is built with, each by the name `sce:limit` gives it (docs/adr/0050). */
@@ -251,6 +313,16 @@ class RecordListParentStateMachine(
 
     /** What the published `refusedCount` holds. */
     val refusedCount: UInt get() = vRefusedCount
+    /** W3C SCXML 5.2: the `pendingCount` datamodel variable, published (`sce:direction="out"`). */
+    private var vPendingCount: UInt = 0.toUInt()
+
+    /** What the published `pendingCount` holds. */
+    val pendingCount: UInt get() = vPendingCount
+    /** W3C SCXML 5.2: the `confirmedCount` datamodel variable, published (`sce:direction="out"`). */
+    private var vConfirmedCount: UInt = 0.toUInt()
+
+    /** What the published `confirmedCount` holds. */
+    val confirmedCount: UInt get() = vConfirmedCount
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -260,6 +332,8 @@ class RecordListParentStateMachine(
     class InvokeParams {
         var told: UInt? = null
         var refusedCount: UInt? = null
+        var pendingCount: UInt? = null
+        var confirmedCount: UInt? = null
     }
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
@@ -270,6 +344,8 @@ class RecordListParentStateMachine(
     private fun acceptParamsPart0(params: InvokeParams) {
         params.told?.let { vTold = it }
         params.refusedCount?.let { vRefusedCount = it }
+        params.pendingCount?.let { vPendingCount = it }
+        params.confirmedCount?.let { vConfirmedCount = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -279,6 +355,8 @@ class RecordListParentStateMachine(
         val others: List<RecordListParentToldValueRecord>,
         val refused: RecordListParentRefusedRecord?,
         val refusedCount: UInt,
+        val pendingCount: UInt,
+        val confirmedCount: UInt,
     )
 
     /**
@@ -300,6 +378,8 @@ class RecordListParentStateMachine(
         others = vOthers,
         refused = vRefused,
         refusedCount = vRefusedCount,
+        pendingCount = vPendingCount,
+        confirmedCount = vConfirmedCount,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -329,16 +409,18 @@ class RecordListParentStateMachine(
      * later revision added at its default.
      */
     val savedShape: SavedShape = SavedShape(
-        first = "4cb68ae1f448dca9c8282ca73cadcc1e88a226ef18799f7023b5c0b32cc5ac7f",
-        revised = "895a13663d6ce24ce93775145fd7e0e6fc564efe5022579ed83296c619b2233a",
-        format2First = "7afa835c6abdf9b644884855314499a143ca4457e93c16a1587a16ed80f759ac",
-        format2Revised = "2130125bdb38062885f16430b45cebbfaca284433cbdf4ca33b2ec052e4cf9e1",
+        first = "f4004247309949f371b21bfb3fdeb9321081f34037b2b8d4cd093dac9e48af27",
+        revised = "339fbcd29a3744cb5e8aad5ff60cf609a4e016d594a75ad0e16e09da7d8e3740",
+        format2First = "59405a4de363d3298249985df7fe808d8751057f0ade2fd995dd782f8240e1de",
+        format2Revised = "0acbd90302f5ed0754a33f3178756a4d271a985d0773eb02e7e9382bade9955c",
         records = listOf(
             RecordLineage(
                 event = "record_list.refused",
-                revision = 1,
-                revisions = listOf(),
+                revision = 2,
+                revisions = listOf("c23696beaa537fe1a7d5ee2981d42dfbb76f8ec4603c2b77a27c9872705e1f61"),
                 added = listOf(
+                    AddedField("command", 2, "\"0\""),
+                    AddedField("withdrawn", 2, "false"),
                 ),
                 widened = listOf(
                 ),
@@ -385,9 +467,10 @@ class RecordListParentStateMachine(
             ),
             EnumLineage(
                 key = "enum:sce:std/shared/record_refusal.scxml",
-                revision = 1,
-                revisions = listOf(),
+                revision = 2,
+                revisions = listOf("3ac588a3c4a21b24f14d28b1fcef233ad4398105757a2598b93d4d89f93275e8"),
                 added = listOf(
+                    AddedVariant("peerRefused", 2),
                 ),
                 holders = listOf(
                     EnumHolder("refused", "reason", false),
@@ -420,6 +503,8 @@ class RecordListParentStateMachine(
         variables += "other" to vOther.toSaved()
         variables += "refused" to SavedValues.optional(vRefused) { it.toSaved() }
         variables += "refusedCount" to SavedValues.of(vRefusedCount)
+        variables += "pendingCount" to SavedValues.of(vPendingCount)
+        variables += "confirmedCount" to SavedValues.of(vConfirmedCount)
     }
 
     /** [save] at the host's wall clock now. */
@@ -460,6 +545,8 @@ class RecordListParentStateMachine(
         val saved4 = RecordListParentToldValueRecord.fromSaved(savedGrown.variable("other"), "other")
         val saved5 = SavedValues.optional(savedGrown.variable("refused"), "refused") { e, w -> RecordListParentRefusedRecord.fromSaved(e, w) }
         val saved6 = SavedValues.uint32(savedGrown.variable("refusedCount"), "refusedCount")
+        val saved7 = SavedValues.uint32(savedGrown.variable("pendingCount"), "pendingCount")
+        val saved8 = SavedValues.uint32(savedGrown.variable("confirmedCount"), "confirmedCount")
         return {
             vTold = saved1
             vShown = saved2
@@ -467,6 +554,8 @@ class RecordListParentStateMachine(
             vOther = saved4
             vRefused = saved5
             vRefusedCount = saved6
+            vPendingCount = saved7
+            vConfirmedCount = saved8
         }
     }
 
@@ -490,6 +579,8 @@ class RecordListParentStateMachine(
         RecordListParentToldValueRecord.fromSaved(savedGrown.variable("other"), "other")
         SavedValues.optional(savedGrown.variable("refused"), "refused") { e, w -> RecordListParentRefusedRecord.fromSaved(e, w) }
         SavedValues.uint32(savedGrown.variable("refusedCount"), "refusedCount")
+        SavedValues.uint32(savedGrown.variable("pendingCount"), "pendingCount")
+        SavedValues.uint32(savedGrown.variable("confirmedCount"), "confirmedCount")
     }
 
     override fun restoreAsSession(saved: SavedState, wallNowMs: Long) = restore(saved, wallNowMs)
@@ -507,7 +598,9 @@ class RecordListParentStateMachine(
     // NL→IR Item C1 Path A: the current event's typed `_event.data` payload(s),
     // lifted from the dequeued event by populateTypedPayload and read by the
     // native transition guards. `null` between events / for untyped events.
+    private var pendingRecordListChangePayload: RecordListParentRecordListChangePayload? = null
     private var pendingRecordListClearPayload: RecordListParentRecordListClearPayload? = null
+    private var pendingRecordListConfirmPayload: RecordListParentRecordListConfirmPayload? = null
     private var pendingRecordListEditPayload: RecordListParentRecordListEditPayload? = null
     private var pendingRecordListJoinPayload: RecordListParentRecordListJoinPayload? = null
     private var pendingRecordListRefusedPayload: RecordListParentRecordListRefusedPayload? = null
@@ -515,9 +608,9 @@ class RecordListParentStateMachine(
     private var pendingRecordListRetirePayload: RecordListParentRecordListRetirePayload? = null
     private var pendingRecordListRolePayload: RecordListParentRecordListRolePayload? = null
     private var pendingRecordListRoomPayload: RecordListParentRecordListRoomPayload? = null
-    private var pendingRecordListSupersedePayload: RecordListParentRecordListSupersedePayload? = null
     private var pendingRecordListValuePayload: RecordListParentRecordListValuePayload? = null
-    private var pendingRecordListWritePayload: RecordListParentRecordListWritePayload? = null
+    private var pendingRecordListVerdictPayload: RecordListParentRecordListVerdictPayload? = null
+    private var pendingRecordListWithdrawPayload: RecordListParentRecordListWithdrawPayload? = null
 
     // NL→IR Item C1 Path A: bind the dequeued event's typed `_event.data` view
     // — from the type-erased carrier the inject seam fills, and otherwise by
@@ -529,7 +622,9 @@ class RecordListParentStateMachine(
     // of the Go policy's PopulateEventMetadata + LiftTypedPayload / the C11 pop
     // loop's `sm->pending_payload = evt.payload`.
     override fun populateTypedPayload(event: RecordListParentEvent, metadata: EventMetadata) {
+        pendingRecordListChangePayload = null
         pendingRecordListClearPayload = null
+        pendingRecordListConfirmPayload = null
         pendingRecordListEditPayload = null
         pendingRecordListJoinPayload = null
         pendingRecordListRefusedPayload = null
@@ -537,11 +632,13 @@ class RecordListParentStateMachine(
         pendingRecordListRetirePayload = null
         pendingRecordListRolePayload = null
         pendingRecordListRoomPayload = null
-        pendingRecordListSupersedePayload = null
         pendingRecordListValuePayload = null
-        pendingRecordListWritePayload = null
+        pendingRecordListVerdictPayload = null
+        pendingRecordListWithdrawPayload = null
         when (val tp = metadata.typedPayload) {
+            is RecordListParentRecordListChangePayload -> pendingRecordListChangePayload = tp
             is RecordListParentRecordListClearPayload -> pendingRecordListClearPayload = tp
+            is RecordListParentRecordListConfirmPayload -> pendingRecordListConfirmPayload = tp
             is RecordListParentRecordListEditPayload -> pendingRecordListEditPayload = tp
             is RecordListParentRecordListJoinPayload -> pendingRecordListJoinPayload = tp
             is RecordListParentRecordListRefusedPayload -> pendingRecordListRefusedPayload = tp
@@ -549,45 +646,51 @@ class RecordListParentStateMachine(
             is RecordListParentRecordListRetirePayload -> pendingRecordListRetirePayload = tp
             is RecordListParentRecordListRolePayload -> pendingRecordListRolePayload = tp
             is RecordListParentRecordListRoomPayload -> pendingRecordListRoomPayload = tp
-            is RecordListParentRecordListSupersedePayload -> pendingRecordListSupersedePayload = tp
             is RecordListParentRecordListValuePayload -> pendingRecordListValuePayload = tp
-            is RecordListParentRecordListWritePayload -> pendingRecordListWritePayload = tp
+            is RecordListParentRecordListVerdictPayload -> pendingRecordListVerdictPayload = tp
+            is RecordListParentRecordListWithdrawPayload -> pendingRecordListWithdrawPayload = tp
             else -> {
                 // No typed carrier, so the producer was not the inject seam: read the
                 // fields out of `data`, which every other producer fills.
-                if (event == RecordListParentEvent.RecordList.Clear) {
+                if (event == RecordListParentEvent.RecordList.Change) {
                     val fields = EventPayload.decode(metadata.data)
-                    pendingRecordListClearPayload = RecordListParentRecordListClearPayload(fields.uint32("id"), fields.uint16("field"), fields.int64("now"), fields.boolean("more"))
+                    pendingRecordListChangePayload = RecordListParentRecordListChangePayload(fields.field("by").let { it.uint64() }, fields.field("wallTime").let { it.int64() }, fields.field("counter").let { it.uint32() }, fields.field("ops").let { it.listWithin(1, 64) { it.record(null) { RecordListParentOpRecord(kind = it.field("kind").let { it.uint8() }, id = it.field("id").let { it.uint32() }, field = it.field("field").let { it.uint16() }, value = it.field("value").let { it.int64() }, text = it.field("text").let { it.string(96) }, wallTime = it.field("wallTime").let { it.int64() }, counter = it.field("counter").let { it.uint32() }, nodeId = it.field("nodeId").let { it.uint64() }) } } })
+                } else if (event == RecordListParentEvent.RecordList.Clear) {
+                    val fields = EventPayload.decode(metadata.data, "{\"command\":\"0\"}")
+                    pendingRecordListClearPayload = RecordListParentRecordListClearPayload(fields.uint32("id"), fields.uint16("field"), fields.int64("now"), fields.boolean("more"), fields.uint64("command"))
+                } else if (event == RecordListParentEvent.RecordList.Confirm) {
+                    val fields = EventPayload.decode(metadata.data)
+                    pendingRecordListConfirmPayload = RecordListParentRecordListConfirmPayload(fields.int64("wallTime"), fields.uint32("counter"), fields.uint64("command"))
                 } else if (event == RecordListParentEvent.RecordList.Edit) {
-                    val fields = EventPayload.decode(metadata.data, "{\"more\":false}")
-                    pendingRecordListEditPayload = RecordListParentRecordListEditPayload(fields.uint32("id"), fields.uint16("field"), fields.int64("value"), fields.string("text", 32), fields.int64("now"), fields.boolean("more"))
+                    val fields = EventPayload.decode(metadata.data, "{\"more\":false,\"command\":\"0\"}")
+                    pendingRecordListEditPayload = RecordListParentRecordListEditPayload(fields.uint32("id"), fields.uint16("field"), fields.int64("value"), fields.string("text", 32), fields.int64("now"), fields.boolean("more"), fields.uint64("command"))
                 } else if (event == RecordListParentEvent.RecordList.Join) {
-                    val fields = EventPayload.decode(metadata.data)
-                    pendingRecordListJoinPayload = RecordListParentRecordListJoinPayload(fields.uint64("node"), fields.boolean("hub"))
+                    val fields = EventPayload.decode(metadata.data, "{\"journal\":true}")
+                    pendingRecordListJoinPayload = RecordListParentRecordListJoinPayload(fields.uint64("node"), fields.boolean("journal"))
                 } else if (event == RecordListParentEvent.RecordList.Refused) {
-                    val fields = EventPayload.decode(metadata.data)
-                    pendingRecordListRefusedPayload = RecordListParentRecordListRefusedPayload(fields.uint32("id"), fields.uint16("field"), fields.string("kind").let { name -> RecordListParentRecordCommandEnum.entries.firstOrNull { it.declaredName == name } ?: throw fields.field("kind").unknownVariant(name, "record_command") }, fields.string("reason").let { name -> RecordListParentRecordRefusalEnum.entries.firstOrNull { it.declaredName == name } ?: throw fields.field("reason").unknownVariant(name, "record_refusal") })
+                    val fields = EventPayload.decode(metadata.data, "{\"command\":\"0\",\"withdrawn\":false}")
+                    pendingRecordListRefusedPayload = RecordListParentRecordListRefusedPayload(fields.uint32("id"), fields.uint16("field"), fields.string("kind").let { name -> RecordListParentRecordCommandEnum.entries.firstOrNull { it.declaredName == name } ?: throw fields.field("kind").unknownVariant(name, "record_command") }, fields.string("reason").let { name -> RecordListParentRecordRefusalEnum.entries.firstOrNull { it.declaredName == name } ?: throw fields.field("reason").unknownVariant(name, "record_refusal") }, fields.uint64("command"), fields.boolean("withdrawn"))
                 } else if (event == RecordListParentEvent.RecordList.Register) {
                     val fields = EventPayload.decode(metadata.data)
                     pendingRecordListRegisterPayload = RecordListParentRecordListRegisterPayload(fields.uint32("id"), fields.uint16("field"), fields.uint32("count"), fields.int64("value"), fields.string("text", 96), fields.int64("wallTime"), fields.uint32("counter"), fields.uint64("nodeId"))
                 } else if (event == RecordListParentEvent.RecordList.Retire) {
-                    val fields = EventPayload.decode(metadata.data)
-                    pendingRecordListRetirePayload = RecordListParentRecordListRetirePayload(fields.uint32("id"), fields.int64("now"), fields.boolean("more"))
+                    val fields = EventPayload.decode(metadata.data, "{\"command\":\"0\"}")
+                    pendingRecordListRetirePayload = RecordListParentRecordListRetirePayload(fields.uint32("id"), fields.int64("now"), fields.boolean("more"), fields.uint64("command"))
                 } else if (event == RecordListParentEvent.RecordList.Role) {
                     val fields = EventPayload.decode(metadata.data)
                     pendingRecordListRolePayload = RecordListParentRecordListRolePayload(fields.uint64("node"), fields.uint8("role"))
                 } else if (event == RecordListParentEvent.RecordList.Room) {
                     val fields = EventPayload.decode(metadata.data)
                     pendingRecordListRoomPayload = RecordListParentRecordListRoomPayload(fields.uint32("values"), fields.uint32("history"), fields.uint32("digest"))
-                } else if (event == RecordListParentEvent.RecordList.Supersede) {
-                    val fields = EventPayload.decode(metadata.data, "{\"parts\":1,\"atWallTime\":\"0\",\"atCounter\":0}")
-                    pendingRecordListSupersedePayload = RecordListParentRecordListSupersedePayload(fields.uint32("id"), fields.uint16("field"), fields.int64("wallTime"), fields.uint32("counter"), fields.uint64("nodeId"), fields.uint64("by"), fields.uint32("parts"), fields.int64("atWallTime"), fields.uint32("atCounter"))
                 } else if (event == RecordListParentEvent.RecordList.Value) {
                     val fields = EventPayload.decode(metadata.data)
                     pendingRecordListValuePayload = RecordListParentRecordListValuePayload(fields.uint32("id"), fields.uint16("field"), fields.uint32("ordinal"), fields.int64("value"), fields.string("text", 96), fields.int64("wallTime"), fields.uint32("counter"), fields.uint64("nodeId"))
-                } else if (event == RecordListParentEvent.RecordList.Write) {
-                    val fields = EventPayload.decode(metadata.data, "{\"parts\":1}")
-                    pendingRecordListWritePayload = RecordListParentRecordListWritePayload(fields.uint32("id"), fields.uint16("field"), fields.int64("value"), fields.string("text", 96), fields.int64("wallTime"), fields.uint32("counter"), fields.uint64("nodeId"), fields.uint32("parts"))
+                } else if (event == RecordListParentEvent.RecordList.Verdict) {
+                    val fields = EventPayload.decode(metadata.data)
+                    pendingRecordListVerdictPayload = RecordListParentRecordListVerdictPayload(fields.int64("wallTime"), fields.uint32("counter"), fields.string("outcome").let { name -> RecordListParentRecordOutcomeEnum.entries.firstOrNull { it.declaredName == name } ?: throw fields.field("outcome").unknownVariant(name, "record_outcome") }, fields.optional("reason") { _ -> fields.string("reason").let { name -> RecordListParentRecordRefusalEnum.entries.firstOrNull { it.declaredName == name } ?: throw fields.field("reason").unknownVariant(name, "record_refusal") } })
+                } else if (event == RecordListParentEvent.RecordList.Withdraw) {
+                    val fields = EventPayload.decode(metadata.data)
+                    pendingRecordListWithdrawPayload = RecordListParentRecordListWithdrawPayload(fields.int64("wallTime"), fields.uint32("counter"), fields.uint64("command"))
                 }
             }
         }
@@ -595,66 +698,99 @@ class RecordListParentStateMachine(
 
     // NL→IR Item C1 Path A: per-event typed `_event.data` inject seams.
     // NL→IR Item C1 Path A typed `_event.data` inject seam for
-    // `record_list.clear` — binds the event name and the payload field values in one call.
-    fun raiseRecordListClear(id: UInt, field: UShort, now: Long, more: Boolean) {
+    // `record_list.change` — binds the event name and the payload field values in one call.
+    fun raiseRecordListChange(by: ULong, wallTime: Long, counter: UInt, ops: List<RecordListParentOpRecord>) {
+        val scePayload = RecordListParentRecordListChangePayload(by, wallTime, counter, ops)
         send(
-            RecordListParentEvent.RecordList.Clear,
+            RecordListParentEvent.RecordList.Change,
             EventMetadata(
                 type = "external",
-                typedPayload = RecordListParentRecordListClearPayload(id, field, now, more),
+                typedPayload = scePayload,
                 // Both carriers are filled: the typed one a native guard reads, and
                 // `data`, which is what the script engine binds `_event.data` from.
                 // Filling only the first left an `<assign expr="_event.data.x">` on
                 // this event reading nothing, on every backend alike.
-                data = EventPayload.encode(mapOf("id" to id, "field" to field, "now" to now, "more" to more))
+                data = com.sce.runtime.EventPayload.recordJson(mapOf<String, Any?>("by" to com.sce.runtime.EventPayload.valueJson(scePayload.by), "wallTime" to com.sce.runtime.EventPayload.valueJson(scePayload.wallTime), "counter" to com.sce.runtime.EventPayload.valueJson(scePayload.counter), "ops" to com.sce.runtime.EventPayload.listJson(scePayload.ops) { com.sce.runtime.EventPayload.recordJson(mapOf<String, Any?>("kind" to com.sce.runtime.EventPayload.valueJson(it.kind), "id" to com.sce.runtime.EventPayload.valueJson(it.id), "field" to com.sce.runtime.EventPayload.valueJson(it.field), "value" to com.sce.runtime.EventPayload.valueJson(it.value), "text" to com.sce.runtime.EventPayload.valueJson(it.text), "wallTime" to com.sce.runtime.EventPayload.valueJson(it.wallTime), "counter" to com.sce.runtime.EventPayload.valueJson(it.counter), "nodeId" to com.sce.runtime.EventPayload.valueJson(it.nodeId))) })).json
+            )
+        )
+    }
+    // NL→IR Item C1 Path A typed `_event.data` inject seam for
+    // `record_list.clear` — binds the event name and the payload field values in one call.
+    fun raiseRecordListClear(id: UInt, field: UShort, now: Long, more: Boolean, command: ULong) {
+        send(
+            RecordListParentEvent.RecordList.Clear,
+            EventMetadata(
+                type = "external",
+                typedPayload = RecordListParentRecordListClearPayload(id, field, now, more, command),
+                // Both carriers are filled: the typed one a native guard reads, and
+                // `data`, which is what the script engine binds `_event.data` from.
+                // Filling only the first left an `<assign expr="_event.data.x">` on
+                // this event reading nothing, on every backend alike.
+                data = EventPayload.encode(mapOf("id" to id, "field" to field, "now" to now, "more" to more, "command" to command))
+            )
+        )
+    }
+    // NL→IR Item C1 Path A typed `_event.data` inject seam for
+    // `record_list.confirm` — binds the event name and the payload field values in one call.
+    fun raiseRecordListConfirm(wallTime: Long, counter: UInt, command: ULong) {
+        send(
+            RecordListParentEvent.RecordList.Confirm,
+            EventMetadata(
+                type = "external",
+                typedPayload = RecordListParentRecordListConfirmPayload(wallTime, counter, command),
+                // Both carriers are filled: the typed one a native guard reads, and
+                // `data`, which is what the script engine binds `_event.data` from.
+                // Filling only the first left an `<assign expr="_event.data.x">` on
+                // this event reading nothing, on every backend alike.
+                data = EventPayload.encode(mapOf("wallTime" to wallTime, "counter" to counter, "command" to command))
             )
         )
     }
     // NL→IR Item C1 Path A typed `_event.data` inject seam for
     // `record_list.edit` — binds the event name and the payload field values in one call.
-    fun raiseRecordListEdit(id: UInt, field: UShort, value: Long, text: String, now: Long, more: Boolean) {
+    fun raiseRecordListEdit(id: UInt, field: UShort, value: Long, text: String, now: Long, more: Boolean, command: ULong) {
         send(
             RecordListParentEvent.RecordList.Edit,
             EventMetadata(
                 type = "external",
-                typedPayload = RecordListParentRecordListEditPayload(id, field, value, text, now, more),
+                typedPayload = RecordListParentRecordListEditPayload(id, field, value, text, now, more, command),
                 // Both carriers are filled: the typed one a native guard reads, and
                 // `data`, which is what the script engine binds `_event.data` from.
                 // Filling only the first left an `<assign expr="_event.data.x">` on
                 // this event reading nothing, on every backend alike.
-                data = EventPayload.encode(mapOf("id" to id, "field" to field, "value" to value, "text" to text, "now" to now, "more" to more))
+                data = EventPayload.encode(mapOf("id" to id, "field" to field, "value" to value, "text" to text, "now" to now, "more" to more, "command" to command))
             )
         )
     }
     // NL→IR Item C1 Path A typed `_event.data` inject seam for
     // `record_list.join` — binds the event name and the payload field values in one call.
-    fun raiseRecordListJoin(node: ULong, hub: Boolean) {
+    fun raiseRecordListJoin(node: ULong, journal: Boolean) {
         send(
             RecordListParentEvent.RecordList.Join,
             EventMetadata(
                 type = "external",
-                typedPayload = RecordListParentRecordListJoinPayload(node, hub),
+                typedPayload = RecordListParentRecordListJoinPayload(node, journal),
                 // Both carriers are filled: the typed one a native guard reads, and
                 // `data`, which is what the script engine binds `_event.data` from.
                 // Filling only the first left an `<assign expr="_event.data.x">` on
                 // this event reading nothing, on every backend alike.
-                data = EventPayload.encode(mapOf("node" to node, "hub" to hub))
+                data = EventPayload.encode(mapOf("node" to node, "journal" to journal))
             )
         )
     }
     // NL→IR Item C1 Path A typed `_event.data` inject seam for
     // `record_list.refused` — binds the event name and the payload field values in one call.
-    fun raiseRecordListRefused(id: UInt, field: UShort, kind: RecordListParentRecordCommandEnum, reason: RecordListParentRecordRefusalEnum) {
+    fun raiseRecordListRefused(id: UInt, field: UShort, kind: RecordListParentRecordCommandEnum, reason: RecordListParentRecordRefusalEnum, command: ULong, withdrawn: Boolean) {
         send(
             RecordListParentEvent.RecordList.Refused,
             EventMetadata(
                 type = "external",
-                typedPayload = RecordListParentRecordListRefusedPayload(id, field, kind, reason),
+                typedPayload = RecordListParentRecordListRefusedPayload(id, field, kind, reason, command, withdrawn),
                 // Both carriers are filled: the typed one a native guard reads, and
                 // `data`, which is what the script engine binds `_event.data` from.
                 // Filling only the first left an `<assign expr="_event.data.x">` on
                 // this event reading nothing, on every backend alike.
-                data = EventPayload.encode(mapOf("id" to id, "field" to field, "kind" to kind.declaredName, "reason" to reason.declaredName))
+                data = EventPayload.encode(mapOf("id" to id, "field" to field, "kind" to kind.declaredName, "reason" to reason.declaredName, "command" to command, "withdrawn" to withdrawn))
             )
         )
     }
@@ -676,17 +812,17 @@ class RecordListParentStateMachine(
     }
     // NL→IR Item C1 Path A typed `_event.data` inject seam for
     // `record_list.retire` — binds the event name and the payload field values in one call.
-    fun raiseRecordListRetire(id: UInt, now: Long, more: Boolean) {
+    fun raiseRecordListRetire(id: UInt, now: Long, more: Boolean, command: ULong) {
         send(
             RecordListParentEvent.RecordList.Retire,
             EventMetadata(
                 type = "external",
-                typedPayload = RecordListParentRecordListRetirePayload(id, now, more),
+                typedPayload = RecordListParentRecordListRetirePayload(id, now, more, command),
                 // Both carriers are filled: the typed one a native guard reads, and
                 // `data`, which is what the script engine binds `_event.data` from.
                 // Filling only the first left an `<assign expr="_event.data.x">` on
                 // this event reading nothing, on every backend alike.
-                data = EventPayload.encode(mapOf("id" to id, "now" to now, "more" to more))
+                data = EventPayload.encode(mapOf("id" to id, "now" to now, "more" to more, "command" to command))
             )
         )
     }
@@ -723,22 +859,6 @@ class RecordListParentStateMachine(
         )
     }
     // NL→IR Item C1 Path A typed `_event.data` inject seam for
-    // `record_list.supersede` — binds the event name and the payload field values in one call.
-    fun raiseRecordListSupersede(id: UInt, field: UShort, wallTime: Long, counter: UInt, nodeId: ULong, by: ULong, parts: UInt, atWallTime: Long, atCounter: UInt) {
-        send(
-            RecordListParentEvent.RecordList.Supersede,
-            EventMetadata(
-                type = "external",
-                typedPayload = RecordListParentRecordListSupersedePayload(id, field, wallTime, counter, nodeId, by, parts, atWallTime, atCounter),
-                // Both carriers are filled: the typed one a native guard reads, and
-                // `data`, which is what the script engine binds `_event.data` from.
-                // Filling only the first left an `<assign expr="_event.data.x">` on
-                // this event reading nothing, on every backend alike.
-                data = EventPayload.encode(mapOf("id" to id, "field" to field, "wallTime" to wallTime, "counter" to counter, "nodeId" to nodeId, "by" to by, "parts" to parts, "atWallTime" to atWallTime, "atCounter" to atCounter))
-            )
-        )
-    }
-    // NL→IR Item C1 Path A typed `_event.data` inject seam for
     // `record_list.value` — binds the event name and the payload field values in one call.
     fun raiseRecordListValue(id: UInt, field: UShort, ordinal: UInt, value: Long, text: String, wallTime: Long, counter: UInt, nodeId: ULong) {
         send(
@@ -755,18 +875,34 @@ class RecordListParentStateMachine(
         )
     }
     // NL→IR Item C1 Path A typed `_event.data` inject seam for
-    // `record_list.write` — binds the event name and the payload field values in one call.
-    fun raiseRecordListWrite(id: UInt, field: UShort, value: Long, text: String, wallTime: Long, counter: UInt, nodeId: ULong, parts: UInt) {
+    // `record_list.verdict` — binds the event name and the payload field values in one call.
+    fun raiseRecordListVerdict(wallTime: Long, counter: UInt, outcome: RecordListParentRecordOutcomeEnum, reason: RecordListParentRecordRefusalEnum?) {
         send(
-            RecordListParentEvent.RecordList.Write,
+            RecordListParentEvent.RecordList.Verdict,
             EventMetadata(
                 type = "external",
-                typedPayload = RecordListParentRecordListWritePayload(id, field, value, text, wallTime, counter, nodeId, parts),
+                typedPayload = RecordListParentRecordListVerdictPayload(wallTime, counter, outcome, reason),
                 // Both carriers are filled: the typed one a native guard reads, and
                 // `data`, which is what the script engine binds `_event.data` from.
                 // Filling only the first left an `<assign expr="_event.data.x">` on
                 // this event reading nothing, on every backend alike.
-                data = EventPayload.encode(mapOf("id" to id, "field" to field, "value" to value, "text" to text, "wallTime" to wallTime, "counter" to counter, "nodeId" to nodeId, "parts" to parts))
+                data = EventPayload.encode(mapOf("wallTime" to wallTime, "counter" to counter, "outcome" to outcome.declaredName, "reason" to reason?.declaredName))
+            )
+        )
+    }
+    // NL→IR Item C1 Path A typed `_event.data` inject seam for
+    // `record_list.withdraw` — binds the event name and the payload field values in one call.
+    fun raiseRecordListWithdraw(wallTime: Long, counter: UInt, command: ULong) {
+        send(
+            RecordListParentEvent.RecordList.Withdraw,
+            EventMetadata(
+                type = "external",
+                typedPayload = RecordListParentRecordListWithdrawPayload(wallTime, counter, command),
+                // Both carriers are filled: the typed one a native guard reads, and
+                // `data`, which is what the script engine binds `_event.data` from.
+                // Filling only the first left an `<assign expr="_event.data.x">` on
+                // this event reading nothing, on every backend alike.
+                data = EventPayload.encode(mapOf("wallTime" to wallTime, "counter" to counter, "command" to command))
             )
         )
     }
@@ -899,6 +1035,42 @@ class RecordListParentStateMachine(
             hasActions = true,
             isInternal = true,
         )
+
+        // W3C SCXML 3.13: holding's transition 11, as the microstep reads it.
+        val transitionHoldingAt11 = EnabledTransition<RecordListParentState, HistoryId>(
+            RecordListParentState.Holding,
+            emptyList(),
+            11,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: holding's transition 12, as the microstep reads it.
+        val transitionHoldingAt12 = EnabledTransition<RecordListParentState, HistoryId>(
+            RecordListParentState.Holding,
+            emptyList(),
+            12,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: holding's transition 13, as the microstep reads it.
+        val transitionHoldingAt13 = EnabledTransition<RecordListParentState, HistoryId>(
+            RecordListParentState.Holding,
+            emptyList(),
+            13,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: holding's transition 14, as the microstep reads it.
+        val transitionHoldingAt14 = EnabledTransition<RecordListParentState, HistoryId>(
+            RecordListParentState.Holding,
+            emptyList(),
+            14,
+            hasActions = true,
+            isInternal = true,
+        )
     }
 
 
@@ -926,17 +1098,21 @@ class RecordListParentStateMachine(
         "done.invoke" -> RecordListParentEvent.Done.Invoke
         "error.communication" -> RecordListParentEvent.Error.Communication
         "error.execution" -> RecordListParentEvent.Error.Execution
+        "record_list.change" -> RecordListParentEvent.RecordList.Change
         "record_list.clear" -> RecordListParentEvent.RecordList.Clear
+        "record_list.confirm" -> RecordListParentEvent.RecordList.Confirm
+        "record_list.confirmed" -> RecordListParentEvent.RecordList.Confirmed
         "record_list.edit" -> RecordListParentEvent.RecordList.Edit
         "record_list.join" -> RecordListParentEvent.RecordList.Join
+        "record_list.pending" -> RecordListParentEvent.RecordList.Pending
         "record_list.refused" -> RecordListParentEvent.RecordList.Refused
         "record_list.register" -> RecordListParentEvent.RecordList.Register
         "record_list.retire" -> RecordListParentEvent.RecordList.Retire
         "record_list.role" -> RecordListParentEvent.RecordList.Role
         "record_list.room" -> RecordListParentEvent.RecordList.Room
-        "record_list.supersede" -> RecordListParentEvent.RecordList.Supersede
         "record_list.value" -> RecordListParentEvent.RecordList.Value
-        "record_list.write" -> RecordListParentEvent.RecordList.Write
+        "record_list.verdict" -> RecordListParentEvent.RecordList.Verdict
+        "record_list.withdraw" -> RecordListParentEvent.RecordList.Withdraw
         else -> null
     }
 
@@ -946,17 +1122,21 @@ class RecordListParentStateMachine(
         is RecordListParentEvent.Done.Invoke -> "done.invoke"
         is RecordListParentEvent.Error.Communication -> "error.communication"
         is RecordListParentEvent.Error.Execution -> "error.execution"
+        is RecordListParentEvent.RecordList.Change -> "record_list.change"
         is RecordListParentEvent.RecordList.Clear -> "record_list.clear"
+        is RecordListParentEvent.RecordList.Confirm -> "record_list.confirm"
+        is RecordListParentEvent.RecordList.Confirmed -> "record_list.confirmed"
         is RecordListParentEvent.RecordList.Edit -> "record_list.edit"
         is RecordListParentEvent.RecordList.Join -> "record_list.join"
+        is RecordListParentEvent.RecordList.Pending -> "record_list.pending"
         is RecordListParentEvent.RecordList.Refused -> "record_list.refused"
         is RecordListParentEvent.RecordList.Register -> "record_list.register"
         is RecordListParentEvent.RecordList.Retire -> "record_list.retire"
         is RecordListParentEvent.RecordList.Role -> "record_list.role"
         is RecordListParentEvent.RecordList.Room -> "record_list.room"
-        is RecordListParentEvent.RecordList.Supersede -> "record_list.supersede"
         is RecordListParentEvent.RecordList.Value -> "record_list.value"
-        is RecordListParentEvent.RecordList.Write -> "record_list.write"
+        is RecordListParentEvent.RecordList.Verdict -> "record_list.verdict"
+        is RecordListParentEvent.RecordList.Withdraw -> "record_list.withdraw"
     }
 
 
@@ -980,13 +1160,17 @@ class RecordListParentStateMachine(
         event is RecordListParentEvent.RecordList.Edit -> TransitionsPart0.transitionHoldingAt1
         event is RecordListParentEvent.RecordList.Clear -> TransitionsPart0.transitionHoldingAt2
         event is RecordListParentEvent.RecordList.Retire -> TransitionsPart0.transitionHoldingAt3
-        event is RecordListParentEvent.RecordList.Role -> TransitionsPart0.transitionHoldingAt4
-        event is RecordListParentEvent.RecordList.Room -> TransitionsPart0.transitionHoldingAt5
-        event is RecordListParentEvent.RecordList.Write -> TransitionsPart0.transitionHoldingAt6
-        event is RecordListParentEvent.RecordList.Supersede -> TransitionsPart0.transitionHoldingAt7
-        event is RecordListParentEvent.RecordList.Register -> TransitionsPart0.transitionHoldingAt8
-        event is RecordListParentEvent.RecordList.Value -> TransitionsPart0.transitionHoldingAt9
-        event is RecordListParentEvent.RecordList.Refused -> TransitionsPart0.transitionHoldingAt10
+        event is RecordListParentEvent.RecordList.Verdict -> TransitionsPart0.transitionHoldingAt4
+        event is RecordListParentEvent.RecordList.Confirm -> TransitionsPart0.transitionHoldingAt5
+        event is RecordListParentEvent.RecordList.Withdraw -> TransitionsPart0.transitionHoldingAt6
+        event is RecordListParentEvent.RecordList.Role -> TransitionsPart0.transitionHoldingAt7
+        event is RecordListParentEvent.RecordList.Room -> TransitionsPart0.transitionHoldingAt8
+        event is RecordListParentEvent.RecordList.Change -> TransitionsPart0.transitionHoldingAt9
+        event is RecordListParentEvent.RecordList.Register -> TransitionsPart0.transitionHoldingAt10
+        event is RecordListParentEvent.RecordList.Value -> TransitionsPart0.transitionHoldingAt11
+        event is RecordListParentEvent.RecordList.Refused -> TransitionsPart0.transitionHoldingAt12
+        event is RecordListParentEvent.RecordList.Pending -> TransitionsPart0.transitionHoldingAt13
+        event is RecordListParentEvent.RecordList.Confirmed -> TransitionsPart0.transitionHoldingAt14
         else -> null
     }
 
@@ -995,7 +1179,7 @@ class RecordListParentStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: record_list_parent.scxml:40 :: _machine
+    // SCE-MAP: record_list_parent.scxml:54 :: _machine
     override fun onEntry(state: RecordListParentState, isDefaultEntry: Boolean) {
         when (state) {
             is RecordListParentState.Holding -> onEntryOfHolding()
@@ -1004,7 +1188,7 @@ class RecordListParentStateMachine(
 
 
     private fun onEntryOfHolding() {
-                // SCE-MAP: record_list_parent.scxml:83 :: holding :: _state_body
+                // SCE-MAP: record_list_parent.scxml:106 :: holding :: _state_body
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 deferStaticInvoke("list", RecordListParentState.Holding)
     }
@@ -1077,7 +1261,7 @@ class RecordListParentStateMachine(
         }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: record_list_parent.scxml:40 :: _machine
+    // SCE-MAP: record_list_parent.scxml:54 :: _machine
     override fun onExit(state: RecordListParentState) {
         when (state) {
             is RecordListParentState.Holding -> onExitOfHolding()
@@ -1086,7 +1270,7 @@ class RecordListParentStateMachine(
 
 
     private fun onExitOfHolding() {
-                // SCE-MAP: record_list_parent.scxml:83 :: holding :: _state_body
+                // SCE-MAP: record_list_parent.scxml:106 :: holding :: _state_body
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(RecordListParentState.Holding)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
@@ -1096,7 +1280,7 @@ class RecordListParentStateMachine(
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: record_list_parent.scxml:40 :: _machine
+    // SCE-MAP: record_list_parent.scxml:54 :: _machine
     override fun executeTransitionContent(source: RecordListParentState, transitionIndex: Int) {
         when (source) {
             is RecordListParentState.Holding -> transitionContentOfHolding(transitionIndex)
@@ -1122,13 +1306,17 @@ class RecordListParentStateMachine(
             8 -> transitionContentOfHoldingAt8()
             9 -> transitionContentOfHoldingAt9()
             10 -> transitionContentOfHoldingAt10()
+            11 -> transitionContentOfHoldingAt11()
+            12 -> transitionContentOfHoldingAt12()
+            13 -> transitionContentOfHoldingAt13()
+            14 -> transitionContentOfHoldingAt14()
             else -> {}
         }
     }
 
 
     private fun transitionContentOfHoldingAt0() {
-                // SCE-MAP: record_list_parent.scxml:89 :: holding :: _transition_0
+                // SCE-MAP: record_list_parent.scxml:112 :: holding :: _transition_0
                 if (pendingRecordListJoinPayload == null) {
                     return
                 }
@@ -1138,7 +1326,7 @@ class RecordListParentStateMachine(
             val sendPayload = mutableMapOf<String, Any?>()
             putParam(sendPayload, "node", (pendingRecordListJoinPayload!!.node).toString())
 
-            putParam(sendPayload, "hub", pendingRecordListJoinPayload!!.hub)
+            putParam(sendPayload, "journal", pendingRecordListJoinPayload!!.journal)
 
             val sendData = buildJsonFromParams(sendPayload)
             // W3C SCXML 6.4 (test192): Send event to invoked child. The build
@@ -1157,7 +1345,7 @@ class RecordListParentStateMachine(
     }
 
     private fun transitionContentOfHoldingAt1() {
-                // SCE-MAP: record_list_parent.scxml:95 :: holding :: _transition_1
+                // SCE-MAP: record_list_parent.scxml:118 :: holding :: _transition_1
                 if (pendingRecordListEditPayload == null) {
                     return
                 }
@@ -1177,6 +1365,8 @@ class RecordListParentStateMachine(
 
             putParam(sendPayload, "more", pendingRecordListEditPayload!!.more)
 
+            putParam(sendPayload, "command", (pendingRecordListEditPayload!!.command).toString())
+
             val sendData = buildJsonFromParams(sendPayload)
             // W3C SCXML 6.4 (test192): Send event to invoked child. The build
             // refused a target naming no invocation above; one that is not
@@ -1194,7 +1384,7 @@ class RecordListParentStateMachine(
     }
 
     private fun transitionContentOfHoldingAt2() {
-                // SCE-MAP: record_list_parent.scxml:105 :: holding :: _transition_2
+                // SCE-MAP: record_list_parent.scxml:129 :: holding :: _transition_2
                 if (pendingRecordListClearPayload == null) {
                     return
                 }
@@ -1209,6 +1399,8 @@ class RecordListParentStateMachine(
             putParam(sendPayload, "now", (pendingRecordListClearPayload!!.now).toString())
 
             putParam(sendPayload, "more", pendingRecordListClearPayload!!.more)
+
+            putParam(sendPayload, "command", (pendingRecordListClearPayload!!.command).toString())
 
             val sendData = buildJsonFromParams(sendPayload)
             // W3C SCXML 6.4 (test192): Send event to invoked child. The build
@@ -1227,7 +1419,7 @@ class RecordListParentStateMachine(
     }
 
     private fun transitionContentOfHoldingAt3() {
-                // SCE-MAP: record_list_parent.scxml:113 :: holding :: _transition_3
+                // SCE-MAP: record_list_parent.scxml:138 :: holding :: _transition_3
                 if (pendingRecordListRetirePayload == null) {
                     return
                 }
@@ -1240,6 +1432,8 @@ class RecordListParentStateMachine(
             putParam(sendPayload, "now", (pendingRecordListRetirePayload!!.now).toString())
 
             putParam(sendPayload, "more", pendingRecordListRetirePayload!!.more)
+
+            putParam(sendPayload, "command", (pendingRecordListRetirePayload!!.command).toString())
 
             val sendData = buildJsonFromParams(sendPayload)
             // W3C SCXML 6.4 (test192): Send event to invoked child. The build
@@ -1258,7 +1452,102 @@ class RecordListParentStateMachine(
     }
 
     private fun transitionContentOfHoldingAt4() {
-                // SCE-MAP: record_list_parent.scxml:120 :: holding :: _transition_4
+                // SCE-MAP: record_list_parent.scxml:148 :: holding :: _transition_4
+                if (pendingRecordListVerdictPayload == null) {
+                    return
+                }
+
+
+            if (run send@{
+            val sendPayload = mutableMapOf<String, Any?>()
+            putParam(sendPayload, "wallTime", (pendingRecordListVerdictPayload!!.wallTime).toString())
+
+            putParam(sendPayload, "counter", (pendingRecordListVerdictPayload!!.counter).toLong())
+
+            putParam(sendPayload, "outcome", (pendingRecordListVerdictPayload!!.outcome).declaredName)
+
+            putParam(sendPayload, "reason", (pendingRecordListVerdictPayload!!.reason)?.let { scePresent -> (scePresent).declaredName })
+
+            val sendData = buildJsonFromParams(sendPayload)
+            // W3C SCXML 6.4 (test192): Send event to invoked child. The build
+            // refused a target naming no invocation above; one that is not
+            // running is not there to reach (W3C SCXML C.1).
+            if (!sendToChild("list", "record_list.verdict", sendData)) {
+                raisePlatformError(RecordListParentEvent.Error.Communication, "<send target='#_list'> names an invocation that is not running", "__send_4")
+                return@send true
+            }
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+    }
+
+    private fun transitionContentOfHoldingAt5() {
+                // SCE-MAP: record_list_parent.scxml:156 :: holding :: _transition_5
+                if (pendingRecordListConfirmPayload == null) {
+                    return
+                }
+
+
+            if (run send@{
+            val sendPayload = mutableMapOf<String, Any?>()
+            putParam(sendPayload, "wallTime", (pendingRecordListConfirmPayload!!.wallTime).toString())
+
+            putParam(sendPayload, "counter", (pendingRecordListConfirmPayload!!.counter).toLong())
+
+            putParam(sendPayload, "command", (pendingRecordListConfirmPayload!!.command).toString())
+
+            val sendData = buildJsonFromParams(sendPayload)
+            // W3C SCXML 6.4 (test192): Send event to invoked child. The build
+            // refused a target naming no invocation above; one that is not
+            // running is not there to reach (W3C SCXML C.1).
+            if (!sendToChild("list", "record_list.confirm", sendData)) {
+                raisePlatformError(RecordListParentEvent.Error.Communication, "<send target='#_list'> names an invocation that is not running", "__send_5")
+                return@send true
+            }
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+    }
+
+    private fun transitionContentOfHoldingAt6() {
+                // SCE-MAP: record_list_parent.scxml:163 :: holding :: _transition_6
+                if (pendingRecordListWithdrawPayload == null) {
+                    return
+                }
+
+
+            if (run send@{
+            val sendPayload = mutableMapOf<String, Any?>()
+            putParam(sendPayload, "wallTime", (pendingRecordListWithdrawPayload!!.wallTime).toString())
+
+            putParam(sendPayload, "counter", (pendingRecordListWithdrawPayload!!.counter).toLong())
+
+            putParam(sendPayload, "command", (pendingRecordListWithdrawPayload!!.command).toString())
+
+            val sendData = buildJsonFromParams(sendPayload)
+            // W3C SCXML 6.4 (test192): Send event to invoked child. The build
+            // refused a target naming no invocation above; one that is not
+            // running is not there to reach (W3C SCXML C.1).
+            if (!sendToChild("list", "record_list.withdraw", sendData)) {
+                raisePlatformError(RecordListParentEvent.Error.Communication, "<send target='#_list'> names an invocation that is not running", "__send_6")
+                return@send true
+            }
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+    }
+
+    private fun transitionContentOfHoldingAt7() {
+                // SCE-MAP: record_list_parent.scxml:170 :: holding :: _transition_7
                 if (pendingRecordListRolePayload == null) {
                     return
                 }
@@ -1275,7 +1564,7 @@ class RecordListParentStateMachine(
             // refused a target naming no invocation above; one that is not
             // running is not there to reach (W3C SCXML C.1).
             if (!sendToChild("list", "record_list.role", sendData)) {
-                raisePlatformError(RecordListParentEvent.Error.Communication, "<send target='#_list'> names an invocation that is not running", "__send_4")
+                raisePlatformError(RecordListParentEvent.Error.Communication, "<send target='#_list'> names an invocation that is not running", "__send_7")
                 return@send true
             }
             false
@@ -1286,8 +1575,8 @@ class RecordListParentStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
     }
 
-    private fun transitionContentOfHoldingAt5() {
-                // SCE-MAP: record_list_parent.scxml:126 :: holding :: _transition_5
+    private fun transitionContentOfHoldingAt8() {
+                // SCE-MAP: record_list_parent.scxml:176 :: holding :: _transition_8
                 if (pendingRecordListRoomPayload == null) {
                     return
                 }
@@ -1306,7 +1595,7 @@ class RecordListParentStateMachine(
             // refused a target naming no invocation above; one that is not
             // running is not there to reach (W3C SCXML C.1).
             if (!sendToChild("list", "record_list.room", sendData)) {
-                raisePlatformError(RecordListParentEvent.Error.Communication, "<send target='#_list'> names an invocation that is not running", "__send_5")
+                raisePlatformError(RecordListParentEvent.Error.Communication, "<send target='#_list'> names an invocation that is not running", "__send_8")
                 return@send true
             }
             false
@@ -1317,35 +1606,29 @@ class RecordListParentStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
     }
 
-    private fun transitionContentOfHoldingAt6() {
-                // SCE-MAP: record_list_parent.scxml:133 :: holding :: _transition_6
-                if (pendingRecordListWritePayload == null) {
+    private fun transitionContentOfHoldingAt9() {
+                // SCE-MAP: record_list_parent.scxml:185 :: holding :: _transition_9
+                if (pendingRecordListChangePayload == null) {
                     return
                 }
 
 
             if (run send@{
             val sendPayload = mutableMapOf<String, Any?>()
-            putParam(sendPayload, "id", (pendingRecordListWritePayload!!.id).toLong())
+            putParam(sendPayload, "by", (pendingRecordListChangePayload!!.by).toString())
 
-            putParam(sendPayload, "field", (pendingRecordListWritePayload!!.field).toLong())
+            putParam(sendPayload, "wallTime", (pendingRecordListChangePayload!!.wallTime).toString())
 
-            putParam(sendPayload, "value", (pendingRecordListWritePayload!!.value).toString())
+            putParam(sendPayload, "counter", (pendingRecordListChangePayload!!.counter).toLong())
 
-            putParam(sendPayload, "text", pendingRecordListWritePayload!!.text)
-
-            putParam(sendPayload, "wallTime", (pendingRecordListWritePayload!!.wallTime).toString())
-
-            putParam(sendPayload, "counter", (pendingRecordListWritePayload!!.counter).toLong())
-
-            putParam(sendPayload, "nodeId", (pendingRecordListWritePayload!!.nodeId).toString())
+            putParam(sendPayload, "ops", (pendingRecordListChangePayload!!.ops).map { mapOf<String, Any?>("kind" to (it.kind).toLong(), "id" to (it.id).toLong(), "field" to (it.field).toLong(), "value" to (it.value).toString(), "text" to it.text, "wallTime" to (it.wallTime).toString(), "counter" to (it.counter).toLong(), "nodeId" to (it.nodeId).toString()) })
 
             val sendData = buildJsonFromParams(sendPayload)
             // W3C SCXML 6.4 (test192): Send event to invoked child. The build
             // refused a target naming no invocation above; one that is not
             // running is not there to reach (W3C SCXML C.1).
-            if (!sendToChild("list", "record_list.write", sendData)) {
-                raisePlatformError(RecordListParentEvent.Error.Communication, "<send target='#_list'> names an invocation that is not running", "__send_6")
+            if (!sendToChild("list", "record_list.change", sendData)) {
+                raisePlatformError(RecordListParentEvent.Error.Communication, "<send target='#_list'> names an invocation that is not running", "__send_9")
                 return@send true
             }
             false
@@ -1356,45 +1639,8 @@ class RecordListParentStateMachine(
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
     }
 
-    private fun transitionContentOfHoldingAt7() {
-                // SCE-MAP: record_list_parent.scxml:144 :: holding :: _transition_7
-                if (pendingRecordListSupersedePayload == null) {
-                    return
-                }
-
-
-            if (run send@{
-            val sendPayload = mutableMapOf<String, Any?>()
-            putParam(sendPayload, "id", (pendingRecordListSupersedePayload!!.id).toLong())
-
-            putParam(sendPayload, "field", (pendingRecordListSupersedePayload!!.field).toLong())
-
-            putParam(sendPayload, "wallTime", (pendingRecordListSupersedePayload!!.wallTime).toString())
-
-            putParam(sendPayload, "counter", (pendingRecordListSupersedePayload!!.counter).toLong())
-
-            putParam(sendPayload, "nodeId", (pendingRecordListSupersedePayload!!.nodeId).toString())
-
-            putParam(sendPayload, "by", (pendingRecordListSupersedePayload!!.by).toString())
-
-            val sendData = buildJsonFromParams(sendPayload)
-            // W3C SCXML 6.4 (test192): Send event to invoked child. The build
-            // refused a target naming no invocation above; one that is not
-            // running is not there to reach (W3C SCXML C.1).
-            if (!sendToChild("list", "record_list.supersede", sendData)) {
-                raisePlatformError(RecordListParentEvent.Error.Communication, "<send target='#_list'> names an invocation that is not running", "__send_7")
-                return@send true
-            }
-            false
-            }) {
-                // W3C SCXML 4.9: an error raised while this element was
-                // processed ends the block.
-                return
-            } // end of run send@ (W3C SCXML 6.2: a discarded message)
-    }
-
-    private fun transitionContentOfHoldingAt8() {
-                // SCE-MAP: record_list_parent.scxml:157 :: holding :: _transition_8
+    private fun transitionContentOfHoldingAt10() {
+                // SCE-MAP: record_list_parent.scxml:196 :: holding :: _transition_10
                 if (pendingRecordListRegisterPayload == null) {
                     return
                 }
@@ -1424,8 +1670,8 @@ class RecordListParentStateMachine(
             }
     }
 
-    private fun transitionContentOfHoldingAt9() {
-                // SCE-MAP: record_list_parent.scxml:169 :: holding :: _transition_9
+    private fun transitionContentOfHoldingAt11() {
+                // SCE-MAP: record_list_parent.scxml:208 :: holding :: _transition_11
                 if (pendingRecordListValuePayload == null) {
                     return
                 }
@@ -1457,15 +1703,31 @@ class RecordListParentStateMachine(
             }
     }
 
-    private fun transitionContentOfHoldingAt10() {
-                // SCE-MAP: record_list_parent.scxml:184 :: holding :: _transition_10
+    private fun transitionContentOfHoldingAt12() {
+                // SCE-MAP: record_list_parent.scxml:223 :: holding :: _transition_12
                 if (pendingRecordListRefusedPayload == null) {
                     return
                 }
 
-            vRefused = RecordListParentRefusedRecord(id = pendingRecordListRefusedPayload!!.id, field = pendingRecordListRefusedPayload!!.field, kind = pendingRecordListRefusedPayload!!.kind, reason = pendingRecordListRefusedPayload!!.reason)
+            vRefused = RecordListParentRefusedRecord(id = pendingRecordListRefusedPayload!!.id, field = pendingRecordListRefusedPayload!!.field, kind = pendingRecordListRefusedPayload!!.kind, reason = pendingRecordListRefusedPayload!!.reason, command = pendingRecordListRefusedPayload!!.command, withdrawn = pendingRecordListRefusedPayload!!.withdrawn)
 
             if (try { vRefusedCount = com.sce.forge.runtime.SceChecked.add(vRefusedCount, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentEvent.Error.Execution, "<assign location='refusedCount'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+    }
+
+    private fun transitionContentOfHoldingAt13() {
+                // SCE-MAP: record_list_parent.scxml:229 :: holding :: _transition_13
+
+            if (try { vPendingCount = com.sce.forge.runtime.SceChecked.add(vPendingCount, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentEvent.Error.Execution, "<assign location='pendingCount'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+    }
+
+    private fun transitionContentOfHoldingAt14() {
+                // SCE-MAP: record_list_parent.scxml:232 :: holding :: _transition_14
+
+            if (try { vConfirmedCount = com.sce.forge.runtime.SceChecked.add(vConfirmedCount, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(RecordListParentEvent.Error.Execution, "<assign location='confirmedCount'>: an integer operation overflowed or failed"); true }) {
                 return
             }
     }

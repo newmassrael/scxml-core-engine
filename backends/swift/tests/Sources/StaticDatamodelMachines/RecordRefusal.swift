@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: f64002805653a41c56a6a08d7b604e8955d0ac09d55e75365d49e24374faca5e
-// SCE-MAP: record_refusal.scxml:30 :: _forge_body
+// source-hash: 81cc59c6b8f46736a80b4b69ee489274d9b0ae32efae821805ba44c3bac3af2c
+// SCE-MAP: record_refusal.scxml:39 :: _forge_body
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="enum")
 // Runtime: none
@@ -21,6 +21,7 @@ public enum RecordRefusal: UInt8, CaseIterable, Sendable {
     case changeTooLarge = 6
     case registerNamedTwice = 7
     case clockExhausted = 8
+    case peerRefused = 9
 
     /// The name the enum document declares for the value.
     public var declaredName: String {
@@ -32,6 +33,7 @@ public enum RecordRefusal: UInt8, CaseIterable, Sendable {
         case .changeTooLarge: return "changeTooLarge"
         case .registerNamedTwice: return "registerNamedTwice"
         case .clockExhausted: return "clockExhausted"
+        case .peerRefused: return "peerRefused"
         }
     }
 
@@ -56,6 +58,7 @@ public enum RecordRefusal: UInt8, CaseIterable, Sendable {
         case "changeTooLarge": self = .changeTooLarge
         case "registerNamedTwice": self = .registerNamedTwice
         case "clockExhausted": self = .clockExhausted
+        case "peerRefused": self = .peerRefused
         default: return nil
         }
     }
