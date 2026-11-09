@@ -1004,12 +1004,33 @@ probe_status=0
     -Pkotlin.daemon.useFallbackStrategy=false \
     >"$LOG/kotlin-headroom.log" 2>&1 || probe_status=$?
 stop_probe_daemon
+# What a refusal of the probe has to show: the cause of a compile that failed
+# sits at the TOP of Gradle's output, above the stack trace, so the last lines
+# of the log name only Gradle's own frames and a red read from them says "the
+# daemon failed" and nothing more (the hosted run of 2026-11-09). The head of
+# the log, the daemon's own log, which the Kotlin daemon writes beside the
+# system's temporary files, and the run-files directory the probe gave it are
+# what say why a JVM that was asked for did not come up.
+show_probe_evidence() {
+    echo "--- the probe's Gradle output, first 80 lines ---" >&2
+    head -n 80 "$LOG/kotlin-headroom.log" >&2
+    echo "--- the probe's Gradle output, last 30 lines ---" >&2
+    tail -n 30 "$LOG/kotlin-headroom.log" >&2
+    local daemon_log
+    for daemon_log in "${TMPDIR:-/tmp}"/kotlin-daemon.*.log; do
+        [ -f "$daemon_log" ] || continue
+        echo "--- $daemon_log, last 40 lines ---" >&2
+        tail -n 40 "$daemon_log" >&2
+    done
+    echo "--- the probe's run-files directory ---" >&2
+    ls -la "$PROBE_RUN_FILES" >&2 || true
+}
 python3 "$JVM_HEAP_REPORT" report --log "$PROBE_GC_LOG" --from-byte 0 \
     "--jvmargs=$PROBE_JVMARGS" --label "Kotlin compile daemon, headroom probe" --must-exist \
-    || { tail -n 30 "$LOG/kotlin-headroom.log" >&2
+    || { show_probe_evidence
          sce_gate_fail "the headroom probe did not compile in a fresh daemon of its own, so it measured nothing — the reason is above"; }
 if (( probe_status != 0 )); then
-    tail -n 30 "$LOG/kotlin-headroom.log" >&2
+    show_probe_evidence
     if grep -qE 'OutOfMemoryError|Not enough memory to run compilation' "$LOG/kotlin-headroom.log"; then
         sce_gate_fail "the committed Kotlin tree no longer compiles in $PROBE_MB MB, two thirds of the $KOTLIN_BUDGET_MB MB compile budget, so that budget no longer holds 1.5 times what the compile needs. Either measure the compile's smallest heap again (the bisection gradle.properties records) and size kotlin.daemon.jvmargs from it, or make the compilation unit smaller"
     fi
