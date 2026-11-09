@@ -29,7 +29,7 @@ use sce_rust_runtime::{
     MeshCall, StatePolicy,
 };
 
-use crate::causal::{Dot, Refusal, Start};
+use crate::causal::{CausalLayer, Dot, Refusal, Start};
 use crate::outbound::{AfterFailure, Attempts};
 use crate::router::{Effect, Invoked, Router, RouterError};
 use crate::signal::Signal;
@@ -231,6 +231,21 @@ impl<T: Transport, E: Environment> Endpoint<T, E> {
     /// each refusal.
     pub fn take_verdicts(&mut self) -> Vec<CausalVerdict> {
         core::mem::take(&mut self.verdicts)
+    }
+
+    /// The causal layer of the causal peer `peer`, once the host started it
+    /// (see [`Router::causal_layer`]): its replica, its delivered vector, what
+    /// it holds and what its log keeps.
+    pub fn causal_layer(&self, peer: &str) -> Option<&CausalLayer<Vec<u8>>> {
+        self.router.causal_layer(peer)
+    }
+
+    /// When a causal layer with work is next owed its `causalVector` (see
+    /// [`Router::next_announce_due_ms`]): with [`Self::next_retry_due_ms`],
+    /// the time a host that owns time sleeps until before its next
+    /// [`tick`](Self::tick).
+    pub fn next_announce_due_ms(&self) -> Option<i64> {
+        self.router.next_announce_due_ms()
     }
 
     /// The host committed the journal record of `dot`, a change sent to the
