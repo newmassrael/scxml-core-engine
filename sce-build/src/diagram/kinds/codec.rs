@@ -9,9 +9,11 @@
 //! A field of fixed width before the first field of variable width is at
 //! the offset the document states, so it is drawn there: a gap between two
 //! such fields is drawn too, as a cell that says the document does not
-//! state what is in it. A sub-byte field is drawn by the bits it occupies,
-//! counted from the least significant bit of its byte as the document
-//! counts them, so the diagram reads most significant bit first.
+//! state what is in it. A field of part of its bytes is drawn by the bits it
+//! occupies: the bits of the word its bytes make, counted from the least
+//! significant bit as the document counts them (docs/adr/0095 §1), drawn so
+//! that each byte reads most significant bit first. A little-endian field
+//! whose bits leave its byte may be drawn as more than one cell.
 //!
 //! A field of variable width — one whose length is read from another field,
 //! one that takes the rest of the message, a variable-length integer, a
@@ -25,11 +27,11 @@
 //! # What is not drawn
 //!
 //! A codec that writes a map (`cbor`) has no byte layout to draw. Fields
-//! that overlap, a sub-byte field that crosses its byte, or a layout of more
-//! than [`MAX_ROWS`] rows is not drawn rather than drawn wrong; the field
-//! table still holds it, and the legend under the picture says in words
-//! what the cells cannot: sizes, byte order, the bits of each flag, which
-//! fields are present only under a condition.
+//! that overlap, a field of part of its bytes written in turn after a field
+//! of variable width, or a layout of more than [`MAX_ROWS`] rows is not drawn
+//! rather than drawn wrong; the field table still holds it, and the legend
+//! under the picture says in words what the cells cannot: sizes, byte order,
+//! the bits of each flag, which fields are present only under a condition.
 
 use super::{caption, facts, say, Picture};
 use crate::diagram::boxes::BoxError;
@@ -38,6 +40,7 @@ use crate::diagram::fit::{Page, Refusal};
 use crate::diagram::metrics::Face;
 use crate::diagram::sheet::{Ink, Outline};
 use crate::diagram::words::{self, Phrase};
+use crate::forge::bit_layout::BitSpan;
 use crate::forge::model::{BitSize, CodecEncoding, CodecField, CodecModel, CountRef, Endian};
 use crate::forge::page::Lexicon;
 
@@ -96,18 +99,25 @@ enum Item<'a> {
     Arms,
 }
 
-/// A fixed field's start, in bits from the start of its frame, most
-/// significant bit first; `None` for a sub-byte field that does not fit its
-/// byte.
-fn fixed_start(f: &CodecField, bits: u64) -> Option<u64> {
-    let byte = u64::from(f.byte_offset) * 8;
-    match f.bit_offset {
-        None => Some(byte),
-        Some(offset) => {
-            let top = u64::from(offset) + bits;
-            (top <= 8).then(|| byte + 8 - top)
+/// The runs of frame bits a fixed field holds, each a start and a length in
+/// bits from the start of its frame, most significant bit first, in frame
+/// order. The bits are those of the bytes the field spans (docs/adr/0095 §1):
+/// in each byte the piece of the field's value it holds, and pieces that touch
+/// are one run. A big-endian field is one run; a little-endian one whose bits
+/// leave its byte holds its low bits in its first byte and its high bits in
+/// its last, so it may be several.
+fn fixed_runs(span: &BitSpan) -> Vec<(u64, u64)> {
+    let mut runs: Vec<(u64, u64)> = Vec::new();
+    for (at, mask) in span.byte_masks() {
+        // The byte's bits run from bit 7 on the left to bit 0 on the right.
+        let start = u64::from(at) * 8 + u64::from(mask.leading_zeros());
+        let bits = u64::from(mask.count_ones());
+        match runs.last_mut() {
+            Some((first, length)) if *first + *length == start => *length += bits,
+            _ => runs.push((start, bits)),
         }
     }
+    runs
 }
 
 /// The frames of `m`, or `None` when it has no layout to draw.
@@ -129,16 +139,17 @@ fn frames(m: &CodecModel) -> Option<Vec<Frame>> {
     let mut rest = items.iter();
     for item in rest.by_ref() {
         match item {
-            Item::Field(f) => match f.bit_size {
-                BitSize::Fixed { bits } => {
-                    let bits = u64::from(bits);
-                    known.push(Piece {
-                        label: Label::Field(f.id.clone()),
-                        start: fixed_start(f, bits)?,
-                        extent: Extent::Fixed(bits),
-                    });
+            Item::Field(f) => match BitSpan::of(f, m.default_endian) {
+                Some(span) => {
+                    for (start, bits) in fixed_runs(&span) {
+                        known.push(Piece {
+                            label: Label::Field(f.id.clone()),
+                            start,
+                            extent: Extent::Fixed(bits),
+                        });
+                    }
                 }
-                _ => {
+                None => {
                     known.push(Piece {
                         label: Label::Field(f.id.clone()),
                         start: u64::from(f.byte_offset) * 8,
@@ -193,14 +204,15 @@ fn frames(m: &CodecModel) -> Option<Vec<Frame>> {
     for item in rest {
         let frame = current.as_mut()?;
         let (label, extent) = match item {
-            Item::Field(f) => match f.bit_size {
-                BitSize::Fixed { bits } => {
-                    if f.bit_offset.is_some() {
-                        return None;
-                    }
-                    (Label::Field(f.id.clone()), Extent::Fixed(u64::from(bits)))
+            Item::Field(f) => match BitSpan::of(f, m.default_endian) {
+                // A field written in turn takes whole bytes of its own
+                // (docs/adr/0095 §3).
+                Some(span) if !span.whole() => return None,
+                Some(span) => {
+                    let bits = u64::from(span.bits);
+                    (Label::Field(f.id.clone()), Extent::Fixed(bits))
                 }
-                _ => (Label::Field(f.id.clone()), Extent::Open),
+                None => (Label::Field(f.id.clone()), Extent::Open),
             },
             Item::Arms => (Label::Arms, Extent::Open),
         };
@@ -277,7 +289,7 @@ fn rows_of(frame: &Frame) -> u64 {
 }
 
 /// `bit 7`, or `bits 7..5`, in the page's words: the bits a field takes,
-/// counted from the least significant bit of its byte.
+/// counted from the least significant bit of its word.
 fn bit_range(lexicon: &Lexicon, bit: u32, width: u32) -> Result<String, Refusal> {
     Ok(if width <= 1 {
         format!("{} {bit}", say(lexicon, Phrase::Bit)?)
@@ -298,7 +310,8 @@ fn legend(m: &CodecModel, lexicon: &Lexicon) -> Result<Vec<(String, String)>, Re
                     Some(offset) => bit_range(lexicon, offset, *bits)?,
                     None => format!("{bits} {}", say(lexicon, Phrase::Bits)?),
                 });
-                if *bits > 8 {
+                // A byte order is the order of the bytes the field's word spans.
+                if BitSpan::of(f, m.default_endian).is_some_and(|s| s.bytes > 1) {
                     let order = match f.endian.unwrap_or(m.default_endian) {
                         Endian::Big => Phrase::BigEndian,
                         Endian::Little => Phrase::LittleEndian,
@@ -666,8 +679,7 @@ mod tests {
     }
 
     /// A gap between two fields is a cell that says what is in it is not
-    /// stated; fields that overlap, or a sub-byte field crossing its byte,
-    /// have no layout.
+    /// stated; fields that overlap have no layout.
     #[test]
     fn gaps_are_drawn_and_overlaps_are_not_laid_out() {
         let m = with(vec![field("a", 0, None, 8), field("b", 4, None, 8)]);
@@ -682,7 +694,67 @@ mod tests {
         assert!(words.iter().any(|w| w == "not stated"), "{words:?}");
 
         assert!(frames(&with(vec![field("a", 0, None, 16), field("b", 1, None, 8)])).is_none());
-        assert!(frames(&with(vec![field("a", 0, Some(6), 4)])).is_none());
+    }
+
+    /// A field whose bits leave its byte is drawn by the bits of its word
+    /// (docs/adr/0095 §1). Twelve big-endian bits four bits into byte 1 are
+    /// all of byte 1 and the high four bits of byte 2: one cell from bit 8.
+    /// Little-endian, byte 1 is the low byte of the word, so they are the
+    /// high four bits of byte 1 and all of byte 2: two cells, and the low
+    /// four bits of byte 1 between them are not stated.
+    #[test]
+    fn a_field_whose_bits_leave_its_byte_is_drawn_by_its_word() {
+        let mut reading = field("reading", 1, Some(4), 12);
+        reading.endian = Some(Endian::Big);
+        let m = with(vec![field("status", 0, None, 8), reading.clone()]);
+        let placed = |m: &CodecModel| {
+            let mut out: Vec<(Label, u64, Extent)> = Vec::new();
+            for p in &frames(m).expect("a layout")[0].pieces {
+                out.push((p.label.clone(), p.start, p.extent));
+            }
+            out
+        };
+        let status = Label::Field("status".into());
+        let reading_label = Label::Field("reading".into());
+        assert_eq!(
+            placed(&m),
+            vec![
+                (status.clone(), 0, Extent::Fixed(8)),
+                (reading_label.clone(), 8, Extent::Fixed(12)),
+            ]
+        );
+        let words = sheet(&m)
+            .words()
+            .into_iter()
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        assert!(
+            words.iter().any(|w| w == "bits 15..4, big-endian"),
+            "{words:?}"
+        );
+
+        reading.endian = Some(Endian::Little);
+        let little = with(vec![field("status", 0, None, 8), reading]);
+        assert_eq!(
+            placed(&little),
+            vec![
+                (status, 0, Extent::Fixed(8)),
+                (reading_label.clone(), 8, Extent::Fixed(4)),
+                (Label::Gap, 12, Extent::Fixed(4)),
+                (reading_label, 16, Extent::Fixed(8)),
+            ]
+        );
+
+        // Four bits from bit 6 of a big-endian word: the low two bits of
+        // byte 0 and the high two of byte 1.
+        let crossing = with(vec![field("a", 0, Some(6), 4)]);
+        assert_eq!(
+            placed(&crossing),
+            vec![
+                (Label::Gap, 0, Extent::Fixed(6)),
+                (Label::Field("a".into()), 6, Extent::Fixed(4)),
+            ]
+        );
     }
 
     /// What follows a variable field is not at the offset it carries: it is
