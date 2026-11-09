@@ -1376,6 +1376,20 @@ Each test fails when the rule it pins is removed; the landing checks each once a
    (step 3) calls the writer's count check where the build does not prove the count (section 15.6). No committed
    document states a lower count, so a tree changes only where the standard library's refusal code and the
    harness's enum are generated.
+   The send's run-time count check landed after the rest of this step (2026-11-09), when ADR 0085's
+   `record_change.ops` (`[1..shared_parts]`) was the first committed field to state a lower count and the list
+   sent it from a variable filled by appends, which the judge then refused. The judge asks
+   `value_type::fits_but_for_count`: a list that fits a field but for the field's own, outermost lower count is
+   accepted with that count left to the send, and every other misfit, a lower count inside an element among them,
+   is refused as before. The lowering (`composed_wire_value`) writes the check through one method of each
+   backend's spelling, `ComposedSpelling::send_counted`, in the failure channel the backend's `<send>` already
+   reads a param's evaluation from: Rust's `AlgorithmError` (`sce_forge_runtime::algorithm::holds_at_least`),
+   Kotlin's `AlgorithmFailure`, Go's, C++'s and Swift's recorded failure, Python's
+   `sce_algorithm.holds_at_least`, the Interpreter's `SceStatic.holdsAtLeast`, each as `precondition`, and C11's
+   refused wire, before the pair is written. A short list fails the param, so the event is refused whole with
+   `error.execution` and nothing of it is delivered. `static_composed_send` sends `counted.sent`
+   (`event_counted.scxml`, a `list<uint8>[1..2]`) empty, which is refused, and then with one element, which
+   arrives, on every lane.
 
 ADR 0085 landing 4 is the first user of steps 1 to 5, and its landing 5 of step 7. (Steps 5 to 8 were numbered 4
 to 7 before the amendment of 2026-11-04 inserted step 4.) ADR 0085's amendment of 2026-11-08 applies this grammar to

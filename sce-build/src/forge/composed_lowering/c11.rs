@@ -580,6 +580,14 @@ impl ComposedSpelling for C11Composed<'_> {
     fn write_field(&self, held: &Held, field: &str) -> String {
         format!("{}.{field}", value_of(held))
     }
+    // The count held first, as the list's room is: a list short of its
+    // field's lower count refuses the wire before any of it is written.
+    fn send_counted(&self, held: &Held, _field: &str, least: u32, sent: String) -> Option<String> {
+        Some(format!(
+            "if ({}.len < {least}u) {{\n    sce_forge_wire_refuse({C11_WIRE});\n}} else {{\n{sent}}}\n",
+            value_of(held)
+        ))
+    }
     // An object of the fields, its keys ascending by their bytes.
     fn write_record(&self, fields: &[(String, String)]) -> String {
         // A record's ids are distinct, so the members order by their ids.
@@ -1055,5 +1063,19 @@ mod tests {
         // `/items/2/tags/3`, the longest below a batch.
         assert_eq!(len("record:Batch"), 15);
         assert!(c11_path_len(&ty("union:Shape"), None, &held).is_err());
+    }
+
+    /// A list sent where its field asks a lower count it does not prove is
+    /// held to the count before any of it is written (docs/adr/0086, section
+    /// 15.6), the wire refused as the list's room refuses it.
+    #[test]
+    fn a_list_sent_short_of_its_fields_count_refuses_the_wire() {
+        assert_eq!(
+            c11().send_counted(&Held::place("sm->taking"), "ops", 1, "W;\n".to_string()),
+            Some(
+                "if ((sm->taking).len < 1u) {\n    sce_forge_wire_refuse(sce_wire);\n} else {\nW;\n}\n"
+                    .to_string()
+            )
+        );
     }
 }
