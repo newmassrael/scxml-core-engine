@@ -37,6 +37,15 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 sce_gate_http_fixture_server
 
+# The generator, built as a target of its own before the suite, as the CI
+# lane's "Build sce-codegen" step builds it. Cargo writes
+# `target/debug/sce-codegen.d`, the list of every file the binary compiled in,
+# only for a target it was asked for, and `generator_source_witness` holds the
+# generator's source witness to that list; built only as a dependency of the
+# tests, the list would be that of whichever tree last built it here.
+cargo build --bin sce-codegen --features cli -p sce-build \
+    || sce_gate_fail "cargo build --bin sce-codegen --features cli -p sce-build"
+
 # `SCE_GATE_NO_FAIL_FAST` is the one thing the CI lane wanted that this gate
 # did not offer, and it kept the lane restating the command instead of calling
 # it. It is a reporting choice, not a different verification: a remote run
