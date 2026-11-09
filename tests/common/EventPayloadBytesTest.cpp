@@ -30,16 +30,6 @@ std::vector<uint8_t> everyByte() {
     return bytes;
 }
 
-// What a payload's field reads as bytes, or why it does not.
-std::string readFrame(const std::string &wire, std::vector<uint8_t> &out) {
-    EventPayloadFields fields;
-    const std::string refusal = EventPayloadFields::decode(wire, fields);
-    if (!refusal.empty()) {
-        return refusal;
-    }
-    return fields.readBytes("frame", out);
-}
-
 // What a generated lift of a schema of entries reads a text or byte-string field by
 // (docs/adr/0086, section 4.4): the value the field's name holds, then the value reader
 // of its type with the bound the type declares, as a field of a composed type is read.
@@ -56,6 +46,20 @@ SCE::Common::EventPayloadRefusal readWithin(const EventPayloadFields &fields, co
     } else {
         return value.readBytes(bound, out);
     }
+}
+
+// The bound of the frames these tests read: every one of the 256 byte values, once.
+constexpr size_t FRAME_BOUND = 256u;
+
+// What a payload's frame field reads as bytes, or why it does not, read as a lift reads
+// a byte string: through the value reader, held to the bound its type declares.
+std::string readFrame(const std::string &wire, std::vector<uint8_t> &out) {
+    EventPayloadFields fields;
+    const std::string refusal = EventPayloadFields::decode(wire, fields);
+    if (!refusal.empty()) {
+        return refusal;
+    }
+    return readWithin(fields, "frame", FRAME_BOUND, out);
 }
 
 }  // namespace
