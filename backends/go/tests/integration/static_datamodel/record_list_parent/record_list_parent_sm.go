@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
+// source-hash: d05ce240c5f3b48b3c83b6bee1ba58feef40d57c310e9a29ef5279604bbaaa42
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: record_list_parent.scxml:40 :: _machine
+// SCE-MAP: record_list_parent.scxml:41 :: _machine
 
 package record_list_parent
 
@@ -140,19 +140,18 @@ const (
 	RecordListParentEventDoneInvoke RecordListParentEvent = 0
 	RecordListParentEventErrorCommunication RecordListParentEvent = 1
 	RecordListParentEventErrorExecution RecordListParentEvent = 2
-	RecordListParentEventRecordListClear RecordListParentEvent = 3
-	RecordListParentEventRecordListEdit RecordListParentEvent = 4
-	RecordListParentEventRecordListJoin RecordListParentEvent = 5
-	RecordListParentEventRecordListRefused RecordListParentEvent = 6
-	RecordListParentEventRecordListRegister RecordListParentEvent = 7
-	RecordListParentEventRecordListRetire RecordListParentEvent = 8
-	RecordListParentEventRecordListRole RecordListParentEvent = 9
-	RecordListParentEventRecordListRoom RecordListParentEvent = 10
-	RecordListParentEventRecordListSupersede RecordListParentEvent = 11
+	RecordListParentEventRecordListChange RecordListParentEvent = 3
+	RecordListParentEventRecordListClear RecordListParentEvent = 4
+	RecordListParentEventRecordListEdit RecordListParentEvent = 5
+	RecordListParentEventRecordListJoin RecordListParentEvent = 6
+	RecordListParentEventRecordListRefused RecordListParentEvent = 7
+	RecordListParentEventRecordListRegister RecordListParentEvent = 8
+	RecordListParentEventRecordListRetire RecordListParentEvent = 9
+	RecordListParentEventRecordListRole RecordListParentEvent = 10
+	RecordListParentEventRecordListRoom RecordListParentEvent = 11
 	RecordListParentEventRecordListValue RecordListParentEvent = 12
-	RecordListParentEventRecordListWrite RecordListParentEvent = 13
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	RecordListParentEventNull RecordListParentEvent = 14
+	RecordListParentEventNull RecordListParentEvent = 13
 )
 
 func (e RecordListParentEvent) String() string {
@@ -163,6 +162,8 @@ func (e RecordListParentEvent) String() string {
 		return "error.communication"
 	case RecordListParentEventErrorExecution:
 		return "error.execution"
+	case RecordListParentEventRecordListChange:
+		return "record_list.change"
 	case RecordListParentEventRecordListClear:
 		return "record_list.clear"
 	case RecordListParentEventRecordListEdit:
@@ -179,12 +180,8 @@ func (e RecordListParentEvent) String() string {
 		return "record_list.role"
 	case RecordListParentEventRecordListRoom:
 		return "record_list.room"
-	case RecordListParentEventRecordListSupersede:
-		return "record_list.supersede"
 	case RecordListParentEventRecordListValue:
 		return "record_list.value"
-	case RecordListParentEventRecordListWrite:
-		return "record_list.write"
 	case RecordListParentEventNull:
 		return ""
 	}
@@ -201,6 +198,7 @@ type RecordListParentPayloadTag int
 
 const (
 	RecordListParentPayloadTagNone RecordListParentPayloadTag = iota
+	RecordListParentPayloadTagRecordListChange
 	RecordListParentPayloadTagRecordListClear
 	RecordListParentPayloadTagRecordListEdit
 	RecordListParentPayloadTagRecordListJoin
@@ -209,10 +207,18 @@ const (
 	RecordListParentPayloadTagRecordListRetire
 	RecordListParentPayloadTagRecordListRole
 	RecordListParentPayloadTagRecordListRoom
-	RecordListParentPayloadTagRecordListSupersede
 	RecordListParentPayloadTagRecordListValue
-	RecordListParentPayloadTagRecordListWrite
 )
+
+// RecordListParentRecordListChangePayload is the NL→IR Item C1 Path A typed `_event.data`
+// payload for `record_list.change`. Internal to the package; consumers inject it via
+// the `RecordListParentRaiseRecordListChange` seam below (fields are unexported by design).
+type RecordListParentRecordListChangePayload struct {
+	by uint64
+	wallTime int64
+	counter uint32
+	ops []RecordListParentOpRecord
+}
 
 // RecordListParentRecordListClearPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `record_list.clear`. Internal to the package; consumers inject it via
@@ -241,7 +247,6 @@ type RecordListParentRecordListEditPayload struct {
 // the `RecordListParentRaiseRecordListJoin` seam below (fields are unexported by design).
 type RecordListParentRecordListJoinPayload struct {
 	node uint64
-	hub bool
 }
 
 // RecordListParentRecordListRefusedPayload is the NL→IR Item C1 Path A typed `_event.data`
@@ -294,21 +299,6 @@ type RecordListParentRecordListRoomPayload struct {
 	digest uint32
 }
 
-// RecordListParentRecordListSupersedePayload is the NL→IR Item C1 Path A typed `_event.data`
-// payload for `record_list.supersede`. Internal to the package; consumers inject it via
-// the `RecordListParentRaiseRecordListSupersede` seam below (fields are unexported by design).
-type RecordListParentRecordListSupersedePayload struct {
-	id uint32
-	field uint16
-	wallTime int64
-	counter uint32
-	nodeId uint64
-	by uint64
-	parts uint32
-	atWallTime int64
-	atCounter uint32
-}
-
 // RecordListParentRecordListValuePayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `record_list.value`. Internal to the package; consumers inject it via
 // the `RecordListParentRaiseRecordListValue` seam below (fields are unexported by design).
@@ -323,18 +313,32 @@ type RecordListParentRecordListValuePayload struct {
 	nodeId uint64
 }
 
-// RecordListParentRecordListWritePayload is the NL→IR Item C1 Path A typed `_event.data`
-// payload for `record_list.write`. Internal to the package; consumers inject it via
-// the `RecordListParentRaiseRecordListWrite` seam below (fields are unexported by design).
-type RecordListParentRecordListWritePayload struct {
-	id uint32
-	field uint16
-	value int64
-	text string
-	wallTime int64
-	counter uint32
-	nodeId uint64
-	parts uint32
+// RecordListParentRaiseRecordListChange is the NL→IR Item C1 Path A per-event typed `_event.data`
+// inject seam for `record_list.change` — binds the event name and the payload field
+// values in one call so the name↔type pairing cannot be constructed
+// inconsistently. Twin of the Rust `RecordListParentInject` extension-trait method
+// and the C11 `raise_<event>_typed` entry.
+// A value past a bound its type declares, at any depth, is refused before
+// anything is sent (docs/adr/0086, section 5.4): the seam answers the refusal,
+// naming the path to the place, and raises nothing.
+func RecordListParentRaiseRecordListChange(e *sce.Engine[RecordListParentState, RecordListParentEvent], by uint64, wallTime int64, counter uint32, ops []RecordListParentOpRecord) error {
+	if err := sce.CheckListWithin("ops", ops, 1, 64, func(scePath0 string, sceValue0 RecordListParentOpRecord) error { return sce.CheckText(scePath0 + "/text", sceValue0.text, 96) }); err != nil {
+		return err
+	}
+	scePayload := RecordListParentRecordListChangePayload{by: by, wallTime: wallTime, counter: counter, ops: ops}
+	e.RaiseExternalWithMeta(sce.EventWithMetadata[RecordListParentEvent]{
+		Event:    RecordListParentEventRecordListChange,
+		Metadata: sce.EventMetadata{
+			EventType:    sce.EventTypeExternal,
+			TypedPayload: scePayload,
+			// Both carriers are filled: the typed one a native guard reads,
+			// and `Data`, which is what the script engine binds `_event.data`
+			// from. Filling only the first left an `<assign expr="_event.data.x">`
+			// on this event reading nothing, on every backend alike.
+			Data: string(sce.RecordJSON(sce.Pair("by", sce.ValueJSON(sce.Uint64PayloadText(scePayload.by))), sce.Pair("wallTime", sce.ValueJSON(sce.Int64PayloadText(scePayload.wallTime))), sce.Pair("counter", sce.ValueJSON(scePayload.counter)), sce.Pair("ops", func() sce.RawJSON { sceItems := make([]sce.RawJSON, 0, len(scePayload.ops)); for _, sceElement := range scePayload.ops { sceItems = append(sceItems, sce.RecordJSON(sce.Pair("kind", sce.ValueJSON(sceElement.kind)), sce.Pair("id", sce.ValueJSON(sceElement.id)), sce.Pair("field", sce.ValueJSON(sceElement.field)), sce.Pair("value", sce.ValueJSON(sce.Int64PayloadText(sceElement.value))), sce.Pair("text", sce.ValueJSON(sceElement.text)), sce.Pair("wallTime", sce.ValueJSON(sce.Int64PayloadText(sceElement.wallTime))), sce.Pair("counter", sce.ValueJSON(sceElement.counter)), sce.Pair("nodeId", sce.ValueJSON(sce.Uint64PayloadText(sceElement.nodeId))))) }; return sce.ListJSON(sceItems, func(sceItem sce.RawJSON) sce.RawJSON { return sceItem }) }()))),
+		},
+	})
+	return nil
 }
 
 // RecordListParentRaiseRecordListClear is the NL→IR Item C1 Path A per-event typed `_event.data`
@@ -382,17 +386,17 @@ func RecordListParentRaiseRecordListEdit(e *sce.Engine[RecordListParentState, Re
 // values in one call so the name↔type pairing cannot be constructed
 // inconsistently. Twin of the Rust `RecordListParentInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RecordListParentRaiseRecordListJoin(e *sce.Engine[RecordListParentState, RecordListParentEvent], node uint64, hub bool) {
+func RecordListParentRaiseRecordListJoin(e *sce.Engine[RecordListParentState, RecordListParentEvent], node uint64) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[RecordListParentEvent]{
 		Event:    RecordListParentEventRecordListJoin,
 		Metadata: sce.EventMetadata{
 			EventType:    sce.EventTypeExternal,
-			TypedPayload: RecordListParentRecordListJoinPayload{node: node, hub: hub, },
+			TypedPayload: RecordListParentRecordListJoinPayload{node: node, },
 			// Both carriers are filled: the typed one a native guard reads,
 			// and `Data`, which is what the script engine binds `_event.data`
 			// from. Filling only the first left an `<assign expr="_event.data.x">`
 			// on this event reading nothing, on every backend alike.
-			Data: sce.PayloadJSON(sce.Pair("node", sce.Uint64PayloadText(node)), sce.Pair("hub", hub)),
+			Data: sce.PayloadJSON(sce.Pair("node", sce.Uint64PayloadText(node))),
 		},
 	})
 }
@@ -497,26 +501,6 @@ func RecordListParentRaiseRecordListRoom(e *sce.Engine[RecordListParentState, Re
 	})
 }
 
-// RecordListParentRaiseRecordListSupersede is the NL→IR Item C1 Path A per-event typed `_event.data`
-// inject seam for `record_list.supersede` — binds the event name and the payload field
-// values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RecordListParentInject` extension-trait method
-// and the C11 `raise_<event>_typed` entry.
-func RecordListParentRaiseRecordListSupersede(e *sce.Engine[RecordListParentState, RecordListParentEvent], id uint32, field uint16, wallTime int64, counter uint32, nodeId uint64, by uint64, parts uint32, atWallTime int64, atCounter uint32) {
-	e.RaiseExternalWithMeta(sce.EventWithMetadata[RecordListParentEvent]{
-		Event:    RecordListParentEventRecordListSupersede,
-		Metadata: sce.EventMetadata{
-			EventType:    sce.EventTypeExternal,
-			TypedPayload: RecordListParentRecordListSupersedePayload{id: id, field: field, wallTime: wallTime, counter: counter, nodeId: nodeId, by: by, parts: parts, atWallTime: atWallTime, atCounter: atCounter, },
-			// Both carriers are filled: the typed one a native guard reads,
-			// and `Data`, which is what the script engine binds `_event.data`
-			// from. Filling only the first left an `<assign expr="_event.data.x">`
-			// on this event reading nothing, on every backend alike.
-			Data: sce.PayloadJSON(sce.Pair("id", id), sce.Pair("field", field), sce.Pair("wallTime", sce.Int64PayloadText(wallTime)), sce.Pair("counter", counter), sce.Pair("nodeId", sce.Uint64PayloadText(nodeId)), sce.Pair("by", sce.Uint64PayloadText(by)), sce.Pair("parts", parts), sce.Pair("atWallTime", sce.Int64PayloadText(atWallTime)), sce.Pair("atCounter", atCounter)),
-		},
-	})
-}
-
 // RecordListParentRaiseRecordListValue is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `record_list.value` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
@@ -533,26 +517,6 @@ func RecordListParentRaiseRecordListValue(e *sce.Engine[RecordListParentState, R
 			// from. Filling only the first left an `<assign expr="_event.data.x">`
 			// on this event reading nothing, on every backend alike.
 			Data: sce.PayloadJSON(sce.Pair("id", id), sce.Pair("field", field), sce.Pair("ordinal", ordinal), sce.Pair("value", sce.Int64PayloadText(value)), sce.Pair("text", text), sce.Pair("wallTime", sce.Int64PayloadText(wallTime)), sce.Pair("counter", counter), sce.Pair("nodeId", sce.Uint64PayloadText(nodeId))),
-		},
-	})
-}
-
-// RecordListParentRaiseRecordListWrite is the NL→IR Item C1 Path A per-event typed `_event.data`
-// inject seam for `record_list.write` — binds the event name and the payload field
-// values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RecordListParentInject` extension-trait method
-// and the C11 `raise_<event>_typed` entry.
-func RecordListParentRaiseRecordListWrite(e *sce.Engine[RecordListParentState, RecordListParentEvent], id uint32, field uint16, value int64, text string, wallTime int64, counter uint32, nodeId uint64, parts uint32) {
-	e.RaiseExternalWithMeta(sce.EventWithMetadata[RecordListParentEvent]{
-		Event:    RecordListParentEventRecordListWrite,
-		Metadata: sce.EventMetadata{
-			EventType:    sce.EventTypeExternal,
-			TypedPayload: RecordListParentRecordListWritePayload{id: id, field: field, value: value, text: text, wallTime: wallTime, counter: counter, nodeId: nodeId, parts: parts, },
-			// Both carriers are filled: the typed one a native guard reads,
-			// and `Data`, which is what the script engine binds `_event.data`
-			// from. Filling only the first left an `<assign expr="_event.data.x">`
-			// on this event reading nothing, on every backend alike.
-			Data: sce.PayloadJSON(sce.Pair("id", id), sce.Pair("field", field), sce.Pair("value", sce.Int64PayloadText(value)), sce.Pair("text", text), sce.Pair("wallTime", sce.Int64PayloadText(wallTime)), sce.Pair("counter", counter), sce.Pair("nodeId", sce.Uint64PayloadText(nodeId)), sce.Pair("parts", parts)),
 		},
 	})
 }
@@ -1065,6 +1029,150 @@ func RecordListParentRefusedRecordFromSaved(value any, what string) (RecordListP
 	return record, nil
 }
 
+// SCE Accepted Subset §2.15: a `record:Op` datamodel value.
+type RecordListParentOpRecord struct {
+	kind uint8
+	id uint32
+	field uint16
+	value int64
+	text string
+	wallTime int64
+	counter uint32
+	nodeId uint64
+}
+
+// Kind reports the `kind` field.
+func (r RecordListParentOpRecord) Kind() uint8 {
+	return r.kind
+}
+
+// Id reports the `id` field.
+func (r RecordListParentOpRecord) Id() uint32 {
+	return r.id
+}
+
+// Field reports the `field` field.
+func (r RecordListParentOpRecord) Field() uint16 {
+	return r.field
+}
+
+// Value reports the `value` field.
+func (r RecordListParentOpRecord) Value() int64 {
+	return r.value
+}
+
+// Text reports the `text` field.
+func (r RecordListParentOpRecord) Text() string {
+	return r.text
+}
+
+// WallTime reports the `wallTime` field.
+func (r RecordListParentOpRecord) WallTime() int64 {
+	return r.wallTime
+}
+
+// Counter reports the `counter` field.
+func (r RecordListParentOpRecord) Counter() uint32 {
+	return r.counter
+}
+
+// NodeId reports the `nodeId` field.
+func (r RecordListParentOpRecord) NodeId() uint64 {
+	return r.nodeId
+}
+
+// ToSaved is this value as a saved state writes it.
+func (r RecordListParentOpRecord) ToSaved() any {
+	saved := sce.NewJSONObject()
+	saved.Set("kind", (sce.SavedWriteUint8)(r.kind))
+	saved.Set("id", (sce.SavedWriteUint32)(r.id))
+	saved.Set("field", (sce.SavedWriteUint16)(r.field))
+	saved.Set("value", (sce.SavedWriteInt64)(r.value))
+	saved.Set("text", (sce.SavedWriteString)(r.text))
+	saved.Set("wallTime", (sce.SavedWriteInt64)(r.wallTime))
+	saved.Set("counter", (sce.SavedWriteUint32)(r.counter))
+	saved.Set("nodeId", (sce.SavedWriteUint64)(r.nodeId))
+	return saved
+}
+
+// RecordListParentOpRecordFromSaved is the value a saved state holds, refused unless it is one.
+func RecordListParentOpRecordFromSaved(value any, what string) (RecordListParentOpRecord, error) {
+	var record RecordListParentOpRecord
+	{
+		saved, err := sce.SavedField(value, what, "kind")
+		if err != nil {
+			return record, err
+		}
+		if record.kind, err = (sce.SavedReadUint8)(saved, what + ".kind"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "id")
+		if err != nil {
+			return record, err
+		}
+		if record.id, err = (sce.SavedReadUint32)(saved, what + ".id"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "field")
+		if err != nil {
+			return record, err
+		}
+		if record.field, err = (sce.SavedReadUint16)(saved, what + ".field"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "value")
+		if err != nil {
+			return record, err
+		}
+		if record.value, err = (sce.SavedReadInt64)(saved, what + ".value"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "text")
+		if err != nil {
+			return record, err
+		}
+		if record.text, err = (sce.SavedBoundedString(96))(saved, what + ".text"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "wallTime")
+		if err != nil {
+			return record, err
+		}
+		if record.wallTime, err = (sce.SavedReadInt64)(saved, what + ".wallTime"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "counter")
+		if err != nil {
+			return record, err
+		}
+		if record.counter, err = (sce.SavedReadUint32)(saved, what + ".counter"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "nodeId")
+		if err != nil {
+			return record, err
+		}
+		if record.nodeId, err = (sce.SavedReadUint64)(saved, what + ".nodeId"); err != nil {
+			return record, err
+		}
+	}
+	return record, nil
+}
+
 // The bounds this machine is built with, each by the name `sce:limit` gives it (docs/adr/0050).
 
 // RecordListParentLimitMergeText is the bound `sce:limit="merge_text"` names, as this build resolved it.
@@ -1511,6 +1619,7 @@ type RecordListParentPolicy struct {
 	// native transition guards (`p.pending<Event>Payload.<field>`). Mirrors
 	// the Rust policy's `pending_payload` / the C11 `sm->pending_payload`.
 	pendingPayloadTag RecordListParentPayloadTag
+	pendingRecordListChangePayload RecordListParentRecordListChangePayload
 	pendingRecordListClearPayload RecordListParentRecordListClearPayload
 	pendingRecordListEditPayload RecordListParentRecordListEditPayload
 	pendingRecordListJoinPayload RecordListParentRecordListJoinPayload
@@ -1519,9 +1628,7 @@ type RecordListParentPolicy struct {
 	pendingRecordListRetirePayload RecordListParentRecordListRetirePayload
 	pendingRecordListRolePayload RecordListParentRecordListRolePayload
 	pendingRecordListRoomPayload RecordListParentRecordListRoomPayload
-	pendingRecordListSupersedePayload RecordListParentRecordListSupersedePayload
 	pendingRecordListValuePayload RecordListParentRecordListValuePayload
-	pendingRecordListWritePayload RecordListParentRecordListWritePayload
 
 	pendingEventData string
 	// W3C SCXML 5.10: Session ID
@@ -2036,6 +2143,8 @@ func (p *RecordListParentPolicy) GetEventFromName(name string) (RecordListParent
 		return RecordListParentEventErrorCommunication, true
 	case "error.execution":
 		return RecordListParentEventErrorExecution, true
+	case "record_list.change":
+		return RecordListParentEventRecordListChange, true
 	case "record_list.clear":
 		return RecordListParentEventRecordListClear, true
 	case "record_list.edit":
@@ -2052,12 +2161,8 @@ func (p *RecordListParentPolicy) GetEventFromName(name string) (RecordListParent
 		return RecordListParentEventRecordListRole, true
 	case "record_list.room":
 		return RecordListParentEventRecordListRoom, true
-	case "record_list.supersede":
-		return RecordListParentEventRecordListSupersede, true
 	case "record_list.value":
 		return RecordListParentEventRecordListValue, true
-	case "record_list.write":
-		return RecordListParentEventRecordListWrite, true
 	}
 	return RecordListParentEventNull, false
 }
@@ -2139,6 +2244,9 @@ func (p *RecordListParentPolicy) PopulateEventMetadata(meta *sce.EventMetadata) 
 	// (twin of the C11 pop loop's `sm->pending_payload = evt.payload`).
 	p.pendingPayloadTag = RecordListParentPayloadTagNone
 	switch v := meta.TypedPayload.(type) {
+	case RecordListParentRecordListChangePayload:
+		p.pendingPayloadTag = RecordListParentPayloadTagRecordListChange
+		p.pendingRecordListChangePayload = v
 	case RecordListParentRecordListClearPayload:
 		p.pendingPayloadTag = RecordListParentPayloadTagRecordListClear
 		p.pendingRecordListClearPayload = v
@@ -2163,15 +2271,9 @@ func (p *RecordListParentPolicy) PopulateEventMetadata(meta *sce.EventMetadata) 
 	case RecordListParentRecordListRoomPayload:
 		p.pendingPayloadTag = RecordListParentPayloadTagRecordListRoom
 		p.pendingRecordListRoomPayload = v
-	case RecordListParentRecordListSupersedePayload:
-		p.pendingPayloadTag = RecordListParentPayloadTagRecordListSupersede
-		p.pendingRecordListSupersedePayload = v
 	case RecordListParentRecordListValuePayload:
 		p.pendingPayloadTag = RecordListParentPayloadTagRecordListValue
 		p.pendingRecordListValuePayload = v
-	case RecordListParentRecordListWritePayload:
-		p.pendingPayloadTag = RecordListParentPayloadTagRecordListWrite
-		p.pendingRecordListWritePayload = v
 	}
 
 	p.pendingEventData = meta.Data
@@ -2193,6 +2295,50 @@ func (p *RecordListParentPolicy) LiftTypedPayload(event RecordListParentEvent, m
 		return nil
 	}
 	switch event {
+	case RecordListParentEventRecordListChange:
+		fields, err := sce.LiftPayload(meta.Data)
+		if err != nil {
+			return err
+		}
+		var payload RecordListParentRecordListChangePayload
+		{
+			sceValue, err := fields.Field("by")
+			if err != nil {
+				return err
+			}
+			if payload.by, err = sce.ValueUnsigned64(sceValue); err != nil {
+				return err
+			}
+		}
+		{
+			sceValue, err := fields.Field("wallTime")
+			if err != nil {
+				return err
+			}
+			if payload.wallTime, err = sce.ValueSigned64(sceValue); err != nil {
+				return err
+			}
+		}
+		{
+			sceValue, err := fields.Field("counter")
+			if err != nil {
+				return err
+			}
+			if payload.counter, err = sce.ValueUnsigned[uint32](sceValue); err != nil {
+				return err
+			}
+		}
+		{
+			sceValue, err := fields.Field("ops")
+			if err != nil {
+				return err
+			}
+			if payload.ops, err = sce.ReadListWithin(sceValue, 1, 64, func(sceValue sce.PayloadValue) (RecordListParentOpRecord, error) { return func() (RecordListParentOpRecord, error) { sceRecord, err := sceValue.Record(""); if err != nil { return RecordListParentOpRecord{}, err }; var sceOut RecordListParentOpRecord; { sceValue, err := sceRecord.Field("kind"); if err != nil { return RecordListParentOpRecord{}, err }; if sceOut.kind, err = sce.ValueUnsigned[uint8](sceValue); err != nil { return RecordListParentOpRecord{}, err } }; { sceValue, err := sceRecord.Field("id"); if err != nil { return RecordListParentOpRecord{}, err }; if sceOut.id, err = sce.ValueUnsigned[uint32](sceValue); err != nil { return RecordListParentOpRecord{}, err } }; { sceValue, err := sceRecord.Field("field"); if err != nil { return RecordListParentOpRecord{}, err }; if sceOut.field, err = sce.ValueUnsigned[uint16](sceValue); err != nil { return RecordListParentOpRecord{}, err } }; { sceValue, err := sceRecord.Field("value"); if err != nil { return RecordListParentOpRecord{}, err }; if sceOut.value, err = sce.ValueSigned64(sceValue); err != nil { return RecordListParentOpRecord{}, err } }; { sceValue, err := sceRecord.Field("text"); if err != nil { return RecordListParentOpRecord{}, err }; if sceOut.text, err = sceValue.Text(96); err != nil { return RecordListParentOpRecord{}, err } }; { sceValue, err := sceRecord.Field("wallTime"); if err != nil { return RecordListParentOpRecord{}, err }; if sceOut.wallTime, err = sce.ValueSigned64(sceValue); err != nil { return RecordListParentOpRecord{}, err } }; { sceValue, err := sceRecord.Field("counter"); if err != nil { return RecordListParentOpRecord{}, err }; if sceOut.counter, err = sce.ValueUnsigned[uint32](sceValue); err != nil { return RecordListParentOpRecord{}, err } }; { sceValue, err := sceRecord.Field("nodeId"); if err != nil { return RecordListParentOpRecord{}, err }; if sceOut.nodeId, err = sce.ValueUnsigned64(sceValue); err != nil { return RecordListParentOpRecord{}, err } }; return sceOut, nil }() }); err != nil {
+				return err
+			}
+		}
+		p.pendingRecordListChangePayload = payload
+		p.pendingPayloadTag = RecordListParentPayloadTagRecordListChange
 	case RecordListParentEventRecordListClear:
 		fields, err := sce.LiftPayload(meta.Data)
 		if err != nil {
@@ -2246,9 +2392,6 @@ func (p *RecordListParentPolicy) LiftTypedPayload(event RecordListParentEvent, m
 		}
 		var payload RecordListParentRecordListJoinPayload
 		if payload.node, err = sce.PayloadUnsigned64(fields, "node"); err != nil {
-			return err
-		}
-		if payload.hub, err = sce.PayloadBool(fields, "hub"); err != nil {
 			return err
 		}
 		p.pendingRecordListJoinPayload = payload
@@ -2353,41 +2496,6 @@ func (p *RecordListParentPolicy) LiftTypedPayload(event RecordListParentEvent, m
 		}
 		p.pendingRecordListRoomPayload = payload
 		p.pendingPayloadTag = RecordListParentPayloadTagRecordListRoom
-	case RecordListParentEventRecordListSupersede:
-		fields, err := sce.LiftPayloadWithDefaults(meta.Data, "{\"parts\":1,\"atWallTime\":\"0\",\"atCounter\":0}")
-		if err != nil {
-			return err
-		}
-		var payload RecordListParentRecordListSupersedePayload
-		if payload.id, err = sce.PayloadUnsigned[uint32](fields, "id"); err != nil {
-			return err
-		}
-		if payload.field, err = sce.PayloadUnsigned[uint16](fields, "field"); err != nil {
-			return err
-		}
-		if payload.wallTime, err = sce.PayloadSigned64(fields, "wallTime"); err != nil {
-			return err
-		}
-		if payload.counter, err = sce.PayloadUnsigned[uint32](fields, "counter"); err != nil {
-			return err
-		}
-		if payload.nodeId, err = sce.PayloadUnsigned64(fields, "nodeId"); err != nil {
-			return err
-		}
-		if payload.by, err = sce.PayloadUnsigned64(fields, "by"); err != nil {
-			return err
-		}
-		if payload.parts, err = sce.PayloadUnsigned[uint32](fields, "parts"); err != nil {
-			return err
-		}
-		if payload.atWallTime, err = sce.PayloadSigned64(fields, "atWallTime"); err != nil {
-			return err
-		}
-		if payload.atCounter, err = sce.PayloadUnsigned[uint32](fields, "atCounter"); err != nil {
-			return err
-		}
-		p.pendingRecordListSupersedePayload = payload
-		p.pendingPayloadTag = RecordListParentPayloadTagRecordListSupersede
 	case RecordListParentEventRecordListValue:
 		fields, err := sce.LiftPayload(meta.Data)
 		if err != nil {
@@ -2420,38 +2528,6 @@ func (p *RecordListParentPolicy) LiftTypedPayload(event RecordListParentEvent, m
 		}
 		p.pendingRecordListValuePayload = payload
 		p.pendingPayloadTag = RecordListParentPayloadTagRecordListValue
-	case RecordListParentEventRecordListWrite:
-		fields, err := sce.LiftPayloadWithDefaults(meta.Data, "{\"parts\":1}")
-		if err != nil {
-			return err
-		}
-		var payload RecordListParentRecordListWritePayload
-		if payload.id, err = sce.PayloadUnsigned[uint32](fields, "id"); err != nil {
-			return err
-		}
-		if payload.field, err = sce.PayloadUnsigned[uint16](fields, "field"); err != nil {
-			return err
-		}
-		if payload.value, err = sce.PayloadSigned64(fields, "value"); err != nil {
-			return err
-		}
-		if payload.text, err = sce.PayloadTextWithin(fields, "text", 96); err != nil {
-			return err
-		}
-		if payload.wallTime, err = sce.PayloadSigned64(fields, "wallTime"); err != nil {
-			return err
-		}
-		if payload.counter, err = sce.PayloadUnsigned[uint32](fields, "counter"); err != nil {
-			return err
-		}
-		if payload.nodeId, err = sce.PayloadUnsigned64(fields, "nodeId"); err != nil {
-			return err
-		}
-		if payload.parts, err = sce.PayloadUnsigned[uint32](fields, "parts"); err != nil {
-			return err
-		}
-		p.pendingRecordListWritePayload = payload
-		p.pendingPayloadTag = RecordListParentPayloadTagRecordListWrite
 	}
 	return nil
 
@@ -2472,11 +2548,11 @@ func (p *RecordListParentPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line record_list_parent.scxml:40
+//line record_list_parent.scxml:41
 func (p *RecordListParentPolicy) ExecuteEntryActions(state RecordListParentState, engine *sce.Engine[RecordListParentState, RecordListParentEvent], isDefaultEntry bool) {
 	switch state {
 	case RecordListParentStateHolding:
-//line record_list_parent.scxml:83
+//line record_list_parent.scxml:84
 		// W3C SCXML 6.4: Defer invoke execution until macrostep end
 		{
 			// docs/adr/0045: the platform part of the id is the number of this
@@ -2518,7 +2594,7 @@ func (p *RecordListParentPolicy) RestartInvokes(engine *sce.Engine[RecordListPar
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line record_list_parent.scxml:40
+//line record_list_parent.scxml:41
 func (p *RecordListParentPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[RecordListParentState, RecordListParentEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -2526,7 +2602,7 @@ func (p *RecordListParentPolicy) ExecuteHistoryDefaultContent(history sce.Histor
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line record_list_parent.scxml:40
+//line record_list_parent.scxml:41
 func (p *RecordListParentPolicy) ExecuteExitActions(state RecordListParentState, engine *sce.Engine[RecordListParentState, RecordListParentEvent], configurationBeforeExit []RecordListParentState) {
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
@@ -2561,7 +2637,7 @@ func (p *RecordListParentPolicy) ExecuteExitActions(state RecordListParentState,
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line record_list_parent.scxml:40
+//line record_list_parent.scxml:41
 func (p *RecordListParentPolicy) BindCurrentEvent(event RecordListParentEvent, engine *sce.Engine[RecordListParentState, RecordListParentEvent]) {
 	// This document's guards never read _event, so there is nothing to bind.
 }
@@ -2571,7 +2647,7 @@ func (p *RecordListParentPolicy) BindCurrentEvent(event RecordListParentEvent, e
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line record_list_parent.scxml:40
+//line record_list_parent.scxml:41
 func (p *RecordListParentPolicy) FirstEnabledTransition(state RecordListParentState, event RecordListParentEvent, engine *sce.Engine[RecordListParentState, RecordListParentEvent]) (sce.EnabledTransition[RecordListParentState, sce.HistoryID], bool) {
 	switch state {
 	case RecordListParentStateHolding:
@@ -2635,7 +2711,7 @@ func (p *RecordListParentPolicy) FirstEnabledTransition(state RecordListParentSt
 				}, true
 			}
 		}
-		if event == RecordListParentEventRecordListWrite {
+		if event == RecordListParentEventRecordListChange {
 			{
 				return sce.EnabledTransition[RecordListParentState, sce.HistoryID]{
 					Source:          state,
@@ -2645,7 +2721,7 @@ func (p *RecordListParentPolicy) FirstEnabledTransition(state RecordListParentSt
 				}, true
 			}
 		}
-		if event == RecordListParentEventRecordListSupersede {
+		if event == RecordListParentEventRecordListRegister {
 			{
 				return sce.EnabledTransition[RecordListParentState, sce.HistoryID]{
 					Source:          state,
@@ -2655,7 +2731,7 @@ func (p *RecordListParentPolicy) FirstEnabledTransition(state RecordListParentSt
 				}, true
 			}
 		}
-		if event == RecordListParentEventRecordListRegister {
+		if event == RecordListParentEventRecordListValue {
 			{
 				return sce.EnabledTransition[RecordListParentState, sce.HistoryID]{
 					Source:          state,
@@ -2665,21 +2741,11 @@ func (p *RecordListParentPolicy) FirstEnabledTransition(state RecordListParentSt
 				}, true
 			}
 		}
-		if event == RecordListParentEventRecordListValue {
-			{
-				return sce.EnabledTransition[RecordListParentState, sce.HistoryID]{
-					Source:          state,
-					TransitionIndex: 9,
-					HasActions:      true,
-					IsInternal:      true,
-				}, true
-			}
-		}
 		if event == RecordListParentEventRecordListRefused {
 			{
 				return sce.EnabledTransition[RecordListParentState, sce.HistoryID]{
 					Source:          state,
-					TransitionIndex: 10,
+					TransitionIndex: 9,
 					HasActions:      true,
 					IsInternal:      true,
 				}, true
@@ -2691,13 +2757,13 @@ func (p *RecordListParentPolicy) FirstEnabledTransition(state RecordListParentSt
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line record_list_parent.scxml:40
+//line record_list_parent.scxml:41
 func (p *RecordListParentPolicy) ExecuteTransitionContent(source RecordListParentState, transitionIndex int, engine *sce.Engine[RecordListParentState, RecordListParentEvent]) {
 	switch source {
 	case RecordListParentStateHolding:
 		switch transitionIndex {
 		case 0:
-//line record_list_parent.scxml:89
+//line record_list_parent.scxml:90
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentPayloadTagRecordListJoin {
@@ -2720,10 +2786,6 @@ func (p *RecordListParentPolicy) ExecuteTransitionContent(source RecordListParen
 		{
 			sceValue := sce.Uint64PayloadText(uint64(p.pendingRecordListJoinPayload.node))
 			parts = append(parts, sce.EventDataParam{Name: "node", Value: sceValue})
-		}
-		{
-			sceValue := p.pendingRecordListJoinPayload.hub
-			parts = append(parts, sce.EventDataParam{Name: "hub", Value: sceValue})
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
 		_ = eventDataStr
@@ -3077,10 +3139,10 @@ func (p *RecordListParentPolicy) ExecuteTransitionContent(source RecordListParen
 	}
 			}()
 		case 6:
-//line record_list_parent.scxml:133
+//line record_list_parent.scxml:135
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
-				if p.pendingPayloadTag != RecordListParentPayloadTagRecordListWrite {
+				if p.pendingPayloadTag != RecordListParentPayloadTagRecordListChange {
 					return
 				}
 
@@ -3098,32 +3160,20 @@ func (p *RecordListParentPolicy) ExecuteTransitionContent(source RecordListParen
 		// `_event.data.value === 42` finds the string "42" unequal.
 		parts := make([]sce.EventDataParam, 0)
 		{
-			sceValue := int64(p.pendingRecordListWritePayload.id)
-			parts = append(parts, sce.EventDataParam{Name: "id", Value: sceValue})
+			sceValue := sce.Uint64PayloadText(uint64(p.pendingRecordListChangePayload.by))
+			parts = append(parts, sce.EventDataParam{Name: "by", Value: sceValue})
 		}
 		{
-			sceValue := int64(p.pendingRecordListWritePayload.field)
-			parts = append(parts, sce.EventDataParam{Name: "field", Value: sceValue})
-		}
-		{
-			sceValue := sce.Int64PayloadText(int64(p.pendingRecordListWritePayload.value))
-			parts = append(parts, sce.EventDataParam{Name: "value", Value: sceValue})
-		}
-		{
-			sceValue := p.pendingRecordListWritePayload.text
-			parts = append(parts, sce.EventDataParam{Name: "text", Value: sceValue})
-		}
-		{
-			sceValue := sce.Int64PayloadText(int64(p.pendingRecordListWritePayload.wallTime))
+			sceValue := sce.Int64PayloadText(int64(p.pendingRecordListChangePayload.wallTime))
 			parts = append(parts, sce.EventDataParam{Name: "wallTime", Value: sceValue})
 		}
 		{
-			sceValue := int64(p.pendingRecordListWritePayload.counter)
+			sceValue := int64(p.pendingRecordListChangePayload.counter)
 			parts = append(parts, sce.EventDataParam{Name: "counter", Value: sceValue})
 		}
 		{
-			sceValue := sce.Uint64PayloadText(uint64(p.pendingRecordListWritePayload.nodeId))
-			parts = append(parts, sce.EventDataParam{Name: "nodeId", Value: sceValue})
+			sceValue := func() []any { sceItems := make([]any, 0, len(p.pendingRecordListChangePayload.ops)); for _, sceElement := range p.pendingRecordListChangePayload.ops { sceItems = append(sceItems, map[string]any{"kind": int64(sceElement.kind), "id": int64(sceElement.id), "field": int64(sceElement.field), "value": sce.Int64PayloadText(sceElement.value), "text": sceElement.text, "wallTime": sce.Int64PayloadText(sceElement.wallTime), "counter": int64(sceElement.counter), "nodeId": sce.Uint64PayloadText(sceElement.nodeId)}) }; return sceItems }()
+			parts = append(parts, sce.EventDataParam{Name: "ops", Value: sceValue})
 		}
 		eventDataStr := sce.BuildJSONFromTypedParams(parts)
 		_ = eventDataStr
@@ -3134,7 +3184,7 @@ func (p *RecordListParentPolicy) ExecuteTransitionContent(source RecordListParen
 	if child := p.childList; child != nil && !child.IsInFinalState() {
 		// W3C SCXML C.1: this session is the sender, and the child reads the
 		// location it publishes as `_event.origin` (docs/adr/0090).
-		sce.DeliverToChild(child, "record_list.write", eventDataStr, p.SessionID)
+		sce.DeliverToChild(child, "record_list.change", eventDataStr, p.SessionID)
 		// docs/adr/0045: what the child sent in answer reaches this session within
 		// the delivery, so nothing is between the two when it returns.
 		p.SettleChildren(engine)
@@ -3155,81 +3205,7 @@ func (p *RecordListParentPolicy) ExecuteTransitionContent(source RecordListParen
 	}
 			}()
 		case 7:
-//line record_list_parent.scxml:144
-			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
-			func() {
-				if p.pendingPayloadTag != RecordListParentPayloadTagRecordListSupersede {
-					return
-				}
-
-	// W3C SCXML 6.2: send id="__send_7"
-	{
-	// W3C SCXML 6.2: Evaluate <param> expressions at send time
-	{
-		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
-		// and its pair left out, and the message still goes; the error ends
-		// the block once it has. Read at the end of this element.
-		paramFailed := false
-		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
-		// delivered, so this is an ordered list rather than a map. The typed
-		// value is kept rather than its text — a receiver reading
-		// `_event.data.value === 42` finds the string "42" unequal.
-		parts := make([]sce.EventDataParam, 0)
-		{
-			sceValue := int64(p.pendingRecordListSupersedePayload.id)
-			parts = append(parts, sce.EventDataParam{Name: "id", Value: sceValue})
-		}
-		{
-			sceValue := int64(p.pendingRecordListSupersedePayload.field)
-			parts = append(parts, sce.EventDataParam{Name: "field", Value: sceValue})
-		}
-		{
-			sceValue := sce.Int64PayloadText(int64(p.pendingRecordListSupersedePayload.wallTime))
-			parts = append(parts, sce.EventDataParam{Name: "wallTime", Value: sceValue})
-		}
-		{
-			sceValue := int64(p.pendingRecordListSupersedePayload.counter)
-			parts = append(parts, sce.EventDataParam{Name: "counter", Value: sceValue})
-		}
-		{
-			sceValue := sce.Uint64PayloadText(uint64(p.pendingRecordListSupersedePayload.nodeId))
-			parts = append(parts, sce.EventDataParam{Name: "nodeId", Value: sceValue})
-		}
-		{
-			sceValue := sce.Uint64PayloadText(uint64(p.pendingRecordListSupersedePayload.by))
-			parts = append(parts, sce.EventDataParam{Name: "by", Value: sceValue})
-		}
-		eventDataStr := sce.BuildJSONFromTypedParams(parts)
-		_ = eventDataStr
-	// W3C SCXML 6.4: Send to invoked child "list". The build
-	// refused a target naming no invocation above, so one matches here.
-	// A child whose session has reached its final state has ended, and is not
-	// there to address.
-	if child := p.childList; child != nil && !child.IsInFinalState() {
-		// W3C SCXML C.1: this session is the sender, and the child reads the
-		// location it publishes as `_event.origin` (docs/adr/0090).
-		sce.DeliverToChild(child, "record_list.supersede", eventDataStr, p.SessionID)
-		// docs/adr/0045: what the child sent in answer reaches this session within
-		// the delivery, so nothing is between the two when it returns.
-		p.SettleChildren(engine)
-	} else {
-		// W3C SCXML C.1: the invocation is not running, so the session the
-		// target names is not there to reach.
-		errEvt := sce.NewPlatformError(RecordListParentEventErrorCommunication, "<send target='#_list'> names an invocation that is not running")
-		errEvt.Metadata.SendID = "__send_7"
-		engine.Raise(errEvt)
-		return
-	}
-		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
-		// <foreach> it came — the block is its own function.
-		if paramFailed {
-			return
-		}
-	}
-	}
-			}()
-		case 8:
-//line record_list_parent.scxml:157
+//line record_list_parent.scxml:146
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentPayloadTagRecordListRegister {
@@ -3281,8 +3257,8 @@ func (p *RecordListParentPolicy) ExecuteTransitionContent(source RecordListParen
 	}
 
 			}()
-		case 9:
-//line record_list_parent.scxml:169
+		case 8:
+//line record_list_parent.scxml:158
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentPayloadTagRecordListValue {
@@ -3336,8 +3312,8 @@ func (p *RecordListParentPolicy) ExecuteTransitionContent(source RecordListParen
 	}
 
 			}()
-		case 10:
-//line record_list_parent.scxml:184
+		case 9:
+//line record_list_parent.scxml:173
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListParentPayloadTagRecordListRefused {

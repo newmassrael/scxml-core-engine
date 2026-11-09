@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
+// source-hash: d05ce240c5f3b48b3c83b6bee1ba58feef40d57c310e9a29ef5279604bbaaa42
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -19,7 +19,7 @@
 // Implements StatePolicy with full transition logic, entry/exit actions, and
 // event processing.
 
-// SCE-MAP: record_list_parent.scxml:40 :: _machine
+// SCE-MAP: record_list_parent.scxml:41 :: _machine
 
 import SceRuntime
 import SceForgeRuntime
@@ -81,19 +81,18 @@ public enum RecordListParentEvent: Int, Hashable, Sendable {
     case doneInvoke = 0
     case errorCommunication = 1
     case errorExecution = 2
-    case recordListClear = 3
-    case recordListEdit = 4
-    case recordListJoin = 5
-    case recordListRefused = 6
-    case recordListRegister = 7
-    case recordListRetire = 8
-    case recordListRole = 9
-    case recordListRoom = 10
-    case recordListSupersede = 11
+    case recordListChange = 3
+    case recordListClear = 4
+    case recordListEdit = 5
+    case recordListJoin = 6
+    case recordListRefused = 7
+    case recordListRegister = 8
+    case recordListRetire = 9
+    case recordListRole = 10
+    case recordListRoom = 11
     case recordListValue = 12
-    case recordListWrite = 13
     /// W3C SCXML 3.13: the sentinel for eventless transition dispatch.
-    case null = 14
+    case null = 13
 }
 
 // ======================================================================
@@ -337,11 +336,65 @@ public struct RecordListParentRefusedRecord: Equatable, Sendable, SceDefault {
     }
 }
 
+/// SCE Accepted Subset §2.15: a `record:Op` datamodel value.
+public struct RecordListParentOpRecord: Equatable, Sendable, SceDefault {
+    public var kind: UInt8 = 0
+    public var id: UInt32 = 0
+    public var field: UInt16 = 0
+    public var value: Int64 = 0
+    public var text: String = ""
+    public var wallTime: Int64 = 0
+    public var counter: UInt32 = 0
+    public var nodeId: UInt64 = 0
+
+    public init() {}
+
+    public init(kind: UInt8, id: UInt32, field: UInt16, value: Int64, text: String, wallTime: Int64, counter: UInt32, nodeId: UInt64) {
+        self.kind = kind
+        self.id = id
+        self.field = field
+        self.value = value
+        self.text = text
+        self.wallTime = wallTime
+        self.counter = counter
+        self.nodeId = nodeId
+    }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "kind", value: SavedValues.of(kind)),
+            (key: "id", value: SavedValues.of(id)),
+            (key: "field", value: SavedValues.of(field)),
+            (key: "value", value: SavedValues.of(value)),
+            (key: "text", value: SavedValues.of(text)),
+            (key: "wallTime", value: SavedValues.of(wallTime)),
+            (key: "counter", value: SavedValues.of(counter)),
+            (key: "nodeId", value: SavedValues.of(nodeId)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> RecordListParentOpRecord {
+        RecordListParentOpRecord(
+            kind: try SavedValues.uint8(try SavedValues.field(value, what, "kind"), "\(what).kind"),
+            id: try SavedValues.uint32(try SavedValues.field(value, what, "id"), "\(what).id"),
+            field: try SavedValues.uint16(try SavedValues.field(value, what, "field"), "\(what).field"),
+            value: try SavedValues.int64(try SavedValues.field(value, what, "value"), "\(what).value"),
+            text: try SavedValues.string(try SavedValues.field(value, what, "text"), "\(what).text", capacity: 96),
+            wallTime: try SavedValues.int64(try SavedValues.field(value, what, "wallTime"), "\(what).wallTime"),
+            counter: try SavedValues.uint32(try SavedValues.field(value, what, "counter"), "\(what).counter"),
+            nodeId: try SavedValues.uint64(try SavedValues.field(value, what, "nodeId"), "\(what).nodeId")
+        )
+    }
+}
+
 // NL-to-IR Item C1 Path A: the typed `_event.data` payload channel for the
 // events whose payload a natively lowered expression reads: a tag, and one
 // `pending<Event>Payload` view per event on the policy.
 enum RecordListParentPayloadTag {
     case none
+    case recordListChange
     case recordListClear
     case recordListEdit
     case recordListJoin
@@ -350,9 +403,17 @@ enum RecordListParentPayloadTag {
     case recordListRetire
     case recordListRole
     case recordListRoom
-    case recordListSupersede
     case recordListValue
-    case recordListWrite
+}
+
+/// The typed `_event.data` payload of `record_list.change` (NL-to-IR Item C1 Path A): what a
+/// natively lowered expression reads. Internal to the module; a host hands the
+/// values to the inject seam below.
+struct RecordListParentRecordListChangePayload {
+    var by: UInt64 = 0
+    var wallTime: Int64 = 0
+    var counter: UInt32 = 0
+    var ops: [RecordListParentOpRecord] = []
 }
 
 /// The typed `_event.data` payload of `record_list.clear` (NL-to-IR Item C1 Path A): what a
@@ -382,7 +443,6 @@ struct RecordListParentRecordListEditPayload {
 /// values to the inject seam below.
 struct RecordListParentRecordListJoinPayload {
     var node: UInt64 = 0
-    var hub: Bool = false
 }
 
 /// The typed `_event.data` payload of `record_list.refused` (NL-to-IR Item C1 Path A): what a
@@ -435,21 +495,6 @@ struct RecordListParentRecordListRoomPayload {
     var digest: UInt32 = 0
 }
 
-/// The typed `_event.data` payload of `record_list.supersede` (NL-to-IR Item C1 Path A): what a
-/// natively lowered expression reads. Internal to the module; a host hands the
-/// values to the inject seam below.
-struct RecordListParentRecordListSupersedePayload {
-    var id: UInt32 = 0
-    var field: UInt16 = 0
-    var wallTime: Int64 = 0
-    var counter: UInt32 = 0
-    var nodeId: UInt64 = 0
-    var by: UInt64 = 0
-    var parts: UInt32 = 0
-    var atWallTime: Int64 = 0
-    var atCounter: UInt32 = 0
-}
-
 /// The typed `_event.data` payload of `record_list.value` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
@@ -462,20 +507,6 @@ struct RecordListParentRecordListValuePayload {
     var wallTime: Int64 = 0
     var counter: UInt32 = 0
     var nodeId: UInt64 = 0
-}
-
-/// The typed `_event.data` payload of `record_list.write` (NL-to-IR Item C1 Path A): what a
-/// natively lowered expression reads. Internal to the module; a host hands the
-/// values to the inject seam below.
-struct RecordListParentRecordListWritePayload {
-    var id: UInt32 = 0
-    var field: UInt16 = 0
-    var value: Int64 = 0
-    var text: String = ""
-    var wallTime: Int64 = 0
-    var counter: UInt32 = 0
-    var nodeId: UInt64 = 0
-    var parts: UInt32 = 0
 }
 
 
@@ -500,6 +531,7 @@ public final class RecordListParentPolicy: InvocablePolicy {
     // The typed `_event.data` of the event being processed, bound by the policy's
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: RecordListParentPayloadTag = .none
+    var pendingRecordListChangePayload = RecordListParentRecordListChangePayload()
     var pendingRecordListClearPayload = RecordListParentRecordListClearPayload()
     var pendingRecordListEditPayload = RecordListParentRecordListEditPayload()
     var pendingRecordListJoinPayload = RecordListParentRecordListJoinPayload()
@@ -508,9 +540,7 @@ public final class RecordListParentPolicy: InvocablePolicy {
     var pendingRecordListRetirePayload = RecordListParentRecordListRetirePayload()
     var pendingRecordListRolePayload = RecordListParentRecordListRolePayload()
     var pendingRecordListRoomPayload = RecordListParentRecordListRoomPayload()
-    var pendingRecordListSupersedePayload = RecordListParentRecordListSupersedePayload()
     var pendingRecordListValuePayload = RecordListParentRecordListValuePayload()
-    var pendingRecordListWritePayload = RecordListParentRecordListWritePayload()
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
@@ -700,6 +730,8 @@ public final class RecordListParentPolicy: InvocablePolicy {
             return "error.communication"
         case .errorExecution:
             return "error.execution"
+        case .recordListChange:
+            return "record_list.change"
         case .recordListClear:
             return "record_list.clear"
         case .recordListEdit:
@@ -716,12 +748,8 @@ public final class RecordListParentPolicy: InvocablePolicy {
             return "record_list.role"
         case .recordListRoom:
             return "record_list.room"
-        case .recordListSupersede:
-            return "record_list.supersede"
         case .recordListValue:
             return "record_list.value"
-        case .recordListWrite:
-            return "record_list.write"
         case .null:
             return ""
         }
@@ -736,6 +764,8 @@ public final class RecordListParentPolicy: InvocablePolicy {
             return .errorCommunication
         case "error.execution":
             return .errorExecution
+        case "record_list.change":
+            return .recordListChange
         case "record_list.clear":
             return .recordListClear
         case "record_list.edit":
@@ -752,12 +782,8 @@ public final class RecordListParentPolicy: InvocablePolicy {
             return .recordListRole
         case "record_list.room":
             return .recordListRoom
-        case "record_list.supersede":
-            return .recordListSupersede
         case "record_list.value":
             return .recordListValue
-        case "record_list.write":
-            return .recordListWrite
         default:
             return nil
         }
@@ -810,6 +836,9 @@ public final class RecordListParentPolicy: InvocablePolicy {
     public func populateEventMetadata(_ metadata: EventMetadata) {
         pendingPayloadTag = .none
         switch metadata.typedPayload {
+        case let payload as RecordListParentRecordListChangePayload:
+            pendingPayloadTag = .recordListChange
+            pendingRecordListChangePayload = payload
         case let payload as RecordListParentRecordListClearPayload:
             pendingPayloadTag = .recordListClear
             pendingRecordListClearPayload = payload
@@ -834,15 +863,9 @@ public final class RecordListParentPolicy: InvocablePolicy {
         case let payload as RecordListParentRecordListRoomPayload:
             pendingPayloadTag = .recordListRoom
             pendingRecordListRoomPayload = payload
-        case let payload as RecordListParentRecordListSupersedePayload:
-            pendingPayloadTag = .recordListSupersede
-            pendingRecordListSupersedePayload = payload
         case let payload as RecordListParentRecordListValuePayload:
             pendingPayloadTag = .recordListValue
             pendingRecordListValuePayload = payload
-        case let payload as RecordListParentRecordListWritePayload:
-            pendingPayloadTag = .recordListWrite
-            pendingRecordListWritePayload = payload
         default:
             break
         }
@@ -858,6 +881,15 @@ public final class RecordListParentPolicy: InvocablePolicy {
             return
         }
         switch event {
+        case .recordListChange:
+            let fields = try PayloadFields.decode(metadata.data)
+            var payload = RecordListParentRecordListChangePayload()
+            payload.by = try ({ (sceValue: PayloadValue) throws -> UInt64 in try sceValue.unsigned64() })(fields.field("by"))
+            payload.wallTime = try ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(fields.field("wallTime"))
+            payload.counter = try ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(fields.field("counter"))
+            payload.ops = try ({ (sceValue: PayloadValue) throws -> [RecordListParentOpRecord] in try sceValue.list(least: 1, bound: 64, { (sceValue: PayloadValue) throws -> RecordListParentOpRecord in try sceValue.record({ (sceFields: PayloadFields) throws -> RecordListParentOpRecord in try RecordListParentOpRecord(kind: ({ (sceValue: PayloadValue) throws -> UInt8 in try sceValue.unsigned() })(sceFields.field("kind")), id: ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(sceFields.field("id")), field: ({ (sceValue: PayloadValue) throws -> UInt16 in try sceValue.unsigned() })(sceFields.field("field")), value: ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(sceFields.field("value")), text: ({ (sceValue: PayloadValue) throws -> String in try sceValue.text(bound: 96) })(sceFields.field("text")), wallTime: ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(sceFields.field("wallTime")), counter: ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(sceFields.field("counter")), nodeId: ({ (sceValue: PayloadValue) throws -> UInt64 in try sceValue.unsigned64() })(sceFields.field("nodeId"))) }) }) })(fields.field("ops"))
+            pendingRecordListChangePayload = payload
+            pendingPayloadTag = .recordListChange
         case .recordListClear:
             let fields = try PayloadFields.decode(metadata.data)
             var payload = RecordListParentRecordListClearPayload()
@@ -882,7 +914,6 @@ public final class RecordListParentPolicy: InvocablePolicy {
             let fields = try PayloadFields.decode(metadata.data)
             var payload = RecordListParentRecordListJoinPayload()
             payload.node = try fields.unsigned64("node")
-            payload.hub = try fields.truth("hub")
             pendingRecordListJoinPayload = payload
             pendingPayloadTag = .recordListJoin
         case .recordListRefused:
@@ -930,20 +961,6 @@ public final class RecordListParentPolicy: InvocablePolicy {
             payload.digest = try fields.unsigned("digest")
             pendingRecordListRoomPayload = payload
             pendingPayloadTag = .recordListRoom
-        case .recordListSupersede:
-            let fields = try PayloadFields.decode(metadata.data, defaults: "{\"parts\":1,\"atWallTime\":\"0\",\"atCounter\":0}")
-            var payload = RecordListParentRecordListSupersedePayload()
-            payload.id = try fields.unsigned("id")
-            payload.field = try fields.unsigned("field")
-            payload.wallTime = try fields.signed64("wallTime")
-            payload.counter = try fields.unsigned("counter")
-            payload.nodeId = try fields.unsigned64("nodeId")
-            payload.by = try fields.unsigned64("by")
-            payload.parts = try fields.unsigned("parts")
-            payload.atWallTime = try fields.signed64("atWallTime")
-            payload.atCounter = try fields.unsigned("atCounter")
-            pendingRecordListSupersedePayload = payload
-            pendingPayloadTag = .recordListSupersede
         case .recordListValue:
             let fields = try PayloadFields.decode(metadata.data)
             var payload = RecordListParentRecordListValuePayload()
@@ -957,19 +974,6 @@ public final class RecordListParentPolicy: InvocablePolicy {
             payload.nodeId = try fields.unsigned64("nodeId")
             pendingRecordListValuePayload = payload
             pendingPayloadTag = .recordListValue
-        case .recordListWrite:
-            let fields = try PayloadFields.decode(metadata.data, defaults: "{\"parts\":1}")
-            var payload = RecordListParentRecordListWritePayload()
-            payload.id = try fields.unsigned("id")
-            payload.field = try fields.unsigned("field")
-            payload.value = try fields.signed64("value")
-            payload.text = try fields.text("text", bound: 96)
-            payload.wallTime = try fields.signed64("wallTime")
-            payload.counter = try fields.unsigned("counter")
-            payload.nodeId = try fields.unsigned64("nodeId")
-            payload.parts = try fields.unsigned("parts")
-            pendingRecordListWritePayload = payload
-            pendingPayloadTag = .recordListWrite
         default:
             break
         }
@@ -1311,7 +1315,7 @@ public final class RecordListParentPolicy: InvocablePolicy {
                     )
                 }
             }
-            if event == .recordListWrite {
+            if event == .recordListChange {
                 do {
                     return EnabledTransition(
                         source: state,
@@ -1322,7 +1326,7 @@ public final class RecordListParentPolicy: InvocablePolicy {
                     )
                 }
             }
-            if event == .recordListSupersede {
+            if event == .recordListRegister {
                 do {
                     return EnabledTransition(
                         source: state,
@@ -1333,7 +1337,7 @@ public final class RecordListParentPolicy: InvocablePolicy {
                     )
                 }
             }
-            if event == .recordListRegister {
+            if event == .recordListValue {
                 do {
                     return EnabledTransition(
                         source: state,
@@ -1344,23 +1348,12 @@ public final class RecordListParentPolicy: InvocablePolicy {
                     )
                 }
             }
-            if event == .recordListValue {
-                do {
-                    return EnabledTransition(
-                        source: state,
-                        targets: [],
-                        transitionIndex: 9,
-                        hasActions: true,
-                        isInternal: true
-                    )
-                }
-            }
             if event == .recordListRefused {
                 do {
                     return EnabledTransition(
                         source: state,
                         targets: [],
-                        transitionIndex: 10,
+                        transitionIndex: 9,
                         hasActions: true,
                         isInternal: true
                     )
@@ -1395,10 +1388,6 @@ public final class RecordListParentPolicy: InvocablePolicy {
                     do {
                         let sceValue: WireValue = .unsigned64(self.pendingRecordListJoinPayload.node)
                         sendParts.append(PayloadPair("node", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .truth(self.pendingRecordListJoinPayload.hub)
-                        sendParts.append(PayloadPair("hub", sceValue))
                     }
                     let sendEventData = payloadJSON(sendParts)
                     // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
@@ -1761,7 +1750,7 @@ public final class RecordListParentPolicy: InvocablePolicy {
             case 6:
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 sceBlock: do {
-                    if pendingPayloadTag != .recordListWrite {
+                    if pendingPayloadTag != .recordListChange {
                         break sceBlock
                     }
 
@@ -1773,32 +1762,20 @@ public final class RecordListParentPolicy: InvocablePolicy {
                     var paramFailed = false
                     var sendParts: [PayloadPair] = []
                     do {
-                        let sceValue: WireValue = .integer(Int64(self.pendingRecordListWritePayload.id))
-                        sendParts.append(PayloadPair("id", sceValue))
+                        let sceValue: WireValue = .unsigned64(self.pendingRecordListChangePayload.by)
+                        sendParts.append(PayloadPair("by", sceValue))
                     }
                     do {
-                        let sceValue: WireValue = .integer(Int64(self.pendingRecordListWritePayload.field))
-                        sendParts.append(PayloadPair("field", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(self.pendingRecordListWritePayload.value)
-                        sendParts.append(PayloadPair("value", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .text(self.pendingRecordListWritePayload.text)
-                        sendParts.append(PayloadPair("text", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(self.pendingRecordListWritePayload.wallTime)
+                        let sceValue: WireValue = .signed64(self.pendingRecordListChangePayload.wallTime)
                         sendParts.append(PayloadPair("wallTime", sceValue))
                     }
                     do {
-                        let sceValue: WireValue = .integer(Int64(self.pendingRecordListWritePayload.counter))
+                        let sceValue: WireValue = .integer(Int64(self.pendingRecordListChangePayload.counter))
                         sendParts.append(PayloadPair("counter", sceValue))
                     }
                     do {
-                        let sceValue: WireValue = .unsigned64(self.pendingRecordListWritePayload.nodeId)
-                        sendParts.append(PayloadPair("nodeId", sceValue))
+                        let sceValue: WireValue = WireValue.composed(listJSON(self.pendingRecordListChangePayload.ops, { (sceElement) -> String in recordJSON([PayloadPair.json("kind", rawJSON: WireValue.integer(Int64(sceElement.kind)).json), PayloadPair.json("id", rawJSON: WireValue.integer(Int64(sceElement.id)).json), PayloadPair.json("field", rawJSON: WireValue.integer(Int64(sceElement.field)).json), PayloadPair.json("value", rawJSON: WireValue.signed64(sceElement.value).json), PayloadPair.json("text", rawJSON: WireValue.text(sceElement.text).json), PayloadPair.json("wallTime", rawJSON: WireValue.signed64(sceElement.wallTime).json), PayloadPair.json("counter", rawJSON: WireValue.integer(Int64(sceElement.counter)).json), PayloadPair.json("nodeId", rawJSON: WireValue.unsigned64(sceElement.nodeId).json)]) }))
+                        sendParts.append(PayloadPair("ops", sceValue))
                     }
                     let sendEventData = payloadJSON(sendParts)
                     // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
@@ -1806,8 +1783,8 @@ public final class RecordListParentPolicy: InvocablePolicy {
                     // the table `classifyTarget` holds. A literal `#_<invokeid>` is routed by it
                     // too, to the child it names.
                     let sendRouted = engine.sendToTarget(
-                        event: engine.resolveEventByName("record_list.write"),
-                        eventName: "record_list.write",
+                        event: engine.resolveEventByName("record_list.change"),
+                        eventName: "record_list.change",
                         target: "#_list",
                         ownSessionID: self.sessionID,
                         delay: .zero,
@@ -1837,80 +1814,6 @@ public final class RecordListParentPolicy: InvocablePolicy {
                 }
                 }
             case 7:
-                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                sceBlock: do {
-                    if pendingPayloadTag != .recordListSupersede {
-                        break sceBlock
-                    }
-
-                // W3C SCXML 6.2: send id="__send_7"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.pendingRecordListSupersedePayload.id))
-                        sendParts.append(PayloadPair("id", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.pendingRecordListSupersedePayload.field))
-                        sendParts.append(PayloadPair("field", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(self.pendingRecordListSupersedePayload.wallTime)
-                        sendParts.append(PayloadPair("wallTime", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.pendingRecordListSupersedePayload.counter))
-                        sendParts.append(PayloadPair("counter", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.pendingRecordListSupersedePayload.nodeId)
-                        sendParts.append(PayloadPair("nodeId", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.pendingRecordListSupersedePayload.by)
-                        sendParts.append(PayloadPair("by", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2.4 + C.1: a targetexpr is a target — the value is routed as
-                    // the same value written in `target` is, at once or after the delay, by
-                    // the table `classifyTarget` holds. A literal `#_<invokeid>` is routed by it
-                    // too, to the child it names.
-                    let sendRouted = engine.sendToTarget(
-                        event: engine.resolveEventByName("record_list.supersede"),
-                        eventName: "record_list.supersede",
-                        target: "#_list",
-                        ownSessionID: self.sessionID,
-                        delay: .zero,
-                        sendID: "__send_7",
-                        eventData: sendEventData,
-                        sender: self.sessionID
-                    )
-                    if sendRouted == .notSupported {
-                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorExecution, message: "<send> target is not a target")
-                        sendError.metadata.sendID = "__send_7"
-                        engine.raise(sendError)
-
-                        break sceBlock  // W3C SCXML 4.9: the error ends the block
-                    }
-                    if sendRouted == .notReachable {
-                        var sendError = EventWithMetadata.platformError(RecordListParentEvent.errorCommunication, message: "<send> target names a session this processor cannot reach")
-                        sendError.metadata.sendID = "__send_7"
-                        engine.raise(sendError)
-
-                        break sceBlock  // W3C SCXML 4.9: the error ends the block
-                    }
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-            case 8:
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 sceBlock: do {
                     if pendingPayloadTag != .recordListRegister {
@@ -1962,7 +1865,7 @@ public final class RecordListParentPolicy: InvocablePolicy {
                 }
 
                 }
-            case 9:
+            case 8:
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 sceBlock: do {
                     if pendingPayloadTag != .recordListValue {
@@ -2016,7 +1919,7 @@ public final class RecordListParentPolicy: InvocablePolicy {
                 }
 
                 }
-            case 10:
+            case 9:
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 sceBlock: do {
                     if pendingPayloadTag != .recordListRefused {
@@ -2042,6 +1945,29 @@ public final class RecordListParentPolicy: InvocablePolicy {
     }}
 
 extension Engine where Policy == RecordListParentPolicy {
+    /// Raises `record_list.change` with its payload, binding the event and the payload's
+    /// values in one call so the pairing of a name and a type cannot be
+    /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are
+    /// filled: the typed one a native expression reads, and `data`, which is what
+    /// every other reader of `_event.data` binds it from.
+    /// A value past a bound its type declares, at any depth, is refused before
+    /// anything is raised (docs/adr/0086, section 5.4): the seam throws the
+    /// `BoundExceeded` that names the path to the place, and raises nothing.
+    public func raiseRecordListChange(by: UInt64, wallTime: Int64, counter: UInt32, ops: [RecordListParentOpRecord]) throws {
+        try checkList("ops", ops, least: 1, bound: 64, { scePath0, sceValue0 in try checkText(scePath0 + "/text", sceValue0.text, bound: 96) })
+        let scePayload = RecordListParentRecordListChangePayload(by: by, wallTime: wallTime, counter: counter, ops: ops)
+        raiseExternalWithMeta(
+            EventWithMetadata(
+                RecordListParentEvent.recordListChange,
+                metadata: EventMetadata(
+                    data: recordJSON([PayloadPair.json("by", rawJSON: WireValue.unsigned64(scePayload.by).json), PayloadPair.json("wallTime", rawJSON: WireValue.signed64(scePayload.wallTime).json), PayloadPair.json("counter", rawJSON: WireValue.integer(Int64(scePayload.counter)).json), PayloadPair.json("ops", rawJSON: listJSON(scePayload.ops, { (sceElement) -> String in recordJSON([PayloadPair.json("kind", rawJSON: WireValue.integer(Int64(sceElement.kind)).json), PayloadPair.json("id", rawJSON: WireValue.integer(Int64(sceElement.id)).json), PayloadPair.json("field", rawJSON: WireValue.integer(Int64(sceElement.field)).json), PayloadPair.json("value", rawJSON: WireValue.signed64(sceElement.value).json), PayloadPair.json("text", rawJSON: WireValue.text(sceElement.text).json), PayloadPair.json("wallTime", rawJSON: WireValue.signed64(sceElement.wallTime).json), PayloadPair.json("counter", rawJSON: WireValue.integer(Int64(sceElement.counter)).json), PayloadPair.json("nodeId", rawJSON: WireValue.unsigned64(sceElement.nodeId).json)]) }))]),
+                    eventType: .externalEvent,
+                    typedPayload: scePayload
+                )
+            )
+        )
+    }
+
     /// Raises `record_list.clear` with its payload, binding the event and the payload's
     /// values in one call so the pairing of a name and a type cannot be
     /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are
@@ -2083,14 +2009,14 @@ extension Engine where Policy == RecordListParentPolicy {
     /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are
     /// filled: the typed one a native expression reads, and `data`, which is what
     /// every other reader of `_event.data` binds it from.
-    public func raiseRecordListJoin(node: UInt64, hub: Bool) {
+    public func raiseRecordListJoin(node: UInt64) {
         raiseExternalWithMeta(
             EventWithMetadata(
                 RecordListParentEvent.recordListJoin,
                 metadata: EventMetadata(
-                    data: payloadJSON(.unsigned64("node", node), .truth("hub", hub)),
+                    data: payloadJSON(.unsigned64("node", node)),
                     eventType: .externalEvent,
-                    typedPayload: RecordListParentRecordListJoinPayload(node: node, hub: hub)
+                    typedPayload: RecordListParentRecordListJoinPayload(node: node)
                 )
             )
         )
@@ -2186,24 +2112,6 @@ extension Engine where Policy == RecordListParentPolicy {
         )
     }
 
-    /// Raises `record_list.supersede` with its payload, binding the event and the payload's
-    /// values in one call so the pairing of a name and a type cannot be
-    /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are
-    /// filled: the typed one a native expression reads, and `data`, which is what
-    /// every other reader of `_event.data` binds it from.
-    public func raiseRecordListSupersede(id: UInt32, field: UInt16, wallTime: Int64, counter: UInt32, nodeId: UInt64, by: UInt64, parts: UInt32, atWallTime: Int64, atCounter: UInt32) {
-        raiseExternalWithMeta(
-            EventWithMetadata(
-                RecordListParentEvent.recordListSupersede,
-                metadata: EventMetadata(
-                    data: payloadJSON(.integer("id", id), .integer("field", field), .signed64("wallTime", wallTime), .integer("counter", counter), .unsigned64("nodeId", nodeId), .unsigned64("by", by), .integer("parts", parts), .signed64("atWallTime", atWallTime), .integer("atCounter", atCounter)),
-                    eventType: .externalEvent,
-                    typedPayload: RecordListParentRecordListSupersedePayload(id: id, field: field, wallTime: wallTime, counter: counter, nodeId: nodeId, by: by, parts: parts, atWallTime: atWallTime, atCounter: atCounter)
-                )
-            )
-        )
-    }
-
     /// Raises `record_list.value` with its payload, binding the event and the payload's
     /// values in one call so the pairing of a name and a type cannot be
     /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are
@@ -2217,24 +2125,6 @@ extension Engine where Policy == RecordListParentPolicy {
                     data: payloadJSON(.integer("id", id), .integer("field", field), .integer("ordinal", ordinal), .signed64("value", value), .text("text", text), .signed64("wallTime", wallTime), .integer("counter", counter), .unsigned64("nodeId", nodeId)),
                     eventType: .externalEvent,
                     typedPayload: RecordListParentRecordListValuePayload(id: id, field: field, ordinal: ordinal, value: value, text: text, wallTime: wallTime, counter: counter, nodeId: nodeId)
-                )
-            )
-        )
-    }
-
-    /// Raises `record_list.write` with its payload, binding the event and the payload's
-    /// values in one call so the pairing of a name and a type cannot be
-    /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are
-    /// filled: the typed one a native expression reads, and `data`, which is what
-    /// every other reader of `_event.data` binds it from.
-    public func raiseRecordListWrite(id: UInt32, field: UInt16, value: Int64, text: String, wallTime: Int64, counter: UInt32, nodeId: UInt64, parts: UInt32) {
-        raiseExternalWithMeta(
-            EventWithMetadata(
-                RecordListParentEvent.recordListWrite,
-                metadata: EventMetadata(
-                    data: payloadJSON(.integer("id", id), .integer("field", field), .signed64("value", value), .text("text", text), .signed64("wallTime", wallTime), .integer("counter", counter), .unsigned64("nodeId", nodeId), .integer("parts", parts)),
-                    eventType: .externalEvent,
-                    typedPayload: RecordListParentRecordListWritePayload(id: id, field: field, value: value, text: text, wallTime: wallTime, counter: counter, nodeId: nodeId, parts: parts)
                 )
             )
         )

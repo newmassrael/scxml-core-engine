@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
+// source-hash: d05ce240c5f3b48b3c83b6bee1ba58feef40d57c310e9a29ef5279604bbaaa42
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -19,7 +19,7 @@
 // Implements StatePolicy with full transition logic, entry/exit actions, and
 // event processing.
 
-// SCE-MAP: todo_peer.scxml:99 :: _machine
+// SCE-MAP: todo_peer.scxml:78 :: _machine
 
 import SceRuntime
 import SceForgeRuntime
@@ -79,27 +79,18 @@ private let documentInitialTargetsOfTodoPeer: [TodoPeerTarget] = [.state(.open)]
 /// are selected under (§scxml-3.13).
 public enum TodoPeerEvent: Int, Hashable, Sendable {
     case errorExecution = 0
-    case todoAck = 1
+    case recordListChange = 1
     case todoAgenda = 2
-    case todoCompact = 3
-    case todoEdit = 4
-    case todoFloor = 5
-    case todoJoin = 6
-    case todoKeep = 7
-    case todoNode = 8
-    case todoPropose = 9
-    case todoResync = 10
-    case todoRole = 11
-    case todoRoom = 12
-    case todoSettle = 13
-    case todoShare = 14
-    case todoSupersede = 15
-    case todoVisit = 16
-    case todoWrite = 17
-    case todoZone = 18
-    case todoZoneClear = 19
+    case todoEdit = 3
+    case todoJoin = 4
+    case todoPass = 5
+    case todoRole = 6
+    case todoRoom = 7
+    case todoTake = 8
+    case todoZone = 9
+    case todoZoneClear = 10
     /// W3C SCXML 3.13: the sentinel for eventless transition dispatch.
-    case null = 20
+    case null = 11
 }
 
 // ======================================================================
@@ -221,39 +212,6 @@ public struct TodoPeerValueRecord: Equatable, Sendable, SceDefault {
             wallTime: try SavedValues.int64(try SavedValues.field(value, what, "wallTime"), "\(what).wallTime"),
             counter: try SavedValues.uint32(try SavedValues.field(value, what, "counter"), "\(what).counter"),
             nodeId: try SavedValues.uint64(try SavedValues.field(value, what, "nodeId"), "\(what).nodeId")
-        )
-    }
-}
-
-/// SCE Accepted Subset §2.15: a `record:Node` datamodel value.
-public struct TodoPeerNodeRecord: Equatable, Sendable, SceDefault {
-    public var depth: UInt8 = 0
-    public var prefix: UInt64 = 0
-    public var hash: UInt32 = 0
-
-    public init() {}
-
-    public init(depth: UInt8, prefix: UInt64, hash: UInt32) {
-        self.depth = depth
-        self.prefix = prefix
-        self.hash = hash
-    }
-
-    /// This value as a saved state writes it.
-    public func toSaved() -> JSONValue {
-        SavedValues.record([
-            (key: "depth", value: SavedValues.of(depth)),
-            (key: "prefix", value: SavedValues.of(prefix)),
-            (key: "hash", value: SavedValues.of(hash)),
-        ])
-    }
-
-    /// The value a saved state holds, refused unless it is one.
-    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> TodoPeerNodeRecord {
-        TodoPeerNodeRecord(
-            depth: try SavedValues.uint8(try SavedValues.field(value, what, "depth"), "\(what).depth"),
-            prefix: try SavedValues.uint64(try SavedValues.field(value, what, "prefix"), "\(what).prefix"),
-            hash: try SavedValues.uint32(try SavedValues.field(value, what, "hash"), "\(what).hash")
         )
     }
 }
@@ -500,35 +458,6 @@ public struct TodoPeerScheduleRecord: Equatable, Sendable, SceDefault {
     }
 }
 
-/// SCE Accepted Subset §2.15: a `record:Answer` datamodel value.
-public struct TodoPeerAnswerRecord: Equatable, Sendable, SceDefault {
-    public var sender: UInt64 = 0
-    public var hash: UInt32 = 0
-
-    public init() {}
-
-    public init(sender: UInt64, hash: UInt32) {
-        self.sender = sender
-        self.hash = hash
-    }
-
-    /// This value as a saved state writes it.
-    public func toSaved() -> JSONValue {
-        SavedValues.record([
-            (key: "sender", value: SavedValues.of(sender)),
-            (key: "hash", value: SavedValues.of(hash)),
-        ])
-    }
-
-    /// The value a saved state holds, refused unless it is one.
-    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> TodoPeerAnswerRecord {
-        TodoPeerAnswerRecord(
-            sender: try SavedValues.uint64(try SavedValues.field(value, what, "sender"), "\(what).sender"),
-            hash: try SavedValues.uint32(try SavedValues.field(value, what, "hash"), "\(what).hash")
-        )
-    }
-}
-
 /// SCE Accepted Subset §2.15: a `record:Member` datamodel value.
 public struct TodoPeerMemberRecord: Equatable, Sendable, SceDefault {
     public var node: UInt64 = 0
@@ -558,37 +487,81 @@ public struct TodoPeerMemberRecord: Equatable, Sendable, SceDefault {
     }
 }
 
+/// SCE Accepted Subset §2.15: a `record:Op` datamodel value.
+public struct TodoPeerOpRecord: Equatable, Sendable, SceDefault {
+    public var kind: UInt8 = 0
+    public var id: UInt32 = 0
+    public var field: UInt16 = 0
+    public var value: Int64 = 0
+    public var text: String = ""
+    public var wallTime: Int64 = 0
+    public var counter: UInt32 = 0
+    public var nodeId: UInt64 = 0
+
+    public init() {}
+
+    public init(kind: UInt8, id: UInt32, field: UInt16, value: Int64, text: String, wallTime: Int64, counter: UInt32, nodeId: UInt64) {
+        self.kind = kind
+        self.id = id
+        self.field = field
+        self.value = value
+        self.text = text
+        self.wallTime = wallTime
+        self.counter = counter
+        self.nodeId = nodeId
+    }
+
+    /// This value as a saved state writes it.
+    public func toSaved() -> JSONValue {
+        SavedValues.record([
+            (key: "kind", value: SavedValues.of(kind)),
+            (key: "id", value: SavedValues.of(id)),
+            (key: "field", value: SavedValues.of(field)),
+            (key: "value", value: SavedValues.of(value)),
+            (key: "text", value: SavedValues.of(text)),
+            (key: "wallTime", value: SavedValues.of(wallTime)),
+            (key: "counter", value: SavedValues.of(counter)),
+            (key: "nodeId", value: SavedValues.of(nodeId)),
+        ])
+    }
+
+    /// The value a saved state holds, refused unless it is one.
+    public static func fromSaved(_ value: JSONValue, _ what: String) throws -> TodoPeerOpRecord {
+        TodoPeerOpRecord(
+            kind: try SavedValues.uint8(try SavedValues.field(value, what, "kind"), "\(what).kind"),
+            id: try SavedValues.uint32(try SavedValues.field(value, what, "id"), "\(what).id"),
+            field: try SavedValues.uint16(try SavedValues.field(value, what, "field"), "\(what).field"),
+            value: try SavedValues.int64(try SavedValues.field(value, what, "value"), "\(what).value"),
+            text: try SavedValues.string(try SavedValues.field(value, what, "text"), "\(what).text", capacity: 96),
+            wallTime: try SavedValues.int64(try SavedValues.field(value, what, "wallTime"), "\(what).wallTime"),
+            counter: try SavedValues.uint32(try SavedValues.field(value, what, "counter"), "\(what).counter"),
+            nodeId: try SavedValues.uint64(try SavedValues.field(value, what, "nodeId"), "\(what).nodeId")
+        )
+    }
+}
+
 // NL-to-IR Item C1 Path A: the typed `_event.data` payload channel for the
 // events whose payload a natively lowered expression reads: a tag, and one
 // `pending<Event>Payload` view per event on the policy.
 enum TodoPeerPayloadTag {
     case none
-    case todoAck
+    case recordListChange
     case todoAgenda
-    case todoCompact
     case todoEdit
-    case todoFloor
     case todoJoin
-    case todoKeep
-    case todoNode
-    case todoPropose
     case todoRole
     case todoRoom
-    case todoSettle
-    case todoShare
-    case todoSupersede
-    case todoVisit
-    case todoWrite
     case todoZone
 }
 
-/// The typed `_event.data` payload of `todo.ack` (NL-to-IR Item C1 Path A): what a
+/// The typed `_event.data` payload of `record_list.change` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
-struct TodoPeerTodoAckPayload {
-    var sender: UInt64 = 0
-    var before: Int64 = 0
-    var hash: UInt32 = 0
+struct TodoPeerRecordListChangePayload {
+    var by: UInt64 = 0
+    var wallTime: Int64 = 0
+    var counter: UInt32 = 0
+    var ops: [TodoPeerOpRecord] = []
 }
 
 /// The typed `_event.data` payload of `todo.agenda` (NL-to-IR Item C1 Path A): what a
@@ -599,13 +572,6 @@ struct TodoPeerTodoAgendaPayload {
     var windowStart: Int64 = 0
     var windowEnd: Int64 = 0
     var skip: UInt32 = 0
-}
-
-/// The typed `_event.data` payload of `todo.compact` (NL-to-IR Item C1 Path A): what a
-/// natively lowered expression reads. Internal to the module; a host hands the
-/// values to the inject seam below.
-struct TodoPeerTodoCompactPayload {
-    var before: Int64 = 0
 }
 
 /// The typed `_event.data` payload of `todo.edit` (NL-to-IR Item C1 Path A): what a
@@ -619,50 +585,11 @@ struct TodoPeerTodoEditPayload {
     var now: Int64 = 0
 }
 
-/// The typed `_event.data` payload of `todo.floor` (NL-to-IR Item C1 Path A): what a
-/// natively lowered expression reads. Internal to the module; a host hands the
-/// values to the inject seam below.
-struct TodoPeerTodoFloorPayload {
-    var before: Int64 = 0
-    var hash: UInt32 = 0
-}
-
 /// The typed `_event.data` payload of `todo.join` (NL-to-IR Item C1 Path A): what a
 /// natively lowered expression reads. Internal to the module; a host hands the
 /// values to the inject seam below.
 struct TodoPeerTodoJoinPayload {
     var node: UInt64 = 0
-    var hub: Bool = false
-}
-
-/// The typed `_event.data` payload of `todo.keep` (NL-to-IR Item C1 Path A): what a
-/// natively lowered expression reads. Internal to the module; a host hands the
-/// values to the inject seam below.
-struct TodoPeerTodoKeepPayload {
-    var kind: UInt8 = 0
-    var element: UInt64 = 0
-    var wallTime: Int64 = 0
-    var counter: UInt32 = 0
-    var nodeId: UInt64 = 0
-}
-
-/// The typed `_event.data` payload of `todo.node` (NL-to-IR Item C1 Path A): what a
-/// natively lowered expression reads. Internal to the module; a host hands the
-/// values to the inject seam below.
-struct TodoPeerTodoNodePayload {
-    var sender: UInt64 = 0
-    var to: UInt64 = 0
-    var depth: UInt8 = 0
-    var prefix: UInt64 = 0
-    var hash: UInt32 = 0
-    var reply: Bool = false
-}
-
-/// The typed `_event.data` payload of `todo.propose` (NL-to-IR Item C1 Path A): what a
-/// natively lowered expression reads. Internal to the module; a host hands the
-/// values to the inject seam below.
-struct TodoPeerTodoProposePayload {
-    var before: Int64 = 0
 }
 
 /// The typed `_event.data` payload of `todo.role` (NL-to-IR Item C1 Path A): what a
@@ -678,59 +605,6 @@ struct TodoPeerTodoRolePayload {
 /// values to the inject seam below.
 struct TodoPeerTodoRoomPayload {
     var values: UInt32 = 0
-    var history: UInt32 = 0
-    var digest: UInt32 = 0
-}
-
-/// The typed `_event.data` payload of `todo.settle` (NL-to-IR Item C1 Path A): what a
-/// natively lowered expression reads. Internal to the module; a host hands the
-/// values to the inject seam below.
-struct TodoPeerTodoSettlePayload {
-    var before: Int64 = 0
-    var members: UInt32 = 0
-}
-
-/// The typed `_event.data` payload of `todo.share` (NL-to-IR Item C1 Path A): what a
-/// natively lowered expression reads. Internal to the module; a host hands the
-/// values to the inject seam below.
-struct TodoPeerTodoSharePayload {
-    var to: UInt64 = 0
-    var minute: UInt64 = 0
-}
-
-/// The typed `_event.data` payload of `todo.supersede` (NL-to-IR Item C1 Path A): what a
-/// natively lowered expression reads. Internal to the module; a host hands the
-/// values to the inject seam below.
-struct TodoPeerTodoSupersedePayload {
-    var id: UInt32 = 0
-    var field: UInt16 = 0
-    var wallTime: Int64 = 0
-    var counter: UInt32 = 0
-    var nodeId: UInt64 = 0
-    var by: UInt64 = 0
-}
-
-/// The typed `_event.data` payload of `todo.visit` (NL-to-IR Item C1 Path A): what a
-/// natively lowered expression reads. Internal to the module; a host hands the
-/// values to the inject seam below.
-struct TodoPeerTodoVisitPayload {
-    var to: UInt64 = 0
-    var depth: UInt8 = 0
-    var prefix: UInt64 = 0
-    var reply: Bool = false
-}
-
-/// The typed `_event.data` payload of `todo.write` (NL-to-IR Item C1 Path A): what a
-/// natively lowered expression reads. Internal to the module; a host hands the
-/// values to the inject seam below.
-struct TodoPeerTodoWritePayload {
-    var id: UInt32 = 0
-    var field: UInt16 = 0
-    var value: Int64 = 0
-    var text: String = ""
-    var wallTime: Int64 = 0
-    var counter: UInt32 = 0
-    var nodeId: UInt64 = 0
 }
 
 /// The typed `_event.data` payload of `todo.zone` (NL-to-IR Item C1 Path A): what a
@@ -767,11 +641,6 @@ private func call_EventRoster__v(_ p0: [TodoPeerMemberRecord], _ p1: UInt64, _ p
     return r.map { TodoPeerMemberRecord(node: $0.node, role: $0.role) }
 }
 
-private func call_EventSettled__vv(_ p0: [TodoPeerEntryRecord], _ p1: [TodoPeerEntryRecord], _ p2: Int64) throws -> UInt32 {
-    let r = try EventSettled.eventSettled(p0.map { OrsetEntryPayload(element: $0.element, wallTime: $0.wallTime, counter: $0.counter, nodeId: $0.nodeId) }, p1.map { OrsetEntryPayload(element: $0.element, wallTime: $0.wallTime, counter: $0.counter, nodeId: $0.nodeId) }, p2)
-    return r
-}
-
 private func call_HlcReceive__vv(_ p0: TodoPeerHlcRecord, _ p1: TodoPeerHlcRecord, _ p2: Int64, _ p3: UInt64) throws -> TodoPeerHlcRecord {
     let r = try HlcReceive.hlcReceive(HlcTimestampPayload(wallTime: p0.wallTime, counter: p0.counter, nodeId: p0.nodeId), HlcTimestampPayload(wallTime: p1.wallTime, counter: p1.counter, nodeId: p1.nodeId), p2, p3)
     return TodoPeerHlcRecord(wallTime: r.wallTime, counter: r.counter, nodeId: r.nodeId)
@@ -780,21 +649,6 @@ private func call_HlcReceive__vv(_ p0: TodoPeerHlcRecord, _ p1: TodoPeerHlcRecor
 private func call_HlcSend__v(_ p0: TodoPeerHlcRecord, _ p1: Int64, _ p2: UInt64) throws -> TodoPeerHlcRecord {
     let r = try HlcSend.hlcSend(HlcTimestampPayload(wallTime: p0.wallTime, counter: p0.counter, nodeId: p0.nodeId), p1, p2)
     return TodoPeerHlcRecord(wallTime: r.wallTime, counter: r.counter, nodeId: r.nodeId)
-}
-
-private func call_MerkleChangeHash__i(_ p0: TodoPeerEntryRecord, _ p1: UInt8) throws -> UInt32 {
-    let r = try MerkleChangeHash.merkleChangeHash(OrsetEntryPayload(element: p0.element, wallTime: p0.wallTime, counter: p0.counter, nodeId: p0.nodeId), p1)
-    return r
-}
-
-private func call_MerkleChangeHash__v(_ p0: TodoPeerEntryRecord, _ p1: UInt8) throws -> UInt32 {
-    let r = try MerkleChangeHash.merkleChangeHash(OrsetEntryPayload(element: p0.element, wallTime: p0.wallTime, counter: p0.counter, nodeId: p0.nodeId), p1)
-    return r
-}
-
-private func call_MerkleInsert__v(_ p0: [TodoPeerNodeRecord], _ p1: Int64, _ p2: UInt32) throws -> [TodoPeerNodeRecord] {
-    let r = try MerkleInsert.merkleInsert(p0.map { MerkleNodePayload(depth: $0.depth, prefix: $0.prefix, hash: $0.hash) }, p1, p2)
-    return r.map { TodoPeerNodeRecord(depth: $0.depth, prefix: $0.prefix, hash: $0.hash) }
 }
 
 private func call_MvValueDrop__vv(_ p0: [TodoPeerValueRecord], _ p1: TodoPeerValueRecord) throws -> [TodoPeerValueRecord] {
@@ -848,42 +702,28 @@ public final class TodoPeerPolicy: InvocablePolicy {
     // The typed `_event.data` of the event being processed, bound by the policy's
     // `populateEventMetadata` or lifted by `liftTypedPayload`.
     var pendingPayloadTag: TodoPeerPayloadTag = .none
-    var pendingTodoAckPayload = TodoPeerTodoAckPayload()
+    var pendingRecordListChangePayload = TodoPeerRecordListChangePayload()
     var pendingTodoAgendaPayload = TodoPeerTodoAgendaPayload()
-    var pendingTodoCompactPayload = TodoPeerTodoCompactPayload()
     var pendingTodoEditPayload = TodoPeerTodoEditPayload()
-    var pendingTodoFloorPayload = TodoPeerTodoFloorPayload()
     var pendingTodoJoinPayload = TodoPeerTodoJoinPayload()
-    var pendingTodoKeepPayload = TodoPeerTodoKeepPayload()
-    var pendingTodoNodePayload = TodoPeerTodoNodePayload()
-    var pendingTodoProposePayload = TodoPeerTodoProposePayload()
     var pendingTodoRolePayload = TodoPeerTodoRolePayload()
     var pendingTodoRoomPayload = TodoPeerTodoRoomPayload()
-    var pendingTodoSettlePayload = TodoPeerTodoSettlePayload()
-    var pendingTodoSharePayload = TodoPeerTodoSharePayload()
-    var pendingTodoSupersedePayload = TodoPeerTodoSupersedePayload()
-    var pendingTodoVisitPayload = TodoPeerTodoVisitPayload()
-    var pendingTodoWritePayload = TodoPeerTodoWritePayload()
     var pendingTodoZonePayload = TodoPeerTodoZonePayload()
 
 
     // ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
     /// W3C SCXML 5.2: the `node` datamodel variable, published (`sce:direction="out"`).
     var vNode: UInt64 = 0
-    /// W3C SCXML 5.2: the `hub` datamodel variable, published (`sce:direction="out"`).
-    var vHub: Bool = false
     /// W3C SCXML 5.2: the `clock` datamodel variable, published (`sce:direction="out"`).
     var vClock: TodoPeerHlcRecord = TodoPeerHlcRecord(wallTime: 0, counter: 0, nodeId: 0)
     /// W3C SCXML 5.2: the `stamp` datamodel variable.
     var vStamp: TodoPeerHlcRecord = TodoPeerHlcRecord(wallTime: 0, counter: 0, nodeId: 0)
+    /// W3C SCXML 5.2: the `dot` datamodel variable.
+    var vDot: TodoPeerHlcRecord = TodoPeerHlcRecord(wallTime: 0, counter: 0, nodeId: 0)
     /// W3C SCXML 5.2: the `adds` datamodel variable, published (`sce:direction="out"`).
     var vAdds: [TodoPeerEntryRecord] = []
-    /// W3C SCXML 5.2: the `tombstones` datamodel variable, published (`sce:direction="out"`).
-    var vTombstones: [TodoPeerEntryRecord] = []
     /// W3C SCXML 5.2: the `one` datamodel variable.
     var vOne: [TodoPeerEntryRecord] = []
-    /// W3C SCXML 5.2: the `stable` datamodel variable.
-    var vStable: [TodoPeerEntryRecord] = []
     /// W3C SCXML 5.2: the `entry` datamodel variable.
     var vEntry: TodoPeerEntryRecord = TodoPeerEntryRecord(element: 0, wallTime: 0, counter: 0, nodeId: 0)
     /// W3C SCXML 5.2: the `values` datamodel variable, published (`sce:direction="out"`).
@@ -892,20 +732,8 @@ public final class TodoPeerPolicy: InvocablePolicy {
     var vTyped: String = ""
     /// W3C SCXML 5.2: the `held` datamodel variable.
     var vHeld: TodoPeerValueRecord = TodoPeerValueRecord(id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0)
-    /// W3C SCXML 5.2: the `digest` datamodel variable, published (`sce:direction="out"`).
-    var vDigest: [TodoPeerNodeRecord] = []
-    /// W3C SCXML 5.2: the `mine` datamodel variable.
-    var vMine: UInt32 = 0
-    /// W3C SCXML 5.2: the `shareId` datamodel variable.
-    var vShareId: UInt32 = 0
-    /// W3C SCXML 5.2: the `shareField` datamodel variable.
-    var vShareField: UInt16 = 0
-    /// W3C SCXML 5.2: the `known` datamodel variable.
-    var vKnown: Bool = false
     /// W3C SCXML 5.2: the `wasLive` datamodel variable.
     var vWasLive: Bool = false
-    /// W3C SCXML 5.2: the `isLive` datamodel variable.
-    var vIsLive: Bool = false
     /// W3C SCXML 5.2: the `present` datamodel variable.
     var vPresent: Bool = false
     /// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
@@ -950,40 +778,12 @@ public final class TodoPeerPolicy: InvocablePolicy {
     var vRawLast: UInt32 = 0
     /// W3C SCXML 5.2: the `utcSec` datamodel variable.
     var vUtcSec: Int64 = 0
-    /// W3C SCXML 5.2: the `floor` datamodel variable, published (`sce:direction="out"`).
-    var vFloor: Int64 = 0
-    /// W3C SCXML 5.2: the `stale` datamodel variable, published (`sce:direction="out"`).
-    var vStale: Bool = false
-    /// W3C SCXML 5.2: the `late` datamodel variable, published (`sce:direction="out"`).
-    var vLate: UInt32 = 0
-    /// W3C SCXML 5.2: the `frozenFor` datamodel variable.
-    var vFrozenFor: Int64 = -1
-    /// W3C SCXML 5.2: the `frozenHash` datamodel variable.
-    var vFrozenHash: UInt32 = 0
-    /// W3C SCXML 5.2: the `pending` datamodel variable.
-    var vPending: Int64 = -1
-    /// W3C SCXML 5.2: the `members` datamodel variable.
-    var vMembers: UInt32 = 0
-    /// W3C SCXML 5.2: the `agreeing` datamodel variable.
-    var vAgreeing: UInt32 = 0
-    /// W3C SCXML 5.2: the `answers` datamodel variable.
-    var vAnswers: [TodoPeerAnswerRecord] = []
-    /// W3C SCXML 5.2: the `answer` datamodel variable.
-    var vAnswer: TodoPeerAnswerRecord = TodoPeerAnswerRecord(sender: 0, hash: 0)
-    /// W3C SCXML 5.2: the `agreed` datamodel variable.
-    var vAgreed: UInt32 = 0
     /// W3C SCXML 5.2: the `roomValues` datamodel variable.
     var vRoomValues: UInt32 = 0
-    /// W3C SCXML 5.2: the `roomHistory` datamodel variable.
-    var vRoomHistory: UInt32 = 0
-    /// W3C SCXML 5.2: the `roomDigest` datamodel variable.
-    var vRoomDigest: UInt32 = 0
     /// W3C SCXML 5.2: the `full` datamodel variable, published (`sce:direction="out"`).
     var vFull: UInt32 = 0
-    /// W3C SCXML 5.2: the `fresh` datamodel variable.
-    var vFresh: Bool = false
-    /// W3C SCXML 5.2: the `blocked` datamodel variable.
-    var vBlocked: Bool = false
+    /// W3C SCXML 5.2: the `gone` datamodel variable.
+    var vGone: UInt32 = 0
     /// W3C SCXML 5.2: the `roster` datamodel variable.
     var vRoster: [TodoPeerMemberRecord] = []
     /// W3C SCXML 5.2: the `denied` datamodel variable, published (`sce:direction="out"`).
@@ -992,14 +792,16 @@ public final class TodoPeerPolicy: InvocablePolicy {
     var vForbidden: Bool = false
     /// W3C SCXML 5.2: the `authorized` datamodel variable.
     var vAuthorized: Bool = true
+    /// W3C SCXML 5.2: the `taking` datamodel variable.
+    var vTaking: [TodoPeerOpRecord] = []
+    /// W3C SCXML 5.2: the `took` datamodel variable.
+    var vTook: UInt32 = 0
+    /// W3C SCXML 5.2: the `op` datamodel variable.
+    var vOp: TodoPeerOpRecord = TodoPeerOpRecord(kind: 0, id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0)
 
     /// Reports what the published `node` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
     public var node: UInt64 { vNode }
-
-    /// Reports what the published `hub` datamodel variable holds now
-    /// (W3C SCXML 5.2). Only the machine writes it.
-    public var hub: Bool { vHub }
 
     /// Reports what the published `clock` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -1009,17 +811,9 @@ public final class TodoPeerPolicy: InvocablePolicy {
     /// (W3C SCXML 5.2). Only the machine writes it.
     public var adds: [TodoPeerEntryRecord] { vAdds }
 
-    /// Reports what the published `tombstones` datamodel variable holds now
-    /// (W3C SCXML 5.2). Only the machine writes it.
-    public var tombstones: [TodoPeerEntryRecord] { vTombstones }
-
     /// Reports what the published `values` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
     public var values: [TodoPeerValueRecord] { vValues }
-
-    /// Reports what the published `digest` datamodel variable holds now
-    /// (W3C SCXML 5.2). Only the machine writes it.
-    public var digest: [TodoPeerNodeRecord] { vDigest }
 
     /// Reports what the published `refusals` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -1032,18 +826,6 @@ public final class TodoPeerPolicy: InvocablePolicy {
     /// Reports what the published `agendaNext` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
     public var agendaNext: UInt32 { vAgendaNext }
-
-    /// Reports what the published `floor` datamodel variable holds now
-    /// (W3C SCXML 5.2). Only the machine writes it.
-    public var floor: Int64 { vFloor }
-
-    /// Reports what the published `stale` datamodel variable holds now
-    /// (W3C SCXML 5.2). Only the machine writes it.
-    public var stale: Bool { vStale }
-
-    /// Reports what the published `late` datamodel variable holds now
-    /// (W3C SCXML 5.2). Only the machine writes it.
-    public var late: UInt32 { vLate }
 
     /// Reports what the published `full` datamodel variable holds now
     /// (W3C SCXML 5.2). Only the machine writes it.
@@ -1060,14 +842,8 @@ public final class TodoPeerPolicy: InvocablePolicy {
     public struct InvokeParams {
         public init() {}
         public var vNode: UInt64? = nil
-        public var vHub: Bool? = nil
         public var vTyped: String? = nil
-        public var vMine: UInt32? = nil
-        public var vShareId: UInt32? = nil
-        public var vShareField: UInt16? = nil
-        public var vKnown: Bool? = nil
         public var vWasLive: Bool? = nil
-        public var vIsLive: Bool? = nil
         public var vPresent: Bool? = nil
         public var vRefusals: UInt32? = nil
         public var vAgendaNext: UInt32? = nil
@@ -1076,24 +852,13 @@ public final class TodoPeerPolicy: InvocablePolicy {
         public var vRawCount: UInt32? = nil
         public var vRawLast: UInt32? = nil
         public var vUtcSec: Int64? = nil
-        public var vFloor: Int64? = nil
-        public var vStale: Bool? = nil
-        public var vLate: UInt32? = nil
-        public var vFrozenFor: Int64? = nil
-        public var vFrozenHash: UInt32? = nil
-        public var vPending: Int64? = nil
-        public var vMembers: UInt32? = nil
-        public var vAgreeing: UInt32? = nil
-        public var vAgreed: UInt32? = nil
         public var vRoomValues: UInt32? = nil
-        public var vRoomHistory: UInt32? = nil
-        public var vRoomDigest: UInt32? = nil
         public var vFull: UInt32? = nil
-        public var vFresh: Bool? = nil
-        public var vBlocked: Bool? = nil
+        public var vGone: UInt32? = nil
         public var vDenied: UInt32? = nil
         public var vForbidden: Bool? = nil
         public var vAuthorized: Bool? = nil
+        public var vTook: UInt32? = nil
     }
 
     /// Gives this machine the values `params` carries, in place of the ones its
@@ -1102,29 +867,11 @@ public final class TodoPeerPolicy: InvocablePolicy {
         if let value = params.vNode {
             vNode = value
         }
-        if let value = params.vHub {
-            vHub = value
-        }
         if let value = params.vTyped {
             vTyped = value
         }
-        if let value = params.vMine {
-            vMine = value
-        }
-        if let value = params.vShareId {
-            vShareId = value
-        }
-        if let value = params.vShareField {
-            vShareField = value
-        }
-        if let value = params.vKnown {
-            vKnown = value
-        }
         if let value = params.vWasLive {
             vWasLive = value
-        }
-        if let value = params.vIsLive {
-            vIsLive = value
         }
         if let value = params.vPresent {
             vPresent = value
@@ -1150,50 +897,14 @@ public final class TodoPeerPolicy: InvocablePolicy {
         if let value = params.vUtcSec {
             vUtcSec = value
         }
-        if let value = params.vFloor {
-            vFloor = value
-        }
-        if let value = params.vStale {
-            vStale = value
-        }
-        if let value = params.vLate {
-            vLate = value
-        }
-        if let value = params.vFrozenFor {
-            vFrozenFor = value
-        }
-        if let value = params.vFrozenHash {
-            vFrozenHash = value
-        }
-        if let value = params.vPending {
-            vPending = value
-        }
-        if let value = params.vMembers {
-            vMembers = value
-        }
-        if let value = params.vAgreeing {
-            vAgreeing = value
-        }
-        if let value = params.vAgreed {
-            vAgreed = value
-        }
         if let value = params.vRoomValues {
             vRoomValues = value
-        }
-        if let value = params.vRoomHistory {
-            vRoomHistory = value
-        }
-        if let value = params.vRoomDigest {
-            vRoomDigest = value
         }
         if let value = params.vFull {
             vFull = value
         }
-        if let value = params.vFresh {
-            vFresh = value
-        }
-        if let value = params.vBlocked {
-            vBlocked = value
+        if let value = params.vGone {
+            vGone = value
         }
         if let value = params.vDenied {
             vDenied = value
@@ -1203,6 +914,9 @@ public final class TodoPeerPolicy: InvocablePolicy {
         }
         if let value = params.vAuthorized {
             vAuthorized = value
+        }
+        if let value = params.vTook {
+            vTook = value
         }
     }
 
@@ -1334,40 +1048,22 @@ public final class TodoPeerPolicy: InvocablePolicy {
         switch event {
         case .errorExecution:
             return "error.execution"
-        case .todoAck:
-            return "todo.ack"
+        case .recordListChange:
+            return "record_list.change"
         case .todoAgenda:
             return "todo.agenda"
-        case .todoCompact:
-            return "todo.compact"
         case .todoEdit:
             return "todo.edit"
-        case .todoFloor:
-            return "todo.floor"
         case .todoJoin:
             return "todo.join"
-        case .todoKeep:
-            return "todo.keep"
-        case .todoNode:
-            return "todo.node"
-        case .todoPropose:
-            return "todo.propose"
-        case .todoResync:
-            return "todo.resync"
+        case .todoPass:
+            return "todo.pass"
         case .todoRole:
             return "todo.role"
         case .todoRoom:
             return "todo.room"
-        case .todoSettle:
-            return "todo.settle"
-        case .todoShare:
-            return "todo.share"
-        case .todoSupersede:
-            return "todo.supersede"
-        case .todoVisit:
-            return "todo.visit"
-        case .todoWrite:
-            return "todo.write"
+        case .todoTake:
+            return "todo.take"
         case .todoZone:
             return "todo.zone"
         case .todoZoneClear:
@@ -1382,40 +1078,22 @@ public final class TodoPeerPolicy: InvocablePolicy {
         switch name {
         case "error.execution":
             return .errorExecution
-        case "todo.ack":
-            return .todoAck
+        case "record_list.change":
+            return .recordListChange
         case "todo.agenda":
             return .todoAgenda
-        case "todo.compact":
-            return .todoCompact
         case "todo.edit":
             return .todoEdit
-        case "todo.floor":
-            return .todoFloor
         case "todo.join":
             return .todoJoin
-        case "todo.keep":
-            return .todoKeep
-        case "todo.node":
-            return .todoNode
-        case "todo.propose":
-            return .todoPropose
-        case "todo.resync":
-            return .todoResync
+        case "todo.pass":
+            return .todoPass
         case "todo.role":
             return .todoRole
         case "todo.room":
             return .todoRoom
-        case "todo.settle":
-            return .todoSettle
-        case "todo.share":
-            return .todoShare
-        case "todo.supersede":
-            return .todoSupersede
-        case "todo.visit":
-            return .todoVisit
-        case "todo.write":
-            return .todoWrite
+        case "todo.take":
+            return .todoTake
         case "todo.zone":
             return .todoZone
         case "todo.zone_clear":
@@ -1472,54 +1150,24 @@ public final class TodoPeerPolicy: InvocablePolicy {
     public func populateEventMetadata(_ metadata: EventMetadata) {
         pendingPayloadTag = .none
         switch metadata.typedPayload {
-        case let payload as TodoPeerTodoAckPayload:
-            pendingPayloadTag = .todoAck
-            pendingTodoAckPayload = payload
+        case let payload as TodoPeerRecordListChangePayload:
+            pendingPayloadTag = .recordListChange
+            pendingRecordListChangePayload = payload
         case let payload as TodoPeerTodoAgendaPayload:
             pendingPayloadTag = .todoAgenda
             pendingTodoAgendaPayload = payload
-        case let payload as TodoPeerTodoCompactPayload:
-            pendingPayloadTag = .todoCompact
-            pendingTodoCompactPayload = payload
         case let payload as TodoPeerTodoEditPayload:
             pendingPayloadTag = .todoEdit
             pendingTodoEditPayload = payload
-        case let payload as TodoPeerTodoFloorPayload:
-            pendingPayloadTag = .todoFloor
-            pendingTodoFloorPayload = payload
         case let payload as TodoPeerTodoJoinPayload:
             pendingPayloadTag = .todoJoin
             pendingTodoJoinPayload = payload
-        case let payload as TodoPeerTodoKeepPayload:
-            pendingPayloadTag = .todoKeep
-            pendingTodoKeepPayload = payload
-        case let payload as TodoPeerTodoNodePayload:
-            pendingPayloadTag = .todoNode
-            pendingTodoNodePayload = payload
-        case let payload as TodoPeerTodoProposePayload:
-            pendingPayloadTag = .todoPropose
-            pendingTodoProposePayload = payload
         case let payload as TodoPeerTodoRolePayload:
             pendingPayloadTag = .todoRole
             pendingTodoRolePayload = payload
         case let payload as TodoPeerTodoRoomPayload:
             pendingPayloadTag = .todoRoom
             pendingTodoRoomPayload = payload
-        case let payload as TodoPeerTodoSettlePayload:
-            pendingPayloadTag = .todoSettle
-            pendingTodoSettlePayload = payload
-        case let payload as TodoPeerTodoSharePayload:
-            pendingPayloadTag = .todoShare
-            pendingTodoSharePayload = payload
-        case let payload as TodoPeerTodoSupersedePayload:
-            pendingPayloadTag = .todoSupersede
-            pendingTodoSupersedePayload = payload
-        case let payload as TodoPeerTodoVisitPayload:
-            pendingPayloadTag = .todoVisit
-            pendingTodoVisitPayload = payload
-        case let payload as TodoPeerTodoWritePayload:
-            pendingPayloadTag = .todoWrite
-            pendingTodoWritePayload = payload
         case let payload as TodoPeerTodoZonePayload:
             pendingPayloadTag = .todoZone
             pendingTodoZonePayload = payload
@@ -1538,14 +1186,15 @@ public final class TodoPeerPolicy: InvocablePolicy {
             return
         }
         switch event {
-        case .todoAck:
+        case .recordListChange:
             let fields = try PayloadFields.decode(metadata.data)
-            var payload = TodoPeerTodoAckPayload()
-            payload.sender = try fields.unsigned64("sender")
-            payload.before = try fields.signed64("before")
-            payload.hash = try fields.unsigned("hash")
-            pendingTodoAckPayload = payload
-            pendingPayloadTag = .todoAck
+            var payload = TodoPeerRecordListChangePayload()
+            payload.by = try ({ (sceValue: PayloadValue) throws -> UInt64 in try sceValue.unsigned64() })(fields.field("by"))
+            payload.wallTime = try ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(fields.field("wallTime"))
+            payload.counter = try ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(fields.field("counter"))
+            payload.ops = try ({ (sceValue: PayloadValue) throws -> [TodoPeerOpRecord] in try sceValue.list(least: 1, bound: 64, { (sceValue: PayloadValue) throws -> TodoPeerOpRecord in try sceValue.record({ (sceFields: PayloadFields) throws -> TodoPeerOpRecord in try TodoPeerOpRecord(kind: ({ (sceValue: PayloadValue) throws -> UInt8 in try sceValue.unsigned() })(sceFields.field("kind")), id: ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(sceFields.field("id")), field: ({ (sceValue: PayloadValue) throws -> UInt16 in try sceValue.unsigned() })(sceFields.field("field")), value: ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(sceFields.field("value")), text: ({ (sceValue: PayloadValue) throws -> String in try sceValue.text(bound: 96) })(sceFields.field("text")), wallTime: ({ (sceValue: PayloadValue) throws -> Int64 in try sceValue.signed64() })(sceFields.field("wallTime")), counter: ({ (sceValue: PayloadValue) throws -> UInt32 in try sceValue.unsigned() })(sceFields.field("counter")), nodeId: ({ (sceValue: PayloadValue) throws -> UInt64 in try sceValue.unsigned64() })(sceFields.field("nodeId"))) }) }) })(fields.field("ops"))
+            pendingRecordListChangePayload = payload
+            pendingPayloadTag = .recordListChange
         case .todoAgenda:
             let fields = try PayloadFields.decode(metadata.data)
             var payload = TodoPeerTodoAgendaPayload()
@@ -1555,12 +1204,6 @@ public final class TodoPeerPolicy: InvocablePolicy {
             payload.skip = try fields.unsigned("skip")
             pendingTodoAgendaPayload = payload
             pendingPayloadTag = .todoAgenda
-        case .todoCompact:
-            let fields = try PayloadFields.decode(metadata.data)
-            var payload = TodoPeerTodoCompactPayload()
-            payload.before = try fields.signed64("before")
-            pendingTodoCompactPayload = payload
-            pendingPayloadTag = .todoCompact
         case .todoEdit:
             let fields = try PayloadFields.decode(metadata.data)
             var payload = TodoPeerTodoEditPayload()
@@ -1571,47 +1214,12 @@ public final class TodoPeerPolicy: InvocablePolicy {
             payload.now = try fields.signed64("now")
             pendingTodoEditPayload = payload
             pendingPayloadTag = .todoEdit
-        case .todoFloor:
-            let fields = try PayloadFields.decode(metadata.data)
-            var payload = TodoPeerTodoFloorPayload()
-            payload.before = try fields.signed64("before")
-            payload.hash = try fields.unsigned("hash")
-            pendingTodoFloorPayload = payload
-            pendingPayloadTag = .todoFloor
         case .todoJoin:
             let fields = try PayloadFields.decode(metadata.data)
             var payload = TodoPeerTodoJoinPayload()
             payload.node = try fields.unsigned64("node")
-            payload.hub = try fields.truth("hub")
             pendingTodoJoinPayload = payload
             pendingPayloadTag = .todoJoin
-        case .todoKeep:
-            let fields = try PayloadFields.decode(metadata.data)
-            var payload = TodoPeerTodoKeepPayload()
-            payload.kind = try fields.unsigned("kind")
-            payload.element = try fields.unsigned64("element")
-            payload.wallTime = try fields.signed64("wallTime")
-            payload.counter = try fields.unsigned("counter")
-            payload.nodeId = try fields.unsigned64("nodeId")
-            pendingTodoKeepPayload = payload
-            pendingPayloadTag = .todoKeep
-        case .todoNode:
-            let fields = try PayloadFields.decode(metadata.data)
-            var payload = TodoPeerTodoNodePayload()
-            payload.sender = try fields.unsigned64("sender")
-            payload.to = try fields.unsigned64("to")
-            payload.depth = try fields.unsigned("depth")
-            payload.prefix = try fields.unsigned64("prefix")
-            payload.hash = try fields.unsigned("hash")
-            payload.reply = try fields.truth("reply")
-            pendingTodoNodePayload = payload
-            pendingPayloadTag = .todoNode
-        case .todoPropose:
-            let fields = try PayloadFields.decode(metadata.data)
-            var payload = TodoPeerTodoProposePayload()
-            payload.before = try fields.signed64("before")
-            pendingTodoProposePayload = payload
-            pendingPayloadTag = .todoPropose
         case .todoRole:
             let fields = try PayloadFields.decode(metadata.data)
             var payload = TodoPeerTodoRolePayload()
@@ -1623,56 +1231,8 @@ public final class TodoPeerPolicy: InvocablePolicy {
             let fields = try PayloadFields.decode(metadata.data)
             var payload = TodoPeerTodoRoomPayload()
             payload.values = try fields.unsigned("values")
-            payload.history = try fields.unsigned("history")
-            payload.digest = try fields.unsigned("digest")
             pendingTodoRoomPayload = payload
             pendingPayloadTag = .todoRoom
-        case .todoSettle:
-            let fields = try PayloadFields.decode(metadata.data)
-            var payload = TodoPeerTodoSettlePayload()
-            payload.before = try fields.signed64("before")
-            payload.members = try fields.unsigned("members")
-            pendingTodoSettlePayload = payload
-            pendingPayloadTag = .todoSettle
-        case .todoShare:
-            let fields = try PayloadFields.decode(metadata.data)
-            var payload = TodoPeerTodoSharePayload()
-            payload.to = try fields.unsigned64("to")
-            payload.minute = try fields.unsigned64("minute")
-            pendingTodoSharePayload = payload
-            pendingPayloadTag = .todoShare
-        case .todoSupersede:
-            let fields = try PayloadFields.decode(metadata.data)
-            var payload = TodoPeerTodoSupersedePayload()
-            payload.id = try fields.unsigned("id")
-            payload.field = try fields.unsigned("field")
-            payload.wallTime = try fields.signed64("wallTime")
-            payload.counter = try fields.unsigned("counter")
-            payload.nodeId = try fields.unsigned64("nodeId")
-            payload.by = try fields.unsigned64("by")
-            pendingTodoSupersedePayload = payload
-            pendingPayloadTag = .todoSupersede
-        case .todoVisit:
-            let fields = try PayloadFields.decode(metadata.data)
-            var payload = TodoPeerTodoVisitPayload()
-            payload.to = try fields.unsigned64("to")
-            payload.depth = try fields.unsigned("depth")
-            payload.prefix = try fields.unsigned64("prefix")
-            payload.reply = try fields.truth("reply")
-            pendingTodoVisitPayload = payload
-            pendingPayloadTag = .todoVisit
-        case .todoWrite:
-            let fields = try PayloadFields.decode(metadata.data)
-            var payload = TodoPeerTodoWritePayload()
-            payload.id = try fields.unsigned("id")
-            payload.field = try fields.unsigned("field")
-            payload.value = try fields.signed64("value")
-            payload.text = try fields.text("text", bound: 96)
-            payload.wallTime = try fields.signed64("wallTime")
-            payload.counter = try fields.unsigned("counter")
-            payload.nodeId = try fields.unsigned64("nodeId")
-            pendingTodoWritePayload = payload
-            pendingPayloadTag = .todoWrite
         case .todoZone:
             let fields = try PayloadFields.decode(metadata.data)
             var payload = TodoPeerTodoZonePayload()
@@ -1787,9 +1347,8 @@ public final class TodoPeerPolicy: InvocablePolicy {
                     )
                 }
             }
-            if event == .todoWrite {
-                // W3C SCXML 5.9: cond="floor > 0 && _event.data.wallTime <= floor" lowered to Swift at build time
-                if (self.pendingPayloadTag == .todoWrite && (self.vFloor > 0 && self.pendingTodoWritePayload.wallTime <= self.vFloor)) {
+            if event == .recordListChange {
+                do {
                     return EnabledTransition(
                         source: state,
                         targets: [],
@@ -1799,7 +1358,7 @@ public final class TodoPeerPolicy: InvocablePolicy {
                     )
                 }
             }
-            if event == .todoWrite {
+            if event == .todoTake {
                 do {
                     return EnabledTransition(
                         source: state,
@@ -1810,7 +1369,7 @@ public final class TodoPeerPolicy: InvocablePolicy {
                     )
                 }
             }
-            if event == .todoSupersede {
+            if event == .todoPass {
                 do {
                     return EnabledTransition(
                         source: state,
@@ -1821,7 +1380,7 @@ public final class TodoPeerPolicy: InvocablePolicy {
                     )
                 }
             }
-            if event == .todoKeep {
+            if event == .todoAgenda {
                 do {
                     return EnabledTransition(
                         source: state,
@@ -1832,7 +1391,7 @@ public final class TodoPeerPolicy: InvocablePolicy {
                     )
                 }
             }
-            if event == .todoCompact {
+            if event == .todoZone {
                 do {
                     return EnabledTransition(
                         source: state,
@@ -1843,7 +1402,7 @@ public final class TodoPeerPolicy: InvocablePolicy {
                     )
                 }
             }
-            if event == .todoSettle {
+            if event == .todoZoneClear {
                 do {
                     return EnabledTransition(
                         source: state,
@@ -1854,122 +1413,12 @@ public final class TodoPeerPolicy: InvocablePolicy {
                     )
                 }
             }
-            if event == .todoPropose {
-                do {
-                    return EnabledTransition(
-                        source: state,
-                        targets: [],
-                        transitionIndex: 10,
-                        hasActions: true,
-                        isInternal: true
-                    )
-                }
-            }
-            if event == .todoAck {
-                do {
-                    return EnabledTransition(
-                        source: state,
-                        targets: [],
-                        transitionIndex: 11,
-                        hasActions: true,
-                        isInternal: true
-                    )
-                }
-            }
-            if event == .todoFloor {
-                do {
-                    return EnabledTransition(
-                        source: state,
-                        targets: [],
-                        transitionIndex: 12,
-                        hasActions: true,
-                        isInternal: true
-                    )
-                }
-            }
-            if event == .todoResync {
-                do {
-                    return EnabledTransition(
-                        source: state,
-                        targets: [],
-                        transitionIndex: 13,
-                        hasActions: true,
-                        isInternal: true
-                    )
-                }
-            }
-            if event == .todoVisit {
-                do {
-                    return EnabledTransition(
-                        source: state,
-                        targets: [],
-                        transitionIndex: 14,
-                        hasActions: true,
-                        isInternal: true
-                    )
-                }
-            }
-            if event == .todoNode {
-                do {
-                    return EnabledTransition(
-                        source: state,
-                        targets: [],
-                        transitionIndex: 15,
-                        hasActions: true,
-                        isInternal: true
-                    )
-                }
-            }
-            if event == .todoShare {
-                do {
-                    return EnabledTransition(
-                        source: state,
-                        targets: [],
-                        transitionIndex: 16,
-                        hasActions: true,
-                        isInternal: true
-                    )
-                }
-            }
-            if event == .todoAgenda {
-                do {
-                    return EnabledTransition(
-                        source: state,
-                        targets: [],
-                        transitionIndex: 17,
-                        hasActions: true,
-                        isInternal: true
-                    )
-                }
-            }
-            if event == .todoZone {
-                do {
-                    return EnabledTransition(
-                        source: state,
-                        targets: [],
-                        transitionIndex: 18,
-                        hasActions: true,
-                        isInternal: true
-                    )
-                }
-            }
-            if event == .todoZoneClear {
-                do {
-                    return EnabledTransition(
-                        source: state,
-                        targets: [],
-                        transitionIndex: 19,
-                        hasActions: true,
-                        isInternal: true
-                    )
-                }
-            }
             if event == .errorExecution {
                 do {
                     return EnabledTransition(
                         source: state,
                         targets: [],
-                        transitionIndex: 20,
+                        transitionIndex: 10,
                         hasActions: true,
                         isInternal: true
                     )
@@ -1997,10 +1446,6 @@ public final class TodoPeerPolicy: InvocablePolicy {
 
                 self.vNode = self.pendingTodoJoinPayload.node
 
-
-
-                self.vHub = self.pendingTodoJoinPayload.hub
-
                 }
             case 1:
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
@@ -2011,14 +1456,6 @@ public final class TodoPeerPolicy: InvocablePolicy {
 
 
                 self.vRoomValues = self.pendingTodoRoomPayload.values
-
-
-
-                self.vRoomHistory = self.pendingTodoRoomPayload.history
-
-
-
-                self.vRoomDigest = self.pendingTodoRoomPayload.digest
 
                 }
             case 2:
@@ -2048,12 +1485,6 @@ public final class TodoPeerPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingTodoEditPayload.text, capacity: 96); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='held.text'>: an integer operation overflowed or failed")); return true }; self.vHeld.text = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-
                 self.vEntry.element = UInt64(self.pendingTodoEditPayload.id)
 
 
@@ -2062,23 +1493,6 @@ public final class TodoPeerPolicy: InvocablePolicy {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
-
-
-                self.vFresh = true
-
-
-                // W3C SCXML 4.6: <foreach array="adds" item="o">, a native loop over a sce-static list
-                for o in self.vAdds {
-                    _ = o
-
-                if (o.element == self.vEntry.element) {
-
-
-                self.vFresh = false
-
-                }
-
-                }
 
 
                 self.vForbidden = false
@@ -2105,10 +1519,6 @@ public final class TodoPeerPolicy: InvocablePolicy {
                 }
 
 
-
-                self.vBlocked = !self.vForbidden && (self.vRoomValues > 0 && self.vFresh && UInt32(truncatingIfNeeded: self.vValues.count) >= self.vRoomValues || self.vRoomHistory > 0 && UInt32(truncatingIfNeeded: self.vTombstones.count) >= self.vRoomHistory || self.vRoomDigest > 0 && UInt32(truncatingIfNeeded: self.vDigest.count) >= self.vRoomDigest)
-
-
                 if (self.vForbidden) {
 
 
@@ -2119,22 +1529,8 @@ public final class TodoPeerPolicy: InvocablePolicy {
                 }
 
 
-                if (self.vBlocked) {
 
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vFull, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='full'>: an integer operation overflowed or failed")); return true }; self.vFull = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-                }
-
-
-                if (!self.vBlocked && !self.vForbidden) {
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.takeDefault(sceFailure, { try call_HlcSend__v(self.vClock, self.pendingTodoEditPayload.now, self.vNode) }); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='clock'>: an integer operation overflowed or failed")); return true }; self.vClock = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vGone = 0
 
 
                 // W3C SCXML 4.6: <foreach array="adds" item="o">, a native loop over a sce-static list
@@ -2143,234 +1539,168 @@ public final class TodoPeerPolicy: InvocablePolicy {
 
                 if (o.element == self.vEntry.element) {
 
+
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vGone, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='gone'>: an integer operation overflowed or failed")); return true }; self.vGone = sceValue; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+                }
+
+                }
+
+                if (!self.vForbidden && self.vRoomValues > 0 && self.vGone == 0 && UInt32(truncatingIfNeeded: self.vValues.count) >= self.vRoomValues) {
+
+
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vFull, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='full'>: an integer operation overflowed or failed")); return true }; self.vFull = sceValue; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+
+
+                self.vForbidden = true
+
+                }
+
+
+                if (!self.vForbidden) {
+
+
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.takeDefault(sceFailure, { try call_HlcSend__v(self.vClock, self.pendingTodoEditPayload.now, self.vNode) }); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='stamp'>: an integer operation overflowed or failed")); return true }; self.vStamp = sceValue; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+
+                // SCE Accepted Subset §2.15: <sce:clear target="taking">
+
+                self.vTaking.removeAll()
+
+
+
+                self.vTook = 0
+
+
+                // W3C SCXML 4.6: <foreach array="adds" item="o">, a native loop over a sce-static list
+                for o in self.vAdds {
+                    _ = o
+
+                if (o.element == self.vEntry.element) {
+
+
+                self.vOp.kind = 1
+
+
+
+                self.vOp.id = self.pendingTodoEditPayload.id
+
+
+
+                self.vOp.field = self.pendingTodoEditPayload.field
+
+
+
+                self.vOp.value = 0
+
+
+
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, "", capacity: 96); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='op.text'>: an integer operation overflowed or failed")); return true }; self.vOp.text = sceValue; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+
+
+                self.vOp.wallTime = o.wallTime
+
+
+
+                self.vOp.counter = o.counter
+
+
+
+                self.vOp.nodeId = o.nodeId
+
+
+                // SCE Accepted Subset §2.15: <sce:append target="taking">
+
+                if ({ () -> Bool in let sceFailure = Failure(); if self.vTaking.count >= 64 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='taking'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vTaking, self.vOp); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='taking'>: an integer operation overflowed or failed")); return true }; self.vTaking.append(sceValue); return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+                }
+
+                }
+
+
+                self.vOp.kind = 0
+
+
+
+                self.vOp.id = self.pendingTodoEditPayload.id
+
+
+
+                self.vOp.field = self.pendingTodoEditPayload.field
+
+
+
+                self.vOp.value = self.pendingTodoEditPayload.value
+
+
+
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingTodoEditPayload.text, capacity: 96); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='op.text'>: an integer operation overflowed or failed")); return true }; self.vOp.text = sceValue; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+
+
+                self.vOp.wallTime = 0
+
+
+
+                self.vOp.counter = 0
+
+
+
+                self.vOp.nodeId = 0
+
+
+                // SCE Accepted Subset §2.15: <sce:append target="taking">
+
+                if ({ () -> Bool in let sceFailure = Failure(); if self.vTaking.count >= 64 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='taking'>: the list already holds its capacity of 64")); return true }; let sceValue = Checked.element(of: self.vTaking, self.vOp); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='taking'>: an integer operation overflowed or failed")); return true }; self.vTaking.append(sceValue); return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+
+
+                self.vClock = self.vStamp
+
+
+
+                self.vDot = self.vStamp
+
+
+                // W3C SCXML 4.6: <foreach array="taking" item="t">, a native loop over a sce-static list
+                for t in self.vTaking {
+                    _ = t
+
                 // W3C SCXML 6.2: send id="__send_0"
                 do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.pendingTodoEditPayload.id))
-                        sendParts.append(PayloadPair("id", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.pendingTodoEditPayload.field))
-                        sendParts.append(PayloadPair("field", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(o.wallTime)
-                        sendParts.append(PayloadPair("wallTime", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(o.counter))
-                        sendParts.append(PayloadPair("counter", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(o.nodeId)
-                        sendParts.append(PayloadPair("nodeId", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.vNode)
-                        sendParts.append(PayloadPair("by", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
+                    let sendEventData = ""
                     // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
                     // and does not change the queue.
                     var sendMetadata = EventMetadata.internalRaise()
                     sendMetadata.data = sendEventData
-                    engine.raise(EventWithMetadata(TodoPeerEvent.todoSupersede, metadata: sendMetadata))
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
+                    engine.raise(EventWithMetadata(TodoPeerEvent.todoTake, metadata: sendMetadata))
+                }
                 }
 
                 // W3C SCXML 6.2: send id="__send_1"
                 do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
-                    // text each value spells, so a second reading of the data model cannot
-                    // disagree with the first.
-                    var sendForm: [String: [String]] = [:]
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.pendingTodoEditPayload.id))
-                        appendFormParam(&sendForm, "id", sceValue)
-                        sendParts.append(PayloadPair("id", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.pendingTodoEditPayload.field))
-                        appendFormParam(&sendForm, "field", sceValue)
-                        sendParts.append(PayloadPair("field", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(o.wallTime)
-                        appendFormParam(&sendForm, "wallTime", sceValue)
-                        sendParts.append(PayloadPair("wallTime", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(o.counter))
-                        appendFormParam(&sendForm, "counter", sceValue)
-                        sendParts.append(PayloadPair("counter", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(o.nodeId)
-                        appendFormParam(&sendForm, "nodeId", sceValue)
-                        sendParts.append(PayloadPair("nodeId", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.vNode)
-                        appendFormParam(&sendForm, "by", sceValue)
-                        sendParts.append(PayloadPair("by", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
-                    // build. The send is dispatched and not refused, and the whole of it is the
-                    // host's: delivering the event locally as well would show the document the act
-                    // twice.
-                    let sendRequest = HostSendRequest(
-                        processorType: "sce:mesh",
-                        eventName: "todo.supersede",
-                        target: "#server",
-                        content: "",
-                        params: sendForm,
-                        sendID: "__send_1",
-                        eventData: sendEventData,
-                        invokeID: engine.currentEventInvokeID
-                    )
-                    engine.performHostSend(sendRequest)
-
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-                }
-
-                // W3C SCXML 6.2: send id="__send_2"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.pendingTodoEditPayload.id))
-                        sendParts.append(PayloadPair("id", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.pendingTodoEditPayload.field))
-                        sendParts.append(PayloadPair("field", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(self.pendingTodoEditPayload.value)
-                        sendParts.append(PayloadPair("value", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .text(self.pendingTodoEditPayload.text)
-                        sendParts.append(PayloadPair("text", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(self.vClock.wallTime)
-                        sendParts.append(PayloadPair("wallTime", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vClock.counter))
-                        sendParts.append(PayloadPair("counter", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.vNode)
-                        sendParts.append(PayloadPair("nodeId", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
+                    let sendEventData = ""
                     // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
                     // and does not change the queue.
                     var sendMetadata = EventMetadata.internalRaise()
                     sendMetadata.data = sendEventData
-                    engine.raise(EventWithMetadata(TodoPeerEvent.todoWrite, metadata: sendMetadata))
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-
-                // W3C SCXML 6.2: send id="__send_3"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
-                    // text each value spells, so a second reading of the data model cannot
-                    // disagree with the first.
-                    var sendForm: [String: [String]] = [:]
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.pendingTodoEditPayload.id))
-                        appendFormParam(&sendForm, "id", sceValue)
-                        sendParts.append(PayloadPair("id", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.pendingTodoEditPayload.field))
-                        appendFormParam(&sendForm, "field", sceValue)
-                        sendParts.append(PayloadPair("field", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(self.pendingTodoEditPayload.value)
-                        appendFormParam(&sendForm, "value", sceValue)
-                        sendParts.append(PayloadPair("value", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .text(self.pendingTodoEditPayload.text)
-                        appendFormParam(&sendForm, "text", sceValue)
-                        sendParts.append(PayloadPair("text", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(self.vClock.wallTime)
-                        appendFormParam(&sendForm, "wallTime", sceValue)
-                        sendParts.append(PayloadPair("wallTime", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vClock.counter))
-                        appendFormParam(&sendForm, "counter", sceValue)
-                        sendParts.append(PayloadPair("counter", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.vNode)
-                        appendFormParam(&sendForm, "nodeId", sceValue)
-                        sendParts.append(PayloadPair("nodeId", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
-                    // build. The send is dispatched and not refused, and the whole of it is the
-                    // host's: delivering the event locally as well would show the document the act
-                    // twice.
-                    let sendRequest = HostSendRequest(
-                        processorType: "sce:mesh",
-                        eventName: "todo.write",
-                        target: "#server",
-                        content: "",
-                        params: sendForm,
-                        sendID: "__send_3",
-                        eventData: sendEventData,
-                        invokeID: engine.currentEventInvokeID
-                    )
-                    engine.performHostSend(sendRequest)
-
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
+                    engine.raise(EventWithMetadata(TodoPeerEvent.todoPass, metadata: sendMetadata))
                 }
                 }
 
@@ -2378,48 +1708,7 @@ public final class TodoPeerPolicy: InvocablePolicy {
             case 4:
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 sceBlock: do {
-                    if pendingPayloadTag != .todoWrite {
-                        break sceBlock
-                    }
-
-
-                self.vHeld.id = UInt64(self.pendingTodoWritePayload.id)
-
-
-
-                self.vHeld.field = UInt64(self.pendingTodoWritePayload.field)
-
-
-
-                self.vHeld.wallTime = self.pendingTodoWritePayload.wallTime
-
-
-
-                self.vHeld.counter = self.pendingTodoWritePayload.counter
-
-
-
-                self.vHeld.nodeId = self.pendingTodoWritePayload.nodeId
-
-
-
-                self.vPresent = call_MvValueHolds__vv(self.vValues, self.vHeld)
-
-
-                if (!self.vPresent) {
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vLate, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='late'>: an integer operation overflowed or failed")); return true }; self.vLate = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-                }
-
-                }
-            case 5:
-                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                sceBlock: do {
-                    if pendingPayloadTag != .todoWrite {
+                    if pendingPayloadTag != .recordListChange {
                         break sceBlock
                     }
 
@@ -2427,7 +1716,7 @@ public final class TodoPeerPolicy: InvocablePolicy {
                 self.vAuthorized = true
 
 
-                if (self.vHub && UInt32(truncatingIfNeeded: self.vRoster.count) > 0) {
+                if (UInt32(truncatingIfNeeded: self.vRoster.count) > 0) {
 
 
                 self.vAuthorized = false
@@ -2437,7 +1726,7 @@ public final class TodoPeerPolicy: InvocablePolicy {
                 for m in self.vRoster {
                     _ = m
 
-                if (m.node == self.pendingTodoWritePayload.nodeId && m.role >= 2) {
+                if (m.node == self.pendingRecordListChangePayload.by && m.role >= 2) {
 
 
                 self.vAuthorized = true
@@ -2461,85 +1750,139 @@ public final class TodoPeerPolicy: InvocablePolicy {
                 if (self.vAuthorized) {
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.pendingTodoWritePayload.text, capacity: 96); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='held.text'>: an integer operation overflowed or failed")); return true }; self.vHeld.text = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-                if (self.pendingTodoWritePayload.nodeId != self.vNode) {
-
-
-                self.vStamp.wallTime = self.pendingTodoWritePayload.wallTime
+                self.vTaking = self.pendingRecordListChangePayload.ops
 
 
 
-                self.vStamp.counter = self.pendingTodoWritePayload.counter
+                self.vTook = 0
 
 
 
-                self.vStamp.nodeId = self.pendingTodoWritePayload.nodeId
+                self.vDot.wallTime = self.pendingRecordListChangePayload.wallTime
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.takeDefault(sceFailure, { try call_HlcReceive__vv(self.vClock, self.vStamp, self.vClock.wallTime, self.vNode) }); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='clock'>: an integer operation overflowed or failed")); return true }; self.vClock = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-                }
-
-
-                if (self.pendingTodoWritePayload.nodeId == self.vNode && (self.pendingTodoWritePayload.wallTime > self.vClock.wallTime || self.pendingTodoWritePayload.wallTime == self.vClock.wallTime && self.pendingTodoWritePayload.counter > self.vClock.counter)) {
-
-
-                self.vClock.wallTime = self.pendingTodoWritePayload.wallTime
+                self.vDot.counter = self.pendingRecordListChangePayload.counter
 
 
 
-                self.vClock.counter = self.pendingTodoWritePayload.counter
-
-                }
+                self.vDot.nodeId = self.pendingRecordListChangePayload.by
 
 
-
-                self.vEntry.element = UInt64(self.pendingTodoWritePayload.id)
-
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt64 = Checked.add(sceFailure, Checked.mul(sceFailure, self.vEntry.element, 65536), UInt64(self.pendingTodoWritePayload.field)); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='entry.element'>: an integer operation overflowed or failed")); return true }; self.vEntry.element = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-
-                self.vEntry.wallTime = self.pendingTodoWritePayload.wallTime
-
-
-
-                self.vEntry.counter = self.pendingTodoWritePayload.counter
-
-
-
-                self.vEntry.nodeId = self.pendingTodoWritePayload.nodeId
-
-
-
-                self.vIsLive = true
-
-
-                // W3C SCXML 4.6: <foreach array="tombstones" item="t">, a native loop over a sce-static list
-                for t in self.vTombstones {
+                // W3C SCXML 4.6: <foreach array="taking" item="t">, a native loop over a sce-static list
+                for t in self.vTaking {
                     _ = t
 
-                if (t.element == self.vEntry.element && t.wallTime == self.vEntry.wallTime && t.counter == self.vEntry.counter && t.nodeId == self.vEntry.nodeId) {
+                // W3C SCXML 6.2: send id="__send_2"
+                do {
+                    let sendEventData = ""
+                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+                    // and does not change the queue.
+                    var sendMetadata = EventMetadata.internalRaise()
+                    sendMetadata.data = sendEventData
+                    engine.raise(EventWithMetadata(TodoPeerEvent.todoTake, metadata: sendMetadata))
+                }
+                }
+
+                if (self.vDot.nodeId == self.vNode && (self.vDot.wallTime > self.vClock.wallTime || self.vDot.wallTime == self.vClock.wallTime && self.vDot.counter > self.vClock.counter)) {
 
 
-                self.vIsLive = false
+                self.vClock.wallTime = self.vDot.wallTime
 
+
+
+                self.vClock.counter = self.vDot.counter
+
+                }
+
+
+                if (self.vDot.nodeId != self.vNode) {
+
+
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.takeDefault(sceFailure, { try call_HlcReceive__vv(self.vClock, self.vDot, self.vClock.wallTime, self.vNode) }); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='clock'>: an integer operation overflowed or failed")); return true }; self.vClock = sceValue; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
                 }
 
-                if (self.vIsLive) {
+                }
+
+                }
+            case 5:
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                sceBlock: do {
+
+
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.atDefault(sceFailure, self.vTaking, self.vTook); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='op'>: an integer operation overflowed or failed")); return true }; self.vOp = sceValue; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+
+
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vTook, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='took'>: an integer operation overflowed or failed")); return true }; self.vTook = sceValue; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+
+
+                self.vEntry.element = UInt64(self.vOp.id)
+
+
+
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt64 = Checked.add(sceFailure, Checked.mul(sceFailure, self.vEntry.element, 65536), UInt64(self.vOp.field)); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='entry.element'>: an integer operation overflowed or failed")); return true }; self.vEntry.element = sceValue; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+
+                if (self.vOp.kind == 0) {
+
+
+                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: String = Checked.bounded(sceFailure, self.vOp.text, capacity: 96); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='held.text'>: an integer operation overflowed or failed")); return true }; self.vHeld.text = sceValue; return false }()) {
+                    break sceBlock  // W3C SCXML 4.9: the error ends the block
+                }
+
+
+
+                self.vHeld.id = UInt64(self.vOp.id)
+
+
+
+                self.vHeld.field = UInt64(self.vOp.field)
+
+
+
+                self.vHeld.value = self.vOp.value
+
+
+
+                self.vHeld.wallTime = self.vDot.wallTime
+
+
+
+                self.vHeld.counter = self.vDot.counter
+
+
+
+                self.vHeld.nodeId = self.vDot.nodeId
+
+
+
+                self.vEntry.wallTime = self.vDot.wallTime
+
+
+
+                self.vEntry.counter = self.vDot.counter
+
+
+
+                self.vEntry.nodeId = self.vDot.nodeId
+
+
+
+                self.vPresent = call_MvValueHolds__vv(self.vValues, self.vHeld)
+
+
+                if (!self.vPresent) {
 
                 // SCE Accepted Subset §2.15: <sce:clear target="one">
 
@@ -2558,319 +1901,54 @@ public final class TodoPeerPolicy: InvocablePolicy {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
-                }
-
-
-
-                self.vHeld.id = UInt64(self.pendingTodoWritePayload.id)
-
-
-
-                self.vHeld.field = UInt64(self.pendingTodoWritePayload.field)
-
-
-
-                self.vHeld.value = self.pendingTodoWritePayload.value
-
-
-
-                self.vHeld.wallTime = self.pendingTodoWritePayload.wallTime
-
-
-
-                self.vHeld.counter = self.pendingTodoWritePayload.counter
-
-
-
-                self.vHeld.nodeId = self.pendingTodoWritePayload.nodeId
-
-
-
-                self.vPresent = call_MvValueHolds__vv(self.vValues, self.vHeld)
-
-
-                if (self.vIsLive && !self.vPresent) {
 
 
                 if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_MvValueKeep__vv(self.vValues, self.vHeld) }), capacity: 512); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='values'>: an integer operation overflowed or failed")); return true }; self.vValues = sceValue; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
-
-                // W3C SCXML 6.2: send id="__send_4"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .integer(Int64(0))
-                        sendParts.append(PayloadPair("kind", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.vEntry.element)
-                        sendParts.append(PayloadPair("element", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(self.pendingTodoWritePayload.wallTime)
-                        sendParts.append(PayloadPair("wallTime", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.pendingTodoWritePayload.counter))
-                        sendParts.append(PayloadPair("counter", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.pendingTodoWritePayload.nodeId)
-                        sendParts.append(PayloadPair("nodeId", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
-                    // and does not change the queue.
-                    var sendMetadata = EventMetadata.internalRaise()
-                    sendMetadata.data = sendEventData
-                    engine.raise(EventWithMetadata(TodoPeerEvent.todoKeep, metadata: sendMetadata))
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-
-                if (self.vHub && self.pendingTodoWritePayload.nodeId != 1) {
-
-                // W3C SCXML 6.2: send id="__send_5"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
-                    // text each value spells, so a second reading of the data model cannot
-                    // disagree with the first.
-                    var sendForm: [String: [String]] = [:]
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.pendingTodoWritePayload.id))
-                        appendFormParam(&sendForm, "id", sceValue)
-                        sendParts.append(PayloadPair("id", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.pendingTodoWritePayload.field))
-                        appendFormParam(&sendForm, "field", sceValue)
-                        sendParts.append(PayloadPair("field", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(self.pendingTodoWritePayload.value)
-                        appendFormParam(&sendForm, "value", sceValue)
-                        sendParts.append(PayloadPair("value", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .text(self.pendingTodoWritePayload.text)
-                        appendFormParam(&sendForm, "text", sceValue)
-                        sendParts.append(PayloadPair("text", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(self.pendingTodoWritePayload.wallTime)
-                        appendFormParam(&sendForm, "wallTime", sceValue)
-                        sendParts.append(PayloadPair("wallTime", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.pendingTodoWritePayload.counter))
-                        appendFormParam(&sendForm, "counter", sceValue)
-                        sendParts.append(PayloadPair("counter", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.pendingTodoWritePayload.nodeId)
-                        appendFormParam(&sendForm, "nodeId", sceValue)
-                        sendParts.append(PayloadPair("nodeId", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
-                    // build. The send is dispatched and not refused, and the whole of it is the
-                    // host's: delivering the event locally as well would show the document the act
-                    // twice.
-                    let sendRequest = HostSendRequest(
-                        processorType: "sce:mesh",
-                        eventName: "todo.write",
-                        target: "#alice",
-                        content: "",
-                        params: sendForm,
-                        sendID: "__send_5",
-                        eventData: sendEventData,
-                        invokeID: engine.currentEventInvokeID
-                    )
-                    engine.performHostSend(sendRequest)
-
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-
-                if (self.vHub && self.pendingTodoWritePayload.nodeId != 2) {
-
-                // W3C SCXML 6.2: send id="__send_6"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
-                    // text each value spells, so a second reading of the data model cannot
-                    // disagree with the first.
-                    var sendForm: [String: [String]] = [:]
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.pendingTodoWritePayload.id))
-                        appendFormParam(&sendForm, "id", sceValue)
-                        sendParts.append(PayloadPair("id", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.pendingTodoWritePayload.field))
-                        appendFormParam(&sendForm, "field", sceValue)
-                        sendParts.append(PayloadPair("field", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(self.pendingTodoWritePayload.value)
-                        appendFormParam(&sendForm, "value", sceValue)
-                        sendParts.append(PayloadPair("value", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .text(self.pendingTodoWritePayload.text)
-                        appendFormParam(&sendForm, "text", sceValue)
-                        sendParts.append(PayloadPair("text", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(self.pendingTodoWritePayload.wallTime)
-                        appendFormParam(&sendForm, "wallTime", sceValue)
-                        sendParts.append(PayloadPair("wallTime", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.pendingTodoWritePayload.counter))
-                        appendFormParam(&sendForm, "counter", sceValue)
-                        sendParts.append(PayloadPair("counter", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.pendingTodoWritePayload.nodeId)
-                        appendFormParam(&sendForm, "nodeId", sceValue)
-                        sendParts.append(PayloadPair("nodeId", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
-                    // build. The send is dispatched and not refused, and the whole of it is the
-                    // host's: delivering the event locally as well would show the document the act
-                    // twice.
-                    let sendRequest = HostSendRequest(
-                        processorType: "sce:mesh",
-                        eventName: "todo.write",
-                        target: "#bob",
-                        content: "",
-                        params: sendForm,
-                        sendID: "__send_6",
-                        eventData: sendEventData,
-                        invokeID: engine.currentEventInvokeID
-                    )
-                    engine.performHostSend(sendRequest)
-
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-                }
-
-                }
-            case 6:
-                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                sceBlock: do {
-                    if pendingPayloadTag != .todoSupersede {
-                        break sceBlock
-                    }
-
-
-                self.vAuthorized = true
-
-
-                if (self.vHub && UInt32(truncatingIfNeeded: self.vRoster.count) > 0) {
-
-
-                self.vAuthorized = false
-
-
-                // W3C SCXML 4.6: <foreach array="roster" item="m">, a native loop over a sce-static list
-                for m in self.vRoster {
-                    _ = m
-
-                if (m.node == self.pendingTodoSupersedePayload.by && m.role >= 2) {
-
-
-                self.vAuthorized = true
-
-                }
-
-                }
-                }
-
-
-                if (!self.vAuthorized) {
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vDenied, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='denied'>: an integer operation overflowed or failed")); return true }; self.vDenied = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
                 }
 
 
-                if (self.vAuthorized) {
+                if (self.vOp.kind == 1) {
 
 
-                self.vEntry.element = UInt64(self.pendingTodoSupersedePayload.id)
-
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt64 = Checked.add(sceFailure, Checked.mul(sceFailure, self.vEntry.element, 65536), UInt64(self.pendingTodoSupersedePayload.field)); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='entry.element'>: an integer operation overflowed or failed")); return true }; self.vEntry.element = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
+                self.vEntry.wallTime = self.vOp.wallTime
 
 
 
-                self.vEntry.wallTime = self.pendingTodoSupersedePayload.wallTime
+                self.vEntry.counter = self.vOp.counter
 
 
 
-                self.vEntry.counter = self.pendingTodoSupersedePayload.counter
+                self.vEntry.nodeId = self.vOp.nodeId
 
 
 
-                self.vEntry.nodeId = self.pendingTodoSupersedePayload.nodeId
+                self.vHeld.id = UInt64(self.vOp.id)
 
 
 
-                self.vKnown = false
+                self.vHeld.field = UInt64(self.vOp.field)
 
 
-                // W3C SCXML 4.6: <foreach array="tombstones" item="t">, a native loop over a sce-static list
-                for t in self.vTombstones {
-                    _ = t
 
-                if (t.element == self.vEntry.element && t.wallTime == self.vEntry.wallTime && t.counter == self.vEntry.counter && t.nodeId == self.vEntry.nodeId) {
+                self.vHeld.wallTime = self.vOp.wallTime
 
 
-                self.vKnown = true
 
-                }
+                self.vHeld.counter = self.vOp.counter
 
-                }
+
+
+                self.vHeld.nodeId = self.vOp.nodeId
+
+
+
+                self.vWasLive = call_MvValueHolds__vv(self.vValues, self.vHeld)
+
 
                 // SCE Accepted Subset §2.15: <sce:clear target="one">
 
@@ -2885,39 +1963,9 @@ public final class TodoPeerPolicy: InvocablePolicy {
 
 
 
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_OrsetUnion__vv(self.vTombstones, self.vOne) }), capacity: 1024); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='tombstones'>: an integer operation overflowed or failed")); return true }; self.vTombstones = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-
                 if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_OrsetLive__vv(self.vAdds, self.vOne) }), capacity: 1024); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='adds'>: an integer operation overflowed or failed")); return true }; self.vAdds = sceValue; return false }()) {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
-
-
-
-                self.vHeld.id = UInt64(self.pendingTodoSupersedePayload.id)
-
-
-
-                self.vHeld.field = UInt64(self.pendingTodoSupersedePayload.field)
-
-
-
-                self.vHeld.wallTime = self.pendingTodoSupersedePayload.wallTime
-
-
-
-                self.vHeld.counter = self.pendingTodoSupersedePayload.counter
-
-
-
-                self.vHeld.nodeId = self.pendingTodoSupersedePayload.nodeId
-
-
-
-                self.vWasLive = call_MvValueHolds__vv(self.vValues, self.vHeld)
 
 
 
@@ -2925,98 +1973,14 @@ public final class TodoPeerPolicy: InvocablePolicy {
                     break sceBlock  // W3C SCXML 4.9: the error ends the block
                 }
 
-
-                if (!self.vKnown) {
-
-                // W3C SCXML 6.2: send id="__send_7"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .integer(Int64(1))
-                        sendParts.append(PayloadPair("kind", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.vEntry.element)
-                        sendParts.append(PayloadPair("element", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(self.pendingTodoSupersedePayload.wallTime)
-                        sendParts.append(PayloadPair("wallTime", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.pendingTodoSupersedePayload.counter))
-                        sendParts.append(PayloadPair("counter", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.pendingTodoSupersedePayload.nodeId)
-                        sendParts.append(PayloadPair("nodeId", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
-                    // and does not change the queue.
-                    var sendMetadata = EventMetadata.internalRaise()
-                    sendMetadata.data = sendEventData
-                    engine.raise(EventWithMetadata(TodoPeerEvent.todoKeep, metadata: sendMetadata))
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
                 }
 
-
-                if (self.vWasLive) {
-
-                // W3C SCXML 6.2: send id="__send_8"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .integer(Int64(0))
-                        sendParts.append(PayloadPair("kind", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.vEntry.element)
-                        sendParts.append(PayloadPair("element", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(self.pendingTodoSupersedePayload.wallTime)
-                        sendParts.append(PayloadPair("wallTime", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.pendingTodoSupersedePayload.counter))
-                        sendParts.append(PayloadPair("counter", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.pendingTodoSupersedePayload.nodeId)
-                        sendParts.append(PayloadPair("nodeId", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
-                    // and does not change the queue.
-                    var sendMetadata = EventMetadata.internalRaise()
-                    sendMetadata.data = sendEventData
-                    engine.raise(EventWithMetadata(TodoPeerEvent.todoKeep, metadata: sendMetadata))
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
                 }
-                }
+            case 6:
+                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
+                sceBlock: do {
 
-
-                if (self.vHub && self.pendingTodoSupersedePayload.by != 1) {
-
-                // W3C SCXML 6.2: send id="__send_9"
+                // W3C SCXML 6.2: send id="__send_3"
                 do {
                     // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
                     // pair left out, and the message still goes; the error ends the block once
@@ -3028,34 +1992,30 @@ public final class TodoPeerPolicy: InvocablePolicy {
                     var sendForm: [String: [String]] = [:]
                     var sendParts: [PayloadPair] = []
                     do {
-                        let sceValue: WireValue = .integer(Int64(self.pendingTodoSupersedePayload.id))
-                        appendFormParam(&sendForm, "id", sceValue)
-                        sendParts.append(PayloadPair("id", sceValue))
+                        let sceValue: WireValue = .unsigned64(self.vDot.nodeId)
+                        appendFormParam(&sendForm, "by", sceValue)
+                        sendParts.append(PayloadPair("by", sceValue))
                     }
                     do {
-                        let sceValue: WireValue = .integer(Int64(self.pendingTodoSupersedePayload.field))
-                        appendFormParam(&sendForm, "field", sceValue)
-                        sendParts.append(PayloadPair("field", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(self.pendingTodoSupersedePayload.wallTime)
+                        let sceValue: WireValue = .signed64(self.vDot.wallTime)
                         appendFormParam(&sendForm, "wallTime", sceValue)
                         sendParts.append(PayloadPair("wallTime", sceValue))
                     }
                     do {
-                        let sceValue: WireValue = .integer(Int64(self.pendingTodoSupersedePayload.counter))
+                        let sceValue: WireValue = .integer(Int64(self.vDot.counter))
                         appendFormParam(&sendForm, "counter", sceValue)
                         sendParts.append(PayloadPair("counter", sceValue))
                     }
                     do {
-                        let sceValue: WireValue = .unsigned64(self.pendingTodoSupersedePayload.nodeId)
-                        appendFormParam(&sendForm, "nodeId", sceValue)
-                        sendParts.append(PayloadPair("nodeId", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.pendingTodoSupersedePayload.by)
-                        appendFormParam(&sendForm, "by", sceValue)
-                        sendParts.append(PayloadPair("by", sceValue))
+                        let sceFailure = Failure()
+                        let sceValue: WireValue = { () -> WireValue in if self.vTaking.count < 1 { sceFailure.fail(.precondition) }; return WireValue.composed(listJSON(self.vTaking, { (sceElement) -> String in recordJSON([PayloadPair.json("kind", rawJSON: WireValue.integer(Int64(sceElement.kind)).json), PayloadPair.json("id", rawJSON: WireValue.integer(Int64(sceElement.id)).json), PayloadPair.json("field", rawJSON: WireValue.integer(Int64(sceElement.field)).json), PayloadPair.json("value", rawJSON: WireValue.signed64(sceElement.value).json), PayloadPair.json("text", rawJSON: WireValue.text(sceElement.text).json), PayloadPair.json("wallTime", rawJSON: WireValue.signed64(sceElement.wallTime).json), PayloadPair.json("counter", rawJSON: WireValue.integer(Int64(sceElement.counter)).json), PayloadPair.json("nodeId", rawJSON: WireValue.unsigned64(sceElement.nodeId).json)]) })) }()
+                        if !sceFailure.failed {
+                            appendFormParam(&sendForm, "ops", sceValue)
+                            sendParts.append(PayloadPair("ops", sceValue))
+                        } else {
+                            engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<send> <param name=ops> failed to evaluate"))
+                            paramFailed = true
+                        }
                     }
                     let sendEventData = payloadJSON(sendParts)
                     // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
@@ -3064,11 +2024,11 @@ public final class TodoPeerPolicy: InvocablePolicy {
                     // twice.
                     let sendRequest = HostSendRequest(
                         processorType: "sce:mesh",
-                        eventName: "todo.supersede",
-                        target: "#alice",
+                        eventName: "record_list.change",
+                        target: "#people",
                         content: "",
                         params: sendForm,
-                        sendID: "__send_9",
+                        sendID: "__send_3",
                         eventData: sendEventData,
                         invokeID: engine.currentEventInvokeID
                     )
@@ -3080,1835 +2040,8 @@ public final class TodoPeerPolicy: InvocablePolicy {
                         break sceBlock
                     }
                 }
-                }
-
-
-                if (self.vHub && self.pendingTodoSupersedePayload.by != 2) {
-
-                // W3C SCXML 6.2: send id="__send_10"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
-                    // text each value spells, so a second reading of the data model cannot
-                    // disagree with the first.
-                    var sendForm: [String: [String]] = [:]
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.pendingTodoSupersedePayload.id))
-                        appendFormParam(&sendForm, "id", sceValue)
-                        sendParts.append(PayloadPair("id", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.pendingTodoSupersedePayload.field))
-                        appendFormParam(&sendForm, "field", sceValue)
-                        sendParts.append(PayloadPair("field", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(self.pendingTodoSupersedePayload.wallTime)
-                        appendFormParam(&sendForm, "wallTime", sceValue)
-                        sendParts.append(PayloadPair("wallTime", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.pendingTodoSupersedePayload.counter))
-                        appendFormParam(&sendForm, "counter", sceValue)
-                        sendParts.append(PayloadPair("counter", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.pendingTodoSupersedePayload.nodeId)
-                        appendFormParam(&sendForm, "nodeId", sceValue)
-                        sendParts.append(PayloadPair("nodeId", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.pendingTodoSupersedePayload.by)
-                        appendFormParam(&sendForm, "by", sceValue)
-                        sendParts.append(PayloadPair("by", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
-                    // build. The send is dispatched and not refused, and the whole of it is the
-                    // host's: delivering the event locally as well would show the document the act
-                    // twice.
-                    let sendRequest = HostSendRequest(
-                        processorType: "sce:mesh",
-                        eventName: "todo.supersede",
-                        target: "#bob",
-                        content: "",
-                        params: sendForm,
-                        sendID: "__send_10",
-                        eventData: sendEventData,
-                        invokeID: engine.currentEventInvokeID
-                    )
-                    engine.performHostSend(sendRequest)
-
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-                }
-
                 }
             case 7:
-                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                sceBlock: do {
-                    if pendingPayloadTag != .todoKeep {
-                        break sceBlock
-                    }
-
-
-                self.vEntry.element = self.pendingTodoKeepPayload.element
-
-
-
-                self.vEntry.wallTime = self.pendingTodoKeepPayload.wallTime
-
-
-
-                self.vEntry.counter = self.pendingTodoKeepPayload.counter
-
-
-
-                self.vEntry.nodeId = self.pendingTodoKeepPayload.nodeId
-
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.takeDefault(sceFailure, { try call_MerkleChangeHash__v(self.vEntry, self.pendingTodoKeepPayload.kind) }); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='mine'>: an integer operation overflowed or failed")); return true }; self.vMine = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_MerkleInsert__v(self.vDigest, Checked.div(sceFailure, self.pendingTodoKeepPayload.wallTime, 60000), self.vMine) }), capacity: 2048); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='digest'>: an integer operation overflowed or failed")); return true }; self.vDigest = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-                }
-            case 8:
-                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                sceBlock: do {
-                    if pendingPayloadTag != .todoCompact {
-                        break sceBlock
-                    }
-
-                // SCE Accepted Subset §2.15: <sce:clear target="stable">
-
-                self.vStable.removeAll()
-
-
-
-                self.vFrozenFor = -1
-
-
-                // W3C SCXML 4.6: <foreach array="tombstones" item="t">, a native loop over a sce-static list
-                for t in self.vTombstones {
-                    _ = t
-
-                if (t.wallTime <= self.pendingTodoCompactPayload.before) {
-
-                // SCE Accepted Subset §2.15: <sce:append target="stable">
-
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vStable.count >= 1024 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='stable'>: the list already holds its capacity of 1024")); return true }; let sceValue = Checked.element(of: self.vStable, t); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='stable'>: an integer operation overflowed or failed")); return true }; self.vStable.append(sceValue); return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.takeDefault(sceFailure, { try call_MerkleChangeHash__i(t, 1) }); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='mine'>: an integer operation overflowed or failed")); return true }; self.vMine = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_MerkleInsert__v(self.vDigest, Checked.div(sceFailure, t.wallTime, 60000), self.vMine) }), capacity: 2048); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='digest'>: an integer operation overflowed or failed")); return true }; self.vDigest = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-                }
-
-                }
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_OrsetLive__vv(self.vTombstones, self.vStable) }), capacity: 1024); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='tombstones'>: an integer operation overflowed or failed")); return true }; self.vTombstones = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-                if (self.pendingTodoCompactPayload.before > self.vFloor) {
-
-
-                self.vFloor = self.pendingTodoCompactPayload.before
-
-                }
-
-                }
-            case 9:
-                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                sceBlock: do {
-                    if pendingPayloadTag != .todoSettle {
-                        break sceBlock
-                    }
-
-                if (self.vHub && self.pendingTodoSettlePayload.before > self.vFloor) {
-
-
-                self.vPending = self.pendingTodoSettlePayload.before
-
-
-
-                self.vMembers = self.pendingTodoSettlePayload.members
-
-
-                // SCE Accepted Subset §2.15: <sce:clear target="answers">
-
-                self.vAnswers.removeAll()
-
-
-                if (self.vClock.wallTime <= self.pendingTodoSettlePayload.before) {
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Int64 = Checked.add(sceFailure, self.pendingTodoSettlePayload.before, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='clock.wallTime'>: an integer operation overflowed or failed")); return true }; self.vClock.wallTime = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-
-                self.vClock.counter = 0
-
-                }
-
-
-                // W3C SCXML 6.2: send id="__send_11"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
-                    // text each value spells, so a second reading of the data model cannot
-                    // disagree with the first.
-                    var sendForm: [String: [String]] = [:]
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .signed64(self.pendingTodoSettlePayload.before)
-                        appendFormParam(&sendForm, "before", sceValue)
-                        sendParts.append(PayloadPair("before", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
-                    // build. The send is dispatched and not refused, and the whole of it is the
-                    // host's: delivering the event locally as well would show the document the act
-                    // twice.
-                    let sendRequest = HostSendRequest(
-                        processorType: "sce:mesh",
-                        eventName: "todo.propose",
-                        target: "#alice",
-                        content: "",
-                        params: sendForm,
-                        sendID: "__send_11",
-                        eventData: sendEventData,
-                        invokeID: engine.currentEventInvokeID
-                    )
-                    engine.performHostSend(sendRequest)
-
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-
-                // W3C SCXML 6.2: send id="__send_12"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
-                    // text each value spells, so a second reading of the data model cannot
-                    // disagree with the first.
-                    var sendForm: [String: [String]] = [:]
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .signed64(self.pendingTodoSettlePayload.before)
-                        appendFormParam(&sendForm, "before", sceValue)
-                        sendParts.append(PayloadPair("before", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
-                    // build. The send is dispatched and not refused, and the whole of it is the
-                    // host's: delivering the event locally as well would show the document the act
-                    // twice.
-                    let sendRequest = HostSendRequest(
-                        processorType: "sce:mesh",
-                        eventName: "todo.propose",
-                        target: "#bob",
-                        content: "",
-                        params: sendForm,
-                        sendID: "__send_12",
-                        eventData: sendEventData,
-                        invokeID: engine.currentEventInvokeID
-                    )
-                    engine.performHostSend(sendRequest)
-
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-                }
-            case 10:
-                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                sceBlock: do {
-                    if pendingPayloadTag != .todoPropose {
-                        break sceBlock
-                    }
-
-                if (!self.vHub && self.pendingTodoProposePayload.before > self.vFloor) {
-
-                if (self.vClock.wallTime <= self.pendingTodoProposePayload.before) {
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Int64 = Checked.add(sceFailure, self.pendingTodoProposePayload.before, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='clock.wallTime'>: an integer operation overflowed or failed")); return true }; self.vClock.wallTime = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-
-                self.vClock.counter = 0
-
-                }
-
-
-                // SCE Accepted Subset §2.15: <sce:clear target="stable">
-
-                self.vStable.removeAll()
-
-
-                // W3C SCXML 4.6: <foreach array="tombstones" item="t">, a native loop over a sce-static list
-                for t in self.vTombstones {
-                    _ = t
-
-                if (t.wallTime <= self.pendingTodoProposePayload.before) {
-
-                // SCE Accepted Subset §2.15: <sce:append target="stable">
-
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vStable.count >= 1024 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='stable'>: the list already holds its capacity of 1024")); return true }; let sceValue = Checked.element(of: self.vStable, t); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='stable'>: an integer operation overflowed or failed")); return true }; self.vStable.append(sceValue); return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-                }
-
-                }
-
-
-                self.vFrozenFor = self.pendingTodoProposePayload.before
-
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.takeDefault(sceFailure, { try call_EventSettled__vv(self.vAdds, self.vTombstones, self.pendingTodoProposePayload.before) }); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='frozenHash'>: an integer operation overflowed or failed")); return true }; self.vFrozenHash = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-                // W3C SCXML 6.2: send id="__send_13"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
-                    // text each value spells, so a second reading of the data model cannot
-                    // disagree with the first.
-                    var sendForm: [String: [String]] = [:]
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.vNode)
-                        appendFormParam(&sendForm, "sender", sceValue)
-                        sendParts.append(PayloadPair("sender", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(self.pendingTodoProposePayload.before)
-                        appendFormParam(&sendForm, "before", sceValue)
-                        sendParts.append(PayloadPair("before", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vFrozenHash))
-                        appendFormParam(&sendForm, "hash", sceValue)
-                        sendParts.append(PayloadPair("hash", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
-                    // build. The send is dispatched and not refused, and the whole of it is the
-                    // host's: delivering the event locally as well would show the document the act
-                    // twice.
-                    let sendRequest = HostSendRequest(
-                        processorType: "sce:mesh",
-                        eventName: "todo.ack",
-                        target: "#server",
-                        content: "",
-                        params: sendForm,
-                        sendID: "__send_13",
-                        eventData: sendEventData,
-                        invokeID: engine.currentEventInvokeID
-                    )
-                    engine.performHostSend(sendRequest)
-
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-                }
-            case 11:
-                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                sceBlock: do {
-                    if pendingPayloadTag != .todoAck {
-                        break sceBlock
-                    }
-
-                if (self.vHub && self.pendingTodoAckPayload.before == self.vPending) {
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.takeDefault(sceFailure, { try call_EventSettled__vv(self.vAdds, self.vTombstones, self.vPending) }); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='mine'>: an integer operation overflowed or failed")); return true }; self.vMine = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-
-                self.vKnown = false
-
-
-                // W3C SCXML 4.6: <foreach array="answers" item="a">, a native loop over a sce-static list
-                for a in self.vAnswers {
-                    _ = a
-
-                if (a.sender == self.pendingTodoAckPayload.sender && a.hash == self.pendingTodoAckPayload.hash) {
-
-
-                self.vKnown = true
-
-                }
-
-                }
-
-                if (!self.vKnown) {
-
-
-                self.vAnswer.sender = self.pendingTodoAckPayload.sender
-
-
-
-                self.vAnswer.hash = self.pendingTodoAckPayload.hash
-
-
-                // SCE Accepted Subset §2.15: <sce:append target="answers">
-
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vAnswers.count >= 512 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='answers'>: the list already holds its capacity of 512")); return true }; let sceValue = Checked.element(of: self.vAnswers, self.vAnswer); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='answers'>: an integer operation overflowed or failed")); return true }; self.vAnswers.append(sceValue); return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-                }
-
-
-
-                self.vAgreeing = 0
-
-
-                // W3C SCXML 4.6: <foreach array="answers" item="a">, a native loop over a sce-static list
-                for a in self.vAnswers {
-                    _ = a
-
-                if (a.hash == self.vMine) {
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.add(sceFailure, self.vAgreeing, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='agreeing'>: an integer operation overflowed or failed")); return true }; self.vAgreeing = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-                }
-
-                }
-
-                if (self.vMembers > 0 && self.vAgreeing >= self.vMembers) {
-
-                // SCE Accepted Subset §2.15: <sce:clear target="stable">
-
-                self.vStable.removeAll()
-
-
-                // W3C SCXML 4.6: <foreach array="tombstones" item="t">, a native loop over a sce-static list
-                for t in self.vTombstones {
-                    _ = t
-
-                if (t.wallTime <= self.vPending) {
-
-                // SCE Accepted Subset §2.15: <sce:append target="stable">
-
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vStable.count >= 1024 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='stable'>: the list already holds its capacity of 1024")); return true }; let sceValue = Checked.element(of: self.vStable, t); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='stable'>: an integer operation overflowed or failed")); return true }; self.vStable.append(sceValue); return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-                }
-
-                }
-
-
-                self.vFrozenFor = self.vPending
-
-
-
-                self.vFrozenHash = self.vMine
-
-
-                // W3C SCXML 6.2: send id="__send_14"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
-                    // text each value spells, so a second reading of the data model cannot
-                    // disagree with the first.
-                    var sendForm: [String: [String]] = [:]
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .signed64(self.vPending)
-                        appendFormParam(&sendForm, "before", sceValue)
-                        sendParts.append(PayloadPair("before", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vMine))
-                        appendFormParam(&sendForm, "hash", sceValue)
-                        sendParts.append(PayloadPair("hash", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
-                    // build. The send is dispatched and not refused, and the whole of it is the
-                    // host's: delivering the event locally as well would show the document the act
-                    // twice.
-                    let sendRequest = HostSendRequest(
-                        processorType: "sce:mesh",
-                        eventName: "todo.floor",
-                        target: "#alice",
-                        content: "",
-                        params: sendForm,
-                        sendID: "__send_14",
-                        eventData: sendEventData,
-                        invokeID: engine.currentEventInvokeID
-                    )
-                    engine.performHostSend(sendRequest)
-
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-
-                // W3C SCXML 6.2: send id="__send_15"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
-                    // text each value spells, so a second reading of the data model cannot
-                    // disagree with the first.
-                    var sendForm: [String: [String]] = [:]
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .signed64(self.vPending)
-                        appendFormParam(&sendForm, "before", sceValue)
-                        sendParts.append(PayloadPair("before", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vMine))
-                        appendFormParam(&sendForm, "hash", sceValue)
-                        sendParts.append(PayloadPair("hash", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
-                    // build. The send is dispatched and not refused, and the whole of it is the
-                    // host's: delivering the event locally as well would show the document the act
-                    // twice.
-                    let sendRequest = HostSendRequest(
-                        processorType: "sce:mesh",
-                        eventName: "todo.floor",
-                        target: "#bob",
-                        content: "",
-                        params: sendForm,
-                        sendID: "__send_15",
-                        eventData: sendEventData,
-                        invokeID: engine.currentEventInvokeID
-                    )
-                    engine.performHostSend(sendRequest)
-
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-
-                // W3C SCXML 6.2: send id="__send_16"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .signed64(self.vPending)
-                        sendParts.append(PayloadPair("before", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vMine))
-                        sendParts.append(PayloadPair("hash", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
-                    // and does not change the queue.
-                    var sendMetadata = EventMetadata.internalRaise()
-                    sendMetadata.data = sendEventData
-                    engine.raise(EventWithMetadata(TodoPeerEvent.todoFloor, metadata: sendMetadata))
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-
-
-                self.vPending = -1
-
-                }
-
-
-                if (self.pendingTodoAckPayload.hash != self.vMine && self.vFloor > 0) {
-
-                // W3C SCXML 6.2: send id="__send_17"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
-                    // text each value spells, so a second reading of the data model cannot
-                    // disagree with the first.
-                    var sendForm: [String: [String]] = [:]
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .signed64(self.vFloor)
-                        appendFormParam(&sendForm, "before", sceValue)
-                        sendParts.append(PayloadPair("before", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vAgreed))
-                        appendFormParam(&sendForm, "hash", sceValue)
-                        sendParts.append(PayloadPair("hash", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
-                    // build. The send is dispatched and not refused, and the whole of it is the
-                    // host's: delivering the event locally as well would show the document the act
-                    // twice.
-                    let sendRequest = HostSendRequest(
-                        processorType: "sce:mesh",
-                        eventName: "todo.floor",
-                        target: "#alice",
-                        content: "",
-                        params: sendForm,
-                        sendID: "__send_17",
-                        eventData: sendEventData,
-                        invokeID: engine.currentEventInvokeID
-                    )
-                    engine.performHostSend(sendRequest)
-
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-
-                // W3C SCXML 6.2: send id="__send_18"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
-                    // text each value spells, so a second reading of the data model cannot
-                    // disagree with the first.
-                    var sendForm: [String: [String]] = [:]
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .signed64(self.vFloor)
-                        appendFormParam(&sendForm, "before", sceValue)
-                        sendParts.append(PayloadPair("before", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vAgreed))
-                        appendFormParam(&sendForm, "hash", sceValue)
-                        sendParts.append(PayloadPair("hash", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
-                    // build. The send is dispatched and not refused, and the whole of it is the
-                    // host's: delivering the event locally as well would show the document the act
-                    // twice.
-                    let sendRequest = HostSendRequest(
-                        processorType: "sce:mesh",
-                        eventName: "todo.floor",
-                        target: "#bob",
-                        content: "",
-                        params: sendForm,
-                        sendID: "__send_18",
-                        eventData: sendEventData,
-                        invokeID: engine.currentEventInvokeID
-                    )
-                    engine.performHostSend(sendRequest)
-
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-                }
-
-                }
-            case 12:
-                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                sceBlock: do {
-                    if pendingPayloadTag != .todoFloor {
-                        break sceBlock
-                    }
-
-                if (self.pendingTodoFloorPayload.before > self.vFloor) {
-
-                if (self.vFrozenFor != self.pendingTodoFloorPayload.before) {
-
-                // SCE Accepted Subset §2.15: <sce:clear target="stable">
-
-                self.vStable.removeAll()
-
-
-                // W3C SCXML 4.6: <foreach array="tombstones" item="t">, a native loop over a sce-static list
-                for t in self.vTombstones {
-                    _ = t
-
-                if (t.wallTime <= self.pendingTodoFloorPayload.before) {
-
-                // SCE Accepted Subset §2.15: <sce:append target="stable">
-
-                if ({ () -> Bool in let sceFailure = Failure(); if self.vStable.count >= 1024 { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='stable'>: the list already holds its capacity of 1024")); return true }; let sceValue = Checked.element(of: self.vStable, t); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<sce:append target='stable'>: an integer operation overflowed or failed")); return true }; self.vStable.append(sceValue); return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-                }
-
-                }
-
-
-                self.vFrozenFor = self.pendingTodoFloorPayload.before
-
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.takeDefault(sceFailure, { try call_EventSettled__vv(self.vAdds, self.vTombstones, self.pendingTodoFloorPayload.before) }); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='frozenHash'>: an integer operation overflowed or failed")); return true }; self.vFrozenHash = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-                }
-
-
-                if (self.vFrozenHash == self.pendingTodoFloorPayload.hash) {
-
-                if (self.vClock.wallTime <= self.pendingTodoFloorPayload.before) {
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Int64 = Checked.add(sceFailure, self.pendingTodoFloorPayload.before, 1); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='clock.wallTime'>: an integer operation overflowed or failed")); return true }; self.vClock.wallTime = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-
-                self.vClock.counter = 0
-
-                }
-
-
-                // W3C SCXML 4.6: <foreach array="stable" item="t">, a native loop over a sce-static list
-                for t in self.vStable {
-                    _ = t
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.takeDefault(sceFailure, { try call_MerkleChangeHash__i(t, 1) }); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='mine'>: an integer operation overflowed or failed")); return true }; self.vMine = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_MerkleInsert__v(self.vDigest, Checked.div(sceFailure, t.wallTime, 60000), self.vMine) }), capacity: 2048); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='digest'>: an integer operation overflowed or failed")); return true }; self.vDigest = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-                }
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue = Checked.within(sceFailure, Checked.takeDefault(sceFailure, { try call_OrsetLive__vv(self.vTombstones, self.vStable) }), capacity: 1024); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='tombstones'>: an integer operation overflowed or failed")); return true }; self.vTombstones = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-
-                self.vFloor = self.pendingTodoFloorPayload.before
-
-
-
-                self.vAgreed = self.pendingTodoFloorPayload.hash
-
-
-
-                self.vStale = false
-
-
-
-                self.vFrozenFor = -1
-
-                }
-
-
-                if (self.vFrozenHash != self.pendingTodoFloorPayload.hash) {
-
-
-                self.vStale = true
-
-                }
-
-                }
-
-                }
-            case 13:
-                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                sceBlock: do {
-
-                // W3C SCXML 6.2: send id="__send_19"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .integer(Int64(0))
-                        sendParts.append(PayloadPair("to", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(0))
-                        sendParts.append(PayloadPair("depth", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(0))
-                        sendParts.append(PayloadPair("prefix", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .truth(false)
-                        sendParts.append(PayloadPair("reply", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
-                    // and does not change the queue.
-                    var sendMetadata = EventMetadata.internalRaise()
-                    sendMetadata.data = sendEventData
-                    engine.raise(EventWithMetadata(TodoPeerEvent.todoVisit, metadata: sendMetadata))
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-            case 14:
-                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                sceBlock: do {
-                    if pendingPayloadTag != .todoVisit {
-                        break sceBlock
-                    }
-
-
-                self.vMine = 0
-
-
-                // W3C SCXML 4.6: <foreach array="digest" item="n">, a native loop over a sce-static list
-                for n in self.vDigest {
-                    _ = n
-
-                if (n.depth == self.pendingTodoVisitPayload.depth && n.prefix == self.pendingTodoVisitPayload.prefix) {
-
-
-                self.vMine = n.hash
-
-                }
-
-                }
-
-                if (!self.vHub) {
-
-                // W3C SCXML 6.2: send id="__send_20"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
-                    // text each value spells, so a second reading of the data model cannot
-                    // disagree with the first.
-                    var sendForm: [String: [String]] = [:]
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.vNode)
-                        appendFormParam(&sendForm, "sender", sceValue)
-                        sendParts.append(PayloadPair("sender", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(0))
-                        appendFormParam(&sendForm, "to", sceValue)
-                        sendParts.append(PayloadPair("to", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.pendingTodoVisitPayload.depth))
-                        appendFormParam(&sendForm, "depth", sceValue)
-                        sendParts.append(PayloadPair("depth", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.pendingTodoVisitPayload.prefix)
-                        appendFormParam(&sendForm, "prefix", sceValue)
-                        sendParts.append(PayloadPair("prefix", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vMine))
-                        appendFormParam(&sendForm, "hash", sceValue)
-                        sendParts.append(PayloadPair("hash", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .truth(self.pendingTodoVisitPayload.reply)
-                        appendFormParam(&sendForm, "reply", sceValue)
-                        sendParts.append(PayloadPair("reply", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
-                    // build. The send is dispatched and not refused, and the whole of it is the
-                    // host's: delivering the event locally as well would show the document the act
-                    // twice.
-                    let sendRequest = HostSendRequest(
-                        processorType: "sce:mesh",
-                        eventName: "todo.node",
-                        target: "#server",
-                        content: "",
-                        params: sendForm,
-                        sendID: "__send_20",
-                        eventData: sendEventData,
-                        invokeID: engine.currentEventInvokeID
-                    )
-                    engine.performHostSend(sendRequest)
-
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-
-                if (self.vHub && self.pendingTodoVisitPayload.to != 2) {
-
-                // W3C SCXML 6.2: send id="__send_21"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
-                    // text each value spells, so a second reading of the data model cannot
-                    // disagree with the first.
-                    var sendForm: [String: [String]] = [:]
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.vNode)
-                        appendFormParam(&sendForm, "sender", sceValue)
-                        sendParts.append(PayloadPair("sender", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.pendingTodoVisitPayload.to)
-                        appendFormParam(&sendForm, "to", sceValue)
-                        sendParts.append(PayloadPair("to", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.pendingTodoVisitPayload.depth))
-                        appendFormParam(&sendForm, "depth", sceValue)
-                        sendParts.append(PayloadPair("depth", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.pendingTodoVisitPayload.prefix)
-                        appendFormParam(&sendForm, "prefix", sceValue)
-                        sendParts.append(PayloadPair("prefix", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vMine))
-                        appendFormParam(&sendForm, "hash", sceValue)
-                        sendParts.append(PayloadPair("hash", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .truth(self.pendingTodoVisitPayload.reply)
-                        appendFormParam(&sendForm, "reply", sceValue)
-                        sendParts.append(PayloadPair("reply", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
-                    // build. The send is dispatched and not refused, and the whole of it is the
-                    // host's: delivering the event locally as well would show the document the act
-                    // twice.
-                    let sendRequest = HostSendRequest(
-                        processorType: "sce:mesh",
-                        eventName: "todo.node",
-                        target: "#alice",
-                        content: "",
-                        params: sendForm,
-                        sendID: "__send_21",
-                        eventData: sendEventData,
-                        invokeID: engine.currentEventInvokeID
-                    )
-                    engine.performHostSend(sendRequest)
-
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-
-                if (self.vHub && (self.pendingTodoVisitPayload.to == 2 || self.pendingTodoVisitPayload.to == 0)) {
-
-                // W3C SCXML 6.2: send id="__send_22"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
-                    // text each value spells, so a second reading of the data model cannot
-                    // disagree with the first.
-                    var sendForm: [String: [String]] = [:]
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.vNode)
-                        appendFormParam(&sendForm, "sender", sceValue)
-                        sendParts.append(PayloadPair("sender", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.pendingTodoVisitPayload.to)
-                        appendFormParam(&sendForm, "to", sceValue)
-                        sendParts.append(PayloadPair("to", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.pendingTodoVisitPayload.depth))
-                        appendFormParam(&sendForm, "depth", sceValue)
-                        sendParts.append(PayloadPair("depth", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.pendingTodoVisitPayload.prefix)
-                        appendFormParam(&sendForm, "prefix", sceValue)
-                        sendParts.append(PayloadPair("prefix", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vMine))
-                        appendFormParam(&sendForm, "hash", sceValue)
-                        sendParts.append(PayloadPair("hash", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .truth(self.pendingTodoVisitPayload.reply)
-                        appendFormParam(&sendForm, "reply", sceValue)
-                        sendParts.append(PayloadPair("reply", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
-                    // build. The send is dispatched and not refused, and the whole of it is the
-                    // host's: delivering the event locally as well would show the document the act
-                    // twice.
-                    let sendRequest = HostSendRequest(
-                        processorType: "sce:mesh",
-                        eventName: "todo.node",
-                        target: "#bob",
-                        content: "",
-                        params: sendForm,
-                        sendID: "__send_22",
-                        eventData: sendEventData,
-                        invokeID: engine.currentEventInvokeID
-                    )
-                    engine.performHostSend(sendRequest)
-
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-                }
-            case 15:
-                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                sceBlock: do {
-                    if pendingPayloadTag != .todoNode {
-                        break sceBlock
-                    }
-
-                if (self.vHub || self.pendingTodoNodePayload.to == 0 || self.pendingTodoNodePayload.to == self.vNode) {
-
-
-                self.vMine = 0
-
-
-                // W3C SCXML 4.6: <foreach array="digest" item="n">, a native loop over a sce-static list
-                for n in self.vDigest {
-                    _ = n
-
-                if (n.depth == self.pendingTodoNodePayload.depth && n.prefix == self.pendingTodoNodePayload.prefix) {
-
-
-                self.vMine = n.hash
-
-                }
-
-                }
-
-                if (self.vMine != self.pendingTodoNodePayload.hash && self.pendingTodoNodePayload.depth < 30) {
-
-                // W3C SCXML 6.2: send id="__send_23"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.pendingTodoNodePayload.sender)
-                        sendParts.append(PayloadPair("to", sceValue))
-                    }
-                    do {
-                        let sceFailure = Failure()
-                        let sceValue: WireValue = .integer(Int64(Checked.add(sceFailure, self.pendingTodoNodePayload.depth, 1)))
-                        if !sceFailure.failed {
-                            sendParts.append(PayloadPair("depth", sceValue))
-                        } else {
-                            engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<send> <param name=depth> failed to evaluate"))
-                            paramFailed = true
-                        }
-                    }
-                    do {
-                        let sceFailure = Failure()
-                        let sceValue: WireValue = .unsigned64(Checked.mul(sceFailure, self.pendingTodoNodePayload.prefix, 3))
-                        if !sceFailure.failed {
-                            sendParts.append(PayloadPair("prefix", sceValue))
-                        } else {
-                            engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<send> <param name=prefix> failed to evaluate"))
-                            paramFailed = true
-                        }
-                    }
-                    do {
-                        let sceValue: WireValue = .truth(false)
-                        sendParts.append(PayloadPair("reply", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
-                    // and does not change the queue.
-                    var sendMetadata = EventMetadata.internalRaise()
-                    sendMetadata.data = sendEventData
-                    engine.raise(EventWithMetadata(TodoPeerEvent.todoVisit, metadata: sendMetadata))
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-
-                // W3C SCXML 6.2: send id="__send_24"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.pendingTodoNodePayload.sender)
-                        sendParts.append(PayloadPair("to", sceValue))
-                    }
-                    do {
-                        let sceFailure = Failure()
-                        let sceValue: WireValue = .integer(Int64(Checked.add(sceFailure, self.pendingTodoNodePayload.depth, 1)))
-                        if !sceFailure.failed {
-                            sendParts.append(PayloadPair("depth", sceValue))
-                        } else {
-                            engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<send> <param name=depth> failed to evaluate"))
-                            paramFailed = true
-                        }
-                    }
-                    do {
-                        let sceFailure = Failure()
-                        let sceValue: WireValue = .unsigned64(Checked.add(sceFailure, Checked.mul(sceFailure, self.pendingTodoNodePayload.prefix, 3), 1))
-                        if !sceFailure.failed {
-                            sendParts.append(PayloadPair("prefix", sceValue))
-                        } else {
-                            engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<send> <param name=prefix> failed to evaluate"))
-                            paramFailed = true
-                        }
-                    }
-                    do {
-                        let sceValue: WireValue = .truth(false)
-                        sendParts.append(PayloadPair("reply", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
-                    // and does not change the queue.
-                    var sendMetadata = EventMetadata.internalRaise()
-                    sendMetadata.data = sendEventData
-                    engine.raise(EventWithMetadata(TodoPeerEvent.todoVisit, metadata: sendMetadata))
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-
-                // W3C SCXML 6.2: send id="__send_25"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.pendingTodoNodePayload.sender)
-                        sendParts.append(PayloadPair("to", sceValue))
-                    }
-                    do {
-                        let sceFailure = Failure()
-                        let sceValue: WireValue = .integer(Int64(Checked.add(sceFailure, self.pendingTodoNodePayload.depth, 1)))
-                        if !sceFailure.failed {
-                            sendParts.append(PayloadPair("depth", sceValue))
-                        } else {
-                            engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<send> <param name=depth> failed to evaluate"))
-                            paramFailed = true
-                        }
-                    }
-                    do {
-                        let sceFailure = Failure()
-                        let sceValue: WireValue = .unsigned64(Checked.add(sceFailure, Checked.mul(sceFailure, self.pendingTodoNodePayload.prefix, 3), 2))
-                        if !sceFailure.failed {
-                            sendParts.append(PayloadPair("prefix", sceValue))
-                        } else {
-                            engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<send> <param name=prefix> failed to evaluate"))
-                            paramFailed = true
-                        }
-                    }
-                    do {
-                        let sceValue: WireValue = .truth(false)
-                        sendParts.append(PayloadPair("reply", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
-                    // and does not change the queue.
-                    var sendMetadata = EventMetadata.internalRaise()
-                    sendMetadata.data = sendEventData
-                    engine.raise(EventWithMetadata(TodoPeerEvent.todoVisit, metadata: sendMetadata))
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-
-                if (self.vMine != self.pendingTodoNodePayload.hash && self.pendingTodoNodePayload.depth == 30) {
-
-                // W3C SCXML 6.2: send id="__send_26"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.pendingTodoNodePayload.sender)
-                        sendParts.append(PayloadPair("to", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.pendingTodoNodePayload.prefix)
-                        sendParts.append(PayloadPair("minute", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
-                    // and does not change the queue.
-                    var sendMetadata = EventMetadata.internalRaise()
-                    sendMetadata.data = sendEventData
-                    engine.raise(EventWithMetadata(TodoPeerEvent.todoShare, metadata: sendMetadata))
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-
-                if (self.vMine != self.pendingTodoNodePayload.hash && self.pendingTodoNodePayload.depth == 30 && !self.pendingTodoNodePayload.reply) {
-
-                // W3C SCXML 6.2: send id="__send_27"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.pendingTodoNodePayload.sender)
-                        sendParts.append(PayloadPair("to", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(30))
-                        sendParts.append(PayloadPair("depth", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.pendingTodoNodePayload.prefix)
-                        sendParts.append(PayloadPair("prefix", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .truth(true)
-                        sendParts.append(PayloadPair("reply", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
-                    // and does not change the queue.
-                    var sendMetadata = EventMetadata.internalRaise()
-                    sendMetadata.data = sendEventData
-                    engine.raise(EventWithMetadata(TodoPeerEvent.todoVisit, metadata: sendMetadata))
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-                }
-
-                }
-            case 16:
-                // W3C SCXML 4.9: a transition's content is one block; an error ends it.
-                sceBlock: do {
-                    if pendingPayloadTag != .todoShare {
-                        break sceBlock
-                    }
-
-                // W3C SCXML 4.6: <foreach array="values" item="v">, a native loop over a sce-static list
-                for v in self.vValues {
-                    _ = v
-
-                var ifCondFailed58 = false
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Bool = Checked.div(sceFailure, v.wallTime, 60000) == Int64(truncatingIfNeeded: self.pendingTodoSharePayload.minute); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<if cond='v.wallTime / 60000 === _event.data.minute'>: an integer operation overflowed or failed")); ifCondFailed58 = true; return false }; return sceValue }()) {
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.narrow(sceFailure, v.id, to: UInt32.self); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='shareId'>: an integer operation overflowed or failed")); return true }; self.vShareId = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt16 = Checked.narrow(sceFailure, v.field, to: UInt16.self); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='shareField'>: an integer operation overflowed or failed")); return true }; self.vShareField = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-                if (!self.vHub) {
-
-                // W3C SCXML 6.2: send id="__send_28"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
-                    // text each value spells, so a second reading of the data model cannot
-                    // disagree with the first.
-                    var sendForm: [String: [String]] = [:]
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vShareId))
-                        appendFormParam(&sendForm, "id", sceValue)
-                        sendParts.append(PayloadPair("id", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vShareField))
-                        appendFormParam(&sendForm, "field", sceValue)
-                        sendParts.append(PayloadPair("field", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(v.value)
-                        appendFormParam(&sendForm, "value", sceValue)
-                        sendParts.append(PayloadPair("value", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .text(v.text)
-                        appendFormParam(&sendForm, "text", sceValue)
-                        sendParts.append(PayloadPair("text", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(v.wallTime)
-                        appendFormParam(&sendForm, "wallTime", sceValue)
-                        sendParts.append(PayloadPair("wallTime", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(v.counter))
-                        appendFormParam(&sendForm, "counter", sceValue)
-                        sendParts.append(PayloadPair("counter", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(v.nodeId)
-                        appendFormParam(&sendForm, "nodeId", sceValue)
-                        sendParts.append(PayloadPair("nodeId", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
-                    // build. The send is dispatched and not refused, and the whole of it is the
-                    // host's: delivering the event locally as well would show the document the act
-                    // twice.
-                    let sendRequest = HostSendRequest(
-                        processorType: "sce:mesh",
-                        eventName: "todo.write",
-                        target: "#server",
-                        content: "",
-                        params: sendForm,
-                        sendID: "__send_28",
-                        eventData: sendEventData,
-                        invokeID: engine.currentEventInvokeID
-                    )
-                    engine.performHostSend(sendRequest)
-
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-
-                if (self.vHub && self.pendingTodoSharePayload.to != 2) {
-
-                // W3C SCXML 6.2: send id="__send_29"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
-                    // text each value spells, so a second reading of the data model cannot
-                    // disagree with the first.
-                    var sendForm: [String: [String]] = [:]
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vShareId))
-                        appendFormParam(&sendForm, "id", sceValue)
-                        sendParts.append(PayloadPair("id", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vShareField))
-                        appendFormParam(&sendForm, "field", sceValue)
-                        sendParts.append(PayloadPair("field", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(v.value)
-                        appendFormParam(&sendForm, "value", sceValue)
-                        sendParts.append(PayloadPair("value", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .text(v.text)
-                        appendFormParam(&sendForm, "text", sceValue)
-                        sendParts.append(PayloadPair("text", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(v.wallTime)
-                        appendFormParam(&sendForm, "wallTime", sceValue)
-                        sendParts.append(PayloadPair("wallTime", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(v.counter))
-                        appendFormParam(&sendForm, "counter", sceValue)
-                        sendParts.append(PayloadPair("counter", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(v.nodeId)
-                        appendFormParam(&sendForm, "nodeId", sceValue)
-                        sendParts.append(PayloadPair("nodeId", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
-                    // build. The send is dispatched and not refused, and the whole of it is the
-                    // host's: delivering the event locally as well would show the document the act
-                    // twice.
-                    let sendRequest = HostSendRequest(
-                        processorType: "sce:mesh",
-                        eventName: "todo.write",
-                        target: "#alice",
-                        content: "",
-                        params: sendForm,
-                        sendID: "__send_29",
-                        eventData: sendEventData,
-                        invokeID: engine.currentEventInvokeID
-                    )
-                    engine.performHostSend(sendRequest)
-
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-
-                if (self.vHub && self.pendingTodoSharePayload.to == 2) {
-
-                // W3C SCXML 6.2: send id="__send_30"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
-                    // text each value spells, so a second reading of the data model cannot
-                    // disagree with the first.
-                    var sendForm: [String: [String]] = [:]
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vShareId))
-                        appendFormParam(&sendForm, "id", sceValue)
-                        sendParts.append(PayloadPair("id", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vShareField))
-                        appendFormParam(&sendForm, "field", sceValue)
-                        sendParts.append(PayloadPair("field", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(v.value)
-                        appendFormParam(&sendForm, "value", sceValue)
-                        sendParts.append(PayloadPair("value", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .text(v.text)
-                        appendFormParam(&sendForm, "text", sceValue)
-                        sendParts.append(PayloadPair("text", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(v.wallTime)
-                        appendFormParam(&sendForm, "wallTime", sceValue)
-                        sendParts.append(PayloadPair("wallTime", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(v.counter))
-                        appendFormParam(&sendForm, "counter", sceValue)
-                        sendParts.append(PayloadPair("counter", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(v.nodeId)
-                        appendFormParam(&sendForm, "nodeId", sceValue)
-                        sendParts.append(PayloadPair("nodeId", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
-                    // build. The send is dispatched and not refused, and the whole of it is the
-                    // host's: delivering the event locally as well would show the document the act
-                    // twice.
-                    let sendRequest = HostSendRequest(
-                        processorType: "sce:mesh",
-                        eventName: "todo.write",
-                        target: "#bob",
-                        content: "",
-                        params: sendForm,
-                        sendID: "__send_30",
-                        eventData: sendEventData,
-                        invokeID: engine.currentEventInvokeID
-                    )
-                    engine.performHostSend(sendRequest)
-
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-                }
-                if ifCondFailed58 {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-                }
-
-                // W3C SCXML 4.6: <foreach array="tombstones" item="t">, a native loop over a sce-static list
-                for t in self.vTombstones {
-                    _ = t
-
-                var ifCondFailed62 = false
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: Bool = Checked.div(sceFailure, t.wallTime, 60000) == Int64(truncatingIfNeeded: self.pendingTodoSharePayload.minute); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<if cond='t.wallTime / 60000 === _event.data.minute'>: an integer operation overflowed or failed")); ifCondFailed62 = true; return false }; return sceValue }()) {
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt32 = Checked.narrow(sceFailure, Checked.div(sceFailure, t.element, 65536), to: UInt32.self); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='shareId'>: an integer operation overflowed or failed")); return true }; self.vShareId = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-
-                if ({ () -> Bool in let sceFailure = Failure(); let sceValue: UInt16 = Checked.narrow(sceFailure, Checked.rem(sceFailure, t.element, 65536), to: UInt16.self); if sceFailure.failed { engine.raise(EventWithMetadata.platformError(TodoPeerEvent.errorExecution, message: "<assign location='shareField'>: an integer operation overflowed or failed")); return true }; self.vShareField = sceValue; return false }()) {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-
-                if (!self.vHub) {
-
-                // W3C SCXML 6.2: send id="__send_31"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
-                    // text each value spells, so a second reading of the data model cannot
-                    // disagree with the first.
-                    var sendForm: [String: [String]] = [:]
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vShareId))
-                        appendFormParam(&sendForm, "id", sceValue)
-                        sendParts.append(PayloadPair("id", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vShareField))
-                        appendFormParam(&sendForm, "field", sceValue)
-                        sendParts.append(PayloadPair("field", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(t.wallTime)
-                        appendFormParam(&sendForm, "wallTime", sceValue)
-                        sendParts.append(PayloadPair("wallTime", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(t.counter))
-                        appendFormParam(&sendForm, "counter", sceValue)
-                        sendParts.append(PayloadPair("counter", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(t.nodeId)
-                        appendFormParam(&sendForm, "nodeId", sceValue)
-                        sendParts.append(PayloadPair("nodeId", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.vNode)
-                        appendFormParam(&sendForm, "by", sceValue)
-                        sendParts.append(PayloadPair("by", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
-                    // build. The send is dispatched and not refused, and the whole of it is the
-                    // host's: delivering the event locally as well would show the document the act
-                    // twice.
-                    let sendRequest = HostSendRequest(
-                        processorType: "sce:mesh",
-                        eventName: "todo.supersede",
-                        target: "#server",
-                        content: "",
-                        params: sendForm,
-                        sendID: "__send_31",
-                        eventData: sendEventData,
-                        invokeID: engine.currentEventInvokeID
-                    )
-                    engine.performHostSend(sendRequest)
-
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-
-                if (self.vHub && self.pendingTodoSharePayload.to != 2) {
-
-                // W3C SCXML 6.2: send id="__send_32"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
-                    // text each value spells, so a second reading of the data model cannot
-                    // disagree with the first.
-                    var sendForm: [String: [String]] = [:]
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vShareId))
-                        appendFormParam(&sendForm, "id", sceValue)
-                        sendParts.append(PayloadPair("id", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vShareField))
-                        appendFormParam(&sendForm, "field", sceValue)
-                        sendParts.append(PayloadPair("field", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(t.wallTime)
-                        appendFormParam(&sendForm, "wallTime", sceValue)
-                        sendParts.append(PayloadPair("wallTime", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(t.counter))
-                        appendFormParam(&sendForm, "counter", sceValue)
-                        sendParts.append(PayloadPair("counter", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(t.nodeId)
-                        appendFormParam(&sendForm, "nodeId", sceValue)
-                        sendParts.append(PayloadPair("nodeId", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.vNode)
-                        appendFormParam(&sendForm, "by", sceValue)
-                        sendParts.append(PayloadPair("by", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
-                    // build. The send is dispatched and not refused, and the whole of it is the
-                    // host's: delivering the event locally as well would show the document the act
-                    // twice.
-                    let sendRequest = HostSendRequest(
-                        processorType: "sce:mesh",
-                        eventName: "todo.supersede",
-                        target: "#alice",
-                        content: "",
-                        params: sendForm,
-                        sendID: "__send_32",
-                        eventData: sendEventData,
-                        invokeID: engine.currentEventInvokeID
-                    )
-                    engine.performHostSend(sendRequest)
-
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-
-                if (self.vHub && self.pendingTodoSharePayload.to == 2) {
-
-                // W3C SCXML 6.2: send id="__send_33"
-                do {
-                    // W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported and its
-                    // pair left out, and the message still goes; the error ends the block once
-                    // it has. Read at the end of this element.
-                    var paramFailed = false
-                    // W3C SCXML C.2 + 6.2.3: the form is a rendering of this one evaluation, the
-                    // text each value spells, so a second reading of the data model cannot
-                    // disagree with the first.
-                    var sendForm: [String: [String]] = [:]
-                    var sendParts: [PayloadPair] = []
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vShareId))
-                        appendFormParam(&sendForm, "id", sceValue)
-                        sendParts.append(PayloadPair("id", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(self.vShareField))
-                        appendFormParam(&sendForm, "field", sceValue)
-                        sendParts.append(PayloadPair("field", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .signed64(t.wallTime)
-                        appendFormParam(&sendForm, "wallTime", sceValue)
-                        sendParts.append(PayloadPair("wallTime", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .integer(Int64(t.counter))
-                        appendFormParam(&sendForm, "counter", sceValue)
-                        sendParts.append(PayloadPair("counter", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(t.nodeId)
-                        appendFormParam(&sendForm, "nodeId", sceValue)
-                        sendParts.append(PayloadPair("nodeId", sceValue))
-                    }
-                    do {
-                        let sceValue: WireValue = .unsigned64(self.vNode)
-                        appendFormParam(&sendForm, "by", sceValue)
-                        sendParts.append(PayloadPair("by", sceValue))
-                    }
-                    let sendEventData = payloadJSON(sendParts)
-                    // W3C SCXML 6.2.5: "sce:mesh" is served by the host, which declared it to this
-                    // build. The send is dispatched and not refused, and the whole of it is the
-                    // host's: delivering the event locally as well would show the document the act
-                    // twice.
-                    let sendRequest = HostSendRequest(
-                        processorType: "sce:mesh",
-                        eventName: "todo.supersede",
-                        target: "#bob",
-                        content: "",
-                        params: sendForm,
-                        sendID: "__send_33",
-                        eventData: sendEventData,
-                        invokeID: engine.currentEventInvokeID
-                    )
-                    engine.performHostSend(sendRequest)
-
-                    // W3C SCXML 4.9: the <param> error ends the block, from however deep a
-                    // <foreach> it came.
-                    if paramFailed {
-                        break sceBlock
-                    }
-                }
-                }
-
-                }
-                if ifCondFailed62 {
-                    break sceBlock  // W3C SCXML 4.9: the error ends the block
-                }
-
-                }
-                }
-            case 17:
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 sceBlock: do {
                     if pendingPayloadTag != .todoAgenda {
@@ -5375,7 +2508,7 @@ public final class TodoPeerPolicy: InvocablePolicy {
                 }
 
                 }
-            case 18:
+            case 8:
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 sceBlock: do {
                     if pendingPayloadTag != .todoZone {
@@ -5454,7 +2587,7 @@ public final class TodoPeerPolicy: InvocablePolicy {
                 }
 
                 }
-            case 19:
+            case 9:
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 sceBlock: do {
 
@@ -5498,7 +2631,7 @@ public final class TodoPeerPolicy: InvocablePolicy {
                 self.vZoneOffsets4.removeAll()
 
                 }
-            case 20:
+            case 10:
                 // W3C SCXML 4.9: a transition's content is one block; an error ends it.
                 sceBlock: do {
 
@@ -5517,19 +2650,24 @@ public final class TodoPeerPolicy: InvocablePolicy {
     }}
 
 extension Engine where Policy == TodoPeerPolicy {
-    /// Raises `todo.ack` with its payload, binding the event and the payload's
+    /// Raises `record_list.change` with its payload, binding the event and the payload's
     /// values in one call so the pairing of a name and a type cannot be
     /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are
     /// filled: the typed one a native expression reads, and `data`, which is what
     /// every other reader of `_event.data` binds it from.
-    public func raiseTodoAck(sender: UInt64, before: Int64, hash: UInt32) {
+    /// A value past a bound its type declares, at any depth, is refused before
+    /// anything is raised (docs/adr/0086, section 5.4): the seam throws the
+    /// `BoundExceeded` that names the path to the place, and raises nothing.
+    public func raiseRecordListChange(by: UInt64, wallTime: Int64, counter: UInt32, ops: [TodoPeerOpRecord]) throws {
+        try checkList("ops", ops, least: 1, bound: 64, { scePath0, sceValue0 in try checkText(scePath0 + "/text", sceValue0.text, bound: 96) })
+        let scePayload = TodoPeerRecordListChangePayload(by: by, wallTime: wallTime, counter: counter, ops: ops)
         raiseExternalWithMeta(
             EventWithMetadata(
-                TodoPeerEvent.todoAck,
+                TodoPeerEvent.recordListChange,
                 metadata: EventMetadata(
-                    data: payloadJSON(.unsigned64("sender", sender), .signed64("before", before), .integer("hash", hash)),
+                    data: recordJSON([PayloadPair.json("by", rawJSON: WireValue.unsigned64(scePayload.by).json), PayloadPair.json("wallTime", rawJSON: WireValue.signed64(scePayload.wallTime).json), PayloadPair.json("counter", rawJSON: WireValue.integer(Int64(scePayload.counter)).json), PayloadPair.json("ops", rawJSON: listJSON(scePayload.ops, { (sceElement) -> String in recordJSON([PayloadPair.json("kind", rawJSON: WireValue.integer(Int64(sceElement.kind)).json), PayloadPair.json("id", rawJSON: WireValue.integer(Int64(sceElement.id)).json), PayloadPair.json("field", rawJSON: WireValue.integer(Int64(sceElement.field)).json), PayloadPair.json("value", rawJSON: WireValue.signed64(sceElement.value).json), PayloadPair.json("text", rawJSON: WireValue.text(sceElement.text).json), PayloadPair.json("wallTime", rawJSON: WireValue.signed64(sceElement.wallTime).json), PayloadPair.json("counter", rawJSON: WireValue.integer(Int64(sceElement.counter)).json), PayloadPair.json("nodeId", rawJSON: WireValue.unsigned64(sceElement.nodeId).json)]) }))]),
                     eventType: .externalEvent,
-                    typedPayload: TodoPeerTodoAckPayload(sender: sender, before: before, hash: hash)
+                    typedPayload: scePayload
                 )
             )
         )
@@ -5553,24 +2691,6 @@ extension Engine where Policy == TodoPeerPolicy {
         )
     }
 
-    /// Raises `todo.compact` with its payload, binding the event and the payload's
-    /// values in one call so the pairing of a name and a type cannot be
-    /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are
-    /// filled: the typed one a native expression reads, and `data`, which is what
-    /// every other reader of `_event.data` binds it from.
-    public func raiseTodoCompact(before: Int64) {
-        raiseExternalWithMeta(
-            EventWithMetadata(
-                TodoPeerEvent.todoCompact,
-                metadata: EventMetadata(
-                    data: payloadJSON(.signed64("before", before)),
-                    eventType: .externalEvent,
-                    typedPayload: TodoPeerTodoCompactPayload(before: before)
-                )
-            )
-        )
-    }
-
     /// Raises `todo.edit` with its payload, binding the event and the payload's
     /// values in one call so the pairing of a name and a type cannot be
     /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are
@@ -5589,91 +2709,19 @@ extension Engine where Policy == TodoPeerPolicy {
         )
     }
 
-    /// Raises `todo.floor` with its payload, binding the event and the payload's
-    /// values in one call so the pairing of a name and a type cannot be
-    /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are
-    /// filled: the typed one a native expression reads, and `data`, which is what
-    /// every other reader of `_event.data` binds it from.
-    public func raiseTodoFloor(before: Int64, hash: UInt32) {
-        raiseExternalWithMeta(
-            EventWithMetadata(
-                TodoPeerEvent.todoFloor,
-                metadata: EventMetadata(
-                    data: payloadJSON(.signed64("before", before), .integer("hash", hash)),
-                    eventType: .externalEvent,
-                    typedPayload: TodoPeerTodoFloorPayload(before: before, hash: hash)
-                )
-            )
-        )
-    }
-
     /// Raises `todo.join` with its payload, binding the event and the payload's
     /// values in one call so the pairing of a name and a type cannot be
     /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are
     /// filled: the typed one a native expression reads, and `data`, which is what
     /// every other reader of `_event.data` binds it from.
-    public func raiseTodoJoin(node: UInt64, hub: Bool) {
+    public func raiseTodoJoin(node: UInt64) {
         raiseExternalWithMeta(
             EventWithMetadata(
                 TodoPeerEvent.todoJoin,
                 metadata: EventMetadata(
-                    data: payloadJSON(.unsigned64("node", node), .truth("hub", hub)),
+                    data: payloadJSON(.unsigned64("node", node)),
                     eventType: .externalEvent,
-                    typedPayload: TodoPeerTodoJoinPayload(node: node, hub: hub)
-                )
-            )
-        )
-    }
-
-    /// Raises `todo.keep` with its payload, binding the event and the payload's
-    /// values in one call so the pairing of a name and a type cannot be
-    /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are
-    /// filled: the typed one a native expression reads, and `data`, which is what
-    /// every other reader of `_event.data` binds it from.
-    public func raiseTodoKeep(kind: UInt8, element: UInt64, wallTime: Int64, counter: UInt32, nodeId: UInt64) {
-        raiseExternalWithMeta(
-            EventWithMetadata(
-                TodoPeerEvent.todoKeep,
-                metadata: EventMetadata(
-                    data: payloadJSON(.integer("kind", kind), .unsigned64("element", element), .signed64("wallTime", wallTime), .integer("counter", counter), .unsigned64("nodeId", nodeId)),
-                    eventType: .externalEvent,
-                    typedPayload: TodoPeerTodoKeepPayload(kind: kind, element: element, wallTime: wallTime, counter: counter, nodeId: nodeId)
-                )
-            )
-        )
-    }
-
-    /// Raises `todo.node` with its payload, binding the event and the payload's
-    /// values in one call so the pairing of a name and a type cannot be
-    /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are
-    /// filled: the typed one a native expression reads, and `data`, which is what
-    /// every other reader of `_event.data` binds it from.
-    public func raiseTodoNode(sender: UInt64, to: UInt64, depth: UInt8, prefix: UInt64, hash: UInt32, reply: Bool) {
-        raiseExternalWithMeta(
-            EventWithMetadata(
-                TodoPeerEvent.todoNode,
-                metadata: EventMetadata(
-                    data: payloadJSON(.unsigned64("sender", sender), .unsigned64("to", to), .integer("depth", depth), .unsigned64("prefix", prefix), .integer("hash", hash), .truth("reply", reply)),
-                    eventType: .externalEvent,
-                    typedPayload: TodoPeerTodoNodePayload(sender: sender, to: to, depth: depth, prefix: prefix, hash: hash, reply: reply)
-                )
-            )
-        )
-    }
-
-    /// Raises `todo.propose` with its payload, binding the event and the payload's
-    /// values in one call so the pairing of a name and a type cannot be
-    /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are
-    /// filled: the typed one a native expression reads, and `data`, which is what
-    /// every other reader of `_event.data` binds it from.
-    public func raiseTodoPropose(before: Int64) {
-        raiseExternalWithMeta(
-            EventWithMetadata(
-                TodoPeerEvent.todoPropose,
-                metadata: EventMetadata(
-                    data: payloadJSON(.signed64("before", before)),
-                    eventType: .externalEvent,
-                    typedPayload: TodoPeerTodoProposePayload(before: before)
+                    typedPayload: TodoPeerTodoJoinPayload(node: node)
                 )
             )
         )
@@ -5702,104 +2750,14 @@ extension Engine where Policy == TodoPeerPolicy {
     /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are
     /// filled: the typed one a native expression reads, and `data`, which is what
     /// every other reader of `_event.data` binds it from.
-    public func raiseTodoRoom(values: UInt32, history: UInt32, digest: UInt32) {
+    public func raiseTodoRoom(values: UInt32) {
         raiseExternalWithMeta(
             EventWithMetadata(
                 TodoPeerEvent.todoRoom,
                 metadata: EventMetadata(
-                    data: payloadJSON(.integer("values", values), .integer("history", history), .integer("digest", digest)),
+                    data: payloadJSON(.integer("values", values)),
                     eventType: .externalEvent,
-                    typedPayload: TodoPeerTodoRoomPayload(values: values, history: history, digest: digest)
-                )
-            )
-        )
-    }
-
-    /// Raises `todo.settle` with its payload, binding the event and the payload's
-    /// values in one call so the pairing of a name and a type cannot be
-    /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are
-    /// filled: the typed one a native expression reads, and `data`, which is what
-    /// every other reader of `_event.data` binds it from.
-    public func raiseTodoSettle(before: Int64, members: UInt32) {
-        raiseExternalWithMeta(
-            EventWithMetadata(
-                TodoPeerEvent.todoSettle,
-                metadata: EventMetadata(
-                    data: payloadJSON(.signed64("before", before), .integer("members", members)),
-                    eventType: .externalEvent,
-                    typedPayload: TodoPeerTodoSettlePayload(before: before, members: members)
-                )
-            )
-        )
-    }
-
-    /// Raises `todo.share` with its payload, binding the event and the payload's
-    /// values in one call so the pairing of a name and a type cannot be
-    /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are
-    /// filled: the typed one a native expression reads, and `data`, which is what
-    /// every other reader of `_event.data` binds it from.
-    public func raiseTodoShare(to: UInt64, minute: UInt64) {
-        raiseExternalWithMeta(
-            EventWithMetadata(
-                TodoPeerEvent.todoShare,
-                metadata: EventMetadata(
-                    data: payloadJSON(.unsigned64("to", to), .unsigned64("minute", minute)),
-                    eventType: .externalEvent,
-                    typedPayload: TodoPeerTodoSharePayload(to: to, minute: minute)
-                )
-            )
-        )
-    }
-
-    /// Raises `todo.supersede` with its payload, binding the event and the payload's
-    /// values in one call so the pairing of a name and a type cannot be
-    /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are
-    /// filled: the typed one a native expression reads, and `data`, which is what
-    /// every other reader of `_event.data` binds it from.
-    public func raiseTodoSupersede(id: UInt32, field: UInt16, wallTime: Int64, counter: UInt32, nodeId: UInt64, by: UInt64) {
-        raiseExternalWithMeta(
-            EventWithMetadata(
-                TodoPeerEvent.todoSupersede,
-                metadata: EventMetadata(
-                    data: payloadJSON(.integer("id", id), .integer("field", field), .signed64("wallTime", wallTime), .integer("counter", counter), .unsigned64("nodeId", nodeId), .unsigned64("by", by)),
-                    eventType: .externalEvent,
-                    typedPayload: TodoPeerTodoSupersedePayload(id: id, field: field, wallTime: wallTime, counter: counter, nodeId: nodeId, by: by)
-                )
-            )
-        )
-    }
-
-    /// Raises `todo.visit` with its payload, binding the event and the payload's
-    /// values in one call so the pairing of a name and a type cannot be
-    /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are
-    /// filled: the typed one a native expression reads, and `data`, which is what
-    /// every other reader of `_event.data` binds it from.
-    public func raiseTodoVisit(to: UInt64, depth: UInt8, prefix: UInt64, reply: Bool) {
-        raiseExternalWithMeta(
-            EventWithMetadata(
-                TodoPeerEvent.todoVisit,
-                metadata: EventMetadata(
-                    data: payloadJSON(.unsigned64("to", to), .integer("depth", depth), .unsigned64("prefix", prefix), .truth("reply", reply)),
-                    eventType: .externalEvent,
-                    typedPayload: TodoPeerTodoVisitPayload(to: to, depth: depth, prefix: prefix, reply: reply)
-                )
-            )
-        )
-    }
-
-    /// Raises `todo.write` with its payload, binding the event and the payload's
-    /// values in one call so the pairing of a name and a type cannot be
-    /// constructed inconsistently (NL-to-IR Item C1 Path A). Both carriers are
-    /// filled: the typed one a native expression reads, and `data`, which is what
-    /// every other reader of `_event.data` binds it from.
-    public func raiseTodoWrite(id: UInt32, field: UInt16, value: Int64, text: String, wallTime: Int64, counter: UInt32, nodeId: UInt64) {
-        raiseExternalWithMeta(
-            EventWithMetadata(
-                TodoPeerEvent.todoWrite,
-                metadata: EventMetadata(
-                    data: payloadJSON(.integer("id", id), .integer("field", field), .signed64("value", value), .text("text", text), .signed64("wallTime", wallTime), .integer("counter", counter), .unsigned64("nodeId", nodeId)),
-                    eventType: .externalEvent,
-                    typedPayload: TodoPeerTodoWritePayload(id: id, field: field, value: value, text: text, wallTime: wallTime, counter: counter, nodeId: nodeId)
+                    typedPayload: TodoPeerTodoRoomPayload(values: values)
                 )
             )
         )
@@ -5837,22 +2795,11 @@ extension TodoPeerPolicy: SavedPolicy {
     /// re-typed or moved something a saved state names refuses it.
     public static var savedShape: SavedShape {
         SavedShape(
-            first: "84564493f4d6537649fd21f55b4a724e9dc0e6a879081544fc16a50dfa5dc34d",
-            revised: "201e7b9ae688a375fef8d36ed817d1d4c784e2b564cb3a27ebff38daa6392f17",
-            format2First: "84564493f4d6537649fd21f55b4a724e9dc0e6a879081544fc16a50dfa5dc34d",
-            format2Revised: "201e7b9ae688a375fef8d36ed817d1d4c784e2b564cb3a27ebff38daa6392f17",
+            first: "379f1ea604eeed8d97ddd3e711e4ee2dc7d9dbe9fe8ad6209b525ef0cdffa8d8",
+            revised: "058fbac9afe11b05ed04e463167e6e9c6f314e0e9e008a3e88e4216a917ed9a1",
+            format2First: "379f1ea604eeed8d97ddd3e711e4ee2dc7d9dbe9fe8ad6209b525ef0cdffa8d8",
+            format2Revised: "058fbac9afe11b05ed04e463167e6e9c6f314e0e9e008a3e88e4216a917ed9a1",
             records: [
-                SavedRecordLineage(
-                    event: "calendar.answer", revision: 1,
-                    revisions: [],
-                    added: [
-                    ],
-                    widened: [
-                    ],
-                    holders: [
-                        SavedRecordHolder(variable: "answers", list: true),
-                        SavedRecordHolder(variable: "answer", list: false),
-                    ]),
                 SavedRecordLineage(
                     event: "calendar.member", revision: 1,
                     revisions: [],
@@ -5895,16 +2842,7 @@ extension TodoPeerPolicy: SavedPolicy {
                     holders: [
                         SavedRecordHolder(variable: "clock", list: false),
                         SavedRecordHolder(variable: "stamp", list: false),
-                    ]),
-                SavedRecordLineage(
-                    event: "merge.merkle_node", revision: 1,
-                    revisions: [],
-                    added: [
-                    ],
-                    widened: [
-                    ],
-                    holders: [
-                        SavedRecordHolder(variable: "digest", list: true),
+                        SavedRecordHolder(variable: "dot", list: false),
                     ]),
                 SavedRecordLineage(
                     event: "merge.mv_value", revision: 1,
@@ -5926,10 +2864,19 @@ extension TodoPeerPolicy: SavedPolicy {
                     ],
                     holders: [
                         SavedRecordHolder(variable: "adds", list: true),
-                        SavedRecordHolder(variable: "tombstones", list: true),
                         SavedRecordHolder(variable: "one", list: true),
-                        SavedRecordHolder(variable: "stable", list: true),
                         SavedRecordHolder(variable: "entry", list: false),
+                    ]),
+                SavedRecordLineage(
+                    event: "record_list.op", revision: 1,
+                    revisions: [],
+                    added: [
+                    ],
+                    widened: [
+                    ],
+                    holders: [
+                        SavedRecordHolder(variable: "taking", list: true),
+                        SavedRecordHolder(variable: "op", list: false),
                     ]),
             ])
     }
@@ -5939,24 +2886,16 @@ extension TodoPeerPolicy: SavedPolicy {
     public func savedVariables() -> [SavedEntry<JSONValue>] {
         [
             SavedEntry("node", SavedValues.of(vNode)),
-            SavedEntry("hub", SavedValues.of(vHub)),
             SavedEntry("clock", vClock.toSaved()),
             SavedEntry("stamp", vStamp.toSaved()),
+            SavedEntry("dot", vDot.toSaved()),
             SavedEntry("adds", SavedValues.list(vAdds) { $0.toSaved() }),
-            SavedEntry("tombstones", SavedValues.list(vTombstones) { $0.toSaved() }),
             SavedEntry("one", SavedValues.list(vOne) { $0.toSaved() }),
-            SavedEntry("stable", SavedValues.list(vStable) { $0.toSaved() }),
             SavedEntry("entry", vEntry.toSaved()),
             SavedEntry("values", SavedValues.list(vValues) { $0.toSaved() }),
             SavedEntry("typed", SavedValues.of(vTyped)),
             SavedEntry("held", vHeld.toSaved()),
-            SavedEntry("digest", SavedValues.list(vDigest) { $0.toSaved() }),
-            SavedEntry("mine", SavedValues.of(vMine)),
-            SavedEntry("shareId", SavedValues.of(vShareId)),
-            SavedEntry("shareField", SavedValues.of(vShareField)),
-            SavedEntry("known", SavedValues.of(vKnown)),
             SavedEntry("wasLive", SavedValues.of(vWasLive)),
-            SavedEntry("isLive", SavedValues.of(vIsLive)),
             SavedEntry("present", SavedValues.of(vPresent)),
             SavedEntry("refusals", SavedValues.of(vRefusals)),
             SavedEntry("agenda", SavedValues.list(vAgenda) { $0.toSaved() }),
@@ -5979,27 +2918,16 @@ extension TodoPeerPolicy: SavedPolicy {
             SavedEntry("rawCount", SavedValues.of(vRawCount)),
             SavedEntry("rawLast", SavedValues.of(vRawLast)),
             SavedEntry("utcSec", SavedValues.of(vUtcSec)),
-            SavedEntry("floor", SavedValues.of(vFloor)),
-            SavedEntry("stale", SavedValues.of(vStale)),
-            SavedEntry("late", SavedValues.of(vLate)),
-            SavedEntry("frozenFor", SavedValues.of(vFrozenFor)),
-            SavedEntry("frozenHash", SavedValues.of(vFrozenHash)),
-            SavedEntry("pending", SavedValues.of(vPending)),
-            SavedEntry("members", SavedValues.of(vMembers)),
-            SavedEntry("agreeing", SavedValues.of(vAgreeing)),
-            SavedEntry("answers", SavedValues.list(vAnswers) { $0.toSaved() }),
-            SavedEntry("answer", vAnswer.toSaved()),
-            SavedEntry("agreed", SavedValues.of(vAgreed)),
             SavedEntry("roomValues", SavedValues.of(vRoomValues)),
-            SavedEntry("roomHistory", SavedValues.of(vRoomHistory)),
-            SavedEntry("roomDigest", SavedValues.of(vRoomDigest)),
             SavedEntry("full", SavedValues.of(vFull)),
-            SavedEntry("fresh", SavedValues.of(vFresh)),
-            SavedEntry("blocked", SavedValues.of(vBlocked)),
+            SavedEntry("gone", SavedValues.of(vGone)),
             SavedEntry("roster", SavedValues.list(vRoster) { $0.toSaved() }),
             SavedEntry("denied", SavedValues.of(vDenied)),
             SavedEntry("forbidden", SavedValues.of(vForbidden)),
             SavedEntry("authorized", SavedValues.of(vAuthorized)),
+            SavedEntry("taking", SavedValues.list(vTaking) { $0.toSaved() }),
+            SavedEntry("took", SavedValues.of(vTook)),
+            SavedEntry("op", vOp.toSaved()),
         ]
     }
 
@@ -6007,130 +2935,92 @@ extension TodoPeerPolicy: SavedPolicy {
     /// text, and changes none: what it returns writes them, and cannot fail.
     public func readSavedVariables(from saved: SavedState) throws -> () -> Void {
         let value0 = try SavedValues.uint64(try saved.variable("node"), "node")
-        let value1 = try SavedValues.bool(try saved.variable("hub"), "hub")
-        let value2 = try TodoPeerHlcRecord.fromSaved(try saved.variable("clock"), "clock")
-        let value3 = try TodoPeerHlcRecord.fromSaved(try saved.variable("stamp"), "stamp")
+        let value1 = try TodoPeerHlcRecord.fromSaved(try saved.variable("clock"), "clock")
+        let value2 = try TodoPeerHlcRecord.fromSaved(try saved.variable("stamp"), "stamp")
+        let value3 = try TodoPeerHlcRecord.fromSaved(try saved.variable("dot"), "dot")
         let value4 = try SavedValues.list(try saved.variable("adds"), "adds", capacity: 1024) { e, w in try TodoPeerEntryRecord.fromSaved(e, w) }
-        let value5 = try SavedValues.list(try saved.variable("tombstones"), "tombstones", capacity: 1024) { e, w in try TodoPeerEntryRecord.fromSaved(e, w) }
-        let value6 = try SavedValues.list(try saved.variable("one"), "one", capacity: 1024) { e, w in try TodoPeerEntryRecord.fromSaved(e, w) }
-        let value7 = try SavedValues.list(try saved.variable("stable"), "stable", capacity: 1024) { e, w in try TodoPeerEntryRecord.fromSaved(e, w) }
-        let value8 = try TodoPeerEntryRecord.fromSaved(try saved.variable("entry"), "entry")
-        let value9 = try SavedValues.list(try saved.variable("values"), "values", capacity: 512) { e, w in try TodoPeerValueRecord.fromSaved(e, w) }
-        let value10 = try SavedValues.string(try saved.variable("typed"), "typed", capacity: 32)
-        let value11 = try TodoPeerValueRecord.fromSaved(try saved.variable("held"), "held")
-        let value12 = try SavedValues.list(try saved.variable("digest"), "digest", capacity: 2048) { e, w in try TodoPeerNodeRecord.fromSaved(e, w) }
-        let value13 = try SavedValues.uint32(try saved.variable("mine"), "mine")
-        let value14 = try SavedValues.uint32(try saved.variable("shareId"), "shareId")
-        let value15 = try SavedValues.uint16(try saved.variable("shareField"), "shareField")
-        let value16 = try SavedValues.bool(try saved.variable("known"), "known")
-        let value17 = try SavedValues.bool(try saved.variable("wasLive"), "wasLive")
-        let value18 = try SavedValues.bool(try saved.variable("isLive"), "isLive")
-        let value19 = try SavedValues.bool(try saved.variable("present"), "present")
-        let value20 = try SavedValues.uint32(try saved.variable("refusals"), "refusals")
-        let value21 = try SavedValues.list(try saved.variable("agenda"), "agenda", capacity: 64) { e, w in try TodoPeerOccurrenceRecord.fromSaved(e, w) }
-        let value22 = try SavedValues.list(try saved.variable("local"), "local", capacity: 64) { e, w in try TodoPeerOccurrenceRecord.fromSaved(e, w) }
-        let value23 = try TodoPeerOccurrenceRecord.fromSaved(try saved.variable("occ"), "occ")
-        let value24 = try SavedValues.uint32(try saved.variable("agendaNext"), "agendaNext")
-        let value25 = try SavedValues.list(try saved.variable("zoneStarts1"), "zoneStarts1", capacity: 64) { e, w in try SavedValues.int64(e, w) }
-        let value26 = try SavedValues.list(try saved.variable("zoneOffsets1"), "zoneOffsets1", capacity: 64) { e, w in try SavedValues.int32(e, w) }
-        let value27 = try SavedValues.list(try saved.variable("zoneStarts2"), "zoneStarts2", capacity: 64) { e, w in try SavedValues.int64(e, w) }
-        let value28 = try SavedValues.list(try saved.variable("zoneOffsets2"), "zoneOffsets2", capacity: 64) { e, w in try SavedValues.int32(e, w) }
-        let value29 = try SavedValues.list(try saved.variable("zoneStarts3"), "zoneStarts3", capacity: 64) { e, w in try SavedValues.int64(e, w) }
-        let value30 = try SavedValues.list(try saved.variable("zoneOffsets3"), "zoneOffsets3", capacity: 64) { e, w in try SavedValues.int32(e, w) }
-        let value31 = try SavedValues.list(try saved.variable("zoneStarts4"), "zoneStarts4", capacity: 64) { e, w in try SavedValues.int64(e, w) }
-        let value32 = try SavedValues.list(try saved.variable("zoneOffsets4"), "zoneOffsets4", capacity: 64) { e, w in try SavedValues.int32(e, w) }
-        let value33 = try SavedValues.list(try saved.variable("zoneStarts"), "zoneStarts", capacity: 64) { e, w in try SavedValues.int64(e, w) }
-        let value34 = try SavedValues.list(try saved.variable("zoneOffsets"), "zoneOffsets", capacity: 64) { e, w in try SavedValues.int32(e, w) }
-        let value35 = try SavedValues.uint32(try saved.variable("zoneRows"), "zoneRows")
-        let value36 = try SavedValues.bool(try saved.variable("split"), "split")
-        let value37 = try TodoPeerScheduleRecord.fromSaved(try saved.variable("sched"), "sched")
-        let value38 = try SavedValues.uint32(try saved.variable("rawCount"), "rawCount")
-        let value39 = try SavedValues.uint32(try saved.variable("rawLast"), "rawLast")
-        let value40 = try SavedValues.int64(try saved.variable("utcSec"), "utcSec")
-        let value41 = try SavedValues.int64(try saved.variable("floor"), "floor")
-        let value42 = try SavedValues.bool(try saved.variable("stale"), "stale")
-        let value43 = try SavedValues.uint32(try saved.variable("late"), "late")
-        let value44 = try SavedValues.int64(try saved.variable("frozenFor"), "frozenFor")
-        let value45 = try SavedValues.uint32(try saved.variable("frozenHash"), "frozenHash")
-        let value46 = try SavedValues.int64(try saved.variable("pending"), "pending")
-        let value47 = try SavedValues.uint32(try saved.variable("members"), "members")
-        let value48 = try SavedValues.uint32(try saved.variable("agreeing"), "agreeing")
-        let value49 = try SavedValues.list(try saved.variable("answers"), "answers", capacity: 512) { e, w in try TodoPeerAnswerRecord.fromSaved(e, w) }
-        let value50 = try TodoPeerAnswerRecord.fromSaved(try saved.variable("answer"), "answer")
-        let value51 = try SavedValues.uint32(try saved.variable("agreed"), "agreed")
-        let value52 = try SavedValues.uint32(try saved.variable("roomValues"), "roomValues")
-        let value53 = try SavedValues.uint32(try saved.variable("roomHistory"), "roomHistory")
-        let value54 = try SavedValues.uint32(try saved.variable("roomDigest"), "roomDigest")
-        let value55 = try SavedValues.uint32(try saved.variable("full"), "full")
-        let value56 = try SavedValues.bool(try saved.variable("fresh"), "fresh")
-        let value57 = try SavedValues.bool(try saved.variable("blocked"), "blocked")
-        let value58 = try SavedValues.list(try saved.variable("roster"), "roster", capacity: 64) { e, w in try TodoPeerMemberRecord.fromSaved(e, w) }
-        let value59 = try SavedValues.uint32(try saved.variable("denied"), "denied")
-        let value60 = try SavedValues.bool(try saved.variable("forbidden"), "forbidden")
-        let value61 = try SavedValues.bool(try saved.variable("authorized"), "authorized")
+        let value5 = try SavedValues.list(try saved.variable("one"), "one", capacity: 1024) { e, w in try TodoPeerEntryRecord.fromSaved(e, w) }
+        let value6 = try TodoPeerEntryRecord.fromSaved(try saved.variable("entry"), "entry")
+        let value7 = try SavedValues.list(try saved.variable("values"), "values", capacity: 512) { e, w in try TodoPeerValueRecord.fromSaved(e, w) }
+        let value8 = try SavedValues.string(try saved.variable("typed"), "typed", capacity: 32)
+        let value9 = try TodoPeerValueRecord.fromSaved(try saved.variable("held"), "held")
+        let value10 = try SavedValues.bool(try saved.variable("wasLive"), "wasLive")
+        let value11 = try SavedValues.bool(try saved.variable("present"), "present")
+        let value12 = try SavedValues.uint32(try saved.variable("refusals"), "refusals")
+        let value13 = try SavedValues.list(try saved.variable("agenda"), "agenda", capacity: 64) { e, w in try TodoPeerOccurrenceRecord.fromSaved(e, w) }
+        let value14 = try SavedValues.list(try saved.variable("local"), "local", capacity: 64) { e, w in try TodoPeerOccurrenceRecord.fromSaved(e, w) }
+        let value15 = try TodoPeerOccurrenceRecord.fromSaved(try saved.variable("occ"), "occ")
+        let value16 = try SavedValues.uint32(try saved.variable("agendaNext"), "agendaNext")
+        let value17 = try SavedValues.list(try saved.variable("zoneStarts1"), "zoneStarts1", capacity: 64) { e, w in try SavedValues.int64(e, w) }
+        let value18 = try SavedValues.list(try saved.variable("zoneOffsets1"), "zoneOffsets1", capacity: 64) { e, w in try SavedValues.int32(e, w) }
+        let value19 = try SavedValues.list(try saved.variable("zoneStarts2"), "zoneStarts2", capacity: 64) { e, w in try SavedValues.int64(e, w) }
+        let value20 = try SavedValues.list(try saved.variable("zoneOffsets2"), "zoneOffsets2", capacity: 64) { e, w in try SavedValues.int32(e, w) }
+        let value21 = try SavedValues.list(try saved.variable("zoneStarts3"), "zoneStarts3", capacity: 64) { e, w in try SavedValues.int64(e, w) }
+        let value22 = try SavedValues.list(try saved.variable("zoneOffsets3"), "zoneOffsets3", capacity: 64) { e, w in try SavedValues.int32(e, w) }
+        let value23 = try SavedValues.list(try saved.variable("zoneStarts4"), "zoneStarts4", capacity: 64) { e, w in try SavedValues.int64(e, w) }
+        let value24 = try SavedValues.list(try saved.variable("zoneOffsets4"), "zoneOffsets4", capacity: 64) { e, w in try SavedValues.int32(e, w) }
+        let value25 = try SavedValues.list(try saved.variable("zoneStarts"), "zoneStarts", capacity: 64) { e, w in try SavedValues.int64(e, w) }
+        let value26 = try SavedValues.list(try saved.variable("zoneOffsets"), "zoneOffsets", capacity: 64) { e, w in try SavedValues.int32(e, w) }
+        let value27 = try SavedValues.uint32(try saved.variable("zoneRows"), "zoneRows")
+        let value28 = try SavedValues.bool(try saved.variable("split"), "split")
+        let value29 = try TodoPeerScheduleRecord.fromSaved(try saved.variable("sched"), "sched")
+        let value30 = try SavedValues.uint32(try saved.variable("rawCount"), "rawCount")
+        let value31 = try SavedValues.uint32(try saved.variable("rawLast"), "rawLast")
+        let value32 = try SavedValues.int64(try saved.variable("utcSec"), "utcSec")
+        let value33 = try SavedValues.uint32(try saved.variable("roomValues"), "roomValues")
+        let value34 = try SavedValues.uint32(try saved.variable("full"), "full")
+        let value35 = try SavedValues.uint32(try saved.variable("gone"), "gone")
+        let value36 = try SavedValues.list(try saved.variable("roster"), "roster", capacity: 64) { e, w in try TodoPeerMemberRecord.fromSaved(e, w) }
+        let value37 = try SavedValues.uint32(try saved.variable("denied"), "denied")
+        let value38 = try SavedValues.bool(try saved.variable("forbidden"), "forbidden")
+        let value39 = try SavedValues.bool(try saved.variable("authorized"), "authorized")
+        let value40 = try SavedValues.list(try saved.variable("taking"), "taking", capacity: 64) { e, w in try TodoPeerOpRecord.fromSaved(e, w) }
+        let value41 = try SavedValues.uint32(try saved.variable("took"), "took")
+        let value42 = try TodoPeerOpRecord.fromSaved(try saved.variable("op"), "op")
         return { [self] in
             self.vNode = value0
-            self.vHub = value1
-            self.vClock = value2
-            self.vStamp = value3
+            self.vClock = value1
+            self.vStamp = value2
+            self.vDot = value3
             self.vAdds = value4
-            self.vTombstones = value5
-            self.vOne = value6
-            self.vStable = value7
-            self.vEntry = value8
-            self.vValues = value9
-            self.vTyped = value10
-            self.vHeld = value11
-            self.vDigest = value12
-            self.vMine = value13
-            self.vShareId = value14
-            self.vShareField = value15
-            self.vKnown = value16
-            self.vWasLive = value17
-            self.vIsLive = value18
-            self.vPresent = value19
-            self.vRefusals = value20
-            self.vAgenda = value21
-            self.vLocal = value22
-            self.vOcc = value23
-            self.vAgendaNext = value24
-            self.vZoneStarts1 = value25
-            self.vZoneOffsets1 = value26
-            self.vZoneStarts2 = value27
-            self.vZoneOffsets2 = value28
-            self.vZoneStarts3 = value29
-            self.vZoneOffsets3 = value30
-            self.vZoneStarts4 = value31
-            self.vZoneOffsets4 = value32
-            self.vZoneStarts = value33
-            self.vZoneOffsets = value34
-            self.vZoneRows = value35
-            self.vSplit = value36
-            self.vSched = value37
-            self.vRawCount = value38
-            self.vRawLast = value39
-            self.vUtcSec = value40
-            self.vFloor = value41
-            self.vStale = value42
-            self.vLate = value43
-            self.vFrozenFor = value44
-            self.vFrozenHash = value45
-            self.vPending = value46
-            self.vMembers = value47
-            self.vAgreeing = value48
-            self.vAnswers = value49
-            self.vAnswer = value50
-            self.vAgreed = value51
-            self.vRoomValues = value52
-            self.vRoomHistory = value53
-            self.vRoomDigest = value54
-            self.vFull = value55
-            self.vFresh = value56
-            self.vBlocked = value57
-            self.vRoster = value58
-            self.vDenied = value59
-            self.vForbidden = value60
-            self.vAuthorized = value61
+            self.vOne = value5
+            self.vEntry = value6
+            self.vValues = value7
+            self.vTyped = value8
+            self.vHeld = value9
+            self.vWasLive = value10
+            self.vPresent = value11
+            self.vRefusals = value12
+            self.vAgenda = value13
+            self.vLocal = value14
+            self.vOcc = value15
+            self.vAgendaNext = value16
+            self.vZoneStarts1 = value17
+            self.vZoneOffsets1 = value18
+            self.vZoneStarts2 = value19
+            self.vZoneOffsets2 = value20
+            self.vZoneStarts3 = value21
+            self.vZoneOffsets3 = value22
+            self.vZoneStarts4 = value23
+            self.vZoneOffsets4 = value24
+            self.vZoneStarts = value25
+            self.vZoneOffsets = value26
+            self.vZoneRows = value27
+            self.vSplit = value28
+            self.vSched = value29
+            self.vRawCount = value30
+            self.vRawLast = value31
+            self.vUtcSec = value32
+            self.vRoomValues = value33
+            self.vFull = value34
+            self.vGone = value35
+            self.vRoster = value36
+            self.vDenied = value37
+            self.vForbidden = value38
+            self.vAuthorized = value39
+            self.vTaking = value40
+            self.vTook = value41
+            self.vOp = value42
         }
     }
 }

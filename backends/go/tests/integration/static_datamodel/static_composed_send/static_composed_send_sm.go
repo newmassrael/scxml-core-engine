@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
+// source-hash: d05ce240c5f3b48b3c83b6bee1ba58feef40d57c310e9a29ef5279604bbaaa42
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: static_composed_send.scxml:29 :: _machine
+// SCE-MAP: static_composed_send.scxml:41 :: _machine
 
 package static_composed_send
 
@@ -138,15 +138,18 @@ type StaticComposedSendEvent int
 
 const (
 	StaticComposedSendEventBatchSent StaticComposedSendEvent = 0
-	StaticComposedSendEventErrorExecution StaticComposedSendEvent = 1
+	StaticComposedSendEventCountedSent StaticComposedSendEvent = 1
+	StaticComposedSendEventErrorExecution StaticComposedSendEvent = 2
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	StaticComposedSendEventNull StaticComposedSendEvent = 2
+	StaticComposedSendEventNull StaticComposedSendEvent = 3
 )
 
 func (e StaticComposedSendEvent) String() string {
 	switch e {
 	case StaticComposedSendEventBatchSent:
 		return "batch.sent"
+	case StaticComposedSendEventCountedSent:
+		return "counted.sent"
 	case StaticComposedSendEventErrorExecution:
 		return "error.execution"
 	case StaticComposedSendEventNull:
@@ -166,6 +169,7 @@ type StaticComposedSendPayloadTag int
 const (
 	StaticComposedSendPayloadTagNone StaticComposedSendPayloadTag = iota
 	StaticComposedSendPayloadTagBatchSent
+	StaticComposedSendPayloadTagCountedSent
 )
 
 // StaticComposedSendBatchSentPayload is the NL→IR Item C1 Path A typed `_event.data`
@@ -179,6 +183,14 @@ type StaticComposedSendBatchSentPayload struct {
 	spare optional.Of[[]uint8]
 	note string
 	late []uint8
+}
+
+// StaticComposedSendCountedSentPayload is the NL→IR Item C1 Path A typed `_event.data`
+// payload for `counted.sent`. Internal to the package; consumers inject it via
+// the `StaticComposedSendRaiseCountedSent` seam below (fields are unexported by design).
+type StaticComposedSendCountedSentPayload struct {
+	kept []uint8
+	hops uint8
 }
 
 // StaticComposedSendRaiseBatchSent is the NL→IR Item C1 Path A per-event typed `_event.data`
@@ -222,6 +234,34 @@ func StaticComposedSendRaiseBatchSent(e *sce.Engine[StaticComposedSendState, Sta
 			// from. Filling only the first left an `<assign expr="_event.data.x">`
 			// on this event reading nothing, on every backend alike.
 			Data: string(sce.RecordJSON(sce.Pair("items", func() sce.RawJSON { sceItems := make([]sce.RawJSON, 0, len(scePayload.items)); for _, sceElement := range scePayload.items { sceItems = append(sceItems, sce.RecordJSON(sce.Pair("id", sce.ValueJSON(sceElement.id)), sce.Pair("amount", sce.ValueJSON(sce.Int64PayloadText(sceElement.amount))), sce.Pair("label", sce.ValueJSON(sceElement.label)), sce.Pair("level", sce.ValueJSON(sceElement.level.String())), sce.Pair("due", func() sce.RawJSON { if sceElement, sceIs := (sceElement.due).Get(); sceIs { return sce.ValueJSON(sce.Int64PayloadText(sceElement)) }; return sce.ValueJSON(nil) }()), sce.Pair("blob", sce.ValueJSON(sce.BytesAsPayloadText(sceElement.blob))), sce.Pair("tags", func() sce.RawJSON { sceItems := make([]sce.RawJSON, 0, len(sceElement.tags)); for _, sceElement := range sceElement.tags { sceItems = append(sceItems, sce.ValueJSON(sceElement)) }; return sce.ListJSON(sceItems, func(sceItem sce.RawJSON) sce.RawJSON { return sceItem }) }()))) }; return sce.ListJSON(sceItems, func(sceItem sce.RawJSON) sce.RawJSON { return sceItem }) }()), sce.Pair("grid", func() sce.RawJSON { sceItems := make([]sce.RawJSON, 0, len(scePayload.grid)); for _, sceElement := range scePayload.grid { sceItems = append(sceItems, func() sce.RawJSON { sceItems := make([]sce.RawJSON, 0, len(sceElement)); for _, sceElement := range sceElement { sceItems = append(sceItems, sce.ValueJSON(sceElement)) }; return sce.ListJSON(sceItems, func(sceItem sce.RawJSON) sce.RawJSON { return sceItem }) }()) }; return sce.ListJSON(sceItems, func(sceItem sce.RawJSON) sce.RawJSON { return sceItem }) }()), sce.Pair("levels", func() sce.RawJSON { sceItems := make([]sce.RawJSON, 0, len(scePayload.levels)); for _, sceElement := range scePayload.levels { sceItems = append(sceItems, sce.ValueJSON(sceElement.String())) }; return sce.ListJSON(sceItems, func(sceItem sce.RawJSON) sce.RawJSON { return sceItem }) }()), sce.Pair("maybe", func() sce.RawJSON { sceItems := make([]sce.RawJSON, 0, len(scePayload.maybe)); for _, sceElement := range scePayload.maybe { sceItems = append(sceItems, func() sce.RawJSON { if sceElement, sceIs := (sceElement).Get(); sceIs { return sce.ValueJSON(sceElement) }; return sce.ValueJSON(nil) }()) }; return sce.ListJSON(sceItems, func(sceItem sce.RawJSON) sce.RawJSON { return sceItem }) }()), sce.Pair("spare", func() sce.RawJSON { if sceElement, sceIs := (scePayload.spare).Get(); sceIs { return func() sce.RawJSON { sceItems := make([]sce.RawJSON, 0, len(sceElement)); for _, sceElement := range sceElement { sceItems = append(sceItems, sce.ValueJSON(sceElement)) }; return sce.ListJSON(sceItems, func(sceItem sce.RawJSON) sce.RawJSON { return sceItem }) }() }; return sce.ValueJSON(nil) }()), sce.Pair("note", sce.ValueJSON(scePayload.note)), sce.Pair("late", func() sce.RawJSON { sceItems := make([]sce.RawJSON, 0, len(scePayload.late)); for _, sceElement := range scePayload.late { sceItems = append(sceItems, sce.ValueJSON(sceElement)) }; return sce.ListJSON(sceItems, func(sceItem sce.RawJSON) sce.RawJSON { return sceItem }) }()))),
+		},
+	})
+	return nil
+}
+
+// StaticComposedSendRaiseCountedSent is the NL→IR Item C1 Path A per-event typed `_event.data`
+// inject seam for `counted.sent` — binds the event name and the payload field
+// values in one call so the name↔type pairing cannot be constructed
+// inconsistently. Twin of the Rust `StaticComposedSendInject` extension-trait method
+// and the C11 `raise_<event>_typed` entry.
+// A value past a bound its type declares, at any depth, is refused before
+// anything is sent (docs/adr/0086, section 5.4): the seam answers the refusal,
+// naming the path to the place, and raises nothing.
+func StaticComposedSendRaiseCountedSent(e *sce.Engine[StaticComposedSendState, StaticComposedSendEvent], kept []uint8, hops uint8) error {
+	if err := sce.CheckListWithin("kept", kept, 1, 2, func(string, uint8) error { return nil }); err != nil {
+		return err
+	}
+	scePayload := StaticComposedSendCountedSentPayload{kept: kept, hops: hops}
+	e.RaiseExternalWithMeta(sce.EventWithMetadata[StaticComposedSendEvent]{
+		Event:    StaticComposedSendEventCountedSent,
+		Metadata: sce.EventMetadata{
+			EventType:    sce.EventTypeExternal,
+			TypedPayload: scePayload,
+			// Both carriers are filled: the typed one a native guard reads,
+			// and `Data`, which is what the script engine binds `_event.data`
+			// from. Filling only the first left an `<assign expr="_event.data.x">`
+			// on this event reading nothing, on every backend alike.
+			Data: string(sce.RecordJSON(sce.Pair("kept", func() sce.RawJSON { sceItems := make([]sce.RawJSON, 0, len(scePayload.kept)); for _, sceElement := range scePayload.kept { sceItems = append(sceItems, sce.ValueJSON(sceElement)) }; return sce.ListJSON(sceItems, func(sceItem sce.RawJSON) sce.RawJSON { return sceItem }) }()), sce.Pair("hops", sce.ValueJSON(scePayload.hops)))),
 		},
 	})
 	return nil
@@ -313,12 +353,12 @@ func NewStaticComposedSendItemRecord(id uint32, amount int64, label string, leve
 // this machine names when every record schema it holds is in its first
 // revision (docs/adr/0045, section 2). The generator computes it once, so it is
 // the text every backend's constant is.
-const StaticComposedSendSavedShapeFormat2 = "f70a18d28ff04fb593898feceefb707a60de12cb52ea065383856cb153e5f555"
+const StaticComposedSendSavedShapeFormat2 = "1e90a6306dff5c26ad4140c585404fe0fb4ed6167709cdddf054d940e56091b1"
 
 // StaticComposedSendSavedShapeFormat2Revised is the shape a format-2 saved state
 // of this machine names when it names a later revision of a record schema or
 // an enum.
-const StaticComposedSendSavedShapeFormat2Revised = "6b116cdf67e27f00da8519217f6d5f8eaa08a218c75642a2c9eb51734b379288"
+const StaticComposedSendSavedShapeFormat2Revised = "c45313f157703b7337989e2ff1d45441c09d2892a1a4a8a65e2046918f346378"
 
 // StaticComposedSendSavedEnumKeys names each enum a value of a saved state of
 // this machine is of, by its document (docs/adr/0044): the key `revisions`
@@ -333,10 +373,10 @@ var StaticComposedSendSavedEnumKeys = [...]string{}
 // one saved at an earlier revision of a record schema is read with each field a
 // later revision added at its default.
 var StaticComposedSendSavedShape = sce.SavedShape{
-	First:          "f70a18d28ff04fb593898feceefb707a60de12cb52ea065383856cb153e5f555",
-	Revised:        "6b116cdf67e27f00da8519217f6d5f8eaa08a218c75642a2c9eb51734b379288",
-	Format2First:   "f70a18d28ff04fb593898feceefb707a60de12cb52ea065383856cb153e5f555",
-	Format2Revised: "6b116cdf67e27f00da8519217f6d5f8eaa08a218c75642a2c9eb51734b379288",
+	First:          "1e90a6306dff5c26ad4140c585404fe0fb4ed6167709cdddf054d940e56091b1",
+	Revised:        "c45313f157703b7337989e2ff1d45441c09d2892a1a4a8a65e2046918f346378",
+	Format2First:   "1e90a6306dff5c26ad4140c585404fe0fb4ed6167709cdddf054d940e56091b1",
+	Format2Revised: "c45313f157703b7337989e2ff1d45441c09d2892a1a4a8a65e2046918f346378",
 	Records: []sce.RecordLineage{
 	},
 	Enums: []sce.EnumLineage{
@@ -375,6 +415,10 @@ func StaticComposedSendSaveAt(engine *sce.Engine[StaticComposedSendState, Static
 	variables.Set("late_sum", sce.SavedWriteUint32(p.vLateSum))
 	variables.Set("late", sce.SavedWriteList(p.vLate, sce.SavedWriteUint8))
 	variables.Set("refusals", sce.SavedWriteUint32(p.vRefusals))
+	variables.Set("held", sce.SavedWriteList(p.vHeld, sce.SavedWriteUint8))
+	variables.Set("counted_deliveries", sce.SavedWriteUint32(p.vCountedDeliveries))
+	variables.Set("counted_sum", sce.SavedWriteUint32(p.vCountedSum))
+	variables.Set("counted_hops", sce.SavedWriteUint8(p.vCountedHops))
 	var children []sce.SavedChild
 	return sce.SaveSession(engine, &StaticComposedSendSavedShape, variables,
 		sce.SaveHistory[StaticComposedSendState, StaticComposedSendEvent](p, StaticComposedSendHistories),
@@ -446,6 +490,26 @@ func StaticComposedSendJudge(saved *sce.SavedState) error {
 	if raw, err := grown.Variable("refusals"); err != nil {
 		return err
 	} else if _, err := sce.SavedReadUint32(raw, "refusals"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("held"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadList(raw, "held", 2, sce.SavedReadUint8); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("counted_deliveries"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "counted_deliveries"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("counted_sum"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint32(raw, "counted_sum"); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("counted_hops"); err != nil {
+		return err
+	} else if _, err := sce.SavedReadUint8(raw, "counted_hops"); err != nil {
 		return err
 	}
 	return sce.JudgeSession[StaticComposedSendState, StaticComposedSendEvent](p, grown)
@@ -555,6 +619,38 @@ func StaticComposedSendRestoreAt(policy *StaticComposedSendPolicy, saved *sce.Sa
 	if err != nil {
 		return nil, err
 	}
+	raw11, err := grown.Variable("held")
+	if err != nil {
+		return nil, err
+	}
+	read11, err := sce.SavedReadList(raw11, "held", 2, sce.SavedReadUint8)
+	if err != nil {
+		return nil, err
+	}
+	raw12, err := grown.Variable("counted_deliveries")
+	if err != nil {
+		return nil, err
+	}
+	read12, err := sce.SavedReadUint32(raw12, "counted_deliveries")
+	if err != nil {
+		return nil, err
+	}
+	raw13, err := grown.Variable("counted_sum")
+	if err != nil {
+		return nil, err
+	}
+	read13, err := sce.SavedReadUint32(raw13, "counted_sum")
+	if err != nil {
+		return nil, err
+	}
+	raw14, err := grown.Variable("counted_hops")
+	if err != nil {
+		return nil, err
+	}
+	read14, err := sce.SavedReadUint8(raw14, "counted_hops")
+	if err != nil {
+		return nil, err
+	}
 	if err := sce.JudgeSession[StaticComposedSendState, StaticComposedSendEvent](policy, grown); err != nil {
 		return nil, err
 	}
@@ -568,6 +664,10 @@ func StaticComposedSendRestoreAt(policy *StaticComposedSendPolicy, saved *sce.Sa
 	policy.vLateSum = read8
 	policy.vLate = read9
 	policy.vRefusals = read10
+	policy.vHeld = read11
+	policy.vCountedDeliveries = read12
+	policy.vCountedSum = read13
+	policy.vCountedHops = read14
 	for _, recorded := range history {
 		policy.SetHistoryValue(recorded.History, recorded.States)
 	}
@@ -645,6 +745,7 @@ type StaticComposedSendPolicy struct {
 	// the Rust policy's `pending_payload` / the C11 `sm->pending_payload`.
 	pendingPayloadTag StaticComposedSendPayloadTag
 	pendingBatchSentPayload StaticComposedSendBatchSentPayload
+	pendingCountedSentPayload StaticComposedSendCountedSentPayload
 
 	pendingEventData string
 	// W3C SCXML 5.10: Session ID
@@ -670,6 +771,14 @@ type StaticComposedSendPolicy struct {
 	vLate []uint8
 	// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
 	vRefusals uint32
+	// W3C SCXML 5.2: the `held` datamodel variable.
+	vHeld []uint8
+	// W3C SCXML 5.2: the `counted_deliveries` datamodel variable, published (`sce:direction="out"`).
+	vCountedDeliveries uint32
+	// W3C SCXML 5.2: the `counted_sum` datamodel variable, published (`sce:direction="out"`).
+	vCountedSum uint32
+	// W3C SCXML 5.2: the `counted_hops` datamodel variable, published (`sce:direction="out"`).
+	vCountedHops uint8
 	// W3C SCXML 6.4: Parent communication (unbounded — see sce.ParentEventQueue)
 	ParentExternalQueue *sce.ParentEventQueue
 	InvokeID           string
@@ -701,6 +810,10 @@ func NewStaticComposedSendPolicy() StaticComposedSendPolicy {
 		vLateSum: 0,
 		vLate: nil,
 		vRefusals: 0,
+		vHeld: nil,
+		vCountedDeliveries: 0,
+		vCountedSum: 0,
+		vCountedHops: 0,
 	}
 }
 
@@ -780,6 +893,24 @@ func (p *StaticComposedSendPolicy) Refusals() uint32 {
 	return p.vRefusals
 }
 
+// CountedDeliveries reports what the published `counted_deliveries` datamodel
+// variable holds now (W3C SCXML 5.2). Only the machine writes it.
+func (p *StaticComposedSendPolicy) CountedDeliveries() uint32 {
+	return p.vCountedDeliveries
+}
+
+// CountedSum reports what the published `counted_sum` datamodel
+// variable holds now (W3C SCXML 5.2). Only the machine writes it.
+func (p *StaticComposedSendPolicy) CountedSum() uint32 {
+	return p.vCountedSum
+}
+
+// CountedHops reports what the published `counted_hops` datamodel
+// variable holds now (W3C SCXML 5.2). Only the machine writes it.
+func (p *StaticComposedSendPolicy) CountedHops() uint8 {
+	return p.vCountedHops
+}
+
 // StaticComposedSendInvokeParams holds the values a parent's `<param>` and
 // `namelist` give this machine's variables before it starts (§scxml-6.4.1). A
 // variable left nil, or absent for an optional one, keeps the value its `<data>`
@@ -794,6 +925,9 @@ type StaticComposedSendInvokeParams struct {
 	VFirstMaybe optional.Of[uint16]
 	VLateSum *uint32
 	VRefusals *uint32
+	VCountedDeliveries *uint32
+	VCountedSum *uint32
+	VCountedHops *uint8
 }
 
 // AcceptParams gives this machine the values params carries, in place of the
@@ -825,6 +959,15 @@ func (p *StaticComposedSendPolicy) AcceptParams(params StaticComposedSendInvokeP
 	}
 	if params.VRefusals != nil {
 		p.vRefusals = *params.VRefusals
+	}
+	if params.VCountedDeliveries != nil {
+		p.vCountedDeliveries = *params.VCountedDeliveries
+	}
+	if params.VCountedSum != nil {
+		p.vCountedSum = *params.VCountedSum
+	}
+	if params.VCountedHops != nil {
+		p.vCountedHops = *params.VCountedHops
 	}
 }
 
@@ -953,6 +1096,8 @@ func (p *StaticComposedSendPolicy) GetEventFromName(name string) (StaticComposed
 	switch name {
 	case "batch.sent":
 		return StaticComposedSendEventBatchSent, true
+	case "counted.sent":
+		return StaticComposedSendEventCountedSent, true
 	case "error.execution":
 		return StaticComposedSendEventErrorExecution, true
 	}
@@ -1037,6 +1182,9 @@ func (p *StaticComposedSendPolicy) PopulateEventMetadata(meta *sce.EventMetadata
 	case StaticComposedSendBatchSentPayload:
 		p.pendingPayloadTag = StaticComposedSendPayloadTagBatchSent
 		p.pendingBatchSentPayload = v
+	case StaticComposedSendCountedSentPayload:
+		p.pendingPayloadTag = StaticComposedSendPayloadTagCountedSent
+		p.pendingCountedSentPayload = v
 	}
 
 	p.pendingEventData = meta.Data
@@ -1129,6 +1277,32 @@ func (p *StaticComposedSendPolicy) LiftTypedPayload(event StaticComposedSendEven
 		}
 		p.pendingBatchSentPayload = payload
 		p.pendingPayloadTag = StaticComposedSendPayloadTagBatchSent
+	case StaticComposedSendEventCountedSent:
+		fields, err := sce.LiftPayload(meta.Data)
+		if err != nil {
+			return err
+		}
+		var payload StaticComposedSendCountedSentPayload
+		{
+			sceValue, err := fields.Field("kept")
+			if err != nil {
+				return err
+			}
+			if payload.kept, err = sce.ReadListWithin(sceValue, 1, 2, func(sceValue sce.PayloadValue) (uint8, error) { return sce.ValueUnsigned[uint8](sceValue) }); err != nil {
+				return err
+			}
+		}
+		{
+			sceValue, err := fields.Field("hops")
+			if err != nil {
+				return err
+			}
+			if payload.hops, err = sce.ValueUnsigned[uint8](sceValue); err != nil {
+				return err
+			}
+		}
+		p.pendingCountedSentPayload = payload
+		p.pendingPayloadTag = StaticComposedSendPayloadTagCountedSent
 	}
 	return nil
 
@@ -1149,7 +1323,7 @@ func (p *StaticComposedSendPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line static_composed_send.scxml:29
+//line static_composed_send.scxml:41
 func (p *StaticComposedSendPolicy) ExecuteEntryActions(state StaticComposedSendState, engine *sce.Engine[StaticComposedSendState, StaticComposedSendEvent], isDefaultEntry bool) {
 	switch state {
 	default:
@@ -1162,7 +1336,7 @@ func (p *StaticComposedSendPolicy) ExecuteEntryActions(state StaticComposedSendS
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line static_composed_send.scxml:29
+//line static_composed_send.scxml:41
 func (p *StaticComposedSendPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[StaticComposedSendState, StaticComposedSendEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -1170,7 +1344,7 @@ func (p *StaticComposedSendPolicy) ExecuteHistoryDefaultContent(history sce.Hist
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line static_composed_send.scxml:29
+//line static_composed_send.scxml:41
 func (p *StaticComposedSendPolicy) ExecuteExitActions(state StaticComposedSendState, engine *sce.Engine[StaticComposedSendState, StaticComposedSendEvent], configurationBeforeExit []StaticComposedSendState) {
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
@@ -1187,7 +1361,7 @@ func (p *StaticComposedSendPolicy) ExecuteExitActions(state StaticComposedSendSt
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line static_composed_send.scxml:29
+//line static_composed_send.scxml:41
 func (p *StaticComposedSendPolicy) BindCurrentEvent(event StaticComposedSendEvent, engine *sce.Engine[StaticComposedSendState, StaticComposedSendEvent]) {
 	// This document's guards never read _event, so there is nothing to bind.
 }
@@ -1197,7 +1371,7 @@ func (p *StaticComposedSendPolicy) BindCurrentEvent(event StaticComposedSendEven
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line static_composed_send.scxml:29
+//line static_composed_send.scxml:41
 func (p *StaticComposedSendPolicy) FirstEnabledTransition(state StaticComposedSendState, event StaticComposedSendEvent, engine *sce.Engine[StaticComposedSendState, StaticComposedSendEvent]) (sce.EnabledTransition[StaticComposedSendState, sce.HistoryID], bool) {
 	switch state {
 	case StaticComposedSendStateIdle:
@@ -1224,11 +1398,34 @@ func (p *StaticComposedSendPolicy) FirstEnabledTransition(state StaticComposedSe
 				}, true
 			}
 		}
+		if event == StaticComposedSendEventCountedSent {
+			// NL→IR Item C1 Path A: native typed `_event.data` guard — cond
+			// "counted_deliveries === 0" lowered to a tag-checked field comparison on
+			// the lifted `pending<Event>Payload` (no script engine).
+			if p.vCountedDeliveries == 0 {
+				return sce.EnabledTransition[StaticComposedSendState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 2,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
+		if event == StaticComposedSendEventCountedSent {
+			{
+				return sce.EnabledTransition[StaticComposedSendState, sce.HistoryID]{
+					Source:          state,
+					TransitionIndex: 3,
+					HasActions:      true,
+					IsInternal:      true,
+				}, true
+			}
+		}
 		if event == StaticComposedSendEventErrorExecution {
 			{
 				return sce.EnabledTransition[StaticComposedSendState, sce.HistoryID]{
 					Source:          state,
-					TransitionIndex: 2,
+					TransitionIndex: 4,
 					HasActions:      true,
 					IsInternal:      true,
 				}, true
@@ -1240,13 +1437,13 @@ func (p *StaticComposedSendPolicy) FirstEnabledTransition(state StaticComposedSe
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line static_composed_send.scxml:29
+//line static_composed_send.scxml:41
 func (p *StaticComposedSendPolicy) ExecuteTransitionContent(source StaticComposedSendState, transitionIndex int, engine *sce.Engine[StaticComposedSendState, StaticComposedSendEvent]) {
 	switch source {
 	case StaticComposedSendStateIdle:
 		switch transitionIndex {
 		case 0:
-//line static_composed_send.scxml:53
+//line static_composed_send.scxml:70
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticComposedSendPayloadTagBatchSent {
@@ -1315,9 +1512,53 @@ func (p *StaticComposedSendPolicy) ExecuteTransitionContent(source StaticCompose
 		}
 	}
 	}
+
+	// W3C SCXML 6.2: send id="__send_1"
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
+	{
+		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
+		// and its pair left out, and the message still goes; the error ends
+		// the block once it has. Read at the end of this element.
+		paramFailed := false
+		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
+		// delivered, so this is an ordered list rather than a map. The typed
+		// value is kept rather than its text — a receiver reading
+		// `_event.data.value === 42` finds the string "42" unequal.
+		parts := make([]sce.EventDataParam, 0)
+		{
+			var sceFailure scealgorithm.Failure
+			sceValue := func() any { if len(p.vHeld) < 1 { sceFailure.Fail(scealgorithm.Precondition) }; return func() []any { sceItems := make([]any, 0, len(p.vHeld)); for _, sceElement := range p.vHeld { sceItems = append(sceItems, int64(sceElement)) }; return sceItems }() }()
+			if !sceFailure.Failed() {
+				parts = append(parts, sce.EventDataParam{Name: "kept", Value: sceValue})
+			} else {
+				engine.Raise(sce.NewPlatformError(StaticComposedSendEventErrorExecution, "<send> <param name='kept'> failed to evaluate"))
+				paramFailed = true
+			}
+		}
+		{
+			sceValue := int64(3)
+			parts = append(parts, sce.EventDataParam{Name: "hops", Value: sceValue})
+		}
+		eventDataStr := sce.BuildJSONFromTypedParams(parts)
+		_ = eventDataStr
+	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+	// and does not change the queue.
+	{
+		meta := sce.NewEventWithMetadata(StaticComposedSendEventCountedSent)
+		meta.Metadata.Data = eventDataStr
+		engine.Raise(meta)
+	}
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
+		if paramFailed {
+			return
+		}
+	}
+	}
 			}()
 		case 1:
-//line static_composed_send.scxml:67
+//line static_composed_send.scxml:90
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != StaticComposedSendPayloadTagBatchSent {
@@ -1395,9 +1636,140 @@ func (p *StaticComposedSendPolicy) ExecuteTransitionContent(source StaticCompose
 
 	}
 
+
+	// SCE Accepted Subset §2.15: <sce:append target="held">
+
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vHeld) >= 2 { engine.Raise(sce.NewPlatformError(StaticComposedSendEventErrorExecution, "<sce:append target='held'>: the list already holds its capacity of 2")); return true }; sceValue := scealgorithm.ElementOf(p.vHeld, 7); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedSendEventErrorExecution, "<sce:append target='held'>: an integer operation overflowed or failed")); return true }; p.vHeld = append(p.vHeld, sceValue); return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+
+	// W3C SCXML 6.2: send id="__send_2"
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
+	{
+		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
+		// and its pair left out, and the message still goes; the error ends
+		// the block once it has. Read at the end of this element.
+		paramFailed := false
+		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
+		// delivered, so this is an ordered list rather than a map. The typed
+		// value is kept rather than its text — a receiver reading
+		// `_event.data.value === 42` finds the string "42" unequal.
+		parts := make([]sce.EventDataParam, 0)
+		{
+			var sceFailure scealgorithm.Failure
+			sceValue := func() any { if len(p.vHeld) < 1 { sceFailure.Fail(scealgorithm.Precondition) }; return func() []any { sceItems := make([]any, 0, len(p.vHeld)); for _, sceElement := range p.vHeld { sceItems = append(sceItems, int64(sceElement)) }; return sceItems }() }()
+			if !sceFailure.Failed() {
+				parts = append(parts, sce.EventDataParam{Name: "kept", Value: sceValue})
+			} else {
+				engine.Raise(sce.NewPlatformError(StaticComposedSendEventErrorExecution, "<send> <param name='kept'> failed to evaluate"))
+				paramFailed = true
+			}
+		}
+		{
+			sceValue := int64(3)
+			parts = append(parts, sce.EventDataParam{Name: "hops", Value: sceValue})
+		}
+		eventDataStr := sce.BuildJSONFromTypedParams(parts)
+		_ = eventDataStr
+	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+	// and does not change the queue.
+	{
+		meta := sce.NewEventWithMetadata(StaticComposedSendEventCountedSent)
+		meta.Metadata.Data = eventDataStr
+		engine.Raise(meta)
+	}
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
+		if paramFailed {
+			return
+		}
+	}
+	}
 			}()
 		case 2:
-//line static_composed_send.scxml:89
+//line static_composed_send.scxml:118
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+				if p.pendingPayloadTag != StaticComposedSendPayloadTagCountedSent {
+					return
+				}
+
+
+	p.vCountedDeliveries = 1
+
+
+	// W3C SCXML 6.2: send id="__send_3"
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
+	{
+		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
+		// and its pair left out, and the message still goes; the error ends
+		// the block once it has. Read at the end of this element.
+		paramFailed := false
+		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
+		// delivered, so this is an ordered list rather than a map. The typed
+		// value is kept rather than its text — a receiver reading
+		// `_event.data.value === 42` finds the string "42" unequal.
+		parts := make([]sce.EventDataParam, 0)
+		{
+			sceValue := func() []any { sceItems := make([]any, 0, len(p.pendingCountedSentPayload.kept)); for _, sceElement := range p.pendingCountedSentPayload.kept { sceItems = append(sceItems, int64(sceElement)) }; return sceItems }()
+			parts = append(parts, sce.EventDataParam{Name: "kept", Value: sceValue})
+		}
+		{
+			sceValue := int64(p.pendingCountedSentPayload.hops)
+			parts = append(parts, sce.EventDataParam{Name: "hops", Value: sceValue})
+		}
+		eventDataStr := sce.BuildJSONFromTypedParams(parts)
+		_ = eventDataStr
+	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+	// and does not change the queue.
+	{
+		meta := sce.NewEventWithMetadata(StaticComposedSendEventCountedSent)
+		meta.Metadata.Data = eventDataStr
+		engine.Raise(meta)
+	}
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
+		if paramFailed {
+			return
+		}
+	}
+	}
+			}()
+		case 3:
+//line static_composed_send.scxml:126
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+				if p.pendingPayloadTag != StaticComposedSendPayloadTagCountedSent {
+					return
+				}
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vCountedDeliveries, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedSendEventErrorExecution, "<assign location='counted_deliveries'>: an integer operation overflowed or failed")); return true }; p.vCountedDeliveries = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+
+
+	p.vCountedHops = p.pendingCountedSentPayload.hops
+
+
+	// W3C SCXML 4.6: <foreach array="_event.data.kept" item="each">, a native loop over a sce-static list
+	for _, each := range append(p.pendingCountedSentPayload.kept[:0:0], p.pendingCountedSentPayload.kept...) {
+		_ = each
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vCountedSum, uint32(each)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(StaticComposedSendEventErrorExecution, "<assign location='counted_sum'>: an integer operation overflowed or failed")); return true }; p.vCountedSum = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+	}
+
+			}()
+		case 4:
+//line static_composed_send.scxml:135
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 

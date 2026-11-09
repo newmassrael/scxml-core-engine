@@ -1,5 +1,5 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: f64002805653a41c56a6a08d7b604e8955d0ac09d55e75365d49e24374faca5e
+// source-hash: a7faa6958690c5f997097ffa5111459d925f4ceff9942f639c58478c1f89cf17
 
 
 // SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
@@ -20,7 +20,7 @@
 // entry/exit actions, and event processing.
 
 
-// SCE-MAP: record_list.scxml:210 :: _machine
+// SCE-MAP: record_list.scxml:153 :: _machine
 
 package record_list
 
@@ -36,9 +36,6 @@ import (
 	sce_hlc_receive "github.com/newmassrael/sce-go-tests/integration/static_datamodel/hlc_receive"
 	sce_hlc_send "github.com/newmassrael/sce-go-tests/integration/static_datamodel/hlc_send"
 	sce_hlc_timestamp "github.com/newmassrael/sce-go-tests/integration/static_datamodel/hlc_timestamp"
-	sce_merkle_change_hash "github.com/newmassrael/sce-go-tests/integration/static_datamodel/merkle_change_hash"
-	sce_merkle_insert "github.com/newmassrael/sce-go-tests/integration/static_datamodel/merkle_insert"
-	sce_merkle_node "github.com/newmassrael/sce-go-tests/integration/static_datamodel/merkle_node"
 	sce_mv_value "github.com/newmassrael/sce-go-tests/integration/static_datamodel/mv_value"
 	sce_mv_value_drop "github.com/newmassrael/sce-go-tests/integration/static_datamodel/mv_value_drop"
 	sce_mv_value_holds "github.com/newmassrael/sce-go-tests/integration/static_datamodel/mv_value_holds"
@@ -48,7 +45,6 @@ import (
 	sce_orset_union "github.com/newmassrael/sce-go-tests/integration/static_datamodel/orset_union"
 	sce_record_member "github.com/newmassrael/sce-go-tests/integration/static_datamodel/record_member"
 	sce_record_roster "github.com/newmassrael/sce-go-tests/integration/static_datamodel/record_roster"
-	sce_record_settled "github.com/newmassrael/sce-go-tests/integration/static_datamodel/record_settled"
 	sce_register_values "github.com/newmassrael/sce-go-tests/integration/static_datamodel/register_values"
 )
 
@@ -156,35 +152,23 @@ type RecordListEvent int
 const (
 	RecordListEventErrorCommunication RecordListEvent = 0
 	RecordListEventErrorExecution RecordListEvent = 1
-	RecordListEventRecordListAck RecordListEvent = 2
-	RecordListEventRecordListAnnounce RecordListEvent = 3
-	RecordListEventRecordListArrive RecordListEvent = 4
-	RecordListEventRecordListClear RecordListEvent = 5
-	RecordListEventRecordListClose RecordListEvent = 6
-	RecordListEventRecordListCompact RecordListEvent = 7
-	RecordListEventRecordListEdit RecordListEvent = 8
-	RecordListEventRecordListFloor RecordListEvent = 9
-	RecordListEventRecordListJoin RecordListEvent = 10
-	RecordListEventRecordListKeep RecordListEvent = 11
-	RecordListEventRecordListNode RecordListEvent = 12
-	RecordListEventRecordListPass RecordListEvent = 13
-	RecordListEventRecordListPropose RecordListEvent = 14
-	RecordListEventRecordListRefused RecordListEvent = 15
-	RecordListEventRecordListRegister RecordListEvent = 16
-	RecordListEventRecordListResync RecordListEvent = 17
-	RecordListEventRecordListRetire RecordListEvent = 18
-	RecordListEventRecordListRole RecordListEvent = 19
-	RecordListEventRecordListRoom RecordListEvent = 20
-	RecordListEventRecordListSettle RecordListEvent = 21
-	RecordListEventRecordListShare RecordListEvent = 22
-	RecordListEventRecordListSupersede RecordListEvent = 23
-	RecordListEventRecordListTake RecordListEvent = 24
-	RecordListEventRecordListTell RecordListEvent = 25
-	RecordListEventRecordListValue RecordListEvent = 26
-	RecordListEventRecordListVisit RecordListEvent = 27
-	RecordListEventRecordListWrite RecordListEvent = 28
+	RecordListEventRecordListAnnounce RecordListEvent = 2
+	RecordListEventRecordListChange RecordListEvent = 3
+	RecordListEventRecordListClear RecordListEvent = 4
+	RecordListEventRecordListClose RecordListEvent = 5
+	RecordListEventRecordListEdit RecordListEvent = 6
+	RecordListEventRecordListJoin RecordListEvent = 7
+	RecordListEventRecordListPass RecordListEvent = 8
+	RecordListEventRecordListRefused RecordListEvent = 9
+	RecordListEventRecordListRegister RecordListEvent = 10
+	RecordListEventRecordListRetire RecordListEvent = 11
+	RecordListEventRecordListRole RecordListEvent = 12
+	RecordListEventRecordListRoom RecordListEvent = 13
+	RecordListEventRecordListTake RecordListEvent = 14
+	RecordListEventRecordListTell RecordListEvent = 15
+	RecordListEventRecordListValue RecordListEvent = 16
 	// W3C SCXML 3.13: Sentinel for eventless transition dispatch
-	RecordListEventNull RecordListEvent = 29
+	RecordListEventNull RecordListEvent = 17
 )
 
 func (e RecordListEvent) String() string {
@@ -193,60 +177,36 @@ func (e RecordListEvent) String() string {
 		return "error.communication"
 	case RecordListEventErrorExecution:
 		return "error.execution"
-	case RecordListEventRecordListAck:
-		return "record_list.ack"
 	case RecordListEventRecordListAnnounce:
 		return "record_list.announce"
-	case RecordListEventRecordListArrive:
-		return "record_list.arrive"
+	case RecordListEventRecordListChange:
+		return "record_list.change"
 	case RecordListEventRecordListClear:
 		return "record_list.clear"
 	case RecordListEventRecordListClose:
 		return "record_list.close"
-	case RecordListEventRecordListCompact:
-		return "record_list.compact"
 	case RecordListEventRecordListEdit:
 		return "record_list.edit"
-	case RecordListEventRecordListFloor:
-		return "record_list.floor"
 	case RecordListEventRecordListJoin:
 		return "record_list.join"
-	case RecordListEventRecordListKeep:
-		return "record_list.keep"
-	case RecordListEventRecordListNode:
-		return "record_list.node"
 	case RecordListEventRecordListPass:
 		return "record_list.pass"
-	case RecordListEventRecordListPropose:
-		return "record_list.propose"
 	case RecordListEventRecordListRefused:
 		return "record_list.refused"
 	case RecordListEventRecordListRegister:
 		return "record_list.register"
-	case RecordListEventRecordListResync:
-		return "record_list.resync"
 	case RecordListEventRecordListRetire:
 		return "record_list.retire"
 	case RecordListEventRecordListRole:
 		return "record_list.role"
 	case RecordListEventRecordListRoom:
 		return "record_list.room"
-	case RecordListEventRecordListSettle:
-		return "record_list.settle"
-	case RecordListEventRecordListShare:
-		return "record_list.share"
-	case RecordListEventRecordListSupersede:
-		return "record_list.supersede"
 	case RecordListEventRecordListTake:
 		return "record_list.take"
 	case RecordListEventRecordListTell:
 		return "record_list.tell"
 	case RecordListEventRecordListValue:
 		return "record_list.value"
-	case RecordListEventRecordListVisit:
-		return "record_list.visit"
-	case RecordListEventRecordListWrite:
-		return "record_list.write"
 	case RecordListEventNull:
 		return ""
 	}
@@ -263,34 +223,15 @@ type RecordListPayloadTag int
 
 const (
 	RecordListPayloadTagNone RecordListPayloadTag = iota
-	RecordListPayloadTagRecordListAck
 	RecordListPayloadTagRecordListAnnounce
+	RecordListPayloadTagRecordListChange
 	RecordListPayloadTagRecordListClear
-	RecordListPayloadTagRecordListCompact
 	RecordListPayloadTagRecordListEdit
-	RecordListPayloadTagRecordListFloor
 	RecordListPayloadTagRecordListJoin
-	RecordListPayloadTagRecordListKeep
-	RecordListPayloadTagRecordListNode
-	RecordListPayloadTagRecordListPropose
 	RecordListPayloadTagRecordListRetire
 	RecordListPayloadTagRecordListRole
 	RecordListPayloadTagRecordListRoom
-	RecordListPayloadTagRecordListSettle
-	RecordListPayloadTagRecordListShare
-	RecordListPayloadTagRecordListSupersede
-	RecordListPayloadTagRecordListVisit
-	RecordListPayloadTagRecordListWrite
 )
-
-// RecordListRecordListAckPayload is the NL→IR Item C1 Path A typed `_event.data`
-// payload for `record_list.ack`. Internal to the package; consumers inject it via
-// the `RecordListRaiseRecordListAck` seam below (fields are unexported by design).
-type RecordListRecordListAckPayload struct {
-	sender uint64
-	before int64
-	hash uint32
-}
 
 // RecordListRecordListAnnouncePayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `record_list.announce`. Internal to the package; consumers inject it via
@@ -298,6 +239,16 @@ type RecordListRecordListAckPayload struct {
 type RecordListRecordListAnnouncePayload struct {
 	id uint32
 	field uint16
+}
+
+// RecordListRecordListChangePayload is the NL→IR Item C1 Path A typed `_event.data`
+// payload for `record_list.change`. Internal to the package; consumers inject it via
+// the `RecordListRaiseRecordListChange` seam below (fields are unexported by design).
+type RecordListRecordListChangePayload struct {
+	by uint64
+	wallTime int64
+	counter uint32
+	ops []RecordListOpRecord
 }
 
 // RecordListRecordListClearPayload is the NL→IR Item C1 Path A typed `_event.data`
@@ -308,13 +259,6 @@ type RecordListRecordListClearPayload struct {
 	field uint16
 	now int64
 	more bool
-}
-
-// RecordListRecordListCompactPayload is the NL→IR Item C1 Path A typed `_event.data`
-// payload for `record_list.compact`. Internal to the package; consumers inject it via
-// the `RecordListRaiseRecordListCompact` seam below (fields are unexported by design).
-type RecordListRecordListCompactPayload struct {
-	before int64
 }
 
 // RecordListRecordListEditPayload is the NL→IR Item C1 Path A typed `_event.data`
@@ -329,50 +273,11 @@ type RecordListRecordListEditPayload struct {
 	more bool
 }
 
-// RecordListRecordListFloorPayload is the NL→IR Item C1 Path A typed `_event.data`
-// payload for `record_list.floor`. Internal to the package; consumers inject it via
-// the `RecordListRaiseRecordListFloor` seam below (fields are unexported by design).
-type RecordListRecordListFloorPayload struct {
-	before int64
-	hash uint32
-}
-
 // RecordListRecordListJoinPayload is the NL→IR Item C1 Path A typed `_event.data`
 // payload for `record_list.join`. Internal to the package; consumers inject it via
 // the `RecordListRaiseRecordListJoin` seam below (fields are unexported by design).
 type RecordListRecordListJoinPayload struct {
 	node uint64
-	hub bool
-}
-
-// RecordListRecordListKeepPayload is the NL→IR Item C1 Path A typed `_event.data`
-// payload for `record_list.keep`. Internal to the package; consumers inject it via
-// the `RecordListRaiseRecordListKeep` seam below (fields are unexported by design).
-type RecordListRecordListKeepPayload struct {
-	kind uint8
-	element uint64
-	wallTime int64
-	counter uint32
-	nodeId uint64
-}
-
-// RecordListRecordListNodePayload is the NL→IR Item C1 Path A typed `_event.data`
-// payload for `record_list.node`. Internal to the package; consumers inject it via
-// the `RecordListRaiseRecordListNode` seam below (fields are unexported by design).
-type RecordListRecordListNodePayload struct {
-	sender uint64
-	to uint64
-	depth uint8
-	prefix uint64
-	hash uint32
-	reply bool
-}
-
-// RecordListRecordListProposePayload is the NL→IR Item C1 Path A typed `_event.data`
-// payload for `record_list.propose`. Internal to the package; consumers inject it via
-// the `RecordListRaiseRecordListPropose` seam below (fields are unexported by design).
-type RecordListRecordListProposePayload struct {
-	before int64
 }
 
 // RecordListRecordListRetirePayload is the NL→IR Item C1 Path A typed `_event.data`
@@ -401,81 +306,6 @@ type RecordListRecordListRoomPayload struct {
 	digest uint32
 }
 
-// RecordListRecordListSettlePayload is the NL→IR Item C1 Path A typed `_event.data`
-// payload for `record_list.settle`. Internal to the package; consumers inject it via
-// the `RecordListRaiseRecordListSettle` seam below (fields are unexported by design).
-type RecordListRecordListSettlePayload struct {
-	before int64
-	members uint32
-}
-
-// RecordListRecordListSharePayload is the NL→IR Item C1 Path A typed `_event.data`
-// payload for `record_list.share`. Internal to the package; consumers inject it via
-// the `RecordListRaiseRecordListShare` seam below (fields are unexported by design).
-type RecordListRecordListSharePayload struct {
-	to uint64
-	minute uint64
-}
-
-// RecordListRecordListSupersedePayload is the NL→IR Item C1 Path A typed `_event.data`
-// payload for `record_list.supersede`. Internal to the package; consumers inject it via
-// the `RecordListRaiseRecordListSupersede` seam below (fields are unexported by design).
-type RecordListRecordListSupersedePayload struct {
-	id uint32
-	field uint16
-	wallTime int64
-	counter uint32
-	nodeId uint64
-	by uint64
-	parts uint32
-	atWallTime int64
-	atCounter uint32
-}
-
-// RecordListRecordListVisitPayload is the NL→IR Item C1 Path A typed `_event.data`
-// payload for `record_list.visit`. Internal to the package; consumers inject it via
-// the `RecordListRaiseRecordListVisit` seam below (fields are unexported by design).
-type RecordListRecordListVisitPayload struct {
-	to uint64
-	depth uint8
-	prefix uint64
-	reply bool
-}
-
-// RecordListRecordListWritePayload is the NL→IR Item C1 Path A typed `_event.data`
-// payload for `record_list.write`. Internal to the package; consumers inject it via
-// the `RecordListRaiseRecordListWrite` seam below (fields are unexported by design).
-type RecordListRecordListWritePayload struct {
-	id uint32
-	field uint16
-	value int64
-	text string
-	wallTime int64
-	counter uint32
-	nodeId uint64
-	parts uint32
-}
-
-// RecordListRaiseRecordListAck is the NL→IR Item C1 Path A per-event typed `_event.data`
-// inject seam for `record_list.ack` — binds the event name and the payload field
-// values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RecordListInject` extension-trait method
-// and the C11 `raise_<event>_typed` entry.
-func RecordListRaiseRecordListAck(e *sce.Engine[RecordListState, RecordListEvent], sender uint64, before int64, hash uint32) {
-	e.RaiseExternalWithMeta(sce.EventWithMetadata[RecordListEvent]{
-		Event:    RecordListEventRecordListAck,
-		Metadata: sce.EventMetadata{
-			EventType:    sce.EventTypeExternal,
-			TypedPayload: RecordListRecordListAckPayload{sender: sender, before: before, hash: hash, },
-			// Both carriers are filled: the typed one a native guard reads,
-			// and `Data`, which is what the script engine binds `_event.data`
-			// from. Filling only the first left an `<assign expr="_event.data.x">`
-			// on this event reading nothing, on every backend alike.
-			Data: sce.PayloadJSON(sce.Pair("sender", sce.Uint64PayloadText(sender)), sce.Pair("before", sce.Int64PayloadText(before)), sce.Pair("hash", hash)),
-		},
-	})
-}
-
 // RecordListRaiseRecordListAnnounce is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `record_list.announce` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
@@ -496,6 +326,34 @@ func RecordListRaiseRecordListAnnounce(e *sce.Engine[RecordListState, RecordList
 	})
 }
 
+// RecordListRaiseRecordListChange is the NL→IR Item C1 Path A per-event typed `_event.data`
+// inject seam for `record_list.change` — binds the event name and the payload field
+// values in one call so the name↔type pairing cannot be constructed
+// inconsistently. Twin of the Rust `RecordListInject` extension-trait method
+// and the C11 `raise_<event>_typed` entry.
+// A value past a bound its type declares, at any depth, is refused before
+// anything is sent (docs/adr/0086, section 5.4): the seam answers the refusal,
+// naming the path to the place, and raises nothing.
+func RecordListRaiseRecordListChange(e *sce.Engine[RecordListState, RecordListEvent], by uint64, wallTime int64, counter uint32, ops []RecordListOpRecord) error {
+	if err := sce.CheckListWithin("ops", ops, 1, 64, func(scePath0 string, sceValue0 RecordListOpRecord) error { return sce.CheckText(scePath0 + "/text", sceValue0.text, 96) }); err != nil {
+		return err
+	}
+	scePayload := RecordListRecordListChangePayload{by: by, wallTime: wallTime, counter: counter, ops: ops}
+	e.RaiseExternalWithMeta(sce.EventWithMetadata[RecordListEvent]{
+		Event:    RecordListEventRecordListChange,
+		Metadata: sce.EventMetadata{
+			EventType:    sce.EventTypeExternal,
+			TypedPayload: scePayload,
+			// Both carriers are filled: the typed one a native guard reads,
+			// and `Data`, which is what the script engine binds `_event.data`
+			// from. Filling only the first left an `<assign expr="_event.data.x">`
+			// on this event reading nothing, on every backend alike.
+			Data: string(sce.RecordJSON(sce.Pair("by", sce.ValueJSON(sce.Uint64PayloadText(scePayload.by))), sce.Pair("wallTime", sce.ValueJSON(sce.Int64PayloadText(scePayload.wallTime))), sce.Pair("counter", sce.ValueJSON(scePayload.counter)), sce.Pair("ops", func() sce.RawJSON { sceItems := make([]sce.RawJSON, 0, len(scePayload.ops)); for _, sceElement := range scePayload.ops { sceItems = append(sceItems, sce.RecordJSON(sce.Pair("kind", sce.ValueJSON(sceElement.kind)), sce.Pair("id", sce.ValueJSON(sceElement.id)), sce.Pair("field", sce.ValueJSON(sceElement.field)), sce.Pair("value", sce.ValueJSON(sce.Int64PayloadText(sceElement.value))), sce.Pair("text", sce.ValueJSON(sceElement.text)), sce.Pair("wallTime", sce.ValueJSON(sce.Int64PayloadText(sceElement.wallTime))), sce.Pair("counter", sce.ValueJSON(sceElement.counter)), sce.Pair("nodeId", sce.ValueJSON(sce.Uint64PayloadText(sceElement.nodeId))))) }; return sce.ListJSON(sceItems, func(sceItem sce.RawJSON) sce.RawJSON { return sceItem }) }()))),
+		},
+	})
+	return nil
+}
+
 // RecordListRaiseRecordListClear is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `record_list.clear` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
@@ -512,26 +370,6 @@ func RecordListRaiseRecordListClear(e *sce.Engine[RecordListState, RecordListEve
 			// from. Filling only the first left an `<assign expr="_event.data.x">`
 			// on this event reading nothing, on every backend alike.
 			Data: sce.PayloadJSON(sce.Pair("id", id), sce.Pair("field", field), sce.Pair("now", sce.Int64PayloadText(now)), sce.Pair("more", more)),
-		},
-	})
-}
-
-// RecordListRaiseRecordListCompact is the NL→IR Item C1 Path A per-event typed `_event.data`
-// inject seam for `record_list.compact` — binds the event name and the payload field
-// values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RecordListInject` extension-trait method
-// and the C11 `raise_<event>_typed` entry.
-func RecordListRaiseRecordListCompact(e *sce.Engine[RecordListState, RecordListEvent], before int64) {
-	e.RaiseExternalWithMeta(sce.EventWithMetadata[RecordListEvent]{
-		Event:    RecordListEventRecordListCompact,
-		Metadata: sce.EventMetadata{
-			EventType:    sce.EventTypeExternal,
-			TypedPayload: RecordListRecordListCompactPayload{before: before, },
-			// Both carriers are filled: the typed one a native guard reads,
-			// and `Data`, which is what the script engine binds `_event.data`
-			// from. Filling only the first left an `<assign expr="_event.data.x">`
-			// on this event reading nothing, on every backend alike.
-			Data: sce.PayloadJSON(sce.Pair("before", sce.Int64PayloadText(before))),
 		},
 	})
 }
@@ -556,102 +394,22 @@ func RecordListRaiseRecordListEdit(e *sce.Engine[RecordListState, RecordListEven
 	})
 }
 
-// RecordListRaiseRecordListFloor is the NL→IR Item C1 Path A per-event typed `_event.data`
-// inject seam for `record_list.floor` — binds the event name and the payload field
-// values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RecordListInject` extension-trait method
-// and the C11 `raise_<event>_typed` entry.
-func RecordListRaiseRecordListFloor(e *sce.Engine[RecordListState, RecordListEvent], before int64, hash uint32) {
-	e.RaiseExternalWithMeta(sce.EventWithMetadata[RecordListEvent]{
-		Event:    RecordListEventRecordListFloor,
-		Metadata: sce.EventMetadata{
-			EventType:    sce.EventTypeExternal,
-			TypedPayload: RecordListRecordListFloorPayload{before: before, hash: hash, },
-			// Both carriers are filled: the typed one a native guard reads,
-			// and `Data`, which is what the script engine binds `_event.data`
-			// from. Filling only the first left an `<assign expr="_event.data.x">`
-			// on this event reading nothing, on every backend alike.
-			Data: sce.PayloadJSON(sce.Pair("before", sce.Int64PayloadText(before)), sce.Pair("hash", hash)),
-		},
-	})
-}
-
 // RecordListRaiseRecordListJoin is the NL→IR Item C1 Path A per-event typed `_event.data`
 // inject seam for `record_list.join` — binds the event name and the payload field
 // values in one call so the name↔type pairing cannot be constructed
 // inconsistently. Twin of the Rust `RecordListInject` extension-trait method
 // and the C11 `raise_<event>_typed` entry.
-func RecordListRaiseRecordListJoin(e *sce.Engine[RecordListState, RecordListEvent], node uint64, hub bool) {
+func RecordListRaiseRecordListJoin(e *sce.Engine[RecordListState, RecordListEvent], node uint64) {
 	e.RaiseExternalWithMeta(sce.EventWithMetadata[RecordListEvent]{
 		Event:    RecordListEventRecordListJoin,
 		Metadata: sce.EventMetadata{
 			EventType:    sce.EventTypeExternal,
-			TypedPayload: RecordListRecordListJoinPayload{node: node, hub: hub, },
+			TypedPayload: RecordListRecordListJoinPayload{node: node, },
 			// Both carriers are filled: the typed one a native guard reads,
 			// and `Data`, which is what the script engine binds `_event.data`
 			// from. Filling only the first left an `<assign expr="_event.data.x">`
 			// on this event reading nothing, on every backend alike.
-			Data: sce.PayloadJSON(sce.Pair("node", sce.Uint64PayloadText(node)), sce.Pair("hub", hub)),
-		},
-	})
-}
-
-// RecordListRaiseRecordListKeep is the NL→IR Item C1 Path A per-event typed `_event.data`
-// inject seam for `record_list.keep` — binds the event name and the payload field
-// values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RecordListInject` extension-trait method
-// and the C11 `raise_<event>_typed` entry.
-func RecordListRaiseRecordListKeep(e *sce.Engine[RecordListState, RecordListEvent], kind uint8, element uint64, wallTime int64, counter uint32, nodeId uint64) {
-	e.RaiseExternalWithMeta(sce.EventWithMetadata[RecordListEvent]{
-		Event:    RecordListEventRecordListKeep,
-		Metadata: sce.EventMetadata{
-			EventType:    sce.EventTypeExternal,
-			TypedPayload: RecordListRecordListKeepPayload{kind: kind, element: element, wallTime: wallTime, counter: counter, nodeId: nodeId, },
-			// Both carriers are filled: the typed one a native guard reads,
-			// and `Data`, which is what the script engine binds `_event.data`
-			// from. Filling only the first left an `<assign expr="_event.data.x">`
-			// on this event reading nothing, on every backend alike.
-			Data: sce.PayloadJSON(sce.Pair("kind", kind), sce.Pair("element", sce.Uint64PayloadText(element)), sce.Pair("wallTime", sce.Int64PayloadText(wallTime)), sce.Pair("counter", counter), sce.Pair("nodeId", sce.Uint64PayloadText(nodeId))),
-		},
-	})
-}
-
-// RecordListRaiseRecordListNode is the NL→IR Item C1 Path A per-event typed `_event.data`
-// inject seam for `record_list.node` — binds the event name and the payload field
-// values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RecordListInject` extension-trait method
-// and the C11 `raise_<event>_typed` entry.
-func RecordListRaiseRecordListNode(e *sce.Engine[RecordListState, RecordListEvent], sender uint64, to uint64, depth uint8, prefix uint64, hash uint32, reply bool) {
-	e.RaiseExternalWithMeta(sce.EventWithMetadata[RecordListEvent]{
-		Event:    RecordListEventRecordListNode,
-		Metadata: sce.EventMetadata{
-			EventType:    sce.EventTypeExternal,
-			TypedPayload: RecordListRecordListNodePayload{sender: sender, to: to, depth: depth, prefix: prefix, hash: hash, reply: reply, },
-			// Both carriers are filled: the typed one a native guard reads,
-			// and `Data`, which is what the script engine binds `_event.data`
-			// from. Filling only the first left an `<assign expr="_event.data.x">`
-			// on this event reading nothing, on every backend alike.
-			Data: sce.PayloadJSON(sce.Pair("sender", sce.Uint64PayloadText(sender)), sce.Pair("to", sce.Uint64PayloadText(to)), sce.Pair("depth", depth), sce.Pair("prefix", sce.Uint64PayloadText(prefix)), sce.Pair("hash", hash), sce.Pair("reply", reply)),
-		},
-	})
-}
-
-// RecordListRaiseRecordListPropose is the NL→IR Item C1 Path A per-event typed `_event.data`
-// inject seam for `record_list.propose` — binds the event name and the payload field
-// values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RecordListInject` extension-trait method
-// and the C11 `raise_<event>_typed` entry.
-func RecordListRaiseRecordListPropose(e *sce.Engine[RecordListState, RecordListEvent], before int64) {
-	e.RaiseExternalWithMeta(sce.EventWithMetadata[RecordListEvent]{
-		Event:    RecordListEventRecordListPropose,
-		Metadata: sce.EventMetadata{
-			EventType:    sce.EventTypeExternal,
-			TypedPayload: RecordListRecordListProposePayload{before: before, },
-			// Both carriers are filled: the typed one a native guard reads,
-			// and `Data`, which is what the script engine binds `_event.data`
-			// from. Filling only the first left an `<assign expr="_event.data.x">`
-			// on this event reading nothing, on every backend alike.
-			Data: sce.PayloadJSON(sce.Pair("before", sce.Int64PayloadText(before))),
+			Data: sce.PayloadJSON(sce.Pair("node", sce.Uint64PayloadText(node))),
 		},
 	})
 }
@@ -712,106 +470,6 @@ func RecordListRaiseRecordListRoom(e *sce.Engine[RecordListState, RecordListEven
 			// from. Filling only the first left an `<assign expr="_event.data.x">`
 			// on this event reading nothing, on every backend alike.
 			Data: sce.PayloadJSON(sce.Pair("values", values), sce.Pair("history", history), sce.Pair("digest", digest)),
-		},
-	})
-}
-
-// RecordListRaiseRecordListSettle is the NL→IR Item C1 Path A per-event typed `_event.data`
-// inject seam for `record_list.settle` — binds the event name and the payload field
-// values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RecordListInject` extension-trait method
-// and the C11 `raise_<event>_typed` entry.
-func RecordListRaiseRecordListSettle(e *sce.Engine[RecordListState, RecordListEvent], before int64, members uint32) {
-	e.RaiseExternalWithMeta(sce.EventWithMetadata[RecordListEvent]{
-		Event:    RecordListEventRecordListSettle,
-		Metadata: sce.EventMetadata{
-			EventType:    sce.EventTypeExternal,
-			TypedPayload: RecordListRecordListSettlePayload{before: before, members: members, },
-			// Both carriers are filled: the typed one a native guard reads,
-			// and `Data`, which is what the script engine binds `_event.data`
-			// from. Filling only the first left an `<assign expr="_event.data.x">`
-			// on this event reading nothing, on every backend alike.
-			Data: sce.PayloadJSON(sce.Pair("before", sce.Int64PayloadText(before)), sce.Pair("members", members)),
-		},
-	})
-}
-
-// RecordListRaiseRecordListShare is the NL→IR Item C1 Path A per-event typed `_event.data`
-// inject seam for `record_list.share` — binds the event name and the payload field
-// values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RecordListInject` extension-trait method
-// and the C11 `raise_<event>_typed` entry.
-func RecordListRaiseRecordListShare(e *sce.Engine[RecordListState, RecordListEvent], to uint64, minute uint64) {
-	e.RaiseExternalWithMeta(sce.EventWithMetadata[RecordListEvent]{
-		Event:    RecordListEventRecordListShare,
-		Metadata: sce.EventMetadata{
-			EventType:    sce.EventTypeExternal,
-			TypedPayload: RecordListRecordListSharePayload{to: to, minute: minute, },
-			// Both carriers are filled: the typed one a native guard reads,
-			// and `Data`, which is what the script engine binds `_event.data`
-			// from. Filling only the first left an `<assign expr="_event.data.x">`
-			// on this event reading nothing, on every backend alike.
-			Data: sce.PayloadJSON(sce.Pair("to", sce.Uint64PayloadText(to)), sce.Pair("minute", sce.Uint64PayloadText(minute))),
-		},
-	})
-}
-
-// RecordListRaiseRecordListSupersede is the NL→IR Item C1 Path A per-event typed `_event.data`
-// inject seam for `record_list.supersede` — binds the event name and the payload field
-// values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RecordListInject` extension-trait method
-// and the C11 `raise_<event>_typed` entry.
-func RecordListRaiseRecordListSupersede(e *sce.Engine[RecordListState, RecordListEvent], id uint32, field uint16, wallTime int64, counter uint32, nodeId uint64, by uint64, parts uint32, atWallTime int64, atCounter uint32) {
-	e.RaiseExternalWithMeta(sce.EventWithMetadata[RecordListEvent]{
-		Event:    RecordListEventRecordListSupersede,
-		Metadata: sce.EventMetadata{
-			EventType:    sce.EventTypeExternal,
-			TypedPayload: RecordListRecordListSupersedePayload{id: id, field: field, wallTime: wallTime, counter: counter, nodeId: nodeId, by: by, parts: parts, atWallTime: atWallTime, atCounter: atCounter, },
-			// Both carriers are filled: the typed one a native guard reads,
-			// and `Data`, which is what the script engine binds `_event.data`
-			// from. Filling only the first left an `<assign expr="_event.data.x">`
-			// on this event reading nothing, on every backend alike.
-			Data: sce.PayloadJSON(sce.Pair("id", id), sce.Pair("field", field), sce.Pair("wallTime", sce.Int64PayloadText(wallTime)), sce.Pair("counter", counter), sce.Pair("nodeId", sce.Uint64PayloadText(nodeId)), sce.Pair("by", sce.Uint64PayloadText(by)), sce.Pair("parts", parts), sce.Pair("atWallTime", sce.Int64PayloadText(atWallTime)), sce.Pair("atCounter", atCounter)),
-		},
-	})
-}
-
-// RecordListRaiseRecordListVisit is the NL→IR Item C1 Path A per-event typed `_event.data`
-// inject seam for `record_list.visit` — binds the event name and the payload field
-// values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RecordListInject` extension-trait method
-// and the C11 `raise_<event>_typed` entry.
-func RecordListRaiseRecordListVisit(e *sce.Engine[RecordListState, RecordListEvent], to uint64, depth uint8, prefix uint64, reply bool) {
-	e.RaiseExternalWithMeta(sce.EventWithMetadata[RecordListEvent]{
-		Event:    RecordListEventRecordListVisit,
-		Metadata: sce.EventMetadata{
-			EventType:    sce.EventTypeExternal,
-			TypedPayload: RecordListRecordListVisitPayload{to: to, depth: depth, prefix: prefix, reply: reply, },
-			// Both carriers are filled: the typed one a native guard reads,
-			// and `Data`, which is what the script engine binds `_event.data`
-			// from. Filling only the first left an `<assign expr="_event.data.x">`
-			// on this event reading nothing, on every backend alike.
-			Data: sce.PayloadJSON(sce.Pair("to", sce.Uint64PayloadText(to)), sce.Pair("depth", depth), sce.Pair("prefix", sce.Uint64PayloadText(prefix)), sce.Pair("reply", reply)),
-		},
-	})
-}
-
-// RecordListRaiseRecordListWrite is the NL→IR Item C1 Path A per-event typed `_event.data`
-// inject seam for `record_list.write` — binds the event name and the payload field
-// values in one call so the name↔type pairing cannot be constructed
-// inconsistently. Twin of the Rust `RecordListInject` extension-trait method
-// and the C11 `raise_<event>_typed` entry.
-func RecordListRaiseRecordListWrite(e *sce.Engine[RecordListState, RecordListEvent], id uint32, field uint16, value int64, text string, wallTime int64, counter uint32, nodeId uint64, parts uint32) {
-	e.RaiseExternalWithMeta(sce.EventWithMetadata[RecordListEvent]{
-		Event:    RecordListEventRecordListWrite,
-		Metadata: sce.EventMetadata{
-			EventType:    sce.EventTypeExternal,
-			TypedPayload: RecordListRecordListWritePayload{id: id, field: field, value: value, text: text, wallTime: wallTime, counter: counter, nodeId: nodeId, parts: parts, },
-			// Both carriers are filled: the typed one a native guard reads,
-			// and `Data`, which is what the script engine binds `_event.data`
-			// from. Filling only the first left an `<assign expr="_event.data.x">`
-			// on this event reading nothing, on every backend alike.
-			Data: sce.PayloadJSON(sce.Pair("id", id), sce.Pair("field", field), sce.Pair("value", sce.Int64PayloadText(value)), sce.Pair("text", text), sce.Pair("wallTime", sce.Int64PayloadText(wallTime)), sce.Pair("counter", counter), sce.Pair("nodeId", sce.Uint64PayloadText(nodeId)), sce.Pair("parts", parts)),
 		},
 	})
 }
@@ -1090,118 +748,6 @@ func RecordListValueRecordFromSaved(value any, what string) (RecordListValueReco
 	return record, nil
 }
 
-// SCE Accepted Subset §2.15: a `record:Node` datamodel value.
-type RecordListNodeRecord struct {
-	depth uint8
-	prefix uint64
-	hash uint32
-}
-
-// Depth reports the `depth` field.
-func (r RecordListNodeRecord) Depth() uint8 {
-	return r.depth
-}
-
-// Prefix reports the `prefix` field.
-func (r RecordListNodeRecord) Prefix() uint64 {
-	return r.prefix
-}
-
-// Hash reports the `hash` field.
-func (r RecordListNodeRecord) Hash() uint32 {
-	return r.hash
-}
-
-// ToSaved is this value as a saved state writes it.
-func (r RecordListNodeRecord) ToSaved() any {
-	saved := sce.NewJSONObject()
-	saved.Set("depth", (sce.SavedWriteUint8)(r.depth))
-	saved.Set("prefix", (sce.SavedWriteUint64)(r.prefix))
-	saved.Set("hash", (sce.SavedWriteUint32)(r.hash))
-	return saved
-}
-
-// RecordListNodeRecordFromSaved is the value a saved state holds, refused unless it is one.
-func RecordListNodeRecordFromSaved(value any, what string) (RecordListNodeRecord, error) {
-	var record RecordListNodeRecord
-	{
-		saved, err := sce.SavedField(value, what, "depth")
-		if err != nil {
-			return record, err
-		}
-		if record.depth, err = (sce.SavedReadUint8)(saved, what + ".depth"); err != nil {
-			return record, err
-		}
-	}
-	{
-		saved, err := sce.SavedField(value, what, "prefix")
-		if err != nil {
-			return record, err
-		}
-		if record.prefix, err = (sce.SavedReadUint64)(saved, what + ".prefix"); err != nil {
-			return record, err
-		}
-	}
-	{
-		saved, err := sce.SavedField(value, what, "hash")
-		if err != nil {
-			return record, err
-		}
-		if record.hash, err = (sce.SavedReadUint32)(saved, what + ".hash"); err != nil {
-			return record, err
-		}
-	}
-	return record, nil
-}
-
-// SCE Accepted Subset §2.15: a `record:Answer` datamodel value.
-type RecordListAnswerRecord struct {
-	sender uint64
-	hash uint32
-}
-
-// Sender reports the `sender` field.
-func (r RecordListAnswerRecord) Sender() uint64 {
-	return r.sender
-}
-
-// Hash reports the `hash` field.
-func (r RecordListAnswerRecord) Hash() uint32 {
-	return r.hash
-}
-
-// ToSaved is this value as a saved state writes it.
-func (r RecordListAnswerRecord) ToSaved() any {
-	saved := sce.NewJSONObject()
-	saved.Set("sender", (sce.SavedWriteUint64)(r.sender))
-	saved.Set("hash", (sce.SavedWriteUint32)(r.hash))
-	return saved
-}
-
-// RecordListAnswerRecordFromSaved is the value a saved state holds, refused unless it is one.
-func RecordListAnswerRecordFromSaved(value any, what string) (RecordListAnswerRecord, error) {
-	var record RecordListAnswerRecord
-	{
-		saved, err := sce.SavedField(value, what, "sender")
-		if err != nil {
-			return record, err
-		}
-		if record.sender, err = (sce.SavedReadUint64)(saved, what + ".sender"); err != nil {
-			return record, err
-		}
-	}
-	{
-		saved, err := sce.SavedField(value, what, "hash")
-		if err != nil {
-			return record, err
-		}
-		if record.hash, err = (sce.SavedReadUint32)(saved, what + ".hash"); err != nil {
-			return record, err
-		}
-	}
-	return record, nil
-}
-
 // SCE Accepted Subset §2.15: a `record:Member` datamodel value.
 type RecordListMemberRecord struct {
 	node uint64
@@ -1250,103 +796,54 @@ func RecordListMemberRecordFromSaved(value any, what string) (RecordListMemberRe
 	return record, nil
 }
 
-// SCE Accepted Subset §2.15: a `record:Part` datamodel value.
-type RecordListPartRecord struct {
+// SCE Accepted Subset §2.15: a `record:Staged` datamodel value.
+type RecordListStagedRecord struct {
 	kind uint8
 	id uint32
 	field uint16
 	value int64
 	text string
-	wallTime int64
-	counter uint32
-	nodeId uint64
-	by uint64
-	atWallTime int64
-	atCounter uint32
-	parts uint32
 }
 
 // Kind reports the `kind` field.
-func (r RecordListPartRecord) Kind() uint8 {
+func (r RecordListStagedRecord) Kind() uint8 {
 	return r.kind
 }
 
 // Id reports the `id` field.
-func (r RecordListPartRecord) Id() uint32 {
+func (r RecordListStagedRecord) Id() uint32 {
 	return r.id
 }
 
 // Field reports the `field` field.
-func (r RecordListPartRecord) Field() uint16 {
+func (r RecordListStagedRecord) Field() uint16 {
 	return r.field
 }
 
 // Value reports the `value` field.
-func (r RecordListPartRecord) Value() int64 {
+func (r RecordListStagedRecord) Value() int64 {
 	return r.value
 }
 
 // Text reports the `text` field.
-func (r RecordListPartRecord) Text() string {
+func (r RecordListStagedRecord) Text() string {
 	return r.text
 }
 
-// WallTime reports the `wallTime` field.
-func (r RecordListPartRecord) WallTime() int64 {
-	return r.wallTime
-}
-
-// Counter reports the `counter` field.
-func (r RecordListPartRecord) Counter() uint32 {
-	return r.counter
-}
-
-// NodeId reports the `nodeId` field.
-func (r RecordListPartRecord) NodeId() uint64 {
-	return r.nodeId
-}
-
-// By reports the `by` field.
-func (r RecordListPartRecord) By() uint64 {
-	return r.by
-}
-
-// AtWallTime reports the `atWallTime` field.
-func (r RecordListPartRecord) AtWallTime() int64 {
-	return r.atWallTime
-}
-
-// AtCounter reports the `atCounter` field.
-func (r RecordListPartRecord) AtCounter() uint32 {
-	return r.atCounter
-}
-
-// Parts reports the `parts` field.
-func (r RecordListPartRecord) Parts() uint32 {
-	return r.parts
-}
-
 // ToSaved is this value as a saved state writes it.
-func (r RecordListPartRecord) ToSaved() any {
+func (r RecordListStagedRecord) ToSaved() any {
 	saved := sce.NewJSONObject()
 	saved.Set("kind", (sce.SavedWriteUint8)(r.kind))
 	saved.Set("id", (sce.SavedWriteUint32)(r.id))
 	saved.Set("field", (sce.SavedWriteUint16)(r.field))
 	saved.Set("value", (sce.SavedWriteInt64)(r.value))
 	saved.Set("text", (sce.SavedWriteString)(r.text))
-	saved.Set("wallTime", (sce.SavedWriteInt64)(r.wallTime))
-	saved.Set("counter", (sce.SavedWriteUint32)(r.counter))
-	saved.Set("nodeId", (sce.SavedWriteUint64)(r.nodeId))
-	saved.Set("by", (sce.SavedWriteUint64)(r.by))
-	saved.Set("atWallTime", (sce.SavedWriteInt64)(r.atWallTime))
-	saved.Set("atCounter", (sce.SavedWriteUint32)(r.atCounter))
-	saved.Set("parts", (sce.SavedWriteUint32)(r.parts))
 	return saved
 }
 
-// RecordListPartRecordFromSaved is the value a saved state holds, refused unless it is one.
-func RecordListPartRecordFromSaved(value any, what string) (RecordListPartRecord, error) {
-	var record RecordListPartRecord
+// RecordListStagedRecordFromSaved is the value a saved state holds, refused unless it is one.
+func RecordListStagedRecordFromSaved(value any, what string) (RecordListStagedRecord, error) {
+	var record RecordListStagedRecord
 	{
 		saved, err := sce.SavedField(value, what, "kind")
 		if err != nil {
@@ -1389,69 +886,6 @@ func RecordListPartRecordFromSaved(value any, what string) (RecordListPartRecord
 			return record, err
 		}
 		if record.text, err = (sce.SavedBoundedString(96))(saved, what + ".text"); err != nil {
-			return record, err
-		}
-	}
-	{
-		saved, err := sce.SavedField(value, what, "wallTime")
-		if err != nil {
-			return record, err
-		}
-		if record.wallTime, err = (sce.SavedReadInt64)(saved, what + ".wallTime"); err != nil {
-			return record, err
-		}
-	}
-	{
-		saved, err := sce.SavedField(value, what, "counter")
-		if err != nil {
-			return record, err
-		}
-		if record.counter, err = (sce.SavedReadUint32)(saved, what + ".counter"); err != nil {
-			return record, err
-		}
-	}
-	{
-		saved, err := sce.SavedField(value, what, "nodeId")
-		if err != nil {
-			return record, err
-		}
-		if record.nodeId, err = (sce.SavedReadUint64)(saved, what + ".nodeId"); err != nil {
-			return record, err
-		}
-	}
-	{
-		saved, err := sce.SavedField(value, what, "by")
-		if err != nil {
-			return record, err
-		}
-		if record.by, err = (sce.SavedReadUint64)(saved, what + ".by"); err != nil {
-			return record, err
-		}
-	}
-	{
-		saved, err := sce.SavedField(value, what, "atWallTime")
-		if err != nil {
-			return record, err
-		}
-		if record.atWallTime, err = (sce.SavedReadInt64)(saved, what + ".atWallTime"); err != nil {
-			return record, err
-		}
-	}
-	{
-		saved, err := sce.SavedField(value, what, "atCounter")
-		if err != nil {
-			return record, err
-		}
-		if record.atCounter, err = (sce.SavedReadUint32)(saved, what + ".atCounter"); err != nil {
-			return record, err
-		}
-	}
-	{
-		saved, err := sce.SavedField(value, what, "parts")
-		if err != nil {
-			return record, err
-		}
-		if record.parts, err = (sce.SavedReadUint32)(saved, what + ".parts"); err != nil {
 			return record, err
 		}
 	}
@@ -1596,10 +1030,151 @@ func RecordListCommandEnumFromSaved(value any, what string) (RecordListCommandEn
 	return 0, sce.Refuse(fmt.Sprintf("'%s' (%s) is not a variant of Command", what, declared))
 }
 
-// The bounds this machine is built with, each by the name `sce:limit` gives it (docs/adr/0050).
+// SCE Accepted Subset §2.15: a `record:Op` datamodel value.
+type RecordListOpRecord struct {
+	kind uint8
+	id uint32
+	field uint16
+	value int64
+	text string
+	wallTime int64
+	counter uint32
+	nodeId uint64
+}
 
-// RecordListLimitMergeDigest is the bound `sce:limit="merge_digest"` names, as this build resolved it.
-const RecordListLimitMergeDigest uint32 = 2048
+// Kind reports the `kind` field.
+func (r RecordListOpRecord) Kind() uint8 {
+	return r.kind
+}
+
+// Id reports the `id` field.
+func (r RecordListOpRecord) Id() uint32 {
+	return r.id
+}
+
+// Field reports the `field` field.
+func (r RecordListOpRecord) Field() uint16 {
+	return r.field
+}
+
+// Value reports the `value` field.
+func (r RecordListOpRecord) Value() int64 {
+	return r.value
+}
+
+// Text reports the `text` field.
+func (r RecordListOpRecord) Text() string {
+	return r.text
+}
+
+// WallTime reports the `wallTime` field.
+func (r RecordListOpRecord) WallTime() int64 {
+	return r.wallTime
+}
+
+// Counter reports the `counter` field.
+func (r RecordListOpRecord) Counter() uint32 {
+	return r.counter
+}
+
+// NodeId reports the `nodeId` field.
+func (r RecordListOpRecord) NodeId() uint64 {
+	return r.nodeId
+}
+
+// ToSaved is this value as a saved state writes it.
+func (r RecordListOpRecord) ToSaved() any {
+	saved := sce.NewJSONObject()
+	saved.Set("kind", (sce.SavedWriteUint8)(r.kind))
+	saved.Set("id", (sce.SavedWriteUint32)(r.id))
+	saved.Set("field", (sce.SavedWriteUint16)(r.field))
+	saved.Set("value", (sce.SavedWriteInt64)(r.value))
+	saved.Set("text", (sce.SavedWriteString)(r.text))
+	saved.Set("wallTime", (sce.SavedWriteInt64)(r.wallTime))
+	saved.Set("counter", (sce.SavedWriteUint32)(r.counter))
+	saved.Set("nodeId", (sce.SavedWriteUint64)(r.nodeId))
+	return saved
+}
+
+// RecordListOpRecordFromSaved is the value a saved state holds, refused unless it is one.
+func RecordListOpRecordFromSaved(value any, what string) (RecordListOpRecord, error) {
+	var record RecordListOpRecord
+	{
+		saved, err := sce.SavedField(value, what, "kind")
+		if err != nil {
+			return record, err
+		}
+		if record.kind, err = (sce.SavedReadUint8)(saved, what + ".kind"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "id")
+		if err != nil {
+			return record, err
+		}
+		if record.id, err = (sce.SavedReadUint32)(saved, what + ".id"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "field")
+		if err != nil {
+			return record, err
+		}
+		if record.field, err = (sce.SavedReadUint16)(saved, what + ".field"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "value")
+		if err != nil {
+			return record, err
+		}
+		if record.value, err = (sce.SavedReadInt64)(saved, what + ".value"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "text")
+		if err != nil {
+			return record, err
+		}
+		if record.text, err = (sce.SavedBoundedString(96))(saved, what + ".text"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "wallTime")
+		if err != nil {
+			return record, err
+		}
+		if record.wallTime, err = (sce.SavedReadInt64)(saved, what + ".wallTime"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "counter")
+		if err != nil {
+			return record, err
+		}
+		if record.counter, err = (sce.SavedReadUint32)(saved, what + ".counter"); err != nil {
+			return record, err
+		}
+	}
+	{
+		saved, err := sce.SavedField(value, what, "nodeId")
+		if err != nil {
+			return record, err
+		}
+		if record.nodeId, err = (sce.SavedReadUint64)(saved, what + ".nodeId"); err != nil {
+			return record, err
+		}
+	}
+	return record, nil
+}
+
+// The bounds this machine is built with, each by the name `sce:limit` gives it (docs/adr/0050).
 
 // RecordListLimitMergeEntries is the bound `sce:limit="merge_entries"` names, as this build resolved it.
 const RecordListLimitMergeEntries uint32 = 1024
@@ -1609,9 +1184,6 @@ const RecordListLimitMergeText uint32 = 96
 
 // RecordListLimitMergeValues is the bound `sce:limit="merge_values"` names, as this build resolved it.
 const RecordListLimitMergeValues uint32 = 512
-
-// RecordListLimitSharedAnswers is the bound `sce:limit="shared_answers"` names, as this build resolved it.
-const RecordListLimitSharedAnswers uint32 = 512
 
 // RecordListLimitSharedMoved is the bound `sce:limit="shared_moved"` names, as this build resolved it.
 const RecordListLimitSharedMoved uint32 = 64
@@ -1634,12 +1206,12 @@ const RecordListLimitSharedTypedText uint32 = 32
 // this machine names when every record schema it holds is in its first
 // revision (docs/adr/0045, section 2). The generator computes it once, so it is
 // the text every backend's constant is.
-const RecordListSavedShapeFormat2 = "f07397fd111637feae43e644bdb300073319756c9be0442cbf7596660ff33f8a"
+const RecordListSavedShapeFormat2 = "a382c1ba98a160cac0a0df4516b810b1fa9cd871bee307ee84727d2caface6fc"
 
 // RecordListSavedShapeFormat2Revised is the shape a format-2 saved state
 // of this machine names when it names a later revision of a record schema or
 // an enum.
-const RecordListSavedShapeFormat2Revised = "da7b1092cfdc71ec67de077860c8f924b6f9e616e3f9535ed34eff7d249cf70a"
+const RecordListSavedShapeFormat2Revised = "81a1a20757de8250f4177a44f09401f721a41ae7469b5473d4a61c8c55d17ce2"
 
 // RecordListSavedEnumKeys names each enum a value of a saved state of
 // this machine is of, by its document (docs/adr/0044): the key `revisions`
@@ -1657,10 +1229,10 @@ var RecordListSavedEnumKeys = [...]string{
 // one saved at an earlier revision of a record schema is read with each field a
 // later revision added at its default.
 var RecordListSavedShape = sce.SavedShape{
-	First:          "a19e77db8250a195249ade686a9bb02b25da03309449cc228f1fda01c1fd792d",
-	Revised:        "3251600de5bc2baa9cd835462ffa530fc0ea4b543cf1ed5d6e8623002c38b5e7",
-	Format2First:   "f07397fd111637feae43e644bdb300073319756c9be0442cbf7596660ff33f8a",
-	Format2Revised: "da7b1092cfdc71ec67de077860c8f924b6f9e616e3f9535ed34eff7d249cf70a",
+	First:          "6d2807245efb3570da4bd92cc2adff21983e83841916253f94ee29b4999c1e5d",
+	Revised:        "abd40bb4b7f0d0847db4f89a596f7d2eac49a1a0d7025a43b712a8fd22a6903c",
+	Format2First:   "a382c1ba98a160cac0a0df4516b810b1fa9cd871bee307ee84727d2caface6fc",
+	Format2Revised: "81a1a20757de8250f4177a44f09401f721a41ae7469b5473d4a61c8c55d17ce2",
 	Records: []sce.RecordLineage{
 		{
 			Event:     "merge.hlc_timestamp",
@@ -1673,18 +1245,7 @@ var RecordListSavedShape = sce.SavedShape{
 			Holders: []sce.RecordHolder{
 				{Variable: "clock", List: false},
 				{Variable: "stamp", List: false},
-			},
-		},
-		{
-			Event:     "merge.merkle_node",
-			Revision:  1,
-			Revisions: []string{},
-			Added: []sce.AddedField{
-			},
-			Widened: []sce.WidenedField{
-			},
-			Holders: []sce.RecordHolder{
-				{Variable: "digest", List: true},
+				{Variable: "dot", List: false},
 			},
 		},
 		{
@@ -1712,23 +1273,8 @@ var RecordListSavedShape = sce.SavedShape{
 			},
 			Holders: []sce.RecordHolder{
 				{Variable: "adds", List: true},
-				{Variable: "tombstones", List: true},
 				{Variable: "one", List: true},
-				{Variable: "stable", List: true},
 				{Variable: "entry", List: false},
-			},
-		},
-		{
-			Event:     "record_list.answer",
-			Revision:  1,
-			Revisions: []string{},
-			Added: []sce.AddedField{
-			},
-			Widened: []sce.WidenedField{
-			},
-			Holders: []sce.RecordHolder{
-				{Variable: "answers", List: true},
-				{Variable: "answer", List: false},
 			},
 		},
 		{
@@ -1744,7 +1290,20 @@ var RecordListSavedShape = sce.SavedShape{
 			},
 		},
 		{
-			Event:     "record_list.part",
+			Event:     "record_list.op",
+			Revision:  1,
+			Revisions: []string{},
+			Added: []sce.AddedField{
+			},
+			Widened: []sce.WidenedField{
+			},
+			Holders: []sce.RecordHolder{
+				{Variable: "taking", List: true},
+				{Variable: "op", List: false},
+			},
+		},
+		{
+			Event:     "record_list.staged",
 			Revision:  1,
 			Revisions: []string{},
 			Added: []sce.AddedField{
@@ -1753,12 +1312,7 @@ var RecordListSavedShape = sce.SavedShape{
 			},
 			Holders: []sce.RecordHolder{
 				{Variable: "staged", List: true},
-				{Variable: "taking", List: true},
-				{Variable: "passing", List: true},
-				{Variable: "waiting", List: true},
-				{Variable: "kept", List: true},
-				{Variable: "part", List: false},
-				{Variable: "op", List: false},
+				{Variable: "staging", List: false},
 			},
 		},
 	},
@@ -1810,39 +1364,20 @@ func RecordListSaveAt(engine *sce.Engine[RecordListState, RecordListEvent], wall
 	}
 	variables := sce.NewJSONObject()
 	variables.Set("node", sce.SavedWriteUint64(p.vNode))
-	variables.Set("hub", sce.SavedWriteBool(p.vHub))
 	variables.Set("clock", p.vClock.ToSaved())
 	variables.Set("stamp", p.vStamp.ToSaved())
+	variables.Set("dot", p.vDot.ToSaved())
 	variables.Set("adds", sce.SavedWriteList(p.vAdds, func(r RecordListEntryRecord) any { return r.ToSaved() }))
-	variables.Set("tombstones", sce.SavedWriteList(p.vTombstones, func(r RecordListEntryRecord) any { return r.ToSaved() }))
 	variables.Set("one", sce.SavedWriteList(p.vOne, func(r RecordListEntryRecord) any { return r.ToSaved() }))
-	variables.Set("stable", sce.SavedWriteList(p.vStable, func(r RecordListEntryRecord) any { return r.ToSaved() }))
 	variables.Set("entry", p.vEntry.ToSaved())
 	variables.Set("values", sce.SavedWriteList(p.vValues, func(r RecordListValueRecord) any { return r.ToSaved() }))
 	variables.Set("held", p.vHeld.ToSaved())
-	variables.Set("digest", sce.SavedWriteList(p.vDigest, func(r RecordListNodeRecord) any { return r.ToSaved() }))
-	variables.Set("mine", sce.SavedWriteUint32(p.vMine))
 	variables.Set("shareId", sce.SavedWriteUint32(p.vShareId))
 	variables.Set("shareField", sce.SavedWriteUint16(p.vShareField))
-	variables.Set("known", sce.SavedWriteBool(p.vKnown))
 	variables.Set("wasLive", sce.SavedWriteBool(p.vWasLive))
-	variables.Set("isLive", sce.SavedWriteBool(p.vIsLive))
 	variables.Set("present", sce.SavedWriteBool(p.vPresent))
 	variables.Set("refusals", sce.SavedWriteUint32(p.vRefusals))
-	variables.Set("floor", sce.SavedWriteInt64(p.vFloor))
-	variables.Set("stale", sce.SavedWriteBool(p.vStale))
-	variables.Set("late", sce.SavedWriteUint32(p.vLate))
-	variables.Set("frozenFor", sce.SavedWriteInt64(p.vFrozenFor))
-	variables.Set("frozenHash", sce.SavedWriteUint32(p.vFrozenHash))
-	variables.Set("pending", sce.SavedWriteInt64(p.vPending))
-	variables.Set("members", sce.SavedWriteUint32(p.vMembers))
-	variables.Set("agreeing", sce.SavedWriteUint32(p.vAgreeing))
-	variables.Set("answers", sce.SavedWriteList(p.vAnswers, func(r RecordListAnswerRecord) any { return r.ToSaved() }))
-	variables.Set("answer", p.vAnswer.ToSaved())
-	variables.Set("agreed", sce.SavedWriteUint32(p.vAgreed))
 	variables.Set("roomValues", sce.SavedWriteUint32(p.vRoomValues))
-	variables.Set("roomHistory", sce.SavedWriteUint32(p.vRoomHistory))
-	variables.Set("roomDigest", sce.SavedWriteUint32(p.vRoomDigest))
 	variables.Set("full", sce.SavedWriteUint32(p.vFull))
 	variables.Set("roster", sce.SavedWriteList(p.vRoster, func(r RecordListMemberRecord) any { return r.ToSaved() }))
 	variables.Set("denied", sce.SavedWriteUint32(p.vDenied))
@@ -1855,7 +1390,8 @@ func RecordListSaveAt(engine *sce.Engine[RecordListState, RecordListEvent], wall
 	variables.Set("live", sce.SavedWriteList(p.vLive, func(r RecordListValueRecord) any { return r.ToSaved() }))
 	variables.Set("ordinal", sce.SavedWriteUint32(p.vOrdinal))
 	variables.Set("empty", p.vEmpty.ToSaved())
-	variables.Set("staged", sce.SavedWriteList(p.vStaged, func(r RecordListPartRecord) any { return r.ToSaved() }))
+	variables.Set("staged", sce.SavedWriteList(p.vStaged, func(r RecordListStagedRecord) any { return r.ToSaved() }))
+	variables.Set("staging", p.vStaging.ToSaved())
 	variables.Set("holding", sce.SavedWriteBool(p.vHolding))
 	variables.Set("closingNow", sce.SavedWriteInt64(p.vClosingNow))
 	variables.Set("spoiled", sce.SavedWriteBool(p.vSpoiled))
@@ -1868,16 +1404,9 @@ func RecordListSaveAt(engine *sce.Engine[RecordListState, RecordListEvent], wall
 	variables.Set("namedId", sce.SavedWriteUint32(p.vNamedId))
 	variables.Set("namedField", sce.SavedWriteUint16(p.vNamedField))
 	variables.Set("namedKind", p.vNamedKind.ToSaved())
-	variables.Set("taking", sce.SavedWriteList(p.vTaking, func(r RecordListPartRecord) any { return r.ToSaved() }))
+	variables.Set("taking", sce.SavedWriteList(p.vTaking, func(r RecordListOpRecord) any { return r.ToSaved() }))
 	variables.Set("took", sce.SavedWriteUint32(p.vTook))
-	variables.Set("passing", sce.SavedWriteList(p.vPassing, func(r RecordListPartRecord) any { return r.ToSaved() }))
-	variables.Set("passed", sce.SavedWriteUint32(p.vPassed))
-	variables.Set("waiting", sce.SavedWriteList(p.vWaiting, func(r RecordListPartRecord) any { return r.ToSaved() }))
-	variables.Set("kept", sce.SavedWriteList(p.vKept, func(r RecordListPartRecord) any { return r.ToSaved() }))
-	variables.Set("part", p.vPart.ToSaved())
 	variables.Set("op", p.vOp.ToSaved())
-	variables.Set("already", sce.SavedWriteBool(p.vAlready))
-	variables.Set("count", sce.SavedWriteUint32(p.vCount))
 	var children []sce.SavedChild
 	return sce.SaveSession(engine, &RecordListSavedShape, variables,
 		sce.SaveHistory[RecordListState, RecordListEvent](p, RecordListHistories),
@@ -1906,11 +1435,6 @@ func RecordListJudge(saved *sce.SavedState) error {
 	} else if _, err := sce.SavedReadUint64(raw, "node"); err != nil {
 		return err
 	}
-	if raw, err := grown.Variable("hub"); err != nil {
-		return err
-	} else if _, err := sce.SavedReadBool(raw, "hub"); err != nil {
-		return err
-	}
 	if raw, err := grown.Variable("clock"); err != nil {
 		return err
 	} else if _, err := RecordListHlcRecordFromSaved(raw, "clock"); err != nil {
@@ -1921,24 +1445,19 @@ func RecordListJudge(saved *sce.SavedState) error {
 	} else if _, err := RecordListHlcRecordFromSaved(raw, "stamp"); err != nil {
 		return err
 	}
+	if raw, err := grown.Variable("dot"); err != nil {
+		return err
+	} else if _, err := RecordListHlcRecordFromSaved(raw, "dot"); err != nil {
+		return err
+	}
 	if raw, err := grown.Variable("adds"); err != nil {
 		return err
 	} else if _, err := sce.SavedReadList(raw, "adds", 1024, RecordListEntryRecordFromSaved); err != nil {
 		return err
 	}
-	if raw, err := grown.Variable("tombstones"); err != nil {
-		return err
-	} else if _, err := sce.SavedReadList(raw, "tombstones", 1024, RecordListEntryRecordFromSaved); err != nil {
-		return err
-	}
 	if raw, err := grown.Variable("one"); err != nil {
 		return err
 	} else if _, err := sce.SavedReadList(raw, "one", 1024, RecordListEntryRecordFromSaved); err != nil {
-		return err
-	}
-	if raw, err := grown.Variable("stable"); err != nil {
-		return err
-	} else if _, err := sce.SavedReadList(raw, "stable", 1024, RecordListEntryRecordFromSaved); err != nil {
 		return err
 	}
 	if raw, err := grown.Variable("entry"); err != nil {
@@ -1956,16 +1475,6 @@ func RecordListJudge(saved *sce.SavedState) error {
 	} else if _, err := RecordListValueRecordFromSaved(raw, "held"); err != nil {
 		return err
 	}
-	if raw, err := grown.Variable("digest"); err != nil {
-		return err
-	} else if _, err := sce.SavedReadList(raw, "digest", 2048, RecordListNodeRecordFromSaved); err != nil {
-		return err
-	}
-	if raw, err := grown.Variable("mine"); err != nil {
-		return err
-	} else if _, err := sce.SavedReadUint32(raw, "mine"); err != nil {
-		return err
-	}
 	if raw, err := grown.Variable("shareId"); err != nil {
 		return err
 	} else if _, err := sce.SavedReadUint32(raw, "shareId"); err != nil {
@@ -1976,19 +1485,9 @@ func RecordListJudge(saved *sce.SavedState) error {
 	} else if _, err := sce.SavedReadUint16(raw, "shareField"); err != nil {
 		return err
 	}
-	if raw, err := grown.Variable("known"); err != nil {
-		return err
-	} else if _, err := sce.SavedReadBool(raw, "known"); err != nil {
-		return err
-	}
 	if raw, err := grown.Variable("wasLive"); err != nil {
 		return err
 	} else if _, err := sce.SavedReadBool(raw, "wasLive"); err != nil {
-		return err
-	}
-	if raw, err := grown.Variable("isLive"); err != nil {
-		return err
-	} else if _, err := sce.SavedReadBool(raw, "isLive"); err != nil {
 		return err
 	}
 	if raw, err := grown.Variable("present"); err != nil {
@@ -2001,74 +1500,9 @@ func RecordListJudge(saved *sce.SavedState) error {
 	} else if _, err := sce.SavedReadUint32(raw, "refusals"); err != nil {
 		return err
 	}
-	if raw, err := grown.Variable("floor"); err != nil {
-		return err
-	} else if _, err := sce.SavedReadInt64(raw, "floor"); err != nil {
-		return err
-	}
-	if raw, err := grown.Variable("stale"); err != nil {
-		return err
-	} else if _, err := sce.SavedReadBool(raw, "stale"); err != nil {
-		return err
-	}
-	if raw, err := grown.Variable("late"); err != nil {
-		return err
-	} else if _, err := sce.SavedReadUint32(raw, "late"); err != nil {
-		return err
-	}
-	if raw, err := grown.Variable("frozenFor"); err != nil {
-		return err
-	} else if _, err := sce.SavedReadInt64(raw, "frozenFor"); err != nil {
-		return err
-	}
-	if raw, err := grown.Variable("frozenHash"); err != nil {
-		return err
-	} else if _, err := sce.SavedReadUint32(raw, "frozenHash"); err != nil {
-		return err
-	}
-	if raw, err := grown.Variable("pending"); err != nil {
-		return err
-	} else if _, err := sce.SavedReadInt64(raw, "pending"); err != nil {
-		return err
-	}
-	if raw, err := grown.Variable("members"); err != nil {
-		return err
-	} else if _, err := sce.SavedReadUint32(raw, "members"); err != nil {
-		return err
-	}
-	if raw, err := grown.Variable("agreeing"); err != nil {
-		return err
-	} else if _, err := sce.SavedReadUint32(raw, "agreeing"); err != nil {
-		return err
-	}
-	if raw, err := grown.Variable("answers"); err != nil {
-		return err
-	} else if _, err := sce.SavedReadList(raw, "answers", 512, RecordListAnswerRecordFromSaved); err != nil {
-		return err
-	}
-	if raw, err := grown.Variable("answer"); err != nil {
-		return err
-	} else if _, err := RecordListAnswerRecordFromSaved(raw, "answer"); err != nil {
-		return err
-	}
-	if raw, err := grown.Variable("agreed"); err != nil {
-		return err
-	} else if _, err := sce.SavedReadUint32(raw, "agreed"); err != nil {
-		return err
-	}
 	if raw, err := grown.Variable("roomValues"); err != nil {
 		return err
 	} else if _, err := sce.SavedReadUint32(raw, "roomValues"); err != nil {
-		return err
-	}
-	if raw, err := grown.Variable("roomHistory"); err != nil {
-		return err
-	} else if _, err := sce.SavedReadUint32(raw, "roomHistory"); err != nil {
-		return err
-	}
-	if raw, err := grown.Variable("roomDigest"); err != nil {
-		return err
-	} else if _, err := sce.SavedReadUint32(raw, "roomDigest"); err != nil {
 		return err
 	}
 	if raw, err := grown.Variable("full"); err != nil {
@@ -2133,7 +1567,12 @@ func RecordListJudge(saved *sce.SavedState) error {
 	}
 	if raw, err := grown.Variable("staged"); err != nil {
 		return err
-	} else if _, err := sce.SavedReadList(raw, "staged", 32, RecordListPartRecordFromSaved); err != nil {
+	} else if _, err := sce.SavedReadList(raw, "staged", 32, RecordListStagedRecordFromSaved); err != nil {
+		return err
+	}
+	if raw, err := grown.Variable("staging"); err != nil {
+		return err
+	} else if _, err := RecordListStagedRecordFromSaved(raw, "staging"); err != nil {
 		return err
 	}
 	if raw, err := grown.Variable("holding"); err != nil {
@@ -2198,7 +1637,7 @@ func RecordListJudge(saved *sce.SavedState) error {
 	}
 	if raw, err := grown.Variable("taking"); err != nil {
 		return err
-	} else if _, err := sce.SavedReadList(raw, "taking", 64, RecordListPartRecordFromSaved); err != nil {
+	} else if _, err := sce.SavedReadList(raw, "taking", 64, RecordListOpRecordFromSaved); err != nil {
 		return err
 	}
 	if raw, err := grown.Variable("took"); err != nil {
@@ -2206,44 +1645,9 @@ func RecordListJudge(saved *sce.SavedState) error {
 	} else if _, err := sce.SavedReadUint32(raw, "took"); err != nil {
 		return err
 	}
-	if raw, err := grown.Variable("passing"); err != nil {
-		return err
-	} else if _, err := sce.SavedReadList(raw, "passing", 64, RecordListPartRecordFromSaved); err != nil {
-		return err
-	}
-	if raw, err := grown.Variable("passed"); err != nil {
-		return err
-	} else if _, err := sce.SavedReadUint32(raw, "passed"); err != nil {
-		return err
-	}
-	if raw, err := grown.Variable("waiting"); err != nil {
-		return err
-	} else if _, err := sce.SavedReadList(raw, "waiting", 64, RecordListPartRecordFromSaved); err != nil {
-		return err
-	}
-	if raw, err := grown.Variable("kept"); err != nil {
-		return err
-	} else if _, err := sce.SavedReadList(raw, "kept", 64, RecordListPartRecordFromSaved); err != nil {
-		return err
-	}
-	if raw, err := grown.Variable("part"); err != nil {
-		return err
-	} else if _, err := RecordListPartRecordFromSaved(raw, "part"); err != nil {
-		return err
-	}
 	if raw, err := grown.Variable("op"); err != nil {
 		return err
-	} else if _, err := RecordListPartRecordFromSaved(raw, "op"); err != nil {
-		return err
-	}
-	if raw, err := grown.Variable("already"); err != nil {
-		return err
-	} else if _, err := sce.SavedReadBool(raw, "already"); err != nil {
-		return err
-	}
-	if raw, err := grown.Variable("count"); err != nil {
-		return err
-	} else if _, err := sce.SavedReadUint32(raw, "count"); err != nil {
+	} else if _, err := RecordListOpRecordFromSaved(raw, "op"); err != nil {
 		return err
 	}
 	return sce.JudgeSession[RecordListState, RecordListEvent](p, grown)
@@ -2281,27 +1685,27 @@ func RecordListRestoreAt(policy *RecordListPolicy, saved *sce.SavedState, clock 
 	if err != nil {
 		return nil, err
 	}
-	raw2, err := grown.Variable("hub")
+	raw2, err := grown.Variable("clock")
 	if err != nil {
 		return nil, err
 	}
-	read2, err := sce.SavedReadBool(raw2, "hub")
+	read2, err := RecordListHlcRecordFromSaved(raw2, "clock")
 	if err != nil {
 		return nil, err
 	}
-	raw3, err := grown.Variable("clock")
+	raw3, err := grown.Variable("stamp")
 	if err != nil {
 		return nil, err
 	}
-	read3, err := RecordListHlcRecordFromSaved(raw3, "clock")
+	read3, err := RecordListHlcRecordFromSaved(raw3, "stamp")
 	if err != nil {
 		return nil, err
 	}
-	raw4, err := grown.Variable("stamp")
+	raw4, err := grown.Variable("dot")
 	if err != nil {
 		return nil, err
 	}
-	read4, err := RecordListHlcRecordFromSaved(raw4, "stamp")
+	read4, err := RecordListHlcRecordFromSaved(raw4, "dot")
 	if err != nil {
 		return nil, err
 	}
@@ -2313,515 +1717,315 @@ func RecordListRestoreAt(policy *RecordListPolicy, saved *sce.SavedState, clock 
 	if err != nil {
 		return nil, err
 	}
-	raw6, err := grown.Variable("tombstones")
+	raw6, err := grown.Variable("one")
 	if err != nil {
 		return nil, err
 	}
-	read6, err := sce.SavedReadList(raw6, "tombstones", 1024, RecordListEntryRecordFromSaved)
+	read6, err := sce.SavedReadList(raw6, "one", 1024, RecordListEntryRecordFromSaved)
 	if err != nil {
 		return nil, err
 	}
-	raw7, err := grown.Variable("one")
+	raw7, err := grown.Variable("entry")
 	if err != nil {
 		return nil, err
 	}
-	read7, err := sce.SavedReadList(raw7, "one", 1024, RecordListEntryRecordFromSaved)
+	read7, err := RecordListEntryRecordFromSaved(raw7, "entry")
 	if err != nil {
 		return nil, err
 	}
-	raw8, err := grown.Variable("stable")
+	raw8, err := grown.Variable("values")
 	if err != nil {
 		return nil, err
 	}
-	read8, err := sce.SavedReadList(raw8, "stable", 1024, RecordListEntryRecordFromSaved)
+	read8, err := sce.SavedReadList(raw8, "values", 512, RecordListValueRecordFromSaved)
 	if err != nil {
 		return nil, err
 	}
-	raw9, err := grown.Variable("entry")
+	raw9, err := grown.Variable("held")
 	if err != nil {
 		return nil, err
 	}
-	read9, err := RecordListEntryRecordFromSaved(raw9, "entry")
+	read9, err := RecordListValueRecordFromSaved(raw9, "held")
 	if err != nil {
 		return nil, err
 	}
-	raw10, err := grown.Variable("values")
+	raw10, err := grown.Variable("shareId")
 	if err != nil {
 		return nil, err
 	}
-	read10, err := sce.SavedReadList(raw10, "values", 512, RecordListValueRecordFromSaved)
+	read10, err := sce.SavedReadUint32(raw10, "shareId")
 	if err != nil {
 		return nil, err
 	}
-	raw11, err := grown.Variable("held")
+	raw11, err := grown.Variable("shareField")
 	if err != nil {
 		return nil, err
 	}
-	read11, err := RecordListValueRecordFromSaved(raw11, "held")
+	read11, err := sce.SavedReadUint16(raw11, "shareField")
 	if err != nil {
 		return nil, err
 	}
-	raw12, err := grown.Variable("digest")
+	raw12, err := grown.Variable("wasLive")
 	if err != nil {
 		return nil, err
 	}
-	read12, err := sce.SavedReadList(raw12, "digest", 2048, RecordListNodeRecordFromSaved)
+	read12, err := sce.SavedReadBool(raw12, "wasLive")
 	if err != nil {
 		return nil, err
 	}
-	raw13, err := grown.Variable("mine")
+	raw13, err := grown.Variable("present")
 	if err != nil {
 		return nil, err
 	}
-	read13, err := sce.SavedReadUint32(raw13, "mine")
+	read13, err := sce.SavedReadBool(raw13, "present")
 	if err != nil {
 		return nil, err
 	}
-	raw14, err := grown.Variable("shareId")
+	raw14, err := grown.Variable("refusals")
 	if err != nil {
 		return nil, err
 	}
-	read14, err := sce.SavedReadUint32(raw14, "shareId")
+	read14, err := sce.SavedReadUint32(raw14, "refusals")
 	if err != nil {
 		return nil, err
 	}
-	raw15, err := grown.Variable("shareField")
+	raw15, err := grown.Variable("roomValues")
 	if err != nil {
 		return nil, err
 	}
-	read15, err := sce.SavedReadUint16(raw15, "shareField")
+	read15, err := sce.SavedReadUint32(raw15, "roomValues")
 	if err != nil {
 		return nil, err
 	}
-	raw16, err := grown.Variable("known")
+	raw16, err := grown.Variable("full")
 	if err != nil {
 		return nil, err
 	}
-	read16, err := sce.SavedReadBool(raw16, "known")
+	read16, err := sce.SavedReadUint32(raw16, "full")
 	if err != nil {
 		return nil, err
 	}
-	raw17, err := grown.Variable("wasLive")
+	raw17, err := grown.Variable("roster")
 	if err != nil {
 		return nil, err
 	}
-	read17, err := sce.SavedReadBool(raw17, "wasLive")
+	read17, err := sce.SavedReadList(raw17, "roster", 64, RecordListMemberRecordFromSaved)
 	if err != nil {
 		return nil, err
 	}
-	raw18, err := grown.Variable("isLive")
+	raw18, err := grown.Variable("denied")
 	if err != nil {
 		return nil, err
 	}
-	read18, err := sce.SavedReadBool(raw18, "isLive")
+	read18, err := sce.SavedReadUint32(raw18, "denied")
 	if err != nil {
 		return nil, err
 	}
-	raw19, err := grown.Variable("present")
+	raw19, err := grown.Variable("forbidden")
 	if err != nil {
 		return nil, err
 	}
-	read19, err := sce.SavedReadBool(raw19, "present")
+	read19, err := sce.SavedReadBool(raw19, "forbidden")
 	if err != nil {
 		return nil, err
 	}
-	raw20, err := grown.Variable("refusals")
+	raw20, err := grown.Variable("authorized")
 	if err != nil {
 		return nil, err
 	}
-	read20, err := sce.SavedReadUint32(raw20, "refusals")
+	read20, err := sce.SavedReadBool(raw20, "authorized")
 	if err != nil {
 		return nil, err
 	}
-	raw21, err := grown.Variable("floor")
+	raw21, err := grown.Variable("announce")
 	if err != nil {
 		return nil, err
 	}
-	read21, err := sce.SavedReadInt64(raw21, "floor")
+	read21, err := sce.SavedReadBool(raw21, "announce")
 	if err != nil {
 		return nil, err
 	}
-	raw22, err := grown.Variable("stale")
+	raw22, err := grown.Variable("announced")
 	if err != nil {
 		return nil, err
 	}
-	read22, err := sce.SavedReadBool(raw22, "stale")
+	read22, err := sce.SavedReadUint32(raw22, "announced")
 	if err != nil {
 		return nil, err
 	}
-	raw23, err := grown.Variable("late")
+	raw23, err := grown.Variable("moved")
 	if err != nil {
 		return nil, err
 	}
-	read23, err := sce.SavedReadUint32(raw23, "late")
+	read23, err := sce.SavedReadList(raw23, "moved", 64, sce.SavedReadUint64)
 	if err != nil {
 		return nil, err
 	}
-	raw24, err := grown.Variable("frozenFor")
+	raw24, err := grown.Variable("listed")
 	if err != nil {
 		return nil, err
 	}
-	read24, err := sce.SavedReadInt64(raw24, "frozenFor")
+	read24, err := sce.SavedReadBool(raw24, "listed")
 	if err != nil {
 		return nil, err
 	}
-	raw25, err := grown.Variable("frozenHash")
+	raw25, err := grown.Variable("live")
 	if err != nil {
 		return nil, err
 	}
-	read25, err := sce.SavedReadUint32(raw25, "frozenHash")
+	read25, err := sce.SavedReadList(raw25, "live", 512, RecordListValueRecordFromSaved)
 	if err != nil {
 		return nil, err
 	}
-	raw26, err := grown.Variable("pending")
+	raw26, err := grown.Variable("ordinal")
 	if err != nil {
 		return nil, err
 	}
-	read26, err := sce.SavedReadInt64(raw26, "pending")
+	read26, err := sce.SavedReadUint32(raw26, "ordinal")
 	if err != nil {
 		return nil, err
 	}
-	raw27, err := grown.Variable("members")
+	raw27, err := grown.Variable("empty")
 	if err != nil {
 		return nil, err
 	}
-	read27, err := sce.SavedReadUint32(raw27, "members")
+	read27, err := RecordListValueRecordFromSaved(raw27, "empty")
 	if err != nil {
 		return nil, err
 	}
-	raw28, err := grown.Variable("agreeing")
+	raw28, err := grown.Variable("staged")
 	if err != nil {
 		return nil, err
 	}
-	read28, err := sce.SavedReadUint32(raw28, "agreeing")
+	read28, err := sce.SavedReadList(raw28, "staged", 32, RecordListStagedRecordFromSaved)
 	if err != nil {
 		return nil, err
 	}
-	raw29, err := grown.Variable("answers")
+	raw29, err := grown.Variable("staging")
 	if err != nil {
 		return nil, err
 	}
-	read29, err := sce.SavedReadList(raw29, "answers", 512, RecordListAnswerRecordFromSaved)
+	read29, err := RecordListStagedRecordFromSaved(raw29, "staging")
 	if err != nil {
 		return nil, err
 	}
-	raw30, err := grown.Variable("answer")
+	raw30, err := grown.Variable("holding")
 	if err != nil {
 		return nil, err
 	}
-	read30, err := RecordListAnswerRecordFromSaved(raw30, "answer")
+	read30, err := sce.SavedReadBool(raw30, "holding")
 	if err != nil {
 		return nil, err
 	}
-	raw31, err := grown.Variable("agreed")
+	raw31, err := grown.Variable("closingNow")
 	if err != nil {
 		return nil, err
 	}
-	read31, err := sce.SavedReadUint32(raw31, "agreed")
+	read31, err := sce.SavedReadInt64(raw31, "closingNow")
 	if err != nil {
 		return nil, err
 	}
-	raw32, err := grown.Variable("roomValues")
+	raw32, err := grown.Variable("spoiled")
 	if err != nil {
 		return nil, err
 	}
-	read32, err := sce.SavedReadUint32(raw32, "roomValues")
+	read32, err := sce.SavedReadBool(raw32, "spoiled")
 	if err != nil {
 		return nil, err
 	}
-	raw33, err := grown.Variable("roomHistory")
+	raw33, err := grown.Variable("probing")
 	if err != nil {
 		return nil, err
 	}
-	read33, err := sce.SavedReadUint32(raw33, "roomHistory")
+	read33, err := sce.SavedReadBool(raw33, "probing")
 	if err != nil {
 		return nil, err
 	}
-	raw34, err := grown.Variable("roomDigest")
+	raw34, err := grown.Variable("gone")
 	if err != nil {
 		return nil, err
 	}
-	read34, err := sce.SavedReadUint32(raw34, "roomDigest")
+	read34, err := sce.SavedReadUint32(raw34, "gone")
 	if err != nil {
 		return nil, err
 	}
-	raw35, err := grown.Variable("full")
+	raw35, err := grown.Variable("writes")
 	if err != nil {
 		return nil, err
 	}
-	read35, err := sce.SavedReadUint32(raw35, "full")
+	read35, err := sce.SavedReadUint32(raw35, "writes")
 	if err != nil {
 		return nil, err
 	}
-	raw36, err := grown.Variable("roster")
+	raw36, err := grown.Variable("covered")
 	if err != nil {
 		return nil, err
 	}
-	read36, err := sce.SavedReadList(raw36, "roster", 64, RecordListMemberRecordFromSaved)
+	read36, err := sce.SavedReadBool(raw36, "covered")
 	if err != nil {
 		return nil, err
 	}
-	raw37, err := grown.Variable("denied")
+	raw37, err := grown.Variable("probe")
 	if err != nil {
 		return nil, err
 	}
-	read37, err := sce.SavedReadUint32(raw37, "denied")
+	read37, err := RecordListRefusalEnumFromSaved(raw37, "probe")
 	if err != nil {
 		return nil, err
 	}
-	raw38, err := grown.Variable("forbidden")
+	raw38, err := grown.Variable("spoiledFor")
 	if err != nil {
 		return nil, err
 	}
-	read38, err := sce.SavedReadBool(raw38, "forbidden")
+	read38, err := RecordListRefusalEnumFromSaved(raw38, "spoiledFor")
 	if err != nil {
 		return nil, err
 	}
-	raw39, err := grown.Variable("authorized")
+	raw39, err := grown.Variable("namedId")
 	if err != nil {
 		return nil, err
 	}
-	read39, err := sce.SavedReadBool(raw39, "authorized")
+	read39, err := sce.SavedReadUint32(raw39, "namedId")
 	if err != nil {
 		return nil, err
 	}
-	raw40, err := grown.Variable("announce")
+	raw40, err := grown.Variable("namedField")
 	if err != nil {
 		return nil, err
 	}
-	read40, err := sce.SavedReadBool(raw40, "announce")
+	read40, err := sce.SavedReadUint16(raw40, "namedField")
 	if err != nil {
 		return nil, err
 	}
-	raw41, err := grown.Variable("announced")
+	raw41, err := grown.Variable("namedKind")
 	if err != nil {
 		return nil, err
 	}
-	read41, err := sce.SavedReadUint32(raw41, "announced")
+	read41, err := RecordListCommandEnumFromSaved(raw41, "namedKind")
 	if err != nil {
 		return nil, err
 	}
-	raw42, err := grown.Variable("moved")
+	raw42, err := grown.Variable("taking")
 	if err != nil {
 		return nil, err
 	}
-	read42, err := sce.SavedReadList(raw42, "moved", 64, sce.SavedReadUint64)
+	read42, err := sce.SavedReadList(raw42, "taking", 64, RecordListOpRecordFromSaved)
 	if err != nil {
 		return nil, err
 	}
-	raw43, err := grown.Variable("listed")
+	raw43, err := grown.Variable("took")
 	if err != nil {
 		return nil, err
 	}
-	read43, err := sce.SavedReadBool(raw43, "listed")
+	read43, err := sce.SavedReadUint32(raw43, "took")
 	if err != nil {
 		return nil, err
 	}
-	raw44, err := grown.Variable("live")
+	raw44, err := grown.Variable("op")
 	if err != nil {
 		return nil, err
 	}
-	read44, err := sce.SavedReadList(raw44, "live", 512, RecordListValueRecordFromSaved)
-	if err != nil {
-		return nil, err
-	}
-	raw45, err := grown.Variable("ordinal")
-	if err != nil {
-		return nil, err
-	}
-	read45, err := sce.SavedReadUint32(raw45, "ordinal")
-	if err != nil {
-		return nil, err
-	}
-	raw46, err := grown.Variable("empty")
-	if err != nil {
-		return nil, err
-	}
-	read46, err := RecordListValueRecordFromSaved(raw46, "empty")
-	if err != nil {
-		return nil, err
-	}
-	raw47, err := grown.Variable("staged")
-	if err != nil {
-		return nil, err
-	}
-	read47, err := sce.SavedReadList(raw47, "staged", 32, RecordListPartRecordFromSaved)
-	if err != nil {
-		return nil, err
-	}
-	raw48, err := grown.Variable("holding")
-	if err != nil {
-		return nil, err
-	}
-	read48, err := sce.SavedReadBool(raw48, "holding")
-	if err != nil {
-		return nil, err
-	}
-	raw49, err := grown.Variable("closingNow")
-	if err != nil {
-		return nil, err
-	}
-	read49, err := sce.SavedReadInt64(raw49, "closingNow")
-	if err != nil {
-		return nil, err
-	}
-	raw50, err := grown.Variable("spoiled")
-	if err != nil {
-		return nil, err
-	}
-	read50, err := sce.SavedReadBool(raw50, "spoiled")
-	if err != nil {
-		return nil, err
-	}
-	raw51, err := grown.Variable("probing")
-	if err != nil {
-		return nil, err
-	}
-	read51, err := sce.SavedReadBool(raw51, "probing")
-	if err != nil {
-		return nil, err
-	}
-	raw52, err := grown.Variable("gone")
-	if err != nil {
-		return nil, err
-	}
-	read52, err := sce.SavedReadUint32(raw52, "gone")
-	if err != nil {
-		return nil, err
-	}
-	raw53, err := grown.Variable("writes")
-	if err != nil {
-		return nil, err
-	}
-	read53, err := sce.SavedReadUint32(raw53, "writes")
-	if err != nil {
-		return nil, err
-	}
-	raw54, err := grown.Variable("covered")
-	if err != nil {
-		return nil, err
-	}
-	read54, err := sce.SavedReadBool(raw54, "covered")
-	if err != nil {
-		return nil, err
-	}
-	raw55, err := grown.Variable("probe")
-	if err != nil {
-		return nil, err
-	}
-	read55, err := RecordListRefusalEnumFromSaved(raw55, "probe")
-	if err != nil {
-		return nil, err
-	}
-	raw56, err := grown.Variable("spoiledFor")
-	if err != nil {
-		return nil, err
-	}
-	read56, err := RecordListRefusalEnumFromSaved(raw56, "spoiledFor")
-	if err != nil {
-		return nil, err
-	}
-	raw57, err := grown.Variable("namedId")
-	if err != nil {
-		return nil, err
-	}
-	read57, err := sce.SavedReadUint32(raw57, "namedId")
-	if err != nil {
-		return nil, err
-	}
-	raw58, err := grown.Variable("namedField")
-	if err != nil {
-		return nil, err
-	}
-	read58, err := sce.SavedReadUint16(raw58, "namedField")
-	if err != nil {
-		return nil, err
-	}
-	raw59, err := grown.Variable("namedKind")
-	if err != nil {
-		return nil, err
-	}
-	read59, err := RecordListCommandEnumFromSaved(raw59, "namedKind")
-	if err != nil {
-		return nil, err
-	}
-	raw60, err := grown.Variable("taking")
-	if err != nil {
-		return nil, err
-	}
-	read60, err := sce.SavedReadList(raw60, "taking", 64, RecordListPartRecordFromSaved)
-	if err != nil {
-		return nil, err
-	}
-	raw61, err := grown.Variable("took")
-	if err != nil {
-		return nil, err
-	}
-	read61, err := sce.SavedReadUint32(raw61, "took")
-	if err != nil {
-		return nil, err
-	}
-	raw62, err := grown.Variable("passing")
-	if err != nil {
-		return nil, err
-	}
-	read62, err := sce.SavedReadList(raw62, "passing", 64, RecordListPartRecordFromSaved)
-	if err != nil {
-		return nil, err
-	}
-	raw63, err := grown.Variable("passed")
-	if err != nil {
-		return nil, err
-	}
-	read63, err := sce.SavedReadUint32(raw63, "passed")
-	if err != nil {
-		return nil, err
-	}
-	raw64, err := grown.Variable("waiting")
-	if err != nil {
-		return nil, err
-	}
-	read64, err := sce.SavedReadList(raw64, "waiting", 64, RecordListPartRecordFromSaved)
-	if err != nil {
-		return nil, err
-	}
-	raw65, err := grown.Variable("kept")
-	if err != nil {
-		return nil, err
-	}
-	read65, err := sce.SavedReadList(raw65, "kept", 64, RecordListPartRecordFromSaved)
-	if err != nil {
-		return nil, err
-	}
-	raw66, err := grown.Variable("part")
-	if err != nil {
-		return nil, err
-	}
-	read66, err := RecordListPartRecordFromSaved(raw66, "part")
-	if err != nil {
-		return nil, err
-	}
-	raw67, err := grown.Variable("op")
-	if err != nil {
-		return nil, err
-	}
-	read67, err := RecordListPartRecordFromSaved(raw67, "op")
-	if err != nil {
-		return nil, err
-	}
-	raw68, err := grown.Variable("already")
-	if err != nil {
-		return nil, err
-	}
-	read68, err := sce.SavedReadBool(raw68, "already")
-	if err != nil {
-		return nil, err
-	}
-	raw69, err := grown.Variable("count")
-	if err != nil {
-		return nil, err
-	}
-	read69, err := sce.SavedReadUint32(raw69, "count")
+	read44, err := RecordListOpRecordFromSaved(raw44, "op")
 	if err != nil {
 		return nil, err
 	}
@@ -2829,74 +2033,49 @@ func RecordListRestoreAt(policy *RecordListPolicy, saved *sce.SavedState, clock 
 		return nil, err
 	}
 	policy.vNode = read1
-	policy.vHub = read2
-	policy.vClock = read3
-	policy.vStamp = read4
+	policy.vClock = read2
+	policy.vStamp = read3
+	policy.vDot = read4
 	policy.vAdds = read5
-	policy.vTombstones = read6
-	policy.vOne = read7
-	policy.vStable = read8
-	policy.vEntry = read9
-	policy.vValues = read10
-	policy.vHeld = read11
-	policy.vDigest = read12
-	policy.vMine = read13
-	policy.vShareId = read14
-	policy.vShareField = read15
-	policy.vKnown = read16
-	policy.vWasLive = read17
-	policy.vIsLive = read18
-	policy.vPresent = read19
-	policy.vRefusals = read20
-	policy.vFloor = read21
-	policy.vStale = read22
-	policy.vLate = read23
-	policy.vFrozenFor = read24
-	policy.vFrozenHash = read25
-	policy.vPending = read26
-	policy.vMembers = read27
-	policy.vAgreeing = read28
-	policy.vAnswers = read29
-	policy.vAnswer = read30
-	policy.vAgreed = read31
-	policy.vRoomValues = read32
-	policy.vRoomHistory = read33
-	policy.vRoomDigest = read34
-	policy.vFull = read35
-	policy.vRoster = read36
-	policy.vDenied = read37
-	policy.vForbidden = read38
-	policy.vAuthorized = read39
-	policy.vAnnounce = read40
-	policy.vAnnounced = read41
-	policy.vMoved = read42
-	policy.vListed = read43
-	policy.vLive = read44
-	policy.vOrdinal = read45
-	policy.vEmpty = read46
-	policy.vStaged = read47
-	policy.vHolding = read48
-	policy.vClosingNow = read49
-	policy.vSpoiled = read50
-	policy.vProbing = read51
-	policy.vGone = read52
-	policy.vWrites = read53
-	policy.vCovered = read54
-	policy.vProbe = read55
-	policy.vSpoiledFor = read56
-	policy.vNamedId = read57
-	policy.vNamedField = read58
-	policy.vNamedKind = read59
-	policy.vTaking = read60
-	policy.vTook = read61
-	policy.vPassing = read62
-	policy.vPassed = read63
-	policy.vWaiting = read64
-	policy.vKept = read65
-	policy.vPart = read66
-	policy.vOp = read67
-	policy.vAlready = read68
-	policy.vCount = read69
+	policy.vOne = read6
+	policy.vEntry = read7
+	policy.vValues = read8
+	policy.vHeld = read9
+	policy.vShareId = read10
+	policy.vShareField = read11
+	policy.vWasLive = read12
+	policy.vPresent = read13
+	policy.vRefusals = read14
+	policy.vRoomValues = read15
+	policy.vFull = read16
+	policy.vRoster = read17
+	policy.vDenied = read18
+	policy.vForbidden = read19
+	policy.vAuthorized = read20
+	policy.vAnnounce = read21
+	policy.vAnnounced = read22
+	policy.vMoved = read23
+	policy.vListed = read24
+	policy.vLive = read25
+	policy.vOrdinal = read26
+	policy.vEmpty = read27
+	policy.vStaged = read28
+	policy.vStaging = read29
+	policy.vHolding = read30
+	policy.vClosingNow = read31
+	policy.vSpoiled = read32
+	policy.vProbing = read33
+	policy.vGone = read34
+	policy.vWrites = read35
+	policy.vCovered = read36
+	policy.vProbe = read37
+	policy.vSpoiledFor = read38
+	policy.vNamedId = read39
+	policy.vNamedField = read40
+	policy.vNamedKind = read41
+	policy.vTaking = read42
+	policy.vTook = read43
+	policy.vOp = read44
 	for _, recorded := range history {
 		policy.SetHistoryValue(recorded.History, recorded.States)
 	}
@@ -2980,32 +2159,6 @@ func sceAdapt_RecordList_HlcSend__v(p0 RecordListHlcRecord, p1 int64, p2 uint64)
 	}
 	out := RecordListHlcRecord{wallTime: r.WallTime, counter: r.Counter, nodeId: r.NodeId}
 	return scealgorithm.Outcome[RecordListHlcRecord]{Value: out}
-}
-
-func sceAdapt_RecordList_MerkleChangeHash__i(p0 RecordListEntryRecord, p1 uint8) scealgorithm.Outcome[uint32] {
-	r, err := sce_merkle_change_hash.MerkleChangeHash(sce_orset_entry.OrsetEntryPayload{Element: p0.element, WallTime: p0.wallTime, Counter: p0.counter, NodeId: p0.nodeId}, p1)
-	return scealgorithm.Outcome[uint32]{Value: r, Err: err}
-}
-
-func sceAdapt_RecordList_MerkleChangeHash__v(p0 RecordListEntryRecord, p1 uint8) scealgorithm.Outcome[uint32] {
-	r, err := sce_merkle_change_hash.MerkleChangeHash(sce_orset_entry.OrsetEntryPayload{Element: p0.element, WallTime: p0.wallTime, Counter: p0.counter, NodeId: p0.nodeId}, p1)
-	return scealgorithm.Outcome[uint32]{Value: r, Err: err}
-}
-
-func sceAdapt_RecordList_MerkleInsert__v(p0 []RecordListNodeRecord, p1 int64, p2 uint32) scealgorithm.Outcome[[]RecordListNodeRecord] {
-	a0 := make([]sce_merkle_node.MerkleNodePayload, len(p0))
-	for i, e := range p0 {
-		a0[i] = sce_merkle_node.MerkleNodePayload{Depth: e.depth, Prefix: e.prefix, Hash: e.hash}
-	}
-	r, err := sce_merkle_insert.MerkleInsert(a0, p1, p2)
-	if err != nil {
-		return scealgorithm.Outcome[[]RecordListNodeRecord]{Err: err}
-	}
-	out := make([]RecordListNodeRecord, len(r))
-	for i, e := range r {
-		out[i] = RecordListNodeRecord{depth: e.Depth, prefix: e.Prefix, hash: e.Hash}
-	}
-	return scealgorithm.Outcome[[]RecordListNodeRecord]{Value: out}
 }
 
 func sceAdapt_RecordList_MvValueDrop__vv(p0 []RecordListValueRecord, p1 RecordListValueRecord) scealgorithm.Outcome[[]RecordListValueRecord] {
@@ -3104,19 +2257,6 @@ func sceAdapt_RecordList_RecordRoster__v(p0 []RecordListMemberRecord, p1 uint64,
 	return scealgorithm.Outcome[[]RecordListMemberRecord]{Value: out}
 }
 
-func sceAdapt_RecordList_RecordSettled__vv(p0 []RecordListEntryRecord, p1 []RecordListEntryRecord, p2 int64) scealgorithm.Outcome[uint32] {
-	a0 := make([]sce_orset_entry.OrsetEntryPayload, len(p0))
-	for i, e := range p0 {
-		a0[i] = sce_orset_entry.OrsetEntryPayload{Element: e.element, WallTime: e.wallTime, Counter: e.counter, NodeId: e.nodeId}
-	}
-	a1 := make([]sce_orset_entry.OrsetEntryPayload, len(p1))
-	for i, e := range p1 {
-		a1[i] = sce_orset_entry.OrsetEntryPayload{Element: e.element, WallTime: e.wallTime, Counter: e.counter, NodeId: e.nodeId}
-	}
-	r, err := sce_record_settled.RecordSettled(a0, a1, p2)
-	return scealgorithm.Outcome[uint32]{Value: r, Err: err}
-}
-
 func sceAdapt_RecordList_RegisterValues__v(p0 []RecordListValueRecord, p1 uint64, p2 uint64) scealgorithm.Outcome[[]RecordListValueRecord] {
 	a0 := make([]sce_mv_value.MvValuePayload, len(p0))
 	for i, e := range p0 {
@@ -3143,24 +2283,14 @@ type RecordListPolicy struct {
 	// native transition guards (`p.pending<Event>Payload.<field>`). Mirrors
 	// the Rust policy's `pending_payload` / the C11 `sm->pending_payload`.
 	pendingPayloadTag RecordListPayloadTag
-	pendingRecordListAckPayload RecordListRecordListAckPayload
 	pendingRecordListAnnouncePayload RecordListRecordListAnnouncePayload
+	pendingRecordListChangePayload RecordListRecordListChangePayload
 	pendingRecordListClearPayload RecordListRecordListClearPayload
-	pendingRecordListCompactPayload RecordListRecordListCompactPayload
 	pendingRecordListEditPayload RecordListRecordListEditPayload
-	pendingRecordListFloorPayload RecordListRecordListFloorPayload
 	pendingRecordListJoinPayload RecordListRecordListJoinPayload
-	pendingRecordListKeepPayload RecordListRecordListKeepPayload
-	pendingRecordListNodePayload RecordListRecordListNodePayload
-	pendingRecordListProposePayload RecordListRecordListProposePayload
 	pendingRecordListRetirePayload RecordListRecordListRetirePayload
 	pendingRecordListRolePayload RecordListRecordListRolePayload
 	pendingRecordListRoomPayload RecordListRecordListRoomPayload
-	pendingRecordListSettlePayload RecordListRecordListSettlePayload
-	pendingRecordListSharePayload RecordListRecordListSharePayload
-	pendingRecordListSupersedePayload RecordListRecordListSupersedePayload
-	pendingRecordListVisitPayload RecordListRecordListVisitPayload
-	pendingRecordListWritePayload RecordListRecordListWritePayload
 
 	pendingEventData string
 	pendingEventInvokeid string
@@ -3169,72 +2299,34 @@ type RecordListPolicy struct {
 	// ── SCE Accepted Subset §2.15: the datamodel="sce-static" variables ──
 	// W3C SCXML 5.2: the `node` datamodel variable, published (`sce:direction="out"`).
 	vNode uint64
-	// W3C SCXML 5.2: the `hub` datamodel variable, published (`sce:direction="out"`).
-	vHub bool
 	// W3C SCXML 5.2: the `clock` datamodel variable, published (`sce:direction="out"`).
 	vClock RecordListHlcRecord
 	// W3C SCXML 5.2: the `stamp` datamodel variable.
 	vStamp RecordListHlcRecord
+	// W3C SCXML 5.2: the `dot` datamodel variable.
+	vDot RecordListHlcRecord
 	// W3C SCXML 5.2: the `adds` datamodel variable, published (`sce:direction="out"`).
 	vAdds []RecordListEntryRecord
-	// W3C SCXML 5.2: the `tombstones` datamodel variable, published (`sce:direction="out"`).
-	vTombstones []RecordListEntryRecord
 	// W3C SCXML 5.2: the `one` datamodel variable.
 	vOne []RecordListEntryRecord
-	// W3C SCXML 5.2: the `stable` datamodel variable.
-	vStable []RecordListEntryRecord
 	// W3C SCXML 5.2: the `entry` datamodel variable.
 	vEntry RecordListEntryRecord
 	// W3C SCXML 5.2: the `values` datamodel variable, published (`sce:direction="out"`).
 	vValues []RecordListValueRecord
 	// W3C SCXML 5.2: the `held` datamodel variable.
 	vHeld RecordListValueRecord
-	// W3C SCXML 5.2: the `digest` datamodel variable, published (`sce:direction="out"`).
-	vDigest []RecordListNodeRecord
-	// W3C SCXML 5.2: the `mine` datamodel variable.
-	vMine uint32
 	// W3C SCXML 5.2: the `shareId` datamodel variable.
 	vShareId uint32
 	// W3C SCXML 5.2: the `shareField` datamodel variable.
 	vShareField uint16
-	// W3C SCXML 5.2: the `known` datamodel variable.
-	vKnown bool
 	// W3C SCXML 5.2: the `wasLive` datamodel variable.
 	vWasLive bool
-	// W3C SCXML 5.2: the `isLive` datamodel variable.
-	vIsLive bool
 	// W3C SCXML 5.2: the `present` datamodel variable.
 	vPresent bool
 	// W3C SCXML 5.2: the `refusals` datamodel variable, published (`sce:direction="out"`).
 	vRefusals uint32
-	// W3C SCXML 5.2: the `floor` datamodel variable, published (`sce:direction="out"`).
-	vFloor int64
-	// W3C SCXML 5.2: the `stale` datamodel variable, published (`sce:direction="out"`).
-	vStale bool
-	// W3C SCXML 5.2: the `late` datamodel variable, published (`sce:direction="out"`).
-	vLate uint32
-	// W3C SCXML 5.2: the `frozenFor` datamodel variable.
-	vFrozenFor int64
-	// W3C SCXML 5.2: the `frozenHash` datamodel variable.
-	vFrozenHash uint32
-	// W3C SCXML 5.2: the `pending` datamodel variable.
-	vPending int64
-	// W3C SCXML 5.2: the `members` datamodel variable.
-	vMembers uint32
-	// W3C SCXML 5.2: the `agreeing` datamodel variable.
-	vAgreeing uint32
-	// W3C SCXML 5.2: the `answers` datamodel variable.
-	vAnswers []RecordListAnswerRecord
-	// W3C SCXML 5.2: the `answer` datamodel variable.
-	vAnswer RecordListAnswerRecord
-	// W3C SCXML 5.2: the `agreed` datamodel variable.
-	vAgreed uint32
 	// W3C SCXML 5.2: the `roomValues` datamodel variable.
 	vRoomValues uint32
-	// W3C SCXML 5.2: the `roomHistory` datamodel variable.
-	vRoomHistory uint32
-	// W3C SCXML 5.2: the `roomDigest` datamodel variable.
-	vRoomDigest uint32
 	// W3C SCXML 5.2: the `full` datamodel variable, published (`sce:direction="out"`).
 	vFull uint32
 	// W3C SCXML 5.2: the `roster` datamodel variable.
@@ -3260,7 +2352,9 @@ type RecordListPolicy struct {
 	// W3C SCXML 5.2: the `empty` datamodel variable.
 	vEmpty RecordListValueRecord
 	// W3C SCXML 5.2: the `staged` datamodel variable.
-	vStaged []RecordListPartRecord
+	vStaged []RecordListStagedRecord
+	// W3C SCXML 5.2: the `staging` datamodel variable.
+	vStaging RecordListStagedRecord
 	// W3C SCXML 5.2: the `holding` datamodel variable.
 	vHolding bool
 	// W3C SCXML 5.2: the `closingNow` datamodel variable.
@@ -3286,25 +2380,11 @@ type RecordListPolicy struct {
 	// W3C SCXML 5.2: the `namedKind` datamodel variable.
 	vNamedKind RecordListCommandEnum
 	// W3C SCXML 5.2: the `taking` datamodel variable.
-	vTaking []RecordListPartRecord
+	vTaking []RecordListOpRecord
 	// W3C SCXML 5.2: the `took` datamodel variable.
 	vTook uint32
-	// W3C SCXML 5.2: the `passing` datamodel variable.
-	vPassing []RecordListPartRecord
-	// W3C SCXML 5.2: the `passed` datamodel variable.
-	vPassed uint32
-	// W3C SCXML 5.2: the `waiting` datamodel variable.
-	vWaiting []RecordListPartRecord
-	// W3C SCXML 5.2: the `kept` datamodel variable.
-	vKept []RecordListPartRecord
-	// W3C SCXML 5.2: the `part` datamodel variable.
-	vPart RecordListPartRecord
 	// W3C SCXML 5.2: the `op` datamodel variable.
-	vOp RecordListPartRecord
-	// W3C SCXML 5.2: the `already` datamodel variable.
-	vAlready bool
-	// W3C SCXML 5.2: the `count` datamodel variable.
-	vCount uint32
+	vOp RecordListOpRecord
 	// W3C SCXML 6.4: Parent communication (unbounded — see sce.ParentEventQueue)
 	ParentExternalQueue *sce.ParentEventQueue
 	InvokeID           string
@@ -3327,39 +2407,20 @@ func NewRecordListPolicy() RecordListPolicy {
 		// and the id it was started under.
 		SessionID: sce.DrawSessionID(),
 		vNode: 0,
-		vHub: false,
 		vClock: RecordListHlcRecord{wallTime: 0, counter: 0, nodeId: 0},
 		vStamp: RecordListHlcRecord{wallTime: 0, counter: 0, nodeId: 0},
+		vDot: RecordListHlcRecord{wallTime: 0, counter: 0, nodeId: 0},
 		vAdds: nil,
-		vTombstones: nil,
 		vOne: nil,
-		vStable: nil,
 		vEntry: RecordListEntryRecord{element: 0, wallTime: 0, counter: 0, nodeId: 0},
 		vValues: nil,
 		vHeld: RecordListValueRecord{id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0},
-		vDigest: nil,
-		vMine: 0,
 		vShareId: 0,
 		vShareField: 0,
-		vKnown: false,
 		vWasLive: false,
-		vIsLive: false,
 		vPresent: false,
 		vRefusals: 0,
-		vFloor: 0,
-		vStale: false,
-		vLate: 0,
-		vFrozenFor: -1,
-		vFrozenHash: 0,
-		vPending: -1,
-		vMembers: 0,
-		vAgreeing: 0,
-		vAnswers: nil,
-		vAnswer: RecordListAnswerRecord{sender: 0, hash: 0},
-		vAgreed: 0,
 		vRoomValues: 0,
-		vRoomHistory: 0,
-		vRoomDigest: 0,
 		vFull: 0,
 		vRoster: nil,
 		vDenied: 0,
@@ -3373,6 +2434,7 @@ func NewRecordListPolicy() RecordListPolicy {
 		vOrdinal: 0,
 		vEmpty: RecordListValueRecord{id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0},
 		vStaged: nil,
+		vStaging: RecordListStagedRecord{kind: 0, id: 0, field: 0, value: 0, text: ""},
 		vHolding: false,
 		vClosingNow: 0,
 		vSpoiled: false,
@@ -3387,14 +2449,7 @@ func NewRecordListPolicy() RecordListPolicy {
 		vNamedKind: RecordListCommandEnumEdit,
 		vTaking: nil,
 		vTook: 0,
-		vPassing: nil,
-		vPassed: 0,
-		vWaiting: nil,
-		vKept: nil,
-		vPart: RecordListPartRecord{kind: 0, id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0, by: 0, atWallTime: 0, atCounter: 0, parts: 1},
-		vOp: RecordListPartRecord{kind: 0, id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0, by: 0, atWallTime: 0, atCounter: 0, parts: 1},
-		vAlready: false,
-		vCount: 0,
+		vOp: RecordListOpRecord{kind: 0, id: 0, field: 0, value: 0, text: "", wallTime: 0, counter: 0, nodeId: 0},
 	}
 }
 
@@ -3419,12 +2474,6 @@ func (p *RecordListPolicy) Node() uint64 {
 	return p.vNode
 }
 
-// Hub reports what the published `hub` datamodel
-// variable holds now (W3C SCXML 5.2). Only the machine writes it.
-func (p *RecordListPolicy) Hub() bool {
-	return p.vHub
-}
-
 // Clock reports what the published `clock` datamodel
 // variable holds now (W3C SCXML 5.2). Only the machine writes it.
 func (p *RecordListPolicy) Clock() RecordListHlcRecord {
@@ -3437,46 +2486,16 @@ func (p *RecordListPolicy) Adds() []RecordListEntryRecord {
 	return p.vAdds
 }
 
-// Tombstones reports what the published `tombstones` datamodel
-// variable holds now (W3C SCXML 5.2). Only the machine writes it.
-func (p *RecordListPolicy) Tombstones() []RecordListEntryRecord {
-	return p.vTombstones
-}
-
 // Values reports what the published `values` datamodel
 // variable holds now (W3C SCXML 5.2). Only the machine writes it.
 func (p *RecordListPolicy) Values() []RecordListValueRecord {
 	return p.vValues
 }
 
-// Digest reports what the published `digest` datamodel
-// variable holds now (W3C SCXML 5.2). Only the machine writes it.
-func (p *RecordListPolicy) Digest() []RecordListNodeRecord {
-	return p.vDigest
-}
-
 // Refusals reports what the published `refusals` datamodel
 // variable holds now (W3C SCXML 5.2). Only the machine writes it.
 func (p *RecordListPolicy) Refusals() uint32 {
 	return p.vRefusals
-}
-
-// Floor reports what the published `floor` datamodel
-// variable holds now (W3C SCXML 5.2). Only the machine writes it.
-func (p *RecordListPolicy) Floor() int64 {
-	return p.vFloor
-}
-
-// Stale reports what the published `stale` datamodel
-// variable holds now (W3C SCXML 5.2). Only the machine writes it.
-func (p *RecordListPolicy) Stale() bool {
-	return p.vStale
-}
-
-// Late reports what the published `late` datamodel
-// variable holds now (W3C SCXML 5.2). Only the machine writes it.
-func (p *RecordListPolicy) Late() uint32 {
-	return p.vLate
 }
 
 // Full reports what the published `full` datamodel
@@ -3503,27 +2522,12 @@ func (p *RecordListPolicy) Announced() uint32 {
 // gave it.
 type RecordListInvokeParams struct {
 	VNode *uint64
-	VHub *bool
-	VMine *uint32
 	VShareId *uint32
 	VShareField *uint16
-	VKnown *bool
 	VWasLive *bool
-	VIsLive *bool
 	VPresent *bool
 	VRefusals *uint32
-	VFloor *int64
-	VStale *bool
-	VLate *uint32
-	VFrozenFor *int64
-	VFrozenHash *uint32
-	VPending *int64
-	VMembers *uint32
-	VAgreeing *uint32
-	VAgreed *uint32
 	VRoomValues *uint32
-	VRoomHistory *uint32
-	VRoomDigest *uint32
 	VFull *uint32
 	VDenied *uint32
 	VForbidden *bool
@@ -3542,9 +2546,6 @@ type RecordListInvokeParams struct {
 	VNamedId *uint32
 	VNamedField *uint16
 	VTook *uint32
-	VPassed *uint32
-	VAlready *bool
-	VCount *uint32
 }
 
 // AcceptParams gives this machine the values params carries, in place of the
@@ -3553,26 +2554,14 @@ func (p *RecordListPolicy) AcceptParams(params RecordListInvokeParams) {
 	if params.VNode != nil {
 		p.vNode = *params.VNode
 	}
-	if params.VHub != nil {
-		p.vHub = *params.VHub
-	}
-	if params.VMine != nil {
-		p.vMine = *params.VMine
-	}
 	if params.VShareId != nil {
 		p.vShareId = *params.VShareId
 	}
 	if params.VShareField != nil {
 		p.vShareField = *params.VShareField
 	}
-	if params.VKnown != nil {
-		p.vKnown = *params.VKnown
-	}
 	if params.VWasLive != nil {
 		p.vWasLive = *params.VWasLive
-	}
-	if params.VIsLive != nil {
-		p.vIsLive = *params.VIsLive
 	}
 	if params.VPresent != nil {
 		p.vPresent = *params.VPresent
@@ -3580,41 +2569,8 @@ func (p *RecordListPolicy) AcceptParams(params RecordListInvokeParams) {
 	if params.VRefusals != nil {
 		p.vRefusals = *params.VRefusals
 	}
-	if params.VFloor != nil {
-		p.vFloor = *params.VFloor
-	}
-	if params.VStale != nil {
-		p.vStale = *params.VStale
-	}
-	if params.VLate != nil {
-		p.vLate = *params.VLate
-	}
-	if params.VFrozenFor != nil {
-		p.vFrozenFor = *params.VFrozenFor
-	}
-	if params.VFrozenHash != nil {
-		p.vFrozenHash = *params.VFrozenHash
-	}
-	if params.VPending != nil {
-		p.vPending = *params.VPending
-	}
-	if params.VMembers != nil {
-		p.vMembers = *params.VMembers
-	}
-	if params.VAgreeing != nil {
-		p.vAgreeing = *params.VAgreeing
-	}
-	if params.VAgreed != nil {
-		p.vAgreed = *params.VAgreed
-	}
 	if params.VRoomValues != nil {
 		p.vRoomValues = *params.VRoomValues
-	}
-	if params.VRoomHistory != nil {
-		p.vRoomHistory = *params.VRoomHistory
-	}
-	if params.VRoomDigest != nil {
-		p.vRoomDigest = *params.VRoomDigest
 	}
 	if params.VFull != nil {
 		p.vFull = *params.VFull
@@ -3669,15 +2625,6 @@ func (p *RecordListPolicy) AcceptParams(params RecordListInvokeParams) {
 	}
 	if params.VTook != nil {
 		p.vTook = *params.VTook
-	}
-	if params.VPassed != nil {
-		p.vPassed = *params.VPassed
-	}
-	if params.VAlready != nil {
-		p.vAlready = *params.VAlready
-	}
-	if params.VCount != nil {
-		p.vCount = *params.VCount
 	}
 }
 
@@ -3808,60 +2755,36 @@ func (p *RecordListPolicy) GetEventFromName(name string) (RecordListEvent, bool)
 		return RecordListEventErrorCommunication, true
 	case "error.execution":
 		return RecordListEventErrorExecution, true
-	case "record_list.ack":
-		return RecordListEventRecordListAck, true
 	case "record_list.announce":
 		return RecordListEventRecordListAnnounce, true
-	case "record_list.arrive":
-		return RecordListEventRecordListArrive, true
+	case "record_list.change":
+		return RecordListEventRecordListChange, true
 	case "record_list.clear":
 		return RecordListEventRecordListClear, true
 	case "record_list.close":
 		return RecordListEventRecordListClose, true
-	case "record_list.compact":
-		return RecordListEventRecordListCompact, true
 	case "record_list.edit":
 		return RecordListEventRecordListEdit, true
-	case "record_list.floor":
-		return RecordListEventRecordListFloor, true
 	case "record_list.join":
 		return RecordListEventRecordListJoin, true
-	case "record_list.keep":
-		return RecordListEventRecordListKeep, true
-	case "record_list.node":
-		return RecordListEventRecordListNode, true
 	case "record_list.pass":
 		return RecordListEventRecordListPass, true
-	case "record_list.propose":
-		return RecordListEventRecordListPropose, true
 	case "record_list.refused":
 		return RecordListEventRecordListRefused, true
 	case "record_list.register":
 		return RecordListEventRecordListRegister, true
-	case "record_list.resync":
-		return RecordListEventRecordListResync, true
 	case "record_list.retire":
 		return RecordListEventRecordListRetire, true
 	case "record_list.role":
 		return RecordListEventRecordListRole, true
 	case "record_list.room":
 		return RecordListEventRecordListRoom, true
-	case "record_list.settle":
-		return RecordListEventRecordListSettle, true
-	case "record_list.share":
-		return RecordListEventRecordListShare, true
-	case "record_list.supersede":
-		return RecordListEventRecordListSupersede, true
 	case "record_list.take":
 		return RecordListEventRecordListTake, true
 	case "record_list.tell":
 		return RecordListEventRecordListTell, true
 	case "record_list.value":
 		return RecordListEventRecordListValue, true
-	case "record_list.visit":
-		return RecordListEventRecordListVisit, true
-	case "record_list.write":
-		return RecordListEventRecordListWrite, true
 	}
 	return RecordListEventNull, false
 }
@@ -3941,36 +2864,21 @@ func (p *RecordListPolicy) PopulateEventMetadata(meta *sce.EventMetadata) {
 	// (twin of the C11 pop loop's `sm->pending_payload = evt.payload`).
 	p.pendingPayloadTag = RecordListPayloadTagNone
 	switch v := meta.TypedPayload.(type) {
-	case RecordListRecordListAckPayload:
-		p.pendingPayloadTag = RecordListPayloadTagRecordListAck
-		p.pendingRecordListAckPayload = v
 	case RecordListRecordListAnnouncePayload:
 		p.pendingPayloadTag = RecordListPayloadTagRecordListAnnounce
 		p.pendingRecordListAnnouncePayload = v
+	case RecordListRecordListChangePayload:
+		p.pendingPayloadTag = RecordListPayloadTagRecordListChange
+		p.pendingRecordListChangePayload = v
 	case RecordListRecordListClearPayload:
 		p.pendingPayloadTag = RecordListPayloadTagRecordListClear
 		p.pendingRecordListClearPayload = v
-	case RecordListRecordListCompactPayload:
-		p.pendingPayloadTag = RecordListPayloadTagRecordListCompact
-		p.pendingRecordListCompactPayload = v
 	case RecordListRecordListEditPayload:
 		p.pendingPayloadTag = RecordListPayloadTagRecordListEdit
 		p.pendingRecordListEditPayload = v
-	case RecordListRecordListFloorPayload:
-		p.pendingPayloadTag = RecordListPayloadTagRecordListFloor
-		p.pendingRecordListFloorPayload = v
 	case RecordListRecordListJoinPayload:
 		p.pendingPayloadTag = RecordListPayloadTagRecordListJoin
 		p.pendingRecordListJoinPayload = v
-	case RecordListRecordListKeepPayload:
-		p.pendingPayloadTag = RecordListPayloadTagRecordListKeep
-		p.pendingRecordListKeepPayload = v
-	case RecordListRecordListNodePayload:
-		p.pendingPayloadTag = RecordListPayloadTagRecordListNode
-		p.pendingRecordListNodePayload = v
-	case RecordListRecordListProposePayload:
-		p.pendingPayloadTag = RecordListPayloadTagRecordListPropose
-		p.pendingRecordListProposePayload = v
 	case RecordListRecordListRetirePayload:
 		p.pendingPayloadTag = RecordListPayloadTagRecordListRetire
 		p.pendingRecordListRetirePayload = v
@@ -3980,21 +2888,6 @@ func (p *RecordListPolicy) PopulateEventMetadata(meta *sce.EventMetadata) {
 	case RecordListRecordListRoomPayload:
 		p.pendingPayloadTag = RecordListPayloadTagRecordListRoom
 		p.pendingRecordListRoomPayload = v
-	case RecordListRecordListSettlePayload:
-		p.pendingPayloadTag = RecordListPayloadTagRecordListSettle
-		p.pendingRecordListSettlePayload = v
-	case RecordListRecordListSharePayload:
-		p.pendingPayloadTag = RecordListPayloadTagRecordListShare
-		p.pendingRecordListSharePayload = v
-	case RecordListRecordListSupersedePayload:
-		p.pendingPayloadTag = RecordListPayloadTagRecordListSupersede
-		p.pendingRecordListSupersedePayload = v
-	case RecordListRecordListVisitPayload:
-		p.pendingPayloadTag = RecordListPayloadTagRecordListVisit
-		p.pendingRecordListVisitPayload = v
-	case RecordListRecordListWritePayload:
-		p.pendingPayloadTag = RecordListPayloadTagRecordListWrite
-		p.pendingRecordListWritePayload = v
 	}
 
 	p.pendingEventData = meta.Data
@@ -4017,23 +2910,6 @@ func (p *RecordListPolicy) LiftTypedPayload(event RecordListEvent, meta *sce.Eve
 		return nil
 	}
 	switch event {
-	case RecordListEventRecordListAck:
-		fields, err := sce.LiftPayload(meta.Data)
-		if err != nil {
-			return err
-		}
-		var payload RecordListRecordListAckPayload
-		if payload.sender, err = sce.PayloadUnsigned64(fields, "sender"); err != nil {
-			return err
-		}
-		if payload.before, err = sce.PayloadSigned64(fields, "before"); err != nil {
-			return err
-		}
-		if payload.hash, err = sce.PayloadUnsigned[uint32](fields, "hash"); err != nil {
-			return err
-		}
-		p.pendingRecordListAckPayload = payload
-		p.pendingPayloadTag = RecordListPayloadTagRecordListAck
 	case RecordListEventRecordListAnnounce:
 		fields, err := sce.LiftPayload(meta.Data)
 		if err != nil {
@@ -4048,6 +2924,50 @@ func (p *RecordListPolicy) LiftTypedPayload(event RecordListEvent, meta *sce.Eve
 		}
 		p.pendingRecordListAnnouncePayload = payload
 		p.pendingPayloadTag = RecordListPayloadTagRecordListAnnounce
+	case RecordListEventRecordListChange:
+		fields, err := sce.LiftPayload(meta.Data)
+		if err != nil {
+			return err
+		}
+		var payload RecordListRecordListChangePayload
+		{
+			sceValue, err := fields.Field("by")
+			if err != nil {
+				return err
+			}
+			if payload.by, err = sce.ValueUnsigned64(sceValue); err != nil {
+				return err
+			}
+		}
+		{
+			sceValue, err := fields.Field("wallTime")
+			if err != nil {
+				return err
+			}
+			if payload.wallTime, err = sce.ValueSigned64(sceValue); err != nil {
+				return err
+			}
+		}
+		{
+			sceValue, err := fields.Field("counter")
+			if err != nil {
+				return err
+			}
+			if payload.counter, err = sce.ValueUnsigned[uint32](sceValue); err != nil {
+				return err
+			}
+		}
+		{
+			sceValue, err := fields.Field("ops")
+			if err != nil {
+				return err
+			}
+			if payload.ops, err = sce.ReadListWithin(sceValue, 1, 64, func(sceValue sce.PayloadValue) (RecordListOpRecord, error) { return func() (RecordListOpRecord, error) { sceRecord, err := sceValue.Record(""); if err != nil { return RecordListOpRecord{}, err }; var sceOut RecordListOpRecord; { sceValue, err := sceRecord.Field("kind"); if err != nil { return RecordListOpRecord{}, err }; if sceOut.kind, err = sce.ValueUnsigned[uint8](sceValue); err != nil { return RecordListOpRecord{}, err } }; { sceValue, err := sceRecord.Field("id"); if err != nil { return RecordListOpRecord{}, err }; if sceOut.id, err = sce.ValueUnsigned[uint32](sceValue); err != nil { return RecordListOpRecord{}, err } }; { sceValue, err := sceRecord.Field("field"); if err != nil { return RecordListOpRecord{}, err }; if sceOut.field, err = sce.ValueUnsigned[uint16](sceValue); err != nil { return RecordListOpRecord{}, err } }; { sceValue, err := sceRecord.Field("value"); if err != nil { return RecordListOpRecord{}, err }; if sceOut.value, err = sce.ValueSigned64(sceValue); err != nil { return RecordListOpRecord{}, err } }; { sceValue, err := sceRecord.Field("text"); if err != nil { return RecordListOpRecord{}, err }; if sceOut.text, err = sceValue.Text(96); err != nil { return RecordListOpRecord{}, err } }; { sceValue, err := sceRecord.Field("wallTime"); if err != nil { return RecordListOpRecord{}, err }; if sceOut.wallTime, err = sce.ValueSigned64(sceValue); err != nil { return RecordListOpRecord{}, err } }; { sceValue, err := sceRecord.Field("counter"); if err != nil { return RecordListOpRecord{}, err }; if sceOut.counter, err = sce.ValueUnsigned[uint32](sceValue); err != nil { return RecordListOpRecord{}, err } }; { sceValue, err := sceRecord.Field("nodeId"); if err != nil { return RecordListOpRecord{}, err }; if sceOut.nodeId, err = sce.ValueUnsigned64(sceValue); err != nil { return RecordListOpRecord{}, err } }; return sceOut, nil }() }); err != nil {
+				return err
+			}
+		}
+		p.pendingRecordListChangePayload = payload
+		p.pendingPayloadTag = RecordListPayloadTagRecordListChange
 	case RecordListEventRecordListClear:
 		fields, err := sce.LiftPayload(meta.Data)
 		if err != nil {
@@ -4068,17 +2988,6 @@ func (p *RecordListPolicy) LiftTypedPayload(event RecordListEvent, meta *sce.Eve
 		}
 		p.pendingRecordListClearPayload = payload
 		p.pendingPayloadTag = RecordListPayloadTagRecordListClear
-	case RecordListEventRecordListCompact:
-		fields, err := sce.LiftPayload(meta.Data)
-		if err != nil {
-			return err
-		}
-		var payload RecordListRecordListCompactPayload
-		if payload.before, err = sce.PayloadSigned64(fields, "before"); err != nil {
-			return err
-		}
-		p.pendingRecordListCompactPayload = payload
-		p.pendingPayloadTag = RecordListPayloadTagRecordListCompact
 	case RecordListEventRecordListEdit:
 		fields, err := sce.LiftPayloadWithDefaults(meta.Data, "{\"more\":false}")
 		if err != nil {
@@ -4105,20 +3014,6 @@ func (p *RecordListPolicy) LiftTypedPayload(event RecordListEvent, meta *sce.Eve
 		}
 		p.pendingRecordListEditPayload = payload
 		p.pendingPayloadTag = RecordListPayloadTagRecordListEdit
-	case RecordListEventRecordListFloor:
-		fields, err := sce.LiftPayload(meta.Data)
-		if err != nil {
-			return err
-		}
-		var payload RecordListRecordListFloorPayload
-		if payload.before, err = sce.PayloadSigned64(fields, "before"); err != nil {
-			return err
-		}
-		if payload.hash, err = sce.PayloadUnsigned[uint32](fields, "hash"); err != nil {
-			return err
-		}
-		p.pendingRecordListFloorPayload = payload
-		p.pendingPayloadTag = RecordListPayloadTagRecordListFloor
 	case RecordListEventRecordListJoin:
 		fields, err := sce.LiftPayload(meta.Data)
 		if err != nil {
@@ -4128,71 +3023,8 @@ func (p *RecordListPolicy) LiftTypedPayload(event RecordListEvent, meta *sce.Eve
 		if payload.node, err = sce.PayloadUnsigned64(fields, "node"); err != nil {
 			return err
 		}
-		if payload.hub, err = sce.PayloadBool(fields, "hub"); err != nil {
-			return err
-		}
 		p.pendingRecordListJoinPayload = payload
 		p.pendingPayloadTag = RecordListPayloadTagRecordListJoin
-	case RecordListEventRecordListKeep:
-		fields, err := sce.LiftPayload(meta.Data)
-		if err != nil {
-			return err
-		}
-		var payload RecordListRecordListKeepPayload
-		if payload.kind, err = sce.PayloadUnsigned[uint8](fields, "kind"); err != nil {
-			return err
-		}
-		if payload.element, err = sce.PayloadUnsigned64(fields, "element"); err != nil {
-			return err
-		}
-		if payload.wallTime, err = sce.PayloadSigned64(fields, "wallTime"); err != nil {
-			return err
-		}
-		if payload.counter, err = sce.PayloadUnsigned[uint32](fields, "counter"); err != nil {
-			return err
-		}
-		if payload.nodeId, err = sce.PayloadUnsigned64(fields, "nodeId"); err != nil {
-			return err
-		}
-		p.pendingRecordListKeepPayload = payload
-		p.pendingPayloadTag = RecordListPayloadTagRecordListKeep
-	case RecordListEventRecordListNode:
-		fields, err := sce.LiftPayload(meta.Data)
-		if err != nil {
-			return err
-		}
-		var payload RecordListRecordListNodePayload
-		if payload.sender, err = sce.PayloadUnsigned64(fields, "sender"); err != nil {
-			return err
-		}
-		if payload.to, err = sce.PayloadUnsigned64(fields, "to"); err != nil {
-			return err
-		}
-		if payload.depth, err = sce.PayloadUnsigned[uint8](fields, "depth"); err != nil {
-			return err
-		}
-		if payload.prefix, err = sce.PayloadUnsigned64(fields, "prefix"); err != nil {
-			return err
-		}
-		if payload.hash, err = sce.PayloadUnsigned[uint32](fields, "hash"); err != nil {
-			return err
-		}
-		if payload.reply, err = sce.PayloadBool(fields, "reply"); err != nil {
-			return err
-		}
-		p.pendingRecordListNodePayload = payload
-		p.pendingPayloadTag = RecordListPayloadTagRecordListNode
-	case RecordListEventRecordListPropose:
-		fields, err := sce.LiftPayload(meta.Data)
-		if err != nil {
-			return err
-		}
-		var payload RecordListRecordListProposePayload
-		if payload.before, err = sce.PayloadSigned64(fields, "before"); err != nil {
-			return err
-		}
-		p.pendingRecordListProposePayload = payload
-		p.pendingPayloadTag = RecordListPayloadTagRecordListPropose
 	case RecordListEventRecordListRetire:
 		fields, err := sce.LiftPayload(meta.Data)
 		if err != nil {
@@ -4241,121 +3073,6 @@ func (p *RecordListPolicy) LiftTypedPayload(event RecordListEvent, meta *sce.Eve
 		}
 		p.pendingRecordListRoomPayload = payload
 		p.pendingPayloadTag = RecordListPayloadTagRecordListRoom
-	case RecordListEventRecordListSettle:
-		fields, err := sce.LiftPayload(meta.Data)
-		if err != nil {
-			return err
-		}
-		var payload RecordListRecordListSettlePayload
-		if payload.before, err = sce.PayloadSigned64(fields, "before"); err != nil {
-			return err
-		}
-		if payload.members, err = sce.PayloadUnsigned[uint32](fields, "members"); err != nil {
-			return err
-		}
-		p.pendingRecordListSettlePayload = payload
-		p.pendingPayloadTag = RecordListPayloadTagRecordListSettle
-	case RecordListEventRecordListShare:
-		fields, err := sce.LiftPayload(meta.Data)
-		if err != nil {
-			return err
-		}
-		var payload RecordListRecordListSharePayload
-		if payload.to, err = sce.PayloadUnsigned64(fields, "to"); err != nil {
-			return err
-		}
-		if payload.minute, err = sce.PayloadUnsigned64(fields, "minute"); err != nil {
-			return err
-		}
-		p.pendingRecordListSharePayload = payload
-		p.pendingPayloadTag = RecordListPayloadTagRecordListShare
-	case RecordListEventRecordListSupersede:
-		fields, err := sce.LiftPayloadWithDefaults(meta.Data, "{\"parts\":1,\"atWallTime\":\"0\",\"atCounter\":0}")
-		if err != nil {
-			return err
-		}
-		var payload RecordListRecordListSupersedePayload
-		if payload.id, err = sce.PayloadUnsigned[uint32](fields, "id"); err != nil {
-			return err
-		}
-		if payload.field, err = sce.PayloadUnsigned[uint16](fields, "field"); err != nil {
-			return err
-		}
-		if payload.wallTime, err = sce.PayloadSigned64(fields, "wallTime"); err != nil {
-			return err
-		}
-		if payload.counter, err = sce.PayloadUnsigned[uint32](fields, "counter"); err != nil {
-			return err
-		}
-		if payload.nodeId, err = sce.PayloadUnsigned64(fields, "nodeId"); err != nil {
-			return err
-		}
-		if payload.by, err = sce.PayloadUnsigned64(fields, "by"); err != nil {
-			return err
-		}
-		if payload.parts, err = sce.PayloadUnsigned[uint32](fields, "parts"); err != nil {
-			return err
-		}
-		if payload.atWallTime, err = sce.PayloadSigned64(fields, "atWallTime"); err != nil {
-			return err
-		}
-		if payload.atCounter, err = sce.PayloadUnsigned[uint32](fields, "atCounter"); err != nil {
-			return err
-		}
-		p.pendingRecordListSupersedePayload = payload
-		p.pendingPayloadTag = RecordListPayloadTagRecordListSupersede
-	case RecordListEventRecordListVisit:
-		fields, err := sce.LiftPayload(meta.Data)
-		if err != nil {
-			return err
-		}
-		var payload RecordListRecordListVisitPayload
-		if payload.to, err = sce.PayloadUnsigned64(fields, "to"); err != nil {
-			return err
-		}
-		if payload.depth, err = sce.PayloadUnsigned[uint8](fields, "depth"); err != nil {
-			return err
-		}
-		if payload.prefix, err = sce.PayloadUnsigned64(fields, "prefix"); err != nil {
-			return err
-		}
-		if payload.reply, err = sce.PayloadBool(fields, "reply"); err != nil {
-			return err
-		}
-		p.pendingRecordListVisitPayload = payload
-		p.pendingPayloadTag = RecordListPayloadTagRecordListVisit
-	case RecordListEventRecordListWrite:
-		fields, err := sce.LiftPayloadWithDefaults(meta.Data, "{\"parts\":1}")
-		if err != nil {
-			return err
-		}
-		var payload RecordListRecordListWritePayload
-		if payload.id, err = sce.PayloadUnsigned[uint32](fields, "id"); err != nil {
-			return err
-		}
-		if payload.field, err = sce.PayloadUnsigned[uint16](fields, "field"); err != nil {
-			return err
-		}
-		if payload.value, err = sce.PayloadSigned64(fields, "value"); err != nil {
-			return err
-		}
-		if payload.text, err = sce.PayloadTextWithin(fields, "text", 96); err != nil {
-			return err
-		}
-		if payload.wallTime, err = sce.PayloadSigned64(fields, "wallTime"); err != nil {
-			return err
-		}
-		if payload.counter, err = sce.PayloadUnsigned[uint32](fields, "counter"); err != nil {
-			return err
-		}
-		if payload.nodeId, err = sce.PayloadUnsigned64(fields, "nodeId"); err != nil {
-			return err
-		}
-		if payload.parts, err = sce.PayloadUnsigned[uint32](fields, "parts"); err != nil {
-			return err
-		}
-		p.pendingRecordListWritePayload = payload
-		p.pendingPayloadTag = RecordListPayloadTagRecordListWrite
 	}
 	return nil
 
@@ -4377,7 +3094,7 @@ func (p *RecordListPolicy) ClearEventMetadata() {
 // ExecuteEntryActions enters one state (W3C SCXML 3.8): adds it to the
 // configuration, runs its <onentry>, and its <initial> transition's content when
 // its initial state is entered by default.
-//line record_list.scxml:210
+//line record_list.scxml:153
 func (p *RecordListPolicy) ExecuteEntryActions(state RecordListState, engine *sce.Engine[RecordListState, RecordListEvent], isDefaultEntry bool) {
 	switch state {
 	default:
@@ -4390,7 +3107,7 @@ func (p *RecordListPolicy) ExecuteEntryActions(state RecordListState, engine *sc
 // <initial> content) when the history was taken with nothing recorded. The
 // engine asks for it by the entry set's defaultHistoryContent answer; a history
 // that restored what it recorded runs nothing.
-//line record_list.scxml:210
+//line record_list.scxml:153
 func (p *RecordListPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[RecordListState, RecordListEvent]) {
 	// W3C SCXML 3.10.2: no <history> in this document has default content.
 }
@@ -4398,7 +3115,7 @@ func (p *RecordListPolicy) ExecuteHistoryDefaultContent(history sce.HistoryID, e
 // ExecuteExitActions exits one state (W3C SCXML 3.9): records its histories,
 // runs its <onexit>, cancels its invocations and removes it from the
 // configuration — §scxml-D-exitStates's order.
-//line record_list.scxml:210
+//line record_list.scxml:153
 func (p *RecordListPolicy) ExecuteExitActions(state RecordListState, engine *sce.Engine[RecordListState, RecordListEvent], configurationBeforeExit []RecordListState) {
 	// §scxml-D-exitStates orders one state's exit as onexit, then
 	// cancelInvoke, then configuration.delete(s), so `In(s)` inside s's own
@@ -4415,7 +3132,7 @@ func (p *RecordListPolicy) ExecuteExitActions(state RecordListState, engine *sce
 // BindCurrentEvent binds the event whose transitions are about to be selected as
 // the _event their guards read (W3C SCXML 5.10) — before the first guard runs,
 // and not for an eventless selection, which has no event of its own.
-//line record_list.scxml:210
+//line record_list.scxml:153
 func (p *RecordListPolicy) BindCurrentEvent(event RecordListEvent, engine *sce.Engine[RecordListState, RecordListEvent]) {
 	// This document's guards never read _event, so there is nothing to bind.
 }
@@ -4425,7 +3142,7 @@ func (p *RecordListPolicy) BindCurrentEvent(event RecordListEvent, engine *sce.E
 // that event enables and whose guard holds. The engine walks the atomic states
 // and their ancestors and keeps the ordered set; the null event asks for
 // eventless transitions.
-//line record_list.scxml:210
+//line record_list.scxml:153
 func (p *RecordListPolicy) FirstEnabledTransition(state RecordListState, event RecordListEvent, engine *sce.Engine[RecordListState, RecordListEvent]) (sce.EnabledTransition[RecordListState, sce.HistoryID], bool) {
 	switch state {
 	case RecordListStateOpen:
@@ -4499,7 +3216,7 @@ func (p *RecordListPolicy) FirstEnabledTransition(state RecordListState, event R
 				}, true
 			}
 		}
-		if event == RecordListEventRecordListTake {
+		if event == RecordListEventRecordListChange {
 			{
 				return sce.EnabledTransition[RecordListState, sce.HistoryID]{
 					Source:          state,
@@ -4509,7 +3226,7 @@ func (p *RecordListPolicy) FirstEnabledTransition(state RecordListState, event R
 				}, true
 			}
 		}
-		if event == RecordListEventRecordListPass {
+		if event == RecordListEventRecordListTake {
 			{
 				return sce.EnabledTransition[RecordListState, sce.HistoryID]{
 					Source:          state,
@@ -4519,57 +3236,11 @@ func (p *RecordListPolicy) FirstEnabledTransition(state RecordListState, event R
 				}, true
 			}
 		}
-		if event == RecordListEventRecordListWrite {
-			// NL→IR Item C1 Path A: native typed `_event.data` guard — cond
-			// "floor > 0 && _event.data.wallTime <= floor" lowered to a tag-checked field comparison on
-			// the lifted `pending<Event>Payload` (no script engine).
-			if p.pendingPayloadTag == RecordListPayloadTagRecordListWrite && (p.vFloor > 0 && p.pendingRecordListWritePayload.wallTime <= p.vFloor) {
+		if event == RecordListEventRecordListPass {
+			{
 				return sce.EnabledTransition[RecordListState, sce.HistoryID]{
 					Source:          state,
 					TransitionIndex: 9,
-					HasActions:      true,
-					IsInternal:      true,
-				}, true
-			}
-		}
-		if event == RecordListEventRecordListWrite {
-			{
-				return sce.EnabledTransition[RecordListState, sce.HistoryID]{
-					Source:          state,
-					TransitionIndex: 10,
-					HasActions:      true,
-					IsInternal:      true,
-				}, true
-			}
-		}
-		if event == RecordListEventRecordListSupersede {
-			// NL→IR Item C1 Path A: native typed `_event.data` guard — cond
-			// "floor > 0 && _event.data.parts > 1 && _event.data.atWallTime <= floor" lowered to a tag-checked field comparison on
-			// the lifted `pending<Event>Payload` (no script engine).
-			if p.pendingPayloadTag == RecordListPayloadTagRecordListSupersede && (p.vFloor > 0 && p.pendingRecordListSupersedePayload.parts > 1 && p.pendingRecordListSupersedePayload.atWallTime <= p.vFloor) {
-				return sce.EnabledTransition[RecordListState, sce.HistoryID]{
-					Source:          state,
-					TransitionIndex: 11,
-					HasActions:      true,
-					IsInternal:      true,
-				}, true
-			}
-		}
-		if event == RecordListEventRecordListSupersede {
-			{
-				return sce.EnabledTransition[RecordListState, sce.HistoryID]{
-					Source:          state,
-					TransitionIndex: 12,
-					HasActions:      true,
-					IsInternal:      true,
-				}, true
-			}
-		}
-		if event == RecordListEventRecordListArrive {
-			{
-				return sce.EnabledTransition[RecordListState, sce.HistoryID]{
-					Source:          state,
-					TransitionIndex: 13,
 					HasActions:      true,
 					IsInternal:      true,
 				}, true
@@ -4582,7 +3253,7 @@ func (p *RecordListPolicy) FirstEnabledTransition(state RecordListState, event R
 			if p.vAnnounce {
 				return sce.EnabledTransition[RecordListState, sce.HistoryID]{
 					Source:          state,
-					TransitionIndex: 14,
+					TransitionIndex: 10,
 					HasActions:      true,
 					IsInternal:      true,
 				}, true
@@ -4595,107 +3266,7 @@ func (p *RecordListPolicy) FirstEnabledTransition(state RecordListState, event R
 			if p.vAnnounce {
 				return sce.EnabledTransition[RecordListState, sce.HistoryID]{
 					Source:          state,
-					TransitionIndex: 15,
-					HasActions:      true,
-					IsInternal:      true,
-				}, true
-			}
-		}
-		if event == RecordListEventRecordListKeep {
-			{
-				return sce.EnabledTransition[RecordListState, sce.HistoryID]{
-					Source:          state,
-					TransitionIndex: 16,
-					HasActions:      true,
-					IsInternal:      true,
-				}, true
-			}
-		}
-		if event == RecordListEventRecordListCompact {
-			{
-				return sce.EnabledTransition[RecordListState, sce.HistoryID]{
-					Source:          state,
-					TransitionIndex: 17,
-					HasActions:      true,
-					IsInternal:      true,
-				}, true
-			}
-		}
-		if event == RecordListEventRecordListSettle {
-			{
-				return sce.EnabledTransition[RecordListState, sce.HistoryID]{
-					Source:          state,
-					TransitionIndex: 18,
-					HasActions:      true,
-					IsInternal:      true,
-				}, true
-			}
-		}
-		if event == RecordListEventRecordListPropose {
-			{
-				return sce.EnabledTransition[RecordListState, sce.HistoryID]{
-					Source:          state,
-					TransitionIndex: 19,
-					HasActions:      true,
-					IsInternal:      true,
-				}, true
-			}
-		}
-		if event == RecordListEventRecordListAck {
-			{
-				return sce.EnabledTransition[RecordListState, sce.HistoryID]{
-					Source:          state,
-					TransitionIndex: 20,
-					HasActions:      true,
-					IsInternal:      true,
-				}, true
-			}
-		}
-		if event == RecordListEventRecordListFloor {
-			{
-				return sce.EnabledTransition[RecordListState, sce.HistoryID]{
-					Source:          state,
-					TransitionIndex: 21,
-					HasActions:      true,
-					IsInternal:      true,
-				}, true
-			}
-		}
-		if event == RecordListEventRecordListResync {
-			{
-				return sce.EnabledTransition[RecordListState, sce.HistoryID]{
-					Source:          state,
-					TransitionIndex: 22,
-					HasActions:      true,
-					IsInternal:      true,
-				}, true
-			}
-		}
-		if event == RecordListEventRecordListVisit {
-			{
-				return sce.EnabledTransition[RecordListState, sce.HistoryID]{
-					Source:          state,
-					TransitionIndex: 23,
-					HasActions:      true,
-					IsInternal:      true,
-				}, true
-			}
-		}
-		if event == RecordListEventRecordListNode {
-			{
-				return sce.EnabledTransition[RecordListState, sce.HistoryID]{
-					Source:          state,
-					TransitionIndex: 24,
-					HasActions:      true,
-					IsInternal:      true,
-				}, true
-			}
-		}
-		if event == RecordListEventRecordListShare {
-			{
-				return sce.EnabledTransition[RecordListState, sce.HistoryID]{
-					Source:          state,
-					TransitionIndex: 25,
+					TransitionIndex: 11,
 					HasActions:      true,
 					IsInternal:      true,
 				}, true
@@ -4705,7 +3276,7 @@ func (p *RecordListPolicy) FirstEnabledTransition(state RecordListState, event R
 			{
 				return sce.EnabledTransition[RecordListState, sce.HistoryID]{
 					Source:          state,
-					TransitionIndex: 26,
+					TransitionIndex: 12,
 					HasActions:      true,
 					IsInternal:      true,
 				}, true
@@ -4717,13 +3288,13 @@ func (p *RecordListPolicy) FirstEnabledTransition(state RecordListState, event R
 
 // ExecuteTransitionContent runs one transition's executable content (W3C SCXML
 // 3.13), between the microstep's exits and its entries.
-//line record_list.scxml:210
+//line record_list.scxml:153
 func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, transitionIndex int, engine *sce.Engine[RecordListState, RecordListEvent]) {
 	switch source {
 	case RecordListStateOpen:
 		switch transitionIndex {
 		case 0:
-//line record_list.scxml:429
+//line record_list.scxml:316
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListPayloadTagRecordListJoin {
@@ -4733,13 +3304,9 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 	p.vNode = p.pendingRecordListJoinPayload.node
 
-
-
-	p.vHub = p.pendingRecordListJoinPayload.hub
-
 			}()
 		case 1:
-//line record_list.scxml:436
+//line record_list.scxml:323
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListPayloadTagRecordListRoom {
@@ -4749,17 +3316,9 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 	p.vRoomValues = p.pendingRecordListRoomPayload.values
 
-
-
-	p.vRoomHistory = p.pendingRecordListRoomPayload.history
-
-
-
-	p.vRoomDigest = p.pendingRecordListRoomPayload.digest
-
 			}()
 		case 2:
-//line record_list.scxml:447
+//line record_list.scxml:332
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListPayloadTagRecordListRole {
@@ -4773,7 +3332,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 			}()
 		case 3:
-//line record_list.scxml:459
+//line record_list.scxml:344
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListPayloadTagRecordListEdit {
@@ -4803,23 +3362,23 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 
 
-	p.vPart.kind = 0
+	p.vStaging.kind = 0
 
 
 
-	p.vPart.id = p.pendingRecordListEditPayload.id
+	p.vStaging.id = p.pendingRecordListEditPayload.id
 
 
 
-	p.vPart.field = p.pendingRecordListEditPayload.field
+	p.vStaging.field = p.pendingRecordListEditPayload.field
 
 
 
-	p.vPart.value = p.pendingRecordListEditPayload.value
+	p.vStaging.value = p.pendingRecordListEditPayload.value
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.pendingRecordListEditPayload.text, 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='part.text'>: an integer operation overflowed or failed")); return true }; p.vPart.text = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.pendingRecordListEditPayload.text, 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='staging.text'>: an integer operation overflowed or failed")); return true }; p.vStaging.text = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -4830,7 +3389,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 	// SCE Accepted Subset §2.15: <sce:append target="staged">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vStaged) >= 32 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='staged'>: the list already holds its capacity of 32")); return true }; sceValue := scealgorithm.ElementOf(p.vStaged, p.vPart); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='staged'>: an integer operation overflowed or failed")); return true }; p.vStaged = append(p.vStaged, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vStaged) >= 32 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='staged'>: the list already holds its capacity of 32")); return true }; sceValue := scealgorithm.ElementOf(p.vStaged, p.vStaging); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='staged'>: an integer operation overflowed or failed")); return true }; p.vStaged = append(p.vStaged, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -4865,7 +3424,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 			}()
 		case 4:
-//line record_list.scxml:484
+//line record_list.scxml:369
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListPayloadTagRecordListClear {
@@ -4899,30 +3458,30 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 
 
-	p.vPart.kind = 1
+	p.vStaging.kind = 1
 
 
 
-	p.vPart.id = p.pendingRecordListClearPayload.id
+	p.vStaging.id = p.pendingRecordListClearPayload.id
 
 
 
-	p.vPart.field = p.pendingRecordListClearPayload.field
+	p.vStaging.field = p.pendingRecordListClearPayload.field
 
 
 
-	p.vPart.value = 0
+	p.vStaging.value = 0
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "", 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='part.text'>: an integer operation overflowed or failed")); return true }; p.vPart.text = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "", 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='staging.text'>: an integer operation overflowed or failed")); return true }; p.vStaging.text = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// SCE Accepted Subset §2.15: <sce:append target="staged">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vStaged) >= 32 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='staged'>: the list already holds its capacity of 32")); return true }; sceValue := scealgorithm.ElementOf(p.vStaged, p.vPart); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='staged'>: an integer operation overflowed or failed")); return true }; p.vStaged = append(p.vStaged, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vStaged) >= 32 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='staged'>: the list already holds its capacity of 32")); return true }; sceValue := scealgorithm.ElementOf(p.vStaged, p.vStaging); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='staged'>: an integer operation overflowed or failed")); return true }; p.vStaged = append(p.vStaged, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -4957,7 +3516,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 			}()
 		case 5:
-//line record_list.scxml:509
+//line record_list.scxml:394
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListPayloadTagRecordListRetire {
@@ -4991,30 +3550,30 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 
 
-	p.vPart.kind = 2
+	p.vStaging.kind = 2
 
 
 
-	p.vPart.id = p.pendingRecordListRetirePayload.id
+	p.vStaging.id = p.pendingRecordListRetirePayload.id
 
 
 
-	p.vPart.field = 0
+	p.vStaging.field = 0
 
 
 
-	p.vPart.value = 0
+	p.vStaging.value = 0
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "", 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='part.text'>: an integer operation overflowed or failed")); return true }; p.vPart.text = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "", 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='staging.text'>: an integer operation overflowed or failed")); return true }; p.vStaging.text = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 	// SCE Accepted Subset §2.15: <sce:append target="staged">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vStaged) >= 32 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='staged'>: the list already holds its capacity of 32")); return true }; sceValue := scealgorithm.ElementOf(p.vStaged, p.vPart); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='staged'>: an integer operation overflowed or failed")); return true }; p.vStaged = append(p.vStaged, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vStaged) >= 32 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='staged'>: the list already holds its capacity of 32")); return true }; sceValue := scealgorithm.ElementOf(p.vStaged, p.vStaging); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='staged'>: an integer operation overflowed or failed")); return true }; p.vStaged = append(p.vStaged, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -5049,7 +3608,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 			}()
 		case 6:
-//line record_list.scxml:551
+//line record_list.scxml:436
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -5236,55 +3795,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 	{
 	var ifCondFailed18 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := !p.vSpoiled && scealgorithm.AddUint32(&sceFailure, p.vGone, p.vWrites) > 0 && p.vRoomHistory > 0 && uint32(len(p.vTombstones)) >= p.vRoomHistory; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<if cond='!spoiled && gone + writes > 0 && roomHistory > 0 && len(tombstones) >= roomHistory'>: an integer operation overflowed or failed")); ifCondFailed18 = true; return false }; return sceValue }() {
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vFull, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='full'>: an integer operation overflowed or failed")); return true }; p.vFull = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-
-
-	p.vSpoiled = true
-
-
-
-	p.vSpoiledFor = RecordListRefusalEnumNoRoomForHistory
-
-	}
-	if ifCondFailed18 {
-		return // W3C SCXML 4.9: the error ends the block
-	}
-	}
-
-
-	{
-	var ifCondFailed19 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := !p.vSpoiled && scealgorithm.AddUint32(&sceFailure, p.vGone, p.vWrites) > 0 && p.vRoomDigest > 0 && uint32(len(p.vDigest)) >= p.vRoomDigest; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<if cond='!spoiled && gone + writes > 0 && roomDigest > 0 && len(digest) >= roomDigest'>: an integer operation overflowed or failed")); ifCondFailed19 = true; return false }; return sceValue }() {
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vFull, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='full'>: an integer operation overflowed or failed")); return true }; p.vFull = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-
-
-	p.vSpoiled = true
-
-
-
-	p.vSpoiledFor = RecordListRefusalEnumNoRoomForDigest
-
-	}
-	if ifCondFailed19 {
-		return // W3C SCXML 4.9: the error ends the block
-	}
-	}
-
-
-	{
-	var ifCondFailed20 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := !p.vSpoiled && scealgorithm.AddUint32(&sceFailure, p.vGone, p.vWrites) > 0; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<if cond='!spoiled && gone + writes > 0'>: an integer operation overflowed or failed")); ifCondFailed20 = true; return false }; return sceValue }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := !p.vSpoiled && scealgorithm.AddUint32(&sceFailure, p.vGone, p.vWrites) > 0; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<if cond='!spoiled && gone + writes > 0'>: an integer operation overflowed or failed")); ifCondFailed18 = true; return false }; return sceValue }() {
 
 
 	p.vProbing = true
@@ -5326,14 +3837,14 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 		_ = s
 
 	{
-	var ifCondFailed21 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivUint64(&sceFailure, a.element, 65536) == uint64(s.id) && (s.kind == 2 || scealgorithm.RemUint64(&sceFailure, a.element, 65536) == uint64(s.field)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<if cond='a.element / 65536 === s.id && (s.kind === 2 || a.element % 65536 === s.field)'>: an integer operation overflowed or failed")); ifCondFailed21 = true; return false }; return sceValue }() {
+	var ifCondFailed19 bool
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivUint64(&sceFailure, a.element, 65536) == uint64(s.id) && (s.kind == 2 || scealgorithm.RemUint64(&sceFailure, a.element, 65536) == uint64(s.field)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<if cond='a.element / 65536 === s.id && (s.kind === 2 || a.element % 65536 === s.field)'>: an integer operation overflowed or failed")); ifCondFailed19 = true; return false }; return sceValue }() {
 
 
 	p.vCovered = true
 
 	}
-	if ifCondFailed21 {
+	if ifCondFailed19 {
 		return // W3C SCXML 4.9: the error ends the block
 	}
 	}
@@ -5344,64 +3855,46 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	if p.vCovered {
 
 
-	p.vPart.kind = 1
+	p.vOp.kind = 1
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowUint32FromUint(&sceFailure, uint64(scealgorithm.DivUint64(&sceFailure, a.element, 65536))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='part.id'>: an integer operation overflowed or failed")); return true }; p.vPart.id = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowUint32FromUint(&sceFailure, uint64(scealgorithm.DivUint64(&sceFailure, a.element, 65536))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='op.id'>: an integer operation overflowed or failed")); return true }; p.vOp.id = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowUint16FromUint(&sceFailure, uint64(scealgorithm.RemUint64(&sceFailure, a.element, 65536))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='part.field'>: an integer operation overflowed or failed")); return true }; p.vPart.field = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowUint16FromUint(&sceFailure, uint64(scealgorithm.RemUint64(&sceFailure, a.element, 65536))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='op.field'>: an integer operation overflowed or failed")); return true }; p.vOp.field = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	p.vPart.value = 0
+	p.vOp.value = 0
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "", 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='part.text'>: an integer operation overflowed or failed")); return true }; p.vPart.text = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "", 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='op.text'>: an integer operation overflowed or failed")); return true }; p.vOp.text = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	p.vPart.wallTime = a.wallTime
+	p.vOp.wallTime = a.wallTime
 
 
 
-	p.vPart.counter = a.counter
+	p.vOp.counter = a.counter
 
 
 
-	p.vPart.nodeId = a.nodeId
-
-
-
-	p.vPart.by = p.vNode
-
-
-
-	p.vPart.atWallTime = p.vStamp.wallTime
-
-
-
-	p.vPart.atCounter = p.vStamp.counter
-
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vGone, p.vWrites); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='part.parts'>: an integer operation overflowed or failed")); return true }; p.vPart.parts = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vOp.nodeId = a.nodeId
 
 
 	// SCE Accepted Subset §2.15: <sce:append target="taking">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vTaking) >= 64 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='taking'>: the list already holds its capacity of 64")); return true }; sceValue := scealgorithm.ElementOf(p.vTaking, p.vPart); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='taking'>: an integer operation overflowed or failed")); return true }; p.vTaking = append(p.vTaking, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vTaking) >= 64 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='taking'>: the list already holds its capacity of 64")); return true }; sceValue := scealgorithm.ElementOf(p.vTaking, p.vOp); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='taking'>: an integer operation overflowed or failed")); return true }; p.vTaking = append(p.vTaking, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -5417,60 +3910,42 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	if s.kind == 0 {
 
 
-	p.vPart.kind = 0
+	p.vOp.kind = 0
 
 
 
-	p.vPart.id = s.id
+	p.vOp.id = s.id
 
 
 
-	p.vPart.field = s.field
+	p.vOp.field = s.field
 
 
 
-	p.vPart.value = s.value
+	p.vOp.value = s.value
 
 
 
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, s.text, 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='part.text'>: an integer operation overflowed or failed")); return true }; p.vPart.text = sceValue; return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, s.text, 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='op.text'>: an integer operation overflowed or failed")); return true }; p.vOp.text = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
 
-	p.vPart.wallTime = p.vStamp.wallTime
+	p.vOp.wallTime = 0
 
 
 
-	p.vPart.counter = p.vStamp.counter
+	p.vOp.counter = 0
 
 
 
-	p.vPart.nodeId = p.vNode
-
-
-
-	p.vPart.by = p.vNode
-
-
-
-	p.vPart.atWallTime = p.vStamp.wallTime
-
-
-
-	p.vPart.atCounter = p.vStamp.counter
-
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vGone, p.vWrites); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='part.parts'>: an integer operation overflowed or failed")); return true }; p.vPart.parts = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
+	p.vOp.nodeId = 0
 
 
 	// SCE Accepted Subset §2.15: <sce:append target="taking">
 
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vTaking) >= 64 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='taking'>: the list already holds its capacity of 64")); return true }; sceValue := scealgorithm.ElementOf(p.vTaking, p.vPart); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='taking'>: an integer operation overflowed or failed")); return true }; p.vTaking = append(p.vTaking, sceValue); return false }() {
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vTaking) >= 64 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='taking'>: the list already holds its capacity of 64")); return true }; sceValue := scealgorithm.ElementOf(p.vTaking, p.vOp); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='taking'>: an integer operation overflowed or failed")); return true }; p.vTaking = append(p.vTaking, sceValue); return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
@@ -5492,26 +3967,8 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	p.vClock = p.vStamp
 
 
-	// SCE Accepted Subset §2.15: <sce:clear target="passing">
 
-	p.vPassing = p.vPassing[:0]
-
-
-
-	p.vPassed = 0
-
-
-	// W3C SCXML 4.6: <foreach array="taking" item="t">, a native loop over a sce-static list
-	for _, t := range append(p.vTaking[:0:0], p.vTaking...) {
-		_ = t
-
-	// SCE Accepted Subset §2.15: <sce:append target="passing">
-
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vPassing) >= 64 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='passing'>: the list already holds its capacity of 64")); return true }; sceValue := scealgorithm.ElementOf(p.vPassing, t); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='passing'>: an integer operation overflowed or failed")); return true }; p.vPassing = append(p.vPassing, sceValue); return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-	}
+	p.vDot = p.vStamp
 
 
 	// W3C SCXML 4.6: <foreach array="taking" item="t">, a native loop over a sce-static list
@@ -5535,10 +3992,6 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	}
 
 
-	// W3C SCXML 4.6: <foreach array="passing" item="t">, a native loop over a sce-static list
-	for _, t := range append(p.vPassing[:0:0], p.vPassing...) {
-		_ = t
-
 	// W3C SCXML 6.2: send id="__send_4"
 	{
 	{
@@ -5554,24 +4007,22 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	}
 	}
 	}
-
-	}
-	if ifCondFailed20 {
+	if ifCondFailed18 {
 		return // W3C SCXML 4.9: the error ends the block
 	}
 	}
 
 
 	{
-	var ifCondFailed24 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := !p.vSpoiled && scealgorithm.AddUint32(&sceFailure, p.vGone, p.vWrites) == 0; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<if cond='!spoiled && gone + writes === 0'>: an integer operation overflowed or failed")); ifCondFailed24 = true; return false }; return sceValue }() {
+	var ifCondFailed22 bool
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := !p.vSpoiled && scealgorithm.AddUint32(&sceFailure, p.vGone, p.vWrites) == 0; if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<if cond='!spoiled && gone + writes === 0'>: an integer operation overflowed or failed")); ifCondFailed22 = true; return false }; return sceValue }() {
 
 	// SCE Accepted Subset §2.15: <sce:clear target="staged">
 
 	p.vStaged = p.vStaged[:0]
 
 	}
-	if ifCondFailed24 {
+	if ifCondFailed22 {
 		return // W3C SCXML 4.9: the error ends the block
 	}
 	}
@@ -5692,7 +4143,118 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 			}()
 		case 7:
-//line record_list.scxml:703
+//line record_list.scxml:571
+			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
+			func() {
+				if p.pendingPayloadTag != RecordListPayloadTagRecordListChange {
+					return
+				}
+
+
+	p.vAuthorized = true
+
+
+	if uint32(len(p.vRoster)) > 0 {
+
+
+	p.vAuthorized = false
+
+
+	// W3C SCXML 4.6: <foreach array="roster" item="m">, a native loop over a sce-static list
+	for _, m := range append(p.vRoster[:0:0], p.vRoster...) {
+		_ = m
+
+	if m.node == p.pendingRecordListChangePayload.by && m.role >= 2 {
+
+
+	p.vAuthorized = true
+
+	}
+
+	}
+
+	}
+
+
+	if !p.vAuthorized {
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vDenied, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='denied'>: an integer operation overflowed or failed")); return true }; p.vDenied = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+	}
+
+
+	if p.vAuthorized {
+
+
+	p.vTaking = append(p.pendingRecordListChangePayload.ops[:0:0], p.pendingRecordListChangePayload.ops...)
+
+
+
+	p.vTook = 0
+
+
+
+	p.vDot.wallTime = p.pendingRecordListChangePayload.wallTime
+
+
+
+	p.vDot.counter = p.pendingRecordListChangePayload.counter
+
+
+
+	p.vDot.nodeId = p.pendingRecordListChangePayload.by
+
+
+	// W3C SCXML 4.6: <foreach array="taking" item="t">, a native loop over a sce-static list
+	for _, t := range append(p.vTaking[:0:0], p.vTaking...) {
+		_ = t
+
+	// W3C SCXML 6.2: send id="__send_6"
+	{
+	{
+		eventDataStr := ""
+		_ = eventDataStr
+	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
+	// and does not change the queue.
+	{
+		meta := sce.NewEventWithMetadata(RecordListEventRecordListTake)
+		meta.Metadata.Data = eventDataStr
+		engine.Raise(meta)
+	}
+	}
+	}
+	}
+
+
+	if p.vDot.nodeId == p.vNode && (p.vDot.wallTime > p.vClock.wallTime || p.vDot.wallTime == p.vClock.wallTime && p.vDot.counter > p.vClock.counter) {
+
+
+	p.vClock.wallTime = p.vDot.wallTime
+
+
+
+	p.vClock.counter = p.vDot.counter
+
+	}
+
+
+	if p.vDot.nodeId != p.vNode {
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_HlcReceive__vv(p.vClock, p.vDot, p.vClock.wallTime, p.vNode)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='clock'>: an integer operation overflowed or failed")); return true }; p.vClock = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+	}
+
+	}
+
+			}()
+		case 8:
+//line record_list.scxml:611
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -5708,48 +4270,6 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	}
 
 
-	if p.vOp.kind == 0 {
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.vOp.text, 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='held.text'>: an integer operation overflowed or failed")); return true }; p.vHeld.text = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-
-	if p.vOp.nodeId != p.vNode {
-
-
-	p.vStamp.wallTime = p.vOp.wallTime
-
-
-
-	p.vStamp.counter = p.vOp.counter
-
-
-
-	p.vStamp.nodeId = p.vOp.nodeId
-
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_HlcReceive__vv(p.vClock, p.vStamp, p.vClock.wallTime, p.vNode)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='clock'>: an integer operation overflowed or failed")); return true }; p.vClock = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-	}
-
-
-	if p.vOp.nodeId == p.vNode && (p.vOp.wallTime > p.vClock.wallTime || p.vOp.wallTime == p.vClock.wallTime && p.vOp.counter > p.vClock.counter) {
-
-
-	p.vClock.wallTime = p.vOp.wallTime
-
-
-
-	p.vClock.counter = p.vOp.counter
-
-	}
-
-
 
 	p.vEntry.element = uint64(p.vOp.id)
 
@@ -5760,37 +4280,55 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	}
 
 
-
-	p.vEntry.wallTime = p.vOp.wallTime
-
+	if p.vOp.kind == 0 {
 
 
-	p.vEntry.counter = p.vOp.counter
-
-
-
-	p.vEntry.nodeId = p.vOp.nodeId
-
-
-
-	p.vIsLive = true
-
-
-	// W3C SCXML 4.6: <foreach array="tombstones" item="t">, a native loop over a sce-static list
-	for _, t := range append(p.vTombstones[:0:0], p.vTombstones...) {
-		_ = t
-
-	if t.element == p.vEntry.element && t.wallTime == p.vEntry.wallTime && t.counter == p.vEntry.counter && t.nodeId == p.vEntry.nodeId {
-
-
-	p.vIsLive = false
-
-	}
-
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.vOp.text, 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='held.text'>: an integer operation overflowed or failed")); return true }; p.vHeld.text = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
-	if p.vIsLive {
+
+	p.vHeld.id = uint64(p.vOp.id)
+
+
+
+	p.vHeld.field = uint64(p.vOp.field)
+
+
+
+	p.vHeld.value = p.vOp.value
+
+
+
+	p.vHeld.wallTime = p.vDot.wallTime
+
+
+
+	p.vHeld.counter = p.vDot.counter
+
+
+
+	p.vHeld.nodeId = p.vDot.nodeId
+
+
+
+	p.vEntry.wallTime = p.vDot.wallTime
+
+
+
+	p.vEntry.counter = p.vDot.counter
+
+
+
+	p.vEntry.nodeId = p.vDot.nodeId
+
+
+
+	p.vPresent = sceAdapt_RecordList_MvValueHolds__vv(p.vValues, p.vHeld)
+
+
+	if !p.vPresent {
 
 	// SCE Accepted Subset §2.15: <sce:clear target="one">
 
@@ -5809,98 +4347,16 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
-	}
-
-
-
-	p.vHeld.id = uint64(p.vOp.id)
-
-
-
-	p.vHeld.field = uint64(p.vOp.field)
-
-
-
-	p.vHeld.value = p.vOp.value
-
-
-
-	p.vHeld.wallTime = p.vOp.wallTime
-
-
-
-	p.vHeld.counter = p.vOp.counter
-
-
-
-	p.vHeld.nodeId = p.vOp.nodeId
-
-
-
-	p.vPresent = sceAdapt_RecordList_MvValueHolds__vv(p.vValues, p.vHeld)
-
-
-	if p.vIsLive && !p.vPresent {
 
 
 	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_MvValueKeep__vv(p.vValues, p.vHeld)), 512); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='values'>: an integer operation overflowed or failed")); return true }; p.vValues = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
-
-	// W3C SCXML 6.2: send id="__send_6"
-	{
-	// W3C SCXML 6.2: Evaluate <param> expressions at send time
-	{
-		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
-		// and its pair left out, and the message still goes; the error ends
-		// the block once it has. Read at the end of this element.
-		paramFailed := false
-		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
-		// delivered, so this is an ordered list rather than a map. The typed
-		// value is kept rather than its text — a receiver reading
-		// `_event.data.value === 42` finds the string "42" unequal.
-		parts := make([]sce.EventDataParam, 0)
-		{
-			sceValue := int64(0)
-			parts = append(parts, sce.EventDataParam{Name: "kind", Value: sceValue})
-		}
-		{
-			sceValue := sce.Uint64PayloadText(uint64(p.vEntry.element))
-			parts = append(parts, sce.EventDataParam{Name: "element", Value: sceValue})
-		}
-		{
-			sceValue := sce.Int64PayloadText(int64(p.vOp.wallTime))
-			parts = append(parts, sce.EventDataParam{Name: "wallTime", Value: sceValue})
-		}
-		{
-			sceValue := int64(p.vOp.counter)
-			parts = append(parts, sce.EventDataParam{Name: "counter", Value: sceValue})
-		}
-		{
-			sceValue := sce.Uint64PayloadText(uint64(p.vOp.nodeId))
-			parts = append(parts, sce.EventDataParam{Name: "nodeId", Value: sceValue})
-		}
-		eventDataStr := sce.BuildJSONFromTypedParams(parts)
-		_ = eventDataStr
-	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
-	// and does not change the queue.
-	{
-		meta := sce.NewEventWithMetadata(RecordListEventRecordListKeep)
-		meta.Metadata.Data = eventDataStr
-		engine.Raise(meta)
-	}
-		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
-		// <foreach> it came — the block is its own function.
-		if paramFailed {
-			return
-		}
-	}
-	}
 	}
 
 
-	if p.vIsLive && !p.vPresent && p.vAnnounce {
+	if !p.vPresent && p.vAnnounce {
 
 	// W3C SCXML 6.2: send id="__send_7"
 	{
@@ -5946,38 +4402,6 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 	if p.vOp.kind == 1 {
 
-	if p.vOp.atWallTime > 0 && p.vOp.by != p.vNode {
-
-
-	p.vStamp.wallTime = p.vOp.atWallTime
-
-
-
-	p.vStamp.counter = p.vOp.atCounter
-
-
-
-	p.vStamp.nodeId = p.vOp.by
-
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_HlcReceive__vv(p.vClock, p.vStamp, p.vClock.wallTime, p.vNode)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='clock'>: an integer operation overflowed or failed")); return true }; p.vClock = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-	}
-
-
-
-	p.vEntry.element = uint64(p.vOp.id)
-
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint64(&sceFailure, scealgorithm.MulUint64(&sceFailure, p.vEntry.element, 65536), uint64(p.vOp.field)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='entry.element'>: an integer operation overflowed or failed")); return true }; p.vEntry.element = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-
 
 	p.vEntry.wallTime = p.vOp.wallTime
 
@@ -5988,48 +4412,6 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 
 	p.vEntry.nodeId = p.vOp.nodeId
-
-
-
-	p.vKnown = false
-
-
-	// W3C SCXML 4.6: <foreach array="tombstones" item="t">, a native loop over a sce-static list
-	for _, t := range append(p.vTombstones[:0:0], p.vTombstones...) {
-		_ = t
-
-	if t.element == p.vEntry.element && t.wallTime == p.vEntry.wallTime && t.counter == p.vEntry.counter && t.nodeId == p.vEntry.nodeId {
-
-
-	p.vKnown = true
-
-	}
-
-	}
-
-
-	// SCE Accepted Subset §2.15: <sce:clear target="one">
-
-	p.vOne = p.vOne[:0]
-
-
-	// SCE Accepted Subset §2.15: <sce:append target="one">
-
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vOne) >= 1024 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='one'>: the list already holds its capacity of 1024")); return true }; sceValue := scealgorithm.ElementOf(p.vOne, p.vEntry); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='one'>: an integer operation overflowed or failed")); return true }; p.vOne = append(p.vOne, sceValue); return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_OrsetUnion__vv(p.vTombstones, p.vOne)), 1024); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='tombstones'>: an integer operation overflowed or failed")); return true }; p.vTombstones = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_OrsetLive__vv(p.vAdds, p.vOne)), 1024); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='adds'>: an integer operation overflowed or failed")); return true }; p.vAdds = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
 
 
 
@@ -6056,123 +4438,33 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	p.vWasLive = sceAdapt_RecordList_MvValueHolds__vv(p.vValues, p.vHeld)
 
 
+	// SCE Accepted Subset §2.15: <sce:clear target="one">
+
+	p.vOne = p.vOne[:0]
+
+
+	// SCE Accepted Subset §2.15: <sce:append target="one">
+
+	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vOne) >= 1024 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='one'>: the list already holds its capacity of 1024")); return true }; sceValue := scealgorithm.ElementOf(p.vOne, p.vEntry); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='one'>: an integer operation overflowed or failed")); return true }; p.vOne = append(p.vOne, sceValue); return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+
+
+	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_OrsetLive__vv(p.vAdds, p.vOne)), 1024); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='adds'>: an integer operation overflowed or failed")); return true }; p.vAdds = sceValue; return false }() {
+		return  // W3C SCXML 4.9: the error ends the block
+	}
+
+
 
 	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_MvValueDrop__vv(p.vValues, p.vHeld)), 512); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='values'>: an integer operation overflowed or failed")); return true }; p.vValues = sceValue; return false }() {
 		return  // W3C SCXML 4.9: the error ends the block
 	}
 
 
-	if !p.vKnown {
-
-	// W3C SCXML 6.2: send id="__send_8"
-	{
-	// W3C SCXML 6.2: Evaluate <param> expressions at send time
-	{
-		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
-		// and its pair left out, and the message still goes; the error ends
-		// the block once it has. Read at the end of this element.
-		paramFailed := false
-		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
-		// delivered, so this is an ordered list rather than a map. The typed
-		// value is kept rather than its text — a receiver reading
-		// `_event.data.value === 42` finds the string "42" unequal.
-		parts := make([]sce.EventDataParam, 0)
-		{
-			sceValue := int64(1)
-			parts = append(parts, sce.EventDataParam{Name: "kind", Value: sceValue})
-		}
-		{
-			sceValue := sce.Uint64PayloadText(uint64(p.vEntry.element))
-			parts = append(parts, sce.EventDataParam{Name: "element", Value: sceValue})
-		}
-		{
-			sceValue := sce.Int64PayloadText(int64(p.vOp.wallTime))
-			parts = append(parts, sce.EventDataParam{Name: "wallTime", Value: sceValue})
-		}
-		{
-			sceValue := int64(p.vOp.counter)
-			parts = append(parts, sce.EventDataParam{Name: "counter", Value: sceValue})
-		}
-		{
-			sceValue := sce.Uint64PayloadText(uint64(p.vOp.nodeId))
-			parts = append(parts, sce.EventDataParam{Name: "nodeId", Value: sceValue})
-		}
-		eventDataStr := sce.BuildJSONFromTypedParams(parts)
-		_ = eventDataStr
-	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
-	// and does not change the queue.
-	{
-		meta := sce.NewEventWithMetadata(RecordListEventRecordListKeep)
-		meta.Metadata.Data = eventDataStr
-		engine.Raise(meta)
-	}
-		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
-		// <foreach> it came — the block is its own function.
-		if paramFailed {
-			return
-		}
-	}
-	}
-	}
-
-
-	if p.vWasLive {
-
-	// W3C SCXML 6.2: send id="__send_9"
-	{
-	// W3C SCXML 6.2: Evaluate <param> expressions at send time
-	{
-		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
-		// and its pair left out, and the message still goes; the error ends
-		// the block once it has. Read at the end of this element.
-		paramFailed := false
-		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
-		// delivered, so this is an ordered list rather than a map. The typed
-		// value is kept rather than its text — a receiver reading
-		// `_event.data.value === 42` finds the string "42" unequal.
-		parts := make([]sce.EventDataParam, 0)
-		{
-			sceValue := int64(0)
-			parts = append(parts, sce.EventDataParam{Name: "kind", Value: sceValue})
-		}
-		{
-			sceValue := sce.Uint64PayloadText(uint64(p.vEntry.element))
-			parts = append(parts, sce.EventDataParam{Name: "element", Value: sceValue})
-		}
-		{
-			sceValue := sce.Int64PayloadText(int64(p.vOp.wallTime))
-			parts = append(parts, sce.EventDataParam{Name: "wallTime", Value: sceValue})
-		}
-		{
-			sceValue := int64(p.vOp.counter)
-			parts = append(parts, sce.EventDataParam{Name: "counter", Value: sceValue})
-		}
-		{
-			sceValue := sce.Uint64PayloadText(uint64(p.vOp.nodeId))
-			parts = append(parts, sce.EventDataParam{Name: "nodeId", Value: sceValue})
-		}
-		eventDataStr := sce.BuildJSONFromTypedParams(parts)
-		_ = eventDataStr
-	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
-	// and does not change the queue.
-	{
-		meta := sce.NewEventWithMetadata(RecordListEventRecordListKeep)
-		meta.Metadata.Data = eventDataStr
-		engine.Raise(meta)
-	}
-		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
-		// <foreach> it came — the block is its own function.
-		if paramFailed {
-			return
-		}
-	}
-	}
-	}
-
-
 	if p.vWasLive && p.vAnnounce {
 
-	// W3C SCXML 6.2: send id="__send_10"
+	// W3C SCXML 6.2: send id="__send_8"
 	{
 	// W3C SCXML 6.2: Evaluate <param> expressions at send time
 	{
@@ -6214,1313 +4506,91 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	}
 
 			}()
-		case 8:
-//line record_list.scxml:839
-			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
-			func() {
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.At(&sceFailure, p.vPassing[:], int64(p.vPassed)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='op'>: an integer operation overflowed or failed")); return true }; p.vOp = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vPassed, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='passed'>: an integer operation overflowed or failed")); return true }; p.vPassed = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-
-	if p.vOp.kind == 0 && p.vOp.parts <= 1 && !p.vHub {
-
-	// W3C SCXML 6.2: send id="__send_11"
-	{
-	// W3C SCXML 6.2: Evaluate <param> expressions at send time
-	{
-		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
-		// and its pair left out, and the message still goes; the error ends
-		// the block once it has. Read at the end of this element.
-		paramFailed := false
-		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
-		// delivered, so this is an ordered list rather than a map. The typed
-		// value is kept rather than its text — a receiver reading
-		// `_event.data.value === 42` finds the string "42" unequal.
-		parts := make([]sce.EventDataParam, 0)
-		{
-			sceValue := int64(p.vOp.id)
-			parts = append(parts, sce.EventDataParam{Name: "id", Value: sceValue})
-		}
-		{
-			sceValue := int64(p.vOp.field)
-			parts = append(parts, sce.EventDataParam{Name: "field", Value: sceValue})
-		}
-		{
-			sceValue := sce.Int64PayloadText(int64(p.vOp.value))
-			parts = append(parts, sce.EventDataParam{Name: "value", Value: sceValue})
-		}
-		{
-			sceValue := p.vOp.text
-			parts = append(parts, sce.EventDataParam{Name: "text", Value: sceValue})
-		}
-		{
-			sceValue := sce.Int64PayloadText(int64(p.vOp.wallTime))
-			parts = append(parts, sce.EventDataParam{Name: "wallTime", Value: sceValue})
-		}
-		{
-			sceValue := int64(p.vOp.counter)
-			parts = append(parts, sce.EventDataParam{Name: "counter", Value: sceValue})
-		}
-		{
-			sceValue := sce.Uint64PayloadText(uint64(p.vOp.nodeId))
-			parts = append(parts, sce.EventDataParam{Name: "nodeId", Value: sceValue})
-		}
-		eventDataStr := sce.BuildJSONFromTypedParams(parts)
-		_ = eventDataStr
-	// §scxml-6.2.5: "sce:mesh" is served by the host, which
-	// declared it to this build. Dispatch rather than refuse — and take the
-	// whole send, because a processor the host serves owns delivery; falling
-	// through would also enqueue the event locally and the document would see
-	// the act twice.
-	{
-		hostParams := sce.WireParamsFromTypedParams(parts)
-		hostRequest := sce.HostSendRequest{
-			ProcessorType: "sce:mesh",
-			EventName:     "record_list.write",
-			Target:        "#hub",
-			Content:       "",
-			Params:        hostParams,
-			SendID:        "__send_11",
-			// W3C SCXML 5.10: the payload computed above, once, for every arm.
-			EventData: eventDataStr,
-			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
-			// processed now, carried back out as a W3C child's send to its
-			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
-			// every machine with a host-served send.
-			InvokeID: p.pendingEventInvokeid,
-		}
-		_, hostServed := engine.PerformHostSend(hostRequest)
-		// W3C SCXML 6.2: a declared type with no handler registered is, from
-		// the document's side, a processor the platform does not support — the
-		// act it asked for was performed by nobody. Same event as an
-		// undeclared type, so a wiring mistake cannot read as success.
-		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
-			errEvt.Metadata.SendID = "__send_11"
-			engine.Raise(errEvt)
-		}
-	}
-		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
-		// <foreach> it came — the block is its own function.
-		if paramFailed {
-			return
-		}
-	}
-	}
-	}
-
-
-	if p.vOp.kind == 0 && p.vOp.parts > 1 && !p.vHub {
-
-	// W3C SCXML 6.2: send id="__send_12"
-	{
-	// W3C SCXML 6.2: Evaluate <param> expressions at send time
-	{
-		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
-		// and its pair left out, and the message still goes; the error ends
-		// the block once it has. Read at the end of this element.
-		paramFailed := false
-		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
-		// delivered, so this is an ordered list rather than a map. The typed
-		// value is kept rather than its text — a receiver reading
-		// `_event.data.value === 42` finds the string "42" unequal.
-		parts := make([]sce.EventDataParam, 0)
-		{
-			sceValue := int64(p.vOp.id)
-			parts = append(parts, sce.EventDataParam{Name: "id", Value: sceValue})
-		}
-		{
-			sceValue := int64(p.vOp.field)
-			parts = append(parts, sce.EventDataParam{Name: "field", Value: sceValue})
-		}
-		{
-			sceValue := sce.Int64PayloadText(int64(p.vOp.value))
-			parts = append(parts, sce.EventDataParam{Name: "value", Value: sceValue})
-		}
-		{
-			sceValue := p.vOp.text
-			parts = append(parts, sce.EventDataParam{Name: "text", Value: sceValue})
-		}
-		{
-			sceValue := sce.Int64PayloadText(int64(p.vOp.wallTime))
-			parts = append(parts, sce.EventDataParam{Name: "wallTime", Value: sceValue})
-		}
-		{
-			sceValue := int64(p.vOp.counter)
-			parts = append(parts, sce.EventDataParam{Name: "counter", Value: sceValue})
-		}
-		{
-			sceValue := sce.Uint64PayloadText(uint64(p.vOp.nodeId))
-			parts = append(parts, sce.EventDataParam{Name: "nodeId", Value: sceValue})
-		}
-		{
-			sceValue := int64(p.vOp.parts)
-			parts = append(parts, sce.EventDataParam{Name: "parts", Value: sceValue})
-		}
-		eventDataStr := sce.BuildJSONFromTypedParams(parts)
-		_ = eventDataStr
-	// §scxml-6.2.5: "sce:mesh" is served by the host, which
-	// declared it to this build. Dispatch rather than refuse — and take the
-	// whole send, because a processor the host serves owns delivery; falling
-	// through would also enqueue the event locally and the document would see
-	// the act twice.
-	{
-		hostParams := sce.WireParamsFromTypedParams(parts)
-		hostRequest := sce.HostSendRequest{
-			ProcessorType: "sce:mesh",
-			EventName:     "record_list.write",
-			Target:        "#hub",
-			Content:       "",
-			Params:        hostParams,
-			SendID:        "__send_12",
-			// W3C SCXML 5.10: the payload computed above, once, for every arm.
-			EventData: eventDataStr,
-			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
-			// processed now, carried back out as a W3C child's send to its
-			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
-			// every machine with a host-served send.
-			InvokeID: p.pendingEventInvokeid,
-		}
-		_, hostServed := engine.PerformHostSend(hostRequest)
-		// W3C SCXML 6.2: a declared type with no handler registered is, from
-		// the document's side, a processor the platform does not support — the
-		// act it asked for was performed by nobody. Same event as an
-		// undeclared type, so a wiring mistake cannot read as success.
-		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
-			errEvt.Metadata.SendID = "__send_12"
-			engine.Raise(errEvt)
-		}
-	}
-		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
-		// <foreach> it came — the block is its own function.
-		if paramFailed {
-			return
-		}
-	}
-	}
-	}
-
-
-	if p.vOp.kind == 0 && p.vOp.parts <= 1 && p.vHub {
-
-	// W3C SCXML 6.2: send id="__send_13"
-	{
-	// W3C SCXML 6.2: Evaluate <param> expressions at send time
-	{
-		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
-		// and its pair left out, and the message still goes; the error ends
-		// the block once it has. Read at the end of this element.
-		paramFailed := false
-		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
-		// delivered, so this is an ordered list rather than a map. The typed
-		// value is kept rather than its text — a receiver reading
-		// `_event.data.value === 42` finds the string "42" unequal.
-		parts := make([]sce.EventDataParam, 0)
-		{
-			sceValue := int64(p.vOp.id)
-			parts = append(parts, sce.EventDataParam{Name: "id", Value: sceValue})
-		}
-		{
-			sceValue := int64(p.vOp.field)
-			parts = append(parts, sce.EventDataParam{Name: "field", Value: sceValue})
-		}
-		{
-			sceValue := sce.Int64PayloadText(int64(p.vOp.value))
-			parts = append(parts, sce.EventDataParam{Name: "value", Value: sceValue})
-		}
-		{
-			sceValue := p.vOp.text
-			parts = append(parts, sce.EventDataParam{Name: "text", Value: sceValue})
-		}
-		{
-			sceValue := sce.Int64PayloadText(int64(p.vOp.wallTime))
-			parts = append(parts, sce.EventDataParam{Name: "wallTime", Value: sceValue})
-		}
-		{
-			sceValue := int64(p.vOp.counter)
-			parts = append(parts, sce.EventDataParam{Name: "counter", Value: sceValue})
-		}
-		{
-			sceValue := sce.Uint64PayloadText(uint64(p.vOp.nodeId))
-			parts = append(parts, sce.EventDataParam{Name: "nodeId", Value: sceValue})
-		}
-		eventDataStr := sce.BuildJSONFromTypedParams(parts)
-		_ = eventDataStr
-	// §scxml-6.2.5: "sce:mesh" is served by the host, which
-	// declared it to this build. Dispatch rather than refuse — and take the
-	// whole send, because a processor the host serves owns delivery; falling
-	// through would also enqueue the event locally and the document would see
-	// the act twice.
-	{
-		hostParams := sce.WireParamsFromTypedParams(parts)
-		hostRequest := sce.HostSendRequest{
-			ProcessorType: "sce:mesh",
-			EventName:     "record_list.write",
-			Target:        "#people",
-			Content:       "",
-			Params:        hostParams,
-			SendID:        "__send_13",
-			// W3C SCXML 5.10: the payload computed above, once, for every arm.
-			EventData: eventDataStr,
-			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
-			// processed now, carried back out as a W3C child's send to its
-			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
-			// every machine with a host-served send.
-			InvokeID: p.pendingEventInvokeid,
-		}
-		_, hostServed := engine.PerformHostSend(hostRequest)
-		// W3C SCXML 6.2: a declared type with no handler registered is, from
-		// the document's side, a processor the platform does not support — the
-		// act it asked for was performed by nobody. Same event as an
-		// undeclared type, so a wiring mistake cannot read as success.
-		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
-			errEvt.Metadata.SendID = "__send_13"
-			engine.Raise(errEvt)
-		}
-	}
-		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
-		// <foreach> it came — the block is its own function.
-		if paramFailed {
-			return
-		}
-	}
-	}
-	}
-
-
-	if p.vOp.kind == 0 && p.vOp.parts > 1 && p.vHub {
-
-	// W3C SCXML 6.2: send id="__send_14"
-	{
-	// W3C SCXML 6.2: Evaluate <param> expressions at send time
-	{
-		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
-		// and its pair left out, and the message still goes; the error ends
-		// the block once it has. Read at the end of this element.
-		paramFailed := false
-		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
-		// delivered, so this is an ordered list rather than a map. The typed
-		// value is kept rather than its text — a receiver reading
-		// `_event.data.value === 42` finds the string "42" unequal.
-		parts := make([]sce.EventDataParam, 0)
-		{
-			sceValue := int64(p.vOp.id)
-			parts = append(parts, sce.EventDataParam{Name: "id", Value: sceValue})
-		}
-		{
-			sceValue := int64(p.vOp.field)
-			parts = append(parts, sce.EventDataParam{Name: "field", Value: sceValue})
-		}
-		{
-			sceValue := sce.Int64PayloadText(int64(p.vOp.value))
-			parts = append(parts, sce.EventDataParam{Name: "value", Value: sceValue})
-		}
-		{
-			sceValue := p.vOp.text
-			parts = append(parts, sce.EventDataParam{Name: "text", Value: sceValue})
-		}
-		{
-			sceValue := sce.Int64PayloadText(int64(p.vOp.wallTime))
-			parts = append(parts, sce.EventDataParam{Name: "wallTime", Value: sceValue})
-		}
-		{
-			sceValue := int64(p.vOp.counter)
-			parts = append(parts, sce.EventDataParam{Name: "counter", Value: sceValue})
-		}
-		{
-			sceValue := sce.Uint64PayloadText(uint64(p.vOp.nodeId))
-			parts = append(parts, sce.EventDataParam{Name: "nodeId", Value: sceValue})
-		}
-		{
-			sceValue := int64(p.vOp.parts)
-			parts = append(parts, sce.EventDataParam{Name: "parts", Value: sceValue})
-		}
-		eventDataStr := sce.BuildJSONFromTypedParams(parts)
-		_ = eventDataStr
-	// §scxml-6.2.5: "sce:mesh" is served by the host, which
-	// declared it to this build. Dispatch rather than refuse — and take the
-	// whole send, because a processor the host serves owns delivery; falling
-	// through would also enqueue the event locally and the document would see
-	// the act twice.
-	{
-		hostParams := sce.WireParamsFromTypedParams(parts)
-		hostRequest := sce.HostSendRequest{
-			ProcessorType: "sce:mesh",
-			EventName:     "record_list.write",
-			Target:        "#people",
-			Content:       "",
-			Params:        hostParams,
-			SendID:        "__send_14",
-			// W3C SCXML 5.10: the payload computed above, once, for every arm.
-			EventData: eventDataStr,
-			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
-			// processed now, carried back out as a W3C child's send to its
-			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
-			// every machine with a host-served send.
-			InvokeID: p.pendingEventInvokeid,
-		}
-		_, hostServed := engine.PerformHostSend(hostRequest)
-		// W3C SCXML 6.2: a declared type with no handler registered is, from
-		// the document's side, a processor the platform does not support — the
-		// act it asked for was performed by nobody. Same event as an
-		// undeclared type, so a wiring mistake cannot read as success.
-		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
-			errEvt.Metadata.SendID = "__send_14"
-			engine.Raise(errEvt)
-		}
-	}
-		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
-		// <foreach> it came — the block is its own function.
-		if paramFailed {
-			return
-		}
-	}
-	}
-	}
-
-
-	if p.vOp.kind == 1 && p.vOp.parts <= 1 && !p.vHub {
-
-	// W3C SCXML 6.2: send id="__send_15"
-	{
-	// W3C SCXML 6.2: Evaluate <param> expressions at send time
-	{
-		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
-		// and its pair left out, and the message still goes; the error ends
-		// the block once it has. Read at the end of this element.
-		paramFailed := false
-		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
-		// delivered, so this is an ordered list rather than a map. The typed
-		// value is kept rather than its text — a receiver reading
-		// `_event.data.value === 42` finds the string "42" unequal.
-		parts := make([]sce.EventDataParam, 0)
-		{
-			sceValue := int64(p.vOp.id)
-			parts = append(parts, sce.EventDataParam{Name: "id", Value: sceValue})
-		}
-		{
-			sceValue := int64(p.vOp.field)
-			parts = append(parts, sce.EventDataParam{Name: "field", Value: sceValue})
-		}
-		{
-			sceValue := sce.Int64PayloadText(int64(p.vOp.wallTime))
-			parts = append(parts, sce.EventDataParam{Name: "wallTime", Value: sceValue})
-		}
-		{
-			sceValue := int64(p.vOp.counter)
-			parts = append(parts, sce.EventDataParam{Name: "counter", Value: sceValue})
-		}
-		{
-			sceValue := sce.Uint64PayloadText(uint64(p.vOp.nodeId))
-			parts = append(parts, sce.EventDataParam{Name: "nodeId", Value: sceValue})
-		}
-		{
-			sceValue := sce.Uint64PayloadText(uint64(p.vOp.by))
-			parts = append(parts, sce.EventDataParam{Name: "by", Value: sceValue})
-		}
-		eventDataStr := sce.BuildJSONFromTypedParams(parts)
-		_ = eventDataStr
-	// §scxml-6.2.5: "sce:mesh" is served by the host, which
-	// declared it to this build. Dispatch rather than refuse — and take the
-	// whole send, because a processor the host serves owns delivery; falling
-	// through would also enqueue the event locally and the document would see
-	// the act twice.
-	{
-		hostParams := sce.WireParamsFromTypedParams(parts)
-		hostRequest := sce.HostSendRequest{
-			ProcessorType: "sce:mesh",
-			EventName:     "record_list.supersede",
-			Target:        "#hub",
-			Content:       "",
-			Params:        hostParams,
-			SendID:        "__send_15",
-			// W3C SCXML 5.10: the payload computed above, once, for every arm.
-			EventData: eventDataStr,
-			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
-			// processed now, carried back out as a W3C child's send to its
-			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
-			// every machine with a host-served send.
-			InvokeID: p.pendingEventInvokeid,
-		}
-		_, hostServed := engine.PerformHostSend(hostRequest)
-		// W3C SCXML 6.2: a declared type with no handler registered is, from
-		// the document's side, a processor the platform does not support — the
-		// act it asked for was performed by nobody. Same event as an
-		// undeclared type, so a wiring mistake cannot read as success.
-		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
-			errEvt.Metadata.SendID = "__send_15"
-			engine.Raise(errEvt)
-		}
-	}
-		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
-		// <foreach> it came — the block is its own function.
-		if paramFailed {
-			return
-		}
-	}
-	}
-	}
-
-
-	if p.vOp.kind == 1 && p.vOp.parts > 1 && !p.vHub {
-
-	// W3C SCXML 6.2: send id="__send_16"
-	{
-	// W3C SCXML 6.2: Evaluate <param> expressions at send time
-	{
-		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
-		// and its pair left out, and the message still goes; the error ends
-		// the block once it has. Read at the end of this element.
-		paramFailed := false
-		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
-		// delivered, so this is an ordered list rather than a map. The typed
-		// value is kept rather than its text — a receiver reading
-		// `_event.data.value === 42` finds the string "42" unequal.
-		parts := make([]sce.EventDataParam, 0)
-		{
-			sceValue := int64(p.vOp.id)
-			parts = append(parts, sce.EventDataParam{Name: "id", Value: sceValue})
-		}
-		{
-			sceValue := int64(p.vOp.field)
-			parts = append(parts, sce.EventDataParam{Name: "field", Value: sceValue})
-		}
-		{
-			sceValue := sce.Int64PayloadText(int64(p.vOp.wallTime))
-			parts = append(parts, sce.EventDataParam{Name: "wallTime", Value: sceValue})
-		}
-		{
-			sceValue := int64(p.vOp.counter)
-			parts = append(parts, sce.EventDataParam{Name: "counter", Value: sceValue})
-		}
-		{
-			sceValue := sce.Uint64PayloadText(uint64(p.vOp.nodeId))
-			parts = append(parts, sce.EventDataParam{Name: "nodeId", Value: sceValue})
-		}
-		{
-			sceValue := sce.Uint64PayloadText(uint64(p.vOp.by))
-			parts = append(parts, sce.EventDataParam{Name: "by", Value: sceValue})
-		}
-		{
-			sceValue := int64(p.vOp.parts)
-			parts = append(parts, sce.EventDataParam{Name: "parts", Value: sceValue})
-		}
-		{
-			sceValue := sce.Int64PayloadText(int64(p.vOp.atWallTime))
-			parts = append(parts, sce.EventDataParam{Name: "atWallTime", Value: sceValue})
-		}
-		{
-			sceValue := int64(p.vOp.atCounter)
-			parts = append(parts, sce.EventDataParam{Name: "atCounter", Value: sceValue})
-		}
-		eventDataStr := sce.BuildJSONFromTypedParams(parts)
-		_ = eventDataStr
-	// §scxml-6.2.5: "sce:mesh" is served by the host, which
-	// declared it to this build. Dispatch rather than refuse — and take the
-	// whole send, because a processor the host serves owns delivery; falling
-	// through would also enqueue the event locally and the document would see
-	// the act twice.
-	{
-		hostParams := sce.WireParamsFromTypedParams(parts)
-		hostRequest := sce.HostSendRequest{
-			ProcessorType: "sce:mesh",
-			EventName:     "record_list.supersede",
-			Target:        "#hub",
-			Content:       "",
-			Params:        hostParams,
-			SendID:        "__send_16",
-			// W3C SCXML 5.10: the payload computed above, once, for every arm.
-			EventData: eventDataStr,
-			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
-			// processed now, carried back out as a W3C child's send to its
-			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
-			// every machine with a host-served send.
-			InvokeID: p.pendingEventInvokeid,
-		}
-		_, hostServed := engine.PerformHostSend(hostRequest)
-		// W3C SCXML 6.2: a declared type with no handler registered is, from
-		// the document's side, a processor the platform does not support — the
-		// act it asked for was performed by nobody. Same event as an
-		// undeclared type, so a wiring mistake cannot read as success.
-		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
-			errEvt.Metadata.SendID = "__send_16"
-			engine.Raise(errEvt)
-		}
-	}
-		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
-		// <foreach> it came — the block is its own function.
-		if paramFailed {
-			return
-		}
-	}
-	}
-	}
-
-
-	if p.vOp.kind == 1 && p.vOp.parts <= 1 && p.vHub {
-
-	// W3C SCXML 6.2: send id="__send_17"
-	{
-	// W3C SCXML 6.2: Evaluate <param> expressions at send time
-	{
-		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
-		// and its pair left out, and the message still goes; the error ends
-		// the block once it has. Read at the end of this element.
-		paramFailed := false
-		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
-		// delivered, so this is an ordered list rather than a map. The typed
-		// value is kept rather than its text — a receiver reading
-		// `_event.data.value === 42` finds the string "42" unequal.
-		parts := make([]sce.EventDataParam, 0)
-		{
-			sceValue := int64(p.vOp.id)
-			parts = append(parts, sce.EventDataParam{Name: "id", Value: sceValue})
-		}
-		{
-			sceValue := int64(p.vOp.field)
-			parts = append(parts, sce.EventDataParam{Name: "field", Value: sceValue})
-		}
-		{
-			sceValue := sce.Int64PayloadText(int64(p.vOp.wallTime))
-			parts = append(parts, sce.EventDataParam{Name: "wallTime", Value: sceValue})
-		}
-		{
-			sceValue := int64(p.vOp.counter)
-			parts = append(parts, sce.EventDataParam{Name: "counter", Value: sceValue})
-		}
-		{
-			sceValue := sce.Uint64PayloadText(uint64(p.vOp.nodeId))
-			parts = append(parts, sce.EventDataParam{Name: "nodeId", Value: sceValue})
-		}
-		{
-			sceValue := sce.Uint64PayloadText(uint64(p.vOp.by))
-			parts = append(parts, sce.EventDataParam{Name: "by", Value: sceValue})
-		}
-		eventDataStr := sce.BuildJSONFromTypedParams(parts)
-		_ = eventDataStr
-	// §scxml-6.2.5: "sce:mesh" is served by the host, which
-	// declared it to this build. Dispatch rather than refuse — and take the
-	// whole send, because a processor the host serves owns delivery; falling
-	// through would also enqueue the event locally and the document would see
-	// the act twice.
-	{
-		hostParams := sce.WireParamsFromTypedParams(parts)
-		hostRequest := sce.HostSendRequest{
-			ProcessorType: "sce:mesh",
-			EventName:     "record_list.supersede",
-			Target:        "#people",
-			Content:       "",
-			Params:        hostParams,
-			SendID:        "__send_17",
-			// W3C SCXML 5.10: the payload computed above, once, for every arm.
-			EventData: eventDataStr,
-			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
-			// processed now, carried back out as a W3C child's send to its
-			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
-			// every machine with a host-served send.
-			InvokeID: p.pendingEventInvokeid,
-		}
-		_, hostServed := engine.PerformHostSend(hostRequest)
-		// W3C SCXML 6.2: a declared type with no handler registered is, from
-		// the document's side, a processor the platform does not support — the
-		// act it asked for was performed by nobody. Same event as an
-		// undeclared type, so a wiring mistake cannot read as success.
-		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
-			errEvt.Metadata.SendID = "__send_17"
-			engine.Raise(errEvt)
-		}
-	}
-		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
-		// <foreach> it came — the block is its own function.
-		if paramFailed {
-			return
-		}
-	}
-	}
-	}
-
-
-	if p.vOp.kind == 1 && p.vOp.parts > 1 && p.vHub {
-
-	// W3C SCXML 6.2: send id="__send_18"
-	{
-	// W3C SCXML 6.2: Evaluate <param> expressions at send time
-	{
-		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
-		// and its pair left out, and the message still goes; the error ends
-		// the block once it has. Read at the end of this element.
-		paramFailed := false
-		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
-		// delivered, so this is an ordered list rather than a map. The typed
-		// value is kept rather than its text — a receiver reading
-		// `_event.data.value === 42` finds the string "42" unequal.
-		parts := make([]sce.EventDataParam, 0)
-		{
-			sceValue := int64(p.vOp.id)
-			parts = append(parts, sce.EventDataParam{Name: "id", Value: sceValue})
-		}
-		{
-			sceValue := int64(p.vOp.field)
-			parts = append(parts, sce.EventDataParam{Name: "field", Value: sceValue})
-		}
-		{
-			sceValue := sce.Int64PayloadText(int64(p.vOp.wallTime))
-			parts = append(parts, sce.EventDataParam{Name: "wallTime", Value: sceValue})
-		}
-		{
-			sceValue := int64(p.vOp.counter)
-			parts = append(parts, sce.EventDataParam{Name: "counter", Value: sceValue})
-		}
-		{
-			sceValue := sce.Uint64PayloadText(uint64(p.vOp.nodeId))
-			parts = append(parts, sce.EventDataParam{Name: "nodeId", Value: sceValue})
-		}
-		{
-			sceValue := sce.Uint64PayloadText(uint64(p.vOp.by))
-			parts = append(parts, sce.EventDataParam{Name: "by", Value: sceValue})
-		}
-		{
-			sceValue := int64(p.vOp.parts)
-			parts = append(parts, sce.EventDataParam{Name: "parts", Value: sceValue})
-		}
-		{
-			sceValue := sce.Int64PayloadText(int64(p.vOp.atWallTime))
-			parts = append(parts, sce.EventDataParam{Name: "atWallTime", Value: sceValue})
-		}
-		{
-			sceValue := int64(p.vOp.atCounter)
-			parts = append(parts, sce.EventDataParam{Name: "atCounter", Value: sceValue})
-		}
-		eventDataStr := sce.BuildJSONFromTypedParams(parts)
-		_ = eventDataStr
-	// §scxml-6.2.5: "sce:mesh" is served by the host, which
-	// declared it to this build. Dispatch rather than refuse — and take the
-	// whole send, because a processor the host serves owns delivery; falling
-	// through would also enqueue the event locally and the document would see
-	// the act twice.
-	{
-		hostParams := sce.WireParamsFromTypedParams(parts)
-		hostRequest := sce.HostSendRequest{
-			ProcessorType: "sce:mesh",
-			EventName:     "record_list.supersede",
-			Target:        "#people",
-			Content:       "",
-			Params:        hostParams,
-			SendID:        "__send_18",
-			// W3C SCXML 5.10: the payload computed above, once, for every arm.
-			EventData: eventDataStr,
-			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
-			// processed now, carried back out as a W3C child's send to its
-			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
-			// every machine with a host-served send.
-			InvokeID: p.pendingEventInvokeid,
-		}
-		_, hostServed := engine.PerformHostSend(hostRequest)
-		// W3C SCXML 6.2: a declared type with no handler registered is, from
-		// the document's side, a processor the platform does not support — the
-		// act it asked for was performed by nobody. Same event as an
-		// undeclared type, so a wiring mistake cannot read as success.
-		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
-			errEvt.Metadata.SendID = "__send_18"
-			engine.Raise(errEvt)
-		}
-	}
-		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
-		// <foreach> it came — the block is its own function.
-		if paramFailed {
-			return
-		}
-	}
-	}
-	}
-
-			}()
 		case 9:
-//line record_list.scxml:942
+//line record_list.scxml:672
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
-				if p.pendingPayloadTag != RecordListPayloadTagRecordListWrite {
-					return
-				}
 
-
-	p.vHeld.id = uint64(p.pendingRecordListWritePayload.id)
-
-
-
-	p.vHeld.field = uint64(p.pendingRecordListWritePayload.field)
-
-
-
-	p.vHeld.wallTime = p.pendingRecordListWritePayload.wallTime
-
-
-
-	p.vHeld.counter = p.pendingRecordListWritePayload.counter
-
-
-
-	p.vHeld.nodeId = p.pendingRecordListWritePayload.nodeId
-
-
-
-	p.vPresent = sceAdapt_RecordList_MvValueHolds__vv(p.vValues, p.vHeld)
-
-
-	if !p.vPresent {
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vLate, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='late'>: an integer operation overflowed or failed")); return true }; p.vLate = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
+	// W3C SCXML 6.2: send id="__send_9"
+	{
+	// W3C SCXML 6.2: Evaluate <param> expressions at send time
+	{
+		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
+		// and its pair left out, and the message still goes; the error ends
+		// the block once it has. Read at the end of this element.
+		paramFailed := false
+		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
+		// delivered, so this is an ordered list rather than a map. The typed
+		// value is kept rather than its text — a receiver reading
+		// `_event.data.value === 42` finds the string "42" unequal.
+		parts := make([]sce.EventDataParam, 0)
+		{
+			sceValue := sce.Uint64PayloadText(uint64(p.vDot.nodeId))
+			parts = append(parts, sce.EventDataParam{Name: "by", Value: sceValue})
+		}
+		{
+			sceValue := sce.Int64PayloadText(int64(p.vDot.wallTime))
+			parts = append(parts, sce.EventDataParam{Name: "wallTime", Value: sceValue})
+		}
+		{
+			sceValue := int64(p.vDot.counter)
+			parts = append(parts, sce.EventDataParam{Name: "counter", Value: sceValue})
+		}
+		{
+			var sceFailure scealgorithm.Failure
+			sceValue := func() any { if len(p.vTaking) < 1 { sceFailure.Fail(scealgorithm.Precondition) }; return func() []any { sceItems := make([]any, 0, len(p.vTaking)); for _, sceElement := range p.vTaking { sceItems = append(sceItems, map[string]any{"kind": int64(sceElement.kind), "id": int64(sceElement.id), "field": int64(sceElement.field), "value": sce.Int64PayloadText(sceElement.value), "text": sceElement.text, "wallTime": sce.Int64PayloadText(sceElement.wallTime), "counter": int64(sceElement.counter), "nodeId": sce.Uint64PayloadText(sceElement.nodeId)}) }; return sceItems }() }()
+			if !sceFailure.Failed() {
+				parts = append(parts, sce.EventDataParam{Name: "ops", Value: sceValue})
+			} else {
+				engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<send> <param name='ops'> failed to evaluate"))
+				paramFailed = true
+			}
+		}
+		eventDataStr := sce.BuildJSONFromTypedParams(parts)
+		_ = eventDataStr
+	// §scxml-6.2.5: "sce:mesh" is served by the host, which
+	// declared it to this build. Dispatch rather than refuse — and take the
+	// whole send, because a processor the host serves owns delivery; falling
+	// through would also enqueue the event locally and the document would see
+	// the act twice.
+	{
+		hostParams := sce.WireParamsFromTypedParams(parts)
+		hostRequest := sce.HostSendRequest{
+			ProcessorType: "sce:mesh",
+			EventName:     "record_list.change",
+			Target:        "#people",
+			Content:       "",
+			Params:        hostParams,
+			SendID:        "__send_9",
+			// W3C SCXML 5.10: the payload computed above, once, for every arm.
+			EventData: eventDataStr,
+			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
+			// processed now, carried back out as a W3C child's send to its
+			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
+			// every machine with a host-served send.
+			InvokeID: p.pendingEventInvokeid,
+		}
+		_, hostServed := engine.PerformHostSend(hostRequest)
+		// W3C SCXML 6.2: a declared type with no handler registered is, from
+		// the document's side, a processor the platform does not support — the
+		// act it asked for was performed by nobody. Same event as an
+		// undeclared type, so a wiring mistake cannot read as success.
+		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
+			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
+			errEvt.Metadata.SendID = "__send_9"
+			engine.Raise(errEvt)
+		}
 	}
-
+		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
+		// <foreach> it came — the block is its own function.
+		if paramFailed {
+			return
+		}
 	}
-
+	}
 			}()
 		case 10:
-//line record_list.scxml:965
-			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
-			func() {
-				if p.pendingPayloadTag != RecordListPayloadTagRecordListWrite {
-					return
-				}
-
-
-	p.vAuthorized = true
-
-
-	if p.vHub && uint32(len(p.vRoster)) > 0 {
-
-
-	p.vAuthorized = false
-
-
-	// W3C SCXML 4.6: <foreach array="roster" item="m">, a native loop over a sce-static list
-	for _, m := range append(p.vRoster[:0:0], p.vRoster...) {
-		_ = m
-
-	if m.node == p.pendingRecordListWritePayload.nodeId && m.role >= 2 {
-
-
-	p.vAuthorized = true
-
-	}
-
-	}
-
-	}
-
-
-	if !p.vAuthorized {
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vDenied, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='denied'>: an integer operation overflowed or failed")); return true }; p.vDenied = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-	}
-
-
-	if p.vAuthorized {
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, p.pendingRecordListWritePayload.text, 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='part.text'>: an integer operation overflowed or failed")); return true }; p.vPart.text = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-
-
-	p.vPart.kind = 0
-
-
-
-	p.vPart.id = p.pendingRecordListWritePayload.id
-
-
-
-	p.vPart.field = p.pendingRecordListWritePayload.field
-
-
-
-	p.vPart.value = p.pendingRecordListWritePayload.value
-
-
-
-	p.vPart.wallTime = p.pendingRecordListWritePayload.wallTime
-
-
-
-	p.vPart.counter = p.pendingRecordListWritePayload.counter
-
-
-
-	p.vPart.nodeId = p.pendingRecordListWritePayload.nodeId
-
-
-
-	p.vPart.by = p.pendingRecordListWritePayload.nodeId
-
-
-
-	p.vPart.atWallTime = p.pendingRecordListWritePayload.wallTime
-
-
-
-	p.vPart.atCounter = p.pendingRecordListWritePayload.counter
-
-
-
-	p.vPart.parts = p.pendingRecordListWritePayload.parts
-
-
-	// W3C SCXML 6.2: send id="__send_19"
-	{
-	{
-		eventDataStr := ""
-		_ = eventDataStr
-	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
-	// and does not change the queue.
-	{
-		meta := sce.NewEventWithMetadata(RecordListEventRecordListArrive)
-		meta.Metadata.Data = eventDataStr
-		engine.Raise(meta)
-	}
-	}
-	}
-	}
-
-			}()
-		case 11:
-//line record_list.scxml:1000
-			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
-			func() {
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vLate, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='late'>: an integer operation overflowed or failed")); return true }; p.vLate = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-			}()
-		case 12:
-//line record_list.scxml:1007
-			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
-			func() {
-				if p.pendingPayloadTag != RecordListPayloadTagRecordListSupersede {
-					return
-				}
-
-
-	p.vAuthorized = true
-
-
-	if p.vHub && uint32(len(p.vRoster)) > 0 {
-
-
-	p.vAuthorized = false
-
-
-	// W3C SCXML 4.6: <foreach array="roster" item="m">, a native loop over a sce-static list
-	for _, m := range append(p.vRoster[:0:0], p.vRoster...) {
-		_ = m
-
-	if m.node == p.pendingRecordListSupersedePayload.by && m.role >= 2 {
-
-
-	p.vAuthorized = true
-
-	}
-
-	}
-
-	}
-
-
-	if !p.vAuthorized {
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vDenied, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='denied'>: an integer operation overflowed or failed")); return true }; p.vDenied = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-	}
-
-
-	if p.vAuthorized {
-
-
-	p.vPart.kind = 1
-
-
-
-	p.vPart.id = p.pendingRecordListSupersedePayload.id
-
-
-
-	p.vPart.field = p.pendingRecordListSupersedePayload.field
-
-
-
-	p.vPart.value = 0
-
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Bounded(&sceFailure, "", 96); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='part.text'>: an integer operation overflowed or failed")); return true }; p.vPart.text = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-
-
-	p.vPart.wallTime = p.pendingRecordListSupersedePayload.wallTime
-
-
-
-	p.vPart.counter = p.pendingRecordListSupersedePayload.counter
-
-
-
-	p.vPart.nodeId = p.pendingRecordListSupersedePayload.nodeId
-
-
-
-	p.vPart.by = p.pendingRecordListSupersedePayload.by
-
-
-
-	p.vPart.atWallTime = p.pendingRecordListSupersedePayload.atWallTime
-
-
-
-	p.vPart.atCounter = p.pendingRecordListSupersedePayload.atCounter
-
-
-
-	p.vPart.parts = p.pendingRecordListSupersedePayload.parts
-
-
-	// W3C SCXML 6.2: send id="__send_20"
-	{
-	{
-		eventDataStr := ""
-		_ = eventDataStr
-	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
-	// and does not change the queue.
-	{
-		meta := sce.NewEventWithMetadata(RecordListEventRecordListArrive)
-		meta.Metadata.Data = eventDataStr
-		engine.Raise(meta)
-	}
-	}
-	}
-	}
-
-			}()
-		case 13:
-//line record_list.scxml:1047
-			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
-			func() {
-
-	if p.vPart.parts > 1 {
-
-
-	p.vEntry.element = uint64(p.vPart.id)
-
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint64(&sceFailure, scealgorithm.MulUint64(&sceFailure, p.vEntry.element, 65536), uint64(p.vPart.field)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='entry.element'>: an integer operation overflowed or failed")); return true }; p.vEntry.element = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-
-
-	p.vEntry.wallTime = p.vPart.wallTime
-
-
-
-	p.vEntry.counter = p.vPart.counter
-
-
-
-	p.vEntry.nodeId = p.vPart.nodeId
-
-
-
-	p.vAlready = false
-
-
-	// W3C SCXML 4.6: <foreach array="tombstones" item="t">, a native loop over a sce-static list
-	for _, t := range append(p.vTombstones[:0:0], p.vTombstones...) {
-		_ = t
-
-	if t.element == p.vEntry.element && t.wallTime == p.vEntry.wallTime && t.counter == p.vEntry.counter && t.nodeId == p.vEntry.nodeId {
-
-
-	p.vAlready = true
-
-	}
-
-	}
-
-
-	if p.vPart.kind == 0 {
-
-
-	p.vHeld.id = uint64(p.vPart.id)
-
-
-
-	p.vHeld.field = uint64(p.vPart.field)
-
-
-
-	p.vHeld.wallTime = p.vPart.wallTime
-
-
-
-	p.vHeld.counter = p.vPart.counter
-
-
-
-	p.vHeld.nodeId = p.vPart.nodeId
-
-
-
-	p.vPresent = sceAdapt_RecordList_MvValueHolds__vv(p.vValues, p.vHeld)
-
-
-	if p.vPresent {
-
-
-	p.vAlready = true
-
-	}
-
-	}
-
-
-
-	p.vListed = false
-
-
-	// W3C SCXML 4.6: <foreach array="waiting" item="w">, a native loop over a sce-static list
-	for _, w := range append(p.vWaiting[:0:0], p.vWaiting...) {
-		_ = w
-
-	if w.kind == p.vPart.kind && w.id == p.vPart.id && w.field == p.vPart.field && w.wallTime == p.vPart.wallTime && w.counter == p.vPart.counter && w.nodeId == p.vPart.nodeId {
-
-
-	p.vListed = true
-
-	}
-
-	}
-
-
-	if !p.vAlready && !p.vListed {
-
-	// SCE Accepted Subset §2.15: <sce:append target="waiting">
-
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vWaiting) >= 64 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='waiting'>: the list already holds its capacity of 64")); return true }; sceValue := scealgorithm.ElementOf(p.vWaiting, p.vPart); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='waiting'>: an integer operation overflowed or failed")); return true }; p.vWaiting = append(p.vWaiting, sceValue); return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-	}
-
-
-
-	p.vCount = 0
-
-
-	// W3C SCXML 4.6: <foreach array="waiting" item="w">, a native loop over a sce-static list
-	for _, w := range append(p.vWaiting[:0:0], p.vWaiting...) {
-		_ = w
-
-	if w.atWallTime == p.vPart.atWallTime && w.atCounter == p.vPart.atCounter && w.by == p.vPart.by {
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vCount, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='count'>: an integer operation overflowed or failed")); return true }; p.vCount = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-	}
-
-	}
-
-
-	if p.vAlready || p.vCount >= p.vPart.parts {
-
-	// SCE Accepted Subset §2.15: <sce:clear target="taking">
-
-	p.vTaking = p.vTaking[:0]
-
-
-
-	p.vTook = 0
-
-
-	// SCE Accepted Subset §2.15: <sce:clear target="kept">
-
-	p.vKept = p.vKept[:0]
-
-
-	// W3C SCXML 4.6: <foreach array="waiting" item="w">, a native loop over a sce-static list
-	for _, w := range append(p.vWaiting[:0:0], p.vWaiting...) {
-		_ = w
-
-	if w.atWallTime == p.vPart.atWallTime && w.atCounter == p.vPart.atCounter && w.by == p.vPart.by {
-
-	// SCE Accepted Subset §2.15: <sce:append target="taking">
-
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vTaking) >= 64 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='taking'>: the list already holds its capacity of 64")); return true }; sceValue := scealgorithm.ElementOf(p.vTaking, w); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='taking'>: an integer operation overflowed or failed")); return true }; p.vTaking = append(p.vTaking, sceValue); return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-	}
-
-
-	if w.atWallTime != p.vPart.atWallTime || w.atCounter != p.vPart.atCounter || w.by != p.vPart.by {
-
-	// SCE Accepted Subset §2.15: <sce:append target="kept">
-
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vKept) >= 64 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='kept'>: the list already holds its capacity of 64")); return true }; sceValue := scealgorithm.ElementOf(p.vKept, w); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='kept'>: an integer operation overflowed or failed")); return true }; p.vKept = append(p.vKept, sceValue); return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-	}
-
-	}
-
-
-	// SCE Accepted Subset §2.15: <sce:clear target="waiting">
-
-	p.vWaiting = p.vWaiting[:0]
-
-
-	// W3C SCXML 4.6: <foreach array="kept" item="k">, a native loop over a sce-static list
-	for _, k := range append(p.vKept[:0:0], p.vKept...) {
-		_ = k
-
-	// SCE Accepted Subset §2.15: <sce:append target="waiting">
-
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vWaiting) >= 64 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='waiting'>: the list already holds its capacity of 64")); return true }; sceValue := scealgorithm.ElementOf(p.vWaiting, k); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='waiting'>: an integer operation overflowed or failed")); return true }; p.vWaiting = append(p.vWaiting, sceValue); return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-	}
-
-
-	// W3C SCXML 4.6: <foreach array="taking" item="t">, a native loop over a sce-static list
-	for _, t := range append(p.vTaking[:0:0], p.vTaking...) {
-		_ = t
-
-	// W3C SCXML 6.2: send id="__send_21"
-	{
-	{
-		eventDataStr := ""
-		_ = eventDataStr
-	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
-	// and does not change the queue.
-	{
-		meta := sce.NewEventWithMetadata(RecordListEventRecordListTake)
-		meta.Metadata.Data = eventDataStr
-		engine.Raise(meta)
-	}
-	}
-	}
-	}
-
-	}
-
-	}
-
-
-	if p.vPart.parts <= 1 {
-
-	// SCE Accepted Subset §2.15: <sce:clear target="taking">
-
-	p.vTaking = p.vTaking[:0]
-
-
-
-	p.vTook = 0
-
-
-	// SCE Accepted Subset §2.15: <sce:append target="taking">
-
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vTaking) >= 64 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='taking'>: the list already holds its capacity of 64")); return true }; sceValue := scealgorithm.ElementOf(p.vTaking, p.vPart); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='taking'>: an integer operation overflowed or failed")); return true }; p.vTaking = append(p.vTaking, sceValue); return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-
-	// W3C SCXML 6.2: send id="__send_22"
-	{
-	{
-		eventDataStr := ""
-		_ = eventDataStr
-	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
-	// and does not change the queue.
-	{
-		meta := sce.NewEventWithMetadata(RecordListEventRecordListTake)
-		meta.Metadata.Data = eventDataStr
-		engine.Raise(meta)
-	}
-	}
-	}
-	}
-
-
-	if p.vHub {
-
-	// SCE Accepted Subset §2.15: <sce:clear target="passing">
-
-	p.vPassing = p.vPassing[:0]
-
-
-
-	p.vPassed = 0
-
-
-	// SCE Accepted Subset §2.15: <sce:append target="passing">
-
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vPassing) >= 64 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='passing'>: the list already holds its capacity of 64")); return true }; sceValue := scealgorithm.ElementOf(p.vPassing, p.vPart); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='passing'>: an integer operation overflowed or failed")); return true }; p.vPassing = append(p.vPassing, sceValue); return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-
-	// W3C SCXML 6.2: send id="__send_23"
-	{
-	{
-		eventDataStr := ""
-		_ = eventDataStr
-	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
-	// and does not change the queue.
-	{
-		meta := sce.NewEventWithMetadata(RecordListEventRecordListPass)
-		meta.Metadata.Data = eventDataStr
-		engine.Raise(meta)
-	}
-	}
-	}
-	}
-
-			}()
-		case 14:
-//line record_list.scxml:1126
+//line record_list.scxml:686
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 				if p.pendingPayloadTag != RecordListPayloadTagRecordListAnnounce {
@@ -7557,7 +4627,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 	if uint32(len(p.vMoved)) == 0 {
 
-	// W3C SCXML 6.2: send id="__send_24"
+	// W3C SCXML 6.2: send id="__send_10"
 	{
 	{
 		eventDataStr := ""
@@ -7585,8 +4655,8 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	}
 
 			}()
-		case 15:
-//line record_list.scxml:1149
+		case 11:
+//line record_list.scxml:709
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -7614,7 +4684,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 	if uint32(len(p.vLive)) == 0 {
 
-	// W3C SCXML 6.2: send id="__send_25"
+	// W3C SCXML 6.2: send id="__send_11"
 	{
 	sendArgError := ""
 	// docs/adr/0005, decision 3: the target is a string computed from the machine's
@@ -7637,7 +4707,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	_ = sendTarget
 	if sendArgError != "" {
 		errEvt := sce.NewPlatformError(RecordListEventErrorExecution, sendArgError)
-		errEvt.Metadata.SendID = "__send_25"
+		errEvt.Metadata.SendID = "__send_11"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
 	}
@@ -7649,7 +4719,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 		// event names its origin, so `targetexpr="_event.origin"` (test336)
 		// reads this session's location, never "".
 		errEvt := sce.NewPlatformError(RecordListEventErrorCommunication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
-		errEvt.Metadata.SendID = "__send_25"
+		errEvt.Metadata.SendID = "__send_11"
 		engine.Raise(errEvt)
 		return
 	}
@@ -7705,16 +4775,16 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	{
 		sendEvt, sendHasEvt := engine.ResolveEventByName("record_list.register")
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "record_list.register", sendTarget, p.SessionID,
-0, "__send_25", eventDataStr, p.SessionID)
+0, "__send_11", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
 			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, "<send> targetexpr produced a value that is not a target")
-			errEvt.Metadata.SendID = "__send_25"
+			errEvt.Metadata.SendID = "__send_11"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
 		}
 		if routed == sce.TargetNotReachable {
 			errEvt := sce.NewPlatformError(RecordListEventErrorCommunication, "<send> targetexpr names a session this processor cannot reach")
-			errEvt.Metadata.SendID = "__send_25"
+			errEvt.Metadata.SendID = "__send_11"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
 		}
@@ -7745,7 +4815,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 	if p.vOrdinal == 0 {
 
-	// W3C SCXML 6.2: send id="__send_26"
+	// W3C SCXML 6.2: send id="__send_12"
 	{
 	sendArgError := ""
 	// docs/adr/0005, decision 3: the target is a string computed from the machine's
@@ -7768,7 +4838,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	_ = sendTarget
 	if sendArgError != "" {
 		errEvt := sce.NewPlatformError(RecordListEventErrorExecution, sendArgError)
-		errEvt.Metadata.SendID = "__send_26"
+		errEvt.Metadata.SendID = "__send_12"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
 	}
@@ -7780,7 +4850,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 		// event names its origin, so `targetexpr="_event.origin"` (test336)
 		// reads this session's location, never "".
 		errEvt := sce.NewPlatformError(RecordListEventErrorCommunication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
-		errEvt.Metadata.SendID = "__send_26"
+		errEvt.Metadata.SendID = "__send_12"
 		engine.Raise(errEvt)
 		return
 	}
@@ -7836,16 +4906,16 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	{
 		sendEvt, sendHasEvt := engine.ResolveEventByName("record_list.register")
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "record_list.register", sendTarget, p.SessionID,
-0, "__send_26", eventDataStr, p.SessionID)
+0, "__send_12", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
 			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, "<send> targetexpr produced a value that is not a target")
-			errEvt.Metadata.SendID = "__send_26"
+			errEvt.Metadata.SendID = "__send_12"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
 		}
 		if routed == sce.TargetNotReachable {
 			errEvt := sce.NewPlatformError(RecordListEventErrorCommunication, "<send> targetexpr names a session this processor cannot reach")
-			errEvt.Metadata.SendID = "__send_26"
+			errEvt.Metadata.SendID = "__send_12"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
 		}
@@ -7862,7 +4932,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 	if p.vOrdinal != 0 {
 
-	// W3C SCXML 6.2: send id="__send_27"
+	// W3C SCXML 6.2: send id="__send_13"
 	{
 	sendArgError := ""
 	// docs/adr/0005, decision 3: the target is a string computed from the machine's
@@ -7885,7 +4955,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	_ = sendTarget
 	if sendArgError != "" {
 		errEvt := sce.NewPlatformError(RecordListEventErrorExecution, sendArgError)
-		errEvt.Metadata.SendID = "__send_27"
+		errEvt.Metadata.SendID = "__send_13"
 		engine.Raise(errEvt)
 		return  // W3C SCXML 4.9: the error ends the block
 	}
@@ -7897,7 +4967,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 		// event names its origin, so `targetexpr="_event.origin"` (test336)
 		// reads this session's location, never "".
 		errEvt := sce.NewPlatformError(RecordListEventErrorCommunication, "<send> targetexpr evaluated to nothing, or to a route the send does not declare, so there is no target to reach")
-		errEvt.Metadata.SendID = "__send_27"
+		errEvt.Metadata.SendID = "__send_13"
 		engine.Raise(errEvt)
 		return
 	}
@@ -7953,16 +5023,16 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	{
 		sendEvt, sendHasEvt := engine.ResolveEventByName("record_list.value")
 		routed := engine.SendToTarget(sendEvt, sendHasEvt, "record_list.value", sendTarget, p.SessionID,
-0, "__send_27", eventDataStr, p.SessionID)
+0, "__send_13", eventDataStr, p.SessionID)
 		if routed == sce.TargetNotSupported {
 			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, "<send> targetexpr produced a value that is not a target")
-			errEvt.Metadata.SendID = "__send_27"
+			errEvt.Metadata.SendID = "__send_13"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
 		}
 		if routed == sce.TargetNotReachable {
 			errEvt := sce.NewPlatformError(RecordListEventErrorCommunication, "<send> targetexpr names a session this processor cannot reach")
-			errEvt.Metadata.SendID = "__send_27"
+			errEvt.Metadata.SendID = "__send_13"
 			engine.Raise(errEvt)
 			return // W3C SCXML 4.9: the error ends the block
 		}
@@ -7998,1807 +5068,8 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 	p.vMoved = p.vMoved[:0]
 
 			}()
-		case 16:
-//line record_list.scxml:1204
-			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
-			func() {
-				if p.pendingPayloadTag != RecordListPayloadTagRecordListKeep {
-					return
-				}
-
-
-	p.vEntry.element = p.pendingRecordListKeepPayload.element
-
-
-
-	p.vEntry.wallTime = p.pendingRecordListKeepPayload.wallTime
-
-
-
-	p.vEntry.counter = p.pendingRecordListKeepPayload.counter
-
-
-
-	p.vEntry.nodeId = p.pendingRecordListKeepPayload.nodeId
-
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_MerkleChangeHash__v(p.vEntry, p.pendingRecordListKeepPayload.kind)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='mine'>: an integer operation overflowed or failed")); return true }; p.vMine = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_MerkleInsert__v(p.vDigest, scealgorithm.DivInt64(&sceFailure, p.pendingRecordListKeepPayload.wallTime, 60000), p.vMine)), 2048); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='digest'>: an integer operation overflowed or failed")); return true }; p.vDigest = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-			}()
-		case 17:
-//line record_list.scxml:1221
-			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
-			func() {
-				if p.pendingPayloadTag != RecordListPayloadTagRecordListCompact {
-					return
-				}
-
-	// SCE Accepted Subset §2.15: <sce:clear target="stable">
-
-	p.vStable = p.vStable[:0]
-
-
-
-	p.vFrozenFor = -1
-
-
-	// W3C SCXML 4.6: <foreach array="tombstones" item="t">, a native loop over a sce-static list
-	for _, t := range append(p.vTombstones[:0:0], p.vTombstones...) {
-		_ = t
-
-	if t.wallTime <= p.pendingRecordListCompactPayload.before {
-
-	// SCE Accepted Subset §2.15: <sce:append target="stable">
-
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vStable) >= 1024 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='stable'>: the list already holds its capacity of 1024")); return true }; sceValue := scealgorithm.ElementOf(p.vStable, t); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='stable'>: an integer operation overflowed or failed")); return true }; p.vStable = append(p.vStable, sceValue); return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_MerkleChangeHash__i(t, 1)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='mine'>: an integer operation overflowed or failed")); return true }; p.vMine = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_MerkleInsert__v(p.vDigest, scealgorithm.DivInt64(&sceFailure, t.wallTime, 60000), p.vMine)), 2048); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='digest'>: an integer operation overflowed or failed")); return true }; p.vDigest = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-	}
-
-	}
-
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_OrsetLive__vv(p.vTombstones, p.vStable)), 1024); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='tombstones'>: an integer operation overflowed or failed")); return true }; p.vTombstones = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-
-	if p.pendingRecordListCompactPayload.before > p.vFloor {
-
-
-	p.vFloor = p.pendingRecordListCompactPayload.before
-
-	}
-
-
-	// SCE Accepted Subset §2.15: <sce:clear target="kept">
-
-	p.vKept = p.vKept[:0]
-
-
-	// W3C SCXML 4.6: <foreach array="waiting" item="w">, a native loop over a sce-static list
-	for _, w := range append(p.vWaiting[:0:0], p.vWaiting...) {
-		_ = w
-
-	if w.atWallTime > p.pendingRecordListCompactPayload.before {
-
-	// SCE Accepted Subset §2.15: <sce:append target="kept">
-
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vKept) >= 64 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='kept'>: the list already holds its capacity of 64")); return true }; sceValue := scealgorithm.ElementOf(p.vKept, w); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='kept'>: an integer operation overflowed or failed")); return true }; p.vKept = append(p.vKept, sceValue); return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-	}
-
-	}
-
-
-	// SCE Accepted Subset §2.15: <sce:clear target="waiting">
-
-	p.vWaiting = p.vWaiting[:0]
-
-
-	// W3C SCXML 4.6: <foreach array="kept" item="k">, a native loop over a sce-static list
-	for _, k := range append(p.vKept[:0:0], p.vKept...) {
-		_ = k
-
-	// SCE Accepted Subset §2.15: <sce:append target="waiting">
-
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vWaiting) >= 64 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='waiting'>: the list already holds its capacity of 64")); return true }; sceValue := scealgorithm.ElementOf(p.vWaiting, k); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='waiting'>: an integer operation overflowed or failed")); return true }; p.vWaiting = append(p.vWaiting, sceValue); return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-	}
-
-			}()
-		case 18:
-//line record_list.scxml:1255
-			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
-			func() {
-				if p.pendingPayloadTag != RecordListPayloadTagRecordListSettle {
-					return
-				}
-
-	if p.vHub && p.pendingRecordListSettlePayload.before > p.vFloor {
-
-
-	p.vPending = p.pendingRecordListSettlePayload.before
-
-
-
-	p.vMembers = p.pendingRecordListSettlePayload.members
-
-
-	// SCE Accepted Subset §2.15: <sce:clear target="answers">
-
-	p.vAnswers = p.vAnswers[:0]
-
-
-	if p.vClock.wallTime <= p.pendingRecordListSettlePayload.before {
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddInt64(&sceFailure, p.pendingRecordListSettlePayload.before, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='clock.wallTime'>: an integer operation overflowed or failed")); return true }; p.vClock.wallTime = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-
-
-	p.vClock.counter = 0
-
-	}
-
-
-	// W3C SCXML 6.2: send id="__send_28"
-	{
-	// W3C SCXML 6.2: Evaluate <param> expressions at send time
-	{
-		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
-		// and its pair left out, and the message still goes; the error ends
-		// the block once it has. Read at the end of this element.
-		paramFailed := false
-		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
-		// delivered, so this is an ordered list rather than a map. The typed
-		// value is kept rather than its text — a receiver reading
-		// `_event.data.value === 42` finds the string "42" unequal.
-		parts := make([]sce.EventDataParam, 0)
-		{
-			sceValue := sce.Int64PayloadText(int64(p.pendingRecordListSettlePayload.before))
-			parts = append(parts, sce.EventDataParam{Name: "before", Value: sceValue})
-		}
-		eventDataStr := sce.BuildJSONFromTypedParams(parts)
-		_ = eventDataStr
-	// §scxml-6.2.5: "sce:mesh" is served by the host, which
-	// declared it to this build. Dispatch rather than refuse — and take the
-	// whole send, because a processor the host serves owns delivery; falling
-	// through would also enqueue the event locally and the document would see
-	// the act twice.
-	{
-		hostParams := sce.WireParamsFromTypedParams(parts)
-		hostRequest := sce.HostSendRequest{
-			ProcessorType: "sce:mesh",
-			EventName:     "record_list.propose",
-			Target:        "#people",
-			Content:       "",
-			Params:        hostParams,
-			SendID:        "__send_28",
-			// W3C SCXML 5.10: the payload computed above, once, for every arm.
-			EventData: eventDataStr,
-			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
-			// processed now, carried back out as a W3C child's send to its
-			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
-			// every machine with a host-served send.
-			InvokeID: p.pendingEventInvokeid,
-		}
-		_, hostServed := engine.PerformHostSend(hostRequest)
-		// W3C SCXML 6.2: a declared type with no handler registered is, from
-		// the document's side, a processor the platform does not support — the
-		// act it asked for was performed by nobody. Same event as an
-		// undeclared type, so a wiring mistake cannot read as success.
-		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
-			errEvt.Metadata.SendID = "__send_28"
-			engine.Raise(errEvt)
-		}
-	}
-		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
-		// <foreach> it came — the block is its own function.
-		if paramFailed {
-			return
-		}
-	}
-	}
-	}
-
-			}()
-		case 19:
-//line record_list.scxml:1276
-			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
-			func() {
-				if p.pendingPayloadTag != RecordListPayloadTagRecordListPropose {
-					return
-				}
-
-	if !p.vHub && p.pendingRecordListProposePayload.before > p.vFloor {
-
-	if p.vClock.wallTime <= p.pendingRecordListProposePayload.before {
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddInt64(&sceFailure, p.pendingRecordListProposePayload.before, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='clock.wallTime'>: an integer operation overflowed or failed")); return true }; p.vClock.wallTime = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-
-
-	p.vClock.counter = 0
-
-	}
-
-
-	// SCE Accepted Subset §2.15: <sce:clear target="stable">
-
-	p.vStable = p.vStable[:0]
-
-
-	// W3C SCXML 4.6: <foreach array="tombstones" item="t">, a native loop over a sce-static list
-	for _, t := range append(p.vTombstones[:0:0], p.vTombstones...) {
-		_ = t
-
-	if t.wallTime <= p.pendingRecordListProposePayload.before {
-
-	// SCE Accepted Subset §2.15: <sce:append target="stable">
-
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vStable) >= 1024 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='stable'>: the list already holds its capacity of 1024")); return true }; sceValue := scealgorithm.ElementOf(p.vStable, t); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='stable'>: an integer operation overflowed or failed")); return true }; p.vStable = append(p.vStable, sceValue); return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-	}
-
-	}
-
-
-
-	p.vFrozenFor = p.pendingRecordListProposePayload.before
-
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_RecordSettled__vv(p.vAdds, p.vTombstones, p.pendingRecordListProposePayload.before)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='frozenHash'>: an integer operation overflowed or failed")); return true }; p.vFrozenHash = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-
-	// W3C SCXML 6.2: send id="__send_29"
-	{
-	// W3C SCXML 6.2: Evaluate <param> expressions at send time
-	{
-		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
-		// and its pair left out, and the message still goes; the error ends
-		// the block once it has. Read at the end of this element.
-		paramFailed := false
-		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
-		// delivered, so this is an ordered list rather than a map. The typed
-		// value is kept rather than its text — a receiver reading
-		// `_event.data.value === 42` finds the string "42" unequal.
-		parts := make([]sce.EventDataParam, 0)
-		{
-			sceValue := sce.Uint64PayloadText(uint64(p.vNode))
-			parts = append(parts, sce.EventDataParam{Name: "sender", Value: sceValue})
-		}
-		{
-			sceValue := sce.Int64PayloadText(int64(p.pendingRecordListProposePayload.before))
-			parts = append(parts, sce.EventDataParam{Name: "before", Value: sceValue})
-		}
-		{
-			sceValue := int64(p.vFrozenHash)
-			parts = append(parts, sce.EventDataParam{Name: "hash", Value: sceValue})
-		}
-		eventDataStr := sce.BuildJSONFromTypedParams(parts)
-		_ = eventDataStr
-	// §scxml-6.2.5: "sce:mesh" is served by the host, which
-	// declared it to this build. Dispatch rather than refuse — and take the
-	// whole send, because a processor the host serves owns delivery; falling
-	// through would also enqueue the event locally and the document would see
-	// the act twice.
-	{
-		hostParams := sce.WireParamsFromTypedParams(parts)
-		hostRequest := sce.HostSendRequest{
-			ProcessorType: "sce:mesh",
-			EventName:     "record_list.ack",
-			Target:        "#hub",
-			Content:       "",
-			Params:        hostParams,
-			SendID:        "__send_29",
-			// W3C SCXML 5.10: the payload computed above, once, for every arm.
-			EventData: eventDataStr,
-			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
-			// processed now, carried back out as a W3C child's send to its
-			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
-			// every machine with a host-served send.
-			InvokeID: p.pendingEventInvokeid,
-		}
-		_, hostServed := engine.PerformHostSend(hostRequest)
-		// W3C SCXML 6.2: a declared type with no handler registered is, from
-		// the document's side, a processor the platform does not support — the
-		// act it asked for was performed by nobody. Same event as an
-		// undeclared type, so a wiring mistake cannot read as success.
-		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
-			errEvt.Metadata.SendID = "__send_29"
-			engine.Raise(errEvt)
-		}
-	}
-		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
-		// <foreach> it came — the block is its own function.
-		if paramFailed {
-			return
-		}
-	}
-	}
-	}
-
-			}()
-		case 20:
-//line record_list.scxml:1306
-			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
-			func() {
-				if p.pendingPayloadTag != RecordListPayloadTagRecordListAck {
-					return
-				}
-
-	if p.vHub && p.pendingRecordListAckPayload.before == p.vPending {
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_RecordSettled__vv(p.vAdds, p.vTombstones, p.vPending)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='mine'>: an integer operation overflowed or failed")); return true }; p.vMine = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-
-
-	p.vKnown = false
-
-
-	// W3C SCXML 4.6: <foreach array="answers" item="a">, a native loop over a sce-static list
-	for _, a := range append(p.vAnswers[:0:0], p.vAnswers...) {
-		_ = a
-
-	if a.sender == p.pendingRecordListAckPayload.sender && a.hash == p.pendingRecordListAckPayload.hash {
-
-
-	p.vKnown = true
-
-	}
-
-	}
-
-
-	if !p.vKnown {
-
-
-	p.vAnswer.sender = p.pendingRecordListAckPayload.sender
-
-
-
-	p.vAnswer.hash = p.pendingRecordListAckPayload.hash
-
-
-	// SCE Accepted Subset §2.15: <sce:append target="answers">
-
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vAnswers) >= 512 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='answers'>: the list already holds its capacity of 512")); return true }; sceValue := scealgorithm.ElementOf(p.vAnswers, p.vAnswer); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='answers'>: an integer operation overflowed or failed")); return true }; p.vAnswers = append(p.vAnswers, sceValue); return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-	}
-
-
-
-	p.vAgreeing = 0
-
-
-	// W3C SCXML 4.6: <foreach array="answers" item="a">, a native loop over a sce-static list
-	for _, a := range append(p.vAnswers[:0:0], p.vAnswers...) {
-		_ = a
-
-	if a.hash == p.vMine {
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddUint32(&sceFailure, p.vAgreeing, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='agreeing'>: an integer operation overflowed or failed")); return true }; p.vAgreeing = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-	}
-
-	}
-
-
-	if p.vMembers > 0 && p.vAgreeing >= p.vMembers {
-
-	// SCE Accepted Subset §2.15: <sce:clear target="stable">
-
-	p.vStable = p.vStable[:0]
-
-
-	// W3C SCXML 4.6: <foreach array="tombstones" item="t">, a native loop over a sce-static list
-	for _, t := range append(p.vTombstones[:0:0], p.vTombstones...) {
-		_ = t
-
-	if t.wallTime <= p.vPending {
-
-	// SCE Accepted Subset §2.15: <sce:append target="stable">
-
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vStable) >= 1024 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='stable'>: the list already holds its capacity of 1024")); return true }; sceValue := scealgorithm.ElementOf(p.vStable, t); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='stable'>: an integer operation overflowed or failed")); return true }; p.vStable = append(p.vStable, sceValue); return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-	}
-
-	}
-
-
-
-	p.vFrozenFor = p.vPending
-
-
-
-	p.vFrozenHash = p.vMine
-
-
-	// W3C SCXML 6.2: send id="__send_30"
-	{
-	// W3C SCXML 6.2: Evaluate <param> expressions at send time
-	{
-		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
-		// and its pair left out, and the message still goes; the error ends
-		// the block once it has. Read at the end of this element.
-		paramFailed := false
-		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
-		// delivered, so this is an ordered list rather than a map. The typed
-		// value is kept rather than its text — a receiver reading
-		// `_event.data.value === 42` finds the string "42" unequal.
-		parts := make([]sce.EventDataParam, 0)
-		{
-			sceValue := sce.Int64PayloadText(int64(p.vPending))
-			parts = append(parts, sce.EventDataParam{Name: "before", Value: sceValue})
-		}
-		{
-			sceValue := int64(p.vMine)
-			parts = append(parts, sce.EventDataParam{Name: "hash", Value: sceValue})
-		}
-		eventDataStr := sce.BuildJSONFromTypedParams(parts)
-		_ = eventDataStr
-	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
-	// and does not change the queue.
-	{
-		meta := sce.NewEventWithMetadata(RecordListEventRecordListFloor)
-		meta.Metadata.Data = eventDataStr
-		engine.Raise(meta)
-	}
-		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
-		// <foreach> it came — the block is its own function.
-		if paramFailed {
-			return
-		}
-	}
-	}
-
-
-	p.vPending = -1
-
-
-	// W3C SCXML 6.2: send id="__send_31"
-	{
-	// W3C SCXML 6.2: Evaluate <param> expressions at send time
-	{
-		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
-		// and its pair left out, and the message still goes; the error ends
-		// the block once it has. Read at the end of this element.
-		paramFailed := false
-		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
-		// delivered, so this is an ordered list rather than a map. The typed
-		// value is kept rather than its text — a receiver reading
-		// `_event.data.value === 42` finds the string "42" unequal.
-		parts := make([]sce.EventDataParam, 0)
-		{
-			sceValue := sce.Int64PayloadText(int64(p.vFrozenFor))
-			parts = append(parts, sce.EventDataParam{Name: "before", Value: sceValue})
-		}
-		{
-			sceValue := int64(p.vMine)
-			parts = append(parts, sce.EventDataParam{Name: "hash", Value: sceValue})
-		}
-		eventDataStr := sce.BuildJSONFromTypedParams(parts)
-		_ = eventDataStr
-	// §scxml-6.2.5: "sce:mesh" is served by the host, which
-	// declared it to this build. Dispatch rather than refuse — and take the
-	// whole send, because a processor the host serves owns delivery; falling
-	// through would also enqueue the event locally and the document would see
-	// the act twice.
-	{
-		hostParams := sce.WireParamsFromTypedParams(parts)
-		hostRequest := sce.HostSendRequest{
-			ProcessorType: "sce:mesh",
-			EventName:     "record_list.floor",
-			Target:        "#people",
-			Content:       "",
-			Params:        hostParams,
-			SendID:        "__send_31",
-			// W3C SCXML 5.10: the payload computed above, once, for every arm.
-			EventData: eventDataStr,
-			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
-			// processed now, carried back out as a W3C child's send to its
-			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
-			// every machine with a host-served send.
-			InvokeID: p.pendingEventInvokeid,
-		}
-		_, hostServed := engine.PerformHostSend(hostRequest)
-		// W3C SCXML 6.2: a declared type with no handler registered is, from
-		// the document's side, a processor the platform does not support — the
-		// act it asked for was performed by nobody. Same event as an
-		// undeclared type, so a wiring mistake cannot read as success.
-		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
-			errEvt.Metadata.SendID = "__send_31"
-			engine.Raise(errEvt)
-		}
-	}
-		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
-		// <foreach> it came — the block is its own function.
-		if paramFailed {
-			return
-		}
-	}
-	}
-	}
-
-
-	if p.pendingRecordListAckPayload.hash != p.vMine && p.vFloor > 0 {
-
-	// W3C SCXML 6.2: send id="__send_32"
-	{
-	// W3C SCXML 6.2: Evaluate <param> expressions at send time
-	{
-		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
-		// and its pair left out, and the message still goes; the error ends
-		// the block once it has. Read at the end of this element.
-		paramFailed := false
-		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
-		// delivered, so this is an ordered list rather than a map. The typed
-		// value is kept rather than its text — a receiver reading
-		// `_event.data.value === 42` finds the string "42" unequal.
-		parts := make([]sce.EventDataParam, 0)
-		{
-			sceValue := sce.Int64PayloadText(int64(p.vFloor))
-			parts = append(parts, sce.EventDataParam{Name: "before", Value: sceValue})
-		}
-		{
-			sceValue := int64(p.vAgreed)
-			parts = append(parts, sce.EventDataParam{Name: "hash", Value: sceValue})
-		}
-		eventDataStr := sce.BuildJSONFromTypedParams(parts)
-		_ = eventDataStr
-	// §scxml-6.2.5: "sce:mesh" is served by the host, which
-	// declared it to this build. Dispatch rather than refuse — and take the
-	// whole send, because a processor the host serves owns delivery; falling
-	// through would also enqueue the event locally and the document would see
-	// the act twice.
-	{
-		hostParams := sce.WireParamsFromTypedParams(parts)
-		hostRequest := sce.HostSendRequest{
-			ProcessorType: "sce:mesh",
-			EventName:     "record_list.floor",
-			Target:        "#people",
-			Content:       "",
-			Params:        hostParams,
-			SendID:        "__send_32",
-			// W3C SCXML 5.10: the payload computed above, once, for every arm.
-			EventData: eventDataStr,
-			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
-			// processed now, carried back out as a W3C child's send to its
-			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
-			// every machine with a host-served send.
-			InvokeID: p.pendingEventInvokeid,
-		}
-		_, hostServed := engine.PerformHostSend(hostRequest)
-		// W3C SCXML 6.2: a declared type with no handler registered is, from
-		// the document's side, a processor the platform does not support — the
-		// act it asked for was performed by nobody. Same event as an
-		// undeclared type, so a wiring mistake cannot read as success.
-		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
-			errEvt.Metadata.SendID = "__send_32"
-			engine.Raise(errEvt)
-		}
-	}
-		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
-		// <foreach> it came — the block is its own function.
-		if paramFailed {
-			return
-		}
-	}
-	}
-	}
-
-	}
-
-			}()
-		case 21:
-//line record_list.scxml:1370
-			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
-			func() {
-				if p.pendingPayloadTag != RecordListPayloadTagRecordListFloor {
-					return
-				}
-
-	if p.pendingRecordListFloorPayload.before > p.vFloor {
-
-	if p.vFrozenFor != p.pendingRecordListFloorPayload.before {
-
-	// SCE Accepted Subset §2.15: <sce:clear target="stable">
-
-	p.vStable = p.vStable[:0]
-
-
-	// W3C SCXML 4.6: <foreach array="tombstones" item="t">, a native loop over a sce-static list
-	for _, t := range append(p.vTombstones[:0:0], p.vTombstones...) {
-		_ = t
-
-	if t.wallTime <= p.pendingRecordListFloorPayload.before {
-
-	// SCE Accepted Subset §2.15: <sce:append target="stable">
-
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vStable) >= 1024 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='stable'>: the list already holds its capacity of 1024")); return true }; sceValue := scealgorithm.ElementOf(p.vStable, t); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='stable'>: an integer operation overflowed or failed")); return true }; p.vStable = append(p.vStable, sceValue); return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-	}
-
-	}
-
-
-
-	p.vFrozenFor = p.pendingRecordListFloorPayload.before
-
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_RecordSettled__vv(p.vAdds, p.vTombstones, p.pendingRecordListFloorPayload.before)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='frozenHash'>: an integer operation overflowed or failed")); return true }; p.vFrozenHash = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-	}
-
-
-	if p.vFrozenHash == p.pendingRecordListFloorPayload.hash {
-
-	if p.vClock.wallTime <= p.pendingRecordListFloorPayload.before {
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.AddInt64(&sceFailure, p.pendingRecordListFloorPayload.before, 1); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='clock.wallTime'>: an integer operation overflowed or failed")); return true }; p.vClock.wallTime = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-
-
-	p.vClock.counter = 0
-
-	}
-
-
-	// W3C SCXML 4.6: <foreach array="stable" item="t">, a native loop over a sce-static list
-	for _, t := range append(p.vStable[:0:0], p.vStable...) {
-		_ = t
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_MerkleChangeHash__i(t, 1)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='mine'>: an integer operation overflowed or failed")); return true }; p.vMine = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_MerkleInsert__v(p.vDigest, scealgorithm.DivInt64(&sceFailure, t.wallTime, 60000), p.vMine)), 2048); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='digest'>: an integer operation overflowed or failed")); return true }; p.vDigest = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-	}
-
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.Within(&sceFailure, scealgorithm.TakeOutcome(&sceFailure, sceAdapt_RecordList_OrsetLive__vv(p.vTombstones, p.vStable)), 1024); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='tombstones'>: an integer operation overflowed or failed")); return true }; p.vTombstones = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-
-
-	p.vFloor = p.pendingRecordListFloorPayload.before
-
-
-
-	p.vAgreed = p.pendingRecordListFloorPayload.hash
-
-
-
-	p.vStale = false
-
-
-
-	p.vFrozenFor = -1
-
-
-	// SCE Accepted Subset §2.15: <sce:clear target="kept">
-
-	p.vKept = p.vKept[:0]
-
-
-	// W3C SCXML 4.6: <foreach array="waiting" item="w">, a native loop over a sce-static list
-	for _, w := range append(p.vWaiting[:0:0], p.vWaiting...) {
-		_ = w
-
-	if w.atWallTime > p.pendingRecordListFloorPayload.before {
-
-	// SCE Accepted Subset §2.15: <sce:append target="kept">
-
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vKept) >= 64 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='kept'>: the list already holds its capacity of 64")); return true }; sceValue := scealgorithm.ElementOf(p.vKept, w); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='kept'>: an integer operation overflowed or failed")); return true }; p.vKept = append(p.vKept, sceValue); return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-	}
-
-	}
-
-
-	// SCE Accepted Subset §2.15: <sce:clear target="waiting">
-
-	p.vWaiting = p.vWaiting[:0]
-
-
-	// W3C SCXML 4.6: <foreach array="kept" item="k">, a native loop over a sce-static list
-	for _, k := range append(p.vKept[:0:0], p.vKept...) {
-		_ = k
-
-	// SCE Accepted Subset §2.15: <sce:append target="waiting">
-
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vWaiting) >= 64 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='waiting'>: the list already holds its capacity of 64")); return true }; sceValue := scealgorithm.ElementOf(p.vWaiting, k); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='waiting'>: an integer operation overflowed or failed")); return true }; p.vWaiting = append(p.vWaiting, sceValue); return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-	}
-
-	}
-
-
-	if p.vFrozenHash != p.pendingRecordListFloorPayload.hash {
-
-
-	p.vStale = true
-
-	}
-
-	}
-
-			}()
-		case 22:
-//line record_list.scxml:1420
-			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
-			func() {
-
-	// SCE Accepted Subset §2.15: <sce:clear target="taking">
-
-	p.vTaking = p.vTaking[:0]
-
-
-
-	p.vTook = 0
-
-
-	// W3C SCXML 4.6: <foreach array="waiting" item="w">, a native loop over a sce-static list
-	for _, w := range append(p.vWaiting[:0:0], p.vWaiting...) {
-		_ = w
-
-	// SCE Accepted Subset §2.15: <sce:append target="taking">
-
-	if func() bool { var sceFailure scealgorithm.Failure; if len(p.vTaking) >= 64 { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='taking'>: the list already holds its capacity of 64")); return true }; sceValue := scealgorithm.ElementOf(p.vTaking, w); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<sce:append target='taking'>: an integer operation overflowed or failed")); return true }; p.vTaking = append(p.vTaking, sceValue); return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-	}
-
-
-	// SCE Accepted Subset §2.15: <sce:clear target="waiting">
-
-	p.vWaiting = p.vWaiting[:0]
-
-
-	// W3C SCXML 4.6: <foreach array="taking" item="t">, a native loop over a sce-static list
-	for _, t := range append(p.vTaking[:0:0], p.vTaking...) {
-		_ = t
-
-	// W3C SCXML 6.2: send id="__send_33"
-	{
-	{
-		eventDataStr := ""
-		_ = eventDataStr
-	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
-	// and does not change the queue.
-	{
-		meta := sce.NewEventWithMetadata(RecordListEventRecordListTake)
-		meta.Metadata.Data = eventDataStr
-		engine.Raise(meta)
-	}
-	}
-	}
-	}
-
-
-	// W3C SCXML 6.2: send id="__send_34"
-	{
-	// W3C SCXML 6.2: Evaluate <param> expressions at send time
-	{
-		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
-		// and its pair left out, and the message still goes; the error ends
-		// the block once it has. Read at the end of this element.
-		paramFailed := false
-		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
-		// delivered, so this is an ordered list rather than a map. The typed
-		// value is kept rather than its text — a receiver reading
-		// `_event.data.value === 42` finds the string "42" unequal.
-		parts := make([]sce.EventDataParam, 0)
-		{
-			sceValue := int64(0)
-			parts = append(parts, sce.EventDataParam{Name: "to", Value: sceValue})
-		}
-		{
-			sceValue := int64(0)
-			parts = append(parts, sce.EventDataParam{Name: "depth", Value: sceValue})
-		}
-		{
-			sceValue := int64(0)
-			parts = append(parts, sce.EventDataParam{Name: "prefix", Value: sceValue})
-		}
-		{
-			sceValue := false
-			parts = append(parts, sce.EventDataParam{Name: "reply", Value: sceValue})
-		}
-		eventDataStr := sce.BuildJSONFromTypedParams(parts)
-		_ = eventDataStr
-	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
-	// and does not change the queue.
-	{
-		meta := sce.NewEventWithMetadata(RecordListEventRecordListVisit)
-		meta.Metadata.Data = eventDataStr
-		engine.Raise(meta)
-	}
-		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
-		// <foreach> it came — the block is its own function.
-		if paramFailed {
-			return
-		}
-	}
-	}
-			}()
-		case 23:
-//line record_list.scxml:1440
-			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
-			func() {
-				if p.pendingPayloadTag != RecordListPayloadTagRecordListVisit {
-					return
-				}
-
-
-	p.vMine = 0
-
-
-	// W3C SCXML 4.6: <foreach array="digest" item="n">, a native loop over a sce-static list
-	for _, n := range append(p.vDigest[:0:0], p.vDigest...) {
-		_ = n
-
-	if n.depth == p.pendingRecordListVisitPayload.depth && n.prefix == p.pendingRecordListVisitPayload.prefix {
-
-
-	p.vMine = n.hash
-
-	}
-
-	}
-
-
-	if !p.vHub {
-
-	// W3C SCXML 6.2: send id="__send_35"
-	{
-	// W3C SCXML 6.2: Evaluate <param> expressions at send time
-	{
-		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
-		// and its pair left out, and the message still goes; the error ends
-		// the block once it has. Read at the end of this element.
-		paramFailed := false
-		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
-		// delivered, so this is an ordered list rather than a map. The typed
-		// value is kept rather than its text — a receiver reading
-		// `_event.data.value === 42` finds the string "42" unequal.
-		parts := make([]sce.EventDataParam, 0)
-		{
-			sceValue := sce.Uint64PayloadText(uint64(p.vNode))
-			parts = append(parts, sce.EventDataParam{Name: "sender", Value: sceValue})
-		}
-		{
-			sceValue := int64(0)
-			parts = append(parts, sce.EventDataParam{Name: "to", Value: sceValue})
-		}
-		{
-			sceValue := int64(p.pendingRecordListVisitPayload.depth)
-			parts = append(parts, sce.EventDataParam{Name: "depth", Value: sceValue})
-		}
-		{
-			sceValue := sce.Uint64PayloadText(uint64(p.pendingRecordListVisitPayload.prefix))
-			parts = append(parts, sce.EventDataParam{Name: "prefix", Value: sceValue})
-		}
-		{
-			sceValue := int64(p.vMine)
-			parts = append(parts, sce.EventDataParam{Name: "hash", Value: sceValue})
-		}
-		{
-			sceValue := p.pendingRecordListVisitPayload.reply
-			parts = append(parts, sce.EventDataParam{Name: "reply", Value: sceValue})
-		}
-		eventDataStr := sce.BuildJSONFromTypedParams(parts)
-		_ = eventDataStr
-	// §scxml-6.2.5: "sce:mesh" is served by the host, which
-	// declared it to this build. Dispatch rather than refuse — and take the
-	// whole send, because a processor the host serves owns delivery; falling
-	// through would also enqueue the event locally and the document would see
-	// the act twice.
-	{
-		hostParams := sce.WireParamsFromTypedParams(parts)
-		hostRequest := sce.HostSendRequest{
-			ProcessorType: "sce:mesh",
-			EventName:     "record_list.node",
-			Target:        "#hub",
-			Content:       "",
-			Params:        hostParams,
-			SendID:        "__send_35",
-			// W3C SCXML 5.10: the payload computed above, once, for every arm.
-			EventData: eventDataStr,
-			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
-			// processed now, carried back out as a W3C child's send to its
-			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
-			// every machine with a host-served send.
-			InvokeID: p.pendingEventInvokeid,
-		}
-		_, hostServed := engine.PerformHostSend(hostRequest)
-		// W3C SCXML 6.2: a declared type with no handler registered is, from
-		// the document's side, a processor the platform does not support — the
-		// act it asked for was performed by nobody. Same event as an
-		// undeclared type, so a wiring mistake cannot read as success.
-		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
-			errEvt.Metadata.SendID = "__send_35"
-			engine.Raise(errEvt)
-		}
-	}
-		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
-		// <foreach> it came — the block is its own function.
-		if paramFailed {
-			return
-		}
-	}
-	}
-	}
-
-
-	if p.vHub {
-
-	// W3C SCXML 6.2: send id="__send_36"
-	{
-	// W3C SCXML 6.2: Evaluate <param> expressions at send time
-	{
-		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
-		// and its pair left out, and the message still goes; the error ends
-		// the block once it has. Read at the end of this element.
-		paramFailed := false
-		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
-		// delivered, so this is an ordered list rather than a map. The typed
-		// value is kept rather than its text — a receiver reading
-		// `_event.data.value === 42` finds the string "42" unequal.
-		parts := make([]sce.EventDataParam, 0)
-		{
-			sceValue := sce.Uint64PayloadText(uint64(p.vNode))
-			parts = append(parts, sce.EventDataParam{Name: "sender", Value: sceValue})
-		}
-		{
-			sceValue := sce.Uint64PayloadText(uint64(p.pendingRecordListVisitPayload.to))
-			parts = append(parts, sce.EventDataParam{Name: "to", Value: sceValue})
-		}
-		{
-			sceValue := int64(p.pendingRecordListVisitPayload.depth)
-			parts = append(parts, sce.EventDataParam{Name: "depth", Value: sceValue})
-		}
-		{
-			sceValue := sce.Uint64PayloadText(uint64(p.pendingRecordListVisitPayload.prefix))
-			parts = append(parts, sce.EventDataParam{Name: "prefix", Value: sceValue})
-		}
-		{
-			sceValue := int64(p.vMine)
-			parts = append(parts, sce.EventDataParam{Name: "hash", Value: sceValue})
-		}
-		{
-			sceValue := p.pendingRecordListVisitPayload.reply
-			parts = append(parts, sce.EventDataParam{Name: "reply", Value: sceValue})
-		}
-		eventDataStr := sce.BuildJSONFromTypedParams(parts)
-		_ = eventDataStr
-	// §scxml-6.2.5: "sce:mesh" is served by the host, which
-	// declared it to this build. Dispatch rather than refuse — and take the
-	// whole send, because a processor the host serves owns delivery; falling
-	// through would also enqueue the event locally and the document would see
-	// the act twice.
-	{
-		hostParams := sce.WireParamsFromTypedParams(parts)
-		hostRequest := sce.HostSendRequest{
-			ProcessorType: "sce:mesh",
-			EventName:     "record_list.node",
-			Target:        "#people",
-			Content:       "",
-			Params:        hostParams,
-			SendID:        "__send_36",
-			// W3C SCXML 5.10: the payload computed above, once, for every arm.
-			EventData: eventDataStr,
-			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
-			// processed now, carried back out as a W3C child's send to its
-			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
-			// every machine with a host-served send.
-			InvokeID: p.pendingEventInvokeid,
-		}
-		_, hostServed := engine.PerformHostSend(hostRequest)
-		// W3C SCXML 6.2: a declared type with no handler registered is, from
-		// the document's side, a processor the platform does not support — the
-		// act it asked for was performed by nobody. Same event as an
-		// undeclared type, so a wiring mistake cannot read as success.
-		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
-			errEvt.Metadata.SendID = "__send_36"
-			engine.Raise(errEvt)
-		}
-	}
-		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
-		// <foreach> it came — the block is its own function.
-		if paramFailed {
-			return
-		}
-	}
-	}
-	}
-
-			}()
-		case 24:
-//line record_list.scxml:1477
-			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
-			func() {
-				if p.pendingPayloadTag != RecordListPayloadTagRecordListNode {
-					return
-				}
-
-	if p.vHub || p.pendingRecordListNodePayload.to == 0 || p.pendingRecordListNodePayload.to == p.vNode {
-
-
-	p.vMine = 0
-
-
-	// W3C SCXML 4.6: <foreach array="digest" item="n">, a native loop over a sce-static list
-	for _, n := range append(p.vDigest[:0:0], p.vDigest...) {
-		_ = n
-
-	if n.depth == p.pendingRecordListNodePayload.depth && n.prefix == p.pendingRecordListNodePayload.prefix {
-
-
-	p.vMine = n.hash
-
-	}
-
-	}
-
-
-	if p.vMine != p.pendingRecordListNodePayload.hash && p.pendingRecordListNodePayload.depth < 30 {
-
-	// W3C SCXML 6.2: send id="__send_37"
-	{
-	// W3C SCXML 6.2: Evaluate <param> expressions at send time
-	{
-		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
-		// and its pair left out, and the message still goes; the error ends
-		// the block once it has. Read at the end of this element.
-		paramFailed := false
-		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
-		// delivered, so this is an ordered list rather than a map. The typed
-		// value is kept rather than its text — a receiver reading
-		// `_event.data.value === 42` finds the string "42" unequal.
-		parts := make([]sce.EventDataParam, 0)
-		{
-			sceValue := sce.Uint64PayloadText(uint64(p.pendingRecordListNodePayload.sender))
-			parts = append(parts, sce.EventDataParam{Name: "to", Value: sceValue})
-		}
-		{
-			var sceFailure scealgorithm.Failure
-			sceValue := int64(scealgorithm.AddUint8(&sceFailure, p.pendingRecordListNodePayload.depth, 1))
-			if !sceFailure.Failed() {
-				parts = append(parts, sce.EventDataParam{Name: "depth", Value: sceValue})
-			} else {
-				engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<send> <param name='depth'> failed to evaluate"))
-				paramFailed = true
-			}
-		}
-		{
-			var sceFailure scealgorithm.Failure
-			sceValue := sce.Uint64PayloadText(uint64(scealgorithm.MulUint64(&sceFailure, p.pendingRecordListNodePayload.prefix, 3)))
-			if !sceFailure.Failed() {
-				parts = append(parts, sce.EventDataParam{Name: "prefix", Value: sceValue})
-			} else {
-				engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<send> <param name='prefix'> failed to evaluate"))
-				paramFailed = true
-			}
-		}
-		{
-			sceValue := false
-			parts = append(parts, sce.EventDataParam{Name: "reply", Value: sceValue})
-		}
-		eventDataStr := sce.BuildJSONFromTypedParams(parts)
-		_ = eventDataStr
-	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
-	// and does not change the queue.
-	{
-		meta := sce.NewEventWithMetadata(RecordListEventRecordListVisit)
-		meta.Metadata.Data = eventDataStr
-		engine.Raise(meta)
-	}
-		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
-		// <foreach> it came — the block is its own function.
-		if paramFailed {
-			return
-		}
-	}
-	}
-
-	// W3C SCXML 6.2: send id="__send_38"
-	{
-	// W3C SCXML 6.2: Evaluate <param> expressions at send time
-	{
-		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
-		// and its pair left out, and the message still goes; the error ends
-		// the block once it has. Read at the end of this element.
-		paramFailed := false
-		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
-		// delivered, so this is an ordered list rather than a map. The typed
-		// value is kept rather than its text — a receiver reading
-		// `_event.data.value === 42` finds the string "42" unequal.
-		parts := make([]sce.EventDataParam, 0)
-		{
-			sceValue := sce.Uint64PayloadText(uint64(p.pendingRecordListNodePayload.sender))
-			parts = append(parts, sce.EventDataParam{Name: "to", Value: sceValue})
-		}
-		{
-			var sceFailure scealgorithm.Failure
-			sceValue := int64(scealgorithm.AddUint8(&sceFailure, p.pendingRecordListNodePayload.depth, 1))
-			if !sceFailure.Failed() {
-				parts = append(parts, sce.EventDataParam{Name: "depth", Value: sceValue})
-			} else {
-				engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<send> <param name='depth'> failed to evaluate"))
-				paramFailed = true
-			}
-		}
-		{
-			var sceFailure scealgorithm.Failure
-			sceValue := sce.Uint64PayloadText(uint64(scealgorithm.AddUint64(&sceFailure, scealgorithm.MulUint64(&sceFailure, p.pendingRecordListNodePayload.prefix, 3), 1)))
-			if !sceFailure.Failed() {
-				parts = append(parts, sce.EventDataParam{Name: "prefix", Value: sceValue})
-			} else {
-				engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<send> <param name='prefix'> failed to evaluate"))
-				paramFailed = true
-			}
-		}
-		{
-			sceValue := false
-			parts = append(parts, sce.EventDataParam{Name: "reply", Value: sceValue})
-		}
-		eventDataStr := sce.BuildJSONFromTypedParams(parts)
-		_ = eventDataStr
-	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
-	// and does not change the queue.
-	{
-		meta := sce.NewEventWithMetadata(RecordListEventRecordListVisit)
-		meta.Metadata.Data = eventDataStr
-		engine.Raise(meta)
-	}
-		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
-		// <foreach> it came — the block is its own function.
-		if paramFailed {
-			return
-		}
-	}
-	}
-
-	// W3C SCXML 6.2: send id="__send_39"
-	{
-	// W3C SCXML 6.2: Evaluate <param> expressions at send time
-	{
-		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
-		// and its pair left out, and the message still goes; the error ends
-		// the block once it has. Read at the end of this element.
-		paramFailed := false
-		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
-		// delivered, so this is an ordered list rather than a map. The typed
-		// value is kept rather than its text — a receiver reading
-		// `_event.data.value === 42` finds the string "42" unequal.
-		parts := make([]sce.EventDataParam, 0)
-		{
-			sceValue := sce.Uint64PayloadText(uint64(p.pendingRecordListNodePayload.sender))
-			parts = append(parts, sce.EventDataParam{Name: "to", Value: sceValue})
-		}
-		{
-			var sceFailure scealgorithm.Failure
-			sceValue := int64(scealgorithm.AddUint8(&sceFailure, p.pendingRecordListNodePayload.depth, 1))
-			if !sceFailure.Failed() {
-				parts = append(parts, sce.EventDataParam{Name: "depth", Value: sceValue})
-			} else {
-				engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<send> <param name='depth'> failed to evaluate"))
-				paramFailed = true
-			}
-		}
-		{
-			var sceFailure scealgorithm.Failure
-			sceValue := sce.Uint64PayloadText(uint64(scealgorithm.AddUint64(&sceFailure, scealgorithm.MulUint64(&sceFailure, p.pendingRecordListNodePayload.prefix, 3), 2)))
-			if !sceFailure.Failed() {
-				parts = append(parts, sce.EventDataParam{Name: "prefix", Value: sceValue})
-			} else {
-				engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<send> <param name='prefix'> failed to evaluate"))
-				paramFailed = true
-			}
-		}
-		{
-			sceValue := false
-			parts = append(parts, sce.EventDataParam{Name: "reply", Value: sceValue})
-		}
-		eventDataStr := sce.BuildJSONFromTypedParams(parts)
-		_ = eventDataStr
-	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
-	// and does not change the queue.
-	{
-		meta := sce.NewEventWithMetadata(RecordListEventRecordListVisit)
-		meta.Metadata.Data = eventDataStr
-		engine.Raise(meta)
-	}
-		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
-		// <foreach> it came — the block is its own function.
-		if paramFailed {
-			return
-		}
-	}
-	}
-	}
-
-
-	if p.vMine != p.pendingRecordListNodePayload.hash && p.pendingRecordListNodePayload.depth == 30 {
-
-	// W3C SCXML 6.2: send id="__send_40"
-	{
-	// W3C SCXML 6.2: Evaluate <param> expressions at send time
-	{
-		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
-		// and its pair left out, and the message still goes; the error ends
-		// the block once it has. Read at the end of this element.
-		paramFailed := false
-		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
-		// delivered, so this is an ordered list rather than a map. The typed
-		// value is kept rather than its text — a receiver reading
-		// `_event.data.value === 42` finds the string "42" unequal.
-		parts := make([]sce.EventDataParam, 0)
-		{
-			sceValue := sce.Uint64PayloadText(uint64(p.pendingRecordListNodePayload.sender))
-			parts = append(parts, sce.EventDataParam{Name: "to", Value: sceValue})
-		}
-		{
-			sceValue := sce.Uint64PayloadText(uint64(p.pendingRecordListNodePayload.prefix))
-			parts = append(parts, sce.EventDataParam{Name: "minute", Value: sceValue})
-		}
-		eventDataStr := sce.BuildJSONFromTypedParams(parts)
-		_ = eventDataStr
-	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
-	// and does not change the queue.
-	{
-		meta := sce.NewEventWithMetadata(RecordListEventRecordListShare)
-		meta.Metadata.Data = eventDataStr
-		engine.Raise(meta)
-	}
-		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
-		// <foreach> it came — the block is its own function.
-		if paramFailed {
-			return
-		}
-	}
-	}
-	}
-
-
-	if p.vMine != p.pendingRecordListNodePayload.hash && p.pendingRecordListNodePayload.depth == 30 && !p.pendingRecordListNodePayload.reply {
-
-	// W3C SCXML 6.2: send id="__send_41"
-	{
-	// W3C SCXML 6.2: Evaluate <param> expressions at send time
-	{
-		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
-		// and its pair left out, and the message still goes; the error ends
-		// the block once it has. Read at the end of this element.
-		paramFailed := false
-		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
-		// delivered, so this is an ordered list rather than a map. The typed
-		// value is kept rather than its text — a receiver reading
-		// `_event.data.value === 42` finds the string "42" unequal.
-		parts := make([]sce.EventDataParam, 0)
-		{
-			sceValue := sce.Uint64PayloadText(uint64(p.pendingRecordListNodePayload.sender))
-			parts = append(parts, sce.EventDataParam{Name: "to", Value: sceValue})
-		}
-		{
-			sceValue := int64(30)
-			parts = append(parts, sce.EventDataParam{Name: "depth", Value: sceValue})
-		}
-		{
-			sceValue := sce.Uint64PayloadText(uint64(p.pendingRecordListNodePayload.prefix))
-			parts = append(parts, sce.EventDataParam{Name: "prefix", Value: sceValue})
-		}
-		{
-			sceValue := true
-			parts = append(parts, sce.EventDataParam{Name: "reply", Value: sceValue})
-		}
-		eventDataStr := sce.BuildJSONFromTypedParams(parts)
-		_ = eventDataStr
-	// W3C SCXML 6.2: Internal send (target="#_internal"). A delay postpones it
-	// and does not change the queue.
-	{
-		meta := sce.NewEventWithMetadata(RecordListEventRecordListVisit)
-		meta.Metadata.Data = eventDataStr
-		engine.Raise(meta)
-	}
-		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
-		// <foreach> it came — the block is its own function.
-		if paramFailed {
-			return
-		}
-	}
-	}
-	}
-
-	}
-
-			}()
-		case 25:
-//line record_list.scxml:1526
-			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
-			func() {
-				if p.pendingPayloadTag != RecordListPayloadTagRecordListShare {
-					return
-				}
-
-	// W3C SCXML 4.6: <foreach array="values" item="v">, a native loop over a sce-static list
-	for _, v := range append(p.vValues[:0:0], p.vValues...) {
-		_ = v
-
-	{
-	var ifCondFailed105 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivInt64(&sceFailure, v.wallTime, 60000) == int64(p.pendingRecordListSharePayload.minute); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<if cond='v.wallTime / 60000 === _event.data.minute'>: an integer operation overflowed or failed")); ifCondFailed105 = true; return false }; return sceValue }() {
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowUint32FromUint(&sceFailure, uint64(v.id)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='shareId'>: an integer operation overflowed or failed")); return true }; p.vShareId = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowUint16FromUint(&sceFailure, uint64(v.field)); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='shareField'>: an integer operation overflowed or failed")); return true }; p.vShareField = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-
-	if !p.vHub {
-
-	// W3C SCXML 6.2: send id="__send_42"
-	{
-	// W3C SCXML 6.2: Evaluate <param> expressions at send time
-	{
-		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
-		// and its pair left out, and the message still goes; the error ends
-		// the block once it has. Read at the end of this element.
-		paramFailed := false
-		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
-		// delivered, so this is an ordered list rather than a map. The typed
-		// value is kept rather than its text — a receiver reading
-		// `_event.data.value === 42` finds the string "42" unequal.
-		parts := make([]sce.EventDataParam, 0)
-		{
-			sceValue := int64(p.vShareId)
-			parts = append(parts, sce.EventDataParam{Name: "id", Value: sceValue})
-		}
-		{
-			sceValue := int64(p.vShareField)
-			parts = append(parts, sce.EventDataParam{Name: "field", Value: sceValue})
-		}
-		{
-			sceValue := sce.Int64PayloadText(int64(v.value))
-			parts = append(parts, sce.EventDataParam{Name: "value", Value: sceValue})
-		}
-		{
-			sceValue := v.text
-			parts = append(parts, sce.EventDataParam{Name: "text", Value: sceValue})
-		}
-		{
-			sceValue := sce.Int64PayloadText(int64(v.wallTime))
-			parts = append(parts, sce.EventDataParam{Name: "wallTime", Value: sceValue})
-		}
-		{
-			sceValue := int64(v.counter)
-			parts = append(parts, sce.EventDataParam{Name: "counter", Value: sceValue})
-		}
-		{
-			sceValue := sce.Uint64PayloadText(uint64(v.nodeId))
-			parts = append(parts, sce.EventDataParam{Name: "nodeId", Value: sceValue})
-		}
-		eventDataStr := sce.BuildJSONFromTypedParams(parts)
-		_ = eventDataStr
-	// §scxml-6.2.5: "sce:mesh" is served by the host, which
-	// declared it to this build. Dispatch rather than refuse — and take the
-	// whole send, because a processor the host serves owns delivery; falling
-	// through would also enqueue the event locally and the document would see
-	// the act twice.
-	{
-		hostParams := sce.WireParamsFromTypedParams(parts)
-		hostRequest := sce.HostSendRequest{
-			ProcessorType: "sce:mesh",
-			EventName:     "record_list.write",
-			Target:        "#hub",
-			Content:       "",
-			Params:        hostParams,
-			SendID:        "__send_42",
-			// W3C SCXML 5.10: the payload computed above, once, for every arm.
-			EventData: eventDataStr,
-			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
-			// processed now, carried back out as a W3C child's send to its
-			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
-			// every machine with a host-served send.
-			InvokeID: p.pendingEventInvokeid,
-		}
-		_, hostServed := engine.PerformHostSend(hostRequest)
-		// W3C SCXML 6.2: a declared type with no handler registered is, from
-		// the document's side, a processor the platform does not support — the
-		// act it asked for was performed by nobody. Same event as an
-		// undeclared type, so a wiring mistake cannot read as success.
-		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
-			errEvt.Metadata.SendID = "__send_42"
-			engine.Raise(errEvt)
-		}
-	}
-		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
-		// <foreach> it came — the block is its own function.
-		if paramFailed {
-			return
-		}
-	}
-	}
-	}
-
-
-	if p.vHub {
-
-	// W3C SCXML 6.2: send id="__send_43"
-	{
-	// W3C SCXML 6.2: Evaluate <param> expressions at send time
-	{
-		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
-		// and its pair left out, and the message still goes; the error ends
-		// the block once it has. Read at the end of this element.
-		paramFailed := false
-		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
-		// delivered, so this is an ordered list rather than a map. The typed
-		// value is kept rather than its text — a receiver reading
-		// `_event.data.value === 42` finds the string "42" unequal.
-		parts := make([]sce.EventDataParam, 0)
-		{
-			sceValue := int64(p.vShareId)
-			parts = append(parts, sce.EventDataParam{Name: "id", Value: sceValue})
-		}
-		{
-			sceValue := int64(p.vShareField)
-			parts = append(parts, sce.EventDataParam{Name: "field", Value: sceValue})
-		}
-		{
-			sceValue := sce.Int64PayloadText(int64(v.value))
-			parts = append(parts, sce.EventDataParam{Name: "value", Value: sceValue})
-		}
-		{
-			sceValue := v.text
-			parts = append(parts, sce.EventDataParam{Name: "text", Value: sceValue})
-		}
-		{
-			sceValue := sce.Int64PayloadText(int64(v.wallTime))
-			parts = append(parts, sce.EventDataParam{Name: "wallTime", Value: sceValue})
-		}
-		{
-			sceValue := int64(v.counter)
-			parts = append(parts, sce.EventDataParam{Name: "counter", Value: sceValue})
-		}
-		{
-			sceValue := sce.Uint64PayloadText(uint64(v.nodeId))
-			parts = append(parts, sce.EventDataParam{Name: "nodeId", Value: sceValue})
-		}
-		eventDataStr := sce.BuildJSONFromTypedParams(parts)
-		_ = eventDataStr
-	// §scxml-6.2.5: "sce:mesh" is served by the host, which
-	// declared it to this build. Dispatch rather than refuse — and take the
-	// whole send, because a processor the host serves owns delivery; falling
-	// through would also enqueue the event locally and the document would see
-	// the act twice.
-	{
-		hostParams := sce.WireParamsFromTypedParams(parts)
-		hostRequest := sce.HostSendRequest{
-			ProcessorType: "sce:mesh",
-			EventName:     "record_list.write",
-			Target:        "#people",
-			Content:       "",
-			Params:        hostParams,
-			SendID:        "__send_43",
-			// W3C SCXML 5.10: the payload computed above, once, for every arm.
-			EventData: eventDataStr,
-			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
-			// processed now, carried back out as a W3C child's send to its
-			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
-			// every machine with a host-served send.
-			InvokeID: p.pendingEventInvokeid,
-		}
-		_, hostServed := engine.PerformHostSend(hostRequest)
-		// W3C SCXML 6.2: a declared type with no handler registered is, from
-		// the document's side, a processor the platform does not support — the
-		// act it asked for was performed by nobody. Same event as an
-		// undeclared type, so a wiring mistake cannot read as success.
-		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
-			errEvt.Metadata.SendID = "__send_43"
-			engine.Raise(errEvt)
-		}
-	}
-		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
-		// <foreach> it came — the block is its own function.
-		if paramFailed {
-			return
-		}
-	}
-	}
-	}
-
-	}
-	if ifCondFailed105 {
-		return // W3C SCXML 4.9: the error ends the block
-	}
-	}
-
-	}
-
-
-	// W3C SCXML 4.6: <foreach array="tombstones" item="t">, a native loop over a sce-static list
-	for _, t := range append(p.vTombstones[:0:0], p.vTombstones...) {
-		_ = t
-
-	{
-	var ifCondFailed108 bool
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.DivInt64(&sceFailure, t.wallTime, 60000) == int64(p.pendingRecordListSharePayload.minute); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<if cond='t.wallTime / 60000 === _event.data.minute'>: an integer operation overflowed or failed")); ifCondFailed108 = true; return false }; return sceValue }() {
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowUint32FromUint(&sceFailure, uint64(scealgorithm.DivUint64(&sceFailure, t.element, 65536))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='shareId'>: an integer operation overflowed or failed")); return true }; p.vShareId = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-
-
-	if func() bool { var sceFailure scealgorithm.Failure; sceValue := scealgorithm.NarrowUint16FromUint(&sceFailure, uint64(scealgorithm.RemUint64(&sceFailure, t.element, 65536))); if sceFailure.Failed() { engine.Raise(sce.NewPlatformError(RecordListEventErrorExecution, "<assign location='shareField'>: an integer operation overflowed or failed")); return true }; p.vShareField = sceValue; return false }() {
-		return  // W3C SCXML 4.9: the error ends the block
-	}
-
-
-	if !p.vHub {
-
-	// W3C SCXML 6.2: send id="__send_44"
-	{
-	// W3C SCXML 6.2: Evaluate <param> expressions at send time
-	{
-		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
-		// and its pair left out, and the message still goes; the error ends
-		// the block once it has. Read at the end of this element.
-		paramFailed := false
-		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
-		// delivered, so this is an ordered list rather than a map. The typed
-		// value is kept rather than its text — a receiver reading
-		// `_event.data.value === 42` finds the string "42" unequal.
-		parts := make([]sce.EventDataParam, 0)
-		{
-			sceValue := int64(p.vShareId)
-			parts = append(parts, sce.EventDataParam{Name: "id", Value: sceValue})
-		}
-		{
-			sceValue := int64(p.vShareField)
-			parts = append(parts, sce.EventDataParam{Name: "field", Value: sceValue})
-		}
-		{
-			sceValue := sce.Int64PayloadText(int64(t.wallTime))
-			parts = append(parts, sce.EventDataParam{Name: "wallTime", Value: sceValue})
-		}
-		{
-			sceValue := int64(t.counter)
-			parts = append(parts, sce.EventDataParam{Name: "counter", Value: sceValue})
-		}
-		{
-			sceValue := sce.Uint64PayloadText(uint64(t.nodeId))
-			parts = append(parts, sce.EventDataParam{Name: "nodeId", Value: sceValue})
-		}
-		{
-			sceValue := sce.Uint64PayloadText(uint64(p.vNode))
-			parts = append(parts, sce.EventDataParam{Name: "by", Value: sceValue})
-		}
-		eventDataStr := sce.BuildJSONFromTypedParams(parts)
-		_ = eventDataStr
-	// §scxml-6.2.5: "sce:mesh" is served by the host, which
-	// declared it to this build. Dispatch rather than refuse — and take the
-	// whole send, because a processor the host serves owns delivery; falling
-	// through would also enqueue the event locally and the document would see
-	// the act twice.
-	{
-		hostParams := sce.WireParamsFromTypedParams(parts)
-		hostRequest := sce.HostSendRequest{
-			ProcessorType: "sce:mesh",
-			EventName:     "record_list.supersede",
-			Target:        "#hub",
-			Content:       "",
-			Params:        hostParams,
-			SendID:        "__send_44",
-			// W3C SCXML 5.10: the payload computed above, once, for every arm.
-			EventData: eventDataStr,
-			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
-			// processed now, carried back out as a W3C child's send to its
-			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
-			// every machine with a host-served send.
-			InvokeID: p.pendingEventInvokeid,
-		}
-		_, hostServed := engine.PerformHostSend(hostRequest)
-		// W3C SCXML 6.2: a declared type with no handler registered is, from
-		// the document's side, a processor the platform does not support — the
-		// act it asked for was performed by nobody. Same event as an
-		// undeclared type, so a wiring mistake cannot read as success.
-		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
-			errEvt.Metadata.SendID = "__send_44"
-			engine.Raise(errEvt)
-		}
-	}
-		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
-		// <foreach> it came — the block is its own function.
-		if paramFailed {
-			return
-		}
-	}
-	}
-	}
-
-
-	if p.vHub {
-
-	// W3C SCXML 6.2: send id="__send_45"
-	{
-	// W3C SCXML 6.2: Evaluate <param> expressions at send time
-	{
-		// W3C SCXML 5.7.1 + 4.9: a <param> that cannot be read is reported
-		// and its pair left out, and the message still goes; the error ends
-		// the block once it has. Read at the end of this element.
-		paramFailed := false
-		// W3C SCXML 6.2 / test178: a name may repeat and every value must be
-		// delivered, so this is an ordered list rather than a map. The typed
-		// value is kept rather than its text — a receiver reading
-		// `_event.data.value === 42` finds the string "42" unequal.
-		parts := make([]sce.EventDataParam, 0)
-		{
-			sceValue := int64(p.vShareId)
-			parts = append(parts, sce.EventDataParam{Name: "id", Value: sceValue})
-		}
-		{
-			sceValue := int64(p.vShareField)
-			parts = append(parts, sce.EventDataParam{Name: "field", Value: sceValue})
-		}
-		{
-			sceValue := sce.Int64PayloadText(int64(t.wallTime))
-			parts = append(parts, sce.EventDataParam{Name: "wallTime", Value: sceValue})
-		}
-		{
-			sceValue := int64(t.counter)
-			parts = append(parts, sce.EventDataParam{Name: "counter", Value: sceValue})
-		}
-		{
-			sceValue := sce.Uint64PayloadText(uint64(t.nodeId))
-			parts = append(parts, sce.EventDataParam{Name: "nodeId", Value: sceValue})
-		}
-		{
-			sceValue := sce.Uint64PayloadText(uint64(p.vNode))
-			parts = append(parts, sce.EventDataParam{Name: "by", Value: sceValue})
-		}
-		eventDataStr := sce.BuildJSONFromTypedParams(parts)
-		_ = eventDataStr
-	// §scxml-6.2.5: "sce:mesh" is served by the host, which
-	// declared it to this build. Dispatch rather than refuse — and take the
-	// whole send, because a processor the host serves owns delivery; falling
-	// through would also enqueue the event locally and the document would see
-	// the act twice.
-	{
-		hostParams := sce.WireParamsFromTypedParams(parts)
-		hostRequest := sce.HostSendRequest{
-			ProcessorType: "sce:mesh",
-			EventName:     "record_list.supersede",
-			Target:        "#people",
-			Content:       "",
-			Params:        hostParams,
-			SendID:        "__send_45",
-			// W3C SCXML 5.10: the payload computed above, once, for every arm.
-			EventData: eventDataStr,
-			// SCE_MESH.md §mesh-10.7: the invokeid of the event being
-			// processed now, carried back out as a W3C child's send to its
-			// parent carries it (§scxml-6.4.1). Analysis keeps the field on
-			// every machine with a host-served send.
-			InvokeID: p.pendingEventInvokeid,
-		}
-		_, hostServed := engine.PerformHostSend(hostRequest)
-		// W3C SCXML 6.2: a declared type with no handler registered is, from
-		// the document's side, a processor the platform does not support — the
-		// act it asked for was performed by nobody. Same event as an
-		// undeclared type, so a wiring mistake cannot read as success.
-		if !hostServed && !engine.HasEventProcessor("sce:mesh") {
-			errEvt := sce.NewPlatformError(RecordListEventErrorExecution, "<send type='sce:mesh'> names a processor the host declared but never registered")
-			errEvt.Metadata.SendID = "__send_45"
-			engine.Raise(errEvt)
-		}
-	}
-		// W3C SCXML 4.9: the <param> error ends the block, from however deep a
-		// <foreach> it came — the block is its own function.
-		if paramFailed {
-			return
-		}
-	}
-	}
-	}
-
-	}
-	if ifCondFailed108 {
-		return // W3C SCXML 4.9: the error ends the block
-	}
-	}
-
-	}
-
-			}()
-		case 26:
-//line record_list.scxml:1590
+		case 12:
+//line record_list.scxml:767
 			// W3C SCXML 4.9: a transition's content is one block; an error ends it.
 			func() {
 
@@ -9824,7 +5095,7 @@ func (p *RecordListPolicy) ExecuteTransitionContent(source RecordListState, tran
 
 	if !p.vHolding {
 
-	// W3C SCXML 6.2: send id="__send_46"
+	// W3C SCXML 6.2: send id="__send_14"
 	{
 	{
 		eventDataStr := ""

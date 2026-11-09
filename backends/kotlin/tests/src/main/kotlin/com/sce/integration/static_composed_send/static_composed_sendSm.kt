@@ -1,10 +1,10 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 39c188440acd2a30e1c96c90e825a582fc7011a2c558c89e70ea674bb5bda40e
+// source-hash: d05ce240c5f3b48b3c83b6bee1ba58feef40d57c310e9a29ef5279604bbaaa42
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/static_datamodel/static_composed_send.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: static_composed_send.scxml:29 :: _machine
+// SCE-MAP: static_composed_send.scxml:41 :: _machine
 
 package com.sce.integration.static_composed_send
 
@@ -22,6 +22,9 @@ sealed interface StaticComposedSendState : State {
 sealed interface StaticComposedSendEvent : Event {
     sealed interface Batch : StaticComposedSendEvent {
         data object Sent : Batch
+    }
+    sealed interface Counted : StaticComposedSendEvent {
+        data object Sent : Counted
     }
     sealed interface Error : StaticComposedSendEvent {
         data object Execution : Error
@@ -46,6 +49,15 @@ data class StaticComposedSendBatchSentPayload(val items: List<StaticComposedSend
         com.sce.runtime.ValueBounds.optional("spare", spare) { scePath0, sceValue0 -> com.sce.runtime.ValueBounds.list(scePath0, sceValue0, 2) { _, _ -> } }
         com.sce.runtime.ValueBounds.text("note", note, 4)
         com.sce.runtime.ValueBounds.list("late", late, 2) { _, _ -> }
+    }
+}
+
+// StaticComposedSendCountedSentPayload is the NL→IR Item C1 Path A typed `_event.data`
+// payload for `counted.sent`. Consumers inject it via the `raiseCountedSent` seam
+// on the machine — they never name this class directly.
+data class StaticComposedSendCountedSentPayload(val kept: List<UByte>, val hops: UByte) {
+    init {
+        com.sce.runtime.ValueBounds.listWithin("kept", kept, 1, 2) { _, _ -> }
     }
 }
 
@@ -155,6 +167,23 @@ class StaticComposedSendStateMachine(
 
     /** What the published `refusals` holds. */
     val refusals: UInt get() = vRefusals
+    /** W3C SCXML 5.2: the `held` datamodel variable, the machine's own. */
+    private var vHeld: List<UByte> = emptyList()
+    /** W3C SCXML 5.2: the `counted_deliveries` datamodel variable, published (`sce:direction="out"`). */
+    private var vCountedDeliveries: UInt = 0.toUInt()
+
+    /** What the published `counted_deliveries` holds. */
+    val countedDeliveries: UInt get() = vCountedDeliveries
+    /** W3C SCXML 5.2: the `counted_sum` datamodel variable, published (`sce:direction="out"`). */
+    private var vCountedSum: UInt = 0.toUInt()
+
+    /** What the published `counted_sum` holds. */
+    val countedSum: UInt get() = vCountedSum
+    /** W3C SCXML 5.2: the `counted_hops` datamodel variable, published (`sce:direction="out"`). */
+    private var vCountedHops: UByte = 0.toUByte()
+
+    /** What the published `counted_hops` holds. */
+    val countedHops: UByte get() = vCountedHops
 
     /**
      * §scxml-6.4.1: the values a parent's `<param>` and `namelist` give this
@@ -171,6 +200,9 @@ class StaticComposedSendStateMachine(
         var firstMaybe: UShort? = null
         var lateSum: UInt? = null
         var refusals: UInt? = null
+        var countedDeliveries: UInt? = null
+        var countedSum: UInt? = null
+        var countedHops: UByte? = null
     }
 
     /** Give this machine the values [params] carries, in place of the ones its `<data>` gave. Called before [initialize]. */
@@ -188,6 +220,9 @@ class StaticComposedSendStateMachine(
         params.firstMaybe?.let { vFirstMaybe = it }
         params.lateSum?.let { vLateSum = it }
         params.refusals?.let { vRefusals = it }
+        params.countedDeliveries?.let { vCountedDeliveries = it }
+        params.countedSum?.let { vCountedSum = it }
+        params.countedHops?.let { vCountedHops = it }
     }
 
     /** The published variables as one immutable value, in declaration order. */
@@ -202,6 +237,9 @@ class StaticComposedSendStateMachine(
         val lateSum: UInt,
         val late: List<UByte>,
         val refusals: UInt,
+        val countedDeliveries: UInt,
+        val countedSum: UInt,
+        val countedHops: UByte,
     )
 
     /**
@@ -228,6 +266,9 @@ class StaticComposedSendStateMachine(
         lateSum = vLateSum,
         late = vLate,
         refusals = vRefusals,
+        countedDeliveries = vCountedDeliveries,
+        countedSum = vCountedSum,
+        countedHops = vCountedHops,
     )
 
     private val _snapshot = kotlinx.coroutines.flow.MutableStateFlow(
@@ -257,10 +298,10 @@ class StaticComposedSendStateMachine(
      * later revision added at its default.
      */
     val savedShape: SavedShape = SavedShape(
-        first = "f70a18d28ff04fb593898feceefb707a60de12cb52ea065383856cb153e5f555",
-        revised = "6b116cdf67e27f00da8519217f6d5f8eaa08a218c75642a2c9eb51734b379288",
-        format2First = "f70a18d28ff04fb593898feceefb707a60de12cb52ea065383856cb153e5f555",
-        format2Revised = "6b116cdf67e27f00da8519217f6d5f8eaa08a218c75642a2c9eb51734b379288",
+        first = "1e90a6306dff5c26ad4140c585404fe0fb4ed6167709cdddf054d940e56091b1",
+        revised = "c45313f157703b7337989e2ff1d45441c09d2892a1a4a8a65e2046918f346378",
+        format2First = "1e90a6306dff5c26ad4140c585404fe0fb4ed6167709cdddf054d940e56091b1",
+        format2Revised = "c45313f157703b7337989e2ff1d45441c09d2892a1a4a8a65e2046918f346378",
         records = listOf(
         ),
         enums = listOf(
@@ -295,6 +336,10 @@ class StaticComposedSendStateMachine(
         variables += "late_sum" to SavedValues.of(vLateSum)
         variables += "late" to SavedValues.list(vLate) { SavedValues.of(it) }
         variables += "refusals" to SavedValues.of(vRefusals)
+        variables += "held" to SavedValues.list(vHeld) { SavedValues.of(it) }
+        variables += "counted_deliveries" to SavedValues.of(vCountedDeliveries)
+        variables += "counted_sum" to SavedValues.of(vCountedSum)
+        variables += "counted_hops" to SavedValues.of(vCountedHops)
     }
 
     /** [save] at the host's wall clock now. */
@@ -339,6 +384,10 @@ class StaticComposedSendStateMachine(
         val saved8 = SavedValues.uint32(savedGrown.variable("late_sum"), "late_sum")
         val saved9 = SavedValues.list(savedGrown.variable("late"), "late", 2) { e, w -> SavedValues.uint8(e, w) }
         val saved10 = SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
+        val saved11 = SavedValues.list(savedGrown.variable("held"), "held", 2) { e, w -> SavedValues.uint8(e, w) }
+        val saved12 = SavedValues.uint32(savedGrown.variable("counted_deliveries"), "counted_deliveries")
+        val saved13 = SavedValues.uint32(savedGrown.variable("counted_sum"), "counted_sum")
+        val saved14 = SavedValues.uint8(savedGrown.variable("counted_hops"), "counted_hops")
         return {
             vDeliveries = saved1
             vItemCount = saved2
@@ -350,6 +399,10 @@ class StaticComposedSendStateMachine(
             vLateSum = saved8
             vLate = saved9
             vRefusals = saved10
+            vHeld = saved11
+            vCountedDeliveries = saved12
+            vCountedSum = saved13
+            vCountedHops = saved14
         }
     }
 
@@ -377,6 +430,10 @@ class StaticComposedSendStateMachine(
         SavedValues.uint32(savedGrown.variable("late_sum"), "late_sum")
         SavedValues.list(savedGrown.variable("late"), "late", 2) { e, w -> SavedValues.uint8(e, w) }
         SavedValues.uint32(savedGrown.variable("refusals"), "refusals")
+        SavedValues.list(savedGrown.variable("held"), "held", 2) { e, w -> SavedValues.uint8(e, w) }
+        SavedValues.uint32(savedGrown.variable("counted_deliveries"), "counted_deliveries")
+        SavedValues.uint32(savedGrown.variable("counted_sum"), "counted_sum")
+        SavedValues.uint8(savedGrown.variable("counted_hops"), "counted_hops")
     }
 
     override fun restoreAsSession(saved: SavedState, wallNowMs: Long) = restore(saved, wallNowMs)
@@ -385,6 +442,7 @@ class StaticComposedSendStateMachine(
     // lifted from the dequeued event by populateTypedPayload and read by the
     // native transition guards. `null` between events / for untyped events.
     private var pendingBatchSentPayload: StaticComposedSendBatchSentPayload? = null
+    private var pendingCountedSentPayload: StaticComposedSendCountedSentPayload? = null
 
     // NL→IR Item C1 Path A: bind the dequeued event's typed `_event.data` view
     // — from the type-erased carrier the inject seam fills, and otherwise by
@@ -397,14 +455,19 @@ class StaticComposedSendStateMachine(
     // loop's `sm->pending_payload = evt.payload`.
     override fun populateTypedPayload(event: StaticComposedSendEvent, metadata: EventMetadata) {
         pendingBatchSentPayload = null
+        pendingCountedSentPayload = null
         when (val tp = metadata.typedPayload) {
             is StaticComposedSendBatchSentPayload -> pendingBatchSentPayload = tp
+            is StaticComposedSendCountedSentPayload -> pendingCountedSentPayload = tp
             else -> {
                 // No typed carrier, so the producer was not the inject seam: read the
                 // fields out of `data`, which every other producer fills.
                 if (event == StaticComposedSendEvent.Batch.Sent) {
                     val fields = EventPayload.decode(metadata.data, "{\"late\":[]}")
                     pendingBatchSentPayload = StaticComposedSendBatchSentPayload(fields.field("items").let { it.list(3) { it.record(null) { StaticComposedSendItemRecord(id = it.field("id").let { it.uint32() }, amount = it.field("amount").let { it.int64() }, label = it.field("label").let { it.string(8) }, level = it.field("level").let { when (val sceName = it.name()) { "low" -> StaticComposedSendSignalLevelEnum.LOW; "high" -> StaticComposedSendSignalLevelEnum.HIGH; "critical" -> StaticComposedSendSignalLevelEnum.CRITICAL; else -> throw it.unknownVariant(sceName, "SignalLevel") } }, due = it.field("due").let { it.optional { it.int64() } }, blob = it.field("blob").let { it.bytes(4) }, tags = it.field("tags").let { it.list(4) { it.string(8) } }) } } }, fields.field("grid").let { it.list(2) { it.list(2) { it.uint8() } } }, fields.field("levels").let { it.list(2) { when (val sceName = it.name()) { "low" -> StaticComposedSendSignalLevelEnum.LOW; "high" -> StaticComposedSendSignalLevelEnum.HIGH; "critical" -> StaticComposedSendSignalLevelEnum.CRITICAL; else -> throw it.unknownVariant(sceName, "SignalLevel") } } }, fields.field("maybe").let { it.list(2) { it.optional { it.uint16() } } }, fields.field("spare").let { it.optional { it.list(2) { it.uint8() } } }, fields.field("note").let { it.string(4) }, fields.field("late").let { it.list(2) { it.uint8() } })
+                } else if (event == StaticComposedSendEvent.Counted.Sent) {
+                    val fields = EventPayload.decode(metadata.data)
+                    pendingCountedSentPayload = StaticComposedSendCountedSentPayload(fields.field("kept").let { it.listWithin(1, 2) { it.uint8() } }, fields.field("hops").let { it.uint8() })
                 }
             }
         }
@@ -425,6 +488,23 @@ class StaticComposedSendStateMachine(
                 // Filling only the first left an `<assign expr="_event.data.x">` on
                 // this event reading nothing, on every backend alike.
                 data = com.sce.runtime.EventPayload.recordJson(mapOf<String, Any?>("items" to com.sce.runtime.EventPayload.listJson(scePayload.items) { com.sce.runtime.EventPayload.recordJson(mapOf<String, Any?>("id" to com.sce.runtime.EventPayload.valueJson(it.id), "amount" to com.sce.runtime.EventPayload.valueJson(it.amount), "label" to com.sce.runtime.EventPayload.valueJson(it.label), "level" to com.sce.runtime.EventPayload.valueJson(it.level.declaredName), "due" to ((it.due)?.let { com.sce.runtime.EventPayload.valueJson(it) } ?: com.sce.runtime.EventPayload.valueJson(null)), "blob" to com.sce.runtime.EventPayload.valueJson(it.blob), "tags" to com.sce.runtime.EventPayload.listJson(it.tags) { com.sce.runtime.EventPayload.valueJson(it) })) }, "grid" to com.sce.runtime.EventPayload.listJson(scePayload.grid) { com.sce.runtime.EventPayload.listJson(it) { com.sce.runtime.EventPayload.valueJson(it) } }, "levels" to com.sce.runtime.EventPayload.listJson(scePayload.levels) { com.sce.runtime.EventPayload.valueJson(it.declaredName) }, "maybe" to com.sce.runtime.EventPayload.listJson(scePayload.maybe) { ((it)?.let { com.sce.runtime.EventPayload.valueJson(it) } ?: com.sce.runtime.EventPayload.valueJson(null)) }, "spare" to ((scePayload.spare)?.let { com.sce.runtime.EventPayload.listJson(it) { com.sce.runtime.EventPayload.valueJson(it) } } ?: com.sce.runtime.EventPayload.valueJson(null)), "note" to com.sce.runtime.EventPayload.valueJson(scePayload.note), "late" to com.sce.runtime.EventPayload.listJson(scePayload.late) { com.sce.runtime.EventPayload.valueJson(it) })).json
+            )
+        )
+    }
+    // NL→IR Item C1 Path A typed `_event.data` inject seam for
+    // `counted.sent` — binds the event name and the payload field values in one call.
+    fun raiseCountedSent(kept: List<UByte>, hops: UByte) {
+        val scePayload = StaticComposedSendCountedSentPayload(kept, hops)
+        send(
+            StaticComposedSendEvent.Counted.Sent,
+            EventMetadata(
+                type = "external",
+                typedPayload = scePayload,
+                // Both carriers are filled: the typed one a native guard reads, and
+                // `data`, which is what the script engine binds `_event.data` from.
+                // Filling only the first left an `<assign expr="_event.data.x">` on
+                // this event reading nothing, on every backend alike.
+                data = com.sce.runtime.EventPayload.recordJson(mapOf<String, Any?>("kept" to com.sce.runtime.EventPayload.listJson(scePayload.kept) { com.sce.runtime.EventPayload.valueJson(it) }, "hops" to com.sce.runtime.EventPayload.valueJson(scePayload.hops))).json
             )
         )
     }
@@ -485,6 +565,24 @@ class StaticComposedSendStateMachine(
             hasActions = true,
             isInternal = true,
         )
+
+        // W3C SCXML 3.13: idle's transition 3, as the microstep reads it.
+        val transitionIdleAt3 = EnabledTransition<StaticComposedSendState, HistoryId>(
+            StaticComposedSendState.Idle,
+            emptyList(),
+            3,
+            hasActions = true,
+            isInternal = true,
+        )
+
+        // W3C SCXML 3.13: idle's transition 4, as the microstep reads it.
+        val transitionIdleAt4 = EnabledTransition<StaticComposedSendState, HistoryId>(
+            StaticComposedSendState.Idle,
+            emptyList(),
+            4,
+            hasActions = true,
+            isInternal = true,
+        )
     }
 
 
@@ -510,6 +608,7 @@ class StaticComposedSendStateMachine(
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): StaticComposedSendEvent? = when (name) {
         "batch.sent" -> StaticComposedSendEvent.Batch.Sent
+        "counted.sent" -> StaticComposedSendEvent.Counted.Sent
         "error.execution" -> StaticComposedSendEvent.Error.Execution
         else -> null
     }
@@ -518,6 +617,7 @@ class StaticComposedSendStateMachine(
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: StaticComposedSendEvent): String? = when (event) {
         is StaticComposedSendEvent.Batch.Sent -> "batch.sent"
+        is StaticComposedSendEvent.Counted.Sent -> "counted.sent"
         is StaticComposedSendEvent.Error.Execution -> "error.execution"
     }
 
@@ -540,7 +640,9 @@ class StaticComposedSendStateMachine(
     @Suppress("UNUSED_PARAMETER") private fun firstEnabledTransitionOfIdle(state: StaticComposedSendState, event: StaticComposedSendEvent?): EnabledTransition<StaticComposedSendState, HistoryId>? = when {
         event is StaticComposedSendEvent.Batch.Sent && vDeliveries == 0.toUInt() -> TransitionsPart0.transitionIdleAt0
         event is StaticComposedSendEvent.Batch.Sent -> TransitionsPart0.transitionIdleAt1
-        event is StaticComposedSendEvent.Error.Execution -> TransitionsPart0.transitionIdleAt2
+        event is StaticComposedSendEvent.Counted.Sent && vCountedDeliveries == 0.toUInt() -> TransitionsPart0.transitionIdleAt2
+        event is StaticComposedSendEvent.Counted.Sent -> TransitionsPart0.transitionIdleAt3
+        event is StaticComposedSendEvent.Error.Execution -> TransitionsPart0.transitionIdleAt4
         else -> null
     }
 
@@ -549,7 +651,7 @@ class StaticComposedSendStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: static_composed_send.scxml:29 :: _machine
+    // SCE-MAP: static_composed_send.scxml:41 :: _machine
     override fun onEntry(state: StaticComposedSendState, isDefaultEntry: Boolean) {
         when (state) {
             is StaticComposedSendState.Idle -> onEntryOfIdle()
@@ -558,11 +660,11 @@ class StaticComposedSendStateMachine(
 
 
     private fun onEntryOfIdle() {
-                // SCE-MAP: static_composed_send.scxml:50 :: idle :: _state_body
+                // SCE-MAP: static_composed_send.scxml:67 :: idle :: _state_body
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: static_composed_send.scxml:29 :: _machine
+    // SCE-MAP: static_composed_send.scxml:41 :: _machine
     override fun onExit(state: StaticComposedSendState) {
         when (state) {
             is StaticComposedSendState.Idle -> onExitOfIdle()
@@ -571,13 +673,13 @@ class StaticComposedSendStateMachine(
 
 
     private fun onExitOfIdle() {
-                // SCE-MAP: static_composed_send.scxml:50 :: idle :: _state_body
+                // SCE-MAP: static_composed_send.scxml:67 :: idle :: _state_body
     }
 
 
 
     // Transition Content (W3C SCXML 3.13)
-    // SCE-MAP: static_composed_send.scxml:29 :: _machine
+    // SCE-MAP: static_composed_send.scxml:41 :: _machine
     override fun executeTransitionContent(source: StaticComposedSendState, transitionIndex: Int) {
         when (source) {
             is StaticComposedSendState.Idle -> transitionContentOfIdle(transitionIndex)
@@ -595,13 +697,15 @@ class StaticComposedSendStateMachine(
             0 -> transitionContentOfIdleAt0()
             1 -> transitionContentOfIdleAt1()
             2 -> transitionContentOfIdleAt2()
+            3 -> transitionContentOfIdleAt3()
+            4 -> transitionContentOfIdleAt4()
             else -> {}
         }
     }
 
 
     private fun transitionContentOfIdleAt0() {
-                // SCE-MAP: static_composed_send.scxml:53 :: idle :: _transition_0
+                // SCE-MAP: static_composed_send.scxml:70 :: idle :: _transition_0
                 if (pendingBatchSentPayload == null) {
                     return
                 }
@@ -636,10 +740,34 @@ class StaticComposedSendStateMachine(
                 // processed ends the block.
                 return
             } // end of run send@ (W3C SCXML 6.2: a discarded message)
+
+
+            if (run send@{
+            var paramFailed = false
+            val sendPayload = mutableMapOf<String, Any?>()
+            try {
+                putParam(sendPayload, "kept", run { if ((vHeld).size < 1) throw com.sce.forge.runtime.AlgorithmFailure(com.sce.forge.runtime.AlgorithmError.Precondition); (vHeld).map { (it).toLong() } })
+            } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
+                raisePlatformError(StaticComposedSendEvent.Error.Execution, "<send> <param name='kept'> could not be read")
+                paramFailed = true
+            }
+
+            putParam(sendPayload, "hops", (3).toLong())
+
+            val sendData = buildJsonFromParams(sendPayload)
+            // W3C SCXML 5.10: an internal send carries `_event.data` just as an
+            // external one does.
+            raiseInternal(StaticComposedSendEvent.Counted.Sent, EventMetadata.internal(sendData))
+            paramFailed
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
     }
 
     private fun transitionContentOfIdleAt1() {
-                // SCE-MAP: static_composed_send.scxml:67 :: idle :: _transition_1
+                // SCE-MAP: static_composed_send.scxml:90 :: idle :: _transition_1
                 if (pendingBatchSentPayload == null) {
                     return
                 }
@@ -692,10 +820,86 @@ class StaticComposedSendStateMachine(
                 return
             }
             }
+
+            if (if (vHeld.size < 2) { vHeld = vHeld + (7.toUByte()); false } else { raisePlatformError(StaticComposedSendEvent.Error.Execution, "<sce:append target='held'>: the list already holds its capacity of 2"); true }) {
+                return
+            }
+
+
+            if (run send@{
+            var paramFailed = false
+            val sendPayload = mutableMapOf<String, Any?>()
+            try {
+                putParam(sendPayload, "kept", run { if ((vHeld).size < 1) throw com.sce.forge.runtime.AlgorithmFailure(com.sce.forge.runtime.AlgorithmError.Precondition); (vHeld).map { (it).toLong() } })
+            } catch (_: com.sce.forge.runtime.AlgorithmFailure) {
+                raisePlatformError(StaticComposedSendEvent.Error.Execution, "<send> <param name='kept'> could not be read")
+                paramFailed = true
+            }
+
+            putParam(sendPayload, "hops", (3).toLong())
+
+            val sendData = buildJsonFromParams(sendPayload)
+            // W3C SCXML 5.10: an internal send carries `_event.data` just as an
+            // external one does.
+            raiseInternal(StaticComposedSendEvent.Counted.Sent, EventMetadata.internal(sendData))
+            paramFailed
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
     }
 
     private fun transitionContentOfIdleAt2() {
-                // SCE-MAP: static_composed_send.scxml:89 :: idle :: _transition_2
+                // SCE-MAP: static_composed_send.scxml:118 :: idle :: _transition_2
+                if (pendingCountedSentPayload == null) {
+                    return
+                }
+
+            vCountedDeliveries = 1.toUInt()
+
+
+            if (run send@{
+            val sendPayload = mutableMapOf<String, Any?>()
+            putParam(sendPayload, "kept", (pendingCountedSentPayload!!.kept).map { (it).toLong() })
+
+            putParam(sendPayload, "hops", (pendingCountedSentPayload!!.hops).toLong())
+
+            val sendData = buildJsonFromParams(sendPayload)
+            // W3C SCXML 5.10: an internal send carries `_event.data` just as an
+            // external one does.
+            raiseInternal(StaticComposedSendEvent.Counted.Sent, EventMetadata.internal(sendData))
+            false
+            }) {
+                // W3C SCXML 4.9: an error raised while this element was
+                // processed ends the block.
+                return
+            } // end of run send@ (W3C SCXML 6.2: a discarded message)
+    }
+
+    private fun transitionContentOfIdleAt3() {
+                // SCE-MAP: static_composed_send.scxml:126 :: idle :: _transition_3
+                if (pendingCountedSentPayload == null) {
+                    return
+                }
+
+            if (try { vCountedDeliveries = com.sce.forge.runtime.SceChecked.add(vCountedDeliveries, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedSendEvent.Error.Execution, "<assign location='counted_deliveries'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+
+            vCountedHops = pendingCountedSentPayload!!.hops
+
+
+            for (each in pendingCountedSentPayload!!.kept) {
+
+            if (try { vCountedSum = com.sce.forge.runtime.SceChecked.add(vCountedSum, each.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedSendEvent.Error.Execution, "<assign location='counted_sum'>: an integer operation overflowed or failed"); true }) {
+                return
+            }
+            }
+    }
+
+    private fun transitionContentOfIdleAt4() {
+                // SCE-MAP: static_composed_send.scxml:135 :: idle :: _transition_4
 
             if (try { vRefusals = com.sce.forge.runtime.SceChecked.add(vRefusals, 1.toUInt()); false } catch (_: com.sce.forge.runtime.AlgorithmFailure) { raisePlatformError(StaticComposedSendEvent.Error.Execution, "<assign location='refusals'>: an integer operation overflowed or failed"); true }) {
                 return
