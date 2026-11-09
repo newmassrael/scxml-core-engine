@@ -339,7 +339,7 @@ fn a_session_whose_system_variables_cannot_be_bound_is_released() {
     let (mut engine, double) = machine(Fail::SystemVariables);
     assert!(engine.initialize().is_err());
     let session = session_of(&engine);
-    assert_eq!(double.asked(), [session.clone()]);
+    assert_eq!(double.asked(), std::slice::from_ref(&session));
     assert_eq!(
         double.destroyed(),
         [session],
