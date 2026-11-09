@@ -277,5 +277,5 @@ scenarios! {
     "sync_client" => sync_client_sm::{SyncClientPolicy, SyncClientPersist};
     "todo_peer_alice" => todo_peer_sm::{TodoPeerPolicy, TodoPeerPersist};
     "todo_peer_bob" => todo_peer_sm::{TodoPeerPolicy, TodoPeerPersist};
-    "todo_peer_server" => todo_peer_sm::{TodoPeerPolicy, TodoPeerPersist};
+    "todo_peer_carol" => todo_peer_sm::{TodoPeerPolicy, TodoPeerPersist};
 }

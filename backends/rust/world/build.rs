@@ -37,21 +37,10 @@ const TODO_PEER: &str = "../../../sce-build/tests/fixtures/static_datamodel/todo
 /// (docs/adr/0082) and replays the to-do list's scenarios at these bounds
 /// (`c11_integration_static_large`).
 const TIERS: &[(&str, &[(&str, u32)])] = &[
-    (
-        "tiny",
-        &[
-            ("merge_values", 16),
-            ("merge_entries", 48),
-            ("merge_digest", 512),
-        ],
-    ),
+    ("tiny", &[("merge_values", 16), ("merge_entries", 48)]),
     (
         "large",
-        &[
-            ("merge_values", 65_536),
-            ("merge_entries", 65_536),
-            ("merge_digest", 262_144),
-        ],
+        &[("merge_values", 65_536), ("merge_entries", 65_536)],
     ),
 ];
 
@@ -87,9 +76,10 @@ const FORGE: &[&str] = &[
     "../../../stdlib/merge/mv_value_holds.scxml",
     "../../../stdlib/merge/mv_value_keep.scxml",
     "../../../stdlib/merge/mv_value_drop.scxml",
-    "../../../stdlib/merge/merkle_node.scxml",
-    "../../../stdlib/merge/merkle_insert.scxml",
-    "../../../stdlib/merge/merkle_change_hash.scxml",
+    // The change of the shared list the to-do list sends and takes, the standard list's own
+    // (docs/adr/0085, section 1.4).
+    "../../../stdlib/shared/record_op.scxml",
+    "../../../stdlib/shared/record_change.scxml",
     "../../../stdlib/merge/rga_node.scxml",
     "../../../stdlib/merge/rga_gone.scxml",
     "../../../stdlib/merge/rga_insert.scxml",
@@ -114,12 +104,6 @@ const FORGE: &[&str] = &[
     "../../../sce-build/tests/fixtures/static_datamodel/sheet_drop_col.scxml",
     "../../../sce-build/tests/fixtures/static_datamodel/todo_join.scxml",
     "../../../sce-build/tests/fixtures/static_datamodel/todo_edit.scxml",
-    "../../../sce-build/tests/fixtures/static_datamodel/todo_write.scxml",
-    "../../../sce-build/tests/fixtures/static_datamodel/todo_supersede.scxml",
-    "../../../sce-build/tests/fixtures/static_datamodel/todo_keep.scxml",
-    "../../../sce-build/tests/fixtures/static_datamodel/todo_node.scxml",
-    "../../../sce-build/tests/fixtures/static_datamodel/todo_visit.scxml",
-    "../../../sce-build/tests/fixtures/static_datamodel/todo_share.scxml",
     "../../../sce-build/tests/fixtures/static_datamodel/todo_agenda.scxml",
     "../../../sce-build/tests/fixtures/static_datamodel/event_occurrence.scxml",
     "../../../sce-build/tests/fixtures/static_datamodel/event_later.scxml",
@@ -132,14 +116,7 @@ const FORGE: &[&str] = &[
     "../../../sce-build/tests/fixtures/static_datamodel/event_roster.scxml",
     "../../../sce-build/tests/fixtures/static_datamodel/todo_role.scxml",
     "../../../sce-build/tests/fixtures/static_datamodel/todo_zone.scxml",
-    "../../../sce-build/tests/fixtures/static_datamodel/todo_compact.scxml",
-    "../../../sce-build/tests/fixtures/static_datamodel/todo_settle.scxml",
-    "../../../sce-build/tests/fixtures/static_datamodel/todo_propose.scxml",
-    "../../../sce-build/tests/fixtures/static_datamodel/todo_ack.scxml",
-    "../../../sce-build/tests/fixtures/static_datamodel/todo_floor.scxml",
     "../../../sce-build/tests/fixtures/static_datamodel/todo_room.scxml",
-    "../../../sce-build/tests/fixtures/static_datamodel/event_settled.scxml",
-    "../../../sce-build/tests/fixtures/static_datamodel/event_answer.scxml",
     "../../../stdlib/time/utc_from_local.scxml",
     "../../../sce-build/tests/fixtures/static_datamodel/presence_join.scxml",
     "../../../sce-build/tests/fixtures/static_datamodel/presence_beat.scxml",
@@ -148,6 +125,8 @@ const FORGE: &[&str] = &[
     "../../../sce-build/tests/fixtures/static_datamodel/presence_left.scxml",
     "../../../sce-build/tests/fixtures/static_datamodel/presence_expire.scxml",
     "machines/todo_shout.scxml",
+    "machines/todo_wide_op.scxml",
+    "machines/todo_wide_change.scxml",
     "machines/revision_reading_1.scxml",
     "machines/revision_reading_2.scxml",
 ];

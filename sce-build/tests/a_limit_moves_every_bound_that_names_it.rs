@@ -339,16 +339,8 @@ fn todo_peer_frames(given: &[(&str, u32)]) -> BTreeMap<(String, String), String>
 /// be a stack that is gone at the call.
 #[test]
 fn no_c11_frame_grows_with_a_list_bound() {
-    let small = todo_peer_frames(&[
-        ("merge_values", 16),
-        ("merge_entries", 48),
-        ("merge_digest", 512),
-    ]);
-    let large = todo_peer_frames(&[
-        ("merge_values", 16 * 64),
-        ("merge_entries", 48 * 64),
-        ("merge_digest", 512 * 64),
-    ]);
+    let small = todo_peer_frames(&[("merge_values", 16), ("merge_entries", 48)]);
+    let large = todo_peer_frames(&[("merge_values", 16 * 64), ("merge_entries", 48 * 64)]);
     // A comparison of nothing would pass: the machine's own functions are many.
     assert!(
         small.len() > 100,

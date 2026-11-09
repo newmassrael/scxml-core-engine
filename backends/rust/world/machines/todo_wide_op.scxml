@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  One operation of a change as the wide sender (todo_wide_sender) writes it: the fields of
+  record_op, with a text of at most 128 bytes of UTF-8 where record_op holds 96.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="todo_wide_op"
+       sce:event-name="todo.wide_op">
+  <datamodel>
+    <data id="kind" sce:type="uint8" sce:direction="in"/>
+    <data id="id" sce:type="uint32" sce:direction="in"/>
+    <data id="field" sce:type="uint16" sce:direction="in"/>
+    <data id="value" sce:type="int64" sce:direction="in"/>
+    <data id="text" sce:type="string[128]" sce:direction="in"/>
+    <data id="wallTime" sce:type="int64" sce:direction="in"/>
+    <data id="counter" sce:type="uint32" sce:direction="in"/>
+    <data id="nodeId" sce:type="uint64" sce:direction="in"/>
+  </datamodel>
+</scxml>

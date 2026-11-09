@@ -53,15 +53,6 @@ private func fieldValue(
     ])
 }
 
-/// A node of the digest tree two copies compare.
-private func digestNode(_ depth: UInt8, _ prefix: UInt64, _ hash: UInt32) -> JSONValue {
-    .object([
-        (key: "depth", value: integer(depth)),
-        (key: "hash", value: integer(hash)),
-        (key: "prefix", value: digits(prefix)),
-    ])
-}
-
 /// A copy of the presence list.
 func presencePeer() -> Machine {
     let policy = PresencePeerPolicy()
@@ -112,17 +103,9 @@ func todoPeer() -> Machine {
             "agendaNext": { integer(policy.agendaNext) },
             "clock": { hlc(policy.clock.wallTime, policy.clock.counter, policy.clock.nodeId) },
             "denied": { integer(policy.denied) },
-            "digest": { .array(policy.digest.map { digestNode($0.depth, $0.prefix, $0.hash) }) },
-            "floor": { digits(policy.floor) },
             "full": { integer(policy.full) },
-            "hub": { .bool(policy.hub) },
-            "late": { integer(policy.late) },
             "node": { digits(policy.node) },
             "refusals": { integer(policy.refusals) },
-            "stale": { .bool(policy.stale) },
-            "tombstones": {
-                .array(policy.tombstones.map { listEntry($0.element, $0.wallTime, $0.counter, $0.nodeId) })
-            },
             "values": {
                 .array(
                     policy.values.map {
