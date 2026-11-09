@@ -370,7 +370,7 @@ extension {{ machine_name }}Policy: SavedPolicy {
     }
 {% for entry in saved_invokes %}
 
-    /// Builds the session `<invoke>` `{{ entry.info.invoke_id | escape_swift }}` ran as the saved child names it and judges
+    /// Builds the session `<invoke>` `{{ entry.info.invoke_id }}` ran as the saved child names it and judges
     /// the state it holds, down to its last grandchild; what it returns resumes it where it stood, in place of
     /// starting it: no `<onentry>` runs, no `<data>` is evaluated and nothing is sent.
     private func sceJudgeSavedChild{{ entry.info.field_suffix | to_pascal_case }}(
