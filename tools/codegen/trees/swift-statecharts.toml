@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# The Swift backend's statechart machines (ADR 0097): every statechart of
+# sce-build/tests/fixtures/swift_statecharts generated for Swift, its machine
+# kept flat in the StaticMachines target of the Swift test package.
+
+[tree]
+name = "swift-statecharts"
+roots = ["backends/swift/tests/Sources/StaticMachines"]
+
+[[generation]]
+each = { files = "sce-build/tests/fixtures/swift_statecharts/*.scxml", as = "machine" }
+arguments = ["generate", "sce-build/tests/fixtures/swift_statecharts/{machine}.scxml", "-l", "swift", "-o", "{out}"]
+place = "backends/swift/tests/Sources/StaticMachines"
+keep = ["*_sm.swift"]

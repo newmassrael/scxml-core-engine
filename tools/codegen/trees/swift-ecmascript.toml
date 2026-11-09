@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# The Swift backend's `datamodel="ecmascript"` machines (ADR 0097), lowered to
+# Lua: every statechart of sce-build/tests/fixtures/swift_ecmascript and four
+# W3C documents, each machine kept flat in the EcmaScriptMachines target of
+# the Swift test package, the one that links the SceLua engine.
+
+[tree]
+name = "swift-ecmascript"
+roots = ["backends/swift/tests/Sources/EcmaScriptMachines"]
+
+[[generation]]
+each = { files = "sce-build/tests/fixtures/swift_ecmascript/*.scxml", as = "machine" }
+arguments = ["generate", "sce-build/tests/fixtures/swift_ecmascript/{machine}.scxml", "-l", "swift", "-o", "{out}"]
+place = "backends/swift/tests/Sources/EcmaScriptMachines"
+keep = ["*_sm.swift"]
+
+[[generation]]
+each = { list = ["279", "321", "444", "550"], as = "id" }
+arguments = ["generate", "resources/{id}/test{id}.scxml", "-l", "swift", "-o", "{out}"]
+place = "backends/swift/tests/Sources/EcmaScriptMachines"
+keep = ["*_sm.swift"]
