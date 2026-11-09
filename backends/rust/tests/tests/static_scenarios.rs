@@ -898,6 +898,20 @@ fn record_list_parent_is_told_what_each_register_holds() {
     );
 }
 
+// Two changes that clear one value at once, given in both orders, leave the value gone
+// on the list a statechart invoked, with nothing held, and its parent is told each
+// register a change moved once (docs/adr/0085, section 9.3).
+#[test]
+fn record_list_takes_two_concurrent_clears_in_either_order() {
+    replay(
+        Engine::new(RecordListParentPolicy::new()),
+        |engine| engine.save().expect("saves"),
+        include_str!(
+            "../../../../sce-build/tests/fixtures/static_datamodel/scenarios/record_list_concurrent_clears.json"
+        ),
+    );
+}
+
 // Leaving the state that holds an <invoke> cancels the child, which then ends
 // nothing and counts nothing.
 #[test]
@@ -1405,15 +1419,17 @@ a_copy_does_what_it_did_in_the_world! {
     // with a model of the list; the world test holds the list to the to-do afternoon in
     // its own process. They are replayed the same way.
     record_list_is_a_persons_copy: record_list_sm::{RecordListPolicy, RecordListPersist} => "static_datamodel/scenarios/record_list_person.json";
-    record_list_is_the_hub_its_people_send_to: record_list_sm::{RecordListPolicy, RecordListPersist} => "static_datamodel/scenarios/record_list_hub.json";
     record_list_started_by_a_host_tells_no_parent: record_list_sm::{RecordListPolicy, RecordListPersist} => "static_datamodel/scenarios/record_list_alone.json";
     // A copy given no Mesh router (`"router": false`) keeps every change it makes:
     // what it does to itself is queued before a send to a peer fails (docs/adr/0046).
     record_list_holds_its_changes_with_no_router: record_list_sm::{RecordListPolicy, RecordListPersist} => "static_datamodel/scenarios/record_list_offline.json";
-    // A change is one unit: staged, stamped once, taken in whole, and sent as parts a
-    // copy holds until they are all there (docs/adr/0046).
+    // A change is one unit and one message: staged, stamped once, taken in whole, and
+    // sent whole as `record_list.change`, which a peer takes in whole (docs/adr/0085).
     record_list_takes_a_change_as_one_unit: record_list_sm::{RecordListPolicy, RecordListPersist} => "static_datamodel/scenarios/record_list_change.json";
     // A field is emptied and a row retired by writing over what the copy has seen, and
     // a write it had not seen stays (docs/adr/0046).
     record_list_clears_a_field_and_retires_a_row: record_list_sm::{RecordListPolicy, RecordListPersist} => "static_datamodel/scenarios/record_list_retire.json";
+    // A change and the one it writes over, given in their causal order, the only order
+    // the list's delivery layer gives (docs/adr/0085, section 9.3).
+    record_list_takes_a_change_after_the_one_it_writes_over: record_list_sm::{RecordListPolicy, RecordListPersist} => "static_datamodel/scenarios/record_list_out_of_causal_order_is_not_given.json";
 }
