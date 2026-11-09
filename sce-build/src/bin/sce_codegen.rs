@@ -672,7 +672,8 @@ fn is_drift_eligible_path(path: &Path) -> bool {
             | Some("go")
             | Some("py")
             | Some("c")
-            | Some("swift"),
+            | Some("swift")
+            | Some("ttcn"),
     )
 }
 
@@ -3673,6 +3674,40 @@ enum Commands {
         #[arg(short = 'I', long = "include-dir", value_name = "DIR")]
         include_dir: Vec<String>,
     },
+    /// Export a test suite to TTCN-3 (docs/adr/0091; docs/SCE_TEST_PROFILE.md
+    /// §9.5): the suite's types module, `<suite>_Types.ttcn`, and the
+    /// structural manifest of it, `<suite>_Types.manifest.json`, written to
+    /// `--output-dir`.
+    ///
+    /// `<suite>` is the unit name of the suite's document, its file's stem in
+    /// lower snake case. The suite and every document it reaches are first
+    /// held to the rules `check` holds them to. Every name the export writes
+    /// is a name of the documents, written as it is written: one that is no
+    /// TTCN-3 identifier, is a word TTCN-3 reserves, or is one identifier
+    /// with another name of its scope is refused (`test-profile/export-name`),
+    /// never renamed. Nothing is written until the whole export is computed,
+    /// so a refused suite leaves no file.
+    ///
+    /// The behaviour module, `<suite>.ttcn`, is not written yet: its port
+    /// types and templates are computed, and refused where they cannot be
+    /// written, on every run, and the module is written once every rule of
+    /// it is (§9.2, E4 to E15).
+    #[command(name = "export-ttcn3")]
+    ExportTtcn3 {
+        /// The `test-suite` document.
+        scxml: String,
+        /// Directory the files are written to.
+        #[arg(short, long, default_value = ".")]
+        output_dir: String,
+        /// Directory the `source-hash` the types module's header carries is
+        /// computed over. Defaults to the suite's directory, as in `generate`.
+        #[arg(long)]
+        input_root: Option<String>,
+        /// Directories searched to resolve `<xi:include>` and `<sce:use>`
+        /// fragments by name — same semantics as `generate --include-dir`.
+        #[arg(short = 'I', long = "include-dir", value_name = "DIR")]
+        include_dir: Vec<String>,
+    },
     /// Write the file of a Rust deployment (docs/adr/0077 §7): a storage
     /// profile that holds each field of each codec of a set at the capacity a
     /// deploy input's `codecs:` block gives it, or at its bound.
@@ -4598,6 +4633,18 @@ fn main() {
             &include_dir,
             error_format,
         ),
+        Commands::ExportTtcn3 {
+            scxml,
+            output_dir,
+            input_root,
+            include_dir,
+        } => cmd_export_ttcn3(
+            &scxml,
+            &output_dir,
+            input_root.as_deref(),
+            &include_dir,
+            error_format,
+        ),
         Commands::Deployment {
             scxml,
             deploy,
@@ -4706,8 +4753,8 @@ fn plan_refusal(command: &Commands, plan_children: bool) -> Option<String> {
 /// never compared.
 fn assert_unchanged_refusal(command: &Commands) -> Option<String> {
     const NOT_A_GENERATOR: &str = "--assert-unchanged applies only to the commands that \
-        generate files: generate, orchestrate, generate-w3c, generate-conformance, deployment \
-        and diagram";
+        generate files: generate, orchestrate, generate-w3c, generate-conformance, deployment, \
+        diagram and export-ttcn3";
     match command {
         // Both modes generate nothing, so a run in either would pass
         // having compared nothing.
@@ -4721,7 +4768,8 @@ fn assert_unchanged_refusal(command: &Commands) -> Option<String> {
         | Commands::GenerateW3c(_)
         | Commands::GenerateConformance { .. }
         | Commands::Deployment { .. }
-        | Commands::Diagram { .. } => None,
+        | Commands::Diagram { .. }
+        | Commands::ExportTtcn3 { .. } => None,
         Commands::GenerateIntegration { .. } => Some(
             "--assert-unchanged cannot apply to generate-integration: each stem is a shell \
              pipeline writing through its own copy and formatter, out of this process's \
@@ -14338,6 +14386,52 @@ fn cmd_payload_schema(
 /// it.
 const PAYLOAD_SCHEMA_READS: &str = "payload-schema reads an event schema \
                                     (sce:kind=\"event-schema\") or a union (sce:kind=\"union\")";
+
+// ── Subcommand: export-ttcn3 ───────────────────────────────────
+//
+// A test suite exported to TTCN-3 (docs/SCE_TEST_PROFILE.md §9.5): the types
+// module and its manifest, computed whole by the library before any file is
+// written, so a refused suite leaves no file behind. The module carries the
+// §synth-6.2.6 header over the suite's source set, as every generated source
+// does; the manifest, JSON, carries none.
+
+fn cmd_export_ttcn3(
+    scxml_path: &str,
+    output_dir: &str,
+    input_root: Option<&str>,
+    include_dirs: &[String],
+    error_format: ErrorFormat,
+) {
+    let suite = Path::new(scxml_path);
+    let include_dirs: Vec<PathBuf> = include_dirs.iter().map(PathBuf::from).collect();
+    let export =
+        sce_build::ttcn3_export::export_suite(suite, &include_dirs).unwrap_or_else(|refused| {
+            match refused {
+                sce_build::ttcn3_export::ExportError::Refused(e) => {
+                    error_format.emit_forge_and_exit(&e)
+                }
+                sce_build::ttcn3_export::ExportError::NotASuite(what) => {
+                    cli_exit(CliError::Usage {
+                        detail: format!(
+                            "export-ttcn3 reads a test suite (sce:kind=\"test-suite\"); {what}"
+                        ),
+                    })
+                }
+            }
+        });
+    let drift = document_set_drift_context(input_root, None, &[suite]);
+    let dir = Path::new(output_dir);
+    ensure_output_dir(dir).unwrap_or_else(|e| {
+        cli_exit(CliError::CreateOutputDir {
+            path: output_dir.to_string(),
+            source: e,
+        })
+    });
+    for (file, text) in export.files() {
+        write_if_changed_drift_aware(&dir.join(file), &with_trailing_newline(&text), &drift);
+    }
+    finish_generated_output();
+}
 
 /// Report every bound `content` writes as an attribute
 /// (`validation/bound-attribute-superseded`, docs/adr/0086 section 1.3), and let
