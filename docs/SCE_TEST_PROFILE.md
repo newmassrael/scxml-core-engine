@@ -2,7 +2,7 @@
 
 - Status: specification of ADR 0091, order of work step 1 (§1 to §10), the document forms of step 2 (§11), the
   structure of the native runtime of step 3 (§12), and the structure of the exporter of step 4, with its types
-  module, its manifest and its name contract (§9.5).
+  module, its manifest, its name contract and the behaviour of each test component (§9.5).
 - Decision: `docs/adr/0091-a-test-is-a-document-of-the-test-profile-and-its-ttcn-3-export-runs-and-agrees-with-it.md`.
   Where this document and the ADR disagree, the ADR is amended or this document is wrong; neither is read as
   overriding the other.
@@ -495,11 +495,14 @@ the documents of the profile alone (ADR 0091 §8).
   `check` holds it to before a language is asked, so the export translates no document `check` refuses.
 - **Output.** For a suite whose unit name is `S`, its file's stem in lower snake case as every unit of a document
   is named: `S_Types.ttcn`, the types module (E1; ADR 0091 C2), and `S_Types.manifest.json`, its structural
-  manifest. The behaviour module `S.ttcn` holds the port types (E3), the templates (E2) and the definitions of E4 to
-  E15. The export computes the port types and the templates on every run and refuses a suite whose port types or
-  templates it cannot write, but it writes no part of that module, nor the witness of §9.4, until every rule of the
-  module is written. Nothing is written before the whole export is computed, so a refused suite leaves no file. The
-  module carries the header of every generated source (`source-hash`); the manifest carries none.
+  manifest. The behaviour module `S.ttcn` holds the port types (E3), the templates (E2), the module parameters the
+  suite declares and the definitions of E4 to E15. The export computes the port types, the templates, the module
+  parameters and the component types and functions of E4 to E13 on every run, and refuses a suite any of which it
+  cannot write; a library caller reads each as the definition's text and as the model it is written from
+  (`Ttcn3Export`). It writes no part of that module, nor the witness of §9.4, until every rule of the module is
+  written, the test cases (E14) and the control part (E15) among them. Nothing is written before the whole export is
+  computed, so a refused suite leaves no file. The module carries the header of every generated source
+  (`source-hash`); the manifest carries none.
 - **Text.** The TTCN-3 is written by the templates under `tools/codegen/templates/ttcn3/`, through the door every
   template passes, read as TTCN-3: a value written into a comment is encoded for it, and a text value is written as
   a character string, a `"` twice and each character outside printable ASCII concatenated as its quadruple
@@ -517,12 +520,18 @@ module, the test log and the witness need no mapping between two names of one th
   (-1 table 15, reserved by A.1.5.0) (`ttcn3_export::names::RESERVED`). The list is wider than one tool
   needs on purpose: a refused name is renamed in its document once, where a reserved name written is a module that
   does not compile;
-- it is one identifier with another name of a scope that sees both (-1 §5.2.2). The definitions of the two
-  modules are one scope, since the behaviour module imports the types module whole; an enumerated value may repeat
-  among enumerated types and is no other name; a formal parameter may repeat among definitions and is no definition
-  and no enumerated value. The names the export makes are in the same scopes: the eight integer types, the modules
-  `S` and `S_Types`, the codec functions and their parameters `msg` and `octets`. Where a made name and a written
-  one collide, the written one is refused.
+- it is one identifier with another name of a scope that sees both (-1 §5.2.2, figure 2 of -1 §5.2.0). The
+  definitions of the two modules are one scope, since the behaviour module imports the types module whole: the
+  types, the codec functions, the port types, the templates, the module parameters, the component types and the
+  functions. Every scope below it sees its names: a template's formal parameters; a component type's ports, timers
+  and variables; and a function's labels and locals, which see the names of the component type it runs on too. Two
+  scopes of one level, two templates or two component types or two functions, may each hold a name the other holds.
+  An enumerated value may repeat among enumerated types and is no other name. So a module parameter and a template's
+  formal parameter of one name are refused, and so are a module parameter and a component's variable, and a port and
+  a state of the component. The names the export makes are in the same scopes: the eight integer types, the modules
+  `S` and `S_Types`, the codec functions and their parameters `msg` and `octets`, each component's functions, and the
+  locals of a function, `v_<ptc>` for each PTC it creates and `v_<record>` for each record a branch of it receives
+  into a variable. Where a made name and a written one collide, the written one is refused.
 
 **Types (E1).** The types module holds, in this order:
 
@@ -570,6 +579,95 @@ of §6.1 is written as -1 Annex B.1 writes it:
 **Port types (E3).** Each port type is `type port P message { d T; … }`, each message in document order with its
 direction, `in`, `out` or `inout`, so its `in` and `out` lists are stated explicitly, as Eclipse Titan requires
 (ADR 0091 answer 1).
+
+**Module parameters.** Each `<sce:module-parameter>` of the suite is `modulepar T name := value;` (-1 §8.2.1), in
+the order the suite declares them, its value a literal of §11.4 as a template writes one, the bound of a text or a
+byte string stated beside it as a field's is. A component's `<data sce:module-parameter="true">` declares no
+variable: every expression that reads it reads the `modulepar` of the same name. The witness names the suite's
+declaration and E15, the rule of the suite.
+
+**Component types (E4).** Each test component the suite reaches is `type component C { … }` (-1 §6.2.10.1), named by
+its unit name: each port `port P p;` of its port type, in document order; each timer `timer T := d;` with its
+default duration, or `timer T;` with none; each variable `var V v := e;` with its initial value. A variable the
+export writes is a number, a bool, a variant of an enum, a text or a byte string; a record, a list, a union or a
+value that may be absent is refused by name (`generate/unsupported-feature`).
+
+**Behaviour (E5 to E13).** Each component's statechart is a function `function f() runs on C { … }`. Its body is
+the entry of the initial configuration and a `goto` to the initial atomic state; then, for each atomic state that is
+no top-level `<final>`, in document order:
+
+- `label s;` (E6);
+- the checks of the eventless transitions of `s` and of each ancestor, in the order of P3, each
+  `if (guard) { block }` or, without a guard, the block itself, which ends the checks;
+- the start of each invocation of `s` and its ancestors that is pending, outermost first (E11, below);
+- `alt { … }` with one alternative per branch of `s` and of each ancestor, in the order of P3 (E7): `[guard]
+  p.receive(t) -> value v { block }`, `[guard] p.receive { block }`, `[guard] T.timeout { block }` or
+  `[guard] c.done { block }` (E8). The value redirect is written where the block reads the message, into a local of
+  the record's type.
+
+A block is what taking the transition from `s` does, in the engine's own order: each exited state's onexit and the
+kill of the PTCs it invoked, the transition's content, each entered state's onentry and, for a state entered by
+default, its initial transition's content; then `goto` the atomic state the machine is left in, or, where that is
+a top-level `<final>`, its exit and `return` (E12). The exit and entry sets are not computed by the exporter: it
+asks the Appendix D core every Rust machine runs on (`sce_rust_runtime::helpers::microstep`, ADR 0064) to take the
+transition from the configuration of `s`, over the tables the generator builds, and writes what the core asks the
+machine to do (`ttcn3_export::macrostep`). The validator of §9.4 computes them again on its own.
+
+Executable content is written statement for statement: `p.send(t)` (E9); `T.start(d)` with `d` the exact decimal of
+the duration's seconds, read from its whole number of microseconds (`0.5`, `0.000001`, never a rounded binary
+float), `T.start` for a timer's default, and `T.stop` (E10); `setverdict(v, reason)` with `inconc` for
+`inconclusive`, and `log(…)` with the label and the value (E13); `<assign>` as `v := e`, and `<if>`, `<elseif>` and
+`<else>` as `if` and `else`. Any other element is refused by name.
+
+**Expressions.** An expression is not read again from its text: it is the typed tree the data model's judge reads
+(`forge::expr::resolve`, over `forge::type_ctx::StaticScope`, the scope every backend's lowering reads), and the
+export prints that tree (`ttcn3_export::expression`). It writes a variable or a module parameter by its name, a field
+of the received message as a field of the redirect's local, a variant by its name, an integer's decimal digits,
+`true` and `false`, a text as a character string, a byte string as `'…'O`, `===` and `!==` as `==` and `!=`, the
+four relational operators of numbers and enums, and `&&`, `||` and `!` as `and`, `or` and `not` (-1 §7.1), each
+operand that is an operation in parentheses. What has no TTCN-3 form that computes the same value is refused by name
+(`generate/unsupported-feature`), never approximated: integer arithmetic, bitwise and shift operators, which
+`sce-static` computes at the width of their operands and fails on an overflow while a TTCN-3 `integer` has no
+width; a conditional expression; a call; an index; a value that may be absent; a float; an assignment of a text or
+a byte string that is no literal, whose bound `sce-static` holds at run time and TTCN-3 does not; and an assignment
+of an integer from a type wider than the place's.
+
+**PTCs (E11).** A PTC is held in a local of the creating function, `var C v_p := null;`. Its invocation is pending
+exactly while its invoking state is active and the reference is `null`, so the start at a label is
+
+```ttcn3
+if (v_p == null) {
+  v_p := C.create("p") alive;
+  connect(mtc:q, v_p:q);
+  map(v_p:r, system:s);
+  v_p.start(f_c());
+}
+```
+
+and leaving the invoking state is `if (v_p != null) { v_p.kill; v_p := null; }`. The PTC's name in the
+configuration is its name in the test system (-1 §21.3.1), which the test log names it by. It is created `alive`:
+a PTC whose behaviour ended stays in `DONE` with its ports and its verdict until its invoking state is left (P9,
+P10), which is what an alive component is after its behaviour stops and before it is killed (-1 §21.3.2 to
+§21.3.4, §21.3.7; -4 §9.12, §9.16, §9.29a); a non-alive one would be destroyed when its function returns.
+
+The creator applies, as it creates the PTC, every `connect` and `map` of the configuration that names it (P9; -1
+§21.1.1; -4 §9.10, §9.32), connects first, then maps, each in document order, and then starts it (-1 §21.3.2; -4
+§9.46). Which connects and maps those are depends on the configuration, so a component that invokes a PTC has one
+function for each configuration that holds it, `f_<component>_in_<configuration>`, and every other component one
+function, `f_<component>`, which every configuration starts. The alternative, one function per component with the
+configuration's operations done elsewhere, has no place to do them: TTCN-3 applies a connect only once both
+components exist (-1 §21.1.1), a PTC is created inside the creator's behaviour where P9 creates it, and a creator's
+function written once would have to branch on a configuration it is not told. With one function for each
+configuration the exported behaviour of a component in a configuration is exactly §4.9 for that configuration. The
+other end of a connect is named as the creator can name it when it creates the PTC: `mtc`, `self`, the PTC itself,
+or another PTC the same component creates, connected then only if that one is created already
+(`if (v_o != null) { connect(…); }`), so that the connect is made at whichever creation comes second. A connect
+whose other end is a PTC the creator holds no reference to is refused by name: -1 reaches a component outside the
+scope of its creation only through a reference passed to it (-1 §21.3.1), which no document writes.
+
+**Provenance.** Every module parameter, component type, function and statement is computed as a model that names
+the rule of §9.2 that wrote it, the document and the node it was written from (`ttcn3_export::behaviour::Source`),
+so the witness of §9.4 is a serialization of that model.
 
 **The manifest.** `S_Types.manifest.json` is the model the types module is written from, serialized
 (`schemas/sce-ttcn3-types-manifest.v1.schema.json`, `pre-release`, a row of `SCE_WIRE_CONTRACTS.md`): every
