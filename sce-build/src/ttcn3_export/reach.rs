@@ -17,7 +17,7 @@
 //! `check` refuses. A test component is a statechart, read by the statechart
 //! parser, which holds it to the rules of the profile as it reads it.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use super::names::{unit_name, Origin};
@@ -26,6 +26,7 @@ use crate::forge::import_source::{type_scope, ImportSource};
 use crate::forge::model::{ForgeDocument, ForgeImport, ForgeKind, ParsedForge};
 use crate::forge::stdlib;
 use crate::forge::value_type::TypeScope;
+use crate::model::SCXMLModel;
 
 /// The kinds whose documents the walk reads, and whose imports it follows.
 const FOLLOWED: [ForgeKind; 8] = [
@@ -81,9 +82,38 @@ pub(super) fn root_line(document: &ForgeDocument) -> Option<u32> {
     at.as_ref().and_then(|at| at.line)
 }
 
-/// Every forge document a suite reaches, by its one spelling.
+/// A test component the suite reaches: a statechart, read by the statechart
+/// parser, which holds it to the rules of the profile as it reads it
+/// (docs/SCE_TEST_PROFILE.md §11.5).
+pub(super) struct ReachedComponent {
+    /// Its one spelling, whatever import reaches it ([`stdlib::identity`]).
+    pub(super) identity: String,
+    /// The name its component type takes in the export ([`unit_name`]).
+    pub(super) name: String,
+    /// The label its refusals carry: its path.
+    pub(super) label: String,
+    /// The directory its own imports resolve against.
+    pub(super) dir: PathBuf,
+    pub(super) model: SCXMLModel,
+}
+
+impl ReachedComponent {
+    /// Where a name written in this component is refused, on `line`.
+    pub(super) fn origin(&self, line: Option<u32>) -> Origin {
+        Origin {
+            kind: ForgeKind::TestComponent,
+            document: self.model.name.clone(),
+            label: self.label.clone(),
+            line,
+        }
+    }
+}
+
+/// Every forge document a suite reaches, by its one spelling, and every test
+/// component.
 pub(super) struct Reach {
     documents: BTreeMap<String, Reached>,
+    components: BTreeMap<String, ReachedComponent>,
 }
 
 impl Reach {
@@ -99,6 +129,21 @@ impl Reach {
     /// suite reaches it.
     pub(super) fn imported(&self, dir: &Path, import: &ForgeImport) -> Option<&Reached> {
         self.documents
+            .get(&stdlib::identity(&stdlib::resolve(dir, &import.src)))
+    }
+
+    /// The test components in the order of their names, two of one name in
+    /// the order of their spellings.
+    pub(super) fn components(&self) -> Vec<&ReachedComponent> {
+        let mut components: Vec<&ReachedComponent> = self.components.values().collect();
+        components.sort_by(|a, b| (&a.name, &a.identity).cmp(&(&b.name, &b.identity)));
+        components
+    }
+
+    /// The test component an import of the document read in `dir` names,
+    /// when the suite reaches it.
+    pub(super) fn component(&self, dir: &Path, import: &ForgeImport) -> Option<&ReachedComponent> {
+        self.components
             .get(&stdlib::identity(&stdlib::resolve(dir, &import.src)))
     }
 }
@@ -137,13 +182,13 @@ pub(super) fn reach(
     label: &str,
 ) -> Result<Reach, Located<ForgeError>> {
     let mut documents: BTreeMap<String, Reached> = BTreeMap::new();
-    let mut components: BTreeSet<String> = BTreeSet::new();
+    let mut components: BTreeMap<String, ReachedComponent> = BTreeMap::new();
     let mut pending: Vec<(Vec<ForgeImport>, PathBuf, String)> =
         vec![(suite.imports.clone(), dir.to_path_buf(), label.to_string())];
     while let Some((imports, dir, label)) = pending.pop() {
         for import in imports.iter().filter(|i| FOLLOWED.contains(&i.kind)) {
             let identity = stdlib::identity(&stdlib::resolve(&dir, &import.src));
-            if documents.contains_key(&identity) || components.contains(&identity) {
+            if documents.contains_key(&identity) || components.contains_key(&identity) {
                 continue;
             }
             let at_import =
@@ -160,8 +205,21 @@ pub(super) fn reach(
                 let Some(model) = source.parse_test_component()? else {
                     return Err(at_import(other_kind(import, &source).into()));
                 };
-                components.insert(identity);
-                pending.push((model.forge_imports, source_dir, source_label));
+                pending.push((
+                    model.forge_imports.clone(),
+                    source_dir.clone(),
+                    source_label.clone(),
+                ));
+                components.insert(
+                    identity.clone(),
+                    ReachedComponent {
+                        identity,
+                        name: unit_name(&stem),
+                        label: source_label,
+                        dir: source_dir,
+                        model,
+                    },
+                );
                 continue;
             }
             let Some(parsed) = source.parse()? else {
@@ -197,7 +255,10 @@ pub(super) fn reach(
             );
         }
     }
-    Ok(Reach { documents })
+    Ok(Reach {
+        documents,
+        components,
+    })
 }
 
 /// Why the document `source` is not the document `import` declares: it is of

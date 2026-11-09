@@ -72,6 +72,48 @@ pub fn write_suite_of_enum(dir: &Path, variant: &str) -> PathBuf {
     write_suite(dir, "report", false)
 }
 
+/// Write the suite `probe_suite.scxml` to `dir` as [`write_suite`] does, its
+/// main test component's imports beside the port's `imports` and its
+/// declarations and states `body`, its initial state `initial`, and the
+/// suite's `<sce:module-parameter>` lines `parameters`; answer the suite's
+/// path. The port carries the record of `<message>.scxml` in.
+pub fn write_suite_of_component(
+    dir: &Path,
+    message: &str,
+    initial: &str,
+    imports: &str,
+    body: &str,
+    parameters: &str,
+) -> PathBuf {
+    let suite = write_suite(dir, message, false);
+    write(
+        dir,
+        "probe_tester",
+        &document(
+            &format!(
+                "sce:kind=\"test-component\" name=\"probe_tester\" datamodel=\"sce-static\" \
+                 initial=\"{initial}\""
+            ),
+            &format!(
+                "  <sce:import kind=\"test-port-type\" src=\"probe_port.scxml\" as=\"ProbePort\"/>\n\
+                 {imports}  <sce:test-port id=\"sut\" type=\"ProbePort\"/>\n{body}"
+            ),
+        ),
+    );
+    write(
+        dir,
+        "probe_suite",
+        &document(
+            "sce:kind=\"test-suite\" name=\"probe_suite\"",
+            &format!(
+                "  <sce:import kind=\"test-case\" src=\"probe_case.scxml\" as=\"ProbeCase\"/>\n\
+                 {parameters}  <sce:execute test-case=\"ProbeCase\"/>\n"
+            ),
+        ),
+    );
+    suite
+}
+
 /// Write the suite `probe_suite.scxml` to `dir`, with its test case, its
 /// configuration, its main test component and its port type, and answer the
 /// suite's path. The port type carries the record of `<message>.scxml`, which

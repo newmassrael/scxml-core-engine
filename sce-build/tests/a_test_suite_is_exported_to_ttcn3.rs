@@ -19,9 +19,10 @@ mod common;
 use std::path::{Path, PathBuf};
 
 use common::profile_suite::{
-    document, write, write_event_schema, write_suite, write_suite_of_enum,
+    document, write, write_event_schema, write_suite, write_suite_of_component, write_suite_of_enum,
 };
 use sce_build::forge::diagnostic::ToDiagnostics;
+use sce_build::ttcn3_export::behaviour::{Source, Statement};
 use sce_build::ttcn3_export::{export_suite, Definition, ExportError, Ttcn3Export};
 
 fn manifest_dir() -> PathBuf {
@@ -344,6 +345,19 @@ fn an_export_is_the_same_bytes_every_time() {
         assert_eq!(first.files(), second.files(), "{}", suite.display());
         assert_eq!(first.port_types, second.port_types, "{}", suite.display());
         assert_eq!(first.templates, second.templates, "{}", suite.display());
+        assert_eq!(
+            first.module_parameters,
+            second.module_parameters,
+            "{}",
+            suite.display()
+        );
+        assert_eq!(
+            first.component_types,
+            second.component_types,
+            "{}",
+            suite.display()
+        );
+        assert_eq!(first.functions, second.functions, "{}", suite.display());
     }
 }
 
@@ -366,6 +380,421 @@ fn an_export_writes_the_types_module_and_its_manifest() {
             ),
         ]
     );
+}
+
+// ── The behaviour (E4 to E13) ──────────────────────────────────
+
+/// The kill of the PTC `reference` refers to, at the depth `pad`, as every
+/// branch that exits its invoking state writes it.
+fn kill(pad: &str, reference: &str) -> String {
+    format!(
+        "{pad}if ({reference} != null) {{
+{pad}  {reference}.kill;
+{pad}  {reference} := null;
+{pad}}}
+"
+    )
+}
+
+/// The job suite: its module parameters, the tester that creates the helper
+/// and connects it, and the helper. The tester's behaviour depends on its
+/// configuration, since it creates a PTC; the helper's does not.
+#[test]
+fn the_job_suites_behaviour_is_exported() {
+    let export = exported(&job_suite());
+    assert_eq!(
+        names(&export.module_parameters),
+        ["elapsed_limit", "run_label", "key"]
+    );
+    assert_eq!(
+        definition(&export.module_parameters, "elapsed_limit"),
+        "modulepar uint32 elapsed_limit := 500;"
+    );
+    assert_eq!(
+        definition(&export.module_parameters, "run_label"),
+        "modulepar universal charstring run_label := \"nightly\"; // at most 8 bytes of UTF-8"
+    );
+    assert_eq!(
+        definition(&export.module_parameters, "key"),
+        "modulepar octetstring key := '0AFF'O; // at most 2 octets"
+    );
+
+    assert_eq!(names(&export.component_types), ["helper", "job_tester"]);
+    assert_eq!(
+        definition(&export.component_types, "helper"),
+        "type component helper {
+  port job_control_port ctl;
+}"
+    );
+    assert_eq!(
+        definition(&export.component_types, "job_tester"),
+        "type component job_tester {
+  port job_port sut;
+  port job_port ctl;
+  timer deadline := 2.0;
+  timer settle;
+  var uint32 elapsed := 0;
+}"
+    );
+
+    assert_eq!(
+        names(&export.functions),
+        ["f_helper", "f_job_tester_in_tester_and_helper"]
+    );
+    assert_eq!(
+        definition(&export.functions, "f_helper"),
+        "function f_helper() runs on helper {
+  goto listening;
+  label listening;
+  alt {
+    [] ctl.receive {
+      setverdict(pass);
+      return;
+    }
+  }
+}"
+    );
+    let kill_helper = kill("      ", "v_helper");
+    assert_eq!(
+        definition(&export.functions, "f_job_tester_in_tester_and_helper"),
+        format!(
+            "function f_job_tester_in_tester_and_helper() runs on job_tester {{
+  var helper v_helper := null;
+  var job_status v_job_status;
+  sut.send(job_report);
+  deadline.start;
+  goto requesting;
+  label requesting;
+  if (v_helper == null) {{
+    v_helper := helper.create(\"helper\") alive;
+    connect(mtc:ctl, v_helper:ctl);
+    v_helper.start(f_helper());
+  }}
+  alt {{
+    [] sut.receive(every_matcher(elapsed_limit)) -> value v_job_status {{
+{kill_helper}      deadline.stop;
+      elapsed := v_job_status.elapsed_ms;
+      ctl.send(job_report);
+      settle.start(0.5);
+      goto settling;
+    }}
+    [] deadline.timeout {{
+{kill_helper}      setverdict(fail, \"no reply in time\");
+      return;
+    }}
+  }}
+  label settling;
+  alt {{
+    [] settle.timeout {{
+      setverdict(pass);
+      return;
+    }}
+  }}
+}}"
+        )
+    );
+}
+
+/// The runtime's suite: a component that reads a module parameter and takes
+/// an eventless choice, one that serves the PTC it creates over a connect,
+/// one that maps the PTC it creates to the test system and removes it, and
+/// the two PTCs.
+#[test]
+fn the_runtime_suites_behaviour_is_exported() {
+    let export = exported(&runtime_suite());
+    assert_eq!(
+        definition(&export.module_parameters, "job"),
+        "modulepar uint32 job := 7;"
+    );
+    assert_eq!(
+        names(&export.component_types),
+        [
+            "answerer",
+            "coordinator",
+            "idler",
+            "param_asker",
+            "ptc_keeper"
+        ]
+    );
+    assert_eq!(
+        definition(&export.component_types, "coordinator"),
+        "type component coordinator {
+  port serving_port peer;
+  var uint32 requested := 0;
+  var uint32 ok := 0;
+}"
+    );
+    assert_eq!(
+        definition(&export.component_types, "param_asker"),
+        "type component param_asker {
+  port exchange_port sut;
+  timer deadline := 1.0;
+  var uint32 answered := 0;
+}"
+    );
+    assert_eq!(
+        definition(&export.component_types, "ptc_keeper"),
+        "type component ptc_keeper {
+  timer patience := 0.01;
+  timer linger := 0.005;
+}"
+    );
+
+    assert_eq!(
+        names(&export.functions),
+        [
+            "f_answerer",
+            "f_coordinator_in_serving_configuration",
+            "f_idler",
+            "f_param_asker",
+            "f_ptc_keeper_in_keeping_configuration"
+        ]
+    );
+    assert_eq!(
+        definition(&export.functions, "f_answerer"),
+        "function f_answerer() runs on answerer {
+  peer.send(request_of(asked));
+  log(\"asked\");
+  goto asking;
+  label asking;
+  alt {
+    [] peer.receive(reply_ok) {
+      setverdict(pass);
+      return;
+    }
+  }
+}"
+    );
+    assert_eq!(
+        definition(&export.functions, "f_idler"),
+        "function f_idler() runs on idler {
+  setverdict(inconc);
+  goto idling;
+  label idling;
+  alt {
+    [] peer.receive {
+      return;
+    }
+  }
+}"
+    );
+    // An eventless transition with a guard is a check taken before the
+    // next, and one with none ends the state's checks: no alt follows it.
+    assert_eq!(
+        definition(&export.functions, "f_param_asker"),
+        "function f_param_asker() runs on param_asker {
+  var job_reply v_job_reply;
+  sut.send(request_of(job));
+  deadline.start;
+  goto asking;
+  label asking;
+  alt {
+    [] sut.receive(reply_ok) -> value v_job_reply {
+      deadline.stop;
+      answered := v_job_reply.job;
+      goto checking;
+    }
+    [] deadline.timeout {
+      setverdict(fail, \"no matching reply in time\");
+      return;
+    }
+  }
+  label checking;
+  if (answered == job) {
+    setverdict(pass);
+    return;
+  }
+  setverdict(fail, \"the reply answers another job\");
+  return;
+}"
+    );
+    // The PTC is started at each atomic state its invoking state holds, and
+    // the done branch of the invoking state is an alternative of each.
+    let create_answerer = "  if (v_answerer == null) {
+    v_answerer := answerer.create(\"answerer\") alive;
+    connect(mtc:peer, v_answerer:peer);
+    v_answerer.start(f_answerer());
+  }
+";
+    let done = format!(
+        "    [] v_answerer.done {{
+{}      setverdict(pass);
+      return;
+    }}
+",
+        kill("      ", "v_answerer")
+    );
+    assert_eq!(
+        definition(&export.functions, "f_coordinator_in_serving_configuration"),
+        format!(
+            "function f_coordinator_in_serving_configuration() runs on coordinator {{
+  var answerer v_answerer := null;
+  var job_request v_job_request;
+  goto serving;
+  label serving;
+{create_answerer}  alt {{
+    [] peer.receive(any_request) -> value v_job_request {{
+      requested := v_job_request.job;
+      peer.send(reply_of(requested, ok));
+      goto served;
+    }}
+{done}  }}
+  label served;
+{create_answerer}  alt {{
+{done}  }}
+}}"
+        )
+    );
+    assert_eq!(
+        definition(&export.functions, "f_ptc_keeper_in_keeping_configuration"),
+        format!(
+            "function f_ptc_keeper_in_keeping_configuration() runs on ptc_keeper {{
+  var idler v_idler := null;
+  patience.start;
+  goto watching;
+  label watching;
+  if (v_idler == null) {{
+    v_idler := idler.create(\"idler\") alive;
+    map(v_idler:peer, system:quiet);
+    v_idler.start(f_idler());
+  }}
+  alt {{
+    [] patience.timeout {{
+{}      linger.start;
+      goto lingering;
+    }}
+  }}
+  label lingering;
+  alt {{
+    [] linger.timeout {{
+      setverdict(pass);
+      return;
+    }}
+  }}
+}}",
+            kill("      ", "v_idler")
+        )
+    );
+}
+
+/// The kind examples: a component that reads the suite's module parameter
+/// as a template's argument.
+#[test]
+fn the_kind_examples_behaviour_is_exported() {
+    let export = exported(&kind_example_suite());
+    assert_eq!(
+        definition(&export.module_parameters, "elapsed_limit"),
+        "modulepar uint32 elapsed_limit := 500;"
+    );
+    assert_eq!(
+        definition(&export.component_types, "test_component"),
+        "type component test_component {
+  port test_port_type sut;
+  timer deadline := 2.0;
+}"
+    );
+    assert_eq!(
+        definition(&export.functions, "f_test_component"),
+        "function f_test_component() runs on test_component {
+  deadline.start;
+  goto waiting;
+  label waiting;
+  alt {
+    [] sut.receive(test_template(elapsed_limit)) {
+      deadline.stop;
+      setverdict(pass);
+      return;
+    }
+    [] deadline.timeout {
+      setverdict(fail, \"no reply in time\");
+      return;
+    }
+  }
+}"
+    );
+}
+
+/// Every definition and statement of the behaviour names the construct it
+/// was translated from and its rule (docs/SCE_TEST_PROFILE.md §9.4): the
+/// component type the component, a PTC's creation and kill its `<invoke>`,
+/// an alt its atomic state, a branch its transition.
+#[test]
+fn each_definition_and_statement_names_its_source() {
+    let export = exported(&job_suite());
+    let tester = export
+        .behaviour
+        .functions
+        .iter()
+        .find(|f| f.name == "f_job_tester_in_tester_and_helper")
+        .expect("the tester's function");
+    assert_eq!(tester.source.rule, "E5");
+    assert!(tester.source.document.ends_with("job_tester.scxml"));
+    assert_eq!(tester.configuration.as_deref(), Some("tester_and_helper"));
+    let sources: Vec<(&str, &str)> = tester
+        .body
+        .iter()
+        .map(|statement| {
+            let source: &Source = match statement {
+                Statement::Label { source, .. }
+                | Statement::Goto { source, .. }
+                | Statement::Return { source }
+                | Statement::Send { source, .. }
+                | Statement::StartTimer { source, .. }
+                | Statement::StopTimer { source, .. }
+                | Statement::Setverdict { source, .. }
+                | Statement::Log { source, .. }
+                | Statement::Assign { source, .. }
+                | Statement::If { source, .. }
+                | Statement::Create { source, .. }
+                | Statement::Kill { source, .. }
+                | Statement::Alt { source, .. } => source,
+            };
+            (source.rule, source.node.as_str())
+        })
+        .collect();
+    assert_eq!(
+        sources,
+        [
+            ("E9", "state 'requesting' / onentry 1 / send 1"),
+            ("E10", "state 'requesting' / onentry 1 / sce_start_timer 2"),
+            ("E8", "scxml"),
+            ("E6", "state 'requesting'"),
+            ("E11", "invoke 'helper'"),
+            ("E7", "state 'requesting'"),
+            ("E6", "state 'settling'"),
+            ("E7", "state 'settling'"),
+        ]
+    );
+    let Some(Statement::Alt { branches, .. }) = tester.body.get(5) else {
+        panic!("the requesting state's alt: {:?}", tester.body);
+    };
+    let branch_sources: Vec<&str> = branches.iter().map(|b| b.source.node.as_str()).collect();
+    assert_eq!(
+        branch_sources,
+        [
+            "state 'requesting' / transition 1",
+            "state 'requesting' / transition 2"
+        ]
+    );
+    let Some(Statement::Kill { source, .. }) = branches[0].block.first() else {
+        panic!(
+            "the receive branch kills the helper first: {:?}",
+            branches[0].block
+        );
+    };
+    assert_eq!(
+        (source.rule, source.node.as_str()),
+        ("E11", "invoke 'helper'")
+    );
+    let component = export
+        .behaviour
+        .component_types
+        .iter()
+        .find(|c| c.name == "job_tester")
+        .expect("the tester's type");
+    assert_eq!(component.timers[0].source.node, "sce:test-timer 'deadline'");
+    assert_eq!(component.timers[0].source.rule, "E4");
+    assert_eq!(export.parameter_views[0].source.rule, "E15");
 }
 
 // ── The manifest ───────────────────────────────────────────────
@@ -780,4 +1209,214 @@ fn a_document_that_is_no_suite_is_not_exported() {
         }
         other => panic!("a template is exported as a suite: {other:?}"),
     }
+}
+
+// ── Refusals of the behaviour ──────────────────────────────────
+
+/// The record `report.scxml`, one number, which every probe below receives.
+fn write_report(dir: &Path) {
+    write_event_schema(
+        dir,
+        "report",
+        "probe.report",
+        "",
+        "    <data id=\"elapsed_ms\" sce:type=\"uint32\" sce:direction=\"in\"/>\n",
+    );
+}
+
+/// A template `probe_match.scxml` of the record, which takes the formal
+/// parameter `parameter`, when one is named, as the upper bound of the number.
+fn write_match(dir: &Path, parameter: Option<&str>) {
+    let (declared, matcher) = match parameter {
+        Some(name) => (
+            format!(
+                "  <datamodel>\n    <data id=\"{name}\" sce:type=\"uint32\" \
+                 sce:direction=\"in\"/>\n  </datamodel>\n"
+            ),
+            format!(
+                "    <sce:value-range field=\"elapsed_ms\">\n      <sce:upper param=\"{name}\"/>\n    \
+                 </sce:value-range>\n"
+            ),
+        ),
+        None => (
+            String::new(),
+            "    <sce:any-value field=\"elapsed_ms\"/>\n".to_string(),
+        ),
+    };
+    write(
+        dir,
+        "probe_match",
+        &document(
+            "sce:kind=\"test-template\" name=\"probe_match\" sce:type=\"record:Report\"",
+            &format!(
+                "  <sce:import kind=\"event-schema\" src=\"report.scxml\" as=\"Report\"/>\n\
+                 {declared}  <sce:record-match>\n{matcher}  </sce:record-match>\n"
+            ),
+        ),
+    );
+}
+
+/// The imports of a probe that matches with `probe_match.scxml` and reads
+/// the record it receives.
+const MATCH_IMPORTS: &str =
+    "  <sce:import kind=\"test-template\" src=\"probe_match.scxml\" as=\"Match\"/>\n  \
+     <sce:import kind=\"event-schema\" src=\"report.scxml\" as=\"Report\"/>\n";
+
+fn message_of(record: &serde_json::Value) -> &str {
+    record["message"].as_str().unwrap_or_default()
+}
+
+/// A module parameter and a template's formal parameter of one name are one
+/// identifier in the scope of the template, which the module's definitions
+/// hold (ES 201 873-1 §5.2.2): the formal parameter is refused, where it is
+/// written.
+#[test]
+fn a_formal_parameter_named_as_a_module_parameter_is_refused_by_name() {
+    let dir = scratch();
+    write_report(dir.path());
+    write_match(dir.path(), Some("limit"));
+    let suite = write_suite_of_component(
+        dir.path(),
+        "report",
+        "waiting",
+        MATCH_IMPORTS,
+        "  <datamodel>\n    <data id=\"limit\" sce:type=\"uint32\" \
+         sce:module-parameter=\"true\"/>\n  </datamodel>\n  <state id=\"waiting\">\n    \
+         <transition sce:receive=\"sut\" sce:test-template=\"Match\" sce:template-args=\"limit\" \
+         target=\"done\"/>\n  </state>\n  <final id=\"done\"/>\n",
+        "  <sce:module-parameter id=\"limit\" type=\"uint32\" value=\"500\"/>\n",
+    );
+    let record = refusal(&suite);
+    assert_eq!(record["code"], "test-profile/export-name", "{record}");
+    assert_eq!(record["actual"], "limit", "{record}");
+    assert_eq!(file_of(&record), "probe_match.scxml", "{record}");
+    assert!(
+        message_of(&record).contains(
+            "the formal parameter 'limit' is one TTCN-3 identifier with the module parameter \
+             'limit'"
+        ),
+        "{record}"
+    );
+}
+
+/// A component's variable is in the scope of its component type, which the
+/// module's definitions hold: one named as a module parameter is refused at
+/// the variable.
+#[test]
+fn a_variable_named_as_a_module_parameter_is_refused_by_name() {
+    let dir = scratch();
+    write_report(dir.path());
+    let suite = write_suite_of_component(
+        dir.path(),
+        "report",
+        "waiting",
+        "",
+        "  <datamodel>\n    <data id=\"key\" sce:type=\"uint32\" expr=\"0\"/>\n  </datamodel>\n  \
+         <state id=\"waiting\">\n    <transition sce:receive=\"sut\" target=\"done\"/>\n  \
+         </state>\n  <final id=\"done\"/>\n",
+        "  <sce:module-parameter id=\"key\" type=\"uint32\" value=\"1\"/>\n",
+    );
+    let record = refusal(&suite);
+    assert_eq!(record["code"], "test-profile/export-name", "{record}");
+    assert_eq!(record["actual"], "key", "{record}");
+    assert_eq!(file_of(&record), "probe_tester.scxml", "{record}");
+    assert!(
+        message_of(&record).contains(
+            "the variable 'key' is one TTCN-3 identifier with the module parameter 'key'"
+        ),
+        "{record}"
+    );
+}
+
+/// A function that runs on a component type sees the type's variables: one
+/// named as a local the export makes in the function, the variable a received
+/// message is stored in, is refused at the variable, which an author wrote.
+#[test]
+fn a_variable_named_as_a_local_of_its_function_is_refused_by_name() {
+    let dir = scratch();
+    write_report(dir.path());
+    write_match(dir.path(), None);
+    let suite = write_suite_of_component(
+        dir.path(),
+        "report",
+        "waiting",
+        MATCH_IMPORTS,
+        "  <datamodel>\n    <data id=\"v_report\" sce:type=\"uint32\" expr=\"0\"/>\n  \
+         </datamodel>\n  <state id=\"waiting\">\n    <transition sce:receive=\"sut\" \
+         sce:test-template=\"Match\" target=\"done\">\n      <assign location=\"v_report\" \
+         expr=\"_event.data.elapsed_ms\"/>\n    </transition>\n  </state>\n  \
+         <final id=\"done\"/>\n",
+        "",
+    );
+    let record = refusal(&suite);
+    assert_eq!(record["code"], "test-profile/export-name", "{record}");
+    assert_eq!(record["actual"], "v_report", "{record}");
+    assert_eq!(file_of(&record), "probe_tester.scxml", "{record}");
+    assert!(
+        message_of(&record).contains(
+            "the variable 'v_report' is one TTCN-3 identifier with the variable a received \
+             message is stored in 'v_report'"
+        ),
+        "{record}"
+    );
+}
+
+/// A name the export makes in a function, the variable a received message is
+/// stored in, and a state of that name are one identifier: the refusal
+/// stands at the state, which an author wrote.
+#[test]
+fn a_state_named_as_a_name_the_export_makes_is_refused_by_name() {
+    let dir = scratch();
+    write_report(dir.path());
+    write_match(dir.path(), None);
+    let suite = write_suite_of_component(
+        dir.path(),
+        "report",
+        "v_report",
+        MATCH_IMPORTS,
+        "  <datamodel>\n    <data id=\"seen\" sce:type=\"uint32\" expr=\"0\"/>\n  </datamodel>\n  \
+         <state id=\"v_report\">\n    <transition sce:receive=\"sut\" sce:test-template=\"Match\" \
+         target=\"done\">\n      <assign location=\"seen\" expr=\"_event.data.elapsed_ms\"/>\n    \
+         </transition>\n  </state>\n  <final id=\"done\"/>\n",
+        "",
+    );
+    let record = refusal(&suite);
+    assert_eq!(record["code"], "test-profile/export-name", "{record}");
+    assert_eq!(record["actual"], "v_report", "{record}");
+    assert_eq!(file_of(&record), "probe_tester.scxml", "{record}");
+    assert!(
+        message_of(&record).contains(
+            "the state 'v_report' is one TTCN-3 identifier with the variable a received message \
+             is stored in 'v_report'"
+        ),
+        "{record}"
+    );
+}
+
+/// `sce-static` adds at the width of its operands and fails the statement on
+/// an overflow, and a TTCN-3 integer has no width: an addition is refused by
+/// name, never written as one that computes another value.
+#[test]
+fn an_arithmetic_expression_is_refused_by_name() {
+    let dir = scratch();
+    write_report(dir.path());
+    let suite = write_suite_of_component(
+        dir.path(),
+        "report",
+        "waiting",
+        "",
+        "  <datamodel>\n    <data id=\"seen\" sce:type=\"uint32\" expr=\"0\"/>\n  </datamodel>\n  \
+         <state id=\"waiting\">\n    <transition sce:receive=\"sut\" target=\"done\">\n      \
+         <assign location=\"seen\" expr=\"seen + 1\"/>\n    </transition>\n  </state>\n  \
+         <final id=\"done\"/>\n",
+        "",
+    );
+    let record = refusal(&suite);
+    assert_eq!(record["code"], "generate/unsupported-feature", "{record}");
+    assert_eq!(file_of(&record), "probe_tester.scxml", "{record}");
+    assert!(
+        message_of(&record).contains("`seen + 1`")
+            && message_of(&record).contains("state 'waiting' / transition 1 / assign 1"),
+        "{record}"
+    );
 }

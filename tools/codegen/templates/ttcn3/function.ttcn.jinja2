@@ -1,0 +1,80 @@
+{#- The behaviour of one test component as a TTCN-3 function that runs on its
+    component type (docs/SCE_TEST_PROFILE.md §9.2 E5 to E13, §9.5): its
+    locals, then each atomic state as a label, the checks of its eventless
+    transitions, the start of its pending invocations and an `alt` of its
+    branches, each block the exits, content and entries of the branch and a
+    `goto` or a `return`. Each statement stands on its own line, two spaces
+    deeper than the block that holds it. `function` is
+    `ttcn3_export::behaviour::FunctionView`. -#}
+{%- import "ttcn3/_types.ttcn.jinja2" as types -%}
+{%- macro call(t) -%}
+{{ t.name }}{% if t.args %}({{ t.args | join(", ") }}){% endif %}
+{%- endmacro -%}
+{%- macro event(e) -%}
+{%- if e.kind == "receive" -%}
+{{ e.port }}.receive{% if e.template %}({{ call(e.template) }}){% endif %}{% if e.redirect %} -> value {{ e.redirect }}{% endif %}
+{%- elif e.kind == "timeout" -%}
+{{ e.timer }}.timeout
+{%- elif e.kind == "done" -%}
+{{ e.reference }}.done
+{%- endif -%}
+{%- endmacro -%}
+{% macro statements(list, pad) %}
+{% for s in list %}
+{% if s.kind == "label" %}
+{{ pad }}label {{ s.name }};
+{% elif s.kind == "goto" %}
+{{ pad }}goto {{ s.label }};
+{% elif s.kind == "return" %}
+{{ pad }}return;
+{% elif s.kind == "send" %}
+{{ pad }}{{ s.port }}.send({{ call(s.template) }});
+{% elif s.kind == "start-timer" %}
+{{ pad }}{{ s.timer }}.start{% if s.duration %}({{ s.duration }}){% endif %};
+{% elif s.kind == "stop-timer" %}
+{{ pad }}{{ s.timer }}.stop;
+{% elif s.kind == "setverdict" %}
+{{ pad }}setverdict({{ s.verdict }}{% if s.reason %}, {{ s.reason }}{% endif %});
+{% elif s.kind == "log" %}
+{{ pad }}log({{ s.items | join(", ") }});
+{% elif s.kind == "assign" %}
+{{ pad }}{{ s.location }} := {{ s.value }};
+{% elif s.kind == "if" %}
+{{ pad }}if ({{ s.condition }}) {
+{{ statements(s.then, pad ~ "  ") }}{{ pad }}}{% if s.otherwise %} else {
+{{ statements(s.otherwise, pad ~ "  ") }}{{ pad }}}{% endif %}
+
+{% elif s.kind == "create" %}
+{{ pad }}if ({{ s.reference }} == null) {
+{{ pad }}  {{ s.reference }} := {{ s.component_type }}.create({{ s.ptc | ttcn3_charstring }}) alive;
+{% for c in s.connections %}
+{% if c.when %}
+{{ pad }}  if ({{ c.when }} != null) {
+{{ pad }}    {{ c.operation }}({{ c.left }}:{{ c.left_port }}, {{ c.right }}:{{ c.right_port }});
+{{ pad }}  }
+{% else %}
+{{ pad }}  {{ c.operation }}({{ c.left }}:{{ c.left_port }}, {{ c.right }}:{{ c.right_port }});
+{% endif %}
+{% endfor %}
+{{ pad }}  {{ s.reference }}.start({{ s.function }}());
+{{ pad }}}
+{% elif s.kind == "kill" %}
+{{ pad }}if ({{ s.reference }} != null) {
+{{ pad }}  {{ s.reference }}.kill;
+{{ pad }}  {{ s.reference }} := null;
+{{ pad }}}
+{% elif s.kind == "alt" %}
+{{ pad }}alt {
+{% for b in s.branches %}
+{{ pad }}  [{% if b.guard %}{{ b.guard }}{% endif %}] {{ event(b.event) }} {
+{{ statements(b.block, pad ~ "    ") }}{{ pad }}  }
+{% endfor %}
+{{ pad }}}
+{% endif %}
+{% endfor %}
+{% endmacro %}
+function {{ function.name }}() runs on {{ function.component }} {
+{% for l in function.locals %}
+  var {{ types.type_expr(l.type) }} {{ l.name }}{% if l.starts_null %} := null{% endif %};
+{% endfor %}
+{{ statements(function.body, "  ") }}}
