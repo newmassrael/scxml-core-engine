@@ -44580,6 +44580,23 @@
         {"source": {"msg_id": 255, "reserved": 126, "aligned_payload": []}, "encoded": [255, 126, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "note": "no payload: the frame ends at the aligned byte"},
         {"source": {"msg_id": 2, "reserved": 3, "aligned_payload": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63]}, "encoded": [2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63], "note": "a payload at its bound"}
       ]
+    },
+    "codec_optional_field_attributes": {
+      "fixture": "CodecOptionalFieldAttributes",
+      "signature": "(raw: &[u8]) <-> {status: u8 @ byte 0 little, reading: u16 @ bytes 1..2 big bits[15:4]}",
+      "cases": [
+        {"decoded": {"status": 12, "reading": 2748}, "encoded": [12, 171, 192], "note": "ready and fault set; 0xABC is the word 0xABC0 over bytes 1 and 2"},
+        {"decoded": {"status": 0, "reading": 0}, "encoded": [0, 0, 0], "note": "all-zero"},
+        {"decoded": {"status": 4, "reading": 4095}, "encoded": [4, 255, 240], "note": "reading at its largest; the low four bits of byte 2 are no field's"},
+        {"decoded": {"status": 0, "reading": 15}, "encoded": [0, 0, 240], "note": "only the high nibble of byte 2"}
+      ],
+      "description": "docs/adr/0081 \u00a75: each source states the value as the codec's interface presents it, and its frame is written by tests/forge/conformance/binary_model.py, an independent reading of the page, which holds each to itself before writing it. a one-byte flags carrier read little-endian, and a 12-bit big-endian field four bits into byte 1 that spans bytes 1 and 2 (docs/adr/0095 \u00a71).",
+      "sources": [
+        {"source": {"status": 12, "reading": 2748}, "encoded": [12, 171, 192], "note": "ready and fault set; reading is the word 0xABC0 over bytes 1 and 2"},
+        {"source": {"status": 0, "reading": 0}, "encoded": [0, 0, 0], "note": "every field zero: three zero bytes"},
+        {"source": {"status": 4, "reading": 4095}, "encoded": [4, 255, 240], "note": "ready alone; reading at its largest, the low four bits of byte 2 no field's"},
+        {"source": {"status": 0, "reading": 15}, "encoded": [0, 0, 240], "note": "the low four bits of reading are the high four of byte 2, and nothing else is set"}
+      ]
     }
   },
   "string_lookups": {
