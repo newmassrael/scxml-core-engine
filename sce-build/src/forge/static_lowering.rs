@@ -1668,10 +1668,11 @@ pub trait StaticTarget {
     /// `<param>` carries as is the statements that write it where the pair the
     /// `<send>` opens stands ([`crate::model::Param::native_writes`]), rather
     /// than a value the target holds a param in. A target that writes so lowers
-    /// a composed value a `<send>`'s `<param>` carries, and refuses one by name
-    /// wherever else a value is written: an `<invoke>`'s `<param>`, a
-    /// `<donedata>`, a `<content expr>` and a send a host serves, whose request
-    /// carries each value as text too.
+    /// a composed value a `<send>`'s `<param>` carries, a send a host serves
+    /// included (whose request carries the value's JSON as its text too, read
+    /// back from the payload), and refuses one by name wherever else a value is
+    /// written, whose template opens no pair for such statements: an
+    /// `<invoke>`'s `<param>`, a `<donedata>` and a `<content expr>`.
     fn composed_param_writes(&self) -> bool {
         false
     }
@@ -19361,15 +19362,11 @@ fn lower_action(
                     param.name.clone(),
                     lower_wire_param(param, Some(action.event.as_str()), ctx, renames, rewrites)?,
                 ));
-                // A send a host serves carries each value as text too, which a
-                // composed value written where its pair stands is not.
-                if action.send_type_host_served {
-                    composed_writes_unlowered(
-                        &format!("a <send> a host serves, <param name=\"{}\">", param.name),
-                        param.native_writes,
-                        rewrites,
-                    )?;
-                }
+                // A send a host serves carries each value as text too: a composed
+                // value's is its JSON, read back from the payload it is written
+                // into (`send_payload_json`), so a `<send>` of either kind
+                // carries one.
+                //
                 // A value read from the payload runs only for a delivery that
                 // carried one, as the rest of the transition's content does.
                 reads_payload |=
@@ -20822,10 +20819,10 @@ fn lower_wire_param(
 /// Refuse by name a composed value written as the statements that write it
 /// where its pair stands ([`StaticTarget::composed_param_writes`]) at a place
 /// that writes its pairs as values (an `<invoke>`'s request, a `<donedata>`,
-/// a `<content expr>`, a send a host serves), whose template opens no pair for
-/// such statements and whose request carries each value as text too
-/// (docs/adr/0086, section 7.3). `construct` names the place, `writes` is what
-/// was lowered there.
+/// a `<content expr>`), whose template opens no pair for such statements
+/// (docs/adr/0086, section 7.3). A `<send>`'s `<param>`, a host-served one
+/// included, is written where its pair stands. `construct` names the place,
+/// `writes` is what was lowered there.
 fn composed_writes_unlowered(
     construct: &str,
     writes: bool,
