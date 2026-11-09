@@ -213,6 +213,16 @@ fn fails_a_job_the_system_under_test_answers_with_a_failure() {
     assert!(logged(&results[0], LogKind::Timeout));
 }
 
+/// The test log every runtime writes of `answers_the_job` in a world with no
+/// feature, answered with success: one file the Rust and the C++ runs are both
+/// held to (`ATestSuite.AGeneratedTestCaseWritesItsTestLog` in
+/// `tests/integration/ATestSuiteRunsEndToEndTest.cpp`), so the agreement of
+/// the backends is one set of bytes. The file ends in a newline, which no
+/// canonical text holds.
+const ANSWERS_THE_JOB_LOG: &str = include_str!(
+    "../../../../sce-build/tests/fixtures/test_profile/runtime/expected_logs/answers_the_job.json"
+);
+
 /// docs/SCE_TEST_PROFILE.md §12.5: the test log of a generated test case, in
 /// its one canonical text. The request the component sends carries the value
 /// its template's unit writes, the job of the suite's module parameter; the
@@ -225,24 +235,9 @@ fn a_generated_test_case_writes_its_test_log() {
     assert_eq!(names(&results), ["answers_the_job"]);
     assert_eq!(
         results[0].canonical_log("runtime_suite"),
-        concat!(
-            "{\"records\":[",
-            "{\"at\":\"0\",\"kind\":\"test-case-started\"},",
-            "{\"at\":\"0\",\"component\":\"mtc\",\"kind\":\"component-created\",",
-            "\"type\":\"param_asker\"},",
-            "{\"at\":\"0\",\"component\":\"mtc\",\"kind\":\"message-sent\",\"port\":\"sut\",",
-            "\"type\":\"job_request\",\"value\":{\"job\":\"7\"}},",
-            "{\"at\":\"0\",\"component\":\"mtc\",\"duration_us\":\"1000000\",",
-            "\"kind\":\"timer-started\",\"timer\":\"deadline\"},",
-            "{\"at\":\"500\",\"component\":\"mtc\",\"kind\":\"message-received\",\"port\":\"sut\",",
-            "\"type\":\"job_reply\",\"value\":{\"code\":\"0\",\"job\":\"7\"}},",
-            "{\"at\":\"500\",\"component\":\"mtc\",\"kind\":\"timer-stopped\",\"timer\":\"deadline\"},",
-            "{\"at\":\"500\",\"component\":\"mtc\",\"kind\":\"verdict-set\",\"verdict\":\"pass\"},",
-            "{\"at\":\"500\",\"component\":\"mtc\",\"kind\":\"component-done\",\"verdict\":\"pass\"},",
-            "{\"at\":\"500\",\"kind\":\"test-case-ended\",\"verdict\":\"pass\"}",
-            "],\"schema\":\"sce-test-log.v1\",\"suite\":\"runtime_suite\",",
-            "\"test_case\":\"answers_the_job\",\"verdict\":\"pass\"}",
-        )
+        ANSWERS_THE_JOB_LOG
+            .strip_suffix('\n')
+            .expect("the shared log ends in one newline")
     );
 }
 

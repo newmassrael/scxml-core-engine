@@ -12,8 +12,10 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <fstream>
 #include <memory>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -25,6 +27,10 @@
 #include "runtime_suite.h"
 #include "saved/SavedValues.h"
 #include "test/Suite.h"
+
+#ifndef SCE_PROJECT_ROOT
+#define SCE_PROJECT_ROOT "."
+#endif
 
 namespace {
 
@@ -147,6 +153,41 @@ TEST(ATestSuite, FailsAJobTheSystemUnderTestAnswersWithAFailure) {
     EXPECT_EQ(results[0].result.verdict, Verdict::Fail);
     EXPECT_EQ(results[0].result.endedAt, SECOND) << "time advances to the timer's instant";
     EXPECT_TRUE(logged(results[0], LogKind::Timeout));
+}
+
+/// The test log every runtime writes of `answers_the_job` in a world with no
+/// feature, answered with success: one file the C++ and the Rust runs are both
+/// held to (`a_generated_test_case_writes_its_test_log` in
+/// backends/rust/tests/tests/a_test_suite_runs_through_its_runner.rs), so the
+/// agreement of the backends is one set of bytes. The file ends in a newline,
+/// which no canonical text holds, so it is read without it.
+std::string sharedLog(const std::string &testCase) {
+    const std::string path = std::string(SCE_PROJECT_ROOT) +
+                             "/sce-build/tests/fixtures/test_profile/runtime/expected_logs/" + testCase + ".json";
+    std::ifstream in(path);
+    EXPECT_TRUE(in.is_open()) << "the shared test log is not readable: " << path;
+    std::ostringstream buffer;
+    buffer << in.rdbuf();
+    std::string text = buffer.str();
+    const bool endsInNewline = !text.empty() && text.back() == '\n';
+    EXPECT_TRUE(endsInNewline) << "the shared log ends in one newline: " << path;
+    if (endsInNewline) {
+        text.pop_back();
+    }
+    return text;
+}
+
+/// docs/SCE_TEST_PROFILE.md §12.5: the test log of a generated test case, in
+/// its one canonical text, byte for byte the one the Rust runtime writes of
+/// the same run. The request the component sends carries the value and the
+/// canonical writer its template's unit gives, the job of the suite's module
+/// parameter; the reply arrives at 500 and is taken in that round, which stops
+/// the timer, passes and ends the MTC.
+TEST(ATestSuite, AGeneratedTestCaseWritesItsTestLog) {
+    std::vector<std::uint32_t> requested;
+    const auto results = SCE::Test::runSuite(SCE::Generated::RuntimeSuite::suite(), {}, responders(0, requested));
+    ASSERT_EQ(names(results), (std::vector<std::string>{"answers_the_job"}));
+    EXPECT_EQ(results[0].canonicalLog("runtime_suite"), sharedLog("answers_the_job"));
 }
 
 /// §11.8: a world runs the test cases whose selection it satisfies, in the
