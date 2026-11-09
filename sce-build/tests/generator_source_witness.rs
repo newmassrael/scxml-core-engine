@@ -233,6 +233,176 @@ fn a_tree_without_the_witness_set_is_unverifiable_not_stale() {
     );
 }
 
+// ── The declared set against what the compiler read ───────────────────
+//
+// The tests above stage exactly the declared set and ask whether the
+// verdict holds there, which proves the digest reads nothing outside it.
+// They cannot prove the converse: that every file the binary compiles in
+// is inside it. A file pulled in by `include_str!` from outside
+// `sce-build/src` and `stdlib` (the Rust and Go harnesses `w3c_suite.rs`
+// writes beside the W3C machines, a runtime's `policy` source, a schema)
+// changes what the generator emits without moving the digest, so
+// `verify-generator` calls a stale binary current and an action key built
+// on the digest (ADR 0097, answer 1) names two generators alike.
+//
+// The compiler knows the set exactly. Cargo writes it next to the binary
+// as a Make-format dep-info file (`<bin>.d`): every source file rustc read
+// for the binary and for the local packages it links, every file a macro
+// included, and every file a local build script watches. The test reads
+// that list and requires each local member of it to be a witness member.
+
+/// The paths a Make-format dep-info file declares as the prerequisites of
+/// its one target. Cargo escapes a space inside a path as `\ `.
+fn dep_info_prerequisites(text: &str) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    for line in text.lines() {
+        let Some((_, prerequisites)) = line.split_once(": ") else {
+            continue;
+        };
+        let mut current = String::new();
+        let mut chars = prerequisites.chars().peekable();
+        while let Some(c) = chars.next() {
+            match c {
+                '\\' if chars.peek() == Some(&' ') => {
+                    current.push(' ');
+                    chars.next();
+                }
+                ' ' => {
+                    if !current.is_empty() {
+                        paths.push(PathBuf::from(std::mem::take(&mut current)));
+                    }
+                }
+                _ => current.push(c),
+            }
+        }
+        if !current.is_empty() {
+            paths.push(PathBuf::from(current));
+        }
+    }
+    paths
+}
+
+/// Each file of this checkout the compiler read to build `sce-codegen`, as a
+/// path relative to the checkout. Files outside the checkout (the registry,
+/// the toolchain) and files the build itself wrote (under the target
+/// directory, wherever it is linked to) are not sources of this tree.
+fn compiled_in_sources() -> Vec<PathBuf> {
+    let bin = sce_codegen_bin();
+    let dep_info = bin.with_extension("d");
+    let text = std::fs::read_to_string(&dep_info).unwrap_or_else(|e| {
+        panic!(
+            "cargo writes the binary's dep-info at {}, and it could not be read: {e}",
+            dep_info.display()
+        )
+    });
+    let root = repo_root()
+        .canonicalize()
+        .expect("the checkout has a canonical path");
+    let target = bin
+        .parent()
+        .and_then(Path::parent)
+        .expect("the binary sits in <target>/<profile>")
+        .canonicalize()
+        .expect("the target directory has a canonical path");
+    let mut sources: Vec<PathBuf> = dep_info_prerequisites(&text)
+        .into_iter()
+        .filter_map(|path| {
+            // Cargo writes this file when it builds `sce-codegen` as a target
+            // it was asked for, and not when it builds it for an integration
+            // test, so in a target directory another tree built last it is
+            // that tree's list. A file of the list that is not here says so;
+            // judging this tree by it would judge some other tree.
+            let canonical = path.canonicalize().unwrap_or_else(|e| {
+                panic!(
+                    "the dep-info at {} names {}, which is not on disk ({e}), so it was \
+                     written for another tree. Build the generator as a target first \
+                     (`cargo build --bin sce-codegen --features cli -p sce-build`, as \
+                     rust-workspace-tests.yml does) and run this test again",
+                    dep_info.display(),
+                    path.display()
+                )
+            });
+            // The build directory is the build's own output. A directory is
+            // a watch on its listing (a build script re-runs when a file is
+            // added to it), and the files it lists are what a witness covers.
+            if canonical.starts_with(&target) || canonical.is_dir() {
+                return None;
+            }
+            canonical.strip_prefix(&root).ok().map(Path::to_path_buf)
+        })
+        .collect();
+    sources.sort();
+    sources.dedup();
+    sources
+}
+
+#[test]
+fn every_file_of_this_tree_the_binary_compiles_in_is_witnessed() {
+    let root = repo_root();
+    let witnessed: std::collections::BTreeSet<PathBuf> =
+        sce_build::generator_witness::witness_paths(&root)
+            .expect("the witness set of this checkout is readable")
+            .into_iter()
+            .map(|path| {
+                path.strip_prefix(&root)
+                    .expect("a witness member is under the checkout")
+                    .to_path_buf()
+            })
+            .collect();
+    let sources = compiled_in_sources();
+    assert!(
+        sources.iter().any(|p| p.starts_with("sce-build/src")),
+        "the dep-info named no source of sce-build at all, so it is not the \
+         binary's: {sources:?}"
+    );
+
+    // Two exemptions, each a file the binary reads that no generated file
+    // depends on. The template tree is read by every run from disk and is an
+    // input of each generation (`RUN_TIME_TREE`). The git HEAD and the ref it
+    // names are watched by the build script for the commit stamp
+    // (`GENERATOR_COMMIT`), a label of diagnostics and exports that no
+    // generated file carries: the drift header leaves it out on purpose
+    // (`forge::drift`), since it would re-stamp every committed tree on every
+    // commit.
+    let unwitnessed: Vec<&PathBuf> = sources
+        .iter()
+        .filter(|path| {
+            !witnessed.contains(*path)
+                && !path.starts_with(sce_build::generator_witness::RUN_TIME_TREE)
+                && !path.starts_with(".git")
+        })
+        .collect();
+    assert!(
+        unwitnessed.is_empty(),
+        "sce-codegen compiles in files its witness does not cover, so editing \
+         one changes what it emits and leaves GENERATOR_SOURCE_DIGEST where it \
+         was. Add each to generator_witness::WITNESS_FILES (or its directory to \
+         WITNESS_TREES):\n  {}",
+        unwitnessed
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>()
+            .join("\n  ")
+    );
+}
+
+/// The parser above, on the two shapes cargo writes: a plain list, and a path
+/// holding an escaped space. A parser that split on every space would turn the
+/// second into two paths that do not exist and fail the test above for a
+/// reason that is not the tree's.
+#[test]
+fn a_dep_info_line_is_read_path_by_path() {
+    let text = "/t/debug/sce-codegen: /r/a.rs /r/dir\\ with\\ space/b.rs  /r/c.rs\n\n/r/a.rs:\n";
+    assert_eq!(
+        dep_info_prerequisites(text),
+        vec![
+            PathBuf::from("/r/a.rs"),
+            PathBuf::from("/r/dir with space/b.rs"),
+            PathBuf::from("/r/c.rs"),
+        ]
+    );
+}
+
 // ── The CMake half ────────────────────────────────────────────────────
 //
 // The tests above prove the binary reaches the right verdict. They say
