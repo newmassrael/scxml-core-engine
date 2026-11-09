@@ -73,7 +73,7 @@
 {{ sce_map.source_marker(model.source_location, "go", symbol_artifact=sce_artifact.machine) }}
 func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}State, engine *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event], isDefaultEntry bool) {
 {% if model.needs_script_engine %}
-	p.ensureScriptEngine()
+	p.assertScriptSession()
 {% endif %}
 {% if model.has_parallel_states or model.uses_in_predicate %}
 	// W3C SCXML 3.4/3.12.1: Add state to active configuration for parallel states and In() predicate
@@ -156,7 +156,7 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 {% set done_native = state.donedata.params | selectattr("native_value") | list | length > 0 %}
 		{
 {% if not done_native %}
-			p.ensureScriptEngine()
+			p.assertScriptSession()
 			se := p.ScriptEngine
 			if se != nil {
 {% else %}
@@ -267,7 +267,7 @@ func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}S
 			// carries the engine.
 {% set donedata_content_lua = state.donedata.content.text | to_lua_data_content %}
 {% endif %}
-			p.ensureScriptEngine()
+			p.assertScriptSession()
 			se := p.ScriptEngine
 			if se != nil {
 				{# A Go raw string needs no escaping, and applying the
@@ -406,7 +406,7 @@ func (p *{{ machine_name }}Policy) RestartInvokes(engine *sce.Engine[{{ machine_
 func (p *{{ machine_name }}Policy) ExecuteHistoryDefaultContent(history sce.HistoryID, engine *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event]) {
 {% if _history_content.any %}
 {% if model.needs_script_engine %}
-	p.ensureScriptEngine()
+	p.assertScriptSession()
 {% endif %}
 	switch history {
 {% for history_id, history_info in model.history_states | dictsort %}
@@ -437,7 +437,7 @@ func (p *{{ machine_name }}Policy) ExecuteHistoryDefaultContent(history sce.Hist
 {{ sce_map.source_marker(model.source_location, "go", symbol_artifact=sce_artifact.machine) }}
 func (p *{{ machine_name }}Policy) ExecuteExitActions(state {{ machine_name }}State, engine *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event], configurationBeforeExit []{{ machine_name }}State) {
 {% if model.needs_script_engine %}
-	p.ensureScriptEngine()
+	p.assertScriptSession()
 {% endif %}
 {% if model.history_states %}
 	// W3C SCXML 3.10 / §scxml-D-exitStates: record the histories of this state

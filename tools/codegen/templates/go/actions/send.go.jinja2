@@ -184,7 +184,7 @@
 {% set send_prologue = (model.needs_script_engine and (action.eventexpr or action.targetexpr or action.typeexpr or action.delayexpr or has_namelist or action.idlocation)) or action.native_delay or action.native_event or action.native_target %}
 {% if send_prologue %}
 {% if model.needs_script_engine %}
-	p.ensureScriptEngine()
+	p.assertScriptSession()
 {% endif %}
 	sendArgError := ""
 {% if action.idlocation and not action.native_idlocation %}
@@ -479,7 +479,7 @@
    engine is asked for it. Only a send with a param that still needs the
    engine builds one. #}
 {% if action.params | rejectattr("is_static_literal") | rejectattr("native_value") | list | length > 0 %}
-		p.ensureScriptEngine()
+		p.assertScriptSession()
 {% endif %}
 {% endif %}
 {# Bound only when something is read through it: a send whose one dynamic
@@ -591,7 +591,7 @@
 		// The reading was decided at codegen time; the VALUE is produced
 		// here, at send time, and serialized so the far end parses. The
 		// analysis counted this text, so the machine carries the engine.
-		p.ensureScriptEngine()
+		p.assertScriptSession()
 		eventDataStr := ""
 		if contentVal, contentErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.content | to_lua_data_content }}`); contentErr == nil {
 			eventDataStr = sce.ScriptValueToJSON(contentVal)
@@ -637,7 +637,7 @@
 		// place error.execution in the internal event queue and use the empty
 		// string as the value of the <content> element."
 		paramFailed := false
-		p.ensureScriptEngine()
+		p.assertScriptSession()
 		eventDataStr := sce.ScriptValueToJSON("")
 		if contentVal, contentErr := p.ScriptEngine.EvaluateExpression(p.SessionID, `{{ action.contentexpr | to_lua_expr }}`); contentErr == nil {
 			eventDataStr = sce.ScriptValueToJSON(contentVal)

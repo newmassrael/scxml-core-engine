@@ -15,7 +15,7 @@
 {% macro invoke_namelist_guard(invoke_info, model, machine_name) %}
 {% if invoke_info.namelist and model.needs_script_engine %}
 			{
-				p.ensureScriptEngine()
+				p.assertScriptSession()
 				se := p.ScriptEngine
 				namelistValid := true
 {% for var_name in invoke_info.namelist | split %}
@@ -132,7 +132,7 @@
 {% elif invoke_info.params and model.needs_script_engine %}
 			// W3C SCXML 6.4.1: Pass params to child datamodel before initialization
 			{
-				p.ensureScriptEngine()
+				p.assertScriptSession()
 				se := p.ScriptEngine
 {% for param in invoke_info.params %}
 {# §scxml-5.7: the value comes from 'expr' or, failing that, 'location' — a
@@ -171,6 +171,33 @@
 {% endfor %}
 			}
 {% endif %}
+{% endmacro %}
+{#
+    docs/adr/0096 + §scxml-6.4: start the child `childEngine`, or, when its
+    start is refused because its script session cannot be established, end
+    the `<invoke>` without a child: the parent keeps none, raises
+    error.execution naming the invoke and the step, and raises no
+    done.invoke for it, the path a `src` or a `namelist` that cannot be read
+    takes. The child never ran, so nothing it sent is drained; its Mesh
+    router, installed before the start, is told the session ended.
+    `invoke_named` is a Go expression naming the invoke: the id it was
+    started under for one that keeps it in an `idlocation`, the document's id
+    otherwise. Expects `childEngine`, `engine` and `p` in scope, inside the
+    loop over the pending invokes.
+#}
+{% macro start_child_or_refuse(invoke_info, invoke_named, model, machine_name) %}
+{% if 'error.execution' in model.events %}
+			if refused := childEngine.Initialize(); refused != nil {
+{% else %}
+			if childEngine.Initialize() != nil {
+{% endif %}
+				childEngine.DetachMesh()
+				delete(p.activeInvokes, "{{ invoke_info.invoke_id }}")
+{% if 'error.execution' in model.events %}
+				engine.Raise(sce.NewPlatformError({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}, sce.ChildStartRefusal({{ invoke_named }}, refused)))
+{% endif %}
+				continue
+			}
 {% endmacro %}
 {% macro hybrid_child_start(invoke_info, child, child_stem, wrapper_type, model, machine_name) %}
 			// W3C SCXML 6.5: Generate child session ID
@@ -231,7 +258,7 @@
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "{{ invoke_info.invoke_id }}", "{% if invoke_info.candidates %}{{ child_stem }}{% endif %}")
-			childEngine.Initialize()
+{{ start_child_or_refuse(invoke_info, '"' ~ (invoke_info.invoke_id | escape_go) ~ '"', model, machine_name) }}
 
 			wrapper := &{{ wrapper_type }}{engine: childEngine, policy: &childPolicy}
 			p.child{{ invoke_info.field_suffix | to_pascal_case }} = wrapper
@@ -354,7 +381,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 			// before the child initializes, since its first <onentry> may
 			// already send to a peer.
 			engine.StartChildMesh(childEngine, "{{ invoke_info.invoke_id }}", "{% if not invoke_info.src.startswith('#') %}{{ invoke_info.child_name }}{% endif %}")
-			childEngine.Initialize()
+{{ start_child_or_refuse(invoke_info, 'pending.InvokeID' if invoke_info.idlocation else ('"' ~ (invoke_info.invoke_id | escape_go) ~ '"'), model, machine_name) }}
 
 			// W3C SCXML 6.4: Store child and create wrapper
 			wrapper := &childEngineWrapper{{ machine_name }}_{{ invoke_info.field_suffix | to_pascal_case }}{engine: childEngine, policy: &childPolicy}
@@ -408,7 +435,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 {# A `datamodel="sce-static"` param is native code (`Param::native_value`) over
    the machine's fields, so it asks no engine for its value. #}
 {% if invoke_info.srcexpr or invoke_info.contentexpr or invoke_info.namelist or invoke_info.idlocation or (invoke_info.params | rejectattr('is_static_literal') | rejectattr('native_value') | list | length > 0) %}
-			p.ensureScriptEngine()
+			p.assertScriptSession()
 {% endif %}
 {% if invoke_info.idlocation %}
 			// W3C SCXML 6.4.1: the invocation's generated id goes to
@@ -582,7 +609,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 {% endif %}
 {% elif invoke_info.srcexpr %}
 			// W3C SCXML 6.4.3: Evaluate srcexpr at runtime
-			p.ensureScriptEngine()
+			p.assertScriptSession()
 			{
 				se := p.ScriptEngine
 {# ⚠ This comment opens WITHOUT a leading dash on purpose. A dash there
@@ -611,7 +638,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 			}
 {% elif invoke_info.contentexpr %}
 			// W3C SCXML 6.4.2: Evaluate contentexpr at runtime
-			p.ensureScriptEngine()
+			p.assertScriptSession()
 			{
 				se := p.ScriptEngine
 				if _, err := se.EvaluateExpression(p.SessionID, `{{ invoke_info.contentexpr | to_lua_expr }}`); err != nil {
@@ -896,7 +923,7 @@ func (p *{{ machine_name }}Policy) ExecuteFinalizeForChildEvent(eventWithMeta *s
 
 	if finalizeScript != "" {
 {% if model.needs_script_engine %}
-		p.ensureScriptEngine()
+		p.assertScriptSession()
 		se := p.ScriptEngine
 		if se != nil {
 			// §scxml-5.10: under the name the child sent it, which is the value's own
@@ -941,7 +968,7 @@ type childEngineWrapper{{ machine_name }}_{{ invoke_info.field_suffix | to_pasca
 	engine *sce.Engine[{{ invoke_info.child_name | to_machine_name }}State, {{ invoke_info.child_name | to_machine_name }}Event]
 	policy *{{ invoke_info.child_name | to_machine_name }}Policy
 }
-func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.field_suffix | to_pascal_case }}) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.field_suffix | to_pascal_case }}) Initialize() error { return w.engine.Initialize() }
 func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.field_suffix | to_pascal_case }}) Tick() { w.engine.Tick() }
 func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.field_suffix | to_pascal_case }}) Step() { w.engine.Step() }
 func (w *childEngineWrapper{{ machine_name }}_{{ invoke_info.field_suffix | to_pascal_case }}) Stop() { w.engine.Stop() }
@@ -974,7 +1001,7 @@ type {{ wrapper }} struct {
 	engine *sce.Engine[{{ target.stem | to_machine_name }}State, {{ target.stem | to_machine_name }}Event]
 	policy *{{ target.stem | to_machine_name }}Policy
 }
-func (w *{{ wrapper }}) Initialize() { w.engine.Initialize() }
+func (w *{{ wrapper }}) Initialize() error { return w.engine.Initialize() }
 func (w *{{ wrapper }}) Tick() { w.engine.Tick() }
 func (w *{{ wrapper }}) Step() { w.engine.Step() }
 func (w *{{ wrapper }}) Stop() { w.engine.Stop() }

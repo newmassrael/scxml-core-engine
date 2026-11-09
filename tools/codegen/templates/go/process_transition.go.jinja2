@@ -135,7 +135,7 @@ func (p *{{ machine_name }}Policy) FirstEnabledTransition(state {{ machine_name 
 func (p *{{ machine_name }}Policy) ExecuteTransitionContent(source {{ machine_name }}State, transitionIndex int, engine *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event]) {
 {% if model.has_transition_actions %}
 {% if model.needs_script_engine %}
-	p.ensureScriptEngine()
+	p.assertScriptSession()
 {% endif %}
 	switch source {
 {# A transition carries content when the document wrote some, and a branch of
