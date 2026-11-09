@@ -370,7 +370,7 @@ plan once per state of its inputs, and many at once, without changing an answer:
 - **Kept per input state.** Each answer is kept in the build tree
   (`<build>/sce-codegen-plans/entries/<key>.plan`), keyed on the SHA-256 of the generator's
   path, the environment it reads its installation and confinement from, and the arguments,
-  beside the list of the files the plan read (`--plan-reads`: the prerequisites the depfile
+  beside the list of the files the plan read (`--reads`: the prerequisites the depfile
   of the same run names, less every file the plan produced, its child generations' included;
   one function, `depfile_prerequisites`, writes both; a file it looked for and did not find
   is listed as `?<path>`). An answer is reused only when neither the generator nor any listed

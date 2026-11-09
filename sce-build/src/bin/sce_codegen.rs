@@ -160,25 +160,22 @@ fn plans_machines() -> bool {
     output_mode() == OutputMode::Plan && PLAN_MACHINES.get().copied().unwrap_or(false)
 }
 
-/// Installed once by `main`, beside [`PLAN_CHILDREN`]: where a `--plan` run
-/// writes the list of the files it read (`--plan-reads`, [`write_plan_reads`]).
-static PLAN_READS: OnceLock<PathBuf> = OnceLock::new();
+/// Installed once by `main`: where a run writes the list of the files it
+/// read (`--reads`, [`write_reads`]). A plan and a generation write the same
+/// list, since a plan is the generation run in memory.
+static READS: OnceLock<PathBuf> = OnceLock::new();
 
-/// The file a `--plan` run was asked to write what it read into, or `None`
-/// when it was not asked, or the run is no plan.
-fn plan_reads() -> Option<&'static Path> {
-    if output_mode() == OutputMode::Plan {
-        PLAN_READS.get().map(PathBuf::as_path)
-    } else {
-        None
-    }
+/// The file a run was asked to write what it read into, or `None` when it
+/// was not asked.
+fn reads_file() -> Option<&'static Path> {
+    READS.get().map(PathBuf::as_path)
 }
 
 /// Whether a run records what it read ([`GenerateReport::depfile`]): a run
-/// asked for a depfile (`--write-deps`), and a plan asked for its reads
-/// (`--plan-reads`), which are the prerequisites that depfile would name.
+/// asked for a depfile (`--write-deps`), and a run asked for its reads
+/// (`--reads`), which are the prerequisites that depfile would name.
 fn records_reads(depfile_path: Option<&str>) -> bool {
-    depfile_path.is_some() || plan_reads().is_some()
+    depfile_path.is_some() || reads_file().is_some()
 }
 
 /// The tree an `--assert-unchanged` run would have left behind, held in
@@ -1868,21 +1865,23 @@ struct Cli {
     #[arg(long, global = true, requires = "plan")]
     plan_machines: bool,
 
-    /// With `--plan`: also write to FILE, one path per line, every file the
-    /// plan read: the prerequisites a `--write-deps` depfile of the same run
-    /// names (its document, what that document includes and imports, the
-    /// source set its `source-hash` covers, the deploy, the templates and
-    /// this program), less every file the run produces; with
-    /// `--plan-children`, those of every child generation it planned too. A
-    /// file the run named and did not find is written `?<path>`.
+    /// Also write to FILE, one path per line, every file the run read: the
+    /// prerequisites a `--write-deps` depfile of the same run names (its
+    /// document, what that document includes and imports, the source set its
+    /// `source-hash` covers, the deploy, the templates and this program),
+    /// less every file the run produces; with `--plan --plan-children`,
+    /// those of every child generation it planned too. A file the run named
+    /// and did not find is written `?<path>`, since its appearing would
+    /// change what the run does.
     ///
-    /// The answer of a plan is a function of what it read and of its
-    /// arguments, so a build that keeps the answer can tell when it is still
-    /// the one the generator would give: when no file of this list is newer
-    /// than the answer. A run that records nothing it read writes no list,
-    /// and an answer without one is never reused.
-    #[arg(long, global = true, requires = "plan", value_name = "FILE")]
-    plan_reads: Option<PathBuf>,
+    /// What a run writes is a function of what it read and of its arguments.
+    /// So a build that keeps a plan's answer can tell when it is still the
+    /// one the generator would give (when no file of this list is newer than
+    /// the answer), and an action cache can key a generation on the contents
+    /// of this list (ADR 0097). A run that records nothing it read writes no
+    /// list, and an answer without one is never reused.
+    #[arg(long, global = true, value_name = "FILE")]
+    reads: Option<PathBuf>,
 
     /// With `--plan`: also state what the machines of each planned
     /// generation need linked beside them that the header-only contracts of
@@ -3838,7 +3837,7 @@ enum Commands {
     /// `orchestrate` or `generate-conformance`, the other two commands whose
     /// files a build compiles), and nothing else is run. For each request,
     /// `<results>/<name>.request` keeps its line, and then either `<name>.plan` holds what the plan printed, with
-    /// `<name>.reads` the files it read (`--plan-reads`), or `<name>.error`
+    /// `<name>.reads` the files it read (`--reads`), or `<name>.error`
     /// holds what the refused run wrote on stderr. Every `.plan` is dated
     /// when the batch began, before any plan read anything, and strictly
     /// after every file written before it: a file a plan read that changed
@@ -3974,6 +3973,26 @@ enum Commands {
         /// anywhere inside the checkout finds it.
         #[arg(long)]
         root: Option<String>,
+    },
+
+    /// Write a generated tree into a directory from its actions (ADR 0097).
+    ///
+    /// The tree is the one `tools/codegen/trees/<TREE>.toml` declares. Each of
+    /// its generations is an action keyed by what it reads, taken from the
+    /// action cache when the cache holds it and run by this binary otherwise;
+    /// its files are written under `--into` at the paths they have in the
+    /// checkout, then the tree's index files and its formatter. Refused when
+    /// this binary was built from other sources than the checkout's, since
+    /// its results would be kept under another generator's key.
+    ///
+    /// The cache is `$SCE_ACTION_CACHE`, else `$XDG_CACHE_HOME/sce/actions`,
+    /// else `~/.cache/sce/actions`.
+    Materialize {
+        /// The tree, as its manifest names it.
+        tree: String,
+        /// Where the tree is written.
+        #[arg(long, value_name = "DIR")]
+        into: PathBuf,
     },
 
     /// SCE Protocol-Synthesis RFC §synth-5-O — resolve a mangled symbol or
@@ -4392,9 +4411,12 @@ fn main() {
         let _ = PLAN_CHILDREN.set(cli.plan_children);
         let _ = PLAN_REQUIRES.set(cli.plan_requires);
         let _ = PLAN_MACHINES.set(cli.plan_machines);
-        if let Some(reads) = cli.plan_reads {
-            let _ = PLAN_READS.set(reads);
+    }
+    if let Some(reads) = cli.reads {
+        if let Some(detail) = reads_refusal(&cli.command) {
+            cli_exit(CliError::Usage { detail });
         }
+        let _ = READS.set(reads);
     }
     match cli.command {
         Commands::Generate(args) => run_generate(*args, error_format),
@@ -4626,6 +4648,7 @@ fn main() {
             deploy,
         } => cmd_verify(&out_dir, &input_root, deploy.as_deref(), error_format),
         Commands::VerifyGenerator { root } => cmd_verify_generator(root.as_deref(), error_format),
+        Commands::Materialize { tree, into } => cmd_materialize(&tree, &into, error_format),
         Commands::Addr2Sce {
             sourcemap_dir,
             symbol,
@@ -4697,6 +4720,24 @@ fn plan_refusal(command: &Commands, plan_children: bool) -> Option<String> {
     }
 }
 
+/// Why `--reads` cannot apply to `command`, or `None` when it does.
+///
+/// Every command that is not one of the three is refused rather than left
+/// to write no list: a caller keying a cache on the list (ADR 0097) would
+/// read a missing list as a run that read nothing.
+fn reads_refusal(command: &Commands) -> Option<String> {
+    match command {
+        Commands::Generate(_) | Commands::Orchestrate(_) | Commands::GenerateConformance { .. } => {
+            None
+        }
+        _ => Some(
+            "--reads applies only to the commands that record what they read: generate, \
+             orchestrate and generate-conformance"
+                .to_string(),
+        ),
+    }
+}
+
 /// Why `--assert-unchanged` cannot apply to `command`, or `None` when it
 /// does.
 ///
@@ -4763,6 +4804,7 @@ fn assert_unchanged_refusal(command: &Commands) -> Option<String> {
         | Commands::LowerAlgorithm { .. }
         | Commands::Verify { .. }
         | Commands::VerifyGenerator { .. }
+        | Commands::Materialize { .. }
         | Commands::Addr2Sce { .. }
         | Commands::Sce2Sym { .. } => Some(NOT_A_GENERATOR.to_string()),
     }
@@ -4983,7 +5025,7 @@ fn cmd_orchestrate(args: OrchestrateArgs, error_format: ErrorFormat) {
         if let Some(path) = write_deps.as_deref() {
             write_depfile_entry(path, &entry);
         }
-        write_plan_reads(Some(&entry));
+        write_reads(Some(&entry));
     }
 
     // A plan's stdout is its answer and nothing else; what of the manifest
@@ -6705,7 +6747,7 @@ fn run_generate(args: GenerateArgs, error_format: ErrorFormat) {
         let children_read = plan_child_generations(&args, &report, error_format);
         read = joined_reads(read, children_read);
     }
-    write_plan_reads(read.as_ref());
+    write_reads(read.as_ref());
     emit_generate_manifest(&report);
 }
 
@@ -7015,7 +7057,7 @@ fn cmd_generate_with_imports(args: GenerateArgs, error_format: ErrorFormat) {
     // prerequisites every document and template any member read, less every
     // file any member wrote.
     write_run_depfile(args.write_deps.as_deref(), &set);
-    write_plan_reads(set.depfile.as_ref());
+    write_reads(set.depfile.as_ref());
     emit_generate_manifest(&set);
 }
 
@@ -8275,7 +8317,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) -> GenerateReport
     // correctly invalidates `<case>_sm.{h,inl}` artifacts on the next
     // ninja/make run. tc8-harness's CMake glob workaround can be
     // retired once consumers pick up this flag. A plan asked for what it read
-    // (`--plan-reads`) records the same entry: the list it writes is these
+    // (`--reads`) records the same entry: the list it writes is these
     // prerequisites.
     if records_reads(depfile_path) {
         report.depfile = Some(depfile_entry(DepfileInputs {
@@ -8678,7 +8720,7 @@ struct DepfileInputs<'a> {
 /// it wrote beside them, and every file it read, before the produced ones are
 /// taken back out. A run writes it as a Make-format depfile
 /// ([`write_depfile_entry`]), and a plan lists what it read from it
-/// ([`write_plan_reads`]).
+/// ([`write_reads`]).
 ///
 /// [`DepfileInputs::self_written`] names files this invocation produced
 /// that are not artefacts — the §9.6.6 synth children and the
@@ -8867,28 +8909,29 @@ fn write_depfile_entry(depfile_path: &str, entry: &DepfileEntry) {
     }
 }
 
-/// `--plan-reads`: write what a plan read, one path per line, to the file it
-/// was asked to write it to. The list is the prerequisites the depfile of
-/// the same run would name ([`depfile_prerequisites`]), each made absolute
-/// against the working directory the run was given, so a reader in another
-/// directory reads the same files.
+/// `--reads`: write what a run read, a plan or a generation, one path per
+/// line, to the file it was asked to write it to. The list is the
+/// prerequisites the depfile of the same run would name
+/// ([`depfile_prerequisites`]), each made absolute against the working
+/// directory the run was given, so a reader in another directory reads the
+/// same files.
 ///
 /// Two things a depfile can leave in are taken out or said apart, because a
-/// build reading the list on its next configure would find either one
-/// missing and plan again, every time, with nothing changed:
-/// - every file the plan produced, its child generations' included, compared
-///   as written ([`plain_absolute`]): a file a later generation reads and an
-///   earlier one wrote is the plan's own, and before the build has run it is
-///   on no disk;
+/// reader keying an answer on the list would find either one missing and
+/// run again, every time, with nothing changed:
+/// - every file the run produced, a plan's child generations' included,
+///   compared as written ([`plain_absolute`]): a file a later generation
+///   reads and an earlier one wrote is the run's own, and before a plan's
+///   build has run it is on no disk;
 /// - a file that is not there (`sce_build::confine::exists`) is written
-///   `?<path>`: the plan looked for it and did not find it, so its answer is
+///   `?<path>`: the run looked for it and did not find it, so its answer is
 ///   current while the file stays absent, and not once it appears.
 ///
-/// A plan whose generations did not all record what they read (`read` is
+/// A run whose generations did not all record what they read (`read` is
 /// `None`) writes no list: an answer without one is never reused, and one
 /// with a list short of a file would be reused after that file changed.
-fn write_plan_reads(read: Option<&DepfileEntry>) {
-    let (Some(path), Some(entry)) = (plan_reads(), read) else {
+fn write_reads(read: Option<&DepfileEntry>) {
+    let (Some(path), Some(entry)) = (reads_file(), read) else {
         return;
     };
     let tree = pending_tree();
@@ -8941,7 +8984,7 @@ fn plain_absolute(path: &Path) -> PathBuf {
 }
 
 /// The prerequisites `entry` names once what the run produced is taken back
-/// out of it: the depfile's, and a plan's read list ([`write_plan_reads`]),
+/// out of it: the depfile's, and a plan's read list ([`write_reads`]),
 /// one list for both.
 fn depfile_prerequisites(entry: &DepfileEntry) -> Vec<PathBuf> {
     let mut deps = entry.prerequisites.clone();
@@ -13918,7 +13961,7 @@ fn cmd_generate_conformance(
     // spelling is free to drift into declaring a directory the render
     // does not read, or missing the one it does.
     //
-    // A plan of the harness (`--plan-reads`) lists the same prerequisites,
+    // A plan of the harness (`--reads`) lists the same prerequisites,
     // from the same entry, so a build keeps its answer exactly while the
     // depfile would not re-run the step.
     if records_reads(depfile_path) {
@@ -13936,7 +13979,7 @@ fn cmd_generate_conformance(
         if let Some(dep_path) = depfile_path {
             write_depfile_entry(dep_path, &entry);
         }
-        write_plan_reads(Some(&entry));
+        write_reads(Some(&entry));
     }
     // A plan's stdout is its answer and nothing else.
     if output_mode() != OutputMode::Plan {
@@ -14558,6 +14601,50 @@ fn cmd_verify_generator(root: Option<&str>, error_format: ErrorFormat) {
     }
 }
 
+// ── Subcommand: materialize ─────────────────────────────────────
+
+/// `materialize`: write the tree `tree` declares into `into` from its actions
+/// (ADR 0097), through this machine's action cache, and say on stderr how
+/// many actions the cache answered and how many ran.
+fn cmd_materialize(tree: &str, into: &Path, error_format: ErrorFormat) {
+    use sce_build::action::{generation, identity, materialize, store, tree as trees};
+    let fail = |detail: String| -> ! {
+        error_format.emit_and_exit(
+            &CliError::ScxmlGenerate {
+                stage: "materialize",
+                detail,
+            },
+            "",
+        )
+    };
+    let root = locate_workspace_root(current_workspace_root_override().as_deref())
+        .unwrap_or_else(|| cli_exit(CliError::ProjectRootNotFound));
+    let identity =
+        identity::GeneratorIdentity::of_checkout(&root).unwrap_or_else(|e| fail(e.to_string()));
+    let binary = std::env::current_exe()
+        .unwrap_or_else(|e| fail(format!("this program cannot name its own binary: {e}")));
+    let generator =
+        generation::Generator::new(&root, &binary, sce_build::GENERATOR_SOURCE_DIGEST, identity)
+            .unwrap_or_else(|e| fail(e.to_string()));
+    let store = store::LocalStore::for_this_machine().unwrap_or_else(|| {
+        fail(
+            "no action cache: none of SCE_ACTION_CACHE, XDG_CACHE_HOME and HOME is set".to_string(),
+        )
+    });
+    let expanded = trees::tree(&root, tree)
+        .and_then(|manifest| manifest.expand(&root))
+        .unwrap_or_else(|e| fail(e.to_string()));
+    let report = materialize::materialize(&generator, &store, &expanded, into)
+        .unwrap_or_else(|e| fail(e.to_string()));
+    eprintln!(
+        "materialize {tree}: {} file(s) into {}; {} action(s) from the cache, {} run",
+        report.files.len(),
+        into.display(),
+        report.hits,
+        report.runs
+    );
+}
+
 /// Walks `out_dir` recursively and returns every file whose extension
 /// matches the set SCE backends emit. Ordering is BTreeMap-sorted so
 /// the first-mismatch-wins diagnostic is deterministic across
@@ -14686,7 +14773,7 @@ struct PlanRequest {
 ///
 /// A run of its own per plan, and not a thread of this one: a generation
 /// keeps its output mode ([`OUTPUT_MODE`], [`PLAN_CHILDREN`],
-/// [`PLAN_READS`]) and the tree it holds in memory ([`PENDING_TREE`]) for
+/// [`READS`]) and the tree it holds in memory ([`PENDING_TREE`]) for
 /// the whole process, holds the documents it wrote on its thread
 /// (`sce_build::confine::hold`), and ends the process when it refuses a
 /// document ([`cli_exit`]). Two plans in one process would share all of it,
@@ -14791,7 +14878,7 @@ fn plan_requests(text: &str, requests_path: &str) -> Vec<PlanRequest> {
         match Cli::try_parse_from(program.chain(arguments.iter().map(String::as_str))) {
             Ok(cli)
                 if cli.plan
-                    && cli.plan_reads.is_none()
+                    && cli.reads.is_none()
                     && plan_refusal(&cli.command, cli.plan_children).is_none() => {}
             Ok(_) => refuse(
                 requests_path,
@@ -14800,7 +14887,7 @@ fn plan_requests(text: &str, requests_path: &str) -> Vec<PlanRequest> {
                  [--plan-machines] [--plan-requires] generate <document> ...`, or `--plan \
                  [--plan-machines] [--plan-requires]` with `orchestrate` or \
                  `generate-conformance`), and the file it reads into is the batch's to name \
-                 (`--plan-reads`)",
+                 (`--reads`)",
             ),
             Err(error) => refuse(
                 requests_path,
@@ -14870,7 +14957,7 @@ fn date_written_now(stamp: &Path) -> std::time::SystemTime {
 }
 
 /// Answer one request of a `plan-batch` run, by a run of `program` with the
-/// request's arguments and `--plan-reads`, and keep the answer under
+/// request's arguments and `--reads`, and keep the answer under
 /// `results`: `<name>.request` holds the request's line; then `<name>.plan`
 /// what the plan printed and `<name>.reads` what it read, or `<name>.error`
 /// what the refused run wrote on stderr. Returns whether the plan answered.
@@ -14896,7 +14983,7 @@ fn answer_plan_request(
     write_kept(&kept("request"), format!("{}\n", request.line).as_bytes());
 
     let run = std::process::Command::new(program)
-        .arg("--plan-reads")
+        .arg("--reads")
         .arg(&reads_part)
         .args(&request.arguments)
         .output()

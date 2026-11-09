@@ -70,7 +70,7 @@
 # kept in the build tree (`<build>/sce-codegen-plans/entries/<key>.plan`),
 # under the SHA-256 of the generator's path, that environment and the
 # arguments, beside the list of the files the plan read (`<key>.reads`,
-# `sce-codegen --plan-reads`, the prerequisites the depfile of the same run
+# `sce-codegen --reads`, the prerequisites the depfile of the same run
 # names: its document, what it includes and imports, its source set, its
 # deploy, the templates and the generator; the files the plan produced left
 # out; a file it looked for and did not find written `?<path>`). A kept
@@ -1110,7 +1110,7 @@ function(sce_codegen_plan PREFIX)
             message(FATAL_ERROR
                 "sce-codegen --plan ${_RUN} failed (${_LANGUAGE}), so the outputs of its "
                 "generation cannot be declared. A sce-codegen older than --plan (or, asked "
-                "with CHILD_GENERATIONS, than --plan-children, or than --plan-reads, or "
+                "with CHILD_GENERATIONS, than --plan-children, or than --reads, or "
                 "asked of a set or a harness, than their plans) answers with a usage error: "
                 "rebuild it from this tree.\n${_PLAN_ERROR}")
         endif()

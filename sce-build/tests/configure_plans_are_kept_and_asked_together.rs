@@ -5,10 +5,11 @@
 // writes (`sce-codegen --plan generate`), and a tree asks several hundred such
 // plans. What lets a build ask each one once per state of its inputs, and many
 // at once, is the generator's, and is held here:
-//   - `--plan-reads` lists what a plan read: the prerequisites a depfile of the
+//   - `--reads` lists what a run read: the prerequisites a depfile of the
 //     same run names, absolute, less every file the run or a child generation
-//     it planned produces; asking for the list changes no answer, and only a
-//     plan is asked for one;
+//     it planned produces; asking for the list changes no answer, a
+//     generation writes the list its plan writes, and a command that records
+//     nothing it reads refuses to be asked for one;
 //   - `plan-batch` answers each request byte for byte as the plan of it alone
 //     does, keeps a refusal as the refused run's stderr, dates each answer when
 //     its request was written, and runs nothing but plans.
@@ -78,7 +79,7 @@ fn conformance_plan(id: &str, language: &str, out: &Path, reads: Option<&Path>) 
     let dir = fixture_dir(id);
     let mut arguments = vec!["--plan".to_string(), "--plan-children".to_string()];
     if let Some(reads) = reads {
-        arguments.extend(["--plan-reads".to_string(), text(reads)]);
+        arguments.extend(["--reads".to_string(), text(reads)]);
     }
     arguments.extend([
         "generate".to_string(),
@@ -117,7 +118,7 @@ fn a_plan_lists_what_it_read_and_answers_as_it_does_without_the_list() {
     };
 
     let plain = plan(&[]);
-    let listed = plan(&["--plan-reads".to_string(), text(&reads)]);
+    let listed = plan(&["--reads".to_string(), text(&reads)]);
 
     assert!(plain.status.success(), "{}", stderr(&plain));
     assert!(listed.status.success(), "{}", stderr(&listed));
@@ -197,32 +198,100 @@ fn read_list(path: &Path) -> (Vec<String>, Vec<String>) {
     (read, absent)
 }
 
+/// A generation is keyed on what it read (ADR 0097): an action cache asks the
+/// run that writes for the list, and keys the result on the contents of the
+/// files it names. The list has to be the one the plan of the same run
+/// writes, since a plan is that run in memory; a generation that listed less
+/// would be found current after a file it read had changed.
 #[test]
-fn a_list_of_reads_is_asked_of_a_plan_alone() {
+fn a_generation_lists_what_its_plan_lists() {
+    let tmp = tempfile::tempdir().expect("temp dir");
+    let door = tmp.path().join("door.scxml");
+    fs::write(&door, DOOR).expect("write the document");
+    let planned = tmp.path().join("planned.reads");
+    let generated = tmp.path().join("generated.reads");
+    let out = tmp.path().join("out");
+    let arguments = |reads: &Path, plan: bool| {
+        let mut arguments = Vec::new();
+        if plan {
+            arguments.push("--plan".to_string());
+        }
+        arguments.extend([
+            "--reads".to_string(),
+            text(reads),
+            "generate".to_string(),
+            text(&door),
+            "-o".to_string(),
+            text(&out),
+            "-l".to_string(),
+            "rust".to_string(),
+        ]);
+        arguments
+    };
+
+    let plan = run(&arguments(&planned, true));
+    assert!(plan.status.success(), "{}", stderr(&plan));
+    assert!(!out.exists(), "a plan wrote its output");
+    let generation = run(&arguments(&generated, false));
+    assert!(generation.status.success(), "{}", stderr(&generation));
+    assert!(out.exists(), "the generation wrote no output");
+
+    let listed = lines_of(&generated);
+    assert!(
+        listed.iter().any(|line| line == &text(&door)),
+        "the generation's list does not name its document: {listed:?}"
+    );
+    assert!(
+        listed.iter().any(|line| line.ends_with(".jinja2")),
+        "the generation's list names no template, so a template edit would \
+         leave its key where it was: {listed:?}"
+    );
+    assert_eq!(
+        listed,
+        lines_of(&planned),
+        "a generation listed other reads than its plan"
+    );
+    let written: Vec<PathBuf> = fs::read_dir(&out)
+        .expect("read the output")
+        .map(|entry| entry.expect("an entry").path())
+        .collect();
+    for file in &written {
+        assert!(
+            !listed.iter().any(|line| line == &text(file)),
+            "the generation listed its own output {} as a read",
+            file.display()
+        );
+    }
+}
+
+/// A command that records nothing it reads is refused the list rather than
+/// left to write none: a cache reading no list would key the run on nothing.
+#[test]
+fn a_command_that_records_no_reads_refuses_the_list() {
     let tmp = tempfile::tempdir().expect("temp dir");
     let door = tmp.path().join("door.scxml");
     fs::write(&door, DOOR).expect("write the document");
     let reads = tmp.path().join("door.reads");
-    let out = tmp.path().join("out");
 
-    let written = run(&[
-        "--plan-reads".to_string(),
+    let checked = run(&[
+        "--reads".to_string(),
         text(&reads),
-        "generate".to_string(),
+        "check".to_string(),
         text(&door),
-        "-o".to_string(),
-        text(&out),
         "-l".to_string(),
-        "cpp".to_string(),
-        "--no-format".to_string(),
+        "rust".to_string(),
     ]);
 
     assert!(
-        !written.status.success(),
-        "--plan-reads was accepted on a run that writes"
+        !checked.status.success(),
+        "--reads was accepted by a command that records nothing it reads"
+    );
+    assert!(
+        stderr(&checked).contains("--reads applies only to"),
+        "the refusal does not say where the flag applies: {}",
+        stderr(&checked)
     );
     assert!(!reads.exists(), "a refused run wrote a list of reads");
-    assert!(!out.exists(), "a refused run wrote its output");
 }
 
 /// A fixture whose generation writes the stub of a hybrid `<invoke>`, whose
@@ -516,7 +585,7 @@ fn a_batch_runs_only_plans() {
         (
             "a plan naming its own list of reads",
             format!(
-                "listed\t--plan\t--plan-reads\t{}\tgenerate\t{}\t-o\t{}\t-l\tcpp\n",
+                "listed\t--plan\t--reads\t{}\tgenerate\t{}\t-o\t{}\t-l\tcpp\n",
                 text(&tmp.path().join("elsewhere.reads")),
                 text(&door),
                 text(&out)

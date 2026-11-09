@@ -23,6 +23,11 @@ pub mod acceptance_record;
 /// What a requirement's evidence depends on, as a closure over the IR
 /// rather than the nodes carrying its id — Requirement-closure RFC §7a.
 pub mod acceptance_report;
+/// Generated code as a build output, kept in an action cache under the
+/// digest of its inputs (ADR 0097). Absent from the WASM build, which has no
+/// filesystem to keep a cache in or to materialize a tree into.
+#[cfg(not(target_arch = "wasm32"))]
+pub mod action;
 pub mod analyzer;
 /// The innermost-enclosing-anchor lookup behind
 /// `SCE_ERROR_CONTRACT.md` §2.1.2 — source location to the

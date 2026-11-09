@@ -1,0 +1,758 @@
+// SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+
+//! One generator invocation as a cached action (ADR 0097, sections 2 and 3).
+//!
+//! # The key, in two stages
+//!
+//! A generation's inputs are the files it reads, and which files it reads is
+//! known only once it has run: the document it is given, what that document
+//! imports and includes, the source set its `source-hash` covers, the
+//! templates it renders. The generator states them (`--reads`), and a file it
+//! looked for and did not find besides. So an action is looked up the way a
+//! build with discovered dependencies is (a compiler's dependency file, Bazel's
+//! and Buck2's dependency-file actions):
+//!
+//! 1. **The read set.** The command and the generator name an action whose
+//!    result is the list of files the last run of that command read. Its key
+//!    covers no file contents.
+//! 2. **The generation.** The files of that list, as they are now, are the
+//!    input root of the action whose result is the generated files; the files
+//!    the run looked for and did not find are its salt.
+//!
+//! Stage 2 is a hit only when every file the last run read holds the bytes it
+//! held then, and every file it did not find is still absent. The generator is
+//! a function of what it reads, so a run with every such file unchanged reads
+//! the same set again and writes the same bytes: what it reads next can differ
+//! only through a file whose contents are part of the key. A changed file
+//! misses stage 2, the generation runs, and its new read set replaces the old.
+//!
+//! # A run
+//!
+//! A miss runs the generator from the checkout's root, every path in its
+//! arguments relative to it (a generated file states the path of its document
+//! as it was given), with an environment of the declared variables alone, into
+//! a scratch directory outside the checkout. The run is recorded only when it
+//! succeeded, read nothing outside the checkout but the generator itself, and
+//! read no file that changed while it ran. A refusal is never recorded: a
+//! refused run states no read set, so nothing could tell when its answer stops
+//! holding.
+
+use std::cell::RefCell;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::fs;
+use std::io;
+use std::path::{Path, PathBuf};
+use std::process::Command as Process;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::SystemTime;
+
+use super::identity::GeneratorIdentity;
+use super::input_root::{input_root, InputFile, InputRootError};
+use super::reapi::{
+    platform, Action, ActionResult, Command, Digest, EnvironmentVariable, OutputFile,
+};
+use super::store::ContentStore;
+
+/// How a generation's arguments name its output directory. Replaced by the
+/// scratch directory of a run, and by [`OUTPUT_DIRECTORY`] in the action, so
+/// that the key does not depend on where a run wrote.
+pub const OUTPUT_PLACEHOLDER: &str = "{out}";
+
+/// The output directory as an action's command names it.
+pub const OUTPUT_DIRECTORY: &str = "sce-out";
+
+/// The salt of a stage-1 action, so that its key can never be a stage-2 key.
+const READ_SET_SALT: &[u8] = b"sce.read-set/1";
+
+/// The first line of a stage-2 salt, followed by the files the run looked for
+/// and did not find.
+const GENERATION_SALT: &str = "sce.generation/1";
+
+/// The name of the read set in a stage-1 result.
+const READ_SET_OUTPUT: &str = "reads";
+
+/// The environment every generation is given beside its own: the template
+/// tree, relative to the root it runs from. Without it the generator finds
+/// its templates from where its binary is, which can be outside the checkout
+/// (a target directory linked elsewhere), and a read there has no place in a
+/// key.
+fn base_environment() -> BTreeMap<String, String> {
+    BTreeMap::from([(
+        "SCE_TEMPLATE_DIR".to_string(),
+        crate::generator_witness::RUN_TIME_TREE.to_string(),
+    )])
+}
+
+impl Generation {
+    /// The environment a run of this generation is given: the base
+    /// environment, and the generation's own over it.
+    fn effective_environment(&self) -> BTreeMap<String, String> {
+        let mut environment = base_environment();
+        environment.extend(self.environment.clone());
+        environment
+    }
+}
+
+/// One invocation of the generator.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct Generation {
+    /// The arguments after the program, every path relative to the checkout's
+    /// root, the output directory spelled [`OUTPUT_PLACEHOLDER`].
+    pub arguments: Vec<String>,
+    /// The environment the run is given, and nothing else.
+    pub environment: BTreeMap<String, String>,
+}
+
+/// A file a generation produced, by its path relative to its output directory.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProducedFile {
+    pub digest: Digest,
+    pub is_executable: bool,
+}
+
+/// Where a generation's files came from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Provenance {
+    /// The store held a result for the key.
+    Hit,
+    /// The generator ran, and its result was recorded.
+    Ran,
+}
+
+/// What a generation produced.
+#[derive(Clone, Debug)]
+pub struct Produced {
+    pub files: BTreeMap<String, ProducedFile>,
+    pub provenance: Provenance,
+    /// The action key of the generation.
+    pub key: Digest,
+}
+
+/// Why a generation produced nothing.
+#[derive(Debug, thiserror::Error)]
+pub enum GenerationError {
+    #[error("{0}")]
+    Io(#[from] io::Error),
+    #[error(
+        "the generator at {binary} was built from other sources than the checkout at {root} \
+         (it carries {carried}, the checkout is {checkout}); rebuild it with: cargo build \
+         --bin sce-codegen --features cli -p sce-build"
+    )]
+    StaleGenerator {
+        binary: PathBuf,
+        root: PathBuf,
+        carried: String,
+        checkout: String,
+    },
+    #[error("`sce-codegen {arguments}` names no output directory ({OUTPUT_PLACEHOLDER})")]
+    NoOutputDirectory { arguments: String },
+    #[error("`sce-codegen {arguments}` exited with status {status}:\n{stderr}")]
+    Refused {
+        arguments: String,
+        status: i32,
+        stderr: String,
+    },
+    #[error("`sce-codegen {arguments}` succeeded and wrote no list of what it read")]
+    NoReadSet { arguments: String },
+    #[error(
+        "`sce-codegen {arguments}` read {path}, which is outside the checkout at {root}: an \
+         action may read only the checkout and its generator, or its key could not name \
+         what it read"
+    )]
+    ReadOutside {
+        arguments: String,
+        path: PathBuf,
+        root: PathBuf,
+    },
+    #[error(
+        "{path} changed while `sce-codegen {arguments}` read it, so its output is of no one \
+         state of the checkout; run it again"
+    )]
+    ChangedDuringRun { arguments: String, path: String },
+    #[error("`sce-codegen {arguments}` wrote {path}, which is not a regular file")]
+    NotAFile { arguments: String, path: PathBuf },
+    #[error("the read set of `sce-codegen {arguments}` is not a tree: {source}")]
+    InputRoot {
+        arguments: String,
+        source: InputRootError,
+    },
+    #[error("the store's read set {digest} is not one a run wrote: {line}")]
+    MalformedReadSet { digest: Digest, line: String },
+}
+
+/// A file's digest, kept with the length and date it was taken at.
+struct HashedFile {
+    len: u64,
+    modified: Option<SystemTime>,
+    digest: Digest,
+}
+
+/// A stage-2 key, and the encoded directories of the input root it names.
+struct KeyedInputs {
+    key: Digest,
+    directories: Vec<(Digest, Vec<u8>)>,
+}
+
+/// The generator of one checkout, and the files it has hashed.
+pub struct Generator {
+    root: PathBuf,
+    binary: PathBuf,
+    identity: GeneratorIdentity,
+    hashed: RefCell<HashMap<PathBuf, HashedFile>>,
+}
+
+impl Generator {
+    /// The generator at `binary`, run on the checkout at `root`. Refused when
+    /// the binary carries a source digest other than the checkout's, since its
+    /// results would be recorded under the key of a generator it is not.
+    ///
+    /// `binary_digest` is the digest the binary carries
+    /// ([`crate::GENERATOR_SOURCE_DIGEST`] when the caller is that binary).
+    pub fn new(
+        root: &Path,
+        binary: &Path,
+        binary_digest: &str,
+        identity: GeneratorIdentity,
+    ) -> Result<Generator, GenerationError> {
+        let root = root.canonicalize()?;
+        if binary_digest != identity.source_digest {
+            return Err(GenerationError::StaleGenerator {
+                binary: binary.to_path_buf(),
+                root,
+                carried: binary_digest.to_string(),
+                checkout: identity.source_digest.clone(),
+            });
+        }
+        Ok(Generator {
+            root,
+            binary: binary.canonicalize()?,
+            identity,
+            hashed: RefCell::new(HashMap::new()),
+        })
+    }
+
+    /// The checkout's root.
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
+    /// The generator this runs, as actions name it.
+    pub fn identity(&self) -> &GeneratorIdentity {
+        &self.identity
+    }
+
+    /// The files `generation` produces: from `store` when it holds them, else
+    /// from a run, which is then recorded in `store`.
+    pub fn produce(
+        &self,
+        store: &dyn ContentStore,
+        generation: &Generation,
+    ) -> Result<Produced, GenerationError> {
+        let command = self.command(generation)?;
+        let (command_digest, command_bytes) = Digest::of_message(&command);
+        let read_set_key = self.read_set_key(&command_digest);
+        if let Some(found) = self.lookup(store, generation, &command_digest, &read_set_key)? {
+            return Ok(found);
+        }
+        self.run(
+            store,
+            generation,
+            &command_digest,
+            &command_bytes,
+            &read_set_key,
+        )
+    }
+
+    fn command(&self, generation: &Generation) -> Result<Command, GenerationError> {
+        if !generation
+            .arguments
+            .iter()
+            .any(|a| a.contains(OUTPUT_PLACEHOLDER))
+        {
+            return Err(GenerationError::NoOutputDirectory {
+                arguments: generation.arguments.join(" "),
+            });
+        }
+        let mut arguments = vec!["sce-codegen".to_string()];
+        arguments.extend(
+            generation
+                .arguments
+                .iter()
+                .map(|a| a.replace(OUTPUT_PLACEHOLDER, OUTPUT_DIRECTORY)),
+        );
+        Ok(Command {
+            arguments,
+            environment_variables: generation
+                .effective_environment()
+                .iter()
+                .map(|(name, value)| EnvironmentVariable {
+                    name: name.clone(),
+                    value: value.clone(),
+                })
+                .collect(),
+            platform: Some(platform(self.identity.properties())),
+            working_directory: String::new(),
+            output_paths: vec![OUTPUT_DIRECTORY.to_string()],
+        })
+    }
+
+    fn action(&self, command: &Digest, input_root: Digest, salt: Vec<u8>) -> Digest {
+        Digest::of_message(&Action {
+            command_digest: Some(command.clone()),
+            input_root_digest: Some(input_root),
+            do_not_cache: false,
+            salt,
+            platform: Some(platform(self.identity.properties())),
+        })
+        .0
+    }
+
+    fn read_set_key(&self, command: &Digest) -> Digest {
+        self.action(command, Digest::of(b""), READ_SET_SALT.to_vec())
+    }
+
+    /// The stage-2 key of `reads` as the files stand now, and the input root
+    /// it is made of.
+    fn generation_key(
+        &self,
+        generation: &Generation,
+        command: &Digest,
+        reads: &ReadSet,
+    ) -> Result<Option<KeyedInputs>, GenerationError> {
+        let mut files = BTreeMap::new();
+        for path in &reads.present {
+            let Some(digest) = self.hash(path)? else {
+                // Read by the last run and gone now: the set itself has moved.
+                return Ok(None);
+            };
+            files.insert(
+                path.clone(),
+                InputFile {
+                    digest,
+                    is_executable: false,
+                },
+            );
+        }
+        for path in &reads.absent {
+            if self.root.join(path).exists() {
+                return Ok(None);
+            }
+        }
+        let root = input_root(&files).map_err(|source| GenerationError::InputRoot {
+            arguments: generation.arguments.join(" "),
+            source,
+        })?;
+        let mut salt = GENERATION_SALT.to_string();
+        for path in &reads.absent {
+            salt.push('\n');
+            salt.push_str(path);
+        }
+        Ok(Some(KeyedInputs {
+            key: self.action(command, root.digest.clone(), salt.into_bytes()),
+            directories: root.directories,
+        }))
+    }
+
+    fn lookup(
+        &self,
+        store: &dyn ContentStore,
+        generation: &Generation,
+        command: &Digest,
+        read_set_key: &Digest,
+    ) -> Result<Option<Produced>, GenerationError> {
+        let Some(recorded) = store.action_result(read_set_key)? else {
+            return Ok(None);
+        };
+        let Some(read_set_digest) = recorded
+            .output_files
+            .iter()
+            .find(|f| f.path == READ_SET_OUTPUT)
+            .and_then(|f| f.digest.clone())
+        else {
+            return Ok(None);
+        };
+        let Some(bytes) = store.read_blob(&read_set_digest)? else {
+            return Ok(None);
+        };
+        let reads = ReadSet::parse(&bytes, &read_set_digest)?;
+        let Some(KeyedInputs { key, .. }) = self.generation_key(generation, command, &reads)?
+        else {
+            return Ok(None);
+        };
+        let Some(result) = store.action_result(&key)? else {
+            return Ok(None);
+        };
+        let mut files = BTreeMap::new();
+        let mut named = Vec::new();
+        for output in &result.output_files {
+            let (Some(digest), Some(relative)) = (
+                output.digest.clone(),
+                output
+                    .path
+                    .strip_prefix(OUTPUT_DIRECTORY)
+                    .and_then(|p| p.strip_prefix('/')),
+            ) else {
+                return Ok(None);
+            };
+            named.push(digest.clone());
+            files.insert(
+                relative.to_string(),
+                ProducedFile {
+                    digest,
+                    is_executable: output.is_executable,
+                },
+            );
+        }
+        if !store.find_missing(&named)?.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(Produced {
+            files,
+            provenance: Provenance::Hit,
+            key,
+        }))
+    }
+
+    fn run(
+        &self,
+        store: &dyn ContentStore,
+        generation: &Generation,
+        command_digest: &Digest,
+        command_bytes: &[u8],
+        read_set_key: &Digest,
+    ) -> Result<Produced, GenerationError> {
+        let shown = generation.arguments.join(" ");
+        let scratch = Scratch::new()?;
+        let out = scratch.path.join("out");
+        fs::create_dir_all(&out)?;
+        let reads_file = scratch.path.join("reads");
+        let out_text = out.display().to_string();
+        let started = SystemTime::now();
+        let output = Process::new(&self.binary)
+            .arg("--reads")
+            .arg(&reads_file)
+            .args(
+                generation
+                    .arguments
+                    .iter()
+                    .map(|a| a.replace(OUTPUT_PLACEHOLDER, &out_text)),
+            )
+            .current_dir(&self.root)
+            .env_clear()
+            .envs(std::env::var_os("PATH").map(|p| ("PATH", p)))
+            .envs(generation.effective_environment())
+            .output()?;
+        if !output.status.success() {
+            return Err(GenerationError::Refused {
+                arguments: shown,
+                status: output.status.code().unwrap_or(-1),
+                stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+            });
+        }
+        let listed = match fs::read_to_string(&reads_file) {
+            Ok(text) => text,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                return Err(GenerationError::NoReadSet { arguments: shown })
+            }
+            Err(e) => return Err(e.into()),
+        };
+        let reads = self.read_set_of_run(&listed, &shown)?;
+        for path in &reads.present {
+            let modified = fs::metadata(self.root.join(path))?.modified().ok();
+            if modified.is_some_and(|m| m > started) {
+                return Err(GenerationError::ChangedDuringRun {
+                    arguments: shown,
+                    path: path.clone(),
+                });
+            }
+        }
+
+        let mut files = BTreeMap::new();
+        let mut output_files = Vec::new();
+        for (relative, path) in walk_files(&out, &shown)? {
+            let bytes = fs::read(&path)?;
+            let is_executable = is_executable(&path)?;
+            let digest = store.write_blob(&bytes)?;
+            output_files.push(OutputFile {
+                path: format!("{OUTPUT_DIRECTORY}/{relative}"),
+                digest: Some(digest.clone()),
+                is_executable,
+            });
+            files.insert(
+                relative,
+                ProducedFile {
+                    digest,
+                    is_executable,
+                },
+            );
+        }
+
+        let Some(KeyedInputs { key, directories }) =
+            self.generation_key(generation, command_digest, &reads)?
+        else {
+            return Err(GenerationError::ChangedDuringRun {
+                arguments: shown,
+                path: "a file the run read".to_string(),
+            });
+        };
+        // The command and the input root go into the store beside the result,
+        // so that an entry can be read back as the action it is, and so that a
+        // store that executes actions has what it needs.
+        store.write_blob(command_bytes)?;
+        for (_, bytes) in &directories {
+            store.write_blob(bytes)?;
+        }
+        store.record_action_result(
+            &key,
+            &ActionResult {
+                output_files,
+                ..ActionResult::default()
+            },
+        )?;
+        let read_set_digest = store.write_blob(reads.render().as_bytes())?;
+        store.record_action_result(
+            read_set_key,
+            &ActionResult {
+                output_files: vec![OutputFile {
+                    path: READ_SET_OUTPUT.to_string(),
+                    digest: Some(read_set_digest),
+                    is_executable: false,
+                }],
+                ..ActionResult::default()
+            },
+        )?;
+        Ok(Produced {
+            files,
+            provenance: Provenance::Ran,
+            key,
+        })
+    }
+
+    /// The read set a run listed, relative to the root. The generator itself
+    /// is named by the identity and left out; anything else outside the
+    /// checkout is refused.
+    fn read_set_of_run(&self, listed: &str, shown: &str) -> Result<ReadSet, GenerationError> {
+        let mut reads = ReadSet::default();
+        for line in listed.lines().filter(|l| !l.is_empty()) {
+            let (absent, path) = match line.strip_prefix('?') {
+                Some(path) => (true, Path::new(path)),
+                None => (false, Path::new(line)),
+            };
+            if !absent && path.canonicalize().ok().as_deref() == Some(self.binary.as_path()) {
+                continue;
+            }
+            let Ok(relative) = path.strip_prefix(&self.root) else {
+                return Err(GenerationError::ReadOutside {
+                    arguments: shown.to_string(),
+                    path: path.to_path_buf(),
+                    root: self.root.clone(),
+                });
+            };
+            let relative = relative
+                .to_str()
+                .map(|s| s.replace(std::path::MAIN_SEPARATOR, "/"))
+                .ok_or_else(|| GenerationError::ReadOutside {
+                    arguments: shown.to_string(),
+                    path: path.to_path_buf(),
+                    root: self.root.clone(),
+                })?;
+            if absent {
+                reads.absent.insert(relative);
+            } else {
+                reads.present.insert(relative);
+            }
+        }
+        Ok(reads)
+    }
+
+    /// The digest of the file at `relative` under the root, or `None` when it
+    /// is not there. A file hashed before, with the same length and date, is
+    /// not read again.
+    fn hash(&self, relative: &str) -> Result<Option<Digest>, GenerationError> {
+        let path = self.root.join(relative);
+        let meta = match fs::metadata(&path) {
+            Ok(meta) => meta,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(e.into()),
+        };
+        let (len, modified) = (meta.len(), meta.modified().ok());
+        if let Some(hashed) = self.hashed.borrow().get(&path) {
+            if hashed.len == len && hashed.modified == modified {
+                return Ok(Some(hashed.digest.clone()));
+            }
+        }
+        let digest = Digest::of(&fs::read(&path)?);
+        self.hashed.borrow_mut().insert(
+            path,
+            HashedFile {
+                len,
+                modified,
+                digest: digest.clone(),
+            },
+        );
+        Ok(Some(digest))
+    }
+}
+
+/// The files a run read, relative to the root, and those it looked for and
+/// did not find.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct ReadSet {
+    present: BTreeSet<String>,
+    absent: BTreeSet<String>,
+}
+
+impl ReadSet {
+    /// One path a line, sorted, an absent one written `?<path>`.
+    fn render(&self) -> String {
+        let mut text = String::new();
+        for path in &self.present {
+            text.push_str(path);
+            text.push('\n');
+        }
+        for path in &self.absent {
+            text.push('?');
+            text.push_str(path);
+            text.push('\n');
+        }
+        text
+    }
+
+    fn parse(bytes: &[u8], digest: &Digest) -> Result<ReadSet, GenerationError> {
+        let malformed = |line: &str| GenerationError::MalformedReadSet {
+            digest: digest.clone(),
+            line: line.to_string(),
+        };
+        let text = std::str::from_utf8(bytes).map_err(|_| malformed("(not UTF-8)"))?;
+        let mut reads = ReadSet::default();
+        for line in text.lines() {
+            let (absent, path) = match line.strip_prefix('?') {
+                Some(path) => (true, path),
+                None => (false, line),
+            };
+            if path.is_empty() || path.starts_with('/') || path.split('/').any(|c| c == "..") {
+                return Err(malformed(line));
+            }
+            if absent {
+                reads.absent.insert(path.to_string());
+            } else {
+                reads.present.insert(path.to_string());
+            }
+        }
+        Ok(reads)
+    }
+}
+
+/// A directory of the system's temporary directory that no other run names,
+/// removed when dropped.
+struct Scratch {
+    path: PathBuf,
+}
+
+impl Scratch {
+    fn new() -> io::Result<Scratch> {
+        static RUNS: AtomicU64 = AtomicU64::new(0);
+        let path = std::env::temp_dir().join(format!(
+            "sce-action-{}-{}",
+            std::process::id(),
+            RUNS.fetch_add(1, Ordering::Relaxed)
+        ));
+        if path.exists() {
+            fs::remove_dir_all(&path)?;
+        }
+        fs::create_dir_all(&path)?;
+        Ok(Scratch { path })
+    }
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.path);
+    }
+}
+
+/// Every file under `dir`, by its path relative to `dir` with `/` between
+/// components, in sorted order. Anything that is not a regular file or a
+/// directory is refused: an output is bytes.
+fn walk_files(dir: &Path, shown: &str) -> Result<Vec<(String, PathBuf)>, GenerationError> {
+    let mut found = Vec::new();
+    let mut pending = vec![dir.to_path_buf()];
+    while let Some(current) = pending.pop() {
+        for entry in fs::read_dir(&current)? {
+            let entry = entry?;
+            let path = entry.path();
+            let kind = entry.file_type()?;
+            if kind.is_dir() {
+                pending.push(path);
+            } else if kind.is_file() {
+                let relative = path
+                    .strip_prefix(dir)
+                    .expect("a walked path is under its root")
+                    .to_str()
+                    .ok_or_else(|| GenerationError::NotAFile {
+                        arguments: shown.to_string(),
+                        path: path.clone(),
+                    })?
+                    .replace(std::path::MAIN_SEPARATOR, "/");
+                found.push((relative, path));
+            } else {
+                return Err(GenerationError::NotAFile {
+                    arguments: shown.to_string(),
+                    path,
+                });
+            }
+        }
+    }
+    found.sort();
+    Ok(found)
+}
+
+#[cfg(unix)]
+fn is_executable(path: &Path) -> io::Result<bool> {
+    use std::os::unix::fs::PermissionsExt;
+    Ok(fs::metadata(path)?.permissions().mode() & 0o111 != 0)
+}
+
+#[cfg(not(unix))]
+fn is_executable(_path: &Path) -> io::Result<bool> {
+    Ok(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_read_set_reads_back_as_it_was_written() {
+        let reads = ReadSet {
+            present: ["tools/codegen/templates/a.jinja2", "x/doc.scxml"]
+                .into_iter()
+                .map(String::from)
+                .collect(),
+            absent: ["x/deploy.yaml".to_string()].into_iter().collect(),
+        };
+        let text = reads.render();
+        assert_eq!(
+            text,
+            "tools/codegen/templates/a.jinja2\nx/doc.scxml\n?x/deploy.yaml\n"
+        );
+        assert_eq!(
+            ReadSet::parse(text.as_bytes(), &Digest::of(text.as_bytes())).unwrap(),
+            reads
+        );
+    }
+
+    /// A read set comes back from a store, which may be shared: a path that
+    /// would leave the checkout is refused rather than hashed.
+    #[test]
+    fn a_read_set_naming_a_path_outside_the_root_is_refused() {
+        for line in ["/etc/passwd", "../up", "a/../../b", "?/abs", ""] {
+            let text = format!("{line}\n");
+            assert!(
+                ReadSet::parse(text.as_bytes(), &Digest::of(text.as_bytes())).is_err(),
+                "{line:?}"
+            );
+        }
+    }
+}

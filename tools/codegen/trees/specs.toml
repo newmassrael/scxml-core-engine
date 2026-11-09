@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: AGPL-3.0-only WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# The request machines of the specs crate (ADR 0097): each document of
+# sce-specs/machines generated for Rust into the crate. The crate keeps the
+# machine and not its sourcemap.
+
+[tree]
+name = "specs"
+roots = ["sce-specs/src/*/generated"]
+
+[[generation]]
+each = { list = ["request_life", "import_life"], as = "machine" }
+arguments = ["generate", "sce-specs/machines/{machine}/{machine}.scxml", "--language", "rust", "--output-dir", "{out}"]
+place = "sce-specs/src/{machine}/generated"
+keep = ["*.rs"]
+
+[[format]]
+tool = "rustfmt"
+directories = ["sce-specs/src/*/generated"]
